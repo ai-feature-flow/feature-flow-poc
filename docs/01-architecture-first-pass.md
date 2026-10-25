@@ -2,7 +2,7 @@
 
 Status: first pass, for discussion. Date: 2026-10-25. Supersedes nothing; `brief.md` is the input.
 
-Working name used here: **Lattice** (see DP1).
+Application name: **Feature Flow** (`feature-flow` in code, configuration, paths and package names). This repository is `feature-flow-poc`, a proof of concept that may evolve into the finished product or be rewritten.
 
 ---
 
@@ -24,11 +24,13 @@ The API service and the workers share the provider and policy libraries. They do
 
 ### 1.2 Task queues
 
+All queues are prefixed with `feature-flow`.
+
 | Queue | Workers | Notes |
 |---|---|---|
-| `orchestration` | Orchestration | Default. May be suffixed per tenant |
-| `agent` | Agent, general pool | Default sandbox capability set |
-| `agent:<capability>` | Agent, specialised pool | Capability routing, see S1. Examples: `agent:os-windows`, `agent:docker`, `agent:gpu` |
+| `feature-flow-orchestration` | Orchestration | Default. May be suffixed per tenant |
+| `feature-flow-agent` | Agent, general pool | Default sandbox capability set |
+| `feature-flow-agent:<capability>` | Agent, specialised pool | Capability routing, see S1. Examples: `feature-flow-agent:os-windows`, `feature-flow-agent:docker`, `feature-flow-agent:gpu` |
 
 A step declares the capabilities it needs. The interpreter picks the queue from the capability set. This is how Windows-only repositories, Docker-dependent test tiers and network-restricted environments are handled without special cases in the interpreter.
 
@@ -244,7 +246,7 @@ Temporal platform, worker platform, sandbox, tracker, code host, CI, agent runti
 |---|---|---|---|
 | Installation | Deployment config | Temporal connection, worker platform, provider selection and credentials references, retention, codec, defaults | Anything repository-specific |
 | Organisation / team | Config service or file | Policy floors, provider bindings, notification routing, budgets, who may approve and steer | Repository build and test detail |
-| Repository | In the repository, `.lattice/manifest.yaml` | Test tiers and commands, setup, static analysis, sandbox base, CI mapping, branch and merge conventions | Policy floors, credentials |
+| Repository | In the repository, `.feature-flow/manifest.yaml` | Test tiers and commands, setup, static analysis, sandbox base, CI mapping, branch and merge conventions | Policy floors, credentials |
 | Run | API at start | Scope, target repositories, plan overrides, attempt budgets within ceiling, dry-run | Policy floors, provider selection |
 
 Precedence: **most specific layer wins, except a small set of safety floors that no lower layer may relax.** See DP6.

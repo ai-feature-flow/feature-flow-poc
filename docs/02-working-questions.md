@@ -39,7 +39,7 @@ Priority: **Must settle** blocks other design work. **Should settle** blocks the
 
 | # | Suggestion | Why |
 |---|---|---|
-| S1 | Route agent steps to task queues by capability (`agent:os-windows`, `agent:docker`) | Handles Windows-only repos and Docker-dependent tiers without special cases in the interpreter |
+| S1 | Route agent steps to task queues by capability (`feature-flow-agent:os-windows`, `feature-flow-agent:docker`) | Handles Windows-only repos and Docker-dependent tiers without special cases in the interpreter |
 | S2 | One `applyPatch` function for re-plans and steering, with protected steps enforced there | Single audit and validation path; closes the "re-plan removed a protected step" hole |
 | S3 | Capability negotiation at run start, not per step | A run fails in the first minute, not at step 40 |
 | S4 | Deterministic idempotency key plus hidden markers on every remote object the engine creates | Retries adopt existing PRs and branches instead of duplicating them |
@@ -58,9 +58,9 @@ Priority: **Must settle** blocks other design work. **Should settle** blocks the
 
 ## DP. Discussion points
 
-### DP1. Project name
-The brief says "choose a project name if useful". I used **Lattice** in the first pass. Alternatives: **Conduit**, **Loom**, **Anvil**, **Forgeflow**.
-*Recommendation:* pick one early; it appears in config paths, namespaces and package names. Low cost now, annoying later.
+### DP1. Project name — settled
+**Feature Flow.** `feature-flow` in code, configuration, paths and package names. This repository is `feature-flow-poc`: a proof of concept that may evolve into the finished product or be rewritten.
+*Note:* the name is settled, so DP1 is closed. The open consequence is naming for the repository manifest directory (`.feature-flow/`) and for Temporal namespaces and task queues, which should follow the same prefix.
 
 ### DP2. Language: .NET or Python (brief Q1)
 | | .NET | Python |
