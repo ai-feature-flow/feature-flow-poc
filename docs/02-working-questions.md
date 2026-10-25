@@ -1,14 +1,14 @@
 # Working list: assumptions, suggestions, discussion points, open questions
 
-Status: for interactive discussion. Date: 2026-10-25. Updated 2026-10-26 for review 01.
+Status: all questions decided. Date: 2026-10-25. Updated 2026-10-26 for reviews 01 to 04.
 Companion to `docs/01-architecture-first-pass.md`.
 
 Review 01 (`docs/reviews/review-01.md`) decided Q1-Q6, Q10 and Q13, and settled
-where the agent loop runs (DP11). Those are recorded under "Decided" below and
-applied in the architecture document. Q7-Q9, Q11, Q12, Q14 and Q16 remain open.
-
-Review 02 (`docs/reviews/review-02.md`) asks for decisions on those remaining
-questions, with options and a recommendation for each.
+where the agent loop runs (DP11). Review 02 asked for decisions on the rest.
+Review 03 decided Q7-Q9, Q11, Q12, Q14 and Q16. Review 04 decided Q15 and
+Q17-Q20. Every question below is now decided and applied in the architecture
+document; decision records for the nine brief questions are in
+`docs/03-decision-records.md`.
 
 How to read this:
 
@@ -17,7 +17,9 @@ How to read this:
 - **DP** = discussion point, a real fork in the road. I have a recommendation.
 - **Q** = open question, I do not yet have a recommendation.
 
-Priority: **Must settle** blocks other design work. **Should settle** blocks the step catalogue. **Later** can wait.
+Priority was: **Must settle** blocks other design work. **Should settle** blocks
+the step catalogue. **Later** can wait. All three tiers are now decided, so the
+questions are grouped by which review decided them rather than by priority.
 
 ---
 
@@ -141,31 +143,36 @@ Options: (a) the agent CLI or SDK runs inside the sandbox and the agent worker s
 
 Full reasoning for each is in `docs/reviews/review-01.md`.
 
-### Must settle
+### Decided (review 03, 2026-10-26)
 
-None outstanding. Q1-Q6 are decided.
-
-### Should settle
-
-| # | Question | Why it blocks |
+| # | Question | Decision |
 |---|---|---|
-| Q7 | Sandbox definition: devcontainer.json, the engine's own manifest, or both (brief Q3)? | Affects the repository manifest and the sandbox provider |
-| Q8 | Docker-dependent tests on Kubernetes: privileged pods, sysbox, remote Docker host, or CI delegation (brief Q2)? | Affects the sandbox provider and the test step |
-| Q9 | Windows-only repositories: can a sandbox provider support Windows hosts (brief Q9)? | Affects worker pools and the test step |
-| Q11 | Concurrency model for several tickets in one repository: serialised, integration branch, or per-ticket branches with a merge queue? | Affects the source control steps and the delivery design |
-| Q12 | How are attempt budgets counted, and can steering exceed the configured ceiling? | Affects the policy model and the steering API |
-| Q14 | How does a run resume or retry after a partial delivery across several repositories? | Affects the delivery steps |
-| Q16 | Cost controls: per-run token and compute budgets, and what happens when exceeded | Moved up from "Later" (review 01, F6). At minimum, record tokens, model and compute time per step from the first version; budgets can come later |
+| Q7 | Sandbox definition: devcontainer.json, the engine's own manifest, or both (brief Q3)? | **Both, and the file is renamed and moved to root `feature-flow.yaml`.** It is authoritative; `devcontainer.json` is an optional input. `.feature-flow/` is reserved but unused in v1 |
+| Q8 | Docker-dependent tests on Kubernetes: privileged pods, sysbox, remote Docker host, or CI delegation (brief Q2)? | **CI delegation as the default**, sysbox where the platform supports it, privileged pods solo only. Per tier, declared in `feature-flow.yaml` |
+| Q9 | Windows-only repositories: can a sandbox provider support Windows hosts (brief Q9)? | **Not in v1.** Hooks in v1: `Os[linux, windows]`, `os: windows` in the manifest, `os-windows` queue routing, CI delegation. Spike W0 (agent runtimes and hooks on Windows) before committing to a Windows VM sandbox |
+| Q11 | Concurrency model for several tickets in one repository | **Per-ticket branches plus `scm.merge_base_forward` plus a serialised merge lock.** One epic integration branch per repository. `max_concurrency` on the `parallel` step confirmed. Optional `MergeQueue` capability |
+| Q12 | How are attempt budgets counted, and can steering exceed the configured ceiling? | **One counting rule:** every entry into a step counts. Infrastructure failures are free. Resumes are free only with progress (new commit, or session growth); after 3 consecutive resumes with no progress the next counts as a restart. Steering grants up to a hard ceiling |
+| Q14 | How does a run resume or retry after a partial delivery across several repositories? | **One idempotent child workflow per repository plus a delivery ledger in the record store.** No compensating action; A7 holds. On failure: retry, fix forward, or revert |
+| Q16 | Cost controls: per-run token and compute budgets, and what happens when exceeded | **Policy-driven, not in v1.** V1 records tokens, model and compute time per step. When budgets arrive, exceeding one always stops at a gate, never a hard stop |
 
-### Later
+Full reasoning for each is in `docs/reviews/review-03.md`.
 
-| # | Question |
-|---|---|
-| Q15 | Multi-tenancy: is one installation ever shared across organisations? |
-| Q17 | Observability contract: what metrics, traces and logs must every provider emit |
-| Q18 | Disaster recovery: what happens to in-flight runs if the record store is lost |
-| Q19 | How does the engine handle a repository that changes its manifest mid-run |
-| Q20 | Interactive human sessions: chat in the console, or hand off to an external tool |
+### Decided (review 04, 2026-10-26)
+
+| # | Question | Decision |
+|---|---|---|
+| Q15 | Multi-tenancy: is one installation ever shared across organisations? | **One organisation per installation** (A10 holds). Teams scoped by the policy model. Add `org_id` to record store keys from v1; no other multi-tenant features |
+| Q17 | Observability contract: what metrics, traces and logs must every provider emit | **OpenTelemetry**, OTLP exporter. One trace per run; spans per step, activity and provider call. The engine decorates every provider call, so providers only add attributes |
+| Q18 | Disaster recovery: what happens to in-flight runs if the record store is lost | **No custom DR mechanism.** Database backups with point-in-time restore; artifact store versioning and replication; a reconcile job rebuilds the run index from Temporal |
+| Q19 | How does the engine handle a repository that changes its manifest mid-run | **Each step reads `feature-flow.yaml` from its branch when it starts** and records the hash of the resolved manifest. Nothing is copied into the plan. Re-run capability negotiation if a needed capability disappears |
+| Q20 | Interactive human sessions: chat in the console, or hand off to an external tool | **Hand-off to the human's own agent tool (surface A) is the v1 MVP.** The session is an engine mechanism; the surface is pluggable. Pre-submit checks run the same validators as the gated steps |
+
+Full reasoning for each is in `docs/reviews/review-04.md`.
+
+### Open
+
+None. Every question in this list has a decision. Decision records for the nine
+brief questions are in `docs/03-decision-records.md`.
 
 ---
 
@@ -176,7 +183,7 @@ None outstanding. Q1-Q6 are decided.
 3. ~~Settle Q4, Q5: the control plane and identity.~~ Done.
 4. ~~Settle Q6: provider packaging.~~ Done.
 5. Write the provider interfaces and the step catalogue. **Next.**
-6. Settle Q7, Q8, Q9: the sandbox and test story.
+6. ~~Settle Q7, Q8, Q9: the sandbox and test story.~~ Done.
 7. Write the configuration schema and the three profiles.
 8. Write the decision records for the brief's Q1 to Q9.
 9. Plan the spike: an interpreter workflow that survives a worker crash and applies a mid-run re-plan.

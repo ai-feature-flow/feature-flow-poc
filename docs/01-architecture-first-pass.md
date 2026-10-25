@@ -1,6 +1,6 @@
 # Architecture, first pass
 
-Status: first pass, revised for review 01. Date: 2026-10-25, updated 2026-10-26. Supersedes nothing; `brief.md` is the input.
+Status: revised for reviews 01 to 04. Date: 2026-10-25, updated 2026-10-26. Supersedes nothing; `brief.md` is the input.
 
 Application name: **Feature Flow** (`feature-flow` in code, configuration, paths and package names). This repository is `feature-flow-poc`, a proof of concept that may evolve into the finished product or be rewritten.
 
@@ -9,6 +9,19 @@ Decisions applied from `docs/reviews/review-01.md`: implementation language is
 agent steps are **resumable** (section 3.6); the plan shape supports **parallel
 branches and joins** (section 3.3); the storage model, control plane, identity
 and provider packaging are settled (sections 2, 4.5, 5.4).
+
+Decisions applied from `docs/reviews/review-03.md`: the repository file is a root
+`feature-flow.yaml` (section 5.1.1); execution targets replace "sandbox spec"
+(section 5.1.1); Windows support is deferred with hooks in version 1 (section
+4.7); the concurrency model is an epic integration branch with per-ticket
+branches (section 6.3); attempt budgets follow one counting rule (section 3.7);
+delivery has no compensating action (section 7.3); and **engine mechanism versus
+workflow policy** is a standing principle (section 1.5).
+
+Decisions applied from `docs/reviews/review-04.md`: observability is
+OpenTelemetry with a provider decorator (section 4.8); interactive sessions are
+an engine mechanism with a pluggable session surface (section 7.4); and
+`feature-flow.yaml` is read per step, never copied into the plan (section 5.1.2).
 
 ---
 
@@ -91,7 +104,7 @@ call an engine endpoint for:
 - **Policy checks on each tool call.** Deny writes for read-only roles, deny
   pushes to protected branches, deny changes to `.git/config` and similar.
 - **Structured events**, which become timeline events in the record store.
-- **Token and cost accounting** per step (see Q16, section 5.5).
+- **Token and cost accounting** per step (section 5.5).
 - **Heartbeats**, so a stalled agent is detected without polling the sandbox.
 
 Supporting rules:
@@ -113,6 +126,24 @@ are better and improve monthly; because hundreds of tool calls per step as
 Temporal activities means thousands of history events per step; and because of
 network latency on every tool call. Commit-level checkpoints plus session resume
 are expected to be enough; measure before revisiting.
+
+### 1.5 Principle: engine mechanism vs workflow policy
+
+Added for review 03. When a design question arises, first decide which side it
+belongs to.
+
+The **engine** provides mechanisms: steps, routing, gates, providers, policy
+evaluation and safety floors. **Workflow content**, defined by the library,
+decides what agents do and how delivery is approached: planning rules, feature
+flagging, deploy ordering, contract compatibility, review checklists.
+
+**Safety floors are the exception.** The engine enforces them because no workflow
+may relax them (DP6).
+
+Example: shipping dark behind feature flags is not an engine concern. It depends
+on whether the adopter has feature flagging — some require every significant
+change to be flagged. If workflows later need to create or check flags, add an
+optional feature-flag provider. Not in version 1.
 
 ---
 
@@ -147,6 +178,24 @@ Decided (product owner, 2026-10-26). Answers Q2, Q3, Q10 and Q13.
 **Git is not a store.** Publishing artifacts to a repository for human review is
 an engine step (`artifact.publish`). There is no requirement to browse run state
 through Git; the console and API replace it.
+
+### 2.2 Tenancy and disaster recovery
+
+Decided (review 04, Q15 and Q18).
+
+**Tenancy.** One organisation per installation (A10 holds). Teams are scoped by
+the policy model and roles. An `org_id` is added to record store keys from the
+first version — cheap now, expensive later. No other multi-tenant features.
+
+**Disaster recovery.** No custom mechanism:
+
+- Record store: standard database backups with point-in-time restore.
+- Artifact store: cloud versioning and replication; content addressing makes
+  integrity checks simple.
+- Temporal unavailable: already handled (section 3.5).
+- A **reconcile job** rebuilds the run index in the record store from Temporal for
+  in-flight runs.
+- Recovery point and recovery time are documented per profile.
 
 ---
 
@@ -238,8 +287,9 @@ concurrently, so the plan shape needs fan-out and join.
   count `n`. Branches are themselves steps or sub-plans, so a branch may be a
   `run.child` for a ticket.
 - `max_concurrency` bounds how many branches are in flight. It is a plan value,
-  so a re-plan can tighten it, and it is what keeps Q11 (concurrency in one
-  repository) a configuration question rather than an interpreter one.
+  so a re-plan can tighten it, and it is what keeps concurrency in one repository
+  a configuration question rather than an interpreter one. Confirmed by review 03;
+  see section 6.3 for the branch and merge model.
 - Join semantics: the join is satisfied when the policy is met. `all` waits for
   every branch; `any` completes when the first branch reaches a terminal
   outcome and cancels the rest; `n` completes when `n` branches succeed.
@@ -307,11 +357,23 @@ Consequences for the step contract:
 
 - `agent.run` declares a resume strategy and records, per attempt, the commit it
   resumed from and the session reference it used.
-- An attempt that resumes does not consume a fresh work attempt in the way a
-  restart would; the attempt counter and the resume counter are separate, so
-  "attempts exhausted" means exhausted *restarts*, not exhausted resumes.
 - Heartbeats carry progress (last commit, session id), so a stalled agent is
   distinguishable from a slow one.
+
+### 3.7 Attempt budgets
+
+Decided (review 03, Q12). This replaces the provisional rule written for review 01
+(F4), which said resumes never count. The complete rule set:
+
+| Rule | Detail |
+|---|---|
+| One counting rule | Every entry into a step counts against that step's allowance, whatever routed there: retry, route back, redirect. No second rule set |
+| Infrastructure failures are free | Classified infrastructure failures retry with backoff and do not count (section 4.3) |
+| Resumes are free only with progress | **Progress = a new commit pushed to the branch, or the agent session has grown since the previous attempt.** The agent runtime provider reports session size or a turn count. After **3 consecutive resumes with no progress**, the next one counts as a restart. `start_to_close` remains the outer bound |
+| Two limits | A per-step allowance (default by step kind, overridable in the plan) and a per-run ceiling |
+| Exhaustion | Outcome `attempts_exhausted`, routed by the plan to a re-plan or a human gate. Never a silent failure |
+| Steering grants | Extra attempts up to a hard ceiling, which is a safety floor; beyond it needs the admin role. Always audited |
+| Review and fix loops | Governed by the findings ledger, not a raw count. The loop ends when no blocking finding is unresolved (D8). A finding that reappears after being fixed twice escalates instead of looping. A declined finding never restarts the loop |
 
 ---
 
@@ -340,7 +402,7 @@ Capabilities are typed records, not strings, so a step can ask a precise questio
 
 | Provider | Example capabilities |
 |---|---|
-| Code host | `PullRequest`, `ReviewComments`, `CheckStatus`, `MergeMethods[merge, squash, rebase]`, `AiReviewRequest`, `BranchProtection` |
+| Code host | `PullRequest`, `ReviewComments`, `CheckStatus`, `MergeMethods[merge, squash, rebase]`, `AiReviewRequest`, `BranchProtection`, `MergeQueue` (optional; only some repositories have it enabled, section 6.3) |
 | CI | `Trigger`, `WaitForRun`, `ReadLogs`, `Artifacts` |
 | Sandbox | `Os[linux, windows]`, `Docker`, `NetworkPolicy`, `PersistentAcrossSteps` |
 | Agent runtime | `StructuredOutput`, `Streaming`, `ToolAllowlist`, `MaxContextTokens`, `Hooks` (can the runtime call back to the engine per tool call, section 1.4), `SessionResume` |
@@ -415,6 +477,43 @@ the engine waits for it; otherwise the human approves in the console or chat and
 the app merges. The audit record shows the bot as actor and the human as
 approver.
 
+### 4.7 Windows support: deferred, with hooks in version 1
+
+Decided (review 03, Q9). Windows-only repositories are required later, not in
+version 1. Version 1 includes the hooks so support needs no engine change:
+
+- `Os[linux, windows]` sandbox capability; `feature-flow.yaml` can declare
+  `os: windows`.
+- Routing to `feature-flow-agent:os-windows` queues (S1).
+- A run that needs Windows and has no provider fails at run-start capability
+  negotiation (S3) with a clear message.
+- CI delegation of test tiers works for Windows repositories (section 5.1.1,
+  execution targets).
+
+Roadmap:
+
+| Phase | Approach | Notes |
+|---|---|---|
+| W0 | Spike: agent runtimes and hooks on Windows | Decides whether pattern C holds on Windows. Under pattern C the runtime runs inside the sandbox, so a Windows sandbox needs a Windows runtime with hook support |
+| W1 | Windows VM sandbox provider: ephemeral or pooled cloud VMs from an image, agent worker on the VM | Primary approach. CI delegation as fallback for tiers the host cannot run |
+| W2 | Windows containers on Windows node pools | Only if density or isolation needs it and the toolchain fits |
+
+Research before W1: image size and start time, and licensing of Windows Server
+and build tools in VMs and containers.
+
+### 4.8 Observability contract
+
+Decided (review 04, Q17).
+
+| Area | Decision |
+|---|---|
+| Standard | OpenTelemetry for traces, metrics and logs, with a configurable exporter (OTLP to any backend). No custom observability interface |
+| Traces | One trace per run; spans per step, activity and provider call, with run id, step id and error class as attributes. Use the Temporal .NET SDK's OpenTelemetry support |
+| Provider contract | The engine wraps every provider call in a decorator, so providers get spans, timeouts and error classification without extra code. Providers only add attributes |
+| Standard metrics | Step duration, attempts, infrastructure retries, schedule-to-start latency per task queue (shows missing or stuck workers), tokens and cost, findings by severity, human wait time, sandbox start time |
+| Stuck runs | Detect by heartbeat age and by the progress rule in section 3.7; send a "run stuck" notification (S13) |
+| Logs | Secrets scrubbed at the logging layer. Agent transcripts are artifacts, not logs |
+
 ---
 
 ## 5. Configuration
@@ -425,10 +524,47 @@ approver.
 |---|---|---|---|
 | Installation | Deployment config | Temporal connection, worker platform, provider selection and credentials references, retention, codec, defaults | Anything repository-specific |
 | Organisation / team | Config service or file | Policy floors, provider bindings, notification routing, budgets, who may approve and steer | Repository build and test detail |
-| Repository | In the repository, `.feature-flow/manifest.yaml` | Test tiers and commands, setup, static analysis, sandbox base, CI mapping, branch and merge conventions | Policy floors, credentials |
+| Repository | In the repository, root `feature-flow.yaml` | Test tiers and commands, setup, static analysis, environment requirements, CI mapping, branch and merge conventions | Policy floors, credentials |
 | Run | API at start | Scope, target repositories, plan overrides, attempt budgets within ceiling, dry-run | Policy floors, provider selection |
 
 Precedence: **most specific layer wins, except a small set of safety floors that no lower layer may relax.** See DP6.
+
+### 5.1.1 `feature-flow.yaml` and execution targets
+
+Decided (review 03, Q7). The repository file is **root-level `feature-flow.yaml`**,
+not `.feature-flow/manifest.yaml`. It describes how automations work with the
+repository — test tiers and how to run them, setup commands, static analysis, CI
+mapping, branch conventions, and environment requirements — and it applies to
+every execution target, not only sandboxes.
+
+- The environment is either **defined inline** (image, toolchain, setup) or
+  **referenced** from an existing `devcontainer.json`. Repositories without a
+  devcontainer need only the one file.
+- Other files (Dockerfiles, compose files for integration services) are
+  referenced by relative path from `feature-flow.yaml`.
+- **`.feature-flow/` is reserved** for possible later use (for example
+  repository-specific review checklists or workflow content overrides). It is not
+  used in version 1.
+
+Terminology:
+
+| Term | Meaning |
+|---|---|
+| `feature-flow.yaml` | The repository file, as written |
+| Resolved manifest | `feature-flow.yaml` after merging the referenced `devcontainer.json` and defaults. Produced by the engine; providers never parse either source file |
+| Execution target | Where a tier runs: sandbox, local, or CI. A provider receives the resolved manifest and runs the tiers for its target |
+
+### 5.1.2 The manifest is read per step, never copied into the plan
+
+Decided (review 04, Q19). The prototype went stale by copying repository settings
+into the plan at run start.
+
+- Each step reads `feature-flow.yaml` from its branch when it starts.
+- Each step records the hash of the resolved manifest it used.
+- If a change removes a capability the run needs, capability negotiation runs
+  again before the next step.
+- Agent edits to `feature-flow.yaml` are flagged at review. Whether they need
+  approval is workflow policy, not an engine concern (section 1.5).
 
 ### 5.2 Policy model
 
@@ -439,8 +575,9 @@ One model, one evaluation function, used by gates, merges and steering.
 | `approval` | Scope (ticket, epic, delivery into default branch), required approvers by role, minimum count, whether an agent counts |
 | `merge` | Target branch pattern, allowed methods, required checks, whether auto-merge is permitted |
 | `findings` | Merge bar per D8: no unresolved blocking finding, and every finding fixed or declined with a recorded reason |
-| `attempts` | Per step kind and per run ceilings; steering may grant more within a hard ceiling |
+| `attempts` | Per step kind and per run ceilings; steering may grant more within a hard ceiling. Counting follows section 3.7 |
 | `steering` | Who may amend a step, override content, grant attempts, abort |
+| `cost` | Not in version 1. When added: per-run and per-step budgets, with the action configurable (warn, gate, abort). Exceeding one always stops at a gate, never a hard stop |
 
 Default: a merge into a repository's default branch requires a human. This is a floor.
 
@@ -451,11 +588,13 @@ Default: a merge into a repository's default branch requires a human. This is a 
 | Temporal | `start-dev` or one container | Compose, Helm, or Temporal Cloud | Temporal Cloud, one namespace per environment |
 | Workers | Local Docker | Kubernetes (EKS/AKS) | Organisation Kubernetes, several pools by capability |
 | Sandbox | Local Docker | Kubernetes pod | Kubernetes pod, plus CI delegation for Docker-dependent and Windows-only tiers |
+| Docker-dependent tiers | Privileged pod (solo only) | sysbox where supported, else CI delegation | CI delegation |
 | Tracker | GitHub Issues | Jira | Jira |
 | Code host | GitHub | GitHub | GitHub (GitHub App identity) |
 | CI | GitHub Actions | GitHub Actions | GitHub Actions and TeamCity |
 | Stores | Local filesystem + SQLite | S3/Blob + Postgres | Organisation-managed object store and database |
 | Secrets | Env or file | Cloud secret manager | Internal platform, short-lived, OIDC planned |
+| Observability | OTLP to a local collector | OTLP to the organisation's backend | OTLP to the organisation's backend |
 
 Same code in all three. Only configuration differs (D4).
 
@@ -503,16 +642,20 @@ Chat integration (Slack first; Microsoft Teams later through the same interface)
 ### 5.5 Cost accounting
 
 Added for review 01 (F6), which moved Q16 from "Later" to "Should settle". The
-prototype ran for 27 hours with no record of token or compute cost.
+prototype ran for 27 hours with no record of token or compute cost. Review 03
+decided the enforcement half: policy-driven, not in version 1.
 
 - **From the first version, every step records tokens, model and compute time.**
-  This is a record-store row per step run, not workflow state. Budgets and
-  enforcement can come later; the data cannot be recovered retroactively.
+  This is a record-store row per step run, not workflow state. The data cannot be
+  recovered retroactively, so recording cannot wait for budgets.
 - Under pattern C the hook endpoint is where token and cost events arrive from
   the agent runtime, so per-step accounting is available without parsing
   transcripts.
 - Model credentials go through a model gateway where possible, so the gateway is
   a second source of truth for cost.
+- **When budgets arrive:** exceeding one always stops at a gate, never a hard
+  stop. The running total lives in workflow state, updated only from activity
+  results — never from a clock or a query.
 
 ---
 
@@ -565,6 +708,40 @@ call the API, which is why the sandbox talks to the API and not only to GitHub.
 5. The epic run applies the patch through the same `applyPatch`. Already-completed steps are untouched. Protected steps are intact.
 6. The epic run starts the new child run, then runs `review.run` at epic scope over the aggregate diff, then `delivery.*` across repositories in declared order.
 
+### 6.3 Concurrency in one repository
+
+Decided (review 03, Q11). Per-ticket branches plus `scm.merge_base_forward` plus
+a serialised merge step. `max_concurrency` on the `parallel` step (section 3.3.1)
+is confirmed.
+
+- There is one **epic integration branch** per repository. It is the base of every
+  ticket branch in the epic, and the source of the delivery PR into the default
+  branch.
+- Each ticket works on its **own ticket branch**. A ticket branch merges into the
+  integration branch only after its own checks, review and findings bar pass.
+  Tickets do not share a working branch, so a failing ticket blocks no one.
+- Merges into the integration branch are **serialised per repository by a merge
+  lock**. Before merging: `scm.merge_base_forward` into the ticket branch; rerun
+  checks only if that merge changed the ticket branch; then merge.
+- A merge conflict routes to an agent step that resolves it, not to a human first.
+- The planner declares the code areas each ticket expects to touch; the scheduler
+  prefers not to run tickets with overlapping areas at the same time. This is a
+  preference, not a rule, and how the planner does it is workflow content
+  (section 1.5).
+- Epic-level review runs on the aggregate diff of the integration branch (DP10),
+  which keeps attribution simple.
+
+Code host merge queues (GitHub merge queue, GitLab merge trains):
+
+- Optional `MergeQueue` capability on the code host provider. Only some
+  repositories have it enabled.
+- When the target branch requires a queue, the merge step enqueues the PR and
+  waits for the result, because a direct merge is refused. This matters most for
+  delivery merges into a default branch.
+- The engine's merge lock remains the default for integration branches.
+- CI providers must report results for queue builds (for example the GitHub
+  Actions `merge_group` event).
+
 ---
 
 ## 7. Engine step catalogue (first grouping)
@@ -580,13 +757,14 @@ Grouped by family. Full contracts are the next deliverable; this is the shape.
 | Source control | `scm.create_branch`, `scm.merge_base_forward`, `scm.open_pr`, `scm.update_pr`, `scm.merge` |
 | CI | `ci.wait_checks` (handles checks that register late), `ci.trigger`, `ci.read_results` |
 | Testing | `test.run_tiers`, `test.run_composition` (several repositories as services) |
-| Analysis | `analysis.run` (fail on new issues, analyser from the repository manifest) |
+| Analysis | `analysis.run` (fail on new issues, analyser from `feature-flow.yaml`) |
 | Review | `review.run` (any scope, any provider) |
 | Findings | `findings.triage`, `findings.post_declines`, `findings.evaluate_readiness` |
 | Fix verification | `fix.verify` (regression test required, re-check against the original finding on the full diff) |
 | Waiting | `wait.for_state` (PR, check, tracker issue) |
 | Artifacts | `artifact.bundle`, `artifact.validate`, `artifact.import`, `artifact.publish` |
-| Delivery | `delivery.deploy_order`, `delivery.gate`, `delivery.report` |
+| Delivery | `delivery.deploy_order`, `delivery.deploy`, `delivery.gate`, `delivery.report` |
+| Sessions | `session.prepare`, `session.wait`, `session.validate` (section 7.4) |
 | Tracker | `tracker.create`, `tracker.update`, `tracker.transition`, `tracker.link` |
 
 Steering is not a step. It is a control-plane capability that produces a plan patch or an attempt grant.
@@ -604,6 +782,59 @@ Every step gets a deterministic idempotency key: `hash(runId, stepId, stableInpu
 
 Fingerprint on: rule or check id, repository, file path, enclosing symbol, and a normalised snippet hash. **Never on line numbers.** A declined finding reopens only when the code its fingerprint points at changes. Full finding bodies live in the record store; the workflow state carries a capped summary (id, fingerprint, severity, scope, status, blocking flag).
 
+### 7.3 Partial delivery across repositories
+
+Decided (review 03, Q14). One idempotent child workflow per repository (DP3), and
+a **delivery ledger in the record store**, read through an activity so workflow
+code stays deterministic.
+
+- **No compensating action.** A7 holds: the engine triggers and gates deploys; it
+  does not perform or roll them back.
+- On failure the run stops at a delivery gate with status `partial` and three
+  choices: **retry**, **fix forward** (route to a fix step or re-plan for the
+  failing repository), or **revert** (a human decision; the engine opens revert
+  PRs).
+- Delivery order comes from plan data.
+- Aborting a run does not close its PRs or delete its branches unless explicitly
+  asked.
+
+### 7.4 Interactive human sessions
+
+Decided (review 04, Q20). An interactive session is an **engine mechanism**:
+prepare a workspace (branch, drafts, context, prompt), wait for a submission,
+validate it, continue. Where the human works is a pluggable **session surface**.
+
+| Surface | Status |
+|---|---|
+| A. Hand-off to the human's own agent tool (VS Code with Copilot, Claude Code, Copilot CLI) on their own machine | **Version 1 (MVP)** |
+| B. Review rounds on a PR in the planning repository | Later, optional |
+| C. Chat in the console with the agent in a sandbox | Later, optional |
+| D. Short clarification questions in a chat platform thread | Later, optional |
+
+Why A is the MVP: the human works in an unsandboxed agent with full access to
+their environment — other repositories, discovery, enterprise systems (wikis,
+observability, ticketing). That is what design and specification work needs, and a
+sandbox cannot provide it.
+
+Requirements for A:
+
+- A CLI, and an MCP server for the human's agent, to fetch the session workspace,
+  run checks, and submit. Authenticated as the human (OIDC, section 5.4).
+- **Hooks and policy do not apply in the human's environment.** The trust boundary
+  is the submission: the engine validates what is submitted, and the human is the
+  accountable actor in the audit record.
+- **Pre-submit checks.** The session can run the same checks that later steps will
+  apply (for example the plan or verification-requirement review) on demand,
+  before submitting. In the prototype a spec session took 8 rounds mostly because
+  agent-drafted verification requirements were accepted without detailed review
+  and then failed the later plan review. Running that review inside the session
+  removes those round trips. This is the same principle as code review: **no check
+  appears for the first time after the work is submitted.**
+  - Engine side: expose any validator or review check as an on-demand action for a
+    session, with the same structured findings as the gated step.
+  - Workflow side: which checks a session should run before submitting is library
+    content (section 1.5).
+
 ---
 
 ## 8. Deliberately not designed yet
@@ -613,7 +844,10 @@ Fingerprint on: rule or check id, repository, file path, enclosing symbol, and a
 - Console UI beyond the API it needs.
 - Deployment internals. The engine triggers and gates deploys; it does not implement them (A7).
 - The remote provider adapter (section 4.5). Interfaces are designed so it stays possible; it is not built in version 1.
-- Cost budgets and enforcement. Recording per-step cost is in scope from the first version (section 5.5); budgets are Q16.
+- Cost budgets and enforcement. Recording per-step cost is in scope from the first version (section 5.5); budgets are Q16, decided as policy-driven and not in version 1.
+- Windows sandboxes (section 4.7). Hooks are in version 1; the provider is not.
+- Session surfaces B, C and D (section 7.4). Only surface A is in version 1.
+- A feature-flag provider. Not an engine concern in version 1 (section 1.5).
 
 ---
 
@@ -625,12 +859,16 @@ Fingerprint on: rule or check id, repository, file path, enclosing symbol, and a
 | R2 | Non-determinism leaks into the interpreter | Pure-function discipline, replay test suite in CI, code review rule |
 | R3 | Decision or steering lost during continue-as-new | Continue-as-new only at safe points; API retries when no gate is open |
 | R4 | LLM gates unstable across passes | Structured, fingerprinted findings carried between passes; verdict is not re-derived from scratch |
-| R5 | Sandbox does not match CI | Repository manifest declares tiers; CI delegation is a first-class path, not a fallback |
+| R5 | Sandbox does not match CI | `feature-flow.yaml` declares tiers; CI delegation is the default for Docker-dependent tiers (section 5.1.1) |
 | R6 | Credential exposure in sandboxes or payloads | Short-lived, least-privilege, per-step credentials; secrets by reference; encrypted payload codec available |
 | R7 | Re-plan agent removes or weakens protected steps | Protected flag enforced in the single `applyPatch` path |
 | R8 | Runs stall on human latency | Unbounded durable waits with reminders, never activity timeouts; "stuck run" notification |
 | R9 | Organisation fork drifts from upstream | All organisation behaviour in configuration and providers; contract tests make drift visible. A distribution repository, not a fork, is the default customisation path (section 4.5) |
-| R10 | Concurrent tickets in one repository conflict | Integration branch plus `scm.merge_base_forward`; serialised merge step per repository; `max_concurrency` on the `parallel` step (see Q11) |
+| R10 | Concurrent tickets in one repository conflict | Epic integration branch plus per-ticket branches; `scm.merge_base_forward`; serialised merge lock per repository; `max_concurrency` on the `parallel` step (section 6.3) |
 | R11 | A long agent step loses its worker or sandbox and restarts from scratch | Resumable agent steps: WIP commits pushed to the branch, session reference in the artifact store, sandbox re-attachment by idempotency key (section 3.6) |
 | R12 | Non-determinism in .NET workflow code is not caught at runtime | Replay tests in CI mandatory from the first workflow (S8); workflow-code review rule: no `Task.Run`, no wall clock, no unordered collections, no I/O |
 | R13 | A run's cost is unknown after the fact | Tokens, model and compute time recorded per step from the first version (section 5.5) |
+| R14 | Pattern C does not hold on Windows: the agent runtime may not run there with hook support | Spike W0 before committing to a Windows sandbox (section 4.7) |
+| R15 | A resumed agent step makes no progress and never exhausts its budget | Progress rule: a resume is free only with a new commit or session growth; after 3 consecutive resumes with no progress the next counts as a restart (section 3.7) |
+| R16 | Repository settings go stale mid-run because they were copied into the plan | Each step reads `feature-flow.yaml` from its branch when it starts and records the hash of the resolved manifest (section 5.1.2) |
+| R17 | A check appears for the first time after work is submitted, causing review round trips | Pre-submit checks in interactive sessions: any validator is exposed as an on-demand action (section 7.4) |
