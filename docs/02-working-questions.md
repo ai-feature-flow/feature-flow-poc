@@ -7,6 +7,9 @@ Review 01 (`docs/reviews/review-01.md`) decided Q1-Q6, Q10 and Q13, and settled
 where the agent loop runs (DP11). Those are recorded under "Decided" below and
 applied in the architecture document. Q7-Q9, Q11, Q12, Q14 and Q16 remain open.
 
+Review 02 (`docs/reviews/review-02.md`) asks for decisions on those remaining
+questions, with options and a recommendation for each.
+
 How to read this:
 
 - **A** = assumption I made to get the first pass written. Correct me if wrong.
