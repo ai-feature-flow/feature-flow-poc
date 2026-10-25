@@ -1,7 +1,11 @@
 # Working list: assumptions, suggestions, discussion points, open questions
 
-Status: for interactive discussion. Date: 2026-10-25.
+Status: for interactive discussion. Date: 2026-10-25. Updated 2026-10-26 for review 01.
 Companion to `docs/01-architecture-first-pass.md`.
+
+Review 01 (`docs/reviews/review-01.md`) decided Q1-Q6, Q10 and Q13, and settled
+where the agent loop runs (DP11). Those are recorded under "Decided" below and
+applied in the architecture document. Q7-Q9, Q11, Q12, Q14 and Q16 remain open.
 
 How to read this:
 
@@ -62,17 +66,21 @@ Priority: **Must settle** blocks other design work. **Should settle** blocks the
 **Feature Flow.** `feature-flow` in code, configuration, paths and package names. This repository is `feature-flow-poc`: a proof of concept that may evolve into the finished product or be rewritten.
 *Note:* the name is settled, so DP1 is closed. The open consequence is naming for the repository manifest directory (`.feature-flow/`) and for Temporal namespaces and task queues, which should follow the same prefix.
 
-### DP2. Language: .NET or Python (brief Q1)
+### DP2. Language: .NET or Python (brief Q1) — settled
 | | .NET | Python |
 |---|---|---|
 | Temporal SDK | First-class, well maintained | First-class, well maintained |
-| Agent SDKs | Claude Agent SDK and GitHub Copilot SDK both have strong .NET and Python support | Same |
-| Enterprise fit | Strong typing helps a large provider surface and a forking organisation | Weaker compile-time guarantees |
+| Agent integration | Not a factor under pattern C (DP11): the engine starts the agent runtime and serves hook callbacks over HTTP. Where it does matter, the GitHub Copilot SDK supports .NET; the Claude Agent SDK is TypeScript and Python only, so .NET would use the Claude API client or run the Claude Code CLI as a subprocess | Full Claude Agent SDK and Copilot SDK support |
+| Typing | Strong typing across a large provider surface and for an organisation maintaining a distribution | Weaker compile-time guarantees |
 | Contributor appeal | Smaller open-source contributor pool for this domain | Larger AI/ML contributor pool |
-| Windows-only repos | Natural fit for the enterprise adopter's .NET Framework repositories | Awkward |
+| Adopter fit | Supported by the first enterprise adopter, with worker templates available | Not the adopter's platform |
+| Packaging | Self-contained single-file binary possible for the CLI | Requires a runtime on the host |
 
-*Recommendation:* **.NET.** The deciding factors are the enterprise adopter's Windows-only .NET Framework repositories and the value of static typing across a large provider surface. The contributor-pool argument is real but weaker than the fit argument.
-*Counter-argument worth hearing:* if the project's centre of gravity is agent SDKs and prompt tooling, Python's ecosystem may matter more than typing.
+*Decided (product owner, 2026-10-26):* **.NET.** Reasons: strong typing across a large provider surface and for an organisation maintaining a distribution; supported by the first enterprise adopter with worker templates available; with pattern C, agent SDK language support is not a factor; a self-contained single-file binary is possible for the CLI.
+
+*Condition on the decision:* the main risk is non-determinism in workflow code, which the .NET SDK does not catch at runtime the way the Python sandbox does. Replay tests in CI (S8) are mandatory from the first workflow, and workflow code gets a review rule: no `Task.Run`, no wall clock, no unordered collections, no I/O.
+
+*Argument removed (review 01, F1):* the enterprise adopter's Windows-only .NET Framework repositories are **not** an argument for a .NET engine. The engine does not build target repositories; sandboxes do. Those repositories need a Windows sandbox, which S1 already covers. Do not reintroduce this argument.
 
 ### DP3. Does the interpreter need a step-level child workflow?
 Options: (a) every step is an activity; (b) steps with their own durable lifecycle are child workflows.
@@ -104,20 +112,35 @@ Options: (a) no, Temporal is required; (b) yes, an in-process mode for solo deve
 ### DP10. Epic-level review: aggregate diff or per-ticket roll-up?
 *Recommendation:* **aggregate diff.** The prototype's cross-ticket findings were only visible across tickets. A roll-up of per-ticket findings would have missed them. Cost: the aggregate diff can be large, so scope it by the repositories and paths the epic touched.
 
+### DP11. Where does the agent loop run? — settled
+Options: (a) the agent CLI or SDK runs inside the sandbox and the agent worker starts it and reads its output; (b) the agent loop runs in the agent worker and each tool call is executed remotely in the sandbox; (c) (a) plus the agent runtime's hooks calling back to the engine.
+
+*Decided (product owner, 2026-10-26):* **(c), "agent in sandbox with engine hooks".** See the architecture document, section 1.4. Option (b) is rejected, not deferred: it requires building and maintaining an agent harness (context management, compaction, edit tools, sub-agents, MCP, prompt caching) when vendor harnesses are better and improve monthly; hundreds of tool calls per step as Temporal activities means thousands of history events per step; and it adds network latency on every tool call. Commit-level checkpoints plus session resume are expected to be enough; measure before revisiting.
+
+*Consequence:* the engine starts processes and serves hook callbacks over HTTP, so agent SDK language support is no longer a factor in the language choice (DP2).
+
 ---
 
 ## Q. Open questions
 
+### Decided (review 01, 2026-10-26)
+
+| # | Question | Decision |
+|---|---|---|
+| Q1 | Language: .NET or Python (brief Q1) | **.NET.** See DP2, including the condition on replay tests and workflow-code review |
+| Q2 | Is the artifact store content-addressed and immutable, or mutable with versions? | **Content-addressed and immutable.** A new version is a new hash plus a named pointer in the record store |
+| Q3 | What exactly is in the record store, and what is its query model? | **Relational, queried through the API.** Runs, step runs, findings ledger, decisions, steering log, timeline events, cost per step. Timeline append-only |
+| Q4 | How do human decisions and steering reach the workflow: signals or updates (brief Q5)? And how does the API authenticate and authorise them? | **Updates**, carrying gate id and plan revision, with a validator that rejects stale or invalid requests. Reads come from the record store, not Temporal queries. OIDC for humans, service-account tokens for automation, per-step short-lived tokens for sandbox hooks. Roles from the policy model, scoped by team or repository |
+| Q5 | Identity: what identity do agents and the engine use against the tracker and code host, per profile (brief Q8)? | **GitHub App** (or host equivalent) for the engine; a token minted per step for agents; service account for the tracker; the developer's own token in the solo profile. Behind a **credential broker** interface |
+| Q6 | Provider packaging: in-process packages, out-of-process plug-ins, or both (brief Q7)? | **In-process .NET packages (NuGet) in v1**, with transport-neutral interfaces so a remote provider adapter stays possible later. Organisation customisation through a **distribution repository**, not a fork |
+| Q10 | Artifact and audit store: Git, object storage, a database, or a combination (brief Q4)? | **A combination, and Git is not a store.** Artifact store (local filesystem solo; S3 or Azure Blob) plus record store (SQLite solo; Postgres). Publishing artifacts to a repository for human review is an `artifact.publish` step |
+| Q13 | What is the retention and archival story for a finished run, given Temporal deletes history? | **The record store is the long-term audit record.** Temporal history is transient and deleted after namespace retention |
+
+Full reasoning for each is in `docs/reviews/review-01.md`.
+
 ### Must settle
 
-| # | Question | Why it blocks |
-|---|---|---|
-| Q1 | Language: .NET or Python (brief Q1, see DP2) | Everything downstream |
-| Q2 | Is the artifact store content-addressed and immutable, or mutable with versions? | Affects caching, audit and the re-plan history design |
-| Q3 | What exactly is in the record store, and what is its query model? | Affects the console, reporting and the findings ledger |
-| Q4 | How do human decisions and steering reach the workflow: signals or updates (brief Q5)? And how does the API authenticate and authorise them? | Affects the API, the interpreter and the audit model |
-| Q5 | Identity: what identity do agents and the engine use against the tracker and code host, per profile (brief Q8)? | Affects provider interfaces, credentials and audit attribution |
-| Q6 | Provider packaging: in-process packages, out-of-process plug-ins, or both (brief Q7)? | Affects the provider interface shape and the fork story |
+None outstanding. Q1-Q6 are decided.
 
 ### Should settle
 
@@ -126,18 +149,16 @@ Options: (a) no, Temporal is required; (b) yes, an in-process mode for solo deve
 | Q7 | Sandbox definition: devcontainer.json, the engine's own manifest, or both (brief Q3)? | Affects the repository manifest and the sandbox provider |
 | Q8 | Docker-dependent tests on Kubernetes: privileged pods, sysbox, remote Docker host, or CI delegation (brief Q2)? | Affects the sandbox provider and the test step |
 | Q9 | Windows-only repositories: can a sandbox provider support Windows hosts (brief Q9)? | Affects worker pools and the test step |
-| Q10 | Artifact and audit store: Git, object storage, a database, or a combination (brief Q4)? | Affects the store interface and the profiles |
 | Q11 | Concurrency model for several tickets in one repository: serialised, integration branch, or per-ticket branches with a merge queue? | Affects the source control steps and the delivery design |
 | Q12 | How are attempt budgets counted, and can steering exceed the configured ceiling? | Affects the policy model and the steering API |
-| Q13 | What is the retention and archival story for a finished run, given Temporal deletes history? | Affects the record store and the audit requirement |
 | Q14 | How does a run resume or retry after a partial delivery across several repositories? | Affects the delivery steps |
+| Q16 | Cost controls: per-run token and compute budgets, and what happens when exceeded | Moved up from "Later" (review 01, F6). At minimum, record tokens, model and compute time per step from the first version; budgets can come later |
 
 ### Later
 
 | # | Question |
 |---|---|
 | Q15 | Multi-tenancy: is one installation ever shared across organisations? |
-| Q16 | Cost controls: per-run token and compute budgets, and what happens when exceeded |
 | Q17 | Observability contract: what metrics, traces and logs must every provider emit |
 | Q18 | Disaster recovery: what happens to in-flight runs if the record store is lost |
 | Q19 | How does the engine handle a repository that changes its manifest mid-run |
@@ -147,11 +168,11 @@ Options: (a) no, Temporal is required; (b) yes, an in-process mode for solo deve
 
 ## Suggested order of work
 
-1. Settle Q1 (language). Everything waits on it.
-2. Settle Q2, Q3, Q10 together: the storage model.
-3. Settle Q4, Q5: the control plane and identity.
-4. Settle Q6: provider packaging.
-5. Write the provider interfaces and the step catalogue.
+1. ~~Settle Q1 (language).~~ Done: .NET (DP2).
+2. ~~Settle Q2, Q3, Q10 together: the storage model.~~ Done.
+3. ~~Settle Q4, Q5: the control plane and identity.~~ Done.
+4. ~~Settle Q6: provider packaging.~~ Done.
+5. Write the provider interfaces and the step catalogue. **Next.**
 6. Settle Q7, Q8, Q9: the sandbox and test story.
 7. Write the configuration schema and the three profiles.
 8. Write the decision records for the brief's Q1 to Q9.

@@ -1,8 +1,14 @@
 # Architecture, first pass
 
-Status: first pass, for discussion. Date: 2026-10-25. Supersedes nothing; `brief.md` is the input.
+Status: first pass, revised for review 01. Date: 2026-10-25, updated 2026-10-26. Supersedes nothing; `brief.md` is the input.
 
 Application name: **Feature Flow** (`feature-flow` in code, configuration, paths and package names). This repository is `feature-flow-poc`, a proof of concept that may evolve into the finished product or be rewritten.
+
+Decisions applied from `docs/reviews/review-01.md`: implementation language is
+**.NET**; the agent loop runs **in the sandbox with engine hooks** (section 1.4);
+agent steps are **resumable** (section 3.6); the plan shape supports **parallel
+branches and joins** (section 3.3); the storage model, control plane, identity
+and provider packaging are settled (sections 2, 4.5, 5.4).
 
 ---
 
@@ -12,9 +18,9 @@ Application name: **Feature Flow** (`feature-flow` in code, configuration, paths
 
 | Component | Runs as | Responsibility | Stateful |
 |---|---|---|---|
-| API service | Long-lived service | Start, steer, decide on, abort and query runs. Authentication and authorisation. Writes the audit record. Owns the Temporal client for control operations | No (uses record store) |
+| API service | Long-lived service | Start, steer, decide on, abort and query runs. Authentication and authorisation. Writes the audit record. Owns the Temporal client for control operations. Serves the **hook endpoint** that agent runtimes in sandboxes call back to (section 1.4) | No (uses record store) |
 | Orchestration worker | Long-lived service, N replicas | Hosts the interpreter workflow and *light* activities (tracker metadata, PR state reads, artifact metadata, notifications, validation) | No |
-| Agent worker | Long-lived service, N replicas, possibly per-capability pools | Hosts agent step activities. Creates and disposes sandboxes via the sandbox provider. Streams heartbeats | No (sandbox is ephemeral) |
+| Agent worker | Long-lived service, N replicas, possibly per-capability pools | Hosts agent step activities. Creates and disposes sandboxes via the sandbox provider. Starts the agent runtime inside the sandbox and supervises it. Streams heartbeats | No (sandbox is ephemeral) |
 | Artifact store | External | Content-addressed, immutable blobs: plans, specs, diffs, transcripts, logs, reports | Yes |
 | Record store | External | Queryable records: findings ledger, decisions, steering log, run index, run timeline | Yes |
 | Temporal | External | Durable execution | Yes |
@@ -55,7 +61,7 @@ graph TB
 
     CLI --> API
     CON --> API
-    API -->|start, signal, update, query| WF
+    API -->|start, update| WF
     API --> RS
     OW -->|hosts| WF
     OW --> AS
@@ -65,7 +71,48 @@ graph TB
     AW -->|creates| SB
     SB --> EXT
     AW --> AS
+    SB -->|hooks: policy, events, cost, heartbeat| API
 ```
+
+Reads do not go through Temporal queries. The console and API read from the
+record store (section 5.4).
+
+### 1.4 Pattern: agent in sandbox with engine hooks
+
+Decided (product owner, 2026-10-26). This is the answer to "where does the agent
+loop run", and it is settled before the language question because it makes the
+engine language largely independent of agent SDK languages.
+
+The agent runtime (for example Claude Code, GitHub Copilot CLI) runs **inside the
+sandbox** with its own tools, unchanged. The agent worker starts it and supervises
+it. The runtime's hooks — before and after each tool call, session start and end —
+call an engine endpoint for:
+
+- **Policy checks on each tool call.** Deny writes for read-only roles, deny
+  pushes to protected branches, deny changes to `.git/config` and similar.
+- **Structured events**, which become timeline events in the record store.
+- **Token and cost accounting** per step (see Q16, section 5.5).
+- **Heartbeats**, so a stalled agent is detected without polling the sandbox.
+
+Supporting rules:
+
+- **Resumability.** Work-in-progress commits are pushed to the branch, and the
+  runtime's own session resume is used, with the session reference stored in the
+  artifact store. See section 3.6.
+- **Model credentials** are short-lived and scoped to the step, preferably
+  through a model gateway so no long-lived key enters the sandbox.
+- **Hook support is a declared capability** of the agent runtime provider. A
+  runtime without hooks gets coarser control (process-level only) and the engine
+  records that in the run.
+
+Rejected alternative: running the agent loop in the agent worker with each tool
+call executed remotely in the sandbox. Rejected, not deferred, because it
+requires building and maintaining an agent harness (context management,
+compaction, edit tools, sub-agents, MCP, prompt caching) when vendor harnesses
+are better and improve monthly; because hundreds of tool calls per step as
+Temporal activities means thousands of history events per step; and because of
+network latency on every tool call. Commit-level checkpoints plus session resume
+are expected to be enough; measure before revisiting.
 
 ---
 
@@ -87,6 +134,20 @@ Two rules follow from this and should be treated as invariants:
 1. **Workflow state holds references and small summaries only.** No transcripts, no diffs, no code, no secrets, no full finding bodies.
 2. **Anything a human or a report needs to query lives in the record store**, not in Temporal history.
 
+### 2.1 Storage model (decided)
+
+Decided (product owner, 2026-10-26). Answers Q2, Q3, Q10 and Q13.
+
+| Store | Contents | Technology by profile | Model |
+|---|---|---|---|
+| Temporal history | Working state only: references and small summaries | Temporal | Transient; deleted after namespace retention |
+| Artifact store | Specs, plans and every plan revision, diffs, transcripts, logs, reports | Local filesystem (solo); S3 or Azure Blob | Immutable, content-addressed. A new version is a new hash plus a named pointer in the record store |
+| Record store | Runs, step runs, findings ledger, decisions, steering log, timeline events, cost per step | SQLite (solo); Postgres | Relational, queried through the API. Timeline append-only. The long-term audit record |
+
+**Git is not a store.** Publishing artifacts to a repository for human review is
+an engine step (`artifact.publish`). There is no requirement to browse run state
+through Git; the console and API replace it.
+
 ---
 
 ## 3. The interpreter
@@ -96,24 +157,30 @@ Two rules follow from this and should be treated as invariants:
 One workflow type for every run. Differences between a ticket run, an epic run and a delivery run come from the plan, not from code.
 
 ```
-state = { planRevision, cursor, stepRuns[], findingsSummary[], attemptBudgets, pendingDecision? }
+state = { planRevision, cursors[], stepRuns[], findingsSummary[], attemptBudgets, pendingDecision? }
 
 loop:
-  step    = plan.next(cursor, state)                 # pure
-  if none: complete(run)
+  ready   = plan.ready(cursors, state)               # pure: steps whose joins are satisfied
+  if none and no step in flight: complete(run)
 
-  if step.gate and not policy.autoApprove(step, state):   # pure
-      decision = await decision(step)                # durable wait, no timeout
-      state    = applyDecision(state, decision)      # pure
+  for each step in ready:                            # concurrent, see 3.3
+    if step.gate and not policy.autoApprove(step, state):   # pure
+        decision = await decision(step)              # durable wait, no timeout
+        state    = applyDecision(state, decision)    # pure
 
-  result  = await execute(step)                      # activity or child workflow
-  state   = applyResult(state, result)               # pure
-  cursor  = plan.route(step, result.outcome, state)  # pure
+  results = await all(execute(step) for step in ready)   # activities or child workflows
+  state   = applyResults(state, results)             # pure
+  cursors = plan.route(ready, results, state)        # pure: advance, open or satisfy joins
 
   if historyBudgetExceeded(state): continueAsNew(state)
 ```
 
 Everything outside `await` is a pure function of the plan and the state. That is the determinism boundary.
+
+Concurrency is bounded by the plan, not by the interpreter: `plan.ready` returns
+only the steps whose dependencies are satisfied and whose concurrency limit
+allows. A11 (several tickets of one epic running concurrently) is expressed as
+parallel branches in the plan, not as special-cased interpreter behaviour.
 
 ### 3.2 Three execution forms for a step
 
@@ -144,9 +211,46 @@ steps:
       completed: verify
       blocked: replan
       attempts_exhausted: human.gate.escalate
+
+  - id: tickets
+    kind: parallel
+    branches: [ticket-a, ticket-b, ticket-c]
+    max_concurrency: 2
+    join: all                       # all | any | n
+    routes:
+      completed: epic_review
+      any_failed: human.gate.escalate
+
+  - id: epic_review
+    kind: review.run
+    scope: epic
+    inputs: { diff: aggregate }
 ```
 
 A step is: `id`, `kind`, `scope`, `inputs` (artifact references), `requires` (capabilities), `limits`, `routes` (outcome to next step id or directive), `protected` (cannot be removed by a re-plan), optional `gate`.
+
+### 3.3.1 Parallel branches and joins
+
+Added for review 01 (F5). A11 says several tickets of one epic may run
+concurrently, so the plan shape needs fan-out and join.
+
+- A `parallel` step names its branches and a `join` policy: `all`, `any`, or a
+  count `n`. Branches are themselves steps or sub-plans, so a branch may be a
+  `run.child` for a ticket.
+- `max_concurrency` bounds how many branches are in flight. It is a plan value,
+  so a re-plan can tighten it, and it is what keeps Q11 (concurrency in one
+  repository) a configuration question rather than an interpreter one.
+- Join semantics: the join is satisfied when the policy is met. `all` waits for
+  every branch; `any` completes when the first branch reaches a terminal
+  outcome and cancels the rest; `n` completes when `n` branches succeed.
+- A branch outcome routes like any other outcome. `any_failed` is the aggregate
+  route when a branch fails and the join policy is not satisfied.
+- `applyPatch` (section 3.4) validates branches the same way it validates steps:
+  known kinds, present capabilities, protected steps intact, routes resolving to
+  steps that exist. A re-plan may add branches to a `parallel` step that has not
+  started, and may not remove a protected branch.
+- Workflow state carries one cursor per in-flight branch, hence `cursors[]` in
+  section 3.1. Continue-as-new still happens only between steps, never mid-step.
 
 ### 3.4 Re-planning and steering share one path
 
@@ -178,6 +282,37 @@ A child run can return outcome `replan_parent` with a patch. The parent applies 
 
 **Known hazard:** a decision or steering update that arrives while the workflow is continuing-as-new can be lost. Mitigation: continue-as-new only at a safe point (between steps, no pending decision), and the API retries when it finds no open gate. See R3.
 
+### 3.6 Resumable agent steps
+
+Added for review 01 (F4). A long agent step — an hour or more — that loses its
+worker or its sandbox must continue, not restart. Interruptions were the
+prototype's main operational pain.
+
+Three mechanisms, in order of preference:
+
+1. **Work-in-progress commits pushed to the branch.** The agent commits and
+   pushes as it goes, so completed work survives any failure. This is the primary
+   checkpoint and it needs no engine state.
+2. **Session resume.** The agent runtime's own session reference is stored in the
+   artifact store. A retry resumes the session rather than starting a new one.
+   Under pattern C (section 1.4) the runtime is already inside the sandbox, so
+   this is the runtime's native resume.
+3. **Sandbox re-attachment.** The sandbox outlives a worker crash. A retry
+   re-attaches to it by idempotency key (section 7.1) instead of creating a new
+   one. This is a sandbox provider capability, `PersistentAcrossSteps`, and the
+   step degrades gracefully when it is absent: it creates a new sandbox and
+   resumes from the pushed commits and the session reference.
+
+Consequences for the step contract:
+
+- `agent.run` declares a resume strategy and records, per attempt, the commit it
+  resumed from and the session reference it used.
+- An attempt that resumes does not consume a fresh work attempt in the way a
+  restart would; the attempt counter and the resume counter are separate, so
+  "attempts exhausted" means exhausted *restarts*, not exhausted resumes.
+- Heartbeats carry progress (last commit, session id), so a stalled agent is
+  distinguishable from a slow one.
+
 ---
 
 ## 4. Providers
@@ -208,7 +343,7 @@ Capabilities are typed records, not strings, so a step can ask a precise questio
 | Code host | `PullRequest`, `ReviewComments`, `CheckStatus`, `MergeMethods[merge, squash, rebase]`, `AiReviewRequest`, `BranchProtection` |
 | CI | `Trigger`, `WaitForRun`, `ReadLogs`, `Artifacts` |
 | Sandbox | `Os[linux, windows]`, `Docker`, `NetworkPolicy`, `PersistentAcrossSteps` |
-| Agent runtime | `StructuredOutput`, `Streaming`, `ToolAllowlist`, `MaxContextTokens` |
+| Agent runtime | `StructuredOutput`, `Streaming`, `ToolAllowlist`, `MaxContextTokens`, `Hooks` (can the runtime call back to the engine per tool call, section 1.4), `SessionResume` |
 | Review | `Scopes[ticket, epic, delivery]`, `StructuredFindings`, `Fingerprints` |
 | Tracker | `Issues`, `Epics`, `Transitions`, `Links`, `Comments` |
 | Artifact store | `ContentAddressed`, `SignedUrls`, `RetentionPolicy` |
@@ -234,7 +369,51 @@ The provider classifies, because it knows its system. The step may override, bec
 
 ### 4.4 Provider catalogue
 
-Temporal platform, worker platform, sandbox, tracker, code host, CI, agent runtime, review, artifact store, record store, secrets, notifications. Each with a contract test suite (S5) so a new provider can prove conformance without the engine changing.
+Temporal platform, worker platform, sandbox, tracker, code host, CI, agent runtime, review, artifact store, record store, secrets, notifications, credential broker. Each with a contract test suite (S5) so a new provider can prove conformance without the engine changing.
+
+### 4.5 Provider packaging (decided)
+
+Decided (product owner, 2026-10-26). Answers Q6.
+
+- **Version 1: providers are in-process .NET packages (NuGet).** A host project
+  references the providers it ships; configuration selects them by name.
+- **Provider interfaces must be transport-neutral.** Async, plain serialisable
+  data objects, no third-party SDK types in signatures, cancellation and
+  classified errors on every call. This keeps a generic **remote provider**
+  adapter possible later — one that implements any interface by calling an
+  out-of-process provider over gRPC or HTTP — for providers in other languages or
+  needing isolation. Do not build the adapter in version 1.
+- **Organisation customisation uses a distribution repository, not a fork.** A
+  separate repository holds the organisation's own providers and a small host
+  project that builds its worker and API images, plus its configuration. A fork
+  is needed only for core changes, which should be rare. The packages and host
+  are designed so this works: published packages, documented host composition.
+
+### 4.6 Credential broker
+
+Added for review 01 (Q5). Given an actor (engine, agent step), a target system
+and a scope, the broker returns a short-lived credential. GitHub App tokens,
+service accounts, personal tokens and future mechanisms (for example OIDC
+workload identity) are implementations.
+
+- **No provider reads credentials directly from configuration.** All go through
+  the broker. This is what keeps identity choices from leaking into provider
+  interfaces.
+- Code host, tracker, CI and chat providers remain fully swappable.
+
+| Actor | Identity |
+|---|---|
+| Engine against the code host | A GitHub App, or the equivalent bot identity on other hosts |
+| Agents in the sandbox | A token minted per step from the app identity: one repository, minimum permissions (contents write), about one hour; refreshable through the hook endpoint |
+| Engine against the tracker | A service account; every action records "on behalf of" the run's requester or approver |
+| Agents against the tracker | None. Tracker writes only through engine steps |
+| Solo profile | The developer's own token for both engine and agents |
+
+Merges into a default branch: the app cannot approve its own PR. Where branch
+protection requires a code host review, the human approves on the code host and
+the engine waits for it; otherwise the human approves in the console or chat and
+the app merges. The audit record shows the bot as actor and the human as
+approver.
 
 ---
 
@@ -280,6 +459,61 @@ Default: a merge into a repository's default branch requires a human. This is a 
 
 Same code in all three. Only configuration differs (D4).
 
+### 5.4 Control plane: decisions, steering and API authorisation (decided)
+
+Decided (product owner, 2026-10-26). Answers Q4.
+
+Transport:
+
+- Decisions and steering use Temporal **Updates**, not Signals. Each carries the
+  gate id and plan revision it applies to; the update validator rejects stale or
+  invalid requests (no open gate, plan revision changed). The API retries against
+  the current run after continue-as-new, which mitigates R3.
+- **Reads do not use Temporal queries.** The console and API read from the record
+  store.
+
+Authentication:
+
+| Caller | Method |
+|---|---|
+| Humans (console, CLI) | OIDC against the organisation's identity provider; a local token in the solo profile |
+| Automation | Service-account API tokens |
+| Agent hooks from the sandbox (pattern C) | Short-lived token issued per step, scoped to that run and step's hook endpoint |
+
+Authorisation:
+
+- Roles from the policy model (viewer, approver, steerer, admin), mapped to
+  identity-provider groups, scoped by team or repository.
+- **Only the API authorises and writes the audit record.** The workflow trusts the
+  API (DP8). Only the API and workers can reach the Temporal namespace.
+
+Chat integration (Slack first; Microsoft Teams later through the same interface):
+
+- Notifications and approvals from chat are wanted for some decisions. A chat
+  action calls the API like any other client. The chat user is mapped to an
+  identity-provider identity (for example by verified email). The policy model
+  states which decisions may be made from chat; for example, ticket-level gates
+  yes, merge into a default branch only in the console. The notifications
+  provider's `Interactive` capability declares support.
+- **Chat must be a pluggable provider.** Slack first, with others (Microsoft
+  Teams, WhatsApp, Discord, and so on) swappable later through the same
+  notifications/chat interface. No Slack-specific types outside the Slack
+  provider.
+
+### 5.5 Cost accounting
+
+Added for review 01 (F6), which moved Q16 from "Later" to "Should settle". The
+prototype ran for 27 hours with no record of token or compute cost.
+
+- **From the first version, every step records tokens, model and compute time.**
+  This is a record-store row per step run, not workflow state. Budgets and
+  enforcement can come later; the data cannot be recovered retroactively.
+- Under pattern C the hook endpoint is where token and cost events arrive from
+  the agent runtime, so per-step accounting is available without parsing
+  transcripts.
+- Model credentials go through a model gateway where possible, so the gateway is
+  a second source of truth for cost.
+
 ---
 
 ## 6. Data flow
@@ -300,7 +534,10 @@ sequenceDiagram
     A->>W: start workflow
     W->>OW: validate config and capabilities
     W->>AW: agent.run (implementer)
-    AW->>S: create sandbox, checkout, run agent
+    AW->>S: create sandbox, checkout, start agent runtime
+    S->>A: hook: session start (per-step token)
+    S->>G: push WIP commit (checkpoint)
+    S->>A: hook: before/after each tool call (policy, events, cost, heartbeat)
     S->>G: push branch
     W->>OW: test.run_tiers, analysis.run
     W->>OW: scm.open_pr
@@ -315,6 +552,9 @@ sequenceDiagram
     W->>OW: scm.merge
     W->>A: run complete
 ```
+
+The agent runtime runs inside the sandbox (pattern C, section 1.4). Its hooks
+call the API, which is why the sandbox talks to the API and not only to GitHub.
 
 ### 6.2 Epic with a mid-run re-plan
 
@@ -333,9 +573,9 @@ Grouped by family. Full contracts are the next deliverable; this is the shape.
 
 | Family | Steps |
 |---|---|
-| Agent | `agent.run` (role, task, tools, write access, limits) |
+| Agent | `agent.run` (role, task, tools, write access, limits, resume strategy) |
 | Human | `human.gate`, `human.session`, `policy.auto_approve` |
-| Composition | `run.child`, `run.wait` |
+| Composition | `run.child`, `run.wait`, `parallel` (fan-out and join, section 3.3.1) |
 | Planning | `plan.replan`, `plan.validate` |
 | Source control | `scm.create_branch`, `scm.merge_base_forward`, `scm.open_pr`, `scm.update_pr`, `scm.merge` |
 | CI | `ci.wait_checks` (handles checks that register late), `ci.trigger`, `ci.read_results` |
@@ -351,7 +591,7 @@ Grouped by family. Full contracts are the next deliverable; this is the shape.
 
 Steering is not a step. It is a control-plane capability that produces a plan patch or an attempt grant.
 
-Every step contract states: inputs, required capabilities, outcomes, idempotency strategy, timeouts and heartbeat, error classification overrides, artifacts in and out, scope, and audit events.
+Every step contract states: inputs, required capabilities, outcomes, idempotency strategy, timeouts and heartbeat, error classification overrides, artifacts in and out, scope, audit events, and — for agent steps — the resume strategy (section 3.6).
 
 ### 7.1 Idempotency
 
@@ -371,7 +611,9 @@ Fingerprint on: rule or check id, repository, file path, enclosing symbol, and a
 - The workflow definition language: syntax, routing rules, re-plan patch format. The engine assumes the plan is data.
 - Workflow content: templates, agent task prompts, skills, check definitions.
 - Console UI beyond the API it needs.
-- Deployment internals. The engine triggers and gates deploys; it does not implement them (A13).
+- Deployment internals. The engine triggers and gates deploys; it does not implement them (A7).
+- The remote provider adapter (section 4.5). Interfaces are designed so it stays possible; it is not built in version 1.
+- Cost budgets and enforcement. Recording per-step cost is in scope from the first version (section 5.5); budgets are Q16.
 
 ---
 
@@ -387,5 +629,8 @@ Fingerprint on: rule or check id, repository, file path, enclosing symbol, and a
 | R6 | Credential exposure in sandboxes or payloads | Short-lived, least-privilege, per-step credentials; secrets by reference; encrypted payload codec available |
 | R7 | Re-plan agent removes or weakens protected steps | Protected flag enforced in the single `applyPatch` path |
 | R8 | Runs stall on human latency | Unbounded durable waits with reminders, never activity timeouts; "stuck run" notification |
-| R9 | Organisation fork drifts from upstream | All organisation behaviour in configuration and providers; contract tests make drift visible |
-| R10 | Concurrent tickets in one repository conflict | Integration branch plus `scm.merge_base_forward`; serialised merge step per repository (see Q11) |
+| R9 | Organisation fork drifts from upstream | All organisation behaviour in configuration and providers; contract tests make drift visible. A distribution repository, not a fork, is the default customisation path (section 4.5) |
+| R10 | Concurrent tickets in one repository conflict | Integration branch plus `scm.merge_base_forward`; serialised merge step per repository; `max_concurrency` on the `parallel` step (see Q11) |
+| R11 | A long agent step loses its worker or sandbox and restarts from scratch | Resumable agent steps: WIP commits pushed to the branch, session reference in the artifact store, sandbox re-attachment by idempotency key (section 3.6) |
+| R12 | Non-determinism in .NET workflow code is not caught at runtime | Replay tests in CI mandatory from the first workflow (S8); workflow-code review rule: no `Task.Run`, no wall clock, no unordered collections, no I/O |
+| R13 | A run's cost is unknown after the fact | Tokens, model and compute time recorded per step from the first version (section 5.5) |
