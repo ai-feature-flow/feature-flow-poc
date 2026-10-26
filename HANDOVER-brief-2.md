@@ -31,6 +31,8 @@ No code yet. This is a design-only repository.
 deliverables. Read the engine design first — the brief says so, and it means it:
 `docs/01` through `docs/06` and the reviews.
 
+Tooling: `tools/watch_remote.py` (see section 3.2) polls `origin` for new reviews.
+
 Three proposals are pre-agreed by the product owner. Confirm them in the design, or
 bring evidence against them:
 
@@ -48,10 +50,51 @@ packaging, validation rules, testing, worked examples, decision records.
 These are how the work has been done so far. They are not written down anywhere
 else.
 
-**Review cycle.** Work is pushed to `main` on `origin`, and the product owner
-replies with a review file in `docs/reviews/`, numbered sequentially. Reviews
-arrive as commits from the product owner; pull to get them. Apply the review, then
-push. The cycle has run eight times and works well.
+### 3.1 Coordinator and child sessions
+
+Work runs in the VS Code agents window, which has orchestration facilities. The
+pattern:
+
+- **One agent acts as coordinator.** It does not do all the work itself. It breaks
+  the deliverable into pieces, farms them out to child sessions, and monitors and
+  controls them.
+- **Child sessions are fully interactive.** The user can see what each is doing and
+  answer questions in it directly. Do not treat them as fire-and-forget.
+- **Run pieces in parallel where they are independent.** For brief 2, the language
+  design and the JSON Schema are coupled, but worked examples and decision records
+  can often proceed in parallel once the design settles.
+- **The coordinator integrates.** Child sessions produce pieces; the coordinator
+  resolves conflicts between them, keeps cross-references consistent, and commits.
+
+This applies to coding as well as to this planning cycle.
+
+### 3.2 Monitoring for reviews
+
+Reviews arrive as pushes to `origin` from the product owner, on no fixed schedule.
+`tools/watch_remote.py` polls for them:
+
+```powershell
+python tools\watch_remote.py                  # one check, then exit
+python tools\watch_remote.py --interval 120   # poll every 2 minutes
+python tools\watch_remote.py --json           # machine-readable
+```
+
+It fetches, reports how far behind the branch is, lists the new commits with their
+files, and **inlines the full text of any new file under `docs/reviews/`** so the
+coordinator can act immediately. It reads review content with
+`git show origin/<branch>:<path>`, so nothing needs to be checked out.
+
+It does **not** pull, merge or rebase — reporting only, so the caller decides.
+
+Intended loop: start it polling in the background, and when a review lands, pull it,
+apply it, and continue **without stopping for input** unless a decision is genuinely
+needed from the user. Stop only for decisions, not for confirmation.
+
+### 3.3 Review cycle
+
+Work is pushed to `main` on `origin`, and the product owner replies with a review
+file in `docs/reviews/`, numbered sequentially. Apply the review, then push. The
+cycle has run eight times and works well.
 
 **Commit trailer.** Every commit ends with:
 
@@ -62,6 +105,10 @@ Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
 **Commit messages.** On Windows, PowerShell mangles commit messages containing
 double quotes. Write the message to a file and use `git commit -F <file>`, then
 delete it. A `.gitignore` now covers `*.tmp`, so this is safe.
+
+**Beware `git add -A`.** It sweeps up untracked scratch files. It has already
+committed a temp file twice and moved a new script onto a scratch branch. Stage
+explicitly, or check `git status` before committing.
 
 **Flag judgement calls.** Where a decision was made without being asked, say so
 explicitly in the summary rather than letting it look settled. Several of these
