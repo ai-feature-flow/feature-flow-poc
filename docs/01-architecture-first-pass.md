@@ -381,12 +381,12 @@ Decided (review 03, Q12). This replaces the provisional rule written for review 
 
 ### 4.1 Interface pattern
 
-Every provider implements a descriptor and a health check, and every method returns a classified result.
+Every provider implements a descriptor and a health check, and every method returns a classified result. **No provider method waits on human or external time** — waiting is an engine mechanism, using durable timers, polling or inbound events. See `docs/04-provider-interfaces.md` section 1.3.
 
 ```csharp
 public interface IProvider {
-    ProviderDescriptor Describe();          // name, version, capabilities, config schema
-    Task<CheckResult> CheckAsync(CancellationToken ct);   // startup and run-start validation
+    ProviderDescriptor Describe();          // name, version, capabilities, requires, config schema
+    Task<ProviderResult<CheckResult>> CheckAsync(CancellationToken ct);   // startup and run-start validation
 }
 
 public readonly record struct ProviderError(
@@ -402,9 +402,9 @@ Capabilities are typed records, not strings, so a step can ask a precise questio
 
 | Provider | Example capabilities |
 |---|---|
-| Code host | `PullRequest`, `ReviewComments`, `CheckStatus`, `MergeMethods[merge, squash, rebase]`, `AiReviewRequest`, `BranchProtection`, `MergeQueue` (optional; only some repositories have it enabled, section 6.3) |
-| CI | `Trigger`, `WaitForRun`, `ReadLogs`, `Artifacts` |
-| Sandbox | `Os[linux, windows]`, `Docker`, `NetworkPolicy`, `PersistentAcrossSteps` |
+| Code host | `PullRequest`, `ReviewComments`, `CheckStatus`, `MergeMethods[merge, squash, rebase]`, `BranchProtection`, `MergeQueue` (optional; only some repositories have it enabled, section 6.3), `InboundEvents` |
+| CI | `Trigger`, `ReadLogs`, `Artifacts`, `InboundEvents` |
+| Sandbox | `Os[linux, windows]`, `Docker`, `NetworkPolicy`, `PersistentAcrossSteps`, `StreamingOutput` |
 | Agent runtime | `StructuredOutput`, `Streaming`, `ToolAllowlist`, `MaxContextTokens`, `Hooks` (can the runtime call back to the engine per tool call, section 1.4), `SessionResume` |
 | Review | `Scopes[ticket, epic, delivery]`, `StructuredFindings`, `Fingerprints` |
 | Tracker | `Issues`, `Epics`, `Transitions`, `Links`, `Comments` |
