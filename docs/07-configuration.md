@@ -1,11 +1,21 @@
 # Configuration schema, precedence and profiles
 
-Status: first pass. Date: 2026-10-26. Deliverable 3 of `brief.md` section 11.
-Companion to `docs/01-architecture-first-pass.md` section 5, which holds the
-decisions this document turns into a schema.
+Status: first pass, revised for review 07. Date: 2026-10-26. Deliverable 3 of
+`brief.md` section 11. Companion to `docs/01-architecture-first-pass.md` section 5,
+which holds the decisions this document turns into a schema.
 
 **Scope.** The four layers, what each may set, the precedence rules and the safety
 floors, the policy model, secrets, validation, and three worked profiles.
+
+**Review 07 applied.** Every provider type may have **several named instances**
+with one default, replacing `ciSecondary` (answer 3). Any layer may tighten a
+floor; none may relax one (answer 2). Team overrides live in the organisation file,
+not a fifth layer (answer 1). Defaults may be set at installation and overridden at
+organisation (answer 4). Dry run uses **fake or recording providers**, not per-step
+declarations (answer 6). Merge settings split into what the organisation *allows*
+and what the repository *chooses* (a); `os` applies to the sandbox target only (b);
+retention is expected-and-checked, not applied (c); scaling is removed from engine
+configuration (d).
 
 ---
 
@@ -25,13 +35,17 @@ which no lower layer may relax** (DP6).
 A layer may only set what section 1.1 allows it to set; anything else is a
 validation error, not a silent override.
 
+**There is no fifth layer** (review 07, answer 1). Where teams need different
+policy, the organisation file contains **team-scoped overrides** selected by team:
+same layer, same file, no extra precedence step.
+
 ### 1.1 What each layer may set
 
 | Layer | May set | May not set |
 |---|---|---|
-| Installation | Temporal connection, worker platform, provider selection, credential references, retention, payload codec, observability, API auth, defaults | Anything repository-specific |
-| Organisation / team | Policy floors, provider bindings, notification routing, role mapping, budgets, who may approve and steer | Repository build and test detail |
-| Repository | Test tiers and how to run them, setup commands, static analysis, environment requirements, CI mapping, branch and merge conventions | Policy floors, credentials |
+| Installation | Temporal connection, worker platform, provider selection and instances, credential references, expected retention, payload codec, observability, API auth, defaults | Anything repository-specific |
+| Organisation / team | Policy floors, provider bindings, notification routing, role mapping, budgets, who may approve and steer, defaults overrides | Repository build and test detail |
+| Repository | Test tiers and how to run them, setup commands, static analysis, environment requirements, CI mapping, branch conventions, **merge choices within what policy allows** | Policy floors, credentials |
 | Run | Scope, target repositories, plan overrides, attempt budgets within ceiling, dry-run | Policy floors, provider selection |
 
 The repository layer is the one that lives in the repository and travels with the
@@ -45,8 +59,10 @@ Decided (DP6). The prototype's "settings conflicted" failure was exactly this:
 separate settings for merge gates, review mode, mandatory steps and auto-merge
 interacted and stopped the run.
 
-A floor is a value that **no lower layer may relax**. A lower layer may tighten it.
-The list is deliberately short and explicit.
+A floor is a value that **no lower layer may relax**. **Any layer may tighten one**
+(review 07, answer 2) — including a repository tightening a floor for itself.
+Validation enforces that floors only move in the stricter direction down the
+layers. The list is deliberately short and explicit.
 
 | # | Floor | Meaning |
 |---|---|---|
@@ -78,32 +94,67 @@ temporal:
   auth: { mode: apiKey, secretRef: secrets/temporal-api-key }
   tls: { enabled: true, caCertRef: secrets/temporal-ca }
   payloadCodec: { name: aes-gcm, keyRef: secrets/payload-key }   # optional
-  retention: 30d
+  expectedRetention: 30d      # checked at startup, warned on mismatch; not applied (review 07, c)
 
 workerPlatform:
   mode: kubernetes
-  orchestration: { replicas: 3, queue: feature-flow-orchestration }
+  orchestration: { queue: feature-flow-orchestration }
   agent:
     pools:
       - queue: feature-flow-agent
         capabilities: [os-linux, docker]
-        replicas: 5
       - queue: feature-flow-agent:os-windows
         capabilities: [os-windows]
-        replicas: 2
 
+# Every provider type may have several named instances, one marked default.
 providers:
-  sandbox:       { name: kubernetes-pod }
-  agentRuntime:  { name: claude-code }
-  codeHost:      { name: github, config: { appId: 12345, secretRef: secrets/github-app-key } }
-  ci:            { name: github-actions }
-  tracker:       { name: jira, config: { baseUrl: https://acme.atlassian.net, secretRef: secrets/jira-token } }
-  review:        { name: copilot-review }
-  artifactStore: { name: azure-blob, config: { container: ff-artifacts } }
-  recordStore:   { name: postgres, config: { connectionSecretRef: secrets/ff-db } }
-  secrets:       { name: azure-keyvault, config: { vault: acme-kv } }
-  notifications: { name: slack, config: { secretRef: secrets/slack-token } }
-  credentialBroker: { name: github-app }
+  sandbox:
+    default: kubernetes-pod
+    instances:
+      kubernetes-pod: { name: kubernetes-pod }
+  agentRuntime:
+    default: claude-code
+    instances:
+      claude-code:    { name: claude-code }
+      copilot-cli:    { name: copilot-cli }
+  codeHost:
+    default: github
+    instances:
+      github: { name: github, config: { appId: 12345, secretRef: secrets/github-app-key } }
+  ci:
+    default: github-actions
+    instances:
+      github-actions: { name: github-actions }
+      teamcity:       { name: teamcity, config: { baseUrl: https://tc.acme.internal, secretRef: secrets/teamcity-token } }
+  tracker:
+    default: jira
+    instances:
+      jira: { name: jira, config: { baseUrl: https://acme.atlassian.net, secretRef: secrets/jira-token } }
+  review:
+    default: copilot-review
+    instances:
+      copilot-review: { name: copilot-review }
+      engine-reviewer: { name: engine-reviewer }
+  artifactStore:
+    default: azure-blob
+    instances:
+      azure-blob: { name: azure-blob, config: { container: ff-artifacts } }
+  recordStore:
+    default: postgres
+    instances:
+      postgres: { name: postgres, config: { connectionSecretRef: secrets/ff-db } }
+  secrets:
+    default: azure-keyvault
+    instances:
+      azure-keyvault: { name: azure-keyvault, config: { vault: acme-kv } }
+  notifications:
+    default: slack
+    instances:
+      slack: { name: slack, config: { secretRef: secrets/slack-token } }
+  credentialBroker:
+    default: github-app
+    instances:
+      github-app: { name: github-app }
 
 api:
   baseUrl: https://feature-flow.acme.internal
@@ -124,11 +175,24 @@ defaults:
 
 Notes:
 
+- **Every provider type may have several named instances, with one marked
+  `default`** (review 07, answer 3). This generalises the two-CI-providers case and
+  covers several review providers (an AI review on the PR plus the engine's own
+  reviewer agent) and several agent runtimes selected by role. A repository's
+  `ci.mapping` selects the instance per tier; other selections work the same way.
 - Providers are selected **by name**; configuration selects them, code does not
   (section 4.5). A host project references the provider packages it ships.
 - Every credential is a `secretRef`. No inline secrets (F2).
+- `expectedRetention` is **checked, not applied** (review 07, c). Retention is a
+  namespace setting owned by the platform team on managed Temporal. The engine
+  warns on mismatch at startup.
+- **Scaling is not engine configuration** (review 07, d). Replica counts belong to
+  the deployment: Helm values, a Kubernetes autoscaler, or compose. The engine
+  names the task queues and the capabilities each pool serves.
 - `defaults` are the starting values for attempt allowances and timeouts. Review 06
-  accepted these as starting values, to be tuned from recorded data.
+  accepted these as starting values, to be tuned from recorded data. **Defaults are
+  not floors** (review 07, answer 4): the installation provides them and the
+  organisation may override them within its ceilings.
 
 ---
 
@@ -172,6 +236,17 @@ notifications:
     decisionNeeded: { channel: "#ff-approvals" }
     runStuck:       { channel: "#ff-ops" }
     runFinished:    { channel: "#ff-runs" }
+
+# Team-scoped overrides: same layer, same file, no extra precedence step.
+teams:
+  payments:
+    policy:
+      approval:
+        defaultBranch: { minCount: 3 }        # tightens F1; never relaxes it
+      attempts:
+        ceiling: { agent.run: 4 }
+    roles:
+      approver: { idpGroups: [acme-payments-leads] }
 ```
 
 Notes:
@@ -182,6 +257,14 @@ Notes:
   epic gates yes; a default-branch merge only in the console.
 - `attempts.ceiling` is what a run may set within (F4). `hardCeiling` is what
   steering may grant up to; beyond it needs the admin role.
+- **Team overrides are not a fifth layer** (review 07, answer 1). They live in the
+  organisation file and are selected by team, so precedence is unchanged.
+- **`policy.merge` states what is allowed; the repository chooses within it**
+  (review 07, a). See section 5. Two places for one setting was the prototype's
+  "settings conflicted" failure, so the split is: organisation says which methods
+  are permitted and whether checks are required; the repository states its
+  preferred method. A repository choice outside the allowed set is a **validation
+  error at run start**, never a silent override.
 
 ---
 
@@ -213,11 +296,11 @@ testTiers:
   - name: integration
     commands: [ "docker compose -f compose.integration.yaml up --abort-on-container-exit" ]
     target: ci                 # Docker-dependent: CI delegation is the default (Q2)
-    ci: { workflow: integration.yml }
+    ci: { instance: github-actions, workflow: integration.yml }
   - name: windows
     commands: [ "msbuild /t:Test" ]
-    target: ci
-    os: windows
+    target: ci                 # CI delegation: works in v1 (review 03, Q9)
+    ci: { instance: teamcity, workflow: windows-tests }
 
 staticAnalysis:
   analyser: sonarcloud
@@ -225,8 +308,9 @@ staticAnalysis:
 
 ci:
   mapping:
-    unit:        { workflow: unit.yml }
-    integration: { workflow: integration.yml }
+    unit:        { instance: github-actions, workflow: unit.yml }
+    integration: { instance: github-actions, workflow: integration.yml }
+    windows:     { instance: teamcity, workflow: windows-tests }
   queueBuilds: true            # report results for merge_group events
 
 branches:
@@ -234,18 +318,26 @@ branches:
   integrationPrefix: ff/epic/
   ticketPrefix: ff/ticket/
 
+# The repository chooses within what organisation policy allows (review 07, a).
 merge:
-  method: squash
-  requireChecks: true
+  method: squash               # must be in policy.merge.defaultBranch.methods
 ```
 
 Notes:
 
 - `target` is the **execution target**: `sandbox`, `local`, or `ci` (section 5.1.1).
   A Docker-dependent tier defaults to CI delegation (Q2).
-- `os: windows` on a tier routes to `feature-flow-agent:os-windows` (S1). Version 1
-  ships no Windows sandbox provider, so such a run fails at run-start capability
-  negotiation with a clear message (section 4.7).
+- **`os` applies to the `sandbox` execution target only** (review 07, b). A Windows
+  tier delegated to CI **must work in version 1** — that is what review 03 decided
+  for Q9. Only a Windows **sandbox** requirement fails capability negotiation,
+  because version 1 ships no Windows sandbox provider (section 4.7).
+- `ci.mapping` selects a **named provider instance** per tier (review 07, answer 3),
+  which is how GitHub Actions and TeamCity coexist without special cases.
+- **`merge.method` is a choice, not a policy** (review 07, a). The organisation
+  states which methods are allowed; the repository picks one. A choice outside the
+  allowed set is a validation error at run start, never a silent override.
+  `requireChecks` is **not** repeated here — it is policy, and only the organisation
+  sets it.
 - Other files (Dockerfiles, compose files) are referenced by relative path.
 - `.feature-flow/` is reserved for later use and is not used in version 1.
 
@@ -268,7 +360,10 @@ Notes:
 
 - A run may set attempt budgets **within** the configured ceiling (F4), and may not
   set policy floors or provider selection.
-- `dryRun` runs the plan without side effects where steps support it.
+- **`dryRun` selects fake or recording providers** (review 07, answer 6). The same
+  plan runs against providers that record instead of act, chosen by configuration.
+  No step declares dry-run support, and no step needs a dry-run branch. This is the
+  same mechanism workflow testing will need, so one feature serves both.
 
 ---
 
@@ -329,8 +424,8 @@ Decided (S10): validate at startup and again at run start, with clear errors.
 
 | When | Checks |
 |---|---|
-| Startup | Schema validity, provider packages present, secrets references resolvable, Temporal reachable, floor definitions internally consistent |
-| Run start | Capability negotiation against the plan's steps (S3), policy floors satisfied, attempt budgets within ceiling, target repositories reachable |
+| Startup | Schema validity, provider packages present, secrets references resolvable, Temporal reachable, **expected retention matches (warn on mismatch)**, floor definitions internally consistent |
+| Run start | Capability negotiation against the plan's steps (S3), policy floors satisfied, **floors only tightened down the layers**, attempt budgets within ceiling, **repository merge choice within the allowed set**, target repositories reachable |
 | Per step | `feature-flow.yaml` read from the branch and its hash recorded; capability negotiation re-run if a needed capability disappeared (section 5.1.2) |
 
 A validation failure is a clear error naming the layer, the key and the reason. It
@@ -355,7 +450,7 @@ temporal:
   address: localhost:7233
   namespace: default
   auth: { mode: none }
-  retention: 7d
+  expectedRetention: 7d
 
 workerPlatform:
   mode: local
@@ -366,17 +461,39 @@ workerPlatform:
         capabilities: [os-linux, docker]
 
 providers:
-  sandbox:       { name: docker }
-  agentRuntime:  { name: claude-code }
-  codeHost:      { name: github, config: { secretRef: env/GITHUB_TOKEN } }
-  ci:            { name: github-actions }
-  tracker:       { name: github-issues }
-  review:        { name: copilot-review }
-  artifactStore: { name: filesystem, config: { path: ~/.feature-flow/artifacts } }
-  recordStore:   { name: sqlite, config: { path: ~/.feature-flow/records.db } }
-  secrets:       { name: env }
-  notifications: { name: console }
-  credentialBroker: { name: personal-token }
+  sandbox:
+    default: docker
+    instances: { docker: { name: docker } }
+  agentRuntime:
+    default: claude-code
+    instances: { claude-code: { name: claude-code } }
+  codeHost:
+    default: github
+    instances: { github: { name: github, config: { secretRef: env/GITHUB_TOKEN } } }
+  ci:
+    default: github-actions
+    instances: { github-actions: { name: github-actions } }
+  tracker:
+    default: github-issues
+    instances: { github-issues: { name: github-issues } }
+  review:
+    default: copilot-review
+    instances: { copilot-review: { name: copilot-review } }
+  artifactStore:
+    default: filesystem
+    instances: { filesystem: { name: filesystem, config: { path: ~/.feature-flow/artifacts } } }
+  recordStore:
+    default: sqlite
+    instances: { sqlite: { name: sqlite, config: { path: ~/.feature-flow/records.db } } }
+  secrets:
+    default: env
+    instances: { env: { name: env } }
+  notifications:
+    default: console
+    instances: { console: { name: console } }
+  credentialBroker:
+    default: personal-token
+    instances: { personal-token: { name: personal-token } }
 
 api:
   auth: { mode: localToken }
@@ -429,29 +546,50 @@ temporal:
   namespace: feature-flow
   auth: { mode: apiKey, secretRef: secrets/temporal-api-key }
   tls: { enabled: true }
-  retention: 30d
+  expectedRetention: 30d
 
 workerPlatform:
   mode: kubernetes
-  orchestration: { replicas: 2, queue: feature-flow-orchestration }
+  orchestration: { queue: feature-flow-orchestration }
   agent:
     pools:
       - queue: feature-flow-agent
         capabilities: [os-linux, docker]
-        replicas: 3
 
 providers:
-  sandbox:       { name: kubernetes-pod }
-  agentRuntime:  { name: claude-code }
-  codeHost:      { name: github, config: { appId: 9911, secretRef: secrets/github-app-key } }
-  ci:            { name: github-actions }
-  tracker:       { name: jira, config: { baseUrl: https://acme.atlassian.net, secretRef: secrets/jira-token } }
-  review:        { name: copilot-review }
-  artifactStore: { name: s3, config: { bucket: acme-ff-artifacts } }
-  recordStore:   { name: postgres, config: { connectionSecretRef: secrets/ff-db } }
-  secrets:       { name: aws-secrets-manager }
-  notifications: { name: slack, config: { secretRef: secrets/slack-token } }
-  credentialBroker: { name: github-app }
+  sandbox:
+    default: kubernetes-pod
+    instances: { kubernetes-pod: { name: kubernetes-pod } }
+  agentRuntime:
+    default: claude-code
+    instances: { claude-code: { name: claude-code } }
+  codeHost:
+    default: github
+    instances: { github: { name: github, config: { appId: 9911, secretRef: secrets/github-app-key } } }
+  ci:
+    default: github-actions
+    instances: { github-actions: { name: github-actions } }
+  tracker:
+    default: jira
+    instances: { jira: { name: jira, config: { baseUrl: https://acme.atlassian.net, secretRef: secrets/jira-token } } }
+  review:
+    default: copilot-review
+    instances: { copilot-review: { name: copilot-review } }
+  artifactStore:
+    default: s3
+    instances: { s3: { name: s3, config: { bucket: acme-ff-artifacts } } }
+  recordStore:
+    default: postgres
+    instances: { postgres: { name: postgres, config: { connectionSecretRef: secrets/ff-db } } }
+  secrets:
+    default: aws-secrets-manager
+    instances: { aws-secrets-manager: { name: aws-secrets-manager } }
+  notifications:
+    default: slack
+    instances: { slack: { name: slack, config: { secretRef: secrets/slack-token } } }
+  credentialBroker:
+    default: github-app
+    instances: { github-app: { name: github-app } }
 
 api:
   baseUrl: https://ff.acme.cloud
@@ -519,34 +657,59 @@ temporal:
   auth: { mode: apiKey, secretRef: secrets/temporal-api-key }
   tls: { enabled: true }
   payloadCodec: { name: aes-gcm, keyRef: secrets/payload-key }
-  retention: 90d
+  expectedRetention: 90d
 
 workerPlatform:
   mode: kubernetes
-  orchestration: { replicas: 5, queue: feature-flow-orchestration }
+  orchestration: { queue: feature-flow-orchestration }
   agent:
     pools:
       - queue: feature-flow-agent
         capabilities: [os-linux, docker]
-        replicas: 10
       - queue: feature-flow-agent:docker
         capabilities: [os-linux, docker]
-        replicas: 4
       # feature-flow-agent:os-windows is declared but has no provider in v1 (section 4.7)
 
 providers:
-  sandbox:       { name: kubernetes-pod }
-  agentRuntime:  { name: claude-code }
-  codeHost:      { name: github, config: { appId: 12345, secretRef: secrets/github-app-key } }
-  ci:            { name: github-actions }
-  ciSecondary:   { name: teamcity, config: { baseUrl: https://tc.acme.internal, secretRef: secrets/teamcity-token } }
-  tracker:       { name: jira, config: { baseUrl: https://acme.atlassian.net, secretRef: secrets/jira-token } }
-  review:        { name: copilot-review }
-  artifactStore: { name: azure-blob, config: { container: ff-artifacts } }
-  recordStore:   { name: postgres, config: { connectionSecretRef: secrets/ff-db } }
-  secrets:       { name: internal-platform, config: { mode: oidc-planned } }
-  notifications: { name: slack, config: { secretRef: secrets/slack-token } }
-  credentialBroker: { name: github-app }
+  sandbox:
+    default: kubernetes-pod
+    instances: { kubernetes-pod: { name: kubernetes-pod } }
+  agentRuntime:
+    default: claude-code
+    instances:
+      claude-code: { name: claude-code }
+      copilot-cli: { name: copilot-cli }
+  codeHost:
+    default: github
+    instances: { github: { name: github, config: { appId: 12345, secretRef: secrets/github-app-key } } }
+  ci:
+    default: github-actions
+    instances:
+      github-actions: { name: github-actions }
+      teamcity:       { name: teamcity, config: { baseUrl: https://tc.acme.internal, secretRef: secrets/teamcity-token } }
+  tracker:
+    default: jira
+    instances: { jira: { name: jira, config: { baseUrl: https://acme.atlassian.net, secretRef: secrets/jira-token } } }
+  review:
+    default: copilot-review
+    instances:
+      copilot-review:  { name: copilot-review }
+      engine-reviewer: { name: engine-reviewer }
+  artifactStore:
+    default: azure-blob
+    instances: { azure-blob: { name: azure-blob, config: { container: ff-artifacts } } }
+  recordStore:
+    default: postgres
+    instances: { postgres: { name: postgres, config: { connectionSecretRef: secrets/ff-db } } }
+  secrets:
+    default: internal-platform
+    instances: { internal-platform: { name: internal-platform, config: { mode: oidc-planned } } }
+  notifications:
+    default: slack
+    instances: { slack: { name: slack, config: { secretRef: secrets/slack-token } } }
+  credentialBroker:
+    default: github-app
+    instances: { github-app: { name: github-app } }
 
 api:
   baseUrl: https://feature-flow.acme.internal
@@ -607,10 +770,13 @@ notifications:
 
 Notes:
 
-- Two CI providers are configured. The repository's `ci.mapping` selects which one
-  a tier uses, so GitHub Actions and TeamCity coexist without special cases.
+- Two CI providers are configured as **named instances**; the repository's
+  `ci.mapping` selects one per tier, so GitHub Actions and TeamCity coexist without
+  special cases. The same mechanism gives two review providers and two agent
+  runtimes.
 - The `os-windows` pool is declared but has no provider in version 1. A run needing
-  Windows fails at run-start capability negotiation with a clear message.
+  a Windows **sandbox** fails at run-start capability negotiation with a clear
+  message. A Windows tier delegated to **CI** works in version 1 (review 07, b).
 - The payload codec is configured because the organisation requires encrypted
   payloads. It is a configuration choice, not a code change (section 3.5).
 
@@ -618,20 +784,18 @@ Notes:
 
 ## 11. Open questions
 
-1. **Whether the organisation layer can be split into organisation and team.**
-   Today it is one layer with optional team scoping through role mapping. A real
-   split would add a fifth layer and another precedence step.
-2. **How a repository opts into a stricter floor than its organisation.** Floors
-   may be tightened by a lower layer, but it is not settled whether a *repository*
-   may tighten a floor for itself, or only an organisation may.
-3. **`ciSecondary` is a placeholder.** Two CI providers are configured by name, but
-   the selection mechanism — per tier in `ci.mapping`, or per repository — is not
-   settled.
-4. **Whether `defaults.attempts` belongs at installation or organisation.** Today
-   it is installation, but an organisation may reasonably want its own starting
-   values.
-5. **Budget configuration shape.** `cost` is not in version 1. When it arrives,
-   whether budgets are per run, per step kind, or per organisation is open.
-6. **Whether `dryRun` needs per-step support declared.** Today it is a run flag and
-   steps honour it where they can. Whether a step must declare dry-run support is
-   not settled.
+All six questions from the first pass were answered in review 07 and are applied
+above:
+
+| # | Question | Answer |
+|---|---|---|
+| 1 | Split organisation and team | **No fifth layer.** Team-scoped overrides live in the organisation file, selected by team (section 4) |
+| 2 | May a repository tighten a floor | **Yes.** Any layer may tighten; none may relax. Validation enforces that floors only move in the stricter direction (section 2) |
+| 3 | Selecting between two CI providers | **Generalised:** every provider type may have several named instances with one default. `ci.mapping` selects per tier (section 3) |
+| 4 | Where `defaults.attempts` belongs | **Both.** Installation provides defaults; organisation may override within its ceilings. Defaults are not floors (section 3) |
+| 5 | Budget configuration shape | Deferred with Q16. When added: per run and per step kind at the organisation layer; a run may only lower them; exceeding one always gates |
+| 6 | Per-step dry-run support | **Not needed.** A dry run runs the same plan against fake or recording providers, selected by configuration (section 6) |
+
+### Still open
+
+None carried forward.

@@ -1,0 +1,34 @@
+Apply review 07 to the configuration schema
+
+Answers:
+- 1: no fifth layer. Team-scoped overrides live in the organisation
+  file, selected by team, so precedence is unchanged.
+- 2: any layer may tighten a floor, none may relax one. Validation
+  enforces that floors only move in the stricter direction.
+- 3: generalised provider instances. Every provider type may have
+  several named instances with one default, selected per tier by
+  ci.mapping. Replaces ciSecondary and covers several review providers
+  and agent runtimes too.
+- 4: defaults belong at both installation and organisation. Defaults
+  are not floors.
+- 5: budget shape deferred with Q16.
+- 6: dry run uses fake or recording providers selected by
+  configuration, not per-step declarations. Same mechanism workflow
+  testing will need.
+
+Issues:
+- a: merge settings split. The organisation states what is allowed
+  (methods, whether checks are required); the repository chooses its
+  preferred method. A choice outside the allowed set is a validation
+  error at run start, never a silent override. requireChecks is no
+  longer repeated in feature-flow.yaml.
+- b: os applies to the sandbox execution target only. A Windows tier
+  delegated to CI must work in version 1; only a Windows sandbox
+  requirement fails capability negotiation.
+- c: retention becomes expectedRetention, checked at startup and
+  warned on mismatch, not applied. It is a namespace setting owned by
+  the platform team on managed Temporal.
+- d: replica counts removed from engine configuration. Scaling belongs
+  to the deployment; the engine names queues and capabilities.
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
