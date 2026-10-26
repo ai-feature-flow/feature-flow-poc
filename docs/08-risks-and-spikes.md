@@ -112,7 +112,7 @@ The plan includes:
 | Kill the worker mid-`agent.run` | The step resumes: WIP commits are on the branch, the session reference is in the artifact store, the sandbox is re-attached by idempotency key, and the **running command** is re-attached by handle (R11, R18) |
 | Kill the worker repeatedly with no progress | After 3 consecutive resumes with no progress, the next counts as a restart and the attempt allowance is consumed (R15) |
 | Make the hook endpoint unreachable mid-step | The agent pauses, the session stops in a resumable state, and the step classifies it as **infrastructure** — not as a denied tool call (R19) |
-| **Stop the Temporal server (or block access) for several minutes mid-run** | Workers wait and resume; **no step fails**; the API reports platform status distinctly from run status (K2) |
+| **Stop the Temporal server (or block access) for several minutes mid-run** | Workers wait and resume; **no step fails**; the API reports platform status distinctly from run status (K2). **If the outage exceeds the heartbeat timeout the activity times out — the retry re-attaches by handle and the step does not fail** (H2). This is the case to prove: a timeout here must not become a work outcome |
 | **Break the worker-to-sandbox connection mid-command** | The activity retries and re-attaches; the command keeps running (K3) |
 | Send a re-plan that removes a protected step | `applyPatch` rejects it, and the rejection is recorded rather than silently dropped (R7) |
 | Send a decision while the workflow is continuing-as-new | The update is rejected as stale and the API retries against the current run (R3) |
@@ -124,6 +124,7 @@ The plan includes:
 |---|---|
 | **History size and event count at each continue-as-new** | Discharges the brief Q6 condition. The threshold is "measured", and this is the measurement |
 | **Events per step, especially for long polled steps** | Whether R20's mitigation holds: one activity per step, not one per poll |
+| **Worker slot capacity: how many concurrent long polled steps before a queue starves** | H1. A poll loop inside one activity holds a worker slot for the whole step, possibly hours. `max_concurrency` on a `parallel` step bounds branches, but nothing bounds how many *runs* occupy slots. This decides worker pool sizing |
 | Wall-clock time lost per crash | Whether resume is actually cheaper than restart |
 | Attempts consumed versus resumes | Whether the progress rule behaves |
 | Whether any step restarted that should have resumed | The failure mode the whole design exists to prevent |
@@ -138,8 +139,12 @@ The plan includes:
 5. History size is recorded, and the continue-as-new threshold is set from it.
 6. Replay tests pass against the recorded histories (R2, R12).
 7. **Temporal unavailable for several minutes: no step fails, and the API reports
-   platform status distinctly from run status** (K2).
+   platform status distinctly from run status** (K2). **Including an outage longer
+   than the heartbeat timeout: the activity times out, the retry re-attaches by
+   handle, and the step does not fail** (H2).
 8. **A long polled step costs one activity, not one per poll** (R20).
+9. **Worker slot capacity is measured**: how many concurrent long polled steps
+   before a task queue starves, and what pool size the answer implies (H1).
 
 Criterion 5 is what closes brief Q6. Until it is measured, that decision record
 stays provisional.

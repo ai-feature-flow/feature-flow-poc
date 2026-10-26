@@ -121,7 +121,8 @@ Waits for a human decision.
 |---|---|
 | Form | Local policy check, then a durable wait in the workflow |
 | Scope | any |
-| Inputs | `gate_id`, `prompt`, `required_role`, `min_approvers`, `options` |
+| Inputs | `gate_id`, `prompt_ref`, `context_refs` |
+| Gate | `decision_type` — a namespaced name, for example `ticket.merge_approval` |
 | Requires | Notifications (optional, for the reminder) |
 | Outcomes | `approved`, `rejected` |
 | Idempotency | By `gate_id`. A decision already recorded is not re-asked |
@@ -132,6 +133,12 @@ Waits for a human decision.
 
 Contract details:
 
+- **The gate names a decision type, not policy** (brief 2, L12; review 09 C7).
+  `required_role` and `min_approvers` were removed from inputs: who may approve,
+  the minimum count and whether an agent counts come from `policy.approval` in the
+  organisation layer (`docs/07` section 4). A template that carried them could
+  relax an organisation's approval rule. An unknown `decision_type` is a blocking
+  validation error at run start.
 - The decision arrives as a **Temporal Update** carrying the gate id and plan
   revision. The validator rejects a stale or invalid request (section 5.4).
 - The API authenticates the human and evaluates the **`approval`** policy, then
@@ -149,10 +156,10 @@ An interactive session: prepare a workspace, wait for a submission, validate it.
 |---|---|
 | Form | Activity to prepare, then a durable wait |
 | Scope | any |
-| Inputs | `session_id`, `purpose`, `context_refs`, `checks` (which pre-submit checks to offer) |
+| Inputs | `purpose`, `context_refs`, `checks_from` (step ids whose validators to offer) |
 | Requires | Session surface |
 | Outcomes | `completed`, `rejected` |
-| Idempotency | By `session_id` |
+| Idempotency | By the engine-generated session id |
 | Limits | No timeout on the wait |
 | Error overrides | None |
 | Artifacts | In: context. Out: the submission |
@@ -164,6 +171,10 @@ Contract details:
   (review 05, P1). Submission and checks are API actions.
 - **Pre-submit checks** run the same validators as the gated steps, on demand, so
   no check appears for the first time after submission (section 7.4).
+- **`checks_from` names step ids, not check names** (brief 2; review 09 C9). The
+  session offers the validators of the steps that follow it, derived from the
+  plan, so the offered set cannot drift from what will actually be applied. The
+  session id is engine-generated; a plan does not carry one.
 - Hooks and policy do not apply in the human's environment. The trust boundary is
   the submission.
 
@@ -342,8 +353,8 @@ Merges the integration base forward into a ticket branch (section 6.3).
 |---|---|
 | Form | Activity |
 | Scope | any |
-| Inputs | `pr_ref`, `method`, `require_human` |
-| Requires | Code host `PullRequest`, `MergeMethods[method]`. `MergeQueue` when the target requires it |
+| Inputs | `pr_ref` |
+| Requires | Code host `PullRequest`. `MergeMethods[method]` for the method the repository chose. `MergeQueue` when the target requires it |
 | Outcomes | `completed`, `blocked` (checks or protection), `rejected` |
 | Idempotency | Key from run, step, PR. A merged PR is already merged |
 | Limits | 30s to enqueue; the wait is a durable wait, not an activity timeout |
@@ -352,6 +363,12 @@ Merges the integration base forward into a ticket branch (section 6.3).
 
 Contract details:
 
+- **No merge method in a plan** (brief 2; review 09 C2). `method` and
+  `require_human` were removed from inputs. The organisation states which methods
+  are allowed and whether checks are required; the repository states its preferred
+  method in `feature-flow.yaml` (`docs/07` section 5). The step reads it per step
+  like any other manifest fact. A merge into a default branch requires a human
+  regardless — that is floor F1, not a step input.
 - **Merge lock, per target branch** (review 06, S3). The lock is keyed by
   repository **plus branch**, so integration branches of different epics in the
   same repository do not conflict. Implemented as a **Temporal-native mutex** — a
@@ -434,7 +451,7 @@ Runs the repository's declared test tiers.
 | Element | Detail |
 |---|---|
 | Form | Activity (agent worker, because it needs a sandbox) |
-| Inputs | `repository`, `tiers`, `execution_target` |
+| Inputs | `repository`, `tier_tags` |
 | Requires | Sandbox `Os[target]`. `Docker` for Docker-dependent tiers |
 | Outcomes | `completed`, `failed` |
 | Idempotency | Key from run, step, repository, tiers, commit |
@@ -449,6 +466,12 @@ Contract details:
   execution target share a sandbox; results are reported per tier. A
   Docker-dependent tier delegated to CI runs through the CI provider **inside the
   same step**, so the plan sees one outcome for the whole set.
+- **The plan selects tiers by tag, it does not list them** (brief 2; review 09 C1).
+  `tiers` was replaced by `tier_tags`, and `execution_target` was removed. Tiers
+  and their targets are repository facts from `feature-flow.yaml`, read per step
+  (section 5.1.2). A plan that listed them would copy repository facts into the
+  plan and go stale — the exact failure review 04 Q19 removed. A tag with no
+  matching tier in the manifest is a validation error at step start.
 - **Execution target** comes from `feature-flow.yaml` (section 5.1.1). A
   Docker-dependent tier defaults to **CI delegation** (Q2).
 - The step reads `feature-flow.yaml` from its branch when it starts, so a tier
@@ -578,7 +601,7 @@ fixed or declined with a recorded reason**. Not "zero findings" (D8).
 | Element | Detail |
 |---|---|
 | Form | Activity |
-| Inputs | `finding_ref`, `diff_ref`, `regression_test_required` |
+| Inputs | `finding_ref`, `diff_ref` |
 | Requires | Review provider, sandbox |
 | Outcomes | `completed`, `failed` |
 | Idempotency | Key from run, step, fingerprint, commit |
@@ -593,6 +616,11 @@ Contract details:
   Some findings cannot sensibly have one: log message content, OpenAPI metadata,
   documentation. The verification review judges whether the reason is acceptable;
   an unjustified reason fails the step.
+- **The requirement is not a template switch** (brief 2; review 09 C4).
+  `regression_test_required` was removed from inputs. The requirement is a step
+  invariant; the "not applicable with a reason" escape is carried in the finding's
+  triage record, not in the plan. A template that could set it to `false` would
+  let a workflow relax a verification floor.
 - The fix is checked **against the original finding on the full diff**, not only on
   the changed lines. The prototype's re-review reported no issues after fixes that
   had introduced new ones.
@@ -614,6 +642,18 @@ Contract details:
 
 Contract detail: this is the general form of `ci.wait_checks`. It polls **inside one
 long-running activity** (review 08, K1); it does not block inside a provider call.
+
+**Which wait form, when** (review 08, H3). `docs/05` 1.2.1 gives two forms and this
+step uses both, chosen by what it is waiting on:
+
+| Target | Form | Why |
+|---|---|---|
+| A CI run, a check, a merge queue entry — something **actively progressing** | Poll inside one long-running activity, heartbeating | The wait is minutes to an hour and progress is continuous. One activity per step (R20) |
+| A tracker issue transition, a code host review approval — something **idle until a human acts** | Durable timer, woken by an inbound event | The wait may be days. Holding a worker slot and a heartbeat for that is waste, and an idle poll loop looks like a stuck step |
+
+The step picks the form from `target`. A human-driven wait that used the poll form
+would hold a worker slot for days; a progressing wait that used the timer form
+would add latency for no reason.
 
 ### 11.2 `artifact.bundle`, `artifact.validate`, `artifact.import`, `artifact.publish`
 
