@@ -873,6 +873,10 @@ Requirements for A:
 
 ## 9. Principal risks
 
+**Spike plan and the full register with mitigations: `docs/08-risks-and-spikes.md`.**
+That document also records which spike tests which risk, and the measurement that
+closes brief Q6.
+
 | # | Risk | First mitigation |
 |---|---|---|
 | R1 | History growth on a 27-hour, hundreds-of-steps run | References only, capped findings summary, measured continue-as-new threshold, replay tests |

@@ -166,7 +166,8 @@ The three parts:
 
 **Condition.** The spike must **measure history size** on a long run with several
 re-plans and confirm the continue-as-new threshold. Until that measurement exists,
-this record is provisional.
+this record is provisional. Spike 1 in `docs/08-risks-and-spikes.md` is where it is
+measured; exit criterion 5 is what closes this record.
 
 **Applied:** architecture sections 3.4, 3.5 and 2.1.
 
