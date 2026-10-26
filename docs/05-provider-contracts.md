@@ -60,6 +60,23 @@ No method waits on human or external completion (section 1.3 of the interfaces
 document). A step that must wait uses a durable timer and polls, or an inbound
 event.
 
+### 1.2.1 Polling happens inside one activity
+
+Added for review 08 (K1). Polling must **not** be one short activity per poll. A
+4-hour agent step polled every 30 seconds would add about 480 activities and well
+over 1,000 history events for a single step, which alone can hit the history limit
+(R1).
+
+> **Poll inside one long-running activity.** The activity loops on
+> `GetCommandStatusAsync` or `GetProgressAsync` and heartbeats. History cost is
+> **one activity per step**. After a worker crash the activity retry re-attaches by
+> handle.
+
+This applies to every poll loop: sandbox commands, agent progress, CI run status,
+PR state, and the fallback when an inbound event is lost. The durable-timer form is
+for waits that may be long and idle (a human gate); the in-activity loop is for
+waits that are actively progressing.
+
 ### 1.3 Error codes
 
 | Reason | Class | Retry | Meaning |
@@ -100,7 +117,7 @@ This is why `FindByMarkerAsync` exists on the code host and why sandbox
 | `AttachAsync` | `PersistentAcrossSteps` | `key` | 30s | No | `not_found` (no sandbox for this key) | Re-attaches to a sandbox that outlived a worker crash. Returns `not_found` rather than creating one; the step decides |
 | `StartCommandAsync` | — | `key` | 30s | No | `validation_failed` (unknown command) | Starts a command and returns a handle. **Does not wait for it to finish** (review 06, C1) |
 | `AttachCommandAsync` | `PersistentAcrossSteps` | `key` | 30s | No | `not_found` | Re-attaches to a **running** command by key after a worker crash. This is what keeps a long command from being lost when the sandbox survives |
-| `GetCommandStatusAsync` | — | none | 15s | No | `not_found` | Returns status, exit code, and output since `outputCursor`. Non-blocking. The step polls it behind a durable timer |
+| `GetCommandStatusAsync` | — | none | 15s | No | `not_found` | Returns status, exit code, and output since `outputCursor`. Non-blocking. **The step polls it inside one long-running activity**, not one activity per poll (section 1.2.1) |
 | `CancelCommandAsync` | — | `key` | 30s | No | `not_found` | Idempotent. Cancelling a finished command succeeds |
 | `CopyInAsync` | — | none | 5 min | Yes | `not_found` (source artifact) | Places an input artifact into the sandbox |
 | `CopyOutAsync` | — | none | 5 min | Yes | `not_found` (path) | Returns an `ArtifactRef`; the content goes to the artifact store, not to workflow state |
@@ -238,9 +255,8 @@ Note: `RequestAiReviewAsync` is deliberately absent. An AI review on a PR is a
 | `ReadLogsAsync` | `ReadLogs` | none | 5 min | `not_found` | Returns a log reference, not the log body |
 | `GetArtifactsAsync` | `Artifacts` | none | 5 min | `not_found` | Returns artifact references |
 
-Note: waiting is an engine mechanism. The step polls `GetRunStatusAsync` behind a
-durable timer, or waits for an inbound event when the provider declares
-`InboundEvents`.
+Note: waiting is an engine mechanism. The step polls `GetRunStatusAsync` **inside
+one long-running activity** (section 1.2.1), or waits for an inbound event.
 
 ---
 

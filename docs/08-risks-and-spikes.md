@@ -1,15 +1,23 @@
 # Risks and spike plan
 
-Status: first pass. Date: 2026-10-26. Deliverable 6 of `brief.md` section 11.
-Companion to `docs/01-architecture-first-pass.md` section 9, which holds the risk
-register. This document holds the register with mitigations, and the spike plan.
+Status: first pass, revised for review 08. Date: 2026-10-26, updated 2026-10-27.
+Deliverable 6 of `brief.md` section 11. Companion to
+`docs/01-architecture-first-pass.md` section 9, which holds the risk register. This
+document holds the register with mitigations, and the spike plan.
+
+**Review 08 applied.** Adds **R20**, polling inflating history, with the mitigation
+that polling happens inside one long-running activity. Adds three failure
+injections to Spike 1 (Temporal unavailable, worker-to-sandbox network break, and
+sizing by history events) and two to Spike 2 (fix verification and the decline
+path, and the events-wake-reads-confirm path). Clarifies the Spike 2 exit criterion
+against floor F1. Applies all five answers, including the W0 fallback decision.
 
 ---
 
 ## 1. Risk register
 
-Nineteen risks. Each has a first mitigation and, where it exists, a spike that
-tests it.
+Twenty risks. Each has a first mitigation and, where it exists, a spike that tests
+it.
 
 | # | Risk | First mitigation | Tested by |
 |---|---|---|---|
@@ -32,6 +40,7 @@ tests it.
 | R17 | A check appears for the first time after work is submitted, causing review round trips | Pre-submit checks in interactive sessions: any validator is exposed as an on-demand action | Spike 3 |
 | R18 | A long sandbox command is lost when the worker crashes, even though the sandbox survives | Commands are started and polled, not awaited: `StartCommandAsync` returns a handle and `AttachCommandAsync` re-attaches to a running command | Spike 1 |
 | R19 | An unreachable hook endpoint denies every tool call, so the agent flails or gives up with a wrong outcome | Unreachable is distinguished from denied: the hook client retries and holds the tool call for a bounded time, then the session stops in a resumable state classified as infrastructure | Spike 1 |
+| R20 | Polling inflates history: one short activity per poll adds hundreds of events for one long step | Poll **inside one long-running activity** that loops and heartbeats. History cost is one activity per step; after a worker crash the activity retry re-attaches by handle | Spike 1 |
 
 ### 1.1 The four that matter most
 
@@ -47,6 +56,12 @@ If the spike plan can only cover a little, cover these:
 R11, R18 and R19 are the same class — **an interruption becomes a wrong outcome
 instead of a continuation**. That was the prototype's defining failure, and it is
 worth treating as one theme rather than three risks.
+
+**R20 is the mitigation's own risk.** Start-and-poll (review 06, C1) fixed R18, but
+done naively — one short activity per poll — it would add about 480 activities and
+well over 1,000 history events for a single 4-hour step, which alone can hit the
+history limit. The fix is to poll inside one long-running activity. It is worth
+noting because it is the second time a fix for one risk has introduced another.
 
 ### 1.2 Residual risks not yet mitigated
 
@@ -76,7 +91,13 @@ everything else.
 **The brief's spike.** An interpreter workflow that survives a worker crash and
 applies a mid-run re-plan.
 
-**Setup.** A plan of 40 to 60 steps, deliberately longer than needed, with:
+**Setup.** Sized by **history events, not steps** (review 08, answer 1). Use fake
+providers — the dry-run mechanism from review 07 — to generate synthetic plans from
+about 50 to 400 steps cheaply, and find where continue-as-new triggers. For
+reference, the prototype's production run reached about 325 steps across an
+initiative with 16 child ticket runs. Then one shorter run with real providers.
+
+The plan includes:
 
 - several `agent.run` steps with a long `start_to_close`;
 - a `parallel` step with three branches and `join: all`;
@@ -91,6 +112,8 @@ applies a mid-run re-plan.
 | Kill the worker mid-`agent.run` | The step resumes: WIP commits are on the branch, the session reference is in the artifact store, the sandbox is re-attached by idempotency key, and the **running command** is re-attached by handle (R11, R18) |
 | Kill the worker repeatedly with no progress | After 3 consecutive resumes with no progress, the next counts as a restart and the attempt allowance is consumed (R15) |
 | Make the hook endpoint unreachable mid-step | The agent pauses, the session stops in a resumable state, and the step classifies it as **infrastructure** — not as a denied tool call (R19) |
+| **Stop the Temporal server (or block access) for several minutes mid-run** | Workers wait and resume; **no step fails**; the API reports platform status distinctly from run status (K2) |
+| **Break the worker-to-sandbox connection mid-command** | The activity retries and re-attaches; the command keeps running (K3) |
 | Send a re-plan that removes a protected step | `applyPatch` rejects it, and the rejection is recorded rather than silently dropped (R7) |
 | Send a decision while the workflow is continuing-as-new | The update is rejected as stale and the API retries against the current run (R3) |
 | Send a re-plan while a `parallel` branch is in flight | The patch applies to future steps; the in-flight branch is untouched |
@@ -100,6 +123,7 @@ applies a mid-run re-plan.
 | Measurement | Why |
 |---|---|
 | **History size and event count at each continue-as-new** | Discharges the brief Q6 condition. The threshold is "measured", and this is the measurement |
+| **Events per step, especially for long polled steps** | Whether R20's mitigation holds: one activity per step, not one per poll |
 | Wall-clock time lost per crash | Whether resume is actually cheaper than restart |
 | Attempts consumed versus resumes | Whether the progress rule behaves |
 | Whether any step restarted that should have resumed | The failure mode the whole design exists to prevent |
@@ -113,9 +137,16 @@ applies a mid-run re-plan.
 4. Continue-as-new happens between steps only, and no decision is lost.
 5. History size is recorded, and the continue-as-new threshold is set from it.
 6. Replay tests pass against the recorded histories (R2, R12).
+7. **Temporal unavailable for several minutes: no step fails, and the API reports
+   platform status distinctly from run status** (K2).
+8. **A long polled step costs one activity, not one per poll** (R20).
 
 Criterion 5 is what closes brief Q6. Until it is measured, that decision record
 stays provisional.
+
+**Simulated versus real** (review 08, answer 2): both. Simulated for fast
+iteration; killing the real process — and a real sandbox and agent CLI — is the
+exit criterion.
 
 ### 2.2 Spike 2: one real ticket run
 
@@ -125,6 +156,12 @@ repository?
 **Setup.** One real repository with a `feature-flow.yaml` declaring at least two
 test tiers, one of them Docker-dependent. Real code host, real CI, real agent
 runtime. Run it to a merged PR.
+
+**Setup.** A **purpose-built fixture repository owned by the project** (review 08,
+answer 3): a small .NET API with a Postgres-backed integration tier (Testcontainers)
+and a GitHub Actions workflow. It doubles as the open-source example and an
+end-to-end test. A production repository comes later, in the first enterprise
+adopter's distribution.
 
 **What it must show:**
 
@@ -136,9 +173,17 @@ runtime. Run it to a merged PR.
 | A review run twice on unchanged input gives the same verdict, with prior findings passed | R4 |
 | Editing `feature-flow.yaml` mid-run is picked up by the next step, and the hash is recorded | R16 |
 | A gate left open for hours does not time out, and a reminder fires | R8 |
+| **Seed a finding, fix it, run `fix.verify`**: regression test required, checked on the full diff | K4 |
+| **The decline path**: decline reason posted on the PR, and the finding is not re-raised on the next review | K4 |
+| **Approve a gate from chat** (inbound event path), then **drop one webhook deliberately** and show the polling fallback completes the step | K5 |
 
-**Exit criteria.** One ticket runs to a merged PR without manual intervention, and
-the cost of the run is known from the record store.
+**Exit criteria.** One ticket runs to a merged PR, and the cost of the run is known
+from the record store.
+
+**On "without manual intervention"** (review 08, K6): that criterion conflicts with
+floor F1 if the PR targets a default branch. Clarified — target an integration
+branch, or count the default-branch approval as an **expected decision**, not an
+intervention. The floor is not waived for the spike.
 
 ### 2.3 Spike 3: concurrent tickets
 
@@ -146,6 +191,11 @@ the cost of the run is known from the record store.
 
 **Setup.** One epic, three tickets, one repository, `max_concurrency: 2`. At least
 two tickets touching overlapping code areas.
+
+**Synthetic tickets, but with a seeded cross-ticket defect** (review 08, answer 4) —
+for example two tickets that each change one side of the same contract. LLM
+behaviour makes an unseeded result inconclusive: without a known defect, an
+epic-level review that finds nothing proves nothing.
 
 **What it must show:**
 
@@ -182,6 +232,23 @@ Windows runtime with hook support. It gates W1, the Windows VM sandbox provider.
 unavailable. Also research before W1: image size and start time, and licensing of
 Windows Server and build tools in VMs and containers.
 
+### 2.5 W0 fallback without hooks (decided)
+
+Decided by the product owner, 2026-10-27 (review 08, answer 5). If an agent runtime
+has no working hooks on Windows, version-1-acceptable control is:
+
+| Control | Mechanism |
+|---|---|
+| Write access | Enforced by the **sandbox itself**: read-only checkout for roles with `write_access: none`, and no push credential issued |
+| Push restriction | The **credential broker**: per-step token, one repository, ticket branch only where the code host supports branch-scoped rules |
+| Post-step diff check | The engine compares the branch before and after, and **fails a step that changed what its role may not change** |
+| Cost | Recorded from the runtime's own usage output instead of hook events |
+
+**Per-tool-call policy (deny before execution) is then unavailable on Windows**, and
+the run records the coarser control. This is the same principle as a runtime without
+the `Hooks` capability on any platform (section 1.4 of the architecture document):
+the engine records what control it actually had.
+
 ---
 
 ## 3. Order and dependencies
@@ -217,16 +284,17 @@ graph LR
 
 ## 5. Open questions
 
-1. **How long the Spike 1 plan should be.** 40 to 60 steps is a proposal. It needs
-   to be long enough to force continue-as-new and to make a restart visibly
-   expensive, but not so long that each iteration costs hours.
-2. **Whether to inject failure by killing the worker process or by simulating it.**
-   Killing the process is more honest; simulating is faster to iterate on. Both are
-   worth having, and the honest one is the exit criterion.
-3. **Which repository Spike 2 uses.** It needs a real repository with a
-   Docker-dependent tier. Whether that is this repository or a fixture is open.
-4. **Whether Spike 3 needs a real epic.** Three synthetic tickets may not produce
-   the cross-ticket findings that make epic-level review worth testing.
-5. **What "acceptable" means for W0 if hooks are unavailable.** The spike will
-   report what coarser control exists; whether that is acceptable is a product
-   decision, not a technical one.
+All five questions from the first pass were answered in review 08 and are applied
+above:
+
+| # | Question | Answer |
+|---|---|---|
+| 1 | Spike 1 plan length | **Size by history events, not steps.** Fake providers generate synthetic plans from about 50 to 400 steps cheaply; find where continue-as-new triggers. Then one shorter run with real providers (section 2.1) |
+| 2 | Kill the worker or simulate | **Both.** Simulated for fast iteration; killing the real process, sandbox and agent CLI is the exit criterion (section 2.1) |
+| 3 | Spike 2 repository | **A purpose-built fixture repository owned by the project**: a small .NET API with a Postgres-backed integration tier and a GitHub Actions workflow. It doubles as the open-source example and an end-to-end test (section 2.2) |
+| 4 | Real epic for Spike 3 | **Synthetic tickets with a seeded cross-ticket defect.** Unseeded LLM results are inconclusive (section 2.3) |
+| 5 | Acceptable W0 fallback without hooks | **Decided, accepted.** Sandbox-enforced write access, broker-restricted push, post-step diff check, cost from runtime usage output. Per-tool-call policy unavailable and recorded (section 2.5) |
+
+### Still open
+
+None carried forward.

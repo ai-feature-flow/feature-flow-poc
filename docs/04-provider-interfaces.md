@@ -98,6 +98,10 @@ is indistinguishable from a stuck one.
 
 - Provider methods are **short, bounded calls**.
 - Waiting is done by the engine: durable timers, polling, or inbound events.
+- **Polling happens inside one long-running activity**, not one short activity per
+  poll. A 4-hour step polled every 30 seconds would add about 480 activities and
+  well over 1,000 history events for one step (review 08, K1). See section 1.2.1 of
+  `docs/05-provider-contracts.md`.
 - A provider that can receive push events declares an **`InboundEvents`**
   capability and translates incoming webhooks into engine events through the API.
 - Anything a human does arrives as an API action and becomes an Update.

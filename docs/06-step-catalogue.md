@@ -411,8 +411,9 @@ Waits for every check on a PR, **including checks that register late**.
 | Error overrides | A check that fails is a **work** outcome, not infrastructure |
 | Audit | Checks waited, final status |
 
-Contract detail: the step polls `GetRunStatusAsync` behind a durable timer. It does
-not call a blocking wait (review 05, P1).
+Contract detail: the step polls `GetRunStatusAsync` **inside one long-running
+activity** (review 08, K1), not one activity per poll. It does not call a blocking
+wait (review 05, P1).
 
 ### 7.3 `ci.read_results`
 
@@ -611,8 +612,8 @@ Contract details:
 | Idempotency | Safe to repeat |
 | Limits | Step-defined timeout; heartbeat via the poll |
 
-Contract detail: this is the general form of `ci.wait_checks`. It polls; it does
-not block inside a provider call.
+Contract detail: this is the general form of `ci.wait_checks`. It polls **inside one
+long-running activity** (review 08, K1); it does not block inside a provider call.
 
 ### 11.2 `artifact.bundle`, `artifact.validate`, `artifact.import`, `artifact.publish`
 
