@@ -523,6 +523,10 @@ Decided (review 04, Q17).
 
 ## 5. Configuration
 
+**Schema, precedence, safety floors and three worked profiles:
+`docs/07-configuration.md`.** This section holds the decisions; that document turns
+them into a schema.
+
 ### 5.1 Layers
 
 | Layer | Where | May set | May not set |
@@ -533,6 +537,15 @@ Decided (review 04, Q17).
 | Run | API at start | Scope, target repositories, plan overrides, attempt budgets within ceiling, dry-run | Policy floors, provider selection |
 
 Precedence: **most specific layer wins, except a small set of safety floors that no lower layer may relax.** See DP6.
+
+The floors, numbered so they can be referenced:
+
+| # | Floor | Meaning |
+|---|---|---|
+| F1 | Human approval for default-branch merges | No layer may set auto-merge for a repository's default branch |
+| F2 | Secrets by reference | No layer may inline a secret value |
+| F3 | Protected steps | A protected step cannot be removed or weakened by a re-plan or by steering |
+| F4 | Attempt ceilings | A run sets budgets within the ceiling; steering may grant up to a hard ceiling; beyond that needs the admin role |
 
 ### 5.1.1 `feature-flow.yaml` and execution targets
 
