@@ -433,9 +433,10 @@ The provider classifies, because it knows its system. The step may override, bec
 
 Temporal platform, worker platform, sandbox, tracker, code host, CI, agent runtime, review, artifact store, record store, secrets, notifications, credential broker, session surface. Each with a contract test suite (S5) so a new provider can prove conformance without the engine changing.
 
-**Interface definitions: `docs/04-provider-interfaces.md`.** That document gives
-each provider its capability record and method signatures. Per-method contracts
-follow once the shape is agreed.
+**Interface definitions: `docs/04-provider-interfaces.md`** gives each provider its
+capability record and method signatures. **`docs/05-provider-contracts.md`** gives
+the per-method contracts: idempotency, error codes, timeouts, heartbeats and
+semantics.
 
 ### 4.5 Provider packaging (decided)
 

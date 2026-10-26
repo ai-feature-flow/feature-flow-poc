@@ -4,9 +4,8 @@ Status: shape only, revised for review 05. Date: 2026-10-26. Deliverable 2 of
 `brief.md` section 11. Companion to `docs/01-architecture-first-pass.md` section 4.
 
 **Scope of this pass.** Every interface is given its capability record and its
-method signatures. Per-method contracts — exact inputs and outputs, idempotency
-keys, error codes, timeouts, heartbeat behaviour — are **not** written yet. They
-follow once the shape is agreed.
+method signatures. Per-method contracts — idempotency keys, error codes, timeouts,
+heartbeat behaviour, semantics — are in `docs/05-provider-contracts.md`.
 
 **Review 05 applied.** The main change is a new rule: **no provider method waits
 on human or external time** (section 1.3). That removed `AskAsync`,
@@ -571,14 +570,14 @@ above:
 
 ### Still open
 
-1. **Per-method contracts.** Not written yet: exact inputs and outputs,
-   idempotency keys, error codes per method, timeouts, heartbeat behaviour. This
-   is the next step for this document.
-2. **The `InboundEvents` shape.** Section 1.3 says a provider translates incoming
+Per-method contracts are now written in `docs/05-provider-contracts.md`, which
+carries its own open questions. The two carried forward here:
+
+1. **The `InboundEvents` shape.** Section 1.3 says a provider translates incoming
    webhooks into engine events through the API, but the endpoint contract is not
    defined. It is the same kind of contract as the agent hook endpoint (section
    3.1) and probably shares its shape.
-3. **Whether `IProgress<CommandProgress>` is the right mechanism** for sandbox
+2. **Whether `IProgress<CommandProgress>` is the right mechanism** for sandbox
    execution progress. It is idiomatic .NET but is not serialisable, which sits
    awkwardly with the transport-neutral rule if a remote provider adapter is ever
    built.
