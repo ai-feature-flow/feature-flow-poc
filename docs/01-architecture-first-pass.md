@@ -854,6 +854,7 @@ Requirements for A:
 - Windows sandboxes (section 4.7). Hooks are in version 1; the provider is not.
 - Session surfaces B, C and D (section 7.4). Only surface A is in version 1.
 - A feature-flag provider. Not an engine concern in version 1 (section 1.5).
+- A deployment provider. Version 1 delivery is merging the delivery PR, then optionally waiting on a deployment status the code host or CI reports (review 06, S2).
 
 ---
 
@@ -870,7 +871,7 @@ Requirements for A:
 | R7 | Re-plan agent removes or weakens protected steps | Protected flag enforced in the single `applyPatch` path |
 | R8 | Runs stall on human latency | Unbounded durable waits with reminders, never activity timeouts; "stuck run" notification |
 | R9 | Organisation fork drifts from upstream | All organisation behaviour in configuration and providers; contract tests make drift visible. A distribution repository, not a fork, is the default customisation path (section 4.5) |
-| R10 | Concurrent tickets in one repository conflict | Epic integration branch plus per-ticket branches; `scm.merge_base_forward`; serialised merge lock per repository; `max_concurrency` on the `parallel` step (section 6.3) |
+| R10 | Concurrent tickets in one repository conflict | Epic integration branch plus per-ticket branches; `scm.merge_base_forward`; merge lock per **target branch** as a Temporal-native mutex; `max_concurrency` on the `parallel` step (section 6.3) |
 | R11 | A long agent step loses its worker or sandbox and restarts from scratch | Resumable agent steps: WIP commits pushed to the branch, session reference in the artifact store, sandbox re-attachment by idempotency key (section 3.6) |
 | R12 | Non-determinism in .NET workflow code is not caught at runtime | Replay tests in CI mandatory from the first workflow (S8); workflow-code review rule: no `Task.Run`, no wall clock, no unordered collections, no I/O |
 | R13 | A run's cost is unknown after the fact | Tokens, model and compute time recorded per step from the first version (section 5.5) |
@@ -878,3 +879,5 @@ Requirements for A:
 | R15 | A resumed agent step makes no progress and never exhausts its budget | Progress rule: a resume is free only with a new commit or session growth; after 3 consecutive resumes with no progress the next counts as a restart (section 3.7) |
 | R16 | Repository settings go stale mid-run because they were copied into the plan | Each step reads `feature-flow.yaml` from its branch when it starts and records the hash of the resolved manifest (section 5.1.2) |
 | R17 | A check appears for the first time after work is submitted, causing review round trips | Pre-submit checks in interactive sessions: any validator is exposed as an on-demand action (section 7.4) |
+| R18 | A long sandbox command is lost when the worker crashes, even though the sandbox survives | Commands are started and polled, not awaited: `StartCommandAsync` returns a handle and `AttachCommandAsync` re-attaches to a running command (review 06, C1) |
+| R19 | An unreachable hook endpoint denies every tool call, so the agent flails or gives up with a wrong outcome | Unreachable is distinguished from denied: the hook client retries and holds the tool call for a bounded time, then the session stops in a resumable state classified as infrastructure (review 06, C2) |

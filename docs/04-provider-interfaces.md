@@ -15,6 +15,12 @@ result and resume (P3), sandbox checkout, file transfer and progress (P4), prior
 findings as a review input (P5), tracker search and field mapping (P6), and
 moving named pointers from the artifact store to the record store (P7).
 
+**Review 06 applied.** Sandbox commands are **started and polled**, not awaited
+(C1): `StartCommandAsync`, `AttachCommandAsync`, `GetCommandStatusAsync` and
+`CancelCommandAsync` replace `ExecuteAsync`, and `IProgress` is gone. Added
+**events wake, reads confirm** (section 1.3.1) and the **inbound gateway**
+(section 1.3.2). `RecordTriageAsync` added for append-only triage (C4).
+
 Language is C#, per DP2. The interfaces are transport-neutral by rule (section
 4.5 of the architecture document), so a remote provider adapter stays possible
 later even though it is not built in version 1.
@@ -96,6 +102,35 @@ is indistinguishable from a stuck one.
   capability and translates incoming webhooks into engine events through the API.
 - Anything a human does arrives as an API action and becomes an Update.
 
+### 1.3.1 Events wake, reads confirm
+
+Added for review 06 (C5, C6). The general rule for anything asynchronous:
+
+> **Events wake, reads confirm.** Hooks, webhooks and chat callbacks only wake the
+> workflow. The workflow then reads the truth through a short provider call:
+> `GetResultAsync`, `GetRunStatusAsync`, `GetPullRequestAsync`. Human decisions
+> remain Updates through the API.
+
+Consequences:
+
+- An event is never a source of truth. It is a hint that something may have
+  changed.
+- Polling is the fallback when an event is lost, not an error path.
+- This is why `GetResultAsync` does not block (C6): the session-end hook wakes the
+  workflow, and `GetResultAsync` confirms.
+
+### 1.3.2 Inbound gateway
+
+One inbound gateway in the API, not one endpoint per provider. Per provider it:
+
+1. **Verifies the webhook signature.**
+2. **Deduplicates by the remote delivery id.**
+3. **Translates** the payload into an engine event.
+
+Engine events are delivered to the workflow as **Signals that only wake it**. The
+workflow then reads state through the provider (section 1.3.1). Human decisions
+stay Updates through the API.
+
 ### 1.4 Two groups of providers
 
 Added for review 05 (answer 5). The credential broker is swappable but not
@@ -120,7 +155,7 @@ public sealed record SandboxCapabilities(
     bool Docker,
     bool NetworkPolicy,
     bool PersistentAcrossSteps,        // can the sandbox outlive a worker crash (3.6)
-    bool StreamingOutput);             // can ExecuteAsync stream output for heartbeats
+    bool StreamingOutput);             // can GetCommandStatusAsync return incremental output
 
 public interface ISandboxProvider : IProvider {
     Task<ProviderResult<SandboxHandle>> CreateAsync(
@@ -133,8 +168,15 @@ public interface ISandboxProvider : IProvider {
 
     Task<ProviderResult<SandboxHandle>> AttachAsync(string idempotencyKey, CancellationToken ct);
 
-    Task<ProviderResult<CommandResult>> ExecuteAsync(
-        SandboxHandle handle, TierCommand command, IProgress<CommandProgress>? progress, CancellationToken ct);
+    Task<ProviderResult<CommandHandle>> StartCommandAsync(
+        SandboxHandle handle, TierCommand command, string idempotencyKey, CancellationToken ct);
+
+    Task<ProviderResult<CommandHandle>> AttachCommandAsync(SandboxHandle handle, string idempotencyKey, CancellationToken ct);
+
+    Task<ProviderResult<CommandStatus>> GetCommandStatusAsync(
+        CommandHandle command, string? outputCursor, CancellationToken ct);
+
+    Task<ProviderResult<Unit>> CancelCommandAsync(CommandHandle command, CancellationToken ct);
 
     Task<ProviderResult<Unit>> CopyInAsync(SandboxHandle handle, ArtifactRef source, string path, CancellationToken ct);
 
@@ -149,11 +191,17 @@ Notes:
 - `AttachAsync` is the re-attachment path for resumable agent steps (section 3.6).
   A provider without `PersistentAcrossSteps` returns a classified error and the
   step degrades to creating a new sandbox.
-- `ExecuteAsync` covers both agent steps and test tiers. The distinction is the
-  command and its limits, not the method (review 05, answer 3).
-- **Long commands need progress.** `IProgress<CommandProgress>` feeds heartbeats;
-  the prototype lost steps to idle timeouts. A provider without `StreamingOutput`
-  must still report periodic progress, or the step cannot heartbeat.
+- **Commands are started and polled, not awaited** (review 06, C1). A command may
+  run for hours, which would break the "short and bounded" rule and would be lost
+  on a worker crash even when the sandbox survives. `StartCommandAsync` returns a
+  handle; `GetCommandStatusAsync` returns status, exit code and output since a
+  cursor. `AttachCommandAsync` re-attaches to a **running** command by key after a
+  worker crash.
+- `GetCommandStatusAsync` covers both agent steps and test tiers. The distinction
+  is the command and its limits, not the method (review 05, answer 3).
+- `StreamingOutput` now means incremental output through the cursor, not an
+  `IProgress` callback. This also removes the transport-neutral problem that
+  `IProgress` had.
 - File transfer is either mounts declared at creation or `CopyIn`/`CopyOut`.
 - Windows is a capability, not a special case. Version 1 ships no Windows
   provider; the hooks are in place (section 4.7).
@@ -420,6 +468,7 @@ public interface IRecordStoreProvider : IProvider {
     Task<ProviderResult<Unit>> UpsertStepRunAsync(StepRunRecord stepRun, CancellationToken ct);
     Task<ProviderResult<Unit>> AppendTimelineAsync(TimelineEvent evt, CancellationToken ct);
     Task<ProviderResult<Unit>> RecordFindingAsync(FindingRecord finding, CancellationToken ct);
+    Task<ProviderResult<Unit>> RecordTriageAsync(TriageRecord triage, CancellationToken ct);
     Task<ProviderResult<Unit>> RecordDecisionAsync(DecisionRecord decision, CancellationToken ct);
     Task<ProviderResult<Unit>> RecordSteeringAsync(SteeringRecord steering, CancellationToken ct);
     Task<ProviderResult<Unit>> RecordCostAsync(CostRecord cost, CancellationToken ct);
@@ -564,20 +613,18 @@ above:
 |---|---|---|
 | 1 | `ProviderResult<T>` vs exceptions | Keep `ProviderResult<T>` for expected outcomes. Exceptions only for programming errors and bugs; the decorator turns an unexpected exception into an infrastructure error with a distinct reason (section 1) |
 | 2 | Named queries vs query object | Named queries, with the catalogue in the engine in one place (section 9) |
-| 3 | Split `ExecuteAsync` | Keep one method. Agent runtimes and test tiers both run commands; the difference is the command and its limits (section 2) |
+| 3 | Split `ExecuteAsync` | Keep one method. Agent runtimes and test tiers both run commands; the difference is the command and its limits. **Review 06 (C1) then replaced it with start and poll**, so the single method is now `GetCommandStatusAsync` (section 2) |
 | 4 | Provider-to-provider capability dependencies | `Requires` on `ProviderDescriptor`, checked at run-start negotiation. Prefer composition through dependency injection where the dependency is real (sections 1.2, 4, 7) |
 | 5 | Is the credential broker a provider? | Swappable but not step-facing. The catalogue splits into **step providers** and **platform services**; same rules for both (section 1.4) |
 
 ### Still open
 
-Per-method contracts are now written in `docs/05-provider-contracts.md`, which
-carries its own open questions. The two carried forward here:
+Per-method contracts are now written in `docs/05-provider-contracts.md`. Both
+questions carried forward from the first pass are now answered by review 06:
 
-1. **The `InboundEvents` shape.** Section 1.3 says a provider translates incoming
-   webhooks into engine events through the API, but the endpoint contract is not
-   defined. It is the same kind of contract as the agent hook endpoint (section
-   3.1) and probably shares its shape.
-2. **Whether `IProgress<CommandProgress>` is the right mechanism** for sandbox
-   execution progress. It is idiomatic .NET but is not serialisable, which sits
-   awkwardly with the transport-neutral rule if a remote provider adapter is ever
-   built.
+1. **The `InboundEvents` shape** — one inbound gateway in the API: verify the
+   signature, deduplicate by remote delivery id, translate to an engine event.
+   Events are Signals that only wake the workflow (section 1.3.2).
+2. **`IProgress<CommandProgress>`** — removed. Commands are started and polled
+   (C1), so incremental output comes through a cursor on
+   `GetCommandStatusAsync`, which is serialisable.

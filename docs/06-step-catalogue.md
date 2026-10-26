@@ -1,14 +1,22 @@
 # Engine step catalogue
 
-Status: first pass. Date: 2026-10-26. Deliverable 4 of `brief.md` section 11.
-Companion to `docs/01-architecture-first-pass.md` section 7, which holds the
-grouping, and to `docs/04-provider-interfaces.md` and
+Status: first pass, revised for review 06. Date: 2026-10-26. Deliverable 4 of
+`brief.md` section 11. Companion to `docs/01-architecture-first-pass.md` section 7,
+which holds the grouping, and to `docs/04-provider-interfaces.md` and
 `docs/05-provider-contracts.md`, which hold the provider contracts these steps
 call.
 
 **Scope.** Every step gets a full contract. Where a step is thin — a direct
 wrapper over one provider call — the contract is short and says so. Where a step
 carries engine logic, the contract states that logic.
+
+**Review 06 applied.** `agent.review` dropped (one `agent.run`, with
+`write_access` as the mechanism); `scm.revert` always gates; the merge lock is per
+target branch as a Temporal-native mutex; `test.run_tiers` takes a list of tiers;
+`fix.verify` allows "regression test not applicable" with a reason;
+`delivery.deploy` is merging the delivery PR, with no deployment provider in
+version 1; `human.gate` evaluates the `approval` policy, not `steering`. Added
+`notify.send` and `tracker.comment`.
 
 ---
 
@@ -93,11 +101,13 @@ Contract details:
 - **The result comes from `GetResultAsync`**, not from the session-end hook. The
   hook is a signal (review 05, P3).
 
-### 2.2 `agent.review`
+### 2.2 Write access is a mechanism, roles are content
 
-Thin wrapper over `agent.run` with `write_access: none` and a review role. Listed
-separately because the plan routes to it by name and because the write-access
-floor is part of its contract.
+`write_access` (`none`, `branch`, `repository`) is enforced by the engine: by the
+sandbox, and by the hook endpoint on each tool call (section 1.4). **Roles are
+workflow content** (section 1.5), so there is no separate `agent.review` step — a
+reviewer is `agent.run` with `write_access: none`, which keeps the floor visible in
+the plan (review 06, answer 1).
 
 ---
 
@@ -124,8 +134,10 @@ Contract details:
 
 - The decision arrives as a **Temporal Update** carrying the gate id and plan
   revision. The validator rejects a stale or invalid request (section 5.4).
-- The API authenticates the human, evaluates the `steering` policy, and writes the
-  decision record before sending the update (DP8).
+- The API authenticates the human and evaluates the **`approval`** policy, then
+  writes the decision record before sending the update (DP8). The `steering`
+  policy is for amendments, overrides, extra attempts and abort — not for gate
+  decisions (review 06, S6).
 - Chat approvals arrive the same way: the chat provider's inbound endpoint
   translates the answer into an API decision call.
 
@@ -340,8 +352,11 @@ Merges the integration base forward into a ticket branch (section 6.3).
 
 Contract details:
 
-- **Merge lock.** Merges into an integration branch are serialised per repository
-  (section 6.3). The step acquires the lock, merges, releases.
+- **Merge lock, per target branch** (review 06, S3). The lock is keyed by
+  repository **plus branch**, so integration branches of different epics in the
+  same repository do not conflict. Implemented as a **Temporal-native mutex** — a
+  lock workflow per target branch — not an external lock. The step acquires,
+  merges, releases.
 - **Merge queue.** When the target branch requires a queue, `MergeAsync` is
   refused, so the step uses `EnqueueMergeAsync` and waits by polling
   `GetPullRequestAsync` or by inbound event.
@@ -361,7 +376,9 @@ Contract details:
 | Limits | 30s, attempts 3 |
 
 Contract detail: serves the revert option of a partial delivery (section 7.3). It
-opens revert PRs; it does not merge them without a gate.
+opens revert PRs and **always gates** — it never merges automatically after
+approval (review 06, answer 2). Reverts usually target a default branch, which is a
+safety floor anyway.
 
 ---
 
@@ -427,11 +444,16 @@ Runs the repository's declared test tiers.
 
 Contract details:
 
+- **One step takes a list of tiers** (review 06, answer 4). Tiers with the same
+  execution target share a sandbox; results are reported per tier. A
+  Docker-dependent tier delegated to CI runs through the CI provider **inside the
+  same step**, so the plan sees one outcome for the whole set.
 - **Execution target** comes from `feature-flow.yaml` (section 5.1.1). A
-  Docker-dependent tier defaults to **CI delegation** (Q2); the step then routes to
-  `ci.trigger` and `ci.read_results` instead of running in the sandbox.
+  Docker-dependent tier defaults to **CI delegation** (Q2).
 - The step reads `feature-flow.yaml` from its branch when it starts, so a tier
   change mid-run is picked up (section 5.1.2).
+- Commands are started and polled (review 06, C1), so a long tier survives a
+  worker crash when the sandbox does.
 
 ### 7.5 `test.run_composition`
 
@@ -565,7 +587,11 @@ fixed or declined with a recorded reason**. Not "zero findings" (D8).
 
 Contract details:
 
-- A fix must **add a regression test**. Without one the step fails.
+- A fix must **add a regression test**. Without one the step fails — **unless the
+  plan records "regression test not applicable" with a reason** (review 06, S1).
+  Some findings cannot sensibly have one: log message content, OpenAPI metadata,
+  documentation. The verification review judges whether the reason is acceptable;
+  an unjustified reason fails the step.
 - The fix is checked **against the original finding on the full diff**, not only on
   the changed lines. The prototype's re-review reported no issues after fixes that
   had introduced new ones.
@@ -599,6 +625,26 @@ not block inside a provider call.
 
 All are idempotent by content hash or by key from run, step and target.
 
+### 11.3 `notify.send`
+
+Added for review 06 (S4). Workflows need to tell humans things that are not
+decisions: "epic delivered", "spec ready for review".
+
+| Element | Detail |
+|---|---|
+| Form | Activity |
+| Scope | any |
+| Inputs | `channel`, `message_ref`, `audience` |
+| Requires | Notifications `Channels[channel]` |
+| Outcomes | `completed`, `failed` |
+| Idempotency | Key from run, step, channel, message hash |
+| Limits | 30s, attempts 3 |
+| Error overrides | A notification failure is **infrastructure** and retries. It never fails the run |
+| Audit | Notification sent |
+
+Contract detail: this is `INotificationsProvider.SendAsync` as a step. It is
+distinct from `human.gate`, which waits for an answer.
+
 ---
 
 ## 12. Delivery steps
@@ -622,7 +668,7 @@ Contract detail: order comes from plan data (section 7.3).
 | Form | Child workflow, one per repository (DP3) |
 | Scope | delivery |
 | Inputs | `repository`, `environment`, `version` |
-| Requires | Whatever the deployment system needs |
+| Requires | Code host `PullRequest`. `CheckStatus` or CI for the optional deployment-status wait |
 | Outcomes | `completed`, `failed`, `blocked` |
 | Idempotency | By repository and run. The delivery ledger records what already happened |
 | Limits | Step-defined |
@@ -630,6 +676,10 @@ Contract detail: order comes from plan data (section 7.3).
 
 Contract details:
 
+- **Version 1: delivery is merging the repository's delivery PR**, then optionally
+  `wait.for_state` on a deployment status the code host or CI reports (review 06,
+  S2). Many organisations deploy on merge. **There is no deployment provider in
+  version 1**; add one later only if workflows need to trigger deploys directly.
 - **No compensating action.** A7 holds: the engine triggers and gates deploys; it
   does not perform or roll them back (section 7.3).
 - The workflow reads the delivery ledger through an activity, never directly.
@@ -672,9 +722,11 @@ are the only path (section 4.6).
 | `tracker.update` | Activity | `issue_ref`, `spec` | `completed`, `failed` | Last write wins |
 | `tracker.transition` | Activity | `issue_ref`, `to_state` | `completed`, `blocked` | Idempotent: transitioning to the current state succeeds |
 | `tracker.link` | Activity | `from`, `to`, `link_type` | `completed`, `failed` | Idempotent: an existing link of the same type succeeds |
+| `tracker.comment` | Activity | `issue_ref`, `body_ref` | `completed`, `failed` | Key from run, step, issue, body hash |
 
 All: 30s, attempts 3. Field mapping is provider configuration, not code
-(review 05, P6).
+(review 05, P6). `tracker.comment` was added for review 06 (S5), because the
+provider has `CommentAsync` but no step used it.
 
 ---
 
@@ -684,7 +736,7 @@ All: 30s, attempts 3. Field mapping is provider configuration, not code
 
 | Brief area | Steps |
 |---|---|
-| Agents | `agent.run`, `agent.review` |
+| Agents | `agent.run` (with `write_access`; roles are workflow content) |
 | Humans | `human.gate`, `human.session`, `policy.auto_approve` |
 | Composition | `run.child`, `run.wait`, `parallel` |
 | Re-planning | `plan.replan`, `plan.validate` |
@@ -699,26 +751,25 @@ All: 30s, attempts 3. Field mapping is provider configuration, not code
 | Waiting | `wait.for_state` |
 | Artifacts | `artifact.bundle`, `artifact.validate`, `artifact.import`, `artifact.publish` |
 | Multi-repository delivery | `delivery.deploy_order`, `delivery.deploy`, `delivery.gate`, `delivery.report` |
-| Tracker | `tracker.create`, `tracker.update`, `tracker.transition`, `tracker.link` |
+| Tracker | `tracker.create`, `tracker.update`, `tracker.transition`, `tracker.link`, `tracker.comment` |
+| Notifications | `notify.send` |
 
 ---
 
 ## 15. Open questions
 
-1. **`agent.review` as a separate kind.** It is a wrapper over `agent.run` with a
-   write-access floor. Keeping it separate makes the floor visible in the plan and
-   in review; the alternative is one `agent.run` with the role carrying the floor.
-2. **Whether `scm.revert` should merge automatically** after a human approves the
-   revert, or always stop at a gate. Today it opens PRs and gates.
-3. **The merge lock's scope.** Section 6.3 serialises merges into an integration
-   branch per repository. Whether the lock is per repository or per epic is not
-   settled; per repository is the safer default but may over-serialise.
-4. **Whether `test.run_tiers` should be one step or one step per tier.** One step
-   is simpler and lets tiers share a sandbox; per tier gives finer routing and
-   per-tier execution targets.
-5. **`wait.for_state` versus `ci.wait_checks`.** The latter is a special case of
-   the former. Both are listed because the plan routes to them by name, but one
-   could be dropped.
-6. **Attempt allowances per step kind.** Section 3.7 says the default is by step
-   kind. The defaults used here (3 for most, 2 for planning and triage) are a
-   proposal, not a decision.
+All six questions from the first pass were answered in review 06 and are applied
+above:
+
+| # | Question | Answer |
+|---|---|---|
+| 1 | `agent.review` as a separate kind | **Dropped.** One `agent.run`; the plan states `write_access: none`. Roles are workflow content; the engine enforces `write_access` (section 2.2) |
+| 2 | Should `scm.revert` merge automatically | **No. Always gate.** Reverts usually target a default branch, which is a safety floor anyway (section 6.6) |
+| 3 | Merge lock scope | **Per target branch** (repository plus branch), as a Temporal-native mutex. Integration branches of different epics do not conflict (section 6.5) |
+| 4 | `test.run_tiers` one step or per tier | **One step taking a list of tiers.** Tiers with the same execution target share a sandbox; results are reported per tier; a CI-delegated tier runs through the CI provider inside the same step (section 7.4) |
+| 5 | `wait.for_state` vs `ci.wait_checks` | **Keep both.** `ci.wait_checks` carries specific semantics: late-registering checks, required check names, a grace period before deciding there is no CI (section 7.2) |
+| 6 | Default attempt allowances | Accepted as starting values. Tune from the recorded attempt and cost data |
+
+### Still open
+
+None carried forward.

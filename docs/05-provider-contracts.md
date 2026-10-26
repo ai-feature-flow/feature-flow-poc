@@ -1,13 +1,21 @@
 # Provider method contracts
 
-Status: first pass. Date: 2026-10-26. Deliverable 2 of `brief.md` section 11.
-Companion to `docs/04-provider-interfaces.md`, which holds the signatures. This
-document holds the contract for each method.
+Status: first pass, revised for review 06. Date: 2026-10-26. Deliverable 2 of
+`brief.md` section 11. Companion to `docs/04-provider-interfaces.md`, which holds
+the signatures. This document holds the contract for each method.
 
 **Scope.** Every method gets: required capability, idempotency strategy, timeout
 and heartbeat, error codes, and semantics where the signature alone is ambiguous.
 Inputs and outputs are given by the signatures; this document states what they
 *mean* and what the caller may rely on.
+
+**Review 06 applied.** Sandbox commands are **started and polled**, not awaited
+(C1): `StartCommandAsync`, `AttachCommandAsync`, `GetCommandStatusAsync`,
+`CancelCommandAsync` replace `ExecuteAsync`, and `IProgress` is gone. The hook
+endpoint distinguishes **unreachable from denied** (C2). `MergeResult` states
+whether the branch changed (C3). Findings are keyed by scope plus fingerprint and
+triage is **append-only** (C4). The inbound gateway is defined (C5), and
+`GetResultAsync` does not block (C6).
 
 ---
 
@@ -90,7 +98,10 @@ This is why `FindByMarkerAsync` exists on the code host and why sandbox
 |---|---|---|---|---|---|---|
 | `CreateAsync` | — | `key` | 5 min | Yes | `conflict` (already exists), `capability_missing` (no provider for the requested `Os`) | Creates the environment and performs the checkout. On `timeout`, call `AttachAsync` with the same key before retrying |
 | `AttachAsync` | `PersistentAcrossSteps` | `key` | 30s | No | `not_found` (no sandbox for this key) | Re-attaches to a sandbox that outlived a worker crash. Returns `not_found` rather than creating one; the step decides |
-| `ExecuteAsync` | — | none | Step-defined | Yes | `timeout`, `partial` | Runs one command. Progress reports feed heartbeats. A provider without `StreamingOutput` must still report periodic progress or the step cannot heartbeat |
+| `StartCommandAsync` | — | `key` | 30s | No | `validation_failed` (unknown command) | Starts a command and returns a handle. **Does not wait for it to finish** (review 06, C1) |
+| `AttachCommandAsync` | `PersistentAcrossSteps` | `key` | 30s | No | `not_found` | Re-attaches to a **running** command by key after a worker crash. This is what keeps a long command from being lost when the sandbox survives |
+| `GetCommandStatusAsync` | — | none | 15s | No | `not_found` | Returns status, exit code, and output since `outputCursor`. Non-blocking. The step polls it behind a durable timer |
+| `CancelCommandAsync` | — | `key` | 30s | No | `not_found` | Idempotent. Cancelling a finished command succeeds |
 | `CopyInAsync` | — | none | 5 min | Yes | `not_found` (source artifact) | Places an input artifact into the sandbox |
 | `CopyOutAsync` | — | none | 5 min | Yes | `not_found` (path) | Returns an `ArtifactRef`; the content goes to the artifact store, not to workflow state |
 | `DisposeAsync` | — | `key` | 5 min | Yes | — | Idempotent: disposing twice succeeds. A sandbox that outlives a worker crash is **not** disposed on worker failure |
@@ -99,8 +110,14 @@ Notes:
 
 - `CreateAsync` takes the credential from the broker, not from configuration. The
   provider never reads credentials itself.
-- `ExecuteAsync` covers agent steps and test tiers alike. The difference is the
-  command and its limits, not the method.
+- **Commands are started and polled, not awaited** (review 06, C1). A command may
+  run for hours; awaiting it inside one call would break the "short and bounded"
+  rule and would lose the command on a worker crash even when the sandbox
+  survives.
+- `GetCommandStatusAsync` covers agent steps and test tiers alike. The difference
+  is the command and its limits, not the method.
+- `StreamingOutput` means incremental output through the cursor. A provider
+  without it returns output only at completion, which is conformant but coarser.
 
 ---
 
@@ -137,8 +154,23 @@ The engine HTTP contract the runtime calls from inside the sandbox.
 - Token and cost events arrive here, which is how per-step cost is recorded
   without parsing transcripts (section 5.5).
 - Heartbeats arrive here, so a stalled agent is distinguishable from a slow one.
-- A hook call that fails does not fail the step. The engine records the gap; a
-  policy check that cannot be evaluated is treated as a deny.
+- **Events wake, reads confirm** (section 1.3.1 of the interfaces document). The
+  session-end hook wakes the workflow; `GetResultAsync` confirms the outcome.
+
+### 3.1.1 Unreachable is not denied
+
+Added for review 06 (C2). If the engine is unreachable — network drop, engine
+restart — treating that as a deny would deny every tool call, and the agent would
+flail or give up with a wrong outcome. That repeats the prototype's network-drop
+failure in a new form.
+
+| Case | Behaviour |
+|---|---|
+| **Unreachable** | The hook client in the sandbox retries with backoff and **holds the tool call** — the agent pauses — for a bounded time. Past that, the session stops in a resumable state and the step classifies it as **infrastructure** |
+| **Denied** | Only when the engine answers deny, or when the engine itself cannot evaluate the policy. The tool call is skipped and reported to the runtime |
+
+So: a hook call that fails does not fail the step, and an unreachable engine is
+never a policy decision.
 
 ---
 
@@ -164,7 +196,7 @@ The engine HTTP contract the runtime calls from inside the sandbox.
 
 | Method | Requires | Idempotency | Timeout | Errors | Semantics |
 |---|---|---|---|---|---|
-| `MergeBaseForwardAsync` | `PullRequest` | none | 30s | `conflict` | Merges the integration base forward into a ticket branch. A `conflict` routes to an agent step that resolves it, not to a human first (section 6.3) |
+| `MergeBaseForwardAsync` | `PullRequest` | none | 30s | `conflict` | Merges the integration base forward into a ticket branch. **`MergeResult` must state whether the branch changed, and the new head SHA** (review 06, C3), because review 03 decided checks rerun only if the merge changed the branch. A `conflict` routes to an agent step that resolves it, not to a human first (section 6.3) |
 | `MergeAsync` | `PullRequest` | `key` | 30s | `conflict`, `rejected` (branch protection), `not_found` | `rejected` means protection or policy refused it. The method must declare the required `MergeMethods` capability |
 | `EnqueueMergeAsync` | `MergeQueue` | `key` | 30s | `rejected`, `not_found` | Enqueues and returns. **It does not wait** — the engine polls `GetPullRequestAsync` or receives an inbound event |
 | `GetBranchProtectionAsync` | `BranchProtection` | none | 15s | `not_found` | Read-only. Used to decide whether a human must approve on the code host |
@@ -281,7 +313,8 @@ Notes:
 | `UpsertRunAsync` | By run id | 15s | — | Last write wins |
 | `UpsertStepRunAsync` | By step run id | 15s | — | Last write wins |
 | `AppendTimelineAsync` | none | 15s | — | **Append-only.** Never updated or deleted |
-| `RecordFindingAsync` | By fingerprint | 15s | `conflict` (already triaged) | Triaged once (D8). A declined finding stays declined until its fingerprint changes |
+| `RecordFindingAsync` | By **scope plus fingerprint** | 15s | — | Records the finding. Keyed by run, scope, repository and fingerprint: the same fingerprint can legitimately appear at ticket and epic scope, and in later runs (review 06, C4) |
+| `RecordTriageAsync` | none | 15s | — | **Append-only.** One `TriageRecord` per decision, with a supersedes link. The current triage is the latest record |
 | `RecordDecisionAsync` | By decision id | 15s | — | Append-only in practice: a decision is not revised |
 | `RecordSteeringAsync` | By steering id | 15s | — | Append-only. Audited |
 | `RecordCostAsync` | By step run id | 15s | — | Accumulates per step run |
@@ -294,9 +327,16 @@ Notes:
 
 - Relational, queried through the API (Q3). This is the long-term audit record
   (Q13).
+- **Findings are keyed by scope plus fingerprint**, and **triage is append-only**
+  (review 06, C4). A finding is still triaged once in effect (D8) — a declined
+  finding stays declined until the code its fingerprint points at changes — but
+  the history of decisions is kept rather than rejected with `conflict`.
 - The workflow reads the delivery ledger through an activity, never directly
   (section 7.3).
 - `org_id` is part of the key from version 1 (Q15).
+- **Query catalogue ownership** (review 06, C7): a distribution may add
+  **read-only** named queries over published views, shipped in its own package. No
+  third-party schema changes in version 1.
 
 ---
 
@@ -371,19 +411,18 @@ the submission, and the human is the accountable actor in the audit record.
 
 ## 15. Open questions
 
-1. **The `InboundEvents` endpoint contract.** Section 1.3 of the interfaces
-   document says a provider translates incoming webhooks into engine events
-   through the API, but the endpoint is not defined. It is the same kind of
-   contract as the agent hook endpoint (section 3.1 here) and probably shares its
-   shape.
-2. **`IProgress<CommandProgress>` for sandbox execution.** Idiomatic .NET but not
-   serialisable, which sits awkwardly with the transport-neutral rule if a remote
-   provider adapter is ever built.
-3. **Whether `GetResultAsync` should block until the agent finishes.** Today it
-   does not: the step polls it. The alternative is a completion signal from the
-   session-end hook, which would make the hook a source of truth after all.
-4. **Whether `RecordFindingAsync` should reject a re-triage** or record it as a
-   new entry with a superseding link. Today it returns `conflict`.
-5. **Query catalogue ownership.** Named queries live in the engine, but a
-   distribution repository may need its own. Whether third parties can add named
-   queries is not settled.
+All five questions from the first pass were answered in review 06 and are applied
+above:
+
+| # | Question | Answer |
+|---|---|---|
+| 1 | The `InboundEvents` endpoint contract | One inbound gateway in the API: verify the signature, deduplicate by remote delivery id, translate to an engine event. Events are Signals that only wake the workflow (interfaces section 1.3.2) |
+| 2 | `IProgress<CommandProgress>` | Removed. Commands are started and polled, so incremental output comes through a cursor on `GetCommandStatusAsync`, which is serialisable (section 2) |
+| 3 | Should `GetResultAsync` block | No. The session-end hook wakes the workflow; `GetResultAsync` confirms; polling is the fallback if the event is lost (section 3) |
+| 4 | Reject a re-triage, or append | **Append-only.** One `TriageRecord` per decision with a supersedes link; the current triage is the latest record (section 9) |
+| 5 | Query catalogue ownership | A distribution may add **read-only** named queries over published views, shipped in its own package. No third-party schema changes in version 1 (section 9) |
+
+### Still open
+
+None carried forward. The general rule that answered several of these — **events
+wake, reads confirm** — is in section 1.3.1 of the interfaces document.
