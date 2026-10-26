@@ -751,7 +751,8 @@ Code host merge queues (GitHub merge queue, GitLab merge trains):
 
 ## 7. Engine step catalogue (first grouping)
 
-Grouped by family. Full contracts are the next deliverable; this is the shape.
+Grouped by family. **Full contracts: `docs/06-step-catalogue.md`.** This section
+holds the grouping and the invariants; that document holds each step's contract.
 
 | Family | Steps |
 |---|---|
@@ -769,12 +770,12 @@ Grouped by family. Full contracts are the next deliverable; this is the shape.
 | Waiting | `wait.for_state` (PR, check, tracker issue) |
 | Artifacts | `artifact.bundle`, `artifact.validate`, `artifact.import`, `artifact.publish` |
 | Delivery | `delivery.deploy_order`, `delivery.deploy`, `delivery.gate`, `delivery.report` |
-| Sessions | `session.prepare`, `session.wait`, `session.validate` (section 7.4) |
+| Human sessions | `human.session` (section 7.4) |
 | Tracker | `tracker.create`, `tracker.update`, `tracker.transition`, `tracker.link` |
 
 Steering is not a step. It is a control-plane capability that produces a plan patch or an attempt grant.
 
-Every step contract states: inputs, required capabilities, outcomes, idempotency strategy, timeouts and heartbeat, error classification overrides, artifacts in and out, scope, audit events, and — for agent steps — the resume strategy (section 3.6).
+Every step contract states: inputs, required capabilities, outcomes, idempotency strategy, timeouts and heartbeat, error classification overrides, artifacts in and out, scope, audit events, and — for agent steps — the resume strategy (section 3.6). See `docs/06-step-catalogue.md`.
 
 ### 7.1 Idempotency
 
