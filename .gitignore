@@ -1,0 +1,10 @@
+# Temporary files
+*.tmp
+.commitmsg.tmp
+
+# Build output
+bin/
+obj/
+
+# Local run state
+.feature-flow/
