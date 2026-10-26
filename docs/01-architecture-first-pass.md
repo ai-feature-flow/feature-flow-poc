@@ -431,7 +431,11 @@ The provider classifies, because it knows its system. The step may override, bec
 
 ### 4.4 Provider catalogue
 
-Temporal platform, worker platform, sandbox, tracker, code host, CI, agent runtime, review, artifact store, record store, secrets, notifications, credential broker. Each with a contract test suite (S5) so a new provider can prove conformance without the engine changing.
+Temporal platform, worker platform, sandbox, tracker, code host, CI, agent runtime, review, artifact store, record store, secrets, notifications, credential broker, session surface. Each with a contract test suite (S5) so a new provider can prove conformance without the engine changing.
+
+**Interface definitions: `docs/04-provider-interfaces.md`.** That document gives
+each provider its capability record and method signatures. Per-method contracts
+follow once the shape is agreed.
 
 ### 4.5 Provider packaging (decided)
 
