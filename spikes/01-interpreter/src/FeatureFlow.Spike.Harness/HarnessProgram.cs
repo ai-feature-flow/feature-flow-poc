@@ -28,6 +28,7 @@ public static class HarnessProgram
             "slots" => await SlotsAsync(client, queue, int.Parse(Arg(args, "--concurrency") ?? "8")),
             "inspect" => await InspectAsync(client, Arg(args, "--id") ?? ""),
             "patch" => await PatchTests.RunAsync(client, queue),
+            "replay" => await ReplayTests.RunAsync(client, args),
             _ => Help(),
         };
     }
