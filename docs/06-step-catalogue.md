@@ -77,7 +77,7 @@ the runtime runs in the sandbox and its hooks call back to the engine.
 |---|---|
 | Form | Activity (agent worker) |
 | Scope | any |
-| Inputs | `role`, `task_ref` (artifact), `tools`, `write_access` (`none`, `branch`, `repository`), `limits`, `resume_strategy`, `capabilities` (queue routing, S1) |
+| Inputs | `role`, `task_ref` (artifact), `write_access` (optional **tightening** only), `limits`, `resume_strategy` |
 | Requires | Sandbox `Os[target]`, agent runtime. `Hooks` optional; `SessionResume` optional |
 | Outcomes | `completed`, `blocked`, `failed`, `attempts_exhausted`, `replan_requested` |
 | Idempotency | Key from run, step and stable inputs. On retry: `AttachAsync` by key, else create; resume the session by reference |
@@ -98,6 +98,16 @@ Contract details:
 - **Write access** is enforced twice: by the sandbox (what the role can reach) and
   by the hook endpoint on each tool call (section 1.4). A reviewer role cannot
   change the repository.
+- **`write_access`, `tools` and `capabilities` come only from the role** (brief 2;
+  review 10 A1). `tools` and `capabilities` were removed from inputs. A step may
+  **tighten** `write_access` — `repository` to `branch`, `branch` to `none` — and
+  never relax it; validation compares the step's value against the role's and
+  rejects any move in the other direction. The reason is an escalation path: an
+  agent may not `replace_role`, but it may `replace_inputs` or insert a new
+  `agent.run`, and with these settings in inputs it could grant itself
+  `repository` access and any tool list. Keeping the floor visible in the plan
+  (review 06, answer 1) is preserved: the step still states `write_access`, it
+  just cannot exceed the role.
 - **The result comes from `GetResultAsync`**, not from the session-end hook. The
   hook is a signal (review 05, P3).
 
@@ -218,7 +228,14 @@ Contract detail: `replan_parent` carries a plan patch for the parent, applied
 through the same `applyPatch` (section 3.4). This is how discovery inside a ticket
 changes the epic.
 
-### 4.2 `run.wait`
+### 4.2 `run.wait` — reserved, not in version 1
+
+**Removed from the version 1 workflow language** (brief 2; review 10, answer to
+the `run.wait` versus `parallel` question). `parallel` with `run.child` branches
+covers every case the worked examples raise, and no example needed `run.wait`.
+It is **reserved**: the contract below is kept so it can return with a worked
+example that needs it, and so `docs/06` stays the single source of truth for what
+exists.
 
 Waits for one or more child runs.
 

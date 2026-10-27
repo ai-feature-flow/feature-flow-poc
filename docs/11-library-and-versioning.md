@@ -97,12 +97,35 @@ organisation content.** They are different problems.
 | Concern | Mechanism | Why |
 |---|---|---|
 | Distributing a versioned, immutable, content-addressed bundle with dependencies | **NuGet package** (`.nupkg`) | The engine is .NET (Q1). Providers are already NuGet (Q7). One toolchain, one feed, one versioning scheme. Semantic versioning, dependency ranges and integrity hashes come free |
-| An organisation adding or overriding content without building a package | **A directory in the distribution repository** | An organisation editing a prompt should not need a packaging pipeline. The distribution repository already exists (Q7) |
+| An organisation adding or overriding content without building a package | **A directory in the distribution repository, published to the artifact store** | An organisation editing a prompt should not need a packaging pipeline. The distribution repository already exists (Q7) |
 
 The overlay directory has the same layout as an extracted package and is loaded
-as if it were a package named `org/<org-name>` at version `0.0.0-local`. It is
-built into the worker image at deployment time, so at runtime there is no
-difference between the two: both are resolved packages in the lock.
+as if it were a package named `org/<org-name>` at version `0.0.0-local`.
+
+### 2.1 Content lives in the artifact store, not the worker image
+
+Review 10 A8, decided by the product owner 2026-10-27. The second draft said the
+overlay was "built into the worker image". That breaks the prototype's own lesson:
+fixing a broken check prompt and applying it to a running run would need an image
+build and a worker deploy, and in-flight workers on the old image could not
+resolve the new hash at all.
+
+> **Library content, overlay included, is published to the artifact store by
+> content hash when the distribution repository merges. Workers resolve by hash
+> from the lock. Images carry the engine and providers, not content.**
+
+| | Content in the image | Content in the artifact store |
+|---|---|---|
+| Fixing a check prompt mid-run | Image build plus worker deploy | Publish, then a lock entry |
+| An in-flight worker resolving new content | Cannot; it has the old image | Yes; it resolves by hash |
+| Rollback | Redeploy | Point the lock at the old hash |
+
+A mid-run override is then a lock entry plus content that **already exists**, with
+no redeploy. That is what makes L8 work as the prototype needed it to.
+
+**Publish step.** A step in the distribution repository's pipeline writes content
+to the artifact store by hash (review 10, answer to the overlay build question).
+It is the same store the engine already uses, so no new infrastructure.
 
 **Rejected: a bespoke archive format.** It would need its own versioning,
 integrity, dependency resolution and tooling for no benefit the .NET ecosystem
@@ -210,19 +233,39 @@ role mapping or policy. Additions only.
 `.feature-flow/` is reserved in `docs/01` 5.1.1 and unused in version 1. This
 brief gives it its first use: repository-added skills and checks.
 
+**One repository file** (review 10 B10). The second draft added a second file,
+`.feature-flow/library.yaml`, alongside `feature-flow.yaml`. Two files for one
+repository's configuration is the "settings conflicted" shape the prototype
+already failed on. The library section goes **in** `feature-flow.yaml`:
+
 ```yaml
-# .feature-flow/library.yaml
+# feature-flow.yaml
 apiVersion: feature-flow/v1
-kind: RepositoryLibrary
-template: feature-flow-default:templates/ticket-delivery
-adds:
-  skills:
-    - name: acme-api-conventions
-      path: .feature-flow/skills/acme-api-conventions.yaml
-  checks:
-    - name: acme-openapi-lint
-      path: .feature-flow/checks/acme-openapi-lint.yaml
+kind: Repository
+
+# ... existing sections: environment, setup, testTiers, staticAnalysis, ci, branches, merge
+
+library:
+  default_template: feature-flow-default:templates/ticket-delivery
+  adds:
+    skills:
+      - name: acme-api-conventions
+        path: .feature-flow/skills/acme-api-conventions.yaml
+    checks:
+      - name: acme-openapi-lint
+        path: .feature-flow/checks/acme-openapi-lint.yaml
 ```
+
+`.feature-flow/` then holds only the **content files** the section references.
+
+| Question | Answer |
+|---|---|
+| Who chooses the template? | The repository names a **default**; the run may choose another, **allowed by the organisation** |
+| When are added skills and checks resolved? | Into the **lock** at run start, not read per step |
+
+Resolving into the lock rather than per step is what keeps them auditable: the
+run records the exact hashes it used, and a later change to the repository does
+not silently alter what a running run resolves.
 
 A repository that tries to override a task or a role is a **validation error at
 run start**, not a silent override. That is the same rule `docs/07` applies to
@@ -262,6 +305,24 @@ changes:
 | Does it change the lock? | Yes. The lock gains an override entry with old and new hash |
 | Is it audited? | Yes: actor, reason, timestamp, old hash, new hash, and the step it applies from |
 | May it use a newer package version? | Yes, **if** it is in the distribution repository (review 09, answer 8). Recorded with both hashes |
+
+### 6.2.1 Who may make an override
+
+Review 10 A9. The second draft did not say.
+
+| Actor | May |
+|---|---|
+| A human with the `steerer` or `admin` role | Apply an override. Audited |
+| An agent | **Propose** one. It becomes a **pending human decision**, exactly as E2 does for a patch touching protected content |
+| Anyone else | No |
+
+An override of content used by a **protected step** is **allowed** — that is the
+prototype's fix case, where a broken check prompt had to be corrected on a
+running run. But the decision request **shows that it affects a protected step**,
+so the human approving it knows what they are approving.
+
+This is the same shape as E2: an agent is never silently refused and never
+silently trusted. It proposes; a human decides; the decision is recorded.
 
 ### 6.3 Why this is not a patch operation
 

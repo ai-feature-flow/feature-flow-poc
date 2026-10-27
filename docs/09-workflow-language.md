@@ -31,6 +31,25 @@ One fact lives in one place. This is what review 09 A1 asked for.
 Naming convention: **snake_case everywhere**, matching `docs/06` (`task_ref`,
 `write_access`, `max_concurrency`, `context_refs`, `pr_ref`). No camelCase.
 
+**The boundary** (review 10 B7). "Everywhere" was too strong, and `docs/07`
+configuration is camelCase throughout. The rule is by document family:
+
+| Family | Convention | Examples |
+|---|---|---|
+| Plans, patches, library content, artifact schemas | **snake_case** | `task_ref`, `write_access`, `tier_tags`, `base_revision`, `resume_at` |
+| Configuration (`docs/07`) | camelCase, unchanged | `roleMapping`, `agentRuntime`, `hardCeiling`, `minCount` |
+
+Configuration keeps camelCase because it is YAML consumed by .NET binding, it is
+already written and reviewed across three profiles, and renaming it would touch
+every installation file for no functional gain. The two families meet at
+`policy.replan.allowed_roles` (section 11.0), which is configuration and so is
+camelCase, and at `roleMapping`, which is configuration referencing library
+content.
+
+Within the plan and library family, the second draft's camelCase is fixed:
+`artifactTypes` becomes `artifact_types`, `schemaVersion` is dropped entirely
+(review 10, answer: `apiVersion` already carries the plan schema version).
+
 ---
 
 ## 2. Concepts
@@ -69,7 +88,7 @@ owns the contracts.
 |---|---|
 | Agent | `agent.run` |
 | Human | `human.gate`, `human.session`, `policy.auto_approve` |
-| Composition | `run.child`, `run.wait`, `parallel` |
+| Composition | `run.child`, `parallel` |
 | Planning | `plan.replan`, `plan.validate` |
 | Source control | `scm.create_branch`, `scm.merge_base_forward`, `scm.open_pr`, `scm.update_pr`, `scm.merge`, `scm.revert` |
 | CI | `ci.trigger`, `ci.wait_checks`, `ci.read_results` |
@@ -86,6 +105,12 @@ owns the contracts.
 
 Steering is not a step. It is a control-plane capability that produces a patch or
 an attempt grant (`docs/01` section 7).
+
+**`run.wait` is not in the version 1 language** (review 10, answer). It was in the
+second draft's enum but unused in every worked example — `parallel` with
+`run.child` branches covers every case the examples raise. It is removed from the
+schema enum and marked **reserved** in `docs/06`. If a worked example later needs
+it, it comes back with that example.
 
 ---
 
@@ -125,7 +150,6 @@ it.
 | `human.session` | `completed`, `rejected` |
 | `policy.auto_approve` | `approved`, `not_approved` |
 | `run.child` | `completed`, `failed`, `replan_parent`, `attempts_exhausted` |
-| `run.wait` | `completed`, `any_failed` |
 | `parallel` | `completed`, `any_failed` |
 | `plan.replan` | `replan_requested`, `failed`, `attempts_exhausted` |
 | `plan.validate` | `completed`, `failed` |
@@ -238,17 +262,30 @@ Rules:
 
 ### 6.2 Terminal directives
 
-Review 09 B2. A route target is a step id or a directive, never both.
+Review 09 B2; review 10 B9. A route target is a step id or a directive, never
+both.
+
+**Directives are a mapping, not a string.** The second draft used
+`completed: "end: completed"`, which needed quoting to survive YAML — an
+unquoted colon-space is not a valid scalar — and which the schema could only
+check with a regex.
+
+```yaml
+routes:
+  completed: { end: completed }
+  rejected: { end: rejected }
+```
 
 | Directive | Run status |
 |---|---|
-| `end: completed` | The run succeeded |
-| `end: failed` | The run failed |
-| `end: partial` | Delivery: some repositories delivered (`docs/01` 7.3) |
-| `end: rejected` | A human rejected and the plan has nowhere else to go |
+| `{ end: completed }` | The run succeeded |
+| `{ end: failed }` | The run failed |
+| `{ end: partial }` | Delivery: some repositories delivered (`docs/01` 7.3) |
+| `{ end: resume }` | `plan.replan`: continue at the patch's `resume_at` (section 15.1.1) |
 
-Step ids must not look like kinds, so `end: completed` is never ambiguous with a
-step named `completed`.
+Typed in the schema as an object with one required `end` property, so no regex
+and no quoting. Step ids must not look like kinds, so a directive is never
+ambiguous with a step id.
 
 ### 6.3 Loops are bounded by the engine
 
@@ -293,6 +330,29 @@ From `docs/01` 3.3.1.
 `any_failed` is the aggregate route when a branch fails and the join policy is
 not satisfied.
 
+### 7.0 A branch's terminal outcome returns to the join
+
+Review 10 A2. Directives are **run** statuses (section 6.2), so a branch routing
+`completed: "end: completed"` would end the whole run when one ticket finished.
+The second draft's examples did exactly that.
+
+> **A branch has no `routes` for its terminal outcomes. Its terminal outcome
+> returns to the enclosing `parallel`, which aggregates.**
+
+| Branch outcome | Meaning to the join |
+|---|---|
+| `completed` | The branch succeeded; counts towards `all`, `any` or `n` |
+| `failed` | Counts towards `any_failed` |
+| `replan_parent` | The child asks the parent to re-plan. Handled by the parent, not the join |
+| `attempts_exhausted` | Counts towards `any_failed` |
+
+A branch **may** route non-terminal outcomes — `blocked`, `rejected` — to steps
+**inside** the branch, because those do not end it. It may not route a terminal
+outcome anywhere, and it may not use a directive. Validation enforces both.
+
+The `parallel` step's own `routes` carry `completed` and `any_failed`, which is
+where the run-level decision is made.
+
 ### 7.1 A ticket branch is a `run.child`
 
 Review 09 A5. A branch is a step or a sub-plan; a ticket branch is a `run.child`
@@ -329,11 +389,22 @@ look-alike.
   <https://github.com/rayokota/cel.net>). It is a C# port of CEL-Java, tracks
   `google/cel-spec`, targets `net8.0` and `net10.0`, and is a dependency of
   `Confluent.SchemaRegistry.Rules`.
-- **Checked, not assumed.** Before this is settled, Spike 1 must confirm: the
-  checker rejects the functions the engine does not register; evaluation is
-  deterministic under replay; and the cost limit is enforceable. If any of the
-  three fails, the fallback is a hand-written subset with a published grammar,
-  and this section changes.
+- **Checked, not assumed.** Before this is settled, Spike 1 must confirm four
+  things: the checker rejects the functions the engine does not register;
+  evaluation is deterministic under replay; **static cost estimation exists**
+  (review 10 C1); and the cost limit is enforceable. If any fails, the fallback
+  is a hand-written subset with a published grammar — **accepted by the product
+  owner, 2026-10-27** — and this section changes.
+- **Cost estimation is the uncertain one.** It is a **cel-go** feature, and it is
+  not established that CEL-Java or Cel.NET has it. If it does not, the length and
+  AST-node caps in section 8.5 plus capped list sizes in workflow state are
+  sufficient: CEL is not Turing-complete, so evaluation cost is bounded by input
+  size. The caps are therefore the primary control and cost estimation is a
+  defence in depth, not the thing the design depends on.
+- **Maintainer risk** (review 10 C2). Cel.NET has a small maintainer base. It is
+  recorded as a risk with the fallback above already stated, and the engine's
+  exposure is limited: CEL is used for route guards and input binding, so a
+  forced migration touches the expression evaluator, not the interpreter.
 
 Why CEL rather than a bespoke subset: it is a specification with conformance
 tests, it is side-effect free and total by construction (no loops, no I/O, no
@@ -362,7 +433,9 @@ Four namespaces. Nothing else is in scope.
 | `params` | Bound run parameters | `params.ticket_id` |
 | `steps.<id>.outcome` | The outcome a completed step returned | `steps.review.outcome == 'findings_open'` |
 | `steps.<id>.artifacts.<name>` | An artifact **reference** produced by a step. Never content | `steps.plan_spec.artifacts.plan` |
-| `run` | `run.id`, `run.scope`, `run.repositories` | `size(run.repositories) > 1` |
+| `steps.<id>.outputs.<name>` | A small typed value the step published. Section 8.3.2 | `steps.plan_spec.outputs.tier_tags` |
+| `steps.<id>.choice` | A recorded choice from a gate (review 10 B12) | `steps.delivery_gate.choice == 'revert'` |
+| `run` | Section 8.3.1 | `size(run.repositories) > 1` |
 | `findings` | `findings.blocking_count`, `findings.open_count` | `findings.blocking_count == 0` |
 
 **There is no `manifest` namespace.** Repository facts are read per step from
@@ -370,6 +443,66 @@ Four namespaces. Nothing else is in scope.
 that needed manifest data would reintroduce exactly the staleness that decision
 removed. The first draft's `facts` and `repo` namespaces are gone; they were
 never defined.
+
+#### 8.3.1 The `run` namespace
+
+Review 10 A4. Every field, with its type and where its value comes from.
+
+| Field | Type | Source |
+|---|---|---|
+| `run.id` | string | The run id, assigned at start |
+| `run.scope` | string | `ticket`, `epic`, `delivery`. From the run request |
+| `run.repositories` | list of string | The run request. Not the manifest |
+| `run.branch` | string | Resolved by the step that needs it, from the branch convention |
+| `run.integration_branch` | string | Same |
+| `run.head_sha` | string | **A reference resolved by the consuming step**, not a value in workflow state |
+| `run.aggregate_diff` | string | Same. An artifact reference |
+| `run.tracker_issue` | string | The run request |
+| `run.delivery_ledger` | string | An artifact reference, read through an activity (`docs/01` 7.3) |
+
+Anything that **changes during the run** — `head_sha`, `aggregate_diff` — is a
+reference the consuming step resolves in its activity. It is not a value held in
+workflow state, because reading it there would be I/O in workflow code.
+
+`findings` is a **namespace**, not a field of `run`. The second draft's examples
+used `run.findings` and `run.findings.open`; both are wrong and are fixed in
+`docs/13`.
+
+#### 8.3.2 Expressions never read artifact content
+
+Review 10 A3. The second draft dereferenced artifacts in expressions:
+`steps.plan_spec.artifacts.plan.verification.tier_tags`. That reads artifact
+**content** inside workflow code, which is I/O and breaks replay (R2, R12).
+
+> **Expressions see references, outcomes and published outputs. Never content.**
+
+Where a step needs a value from an artifact, the **consuming step** reads it in
+its own activity. `run_tests` consumes the plan artifact and reads `tier_tags`
+itself; the expression only passes the reference.
+
+For the cases where a value genuinely must reach workflow state, a step may
+publish a small, typed, size-capped `outputs` map:
+
+```yaml
+- id: plan_spec
+  kind: agent.run
+  produces: [{ name: plan, type: ticket-plan }]
+  outputs:
+    tier_tags: { type: array, max_size: 16 }
+  routes: { ... }
+```
+
+| Rule | Value |
+|---|---|
+| Declared in | The step contract, per kind (`docs/06`) |
+| Types | `string`, `number`, `boolean`, and lists of those |
+| Cap | 16 entries, 256 bytes per value. Checked at load |
+| Written by | The step's activity result, never by workflow code |
+| Read as | `steps.<id>.outputs.<name>` |
+
+The cap is what keeps this from becoming a second, looser artifact store inside
+workflow state. A step that needs more than 16 small values should be passing an
+artifact reference and reading it in an activity.
 
 ### 8.4 Allowed functions
 
@@ -456,13 +589,21 @@ A step declares what it produces and what it consumes.
 
 | Where | What | On failure |
 |---|---|---|
-| Producer side, after the step | The produced artifact is validated against the type's JSON Schema | The step outcome becomes `failed`. The **field-level errors are returned to the agent** for a retry, and the retry counts as an attempt (`docs/01` 3.7) |
+| Producer side, after the step | The produced artifact is validated against the type's JSON Schema | The **field-level errors are returned to the agent in the same session**, for a bounded number of correction turns (default 2). Only if the artifact still fails is the outcome `failed` |
 | Consumer side, at load | For each `consumes`, the referenced producer's `produces` entry must declare the same type, or a type that declares `compatible_with` it | Blocking validation error |
 | Consumer side, at step start | The artifact exists and still validates | Blocking; the step fails |
 
 Producer-side validation is what turns "the agent produced something that failed
 its contract with an unhelpful error" (brief lesson 8) into a named field and a
 named rule.
+
+**Correction turns, not a whole re-run** (review 10 B5). A missing required field
+does not need the agent to start again; in the prototype it could usually be
+fixed in place. The step returns the field-level errors into the **running
+session** and lets the agent correct them, for a bounded number of turns
+(`limits.correction_turns`, default 2). Only then does the outcome become
+`failed`. A correction turn is **not** an attempt: no new sandbox, no new
+session, and the work already done is kept.
 
 ### 10.4 Worked example: the ticket plan artifact
 
@@ -509,8 +650,8 @@ missing`. That string goes back to the agent.
 
 ## 11. Roles (L4)
 
-Review 09 D4 and C8. Roles are library content; `write_access` is engine
-mechanism (`docs/06` 2.2).
+Review 09 D4 and C8; review 10 A1 and B11. Roles are library content;
+`write_access` is engine mechanism (`docs/06` 2.2).
 
 ```yaml
 roles:
@@ -530,6 +671,44 @@ roles:
 | `capabilities` | Queue routing (S1) and capability negotiation (S3) |
 | `runtime.requires` | Capabilities the agent runtime must declare. **Not** a product name |
 | `skills` | Library references |
+
+### 11.0 Privilege comes from the role, never from the step
+
+Review 10 A1. This closes an escalation path the second draft left open.
+
+`agent.run` inputs carried `role`, `tools`, `write_access` and `capabilities`,
+and the role *also* defined `write_access`, `tools` and `capabilities`. An agent
+may not `replace_role` (section 15.4), but it **may** `replace_inputs` on any
+unprotected step, or `insert_after` a new `agent.run`. Either could set
+`write_access: repository` and any tool list. The same setting in two places,
+with the weaker one writable by an agent, is a privilege escalation.
+
+The rule:
+
+> **`write_access`, `tools` and `capabilities` come only from the role.** A step
+> may **tighten** `write_access`, never relax it. It may not set `tools` or
+> `capabilities` at all.
+
+| Setting | Source | A step may |
+|---|---|---|
+| `write_access` | The role | Tighten: `repository` to `branch`, `branch` to `none`, and so on. Never relax |
+| `tools` | The role | Nothing |
+| `capabilities` | The role | Nothing |
+
+So a planner step is `role: roles/planner` with `write_access: none` — a
+tightening, which is allowed and which keeps the floor visible in the plan
+(review 06, answer 1). A step cannot grant itself `repository` access by naming
+a role that has it and then tightening nothing, because the second control below
+governs which roles a re-plan may introduce.
+
+**Second control: which roles a re-plan may use.** Organisation policy gains
+`policy.replan.allowed_roles` (`docs/07` section 4). An agent-proposed step or
+`replace_inputs` may use only a role on that list. Otherwise the patch becomes a
+**pending human decision** (section 15.5), not a rejection.
+
+Validation enforces both: a step whose `write_access` exceeds its role's is a
+blocking error, and a patch introducing a role outside `allowed_roles` is a
+pending decision when the proposer is an agent.
 
 ### 11.1 Runtime selection is role mapping in the organisation layer
 
@@ -554,9 +733,13 @@ failure from brief lesson 5.
 | Layer | May | May not |
 |---|---|---|
 | Library | Define the role | — |
-| Organisation | Map the role to a runtime instance and a model; **tighten** `write_access` | Relax `write_access`; change `tools` |
+| Organisation | Map the role to a runtime instance and a model; **tighten** `write_access`; **remove** tools (review 10 B11) | Relax `write_access`; **add** tools |
 | Repository | Nothing | Anything (review 09 D9) |
 | Run | Nothing | Anything |
+
+Tightening is one-directional: `write_access` may only move towards `none`, and
+`tools` may only shrink. Validation compares the effective role against the
+library role and rejects any change in the other direction.
 
 ---
 
@@ -590,8 +773,8 @@ starts.
 
 Repository: {{ bindings.repository }}
 
-The acceptance criteria are in the plan artifact:
-{{ bindings.plan_ref }}
+The acceptance criteria are in the plan artifact at:
+{{ bindings.plan_path }}
 
 Work only on the branch you are given. Do not push to the default branch.
 ```
@@ -601,8 +784,15 @@ inputs:
   task_ref: feature-flow-default:tasks/implement-ticket
   bindings:
     repository: { expr: "run.repositories[0]" }
-    plan_ref: { expr: "steps.plan_spec.artifacts.plan" }
+    plan_path: { from_artifact: "steps.plan_spec.artifacts.plan" }
 ```
+
+**A consumed artifact renders as a path, not a hash** (review 10 B6). The second
+draft rendered `{{ bindings.plan_ref }}`, which is an artifact store reference the
+agent cannot open. A binding of the form `from_artifact` is copied into the
+sandbox by `CopyInAsync` (`docs/05` section 2) and renders as the **path** the
+agent can read. A binding that is genuinely a reference — something the agent
+should quote back but not open — uses `expr` and renders the reference.
 
 ### 12.3 Where the rendered prompt is stored
 
@@ -637,6 +827,37 @@ purpose was to generate the tickets.
    parameters taken from the artifact.
 3. The interpreter applies the patch through `applyPatch`. The branches are now
    ordinary steps: validated, auditable, and visible in the readable form.
+
+**The expansion is deterministic** (review 10 B1). Turning a typed `ticket-list`
+artifact into one `run.child` per item is a mapping, not a judgement. The second
+draft used an agent for it, which adds cost and a failure mode to a
+transformation that cannot fail if the artifact validates.
+
+`plan.replan` therefore takes a **template mapping** and runs no agent:
+
+```yaml
+- id: expand_tickets
+  kind: plan.replan
+  inputs:
+    mode: expand
+    from: { expr: "steps.plan_tickets.artifacts.tickets" }
+    mapping:
+      template: feature-flow-default:templates/ticket-delivery
+      target: tickets                  # the parallel step to add branches to
+      bind:
+        ticket_id: "$.ticket_id"
+        repositories: "$.repositories"
+    resume_at: tickets
+  routes:
+    replan_requested: { end: resume }
+    failed: gate_epic_plan
+    attempts_exhausted: gate_epic_plan
+```
+
+`$.<field>` is a path into each item of the artifact, not CEL — the mapping is
+data, and no expression is evaluated. An agent may still be used for a re-plan
+that needs judgement (`mode: agent`); the deterministic form is the default for
+expansion. L9's reasoning is unaffected: either way a **patch** is produced.
 
 ### 13.2 Why a patch and not dynamic binding
 
@@ -691,6 +912,35 @@ The first draft put `required_role` and `min_approvers` in the gate's inputs.
 That is policy in a template, which is what L12 exists to prevent, and it would
 let a template relax an organisation's approval rule.
 
+### 14.1 A gate may record a choice, not only approve or reject
+
+Review 10 B12. `docs/01` 7.3 gives a partial delivery three human choices:
+retry, fix forward, revert. Modelling those as three outcomes would add outcomes
+to the vocabulary for one step.
+
+> **A gate keeps `approved` and `rejected` as its outcomes. It records a
+> `choice`, and guarded routes select on it.**
+
+```yaml
+- id: delivery_gate
+  kind: delivery.gate
+  gate: { decision_type: delivery.partial_approval }
+  inputs:
+    status: partial
+    options: [retry, fix_forward, revert]
+  routes:
+    approved:
+      - when: "steps.delivery_gate.choice == 'revert'"
+        to: revert_prs
+      - when: "steps.delivery_gate.choice == 'fix_forward'"
+        to: replan
+      - to: deliver
+    rejected: { end: partial }
+```
+
+No new outcomes, and the choice is visible in the audit record and in the
+readable form.
+
 `decision_type` values are namespaced strings (`ticket.merge_approval`,
 `epic.delivery_approval`, `delivery.partial_approval`). The organisation's
 `policy.approval` is keyed by them. An unknown decision type is a blocking
@@ -722,6 +972,30 @@ changes:
 not the current revision is rejected as stale and re-proposed against the current
 one. It is not silently rebased.
 
+### 15.1.1 The patch names its resume point
+
+Review 10 A6. The second draft's `plan.replan` routed
+`replan_requested: implement` regardless of what the patch did, so a patch that
+inserted a step before `implement`, or fixed the plan somewhere else entirely,
+was skipped or ignored.
+
+```yaml
+base_revision: 7
+resume_at: implement
+changes: [ ... ]
+```
+
+| Rule | Detail |
+|---|---|
+| `resume_at` | A step id, validated exactly like a route target: it must exist after the patch is applied |
+| Meaning | `plan.replan`'s `replan_requested` route means "continue at the patch's resume point", not "go to this fixed step" |
+| Default if omitted | The step that routed to `plan.replan` — that is, the step whose outcome sent the run here. This is the common case: a step fails, asks for a re-plan, and wants to retry itself |
+| Validation | A `resume_at` that does not exist after the patch is a blocking error |
+
+So the route becomes a constant: every `plan.replan` step routes
+`replan_requested: { resume: true }`, and the interpreter resolves the target
+from the patch. A plan author no longer has to guess where a re-plan will land.
+
 ### 15.2 "Weaken" is defined
 
 Review 09 E1. Floor F3 says a protected step cannot be removed or weakened.
@@ -749,8 +1023,8 @@ third was never defined.
 
 | Op | Effect |
 |---|---|
-| `insert_before` | Insert a step before `target` |
-| `insert_after` | Insert a step after `target` |
+| `insert_before` | Insert a step before `target`. Section 15.3.1 |
+| `insert_after` | Insert a step after `target`. Section 15.3.1 |
 | `replace_step` | Replace the step at `target` |
 | `remove_step` | Remove the step at `target` |
 | `replace_inputs` | Replace the `inputs` of `target` |
@@ -760,6 +1034,37 @@ third was never defined.
 | `add_branch` | Add a branch to a `parallel` at `target` |
 | `remove_branch` | Remove a branch from a `parallel` at `target` |
 
+### 15.3.1 `insert_before` and `insert_after` are defined
+
+Review 10 A7. On a graph, "insert after X" is ambiguous: which of X's routes get
+rewired? The second draft used `insert_after epic_review` **and** a
+`change_route` on `epic_review` in the same patch, which is either redundant or
+required, and the document did not say which.
+
+**Decision: keep the two inserts, with rewiring defined.**
+
+> `insert_after X` inserts `S` immediately after `X`. Every route of `X` that
+> pointed at some step `Y` now points at `S`. `S`'s own routes are given
+> explicitly in the patch. `insert_before X` is the mirror: every route from any
+> step that pointed at `X` now points at `S`, and `S` routes to `X`.
+
+Why keep them rather than drop them for `add_step` plus `change_route`:
+
+| | `insert_after` with rewiring | `add_step` plus `change_route` |
+|---|---|---|
+| Operations to insert into a chain | 1 | 2, and the author must know every inbound route |
+| Failure mode if the author forgets | None; rewiring is automatic | A dangling route, or a step that is added but unreachable |
+| What an LLM must get right | The step and its own routes | The step, its routes, **and** every route that must be repointed |
+
+An LLM writing a patch knows where it wants the new step to sit. It does not
+reliably know every inbound route to `X`, which is exactly the information
+`add_step` would force it to supply. Rewiring is the version with fewer things to
+get right, so it is the one kept.
+
+The consequence: `insert_after` followed by `change_route` on the same target is
+**redundant**, and the second draft's example is fixed in `docs/13` section 3 to
+use `insert_after` alone.
+
 ### 15.4 Who may use which operation
 
 Review 09 E6.
@@ -767,14 +1072,19 @@ Review 09 E6.
 | Op | An agent may propose | A human may apply |
 |---|---|---|
 | `insert_before`, `insert_after` | Yes | Yes |
-| `replace_step` | Yes, if `target` is not protected | Yes |
-| `remove_step` | Yes, if `target` is not protected | Yes |
-| `replace_inputs` | Yes, if `target` is not protected | Yes |
+| `replace_step` | Yes; if `target` is protected, a **pending human decision** | Yes |
+| `remove_step` | Yes; if `target` is protected, a **pending human decision** | Yes |
+| `replace_inputs` | Yes; if `target` is protected, or the role is outside `policy.replan.allowed_roles`, a **pending human decision** | Yes |
 | `replace_limits` | Yes, within `policy.attempts.ceiling` | Yes, up to `hardCeiling`; beyond that needs admin (F4) |
 | `replace_role` | **No** | Yes, `steerer` or `admin` |
-| `change_route` | Yes, if `target` is not protected | Yes |
+| `change_route` | Yes; if `target` is protected, a **pending human decision** | Yes |
 | `add_branch` | Yes, if the `parallel` has not started | Yes |
 | `remove_branch` | Yes, if the branch is not protected and has not started | Yes |
+
+Review 10 B3: the second draft's "Yes, if `target` is not protected" read as
+*rejection*. It is not. An agent patch touching protected content becomes a
+**pending human decision** (section 15.5), which a human may approve with a
+reason. Only a patch that would relax a safety floor is rejected outright.
 
 ### 15.5 A patch touching protected content becomes a human decision
 

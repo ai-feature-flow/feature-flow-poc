@@ -177,6 +177,16 @@ def print_report(report: Report) -> None:
 
 
 def main() -> int:
+    # Review text is UTF-8 and routinely contains characters the Windows console
+    # encoding (cp1252) cannot represent. Without this, print_report raises
+    # UnicodeEncodeError after the fetch has already moved origin/<branch>, so
+    # the tool reports nothing while the remote ref has silently advanced.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
     parser = argparse.ArgumentParser(description="Watch a git remote for new commits.")
     parser.add_argument("--repo", default=".", help="repository path (default: cwd)")
     parser.add_argument("--branch", default=None, help="branch to watch (default: current)")

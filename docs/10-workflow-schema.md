@@ -61,7 +61,6 @@ the array.
         "name": { "type": "string" },
         "scope": { "enum": ["ticket", "epic", "delivery", "any"] },
         "revision": { "type": "integer", "minimum": 1 },
-        "schemaVersion": { "const": 1 },
         "description": { "type": "string" },
         "source": { "$ref": "#/$defs/LibraryRef" }
       },
@@ -119,7 +118,8 @@ the array.
         "routes": { "$ref": "#/$defs/Routes" },
         "gate": { "$ref": "#/$defs/Gate" },
         "produces": { "type": "array", "items": { "$ref": "#/$defs/ArtifactDecl" } },
-        "consumes": { "type": "array", "items": { "$ref": "#/$defs/ArtifactDecl" } }
+        "consumes": { "type": "array", "items": { "$ref": "#/$defs/ArtifactDecl" } },
+        "outputs": { "$ref": "#/$defs/Outputs" }
       },
       "additionalProperties": false
     },
@@ -127,7 +127,7 @@ the array.
       "enum": [
         "agent.run",
         "human.gate", "human.session", "policy.auto_approve",
-        "run.child", "run.wait", "parallel",
+        "run.child", "parallel",
         "plan.replan", "plan.validate",
         "scm.create_branch", "scm.merge_base_forward", "scm.open_pr",
         "scm.update_pr", "scm.merge", "scm.revert",
@@ -183,9 +183,28 @@ the array.
         }
       ]
     },
+    "Outputs": {
+      "type": "object",
+      "maxProperties": 16,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": { "enum": ["string", "number", "boolean", "array"] },
+          "max_size": { "type": "integer", "minimum": 1, "maximum": 256 }
+        },
+        "additionalProperties": false
+      },
+      "description": "Small typed values published into workflow state. Never artifact content (review 10 A3)"
+    },
     "Directive": {
-      "type": "string",
-      "pattern": "^end: (completed|failed|partial|rejected)$"
+      "type": "object",
+      "required": ["end"],
+      "properties": {
+        "end": { "enum": ["completed", "failed", "partial", "rejected", "resume"] }
+      },
+      "additionalProperties": false,
+      "description": "A mapping, not a string: typed in the schema and needs no YAML quoting (review 10 B9)"
     },
     "Expression": {
       "type": "string",
@@ -255,6 +274,11 @@ the array.
       "type": "integer",
       "minimum": 1,
       "description": "Optimistic concurrency. A stale revision is rejected and re-proposed"
+    },
+    "resume_at": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "Where execution continues after the patch. Validated like a route target: must exist after the patch is applied. Defaults to the step that routed to plan.replan (review 10 A6)"
     },
     "changes": {
       "type": "array",

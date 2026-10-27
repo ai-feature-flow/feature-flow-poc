@@ -66,7 +66,7 @@ Consequences:
 | 22 | `limits.attempts` within `policy.attempts.ceiling` | Run start | Yes | F4 |
 | 23 | Patch: `base_revision` is current | Patch | Yes | E3 |
 | 24 | Patch: operation is permitted to the proposer | Patch | Yes | E6 |
-| 25 | Patch: protected step not removed, weakened or **made unreachable** | Patch | Yes | F3, E1 |
+| 25 | Patch: protected step not removed, weakened or **made unreachable** | Patch | **Three results** | F3, E1, E2, review 10 B2 |
 | 26 | Patch: result passes every load check | Patch | Yes | — |
 | 27 | Step inputs satisfy the kind's contract | Step start | Yes | Execution |
 | 28 | Consumed artifact exists and validates | Step start | Yes | Execution |
@@ -75,6 +75,20 @@ Consequences:
 | 31 | Step id not in snake_case style | Load | **No** | Cosmetic |
 
 Checks 10, 13, 14, 15 and 25 are the ones review 09 F3 said were missing.
+
+### 2.2 Check 25 has three results, not two
+
+Review 10 B2. A patch has three possible outcomes, and the table's "blocks"
+column cannot express the middle one:
+
+| Result | When | Effect |
+|---|---|---|
+| **Applied** | The patch is valid and touches nothing protected | A new plan revision |
+| **Pending human decision** | An **agent** patch touches protected content, or uses a role outside `policy.replan.allowed_roles` | Recorded with the diff and reason; a human may approve with a reason (E2) |
+| **Rejected** | The patch would relax a safety floor, or is invalid, or `base_revision` is stale | Recorded, not silently dropped (R7) |
+
+Only the third is a hard block. The second is a **wait**, and it is the case the
+prototype got wrong by either silently applying or silently refusing.
 
 ### 2.1 On check 6
 
@@ -124,15 +138,19 @@ parameters:
   ticket_id: FF-1042
   repositories: [acme/api]
 
-# Outcome per step id. A step not listed returns completed.
+# Outcome per step id, per visit. A step not listed returns completed.
 provider_script:
   plan_spec: completed
   design: completed
   implement: completed
   run_tests: failed
-  review: findings_open
+  review: [findings_open, completed]     # first visit, then second
+  triage_findings: completed
+  fix_findings: completed
+  verify_fix: completed
 
-expected_path: [plan_spec, design, implement, run_tests, review, triage_findings]
+expected_path: [plan_spec, design, implement, run_tests, review, triage_findings,
+                fix_findings, verify_fix, run_tests, review, evaluate_readiness]
 expected_status: null          # null means the run is still in flight at the end
 expected_validation_errors: []
 ```
@@ -141,10 +159,23 @@ expected_validation_errors: []
 |---|---|
 | `template` | The template under test |
 | `parameters` | Bound parameters |
-| `provider_script` | Step id to outcome. Fake providers return it. A step not listed returns `completed` |
+| `provider_script` | Step id to outcome, **per visit**. A scalar means every visit; a list gives one outcome per visit in order. A step not listed returns `completed` |
 | `expected_path` | The ordered list of step ids the run executes |
 | `expected_status` | `completed`, `failed`, `partial`, `rejected`, or `null` for still in flight |
 | `expected_validation_errors` | Expected blocking errors, by check number |
+
+**Per-visit scripting** (review 10, answer). A step may be visited more than once
+— the test, fix, retest loop is the normal case — so a single outcome per step id
+cannot express a loop. `review: [findings_open, completed]` says the first visit
+opens findings and the second passes. Without this, no loop can be tested.
+
+**Error classes too** (review 10, answer). A scripted value may be an outcome or
+an error class, so the attempt rules can be exercised:
+
+```yaml
+provider_script:
+  implement: { error: infrastructure, times: 2 }   # free retries, then completed
+```
 
 A test that expects validation errors uses the same file with an empty
 `provider_script` and a populated `expected_validation_errors`.
@@ -193,29 +224,35 @@ against.
 
 ```
 Plan ticket-delivery rev 7 (ticket FF-1042)
-─────────────────────────────────────────────
- 1  plan_spec        agent.run      completed  -> design
- 2  design           agent.run      [protected] running
- 3  implement        agent.run      pending
- 4  run_tests        test.run_tiers pending
- 5  review           review.run     pending
- 6  triage_findings  findings.triage pending
- 7  merge_pr         scm.merge      pending
- 8  gate_merge       human.gate     pending    ticket.merge_approval
-
-Routes from review:
-  findings_open -> triage_findings
-  completed     -> merge_pr
+──────────────────────────────────────────────────────────────────────────
+ #  id               kind            role         access  status     routes
+ 1  plan_spec        agent.run       planner      none    completed  completed->design
+ 2  design           agent.run       designer     none    running    [protected]
+ 3  implement        agent.run       implementer  branch  pending    completed->run_tests
+                                                                     blocked->replan
+ 4  run_tests        test.run_tiers  -            -       pending    completed->review
+                                                                     failed->triage_findings
+ 5  review           review.run      -            -       pending    findings_open->triage_findings
+ 6  triage_findings  findings.triage -            -       pending    completed->fix_findings
+ 7  merge_pr         scm.merge       -            -       pending    completed->end:completed
+ 8  gate_merge       human.gate      -            -       pending    ticket.merge_approval
 
 Protected: design
 ```
 
-Rules:
+Rules (review 10 B4):
 
-- One line per step: sequence, id, kind, status, and the route it will take.
+- One line per step: sequence, id, kind, role, **effective `write_access`**,
+  status, and every **non-default** route on one compact line.
+- **Every** step's routes are shown, not only the current step's. An agent patches
+  routes and inputs of steps other than the one running, so it needs to see them.
+- The effective `write_access` is shown, which keeps review 06 answer 1's "floor
+  visible in the plan" true in the form the agent actually reads.
 - Protected steps are marked.
-- Only the current step's routes are expanded; the rest are one line each.
-- No inputs, no artifact hashes, no expressions. The agent patches by step id.
+- **Inputs stay hidden.** An agent asks for a step's detail by id rather than
+  having the whole plan inlined — that is what keeps the form small enough to
+  read in a context window, which was the prototype's problem.
+- No artifact hashes, no expressions. The agent patches by step id.
 - Generated by the engine from the plan. It is not a second representation an
   author maintains.
 
@@ -225,11 +262,12 @@ This is the only golden-tested output (section 3.6).
 
 ## 5. Open questions
 
-- **Provider script granularity.** `provider_script` maps a step id to an outcome.
-  Is that enough, or do some tests need to script a provider *error class* (for
-  example `infrastructure` versus `work`) to exercise the attempt rules?
-- **`expected_path` and concurrency.** A `parallel` step's branches interleave.
-  Is the expected path a partial order, or is a set of acceptable paths needed?
-- **Replay test storage.** Recorded histories are large and contain payloads.
-  Where are they stored, and how are secrets scrubbed before they are committed
-  to a repository?
+- **Replay history storage.** Recorded histories contain references only (payload
+  codec, `docs/07`), are recorded from fixture repository runs (review 08, answer
+  3), and are stored with the engine tests, with a CI check that rejects anything
+  matching the secret scanner (review 10, answer).
+- **Per-branch expected paths.** A `parallel` step's branches interleave, so
+  `expected_path` is the **parent's** path and each branch gets its own
+  `expected_branch_paths` entry. No interleaving assertions (review 10, answer).
+  Is one path per branch enough, or do concurrent branches in one repository need
+  an ordering assertion after all?

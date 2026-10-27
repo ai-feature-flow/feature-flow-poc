@@ -1,14 +1,20 @@
 # Worked examples
 
-Status: second draft. Date: 2026-10-27. Deliverable 6 of
+Status: third draft. Date: 2026-10-27. Deliverable 6 of
 `docs/briefs/brief-02-workflow-language.md`.
 
-**Review 09 applied.** Every example is checked against `docs/06` and the recorded
-decisions. C1-C9 and E7 are fixed: no tier lists, no merge method, no repository
-names, no `allowRegression`, review is `review.run` feeding the findings ledger,
-`partial` does not route to success, gates name a decision type, roles do not name
-a runtime, session checks derive from later steps, and the re-plan example is the
-`docs/01` 6.2 scenario.
+**Review 10 applied.** The second draft's examples failed the document's own
+validation checks (A5): `apply_child_patch` did not exist, `verification_review`
+was unreachable, `params.platform_repository` was undeclared, and the child
+branches never passed the `ticket_id` their template requires. All four are fixed,
+and every example below has been run through the validation table — section 6
+records the result.
+
+Also applied: A2 (branch completion returns to the join), A3 (expressions read no
+artifact content), A4 (`run` and `findings` fields defined), A6 (`resume_at`),
+A7 (`insert_after` alone, no redundant `change_route`), A10 (the epic fix path),
+A11 (ordered two-repository delivery), B1 (deterministic expansion), B6 (bindings
+render paths), B9 (directives as a mapping), B12 (gate choice).
 
 Four examples: a single ticket, an epic, a mid-run re-plan, and a human session.
 
@@ -23,14 +29,13 @@ metadata:
   name: ticket-delivery
   scope: ticket
   revision: 1
-  schemaVersion: 1
   source: feature-flow-default:templates/ticket-delivery
 
 parameters:
   ticket_id: { type: string, required: true }
   repositories: { type: array, required: true }
 
-artifactTypes:
+artifact_types:
   - name: ticket-plan
     version: 1
     schema_ref: feature-flow-default:schemas/ticket-plan
@@ -45,8 +50,10 @@ steps:
       bindings:
         ticket_id: { expr: "params.ticket_id" }
     requires: { capabilities: [sandbox, agent_runtime] }
-    limits: { attempts: 3, start_to_close: 4h, heartbeat: 30s }
+    limits: { attempts: 3, start_to_close: 4h, heartbeat: 30s, correction_turns: 2 }
     produces: [{ name: plan, type: ticket-plan }]
+    outputs:
+      tier_tags: { type: array, max_size: 16 }
     routes:
       completed: design
       blocked: gate_spec
@@ -61,6 +68,8 @@ steps:
       role: feature-flow-default:roles/designer
       task_ref: feature-flow-default:tasks/design
       write_access: none
+      bindings:
+        plan_path: { from_artifact: "steps.plan_spec.artifacts.plan" }
     consumes: [{ name: plan, type: ticket-plan, from: plan_spec }]
     routes:
       completed: implement
@@ -76,6 +85,8 @@ steps:
       task_ref: feature-flow-default:tasks/implement-ticket
       write_access: branch
       resume_strategy: wip_commits_and_session
+      bindings:
+        plan_path: { from_artifact: "steps.plan_spec.artifacts.plan" }
     requires: { capabilities: [sandbox, agent_runtime] }
     limits: { attempts: 3, start_to_close: 4h, heartbeat: 30s }
     routes:
@@ -88,7 +99,8 @@ steps:
   - id: run_tests
     kind: test.run_tiers
     inputs:
-      tier_tags: { expr: "steps.plan_spec.artifacts.plan.verification.tier_tags" }
+      tier_tags: { expr: "steps.plan_spec.outputs.tier_tags" }
+    consumes: [{ name: plan, type: ticket-plan, from: plan_spec }]
     routes:
       completed: review
       failed: triage_findings
@@ -100,7 +112,7 @@ steps:
       scope: ticket
       diff_ref: { expr: "steps.implement.artifacts.diff" }
       checks: [feature-flow-default:checks/merge-bar]
-      prior_findings: { expr: "run.findings" }
+      prior_findings: { expr: "findings.all" }
     routes:
       completed: evaluate_readiness
       findings_open: triage_findings
@@ -110,7 +122,7 @@ steps:
   - id: triage_findings
     kind: findings.triage
     inputs:
-      finding_refs: { expr: "run.findings.open" }
+      finding_refs: { expr: "findings.open" }
       mode: agent
     limits: { attempts: 2 }
     routes:
@@ -124,6 +136,8 @@ steps:
       role: feature-flow-default:roles/fixer
       task_ref: feature-flow-default:tasks/fix-findings
       write_access: branch
+      bindings:
+        findings_path: { from_artifact: "steps.triage_findings.artifacts.selected" }
     routes:
       completed: verify_fix
       blocked: gate_escalate
@@ -150,7 +164,7 @@ steps:
   - id: open_pr
     kind: scm.open_pr
     inputs:
-      repository: { expr: "params.repositories[0]" }
+      repository: { expr: "run.repositories[0]" }
       branch: { expr: "run.branch" }
       base: { expr: "run.integration_branch" }
       body_ref: feature-flow-default:prompts/pr-body
@@ -162,7 +176,7 @@ steps:
   - id: wait_checks
     kind: ci.wait_checks
     inputs:
-      repository: { expr: "params.repositories[0]" }
+      repository: { expr: "run.repositories[0]" }
       commit_sha: { expr: "run.head_sha" }
     routes:
       completed: gate_merge
@@ -178,14 +192,14 @@ steps:
       context_refs: { expr: "[steps.review.artifacts.findings]" }
     routes:
       approved: merge_pr
-      rejected: "end: rejected"
+      rejected: { end: rejected }
 
   - id: merge_pr
     kind: scm.merge
     inputs:
       pr_ref: { expr: "steps.open_pr.artifacts.pr" }
     routes:
-      completed: "end: completed"
+      completed: { end: completed }
       blocked: gate_escalate
       rejected: gate_merge
       attempts_exhausted: gate_escalate
@@ -193,11 +207,12 @@ steps:
   - id: replan
     kind: plan.replan
     inputs:
+      mode: agent
       reason: { expr: "steps.implement.outcome" }
       context_refs: { expr: "[steps.plan_spec.artifacts.plan]" }
     limits: { attempts: 2 }
     routes:
-      replan_requested: implement
+      replan_requested: { end: resume }
       failed: gate_escalate
       attempts_exhausted: gate_escalate
 
@@ -209,7 +224,7 @@ steps:
       context_refs: { expr: "[steps.plan_spec.artifacts.plan]" }
     routes:
       approved: design
-      rejected: "end: rejected"
+      rejected: { end: rejected }
 
   - id: gate_design
     kind: human.gate
@@ -218,7 +233,7 @@ steps:
       prompt_ref: feature-flow-default:prompts/design-approval
     routes:
       approved: implement
-      rejected: "end: rejected"
+      rejected: { end: rejected }
 
   - id: gate_escalate
     kind: human.gate
@@ -227,23 +242,28 @@ steps:
       prompt_ref: feature-flow-default:prompts/escalation
     routes:
       approved: replan
-      rejected: "end: failed"
+      rejected: { end: failed }
 ```
 
 ### 1.1 What this example gets right
 
 | Decision | How |
 |---|---|
-| C1: tiers come from `feature-flow.yaml` | `run_tests` passes `tier_tags`, not a tier list. The step reads the manifest per step |
-| C2: no merge method in a template | `merge_pr` passes only `pr_ref`. The organisation allows methods; the repository chooses |
-| C3: no installation-specific names | `repositories` is a run parameter. No default repository name |
-| C4: no `allowRegression` | `verify_fix` has no such input. The regression test requirement is a step invariant |
-| C5: review feeds the findings ledger | `review.run`, then `findings.triage`, then `findings.evaluate_readiness` for `ready` |
+| C1: tiers come from `feature-flow.yaml` | `run_tests` passes `tier_tags` from `plan_spec.outputs`, and consumes the plan artifact to read them in its activity |
+| A3: expressions read no content | `tier_tags` comes from `outputs`, not from dereferencing `artifacts.plan`. `run_tests` reads the artifact itself |
+| A4: `run` fields defined | `run.repositories[0]`, `run.branch`, `run.integration_branch`, `run.head_sha` — all in `docs/09` 8.3.1 |
+| A4: `findings` is a namespace | `findings.all`, `findings.open`. Not `run.findings` |
+| C2: no merge method in a template | `merge_pr` passes only `pr_ref` |
+| C3: no installation-specific names | `repositories` is a run parameter |
+| C4: no `allowRegression` | `verify_fix` has no such input |
+| C5: review feeds the findings ledger | `review.run`, `findings.triage`, `findings.evaluate_readiness` |
 | C7: no policy in a template | Every gate names a `decision_type` only |
-| B3: the loop is bounded by the engine | `run_tests` to `triage_findings` to `fix_findings` to `verify_fix` back to `run_tests`. The cycle exits through `gate_escalate` on `attempts_exhausted`, and the findings ledger escalates a finding that reappears after two fixes |
-| B2: directives, not step ids | `end: completed`, `end: rejected`, `end: failed` |
-| B1: one routing form | Per-step `routes` only |
-| A4: snake_case | `task_ref`, `write_access`, `tier_tags`, `pr_ref`, `context_refs` |
+| A1: privilege from the role | `write_access` is a tightening on every step; no step sets `tools` or `capabilities` |
+| B5: correction turns | `plan_spec` sets `correction_turns: 2` |
+| B6: bindings render paths | `plan_path: { from_artifact: ... }`, not a hash |
+| B9: directives are a mapping | `{ end: completed }`, no quoting |
+| A6: resume point | `replan` routes `{ end: resume }`; the patch names `resume_at` |
+| B3: loops bounded by the engine | The cycle exits through `gate_escalate` on `attempts_exhausted` |
 
 ---
 
@@ -256,14 +276,13 @@ metadata:
   name: epic-delivery
   scope: epic
   revision: 1
-  schemaVersion: 1
   source: feature-flow-default:templates/epic-delivery
 
 parameters:
   epic_id: { type: string, required: true }
   repositories: { type: array, required: true }
 
-artifactTypes:
+artifact_types:
   - name: ticket-list
     version: 1
     schema_ref: feature-flow-default:schemas/ticket-list
@@ -288,11 +307,18 @@ steps:
   - id: expand_tickets
     kind: plan.replan
     inputs:
-      reason: "expand ticket list into run.child branches"
-      context_refs: { expr: "[steps.plan_tickets.artifacts.tickets]" }
+      mode: expand
+      from: { expr: "steps.plan_tickets.artifacts.tickets" }
+      mapping:
+        template: feature-flow-default:templates/ticket-delivery
+        target: tickets
+        bind:
+          ticket_id: "$.ticket_id"
+          repositories: "$.repositories"
+      resume_at: tickets
     limits: { attempts: 2 }
     routes:
-      replan_requested: tickets
+      replan_requested: { end: resume }
       failed: gate_epic_plan
       attempts_exhausted: gate_epic_plan
 
@@ -312,7 +338,7 @@ steps:
       scope: epic
       diff_ref: { expr: "run.aggregate_diff" }
       checks: [feature-flow-default:checks/epic-review]
-      prior_findings: { expr: "run.findings" }
+      prior_findings: { expr: "findings.all" }
     routes:
       completed: epic_readiness
       findings_open: epic_triage
@@ -322,60 +348,108 @@ steps:
   - id: epic_triage
     kind: findings.triage
     inputs:
-      finding_refs: { expr: "run.findings.open" }
+      finding_refs: { expr: "findings.open" }
       mode: agent
+    routes:
+      completed: epic_fix
+      blocked: gate_epic_escalate
+      attempts_exhausted: gate_epic_escalate
+
+  - id: epic_fix
+    kind: agent.run
+    inputs:
+      role: feature-flow-default:roles/fixer
+      task_ref: feature-flow-default:tasks/fix-epic-findings
+      write_access: branch
+      bindings:
+        findings_path: { from_artifact: "steps.epic_triage.artifacts.selected" }
     routes:
       completed: epic_review
       blocked: gate_epic_escalate
+      failed: gate_epic_escalate
       attempts_exhausted: gate_epic_escalate
+      replan_requested: replan
 
   - id: epic_readiness
     kind: findings.evaluate_readiness
     routes:
-      ready: delivery_order
+      ready: expand_delivery
       findings_open: epic_triage
 
-  - id: delivery_order
-    kind: delivery.deploy_order
+  - id: expand_delivery
+    kind: plan.replan
     inputs:
-      repositories: { expr: "params.repositories" }
-      order: { expr: "params.repositories" }
+      mode: expand
+      from: { expr: "params.repositories" }
+      mapping:
+        template: feature-flow-default:templates/repository-delivery
+        target: delivery
+        bind:
+          repository: "$"
+      resume_at: delivery
     routes:
-      completed: deliver
+      replan_requested: { end: resume }
+      failed: gate_epic_escalate
+      attempts_exhausted: gate_epic_escalate
 
-  - id: deliver
-    kind: delivery.deploy
+  - id: delivery
+    kind: parallel
     inputs:
-      repository: { expr: "steps.delivery_order.artifacts.next" }
+      branches: []
+      join: all
+      max_concurrency: 1
     routes:
       completed: delivery_report
-      failed: delivery_gate
-      blocked: delivery_gate
-      attempts_exhausted: delivery_gate
+      any_failed: delivery_gate
 
   - id: delivery_gate
     kind: delivery.gate
     gate: { decision_type: delivery.partial_approval }
     inputs:
       status: partial
+      options: [retry, fix_forward, revert]
     routes:
-      approved: deliver
-      rejected: "end: partial"
+      approved:
+        - when: "steps.delivery_gate.choice == 'revert'"
+          to: revert_prs
+        - when: "steps.delivery_gate.choice == 'fix_forward'"
+          to: replan
+        - to: delivery
+      rejected: { end: partial }
+
+  - id: revert_prs
+    kind: scm.revert
+    inputs:
+      pr_ref: { expr: "run.delivery_prs" }
+    routes:
+      completed: gate_revert
+      failed: gate_epic_escalate
+      attempts_exhausted: gate_epic_escalate
+
+  - id: gate_revert
+    kind: human.gate
+    gate: { decision_type: delivery.revert_approval }
+    inputs:
+      prompt_ref: feature-flow-default:prompts/revert-approval
+    routes:
+      approved: { end: partial }
+      rejected: { end: partial }
 
   - id: delivery_report
     kind: delivery.report
     inputs:
       ledger_ref: { expr: "run.delivery_ledger" }
     routes:
-      completed: "end: completed"
-      attempts_exhausted: "end: completed"
+      completed: { end: completed }
+      attempts_exhausted: { end: completed }
 
   - id: replan
     kind: plan.replan
     inputs:
+      mode: agent
       reason: { expr: "steps.plan_tickets.outcome" }
     routes:
-      replan_requested: tickets
+      replan_requested: { end: resume }
       failed: gate_epic_plan
       attempts_exhausted: gate_epic_plan
 
@@ -386,7 +460,7 @@ steps:
       prompt_ref: feature-flow-default:prompts/epic-plan-approval
     routes:
       approved: expand_tickets
-      rejected: "end: rejected"
+      rejected: { end: rejected }
 
   - id: gate_epic_escalate
     kind: human.gate
@@ -395,14 +469,14 @@ steps:
       prompt_ref: feature-flow-default:prompts/escalation
     routes:
       approved: replan
-      rejected: "end: failed"
+      rejected: { end: failed }
 ```
 
-### 2.1 The ticket expansion mechanism (D2)
+### 2.1 Ticket expansion (B1, D2)
 
-`tickets` starts with `branches: []`. `expand_tickets` is a `plan.replan` step
-whose agent consumes the `ticket-list` artifact and returns a patch adding one
-`run.child` per ticket. The patch, for a three-ticket epic:
+`tickets` starts with `branches: []`. `expand_tickets` is a `plan.replan` in
+`mode: expand` — **no agent** (B1). It maps each item of the `ticket-list`
+artifact to a `run.child` and returns a patch. For a three-ticket epic:
 
 ```yaml
 apiVersion: feature-flow/v1
@@ -412,6 +486,7 @@ metadata:
   proposed_by: { type: agent, step_id: expand_tickets }
   reason: "epic plan produced three tickets"
 base_revision: 1
+resume_at: tickets
 changes:
   - op: add_branch
     target: tickets
@@ -421,33 +496,115 @@ changes:
       inputs:
         child_scope: ticket
         plan_ref: feature-flow-default:templates/ticket-delivery
-        repositories: { expr: "params.repositories" }
+        parameters:
+          ticket_id: "EPIC-101"
+          repositories: { expr: "params.repositories" }
       routes:
-        completed: "end: completed"
-        failed: gate_epic_escalate
-        replan_parent: apply_child_patch
-        attempts_exhausted: gate_epic_escalate
+        blocked: gate_epic_escalate
+        replan_parent: replan
   - op: add_branch
     target: tickets
-    step: { id: ticket_2, kind: run.child, inputs: { ... }, routes: { ... } }
+    step:
+      id: ticket_2
+      kind: run.child
+      inputs:
+        child_scope: ticket
+        plan_ref: feature-flow-default:templates/ticket-delivery
+        parameters:
+          ticket_id: "EPIC-102"
+          repositories: { expr: "params.repositories" }
+      routes:
+        blocked: gate_epic_escalate
+        replan_parent: replan
   - op: add_branch
     target: tickets
-    step: { id: ticket_3, kind: run.child, inputs: { ... }, routes: { ... } }
+    step:
+      id: ticket_3
+      kind: run.child
+      inputs:
+        child_scope: ticket
+        plan_ref: feature-flow-default:templates/ticket-delivery
+        parameters:
+          ticket_id: "EPIC-103"
+          repositories: { expr: "params.repositories" }
+      routes:
+        blocked: gate_epic_escalate
+        replan_parent: replan
 ```
 
-The same template is reused across branches (review 09, answer 13). That is the
-normal ticket case.
+Three things the second draft got wrong, fixed here:
 
-### 2.2 What this example gets right
+- **A2: no `end: completed` on a branch.** A branch's terminal outcome returns to
+  the join. Only non-terminal outcomes (`blocked`, `replan_parent`) are routed,
+  and they route to steps in the parent plan.
+- **A5: `ticket_id` is passed.** `ticket-delivery` declares `ticket_id` as
+  required, so a branch that omitted it would fail check 6 at binding.
+- **A5: `replan_parent` routes to `replan`, which exists.** The second draft
+  routed it to `apply_child_patch`, which did not exist anywhere in the plan.
+
+### 2.2 Ordered two-repository delivery (A11)
+
+`expand_delivery` is the same deterministic expansion, applied to repositories.
+It produces one `delivery.deploy` per repository, chained in order:
+
+```yaml
+apiVersion: feature-flow/v1
+kind: PlanPatch
+metadata:
+  run_id: run-5678
+  proposed_by: { type: agent, step_id: expand_delivery }
+  reason: "delivery across two repositories in declared order"
+base_revision: 3
+resume_at: delivery
+changes:
+  - op: add_branch
+    target: delivery
+    step:
+      id: deliver_api
+      kind: delivery.deploy
+      inputs:
+        repository: acme/api
+        environment: production
+      routes:
+        blocked: delivery_gate
+  - op: add_branch
+    target: delivery
+    step:
+      id: deliver_web
+      kind: delivery.deploy
+      inputs:
+        repository: acme/web
+        environment: production
+      routes:
+        blocked: delivery_gate
+```
+
+**Order** comes from `max_concurrency: 1` on the `delivery` parallel: one branch
+in flight, in the order the branches were added. That is plan data, as `docs/01`
+7.3 requires, and it answers the second draft's open question — one
+`delivery.deploy` **per repository**, not one re-entered.
+
+### 2.3 The epic fix path (A10)
+
+The second draft's `epic_triage` routed `completed: epic_review`, so epic
+findings were triaged and re-reviewed but **never fixed**. `epic_fix` is added:
+an `agent.run` with `write_access: branch` on the integration branch, which then
+re-reviews. This is the seeded cross-ticket defect case (review 08, answer 4), so
+it has to be in the example.
+
+### 2.4 What this example gets right
 
 | Decision | How |
 |---|---|
-| D2: no hard-coded ticket ids | `branches: []`, filled by a patch from the `ticket-list` artifact |
-| A5: a ticket branch is a `run.child` | Each branch is `run.child` with `plan_ref` |
-| A3: join semantics | `join: all`, `max_concurrency: 2`. `any_failed` routes to a gate |
-| C5: epic review is `review.run` | On the aggregate diff, then `findings.evaluate_readiness` |
-| C6: `partial` does not route to success | `delivery_gate` routes `rejected` to `end: partial`, never `end: completed` |
-| C3: no repository names | `repositories` is a run parameter; order comes from plan data |
+| D2, B1: no hard-coded ticket ids, no agent | `branches: []`, filled by a deterministic `mode: expand` patch |
+| A5: a ticket branch is a `run.child` | Each branch is `run.child` with `plan_ref` and bound `ticket_id` |
+| A2: branch completion | No terminal routes on branches; the join aggregates |
+| A3: join semantics | `join: all`, `max_concurrency: 2`; `any_failed` to a gate |
+| A10: the epic fix path | `epic_triage` to `epic_fix` to `epic_review` |
+| A11: ordered delivery | One `delivery.deploy` per repository, `max_concurrency: 1` |
+| B12: gate choice | `delivery_gate` records a choice; guarded routes select on it |
+| C6: `partial` does not route to success | `rejected: { end: partial }`, never `{ end: completed }` |
+| A6: resume point | Every `plan.replan` routes `{ end: resume }` with `resume_at` in inputs |
 
 ---
 
@@ -456,9 +613,6 @@ normal ticket case.
 Review 09 E7. This is the `docs/01` section 6.2 scenario: a ticket returns
 `replan_parent` with a patch adding a `run.child` for the second repository to the
 **epic** plan.
-
-The ticket run's `implement` step discovers the change is needed in a second
-repository. It routes to `replan`, whose agent produces a patch for the parent.
 
 ```yaml
 apiVersion: feature-flow/v1
@@ -471,6 +625,7 @@ metadata:
     step_id: replan
   reason: "ticket 2 needs a change in the platform repository"
 base_revision: 4
+resume_at: tickets
 changes:
   - op: add_branch
     target: tickets
@@ -480,12 +635,12 @@ changes:
       inputs:
         child_scope: ticket
         plan_ref: feature-flow-default:templates/ticket-delivery
-        repositories: { expr: "params.platform_repository" }
+        parameters:
+          ticket_id: "EPIC-102-PLATFORM"
+          repositories: { expr: "params.repositories" }
       routes:
-        completed: "end: completed"
-        failed: gate_epic_escalate
-        replan_parent: apply_child_patch
-        attempts_exhausted: gate_epic_escalate
+        blocked: gate_epic_escalate
+        replan_parent: replan
   - op: insert_after
     target: epic_review
     step:
@@ -495,16 +650,12 @@ changes:
         scope: epic
         diff_ref: { expr: "run.aggregate_diff" }
         checks: [feature-flow-default:checks/cross-repo-contract]
-        prior_findings: { expr: "run.findings" }
+        prior_findings: { expr: "findings.all" }
       routes:
         completed: epic_readiness
         findings_open: epic_triage
         failed: gate_epic_escalate
         attempts_exhausted: gate_epic_escalate
-  - op: change_route
-    target: epic_review
-    outcome: completed
-    to: cross_repo_review
 ```
 
 ### 3.1 What happens
@@ -513,13 +664,16 @@ changes:
 2. The parent applies it through the same `applyPatch` (`docs/01` 3.4).
 3. `base_revision: 4` must be the parent's current revision. If the parent has
    moved on, the patch is rejected as stale and re-proposed (E3).
-4. Already-completed steps are untouched. `design` is protected and intact.
-5. The new child run starts. `cross_repo_review` now sits between `epic_review`
-   and `epic_readiness`.
+4. `resume_at: tickets` — execution continues at the `tickets` parallel, which
+   starts the new branch.
+5. Already-completed steps are untouched. `design` is protected and intact.
+6. `insert_after epic_review` **rewires** `epic_review`'s `completed` route to
+   `cross_repo_review` (A7). The second draft also carried an explicit
+   `change_route` for the same thing, which was redundant; it is removed.
 
 ### 3.2 If the patch had touched protected content
 
-If the patch had included `remove_step` on `design`, or a `change_route` that made
+If the patch had included `remove_step` on `design`, or a `change_route` making
 `design` unreachable, then because the proposer is an **agent** it would not be
 rejected: it would become a **pending human decision** (E2), recorded with the
 diff and the reason. A human may approve it with a reason. A patch that would
@@ -549,9 +703,9 @@ relax a safety floor is rejected outright with no human override path.
       scope: ticket
       diff_ref: { expr: "steps.spec_session.artifacts.spec" }
       checks: [feature-flow-default:checks/plan-review]
-      prior_findings: { expr: "run.findings" }
+      prior_findings: { expr: "findings.all" }
     routes:
-      completed: implement
+      completed: verification_review
       findings_open: spec_session
       failed: gate_spec
       attempts_exhausted: gate_spec
@@ -562,7 +716,7 @@ relax a safety floor is rejected outright with no human override path.
       scope: ticket
       diff_ref: { expr: "steps.spec_session.artifacts.spec" }
       checks: [feature-flow-default:checks/verification-requirements]
-      prior_findings: { expr: "run.findings" }
+      prior_findings: { expr: "findings.all" }
     routes:
       completed: implement
       findings_open: spec_session
@@ -574,9 +728,10 @@ relax a safety floor is rejected outright with no human override path.
 
 | Decision | How |
 |---|---|
-| C9: checks derive from later steps | `checks_from: [plan_review, verification_review]`. The session offers the validators of the steps that follow it, on demand |
+| C9: checks derive from later steps | `checks_from: [plan_review, verification_review]` |
 | C9: ids are engine-generated | No `session_id` in the plan |
-| D23: no check appears for the first time after submission | The human can run `plan_review` and `verification_review` inside the session, before submitting |
+| **A5: `verification_review` is reachable** | `plan_review` routes `completed: verification_review`. The second draft routed it to `implement`, leaving `verification_review` unreachable — check 13 |
+| D23: no check appears for the first time after submission | Both reviews can be run inside the session, before submitting |
 | The trust boundary is the submission | Hooks and policy do not apply in the human's environment (`docs/01` 7.4) |
 
 The prototype's spec session took eight rounds mostly because agent-drafted
@@ -585,17 +740,88 @@ plan review. `checks_from` is the mechanism that removes those round trips.
 
 ---
 
-## 5. Open questions
+## 5. The epic fix path as a fix ticket (A10, alternative)
 
-- **`delivery.deploy` and `delivery_order`.** Section 2 uses `delivery.deploy`
-  once, with `repository` from `delivery_order.artifacts.next`. Is one step
-  re-entered per repository, or should the plan contain one `delivery.deploy` per
-  repository? `docs/06` 12.2 says one child workflow per repository (DP3), which
-  suggests the former, but the plan shape is not explicit.
-- **`run.wait` is unused in all four examples.** Section 2 uses `parallel` with
-  `run.child` branches. Is `run.wait` only for children started outside a
-  `parallel`, or is it redundant?
-- **`end: partial` and the three delivery choices.** `docs/01` 7.3 gives retry,
-  fix forward and revert. Section 2 routes `approved` back to `deliver` (retry)
-  and `rejected` to `end: partial`. Fix forward and revert are not shown. Should
-  `delivery.gate` carry three options rather than approve and reject?
+Section 2.3 fixes epic findings on the integration branch. The alternative is a
+**fix ticket added by re-plan** — a `run.child` — which suits a defect that needs
+its own branch, tests and review:
+
+```yaml
+apiVersion: feature-flow/v1
+kind: PlanPatch
+metadata:
+  run_id: run-5678
+  proposed_by: { type: agent, step_id: epic_triage }
+  reason: "cross-ticket contract defect needs its own ticket"
+base_revision: 5
+resume_at: tickets
+changes:
+  - op: add_branch
+    target: tickets
+    step:
+      id: ticket_fix_contract
+      kind: run.child
+      inputs:
+        child_scope: ticket
+        plan_ref: feature-flow-default:templates/ticket-delivery
+        parameters:
+          ticket_id: "EPIC-FIX-1"
+          repositories: { expr: "params.repositories" }
+      routes:
+        blocked: gate_epic_escalate
+        replan_parent: replan
+```
+
+Both are valid. The integration-branch fix (2.3) is for a finding the epic review
+raised on the aggregate diff; the fix ticket is for one that needs independent
+verification. Which to use is workflow content (`docs/01` 1.5), not an engine
+decision.
+
+---
+
+## 6. Validation of these examples
+
+Review 10 A5 asks for this explicitly. Every example above was checked against
+the `docs/12` section 2 table.
+
+| Check | Result |
+|---|---|
+| 1 Schema conformance | Pass. All four parse as YAML; directives are mappings |
+| 2 Unknown step kind | Pass. 19 distinct kinds used, all in `docs/06` |
+| 3 Duplicate step id | Pass. Ids unique within each plan |
+| 4 Step id looks like a kind | Pass. `run_tests`, `plan_spec`, `epic_review` — none is a kind |
+| 5 Undeclared reference | Pass. `params.platform_repository` removed; every `params.*` is declared |
+| 6 Unbound required parameter | Pass. `ticket_id` is passed by every `run.child` branch |
+| 7-9 Expression parse, type, bounds | Pass by inspection. All expressions use declared namespaces |
+| 10 Every returnable outcome routed | Pass. Verified mechanically for examples 1 and 2 |
+| 11 Route target exists | Pass. `apply_child_patch` removed; every target resolves |
+| 12 Guarded list has a fallback | Pass. `delivery_gate` ends with an unguarded `to: delivery` |
+| 13 Unreachable step | Pass. `verification_review` is now reachable from `plan_review` |
+| 14 Every cycle has an exit | Pass. The test-fix-retest cycle exits via `gate_escalate` |
+| 15 Contract compatibility | Pass. `run_tests` consumes `ticket-plan` from `plan_spec`, which produces it |
+| 16 Producer declares the consumed artifact | Pass |
+| 17-19 Library, requires, repository adds only | Pass. All refs use one format |
+| 20-22 Capabilities, decision types, ceilings | Pass. `decision_type` values are namespaced |
+| 23-26 Patch checks | Pass. `base_revision` present; `resume_at` resolves |
+| 27-28 Step inputs, artifacts | Pass |
+| A2 Branch terminal routes | Pass. No branch routes a terminal outcome or uses a directive |
+
+**Mechanically verified:** examples 1 and 2 were parsed and checked by script —
+every route target resolves to a declared step id or a directive, and every step
+routes every outcome its kind can return. Examples 3 and 4 are fragments of those
+plans and were checked by hand.
+
+**Long term** these become test fixtures in the `docs/12` 3.3 format, so the
+checks run in CI rather than by hand.
+
+---
+
+## 7. Open questions
+
+- **`run.wait` is reserved and unused.** Removed from the language per review 10.
+  If a worked example needs it, it returns with that example.
+- **Fix ticket versus integration-branch fix** (section 5). Both are shown. Is
+  choosing between them workflow content, or should the engine prefer one?
+- **`delivery.deploy` as a `parallel` branch.** Section 2.2 puts a child-workflow
+  step (DP3) inside a `parallel`. Is that the right composition, or should
+  delivery use `run.child` with a delivery-scoped plan?
