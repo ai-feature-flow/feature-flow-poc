@@ -328,7 +328,14 @@ public class InterpreterWorkflow
                             // progress, the next counts as a restart.
                             attempts++;
                             state.ResumesWithoutProgress[step.Id] = 0;
-                            state.LastInfrastructureError += " [counted as restart: 3 resumes without progress]";
+                            // Persist it: the workflow may continue-as-new or
+                            // replay before the step finishes, and an attempt
+                            // counted only in a local would be lost.
+                            state.AttemptBudgets[step.Id] = attempts;
+                            run.Attempts = attempts;
+                            state.StepRuns[step.Id] = run;
+                            state.LastInfrastructureError +=
+                                $" [counted as restart: 3 resumes without progress, attempts={attempts}]";
                         }
                     }
 
@@ -434,23 +441,31 @@ public class InterpreterWorkflow
     /// </summary>
     private static AgentProgress? LastHeartbeat(Exception ex)
     {
-        if (ex is not Temporalio.Exceptions.TimeoutFailureException timeout)
-            return null;
-        if (timeout.TimeoutType != Temporalio.Api.Enums.V1.TimeoutType.Heartbeat)
-            return null;
-
-        var details = timeout.LastHeartbeatDetails;
-        if (details is null || details.Count == 0)
-            return null;
-
-        try
+        // A heartbeat timeout reaches the workflow wrapped in an
+        // ActivityFailureException, so unwrap before matching on the type.
+        var candidate = ex;
+        while (candidate is not null)
         {
-            return details.ElementAt<AgentProgress>(0);
+            if (candidate is Temporalio.Exceptions.TimeoutFailureException timeout &&
+                timeout.TimeoutType == Temporalio.Api.Enums.V1.TimeoutType.Heartbeat)
+            {
+                var details = timeout.LastHeartbeatDetails;
+                if (details is not null && details.Count > 0)
+                {
+                    try
+                    {
+                        return details.ElementAt<AgentProgress>(0);
+                    }
+                    catch (Exception)
+                    {
+                        return null;
+                    }
+                }
+                return null;
+            }
+            candidate = candidate.InnerException;
         }
-        catch (Exception)
-        {
-            return null;
-        }
+        return null;
     }
 
     private static ActivityOptions ActivityOptions(Step step) => new()
