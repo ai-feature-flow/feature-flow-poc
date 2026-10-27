@@ -1,0 +1,12 @@
+{
+  "steps": 50,
+  "result": "completed",
+  "samples": [
+    {
+      "ContinueAsNewIndex": 0,
+      "HistoryLengthBytes": 65982,
+      "HistoryEventCount": 309,
+      "StepsExecuted": 50
+    }
+  ]
+}
