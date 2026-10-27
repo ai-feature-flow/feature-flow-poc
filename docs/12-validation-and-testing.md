@@ -76,6 +76,26 @@ Consequences:
 
 Checks 10, 13, 14, 15 and 25 are the ones review 09 F3 said were missing.
 
+### 2.1 On check 6
+
+The first draft checked "unresolved `${...}`" at template load. That is wrong: a
+template is *supposed* to have unbound parameters. The split is check 5 (load)
+versus check 6 (binding).
+
+### 2.2 Check 25 has three results, not two
+
+Review 10 B2. A patch has three possible outcomes, and the table's "blocks"
+column cannot express the middle one:
+
+| Result | When | Effect |
+|---|---|---|
+| **Applied** | The patch is valid and touches nothing protected | A new plan revision |
+| **Pending human decision** | An **agent** patch touches protected content, or uses a role outside `policy.replan.allowed_roles` | Recorded with the diff and reason; a human may approve with a reason (E2) |
+| **Rejected** | The patch would relax a safety floor, or is invalid, or `base_revision` is stale | Recorded, not silently dropped (R7) |
+
+Only the third is a hard block. The second is a **wait**, and it is the case the
+prototype got wrong by either silently applying or silently refusing.
+
 ### 2.3 Reachability and expansion
 
 Review 11 A2 introduced `mode: expand`, which generates steps that do not exist
@@ -92,25 +112,20 @@ it, not over the literal step graph alone. A step reachable only through an
 expansion is still validated for its own routes and outcomes at load, because its
 shape is known from the mapping's template.
 
-### 2.2 Check 25 has three results, not two
+**When the patch-time half of this rule applies** (review 12 B5c). A patch
+targets steps by id, and those ids are resolved against the plan **as it will be
+after the patch**, not against the template at load. A patch may legitimately
+name a step it is itself inserting, so "the target does not exist" is not a load
+error. The rule is:
 
-Review 10 B2. A patch has three possible outcomes, and the table's "blocks"
-column cannot express the middle one:
-
-| Result | When | Effect |
+| Check | When it runs | What it compares against |
 |---|---|---|
-| **Applied** | The patch is valid and touches nothing protected | A new plan revision |
-| **Pending human decision** | An **agent** patch touches protected content, or uses a role outside `policy.replan.allowed_roles` | Recorded with the diff and reason; a human may approve with a reason (E2) |
-| **Rejected** | The patch would relax a safety floor, or is invalid, or `base_revision` is stale | Recorded, not silently dropped (R7) |
+| Route targets resolve | Load | The plan as loaded, plus `expand` mappings |
+| Patch `target`, `on_other` and `resume_at` resolve | **Patch time** | The plan as it will be after the patch is applied |
 
-Only the third is a hard block. The second is a **wait**, and it is the case the
-prototype got wrong by either silently applying or silently refusing.
-
-### 2.1 On check 6
-
-The first draft checked "unresolved `${...}`" at template load. That is wrong: a
-template is *supposed* to have unbound parameters. The split is check 5 (load)
-versus check 6 (binding).
+A patch whose `resume_at` does not exist after application is a blocking error at
+patch time (`docs/09` 15.1.1). It is not detectable at load, and must not be
+reported as a load error.
 
 ---
 

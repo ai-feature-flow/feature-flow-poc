@@ -360,6 +360,15 @@ Consequences for the step contract:
 - Heartbeats carry progress (last commit, session id), so a stalled agent is
   distinguishable from a slow one.
 
+**Graceful worker shutdown is an implementation requirement** (review 12 B2).
+Spike 1 measured 87.4s from a worker kill to the step making progress again, and
+almost all of it was the heartbeat timeout plus worker restart — not the resume
+itself, which is a re-attach by handle and is cheap. A worker shutting down
+deliberately must therefore finish its current heartbeat, release its slots, and
+let the platform reassign the activity immediately, rather than waiting to be
+detected as dead. Crash recovery and planned shutdown are different paths, and
+only the first should cost a timeout.
+
 ### 3.7 Attempt budgets
 
 Decided (review 03, Q12). This replaces the provisional rule written for review 01

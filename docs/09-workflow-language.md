@@ -361,8 +361,20 @@ the sibling branches undefined while that ran.
 | `completed` | The join | Counts towards `all`, `any` or `n` |
 | `failed` | The join | Counts towards `any_failed` |
 | `attempts_exhausted` | The join | Counts towards `any_failed` |
-| `replan_parent` | **The interpreter** | The child's patch goes through `applyPatch` with the E2 rules. **Siblings keep running** |
+| `replan_parent` | **The interpreter** | The child's patch goes through `applyPatch` with the E2 rules. **Siblings keep running.** The branch **counts as completed for the join** — see below |
 | `blocked` | The child's own plan | Never reaches the parent |
+
+**`replan_parent` counts as completed for the join** (review 12 B5a). The child
+did its work and reported a discovery; that is not a failure, and leaving the
+branch unresolved would deadlock a `join: all`. The parent applies the patch and
+the join proceeds.
+
+**The ticket is not automatically re-run.** Whether the parent's patch re-runs
+the child is a decision the patch makes, not a consequence of `replan_parent`. If
+the patch inserts a new step or re-points a route so the child's work is
+revisited, the child runs again; if it only adds future work, it does not. The
+interpreter does not infer a re-run, because inferring it would silently consume
+the child's attempt budget.
 
 Two consequences the third draft got wrong:
 
@@ -415,24 +427,38 @@ look-alike.
 
 - **.NET implementation: `Cel.NET`** (NuGet `Cel.NET`, version 2.3.1,
   <https://github.com/rayokota/cel.net>). It is a C# port of CEL-Java, tracks
-  `google/cel-spec`, targets `net8.0` and `net10.0`, and is a dependency of
-  `Confluent.SchemaRegistry.Rules`.
-- **Checked, not assumed.** Before this is settled, Spike 1 must confirm four
-  things: the checker rejects the functions the engine does not register;
-  evaluation is deterministic under replay; **static cost estimation exists**
-  (review 10 C1); and the cost limit is enforceable. If any fails, the fallback
-  is a hand-written subset with a published grammar — **accepted by the product
-  owner, 2026-10-27** — and this section changes.
-- **Cost estimation is the uncertain one.** It is a **cel-go** feature, and it is
-  not established that CEL-Java or Cel.NET has it. If it does not, the length and
-  AST-node caps in section 8.5 plus capped list sizes in workflow state are
-  sufficient: CEL is not Turing-complete, so evaluation cost is bounded by input
-  size. The caps are therefore the primary control and cost estimation is a
-  defence in depth, not the thing the design depends on.
+  `google/cel-spec`, and is a dependency of `Confluent.SchemaRegistry.Rules`.
+  **Confirmed by Spike 1, 2026-10-27.** It ships four target frameworks —
+  `net10.0`, `net8.0`, `netstandard2.1` and `net462` — not the two this section
+  previously stated, and pulls seven transitive dependencies including
+  Antlr4.Runtime.Standard, Apache.Avro and Google.Protobuf.
+- **Checked, and now confirmed.** Spike 1 ran the four checks and **all four
+  pass**: the checker rejects unregistered functions and unknown variables;
+  evaluation is deterministic under replay (120,000 evaluations, one distinct
+  result each, order-independent); **static cost estimation exists**
+  (`Cel.Cel.EstimateCost(object)` / `Cel.Prog.Cost()`); and the cost limit is
+  enforceable. Cel.NET stays. The fallback is no longer needed.
+- **Cost estimation is load-bearing, not defence in depth.** Cel.NET has no
+  runtime interrupt: `DecObserveEval` fires but the exception is swallowed, so an
+  expression that is already running cannot be stopped. The static cost estimate
+  is therefore the only thing that stops an expensive expression before it runs.
+  The length and AST-node caps in section 8.5 remain as a second control.
+- **The environment must be built with `Env.NewCustomEnv` and explicit opt-in.**
+  `Env.NewEnv()` and the default `ScriptHost` register the whole standard library
+  **and comprehensions** before the engine declares anything, so a checker built
+  on them is not restricted. This is what makes the first check above true in the
+  engine rather than only in the spike.
+- **`lower` and `upper` are registered by the engine** (review 12, answer 3).
+  Cel.NET does not declare them anywhere — not in the standard library, not in
+  `StringsLib` — but section 8.4 allows them. The engine registers them using
+  culture-invariant conversion (`ToLowerInvariant`); the culture-sensitive form
+  is non-deterministic across machines and is a replay hazard.
 - **Maintainer risk** (review 10 C2). Cel.NET has a small maintainer base. It is
-  recorded as a risk with the fallback above already stated, and the engine's
-  exposure is limited: CEL is used for route guards and input binding, so a
-  forced migration touches the expression evaluator, not the interpreter.
+  recorded as a risk, and the engine's exposure is limited: CEL is used for route
+  guards and input binding, so a forced migration touches the expression
+  evaluator, not the interpreter. The fallback remains a hand-written subset with
+  a published grammar, **accepted by the product owner, 2026-10-27**, if that
+  migration is ever forced.
 
 Why CEL rather than a bespoke subset: it is a specification with conformance
 tests, it is side-effect free and total by construction (no loops, no I/O, no
@@ -892,6 +918,20 @@ transformation that cannot fail if the artifact validates.
 data, and no expression is evaluated. An agent may still be used for a re-plan
 that needs judgement (`mode: agent`); the deterministic form is the default for
 expansion. L9's reasoning is unaffected: either way a **patch** is produced.
+
+**An expansion of zero items is not an error** (review 12 B5b). A ticket list
+with no tickets, or a repository list with one entry, are both legitimate
+outcomes of planning. The rules:
+
+| Case | Behaviour |
+|---|---|
+| Zero items, `shape: parallel` | The patch adds no branches. The `parallel` step has an empty branch list and **completes immediately** with `completed`. It does not wait, and it does not fail |
+| Zero items, `shape: chain` | The patch adds no steps. `target` routes directly to `on_other` |
+| Zero items and no `on_other` | A **blocking validation error at patch time**. With nothing to chain, the route out of `target` is undefined, so the plan would have a dangling route |
+
+The third case is the only one that blocks. An empty expansion is a valid plan
+that does less work, not a failure — and treating it as an error would make a
+planning step that finds nothing to do indistinguishable from one that broke.
 
 ### 13.2 Why a patch and not dynamic binding
 

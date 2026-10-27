@@ -217,6 +217,9 @@ policy:
   attempts:
     ceiling: { agent.run: 5, perRun: 40 }
     hardCeiling: { agent.run: 8, perRun: 60 }     # steering may not exceed without admin
+  timeouts:
+    heartbeat: 30s                                # how long a step may go silent
+    stalledAfter: 8                               # consecutive infrastructure failures before the run is marked stalled
   steering:
     mayAmendStep: [steerer, admin]
     mayOverrideContent: [admin]
@@ -257,6 +260,17 @@ Notes:
   epic gates yes; a default-branch merge only in the console.
 - `attempts.ceiling` is what a run may set within (F4). `hardCeiling` is what
   steering may grant up to; beyond it needs the admin role.
+- **`timeouts.heartbeat` is an operational setting, not a plan value** (review 12
+  B2). It is how long a step may go silent before the engine treats it as
+  interrupted, and it is the dominant term in crash recovery cost: Spike 1
+  measured 87.4s from worker kill to the step making progress again, almost all
+  of it this timeout plus worker restart. Lowering it detects crashes faster but
+  risks false positives on a slow step; raising it delays detection. It is set
+  per installation, not per step, because it describes the platform rather than
+  the work.
+- **`timeouts.stalledAfter`** is how many consecutive infrastructure failures
+  mark a run stalled on infrastructure (D24). A stalled run alerts and waits; it
+  never fails on its own. A human may abort it.
 - **Team overrides are not a fifth layer** (review 07, answer 1). They live in the
   organisation file and are selected by team, so precedence is unchanged.
 - **`policy.merge` states what is allowed; the repository chooses within it**

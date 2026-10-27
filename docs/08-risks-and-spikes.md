@@ -296,6 +296,13 @@ graph LR
 | Disaster recovery | Q18: no custom mechanism; standard backups |
 | Performance at scale | One run at a time is enough to answer these questions |
 
+### 4.1 Carried to later work
+
+| Item | Where it lands |
+|---|---|
+| **The API must report platform status distinctly from run status** (K2, half of Spike 1 exit criterion 7) | Deferred to the API work (review 12, answer 1). Spike 1 proved the other half — no step fails during a platform outage — but the spike has no API layer, only a client. This is an **acceptance criterion the API must meet**, recorded here so it is not lost |
+| Worker pool sizing | `docs/07`, once Spike 1's slot measurement is reproducible (review 12, answer 5) |
+
 ---
 
 ## 5. Open questions
