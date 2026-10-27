@@ -96,6 +96,15 @@ app.MapPost("/commands/{handle}/fail-hook", (string handle) =>
     return Results.Ok(new FailHookResponse(cmd.Handle, cmd.StepId));
 });
 
+// Spike-only: the inverse of fail-hook, so a test can prove the step recovers
+// once the hook endpoint comes back. fail-hook has no inverse in the original
+// contract, and /admin/reset would also wipe the commands under test.
+app.MapPost("/hook/{stepId}/restore", (string stepId) =>
+{
+    store.MarkHookUp(stepId);
+    return Results.Ok(new OkResponse(true));
+});
+
 app.MapPost("/admin/reset", () =>
 {
     store.Reset();
@@ -175,6 +184,8 @@ sealed class SandboxStore
     public bool IsHookDown(string stepId) => _hookDown.ContainsKey(stepId);
 
     public void MarkHookDown(string stepId) => _hookDown[stepId] = 1;
+
+    public void MarkHookUp(string stepId) => _hookDown.TryRemove(stepId, out _);
 
     public void Reset()
     {

@@ -29,6 +29,7 @@ public static class HarnessProgram
             "inspect" => await InspectAsync(client, Arg(args, "--id") ?? ""),
             "patch" => await PatchTests.RunAsync(client, queue),
             "replay" => await ReplayTests.RunAsync(client, args),
+            "crash" => await CrashTests.RunAsync(client, queue, args),
             _ => Help(),
         };
     }
@@ -201,6 +202,10 @@ public static class HarnessProgram
               history  --steps 200        measure history size at continue-as-new
               slots    --concurrency 8    measure worker slot capacity
               patch                       patch tests: exit criteria 2, 3, 4
+              replay                      replay tests against recorded histories
+              crash [all|1-resume-after-crash|2-repeated-kill-no-progress|
+                    3-hook-unreachable-infrastructure|4-break-connection]
+                                          crash tests: exit criterion 1 and its measurements
               inspect  --id <workflow>    query a run's state
             """);
         return 0;

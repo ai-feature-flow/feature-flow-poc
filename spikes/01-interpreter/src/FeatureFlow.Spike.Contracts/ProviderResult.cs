@@ -44,7 +44,22 @@ public sealed record AgentRunResult(
     string? CommandHandle = null,
     string? SandboxKey = null,
     string? PatchRef = null,
-    string? ErrorReason = null);
+    string? ErrorReason = null,
+    int InfrastructureRetries = 0);
+
+/// <summary>
+/// What an agent.run activity heartbeats. docs/01 3.6: "Heartbeats carry
+/// progress (last commit, session id), so a stalled agent is distinguishable
+/// from a slow one." The workflow reads the last heartbeat off a heartbeat
+/// timeout to decide whether a resume made progress (docs/01 3.7).
+/// </summary>
+public sealed record AgentProgress(
+    string? LastCommit,
+    int SessionTurns,
+    string? SessionRef,
+    string? CommandHandle,
+    string? SandboxKey,
+    double ElapsedSeconds);
 
 /// <summary>
 /// Progress evidence for the attempt rule. docs/01 3.7: progress is a new commit

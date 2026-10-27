@@ -279,14 +279,82 @@ public class InterpreterWorkflow
             }
             catch (Exception ex)
             {
+                // A heartbeat timeout is how a worker crash surfaces: the worker
+                // stopped heartbeating, so the activity times out and the retry
+                // re-attaches by handle (docs/08 2.1, H2). It is infrastructure,
+                // so it does not consume an attempt — but it IS a resume, and
+                // docs/01 3.7 makes a resume free only with progress. The last
+                // heartbeat carries the progress evidence (docs/01 3.6).
+                var heartbeat = LastHeartbeat(ex);
+                if (heartbeat is not null)
+                {
+                    run.Resumes++;
+                    run.InfrastructureFailures++;
+                    state.LastInfrastructureError =
+                        $"step {step.Id} heartbeat timeout after {heartbeat.SessionTurns} turns " +
+                        $"commit={heartbeat.LastCommit} handle={heartbeat.CommandHandle}";
+
+                    sessionRef = heartbeat.SessionRef ?? sessionRef;
+                    run.CommandHandle = heartbeat.CommandHandle ?? run.CommandHandle;
+                    run.SandboxKey = heartbeat.SandboxKey ?? run.SandboxKey;
+                    run.SessionRef = sessionRef;
+
+                    // Measurement 6: a restart would have produced a different
+                    // handle or key. Same handle and key means it resumed.
+                    if (run.CommandHandle is not null && heartbeat.CommandHandle is not null &&
+                        !string.Equals(run.CommandHandle, heartbeat.CommandHandle, StringComparison.Ordinal))
+                    {
+                        run.RestartedWhenShouldHaveResumed = true;
+                    }
+
+                    var progressed =
+                        (heartbeat.LastCommit is not null && heartbeat.LastCommit != lastCommit) ||
+                        heartbeat.SessionTurns > lastTurns;
+
+                    if (progressed)
+                    {
+                        state.ResumesWithoutProgress[step.Id] = 0;
+                        lastCommit = heartbeat.LastCommit ?? lastCommit;
+                        lastTurns = heartbeat.SessionTurns;
+                    }
+                    else
+                    {
+                        var without = state.ResumesWithoutProgress.TryGetValue(step.Id, out var w) ? w : 0;
+                        without++;
+                        state.ResumesWithoutProgress[step.Id] = without;
+                        if (without >= 3)
+                        {
+                            // docs/01 3.7: after 3 consecutive resumes with no
+                            // progress, the next counts as a restart.
+                            attempts++;
+                            state.ResumesWithoutProgress[step.Id] = 0;
+                            state.LastInfrastructureError += " [counted as restart: 3 resumes without progress]";
+                        }
+                    }
+
+                    if (attempts >= allowance)
+                    {
+                        run.Outcome = Outcomes.AttemptsExhausted;
+                        run.Attempts = attempts;
+                        state.AttemptBudgets[step.Id] = attempts;
+                        state.StepRuns[step.Id] = run;
+                        state.StepsExecuted++;
+                        return new StepOutcome(step.Id, Outcomes.AttemptsExhausted, null);
+                    }
+
+                    await Workflow.DelayAsync(TimeSpan.FromSeconds(1));
+                    continue;
+                }
+
                 // Infrastructure: the platform or the sandbox went away. Free
                 // retry, no attempt consumed (docs/01 3.7). Bounded, because an
                 // unbounded synchronous retry loop deadlocks the workflow task.
                 run.Resumes++;
+                run.InfrastructureFailures++;
                 infrastructureFailures++;
                 state.LastInfrastructureError =
                     $"step {step.Id} failure {infrastructureFailures}: {ex.GetType().Name}: {ex.Message}";
-                if (infrastructureFailures >= 5)
+                if (infrastructureFailures >= 50)
                     throw;
                 await Workflow.DelayAsync(TimeSpan.FromSeconds(1));
                 continue;
@@ -327,6 +395,12 @@ public class InterpreterWorkflow
             lastCommit = result.LastCommit ?? lastCommit;
             lastTurns = result.SessionTurns;
 
+            // Resume evidence for the harness (docs/01 3.6).
+            run.CommandHandle = result.CommandHandle ?? run.CommandHandle;
+            run.SandboxKey = result.SandboxKey ?? run.SandboxKey;
+            run.SessionRef = sessionRef;
+            run.InfrastructureFailures += result.InfrastructureRetries;
+
             if (result.Outcome == Outcomes.Completed || result.Outcome == Outcomes.Failed ||
                 result.Outcome == Outcomes.Blocked || result.Outcome == Outcomes.Approved ||
                 result.Outcome == Outcomes.Rejected || result.Outcome == Outcomes.FindingsOpen ||
@@ -353,13 +427,43 @@ public class InterpreterWorkflow
         }
     }
 
+    /// <summary>
+    /// Read the last heartbeat off a heartbeat timeout. docs/01 3.6: heartbeats
+    /// carry progress, so a stalled agent is distinguishable from a slow one.
+    /// Returns null for any other failure, which is not a resume.
+    /// </summary>
+    private static AgentProgress? LastHeartbeat(Exception ex)
+    {
+        if (ex is not Temporalio.Exceptions.TimeoutFailureException timeout)
+            return null;
+        if (timeout.TimeoutType != Temporalio.Api.Enums.V1.TimeoutType.Heartbeat)
+            return null;
+
+        var details = timeout.LastHeartbeatDetails;
+        if (details is null || details.Count == 0)
+            return null;
+
+        try
+        {
+            return details.ElementAt<AgentProgress>(0);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     private static ActivityOptions ActivityOptions(Step step) => new()
     {
         StartToCloseTimeout = TimeSpan.FromSeconds(ParseSeconds(step.SimulatedDuration, 5) + 120),
         HeartbeatTimeout = TimeSpan.FromSeconds(30),
         RetryPolicy = new Temporalio.Common.RetryPolicy
         {
-            MaximumAttempts = 0, // the interpreter owns the attempt budget
+            // The interpreter owns the attempt budget (docs/01 3.7), so Temporal
+            // must not retry on its own: one activity attempt per interpreter
+            // attempt, otherwise the workflow never sees the failure and the
+            // progress rule never runs.
+            MaximumAttempts = 1,
             InitialInterval = TimeSpan.FromSeconds(1),
             BackoffCoefficient = 1.5f,
             MaximumInterval = TimeSpan.FromSeconds(10),

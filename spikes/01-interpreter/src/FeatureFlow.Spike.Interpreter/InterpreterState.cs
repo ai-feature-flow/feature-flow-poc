@@ -62,6 +62,20 @@ public sealed class StepRun
     /// <summary>True if this step ever restarted when it should have resumed. Measurement 6.</summary>
     public bool RestartedWhenShouldHaveResumed { get; set; }
 
+    /// <summary>Spike-only: infrastructure failures seen, which must not consume attempts.</summary>
+    public int InfrastructureFailures { get; set; }
+
+    /// <summary>
+    /// Spike-only: the sandbox command handle, key and session seen on the last
+    /// attempt. The resume evidence from docs/01 3.6, read by the harness to
+    /// prove re-attachment rather than restart.
+    /// </summary>
+    public string? CommandHandle { get; set; }
+
+    public string? SandboxKey { get; set; }
+
+    public string? SessionRef { get; set; }
+
     public List<AttemptProgress> Attempts_ { get; set; } = new();
 
     public Dictionary<string, string> Outputs { get; set; } = new(StringComparer.Ordinal);

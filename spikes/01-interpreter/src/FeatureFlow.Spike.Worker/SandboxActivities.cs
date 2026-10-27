@@ -46,20 +46,36 @@ public sealed class SandboxActivities : ISpikeActivities
 
         // docs/05 1.2.1: poll inside ONE activity, heartbeating. One activity per
         // step, not one per poll. This is exit criterion 8 (R20).
+        var infrastructureRetries = 0;
         while (true)
         {
-            var view = await GetAsync<CommandView>($"/commands/{start.Handle}");
+            CommandView view;
+            try
+            {
+                view = await GetAsync<CommandView>($"/commands/{start.Handle}");
+            }
+            catch (Exception ex) when (IsUnreachable(ex))
+            {
+                // K3: the worker-to-sandbox connection broke. The command keeps
+                // running in the sandbox; this is infrastructure, so it retries
+                // free and does not consume an attempt (docs/01 3.7).
+                infrastructureRetries++;
+                Console.WriteLine($"ACTIVITY {request.StepId} attempt {request.AttemptNumber}: " +
+                                  $"sandbox unreachable, retry {infrastructureRetries}");
+                await Task.Delay(TimeSpan.FromMilliseconds(500));
+                continue;
+            }
 
             // The hook endpoint going away is infrastructure, not a denied tool
             // call (R19).
             var hook = await TryGetAsync<HookView>($"/hook/{request.StepId}");
             if (hook is null)
             {
-                ActivityExecutionContext.Current.Heartbeat(new object?[] { view });
+                ActivityExecutionContext.Current.Heartbeat(new object?[] { Progress(view) });
                 throw new ApplicationException("hook endpoint unreachable");
             }
 
-            ActivityExecutionContext.Current.Heartbeat(new object?[] { view });
+            ActivityExecutionContext.Current.Heartbeat(new object?[] { Progress(view) });
 
             if (view.Status == "completed")
             {
@@ -69,12 +85,27 @@ public sealed class SandboxActivities : ISpikeActivities
                     view.SessionRef,
                     view.SessionTurns,
                     view.Handle,
-                    view.SandboxKey);
+                    view.SandboxKey,
+                    null,
+                    null,
+                    infrastructureRetries);
             }
 
             await Task.Delay(TimeSpan.FromMilliseconds(500));
         }
     }
+
+    private static AgentProgress Progress(CommandView view) => new(
+        view.LastCommit, view.SessionTurns, view.SessionRef, view.Handle, view.SandboxKey,
+        view.ElapsedSeconds);
+
+    /// <summary>
+    /// docs/05 1.3: unreachable is Infrastructure, so it retries free. A 503
+    /// from the sandbox is the K3 injection; anything else is treated as work.
+    /// </summary>
+    private static bool IsUnreachable(Exception ex) =>
+        ex.Message.Contains("503", StringComparison.Ordinal) ||
+        ex.Message.Contains("unreachable", StringComparison.Ordinal);
     [Activity]
     public async Task<AgentRunResult> RunGenericStepAsync(GenericStepRequest request)
     {
