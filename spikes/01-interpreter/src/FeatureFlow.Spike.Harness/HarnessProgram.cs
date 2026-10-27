@@ -30,6 +30,7 @@ public static class HarnessProgram
             "patch" => await PatchTests.RunAsync(client, queue),
             "replay" => await ReplayTests.RunAsync(client, args),
             "crash" => await CrashTests.RunAsync(client, queue, args),
+            "outage" => await OutageTests.RunAsync(client, queue, args),
             _ => Help(),
         };
     }

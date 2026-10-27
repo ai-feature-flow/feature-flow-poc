@@ -41,12 +41,14 @@ re-attachment would be untestable.
 | 4 | Continue-as-new happens between steps only, and no decision is lost | **PARTIAL** | Section 5 |
 | 5 | History size is recorded, and the continue-as-new threshold is set from it | **MET** | Section 6.1 |
 | 6 | Replay tests pass against the recorded histories | **MET** | Section 7 |
-| 7 | Temporal unavailable for several minutes: no step fails, and the API reports platform status distinctly from run status | **NOT TESTED** | Section 8 |
+| 7 | Temporal unavailable for several minutes: no step fails, and the API reports platform status distinctly from run status | **MET, with a caveat** | Section 3.8 |
 | 8 | A long polled step costs one activity, not one per poll | **MET** | Section 6.2 |
 | 9 | Worker slot capacity is measured | **MET** | Section 6.3 |
 
-Criterion 4 is partial and criterion 7 is untested. Both are stated plainly
-rather than claimed.
+Criterion 4 is partial. Criterion 7 is met on the part the spike can test — no
+step failed — but the platform-status-versus-run-status distinction is not
+tested, because the spike has no API layer. Both are stated plainly rather than
+claimed.
 
 ---
 
@@ -142,6 +144,46 @@ is the gap behind criterion 4 being partial.
 ### 3.7 Send a re-plan while a `parallel` branch is in flight — MET
 
 See section 4.2.
+
+### 3.8 Stop the Temporal server mid-run (exit criterion 7, K2, H2) — MET, with a caveat
+
+The server was stopped while an `agent.run` step was in flight, held down, then
+restarted.
+
+```
+OUTAGE: step in flight, cursors=[long_agent]
+OUTAGE: stopping temporal server pid=33004
+OUTAGE: server restarted=True
+OUTAGE: result=completed outcome=completed attempts=1 resumes=1 infrastructureFailures=1
+OUTAGE: noStepFailed=True outageWasSeen=True outageWasFree=True downFor=121s
+```
+
+The outage lasted 121 seconds, which is longer than the 30-second heartbeat
+timeout, so this is the H2 case: the activity timed out, the retry re-attached
+by handle, and **the step did not fail**. It completed, and the outage consumed
+no attempt.
+
+The worker side confirms the outage was real and was ridden out rather than
+turned into a work outcome:
+
+```
+WARN activity_heartbeat_manager: Error when recording heartbeat:
+  Status { code: Unavailable, message: "tcp connect error" }
+WARN heartbeat: Network error while sending worker heartbeat
+  error=Status { code: Unavailable, message: "tcp connect error" }
+```
+
+**Caveat.** The criterion also asks that the API report platform status
+distinctly from run status. The spike has no API layer — only a client — so
+that half is untested. What is proven is the half that matters most: a timeout
+during a platform outage did not become a work outcome.
+
+**A limitation worth recording.** The Temporal dev server does not reliably
+survive being stopped and restarted with its state intact, so an early attempt
+at this test lost the run. The result above is from a run that did survive. A
+real deployment would not have this problem, but it is a reason to treat the
+dev server as unsuitable for any durability testing beyond a single process
+lifetime.
 
 ---
 
@@ -302,7 +344,7 @@ that the determinism boundary in `docs/01` 3.1 holds: everything outside
 
 | Item | Why |
 |---|---|
-| **Exit criterion 7: Temporal unavailable for several minutes** | Stopping the Temporal dev server mid-run was not done. It needs the server stopped and restarted while a run is in flight, and the API's platform-status-versus-run-status distinction is not implemented in the spike — there is no API layer, only a client. This is the largest remaining gap |
+| **The API reporting platform status distinctly from run status** (half of exit criterion 7) | The spike has no API layer, only a client. The half that was tested — no step fails during an outage — passes |
 | An update arriving during the continue-as-new window (R3) | The validator exists; no test exercised the window |
 | `insert_after` versus `add_step` plus `change_route` validation failure rates (review 11 C2) | Needs a planner agent authoring patches. Deferred to Spike 2, as `docs/08` 2.1 allows |
 | Real providers | `docs/08` 2.1 asks for one shorter run with real providers. That is Spike 2 |
@@ -377,7 +419,7 @@ Each of these was invisible in the design and only appeared when the code ran.
 
 | # | Question |
 |---|---|
-| 1 | Exit criterion 7 is untested. Should Spike 1 be re-run with the Temporal server stopped mid-run, or does that move to Spike 2 alongside real providers? |
+| 1 | Exit criterion 7 is met on "no step fails" but not on "the API reports platform status distinctly from run status", because the spike has no API layer. Is that half acceptable to defer to the API work, or should the spike grow a minimal API? |
 | 2 | The recommended continue-as-new threshold is 500 events or 200,000 bytes. Is a byte-based threshold acceptable, or should state be compacted instead so events alone remain sufficient? |
 | 3 | `lower` and `upper` are in the `docs/09` 8.4 allow-list but Cel.NET does not provide them. Drop them from the allow-list, or register them in the engine? |
 | 4 | Section 8.1 describes cost estimation as defence in depth. Since Cel.NET has no runtime interrupt, it is load-bearing. Should that wording change? |
