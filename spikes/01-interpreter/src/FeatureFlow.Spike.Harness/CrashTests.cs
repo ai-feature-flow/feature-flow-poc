@@ -25,6 +25,7 @@ public static class CrashTests
 
     private static string ResultsDir()
     {
+        // Review 12 B4: one place for results, not two.
         var dir = Path.GetFullPath(Path.Combine(
             AppContext.BaseDirectory, "..", "..", "..", "..", "..", "results"));
         Directory.CreateDirectory(dir);
@@ -186,7 +187,7 @@ public static class CrashTests
         sw.Stop();
 
         var state = await handle.QueryAsync(w => w.State());
-        var run = state.StepRuns.TryGetValue(stepId, out var r) ? r : null;
+        var run = Detail(id, stepId);
         var after = await sandbox.StateAsync();
 
         say($"result={result} outcome={run?.Outcome} attempts={run?.Attempts} " +
@@ -294,7 +295,7 @@ public static class CrashTests
         for (var i = 1; i <= 12; i++)
         {
             var state0 = await handle.QueryAsync(w => w.State());
-            var run0 = state0.StepRuns.TryGetValue(stepId, out var r0) ? r0 : null;
+            var run0 = Detail(id, stepId);
             if (run0 is not null && run0.Outcome.Length > 0)
             {
                 say($"kill {i}: step already terminal ({run0.Outcome}), stopping");
@@ -307,12 +308,12 @@ public static class CrashTests
             // Wait for the step to make progress again: a new resume, a new
             // attempt, or a terminal outcome. This is what measurement 5 times.
             var sw = Stopwatch.StartNew();
-            await WaitForResumeAsync(handle, stepId, run0?.Resumes ?? 0, run0?.Attempts ?? 0,
+            await WaitForResumeAsync(handle, id, stepId, run0?.Resumes ?? 0, run0?.Attempts ?? 0,
                 TimeSpan.FromSeconds(180), say);
             sw.Stop();
 
             var state1 = await handle.QueryAsync(w => w.State());
-            var run1 = state1.StepRuns.TryGetValue(stepId, out var r1) ? r1 : null;
+            var run1 = Detail(id, stepId);
             var turns = (await sandbox.CommandAsync(before.Handle))?.SessionTurns ?? -1;
 
             say($"kill {i}: resumes={run1?.Resumes} attempts={run1?.Attempts} " +
@@ -330,7 +331,7 @@ public static class CrashTests
         }
 
         var final = await handle.QueryAsync(w => w.State());
-        var run = final.StepRuns.TryGetValue(stepId, out var rf) ? rf : null;
+        var run = Detail(id, stepId);
         say($"final: outcome={run?.Outcome} attempts={run?.Attempts} resumes={run?.Resumes} " +
             $"terminal={final.TerminalStatus}");
 
@@ -404,7 +405,7 @@ public static class CrashTests
         // can finish. The point is what the workflow does with the failure.
         await Task.Delay(TimeSpan.FromSeconds(6));
         var mid = await handle.QueryAsync(w => w.State());
-        var midRun = mid.StepRuns.TryGetValue(stepId, out var mr) ? mr : null;
+        var midRun = Detail(id, stepId);
         say($"during outage: outcome='{midRun?.Outcome}' attempts={midRun?.Attempts} " +
             $"resumes={midRun?.Resumes} infrastructureFailures={midRun?.InfrastructureFailures}");
         say($"  lastError={mid.LastInfrastructureError}");
@@ -423,7 +424,7 @@ public static class CrashTests
         }
 
         var state = await handle.QueryAsync(w => w.State());
-        var run = state.StepRuns.TryGetValue(stepId, out var r) ? r : null;
+        var run = Detail(id, stepId);
         say($"result={result} outcome={run?.Outcome} attempts={run?.Attempts} " +
             $"resumes={run?.Resumes} infrastructureFailures={run?.InfrastructureFailures}");
         say($"lastError={state.LastInfrastructureError}");
@@ -521,7 +522,7 @@ public static class CrashTests
         }
 
         var state = await handle.QueryAsync(w => w.State());
-        var run = state.StepRuns.TryGetValue(stepId, out var r) ? r : null;
+        var run = Detail(id, stepId);
         var after = await sandbox.StateAsync();
         say($"result={result} outcome={run?.Outcome} attempts={run?.Attempts} " +
             $"resumes={run?.Resumes} infrastructureFailures={run?.InfrastructureFailures}");
@@ -593,6 +594,17 @@ public static class CrashTests
         return plan;
     }
 
+    /// <summary>
+    /// Read a step's detail from the record store. Review 12 A1: detail is not
+    /// carried across continue-as-new, so it is read from the store rather than
+    /// from workflow state.
+    /// </summary>
+    private static StepRunDetail? Detail(string runId, string stepId) =>
+        RecordStore.ForRun(runId).Entries
+            .Where(e => e.Kind == "step_run")
+            .Select(e => (StepRunDetail)e.Payload)
+            .LastOrDefault(d => d.StepId == stepId);
+
     /// <summary>Waits until the sandbox has a command for the step, with progress.</summary>
     private static async Task<CommandView?> WaitForCommandAsync(
         SandboxClient sandbox, string stepId, int minTurns, Action<string> say)
@@ -615,8 +627,8 @@ public static class CrashTests
     /// again" after a kill, and it is what measurement 5 times.
     /// </summary>
     private static async Task<bool> WaitForResumeAsync(
-        WorkflowHandle<InterpreterWorkflow> handle, string stepId, int resumesBefore,
-        int attemptsBefore, TimeSpan timeout, Action<string> say)
+        WorkflowHandle<InterpreterWorkflow> handle, string runId, string stepId,
+        int resumesBefore, int attemptsBefore, TimeSpan timeout, Action<string> say)
     {
         var deadline = DateTimeOffset.UtcNow + timeout;
         while (DateTimeOffset.UtcNow < deadline)
@@ -624,7 +636,7 @@ public static class CrashTests
             try
             {
                 var state = await handle.QueryAsync(w => w.State());
-                if (state.StepRuns.TryGetValue(stepId, out var run) &&
+                if (Detail(runId, stepId) is { } run &&
                     (run.Resumes > resumesBefore || run.Attempts > attemptsBefore ||
                      run.Outcome.Length > 0))
                 {

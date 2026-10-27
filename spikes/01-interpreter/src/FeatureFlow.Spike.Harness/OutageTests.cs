@@ -99,14 +99,20 @@ public static class OutageTests
         }
 
         var after = await handle.QueryAsync(w => w.State());
-        var run = after.StepRuns.TryGetValue("long_agent", out var r) ? r : null;
+        var outcome = after.StepOutcomes.TryGetValue("long_agent", out var r) ? r.Outcome : null;
 
-        Console.WriteLine($"OUTAGE: result={result} outcome={run?.Outcome} " +
+        // Detail is not carried (review 12 A1); read it from the record store.
+        var run = RecordStore.ForRun(id).Entries
+            .Where(e => e.Kind == "step_run")
+            .Select(e => (StepRunDetail)e.Payload)
+            .LastOrDefault(d => d.StepId == "long_agent");
+
+        Console.WriteLine($"OUTAGE: result={result} outcome={outcome} " +
                           $"attempts={run?.Attempts} resumes={run?.Resumes} " +
                           $"infrastructureFailures={run?.InfrastructureFailures}");
 
         // The criterion: no step failed because the platform was down.
-        var noStepFailed = run?.Outcome == Outcomes.Completed;
+        var noStepFailed = outcome == Outcomes.Completed;
         var outageWasSeen = (run?.InfrastructureFailures ?? 0) > 0;
         var outageWasFree = (run?.Attempts ?? 99) == 1;
 

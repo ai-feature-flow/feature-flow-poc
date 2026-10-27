@@ -1,0 +1,3 @@
+Using launch settings from D:\Dev\feature-flow-poc\spikes\01-interpreter\src\FeatureFlow.Spike.Sandbox\Properties\launchSettings.json...
+SANDBOX listening on http://127.0.0.1:5199 (port 5199)
+SANDBOX 2026-10-27T18:36:44.789Z GET /health -> 200 10ms

@@ -21,7 +21,7 @@ public static class PlanReady
         {
             if (state.Cursors.Contains(step.Id))
                 continue;
-            if (state.StepRuns.ContainsKey(step.Id))
+            if (state.StepOutcomes.ContainsKey(step.Id))
                 continue;
             if (!IsReachable(state.Plan, step.Id))
                 continue;
@@ -44,12 +44,12 @@ public static class PlanReady
         {
             if (other.Kind == "parallel" &&
                 ParallelInputs.FromInputs(other.Inputs).Branches.Contains(step.Id) &&
-                state.StepRuns.ContainsKey(other.Id))
+                state.StepOutcomes.ContainsKey(other.Id))
             {
                 return true;
             }
 
-            if (!state.StepRuns.TryGetValue(other.Id, out var run))
+            if (!state.StepOutcomes.TryGetValue(other.Id, out var run))
                 continue;
             var target = ResolveRoute(other, run.Outcome, state);
             if (target?.Step == step.Id)
@@ -164,7 +164,7 @@ public static class PlanReady
         if (parts[0] == "steps" && parts.Length >= 3)
         {
             var stepId = parts[1];
-            if (!state.StepRuns.TryGetValue(stepId, out var run))
+            if (!state.StepOutcomes.TryGetValue(stepId, out var run))
                 return null;
             if (parts[2] == "outcome")
                 return run.Outcome;

@@ -23,6 +23,14 @@ public class InterpreterWorkflow
 
     private bool continueAsNewRequested;
 
+    /// <summary>
+    /// Per-step detail, kept out of carried state. Review 12 A1: this is what
+    /// goes to the record store. It is rebuilt from the record store on replay,
+    /// so it must never be read to make a routing decision.
+    /// </summary>
+    private readonly Dictionary<string, StepRunDetail> stepDetails =
+        new(StringComparer.Ordinal);
+
     [WorkflowRun]
     public async Task<string> RunAsync(InterpreterInput input)
     {
@@ -37,14 +45,15 @@ public class InterpreterWorkflow
             // never mid-step, and never with a pending decision (R3).
             if (ShouldContinueAsNew(threshold))
             {
-                state.HistorySamples.Add(new HistorySample
-                {
-                    ContinueAsNewIndex = state.ContinueAsNewCount,
-                    HistoryLengthBytes = Workflow.CurrentHistorySize,
-                    HistoryEventCount = Workflow.CurrentHistoryLength,
-                    StepsExecuted = state.StepsExecuted,
-                });
+                RecordSample();
                 state.ContinueAsNewCount++;
+
+                // Review 12 A1: carried state must be bounded by plan size, not
+                // by steps executed. Drop per-step bookkeeping for steps that
+                // have finished before carrying the state forward.
+                state.PruneCompleted();
+                state.CarriedStateBytes = MeasureCarriedState();
+
                 throw Workflow.CreateContinueAsNewException<InterpreterWorkflow>(
                     w => w.RunAsync(new InterpreterInput
                     {
@@ -58,13 +67,7 @@ public class InterpreterWorkflow
             if (ready.Count == 0)
             {
                 // Record the final history size. Measurement 1.
-                state.HistorySamples.Add(new HistorySample
-                {
-                    ContinueAsNewIndex = state.ContinueAsNewCount,
-                    HistoryLengthBytes = Workflow.CurrentHistorySize,
-                    HistoryEventCount = Workflow.CurrentHistoryLength,
-                    StepsExecuted = state.StepsExecuted,
-                });
+                RecordSample();
                 return state.TerminalStatus ?? Outcomes.Completed;
             }
 
@@ -76,11 +79,8 @@ public class InterpreterWorkflow
                 await Workflow.WaitConditionAsync(() => decisions.ContainsKey(step.Id));
                 var decision = decisions[step.Id];
                 decisions.Remove(step.Id);
-                state.StepRuns[step.Id] = new StepRun
-                {
-                    StepId = step.Id,
-                    Outcome = decision == "approved" ? Outcomes.Approved : Outcomes.Rejected,
-                };
+                var outcome = decision == "approved" ? Outcomes.Approved : Outcomes.Rejected;
+                CompleteStep(step.Id, outcome);
                 state.StepsExecuted++;
             }
 
@@ -88,7 +88,7 @@ public class InterpreterWorkflow
             {
                 Route(gated, gated.ToDictionary(
                     s => s.Id,
-                    s => new StepOutcome(s.Id, state.StepRuns[s.Id].Outcome, null),
+                    s => new StepOutcome(s.Id, state.StepOutcomes[s.Id].Outcome, null),
                     StringComparer.Ordinal));
                 if (state.TerminalStatus is not null)
                     continue;
@@ -99,11 +99,7 @@ public class InterpreterWorkflow
             // (docs/01 3.3.1).
             foreach (var parallel in PlanReady.Ready(state).Where(s => s.Kind == "parallel").ToList())
             {
-                state.StepRuns[parallel.Id] = new StepRun
-                {
-                    StepId = parallel.Id,
-                    Outcome = "started",
-                };
+                state.StepOutcomes[parallel.Id] = new StepOutcomeRecord { Outcome = "started" };
             }
 
             var executable = PlanReady.Ready(state)
@@ -158,7 +154,7 @@ public class InterpreterWorkflow
     {
         foreach (var parallel in state.Plan.Steps.Where(s => s.Kind == "parallel").ToList())
         {
-            if (!state.StepRuns.TryGetValue(parallel.Id, out var parallelRun))
+            if (!state.StepOutcomes.TryGetValue(parallel.Id, out var parallelRun))
                 continue;
             // "started" means the branches are in flight; the join has not
             // settled yet.
@@ -170,11 +166,11 @@ public class InterpreterWorkflow
             if (branches.Count == 0)
                 continue;
 
-            var done = branches.Where(b => state.StepRuns.ContainsKey(b)).ToList();
-            var succeeded = done.Count(b => state.StepRuns[b].Outcome == Outcomes.Completed);
+            var done = branches.Where(b => state.StepOutcomes.ContainsKey(b)).ToList();
+            var succeeded = done.Count(b => state.StepOutcomes[b].Outcome == Outcomes.Completed);
             var failed = done.Count(b =>
-                state.StepRuns[b].Outcome == Outcomes.Failed ||
-                state.StepRuns[b].Outcome == Outcomes.AttemptsExhausted);
+                state.StepOutcomes[b].Outcome == Outcomes.Failed ||
+                state.StepOutcomes[b].Outcome == Outcomes.AttemptsExhausted);
 
             var satisfied = inputs.Join switch
             {
@@ -190,11 +186,7 @@ public class InterpreterWorkflow
                 ? Outcomes.AnyFailed
                 : Outcomes.Completed;
 
-            state.StepRuns[parallel.Id] = new StepRun
-            {
-                StepId = parallel.Id,
-                Outcome = outcome,
-            };
+            CompleteStep(parallel.Id, outcome);
             state.StepsExecuted++;
 
             Route(new List<Step> { parallel }, new Dictionary<string, StepOutcome>(StringComparer.Ordinal)
@@ -203,6 +195,60 @@ public class InterpreterWorkflow
             });
         }
     }
+
+    /// <summary>
+    /// Record a step's outcome in carried state, and its detail in the record
+    /// store. Review 12 A1: only what an expression can read is carried.
+    /// </summary>
+    private void CompleteStep(string stepId, string outcome)
+    {
+        var detail = stepDetails.TryGetValue(stepId, out var existing)
+            ? existing
+            : new StepRunDetail { StepId = stepId };
+        detail.Outcome = outcome;
+
+        state.StepOutcomes[stepId] = new StepOutcomeRecord
+        {
+            Outcome = outcome,
+            Outputs = new Dictionary<string, string>(detail.Outputs, StringComparer.Ordinal),
+        };
+
+        stepDetails[stepId] = detail;
+        RecordStore.ForRun(Workflow.Info.WorkflowId).RecordStepRun(detail);
+    }
+
+    /// <summary>
+    /// Review 12 A1: report the continue-as-new input size per continue-as-new,
+    /// so it can be shown to be bounded by plan size rather than steps executed.
+    /// </summary>
+    private long MeasureCarriedState()
+    {
+        try
+        {
+            return System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(state).Length;
+        }
+        catch
+        {
+            return -1;
+        }
+    }
+
+    private void RecordSample()
+    {
+        var sample = new HistorySample
+        {
+            ContinueAsNewIndex = state.ContinueAsNewCount,
+            HistoryLengthBytes = Workflow.CurrentHistorySize,
+            HistoryEventCount = Workflow.CurrentHistoryLength,
+            StepsExecuted = state.StepsExecuted,
+            CarriedStateBytes = MeasureCarriedState(),
+        };
+        RecordStore.ForRun(Workflow.Info.WorkflowId).RecordHistorySample(sample);
+        lastSample = sample;
+    }
+
+    /// <summary>The most recent sample, for the query. Not carried: it is one record.</summary>
+    private HistorySample? lastSample;
 
     private bool ShouldContinueAsNew(int threshold)
     {
@@ -242,9 +288,11 @@ public class InterpreterWorkflow
     {
         var attempts = state.AttemptBudgets.TryGetValue(step.Id, out var used) ? used : 0;
         var allowance = step.Limits?.Attempts ?? 3;
-        var run = state.StepRuns.TryGetValue(step.Id, out var existing)
+        // Detail lives outside carried state (review 12 A1). It is rebuilt from
+        // the record store, so it must never drive a routing decision.
+        var run = stepDetails.TryGetValue(step.Id, out var existing)
             ? existing
-            : new StepRun { StepId = step.Id };
+            : new StepRunDetail { StepId = step.Id };
 
         string? sessionRef = run.Attempts_.LastOrDefault()?.SessionRef;
         var lastCommit = run.Attempts_.LastOrDefault()?.LastCommit;
@@ -333,7 +381,7 @@ public class InterpreterWorkflow
                             // counted only in a local would be lost.
                             state.AttemptBudgets[step.Id] = attempts;
                             run.Attempts = attempts;
-                            state.StepRuns[step.Id] = run;
+                            stepDetails[step.Id] = run;
                             state.LastInfrastructureError +=
                                 $" [counted as restart: 3 resumes without progress, attempts={attempts}]";
                         }
@@ -344,26 +392,41 @@ public class InterpreterWorkflow
                         run.Outcome = Outcomes.AttemptsExhausted;
                         run.Attempts = attempts;
                         state.AttemptBudgets[step.Id] = attempts;
-                        state.StepRuns[step.Id] = run;
+                        stepDetails[step.Id] = run;
                         state.StepsExecuted++;
                         return new StepOutcome(step.Id, Outcomes.AttemptsExhausted, null);
                     }
 
-                    await Workflow.DelayAsync(TimeSpan.FromSeconds(1));
+                    await Workflow.DelayAsync(BackoffFor(run.InfrastructureFailures));
                     continue;
                 }
 
                 // Infrastructure: the platform or the sandbox went away. Free
-                // retry, no attempt consumed (docs/01 3.7). Bounded, because an
-                // unbounded synchronous retry loop deadlocks the workflow task.
+                // retry, no attempt consumed (docs/01 3.7).
+                //
+                // Review 12 A4: no count limit. A fixed 1s retry against an
+                // immediately refusing endpoint both fails the step after about
+                // 25 minutes and adds ~6 events per retry, which is R20 in
+                // another form. Exponential backoff with a cap instead, and past
+                // a threshold the run is marked stalled on infrastructure (D24)
+                // and alerts. It never fails on its own; a human may abort it.
                 run.Resumes++;
                 run.InfrastructureFailures++;
                 infrastructureFailures++;
+
+                var backoff = BackoffFor(infrastructureFailures);
                 state.LastInfrastructureError =
-                    $"step {step.Id} failure {infrastructureFailures}: {ex.GetType().Name}: {ex.Message}";
-                if (infrastructureFailures >= 50)
-                    throw;
-                await Workflow.DelayAsync(TimeSpan.FromSeconds(1));
+                    $"step {step.Id} infrastructure failure {infrastructureFailures}: " +
+                    $"{ex.GetType().Name}: {ex.Message} (backoff {backoff.TotalSeconds:F0}s)";
+
+                if (infrastructureFailures >= StalledAfterFailures)
+                {
+                    state.StalledOnInfrastructure = true;
+                    state.StalledSince ??= Workflow.UtcNow;
+                    state.StalledStepId = step.Id;
+                }
+
+                await Workflow.DelayAsync(backoff);
                 continue;
             }
 
@@ -416,7 +479,8 @@ public class InterpreterWorkflow
                 run.Outcome = result.Outcome;
                 run.Attempts = attempts + 1;
                 state.AttemptBudgets[step.Id] = run.Attempts;
-                state.StepRuns[step.Id] = run;
+                stepDetails[step.Id] = run;
+                CompleteStep(step.Id, result.Outcome);
                 state.StepsExecuted++;
                 return new StepOutcome(step.Id, result.Outcome, result.PatchRef);
             }
@@ -427,11 +491,32 @@ public class InterpreterWorkflow
                 run.Outcome = Outcomes.AttemptsExhausted;
                 run.Attempts = attempts;
                 state.AttemptBudgets[step.Id] = attempts;
-                state.StepRuns[step.Id] = run;
+                stepDetails[step.Id] = run;
+                CompleteStep(step.Id, Outcomes.AttemptsExhausted);
                 state.StepsExecuted++;
                 return new StepOutcome(step.Id, Outcomes.AttemptsExhausted, null);
             }
         }
+    }
+
+    /// <summary>
+    /// Review 12 A4: exponential backoff with a cap, so a long infrastructure
+    /// outage neither fails the step nor floods history with retries.
+    /// </summary>
+    public static readonly TimeSpan MaxBackoff = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Review 12 A4: past this many consecutive infrastructure failures the run
+    /// is marked stalled on infrastructure (D24) and alerts. It does not fail.
+    /// </summary>
+    public const int StalledAfterFailures = 8;
+
+    private static TimeSpan BackoffFor(int failures)
+    {
+        // 1s, 2s, 4s, 8s ... capped at MaxBackoff.
+        var seconds = Math.Pow(2, Math.Min(failures - 1, 20));
+        var capped = Math.Min(seconds, MaxBackoff.TotalSeconds);
+        return TimeSpan.FromSeconds(capped);
     }
 
     /// <summary>
@@ -530,7 +615,11 @@ public class InterpreterWorkflow
     public Task<string> SubmitPatchAsync(PlanPatch patch)
     {
         var result = ApplyPatch.Apply(state.Plan, patch);
-        state.PatchRecords.Add(new PatchRecord
+
+        // Review 12 A1: the patch record goes to the record store, not to
+        // carried state. R7 still requires it to be recorded rather than
+        // silently dropped.
+        RecordStore.ForRun(Workflow.Info.WorkflowId).RecordPatch(new PatchRecord
         {
             BaseRevision = patch.BaseRevision,
             NewRevision = result.Kind == PatchResultKind.Applied ? result.NewRevision : null,
@@ -581,8 +670,16 @@ public class InterpreterWorkflow
     [WorkflowQuery]
     public InterpreterState State() => state;
 
+    /// <summary>
+    /// Per-step detail for diagnosis. Not carried across continue-as-new: it is
+    /// read from the record store.
+    /// </summary>
     [WorkflowQuery]
-    public List<HistorySample> HistorySamples() => state.HistorySamples;
+    public Dictionary<string, StepRunDetail> StepRuns() =>
+        new(stepDetails, StringComparer.Ordinal);
+
+    [WorkflowQuery]
+    public HistorySample? LastSample() => lastSample;
 
     [WorkflowQuery]
     public int HistoryEventCount() => Workflow.CurrentHistoryLength;

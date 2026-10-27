@@ -60,7 +60,7 @@ public static class HarnessProgram
                     var state = await handle.QueryAsync(w => w.State());
                     foreach (var step in state.Plan.Steps.Where(s => s.Gate is not null))
                     {
-                        if (state.StepRuns.ContainsKey(step.Id))
+                        if (state.StepOutcomes.ContainsKey(step.Id))
                             continue;
                         await handle.ExecuteUpdateAsync(w => w.SubmitDecisionAsync(
                             new StepDecision(step.Id, Outcomes.Approved)));
@@ -103,16 +103,19 @@ public static class HarnessProgram
 
         var result = await handle.GetResultAsync<string>();
 
-        // The final sample is recorded by the workflow before it returns, so it
-        // survives completion. Measurement 1.
-        var samples = await handle.QueryAsync(w => w.HistorySamples());
+        // Review 12 A1: samples go to the record store, not to carried state.
+        // Read them back from there.
+        var samples = RecordStore.ForRun(id).Entries
+            .Where(e => e.Kind == "history_sample")
+            .Select(e => (HistorySample)e.Payload)
+            .ToList();
 
         Console.WriteLine($"HARNESS result={result}");
         foreach (var s in samples)
         {
             Console.WriteLine($"HARNESS continue-as-new #{s.ContinueAsNewIndex}: " +
                               $"events={s.HistoryEventCount} bytes={s.HistoryLengthBytes} " +
-                              $"steps={s.StepsExecuted}");
+                              $"steps={s.StepsExecuted} carried={s.CarriedStateBytes}");
         }
 
         var path = Path.Combine(ResultsDir(), $"history-{steps}.json");
@@ -180,16 +183,28 @@ public static class HarnessProgram
                           $"continueAsNew={state.ContinueAsNewCount} terminal={state.TerminalStatus}");
         Console.WriteLine($"HARNESS cursors=[{string.Join(",", state.Cursors)}]");
         Console.WriteLine($"HARNESS lastError={state.LastInfrastructureError}");
-        Console.WriteLine($"HARNESS stepRuns:");
-        foreach (var (stepId, run) in state.StepRuns)
-            Console.WriteLine($"  {stepId} -> {run.Outcome} attempts={run.Attempts} resumes={run.Resumes}");
+        Console.WriteLine($"HARNESS carriedStateBytes={state.CarriedStateBytes}");
+        Console.WriteLine($"HARNESS stepOutcomes (carried):");
+        foreach (var (stepId, record) in state.StepOutcomes)
+            Console.WriteLine($"  {stepId} -> {record.Outcome}");
+
+        // Detail is not carried; read it from the record store.
+        var details = RecordStore.ForRun(id).Entries
+            .Where(e => e.Kind == "step_run")
+            .Select(e => (StepRunDetail)e.Payload)
+            .ToList();
+        Console.WriteLine($"HARNESS stepRunDetail (record store):");
+        foreach (var d in details)
+            Console.WriteLine($"  {d.StepId} -> {d.Outcome} attempts={d.Attempts} " +
+                              $"resumes={d.Resumes} infra={d.InfrastructureFailures}");
         return 0;
     }
 
     private static string ResultsDir()
     {
+        // Review 12 B4: one place for results, not two.
         var dir = Path.GetFullPath(Path.Combine(
-            AppContext.BaseDirectory, "..", "..", "..", "..", "results"));
+            AppContext.BaseDirectory, "..", "..", "..", "..", "..", "results", "measurements"));
         Directory.CreateDirectory(dir);
         return dir;
     }

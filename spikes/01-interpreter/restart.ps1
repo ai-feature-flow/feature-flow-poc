@@ -8,12 +8,29 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $src = Join-Path $root 'src'
-$logDir = 'd:\Dev\feature-flow-poc\.spike'
+$logDir = Join-Path $root '.logs'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
-# Stop anything still holding the DLLs.
-Get-Process -Name dotnet -ErrorAction SilentlyContinue | ForEach-Object {
-    Stop-Process -Id $_.Id -Force
+# Review 12 A1: step-run detail, patch records and history samples go to the
+# record store, not to carried state. Both the worker and the harness need the
+# same path, so set it here rather than relying on the caller's environment.
+$recordStore = Join-Path $root 'results\records'
+New-Item -ItemType Directory -Force -Path $recordStore | Out-Null
+$env:FF_RECORD_STORE = $recordStore
+
+# Review 12 B3: stop only the spike's own processes, not every dotnet process on
+# the machine. The sandbox and worker are started with `dotnet run` from their
+# own directories, so match on the --urls and --queue arguments they were given.
+$spikePids = Get-CimInstance Win32_Process -Filter "Name = 'dotnet.exe'" |
+    Where-Object {
+        $_.CommandLine -like '*--urls http://127.0.0.1:5199*' -or
+        $_.CommandLine -like '*--queue spike-1*'
+    } |
+    Select-Object -ExpandProperty ProcessId
+
+foreach ($spikePid in $spikePids) {
+    Write-Host "stopping spike process $spikePid"
+    Stop-Process -Id $spikePid -Force -ErrorAction SilentlyContinue
 }
 Start-Sleep -Seconds 2
 

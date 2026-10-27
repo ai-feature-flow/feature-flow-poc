@@ -131,10 +131,10 @@ public static class PatchTests
             {
                 var s = await handle.QueryAsync(w => w.State());
                 if (i % 10 == 0)
-                    Console.WriteLine($"  poll {i}: runs=[{string.Join(",", s.StepRuns.Keys)}] " +
+                    Console.WriteLine($"  poll {i}: runs=[{string.Join(",", s.StepOutcomes.Keys)}] " +
                                       $"cursors=[{string.Join(",", s.Cursors)}]");
-                if (s.StepRuns.ContainsKey("tickets") &&
-                    s.StepRuns["tickets"].Outcome == "started")
+                if (s.StepOutcomes.ContainsKey("tickets") &&
+                    s.StepOutcomes["tickets"].Outcome == "started")
                 {
                     midRun = s;
                     break;
@@ -153,7 +153,7 @@ public static class PatchTests
             return 1;
         }
 
-        var completedBefore = midRun.StepRuns.Keys.OrderBy(x => x, StringComparer.Ordinal).ToList();
+        var completedBefore = midRun.StepOutcomes.Keys.OrderBy(x => x, StringComparer.Ordinal).ToList();
         var inFlightBefore = midRun.Cursors.OrderBy(x => x, StringComparer.Ordinal).ToList();
         Console.WriteLine($"PATCH mid-run: completed before=[{string.Join(",", completedBefore)}] " +
                           $"inFlight before=[{string.Join(",", inFlightBefore)}]");
@@ -166,21 +166,21 @@ public static class PatchTests
         Console.WriteLine($"PATCH mid-run: patch verdict={verdict}");
 
         var after = await handle.QueryAsync(w => w.State());
-        var completedAfter = after.StepRuns.Keys.OrderBy(x => x, StringComparer.Ordinal).ToList();
+        var completedAfter = after.StepOutcomes.Keys.OrderBy(x => x, StringComparer.Ordinal).ToList();
 
         // Every step that had completed must still be completed, with the same
         // outcome. In-flight branches are untouched by definition: the patch
         // applies to future steps.
         var preserved = completedBefore.All(k =>
-            after.StepRuns.ContainsKey(k) &&
-            after.StepRuns[k].Outcome == midRun.StepRuns[k].Outcome);
+            after.StepOutcomes.ContainsKey(k) &&
+            after.StepOutcomes[k].Outcome == midRun.StepOutcomes[k].Outcome);
 
         if (!preserved)
         {
             foreach (var k in completedBefore)
             {
-                var before = midRun.StepRuns[k].Outcome;
-                var now = after.StepRuns.TryGetValue(k, out var r) ? r.Outcome : "<gone>";
+                var before = midRun.StepOutcomes[k].Outcome;
+                var now = after.StepOutcomes.TryGetValue(k, out var r) ? r.Outcome : "<gone>";
                 if (before != now)
                     Console.WriteLine($"  changed: {k} {before} -> {now}");
             }
@@ -215,7 +215,7 @@ public static class PatchTests
                 var state = await handle.QueryAsync(w => w.State());
                 foreach (var step in state.Plan.Steps.Where(s => s.Gate is not null))
                 {
-                    if (state.StepRuns.ContainsKey(step.Id))
+                    if (state.StepOutcomes.ContainsKey(step.Id))
                         continue;
                     await handle.ExecuteUpdateAsync(w => w.SubmitDecisionAsync(
                         new StepDecision(step.Id, Outcomes.Approved)));
