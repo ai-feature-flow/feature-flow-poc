@@ -1,0 +1,42 @@
+
+=== PACKAGE FACTS ===
+
+  assembly name:              Cel.main
+  assembly version:           2.3.1.0
+  assembly file version:      2.3.1.0
+  informational version:      2.3.1+9aea3698ea4565018d826a7cc6cc14f54408b5a6
+  assembly location:          D:\Dev\feature-flow-poc\spikes\01-interpreter\src\CelChecks\bin\Debug\net9.0\Cel.main.dll
+
+  target frameworks shipped in the package (lib/ folders):
+      net10.0              Cel.main.dll   581120 bytes
+      net462               Cel.main.dll   578048 bytes
+      net8.0               Cel.main.dll   577024 bytes
+      netstandard2.1       Cel.main.dll   577536 bytes
+
+  transitive dependencies, resolved by NuGet (obj/project.assets.json):
+    target: net9.0
+      Antlr4.Runtime.Standard/4.13.1           [package]  deps: (none)
+      Apache.Avro/1.12.1                       [package]  deps: Newtonsoft.Json, System.CodeDom
+      Cel.NET/2.3.1                            [package]  deps: Antlr4.Runtime.Standard, Apache.Avro, Google.Protobuf, Grpc.Core.Api, Newtonsoft.Json, NodaTime  <-- the package under test
+      Google.Protobuf/3.26.1                   [package]  deps: (none)
+      Grpc.Core.Api/2.63.0                     [package]  deps: (none)
+      Newtonsoft.Json/13.0.4                   [package]  deps: (none)
+      NodaTime/3.3.3                           [package]  deps: (none)
+      System.CodeDom/8.0.0                     [package]  deps: (none)
+
+  dependency assemblies actually loaded into this process at runtime:
+      (loaded Antlr4.Runtime.Standard)
+      (loaded Avro)
+      (loaded Google.Protobuf)
+      (loaded Grpc.Core.Api)
+      (loaded Newtonsoft.Json)
+      (loaded NodaTime)
+      Antlr4.Runtime.Standard          4.13.1.0
+      Avro                             1.12.0.0
+      Cel.main                         2.3.1.0
+      Google.Protobuf                  3.26.1.0
+      Grpc.Core.Api                    2.0.0.0
+      Newtonsoft.Json                  13.0.0.0
+      NodaTime                         3.3.3.0
+
+

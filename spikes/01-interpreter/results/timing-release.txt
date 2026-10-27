@@ -1,0 +1,31 @@
+
+=== TIMING ===
+
+-- cold start: first Env + parse + check + plan + eval of the process --
+  Env.NewCustomEnv(StdLib, ClearMacros, Declarations):    71.976 ms
+  parse + check + plan ("findings.blocking_count == 0 && size(run.repositories) > 1"):    68.109 ms
+  first Eval():                              3.353 ms  -> True
+  TOTAL to first evaluation:               143.439 ms
+
+-- second time round in the same process (JIT/static init already paid) --
+  2nd Env.NewCustomEnv:       0.129 ms
+  2nd parse+check+plan:       2.061 ms
+  2nd Eval:                   0.021 ms
+  2nd TOTAL:                  2.210 ms
+
+  Reading: the first column is dominated by one-off JIT and static initialisation
+  (Antlr4 parser tables, Protobuf reflection, the standard-library overload tables).
+  The steady-state column is what a warm workflow worker pays.
+
+  ScriptHost path (build host + build script + first Execute):     4.578 ms -> True
+
+-- warm: 100,000 evaluations of the same compiled program --
+  Eval (Env/Prog path)
+      n= 100000  mean=  0.0006 ms (    0.60 us)  p50=   0.50 us  p95=   0.70 us  p99=   2.50 us  max= 1818.90 us
+  Execute (ScriptHost path)
+      n= 100000  mean=  0.0009 ms (    0.90 us)  p50=   0.80 us  p95=   1.10 us  p99=   1.30 us  max=  351.50 us
+-- warm compile: 10000 parse+check+plan of the same expression --
+  parse+check+plan
+      n=  10000  mean=  0.1254 ms (  125.36 us)  p50=  95.70 us  p95= 239.00 us  p99= 329.60 us  max= 1862.20 us
+
+

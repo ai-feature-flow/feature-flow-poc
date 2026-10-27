@@ -1,0 +1,182 @@
+
+=== PROBE: baseline Env content ===
+
+[Env.NewEnv() [no options]]
+  1 + 1                        -> CHECK ACCEPT
+  size('abc')                  -> CHECK ACCEPT
+  'abc'.contains('b')          -> CHECK ACCEPT
+  'abc'.matches('a.*')         -> CHECK ACCEPT
+  matches('abc', 'a.*')        -> CHECK REJECT: ERROR: <input>:1:8: found no matching overload for 'matches' applied to '(string, string)'
+  [1,2].all(x, x > 0)          -> CHECK ACCEPT
+  timestamp(0)                 -> CHECK ACCEPT
+  foo                          -> CHECK REJECT: ERROR: <input>:1:1: undeclared reference to 'foo' (in container '')
+  x.y.z                        -> CHECK REJECT: ERROR: <input>:1:1: undeclared reference to 'x' (in container '')
+
+[Env.NewCustomEnv() [no options]]
+  1 + 1                        -> CHECK REJECT: ERROR: <input>:1:3: undeclared reference to '_+_' (in container '')
+  size('abc')                  -> CHECK REJECT: ERROR: <input>:1:5: undeclared reference to 'size' (in container '')
+  'abc'.contains('b')          -> CHECK REJECT: ERROR: <input>:1:15: undeclared reference to 'contains' (in container '')
+  'abc'.matches('a.*')         -> CHECK REJECT: ERROR: <input>:1:14: undeclared reference to 'matches' (in container '')
+  matches('abc', 'a.*')        -> CHECK REJECT: ERROR: <input>:1:8: undeclared reference to 'matches' (in container '')
+  [1,2].all(x, x > 0)          -> CHECK REJECT: ERROR: <input>:1:10: undeclared reference to 'all' (in container '')
+  timestamp(0)                 -> CHECK REJECT: ERROR: <input>:1:10: undeclared reference to 'timestamp' (in container '')
+  foo                          -> CHECK REJECT: ERROR: <input>:1:1: undeclared reference to 'foo' (in container '')
+  x.y.z                        -> CHECK REJECT: ERROR: <input>:1:1: undeclared reference to 'x' (in container '')
+
+[Env.NewCustomEnv(StdLib())]
+  1 + 1                        -> CHECK ACCEPT
+  size('abc')                  -> CHECK ACCEPT
+  'abc'.contains('b')          -> CHECK ACCEPT
+  'abc'.matches('a.*')         -> CHECK ACCEPT
+  matches('abc', 'a.*')        -> CHECK REJECT: ERROR: <input>:1:8: found no matching overload for 'matches' applied to '(string, string)'
+  [1,2].all(x, x > 0)          -> CHECK ACCEPT
+  timestamp(0)                 -> CHECK ACCEPT
+  foo                          -> CHECK REJECT: ERROR: <input>:1:1: undeclared reference to 'foo' (in container '')
+  x.y.z                        -> CHECK REJECT: ERROR: <input>:1:1: undeclared reference to 'x' (in container '')
+
+[Env.NewCustomEnv(StdLib(), ClearMacros())]
+  1 + 1                        -> CHECK ACCEPT
+  size('abc')                  -> CHECK ACCEPT
+  'abc'.contains('b')          -> CHECK ACCEPT
+  'abc'.matches('a.*')         -> CHECK ACCEPT
+  matches('abc', 'a.*')        -> CHECK REJECT: ERROR: <input>:1:8: found no matching overload for 'matches' applied to '(string, string)'
+  [1,2].all(x, x > 0)          -> CHECK REJECT: ERROR: <input>:1:10: undeclared reference to 'all' (in container '')
+  timestamp(0)                 -> CHECK ACCEPT
+  foo                          -> CHECK REJECT: ERROR: <input>:1:1: undeclared reference to 'foo' (in container '')
+  x.y.z                        -> CHECK REJECT: ERROR: <input>:1:1: undeclared reference to 'x' (in container '')
+
+--- ITypeProvider / registry inspection ---
+bare.TypeProvider      = Cel.Common.Types.Pb.ProtoTypeRegistry
+custom.TypeProvider    = Cel.Common.Types.Pb.ProtoTypeRegistry
+
+--- functions the standard library registers (via Checker.StandardDeclarations) ---
+  48 declarations; functions (non-operator):
+    !_
+    -_
+    @in
+    @not_strictly_false
+    bool
+    bytes
+    contains
+    double
+    duration
+    dyn
+    endsWith
+    getDate
+    getDayOfMonth
+    getDayOfWeek
+    getDayOfYear
+    getFullYear
+    getHours
+    getMilliseconds
+    getMinutes
+    getMonth
+    getSeconds
+    in
+    int
+    list
+    map
+    matches
+    null_type
+    size
+    startsWith
+    string
+    timestamp
+    type
+    uint
+
+  operators (the '_x_' names): _!=_ _%_ _&&_ _*_ _+_ _-_ _/_ _<=_ _<_ _==_ _>=_ _>_ _?_:_ _[_] _||_
+
+--- clock / randomness / I/O reachability under StdLib ---
+  now()                            -> CHECK REJECT: ERROR: <input>:1:4: undeclared reference to 'now' (in container '')
+  random()                         -> CHECK REJECT: ERROR: <input>:1:7: undeclared reference to 'random' (in container '')
+  rand()                           -> CHECK REJECT: ERROR: <input>:1:5: undeclared reference to 'rand' (in container '')
+  uuid()                           -> CHECK REJECT: ERROR: <input>:1:5: undeclared reference to 'uuid' (in container '')
+  currentTime()                    -> CHECK REJECT: ERROR: <input>:1:12: undeclared reference to 'currentTime' (in container '')
+  timestamp(0) > timestamp(1)      -> CHECK ACCEPT
+  duration('1s')                   -> CHECK ACCEPT
+  getDate(0)                       -> CHECK REJECT: ERROR: <input>:1:8: found no matching overload for 'getDate' applied to '(int)'
+  getFullYear(0)                   -> CHECK REJECT: ERROR: <input>:1:12: found no matching overload for 'getFullYear' applied to '(int)'
+  math.greatest(1, 2)              -> CHECK REJECT: ERROR: <input>:1:1: undeclared reference to 'math' (in container '')
+  math.least(1, 2)                 -> CHECK REJECT: ERROR: <input>:1:1: undeclared reference to 'math' (in container '')
+  'a'.format([1])                  -> CHECK REJECT: ERROR: <input>:1:11: undeclared reference to 'format' (in container '')
+  dyn(1)                           -> CHECK ACCEPT
+
+--- the stdlib's own declarations for the 8.4 functions (as Decl protos) ---
+    { "name": "size", "function": { "overloads": [ { "overloadId": "string_size", "params": [ { "primitive": "STRING" } ], "resultType": { "primitive": "INT64" }, "isInstanceFunction": true }, { "overloadId": "bytes_size", "params": [ { "primitive": "BYTES" } ], "resultType": { "primitive": "INT64" }, "isInstanceFunction": true }, { "overloadId": "list_size", "params": [ { "listType": { "elemType": { "typeParam": "A" } } } ], "typeParams": [ "A" ], "resultType": { "primitive": "INT64" }, "isInstanceFunction": true }, { "overloadId": "map_size", "params": [ { "mapType": { "keyType": { "typeParam": "A" }, "valueType": { "typeParam": "B" } } } ], "typeParams": [ "A", "B" ], "resultType": { "primitive": "INT64" }, "isInstanceFunction": true }, { "overloadId": "size_string", "params": [ { "primitive": "STRING" } ], "resultType": { "primitive": "INT64" } }, { "overloadId": "size_bytes", "params": [ { "primitive": "BYTES" } ], "resultType": { "primitive": "INT64" } }, { "overloadId": "size_list", "params": [ { "listType": { "elemType": { "typeParam": "A" } } } ], "typeParams": [ "A" ], "resultType": { "primitive": "INT64" } }, { "overloadId": "size_map", "params": [ { "mapType": { "keyType": { "typeParam": "A" }, "valueType": { "typeParam": "B" } } } ], "typeParams": [ "A", "B" ], "resultType": { "primitive": "INT64" } } ] } }
+    { "name": "contains", "function": { "overloads": [ { "overloadId": "contains_string", "params": [ { "primitive": "STRING" }, { "primitive": "STRING" } ], "resultType": { "primitive": "BOOL" }, "isInstanceFunction": true } ] } }
+    { "name": "endsWith", "function": { "overloads": [ { "overloadId": "ends_with_string", "params": [ { "primitive": "STRING" }, { "primitive": "STRING" } ], "resultType": { "primitive": "BOOL" }, "isInstanceFunction": true } ] } }
+    { "name": "matches", "function": { "overloads": [ { "overloadId": "matches_string", "params": [ { "primitive": "STRING" }, { "primitive": "STRING" } ], "resultType": { "primitive": "BOOL" }, "isInstanceFunction": true } ] } }
+    { "name": "startsWith", "function": { "overloads": [ { "overloadId": "starts_with_string", "params": [ { "primitive": "STRING" }, { "primitive": "STRING" } ], "resultType": { "primitive": "BOOL" }, "isInstanceFunction": true } ] } }
+
+
+--- can the engine declare operators by name to get an exact 8.4 whitelist? ---
+  1 + 1                                      -> ACCEPT
+  1 < 2                                      -> ACCEPT
+  true && false                              -> ACCEPT
+  1 == 1                                     -> ACCEPT
+  size('abc') == 3                           -> ACCEPT
+  params.ticket_id.startsWith('TICKET-')     -> REJECT: ERROR: <input>:1:28: found no matching overload for 'startsWith' applied to 'dyn.(string)'
+  params.ticket_id.matches('^T')             -> REJECT: ERROR: <input>:1:25: found no matching overload for 'matches' applied to 'dyn.(string)'
+  contains(params.ticket_id, 'TICKET')       -> ACCEPT
+  lower('ABC')                               -> ACCEPT
+  upper('abc')                               -> ACCEPT
+  endsWith(params.ticket_id, '-1')           -> ACCEPT
+  timestamp(0)                               -> REJECT: ERROR: <input>:1:10: undeclared reference to 'timestamp' (in container '')
+  duration('1s')                             -> REJECT: ERROR: <input>:1:9: undeclared reference to 'duration' (in container '')
+  dyn(1)                                     -> REJECT: ERROR: <input>:1:4: undeclared reference to 'dyn' (in container '')
+  int('1')                                   -> REJECT: ERROR: <input>:1:4: undeclared reference to 'int' (in container '')
+  now()                                      -> REJECT: ERROR: <input>:1:4: undeclared reference to 'now' (in container '')
+  httpGet('x')                               -> REJECT: ERROR: <input>:1:8: undeclared reference to 'httpGet' (in container '')
+  manifest.x                                 -> REJECT: ERROR: <input>:1:1: undeclared reference to 'manifest' (in container '')
+
+--- POSTURE C: stdlib decl protos filtered to the 8.4 allow-list ---
+  kept 25 of 55 stdlib declarations:
+    !_, -_, @in, @not_strictly_false, _!=_, _%_, _&&_, _*_, _+_, _-_, _/_, _<=_, _<_, _==_, _>=_, _>_, _?_:_, _[_], _||_, contains, endsWith, in, matches, size, startsWith
+
+  1 + 1                                        -> ACCEPT
+  1 < 2                                        -> ACCEPT
+  true && false                                -> ACCEPT
+  1 == 1                                       -> ACCEPT
+  !true                                        -> ACCEPT
+  -1                                           -> ACCEPT
+  1 % 2                                        -> ACCEPT
+  size('abc') == 3                             -> ACCEPT
+  size(run.repositories) > 1                   -> ACCEPT
+  params.ticket_id.startsWith('TICKET-')       -> ACCEPT
+  params.ticket_id.matches('^T')               -> ACCEPT
+  params.ticket_id.endsWith('-1')              -> ACCEPT
+  params.ticket_id.contains('TICKET')          -> ACCEPT
+  lower('ABC')                                 -> REJECT: ERROR: <input>:1:6: undeclared reference to 'lower' (in container '')
+  upper('abc')                                 -> REJECT: ERROR: <input>:1:6: undeclared reference to 'upper' (in container '')
+  params.ticket_id in ['a', 'b']               -> ACCEPT
+  findings.blocking_count > 0                  -> ACCEPT
+  timestamp(0)                                 -> REJECT: ERROR: <input>:1:10: undeclared reference to 'timestamp' (in container '')
+  duration('1s')                               -> REJECT: ERROR: <input>:1:9: undeclared reference to 'duration' (in container '')
+  dyn(1)                                       -> REJECT: ERROR: <input>:1:4: undeclared reference to 'dyn' (in container '')
+  int('1')                                     -> REJECT: ERROR: <input>:1:4: undeclared reference to 'int' (in container '')
+  string(1)                                    -> REJECT: ERROR: <input>:1:7: undeclared reference to 'string' (in container '')
+  now()                                        -> REJECT: ERROR: <input>:1:4: undeclared reference to 'now' (in container '')
+  random()                                     -> REJECT: ERROR: <input>:1:7: undeclared reference to 'random' (in container '')
+  httpGet('x')                                 -> REJECT: ERROR: <input>:1:8: undeclared reference to 'httpGet' (in container '')
+  manifest.x                                   -> REJECT: ERROR: <input>:1:1: undeclared reference to 'manifest' (in container '')
+  run.repositories.all(r, r.startsWith('svc-')) -> REJECT: ERROR: <input>:1:21: undeclared reference to 'all' (in container '')
+
+--- POSTURE D: does Cel.Extension.StringsLib supply 'lower'/'upper'? ---
+  lower('ABC')                 -> REJECT: ERROR: <input>:1:6: undeclared reference to 'lower' (in container '')
+  upper('abc')                 -> REJECT: ERROR: <input>:1:6: undeclared reference to 'upper' (in container '')
+  lower(params.ticket_id)      -> REJECT: ERROR: <input>:1:6: undeclared reference to 'lower' (in container '')
+  'ABC'.lower()                -> REJECT: ERROR: <input>:1:12: undeclared reference to 'lower' (in container '')
+  'abc'.upper()                -> REJECT: ERROR: <input>:1:12: undeclared reference to 'upper' (in container '')
+  'a,b'.split(',')             -> ACCEPT
+  'a b'.replace(' ', '_')      -> ACCEPT
+  '  a  '.trim()               -> ACCEPT
+  'abc'.join(['1'])            -> REJECT: ERROR: <input>:1:11: found no matching overload for 'join' applied to 'string.(list(string))'
+  'abc'.substring(1)           -> ACCEPT
+
+  StringsLib declaration names:
+  [StringsLib only] lower('ABC')             -> REJECT: ERROR: <input>:1:6: undeclared reference to 'lower' (in container '')
+  [StringsLib only] upper('abc')             -> REJECT: ERROR: <input>:1:6: undeclared reference to 'upper' (in container '')
+  [StringsLib only] 'a,b'.split(',')         -> ACCEPT
+  [StringsLib only] 'abc'.replace('b','c')   -> ACCEPT
+

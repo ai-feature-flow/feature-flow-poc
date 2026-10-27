@@ -1,0 +1,544 @@
+=== PACKAGE FACTS ===
+
+  assembly name:              Cel.main
+  assembly version:           2.3.1.0
+  assembly file version:      2.3.1.0
+  informational version:      2.3.1+9aea3698ea4565018d826a7cc6cc14f54408b5a6
+  assembly location:          D:\Dev\feature-flow-poc\spikes\01-interpreter\src\CelChecks\bin\Release\net9.0\Cel.main.dll
+
+  target frameworks shipped in the package (lib/ folders):
+      net10.0              Cel.main.dll   581120 bytes
+      net462               Cel.main.dll   578048 bytes
+      net8.0               Cel.main.dll   577024 bytes
+      netstandard2.1       Cel.main.dll   577536 bytes
+
+  transitive dependencies, resolved by NuGet (obj/project.assets.json):
+    target: net9.0
+      Antlr4.Runtime.Standard/4.13.1           [package]  deps: (none)
+      Apache.Avro/1.12.1                       [package]  deps: Newtonsoft.Json, System.CodeDom
+      Cel.NET/2.3.1                            [package]  deps: Antlr4.Runtime.Standard, Apache.Avro, Google.Protobuf, Grpc.Core.Api, Newtonsoft.Json, NodaTime  <-- the package under test
+      Google.Protobuf/3.26.1                   [package]  deps: (none)
+      Grpc.Core.Api/2.63.0                     [package]  deps: (none)
+      Newtonsoft.Json/13.0.4                   [package]  deps: (none)
+      NodaTime/3.3.3                           [package]  deps: (none)
+      System.CodeDom/8.0.0                     [package]  deps: (none)
+
+  dependency assemblies actually loaded into this process at runtime:
+      (loaded Antlr4.Runtime.Standard)
+      (loaded Avro)
+      (loaded Google.Protobuf)
+      (loaded Grpc.Core.Api)
+      (loaded Newtonsoft.Json)
+      (loaded NodaTime)
+      Antlr4.Runtime.Standard          4.13.1.0
+      Avro                             1.12.0.0
+      Cel.main                         2.3.1.0
+      Google.Protobuf                  3.26.1.0
+      Grpc.Core.Api                    2.0.0.0
+      Newtonsoft.Json                  13.0.0.0
+      NodaTime                         3.3.3.0
+
+=== CHECK 1: restricted checker ===
+
+-- registered declarations --
+   params
+   steps
+   run
+   findings
+
+[1a control: allowed variable + operator]
+  expression: findings.blocking_count > 0
+  result:     ACCEPTED (script built)
+  evaluated:  True
+
+[1b unregistered function 'httpGet']
+  expression: httpGet('https://example.com')
+  result:     REJECTED
+  exception:  Cel.Tools.ScriptCreateException
+  message:    check failed: ERROR: <input>:1:8: undeclared reference to 'httpGet' (in container '') / | httpGet('https://example.com') / | .......^
+  issue:      Error{location=line=1, column=7, message='undeclared reference to 'httpGet' (in container '')'}
+
+[1c stdlib function 'size' (declared vars)]
+  expression: size(run.repositories) > 1
+  result:     ACCEPTED (script built)
+  evaluated:  True
+
+[1d unknown variable 'manifest']
+  expression: manifest.repositories.size() > 0
+  result:     REJECTED
+  exception:  Cel.Tools.ScriptCreateException
+  message:    check failed: ERROR: <input>:1:1: undeclared reference to 'manifest' (in container '') / | manifest.repositories.size() > 0 / | ^
+  issue:      Error{location=line=1, column=0, message='undeclared reference to 'manifest' (in container '')'}
+
+[1e known var, unknown field]
+  expression: run.nonexistent_field == 1
+  result:     ACCEPTED (script built)
+  accepted at check time, FAILED at eval: Cel.Tools.ScriptExecutionException: no such key: nonexistent_field
+
+[1f 'matches' as a method call]
+  expression: params.ticket_id.matches('^TICKET-[0-9]+$')
+  result:     ACCEPTED (script built)
+  evaluated:  True
+
+[1g comprehension macro 'all']
+  expression: run.repositories.all(r, r.startsWith('svc-'))
+  result:     ACCEPTED (script built)
+  evaluated:  True
+
+
+-- 1h POSTURE A: Env.NewCustomEnv(StdLib(), ClearMacros(), Declarations(vars)) --
+   variables:  params, steps, run, findings
+   functions:  the Cel.NET standard library
+   macros:     none (ClearMacros()) -- 8.4 says no comprehensions
+
+[1h-1 control: allowed function 'size']
+  expression: size(run.repositories) > 1
+  result:     ACCEPTED (parse+check+plan all passed)
+
+[1h-2 control: allowed function 'startsWith']
+  expression: params.ticket_id.startsWith('TICKET-')
+  result:     ACCEPTED (parse+check+plan all passed)
+
+[1h-3 allowed function 'matches']
+  expression: params.ticket_id.matches('^TICKET-[0-9]+$')
+  result:     ACCEPTED (parse+check+plan all passed)
+
+[1h-4 UNREGISTERED function 'httpGet' -> must be rejected]
+  expression: httpGet('https://example.com')
+  result:     REJECTED
+  exception:  System.InvalidOperationException
+  message:    check: ERROR: <input>:1:8: undeclared reference to 'httpGet' (in container '') / | httpGet('https://example.com') / | .......^
+
+[1h-5 comprehension 'all' (macros off) -> must be rejected]
+  expression: run.repositories.all(r, r.startsWith('svc-'))
+  result:     REJECTED
+  exception:  System.InvalidOperationException
+  message:    check: ERROR: <input>:1:21: undeclared reference to 'all' (in container '') / | run.repositories.all(r, r.startsWith('svc-')) / | ....................^ / ERROR: <input>:1:22: undeclared reference to 'r' (in container '')
+
+[1h-6 UNDECLARED variable 'manifest' -> must be rejected]
+  expression: manifest.repositories.size() > 0
+  result:     REJECTED
+  exception:  System.InvalidOperationException
+  message:    check: ERROR: <input>:1:1: undeclared reference to 'manifest' (in container '') / | manifest.repositories.size() > 0 / | ^
+
+[1h-7 stdlib 'timestamp' -- NOT in 8.4, so a gap]
+  expression: timestamp('2026-01-01T00:00:00Z') > timestamp(0)
+  result:     ACCEPTED (parse+check+plan all passed)
+
+[1h-8 declared var, undeclared field (dyn map)]
+  expression: run.nonexistent_field == 1
+  result:     ACCEPTED (parse+check+plan all passed)
+
+-- 1h POSTURE B: Env.NewCustomEnv(Declarations(...)) with no stdlib at all --
+   Only the four variables plus four hand-declared functions. No stdlib, no macros.
+
+[1h-9  declared function 'size' -> must be accepted]
+  expression: size('abc') > 1
+  result:     REJECTED
+  exception:  System.InvalidOperationException
+  message:    check: ERROR: <input>:1:13: undeclared reference to '_>_' (in container '') / | size('abc') > 1 / | ............^
+
+[1h-10 declared function 'startsWith' -> must be accepted]
+  expression: startsWith(params.ticket_id, 'TICKET')
+  result:     ACCEPTED (parse+check+plan all passed)
+
+[1h-11 declared funcs + '&&'/'==' -> operators come from stdlib]
+  expression: size('abc') == 3 && startsWith('abc', 'a')
+  result:     REJECTED
+  exception:  System.InvalidOperationException
+  message:    check: ERROR: <input>:1:13: undeclared reference to '_==_' (in container '') / | size('abc') == 3 && startsWith('abc', 'a') / | ............^ / ERROR: <input>:1:18: undeclared reference to '_&&_' (in container '')
+
+[1h-12 UNDECLARED function 'matches' -> must be rejected]
+  expression: 'abc'.matches('a.*')
+  result:     REJECTED
+  exception:  System.InvalidOperationException
+  message:    check: ERROR: <input>:1:14: undeclared reference to 'matches' (in container '') / | 'abc'.matches('a.*') / | .............^
+
+[1h-13 UNDECLARED function 'timestamp' -> must be rejected]
+  expression: timestamp(0)
+  result:     REJECTED
+  exception:  System.InvalidOperationException
+  message:    check: ERROR: <input>:1:10: undeclared reference to 'timestamp' (in container '') / | timestamp(0) / | .........^
+
+[1h-14 UNDECLARED function 'httpGet' -> must be rejected]
+  expression: httpGet('x')
+  result:     REJECTED
+  exception:  System.InvalidOperationException
+  message:    check: ERROR: <input>:1:8: undeclared reference to 'httpGet' (in container '') / | httpGet('x') / | .......^
+
+[1h-15 UNDECLARED variable 'manifest' -> must be rejected]
+  expression: manifest.x
+  result:     REJECTED
+  exception:  System.InvalidOperationException
+  message:    check: ERROR: <input>:1:1: undeclared reference to 'manifest' (in container '') / | manifest.x / | ^
+
+
+-- 1i POSTURE C: stdlib decl protos filtered to the docs/09 8.4 allow-list --
+   kept 25 of 55 stdlib declarations, macros off,
+   variables: params, steps, run, findings
+
+   -- must be ACCEPTED (8.4 allows these) --
+[1i-1 arithmetic operator]
+  expression: 1 + 1
+  result:     ACCEPTED (parse+check+plan all passed)
+
+[1i-2 comparison operator]
+  expression: 1 < 2
+  result:     ACCEPTED (parse+check+plan all passed)
+
+[1i-3 boolean operator]
+  expression: true && false
+  result:     ACCEPTED (parse+check+plan all passed)
+
+[1i-4 findings namespace]
+  expression: findings.blocking_count > 0
+  result:     ACCEPTED (parse+check+plan all passed)
+
+[1i-5 size()]
+  expression: size(run.repositories) > 1
+  result:     ACCEPTED (parse+check+plan all passed)
+
+[1i-6 startsWith()]
+  expression: params.ticket_id.startsWith('TICKET-')
+  result:     ACCEPTED (parse+check+plan all passed)
+
+[1i-7 endsWith()]
+  expression: params.ticket_id.endsWith('-1')
+  result:     ACCEPTED (parse+check+plan all passed)
+
+[1i-8 matches()]
+  expression: params.ticket_id.matches('^TICKET-[0-9]+$')
+  result:     ACCEPTED (parse+check+plan all passed)
+
+[1i-9 contains()]
+  expression: params.ticket_id.contains('TICKET')
+  result:     ACCEPTED (parse+check+plan all passed)
+
+   -- must be REJECTED (not in 8.4) --
+[1i-10 'lower' -- NOT declared by Cel.NET at all]
+  expression: lower('ABC')
+  result:     REJECTED
+  exception:  System.InvalidOperationException
+  message:    check: ERROR: <input>:1:6: undeclared reference to 'lower' (in container '') / | lower('ABC') / | .....^
+
+[1i-11 'upper' -- NOT declared by Cel.NET at all]
+  expression: upper('abc')
+  result:     REJECTED
+  exception:  System.InvalidOperationException
+  message:    check: ERROR: <input>:1:6: undeclared reference to 'upper' (in container '') / | upper('abc') / | .....^
+
+[1i-12 'timestamp' (clock-adjacent)]
+  expression: timestamp(0)
+  result:     REJECTED
+  exception:  System.InvalidOperationException
+  message:    check: ERROR: <input>:1:10: undeclared reference to 'timestamp' (in container '') / | timestamp(0) / | .........^
+
+[1i-13 'duration']
+  expression: duration('1s')
+  result:     REJECTED
+  exception:  System.InvalidOperationException
+  message:    check: ERROR: <input>:1:9: undeclared reference to 'duration' (in container '') / | duration('1s') / | ........^
+
+[1i-14 'dyn']
+  expression: dyn(1)
+  result:     REJECTED
+  exception:  System.InvalidOperationException
+  message:    check: ERROR: <input>:1:4: undeclared reference to 'dyn' (in container '') / | dyn(1) / | ...^
+
+[1i-15 'int']
+  expression: int('1')
+  result:     REJECTED
+  exception:  System.InvalidOperationException
+  message:    check: ERROR: <input>:1:4: undeclared reference to 'int' (in container '') / | int('1') / | ...^
+
+[1i-16 'now' (a clock, if it existed)]
+  expression: now()
+  result:     REJECTED
+  exception:  System.InvalidOperationException
+  message:    check: ERROR: <input>:1:4: undeclared reference to 'now' (in container '') / | now() / | ...^
+
+[1i-17 'random']
+  expression: random()
+  result:     REJECTED
+  exception:  System.InvalidOperationException
+  message:    check: ERROR: <input>:1:7: undeclared reference to 'random' (in container '') / | random() / | ......^
+
+[1i-18 'httpGet' (I/O)]
+  expression: httpGet('https://example.com')
+  result:     REJECTED
+  exception:  System.InvalidOperationException
+  message:    check: ERROR: <input>:1:8: undeclared reference to 'httpGet' (in container '') / | httpGet('https://example.com') / | .......^
+
+[1i-19 'manifest' namespace (8.3 says it does not exist)]
+  expression: manifest.repositories.size() > 0
+  result:     REJECTED
+  exception:  System.InvalidOperationException
+  message:    check: ERROR: <input>:1:1: undeclared reference to 'manifest' (in container '') / | manifest.repositories.size() > 0 / | ^
+
+[1i-20 comprehension 'all' (8.4: no comprehensions)]
+  expression: run.repositories.all(r, r.startsWith('svc-'))
+  result:     REJECTED
+  exception:  System.InvalidOperationException
+  message:    check: ERROR: <input>:1:21: undeclared reference to 'all' (in container '') / | run.repositories.all(r, r.startsWith('svc-')) / | ....................^ / ERROR: <input>:1:22: undeclared reference to 'r' (in container '')
+
+[1i-21 comprehension 'exists']
+  expression: run.repositories.exists(r, r == 'x')
+  result:     REJECTED
+  exception:  System.InvalidOperationException
+  message:    check: ERROR: <input>:1:24: undeclared reference to 'exists' (in container '') / | run.repositories.exists(r, r == 'x') / | .......................^ / ERROR: <input>:1:25: undeclared reference to 'r' (in container '')
+
+[1i-22 comprehension 'map']
+  expression: run.repositories.map(r, r + '!')
+  result:     REJECTED
+  exception:  System.InvalidOperationException
+  message:    check: ERROR: <input>:1:21: undeclared reference to 'map' (in container '') / | run.repositories.map(r, r + '!') / | ....................^ / ERROR: <input>:1:22: undeclared reference to 'r' (in container '')
+
+
+=== CHECK 2: replay determinism ===
+
+[findings.blocking_count > 0]
+  iterations:            20000
+  first value:           False (Boolean)
+  distinct result hashes:1
+  mismatches vs first:   0
+  verdict:               DETERMINISTIC
+
+[size(run.repositories) > 1 && findings.open_count < 10]
+  iterations:            20000
+  first value:           True (Boolean)
+  distinct result hashes:1
+  mismatches vs first:   0
+  verdict:               DETERMINISTIC
+
+[params.ticket_id.startsWith('TICKET-') ? 'ticket' : 'other']
+  iterations:            20000
+  first value:           ticket (String)
+  distinct result hashes:1
+  mismatches vs first:   0
+  verdict:               DETERMINISTIC
+
+[run.repositories[0] + '/' + run.branch]
+  iterations:            20000
+  first value:           svc-alpha/feature/TICKET-1234 (String)
+  distinct result hashes:1
+  mismatches vs first:   0
+  verdict:               DETERMINISTIC
+
+[{'a': 1, 'b': 2, 'c': 3}.b == 2]
+  iterations:            20000
+  first value:           True (Boolean)
+  distinct result hashes:1
+  mismatches vs first:   0
+  verdict:               DETERMINISTIC
+
+[findings.blocking_count == 0 || findings.open_count > 3]
+  iterations:            20000
+  first value:           True (Boolean)
+  distinct result hashes:1
+  mismatches vs first:   0
+  verdict:               DETERMINISTIC
+
+-- map insertion order independence --
+  order forward   keys=64  value=2016  hash=E9D7830C3AB84C13
+  order reverse   keys=64  value=2016  hash=E9D7830C3AB84C13
+  order shuffle#1 keys=64  value=2016  hash=E9D7830C3AB84C13
+  order shuffle#2 keys=64  value=2016  hash=E9D7830C3AB84C13
+  order shuffle#3 keys=64  value=2016  hash=E9D7830C3AB84C13
+  order shuffle#4 keys=64  value=2016  hash=E9D7830C3AB84C13
+  order shuffle#5 keys=64  value=2016  hash=E9D7830C3AB84C13
+  distinct hashes across 7 insertion orders: 1
+  verdict: ORDER-INDEPENDENT
+
+-- map size() and key order --
+  order[0] size(params) = 64
+  order[1] size(params) = 64
+  order[2] size(params) = 64
+  order[3] size(params) = 64
+  order[4] size(params) = 64
+  order[5] size(params) = 64
+  order[6] size(params) = 64
+  distinct hashes: 1
+  verdict: ORDER-INDEPENDENT
+
+-- nested maps: 32 sub-maps, 7 insertion orders --
+  order[0] value=192  hash=193B99A41D9BB026
+  order[1] value=192  hash=193B99A41D9BB026
+  order[2] value=192  hash=193B99A41D9BB026
+  order[3] value=192  hash=193B99A41D9BB026
+  order[4] value=192  hash=193B99A41D9BB026
+  order[5] value=192  hash=193B99A41D9BB026
+  order[6] value=192  hash=193B99A41D9BB026
+  distinct hashes across 7 orders: 1
+  verdict: ORDER-INDEPENDENT
+
+-- map-valued result: source key order vs equality --
+  {'a': 1, 'b': 2, 'c': 3, 'd': 4} -> {a=1, b=2, c=3, d=4}
+  {'d': 4, 'c': 3, 'b': 2, 'a': 1} -> {a=1, b=2, c=3, d=4}
+  {'b': 2, 'd': 4, 'a': 1, 'c': 3} -> {a=1, b=2, c=3, d=4}
+  ({'a': 1, 'b': 2, 'c': 3, 'd': 4}) == ({'d': 4, 'c': 3, 'b': 2, 'a': 1}) == ({'b': 2, 'd': 4, 'a': 1, 'c': 3}) -> True
+  distinct rendered results: 1
+  verdict: ORDER-INDEPENDENT
+
+=== CHECK 3: static cost estimation ===
+
+-- 3a: cost surface present in the exported API --
+  Cel.Cel                                PRESENT
+  Cel.Interpreter.Cost                   PRESENT
+  Cel.Interpreter.ICoster                PRESENT
+  Cel.Prog                               PRESENT
+  Cel.Interpreter.InterpretableUtils     PRESENT
+  Cost.Min/Max properties: Int64 Min, Int64 Max
+  Cost.None = Cost{min=0, max=0}; Cost.Unknown = Cost{min=0, max=9223372036854775807}; Cost.OneOne = Cost{min=1, max=1}
+  Cel.Cel.EstimateCost(object) static: Cel.Interpreter.Cost EstimateCost(System.Object)
+
+-- 3b: measured cost estimates (static, at compile time) --
+  findings.blocking_count > 0
+      len=  27  Prog.Cost() min=     2 max=     2   Cel.EstimateCost() min=     2 max=     2
+  size(run.repositories) > 1
+      len=  26  Prog.Cost() min=     3 max=     3   Cel.EstimateCost() min=     3 max=     3
+  params.ticket_id.startsWith('TICKET-')
+      len=  38  Prog.Cost() min=     2 max=     2   Cel.EstimateCost() min=     2 max=     2
+  1 + 1
+      len=   5  Prog.Cost() min=     1 max=     1   Cel.EstimateCost() min=     1 max=     1
+  run.repositories[0] + '/' + run.branch
+      len=  38  Prog.Cost() min=     4 max=     4   Cel.EstimateCost() min=     4 max=     4
+  findings.blocking_count == 0 && findings.open_count > 3 && size(run...
+      len=  85  Prog.Cost() min=     2 max=     9   Cel.EstimateCost() min=     2 max=     9
+  params.k00 + params.k01 + params.k02 + params.k03 + params.k04 + pa...
+      len= 777  Prog.Cost() min=   119 max=   119   Cel.EstimateCost() min=   119 max=   119
+
+-- 3c: is the estimate purely static (no input needed)? --
+  Cost is read from the planned IInterpretable tree (Cel.Prog : ICoster),
+  before any Eval() call and with no activation. No input data is required.
+
+=== CHECK 4: cost limit enforceable ===
+
+-- 4a: is there a built-in cost limit in the exported API? --
+  members matching Cost/Budget/Limit: 48
+    Cel.Cel.EstimateCost
+    Cel.Interpreter.AbsoluteAttribute.Cost
+    Cel.Interpreter.AbstractEvalLhsRhs.Cost
+    Cel.Interpreter.AbstractEvalWatch`1.Cost
+    Cel.Interpreter.AttrQualifier.Cost
+    Cel.Interpreter.BoolQualifier.Cost
+    Cel.Interpreter.ConditionalAttribute.Cost
+    Cel.Interpreter.Cost.EstimateCost
+    Cel.Interpreter.EvalAnd.Cost
+    Cel.Interpreter.EvalAttr.Cost
+    Cel.Interpreter.EvalBinary.Cost
+    Cel.Interpreter.EvalConst.Cost
+    Cel.Interpreter.EvalEq.Cost
+    Cel.Interpreter.EvalExhaustiveAnd.Cost
+    Cel.Interpreter.EvalExhaustiveConditional.Cost
+    Cel.Interpreter.EvalExhaustiveFold.Cost
+    Cel.Interpreter.EvalExhaustiveOr.Cost
+    Cel.Interpreter.EvalFold.Cost
+    Cel.Interpreter.EvalList.Cost
+    Cel.Interpreter.EvalMap.Cost
+    Cel.Interpreter.EvalNe.Cost
+    Cel.Interpreter.EvalObj.Cost
+    Cel.Interpreter.EvalOr.Cost
+    Cel.Interpreter.EvalSetMembership.Cost
+    Cel.Interpreter.EvalTestOnly.Cost
+    Cel.Interpreter.EvalUnary.Cost
+    Cel.Interpreter.EvalVarArgs.Cost
+    Cel.Interpreter.EvalWatch.Cost
+    Cel.Interpreter.EvalWatchAttr.Cost
+    Cel.Interpreter.EvalWatchConst.Cost
+    Cel.Interpreter.EvalZeroArity.Cost
+    Cel.Interpreter.FieldQualifier.Cost
+    Cel.Interpreter.ICoster.Cost
+    Cel.Interpreter.IntQualifier.Cost
+    Cel.Interpreter.InterpretableUtils.CalExhaustiveBinaryOpsCost
+    Cel.Interpreter.InterpretableUtils.CalShortCircuitBinaryOpsCost
+    Cel.Interpreter.InterpretableUtils.SumOfCost
+    Cel.Interpreter.MaybeAttribute.Cost
+    Cel.Interpreter.RelativeAttribute.Cost
+    Cel.Interpreter.StringQualifier.Cost
+    Cel.Interpreter.UintQualifier.Cost
+    Cel.Parser.Options+Builder.ErrorRecoveryLimit
+    Cel.Parser.Options+Builder.ExpressionSizeCodePointLimit
+    Cel.Parser.Options.ErrorRecoveryLimit
+    Cel.Parser.Options.ExpressionSizeCodePointLimit
+    Cel.Parser.Options.get_ErrorRecoveryLimit
+    Cel.Parser.Options.get_ExpressionSizeCodePointLimit
+    Cel.Prog.Cost
+  -> none of these is a 'reject when over budget' knob; the limit must be
+     applied by the engine against Cost.Max. Demonstrated in 4b.
+
+-- 4b: engine-enforced cost limit, using Cel.Cel.EstimateCost --
+  budget: Cost.Max <= 100
+
+  [small guard]  len=27
+      Cost = min=2 max=2   AST nodes = 5
+      gate: ACCEPTED -- cost max 2 <= budget 100
+
+  [typical route guard]  len=54
+      Cost = min=3 max=6   AST nodes = 11
+      gate: ACCEPTED -- cost max 6 <= budget 100
+
+  [40-term concatenation]  len=517
+      Cost = min=79 max=79   AST nodes = 120
+      gate: ACCEPTED -- cost max 79 <= budget 100
+
+  [400-term concatenation]  len=5597
+      Cost = min=799 max=799   AST nodes = 1200
+      gate: REJECTED -- cost max 799 > budget 100
+
+  [300-conjunction guard]  len=6486
+      Cost = min=2 max=899   AST nodes = 1500
+      gate: REJECTED -- cost max 899 > budget 100
+
+-- 4c: 8.5 caps -- length <= 1000 chars, AST nodes <= 200 --
+
+  expression                                      len  nodes  gate
+  --------------------------------------------------------------------------------------------
+  findings.blocking_count > 0                       27      5  ACCEPTED                    
+  size(run.repositories) > 1 && findings.op...      54     11  ACCEPTED                    
+  params.k00 + params.k01 + params.k02 + pa...     777    180  ACCEPTED                    
+  params.k00 + params.k01 + params.k02 + pa...    1037    240  REJECTED: length 1037 > 1000
+  params.k00 == 0 && params.k01 == 1 && par...     786    200  ACCEPTED                    
+  params.k000 + params.k001 + params.k002 +...    5597   1200  REJECTED: length 5597 > 1000
+
+  Note: the caps are checked on the source text (length) and on the parsed
+  and checked AST (node count), which is exactly the load-time position 8.5 asks for.
+
+-- 4d: runtime step ceiling via ProgramOptions.CustomDecorator(DecObserveEval(...)) --
+  expression: 400-term concatenation (len=5597)
+  step ceiling: 50
+  observer fired 1199 times; ceiling tripped: True
+  Eval() returned normally: type=System.String len=530
+  -> the observer CANNOT abort evaluation: Cel.NET catches exceptions thrown
+     from the EvalObserver delegate and evaluation completes anyway.
+     A runtime step ceiling is therefore NOT available via this surface.
+     The static cost estimate in 4b is the only working enforcement point.
+
+=== TIMING ===
+
+-- cold start: first Env + parse + check + plan + eval of the process --
+  Env.NewCustomEnv(StdLib, ClearMacros, Declarations):     0.137 ms
+  parse + check + plan ("findings.blocking_count == 0 && size(run.repositories) > 1"):     2.302 ms
+  first Eval():                              0.176 ms  -> True
+  TOTAL to first evaluation:                 2.615 ms
+
+-- second time round in the same process (JIT/static init already paid) --
+  2nd Env.NewCustomEnv:       0.155 ms
+  2nd parse+check+plan:       2.031 ms
+  2nd Eval:                   0.013 ms
+  2nd TOTAL:                  2.199 ms
+
+  Reading: the first column is dominated by one-off JIT and static initialisation
+  (Antlr4 parser tables, Protobuf reflection, the standard-library overload tables).
+  The steady-state column is what a warm workflow worker pays.
+
+  ScriptHost path (build host + build script + first Execute):     1.972 ms -> True
+
+-- warm: 100,000 evaluations of the same compiled program --
+  Eval (Env/Prog path)
+      n= 100000  mean=  0.0007 ms (    0.67 us)  p50=   0.60 us  p95=   0.90 us  p99=   1.20 us  max=  224.00 us
+  Execute (ScriptHost path)
+      n= 100000  mean=  0.0010 ms (    0.99 us)  p50=   0.90 us  p95=   1.20 us  p99=   1.50 us  max=  149.80 us
+-- warm compile: 10000 parse+check+plan of the same expression --
+  parse+check+plan
+      n=  10000  mean=  0.0953 ms (   95.34 us)  p50=  46.60 us  p95= 217.10 us  p99= 303.80 us  max= 1094.50 us
+

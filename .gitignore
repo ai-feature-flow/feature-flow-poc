@@ -8,3 +8,6 @@ obj/
 
 # Local run state
 .feature-flow/
+
+# Spike 1 local run state: Temporal dev server database and process logs
+.spike/

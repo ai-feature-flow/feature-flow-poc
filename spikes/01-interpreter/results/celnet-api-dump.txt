@@ -1,0 +1,4228 @@
+# Cel.NET public API dump
+# Assembly: Cel.main, Version=2.3.1.0, Culture=neutral, PublicKeyToken=2230072a1ae74075
+# Location: D:\Dev\feature-flow-poc\spikes\01-interpreter\src\CelChecks\bin\Debug\net9.0\Cel.main.dll
+# Generated: 2026-10-27T04:21:28.3079153+00:00
+# Public types: (see below)
+
+## Type count: 370
+
+TYPE class Cel.Ast
+  CTOR .ctor(Expr expr, SourceInfo info, ISource source)
+  CTOR .ctor(Expr expr, SourceInfo info, ISource source, IDictionary<Int64,Reference> refMap, IDictionary<Int64,Type> typeMap)
+  PROP Boolean Checked
+  PROP Expr Expr
+  PROP Type ResultType
+  PROP ISource Source
+  PROP SourceInfo SourceInfo
+  METHOD String ToString()
+
+TYPE class Cel.Cel
+  CTOR .ctor()
+  METHOD CheckedExpr AstToCheckedExpr(Ast a) [static]
+  METHOD ParsedExpr AstToParsedExpr(Ast a) [static]
+  METHOD String AstToString(Ast a) [static]
+  METHOD Ast CheckedExprToAst(CheckedExpr checkedExpr) [static]
+  METHOD Cost EstimateCost(Object p) [static]
+  METHOD AttributePattern NewAttributePattern(String varName) [static]
+  METHOD IProgram NewProgram(Env e, Ast ast, ProgramOption[] opts) [static]
+  METHOD IActivation NoVars() [static]
+  METHOD Ast ParsedExprToAst(ParsedExpr parsedExpr) [static]
+  METHOD IPartialActivation PartialVars(Object vars, AttributePattern[] unknowns) [static]
+
+TYPE class Cel.Checker.Checker
+  METHOD CheckResult Check(ParseResult parsedExpr, ISource source, CheckerEnv env) [static]
+  FIELD IList<Decl> CrossTypeNumericComparisonDeclarations [static]
+  FIELD IList<Decl> StandardDeclarations [static]
+
+TYPE class Cel.Checker.Checker+CheckResult
+  PROP CheckedExpr CheckedExpr
+  PROP TypeErrors Errors
+  METHOD Boolean HasErrors()
+  METHOD String ToString()
+
+TYPE class Cel.Checker.CheckerEnv
+  METHOD Void Add(Decl[] decls)
+  METHOD Void Add(IList<Decl> decls)
+  METHOD CheckerEnv EnableDynamicAggregateLiterals(Boolean enabled)
+  METHOD Decl LookupFunction(String name)
+  METHOD Decl LookupIdent(String name)
+  METHOD CheckerEnv NewCheckerEnv(Container container, ITypeProvider provider) [static]
+  METHOD CheckerEnv NewStandardCheckerEnv(Container container, ITypeProvider provider) [static]
+
+TYPE class Cel.Checker.Decls
+  CTOR .ctor()
+  FIELD Type Any [static]
+  FIELD Type Bool [static]
+  FIELD Type Bytes [static]
+  FIELD Type Double [static]
+  FIELD Type Duration [static]
+  FIELD Type Dyn [static]
+  FIELD Type Error [static]
+  FIELD Type Int [static]
+  METHOD Type NewAbstractType(String name, IList<Type> paramTypes) [static]
+  METHOD Decl NewConst(String name, Type t, Constant v) [static]
+  METHOD Decl NewFunction(String name, Overload[] overloads) [static]
+  METHOD Decl NewFunction(String name, IList<Overload> overloads) [static]
+  METHOD Type NewFunctionType(Type resultType, IList<Type> argTypes) [static]
+  METHOD Decl NewIdent(String name, Type t, Constant v) [static]
+  METHOD Overload NewInstanceOverload(String id, IList<Type> argTypes, Type resultType) [static]
+  METHOD Type NewListType(Type elem) [static]
+  METHOD Type NewMapType(Type key, Type value) [static]
+  METHOD Type NewObjectType(String typeName) [static]
+  METHOD Overload NewOverload(String id, IList<Type> argTypes, Type resultType) [static]
+  METHOD Overload NewParameterizedInstanceOverload(String id, IList<Type> argTypes, Type resultType, IList<String> typeParams) [static]
+  METHOD Overload NewParameterizedOverload(String id, IList<Type> argTypes, Type resultType, IList<String> typeParams) [static]
+  METHOD Type NewPrimitiveType(PrimitiveType primitive) [static]
+  METHOD Type NewTypeParamType(String name) [static]
+  METHOD Type NewTypeType(Type nested) [static]
+  METHOD Decl NewVar(String name, Type t) [static]
+  METHOD Type NewWellKnownType(WellKnownType wellKnown) [static]
+  METHOD Type NewWrapperType(Type wrapped) [static]
+  FIELD Type Null [static]
+  FIELD Type String [static]
+  FIELD Type Timestamp [static]
+  FIELD Type Uint [static]
+
+TYPE class Cel.Checker.Mapping
+  METHOD String ToString()
+
+TYPE class Cel.Checker.Printer
+  CTOR .ctor()
+  METHOD String Print(Expr e, CheckedExpr checks) [static]
+
+TYPE class Cel.Checker.Scopes
+  METHOD Void AddFunction(Decl fn)
+  METHOD Void AddIdent(Decl decl)
+  METHOD Decl FindFunction(String name)
+  METHOD Decl FindIdent(String name)
+  METHOD Decl FindIdentInScope(String name)
+  METHOD Scopes NewScopes() [static]
+  METHOD Scopes Pop()
+  METHOD Scopes Push()
+  METHOD Decl UpdateFunction(String name, Decl ident)
+
+TYPE class Cel.Checker.TypeErrors : Errors
+  CTOR .ctor(ISource source)
+  METHOD Void UnknownType(ILocation l, String info)
+
+TYPE class Cel.Checker.Types
+  CTOR .ctor()
+  METHOD String FormatCheckedType(Type t) [static]
+
+TYPE class Cel.Common.CelError : IComparable<CelError>
+  CTOR .ctor(ILocation location, String message)
+  METHOD Int32 CompareTo(CelError o)
+  METHOD Boolean Equals(Object o)
+  METHOD Int32 GetHashCode()
+  PROP ILocation Location
+  PROP String Message
+  METHOD String ToDisplayString(ISource source)
+  METHOD String ToString()
+
+TYPE class Cel.Common.Containers.Container
+  METHOD ContainerOption Abbrevs(String[] qualifiedNames) [static]
+  METHOD ContainerOption Alias(String qualifiedName, String alias) [static]
+  METHOD IDictionary<String,String> AliasSet()
+  FIELD Container DefaultContainer [static]
+  METHOD Container Extend(ContainerOption[] opts)
+  METHOD String Name()
+  METHOD ContainerOption Name(String name) [static]
+  METHOD Container NewContainer(ContainerOption[] opts) [static]
+  METHOD String[] ResolveCandidateNames(String name)
+  METHOD String ToQualifiedName(Expr e) [static]
+  METHOD String ToString()
+
+TYPE class Cel.Common.Containers.Container+ContainerOption : MulticastDelegate, ICloneable, ISerializable
+  CTOR .ctor(Object object, IntPtr method)
+  METHOD IAsyncResult BeginInvoke(Container c, AsyncCallback callback, Object object)
+  METHOD Container EndInvoke(IAsyncResult result)
+  METHOD Container Invoke(Container c)
+
+TYPE class Cel.Common.Debug.Debug
+  CTOR .ctor()
+  METHOD String FormatLiteral(Constant c) [static]
+  METHOD String ToAdornedDebugString(Expr e, IAdorner adorner) [static]
+  METHOD String ToDebugString(Expr e)
+
+TYPE class Cel.Common.Debug.Debug+DebugWriter
+  CTOR .ctor(IAdorner a)
+  METHOD String ToString()
+
+TYPE interface Cel.Common.Debug.Debug+IAdorner
+  METHOD String GetMetadata(Object ctx)
+
+TYPE class Cel.Common.ErrorWithLocation : Exception, ISerializable
+  CTOR .ctor(ILocation location, String message)
+  PROP ILocation Location
+
+TYPE class Cel.Common.Errors
+  CTOR .ctor(ISource source)
+  METHOD Errors Append(IList<CelError> errors)
+  PROP IList<CelError> GetErrors
+  METHOD Boolean HasErrors()
+  METHOD Void ReportError(ILocation l, String format, Object[] args)
+  METHOD Void SyntaxError(ILocation l, String msg)
+  METHOD String ToDisplayString()
+  METHOD String ToString()
+
+TYPE interface Cel.Common.ILocation : IComparable<ILocation>
+  METHOD Int32 Column()
+  METHOD Int32 Line()
+
+TYPE interface Cel.Common.ISource
+  METHOD String Content()
+  METHOD String Description()
+  METHOD IList<Int32> LineOffsets()
+  METHOD Int32 LocationOffset(ILocation location)
+  METHOD ILocation NewLocation(Int32 line, Int32 col)
+  METHOD ILocation OffsetLocation(Int32 offset)
+  METHOD String Snippet(Int32 line)
+
+TYPE static class Cel.Common.LocationFactory
+  METHOD ILocation NewLocation(Int32 line, Int32 column) [static]
+  FIELD ILocation NoLocation [static]
+
+TYPE class Cel.Common.Operators.Operator
+  FIELD Operator Add [static]
+  FIELD Operator All [static]
+  METHOD Operator ById(String id) [static]
+  FIELD Operator Conditional [static]
+  FIELD Operator Divide [static]
+  FIELD Operator Equals [static]
+  FIELD Operator Exists [static]
+  FIELD Operator ExistsOne [static]
+  FIELD Operator Filter [static]
+  METHOD Operator Find(String text) [static]
+  METHOD String FindReverse(String id) [static]
+  METHOD String FindReverseBinaryOperator(String id) [static]
+  FIELD Operator Greater [static]
+  FIELD Operator GreaterEquals [static]
+  FIELD Operator Has [static]
+  PROP String Id
+  FIELD Operator In [static]
+  FIELD Operator Index [static]
+  PROP InnerEnum InnerEnumValue
+  FIELD Operator Less [static]
+  FIELD Operator LessEquals [static]
+  FIELD Operator LogicalAnd [static]
+  FIELD Operator LogicalNot [static]
+  FIELD Operator LogicalOr [static]
+  FIELD Operator Map [static]
+  FIELD Operator Modulo [static]
+  FIELD Operator Multiply [static]
+  FIELD Operator Negate [static]
+  FIELD Operator NotEquals [static]
+  FIELD Operator NotStrictlyFalse [static]
+  FIELD Operator OldIn [static]
+  FIELD Operator OldNotStrictlyFalse [static]
+  METHOD Int32 Ordinal()
+  PROP Int32 Precedence
+  METHOD Int32 PrecedenceById(String id) [static]
+  FIELD Operator Subtract [static]
+  METHOD String ToString()
+  METHOD Operator ValueOf(String name) [static]
+  METHOD Operator[] Values() [static]
+
+TYPE enum Cel.Common.Operators.Operator+InnerEnum : IComparable, ISpanFormattable, IFormattable, IConvertible
+  FIELD InnerEnum Add [static] = 10
+  FIELD InnerEnum All [static] = 18
+  FIELD InnerEnum Conditional [static] = 0
+  FIELD InnerEnum Divide [static] = 13
+  FIELD InnerEnum Equals [static] = 4
+  FIELD InnerEnum Exists [static] = 19
+  FIELD InnerEnum ExistsOne [static] = 20
+  FIELD InnerEnum Filter [static] = 22
+  FIELD InnerEnum Greater [static] = 8
+  FIELD InnerEnum GreaterEquals [static] = 9
+  FIELD InnerEnum Has [static] = 17
+  FIELD InnerEnum In [static] = 24
+  FIELD InnerEnum Index [static] = 16
+  FIELD InnerEnum Less [static] = 6
+  FIELD InnerEnum LessEquals [static] = 7
+  FIELD InnerEnum LogicalAnd [static] = 1
+  FIELD InnerEnum LogicalNot [static] = 3
+  FIELD InnerEnum LogicalOr [static] = 2
+  FIELD InnerEnum Map [static] = 21
+  FIELD InnerEnum Modulo [static] = 14
+  FIELD InnerEnum Multiply [static] = 12
+  FIELD InnerEnum Negate [static] = 15
+  FIELD InnerEnum NotEquals [static] = 5
+  FIELD InnerEnum NotStrictlyFalse [static] = 23
+  FIELD InnerEnum OldIn [static] = 26
+  FIELD InnerEnum OldNotStrictlyFalse [static] = 25
+  FIELD InnerEnum Subtract [static] = 11
+  FIELD Int32 value__
+
+TYPE static class Cel.Common.SourceFactory
+  METHOD ISource NewInfoSource(SourceInfo info) [static]
+  METHOD ISource NewStringSource(String contents, String description) [static]
+  METHOD ISource NewTextSource(String text) [static]
+
+TYPE class Cel.Common.Types.Avro.AvroEnumDescription
+  CTOR .ctor(EnumSchema schema)
+  METHOD IEnumerable<AvroEnumValue> BuildValues()
+  METHOD String FullName()
+  METHOD Type PbType()
+
+TYPE class Cel.Common.Types.Avro.AvroEnumValue
+  CTOR .ctor(AvroEnumDescription enumType, String enumValue)
+  METHOD String FullyQualifiedName(GenericEnum value) [static]
+  METHOD String FullyQualifiedName()
+  METHOD IVal StringValue()
+
+TYPE class Cel.Common.Types.Avro.AvroFieldType : FieldType
+  CTOR .ctor(Type type, FieldTester isSet, FieldGetter getFrom, Schema schema)
+
+TYPE class Cel.Common.Types.Avro.AvroRegistry : ITypeRegistry, ITypeAdapterProvider, ITypeProvider
+  METHOD ITypeRegistry Copy()
+  FIELD String DecimalTypeName [static] = avro.decimal
+  METHOD IVal EnumValue(String enumName)
+  METHOD FieldType FindFieldType(String messageType, String fieldName)
+  METHOD IVal FindIdent(String identName)
+  METHOD Type FindType(String typeName)
+  METHOD IVal NativeToValue(Object value)
+  METHOD ITypeRegistry NewRegistry() [static]
+  METHOD ITypeRegistry NewRegistry(Func<Object,IVal> customAdapter) [static]
+  METHOD IVal NewValue(String typeName, IDictionary<String,IVal> fields)
+  METHOD Void Register(Object t)
+  METHOD Void RegisterType(IType[] types)
+  METHOD TypeAdapter ToTypeAdapter()
+
+TYPE class Cel.Common.Types.Avro.AvroTypeDescription : ITypeDescription
+  CTOR .ctor(RecordSchema schema, TypeQuery typeQuery)
+  METHOD FieldType FieldType(String fieldName)
+  METHOD Object FromObject(Object value, String property)
+  METHOD RecordSchema GetSchema(Object message) [static]
+  METHOD Boolean HasProperty(String property)
+  METHOD String Name()
+  FIELD Schema NullAvroSchema [static]
+  METHOD Type PbType()
+  METHOD Type ReflectType()
+  METHOD IType Type()
+
+TYPE class Cel.Common.Types.Avro.AvroTypeDescription+TypeQuery : MulticastDelegate, ICloneable, ISerializable
+  CTOR .ctor(Object object, IntPtr method)
+  METHOD IAsyncResult BeginInvoke(Schema type, AsyncCallback callback, Object object)
+  METHOD Type EndInvoke(IAsyncResult result)
+  METHOD Type Invoke(Schema type)
+
+TYPE class Cel.Common.Types.BoolT : BaseVal, IVal, IComparer, INegater
+  FIELD IType BoolType [static]
+  METHOD Boolean BooleanValue()
+  METHOD IVal Compare(IVal other)
+  METHOD Object ConvertToNative(Type typeDesc)
+  METHOD IVal ConvertToType(IType typeVal)
+  METHOD IVal Equal(IVal other)
+  METHOD Boolean Equals(Object o)
+  FIELD BoolT False [static]
+  METHOD Int32 GetHashCode()
+  METHOD IVal Negate()
+  FIELD BoolT True [static]
+  METHOD IType Type()
+  METHOD Object Value()
+
+TYPE class Cel.Common.Types.BytesT : BaseVal, IVal, IAdder, IComparer, ISizer
+  METHOD IVal Add(IVal other)
+  METHOD BytesT BytesOf(Byte[] b) [static]
+  METHOD IVal BytesOf(ByteString value) [static]
+  METHOD BytesT BytesOf(String s) [static]
+  FIELD IType BytesType [static]
+  METHOD IVal Compare(IVal other)
+  METHOD Object ConvertToNative(Type typeDesc)
+  METHOD IVal ConvertToType(IType typeValue)
+  METHOD IVal Equal(IVal other)
+  METHOD Boolean Equals(Object o)
+  METHOD Int32 GetHashCode()
+  METHOD IVal Size()
+  METHOD String ToString()
+  METHOD IType Type()
+  METHOD Object Value()
+
+TYPE class Cel.Common.Types.DoubleT : BaseVal, IVal, IAdder, IComparer, IDivider, IMultiplier, INegater, ISubtractor
+  METHOD IVal Add(IVal other)
+  METHOD IVal Compare(IVal other)
+  METHOD Object ConvertToNative(Type typeDesc)
+  METHOD IVal ConvertToType(IType typeValue)
+  METHOD IVal Divide(IVal other)
+  METHOD DoubleT DoubleOf(Double d) [static]
+  FIELD IType DoubleType [static]
+  METHOD IVal Equal(IVal other)
+  METHOD Boolean Equals(Object o)
+  METHOD Int32 GetHashCode()
+  METHOD IVal Multiply(IVal other)
+  METHOD IVal Negate()
+  METHOD IVal Subtract(IVal other)
+  METHOD IType Type()
+  METHOD Object Value()
+
+TYPE class Cel.Common.Types.DurationT : BaseVal, IVal, IAdder, IComparer, INegater, IReceiver, ISubtractor
+  METHOD IVal Add(IVal other)
+  METHOD IVal Compare(IVal other)
+  METHOD Object ConvertToNative(Type typeDesc)
+  METHOD IVal ConvertToType(IType typeValue)
+  METHOD DurationT DurationOf(String s) [static]
+  METHOD DurationT DurationOf(Duration d) [static]
+  METHOD DurationT DurationOf(Period d) [static]
+  FIELD IType DurationType [static]
+  METHOD IVal Equal(IVal other)
+  METHOD Boolean Equals(Object o)
+  METHOD Int32 GetHashCode()
+  FIELD Int64 MaxDurationSeconds [static] = 9223372035
+  FIELD Int64 MinDurationSeconds [static] = -9223372036
+  METHOD IVal Negate()
+  METHOD IVal RangeCheck()
+  METHOD IVal Receive(String function, String overload, IVal[] args)
+  METHOD IVal Subtract(IVal other)
+  METHOD IVal TimeGetHours(Period duration) [static]
+  METHOD IVal TimeGetMilliseconds(Period duration) [static]
+  METHOD IVal TimeGetMinutes(Period duration) [static]
+  METHOD IVal TimeGetSeconds(Period duration) [static]
+  METHOD IType Type()
+  METHOD Object Value()
+
+TYPE class Cel.Common.Types.Err : BaseVal, IVal
+  METHOD IVal AnyWithEmptyType() [static]
+  METHOD Boolean BooleanValue()
+  PROP Exception Cause
+  METHOD Object ConvertToNative(Type typeDesc)
+  METHOD IVal ConvertToType(IType typeVal)
+  METHOD IVal DivideByZero() [static]
+  METHOD IVal Equal(IVal other)
+  FIELD IVal ErrDurationOutOfRange [static]
+  FIELD IVal ErrDurationOverflow [static]
+  FIELD IVal ErrIntOverflow [static]
+  FIELD IVal ErrTimestampOutOfRange [static]
+  FIELD IVal ErrTimestampOverflow [static]
+  FIELD IType ErrType [static]
+  FIELD IVal ErrUintOverflow [static]
+  METHOD Boolean HasCause()
+  METHOD Exception IndexOutOfBoundsException(Object i) [static]
+  METHOD Int64 IntValue()
+  METHOD Boolean IsError(IVal val) [static]
+  METHOD IVal MaybeNoSuchOverloadErr(IVal val) [static]
+  METHOD IVal ModulusByZero() [static]
+  METHOD IVal NewErr(String format, Object[] args) [static]
+  METHOD IVal NewErr(Exception cause, String format, Object[] args) [static]
+  METHOD IVal NewTypeConversionError(Object from, Object to) [static]
+  METHOD IVal NoMoreElements() [static]
+  METHOD Exception NoSuchAttributeException(Object context) [static]
+  METHOD IVal NoSuchField(Object field) [static]
+  METHOD IVal NoSuchKey(Object key) [static]
+  METHOD Exception NoSuchKeyException(Object key) [static]
+  METHOD IVal NoSuchOverload(IVal val, String function, IVal other) [static]
+  METHOD IVal NoSuchOverload(IVal val, String function, IType argA, IType argB) [static]
+  METHOD IVal NoSuchOverload(IVal val, String function, String overload, IVal[] args) [static]
+  METHOD IVal RangeError(Object from, Object to) [static]
+  METHOD Void ThrowErrorAsIllegalStateException(IVal val) [static]
+  METHOD Exception ToRuntimeException()
+  METHOD String ToString()
+  METHOD IType Type()
+  METHOD UInt64 UintValue()
+  METHOD IVal UnknownType(Object field) [static]
+  METHOD IVal UnsupportedRefValConversionErr(Object val) [static]
+  METHOD IVal ValOrErr(IVal val, String format, Object[] args) [static]
+  METHOD Object Value()
+
+TYPE class Cel.Common.Types.Err+ErrException : ArgumentException, ISerializable
+  CTOR .ctor(String format, Object[] args)
+  PROP IVal Err
+
+TYPE interface Cel.Common.Types.IIterableT
+  METHOD IIteratorT Iterator()
+
+TYPE interface Cel.Common.Types.IIteratorT : IVal
+  METHOD IVal HasNext()
+  METHOD IVal Next()
+
+TYPE class Cel.Common.Types.IntT : BaseVal, IVal, IAdder, IComparer, IDivider, IModder, IMultiplier, INegater, ISubtractor
+  METHOD IVal Add(IVal other)
+  METHOD IVal Compare(IVal other)
+  METHOD Object ConvertToNative(Type typeDesc)
+  METHOD IVal ConvertToType(IType typeValue)
+  METHOD IVal Divide(IVal other)
+  METHOD IVal Equal(IVal other)
+  METHOD Boolean Equals(Object o)
+  METHOD Int32 GetHashCode()
+  FIELD IntT IntNegOne [static]
+  METHOD IntT IntOf(Int64 i) [static]
+  METHOD IntT IntOfCompare(Int32 compareToResult) [static]
+  FIELD IntT IntOne [static]
+  FIELD IType IntType [static]
+  METHOD Int64 IntValue()
+  FIELD IntT IntZero [static]
+  PROP Boolean JsonSafe
+  FIELD Int64 MaxIntJson [static]
+  FIELD Int64 MinIntJson [static]
+  METHOD IVal Modulo(IVal other)
+  METHOD IVal Multiply(IVal other)
+  METHOD IVal Negate()
+  METHOD IVal Subtract(IVal other)
+  METHOD IType Type()
+  METHOD UInt64 UintValue()
+  METHOD Object Value()
+
+TYPE static class Cel.Common.Types.IteratorFactory
+  METHOD IIteratorT Iterator(TypeAdapter adapter, IEnumerator<T1> iterator) [static] [generic<T1>]
+
+TYPE class Cel.Common.Types.Json.JsonEnumDescription
+  CTOR .ctor(Type type)
+  METHOD IEnumerable<JsonEnumValue> BuildValues()
+  METHOD Type PbType()
+
+TYPE class Cel.Common.Types.Json.JsonEnumValue
+  CTOR .ctor(Enum enumValue)
+  METHOD String FullyQualifiedName(Enum value) [static]
+  METHOD String FullyQualifiedName()
+  METHOD IVal OrdinalValue()
+
+TYPE class Cel.Common.Types.Json.JsonFieldType : FieldType
+  CTOR .ctor(Type type, FieldTester isSet, FieldGetter getFrom, IValueProvider propertyWriter)
+  METHOD IValueProvider PropertyWriter()
+
+TYPE class Cel.Common.Types.Json.JsonRegistry : ITypeRegistry, ITypeAdapterProvider, ITypeProvider
+  METHOD ITypeRegistry Copy()
+  METHOD JsonEnumDescription EnumDescription(Type clazz)
+  METHOD IVal EnumValue(String enumName)
+  METHOD FieldType FindFieldType(String messageType, String fieldName)
+  METHOD IVal FindIdent(String identName)
+  METHOD Type FindType(String typeName)
+  METHOD IVal NativeToValue(Object value)
+  METHOD ITypeRegistry NewRegistry() [static]
+  METHOD IVal NewValue(String typeName, IDictionary<String,IVal> fields)
+  METHOD Void Register(Object t)
+  METHOD Void RegisterType(IType[] types)
+  METHOD TypeAdapter ToTypeAdapter()
+  METHOD JsonTypeDescription TypeDescription(Type clazz)
+
+TYPE class Cel.Common.Types.Json.JsonTypeDescription : ITypeDescription
+  CTOR .ctor(Type type, JsonSerializer ser, TypeQuery typeQuery)
+  METHOD FieldType FieldType(String fieldName)
+  METHOD Type FindTypeForJsonType(Type type, TypeQuery typeQuery)
+  METHOD Object FromObject(Object value, String property)
+  METHOD Boolean HasProperty(String property)
+  METHOD String Name()
+  METHOD Type PbType()
+  METHOD Type ReflectType()
+  METHOD IType Type()
+
+TYPE class Cel.Common.Types.Json.JsonTypeDescription+TypeQuery : MulticastDelegate, ICloneable, ISerializable
+  CTOR .ctor(Object object, IntPtr method)
+  METHOD IAsyncResult BeginInvoke(Type type, AsyncCallback callback, Object object)
+  METHOD Type EndInvoke(IAsyncResult result)
+  METHOD Type Invoke(Type type)
+
+TYPE abstract class Cel.Common.Types.ListT : BaseVal, IVal, ILister, IAdder, IContainer, IIndexer, IIterableT, ISizer
+  METHOD IVal Add(IVal other)
+  METHOD IVal Contains(IVal value)
+  METHOD Object ConvertToNative(Type typeDesc)
+  METHOD IVal ConvertToType(IType typeValue)
+  METHOD IVal Equal(IVal other)
+  METHOD IVal Get(IVal index)
+  METHOD IIteratorT Iterator()
+  FIELD IType ListType [static]
+  METHOD IVal NewGenericArrayList(TypeAdapter adapter, Array value) [static]
+  METHOD IVal NewJsonList(TypeAdapter adapter, ListValue l) [static]
+  METHOD IVal NewStringArrayList(String[] value) [static]
+  METHOD IVal NewValArrayList(TypeAdapter adapter, IVal[] value) [static]
+  METHOD IVal Size()
+  METHOD IType Type()
+  METHOD Object Value()
+
+TYPE abstract class Cel.Common.Types.MapT : BaseVal, IVal, IMapper, IContainer, IIndexer, IIterableT, ISizer
+  METHOD IVal Contains(IVal value)
+  METHOD Object ConvertToNative(Type typeDesc)
+  METHOD IVal ConvertToType(IType typeValue)
+  METHOD IVal Equal(IVal other)
+  METHOD IVal Find(IVal key)
+  METHOD IVal Get(IVal index)
+  METHOD IIteratorT Iterator()
+  FIELD IType MapType [static]
+  METHOD IVal NewJsonStruct(TypeAdapter adapter, Struct value) [static]
+  METHOD IVal NewMaybeWrappedMap(TypeAdapter adapter, IDictionary value) [static]
+  METHOD IVal NewWrappedMap(TypeAdapter adapter, IDictionary<IVal,IVal> value) [static]
+  METHOD IVal Size()
+  METHOD IType Type()
+  METHOD Object Value()
+
+TYPE class Cel.Common.Types.NullT : BaseVal, IVal
+  CTOR .ctor()
+  METHOD Object ConvertToNative(Type typeDesc)
+  METHOD IVal ConvertToType(IType typeValue)
+  METHOD IVal Equal(IVal other)
+  METHOD Boolean Equals(Object obj)
+  METHOD Int32 GetHashCode()
+  FIELD IType NullType [static]
+  FIELD NullT NullValue [static]
+  METHOD String ToString()
+  METHOD IType Type()
+  METHOD Object Value()
+
+TYPE abstract class Cel.Common.Types.ObjectT : BaseVal, IVal, IFieldTester, IIndexer, ITypeAdapterProvider
+  METHOD IVal ConvertToType(IType typeVal)
+  METHOD IVal Equal(IVal other)
+  METHOD Boolean Equals(Object o)
+  METHOD IVal Get(IVal index)
+  METHOD Int32 GetHashCode()
+  METHOD IVal IsSet(IVal field)
+  METHOD IVal NativeToValue(Object value)
+  METHOD TypeAdapter ToTypeAdapter()
+  METHOD IType Type()
+  METHOD Object Value()
+
+TYPE class Cel.Common.Types.OpaqueT : BaseVal, IVal
+  METHOD Object ConvertToNative(Type typeDesc)
+  METHOD IVal ConvertToType(IType typeValue)
+  METHOD IVal Equal(IVal other)
+  METHOD Boolean Equals(Object o)
+  METHOD Int32 GetHashCode()
+  METHOD OpaqueT Of(Object value, String typeName) [static]
+  METHOD String ToString()
+  METHOD IType Type()
+  METHOD Object Value()
+
+TYPE class Cel.Common.Types.Overflow
+  CTOR .ctor()
+  METHOD Period AddDurationChecked(Period x, Period y) [static]
+  METHOD Int64 AddInt64Checked(Int64 x, Int64 y) [static]
+  METHOD ZonedDateTime AddTimeDurationChecked(ZonedDateTime x, Period y) [static]
+  METHOD UInt64 AddUint64Checked(UInt64 x, UInt64 y) [static]
+  METHOD ZonedDateTime CheckTimeOverflow(ZonedDateTime x) [static]
+  METHOD Int64 DivideInt64Checked(Int64 x, Int64 y) [static]
+  METHOD Int64 ModuloInt64Checked(Int64 x, Int64 y) [static]
+  METHOD Int64 MultiplyInt64Checked(Int64 x, Int64 y) [static]
+  METHOD UInt64 MultiplyUint64Checked(UInt64 x, UInt64 y) [static]
+  METHOD Period NegateDurationChecked(Period x) [static]
+  METHOD Int64 NegateInt64Checked(Int64 x) [static]
+  FIELD OverflowException OverflowErrorException [static]
+  METHOD Period SubtractDurationChecked(Period x, Period y) [static]
+  METHOD Int64 SubtractInt64Checked(Int64 x, Int64 y) [static]
+  METHOD Period SubtractTimeChecked(ZonedDateTime x, ZonedDateTime y) [static]
+  METHOD ZonedDateTime SubtractTimeDurationChecked(ZonedDateTime x, Period y) [static]
+  METHOD UInt64 SubtractUint64Checked(UInt64 x, UInt64 y) [static]
+
+TYPE class Cel.Common.Types.Overflow+OverflowException : Exception, ISerializable
+
+TYPE class Cel.Common.Types.Overloads
+  FIELD String AddBytes [static] = add_bytes
+  FIELD String AddDouble [static] = add_double
+  FIELD String AddDurationDuration [static] = add_duration_duration
+  FIELD String AddDurationTimestamp [static] = add_duration_timestamp
+  FIELD String AddInt64 [static] = add_int64
+  FIELD String AddList [static] = add_list
+  FIELD String AddString [static] = add_string
+  FIELD String AddTimestampDuration [static] = add_timestamp_duration
+  FIELD String AddUint64 [static] = add_uint64
+  FIELD String BoolToBool [static] = bool_to_bool
+  FIELD String BoolToString [static] = bool_to_string
+  FIELD String BytesToBytes [static] = bytes_to_bytes
+  FIELD String BytesToString [static] = bytes_to_string
+  FIELD String Conditional [static] = conditional
+  FIELD String Contains [static] = contains
+  FIELD String ContainsString [static] = contains_string
+  FIELD String DeprecatedIn [static] = in
+  FIELD String DivideDouble [static] = divide_double
+  FIELD String DivideInt64 [static] = divide_int64
+  FIELD String DivideUint64 [static] = divide_uint64
+  FIELD String DoubleToDouble [static] = double_to_double
+  FIELD String DoubleToInt [static] = double_to_int64
+  FIELD String DoubleToString [static] = double_to_string
+  FIELD String DoubleToUint [static] = double_to_uint64
+  FIELD String DurationToDuration [static] = duration_to_duration
+  FIELD String DurationToHours [static] = duration_to_hours
+  FIELD String DurationToInt [static] = duration_to_int64
+  FIELD String DurationToMilliseconds [static] = duration_to_milliseconds
+  FIELD String DurationToMinutes [static] = duration_to_minutes
+  FIELD String DurationToSeconds [static] = duration_to_seconds
+  FIELD String DurationToString [static] = duration_to_string
+  FIELD String EndsWith [static] = endsWith
+  FIELD String EndsWithString [static] = ends_with_string
+  FIELD String Equals [static] = equals
+  FIELD String GreaterBool [static] = greater_bool
+  FIELD String GreaterBytes [static] = greater_bytes
+  FIELD String GreaterDouble [static] = greater_double
+  FIELD String GreaterDoubleInt64 [static] = greater_double_int64
+  FIELD String GreaterDoubleUint64 [static] = greater_double_uint64
+  FIELD String GreaterDuration [static] = greater_duration
+  FIELD String GreaterEqualsBool [static] = greater_equals_bool
+  FIELD String GreaterEqualsBytes [static] = greater_equals_bytes
+  FIELD String GreaterEqualsDouble [static] = greater_equals_double
+  FIELD String GreaterEqualsDoubleInt64 [static] = greater_equals_double_int64
+  FIELD String GreaterEqualsDoubleUint64 [static] = greater_equals_double_uint64
+  FIELD String GreaterEqualsDuration [static] = greater_equals_duration
+  FIELD String GreaterEqualsInt64 [static] = greater_equals_int64
+  FIELD String GreaterEqualsInt64Double [static] = greater_equals_int64_double
+  FIELD String GreaterEqualsInt64Uint64 [static] = greater_equals_int64_uint64
+  FIELD String GreaterEqualsString [static] = greater_equals_string
+  FIELD String GreaterEqualsTimestamp [static] = greater_equals_timestamp
+  FIELD String GreaterEqualsUint64 [static] = greater_equals_uint64
+  FIELD String GreaterEqualsUint64Double [static] = greater_equals_uint64_double
+  FIELD String GreaterEqualsUint64Int64 [static] = greater_equals_uint64_int64
+  FIELD String GreaterInt64 [static] = greater_int64
+  FIELD String GreaterInt64Double [static] = greater_int64_double
+  FIELD String GreaterInt64Uint64 [static] = greater_int64_uint64
+  FIELD String GreaterString [static] = greater_string
+  FIELD String GreaterTimestamp [static] = greater_timestamp
+  FIELD String GreaterUint64 [static] = greater_uint64
+  FIELD String GreaterUint64Double [static] = greater_uint64_double
+  FIELD String GreaterUint64Int64 [static] = greater_uint64_int64
+  FIELD String HasNext [static] = @hasNext
+  FIELD String InList [static] = in_list
+  FIELD String InMap [static] = in_map
+  FIELD String InMessage [static] = in_message
+  FIELD String IndexList [static] = index_list
+  FIELD String IndexMap [static] = index_map
+  FIELD String IndexMessage [static] = index_message
+  FIELD String IntToDouble [static] = int64_to_double
+  FIELD String IntToDuration [static] = int64_to_duration
+  FIELD String IntToInt [static] = int64_to_int64
+  FIELD String IntToString [static] = int64_to_string
+  FIELD String IntToTimestamp [static] = int64_to_timestamp
+  FIELD String IntToUint [static] = int64_to_uint64
+  METHOD Boolean IsTypeConversionFunction(String function) [static]
+  FIELD String Iterator [static] = @iterator
+  FIELD String LessBool [static] = less_bool
+  FIELD String LessBytes [static] = less_bytes
+  FIELD String LessDouble [static] = less_double
+  FIELD String LessDoubleInt64 [static] = less_double_int64
+  FIELD String LessDoubleUint64 [static] = less_double_uint64
+  FIELD String LessDuration [static] = less_duration
+  FIELD String LessEqualsBool [static] = less_equals_bool
+  FIELD String LessEqualsBytes [static] = less_equals_bytes
+  FIELD String LessEqualsDouble [static] = less_equals_double
+  FIELD String LessEqualsDoubleInt64 [static] = less_equals_double_int64
+  FIELD String LessEqualsDoubleUint64 [static] = less_equals_double_uint64
+  FIELD String LessEqualsDuration [static] = less_equals_duration
+  FIELD String LessEqualsInt64 [static] = less_equals_int64
+  FIELD String LessEqualsInt64Double [static] = less_equals_int64_double
+  FIELD String LessEqualsInt64Uint64 [static] = less_equals_int64_uint64
+  FIELD String LessEqualsString [static] = less_equals_string
+  FIELD String LessEqualsTimestamp [static] = less_equals_timestamp
+  FIELD String LessEqualsUint64 [static] = less_equals_uint64
+  FIELD String LessEqualsUint64Double [static] = less_equals_uint64_double
+  FIELD String LessEqualsUint64Int64 [static] = less_equals_uint64_int64
+  FIELD String LessInt64 [static] = less_int64
+  FIELD String LessInt64Double [static] = less_int64_double
+  FIELD String LessInt64Uint64 [static] = less_int64_uint64
+  FIELD String LessString [static] = less_string
+  FIELD String LessTimestamp [static] = less_timestamp
+  FIELD String LessUint64 [static] = less_uint64
+  FIELD String LessUint64Double [static] = less_uint64_double
+  FIELD String LessUint64Int64 [static] = less_uint64_int64
+  FIELD String LogicalAnd [static] = logical_and
+  FIELD String LogicalNot [static] = logical_not
+  FIELD String LogicalOr [static] = logical_or
+  FIELD String Matches [static] = matches
+  FIELD String MatchesString [static] = matches_string
+  FIELD String ModuloInt64 [static] = modulo_int64
+  FIELD String ModuloUint64 [static] = modulo_uint64
+  FIELD String MultiplyDouble [static] = multiply_double
+  FIELD String MultiplyInt64 [static] = multiply_int64
+  FIELD String MultiplyUint64 [static] = multiply_uint64
+  FIELD String NegateDouble [static] = negate_double
+  FIELD String NegateInt64 [static] = negate_int64
+  FIELD String Next [static] = @next
+  FIELD String NotEquals [static] = not_equals
+  FIELD String NotStrictlyFalse [static] = not_strictly_false
+  FIELD String Size [static] = size
+  FIELD String SizeBytes [static] = size_bytes
+  FIELD String SizeBytesInst [static] = bytes_size
+  FIELD String SizeList [static] = size_list
+  FIELD String SizeListInst [static] = list_size
+  FIELD String SizeMap [static] = size_map
+  FIELD String SizeMapInst [static] = map_size
+  FIELD String SizeString [static] = size_string
+  FIELD String SizeStringInst [static] = string_size
+  FIELD String StartsWith [static] = startsWith
+  FIELD String StartsWithString [static] = starts_with_string
+  FIELD String StringToBool [static] = string_to_bool
+  FIELD String StringToBytes [static] = string_to_bytes
+  FIELD String StringToDouble [static] = string_to_double
+  FIELD String StringToDuration [static] = string_to_duration
+  FIELD String StringToInt [static] = string_to_int64
+  FIELD String StringToString [static] = string_to_string
+  FIELD String StringToTimestamp [static] = string_to_timestamp
+  FIELD String StringToUint [static] = string_to_uint64
+  FIELD String SubtractDouble [static] = subtract_double
+  FIELD String SubtractDurationDuration [static] = subtract_duration_duration
+  FIELD String SubtractInt64 [static] = subtract_int64
+  FIELD String SubtractTimestampDuration [static] = subtract_timestamp_duration
+  FIELD String SubtractTimestampTimestamp [static] = subtract_timestamp_timestamp
+  FIELD String SubtractUint64 [static] = subtract_uint64
+  FIELD String TimeGetDate [static] = getDate
+  FIELD String TimeGetDayOfMonth [static] = getDayOfMonth
+  FIELD String TimeGetDayOfWeek [static] = getDayOfWeek
+  FIELD String TimeGetDayOfYear [static] = getDayOfYear
+  FIELD String TimeGetFullYear [static] = getFullYear
+  FIELD String TimeGetHours [static] = getHours
+  FIELD String TimeGetMilliseconds [static] = getMilliseconds
+  FIELD String TimeGetMinutes [static] = getMinutes
+  FIELD String TimeGetMonth [static] = getMonth
+  FIELD String TimeGetSeconds [static] = getSeconds
+  FIELD String TimestampToDayOfMonthOneBased [static] = timestamp_to_day_of_month_1_based
+  FIELD String TimestampToDayOfMonthOneBasedWithTz [static] = timestamp_to_day_of_month_1_based_with_tz
+  FIELD String TimestampToDayOfMonthZeroBased [static] = timestamp_to_day_of_month
+  FIELD String TimestampToDayOfMonthZeroBasedWithTz [static] = timestamp_to_day_of_month_with_tz
+  FIELD String TimestampToDayOfWeek [static] = timestamp_to_day_of_week
+  FIELD String TimestampToDayOfWeekWithTz [static] = timestamp_to_day_of_week_with_tz
+  FIELD String TimestampToDayOfYear [static] = timestamp_to_day_of_year
+  FIELD String TimestampToDayOfYearWithTz [static] = timestamp_to_day_of_year_with_tz
+  FIELD String TimestampToHours [static] = timestamp_to_hours
+  FIELD String TimestampToHoursWithTz [static] = timestamp_to_hours_with_tz
+  FIELD String TimestampToInt [static] = timestamp_to_int64
+  FIELD String TimestampToMilliseconds [static] = timestamp_to_milliseconds
+  FIELD String TimestampToMillisecondsWithTz [static] = timestamp_to_milliseconds_with_tz
+  FIELD String TimestampToMinutes [static] = timestamp_to_minutes
+  FIELD String TimestampToMinutesWithTz [static] = timestamp_to_minutes_with_tz
+  FIELD String TimestampToMonth [static] = timestamp_to_month
+  FIELD String TimestampToMonthWithTz [static] = timestamp_to_month_with_tz
+  FIELD String TimestampToSeconds [static] = timestamp_to_seconds
+  FIELD String TimestampToSecondsWithTz [static] = timestamp_to_seconds_tz
+  FIELD String TimestampToString [static] = timestamp_to_string
+  FIELD String TimestampToTimestamp [static] = timestamp_to_timestamp
+  FIELD String TimestampToYear [static] = timestamp_to_year
+  FIELD String TimestampToYearWithTz [static] = timestamp_to_year_with_tz
+  FIELD String ToDyn [static] = to_dyn
+  FIELD String TypeConvertBool [static] = bool
+  FIELD String TypeConvertBytes [static] = bytes
+  FIELD String TypeConvertDouble [static] = double
+  FIELD String TypeConvertDuration [static] = duration
+  FIELD String TypeConvertDyn [static] = dyn
+  FIELD String TypeConvertInt [static] = int
+  FIELD String TypeConvertString [static] = string
+  FIELD String TypeConvertTimestamp [static] = timestamp
+  FIELD String TypeConvertType [static] = type
+  FIELD String TypeConvertUint [static] = uint
+  FIELD String UintToDouble [static] = uint64_to_double
+  FIELD String UintToInt [static] = uint64_to_int64
+  FIELD String UintToString [static] = uint64_to_string
+  FIELD String UintToUint [static] = uint64_to_uint64
+
+TYPE class Cel.Common.Types.Pb.Checked
+  CTOR .ctor()
+  FIELD Type CheckedAny [static]
+  FIELD Type CheckedBool [static]
+  FIELD Type CheckedBytes [static]
+  FIELD Type CheckedDouble [static]
+  FIELD Type CheckedDuration [static]
+  FIELD Type CheckedDyn [static]
+  FIELD Type CheckedInt [static]
+  FIELD Type CheckedListDyn [static]
+  FIELD Type CheckedMapStringDyn [static]
+  METHOD Type CheckedMessageType(String name) [static]
+  FIELD Type CheckedNull [static]
+  FIELD IDictionary<Kind,Type> CheckedPrimitives [static]
+  FIELD Type CheckedString [static]
+  FIELD Type CheckedTimestamp [static]
+  FIELD Type CheckedUint [static]
+  FIELD IDictionary<String,Type> CheckedWellKnowns [static]
+
+TYPE class Cel.Common.Types.Pb.Db
+  METHOD ISet<FileDescriptor> CollectFileDescriptorSet(IMessage message) [static]
+  METHOD Db Copy()
+  FIELD Db DefaultDb [static]
+  METHOD EnumValueDescription DescribeEnum(String enumName)
+  METHOD PbTypeDescription DescribeType(String typeName)
+  METHOD Boolean Equals(Object o)
+  METHOD IList<FileDescription> FileDescriptions()
+  METHOD Int32 GetHashCode()
+  METHOD Db NewDb() [static]
+  METHOD FileDescription RegisterDescriptor(FileDescriptor fileDesc)
+  METHOD FileDescription RegisterMessage(IMessage message)
+  METHOD String ToString()
+
+TYPE class Cel.Common.Types.Pb.DefaultTypeAdapter : ITypeAdapterProvider
+  FIELD DefaultTypeAdapter Instance [static]
+  METHOD IVal NativeToValue(Object value)
+  METHOD IVal NativeToValue(Db db, TypeAdapter a, Object value) [static]
+  METHOD TypeAdapter ToTypeAdapter()
+
+TYPE abstract class Cel.Common.Types.Pb.Description
+  METHOD IMessage Zero()
+
+TYPE class Cel.Common.Types.Pb.EnumValueDescription
+  METHOD Boolean Equals(Object o)
+  METHOD Int32 GetHashCode()
+  METHOD String Name()
+  METHOD EnumValueDescription NewEnumValueDescription(String name, EnumValueDescriptor desc) [static]
+  METHOD Int32 Value()
+
+TYPE class Cel.Common.Types.Pb.FieldDescription : Description
+  METHOD Type CheckedType()
+  METHOD FieldDescriptor Descriptor()
+  PROP Boolean Enum
+  METHOD Boolean Equals(Object o)
+  METHOD Object GetField(Object target)
+  METHOD Object GetFrom(Db db, Object target)
+  METHOD Int32 GetHashCode()
+  METHOD Object GetValueFromField(FieldDescriptor desc, IMessage message) [static]
+  METHOD Boolean HasField(Object target)
+  METHOD Boolean HasValueForField(FieldDescriptor desc, IMessage message) [static]
+  METHOD Boolean IsSet(Object target)
+  PROP Boolean List
+  PROP Boolean Map
+  METHOD Object MaybeUnwrapDynamic(Db db, IMessage msg)
+  PROP Boolean Message
+  METHOD String Name()
+  METHOD FieldDescription NewFieldDescription(FieldDescriptor fieldDesc) [static]
+  PROP Boolean Oneof
+  METHOD Type ReflectType()
+  METHOD String ToString()
+  METHOD Type TypeDefToType()
+  METHOD IMessage Zero()
+
+TYPE class Cel.Common.Types.Pb.FileDescription
+  PROP String[] EnumNames
+  METHOD Boolean Equals(Object o)
+  METHOD EnumValueDescription GetEnumDescription(String enumName)
+  METHOD Int32 GetHashCode()
+  METHOD PbTypeDescription GetTypeDescription(String typeName)
+  METHOD FileDescription NewFileDescription(FileDescriptor fileDesc) [static]
+  PROP String[] TypeNames
+
+TYPE class Cel.Common.Types.Pb.PbObjectT : ObjectT, IVal, IFieldTester, IIndexer, ITypeAdapterProvider
+  METHOD Object ConvertToNative(Type typeDesc)
+  METHOD IVal Get(IVal index)
+  METHOD IVal IsSet(IVal field)
+  METHOD IVal NewObject(TypeAdapter adapter, PbTypeDescription typeDesc, IType typeValue, IMessage value) [static]
+
+TYPE class Cel.Common.Types.Pb.PbTypeDescription : Description, ITypeDescription
+  PROP MessageDescriptor Descriptor
+  METHOD Boolean Equals(Object o)
+  METHOD FieldDescription FieldByName(String name)
+  METHOD IDictionary<String,FieldDescription> FieldMap()
+  METHOD Int32 GetHashCode()
+  METHOD Object MaybeUnwrap(Db db, Object m)
+  METHOD String Name()
+  METHOD IMessage NewMessageBuilder()
+  METHOD PbTypeDescription NewTypeDescription(String typeName, MessageDescriptor desc) [static]
+  METHOD Type ReflectType()
+  METHOD String ToString()
+  METHOD String TypeNameFromMessage(IMessage message) [static]
+  METHOD String TypeNameFromUrl(String typeUrl) [static]
+  METHOD IMessage Zero()
+
+TYPE class Cel.Common.Types.Pb.ProtoTypeRegistry : ITypeRegistry, ITypeAdapterProvider, ITypeProvider
+  METHOD ITypeRegistry Copy()
+  METHOD IVal EnumValue(String enumName)
+  METHOD Boolean Equals(Object o)
+  METHOD FieldType FindFieldType(String messageType, String fieldName)
+  METHOD IVal FindIdent(String identName)
+  METHOD Type FindType(String typeName)
+  METHOD Int32 GetHashCode()
+  METHOD IVal NativeToValue(Object value)
+  METHOD ProtoTypeRegistry NewEmptyRegistry() [static]
+  METHOD ProtoTypeRegistry NewRegistry(IMessage[] types) [static]
+  METHOD ProtoTypeRegistry NewRegistry(Func<Object,IVal> customAdapter, IMessage[] types) [static]
+  METHOD IVal NewValue(String typeName, IDictionary<String,IVal> fields)
+  METHOD Void Register(Object t)
+  METHOD Void RegisterDescriptor(FileDescriptor fileDesc)
+  METHOD Void RegisterMessage(IMessage message)
+  METHOD Void RegisterType(IType[] types)
+  METHOD String ToString()
+  METHOD TypeAdapter ToTypeAdapter()
+
+TYPE abstract class Cel.Common.Types.Ref.BaseVal : IVal
+  METHOD Boolean BooleanValue()
+  METHOD Object ConvertToNative(Type typeDesc)
+  METHOD IVal ConvertToType(IType typeValue)
+  METHOD IVal Equal(IVal other)
+  METHOD Boolean Equals(Object obj)
+  METHOD Int32 GetHashCode()
+  METHOD Int64 IntValue()
+  METHOD String ToString()
+  METHOD IType Type()
+  METHOD UInt64 UintValue()
+  METHOD Object Value()
+
+TYPE class Cel.Common.Types.Ref.FieldGetter : MulticastDelegate, ICloneable, ISerializable
+  CTOR .ctor(Object object, IntPtr method)
+  METHOD IAsyncResult BeginInvoke(Object target, AsyncCallback callback, Object object)
+  METHOD Object EndInvoke(IAsyncResult result)
+  METHOD Object Invoke(Object target)
+
+TYPE class Cel.Common.Types.Ref.FieldTester : MulticastDelegate, ICloneable, ISerializable
+  CTOR .ctor(Object object, IntPtr method)
+  METHOD IAsyncResult BeginInvoke(Object target, AsyncCallback callback, Object object)
+  METHOD Boolean EndInvoke(IAsyncResult result)
+  METHOD Boolean Invoke(Object target)
+
+TYPE class Cel.Common.Types.Ref.FieldType
+  CTOR .ctor(Type type, FieldTester isSet, FieldGetter getFrom)
+  FIELD FieldGetter GetFrom
+  FIELD FieldTester IsSet
+  FIELD Type Type
+
+TYPE interface Cel.Common.Types.Ref.IType : IVal
+  METHOD Boolean HasTrait(Trait trait)
+  METHOD TypeEnum TypeEnum()
+  METHOD String TypeName()
+
+TYPE interface Cel.Common.Types.Ref.ITypeAdapterProvider
+  METHOD IVal NativeToValue(Object value)
+  METHOD TypeAdapter ToTypeAdapter()
+
+TYPE interface Cel.Common.Types.Ref.ITypeDescription
+  METHOD String Name()
+  METHOD Type ReflectType()
+
+TYPE interface Cel.Common.Types.Ref.ITypeProvider
+  METHOD IVal EnumValue(String enumName)
+  METHOD FieldType FindFieldType(String messageType, String fieldName)
+  METHOD IVal FindIdent(String identName)
+  METHOD Type FindType(String typeName)
+  METHOD IVal NewValue(String typeName, IDictionary<String,IVal> fields)
+
+TYPE interface Cel.Common.Types.Ref.ITypeRegistry : ITypeAdapterProvider, ITypeProvider
+  METHOD ITypeRegistry Copy()
+  METHOD Void Register(Object t)
+  METHOD Void RegisterType(IType[] types)
+
+TYPE interface Cel.Common.Types.Ref.IVal
+  METHOD Boolean BooleanValue()
+  METHOD Object ConvertToNative(Type typeDesc)
+  METHOD IVal ConvertToType(IType typeValue)
+  METHOD IVal Equal(IVal other)
+  METHOD Int64 IntValue()
+  METHOD IType Type()
+  METHOD UInt64 UintValue()
+  METHOD Object Value()
+
+TYPE class Cel.Common.Types.Ref.TypeAdapter : MulticastDelegate, ICloneable, ISerializable
+  CTOR .ctor(Object object, IntPtr method)
+  METHOD IAsyncResult BeginInvoke(Object value, AsyncCallback callback, Object object)
+  METHOD IVal EndInvoke(IAsyncResult result)
+  METHOD IVal Invoke(Object value)
+
+TYPE class Cel.Common.Types.Ref.TypeAdapterSupport
+  METHOD IVal MaybeNativeToValue(TypeAdapter a, Object value) [static]
+
+TYPE class Cel.Common.Types.Ref.TypeEnum
+  FIELD TypeEnum Bool [static]
+  FIELD TypeEnum Bytes [static]
+  FIELD TypeEnum Double [static]
+  FIELD TypeEnum Duration [static]
+  FIELD TypeEnum Err [static]
+  PROP InnerEnum InnerEnumValue
+  FIELD TypeEnum Int [static]
+  FIELD TypeEnum List [static]
+  FIELD TypeEnum Map [static]
+  PROP String Name
+  FIELD TypeEnum Null [static]
+  FIELD TypeEnum Object [static]
+  METHOD Int32 Ordinal()
+  FIELD TypeEnum String [static]
+  FIELD TypeEnum Timestamp [static]
+  METHOD String ToString()
+  FIELD TypeEnum Type [static]
+  FIELD TypeEnum Uint [static]
+  FIELD TypeEnum Unknown [static]
+  METHOD TypeEnum ValueOf(String name) [static]
+  METHOD TypeEnum[] Values() [static]
+
+TYPE enum Cel.Common.Types.Ref.TypeEnum+InnerEnum : IComparable, ISpanFormattable, IFormattable, IConvertible
+  FIELD InnerEnum Bool [static] = 0
+  FIELD InnerEnum Bytes [static] = 1
+  FIELD InnerEnum Double [static] = 2
+  FIELD InnerEnum Duration [static] = 3
+  FIELD InnerEnum Err [static] = 4
+  FIELD InnerEnum Int [static] = 5
+  FIELD InnerEnum List [static] = 6
+  FIELD InnerEnum Map [static] = 7
+  FIELD InnerEnum Null [static] = 8
+  FIELD InnerEnum Object [static] = 9
+  FIELD InnerEnum String [static] = 10
+  FIELD InnerEnum Timestamp [static] = 11
+  FIELD InnerEnum Type [static] = 12
+  FIELD InnerEnum Uint [static] = 13
+  FIELD InnerEnum Unknown [static] = 14
+  FIELD Int32 value__
+
+TYPE class Cel.Common.Types.StringT : BaseVal, IVal, IAdder, IComparer, IMatcher, IReceiver, ISizer
+  METHOD IVal Add(IVal other)
+  METHOD IVal Compare(IVal other)
+  METHOD Object ConvertToNative(Type typeDesc)
+  METHOD IVal ConvertToType(IType typeVal)
+  METHOD IVal Equal(IVal other)
+  METHOD Boolean Equals(Object o)
+  METHOD Int32 GetHashCode()
+  METHOD IVal Match(IVal pattern)
+  METHOD IVal Receive(String function, String overload, IVal[] args)
+  METHOD IVal Size()
+  METHOD StringT StringOf(String s) [static]
+  FIELD IType StringType [static]
+  METHOD IType Type()
+  FIELD UTF8Encoding Utf8 [static]
+  METHOD Object Value()
+
+TYPE class Cel.Common.Types.TimestampT : BaseVal, IVal, IAdder, IComparer, IReceiver, ISubtractor
+  METHOD IVal Add(IVal other)
+  METHOD IVal Compare(IVal other)
+  METHOD Object ConvertToNative(Type typeDesc)
+  METHOD IVal ConvertToType(IType typeValue)
+  METHOD IVal Equal(IVal other)
+  METHOD Boolean Equals(Object o)
+  METHOD Int32 GetHashCode()
+  FIELD Int64 MaxUnixTime [static] = 253402300799
+  FIELD Int64 MinUnixTime [static] = -62135596800
+  METHOD DateTimeZone ParseTz(String tz) [static]
+  METHOD IVal RangeCheck()
+  METHOD IVal Receive(String function, String overload, IVal[] args)
+  METHOD IVal Subtract(IVal other)
+  METHOD IVal TimestampGetDayOfMonthOneBased(ZonedDateTime t) [static]
+  METHOD IVal TimestampGetDayOfMonthOneBasedWithTz(ZonedDateTime t, IVal tz) [static]
+  METHOD IVal TimestampGetDayOfMonthZeroBased(ZonedDateTime t) [static]
+  METHOD IVal TimestampGetDayOfMonthZeroBasedWithTz(ZonedDateTime t, IVal tz) [static]
+  METHOD IVal TimestampGetDayOfWeek(ZonedDateTime t) [static]
+  METHOD IVal TimestampGetDayOfWeekWithTz(ZonedDateTime t, IVal tz) [static]
+  METHOD IVal TimestampGetDayOfYear(ZonedDateTime t) [static]
+  METHOD IVal TimestampGetDayOfYearWithTz(ZonedDateTime t, IVal tz) [static]
+  METHOD IVal TimestampGetFullYear(ZonedDateTime t) [static]
+  METHOD IVal TimestampGetFullYearWithTz(ZonedDateTime t, IVal tz) [static]
+  METHOD IVal TimestampGetHours(ZonedDateTime t) [static]
+  METHOD IVal TimestampGetHoursWithTz(ZonedDateTime t, IVal tz) [static]
+  METHOD IVal TimestampGetMilliseconds(ZonedDateTime t) [static]
+  METHOD IVal TimestampGetMillisecondsWithTz(ZonedDateTime t, IVal tz) [static]
+  METHOD IVal TimestampGetMinutes(ZonedDateTime t) [static]
+  METHOD IVal TimestampGetMinutesWithTz(ZonedDateTime t, IVal tz) [static]
+  METHOD IVal TimestampGetMonth(ZonedDateTime t) [static]
+  METHOD IVal TimestampGetMonthWithTz(ZonedDateTime t, IVal tz) [static]
+  METHOD IVal TimestampGetSeconds(ZonedDateTime t) [static]
+  METHOD IVal TimestampGetSecondsWithTz(ZonedDateTime t, IVal tz) [static]
+  METHOD TimestampT TimestampOf(String s) [static]
+  METHOD TimestampT TimestampOf(Instant t) [static]
+  METHOD TimestampT TimestampOf(Timestamp t) [static]
+  METHOD TimestampT TimestampOf(ZonedDateTime t) [static]
+  FIELD IType TimestampType [static]
+  METHOD IType Type()
+  METHOD Object Value()
+  FIELD DateTimeZone ZoneIdZ [static]
+
+TYPE interface Cel.Common.Types.Traits.IAdder
+  METHOD IVal Add(IVal other)
+
+TYPE interface Cel.Common.Types.Traits.IComparer
+  METHOD IVal Compare(IVal other)
+
+TYPE interface Cel.Common.Types.Traits.IContainer
+  METHOD IVal Contains(IVal value)
+
+TYPE interface Cel.Common.Types.Traits.IDivider
+  METHOD IVal Divide(IVal denominator)
+
+TYPE interface Cel.Common.Types.Traits.IFieldTester
+  METHOD IVal IsSet(IVal field)
+
+TYPE interface Cel.Common.Types.Traits.IIndexer
+  METHOD IVal Get(IVal index)
+
+TYPE interface Cel.Common.Types.Traits.ILister : IVal, IAdder, IContainer, IIndexer, IIterableT, ISizer
+
+TYPE interface Cel.Common.Types.Traits.IMapper : IVal, IContainer, IIndexer, IIterableT, ISizer
+  METHOD IVal Find(IVal key)
+
+TYPE interface Cel.Common.Types.Traits.IMatcher
+  METHOD IVal Match(IVal pattern)
+
+TYPE interface Cel.Common.Types.Traits.IModder
+  METHOD IVal Modulo(IVal denominator)
+
+TYPE interface Cel.Common.Types.Traits.IMultiplier
+  METHOD IVal Multiply(IVal other)
+
+TYPE interface Cel.Common.Types.Traits.INegater
+  METHOD IVal Negate()
+
+TYPE interface Cel.Common.Types.Traits.IReceiver
+  METHOD IVal Receive(String function, String overload, IVal[] args)
+
+TYPE interface Cel.Common.Types.Traits.ISizer
+  METHOD IVal Size()
+
+TYPE interface Cel.Common.Types.Traits.ISubtractor
+  METHOD IVal Subtract(IVal subtrahend)
+
+TYPE enum Cel.Common.Types.Traits.Trait : IComparable, ISpanFormattable, IFormattable, IConvertible
+  FIELD Trait AdderType [static] = 1
+  FIELD Trait ComparerType [static] = 2
+  FIELD Trait ContainerType [static] = 3
+  FIELD Trait DividerType [static] = 4
+  FIELD Trait FieldTesterType [static] = 5
+  FIELD Trait IndexerType [static] = 6
+  FIELD Trait IterableType [static] = 7
+  FIELD Trait IteratorType [static] = 8
+  FIELD Trait MatcherType [static] = 9
+  FIELD Trait ModderType [static] = 10
+  FIELD Trait MultiplierType [static] = 11
+  FIELD Trait NegatorType [static] = 12
+  FIELD Trait None [static] = 0
+  FIELD Trait ReceiverType [static] = 13
+  FIELD Trait SizerType [static] = 14
+  FIELD Trait SubtractorType [static] = 15
+  FIELD Int32 value__
+
+TYPE class Cel.Common.Types.TypeT : IType, IVal
+  METHOD Boolean BooleanValue()
+  METHOD Object ConvertToNative(Type typeDesc)
+  METHOD IVal ConvertToType(IType typeVal)
+  METHOD IVal Equal(IVal other)
+  METHOD Boolean Equals(Object o)
+  METHOD Int32 GetHashCode()
+  METHOD Boolean HasTrait(Trait trait)
+  METHOD Int64 IntValue()
+  METHOD IType NewObjectTypeValue(String name) [static]
+  METHOD String ToString()
+  METHOD IType Type()
+  METHOD TypeEnum TypeEnum()
+  METHOD String TypeName()
+  FIELD IType TypeType [static]
+  METHOD UInt64 UintValue()
+  METHOD Object Value()
+
+TYPE class Cel.Common.Types.Types
+  METHOD BoolT BoolOf(Boolean b) [static]
+  METHOD IVal Equal(IVal lhs, IVal rhs) [static]
+  METHOD IType GetTypeByName(String typeName) [static]
+
+TYPE class Cel.Common.Types.UintT : BaseVal, IVal, IAdder, IComparer, IDivider, IModder, IMultiplier, ISubtractor
+  METHOD IVal Add(IVal other)
+  METHOD IVal Compare(IVal other)
+  METHOD Object ConvertToNative(Type typeDesc)
+  METHOD IVal ConvertToType(IType typeValue)
+  METHOD IVal Divide(IVal other)
+  METHOD IVal Equal(IVal other)
+  METHOD Boolean Equals(Object o)
+  METHOD Int32 GetHashCode()
+  METHOD Int64 IntValue()
+  PROP Boolean JsonSafe
+  METHOD IVal Modulo(IVal other)
+  METHOD IVal Multiply(IVal other)
+  METHOD IVal Subtract(IVal other)
+  METHOD IType Type()
+  METHOD UintT UintOf(UInt64 i) [static]
+  FIELD IType UintType [static]
+  METHOD UInt64 UintValue()
+  FIELD UintT UintZero [static]
+  METHOD Object Value()
+
+TYPE class Cel.Common.Types.UnknownT : BaseVal, IVal
+  METHOD Object ConvertToNative(Type typeDesc)
+  METHOD IVal ConvertToType(IType typeVal)
+  METHOD IVal Equal(IVal other)
+  METHOD Boolean Equals(Object o)
+  METHOD Int32 GetHashCode()
+  METHOD Int64 IntValue()
+  METHOD Boolean IsUnknown(Object val) [static]
+  METHOD IType Type()
+  METHOD UInt64 UintValue()
+  METHOD UnknownT UnknownOf(Int64 value) [static]
+  FIELD IType UnknownType [static]
+  METHOD Object Value()
+
+TYPE class Cel.Common.Types.Util
+  CTOR .ctor()
+  METHOD Boolean IsPrimitiveType(IVal val) [static]
+  METHOD Boolean IsUnknownOrError(IVal val) [static]
+
+TYPE class Cel.Env
+  PROP ITypeAdapterProvider CelTypeAdapter
+  METHOD AstIssuesTuple Check(Ast ast)
+  METHOD AstIssuesTuple Compile(String txt)
+  METHOD AstIssuesTuple CompileSource(ISource src)
+  METHOD Env Extend(IList<EnvOption> opts)
+  METHOD Env Extend(EnvOption[] opts)
+  PROP EnvFeature Feature
+  METHOD Boolean HasFeature(EnvFeature flag)
+  METHOD Env NewCustomEnv(ITypeRegistry registry, IList<EnvOption> opts) [static]
+  METHOD Env NewCustomEnv(EnvOption[] opts) [static]
+  METHOD Env NewEnv(EnvOption[] opts) [static]
+  METHOD AstIssuesTuple Parse(String txt)
+  METHOD AstIssuesTuple ParseSource(ISource src)
+  METHOD IProgram Program(Ast ast, ProgramOption[] opts)
+  METHOD Ast ResidualAst(Ast a, EvalDetails details)
+  METHOD String ToString()
+  PROP TypeAdapter TypeAdapter
+  PROP ITypeProvider TypeProvider
+  PROP IPartialActivation UnknownVars
+
+TYPE class Cel.Env+AstIssuesTuple
+  PROP Ast Ast
+  METHOD Boolean HasIssues()
+  PROP Issues Issues
+
+TYPE enum Cel.EnvFeature : IComparable, ISpanFormattable, IFormattable, IConvertible
+  FIELD EnvFeature FeatureCrossTypeNumericComparisons [static] = 1
+  FIELD EnvFeature FeatureDisableDynamicAggregateLiterals [static] = 0
+  FIELD Int32 value__
+
+TYPE class Cel.EnvOption : MulticastDelegate, ICloneable, ISerializable
+  CTOR .ctor(Object object, IntPtr method)
+  METHOD IAsyncResult BeginInvoke(Env e, AsyncCallback callback, Object object)
+  METHOD Env EndInvoke(IAsyncResult result)
+  METHOD Env Invoke(Env e)
+
+TYPE static class Cel.EnvOptions
+  METHOD EnvOption Abbrevs(String[] qualifiedNames) [static]
+  METHOD EnvOption ClearMacros() [static]
+  METHOD EnvOption Container(String name) [static]
+  METHOD EnvOption CustomTypeAdapter(ITypeAdapterProvider adapter) [static]
+  METHOD EnvOption CustomTypeProvider(ITypeProvider provider) [static]
+  METHOD EnvOption Declarations(IList<Decl> decls) [static]
+  METHOD EnvOption Declarations(Decl[] decls) [static]
+  METHOD EnvOption Features(EnvFeature[] flags) [static]
+  METHOD EnvOption HomogeneousAggregateLiterals() [static]
+  METHOD EnvOption Macros(Macro[] macros) [static]
+  METHOD EnvOption Macros(IList<Macro> macros) [static]
+  METHOD EnvOption Types(IList<Object> addTypes) [static]
+  METHOD EnvOption Types(Object[] addTypes) [static]
+
+TYPE class Cel.EvalDetails
+  CTOR .ctor(IEvalState state)
+  PROP IEvalState State
+
+TYPE class Cel.EvalOption
+  PROP Int32 Mask
+  FIELD EvalOption OptExhaustiveEval [static]
+  FIELD EvalOption OptOptimize [static]
+  FIELD EvalOption OptPartialEval [static]
+  FIELD EvalOption OptTrackState [static]
+  METHOD Int32 Ordinal()
+  METHOD String ToString()
+  METHOD EvalOption ValueOf(String name) [static]
+  METHOD EvalOption[] Values() [static]
+
+TYPE enum Cel.EvalOption+InnerEnum : IComparable, ISpanFormattable, IFormattable, IConvertible
+  FIELD InnerEnum OptExhaustiveEval [static] = 1
+  FIELD InnerEnum OptOptimize [static] = 2
+  FIELD InnerEnum OptPartialEval [static] = 3
+  FIELD InnerEnum OptTrackState [static] = 0
+  FIELD Int32 value__
+
+TYPE class Cel.EvalResult
+  PROP EvalDetails EvalDetails
+  PROP IVal Val
+
+TYPE class Cel.Extension.Guards
+  METHOD UnaryOp CallInStrArrayOutStr(Func<String[],String> func) [static]
+  METHOD BinaryOp CallInStrArrayStrOutStr(Func<String[],String,String> func) [static]
+  METHOD FunctionOp CallInStrIntIntOutStr(Func<String,Int32,Int32,String> func) [static]
+  METHOD BinaryOp CallInStrIntOutStr(Func<String,Int32,String> func) [static]
+  METHOD UnaryOp CallInStrOutStr(Func<String,String> func) [static]
+  METHOD FunctionOp CallInStrStrIntOutInt(Func<String,String,Int32,Int32> func) [static]
+  METHOD FunctionOp CallInStrStrIntOutStrArr(Func<String,String,Int32,String[]> func) [static]
+  METHOD BinaryOp CallInStrStrOutInt(Func<String,String,Int32> func) [static]
+  METHOD BinaryOp CallInStrStrOutStrArr(Func<String,String,String[]> func) [static]
+  METHOD FunctionOp CallInStrStrStrIntOutStr(Func<String,String,String,Int32,String> func) [static]
+  METHOD FunctionOp CallInStrStrStrOutStr(Func<String,String,String,String> func) [static]
+
+TYPE class Cel.Extension.MathLib : ILibrary
+  CTOR .ctor()
+  PROP IList<EnvOption> CompileOptions
+  METHOD EnvOption Math() [static]
+  PROP IList<ProgramOption> ProgramOptions
+
+TYPE class Cel.Extension.StringsLib : ILibrary
+  CTOR .ctor()
+  PROP IList<EnvOption> CompileOptions
+  PROP IList<ProgramOption> ProgramOptions
+  METHOD EnvOption Strings() [static]
+
+TYPE interface Cel.IEnvOption
+
+TYPE interface Cel.ILibrary
+  PROP IList<EnvOption> CompileOptions
+  PROP IList<ProgramOption> ProgramOptions
+
+TYPE interface Cel.IProgram
+  METHOD EvalResult Eval(Object vars)
+
+TYPE interface Cel.IProgramOption
+
+TYPE class Cel.Interpreter.AbsoluteAttribute : INamespacedAttribute, IAttribute, IQualifier, ICoster
+  METHOD IAttribute AddQualifier(IQualifier q)
+  METHOD String[] CandidateVariableNames()
+  METHOD Cost Cost()
+  METHOD Int64 Id()
+  METHOD IList<IQualifier> Qualifiers()
+  METHOD Object Qualify(IActivation vars, Object obj)
+  METHOD Object Resolve(IActivation vars)
+  METHOD String ToString()
+  METHOD Object TryResolve(IActivation vars)
+
+TYPE abstract class Cel.Interpreter.AbstractEval : IInterpretable
+  METHOD IVal Eval(IActivation activation)
+  METHOD Int64 Id()
+  METHOD String ToString()
+
+TYPE abstract class Cel.Interpreter.AbstractEvalLhsRhs : AbstractEval, IInterpretable, ICoster
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation activation)
+  METHOD String ToString()
+
+TYPE abstract class Cel.Interpreter.AbstractEvalWatch`1 : AbstractEval, IInterpretable, ICoster, IQualifier
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation activation)
+  METHOD Object Qualify(IActivation vars, Object obj)
+
+TYPE static class Cel.Interpreter.ActivationFactory
+  METHOD IActivation EmptyActivation() [static]
+  METHOD IActivation NewActivation(Object bindings) [static]
+  METHOD IActivation NewHierarchicalActivation(IActivation parent, IActivation child) [static]
+  METHOD IPartialActivation NewPartialActivation(Object bindings, AttributePattern[] unknowns) [static]
+
+TYPE class Cel.Interpreter.AstPruner
+  METHOD Expr PruneAst(Expr expr, IEvalState state) [static]
+
+TYPE class Cel.Interpreter.AttrFactory : IAttributeFactory
+  METHOD INamespacedAttribute AbsoluteAttribute(Int64 id, String[] names)
+  METHOD IAttribute ConditionalAttribute(Int64 id, IInterpretable expr, IAttribute t, IAttribute f)
+  METHOD IAttribute MaybeAttribute(Int64 id, String name)
+  METHOD IQualifier NewQualifier(Type objType, Int64 qualId, Object val)
+  METHOD IAttribute RelativeAttribute(Int64 id, IInterpretable operand)
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.AttrQualifier : ICoster, IAttribute, IQualifier
+  METHOD IAttribute AddQualifier(IQualifier q)
+  METHOD Cost Cost()
+  METHOD Int64 Id()
+  METHOD Object Qualify(IActivation vars, Object obj)
+  METHOD Object Resolve(IActivation a)
+  METHOD String ToString()
+
+TYPE static class Cel.Interpreter.AttributeFactoryUtils
+  METHOD IAttributeFactory NewAttributeFactory(Container cont, TypeAdapter a, ITypeProvider p) [static]
+  METHOD IQualifier NewQualifierStatic(TypeAdapter adapter, Int64 id, Object v) [static]
+  METHOD IVal RefResolve(TypeAdapter adapter, IVal idx, Object obj) [static]
+
+TYPE class Cel.Interpreter.AttributePattern
+  METHOD AttributePattern NewAttributePattern(String variable) [static]
+  METHOD IAttributeFactory NewPartialAttributeFactory(Container container, TypeAdapter adapter, ITypeProvider provider) [static]
+  METHOD AttributePattern QualBool(Boolean pattern)
+  METHOD AttributePattern QualInt(Int64 pattern)
+  METHOD AttributePattern QualString(String pattern)
+  METHOD AttributePattern QualUint(UInt64 pattern)
+  METHOD IList<AttributeQualifierPattern> QualifierPatterns()
+  METHOD String ToString()
+  METHOD Boolean VariableMatches(String variable)
+  METHOD AttributePattern Wildcard()
+
+TYPE class Cel.Interpreter.AttributePattern+AttributeQualifierPattern
+  METHOD Boolean Matches(IQualifier q)
+  METHOD String ToString()
+
+TYPE interface Cel.Interpreter.AttributePattern+IQualifierValueEquator
+  METHOD Boolean QualifierValueEquals(Object value)
+
+TYPE class Cel.Interpreter.BoolQualifier : ICoster, IConstantQualifierEquator, IQualifierValueEquator, IConstantQualifier, IQualifier
+  METHOD Cost Cost()
+  METHOD Int64 Id()
+  METHOD Boolean QualifierValueEquals(Object value)
+  METHOD Object Qualify(IActivation vars, Object obj)
+  METHOD String ToString()
+  METHOD IVal Value()
+
+TYPE class Cel.Interpreter.ConditionalAttribute : IAttribute, IQualifier, ICoster
+  METHOD IAttribute AddQualifier(IQualifier qual)
+  METHOD Cost Cost()
+  METHOD Int64 Id()
+  METHOD Object Qualify(IActivation vars, Object obj)
+  METHOD Object Resolve(IActivation vars)
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.Cost
+  METHOD Cost Add(Cost c)
+  METHOD Boolean Equals(Object o)
+  METHOD Cost EstimateCost(Object i) [static]
+  METHOD Int32 GetHashCode()
+  PROP Int64 Max
+  PROP Int64 Min
+  METHOD Cost Multiply(Int64 multiplier)
+  FIELD Cost None [static]
+  METHOD Cost Of(Int64 min, Int64 max) [static]
+  FIELD Cost OneOne [static]
+  METHOD String ToString()
+  FIELD Cost Unknown [static]
+
+TYPE class Cel.Interpreter.DefaultDispatcher : IDispatcher
+  METHOD Void Add(Overload[] overloads)
+  METHOD Overload FindOverload(String overload)
+  METHOD String[] OverloadIds()
+
+TYPE static class Cel.Interpreter.DispatcherFactory
+  METHOD IDispatcher ExtendDispatcher(IDispatcher parent) [static]
+  METHOD IDispatcher NewDispatcher() [static]
+
+TYPE class Cel.Interpreter.EvalAnd : AbstractEvalLhsRhs, IInterpretable, ICoster
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation ctx)
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.EvalAttr : AbstractEval, IInterpretable, IInterpretableAttribute, IAttribute, IQualifier, ICoster
+  METHOD TypeAdapter Adapter()
+  METHOD IAttribute AddQualifier(IQualifier qualifier)
+  METHOD IAttribute Attr()
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation ctx)
+  METHOD Object Qualify(IActivation ctx, Object obj)
+  METHOD Object Resolve(IActivation ctx)
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.EvalBinary : AbstractEvalLhsRhs, IInterpretable, ICoster, IInterpretableCall
+  METHOD IInterpretable[] Args()
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation ctx)
+  METHOD String Function()
+  METHOD String OverloadId()
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.EvalConst : AbstractEval, IInterpretable, IInterpretableConst, ICoster
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation activation)
+  METHOD String ToString()
+  METHOD IVal Value()
+
+TYPE class Cel.Interpreter.EvalEq : AbstractEvalLhsRhs, IInterpretable, ICoster, IInterpretableCall
+  METHOD IInterpretable[] Args()
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation ctx)
+  METHOD String Function()
+  METHOD String OverloadId()
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.EvalExhaustiveAnd : AbstractEvalLhsRhs, IInterpretable, ICoster
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation ctx)
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.EvalExhaustiveConditional : AbstractEval, IInterpretable, ICoster
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation ctx)
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.EvalExhaustiveFold : AbstractEval, IInterpretable, ICoster
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation ctx)
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.EvalExhaustiveOr : AbstractEvalLhsRhs, IInterpretable, ICoster
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation ctx)
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.EvalFold : AbstractEval, IInterpretable, ICoster
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation ctx)
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.EvalList : AbstractEval, IInterpretable, ICoster
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation ctx)
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.EvalMap : AbstractEval, IInterpretable, ICoster
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation ctx)
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.EvalNe : AbstractEvalLhsRhs, IInterpretable, ICoster, IInterpretableCall
+  METHOD IInterpretable[] Args()
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation ctx)
+  METHOD String Function()
+  METHOD String OverloadId()
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.EvalObj : AbstractEval, IInterpretable, ICoster
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation ctx)
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.EvalObserver : MulticastDelegate, ICloneable, ISerializable
+  CTOR .ctor(Object object, IntPtr method)
+  METHOD IAsyncResult BeginInvoke(Int64 id, IVal v, AsyncCallback callback, Object object)
+  METHOD Void EndInvoke(IAsyncResult result)
+  METHOD Void Invoke(Int64 id, IVal v)
+
+TYPE class Cel.Interpreter.EvalOr : AbstractEvalLhsRhs, IInterpretable, ICoster
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation ctx)
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.EvalSetMembership : AbstractEval, IInterpretable, ICoster
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation ctx)
+  METHOD String ToString()
+
+TYPE static class Cel.Interpreter.EvalStateFactory
+  METHOD IEvalState NewEvalState() [static]
+
+TYPE class Cel.Interpreter.EvalStateImpl : IEvalState
+  CTOR .ctor()
+  METHOD Int64[] Ids()
+  METHOD Void Reset()
+  METHOD Void SetValue(Int64 id, IVal v)
+  METHOD IVal Value(Int64 id)
+
+TYPE class Cel.Interpreter.EvalTestOnly : IInterpretable, ICoster
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation ctx)
+  METHOD Int64 Id()
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.EvalUnary : AbstractEval, IInterpretable, IInterpretableCall, ICoster
+  METHOD IInterpretable[] Args()
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation ctx)
+  METHOD String Function()
+  METHOD String OverloadId()
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.EvalVarArgs : AbstractEval, IInterpretable, ICoster, IInterpretableCall
+  CTOR .ctor(Int64 id, String function, String overload, IInterpretable[] args, Trait trait, FunctionOp impl)
+  METHOD IInterpretable[] Args()
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation ctx)
+  METHOD String Function()
+  METHOD String OverloadId()
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.EvalWatch : IInterpretable, ICoster
+  CTOR .ctor(IInterpretable i, EvalObserver observer)
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation ctx)
+  METHOD Int64 Id()
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.EvalWatchAttr : ICoster, IInterpretableAttribute, IInterpretable, IAttribute, IQualifier
+  CTOR .ctor(IInterpretableAttribute attr, EvalObserver observer)
+  METHOD TypeAdapter Adapter()
+  METHOD IAttribute AddQualifier(IQualifier q)
+  METHOD IAttribute Attr()
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation ctx)
+  METHOD Int64 Id()
+  METHOD Object Qualify(IActivation vars, Object obj)
+  METHOD Object Resolve(IActivation act)
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.EvalWatchConst : IInterpretableConst, IInterpretable, ICoster
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation activation)
+  METHOD Int64 Id()
+  METHOD String ToString()
+  METHOD IVal Value()
+
+TYPE class Cel.Interpreter.EvalWatchConstQual : AbstractEvalWatch<IConstantQualifier>, IInterpretable, ICoster, IQualifier, IConstantQualifier
+  METHOD IVal Eval(IActivation activation)
+  METHOD String ToString()
+  METHOD IVal Value()
+
+TYPE class Cel.Interpreter.EvalWatchConstQualEquat : AbstractEvalWatch<IConstantQualifierEquator>, IInterpretable, ICoster, IQualifier, IConstantQualifierEquator, IQualifierValueEquator, IConstantQualifier
+  METHOD IVal Eval(IActivation activation)
+  METHOD Boolean QualifierValueEquals(Object value)
+  METHOD String ToString()
+  METHOD IVal Value()
+
+TYPE class Cel.Interpreter.EvalWatchQual : AbstractEvalWatch<IQualifier>, IInterpretable, ICoster, IQualifier
+  CTOR .ctor(IQualifier delegate, EvalObserver observer, TypeAdapter adapter)
+  METHOD IVal Eval(IActivation activation)
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.EvalZeroArity : AbstractEval, IInterpretable, IInterpretableCall, ICoster
+  METHOD IInterpretable[] Args()
+  METHOD Cost Cost()
+  METHOD IVal Eval(IActivation activation)
+  METHOD String Function()
+  METHOD String OverloadId()
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.ExprInterpreter : IInterpreter
+  METHOD IInterpretable NewInterpretable(CheckedExpr checked, InterpretableDecorator[] decorators)
+  METHOD IInterpretable NewUncheckedInterpretable(Expr expr, InterpretableDecorator[] decorators)
+
+TYPE class Cel.Interpreter.FieldQualifier : ICoster, IConstantQualifierEquator, IQualifierValueEquator, IConstantQualifier, IQualifier
+  METHOD Cost Cost()
+  METHOD Int64 Id()
+  METHOD String Name()
+  METHOD Boolean QualifierValueEquals(Object value)
+  METHOD Object Qualify(IActivation vars, Object obj)
+  METHOD String ToString()
+  METHOD IVal Value()
+
+TYPE class Cel.Interpreter.FunctionActivation : IActivation
+  METHOD IActivation Parent()
+  METHOD Object ResolveName(String name)
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.Functions.BinaryOp : MulticastDelegate, ICloneable, ISerializable
+  CTOR .ctor(Object object, IntPtr method)
+  METHOD IAsyncResult BeginInvoke(IVal lhs, IVal rhs, AsyncCallback callback, Object object)
+  METHOD IVal EndInvoke(IAsyncResult result)
+  METHOD IVal Invoke(IVal lhs, IVal rhs)
+
+TYPE class Cel.Interpreter.Functions.FunctionOp : MulticastDelegate, ICloneable, ISerializable
+  CTOR .ctor(Object object, IntPtr method)
+  METHOD IAsyncResult BeginInvoke(IVal[] values, AsyncCallback callback, Object object)
+  METHOD IVal EndInvoke(IAsyncResult result)
+  METHOD IVal Invoke(IVal[] values)
+
+TYPE class Cel.Interpreter.Functions.Overload
+  METHOD Overload Binary(Operator operator, BinaryOp op) [static]
+  METHOD Overload Binary(String operator, BinaryOp op) [static]
+  METHOD Overload Binary(Operator operator, Trait trait, BinaryOp op) [static]
+  METHOD Overload Binary(String operator, Trait trait, BinaryOp op) [static]
+  FIELD BinaryOp BinaryOp
+  METHOD Overload Function(String operator, FunctionOp op) [static]
+  METHOD Overload Function(String operator, Trait trait, FunctionOp op) [static]
+  FIELD FunctionOp FunctionOp
+  METHOD Overload NewOverload(String operator, Trait trait, UnaryOp unary, BinaryOp binary, FunctionOp function) [static]
+  FIELD Trait OperandTrait
+  FIELD String Operator
+  METHOD Overload[] StandardOverloads() [static]
+  METHOD String ToString()
+  METHOD Overload Unary(Operator operator, UnaryOp op) [static]
+  METHOD Overload Unary(String operator, UnaryOp op) [static]
+  METHOD Overload Unary(Operator operator, Trait trait, UnaryOp op) [static]
+  METHOD Overload Unary(String operator, Trait trait, UnaryOp op) [static]
+  FIELD UnaryOp UnaryOp
+
+TYPE class Cel.Interpreter.Functions.UnaryOp : MulticastDelegate, ICloneable, ISerializable
+  CTOR .ctor(Object object, IntPtr method)
+  METHOD IAsyncResult BeginInvoke(IVal val, AsyncCallback callback, Object object)
+  METHOD IVal EndInvoke(IAsyncResult result)
+  METHOD IVal Invoke(IVal val)
+
+TYPE class Cel.Interpreter.HierarchicalActivation : IActivation
+  METHOD IActivation Parent()
+  METHOD Object ResolveName(String name)
+  METHOD String ToString()
+
+TYPE interface Cel.Interpreter.IActivation
+  METHOD IActivation Parent()
+  METHOD Object ResolveName(String name)
+
+TYPE interface Cel.Interpreter.IAttribute : IQualifier
+  METHOD IAttribute AddQualifier(IQualifier q)
+  METHOD Object Resolve(IActivation a)
+
+TYPE interface Cel.Interpreter.IAttributeFactory
+  METHOD INamespacedAttribute AbsoluteAttribute(Int64 id, String[] names)
+  METHOD IAttribute ConditionalAttribute(Int64 id, IInterpretable expr, IAttribute t, IAttribute f)
+  METHOD IAttribute MaybeAttribute(Int64 id, String name)
+  METHOD IQualifier NewQualifier(Type objType, Int64 qualId, Object val)
+  METHOD IAttribute RelativeAttribute(Int64 id, IInterpretable operand)
+
+TYPE interface Cel.Interpreter.IConstantQualifier : IQualifier
+  METHOD IVal Value()
+
+TYPE interface Cel.Interpreter.IConstantQualifierEquator : IQualifierValueEquator, IConstantQualifier, IQualifier
+
+TYPE interface Cel.Interpreter.ICoster
+  METHOD Cost Cost()
+
+TYPE interface Cel.Interpreter.IDispatcher
+  METHOD Void Add(Overload[] overloads)
+  METHOD Overload FindOverload(String overload)
+  METHOD String[] OverloadIds()
+
+TYPE interface Cel.Interpreter.IEvalState
+  METHOD Int64[] Ids()
+  METHOD Void Reset()
+  METHOD Void SetValue(Int64 id, IVal v)
+  METHOD IVal Value(Int64 id)
+
+TYPE interface Cel.Interpreter.IInterpretable
+  METHOD IVal Eval(IActivation activation)
+  METHOD Int64 Id()
+
+TYPE interface Cel.Interpreter.IInterpretableAttribute : IInterpretable, IAttribute, IQualifier
+  METHOD TypeAdapter Adapter()
+  METHOD IAttribute AddQualifier(IQualifier qualifier)
+  METHOD IAttribute Attr()
+  METHOD Object Qualify(IActivation vars, Object obj)
+  METHOD Object Resolve(IActivation act)
+
+TYPE interface Cel.Interpreter.IInterpretableCall : IInterpretable
+  METHOD IInterpretable[] Args()
+  METHOD String Function()
+  METHOD String OverloadId()
+
+TYPE interface Cel.Interpreter.IInterpretableConst : IInterpretable
+  METHOD IVal Value()
+
+TYPE interface Cel.Interpreter.IInterpretableDecorator
+  METHOD IInterpretable Decorate(IInterpretable i)
+
+TYPE interface Cel.Interpreter.IInterpretablePlanner
+  METHOD IInterpretable Plan(Expr expr)
+
+TYPE interface Cel.Interpreter.IInterpreter
+  METHOD IInterpretable NewInterpretable(CheckedExpr checked, InterpretableDecorator[] decorators)
+  METHOD IInterpretable NewUncheckedInterpretable(Expr expr, InterpretableDecorator[] decorators)
+
+TYPE interface Cel.Interpreter.INamespacedAttribute : IAttribute, IQualifier
+  METHOD String[] CandidateVariableNames()
+  METHOD IList<IQualifier> Qualifiers()
+  METHOD Object TryResolve(IActivation a)
+
+TYPE interface Cel.Interpreter.IPartialActivation : IActivation
+  METHOD AttributePattern[] UnknownAttributePatterns()
+
+TYPE interface Cel.Interpreter.IQualifier
+  METHOD Int64 Id()
+  METHOD Object Qualify(IActivation vars, Object obj)
+
+TYPE class Cel.Interpreter.IntQualifier : ICoster, IConstantQualifierEquator, IQualifierValueEquator, IConstantQualifier, IQualifier
+  METHOD Cost Cost()
+  METHOD Int64 Id()
+  METHOD Boolean QualifierValueEquals(Object value)
+  METHOD Object Qualify(IActivation vars, Object obj)
+  METHOD String ToString()
+  METHOD IVal Value()
+
+TYPE class Cel.Interpreter.InterpretableDecorator : MulticastDelegate, ICloneable, ISerializable
+  CTOR .ctor(Object object, IntPtr method)
+  METHOD IAsyncResult BeginInvoke(IInterpretable i, AsyncCallback callback, Object object)
+  METHOD IInterpretable EndInvoke(IAsyncResult result)
+  METHOD IInterpretable Invoke(IInterpretable i)
+
+TYPE static class Cel.Interpreter.InterpretableDecoratorUtils
+  METHOD InterpretableDecorator DecDisableShortcircuits() [static]
+  METHOD InterpretableDecorator DecObserveEval(EvalObserver observer) [static]
+  METHOD InterpretableDecorator DecOptimize() [static]
+  METHOD IInterpretable MaybeBuildListLiteral(IInterpretable i, EvalList l) [static]
+  METHOD IInterpretable MaybeBuildMapLiteral(IInterpretable i, EvalMap mp) [static]
+  METHOD IInterpretable MaybeOptimizeConstUnary(IInterpretable i, IInterpretableCall call) [static]
+  METHOD IInterpretable MaybeOptimizeSetMembership(IInterpretable i, IInterpretableCall inlist) [static]
+
+TYPE static class Cel.Interpreter.InterpretablePlannerFactory
+  METHOD IInterpretablePlanner NewPlanner(IDispatcher disp, ITypeProvider provider, TypeAdapter adapter, IAttributeFactory attrFactory, Container cont, CheckedExpr checked, InterpretableDecorator[] decorators) [static]
+  METHOD IInterpretablePlanner NewUncheckedPlanner(IDispatcher disp, ITypeProvider provider, TypeAdapter adapter, IAttributeFactory attrFactory, Container cont, InterpretableDecorator[] decorators) [static]
+
+TYPE static class Cel.Interpreter.InterpretableUtils
+  METHOD Cost CalExhaustiveBinaryOpsCost(IInterpretable lhs, IInterpretable rhs) [static]
+  METHOD Cost CalShortCircuitBinaryOpsCost(IInterpretable lhs, IInterpretable rhs) [static]
+  METHOD IInterpretableConst NewConstValue(Int64 id, IVal val) [static]
+  METHOD Cost SumOfCost(IInterpretable[] interps) [static]
+
+TYPE static class Cel.Interpreter.InterpreterUtils
+  METHOD InterpretableDecorator ExhaustiveEval(IEvalState state) [static]
+  METHOD IInterpreter NewInterpreter(IDispatcher dispatcher, Container container, ITypeProvider provider, TypeAdapter adapter, IAttributeFactory attrFactory) [static]
+  METHOD IInterpreter NewStandardInterpreter(Container container, ITypeProvider provider, TypeAdapter adapter, IAttributeFactory resolver) [static]
+  METHOD InterpretableDecorator Optimize() [static]
+  METHOD InterpretableDecorator TrackState(IEvalState state) [static]
+
+TYPE class Cel.Interpreter.MapActivation : IActivation
+  METHOD IActivation Parent()
+  METHOD Object ResolveName(String name)
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.MaybeAttribute : ICoster, IAttribute, IQualifier
+  METHOD IAttribute AddQualifier(IQualifier qual)
+  METHOD Cost Cost()
+  METHOD Int64 Id()
+  METHOD Object Qualify(IActivation vars, Object obj)
+  METHOD Object Resolve(IActivation vars)
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.PartActivation : IPartialActivation, IActivation
+  METHOD IActivation Parent()
+  METHOD Object ResolveName(String name)
+  METHOD String ToString()
+  METHOD AttributePattern[] UnknownAttributePatterns()
+
+TYPE class Cel.Interpreter.Planner : IInterpretablePlanner
+  METHOD IInterpretable Plan(Expr expr)
+
+TYPE class Cel.Interpreter.RelativeAttribute : ICoster, IAttribute, IQualifier
+  METHOD IAttribute AddQualifier(IQualifier qual)
+  METHOD Cost Cost()
+  METHOD Int64 Id()
+  METHOD Object Qualify(IActivation vars, Object obj)
+  METHOD Object Resolve(IActivation vars)
+  METHOD String ToString()
+
+TYPE class Cel.Interpreter.StringQualifier : ICoster, IConstantQualifierEquator, IQualifierValueEquator, IConstantQualifier, IQualifier
+  METHOD Cost Cost()
+  METHOD Int64 Id()
+  METHOD Boolean QualifierValueEquals(Object value)
+  METHOD Object Qualify(IActivation vars, Object obj)
+  METHOD String ToString()
+  METHOD IVal Value()
+
+TYPE class Cel.Interpreter.UintQualifier : ICoster, IConstantQualifierEquator, IQualifierValueEquator, IConstantQualifier, IQualifier
+  METHOD Cost Cost()
+  METHOD Int64 Id()
+  METHOD Boolean QualifierValueEquals(Object value)
+  METHOD Object Qualify(IActivation vars, Object obj)
+  METHOD String ToString()
+  METHOD IVal Value()
+
+TYPE class Cel.Interpreter.VarActivation : IActivation
+  METHOD IActivation Parent()
+  METHOD Object ResolveName(String name)
+  METHOD String ToString()
+
+TYPE class Cel.Issues
+  METHOD Issues Append(Issues other)
+  METHOD Exception Err()
+  PROP IList<CelError> Errors
+  METHOD Boolean HasIssues()
+  METHOD Issues NewIssues(Errors errs) [static]
+  METHOD Issues NoIssues(ISource source) [static]
+  METHOD String ToString()
+
+TYPE static class Cel.LibraryOptions
+  METHOD EnvOption Lib(ILibrary l) [static]
+  METHOD EnvOption StdLib() [static]
+
+TYPE class Cel.Parser.ExprHelperImpl : IExprHelper
+  CTOR .ctor(Helper parserHelper, Int64 id)
+  METHOD Expr Fold(String iterVar, Expr iterRange, String accuVar, Expr accuInit, Expr condition, Expr step, Expr result)
+  METHOD Expr GlobalCall(String function, IList<Expr> args)
+  METHOD Expr GlobalCall(String function, Expr[] args)
+  METHOD Expr Ident(String name)
+  METHOD Expr LiteralBool(Boolean value)
+  METHOD Expr LiteralBytes(ByteString value)
+  METHOD Expr LiteralDouble(Double value)
+  METHOD Expr LiteralInt(Int64 value)
+  METHOD Expr LiteralString(String value)
+  METHOD Expr LiteralUint(UInt64 value)
+  METHOD Expr NewList(IList<Expr> elems)
+  METHOD Expr NewList(Expr[] elems)
+  METHOD Expr NewMap(IList<Entry> entries)
+  METHOD Entry NewMapEntry(Expr key, Expr val)
+  METHOD Expr NewObject(String typeName, IList<Entry> fieldInits)
+  METHOD Entry NewObjectFieldInit(String field, Expr init)
+  METHOD ILocation OffsetLocation(Int64 exprId)
+  METHOD Expr PresenceTest(Expr operand, String field)
+  METHOD Expr ReceiverCall(String function, Expr target, IList<Expr> args)
+  METHOD Expr Select(Expr operand, String field)
+
+TYPE class Cel.Parser.Gen.CELBaseVisitor`1 : AbstractParseTreeVisitor<Result>, IParseTreeVisitor<Result>, ICELVisitor<Result>
+  CTOR .ctor()
+  METHOD Result VisitBoolFalse(BoolFalseContext context)
+  METHOD Result VisitBoolTrue(BoolTrueContext context)
+  METHOD Result VisitBytes(BytesContext context)
+  METHOD Result VisitCalc(CalcContext context)
+  METHOD Result VisitConditionalAnd(ConditionalAndContext context)
+  METHOD Result VisitConditionalOr(ConditionalOrContext context)
+  METHOD Result VisitConstantLiteral(ConstantLiteralContext context)
+  METHOD Result VisitCreateList(CreateListContext context)
+  METHOD Result VisitCreateMessage(CreateMessageContext context)
+  METHOD Result VisitCreateStruct(CreateStructContext context)
+  METHOD Result VisitDouble(DoubleContext context)
+  METHOD Result VisitExpr(ExprContext context)
+  METHOD Result VisitExprList(ExprListContext context)
+  METHOD Result VisitFieldInitializerList(FieldInitializerListContext context)
+  METHOD Result VisitIdentOrGlobalCall(IdentOrGlobalCallContext context)
+  METHOD Result VisitIndex(IndexContext context)
+  METHOD Result VisitInt(IntContext context)
+  METHOD Result VisitLogicalNot(LogicalNotContext context)
+  METHOD Result VisitMapInitializerList(MapInitializerListContext context)
+  METHOD Result VisitMemberExpr(MemberExprContext context)
+  METHOD Result VisitNegate(NegateContext context)
+  METHOD Result VisitNested(NestedContext context)
+  METHOD Result VisitNull(NullContext context)
+  METHOD Result VisitPrimaryExpr(PrimaryExprContext context)
+  METHOD Result VisitRelation(RelationContext context)
+  METHOD Result VisitSelectOrCall(SelectOrCallContext context)
+  METHOD Result VisitStart(StartContext context)
+  METHOD Result VisitString(StringContext context)
+  METHOD Result VisitUint(UintContext context)
+
+TYPE class Cel.Parser.Gen.CELLexer : Lexer, IRecognizer, ITokenSource
+  CTOR .ctor(ICharStream input)
+  CTOR .ctor(ICharStream input, TextWriter output, TextWriter errorOutput)
+  FIELD Int32 BYTES [static] = 35
+  FIELD Int32 COLON [static] = 21
+  FIELD Int32 COMMA [static] = 17
+  FIELD Int32 COMMENT [static] = 30
+  PROP String[] ChannelNames
+  FIELD Int32 DOT [static] = 16
+  FIELD IVocabulary DefaultVocabulary [static]
+  FIELD Int32 EQUALS [static] = 1
+  FIELD Int32 EXCLAM [static] = 19
+  FIELD Int32 FALSE [static] = 27
+  FIELD Int32 GREATER [static] = 7
+  FIELD Int32 GREATER_EQUALS [static] = 6
+  PROP String GrammarFileName
+  FIELD Int32 IDENTIFIER [static] = 36
+  FIELD Int32 IN [static] = 3
+  FIELD Int32 LBRACE [static] = 12
+  FIELD Int32 LBRACKET [static] = 10
+  FIELD Int32 LESS [static] = 4
+  FIELD Int32 LESS_EQUALS [static] = 5
+  FIELD Int32 LOGICAL_AND [static] = 8
+  FIELD Int32 LOGICAL_OR [static] = 9
+  FIELD Int32 LPAREN [static] = 14
+  FIELD Int32 MINUS [static] = 18
+  PROP String[] ModeNames
+  FIELD Int32 NOT_EQUALS [static] = 2
+  FIELD Int32 NULL [static] = 28
+  FIELD Int32 NUM_FLOAT [static] = 31
+  FIELD Int32 NUM_INT [static] = 32
+  FIELD Int32 NUM_UINT [static] = 33
+  FIELD Int32 PERCENT [static] = 25
+  FIELD Int32 PLUS [static] = 22
+  FIELD Int32 QUESTIONMARK [static] = 20
+  FIELD Int32 RBRACE [static] = 13
+  FIELD Int32 RPAREN [static] = 15
+  FIELD Int32 RPRACKET [static] = 11
+  PROP String[] RuleNames
+  FIELD Int32 SLASH [static] = 24
+  FIELD Int32 STAR [static] = 23
+  FIELD Int32 STRING [static] = 34
+  PROP Int32[] SerializedAtn
+  FIELD Int32 TRUE [static] = 26
+  PROP IVocabulary Vocabulary
+  FIELD Int32 WHITESPACE [static] = 29
+  FIELD ATN _ATN [static]
+  FIELD String[] channelNames [static]
+  FIELD String[] modeNames [static]
+  FIELD String[] ruleNames [static]
+
+TYPE class Cel.Parser.Gen.CELParser : Parser, IRecognizer
+  CTOR .ctor(ITokenStream input)
+  CTOR .ctor(ITokenStream input, TextWriter output, TextWriter errorOutput)
+  FIELD Int32 BYTES [static] = 35
+  FIELD Int32 COLON [static] = 21
+  FIELD Int32 COMMA [static] = 17
+  FIELD Int32 COMMENT [static] = 30
+  FIELD Int32 DOT [static] = 16
+  FIELD IVocabulary DefaultVocabulary [static]
+  FIELD Int32 EQUALS [static] = 1
+  FIELD Int32 EXCLAM [static] = 19
+  FIELD Int32 FALSE [static] = 27
+  FIELD Int32 GREATER [static] = 7
+  FIELD Int32 GREATER_EQUALS [static] = 6
+  PROP String GrammarFileName
+  FIELD Int32 IDENTIFIER [static] = 36
+  FIELD Int32 IN [static] = 3
+  FIELD Int32 LBRACE [static] = 12
+  FIELD Int32 LBRACKET [static] = 10
+  FIELD Int32 LESS [static] = 4
+  FIELD Int32 LESS_EQUALS [static] = 5
+  FIELD Int32 LOGICAL_AND [static] = 8
+  FIELD Int32 LOGICAL_OR [static] = 9
+  FIELD Int32 LPAREN [static] = 14
+  FIELD Int32 MINUS [static] = 18
+  FIELD Int32 NOT_EQUALS [static] = 2
+  FIELD Int32 NULL [static] = 28
+  FIELD Int32 NUM_FLOAT [static] = 31
+  FIELD Int32 NUM_INT [static] = 32
+  FIELD Int32 NUM_UINT [static] = 33
+  FIELD Int32 PERCENT [static] = 25
+  FIELD Int32 PLUS [static] = 22
+  FIELD Int32 QUESTIONMARK [static] = 20
+  FIELD Int32 RBRACE [static] = 13
+  FIELD Int32 RPAREN [static] = 15
+  FIELD Int32 RPRACKET [static] = 11
+  FIELD Int32 RULE_calc [static] = 5
+  FIELD Int32 RULE_conditionalAnd [static] = 3
+  FIELD Int32 RULE_conditionalOr [static] = 2
+  FIELD Int32 RULE_expr [static] = 1
+  FIELD Int32 RULE_exprList [static] = 9
+  FIELD Int32 RULE_fieldInitializerList [static] = 10
+  FIELD Int32 RULE_literal [static] = 12
+  FIELD Int32 RULE_mapInitializerList [static] = 11
+  FIELD Int32 RULE_member [static] = 7
+  FIELD Int32 RULE_primary [static] = 8
+  FIELD Int32 RULE_relation [static] = 4
+  FIELD Int32 RULE_start [static] = 0
+  FIELD Int32 RULE_unary [static] = 6
+  PROP String[] RuleNames
+  FIELD Int32 SLASH [static] = 24
+  FIELD Int32 STAR [static] = 23
+  FIELD Int32 STRING [static] = 34
+  METHOD Boolean Sempred(RuleContext _localctx, Int32 ruleIndex, Int32 predIndex)
+  PROP Int32[] SerializedAtn
+  FIELD Int32 TRUE [static] = 26
+  PROP IVocabulary Vocabulary
+  FIELD Int32 WHITESPACE [static] = 29
+  FIELD ATN _ATN [static]
+  METHOD CalcContext calc()
+  METHOD ConditionalAndContext conditionalAnd()
+  METHOD ConditionalOrContext conditionalOr()
+  METHOD ExprContext expr()
+  METHOD ExprListContext exprList()
+  METHOD FieldInitializerListContext fieldInitializerList()
+  METHOD LiteralContext literal()
+  METHOD MapInitializerListContext mapInitializerList()
+  METHOD MemberContext member()
+  METHOD PrimaryContext primary()
+  METHOD RelationContext relation()
+  FIELD String[] ruleNames [static]
+  METHOD StartContext start()
+  METHOD UnaryContext unary()
+
+TYPE class Cel.Parser.Gen.CELParser+BoolFalseContext : LiteralContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(LiteralContext context)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode FALSE()
+  FIELD IToken tok
+
+TYPE class Cel.Parser.Gen.CELParser+BoolTrueContext : LiteralContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(LiteralContext context)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode TRUE()
+  FIELD IToken tok
+
+TYPE class Cel.Parser.Gen.CELParser+BytesContext : LiteralContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(LiteralContext context)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode BYTES()
+  FIELD IToken tok
+
+TYPE class Cel.Parser.Gen.CELParser+CalcContext : ParserRuleContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(ParserRuleContext parent, Int32 invokingState)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode MINUS()
+  METHOD ITerminalNode PERCENT()
+  METHOD ITerminalNode PLUS()
+  PROP Int32 RuleIndex
+  METHOD ITerminalNode SLASH()
+  METHOD ITerminalNode STAR()
+  METHOD CalcContext[] calc()
+  METHOD CalcContext calc(Int32 i)
+  FIELD IToken op
+  METHOD UnaryContext unary()
+
+TYPE class Cel.Parser.Gen.CELParser+ConditionalAndContext : ParserRuleContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(ParserRuleContext parent, Int32 invokingState)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode[] LOGICAL_AND()
+  METHOD ITerminalNode LOGICAL_AND(Int32 i)
+  PROP Int32 RuleIndex
+  FIELD IList<RelationContext> _e1
+  FIELD IList<IToken> _ops
+  FIELD RelationContext _relation
+  FIELD RelationContext e
+  METHOD RelationContext[] relation()
+  METHOD RelationContext relation(Int32 i)
+  FIELD IToken s8
+
+TYPE class Cel.Parser.Gen.CELParser+ConditionalOrContext : ParserRuleContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(ParserRuleContext parent, Int32 invokingState)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode[] LOGICAL_OR()
+  METHOD ITerminalNode LOGICAL_OR(Int32 i)
+  PROP Int32 RuleIndex
+  FIELD ConditionalAndContext _conditionalAnd
+  FIELD IList<ConditionalAndContext> _e1
+  FIELD IList<IToken> _ops
+  METHOD ConditionalAndContext[] conditionalAnd()
+  METHOD ConditionalAndContext conditionalAnd(Int32 i)
+  FIELD ConditionalAndContext e
+  FIELD IToken s9
+
+TYPE class Cel.Parser.Gen.CELParser+ConstantLiteralContext : PrimaryContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(PrimaryContext context)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD LiteralContext literal()
+
+TYPE class Cel.Parser.Gen.CELParser+CreateListContext : PrimaryContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(PrimaryContext context)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode COMMA()
+  METHOD ITerminalNode LBRACKET()
+  METHOD ITerminalNode RPRACKET()
+  FIELD ExprListContext elems
+  METHOD ExprListContext exprList()
+  FIELD IToken op
+
+TYPE class Cel.Parser.Gen.CELParser+CreateMessageContext : MemberContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(MemberContext context)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode COMMA()
+  METHOD ITerminalNode LBRACE()
+  METHOD ITerminalNode RBRACE()
+  FIELD FieldInitializerListContext entries
+  METHOD FieldInitializerListContext fieldInitializerList()
+  METHOD MemberContext member()
+  FIELD IToken op
+
+TYPE class Cel.Parser.Gen.CELParser+CreateStructContext : PrimaryContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(PrimaryContext context)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode COMMA()
+  METHOD ITerminalNode LBRACE()
+  METHOD ITerminalNode RBRACE()
+  FIELD MapInitializerListContext entries
+  METHOD MapInitializerListContext mapInitializerList()
+  FIELD IToken op
+
+TYPE class Cel.Parser.Gen.CELParser+DoubleContext : LiteralContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(LiteralContext context)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode MINUS()
+  METHOD ITerminalNode NUM_FLOAT()
+  FIELD IToken sign
+  FIELD IToken tok
+
+TYPE class Cel.Parser.Gen.CELParser+ExprContext : ParserRuleContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(ParserRuleContext parent, Int32 invokingState)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode COLON()
+  METHOD ITerminalNode QUESTIONMARK()
+  PROP Int32 RuleIndex
+  METHOD ConditionalOrContext[] conditionalOr()
+  METHOD ConditionalOrContext conditionalOr(Int32 i)
+  FIELD ConditionalOrContext e
+  FIELD ConditionalOrContext e1
+  FIELD ExprContext e2
+  METHOD ExprContext expr()
+  FIELD IToken op
+
+TYPE class Cel.Parser.Gen.CELParser+ExprListContext : ParserRuleContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(ParserRuleContext parent, Int32 invokingState)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode[] COMMA()
+  METHOD ITerminalNode COMMA(Int32 i)
+  PROP Int32 RuleIndex
+  FIELD IList<ExprContext> _e
+  FIELD ExprContext _expr
+  METHOD ExprContext[] expr()
+  METHOD ExprContext expr(Int32 i)
+
+TYPE class Cel.Parser.Gen.CELParser+FieldInitializerListContext : ParserRuleContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(ParserRuleContext parent, Int32 invokingState)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode[] COLON()
+  METHOD ITerminalNode COLON(Int32 i)
+  METHOD ITerminalNode[] COMMA()
+  METHOD ITerminalNode COMMA(Int32 i)
+  METHOD ITerminalNode[] IDENTIFIER()
+  METHOD ITerminalNode IDENTIFIER(Int32 i)
+  PROP Int32 RuleIndex
+  FIELD IToken _IDENTIFIER
+  FIELD IList<IToken> _cols
+  FIELD ExprContext _expr
+  FIELD IList<IToken> _fields
+  FIELD IList<ExprContext> _values
+  METHOD ExprContext[] expr()
+  METHOD ExprContext expr(Int32 i)
+  FIELD IToken s21
+
+TYPE class Cel.Parser.Gen.CELParser+IdentOrGlobalCallContext : PrimaryContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(PrimaryContext context)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode DOT()
+  METHOD ITerminalNode IDENTIFIER()
+  METHOD ITerminalNode LPAREN()
+  METHOD ITerminalNode RPAREN()
+  FIELD ExprListContext args
+  METHOD ExprListContext exprList()
+  FIELD IToken id
+  FIELD IToken leadingDot
+  FIELD IToken op
+
+TYPE class Cel.Parser.Gen.CELParser+IndexContext : MemberContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(MemberContext context)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode LBRACKET()
+  METHOD ITerminalNode RPRACKET()
+  METHOD ExprContext expr()
+  FIELD ExprContext index
+  METHOD MemberContext member()
+  FIELD IToken op
+
+TYPE class Cel.Parser.Gen.CELParser+IntContext : LiteralContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(LiteralContext context)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode MINUS()
+  METHOD ITerminalNode NUM_INT()
+  FIELD IToken sign
+  FIELD IToken tok
+
+TYPE class Cel.Parser.Gen.CELParser+LiteralContext : ParserRuleContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(ParserRuleContext parent, Int32 invokingState)
+  CTOR .ctor()
+  METHOD Void CopyFrom(LiteralContext context)
+  PROP Int32 RuleIndex
+
+TYPE class Cel.Parser.Gen.CELParser+LogicalNotContext : UnaryContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(UnaryContext context)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode[] EXCLAM()
+  METHOD ITerminalNode EXCLAM(Int32 i)
+  FIELD IList<IToken> _ops
+  METHOD MemberContext member()
+  FIELD IToken s19
+
+TYPE class Cel.Parser.Gen.CELParser+MapInitializerListContext : ParserRuleContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(ParserRuleContext parent, Int32 invokingState)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode[] COLON()
+  METHOD ITerminalNode COLON(Int32 i)
+  METHOD ITerminalNode[] COMMA()
+  METHOD ITerminalNode COMMA(Int32 i)
+  PROP Int32 RuleIndex
+  FIELD IList<IToken> _cols
+  FIELD ExprContext _expr
+  FIELD IList<ExprContext> _keys
+  FIELD IList<ExprContext> _values
+  METHOD ExprContext[] expr()
+  METHOD ExprContext expr(Int32 i)
+  FIELD IToken s21
+
+TYPE class Cel.Parser.Gen.CELParser+MemberContext : ParserRuleContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(ParserRuleContext parent, Int32 invokingState)
+  CTOR .ctor()
+  METHOD Void CopyFrom(MemberContext context)
+  PROP Int32 RuleIndex
+
+TYPE class Cel.Parser.Gen.CELParser+MemberExprContext : UnaryContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(UnaryContext context)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD MemberContext member()
+
+TYPE class Cel.Parser.Gen.CELParser+NegateContext : UnaryContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(UnaryContext context)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode[] MINUS()
+  METHOD ITerminalNode MINUS(Int32 i)
+  FIELD IList<IToken> _ops
+  METHOD MemberContext member()
+  FIELD IToken s18
+
+TYPE class Cel.Parser.Gen.CELParser+NestedContext : PrimaryContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(PrimaryContext context)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode LPAREN()
+  METHOD ITerminalNode RPAREN()
+  FIELD ExprContext e
+  METHOD ExprContext expr()
+
+TYPE class Cel.Parser.Gen.CELParser+NullContext : LiteralContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(LiteralContext context)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode NULL()
+  FIELD IToken tok
+
+TYPE class Cel.Parser.Gen.CELParser+PrimaryContext : ParserRuleContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(ParserRuleContext parent, Int32 invokingState)
+  CTOR .ctor()
+  METHOD Void CopyFrom(PrimaryContext context)
+  PROP Int32 RuleIndex
+
+TYPE class Cel.Parser.Gen.CELParser+PrimaryExprContext : MemberContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(MemberContext context)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD PrimaryContext primary()
+
+TYPE class Cel.Parser.Gen.CELParser+RelationContext : ParserRuleContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(ParserRuleContext parent, Int32 invokingState)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode EQUALS()
+  METHOD ITerminalNode GREATER()
+  METHOD ITerminalNode GREATER_EQUALS()
+  METHOD ITerminalNode IN()
+  METHOD ITerminalNode LESS()
+  METHOD ITerminalNode LESS_EQUALS()
+  METHOD ITerminalNode NOT_EQUALS()
+  PROP Int32 RuleIndex
+  METHOD CalcContext calc()
+  FIELD IToken op
+  METHOD RelationContext[] relation()
+  METHOD RelationContext relation(Int32 i)
+
+TYPE class Cel.Parser.Gen.CELParser+SelectOrCallContext : MemberContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(MemberContext context)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode DOT()
+  METHOD ITerminalNode IDENTIFIER()
+  METHOD ITerminalNode LPAREN()
+  METHOD ITerminalNode RPAREN()
+  FIELD ExprListContext args
+  METHOD ExprListContext exprList()
+  FIELD IToken id
+  METHOD MemberContext member()
+  FIELD IToken op
+  FIELD IToken open
+
+TYPE class Cel.Parser.Gen.CELParser+StartContext : ParserRuleContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(ParserRuleContext parent, Int32 invokingState)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode Eof()
+  PROP Int32 RuleIndex
+  FIELD ExprContext e
+  METHOD ExprContext expr()
+
+TYPE class Cel.Parser.Gen.CELParser+StringContext : LiteralContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(LiteralContext context)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode STRING()
+  FIELD IToken tok
+
+TYPE class Cel.Parser.Gen.CELParser+UintContext : LiteralContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(LiteralContext context)
+  METHOD TResult Accept(IParseTreeVisitor<TResult> visitor) [generic<TResult>]
+  METHOD ITerminalNode NUM_UINT()
+  FIELD IToken tok
+
+TYPE class Cel.Parser.Gen.CELParser+UnaryContext : ParserRuleContext, IRuleNode, IParseTree, ISyntaxTree, ITree
+  CTOR .ctor(ParserRuleContext parent, Int32 invokingState)
+  CTOR .ctor()
+  METHOD Void CopyFrom(UnaryContext context)
+  PROP Int32 RuleIndex
+
+TYPE interface Cel.Parser.Gen.ICELVisitor`1 : IParseTreeVisitor<Result>
+  METHOD Result VisitBoolFalse(BoolFalseContext context)
+  METHOD Result VisitBoolTrue(BoolTrueContext context)
+  METHOD Result VisitBytes(BytesContext context)
+  METHOD Result VisitCalc(CalcContext context)
+  METHOD Result VisitConditionalAnd(ConditionalAndContext context)
+  METHOD Result VisitConditionalOr(ConditionalOrContext context)
+  METHOD Result VisitConstantLiteral(ConstantLiteralContext context)
+  METHOD Result VisitCreateList(CreateListContext context)
+  METHOD Result VisitCreateMessage(CreateMessageContext context)
+  METHOD Result VisitCreateStruct(CreateStructContext context)
+  METHOD Result VisitDouble(DoubleContext context)
+  METHOD Result VisitExpr(ExprContext context)
+  METHOD Result VisitExprList(ExprListContext context)
+  METHOD Result VisitFieldInitializerList(FieldInitializerListContext context)
+  METHOD Result VisitIdentOrGlobalCall(IdentOrGlobalCallContext context)
+  METHOD Result VisitIndex(IndexContext context)
+  METHOD Result VisitInt(IntContext context)
+  METHOD Result VisitLogicalNot(LogicalNotContext context)
+  METHOD Result VisitMapInitializerList(MapInitializerListContext context)
+  METHOD Result VisitMemberExpr(MemberExprContext context)
+  METHOD Result VisitNegate(NegateContext context)
+  METHOD Result VisitNested(NestedContext context)
+  METHOD Result VisitNull(NullContext context)
+  METHOD Result VisitPrimaryExpr(PrimaryExprContext context)
+  METHOD Result VisitRelation(RelationContext context)
+  METHOD Result VisitSelectOrCall(SelectOrCallContext context)
+  METHOD Result VisitStart(StartContext context)
+  METHOD Result VisitString(StringContext context)
+  METHOD Result VisitUint(UintContext context)
+
+TYPE class Cel.Parser.Helper
+
+TYPE interface Cel.Parser.IExprHelper
+  METHOD Expr Fold(String iterVar, Expr iterRange, String accuVar, Expr accuInit, Expr condition, Expr step, Expr result)
+  METHOD Expr GlobalCall(String function, IList<Expr> args)
+  METHOD Expr GlobalCall(String function, Expr[] args)
+  METHOD Expr Ident(String name)
+  METHOD Expr LiteralBool(Boolean value)
+  METHOD Expr LiteralBytes(ByteString value)
+  METHOD Expr LiteralDouble(Double value)
+  METHOD Expr LiteralInt(Int64 value)
+  METHOD Expr LiteralString(String value)
+  METHOD Expr LiteralUint(UInt64 value)
+  METHOD Expr NewList(IList<Expr> elems)
+  METHOD Expr NewList(Expr[] elems)
+  METHOD Expr NewMap(IList<Entry> entries)
+  METHOD Entry NewMapEntry(Expr key, Expr val)
+  METHOD Expr NewObject(String typeName, IList<Entry> fieldInits)
+  METHOD Entry NewObjectFieldInit(String field, Expr init)
+  METHOD ILocation OffsetLocation(Int64 exprId)
+  METHOD Expr PresenceTest(Expr operand, String field)
+  METHOD Expr ReceiverCall(String function, Expr target, IList<Expr> args)
+  METHOD Expr Select(Expr operand, String field)
+
+TYPE class Cel.Parser.Macro
+  CTOR .ctor(String function, Boolean receiverStyle, Boolean varArgStyle, Int32 argCount, MacroExpander expander)
+  FIELD String AccumulatorName [static] = __result__
+  FIELD IList<Macro> AllMacros [static]
+  METHOD Int32 ArgCount()
+  METHOD MacroExpander Expander()
+  METHOD String Function()
+  METHOD String MacroKey()
+  FIELD IList<Macro> MoMacros [static]
+  METHOD Macro NewReceiverMacro(String function, Int32 argCount, MacroExpander expander) [static]
+  PROP Boolean ReceiverStyle
+  METHOD String ToString()
+  PROP Boolean VarArgStyle
+
+TYPE class Cel.Parser.MacroExpander : MulticastDelegate, ICloneable, ISerializable
+  CTOR .ctor(Object object, IntPtr method)
+  METHOD IAsyncResult BeginInvoke(IExprHelper eh, Expr target, IList<Expr> args, AsyncCallback callback, Object object)
+  METHOD Expr EndInvoke(IAsyncResult result)
+  METHOD Expr Invoke(IExprHelper eh, Expr target, IList<Expr> args)
+
+TYPE class Cel.Parser.Options
+  PROP Int32 ErrorRecoveryLimit
+  PROP Int32 ExpressionSizeCodePointLimit
+  METHOD Macro GetMacro(String name)
+  PROP Int32 MaxRecursionDepth
+  METHOD Builder NewBuilder() [static]
+
+TYPE class Cel.Parser.Options+Builder
+  CTOR .ctor()
+  METHOD Options Build()
+  METHOD Builder ErrorRecoveryLimit(Int32 errorRecoveryLimit)
+  METHOD Builder ExpressionSizeCodePointLimit(Int32 expressionSizeCodePointLimit)
+  METHOD Builder Macros(Macro[] macros)
+  METHOD Builder Macros(IList<Macro> macros)
+  METHOD Builder MaxRecursionDepth(Int32 maxRecursionDepth)
+
+TYPE class Cel.Parser.ParseError : Exception, ISerializable
+  CTOR .ctor(ILocation location, String message)
+  PROP ILocation Location
+
+TYPE class Cel.Parser.Parser
+  CTOR .ctor(Options options)
+  METHOD ParseResult Parse(Options options, ISource source) [static]
+  METHOD ParseResult Parse(ISource source)
+  METHOD ParseResult ParseAllMacros(ISource source) [static]
+  METHOD ParseResult ParseWithMacros(ISource source, IList<Macro> macros) [static]
+
+TYPE class Cel.Parser.Parser+ParseResult
+  CTOR .ctor(Expr expr, Errors errors, SourceInfo sourceInfo)
+  PROP Errors Errors
+  PROP Expr Expr
+  METHOD Boolean HasErrors()
+  PROP SourceInfo SourceInfo
+
+TYPE class Cel.Parser.StringCharStream : ICharStream, IIntStream
+  CTOR .ctor(String buf, String src)
+  METHOD Void Consume()
+  METHOD String GetText(Interval interval)
+  PROP Int32 Index
+  METHOD Int32 LA(Int32 offset)
+  METHOD Int32 Mark()
+  METHOD Void Release(Int32 marker)
+  METHOD Void Seek(Int32 index)
+  PROP Int32 Size
+  PROP String SourceName
+  METHOD String ToString()
+
+TYPE class Cel.Parser.Unescape
+  CTOR .ctor()
+  METHOD MemoryStream DoUnescape(String value, Boolean isBytes) [static]
+  METHOD String ToUtf8(MemoryStream buf) [static]
+
+TYPE class Cel.Parser.Unparser
+  METHOD String Unparse(Expr expr, SourceInfo info) [static]
+
+TYPE class Cel.Prog : IProgram, ICoster
+  METHOD Cost Cost()
+  METHOD EvalResult Eval(Object input)
+
+TYPE class Cel.ProgramOption : MulticastDelegate, ICloneable, ISerializable
+  CTOR .ctor(Object object, IntPtr method)
+  METHOD IAsyncResult BeginInvoke(Prog prog, AsyncCallback callback, Object object)
+  METHOD Prog EndInvoke(IAsyncResult result)
+  METHOD Prog Invoke(Prog prog)
+
+TYPE static class Cel.ProgramOptions
+  METHOD ProgramOption CustomDecorator(InterpretableDecorator dec) [static]
+  METHOD ProgramOption EvalOptions(EvalOption[] opts) [static]
+  METHOD ProgramOption Functions(Overload[] funcs) [static]
+  METHOD ProgramOption Globals(Object vars) [static]
+
+TYPE class Cel.StdLibrary : ILibrary
+  CTOR .ctor()
+  PROP IList<EnvOption> CompileOptions
+  PROP IList<ProgramOption> ProgramOptions
+
+TYPE class Cel.Tools.Script
+  METHOD T Execute(Func<String,Object> arguments) [generic<T>]
+  METHOD T Execute(IDictionary<String,Object> arguments) [generic<T>]
+
+TYPE class Cel.Tools.ScriptCreateException : ScriptException, ISerializable
+  CTOR .ctor(String message, Issues issues)
+  PROP Issues Issues
+
+TYPE abstract class Cel.Tools.ScriptException : Exception, ISerializable
+
+TYPE class Cel.Tools.ScriptExecutionException : ScriptException, ISerializable
+  CTOR .ctor(String message)
+  CTOR .ctor(String message, Exception cause)
+
+TYPE class Cel.Tools.ScriptHost
+  METHOD ScriptBuilder BuildScript(String sourceText)
+  METHOD Script GetOrCreateScript(String sourceText, IList<Decl> declarations, IList<Object> types)
+  METHOD Builder NewBuilder() [static]
+
+TYPE class Cel.Tools.ScriptHost+Builder
+  METHOD Builder Adapter(ITypeAdapterProvider adapter)
+  METHOD ScriptHost Build()
+  METHOD Builder DisableOptimize()
+  METHOD Builder Registry(ITypeRegistry registry)
+
+TYPE class Cel.Tools.ScriptHost+ScriptBuilder
+  METHOD Script Build()
+  METHOD ScriptBuilder WithContainer(String container)
+  METHOD ScriptBuilder WithDeclarations(Decl[] declarations)
+  METHOD ScriptBuilder WithDeclarations(IList<Decl> declarations)
+  METHOD ScriptBuilder WithLibraries(ILibrary[] libraries)
+  METHOD ScriptBuilder WithLibraries(IList<ILibrary> libraries)
+  METHOD ScriptBuilder WithTypes(Object[] types)
+  METHOD ScriptBuilder WithTypes(IList<Object> types)
+
+TYPE class Google.Api.Expr.V1Alpha1.CheckRequest : IMessage<CheckRequest>, IMessage, IEquatable<CheckRequest>, IDeepCloneable<CheckRequest>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(CheckRequest other)
+  METHOD Int32 CalculateSize()
+  METHOD CheckRequest Clone()
+  PROP String Container
+  FIELD Int32 ContainerFieldNumber [static] = 3
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(CheckRequest other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(CheckRequest other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP Boolean NoStdEnv
+  FIELD Int32 NoStdEnvFieldNumber [static] = 4
+  PROP ParsedExpr ParsedExpr
+  FIELD Int32 ParsedExprFieldNumber [static] = 1
+  PROP MessageParser<CheckRequest> Parser [static]
+  METHOD String ToString()
+  PROP RepeatedField<Decl> TypeEnv
+  FIELD Int32 TypeEnvFieldNumber [static] = 2
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Api.Expr.V1Alpha1.CheckResponse : IMessage<CheckResponse>, IMessage, IEquatable<CheckResponse>, IDeepCloneable<CheckResponse>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(CheckResponse other)
+  METHOD Int32 CalculateSize()
+  PROP CheckedExpr CheckedExpr
+  FIELD Int32 CheckedExprFieldNumber [static] = 1
+  METHOD CheckResponse Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(CheckResponse other)
+  METHOD Int32 GetHashCode()
+  PROP RepeatedField<Status> Issues
+  FIELD Int32 IssuesFieldNumber [static] = 2
+  METHOD Void MergeFrom(CheckResponse other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<CheckResponse> Parser [static]
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Api.Expr.V1Alpha1.CheckedExpr : IMessage<CheckedExpr>, IMessage, IEquatable<CheckedExpr>, IDeepCloneable<CheckedExpr>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(CheckedExpr other)
+  METHOD Int32 CalculateSize()
+  METHOD CheckedExpr Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(CheckedExpr other)
+  PROP Expr Expr
+  FIELD Int32 ExprFieldNumber [static] = 4
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(CheckedExpr other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<CheckedExpr> Parser [static]
+  PROP MapField<Int64,Reference> ReferenceMap
+  FIELD Int32 ReferenceMapFieldNumber [static] = 2
+  PROP SourceInfo SourceInfo
+  FIELD Int32 SourceInfoFieldNumber [static] = 5
+  METHOD String ToString()
+  PROP MapField<Int64,Type> TypeMap
+  FIELD Int32 TypeMapFieldNumber [static] = 3
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE static class Google.Api.Expr.V1Alpha1.CheckedReflection
+  PROP FileDescriptor Descriptor [static]
+
+TYPE static class Google.Api.Expr.V1Alpha1.ConformanceService
+  METHOD ServerServiceDefinition BindService(ConformanceServiceBase serviceImpl) [static]
+  METHOD Void BindService(ServiceBinderBase serviceBinder, ConformanceServiceBase serviceImpl) [static]
+  PROP ServiceDescriptor Descriptor [static]
+
+TYPE abstract class Google.Api.Expr.V1Alpha1.ConformanceService+ConformanceServiceBase
+  METHOD Task<CheckResponse> Check(CheckRequest request, ServerCallContext context)
+  METHOD Task<EvalResponse> Eval(EvalRequest request, ServerCallContext context)
+  METHOD Task<ParseResponse> Parse(ParseRequest request, ServerCallContext context)
+
+TYPE class Google.Api.Expr.V1Alpha1.ConformanceService+ConformanceServiceClient : ClientBase<ConformanceServiceClient>
+  CTOR .ctor(ChannelBase channel)
+  CTOR .ctor(CallInvoker callInvoker)
+  METHOD CheckResponse Check(CheckRequest request, Metadata headers = ?, Nullable<DateTime> deadline = ?, CancellationToken cancellationToken = ?)
+  METHOD CheckResponse Check(CheckRequest request, CallOptions options)
+  METHOD AsyncUnaryCall<CheckResponse> CheckAsync(CheckRequest request, Metadata headers = ?, Nullable<DateTime> deadline = ?, CancellationToken cancellationToken = ?)
+  METHOD AsyncUnaryCall<CheckResponse> CheckAsync(CheckRequest request, CallOptions options)
+  METHOD EvalResponse Eval(EvalRequest request, Metadata headers = ?, Nullable<DateTime> deadline = ?, CancellationToken cancellationToken = ?)
+  METHOD EvalResponse Eval(EvalRequest request, CallOptions options)
+  METHOD AsyncUnaryCall<EvalResponse> EvalAsync(EvalRequest request, Metadata headers = ?, Nullable<DateTime> deadline = ?, CancellationToken cancellationToken = ?)
+  METHOD AsyncUnaryCall<EvalResponse> EvalAsync(EvalRequest request, CallOptions options)
+  METHOD ParseResponse Parse(ParseRequest request, Metadata headers = ?, Nullable<DateTime> deadline = ?, CancellationToken cancellationToken = ?)
+  METHOD ParseResponse Parse(ParseRequest request, CallOptions options)
+  METHOD AsyncUnaryCall<ParseResponse> ParseAsync(ParseRequest request, Metadata headers = ?, Nullable<DateTime> deadline = ?, CancellationToken cancellationToken = ?)
+  METHOD AsyncUnaryCall<ParseResponse> ParseAsync(ParseRequest request, CallOptions options)
+
+TYPE static class Google.Api.Expr.V1Alpha1.ConformanceServiceReflection
+  PROP FileDescriptor Descriptor [static]
+
+TYPE class Google.Api.Expr.V1Alpha1.Constant : IMessage<Constant>, IMessage, IEquatable<Constant>, IDeepCloneable<Constant>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Constant other)
+  PROP Boolean BoolValue
+  FIELD Int32 BoolValueFieldNumber [static] = 2
+  PROP ByteString BytesValue
+  FIELD Int32 BytesValueFieldNumber [static] = 7
+  METHOD Int32 CalculateSize()
+  METHOD Void ClearBoolValue()
+  METHOD Void ClearBytesValue()
+  METHOD Void ClearConstantKind()
+  METHOD Void ClearDoubleValue()
+  METHOD Void ClearInt64Value()
+  METHOD Void ClearNullValue()
+  METHOD Void ClearStringValue()
+  METHOD Void ClearUint64Value()
+  METHOD Constant Clone()
+  PROP ConstantKindOneofCase ConstantKindCase
+  PROP MessageDescriptor Descriptor [static]
+  PROP Double DoubleValue
+  FIELD Int32 DoubleValueFieldNumber [static] = 5
+  PROP Duration DurationValue
+  FIELD Int32 DurationValueFieldNumber [static] = 8
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Constant other)
+  METHOD Int32 GetHashCode()
+  PROP Boolean HasBoolValue
+  PROP Boolean HasBytesValue
+  PROP Boolean HasDoubleValue
+  PROP Boolean HasInt64Value
+  PROP Boolean HasNullValue
+  PROP Boolean HasStringValue
+  PROP Boolean HasUint64Value
+  PROP Int64 Int64Value
+  FIELD Int32 Int64ValueFieldNumber [static] = 3
+  METHOD Void MergeFrom(Constant other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP NullValue NullValue
+  FIELD Int32 NullValueFieldNumber [static] = 1
+  PROP MessageParser<Constant> Parser [static]
+  PROP String StringValue
+  FIELD Int32 StringValueFieldNumber [static] = 6
+  PROP Timestamp TimestampValue
+  FIELD Int32 TimestampValueFieldNumber [static] = 9
+  METHOD String ToString()
+  PROP UInt64 Uint64Value
+  FIELD Int32 Uint64ValueFieldNumber [static] = 4
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE enum Google.Api.Expr.V1Alpha1.Constant+ConstantKindOneofCase : IComparable, ISpanFormattable, IFormattable, IConvertible
+  FIELD ConstantKindOneofCase BoolValue [static] = 2
+  FIELD ConstantKindOneofCase BytesValue [static] = 7
+  FIELD ConstantKindOneofCase DoubleValue [static] = 5
+  FIELD ConstantKindOneofCase DurationValue [static] = 8
+  FIELD ConstantKindOneofCase Int64Value [static] = 3
+  FIELD ConstantKindOneofCase None [static] = 0
+  FIELD ConstantKindOneofCase NullValue [static] = 1
+  FIELD ConstantKindOneofCase StringValue [static] = 6
+  FIELD ConstantKindOneofCase TimestampValue [static] = 9
+  FIELD ConstantKindOneofCase Uint64Value [static] = 4
+  FIELD Int32 value__
+
+TYPE class Google.Api.Expr.V1Alpha1.Decl : IMessage<Decl>, IMessage, IEquatable<Decl>, IDeepCloneable<Decl>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Decl other)
+  METHOD Int32 CalculateSize()
+  METHOD Void ClearDeclKind()
+  METHOD Decl Clone()
+  PROP DeclKindOneofCase DeclKindCase
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Decl other)
+  PROP FunctionDecl Function
+  FIELD Int32 FunctionFieldNumber [static] = 3
+  METHOD Int32 GetHashCode()
+  PROP IdentDecl Ident
+  FIELD Int32 IdentFieldNumber [static] = 2
+  METHOD Void MergeFrom(Decl other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP String Name
+  FIELD Int32 NameFieldNumber [static] = 1
+  PROP MessageParser<Decl> Parser [static]
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE enum Google.Api.Expr.V1Alpha1.Decl+DeclKindOneofCase : IComparable, ISpanFormattable, IFormattable, IConvertible
+  FIELD DeclKindOneofCase Function [static] = 3
+  FIELD DeclKindOneofCase Ident [static] = 2
+  FIELD DeclKindOneofCase None [static] = 0
+  FIELD Int32 value__
+
+TYPE static class Google.Api.Expr.V1Alpha1.Decl+Types
+
+TYPE class Google.Api.Expr.V1Alpha1.Decl+Types+FunctionDecl : IMessage<FunctionDecl>, IMessage, IEquatable<FunctionDecl>, IDeepCloneable<FunctionDecl>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(FunctionDecl other)
+  METHOD Int32 CalculateSize()
+  METHOD FunctionDecl Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(FunctionDecl other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(FunctionDecl other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP RepeatedField<Overload> Overloads
+  FIELD Int32 OverloadsFieldNumber [static] = 1
+  PROP MessageParser<FunctionDecl> Parser [static]
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE static class Google.Api.Expr.V1Alpha1.Decl+Types+FunctionDecl+Types
+
+TYPE class Google.Api.Expr.V1Alpha1.Decl+Types+FunctionDecl+Types+Overload : IMessage<Overload>, IMessage, IEquatable<Overload>, IDeepCloneable<Overload>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Overload other)
+  METHOD Int32 CalculateSize()
+  METHOD Overload Clone()
+  PROP MessageDescriptor Descriptor [static]
+  PROP String Doc
+  FIELD Int32 DocFieldNumber [static] = 6
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Overload other)
+  METHOD Int32 GetHashCode()
+  PROP Boolean IsInstanceFunction
+  FIELD Int32 IsInstanceFunctionFieldNumber [static] = 5
+  METHOD Void MergeFrom(Overload other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP String OverloadId
+  FIELD Int32 OverloadIdFieldNumber [static] = 1
+  PROP RepeatedField<Type> Params
+  FIELD Int32 ParamsFieldNumber [static] = 2
+  PROP MessageParser<Overload> Parser [static]
+  PROP Type ResultType
+  FIELD Int32 ResultTypeFieldNumber [static] = 4
+  METHOD String ToString()
+  PROP RepeatedField<String> TypeParams
+  FIELD Int32 TypeParamsFieldNumber [static] = 3
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Api.Expr.V1Alpha1.Decl+Types+IdentDecl : IMessage<IdentDecl>, IMessage, IEquatable<IdentDecl>, IDeepCloneable<IdentDecl>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(IdentDecl other)
+  METHOD Int32 CalculateSize()
+  METHOD IdentDecl Clone()
+  PROP MessageDescriptor Descriptor [static]
+  PROP String Doc
+  FIELD Int32 DocFieldNumber [static] = 3
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(IdentDecl other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(IdentDecl other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<IdentDecl> Parser [static]
+  METHOD String ToString()
+  PROP Type Type
+  FIELD Int32 TypeFieldNumber [static] = 1
+  PROP Constant Value
+  FIELD Int32 ValueFieldNumber [static] = 2
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Api.Expr.V1Alpha1.EnumValue : IMessage<EnumValue>, IMessage, IEquatable<EnumValue>, IDeepCloneable<EnumValue>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(EnumValue other)
+  METHOD Int32 CalculateSize()
+  METHOD EnumValue Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(EnumValue other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(EnumValue other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<EnumValue> Parser [static]
+  METHOD String ToString()
+  PROP String Type
+  FIELD Int32 TypeFieldNumber [static] = 1
+  PROP Int32 Value
+  FIELD Int32 ValueFieldNumber [static] = 2
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Api.Expr.V1Alpha1.ErrorSet : IMessage<ErrorSet>, IMessage, IEquatable<ErrorSet>, IDeepCloneable<ErrorSet>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(ErrorSet other)
+  METHOD Int32 CalculateSize()
+  METHOD ErrorSet Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(ErrorSet other)
+  PROP RepeatedField<Status> Errors
+  FIELD Int32 ErrorsFieldNumber [static] = 1
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(ErrorSet other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<ErrorSet> Parser [static]
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE static class Google.Api.Expr.V1Alpha1.EvalReflection
+  PROP FileDescriptor Descriptor [static]
+
+TYPE class Google.Api.Expr.V1Alpha1.EvalRequest : IMessage<EvalRequest>, IMessage, IEquatable<EvalRequest>, IDeepCloneable<EvalRequest>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(EvalRequest other)
+  PROP MapField<String,ExprValue> Bindings
+  FIELD Int32 BindingsFieldNumber [static] = 3
+  METHOD Int32 CalculateSize()
+  PROP CheckedExpr CheckedExpr
+  FIELD Int32 CheckedExprFieldNumber [static] = 2
+  METHOD Void ClearExprKind()
+  METHOD EvalRequest Clone()
+  PROP String Container
+  FIELD Int32 ContainerFieldNumber [static] = 4
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(EvalRequest other)
+  PROP ExprKindOneofCase ExprKindCase
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(EvalRequest other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP ParsedExpr ParsedExpr
+  FIELD Int32 ParsedExprFieldNumber [static] = 1
+  PROP MessageParser<EvalRequest> Parser [static]
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE enum Google.Api.Expr.V1Alpha1.EvalRequest+ExprKindOneofCase : IComparable, ISpanFormattable, IFormattable, IConvertible
+  FIELD ExprKindOneofCase CheckedExpr [static] = 2
+  FIELD ExprKindOneofCase None [static] = 0
+  FIELD ExprKindOneofCase ParsedExpr [static] = 1
+  FIELD Int32 value__
+
+TYPE class Google.Api.Expr.V1Alpha1.EvalResponse : IMessage<EvalResponse>, IMessage, IEquatable<EvalResponse>, IDeepCloneable<EvalResponse>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(EvalResponse other)
+  METHOD Int32 CalculateSize()
+  METHOD EvalResponse Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(EvalResponse other)
+  METHOD Int32 GetHashCode()
+  PROP RepeatedField<Status> Issues
+  FIELD Int32 IssuesFieldNumber [static] = 2
+  METHOD Void MergeFrom(EvalResponse other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<EvalResponse> Parser [static]
+  PROP ExprValue Result
+  FIELD Int32 ResultFieldNumber [static] = 1
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Api.Expr.V1Alpha1.EvalState : IMessage<EvalState>, IMessage, IEquatable<EvalState>, IDeepCloneable<EvalState>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(EvalState other)
+  METHOD Int32 CalculateSize()
+  METHOD EvalState Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(EvalState other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(EvalState other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<EvalState> Parser [static]
+  PROP RepeatedField<Result> Results
+  FIELD Int32 ResultsFieldNumber [static] = 3
+  METHOD String ToString()
+  PROP RepeatedField<ExprValue> Values
+  FIELD Int32 ValuesFieldNumber [static] = 1
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE static class Google.Api.Expr.V1Alpha1.EvalState+Types
+
+TYPE class Google.Api.Expr.V1Alpha1.EvalState+Types+Result : IMessage<Result>, IMessage, IEquatable<Result>, IDeepCloneable<Result>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Result other)
+  METHOD Int32 CalculateSize()
+  METHOD Result Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Result other)
+  PROP Int64 Expr
+  FIELD Int32 ExprFieldNumber [static] = 1
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(Result other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<Result> Parser [static]
+  METHOD String ToString()
+  PROP Int64 Value
+  FIELD Int32 ValueFieldNumber [static] = 2
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Api.Expr.V1Alpha1.Explain : IMessage<Explain>, IMessage, IEquatable<Explain>, IDeepCloneable<Explain>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Explain other)
+  METHOD Int32 CalculateSize()
+  METHOD Explain Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Explain other)
+  PROP RepeatedField<ExprStep> ExprSteps
+  FIELD Int32 ExprStepsFieldNumber [static] = 2
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(Explain other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<Explain> Parser [static]
+  METHOD String ToString()
+  PROP RepeatedField<Value> Values
+  FIELD Int32 ValuesFieldNumber [static] = 1
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE static class Google.Api.Expr.V1Alpha1.Explain+Types
+
+TYPE class Google.Api.Expr.V1Alpha1.Explain+Types+ExprStep : IMessage<ExprStep>, IMessage, IEquatable<ExprStep>, IDeepCloneable<ExprStep>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(ExprStep other)
+  METHOD Int32 CalculateSize()
+  METHOD ExprStep Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(ExprStep other)
+  METHOD Int32 GetHashCode()
+  PROP Int64 Id
+  FIELD Int32 IdFieldNumber [static] = 1
+  METHOD Void MergeFrom(ExprStep other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<ExprStep> Parser [static]
+  METHOD String ToString()
+  PROP Int32 ValueIndex
+  FIELD Int32 ValueIndexFieldNumber [static] = 2
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE static class Google.Api.Expr.V1Alpha1.ExplainReflection
+  PROP FileDescriptor Descriptor [static]
+
+TYPE class Google.Api.Expr.V1Alpha1.Expr : IMessage<Expr>, IMessage, IEquatable<Expr>, IDeepCloneable<Expr>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Expr other)
+  METHOD Int32 CalculateSize()
+  PROP Call CallExpr
+  FIELD Int32 CallExprFieldNumber [static] = 6
+  METHOD Void ClearExprKind()
+  METHOD Expr Clone()
+  PROP Comprehension ComprehensionExpr
+  FIELD Int32 ComprehensionExprFieldNumber [static] = 9
+  PROP Constant ConstExpr
+  FIELD Int32 ConstExprFieldNumber [static] = 3
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Expr other)
+  PROP ExprKindOneofCase ExprKindCase
+  METHOD Int32 GetHashCode()
+  PROP Int64 Id
+  FIELD Int32 IdFieldNumber [static] = 2
+  PROP Ident IdentExpr
+  FIELD Int32 IdentExprFieldNumber [static] = 4
+  PROP CreateList ListExpr
+  FIELD Int32 ListExprFieldNumber [static] = 7
+  METHOD Void MergeFrom(Expr other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<Expr> Parser [static]
+  PROP Select SelectExpr
+  FIELD Int32 SelectExprFieldNumber [static] = 5
+  PROP CreateStruct StructExpr
+  FIELD Int32 StructExprFieldNumber [static] = 8
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE enum Google.Api.Expr.V1Alpha1.Expr+ExprKindOneofCase : IComparable, ISpanFormattable, IFormattable, IConvertible
+  FIELD ExprKindOneofCase CallExpr [static] = 6
+  FIELD ExprKindOneofCase ComprehensionExpr [static] = 9
+  FIELD ExprKindOneofCase ConstExpr [static] = 3
+  FIELD ExprKindOneofCase IdentExpr [static] = 4
+  FIELD ExprKindOneofCase ListExpr [static] = 7
+  FIELD ExprKindOneofCase None [static] = 0
+  FIELD ExprKindOneofCase SelectExpr [static] = 5
+  FIELD ExprKindOneofCase StructExpr [static] = 8
+  FIELD Int32 value__
+
+TYPE static class Google.Api.Expr.V1Alpha1.Expr+Types
+
+TYPE class Google.Api.Expr.V1Alpha1.Expr+Types+Call : IMessage<Call>, IMessage, IEquatable<Call>, IDeepCloneable<Call>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Call other)
+  PROP RepeatedField<Expr> Args
+  FIELD Int32 ArgsFieldNumber [static] = 3
+  METHOD Int32 CalculateSize()
+  METHOD Call Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Call other)
+  PROP String Function
+  FIELD Int32 FunctionFieldNumber [static] = 2
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(Call other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<Call> Parser [static]
+  PROP Expr Target
+  FIELD Int32 TargetFieldNumber [static] = 1
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Api.Expr.V1Alpha1.Expr+Types+Comprehension : IMessage<Comprehension>, IMessage, IEquatable<Comprehension>, IDeepCloneable<Comprehension>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Comprehension other)
+  PROP Expr AccuInit
+  FIELD Int32 AccuInitFieldNumber [static] = 4
+  PROP String AccuVar
+  FIELD Int32 AccuVarFieldNumber [static] = 3
+  METHOD Int32 CalculateSize()
+  METHOD Comprehension Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Comprehension other)
+  METHOD Int32 GetHashCode()
+  PROP Expr IterRange
+  FIELD Int32 IterRangeFieldNumber [static] = 2
+  PROP String IterVar
+  FIELD Int32 IterVarFieldNumber [static] = 1
+  PROP Expr LoopCondition
+  FIELD Int32 LoopConditionFieldNumber [static] = 5
+  PROP Expr LoopStep
+  FIELD Int32 LoopStepFieldNumber [static] = 6
+  METHOD Void MergeFrom(Comprehension other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<Comprehension> Parser [static]
+  PROP Expr Result
+  FIELD Int32 ResultFieldNumber [static] = 7
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Api.Expr.V1Alpha1.Expr+Types+CreateList : IMessage<CreateList>, IMessage, IEquatable<CreateList>, IDeepCloneable<CreateList>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(CreateList other)
+  METHOD Int32 CalculateSize()
+  METHOD CreateList Clone()
+  PROP MessageDescriptor Descriptor [static]
+  PROP RepeatedField<Expr> Elements
+  FIELD Int32 ElementsFieldNumber [static] = 1
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(CreateList other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(CreateList other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<CreateList> Parser [static]
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Api.Expr.V1Alpha1.Expr+Types+CreateStruct : IMessage<CreateStruct>, IMessage, IEquatable<CreateStruct>, IDeepCloneable<CreateStruct>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(CreateStruct other)
+  METHOD Int32 CalculateSize()
+  METHOD CreateStruct Clone()
+  PROP MessageDescriptor Descriptor [static]
+  PROP RepeatedField<Entry> Entries
+  FIELD Int32 EntriesFieldNumber [static] = 2
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(CreateStruct other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(CreateStruct other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP String MessageName
+  FIELD Int32 MessageNameFieldNumber [static] = 1
+  PROP MessageParser<CreateStruct> Parser [static]
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE static class Google.Api.Expr.V1Alpha1.Expr+Types+CreateStruct+Types
+
+TYPE class Google.Api.Expr.V1Alpha1.Expr+Types+CreateStruct+Types+Entry : IMessage<Entry>, IMessage, IEquatable<Entry>, IDeepCloneable<Entry>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Entry other)
+  METHOD Int32 CalculateSize()
+  METHOD Void ClearFieldKey()
+  METHOD Void ClearKeyKind()
+  METHOD Entry Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Entry other)
+  PROP String FieldKey
+  FIELD Int32 FieldKeyFieldNumber [static] = 2
+  METHOD Int32 GetHashCode()
+  PROP Boolean HasFieldKey
+  PROP Int64 Id
+  FIELD Int32 IdFieldNumber [static] = 1
+  PROP KeyKindOneofCase KeyKindCase
+  PROP Expr MapKey
+  FIELD Int32 MapKeyFieldNumber [static] = 3
+  METHOD Void MergeFrom(Entry other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<Entry> Parser [static]
+  METHOD String ToString()
+  PROP Expr Value
+  FIELD Int32 ValueFieldNumber [static] = 4
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE enum Google.Api.Expr.V1Alpha1.Expr+Types+CreateStruct+Types+Entry+KeyKindOneofCase : IComparable, ISpanFormattable, IFormattable, IConvertible
+  FIELD KeyKindOneofCase FieldKey [static] = 2
+  FIELD KeyKindOneofCase MapKey [static] = 3
+  FIELD KeyKindOneofCase None [static] = 0
+  FIELD Int32 value__
+
+TYPE class Google.Api.Expr.V1Alpha1.Expr+Types+Ident : IMessage<Ident>, IMessage, IEquatable<Ident>, IDeepCloneable<Ident>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Ident other)
+  METHOD Int32 CalculateSize()
+  METHOD Ident Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Ident other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(Ident other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP String Name
+  FIELD Int32 NameFieldNumber [static] = 1
+  PROP MessageParser<Ident> Parser [static]
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Api.Expr.V1Alpha1.Expr+Types+Select : IMessage<Select>, IMessage, IEquatable<Select>, IDeepCloneable<Select>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Select other)
+  METHOD Int32 CalculateSize()
+  METHOD Select Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Select other)
+  PROP String Field
+  FIELD Int32 FieldFieldNumber [static] = 2
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(Select other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP Expr Operand
+  FIELD Int32 OperandFieldNumber [static] = 1
+  PROP MessageParser<Select> Parser [static]
+  PROP Boolean TestOnly
+  FIELD Int32 TestOnlyFieldNumber [static] = 3
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Api.Expr.V1Alpha1.ExprValue : IMessage<ExprValue>, IMessage, IEquatable<ExprValue>, IDeepCloneable<ExprValue>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(ExprValue other)
+  METHOD Int32 CalculateSize()
+  METHOD Void ClearKind()
+  METHOD ExprValue Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(ExprValue other)
+  PROP ErrorSet Error
+  FIELD Int32 ErrorFieldNumber [static] = 2
+  METHOD Int32 GetHashCode()
+  PROP KindOneofCase KindCase
+  METHOD Void MergeFrom(ExprValue other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<ExprValue> Parser [static]
+  METHOD String ToString()
+  PROP UnknownSet Unknown
+  FIELD Int32 UnknownFieldNumber [static] = 3
+  PROP Value Value
+  FIELD Int32 ValueFieldNumber [static] = 1
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE enum Google.Api.Expr.V1Alpha1.ExprValue+KindOneofCase : IComparable, ISpanFormattable, IFormattable, IConvertible
+  FIELD KindOneofCase Error [static] = 2
+  FIELD KindOneofCase None [static] = 0
+  FIELD KindOneofCase Unknown [static] = 3
+  FIELD KindOneofCase Value [static] = 1
+  FIELD Int32 value__
+
+TYPE class Google.Api.Expr.V1Alpha1.IssueDetails : IMessage<IssueDetails>, IMessage, IEquatable<IssueDetails>, IDeepCloneable<IssueDetails>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(IssueDetails other)
+  METHOD Int32 CalculateSize()
+  METHOD IssueDetails Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(IssueDetails other)
+  METHOD Int32 GetHashCode()
+  PROP Int64 Id
+  FIELD Int32 IdFieldNumber [static] = 3
+  METHOD Void MergeFrom(IssueDetails other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<IssueDetails> Parser [static]
+  PROP SourcePosition Position
+  FIELD Int32 PositionFieldNumber [static] = 2
+  PROP Severity Severity
+  FIELD Int32 SeverityFieldNumber [static] = 1
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE static class Google.Api.Expr.V1Alpha1.IssueDetails+Types
+
+TYPE enum Google.Api.Expr.V1Alpha1.IssueDetails+Types+Severity : IComparable, ISpanFormattable, IFormattable, IConvertible
+  FIELD Severity Deprecation [static] = 1
+  FIELD Severity Error [static] = 3
+  FIELD Severity Unspecified [static] = 0
+  FIELD Severity Warning [static] = 2
+  FIELD Int32 value__
+
+TYPE class Google.Api.Expr.V1Alpha1.ListValue : IMessage<ListValue>, IMessage, IEquatable<ListValue>, IDeepCloneable<ListValue>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(ListValue other)
+  METHOD Int32 CalculateSize()
+  METHOD ListValue Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(ListValue other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(ListValue other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<ListValue> Parser [static]
+  METHOD String ToString()
+  PROP RepeatedField<Value> Values
+  FIELD Int32 ValuesFieldNumber [static] = 1
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Api.Expr.V1Alpha1.MapValue : IMessage<MapValue>, IMessage, IEquatable<MapValue>, IDeepCloneable<MapValue>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(MapValue other)
+  METHOD Int32 CalculateSize()
+  METHOD MapValue Clone()
+  PROP MessageDescriptor Descriptor [static]
+  PROP RepeatedField<Entry> Entries
+  FIELD Int32 EntriesFieldNumber [static] = 1
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(MapValue other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(MapValue other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<MapValue> Parser [static]
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE static class Google.Api.Expr.V1Alpha1.MapValue+Types
+
+TYPE class Google.Api.Expr.V1Alpha1.MapValue+Types+Entry : IMessage<Entry>, IMessage, IEquatable<Entry>, IDeepCloneable<Entry>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Entry other)
+  METHOD Int32 CalculateSize()
+  METHOD Entry Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Entry other)
+  METHOD Int32 GetHashCode()
+  PROP Value Key
+  FIELD Int32 KeyFieldNumber [static] = 1
+  METHOD Void MergeFrom(Entry other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<Entry> Parser [static]
+  METHOD String ToString()
+  PROP Value Value
+  FIELD Int32 ValueFieldNumber [static] = 2
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Api.Expr.V1Alpha1.ParseRequest : IMessage<ParseRequest>, IMessage, IEquatable<ParseRequest>, IDeepCloneable<ParseRequest>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(ParseRequest other)
+  METHOD Int32 CalculateSize()
+  PROP String CelSource
+  FIELD Int32 CelSourceFieldNumber [static] = 1
+  METHOD ParseRequest Clone()
+  PROP MessageDescriptor Descriptor [static]
+  PROP Boolean DisableMacros
+  FIELD Int32 DisableMacrosFieldNumber [static] = 4
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(ParseRequest other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(ParseRequest other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<ParseRequest> Parser [static]
+  PROP String SourceLocation
+  FIELD Int32 SourceLocationFieldNumber [static] = 3
+  PROP String SyntaxVersion
+  FIELD Int32 SyntaxVersionFieldNumber [static] = 2
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Api.Expr.V1Alpha1.ParseResponse : IMessage<ParseResponse>, IMessage, IEquatable<ParseResponse>, IDeepCloneable<ParseResponse>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(ParseResponse other)
+  METHOD Int32 CalculateSize()
+  METHOD ParseResponse Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(ParseResponse other)
+  METHOD Int32 GetHashCode()
+  PROP RepeatedField<Status> Issues
+  FIELD Int32 IssuesFieldNumber [static] = 2
+  METHOD Void MergeFrom(ParseResponse other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP ParsedExpr ParsedExpr
+  FIELD Int32 ParsedExprFieldNumber [static] = 1
+  PROP MessageParser<ParseResponse> Parser [static]
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Api.Expr.V1Alpha1.ParsedExpr : IMessage<ParsedExpr>, IMessage, IEquatable<ParsedExpr>, IDeepCloneable<ParsedExpr>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(ParsedExpr other)
+  METHOD Int32 CalculateSize()
+  METHOD ParsedExpr Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(ParsedExpr other)
+  PROP Expr Expr
+  FIELD Int32 ExprFieldNumber [static] = 2
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(ParsedExpr other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<ParsedExpr> Parser [static]
+  PROP SourceInfo SourceInfo
+  FIELD Int32 SourceInfoFieldNumber [static] = 3
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Api.Expr.V1Alpha1.Reference : IMessage<Reference>, IMessage, IEquatable<Reference>, IDeepCloneable<Reference>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Reference other)
+  METHOD Int32 CalculateSize()
+  METHOD Reference Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Reference other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(Reference other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP String Name
+  FIELD Int32 NameFieldNumber [static] = 1
+  PROP RepeatedField<String> OverloadId
+  FIELD Int32 OverloadIdFieldNumber [static] = 3
+  PROP MessageParser<Reference> Parser [static]
+  METHOD String ToString()
+  PROP Constant Value
+  FIELD Int32 ValueFieldNumber [static] = 4
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Api.Expr.V1Alpha1.SourceInfo : IMessage<SourceInfo>, IMessage, IEquatable<SourceInfo>, IDeepCloneable<SourceInfo>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(SourceInfo other)
+  METHOD Int32 CalculateSize()
+  METHOD SourceInfo Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(SourceInfo other)
+  METHOD Int32 GetHashCode()
+  PROP RepeatedField<Int32> LineOffsets
+  FIELD Int32 LineOffsetsFieldNumber [static] = 3
+  PROP String Location
+  FIELD Int32 LocationFieldNumber [static] = 2
+  PROP MapField<Int64,Expr> MacroCalls
+  FIELD Int32 MacroCallsFieldNumber [static] = 5
+  METHOD Void MergeFrom(SourceInfo other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<SourceInfo> Parser [static]
+  PROP MapField<Int64,Int32> Positions
+  FIELD Int32 PositionsFieldNumber [static] = 4
+  PROP String SyntaxVersion
+  FIELD Int32 SyntaxVersionFieldNumber [static] = 1
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Api.Expr.V1Alpha1.SourcePosition : IMessage<SourcePosition>, IMessage, IEquatable<SourcePosition>, IDeepCloneable<SourcePosition>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(SourcePosition other)
+  METHOD Int32 CalculateSize()
+  METHOD SourcePosition Clone()
+  PROP Int32 Column
+  FIELD Int32 ColumnFieldNumber [static] = 4
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(SourcePosition other)
+  METHOD Int32 GetHashCode()
+  PROP Int32 Line
+  FIELD Int32 LineFieldNumber [static] = 3
+  PROP String Location
+  FIELD Int32 LocationFieldNumber [static] = 1
+  METHOD Void MergeFrom(SourcePosition other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP Int32 Offset
+  FIELD Int32 OffsetFieldNumber [static] = 2
+  PROP MessageParser<SourcePosition> Parser [static]
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE static class Google.Api.Expr.V1Alpha1.SyntaxReflection
+  PROP FileDescriptor Descriptor [static]
+
+TYPE class Google.Api.Expr.V1Alpha1.Type : IMessage<Type>, IMessage, IEquatable<Type>, IDeepCloneable<Type>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Type other)
+  PROP AbstractType AbstractType
+  FIELD Int32 AbstractTypeFieldNumber [static] = 14
+  METHOD Int32 CalculateSize()
+  METHOD Void ClearMessageType()
+  METHOD Void ClearNull()
+  METHOD Void ClearPrimitive()
+  METHOD Void ClearTypeKind()
+  METHOD Void ClearTypeParam()
+  METHOD Void ClearWellKnown()
+  METHOD Void ClearWrapper()
+  METHOD Type Clone()
+  PROP MessageDescriptor Descriptor [static]
+  PROP Empty Dyn
+  FIELD Int32 DynFieldNumber [static] = 1
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Type other)
+  PROP Empty Error
+  FIELD Int32 ErrorFieldNumber [static] = 12
+  PROP FunctionType Function
+  FIELD Int32 FunctionFieldNumber [static] = 8
+  METHOD Int32 GetHashCode()
+  PROP Boolean HasMessageType
+  PROP Boolean HasNull
+  PROP Boolean HasPrimitive
+  PROP Boolean HasTypeParam
+  PROP Boolean HasWellKnown
+  PROP Boolean HasWrapper
+  PROP ListType ListType
+  FIELD Int32 ListTypeFieldNumber [static] = 6
+  PROP MapType MapType
+  FIELD Int32 MapTypeFieldNumber [static] = 7
+  METHOD Void MergeFrom(Type other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP String MessageType
+  FIELD Int32 MessageTypeFieldNumber [static] = 9
+  PROP NullValue Null
+  FIELD Int32 NullFieldNumber [static] = 2
+  PROP MessageParser<Type> Parser [static]
+  PROP PrimitiveType Primitive
+  FIELD Int32 PrimitiveFieldNumber [static] = 3
+  METHOD String ToString()
+  PROP TypeKindOneofCase TypeKindCase
+  PROP String TypeParam
+  FIELD Int32 TypeParamFieldNumber [static] = 10
+  PROP Type Type_
+  FIELD Int32 Type_FieldNumber [static] = 11
+  PROP WellKnownType WellKnown
+  FIELD Int32 WellKnownFieldNumber [static] = 5
+  PROP PrimitiveType Wrapper
+  FIELD Int32 WrapperFieldNumber [static] = 4
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE enum Google.Api.Expr.V1Alpha1.Type+TypeKindOneofCase : IComparable, ISpanFormattable, IFormattable, IConvertible
+  FIELD TypeKindOneofCase AbstractType [static] = 14
+  FIELD TypeKindOneofCase Dyn [static] = 1
+  FIELD TypeKindOneofCase Error [static] = 12
+  FIELD TypeKindOneofCase Function [static] = 8
+  FIELD TypeKindOneofCase ListType [static] = 6
+  FIELD TypeKindOneofCase MapType [static] = 7
+  FIELD TypeKindOneofCase MessageType [static] = 9
+  FIELD TypeKindOneofCase None [static] = 0
+  FIELD TypeKindOneofCase Null [static] = 2
+  FIELD TypeKindOneofCase Primitive [static] = 3
+  FIELD TypeKindOneofCase TypeParam [static] = 10
+  FIELD TypeKindOneofCase Type_ [static] = 11
+  FIELD TypeKindOneofCase WellKnown [static] = 5
+  FIELD TypeKindOneofCase Wrapper [static] = 4
+  FIELD Int32 value__
+
+TYPE static class Google.Api.Expr.V1Alpha1.Type+Types
+
+TYPE class Google.Api.Expr.V1Alpha1.Type+Types+AbstractType : IMessage<AbstractType>, IMessage, IEquatable<AbstractType>, IDeepCloneable<AbstractType>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(AbstractType other)
+  METHOD Int32 CalculateSize()
+  METHOD AbstractType Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(AbstractType other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(AbstractType other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP String Name
+  FIELD Int32 NameFieldNumber [static] = 1
+  PROP RepeatedField<Type> ParameterTypes
+  FIELD Int32 ParameterTypesFieldNumber [static] = 2
+  PROP MessageParser<AbstractType> Parser [static]
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Api.Expr.V1Alpha1.Type+Types+FunctionType : IMessage<FunctionType>, IMessage, IEquatable<FunctionType>, IDeepCloneable<FunctionType>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(FunctionType other)
+  PROP RepeatedField<Type> ArgTypes
+  FIELD Int32 ArgTypesFieldNumber [static] = 2
+  METHOD Int32 CalculateSize()
+  METHOD FunctionType Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(FunctionType other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(FunctionType other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<FunctionType> Parser [static]
+  PROP Type ResultType
+  FIELD Int32 ResultTypeFieldNumber [static] = 1
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Api.Expr.V1Alpha1.Type+Types+ListType : IMessage<ListType>, IMessage, IEquatable<ListType>, IDeepCloneable<ListType>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(ListType other)
+  METHOD Int32 CalculateSize()
+  METHOD ListType Clone()
+  PROP MessageDescriptor Descriptor [static]
+  PROP Type ElemType
+  FIELD Int32 ElemTypeFieldNumber [static] = 1
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(ListType other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(ListType other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<ListType> Parser [static]
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Api.Expr.V1Alpha1.Type+Types+MapType : IMessage<MapType>, IMessage, IEquatable<MapType>, IDeepCloneable<MapType>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(MapType other)
+  METHOD Int32 CalculateSize()
+  METHOD MapType Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(MapType other)
+  METHOD Int32 GetHashCode()
+  PROP Type KeyType
+  FIELD Int32 KeyTypeFieldNumber [static] = 1
+  METHOD Void MergeFrom(MapType other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<MapType> Parser [static]
+  METHOD String ToString()
+  PROP Type ValueType
+  FIELD Int32 ValueTypeFieldNumber [static] = 2
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE enum Google.Api.Expr.V1Alpha1.Type+Types+PrimitiveType : IComparable, ISpanFormattable, IFormattable, IConvertible
+  FIELD PrimitiveType Bool [static] = 1
+  FIELD PrimitiveType Bytes [static] = 6
+  FIELD PrimitiveType Double [static] = 4
+  FIELD PrimitiveType Int64 [static] = 2
+  FIELD PrimitiveType String [static] = 5
+  FIELD PrimitiveType Uint64 [static] = 3
+  FIELD PrimitiveType Unspecified [static] = 0
+  FIELD Int32 value__
+
+TYPE enum Google.Api.Expr.V1Alpha1.Type+Types+WellKnownType : IComparable, ISpanFormattable, IFormattable, IConvertible
+  FIELD WellKnownType Any [static] = 1
+  FIELD WellKnownType Duration [static] = 3
+  FIELD WellKnownType Timestamp [static] = 2
+  FIELD WellKnownType Unspecified [static] = 0
+  FIELD Int32 value__
+
+TYPE class Google.Api.Expr.V1Alpha1.UnknownSet : IMessage<UnknownSet>, IMessage, IEquatable<UnknownSet>, IDeepCloneable<UnknownSet>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(UnknownSet other)
+  METHOD Int32 CalculateSize()
+  METHOD UnknownSet Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(UnknownSet other)
+  PROP RepeatedField<Int64> Exprs
+  FIELD Int32 ExprsFieldNumber [static] = 1
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(UnknownSet other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<UnknownSet> Parser [static]
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Api.Expr.V1Alpha1.Value : IMessage<Value>, IMessage, IEquatable<Value>, IDeepCloneable<Value>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Value other)
+  PROP Boolean BoolValue
+  FIELD Int32 BoolValueFieldNumber [static] = 2
+  PROP ByteString BytesValue
+  FIELD Int32 BytesValueFieldNumber [static] = 7
+  METHOD Int32 CalculateSize()
+  METHOD Void ClearBoolValue()
+  METHOD Void ClearBytesValue()
+  METHOD Void ClearDoubleValue()
+  METHOD Void ClearInt64Value()
+  METHOD Void ClearKind()
+  METHOD Void ClearNullValue()
+  METHOD Void ClearStringValue()
+  METHOD Void ClearTypeValue()
+  METHOD Void ClearUint64Value()
+  METHOD Value Clone()
+  PROP MessageDescriptor Descriptor [static]
+  PROP Double DoubleValue
+  FIELD Int32 DoubleValueFieldNumber [static] = 5
+  PROP EnumValue EnumValue
+  FIELD Int32 EnumValueFieldNumber [static] = 9
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Value other)
+  METHOD Int32 GetHashCode()
+  PROP Boolean HasBoolValue
+  PROP Boolean HasBytesValue
+  PROP Boolean HasDoubleValue
+  PROP Boolean HasInt64Value
+  PROP Boolean HasNullValue
+  PROP Boolean HasStringValue
+  PROP Boolean HasTypeValue
+  PROP Boolean HasUint64Value
+  PROP Int64 Int64Value
+  FIELD Int32 Int64ValueFieldNumber [static] = 3
+  PROP KindOneofCase KindCase
+  PROP ListValue ListValue
+  FIELD Int32 ListValueFieldNumber [static] = 12
+  PROP MapValue MapValue
+  FIELD Int32 MapValueFieldNumber [static] = 11
+  METHOD Void MergeFrom(Value other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP NullValue NullValue
+  FIELD Int32 NullValueFieldNumber [static] = 1
+  PROP Any ObjectValue
+  FIELD Int32 ObjectValueFieldNumber [static] = 10
+  PROP MessageParser<Value> Parser [static]
+  PROP String StringValue
+  FIELD Int32 StringValueFieldNumber [static] = 6
+  METHOD String ToString()
+  PROP String TypeValue
+  FIELD Int32 TypeValueFieldNumber [static] = 15
+  PROP UInt64 Uint64Value
+  FIELD Int32 Uint64ValueFieldNumber [static] = 4
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE enum Google.Api.Expr.V1Alpha1.Value+KindOneofCase : IComparable, ISpanFormattable, IFormattable, IConvertible
+  FIELD KindOneofCase BoolValue [static] = 2
+  FIELD KindOneofCase BytesValue [static] = 7
+  FIELD KindOneofCase DoubleValue [static] = 5
+  FIELD KindOneofCase EnumValue [static] = 9
+  FIELD KindOneofCase Int64Value [static] = 3
+  FIELD KindOneofCase ListValue [static] = 12
+  FIELD KindOneofCase MapValue [static] = 11
+  FIELD KindOneofCase None [static] = 0
+  FIELD KindOneofCase NullValue [static] = 1
+  FIELD KindOneofCase ObjectValue [static] = 10
+  FIELD KindOneofCase StringValue [static] = 6
+  FIELD KindOneofCase TypeValue [static] = 15
+  FIELD KindOneofCase Uint64Value [static] = 4
+  FIELD Int32 value__
+
+TYPE static class Google.Api.Expr.V1Alpha1.ValueReflection
+  PROP FileDescriptor Descriptor [static]
+
+TYPE class Google.Rpc.BadRequest : IMessage<BadRequest>, IMessage, IEquatable<BadRequest>, IDeepCloneable<BadRequest>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(BadRequest other)
+  METHOD Int32 CalculateSize()
+  METHOD BadRequest Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(BadRequest other)
+  PROP RepeatedField<FieldViolation> FieldViolations
+  FIELD Int32 FieldViolationsFieldNumber [static] = 1
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(BadRequest other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<BadRequest> Parser [static]
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE static class Google.Rpc.BadRequest+Types
+
+TYPE class Google.Rpc.BadRequest+Types+FieldViolation : IMessage<FieldViolation>, IMessage, IEquatable<FieldViolation>, IDeepCloneable<FieldViolation>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(FieldViolation other)
+  METHOD Int32 CalculateSize()
+  METHOD FieldViolation Clone()
+  PROP String Description
+  FIELD Int32 DescriptionFieldNumber [static] = 2
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(FieldViolation other)
+  PROP String Field
+  FIELD Int32 FieldFieldNumber [static] = 1
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(FieldViolation other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<FieldViolation> Parser [static]
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE enum Google.Rpc.Code : IComparable, ISpanFormattable, IFormattable, IConvertible
+  FIELD Code Aborted [static] = 10
+  FIELD Code AlreadyExists [static] = 6
+  FIELD Code Cancelled [static] = 1
+  FIELD Code DataLoss [static] = 15
+  FIELD Code DeadlineExceeded [static] = 4
+  FIELD Code FailedPrecondition [static] = 9
+  FIELD Code Internal [static] = 13
+  FIELD Code InvalidArgument [static] = 3
+  FIELD Code NotFound [static] = 5
+  FIELD Code Ok [static] = 0
+  FIELD Code OutOfRange [static] = 11
+  FIELD Code PermissionDenied [static] = 7
+  FIELD Code ResourceExhausted [static] = 8
+  FIELD Code Unauthenticated [static] = 16
+  FIELD Code Unavailable [static] = 14
+  FIELD Code Unimplemented [static] = 12
+  FIELD Code Unknown [static] = 2
+  FIELD Int32 value__
+
+TYPE static class Google.Rpc.CodeReflection
+  PROP FileDescriptor Descriptor [static]
+
+TYPE class Google.Rpc.Context.AttributeContext : IMessage<AttributeContext>, IMessage, IEquatable<AttributeContext>, IDeepCloneable<AttributeContext>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(AttributeContext other)
+  PROP Api Api
+  FIELD Int32 ApiFieldNumber [static] = 6
+  METHOD Int32 CalculateSize()
+  METHOD AttributeContext Clone()
+  PROP MessageDescriptor Descriptor [static]
+  PROP Peer Destination
+  FIELD Int32 DestinationFieldNumber [static] = 2
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(AttributeContext other)
+  PROP RepeatedField<Any> Extensions
+  FIELD Int32 ExtensionsFieldNumber [static] = 8
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(AttributeContext other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP Peer Origin
+  FIELD Int32 OriginFieldNumber [static] = 7
+  PROP MessageParser<AttributeContext> Parser [static]
+  PROP Request Request
+  FIELD Int32 RequestFieldNumber [static] = 3
+  PROP Resource Resource
+  FIELD Int32 ResourceFieldNumber [static] = 5
+  PROP Response Response
+  FIELD Int32 ResponseFieldNumber [static] = 4
+  PROP Peer Source
+  FIELD Int32 SourceFieldNumber [static] = 1
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE static class Google.Rpc.Context.AttributeContext+Types
+
+TYPE class Google.Rpc.Context.AttributeContext+Types+Api : IMessage<Api>, IMessage, IEquatable<Api>, IDeepCloneable<Api>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Api other)
+  METHOD Int32 CalculateSize()
+  METHOD Api Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Api other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(Api other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP String Operation
+  FIELD Int32 OperationFieldNumber [static] = 2
+  PROP MessageParser<Api> Parser [static]
+  PROP String Protocol
+  FIELD Int32 ProtocolFieldNumber [static] = 3
+  PROP String Service
+  FIELD Int32 ServiceFieldNumber [static] = 1
+  METHOD String ToString()
+  PROP String Version
+  FIELD Int32 VersionFieldNumber [static] = 4
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Rpc.Context.AttributeContext+Types+Auth : IMessage<Auth>, IMessage, IEquatable<Auth>, IDeepCloneable<Auth>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Auth other)
+  PROP RepeatedField<String> AccessLevels
+  FIELD Int32 AccessLevelsFieldNumber [static] = 5
+  PROP RepeatedField<String> Audiences
+  FIELD Int32 AudiencesFieldNumber [static] = 2
+  METHOD Int32 CalculateSize()
+  PROP Struct Claims
+  FIELD Int32 ClaimsFieldNumber [static] = 4
+  METHOD Auth Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Auth other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(Auth other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<Auth> Parser [static]
+  PROP String Presenter
+  FIELD Int32 PresenterFieldNumber [static] = 3
+  PROP String Principal
+  FIELD Int32 PrincipalFieldNumber [static] = 1
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Rpc.Context.AttributeContext+Types+Peer : IMessage<Peer>, IMessage, IEquatable<Peer>, IDeepCloneable<Peer>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Peer other)
+  METHOD Int32 CalculateSize()
+  METHOD Peer Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Peer other)
+  METHOD Int32 GetHashCode()
+  PROP String Ip
+  FIELD Int32 IpFieldNumber [static] = 1
+  PROP MapField<String,String> Labels
+  FIELD Int32 LabelsFieldNumber [static] = 6
+  METHOD Void MergeFrom(Peer other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<Peer> Parser [static]
+  PROP Int64 Port
+  FIELD Int32 PortFieldNumber [static] = 2
+  PROP String Principal
+  FIELD Int32 PrincipalFieldNumber [static] = 7
+  PROP String RegionCode
+  FIELD Int32 RegionCodeFieldNumber [static] = 8
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Rpc.Context.AttributeContext+Types+Request : IMessage<Request>, IMessage, IEquatable<Request>, IDeepCloneable<Request>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Request other)
+  PROP Auth Auth
+  FIELD Int32 AuthFieldNumber [static] = 13
+  METHOD Int32 CalculateSize()
+  METHOD Request Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Request other)
+  METHOD Int32 GetHashCode()
+  PROP MapField<String,String> Headers
+  FIELD Int32 HeadersFieldNumber [static] = 3
+  PROP String Host
+  FIELD Int32 HostFieldNumber [static] = 5
+  PROP String Id
+  FIELD Int32 IdFieldNumber [static] = 1
+  METHOD Void MergeFrom(Request other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP String Method
+  FIELD Int32 MethodFieldNumber [static] = 2
+  PROP MessageParser<Request> Parser [static]
+  PROP String Path
+  FIELD Int32 PathFieldNumber [static] = 4
+  PROP String Protocol
+  FIELD Int32 ProtocolFieldNumber [static] = 11
+  PROP String Query
+  FIELD Int32 QueryFieldNumber [static] = 7
+  PROP String Reason
+  FIELD Int32 ReasonFieldNumber [static] = 12
+  PROP String Scheme
+  FIELD Int32 SchemeFieldNumber [static] = 6
+  PROP Int64 Size
+  FIELD Int32 SizeFieldNumber [static] = 10
+  PROP Timestamp Time
+  FIELD Int32 TimeFieldNumber [static] = 9
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Rpc.Context.AttributeContext+Types+Resource : IMessage<Resource>, IMessage, IEquatable<Resource>, IDeepCloneable<Resource>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Resource other)
+  PROP MapField<String,String> Annotations
+  FIELD Int32 AnnotationsFieldNumber [static] = 6
+  METHOD Int32 CalculateSize()
+  METHOD Resource Clone()
+  PROP Timestamp CreateTime
+  FIELD Int32 CreateTimeFieldNumber [static] = 8
+  PROP Timestamp DeleteTime
+  FIELD Int32 DeleteTimeFieldNumber [static] = 10
+  PROP MessageDescriptor Descriptor [static]
+  PROP String DisplayName
+  FIELD Int32 DisplayNameFieldNumber [static] = 7
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Resource other)
+  PROP String Etag
+  FIELD Int32 EtagFieldNumber [static] = 11
+  METHOD Int32 GetHashCode()
+  PROP MapField<String,String> Labels
+  FIELD Int32 LabelsFieldNumber [static] = 4
+  PROP String Location
+  FIELD Int32 LocationFieldNumber [static] = 12
+  METHOD Void MergeFrom(Resource other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP String Name
+  FIELD Int32 NameFieldNumber [static] = 2
+  PROP MessageParser<Resource> Parser [static]
+  PROP String Service
+  FIELD Int32 ServiceFieldNumber [static] = 1
+  METHOD String ToString()
+  PROP String Type
+  FIELD Int32 TypeFieldNumber [static] = 3
+  PROP String Uid
+  FIELD Int32 UidFieldNumber [static] = 5
+  PROP Timestamp UpdateTime
+  FIELD Int32 UpdateTimeFieldNumber [static] = 9
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Rpc.Context.AttributeContext+Types+Response : IMessage<Response>, IMessage, IEquatable<Response>, IDeepCloneable<Response>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Response other)
+  PROP Duration BackendLatency
+  FIELD Int32 BackendLatencyFieldNumber [static] = 5
+  METHOD Int32 CalculateSize()
+  METHOD Response Clone()
+  PROP Int64 Code
+  FIELD Int32 CodeFieldNumber [static] = 1
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Response other)
+  METHOD Int32 GetHashCode()
+  PROP MapField<String,String> Headers
+  FIELD Int32 HeadersFieldNumber [static] = 3
+  METHOD Void MergeFrom(Response other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<Response> Parser [static]
+  PROP Int64 Size
+  FIELD Int32 SizeFieldNumber [static] = 2
+  PROP Timestamp Time
+  FIELD Int32 TimeFieldNumber [static] = 4
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE static class Google.Rpc.Context.AttributeContextReflection
+  PROP FileDescriptor Descriptor [static]
+
+TYPE class Google.Rpc.DebugInfo : IMessage<DebugInfo>, IMessage, IEquatable<DebugInfo>, IDeepCloneable<DebugInfo>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(DebugInfo other)
+  METHOD Int32 CalculateSize()
+  METHOD DebugInfo Clone()
+  PROP MessageDescriptor Descriptor [static]
+  PROP String Detail
+  FIELD Int32 DetailFieldNumber [static] = 2
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(DebugInfo other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(DebugInfo other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<DebugInfo> Parser [static]
+  PROP RepeatedField<String> StackEntries
+  FIELD Int32 StackEntriesFieldNumber [static] = 1
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE static class Google.Rpc.ErrorDetailsReflection
+  PROP FileDescriptor Descriptor [static]
+
+TYPE class Google.Rpc.ErrorInfo : IMessage<ErrorInfo>, IMessage, IEquatable<ErrorInfo>, IDeepCloneable<ErrorInfo>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(ErrorInfo other)
+  METHOD Int32 CalculateSize()
+  METHOD ErrorInfo Clone()
+  PROP MessageDescriptor Descriptor [static]
+  PROP String Domain
+  FIELD Int32 DomainFieldNumber [static] = 2
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(ErrorInfo other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(ErrorInfo other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MapField<String,String> Metadata
+  FIELD Int32 MetadataFieldNumber [static] = 3
+  PROP MessageParser<ErrorInfo> Parser [static]
+  PROP String Reason
+  FIELD Int32 ReasonFieldNumber [static] = 1
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Rpc.Help : IMessage<Help>, IMessage, IEquatable<Help>, IDeepCloneable<Help>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Help other)
+  METHOD Int32 CalculateSize()
+  METHOD Help Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Help other)
+  METHOD Int32 GetHashCode()
+  PROP RepeatedField<Link> Links
+  FIELD Int32 LinksFieldNumber [static] = 1
+  METHOD Void MergeFrom(Help other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<Help> Parser [static]
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE static class Google.Rpc.Help+Types
+
+TYPE class Google.Rpc.Help+Types+Link : IMessage<Link>, IMessage, IEquatable<Link>, IDeepCloneable<Link>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Link other)
+  METHOD Int32 CalculateSize()
+  METHOD Link Clone()
+  PROP String Description
+  FIELD Int32 DescriptionFieldNumber [static] = 1
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Link other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(Link other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<Link> Parser [static]
+  METHOD String ToString()
+  PROP String Url
+  FIELD Int32 UrlFieldNumber [static] = 2
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Rpc.LocalizedMessage : IMessage<LocalizedMessage>, IMessage, IEquatable<LocalizedMessage>, IDeepCloneable<LocalizedMessage>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(LocalizedMessage other)
+  METHOD Int32 CalculateSize()
+  METHOD LocalizedMessage Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(LocalizedMessage other)
+  METHOD Int32 GetHashCode()
+  PROP String Locale
+  FIELD Int32 LocaleFieldNumber [static] = 1
+  METHOD Void MergeFrom(LocalizedMessage other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP String Message
+  FIELD Int32 MessageFieldNumber [static] = 2
+  PROP MessageParser<LocalizedMessage> Parser [static]
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Rpc.PreconditionFailure : IMessage<PreconditionFailure>, IMessage, IEquatable<PreconditionFailure>, IDeepCloneable<PreconditionFailure>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(PreconditionFailure other)
+  METHOD Int32 CalculateSize()
+  METHOD PreconditionFailure Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(PreconditionFailure other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(PreconditionFailure other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<PreconditionFailure> Parser [static]
+  METHOD String ToString()
+  PROP RepeatedField<Violation> Violations
+  FIELD Int32 ViolationsFieldNumber [static] = 1
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE static class Google.Rpc.PreconditionFailure+Types
+
+TYPE class Google.Rpc.PreconditionFailure+Types+Violation : IMessage<Violation>, IMessage, IEquatable<Violation>, IDeepCloneable<Violation>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Violation other)
+  METHOD Int32 CalculateSize()
+  METHOD Violation Clone()
+  PROP String Description
+  FIELD Int32 DescriptionFieldNumber [static] = 3
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Violation other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(Violation other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<Violation> Parser [static]
+  PROP String Subject
+  FIELD Int32 SubjectFieldNumber [static] = 2
+  METHOD String ToString()
+  PROP String Type
+  FIELD Int32 TypeFieldNumber [static] = 1
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Rpc.QuotaFailure : IMessage<QuotaFailure>, IMessage, IEquatable<QuotaFailure>, IDeepCloneable<QuotaFailure>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(QuotaFailure other)
+  METHOD Int32 CalculateSize()
+  METHOD QuotaFailure Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(QuotaFailure other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(QuotaFailure other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<QuotaFailure> Parser [static]
+  METHOD String ToString()
+  PROP RepeatedField<Violation> Violations
+  FIELD Int32 ViolationsFieldNumber [static] = 1
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE static class Google.Rpc.QuotaFailure+Types
+
+TYPE class Google.Rpc.QuotaFailure+Types+Violation : IMessage<Violation>, IMessage, IEquatable<Violation>, IDeepCloneable<Violation>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Violation other)
+  METHOD Int32 CalculateSize()
+  METHOD Violation Clone()
+  PROP String Description
+  FIELD Int32 DescriptionFieldNumber [static] = 2
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Violation other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(Violation other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<Violation> Parser [static]
+  PROP String Subject
+  FIELD Int32 SubjectFieldNumber [static] = 1
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Rpc.RequestInfo : IMessage<RequestInfo>, IMessage, IEquatable<RequestInfo>, IDeepCloneable<RequestInfo>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(RequestInfo other)
+  METHOD Int32 CalculateSize()
+  METHOD RequestInfo Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(RequestInfo other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(RequestInfo other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<RequestInfo> Parser [static]
+  PROP String RequestId
+  FIELD Int32 RequestIdFieldNumber [static] = 1
+  PROP String ServingData
+  FIELD Int32 ServingDataFieldNumber [static] = 2
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Rpc.ResourceInfo : IMessage<ResourceInfo>, IMessage, IEquatable<ResourceInfo>, IDeepCloneable<ResourceInfo>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(ResourceInfo other)
+  METHOD Int32 CalculateSize()
+  METHOD ResourceInfo Clone()
+  PROP String Description
+  FIELD Int32 DescriptionFieldNumber [static] = 4
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(ResourceInfo other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(ResourceInfo other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP String Owner
+  FIELD Int32 OwnerFieldNumber [static] = 3
+  PROP MessageParser<ResourceInfo> Parser [static]
+  PROP String ResourceName
+  FIELD Int32 ResourceNameFieldNumber [static] = 2
+  PROP String ResourceType
+  FIELD Int32 ResourceTypeFieldNumber [static] = 1
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Rpc.RetryInfo : IMessage<RetryInfo>, IMessage, IEquatable<RetryInfo>, IDeepCloneable<RetryInfo>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(RetryInfo other)
+  METHOD Int32 CalculateSize()
+  METHOD RetryInfo Clone()
+  PROP MessageDescriptor Descriptor [static]
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(RetryInfo other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(RetryInfo other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP MessageParser<RetryInfo> Parser [static]
+  PROP Duration RetryDelay
+  FIELD Int32 RetryDelayFieldNumber [static] = 1
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE class Google.Rpc.Status : IMessage<Status>, IMessage, IEquatable<Status>, IDeepCloneable<Status>, IBufferMessage
+  CTOR .ctor()
+  CTOR .ctor(Status other)
+  METHOD Int32 CalculateSize()
+  METHOD Status Clone()
+  PROP Int32 Code
+  FIELD Int32 CodeFieldNumber [static] = 1
+  PROP MessageDescriptor Descriptor [static]
+  PROP RepeatedField<Any> Details
+  FIELD Int32 DetailsFieldNumber [static] = 3
+  METHOD Boolean Equals(Object other)
+  METHOD Boolean Equals(Status other)
+  METHOD Int32 GetHashCode()
+  METHOD Void MergeFrom(Status other)
+  METHOD Void MergeFrom(CodedInputStream input)
+  PROP String Message
+  FIELD Int32 MessageFieldNumber [static] = 2
+  PROP MessageParser<Status> Parser [static]
+  METHOD String ToString()
+  METHOD Void WriteTo(CodedOutputStream output)
+
+TYPE static class Google.Rpc.StatusReflection
+  PROP FileDescriptor Descriptor [static]
+
