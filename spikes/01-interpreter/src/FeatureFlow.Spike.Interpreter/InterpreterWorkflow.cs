@@ -100,7 +100,12 @@ public class InterpreterWorkflow
                     s => new StepOutcome(s.Id, state.StepOutcomes[s.Id].Outcome, null),
                     StringComparer.Ordinal));
                 if (state.TerminalStatus is not null)
+                {
+                    // Yield before looping, so the workflow task is not held by
+                    // a synchronous loop.
+                    await Workflow.DelayAsync(TimeSpan.FromMilliseconds(200));
                     continue;
+                }
             }
 
             // A parallel step is structural: it does not execute. Mark it
@@ -114,13 +119,20 @@ public class InterpreterWorkflow
             var executable = PlanReady.Ready(state)
                 .Where(s => s.Gate is null && s.Kind != "parallel")
                 .ToList();
-            if (executable.Count == 0)
-                continue;
 
             // docs/09 7.0: a branch reports its terminal outcome to the join.
             // max_concurrency bounds how many branches are in flight; it is a
             // plan value, not an interpreter one (docs/01 3.3.1).
             executable = ApplyConcurrencyLimit(executable);
+
+            if (executable.Count == 0)
+            {
+                // Nothing may start yet because a concurrency limit is holding
+                // it back. Yield, or this becomes a synchronous loop that
+                // starves the workflow task and blocks queries.
+                await Workflow.DelayAsync(TimeSpan.FromMilliseconds(200));
+                continue;
+            }
 
             var results = await ExecuteAsync(executable);
             Route(executable, results);

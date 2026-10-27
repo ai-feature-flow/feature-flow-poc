@@ -35,6 +35,9 @@ public static class HarnessProgram
             "backoff" => await BackoffTests.RunAsync(client, queue, args),
             "events" => await EventCountTests.RunAsync(client, queue, args),
             "can" => await ContinueAsNewTests.RunAsync(client, queue, args),
+            "fixture" => await FixtureCapture.CaptureAsync(args),
+            "replay-fixtures" => await FixtureCapture.ReplayAllAsync(),
+            "block" => await BlockAccessTests.RunAsync(client, queue, args),
             _ => Help(),
         };
     }

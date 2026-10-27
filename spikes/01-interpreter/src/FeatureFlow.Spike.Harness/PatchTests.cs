@@ -122,11 +122,13 @@ public static class PatchTests
             (InterpreterWorkflow w) => w.RunAsync(new InterpreterInput { Plan = plan }),
             new(id, queue));
 
-        // Wait until the parallel branches are in flight.
+        // Wait until the parallel branches are in flight. Poll slowly: a tight
+        // query loop fills the server's consistent query buffer. The spec plan
+        // runs three agent steps before the parallel, so allow generously.
         InterpreterState? midRun = null;
-        for (var i = 0; i < 60; i++)
+        for (var i = 0; i < 80; i++)
         {
-            await Task.Delay(500);
+            await Task.Delay(1500);
             try
             {
                 var s = await handle.QueryAsync(w => w.State());

@@ -1,2 +1,4 @@
 WORKER starting queue=spike-1 sandbox=http://127.0.0.1:5199 maxConcurrentActivities=10 pid=38384
 WORKER ready
+WORKER starting queue=spike-1 sandbox=http://127.0.0.1:5199 maxConcurrentActivities=10 pid=34336
+WORKER ready
