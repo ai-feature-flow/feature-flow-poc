@@ -1,0 +1,17 @@
+{
+  "concurrency": 4,
+  "stepSeconds": 20,
+  "totalSeconds": 17.0577628,
+  "perRun": [
+    1.9822828,
+    2.860898,
+    13.8296208,
+    14.167239
+  ],
+  "scheduleToStart": [
+    0,
+    0,
+    0,
+    0
+  ]
+}

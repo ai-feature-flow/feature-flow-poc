@@ -10,8 +10,17 @@ namespace FeatureFlow.Spike.Interpreter;
 [Workflow]
 public class InterpreterWorkflow
 {
-    /// <summary>Continue-as-new threshold. Set from measurement 5.</summary>
-    public const int DefaultHistoryEventThreshold = 2000;
+    /// <summary>
+    /// Continue-as-new threshold. Review 12 A2: derived from Temporal's limits
+    /// with a margin, not from where a test happened to trigger.
+    ///
+    /// Temporal warns at 10,240 events or 10 MB and hard-fails at 51,200 events
+    /// or 50 MB. Measured cost is 6.28 events per step, so the warning threshold
+    /// is reached at about 1,630 steps. Half of that is 5,120 events, about 815
+    /// steps — comfortably clear of the warning, and few enough continue-as-new
+    /// points that the R3 window is not opened often.
+    /// </summary>
+    public const int DefaultHistoryEventThreshold = 5120;
 
     private InterpreterState state = new();
 

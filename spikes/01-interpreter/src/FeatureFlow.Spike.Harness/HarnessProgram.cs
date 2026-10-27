@@ -31,6 +31,7 @@ public static class HarnessProgram
             "replay" => await ReplayTests.RunAsync(client, args),
             "crash" => await CrashTests.RunAsync(client, queue, args),
             "outage" => await OutageTests.RunAsync(client, queue, args),
+            "slots-latency" => await SlotTests.RunAsync(client, queue, args),
             _ => Help(),
         };
     }
