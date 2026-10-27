@@ -212,7 +212,7 @@ steps:
       context_refs: { expr: "[steps.plan_spec.artifacts.plan]" }
     limits: { attempts: 2 }
     routes:
-      replan_requested: { end: resume }
+      replan_requested: { resume: true }
       failed: gate_escalate
       attempts_exhausted: gate_escalate
 
@@ -262,7 +262,7 @@ steps:
 | B5: correction turns | `plan_spec` sets `correction_turns: 2` |
 | B6: bindings render paths | `plan_path: { from_artifact: ... }`, not a hash |
 | B9: directives are a mapping | `{ end: completed }`, no quoting |
-| A6: resume point | `replan` routes `{ end: resume }`; the patch names `resume_at` |
+| A6: resume point | `replan` routes `{ resume: true }`; the patch names `resume_at` |
 | B3: loops bounded by the engine | The cycle exits through `gate_escalate` on `attempts_exhausted` |
 
 ---
@@ -318,7 +318,7 @@ steps:
       resume_at: tickets
     limits: { attempts: 2 }
     routes:
-      replan_requested: { end: resume }
+      replan_requested: { resume: true }
       failed: gate_epic_plan
       attempts_exhausted: gate_epic_plan
 
@@ -380,27 +380,27 @@ steps:
     kind: plan.replan
     inputs:
       mode: expand
+      shape: chain
       from: { expr: "params.repositories" }
       mapping:
         template: feature-flow-default:templates/repository-delivery
-        target: delivery
+        target: delivery_start
+        on_other: delivery_gate
         bind:
           repository: "$"
-      resume_at: delivery
+      resume_at: delivery_start
     routes:
-      replan_requested: { end: resume }
+      replan_requested: { resume: true }
       failed: gate_epic_escalate
       attempts_exhausted: gate_epic_escalate
 
-  - id: delivery
-    kind: parallel
+  - id: delivery_start
+    kind: delivery.deploy_order
     inputs:
-      branches: []
-      join: all
-      max_concurrency: 1
+      repositories: { expr: "params.repositories" }
+      order: { expr: "params.repositories" }
     routes:
       completed: delivery_report
-      any_failed: delivery_gate
 
   - id: delivery_gate
     kind: delivery.gate
@@ -414,7 +414,7 @@ steps:
           to: revert_prs
         - when: "steps.delivery_gate.choice == 'fix_forward'"
           to: replan
-        - to: delivery
+        - to: delivery_start
       rejected: { end: partial }
 
   - id: revert_prs
@@ -449,7 +449,7 @@ steps:
       mode: agent
       reason: { expr: "steps.plan_tickets.outcome" }
     routes:
-      replan_requested: { end: resume }
+      replan_requested: { resume: true }
       failed: gate_epic_plan
       attempts_exhausted: gate_epic_plan
 
@@ -483,7 +483,7 @@ apiVersion: feature-flow/v1
 kind: PlanPatch
 metadata:
   run_id: run-5678
-  proposed_by: { type: agent, step_id: expand_tickets }
+  proposed_by: { type: engine, step_id: expand_tickets }
   reason: "epic plan produced three tickets"
 base_revision: 1
 resume_at: tickets
@@ -498,10 +498,7 @@ changes:
         plan_ref: feature-flow-default:templates/ticket-delivery
         parameters:
           ticket_id: "EPIC-101"
-          repositories: { expr: "params.repositories" }
-      routes:
-        blocked: gate_epic_escalate
-        replan_parent: replan
+          repositories: ["acme/api"]
   - op: add_branch
     target: tickets
     step:
@@ -512,10 +509,7 @@ changes:
         plan_ref: feature-flow-default:templates/ticket-delivery
         parameters:
           ticket_id: "EPIC-102"
-          repositories: { expr: "params.repositories" }
-      routes:
-        blocked: gate_epic_escalate
-        replan_parent: replan
+          repositories: ["acme/api"]
   - op: add_branch
     target: tickets
     step:
@@ -526,21 +520,23 @@ changes:
         plan_ref: feature-flow-default:templates/ticket-delivery
         parameters:
           ticket_id: "EPIC-103"
-          repositories: { expr: "params.repositories" }
-      routes:
-        blocked: gate_epic_escalate
-        replan_parent: replan
+          repositories: ["acme/api", "acme/web"]
 ```
 
-Three things the second draft got wrong, fixed here:
+Four things the earlier drafts got wrong, fixed here:
 
 - **A2: no `end: completed` on a branch.** A branch's terminal outcome returns to
-  the join. Only non-terminal outcomes (`blocked`, `replan_parent`) are routed,
-  and they route to steps in the parent plan.
-- **A5: `ticket_id` is passed.** `ticket-delivery` declares `ticket_id` as
-  required, so a branch that omitted it would fail check 6 at binding.
-- **A5: `replan_parent` routes to `replan`, which exists.** The second draft
-  routed it to `apply_child_patch`, which did not exist anywhere in the plan.
+  the join.
+- **A1: no routes at all on a branch.** The third draft routed `blocked` and
+  `replan_parent` to parent steps, which left the join and the siblings undefined
+  while that ran. `blocked` is handled inside the child's own plan;
+  `replan_parent` is handled by the interpreter, and siblings keep running.
+- **A5: `ticket_id` is passed.** `ticket-delivery` declares it required, so a
+  branch omitting it would fail check 6 at binding.
+- **B4: the binding matches the patch.** The mapping binds
+  `repositories: "$.repositories"` from each ticket-list item, so the generated
+  patch carries the **bound value**, not `params.repositories`. The third draft
+  showed the mapping and the patch disagreeing.
 
 ### 2.2 Ordered two-repository delivery (A11)
 
@@ -552,37 +548,46 @@ apiVersion: feature-flow/v1
 kind: PlanPatch
 metadata:
   run_id: run-5678
-  proposed_by: { type: agent, step_id: expand_delivery }
+  proposed_by: { type: engine, step_id: expand_delivery }
   reason: "delivery across two repositories in declared order"
 base_revision: 3
-resume_at: delivery
+resume_at: delivery_start
 changes:
-  - op: add_branch
-    target: delivery
+  - op: add_chain
+    target: delivery_start
+    on_other: delivery_gate
     step:
       id: deliver_api
       kind: delivery.deploy
       inputs:
         repository: acme/api
-        environment: production
-      routes:
-        blocked: delivery_gate
-  - op: add_branch
-    target: delivery
+  - op: add_chain
+    target: deliver_api
+    on_other: delivery_gate
     step:
       id: deliver_web
       kind: delivery.deploy
       inputs:
         repository: acme/web
-        environment: production
-      routes:
-        blocked: delivery_gate
 ```
 
-**Order** comes from `max_concurrency: 1` on the `delivery` parallel: one branch
-in flight, in the order the branches were added. That is plan data, as `docs/01`
-7.3 requires, and it answers the second draft's open question — one
-`delivery.deploy` **per repository**, not one re-entered.
+`proposed_by.type` is **`engine`**, not `agent` (review 11 B4): a deterministic
+expansion runs no agent, so attributing it to one is wrong in the audit record.
+
+**Order is a declared dependency, not a concurrency limit** (review 11 A2). The
+third draft used a `parallel` with `max_concurrency: 1`, which is wrong twice:
+with `join: all` a failure in `deliver_api` still lets `deliver_web` run, and
+"in the order added" is an implicit property of a limit rather than a declared
+dependency.
+
+`add_chain` rewires `target`'s `completed` route to the new step and points every
+other outcome at `on_other`. So `deliver_api` completing goes to `deliver_web`;
+`deliver_api` failing goes to `delivery_gate` and `deliver_web` never runs. One
+`delivery.deploy` **per repository**, chained in order — which answers the open
+question from the second draft.
+
+`environment` is gone: it was an installation-specific name, the same problem as
+C3 in review 09. It comes from configuration.
 
 ### 2.3 The epic fix path (A10)
 
@@ -601,10 +606,10 @@ it has to be in the example.
 | A2: branch completion | No terminal routes on branches; the join aggregates |
 | A3: join semantics | `join: all`, `max_concurrency: 2`; `any_failed` to a gate |
 | A10: the epic fix path | `epic_triage` to `epic_fix` to `epic_review` |
-| A11: ordered delivery | One `delivery.deploy` per repository, `max_concurrency: 1` |
+| A11: ordered delivery | One `delivery.deploy` per repository, chained by `add_chain` |
 | B12: gate choice | `delivery_gate` records a choice; guarded routes select on it |
 | C6: `partial` does not route to success | `rejected: { end: partial }`, never `{ end: completed }` |
-| A6: resume point | Every `plan.replan` routes `{ end: resume }` with `resume_at` in inputs |
+| A6: resume point | Every `plan.replan` routes `{ resume: true }` with `resume_at` in inputs |
 
 ---
 
@@ -637,10 +642,7 @@ changes:
         plan_ref: feature-flow-default:templates/ticket-delivery
         parameters:
           ticket_id: "EPIC-102-PLATFORM"
-          repositories: { expr: "params.repositories" }
-      routes:
-        blocked: gate_epic_escalate
-        replan_parent: replan
+          repositories: ["acme/platform"]
   - op: insert_after
     target: epic_review
     step:
@@ -766,10 +768,7 @@ changes:
         plan_ref: feature-flow-default:templates/ticket-delivery
         parameters:
           ticket_id: "EPIC-FIX-1"
-          repositories: { expr: "params.repositories" }
-      routes:
-        blocked: gate_epic_escalate
-        replan_parent: replan
+          repositories: ["acme/api", "acme/web"]
 ```
 
 Both are valid. The integration-branch fix (2.3) is for a finding the epic review
@@ -796,7 +795,7 @@ the `docs/12` section 2 table.
 | 10 Every returnable outcome routed | Pass. Verified mechanically for examples 1 and 2 |
 | 11 Route target exists | Pass. `apply_child_patch` removed; every target resolves |
 | 12 Guarded list has a fallback | Pass. `delivery_gate` ends with an unguarded `to: delivery` |
-| 13 Unreachable step | Pass. `verification_review` is now reachable from `plan_review` |
+| 13 Unreachable step | Pass. `verification_review` is now reachable from `plan_review`. `delivery_gate` is reachable only through the delivery expansion's `on_other`, which `docs/12` 2.3 counts as reachable |
 | 14 Every cycle has an exit | Pass. The test-fix-retest cycle exits via `gate_escalate` |
 | 15 Contract compatibility | Pass. `run_tests` consumes `ticket-plan` from `plan_spec`, which produces it |
 | 16 Producer declares the consumed artifact | Pass |
@@ -818,10 +817,15 @@ checks run in CI rather than by hand.
 
 ## 7. Open questions
 
-- **`run.wait` is reserved and unused.** Removed from the language per review 10.
-  If a worked example needs it, it returns with that example.
-- **Fix ticket versus integration-branch fix** (section 5). Both are shown. Is
-  choosing between them workflow content, or should the engine prefer one?
-- **`delivery.deploy` as a `parallel` branch.** Section 2.2 puts a child-workflow
-  step (DP3) inside a `parallel`. Is that the right composition, or should
-  delivery use `run.child` with a delivery-scoped plan?
+None open. Every question from the earlier drafts was answered in review 10 or 11:
+
+| Question | Answer |
+|---|---|
+| `run.wait` is reserved and unused | Removed from the language per review 10. It returns only if a worked example needs it |
+| Fix ticket versus integration-branch fix (section 5) | Both are shown. **The engine prefers neither** — the choice is workflow content (review 11 D) |
+| `delivery.deploy` as a `parallel` branch | Superseded by A2: delivery is a **chain**, not a parallel. One `delivery.deploy` per repository, linked by routes |
+| One `delivery.deploy` re-entered, or one per repository | One per repository (review 10, answer) |
+
+**Two measurements remain**, assigned to spikes rather than open as design
+questions: the `outputs` cap (Spike 2, review 11 C1) and `insert_after` rewiring
+versus `add_step` plus `change_route` (Spike 1 or 2, review 11 C2).

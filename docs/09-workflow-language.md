@@ -202,7 +202,7 @@ From `docs/01` section 3.3. One field set, snake_case.
   scope: ticket
   protected: true
   inputs:
-    role: roles/implementer
+    role: feature-flow-default:roles/implementer
     task_ref: feature-flow-default:tasks/implement-ticket
     write_access: branch
   requires:
@@ -281,11 +281,25 @@ routes:
 | `{ end: completed }` | The run succeeded |
 | `{ end: failed }` | The run failed |
 | `{ end: partial }` | Delivery: some repositories delivered (`docs/01` 7.3) |
-| `{ end: resume }` | `plan.replan`: continue at the patch's `resume_at` (section 15.1.1) |
+| `{ end: rejected }` | A human rejected and the plan has nowhere else to go |
 
 Typed in the schema as an object with one required `end` property, so no regex
 and no quoting. Step ids must not look like kinds, so a directive is never
 ambiguous with a step id.
+
+**`resume` is not an `end` value** (review 11 A3). `end` is a **run status**, and
+resuming is not one — the run has not ended. The third draft had both
+`{ end: resume }` and `{ resume: true }` in different places. One form, outside
+`end`:
+
+```yaml
+routes:
+  replan_requested: { resume: true }
+```
+
+`{ resume: true }` is a route target in its own right, valid only on a
+`plan.replan` step, and it resolves to the patch's `resume_at` (section 15.1.1).
+`resume` is removed from the `end` enum in `docs/10`.
 
 ### 6.3 Loops are bounded by the engine
 
@@ -330,25 +344,41 @@ From `docs/01` 3.3.1.
 `any_failed` is the aggregate route when a branch fails and the join policy is
 not satisfied.
 
-### 7.0 A branch's terminal outcome returns to the join
+### 7.0 What a branch reports, and what it may route to
 
-Review 10 A2. Directives are **run** statuses (section 6.2), so a branch routing
-`completed: "end: completed"` would end the whole run when one ticket finished.
-The second draft's examples did exactly that.
+Review 10 A2; review 11 A1. Directives are **run** statuses (section 6.2), so a
+branch routing `completed: "end: completed"` would end the whole run when one
+ticket finished. The second draft's examples did exactly that, and the third
+draft then routed branch outcomes to **parent** steps, which left the join and
+the sibling branches undefined while that ran.
 
-> **A branch has no `routes` for its terminal outcomes. Its terminal outcome
-> returns to the enclosing `parallel`, which aggregates.**
+> **A `run.child` branch reports only its terminal outcome and `replan_parent` to
+> the parent. It routes nothing else. `blocked` is handled inside the child's own
+> plan.**
 
-| Branch outcome | Meaning to the join |
-|---|---|
-| `completed` | The branch succeeded; counts towards `all`, `any` or `n` |
-| `failed` | Counts towards `any_failed` |
-| `replan_parent` | The child asks the parent to re-plan. Handled by the parent, not the join |
-| `attempts_exhausted` | Counts towards `any_failed` |
+| Branch outcome | Who handles it | Effect on the join |
+|---|---|---|
+| `completed` | The join | Counts towards `all`, `any` or `n` |
+| `failed` | The join | Counts towards `any_failed` |
+| `attempts_exhausted` | The join | Counts towards `any_failed` |
+| `replan_parent` | **The interpreter** | The child's patch goes through `applyPatch` with the E2 rules. **Siblings keep running** |
+| `blocked` | The child's own plan | Never reaches the parent |
 
-A branch **may** route non-terminal outcomes — `blocked`, `rejected` — to steps
-**inside** the branch, because those do not end it. It may not route a terminal
-outcome anywhere, and it may not use a directive. Validation enforces both.
+Two consequences the third draft got wrong:
+
+- **`replan_parent` is handled by the interpreter, not routed to an agent
+  `replan` step.** Routing it to `replan` would re-plan from
+  `steps.plan_tickets.outcome` and **ignore the child's patch entirely** — the
+  child's discovery would be discarded. The interpreter applies the child's patch
+  through the same `applyPatch`, with the same three results: applied, pending
+  human decision, rejected (section 15.5).
+- **Siblings keep running.** A `replan_parent` from one branch does not suspend
+  the others. The patch applies to future steps; in-flight branches are
+  untouched, which is already the rule for a re-plan arriving while a branch is
+  in flight (`docs/08` 2.1).
+
+A branch therefore has **no `routes` at all** in the common case. It may not use
+a directive, and it may not route a terminal outcome. Validation enforces both.
 
 The `parallel` step's own `routes` carry `completed` and `any_failed`, which is
 where the run-level decision is made.
@@ -364,13 +394,11 @@ step carrying `plan_ref`.
   inputs:
     child_scope: ticket
     plan_ref: feature-flow-default:templates/ticket-delivery
-    repositories: { expr: "params.ticket_a_repos" }
-    protected: false
-  routes:
-    completed: "end: completed"
-    failed: escalate
-    replan_parent: apply_child_patch
-    attempts_exhausted: escalate
+    parameters:
+      ticket_id: "EPIC-101"
+      repositories: { expr: "params.repositories" }
+  # No routes: the branch reports its terminal outcome to the join, and
+  # replan_parent is handled by the interpreter.
 ```
 
 A re-plan may add branches to a `parallel` step that has not started, and may not
@@ -459,6 +487,7 @@ Review 10 A4. Every field, with its type and where its value comes from.
 | `run.aggregate_diff` | string | Same. An artifact reference |
 | `run.tracker_issue` | string | The run request |
 | `run.delivery_ledger` | string | An artifact reference, read through an activity (`docs/01` 7.3) |
+| `run.delivery_prs` | list of string | PR references for the delivery, from the delivery ledger |
 
 Anything that **changes during the run** — `head_sha`, `aggregate_diff` — is a
 reference the consuming step resolves in its activity. It is not a value held in
@@ -557,7 +586,7 @@ Review 09 D1. This was absent from the first draft.
 Artifact types are library content. One type, one JSON Schema.
 
 ```yaml
-artifactTypes:
+artifact_types:
   - name: ticket-plan
     version: 1
     schema_ref: feature-flow-default:schemas/ticket-plan.schema.json
@@ -664,6 +693,10 @@ roles:
     skills: [feature-flow-default:skills/patch-review]
 ```
 
+This is the **role**, so `tools` and `capabilities` belong here — that is where
+section 11.0 says they come from. They are absent from `agent.run` **inputs**,
+which is what stops a step or a patch from setting them.
+
 | Field | Meaning |
 |---|---|
 | `write_access` | `none`, `branch`, `repository`. Enforced by the sandbox and by the hook endpoint on every tool call |
@@ -695,8 +728,9 @@ The rule:
 | `tools` | The role | Nothing |
 | `capabilities` | The role | Nothing |
 
-So a planner step is `role: roles/planner` with `write_access: none` — a
-tightening, which is allowed and which keeps the floor visible in the plan
+So a planner step is `role: feature-flow-default:roles/planner` with
+`write_access: none` — a tightening, which is allowed and which keeps the floor
+visible in the plan
 (review 06, answer 1). A step cannot grant itself `repository` access by naming
 a role that has it and then tightening nothing, because the second control below
 governs which roles a re-plan may introduce.
@@ -849,7 +883,7 @@ transformation that cannot fail if the artifact validates.
         repositories: "$.repositories"
     resume_at: tickets
   routes:
-    replan_requested: { end: resume }
+    replan_requested: { resume: true }
     failed: gate_epic_plan
     attempts_exhausted: gate_epic_plan
 ```
@@ -881,6 +915,16 @@ parent applies it through the same `applyPatch` (`docs/01` 3.4). Already-complet
 steps are untouched; protected steps are intact. This is the `docs/01` section 6.2
 scenario, worked in `docs/13` section 3.
 
+**The interpreter handles it; it is not routed** (review 11 A1). A branch must
+not route `replan_parent` to an agent `replan` step, because that step would
+re-plan from its own inputs — `steps.plan_tickets.outcome` in the epic example —
+and **discard the child's patch**. The child's discovery would be lost, which is
+precisely what `replan_parent` exists to prevent.
+
+The patch goes through `applyPatch` with the same three results as any other
+(section 15.5): applied, pending human decision, or rejected. **Sibling branches
+keep running**; a `replan_parent` from one branch does not suspend the others.
+
 ---
 
 ## 14. Policy references (L12)
@@ -898,7 +942,7 @@ policy.
     context_refs: { expr: "[steps.review.artifacts.findings]" }
   routes:
     approved: merge_pr
-    rejected: "end: rejected"
+    rejected: { end: rejected }
 ```
 
 | Question | Answered by | Where it lives |
@@ -996,6 +1040,9 @@ So the route becomes a constant: every `plan.replan` step routes
 `replan_requested: { resume: true }`, and the interpreter resolves the target
 from the patch. A plan author no longer has to guess where a re-plan will land.
 
+`{ resume: true }` is the **only** form (review 11 A3). The third draft also used
+`{ end: resume }`, which wrongly made resuming a run status.
+
 ### 15.2 "Weaken" is defined
 
 Review 09 E1. Floor F3 says a protected step cannot be removed or weakened.
@@ -1033,6 +1080,7 @@ third was never defined.
 | `change_route` | Change one route of `target` |
 | `add_branch` | Add a branch to a `parallel` at `target` |
 | `remove_branch` | Remove a branch from a `parallel` at `target` |
+| `add_chain` | Add a step chained after `target`: `target`'s `completed` route goes to the new step, every other outcome goes to `on_other`. Section 15.3.2 |
 
 ### 15.3.1 `insert_before` and `insert_after` are defined
 
@@ -1065,6 +1113,67 @@ The consequence: `insert_after` followed by `change_route` on the same target is
 **redundant**, and the second draft's example is fixed in `docs/13` section 3 to
 use `insert_after` alone.
 
+### 15.3.2 Ordered work is a chain, not a concurrency limit
+
+Review 11 A2. The third draft expressed ordered two-repository delivery as a
+`parallel` with `max_concurrency: 1`. That is wrong twice over:
+
+- With `join: all`, if the first repository fails, the second **still runs**,
+  because the join waits for every branch. A failed delivery does not stop the
+  next one.
+- "In the order added" is an implicit property of a concurrency limit, not a
+  declared dependency. Nothing in the plan says the second depends on the first.
+
+**Decision: `mode: expand` gains a `chain` shape.** Order is a declared
+dependency, expressed as routes.
+
+```yaml
+- id: expand_delivery
+  kind: plan.replan
+  inputs:
+    mode: expand
+    shape: chain
+    from: { expr: "params.repositories" }
+    mapping:
+      template: feature-flow-default:templates/repository-delivery
+      target: delivery_start
+      on_other: delivery_gate
+      bind:
+        repository: "$"
+    resume_at: delivery_start
+```
+
+which produces one `add_chain` per item:
+
+```yaml
+changes:
+  - op: add_chain
+    target: delivery_start
+    on_other: delivery_gate
+    step:
+      id: deliver_api
+      kind: delivery.deploy
+      inputs: { repository: acme/api }
+  - op: add_chain
+    target: deliver_api
+    on_other: delivery_gate
+    step:
+      id: deliver_web
+      kind: delivery.deploy
+      inputs: { repository: acme/web }
+```
+
+`add_chain` rewires `target`'s `completed` route to the new step and points every
+**other** outcome of `target` at `on_other`. So `deliver_api` completing goes to
+`deliver_web`; `deliver_api` failing goes to `delivery_gate` and `deliver_web`
+never runs. That is the ordering the brief asks for, and it is visible in the
+plan rather than implied by a number.
+
+**Rejected: `order: sequential` with `stop_on: any_failed` on `parallel`.** It
+would keep the fan-out shape for work that is not fan-out, and it would need a
+second mechanism (`stop_on`) to express what a route already says. The chain
+reuses routing, which is the mechanism the language already has.
+
 ### 15.4 Who may use which operation
 
 Review 09 E6.
@@ -1080,6 +1189,7 @@ Review 09 E6.
 | `change_route` | Yes; if `target` is protected, a **pending human decision** | Yes |
 | `add_branch` | Yes, if the `parallel` has not started | Yes |
 | `remove_branch` | Yes, if the branch is not protected and has not started | Yes |
+| `add_chain` | Yes, if `target` has not started | Yes |
 
 Review 10 B3: the second draft's "Yes, if `target` is not protected" read as
 *rejection*. It is not. An agent patch touching protected content becomes a
@@ -1166,17 +1276,22 @@ Each is applied in the named document.
 
 ## 18. Open questions
 
-- **CEL implementation risk.** `Cel.NET` is chosen on evidence, not on use. If
-  Spike 1 finds the checker cannot be restricted to a deterministic function set,
-  the fallback is a defined subset with a published grammar. Which is acceptable
-  to the product owner?
-- **`end: partial` and the delivery gate.** `docs/01` 7.3 gives a partial delivery
-  three human choices: retry, fix forward, revert. Is that a `delivery.gate` with
-  three options, or three routes from the gate? `docs/13` section 2 currently
-  routes all three to steps.
-- **Artifact type compatibility.** Section 10.3 allows a consumer to accept a
-  type that declares `compatible_with`. Is a declared compatibility list the right
-  mechanism, or should compatibility be structural (a subset of required
-  properties)?
-- **`run.wait` versus `parallel`.** Both exist in `docs/06`. Is `run.wait` for
-  children started outside a `parallel`, or is it redundant?
+None open. Every question from the first and second drafts was answered in review
+10 or 11:
+
+| Question | Answer |
+|---|---|
+| CEL fallback: a hand-written subset with a published grammar | **Acceptable.** Decided by the product owner, 2026-10-27. Spike 1 runs the checks (section 8.1) |
+| `end: partial` and the three delivery choices | A gate keeps `approved` / `rejected` and records a **choice**; guarded routes select on it (section 14.1) |
+| `compatible_with` or structural compatibility | Declared `compatible_with`. Explicit, checkable, and an author decision rather than an accident of shape |
+| `run.wait` versus `parallel` | **`run.wait` is out of the version 1 language** unless a worked example needs it. Removed from the schema enum, reserved in `docs/06` |
+| Per-kind input schemas: generated or hand-written | Generated, in implementation. Recorded as an implementation task |
+| Artifact type compatibility | Declared `compatible_with` (section 10.3) |
+
+**Two measurements remain**, both assigned to spikes rather than open as design
+questions:
+
+| Item | Where |
+|---|---|
+| The `outputs` cap of 16 entries and 256 bytes is a starting value | Spike 2 records actual output sizes per kind (review 11 C1) |
+| `insert_after` with rewiring is argued, not measured | Spike 1 or 2: have the planner agent author patches with both forms on the fixture plans and record validation failure rates (review 11 C2) |

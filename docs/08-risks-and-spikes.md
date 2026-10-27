@@ -153,6 +153,16 @@ stays provisional.
 iteration; killing the real process — and a real sandbox and agent CLI — is the
 exit criterion.
 
+**Also in scope** (review 11 E): the Cel.NET checks from `docs/09` 8.1 — a
+restricted checker, replay determinism, cost estimation, and an enforceable cost
+limit. And, if the agent runtime part is ready, the `insert_after` measurement
+below; otherwise that moves to Spike 2.
+
+| Additional measurement | Why |
+|---|---|
+| **Cel.NET**: restricted checker, replay determinism, cost estimation, cost limit | Closes or changes the CEL choice (`docs/09` 8.1). The fallback is a hand-written subset with a published grammar, accepted by the product owner |
+| **`insert_after` rewiring versus `add_step` plus `change_route`** (review 11 C2) | Have the planner agent author patches with both forms on the fixture plans and record **validation failure rates**. `docs/09` 15.3.1 argues for rewiring; this settles it. Cheap, and it moves to Spike 2 if the agent runtime is not ready |
+
 ### 2.2 Spike 2: one real ticket run
 
 **Question.** Does one ticket run end to end against real providers, on a real
@@ -179,6 +189,7 @@ adopter's distribution.
 | Editing `feature-flow.yaml` mid-run is picked up by the next step, and the hash is recorded | R16 |
 | A gate left open for hours does not time out, and a reminder fires | R8 |
 | **Seed a finding, fix it, run `fix.verify`**: regression test required, checked on the full diff | K4 |
+| **Record actual `outputs` sizes per step kind** (review 11 C1) | The cap of 16 entries and 256 bytes per value is a starting value. This is the measurement that replaces it |
 | **The decline path**: decline reason posted on the PR, and the finding is not re-raised on the next review | K4 |
 | **Approve a gate from chat** (inbound event path), then **drop one webhook deliberately** and show the polling fallback completes the step | K5 |
 

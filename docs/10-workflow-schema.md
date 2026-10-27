@@ -43,7 +43,7 @@ the array.
       "type": "object",
       "additionalProperties": { "$ref": "#/$defs/ParameterDef" }
     },
-    "artifactTypes": {
+    "artifact_types": {
       "type": "array",
       "items": { "$ref": "#/$defs/ArtifactType" }
     },
@@ -162,6 +162,7 @@ the array.
     "RouteTarget": {
       "oneOf": [
         { "$ref": "#/$defs/Directive" },
+        { "$ref": "#/$defs/Resume" },
         { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
         {
           "type": "array",
@@ -174,6 +175,7 @@ the array.
               "to": {
                 "oneOf": [
                   { "$ref": "#/$defs/Directive" },
+                  { "$ref": "#/$defs/Resume" },
                   { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }
                 ]
               }
@@ -201,10 +203,19 @@ the array.
       "type": "object",
       "required": ["end"],
       "properties": {
-        "end": { "enum": ["completed", "failed", "partial", "rejected", "resume"] }
+        "end": { "enum": ["completed", "failed", "partial", "rejected"] }
       },
       "additionalProperties": false,
       "description": "A mapping, not a string: typed in the schema and needs no YAML quoting (review 10 B9)"
+    },
+    "Resume": {
+      "type": "object",
+      "required": ["resume"],
+      "properties": {
+        "resume": { "const": true }
+      },
+      "additionalProperties": false,
+      "description": "Continue at the patch's resume_at. Not an end value: the run has not ended (review 11 A3). Valid only on plan.replan"
     },
     "Expression": {
       "type": "string",
@@ -296,7 +307,7 @@ the array.
           "type": "object",
           "required": ["type"],
           "properties": {
-            "type": { "enum": ["agent", "human", "child_run"] },
+            "type": { "enum": ["agent", "human", "child_run", "engine"] },
             "step_id": { "type": "string" },
             "actor": { "type": "string" },
             "child_run_id": { "type": "string" }
@@ -315,7 +326,7 @@ the array.
           "enum": [
             "insert_before", "insert_after", "replace_step", "remove_step",
             "replace_inputs", "replace_limits", "replace_role", "change_route",
-            "add_branch", "remove_branch"
+            "add_branch", "remove_branch", "add_chain"
           ]
         },
         "target": { "type": "string" },
@@ -324,6 +335,7 @@ the array.
         "limits": { "$ref": "plan/v1#/$defs/Limits" },
         "role": { "type": "string" },
         "branch": { "type": "string" },
+        "on_other": { "type": "string" },
         "outcome": { "type": "string" },
         "to": {
           "oneOf": [
@@ -352,6 +364,7 @@ the array.
 | `change_route` | Step id | `outcome`, `to` | — |
 | `add_branch` | `parallel` step id | `step` | — |
 | `remove_branch` | `parallel` step id | `branch` | — |
+| `add_chain` | Step id to chain after | `step`, `on_other` | — |
 
 ---
 
@@ -371,15 +384,16 @@ The mechanism is a schema per kind, selected by `kind`:
         "properties": {
           "inputs": {
             "type": "object",
-            "required": ["role", "task_ref", "write_access"],
+            "required": ["role", "task_ref"],
             "properties": {
-              "role": { "type": "string" },
+              "role": { "$ref": "#/$defs/LibraryRef" },
               "task_ref": { "$ref": "#/$defs/LibraryRef" },
-              "write_access": { "enum": ["none", "branch", "repository"] },
-              "tools": { "type": "array", "items": { "type": "string" } },
+              "write_access": {
+                "enum": ["none", "branch", "repository"],
+                "description": "Optional TIGHTENING only. Defaults to the role's value. A step may never exceed its role (review 10 A1, review 11 A4)"
+              },
               "bindings": { "type": "object" },
-              "resume_strategy": { "type": "string" },
-              "capabilities": { "type": "array", "items": { "type": "string" } }
+              "resume_strategy": { "type": "string" }
             },
             "additionalProperties": false
           }
@@ -407,13 +421,12 @@ deliverable.**
     "name": "ticket-delivery",
     "scope": "ticket",
     "revision": 1,
-    "schemaVersion": 1,
     "source": "feature-flow-default:templates/ticket-delivery"
   },
   "parameters": {
     "ticket_id": { "type": "string", "required": true }
   },
-  "artifactTypes": [
+  "artifact_types": [
     {
       "name": "ticket-plan",
       "version": 1,
@@ -426,7 +439,7 @@ deliverable.**
       "kind": "agent.run",
       "scope": "ticket",
       "inputs": {
-        "role": "roles/planner",
+        "role": "feature-flow-default:roles/planner",
         "task_ref": "feature-flow-default:tasks/plan-ticket",
         "write_access": "none",
         "bindings": { "ticket_id": { "expr": "params.ticket_id" } }
@@ -447,7 +460,7 @@ deliverable.**
       "kind": "agent.run",
       "protected": true,
       "inputs": {
-        "role": "roles/designer",
+        "role": "feature-flow-default:roles/designer",
         "task_ref": "feature-flow-default:tasks/design",
         "write_access": "none"
       },
@@ -468,7 +481,7 @@ deliverable.**
         "prompt_ref": "feature-flow-default:prompts/spec-approval",
         "context_refs": { "expr": "[steps.plan_spec.artifacts.plan]" }
       },
-      "routes": { "approved": "design", "rejected": "end: rejected" }
+      "routes": { "approved": "design", "rejected": { "end": "rejected" } }
     }
   ]
 }
@@ -488,6 +501,7 @@ deliverable.**
     "reason": "implementation discovered a change needed in a second repository"
   },
   "base_revision": 7,
+  "resume_at": "tickets",
   "changes": [
     {
       "op": "add_branch",
@@ -498,13 +512,10 @@ deliverable.**
         "inputs": {
           "child_scope": "ticket",
           "plan_ref": "feature-flow-default:templates/ticket-delivery",
-          "repositories": { "expr": "params.second_repository" }
-        },
-        "routes": {
-          "completed": "end: completed",
-          "failed": "escalate",
-          "replan_parent": "apply_child_patch",
-          "attempts_exhausted": "escalate"
+          "parameters": {
+            "ticket_id": "EPIC-104",
+            "repositories": { "expr": "params.repositories" }
+          }
         }
       }
     }
@@ -512,16 +523,20 @@ deliverable.**
 }
 ```
 
+No `routes` on the branch: it reports its terminal outcome to the join, and
+`replan_parent` is handled by the interpreter (review 11 A1).
+
 ---
 
 ## 7. Open questions
 
-- **Per-kind input schemas: generated or hand-written?** Section 4 argues for a
-  generator over `docs/06`. That needs `docs/06` to be machine-readable, which it
-  is not today. Is making it so in scope for this brief, or does the first
-  implementation hand-write the forty-one schemas?
-- **`$ref` across documents.** The patch schema references `plan/v1#/$defs/Step`.
-  Is a bundled single-file schema preferred for distribution, or is cross-document
-  `$ref` acceptable?
-- **`schemaVersion` versus `apiVersion`.** Both appear in `PlanMetadata`. Is one
-  redundant?
+None open. Every question from the first and second drafts was answered in review
+10 or 11:
+
+| Question | Answer |
+|---|---|
+| Per-kind input schemas: generated or hand-written | **Generated.** In implementation the catalogue becomes one machine-readable YAML file that `docs/06` and the schemas are both generated from. Recorded as an implementation task, not in scope for this brief |
+| `$ref` across documents | Cross-document `$ref` in source; publish a bundled single file |
+| `schemaVersion` versus `apiVersion` | Redundant. `apiVersion: feature-flow/v1` **is** the plan schema version; `schemaVersion` is dropped, and a package's `requires.plan_schema_version` is expressed as an `apiVersion` |
+| Richer input types | Yes: inputs are typed per step kind, from the catalogue (section 4) |
+| Reference format | One format, `package[@constraint]:type/name` (`docs/11` section 3) |

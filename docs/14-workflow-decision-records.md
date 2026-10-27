@@ -159,7 +159,7 @@ after the package has moved on, and it is what makes a mid-run override auditabl
 
 | Element | Design |
 |---|---|
-| Declaration | `artifactTypes` in the plan, or in the library. One type, one JSON Schema, one version |
+| Declaration | `artifact_types` in the plan, or in the library. One type, one JSON Schema, one version |
 | Producer | A step declares `produces: [{ name, type }]` |
 | Consumer | A step declares `consumes: [{ name, type, from }]` |
 | Producer-side validation | After the step, against the type's schema. On failure the outcome becomes `failed` and **field-level errors are returned to the agent** for a retry, which counts as an attempt |
@@ -373,11 +373,33 @@ sections 1, 2 and 4.
 
 ## Open questions
 
-- **CEL implementation risk** (`docs/09` 18). If Spike 1 finds `Cel.NET` cannot be
-  restricted to a deterministic function set, is a hand-written subset with a
-  published grammar acceptable?
-- **Per-kind input schemas** (`docs/10` 7). Generated from `docs/06`, which would
-  need to become machine-readable, or hand-written forty-one times?
-- **`run.wait` versus `parallel`** (`docs/13` 5). Is `run.wait` redundant?
-- **Artifact type compatibility** (`docs/09` 18). A declared `compatible_with`
-  list, or structural compatibility?
+None open. Every question was answered in review 10 or 11:
+
+| Question | Answer |
+|---|---|
+| CEL fallback: a hand-written subset with a published grammar | **Acceptable.** Decided by the product owner, 2026-10-27 |
+| Per-kind input schemas: generated or hand-written | **Generated.** In implementation the catalogue becomes one machine-readable YAML file that `docs/06` and the schemas are both generated from. An implementation task, not in scope for this brief |
+| `run.wait` versus `parallel` | **`run.wait` is out of the version 1 language** unless a worked example needs it. Reserved in `docs/06` |
+| Artifact type compatibility | Declared `compatible_with`. Explicit, checkable, and an author decision rather than an accident of shape |
+
+## Decisions taken from review 11
+
+| Item | Decision | Applied |
+|---|---|---|
+| A1 | A `run.child` branch reports only its terminal outcome and `replan_parent`. `replan_parent` is handled by the **interpreter**, not routed to an agent `replan` step, which would discard the child's patch. Siblings keep running | `docs/09` 7.0, 13.3; `docs/13` 2.1, 2.2, 3 |
+| A2 | Ordered work is a **chain**, not `max_concurrency: 1`. `mode: expand` gains `shape: chain`, producing `add_chain` operations that link steps by routes | `docs/09` 15.3.2; `docs/13` 2.2 |
+| A3 | One resume form: `{ resume: true }`, outside `end`. `resume` is not a run status | `docs/09` 6.2, 15.1.1; `docs/10` 2 |
+| A4 | `tools` and `capabilities` removed from `agent.run` inputs; `write_access` optional, defaulting to the role's | `docs/10` 4 |
+| C1 | The `outputs` cap is a starting value; Spike 2 records actual sizes | `docs/09` 18 |
+| C2 | `insert_after` rewiring is argued, not measured; a spike records validation failure rates for both forms | `docs/09` 18 |
+
+## Judgement calls accepted by the product owner
+
+Decided 2026-10-27, review 11 section D.
+
+| Call | Decision |
+|---|---|
+| `insert_after` rewires the target's routes | Accepted, subject to the C2 measurement |
+| `outputs` cap of 16 entries and 256 bytes | Accepted as a starting value (C1) |
+| Both epic fix paths shown; the choice is workflow content | Accepted. The engine prefers neither |
+| `docs/07` configuration stays camelCase; plans and library content are snake_case | Accepted. The boundary is stated once, in `docs/09` section 1 |

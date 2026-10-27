@@ -54,7 +54,7 @@ Consequences:
 | 10 | **Every outcome the kind can return is routed** | Load | Yes | Routing |
 | 11 | Route target is a step id that exists, or a directive | Load | Yes | Routing |
 | 12 | A guarded route list ends with an unguarded fallback | Load | Yes | Routing |
-| 13 | **Unreachable step** | Load | Yes | Execution |
+| 13 | **Unreachable step** | Load | Yes | Execution. A step named in an `expand` mapping's `target` or `on_other` counts as reachable — see section 2.3 |
 | 14 | **Every cycle has a route out** | Load | Yes | Execution |
 | 15 | **Producer and consumer contract compatibility** | Load | Yes | Execution |
 | 16 | Consumed artifact's producer step exists and declares it | Load | Yes | Execution |
@@ -75,6 +75,22 @@ Consequences:
 | 31 | Step id not in snake_case style | Load | **No** | Cosmetic |
 
 Checks 10, 13, 14, 15 and 25 are the ones review 09 F3 said were missing.
+
+### 2.3 Reachability and expansion
+
+Review 11 A2 introduced `mode: expand`, which generates steps that do not exist
+at load. `delivery_gate` in `docs/13` section 2 is reachable **only** from the
+`on_other` of the delivery expansion, so a naive reachability check would flag it
+as unreachable and block a valid plan.
+
+> A step is reachable if it is the target of a route, **or** if it is named in an
+> `expand` mapping's `target` or `on_other`, **or** if it is named in a patch
+> operation's `target`, `on_other` or `resume_at`.
+
+The check therefore runs over the plan **plus** every `expand` mapping declared in
+it, not over the literal step graph alone. A step reachable only through an
+expansion is still validated for its own routes and outcomes at load, because its
+shape is known from the mapping's template.
 
 ### 2.2 Check 25 has three results, not two
 
