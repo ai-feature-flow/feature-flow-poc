@@ -11,3 +11,4 @@ obj/
 
 # Spike 1 local run state: Temporal dev server database and process logs
 .spike/
+spikes/01-interpreter/.logs/
