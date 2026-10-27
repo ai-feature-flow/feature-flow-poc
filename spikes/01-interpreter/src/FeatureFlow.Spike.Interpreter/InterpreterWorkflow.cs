@@ -423,6 +423,12 @@ public class InterpreterWorkflow
                 run.InfrastructureFailures++;
                 infrastructureFailures++;
 
+                // Review 12 A4: record the failure as it happens, so a stalled
+                // run is observable while it is stalled rather than only after
+                // the step finishes.
+                stepDetails[step.Id] = run;
+                RecordStore.ForRun(Workflow.Info.WorkflowId).RecordStepRun(run);
+
                 var backoff = BackoffFor(infrastructureFailures);
                 state.LastInfrastructureError =
                     $"step {step.Id} infrastructure failure {infrastructureFailures}: " +
