@@ -46,7 +46,10 @@ public static class PlanGenerator
     {
         var plan = new Plan { Entry = "plan_spec", Revision = 1 };
 
-        plan.Steps.Add(Agent("plan_spec", "run_tests", 8));
+        // plan_spec -> implement -> run_tests. implement is protected, so it
+        // must be reachable from the entry point or every patch is rejected as
+        // a bypass (docs/09 15.2).
+        plan.Steps.Add(Agent("plan_spec", "implement", 8));
 
         // A protected step. A re-plan will try to remove it (R7).
         plan.Steps.Add(new Step
@@ -94,13 +97,14 @@ public static class PlanGenerator
 
         // docs/09 7.0: a branch reports only its terminal outcome to the join.
         // It routes nothing else, and it may not use a directive.
+        // Long enough that a patch can be sent while they are in flight.
         foreach (var branch in new[] { "ticket_a", "ticket_b", "ticket_c" })
         {
             plan.Steps.Add(new Step
             {
                 Id = branch,
                 Kind = "notify.send",
-                SimulatedDuration = "10",
+                SimulatedDuration = "30",
                 Routes = new(StringComparer.Ordinal),
             });
         }

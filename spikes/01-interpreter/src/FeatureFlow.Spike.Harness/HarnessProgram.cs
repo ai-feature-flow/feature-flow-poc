@@ -27,6 +27,7 @@ public static class HarnessProgram
             "history" => await HistoryAsync(client, queue, int.Parse(Arg(args, "--steps") ?? "200")),
             "slots" => await SlotsAsync(client, queue, int.Parse(Arg(args, "--concurrency") ?? "8")),
             "inspect" => await InspectAsync(client, Arg(args, "--id") ?? ""),
+            "patch" => await PatchTests.RunAsync(client, queue),
             _ => Help(),
         };
     }
@@ -198,6 +199,8 @@ public static class HarnessProgram
               smoke                       run the spec plan once
               history  --steps 200        measure history size at continue-as-new
               slots    --concurrency 8    measure worker slot capacity
+              patch                       patch tests: exit criteria 2, 3, 4
+              inspect  --id <workflow>    query a run's state
             """);
         return 0;
     }

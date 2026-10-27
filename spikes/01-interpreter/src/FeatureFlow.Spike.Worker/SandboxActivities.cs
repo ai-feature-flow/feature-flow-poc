@@ -78,7 +78,7 @@ public sealed class SandboxActivities : ISpikeActivities
     [Activity]
     public async Task<AgentRunResult> RunGenericStepAsync(GenericStepRequest request)
     {
-        await Task.Delay(TimeSpan.FromMilliseconds(request.DurationSeconds));
+        await Task.Delay(TimeSpan.FromSeconds(request.DurationSeconds));
         return new AgentRunResult(Outcomes.Completed);
     }
     [Activity]
