@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>FeatureFlow.Spike.Ci</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\01-interpreter\src\FeatureFlow.Spike.Contracts\FeatureFlow.Spike.Contracts.csproj" />
+    <ProjectReference Include="..\FeatureFlow.Spike.Providers\FeatureFlow.Spike.Providers.csproj" />
+  </ItemGroup>
+
+</Project>
