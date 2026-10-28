@@ -50,6 +50,31 @@ public sealed class RecordStore
         }
     }
 
+    /// <summary>
+    /// Read a run's records straight from disk. The worker writes them in a
+    /// different process, so an in-memory store held by the harness would not
+    /// see them.
+    /// </summary>
+    public static List<RecordEntry> Read(string runId)
+    {
+        var dir = Environment.GetEnvironmentVariable("FF_RECORD_STORE")
+                  ?? Path.Combine(Path.GetTempPath(), "ff-record-store");
+        var path = Path.Combine(dir, $"{runId}.json");
+        if (!File.Exists(path))
+            return new List<RecordEntry>();
+
+        try
+        {
+            var json = File.ReadAllText(path);
+            return JsonSerializer.Deserialize<List<RecordEntry>>(json, Json)
+                   ?? new List<RecordEntry>();
+        }
+        catch
+        {
+            return new List<RecordEntry>();
+        }
+    }
+
     public void RecordStepRun(StepRunDetail detail)
     {
         entries.Add(new RecordEntry("step_run", DateTimeOffset.UtcNow, detail));
@@ -78,6 +103,10 @@ public sealed class RecordStore
 
     public sealed class RecordEntry
     {
+        public RecordEntry()
+        {
+        }
+
         public RecordEntry(string kind, DateTimeOffset at, object payload)
         {
             Kind = kind;
@@ -85,10 +114,25 @@ public sealed class RecordStore
             Payload = payload;
         }
 
-        public string Kind { get; }
+        public string Kind { get; set; } = "";
 
-        public DateTimeOffset At { get; }
+        public DateTimeOffset At { get; set; }
 
-        public object Payload { get; }
+        /// <summary>
+        /// Deserialised as a JsonElement, because the payload type varies by
+        /// kind. Callers cast with PayloadAs.
+        /// </summary>
+        public object? Payload { get; set; }
+
+        public T? PayloadAs<T>() where T : class
+        {
+            if (Payload is T typed)
+                return typed;
+            if (Payload is System.Text.Json.JsonElement e)
+            {
+                return System.Text.Json.JsonSerializer.Deserialize<T>(e.GetRawText(), Json);
+            }
+            return null;
+        }
     }
 }

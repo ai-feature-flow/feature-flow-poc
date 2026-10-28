@@ -600,9 +600,9 @@ public static class CrashTests
     /// from workflow state.
     /// </summary>
     private static StepRunDetail? Detail(string runId, string stepId) =>
-        RecordStore.ForRun(runId).Entries
+        RecordStore.Read(runId)
             .Where(e => e.Kind == "step_run")
-            .Select(e => (StepRunDetail)e.Payload)
+            .Select(e => e.PayloadAs<StepRunDetail>()).Where(d => d is not null).Select(d => d!)
             .LastOrDefault(d => d.StepId == stepId);
 
     /// <summary>Waits until the sandbox has a command for the step, with progress.</summary>

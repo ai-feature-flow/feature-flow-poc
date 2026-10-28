@@ -112,9 +112,9 @@ public static class HarnessProgram
 
         // Review 12 A1: samples go to the record store, not to carried state.
         // Read them back from there.
-        var samples = RecordStore.ForRun(id).Entries
+        var samples = RecordStore.Read(id)
             .Where(e => e.Kind == "history_sample")
-            .Select(e => (HistorySample)e.Payload)
+            .Select(e => e.PayloadAs<HistorySample>()).Where(d => d is not null).Select(d => d!)
             .ToList();
 
         Console.WriteLine($"HARNESS result={result}");
@@ -196,9 +196,9 @@ public static class HarnessProgram
             Console.WriteLine($"  {stepId} -> {record.Outcome}");
 
         // Detail is not carried; read it from the record store.
-        var details = RecordStore.ForRun(id).Entries
+        var details = RecordStore.Read(id)
             .Where(e => e.Kind == "step_run")
-            .Select(e => (StepRunDetail)e.Payload)
+            .Select(e => e.PayloadAs<StepRunDetail>()).Where(d => d is not null).Select(d => d!)
             .ToList();
         Console.WriteLine($"HARNESS stepRunDetail (record store):");
         foreach (var d in details)

@@ -209,9 +209,11 @@ public static class PatchTests
 
     private static async Task ApproveGatesAsync(WorkflowHandle<InterpreterWorkflow> handle)
     {
+        // Poll slowly: a tight query loop fills the server's consistent query
+        // buffer and makes the workflow unqueryable.
         for (var i = 0; i < 20; i++)
         {
-            await Task.Delay(1000);
+            await Task.Delay(3000);
             try
             {
                 var state = await handle.QueryAsync(w => w.State());

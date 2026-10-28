@@ -1,0 +1,20 @@
+{
+  "steps": 120,
+  "result": "completed",
+  "samples": [
+    {
+      "ContinueAsNewIndex": 0,
+      "HistoryLengthBytes": 124356,
+      "HistoryEventCount": 510,
+      "StepsExecuted": 76,
+      "CarriedStateBytes": 58347
+    },
+    {
+      "ContinueAsNewIndex": 1,
+      "HistoryLengthBytes": 151571,
+      "HistoryEventCount": 285,
+      "StepsExecuted": 120,
+      "CarriedStateBytes": 60661
+    }
+  ]
+}

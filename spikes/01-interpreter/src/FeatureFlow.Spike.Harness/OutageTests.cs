@@ -102,9 +102,9 @@ public static class OutageTests
         var outcome = after.StepOutcomes.TryGetValue("long_agent", out var r) ? r.Outcome : null;
 
         // Detail is not carried (review 12 A1); read it from the record store.
-        var run = RecordStore.ForRun(id).Entries
+        var run = RecordStore.Read(id)
             .Where(e => e.Kind == "step_run")
-            .Select(e => (StepRunDetail)e.Payload)
+            .Select(e => e.PayloadAs<StepRunDetail>()).Where(d => d is not null).Select(d => d!)
             .LastOrDefault(d => d.StepId == "long_agent");
 
         Console.WriteLine($"OUTAGE: result={result} outcome={outcome} " +

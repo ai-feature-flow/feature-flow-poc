@@ -110,9 +110,9 @@ public static class BlockAccessTests
 
         var state = await handle.QueryAsync(w => w.State());
         var outcome = state.StepOutcomes.TryGetValue("block_agent", out var r) ? r.Outcome : null;
-        var detail = RecordStore.ForRun(id).Entries
+        var detail = RecordStore.Read(id)
             .Where(e => e.Kind == "step_run")
-            .Select(e => (StepRunDetail)e.Payload)
+            .Select(e => e.PayloadAs<StepRunDetail>()).Where(d => d is not null).Select(d => d!)
             .LastOrDefault(d => d.StepId == "block_agent");
 
         Console.WriteLine($"BLOCK: result={result} outcome={outcome} " +

@@ -14,3 +14,15 @@ WORKER starting queue=spike-1 sandbox=http://127.0.0.1:5199 maxConcurrentActivit
 WORKER ready
 WORKER starting queue=spike-1 sandbox=http://127.0.0.1:5199 maxConcurrentActivities=10 pid=25300
 WORKER ready
+WORKER starting queue=spike-1 sandbox=http://127.0.0.1:5199 maxConcurrentActivities=10 pid=32876
+WORKER ready
+WORKER starting queue=spike-1 sandbox=http://127.0.0.1:5199 maxConcurrentActivities=10 pid=36720
+WORKER ready
+WORKER starting queue=spike-1 sandbox=http://127.0.0.1:5199 maxConcurrentActivities=10 pid=25180
+WORKER ready
+WORKER starting queue=spike-1 sandbox=http://127.0.0.1:5199 maxConcurrentActivities=10 pid=1836
+WORKER ready
+WORKER starting queue=spike-1 sandbox=http://127.0.0.1:5199 maxConcurrentActivities=10 pid=14540
+WORKER ready
+WORKER starting queue=spike-1 sandbox=http://127.0.0.1:5199 maxConcurrentActivities=10 pid=32380
+WORKER ready
