@@ -1,0 +1,34 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FeatureFlow.Spike.Contracts", "..\..\01-interpreter\src\FeatureFlow.Spike.Contracts\FeatureFlow.Spike.Contracts.csproj", "{1D0C5E7C-36A4-4AF2-B75C-4F110A5FF4A8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FeatureFlow.Spike.Providers", "FeatureFlow.Spike.Providers\FeatureFlow.Spike.Providers.csproj", "{7C4A1E92-5B3D-4F18-9A6C-2E5D8B41F0A7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FeatureFlow.Spike.Verify", "FeatureFlow.Spike.Verify\FeatureFlow.Spike.Verify.csproj", "{3F9B2D64-8C71-4E35-B0A9-6D1C7E53B284}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{1D0C5E7C-36A4-4AF2-B75C-4F110A5FF4A8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1D0C5E7C-36A4-4AF2-B75C-4F110A5FF4A8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1D0C5E7C-36A4-4AF2-B75C-4F110A5FF4A8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1D0C5E7C-36A4-4AF2-B75C-4F110A5FF4A8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7C4A1E92-5B3D-4F18-9A6C-2E5D8B41F0A7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7C4A1E92-5B3D-4F18-9A6C-2E5D8B41F0A7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7C4A1E92-5B3D-4F18-9A6C-2E5D8B41F0A7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7C4A1E92-5B3D-4F18-9A6C-2E5D8B41F0A7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3F9B2D64-8C71-4E35-B0A9-6D1C7E53B284}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3F9B2D64-8C71-4E35-B0A9-6D1C7E53B284}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3F9B2D64-8C71-4E35-B0A9-6D1C7E53B284}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3F9B2D64-8C71-4E35-B0A9-6D1C7E53B284}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

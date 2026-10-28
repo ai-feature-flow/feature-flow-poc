@@ -14,7 +14,8 @@ public sealed record ProviderError(
     ErrorClass Class,
     string Reason,
     TimeSpan? RetryAfter = null,
-    string? RemoteId = null);
+    string? RemoteId = null,
+    string? Detail = null);
 
 public sealed record ProviderResult<T>(T? Value, ProviderError? Error)
 {
@@ -25,11 +26,11 @@ public sealed record ProviderResult<T>(T? Value, ProviderError? Error)
 
     public static ProviderResult<T> Fail(ProviderError error) => new(default, error);
 
-    public static ProviderResult<T> Infrastructure(string reason, TimeSpan? retryAfter = null) =>
-        new(default, new ProviderError(ErrorClass.Infrastructure, reason, retryAfter));
+    public static ProviderResult<T> Infrastructure(string reason, TimeSpan? retryAfter = null, string? detail = null) =>
+        new(default, new ProviderError(ErrorClass.Infrastructure, reason, retryAfter, null, detail));
 
-    public static ProviderResult<T> Work(string reason) =>
-        new(default, new ProviderError(ErrorClass.Work, reason));
+    public static ProviderResult<T> Work(string reason, string? detail = null) =>
+        new(default, new ProviderError(ErrorClass.Work, reason, null, null, detail));
 }
 
 /// <summary>
