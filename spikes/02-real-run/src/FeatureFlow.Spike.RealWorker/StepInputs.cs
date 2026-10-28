@@ -1,0 +1,166 @@
+using System.Text.Json;
+using FeatureFlow.Spike.CodeHost;
+using FeatureFlow.Spike.Contracts;
+
+namespace FeatureFlow.Spike.RealWorker;
+
+/// <summary>
+/// Reads step inputs. Plan inputs arrive as <c>object?</c> and may be a
+/// <see cref="JsonElement"/> after deserialisation, so a plain cast is not
+/// enough — the same problem <c>ParallelInputs.FromInputs</c> solves in
+/// Contracts.
+/// </summary>
+public static class Inputs
+{
+    /// <summary>The role reference, e.g. "feature-flow-default:roles/planner".</summary>
+    public static string? Role(Step step) => Text(step, "role");
+
+    /// <summary>docs/06 2.2: write access is a mechanism, roles are content.</summary>
+    public static string WriteAccess(Step step) => Text(step, "write_access") ?? "branch";
+
+    public static string? Text(Step step, string name)
+    {
+        if (!step.Inputs.TryGetValue(name, out var value) || value is null)
+            return null;
+
+        var text = value switch
+        {
+            string s => s,
+            JsonElement e when e.ValueKind == JsonValueKind.String => e.GetString(),
+            _ => value.ToString(),
+        };
+
+        return string.IsNullOrWhiteSpace(text) ? null : text;
+    }
+
+    /// <summary>A list of strings, e.g. tier tags.</summary>
+    public static List<string> List(Step step, string name)
+    {
+        if (!step.Inputs.TryGetValue(name, out var value) || value is null)
+            return new List<string>();
+
+        if (value is JsonElement e && e.ValueKind == JsonValueKind.Array)
+            return e.EnumerateArray().Select(x => x.ToString()).ToList();
+
+        if (value is IEnumerable<object?> items)
+            return items.Select(x => x?.ToString() ?? "").Where(x => x.Length > 0).ToList();
+
+        return new List<string>();
+    }
+}
+
+/// <summary>
+/// Step limits. docs/06 2.1: start_to_close defaults to 4h and heartbeat to 30s.
+/// </summary>
+public static class Limits
+{
+    public static TimeSpan WallClock(Step step)
+    {
+        var text = step.Limits?.StartToClose;
+        if (string.IsNullOrWhiteSpace(text))
+            return TimeSpan.FromHours(4);
+
+        try
+        {
+            return System.Xml.XmlConvert.ToTimeSpan(text);
+        }
+        catch (FormatException)
+        {
+            return TimeSpan.FromHours(4);
+        }
+    }
+}
+
+/// <summary>
+/// The prompt for a step. docs/09 12.2: the prompt is content, rendered from the
+/// task; the model and endpoint are configuration and are deliberately absent.
+/// </summary>
+public static class Prompt
+{
+    public static string For(Step step, RunContext context, FileContent? manifest)
+    {
+        var role = Inputs.Role(step) ?? "implementer";
+        var write = Inputs.WriteAccess(step);
+
+        var manifestNote = manifest is null
+            ? "feature-flow.yaml was not readable on this branch."
+            : $"feature-flow.yaml on {manifest.Ref} is {manifest.SizeBytes} bytes, hash sha256:{manifest.ContentHash}.";
+
+        // A concrete task, not an open-ended one. The spike's model is small, so
+        // the step must say exactly what to change and exactly what to run. An
+        // open-ended prompt makes the agent describe work instead of doing it,
+        // which produces no commit and no progress evidence.
+        var task = TaskFor(step.Id);
+
+        return $"""
+            You are the {role} for ticket {context.TicketId} in the repository
+            {RunContext.Owner}/{RunContext.Repository}, on branch {context.Branch}.
+
+            Working directory: {context.WorkingDirectory}
+            Write access: {write}
+            {manifestNote}
+
+            YOUR TASK — do exactly this, nothing else:
+            {task}
+
+            Use your tools to edit the file. Then commit the change with git:
+              git add <the file you changed>
+              git commit -m "{context.TicketId}: {step.Id}"
+
+            Do NOT push. Do NOT run tests. Do NOT create a pull request.
+            When you are done, reply with one short sentence saying what you changed.
+            """;
+    }
+
+    /// <summary>
+    /// The concrete task for each agent step. Spike scope: the ticket is a small,
+    /// real change to the fixture, so the run produces a real commit and a real
+    /// diff for review to look at.
+    /// </summary>
+    private static string TaskFor(string stepId) => stepId switch
+    {
+        "plan_spec" =>
+            "Create the file docs/ticket-plan.md containing a three-line plan: the goal, " +
+            "the file to change, and the test to add.",
+
+        "design" =>
+            "Append a short '## Design' section to docs/ticket-plan.md describing the " +
+            "Count() method: its signature, what it returns, and why it belongs on WidgetStore.",
+
+        "implement" =>
+            "Add a public method Count() to the WidgetStore class in " +
+            "src/FeatureFlow.Example.Api/WidgetStore.cs. It must return the number of " +
+            "widgets as an int. Place it immediately after the Add method.",
+
+        "fix_findings" =>
+            "Add a unit test to tests/FeatureFlow.Example.Api.UnitTests/WidgetStoreTests.cs " +
+            "named Count_returns_the_number_of_widgets. It must create a WidgetStore, add " +
+            "two widgets, and assert that Count() returns 2. Keep the [Trait(\"Category\", " +
+            "\"unit\")] attribute on the class.",
+
+        _ =>
+            "Append one line to docs/ticket-plan.md noting that this step ran.",
+    };
+
+    /// <summary>
+    /// Whether the step's work is applied by the runtime directly rather than by
+    /// the model.
+    ///
+    /// <para>
+    /// The model behind this spike's runtime is a local 7B/8B model reached
+    /// through Ollama. It cannot reliably emit tool calls: Ollama returns the
+    /// tool call as prose text rather than a structured tool_use block, so the
+    /// runtime never acts on it. That is an environment limitation, not a
+    /// property of the engine.
+    /// </para>
+    ///
+    /// <para>
+    /// So the step's <b>work</b> is applied by the runtime, and everything around
+    /// it stays real: the runtime is really started and polled, the commit is
+    /// really made on the branch, the diff is really read from the code host, CI
+    /// is really dispatched, the PR is really opened and merged. The report says
+    /// plainly which part is model-authored and which is not.
+    /// </para>
+    /// </summary>
+    public static bool WorkIsScripted => true;
+}

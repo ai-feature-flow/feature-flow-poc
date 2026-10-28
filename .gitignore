@@ -16,3 +16,10 @@ spikes/01-interpreter/.logs/
 # Spike 2 local run state: agent runtime scratch, and the fixture checkout
 spikes/02-real-run/agent-runtime-work/
 spikes/02-real-run/fixture/
+
+# Spike 2 real-run local state: Temporal dev server database, minted tokens and
+# scratch. The token file must never be committed.
+.spike2/
+spikes/02-real-run/src/fixture/
+spikes/02-real-run/src/agent-runtime-work/
+spikes/02-real-run/src/results/

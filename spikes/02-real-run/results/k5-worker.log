@@ -1,0 +1,12 @@
+WORKER starting queue=spike-2-real address=localhost:7333 repo=D:\Dev\feature-flow-poc\spikes\02-real-run\fixture branch=ff/ticket/spike2-final base=main run=final-run pid=24144
+WORKER plan 17 steps, entry plan_spec
+WORKER ready
+WORKER starting queue=spike-2-real address=localhost:7333 repo=D:\Dev\feature-flow-poc\spikes\02-real-run\fixture branch=ff/ticket/spike2-final base=main run=final-run pid=36244
+WORKER plan 17 steps, entry plan_spec
+WORKER ready
+WORKER starting queue=spike-2-real address=localhost:7333 repo=D:\Dev\feature-flow-poc\spikes\02-real-run\fixture branch=ff/ticket/spike2-final base=main run=final-run pid=26328
+WORKER plan 17 steps, entry plan_spec
+WORKER ready
+WORKER starting queue=spike-2-real address=localhost:7333 repo=D:\Dev\feature-flow-poc\spikes\02-real-run\fixture branch=ff/ticket/spike2-final base=main run=final-run pid=39156
+WORKER plan 17 steps, entry plan_spec
+WORKER ready

@@ -1,0 +1,90 @@
+[
+  {
+    "Kind": "agent.run",
+    "Steps": 4,
+    "Entries": 5,
+    "MaxValueBytes": 40,
+    "TotalBytes": 104,
+    "VsCap": "within"
+  },
+  {
+    "Kind": "ci.wait_checks",
+    "Steps": 1,
+    "Entries": 2,
+    "MaxValueBytes": 7,
+    "TotalBytes": 8,
+    "VsCap": "within"
+  },
+  {
+    "Kind": "findings.evaluate_readiness",
+    "Steps": 1,
+    "Entries": 2,
+    "MaxValueBytes": 4,
+    "TotalBytes": 5,
+    "VsCap": "within"
+  },
+  {
+    "Kind": "findings.triage",
+    "Steps": 1,
+    "Entries": 2,
+    "MaxValueBytes": 6,
+    "TotalBytes": 7,
+    "VsCap": "within"
+  },
+  {
+    "Kind": "fix.verify",
+    "Steps": 1,
+    "Entries": 2,
+    "MaxValueBytes": 59,
+    "TotalBytes": 65,
+    "VsCap": "within"
+  },
+  {
+    "Kind": "human.gate",
+    "Steps": 4,
+    "Entries": 1,
+    "MaxValueBytes": 8,
+    "TotalBytes": 8,
+    "VsCap": "within"
+  },
+  {
+    "Kind": "plan.replan",
+    "Steps": 1,
+    "Entries": 1,
+    "MaxValueBytes": 26,
+    "TotalBytes": 26,
+    "VsCap": "within"
+  },
+  {
+    "Kind": "review.run",
+    "Steps": 1,
+    "Entries": 3,
+    "MaxValueBytes": 71,
+    "TotalBytes": 81,
+    "VsCap": "within"
+  },
+  {
+    "Kind": "scm.merge",
+    "Steps": 1,
+    "Entries": 3,
+    "MaxValueBytes": 40,
+    "TotalBytes": 49,
+    "VsCap": "within"
+  },
+  {
+    "Kind": "scm.open_pr",
+    "Steps": 1,
+    "Entries": 2,
+    "MaxValueBytes": 40,
+    "TotalBytes": 41,
+    "VsCap": "within"
+  },
+  {
+    "Kind": "test.run_tiers",
+    "Steps": 1,
+    "Entries": 3,
+    "MaxValueBytes": 16,
+    "TotalBytes": 34,
+    "VsCap": "within"
+  }
+]

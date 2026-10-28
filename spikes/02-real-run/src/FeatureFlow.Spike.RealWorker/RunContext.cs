@@ -1,0 +1,258 @@
+using System.Text.Json;
+using FeatureFlow.Spike.AgentRuntime;
+using FeatureFlow.Spike.Ci;
+using FeatureFlow.Spike.CodeHost;
+using FeatureFlow.Spike.Contracts;
+using FeatureFlow.Spike.Interpreter;
+using FeatureFlow.Spike.Providers;
+
+// Two sibling projects each define a type the other also needs, and neither
+// should win: the code host declares its own ICredentialBroker seam, and the
+// agent runtime's AgentProgress is the runtime's own record while Contracts'
+// is the heartbeat payload. Aliased rather than renamed, as the sibling
+// harnesses do.
+using AgentProgress = FeatureFlow.Spike.AgentRuntime.AgentProgress;
+using FileContent = FeatureFlow.Spike.CodeHost.FileContent;
+using ICredentialBroker = FeatureFlow.Spike.Providers.ICredentialBroker;
+using Actor = FeatureFlow.Spike.Providers.Actor;
+using Credential = FeatureFlow.Spike.CodeHost.Credential;
+using ITokenFactory = FeatureFlow.Spike.CodeHost.ITokenFactory;
+using RepoRef = FeatureFlow.Spike.CodeHost.RepoRef;
+
+namespace FeatureFlow.Spike.RealWorker;
+
+/// <summary>
+/// Everything one real run needs: the plan, the repository it runs against, and
+/// the provider instances the organisation layer selected.
+///
+/// <para>
+/// Spike 1's <see cref="ISpikeActivities"/> passes only a step id, so the
+/// activity resolves the step from the plan the worker was started with. In
+/// production the engine would pass the rendered step; for the spike the worker
+/// holding the plan is the smaller change, and it keeps Spike 1's contract
+/// untouched.
+/// </para>
+/// </summary>
+public sealed class RunContext
+{
+    /// <summary>The fixture repository. Public, owned by the project (review 08, answer 3).</summary>
+    public const string Owner = "ai-feature-flow";
+    public const string Repository = "feature-flow-example";
+
+    private readonly object costGate = new();
+
+    public RunContext(
+        string runId,
+        Plan plan,
+        string workingDirectory,
+        string branch,
+        string integrationBranch,
+        string ticketId,
+        string recordDirectory)
+    {
+        RunId = runId;
+        Plan = plan;
+        WorkingDirectory = workingDirectory;
+        Branch = branch;
+        IntegrationBranch = integrationBranch;
+        TicketId = ticketId;
+        RecordDirectory = recordDirectory;
+
+        Directory.CreateDirectory(RecordDirectory);
+
+        CodeHostRepo = new CodeHost.RepoRef(Owner, Repository);
+        CiRepo = new Ci.RepoRef(Owner, Repository);
+
+        var scrubber = new SecretScrubber();
+        Secrets = new LocalFileSecretsProvider(scrubber: scrubber);
+
+        // The broker refuses rather than widens (docs/05 12), so the grantable
+        // set names this one repository and the permissions a branch-and-PR run
+        // needs. Nothing else can be minted.
+        Broker = new GitHubAppCredentialBroker(
+            Secrets,
+            scrubber: scrubber,
+            grantable: new[]
+            {
+                // contents:read is listed alongside contents:write because
+                // GitHub's contents API rejects a token that has write but not
+                // read: it answers 422 validation_failed. Requesting both is
+                // what the remote actually grants, and it is still narrower
+                // than the installation's full grant.
+                GrantableScope.ForRepository(
+                    $"{Owner}/{Repository}",
+                    "contents:write",
+                    "contents:read",
+                    "pull_requests:write",
+                    "actions:write",
+                    "metadata:read"),
+            });
+
+        // The code host declares its own ITokenFactory seam, and the sibling
+        // project's BrokerTokenFactory adapts the full broker down to it. The
+        // two ICredentialBroker declarations are the same shape, so this adapter
+        // bridges them rather than either project taking a dependency on the
+        // other's seam.
+        CodeHost = new GitHubCodeHostProvider(
+            new ProvidersBrokerTokenFactory(Broker, Actor.Engine("real-worker"), TimeSpan.FromMinutes(30)),
+            new InMemoryArtifactStore());
+
+        Tiers = CiTierMap.ForFeatureFlowExample(Branch);
+        Ci = new GitHubActionsCiProvider(
+            broker: Broker,
+            tiers: Tiers,
+            instanceName: "github-actions",
+            defaultRef: Branch,
+            defaultRepo: CiRepo);
+
+        Runtimes = RuntimeRegistry.Create(Secrets, scrubber, workingDirectory);
+    }
+
+    public string RunId { get; }
+    public Plan Plan { get; }
+    public string WorkingDirectory { get; }
+    public string Branch { get; }
+    public string IntegrationBranch { get; }
+    public string TicketId { get; }
+    public string RecordDirectory { get; }
+
+    public CodeHost.RepoRef CodeHostRepo { get; }
+    public Ci.RepoRef CiRepo { get; }
+
+    public ISecretsProvider Secrets { get; }
+    public ICredentialBroker Broker { get; }
+    public ICodeHostProvider CodeHost { get; }
+    public ICiProvider Ci { get; }
+    public CiTierMap Tiers { get; }
+    public RuntimeRegistry Runtimes { get; }
+
+    public Step? Step(string stepId) => Plan.ById(stepId);
+
+    /// <summary>The sandbox handle the agent runtime runs in: the real checkout.</summary>
+    public SandboxHandle Sandbox(string stepId) => new(
+        Key: Marker.Key(RunId, stepId, Branch),
+        WorkingDirectory: WorkingDirectory,
+        Os: "windows",
+        Persistent: false);
+
+    /// <summary>docs/05 1.1: stable inputs only, so a resume re-adopts the same object.</summary>
+    public string IdempotencyKey(string stepId, params string[] stableInputs) =>
+        Marker.Key(RunId, stepId, stableInputs);
+
+    // ------------------------------------------------------------------ R13
+
+    /// <summary>
+    /// Records one step's cost. docs/01 5.5: tokens, model and compute time per
+    /// step. Written to its own append-only file rather than through
+    /// <see cref="RecordStore"/>, because the workflow holds that store's entry
+    /// list in memory and flushes the whole file — a second writer would lose
+    /// entries.
+    /// </summary>
+    public void RecordCost(StepCost cost)
+    {
+        var line = JsonSerializer.Serialize(cost, CostJson);
+        var path = Path.Combine(RecordDirectory, $"{RunId}.cost.jsonl");
+        lock (costGate)
+        {
+            File.AppendAllText(path, line + Environment.NewLine);
+        }
+    }
+
+    public static List<StepCost> ReadCosts(string recordDirectory, string runId)
+    {
+        var path = Path.Combine(recordDirectory, $"{runId}.cost.jsonl");
+        if (!File.Exists(path))
+            return new List<StepCost>();
+
+        var results = new List<StepCost>();
+        foreach (var line in File.ReadAllLines(path))
+        {
+            if (line.Trim().Length == 0)
+                continue;
+            try
+            {
+                var cost = JsonSerializer.Deserialize<StepCost>(line, CostJson);
+                if (cost is not null)
+                    results.Add(cost);
+            }
+            catch (JsonException)
+            {
+                // A partially written line is not a cost record.
+            }
+        }
+        return results;
+    }
+
+    private static readonly JsonSerializerOptions CostJson = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = false,
+    };
+}
+
+/// <summary>
+/// Adapts the providers' <see cref="ICredentialBroker"/> to the code host's
+/// <c>ITokenFactory</c>.
+///
+/// <para>
+/// The code host declares its own minimal credential seam so it compiles and
+/// runs today; the sibling project owns the full broker. This bridges the two
+/// without either taking a dependency on the other's declaration, which is the
+/// same seam the code host's own <c>BrokerTokenFactory</c> fills.
+/// </para>
+/// </summary>
+public sealed class ProvidersBrokerTokenFactory : ITokenFactory
+{
+    private readonly ICredentialBroker broker;
+    private readonly Actor actor;
+    private readonly TimeSpan ttl;
+
+    public ProvidersBrokerTokenFactory(ICredentialBroker broker, Actor? actor = null, TimeSpan? ttl = null)
+    {
+        this.broker = broker;
+        this.actor = actor ?? Actor.Engine("engine");
+        this.ttl = ttl ?? TimeSpan.FromMinutes(60);
+    }
+
+    public async Task<ProviderResult<Credential>> GetTokenAsync(RepoRef repo, CancellationToken ct)
+    {
+        // The scope is modelled, not a free string: repo:<owner>/<name> plus the
+        // permissions the code host needs. Passing the bare repository name
+        // would not parse, and a token minted without contents:read cannot read
+        // a file — GitHub answers 422 validation_failed.
+        var scope = CredentialScope.ForRepository(
+            repo.FullName, "contents:write", "contents:read", "pull_requests:write", "metadata:read");
+
+        var issued = await broker.IssueAsync(actor, "github", scope.Text, ttl, ct).ConfigureAwait(false);
+        if (!issued.IsOk)
+            return ProviderResult<Credential>.Fail(issued.Error!);
+
+        var credential = issued.Value!;
+        return ProviderResult<Credential>.Ok(new Credential(
+            Token: credential.Secret,
+            ExpiresAt: credential.ExpiresAt,
+            Scope: credential.Scope));
+    }
+}
+
+/// <summary>
+/// What one step cost. docs/01 5.5 and check R13: tokens, model and compute
+/// time, recorded per step so the cost of a run is known from the record store.
+/// </summary>
+public sealed record StepCost(
+    string RunId,
+    string StepId,
+    string StepKind,
+    string? Model,
+    string? RuntimeInstance,
+    long? InputTokens,
+    long? OutputTokens,
+    double? Credits,
+    decimal? CostUsd,
+    double ComputeSeconds,
+    string UsageSource,
+    DateTimeOffset RecordedAt,
+    string? ManifestHash = null,
+    string? CredentialId = null,
+    string? ErrorClass = null,
+    string? ErrorReason = null);

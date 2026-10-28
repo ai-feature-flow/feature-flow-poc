@@ -1,0 +1,23 @@
+WORKER starting queue=spike-2-real address=localhost:7333 repo=D:\Dev\feature-flow-poc\spikes\02-real-run\fixture branch=ff/ticket/spike2-final base=main run=final-run pid=28744
+WORKER plan 17 steps, entry plan_spec
+WORKER ready
+STEP plan_spec: feature-flow.yaml ref=ff/ticket/spike2-final sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP plan_spec: committed d12f1bf4029853e0869f4c4967736270751be6ec on ff/ticket/spike2-final
+STEP design: feature-flow.yaml ref=ff/ticket/spike2-final sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP design: committed df3d0f41322b444f9b58cd4f9a76c849826158b7 on ff/ticket/spike2-final
+STEP implement: feature-flow.yaml unreadable on ff/ticket/spike2-final: Infrastructure/unreachable
+STEP push: credential refused: Infrastructure/unreachable
+STEP implement: committed df3d0f41322b444f9b58cd4f9a76c849826158b7 on ff/ticket/spike2-final
+STEP run_tests: feature-flow.yaml ref=ff/ticket/spike2-final sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP run_tests: tiers [unit=success, integration=Success], delegated to CI: [integration]
+STEP review: feature-flow.yaml ref=ff/ticket/spike2-final sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP review: diffHash=72805ed683f1c78e149422637fc8a11415b10f9b8d337d8809f5badf6fb607c8 priorFindings=0 verdict=completed findings=0
+STEP evaluate_readiness: feature-flow.yaml ref=ff/ticket/spike2-final sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP evaluate_readiness: open=0 unresolved=0 => ready
+STEP open_pr: feature-flow.yaml ref=ff/ticket/spike2-final sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP open_pr: feature-flow.yaml ref=ff/ticket/spike2-final sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP open_pr: PR #3 ff/ticket/spike2-final -> main
+STEP wait_checks: feature-flow.yaml ref=ff/ticket/spike2-final sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP wait_checks: checks success (3 check(s)) at df3d0f41322b444f9b58cd4f9a76c849826158b7
+STEP merge_pr: feature-flow.yaml ref=ff/ticket/spike2-final sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP merge_pr: merged PR #3 method=squash merged=True branchChanged=True head=5dd0108fc9e9a3e4af18995fc68eed6f0a9231ac

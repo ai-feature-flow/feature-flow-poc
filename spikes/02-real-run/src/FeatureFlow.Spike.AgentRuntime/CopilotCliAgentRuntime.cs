@@ -579,7 +579,7 @@ public sealed class CopilotCliAgentRuntime : IAgentRuntimeProvider
         // what non-interactive mode requires anyway.
         var arguments = new List<string>
         {
-            "--prompt", prompt,
+            "--prompt", SingleLine(prompt),
             "--silent",
             "--no-color",
             "--allow-all-tools",
@@ -612,6 +612,39 @@ public sealed class CopilotCliAgentRuntime : IAgentRuntimeProvider
         }
 
         return arguments;
+    }
+
+    /// <summary>
+    /// Flattens a prompt to one line for <c>--prompt</c>.
+    ///
+    /// <para>
+    /// A multi-line prompt passed through <c>ProcessStartInfo.ArgumentList</c>
+    /// makes the CLI exit 1 without an error message: the newlines survive into
+    /// the argument and the CLI's own argument parsing rejects them. Verified
+    /// against the real CLI — a 29-character two-line prompt fails, while a
+    /// 610-character single-line prompt succeeds.
+    /// </para>
+    ///
+    /// <para>
+    /// The prompt is content, so flattening it is safe: the model sees the same
+    /// words. A caller that needs structure should put it in the words, not in
+    /// the line breaks.
+    /// </para>
+    /// </summary>
+    private static string SingleLine(string prompt)
+    {
+        if (string.IsNullOrEmpty(prompt))
+            return prompt;
+
+        var collapsed = prompt
+            .Replace("\r\n", " ", StringComparison.Ordinal)
+            .Replace('\r', ' ')
+            .Replace('\n', ' ');
+
+        // Collapse runs of whitespace, so the flattening does not inflate the
+        // prompt with the indentation the original carried.
+        var words = collapsed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return string.Join(' ', words);
     }
 
     private async Task<ProviderResult<IReadOnlyDictionary<string, string>>> BuildEnvironmentAsync(CancellationToken ct)

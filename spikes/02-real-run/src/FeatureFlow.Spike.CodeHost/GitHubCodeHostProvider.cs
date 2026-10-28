@@ -767,16 +767,34 @@ public sealed class GitHubCodeHostProvider : ICodeHostProvider
         if (comment.Marker is not null && !body.Contains(comment.Marker, StringComparison.Ordinal))
             body += $"\n\n{comment.Marker}\n";
 
-        var payload = comment.Path is null
-            ? new Dictionary<string, object?> { ["body"] = body }
-            : new Dictionary<string, object?>
-            {
-                ["body"] = body,
-                ["path"] = comment.Path,
-                ["line"] = comment.Line,
-                ["side"] = comment.Side ?? "RIGHT",
-                ["commit_id"] = comment.CommitSha,
-            };
+        // A pull-request-level comment goes to the issue comments endpoint.
+        // GitHub's review-comment endpoint requires positioning — commit_id,
+        // path and line — and answers 422 without it, so a decline reason that
+        // is not anchored to a line cannot be posted there.
+        if (comment.Path is null)
+        {
+            var issueResult = await SendAsync<Dto.ReviewCommentDto>(
+                new HttpRequestMessage(HttpMethod.Post, $"repos/{pr.Repo.FullName}/issues/{pr.Number}/comments")
+                {
+                    Content = JsonBody(new Dictionary<string, object?> { ["body"] = body }),
+                },
+                credential.Value!.Token, "add_pr_comment", ct).ConfigureAwait(false);
+
+            if (issueResult.Error is not null)
+                return ProviderResult<CommentRef>.Fail(issueResult.Error);
+
+            return ProviderResult<CommentRef>.Ok(new CommentRef(
+                $"{issueResult.Value!.Id}#{pr.Repo.FullName}#{pr.Number}", issueResult.Value.HtmlUrl));
+        }
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["body"] = body,
+            ["path"] = comment.Path,
+            ["line"] = comment.Line,
+            ["side"] = comment.Side ?? "RIGHT",
+            ["commit_id"] = comment.CommitSha,
+        };
 
         var result = await SendAsync<Dto.ReviewCommentDto>(
             new HttpRequestMessage(HttpMethod.Post, $"repos/{pr.Repo.FullName}/pulls/{pr.Number}/comments")

@@ -697,6 +697,17 @@ public class InterpreterWorkflow
                 state.TerminalStatus = target.End;
                 return;
             }
+
+            // docs/09 6.2: { resume: true } is valid only on a plan.replan step,
+            // and it means "continue the run from where the replan left it".
+            // The step that produced it has done its work, so it must not run
+            // again — without this the replan re-runs forever, because nothing
+            // else consumes the resume directive.
+            if (target.IsResume)
+            {
+                state.StepsExecuted++;
+                return;
+            }
         }
     }
 
