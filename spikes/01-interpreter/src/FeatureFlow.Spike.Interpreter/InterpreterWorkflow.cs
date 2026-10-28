@@ -335,6 +335,9 @@ public class InterpreterWorkflow
         var lastTurns = run.Attempts_.LastOrDefault()?.SessionTurns ?? 0;
         var infrastructureFailures = 0;
 
+        // Review 13 B1: the clock for "no successful contact" starts here.
+        state.LastContactAt ??= Workflow.UtcNow;
+
         while (true)
         {
             var resumed = attempts > 0;
@@ -433,6 +436,17 @@ public class InterpreterWorkflow
                         return new StepOutcome(step.Id, Outcomes.AttemptsExhausted, null);
                     }
 
+                    // Review 13 B1: the stalled check applies on this path too.
+                    // A heartbeat timeout is the common way a long outage
+                    // surfaces, so leaving it out meant the state never appeared.
+                    var sinceHb = Workflow.UtcNow - (state.LastContactAt ?? Workflow.UtcNow);
+                    if (sinceHb >= StalledAfter)
+                    {
+                        state.StalledOnInfrastructure = true;
+                        state.StalledSince ??= Workflow.UtcNow;
+                        state.StalledStepId = step.Id;
+                    }
+
                     await Workflow.DelayAsync(BackoffFor(run.InfrastructureFailures));
                     continue;
                 }
@@ -461,7 +475,12 @@ public class InterpreterWorkflow
                     $"step {step.Id} infrastructure failure {infrastructureFailures}: " +
                     $"{ex.GetType().Name}: {ex.Message} (backoff {backoff.TotalSeconds:F0}s)";
 
-                if (infrastructureFailures >= StalledAfterFailures)
+                // Review 13 B1: time-based. The run is stalled once it has been
+                // without successful contact for StalledAfter, regardless of how
+                // many retries that took. FirstContactAt is set when the step
+                // starts; every successful activity result resets it.
+                var sinceContact = Workflow.UtcNow - (state.LastContactAt ?? Workflow.UtcNow);
+                if (sinceContact >= StalledAfter)
                 {
                     state.StalledOnInfrastructure = true;
                     state.StalledSince ??= Workflow.UtcNow;
@@ -479,6 +498,17 @@ public class InterpreterWorkflow
             {
                 run.Resumes++;
                 continue;
+            }
+
+            // Successful contact: reset the stalled clock and clear the state.
+            // Only reached when the activity actually returned work, not when it
+            // reported an infrastructure failure.
+            state.LastContactAt = Workflow.UtcNow;
+            if (state.StalledOnInfrastructure)
+            {
+                state.StalledOnInfrastructure = false;
+                state.StalledSince = null;
+                state.StalledStepId = null;
             }
 
             // docs/01 3.7: progress is a new commit, or the session having grown.
@@ -549,6 +579,12 @@ public class InterpreterWorkflow
     public static TimeSpan HeartbeatTimeout = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// Added to a step's simulated duration to give the activity room to finish.
+    /// Tunable so a test can make an activity time out on purpose.
+    /// </summary>
+    public static int StartToClosePadding = 120;
+
+    /// <summary>
     /// Review 12 A4: exponential backoff with a cap, so a long infrastructure
     /// outage neither fails the step nor floods history with retries.
     /// </summary>
@@ -558,7 +594,13 @@ public class InterpreterWorkflow
     /// Review 12 A4: past this many consecutive infrastructure failures the run
     /// is marked stalled on infrastructure (D24) and alerts. It does not fail.
     /// </summary>
-    public static int StalledAfterFailures = 8;
+    /// <summary>
+    /// Review 13 B1: stalled is **time-based**, not count-based. A count of 8
+    /// failures took about 8 minutes to reach, because each failure costs a
+    /// heartbeat timeout plus backoff. Time-based answers open question 3
+    /// without shortening heartbeats.
+    /// </summary>
+    public static TimeSpan StalledAfter = TimeSpan.FromMinutes(5);
 
     private static TimeSpan BackoffFor(int failures)
     {
@@ -604,7 +646,8 @@ public class InterpreterWorkflow
 
     private static ActivityOptions ActivityOptions(Step step) => new()
     {
-        StartToCloseTimeout = TimeSpan.FromSeconds(ParseSeconds(step.SimulatedDuration, 5) + 120),
+        StartToCloseTimeout = TimeSpan.FromSeconds(
+            ParseSeconds(step.SimulatedDuration, 5) + StartToClosePadding),
         HeartbeatTimeout = HeartbeatTimeout,
         RetryPolicy = new Temporalio.Common.RetryPolicy
         {

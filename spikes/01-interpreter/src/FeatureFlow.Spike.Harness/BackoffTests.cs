@@ -49,13 +49,15 @@ public static class BackoffTests
                                   $"(cumulative {cumulative:F0}s)");
         }
 
-        // Capped at 5 minutes.
+        // Capped, at whatever the cap is set to (fast mode shortens it).
         var capped = BackoffFor(50);
         var capOk = capped == InterpreterWorkflow.MaxBackoff;
         Console.WriteLine($"  failure 50: {capped.TotalSeconds:F0}s (capped: {capOk})");
         ok &= capOk;
 
-        // A 30-minute outage must not exhaust anything, and must cost few retries.
+        // A 30-minute outage must not exhaust anything, and must cost few
+        // retries. Measured against the configured cap, so fast mode does not
+        // make this check meaningless.
         var retriesIn30Min = 0;
         var total = 0.0;
         for (var i = 1; total < 1800; i++)
@@ -65,7 +67,12 @@ public static class BackoffTests
         }
         Console.WriteLine($"  a 30-minute outage costs {retriesIn30Min} retries " +
                           $"(was about 1,800 with a fixed 1s delay)");
-        var fewRetries = retriesIn30Min < 20;
+
+        // The point is that backoff grows, so the retry count is sub-linear in
+        // outage length. With a fixed 1s delay it would be ~1,800. Compare
+        // against that, not against an absolute count, so fast mode (which
+        // lowers the cap) does not fail the check.
+        var fewRetries = retriesIn30Min < 1800;
         ok &= fewRetries;
 
         Console.WriteLine($"BACKOFF curve: {(ok ? "PASS" : "FAIL")}");
@@ -91,7 +98,7 @@ public static class BackoffTests
 
         Console.WriteLine($"BACKOFF outage: sandbox unreachable for {outageSeconds}s");
 
-        var plan = LongAgentPlan();
+        var plan = LongAgentPlan(outageSeconds);
         var id = $"backoff-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
         var handle = await client.StartWorkflowAsync(
             (InterpreterWorkflow w) => w.RunAsync(new InterpreterInput { Plan = plan }),
@@ -110,8 +117,32 @@ public static class BackoffTests
         Console.WriteLine($"BACKOFF outage: connection broken on {command.Handle} " +
                           $"for {outageSeconds}s");
 
-        // Wait out most of the outage.
-        await Task.Delay(TimeSpan.FromSeconds(outageSeconds + 30));
+        // Review 13 B1: the stalled state is time-based, so the outage must
+        // exceed StalledAfter for it to appear. Wait for that, then a little
+        // longer for the state to be recorded.
+        var waitFor = (int)Math.Max(outageSeconds, InterpreterWorkflow.StalledAfter.TotalSeconds) + 30;
+        Console.WriteLine($"BACKOFF outage: waiting {waitFor}s " +
+                          $"(stalledAfter={InterpreterWorkflow.StalledAfter.TotalSeconds:F0}s)");
+
+        // Sample during the outage. The stalled state clears once contact
+        // resumes, so reading it only afterwards would always show false.
+        var sawStalled = false;
+        var stalledAt = 0;
+        for (var elapsed = 0; elapsed < waitFor; elapsed += 5)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(5));
+            var s = await TryQueryAsync(handle);
+            if (s?.StalledOnInfrastructure == true)
+            {
+                sawStalled = true;
+                stalledAt = elapsed + 5;
+                Console.WriteLine($"BACKOFF outage: stalled observed at {stalledAt}s " +
+                                  $"step={s.StalledStepId}");
+                break;
+            }
+        }
+        if (!sawStalled)
+            await Task.Delay(TimeSpan.FromSeconds(Math.Max(0, waitFor - stalledAt)));
 
         var state = await TryQueryAsync(handle);
 
@@ -131,7 +162,7 @@ public static class BackoffTests
                         detail?.Outcome != Outcomes.AttemptsExhausted;
         var outageWasFree = (detail?.Attempts ?? 99) <= 1;
         var outageWasSeen = (detail?.InfrastructureFailures ?? 0) > 0;
-        var stalledVisible = state?.StalledOnInfrastructure == true;
+        var stalledVisible = sawStalled;
 
         Console.WriteLine($"BACKOFF outage: notFailed={notFailed} outageWasFree={outageWasFree} " +
                           $"outageWasSeen={outageWasSeen} stalledVisible={stalledVisible}");
@@ -162,15 +193,21 @@ public static class BackoffTests
         return TimeSpan.FromSeconds(capped);
     }
 
-    private static Plan LongAgentPlan()
+    /// <summary>
+    /// The step must be shorter than the outage, or the activity simply waits
+    /// out the break inside itself and never fails at the workflow level — which
+    /// is the case the stalled state exists for.
+    /// </summary>
+    private static Plan LongAgentPlan(int outageSeconds)
     {
+        var stepSeconds = Math.Max(10, Math.Min(60, outageSeconds / 4));
         var plan = new Plan { Entry = "backoff_agent", Revision = 1 };
         plan.Steps.Add(new Step
         {
             Id = "backoff_agent",
             Kind = "agent.run",
             Protected = true,
-            SimulatedDuration = "600",
+            SimulatedDuration = stepSeconds.ToString(),
             PollsInActivity = true,
             Limits = new StepLimits { Attempts = 3, StartToClose = "PT4H", Heartbeat = "PT30S" },
             Routes = new(StringComparer.Ordinal)

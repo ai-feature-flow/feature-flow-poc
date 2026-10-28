@@ -219,7 +219,7 @@ policy:
     hardCeiling: { agent.run: 8, perRun: 60 }     # steering may not exceed without admin
   timeouts:
     heartbeat: 30s                                # how long a step may go silent
-    stalledAfter: 8                               # consecutive infrastructure failures before the run is marked stalled
+    stalledAfter: 5m                              # time with no successful contact before the run is marked stalled
   steering:
     mayAmendStep: [steerer, admin]
     mayOverrideContent: [admin]
@@ -268,9 +268,13 @@ Notes:
   risks false positives on a slow step; raising it delays detection. It is set
   per installation, not per step, because it describes the platform rather than
   the work.
-- **`timeouts.stalledAfter`** is how many consecutive infrastructure failures
-  mark a run stalled on infrastructure (D24). A stalled run alerts and waits; it
-  never fails on its own. A human may abort it.
+- **`timeouts.stalledAfter`** is how long a run may go without successful
+  contact with a provider before it is marked stalled on infrastructure (D24).
+  It is **time-based, not a count of retries** (review 13 B1): a count took about
+  8 minutes to reach, because each retry costs a heartbeat timeout plus backoff,
+  and that coupling made the threshold depend on two other settings. A stalled
+  run alerts and waits; it never fails on its own. A human may abort it. Any
+  successful contact resets the clock and clears the state.
 - **Team overrides are not a fifth layer** (review 07, answer 1). They live in the
   organisation file and are selected by team, so precedence is unchanged.
 - **`policy.merge` states what is allowed; the repository chooses within it**

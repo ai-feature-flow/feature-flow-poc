@@ -68,6 +68,13 @@ public sealed class InterpreterState
     public string? StalledStepId { get; set; }
 
     /// <summary>
+    /// Review 13 B1: when the run last had successful contact with a provider.
+    /// The stalled clock runs from here, so it is time-based rather than a count
+    /// of retries.
+    /// </summary>
+    public DateTimeOffset? LastContactAt { get; set; }
+
+    /// <summary>
     /// Spike-only: size of the state carried into this run, in bytes. Review 12
     /// A1 asks for the continue-as-new input size to be reported per
     /// continue-as-new, so it can be shown to be bounded by plan size.

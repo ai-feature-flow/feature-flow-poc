@@ -18,6 +18,19 @@ public static class WorkerProgram
         var address = Arg(args, "--address") ?? "localhost:7233";
         var maxConcurrentActivities = int.Parse(Arg(args, "--max-concurrent-activities") ?? "10");
 
+        // Review 13: the tunables that dominate test wall-clock time live in the
+        // workflow, but the worker is a separate process, so they must be passed
+        // in rather than set by the harness.
+        if (args.Contains("--fast"))
+        {
+            InterpreterWorkflow.HeartbeatTimeout = TimeSpan.FromSeconds(3);
+            InterpreterWorkflow.MaxBackoff = TimeSpan.FromSeconds(5);
+            InterpreterWorkflow.StalledAfter = TimeSpan.FromSeconds(30);
+            InterpreterWorkflow.StartToClosePadding = 5;
+            Console.WriteLine("WORKER fast mode: heartbeat=3s backoffCap=5s " +
+                              "stalledAfter=30s startToClosePadding=5s");
+        }
+
         Console.WriteLine($"WORKER starting queue={taskQueue} sandbox={sandboxUrl} " +
                           $"maxConcurrentActivities={maxConcurrentActivities} pid={Environment.ProcessId}");
 

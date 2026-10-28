@@ -27,8 +27,10 @@ public static class HarnessProgram
         {
             InterpreterWorkflow.HeartbeatTimeout = TimeSpan.FromSeconds(3);
             InterpreterWorkflow.MaxBackoff = TimeSpan.FromSeconds(5);
-            InterpreterWorkflow.StalledAfterFailures = 3;
-            Console.WriteLine("HARNESS fast mode: heartbeat=3s backoffCap=5s stalledAfter=3");
+            InterpreterWorkflow.StalledAfter = TimeSpan.FromSeconds(30);
+            InterpreterWorkflow.StartToClosePadding = 5;
+            Console.WriteLine("HARNESS fast mode: heartbeat=3s backoffCap=5s " +
+                              "stalledAfter=30s startToClosePadding=5s");
         }
 
         var client = await TemporalClient.ConnectAsync(new(Address));
