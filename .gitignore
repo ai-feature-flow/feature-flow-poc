@@ -12,3 +12,7 @@ obj/
 # Spike 1 local run state: Temporal dev server database and process logs
 .spike/
 spikes/01-interpreter/.logs/
+
+# Spike 2 local run state: agent runtime scratch, and the fixture checkout
+spikes/02-real-run/agent-runtime-work/
+spikes/02-real-run/fixture/
