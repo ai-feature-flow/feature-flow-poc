@@ -44,9 +44,22 @@ public sealed class SandboxActivities : ISpikeActivities
             commitEverySeconds = request.CommitEverySeconds,
         });
 
+        // Review 13 A1: record occupancy for the long polled step too, since
+        // that is the case the slot measurement actually exercises.
+        var now = Interlocked.Increment(ref inFlight);
+        while (true)
+        {
+            var peak = Volatile.Read(ref peakInFlight);
+            if (now <= peak || Interlocked.CompareExchange(ref peakInFlight, now, peak) == peak)
+                break;
+        }
+        Console.WriteLine($"ACTIVITY concurrency inFlight={now} peak={Volatile.Read(ref peakInFlight)}");
+
         // docs/05 1.2.1: poll inside ONE activity, heartbeating. One activity per
         // step, not one per poll. This is exit criterion 8 (R20).
         var infrastructureRetries = 0;
+        try
+        {
         while (true)
         {
             CommandView view;
@@ -93,6 +106,11 @@ public sealed class SandboxActivities : ISpikeActivities
 
             await Task.Delay(TimeSpan.FromMilliseconds(500));
         }
+        }
+        finally
+        {
+            Interlocked.Decrement(ref inFlight);
+        }
     }
 
     private static AgentProgress Progress(CommandView view) => new(
@@ -106,12 +124,42 @@ public sealed class SandboxActivities : ISpikeActivities
     private static bool IsUnreachable(Exception ex) =>
         ex.Message.Contains("503", StringComparison.Ordinal) ||
         ex.Message.Contains("unreachable", StringComparison.Ordinal);
+    /// <summary>
+    /// Review 13 A1: how many activities this worker is executing right now, and
+    /// the high-water mark. This is the ground truth for slot occupancy; the
+    /// configured slot count alone does not prove anything actually overlapped.
+    /// </summary>
+    private int inFlight;
+    private int peakInFlight;
+
     [Activity]
     public async Task<AgentRunResult> RunGenericStepAsync(GenericStepRequest request)
     {
-        await Task.Delay(TimeSpan.FromSeconds(request.DurationSeconds));
-        return new AgentRunResult(Outcomes.Completed);
+        var now = Interlocked.Increment(ref inFlight);
+        while (true)
+        {
+            var peak = Volatile.Read(ref peakInFlight);
+            if (now <= peak || Interlocked.CompareExchange(ref peakInFlight, now, peak) == peak)
+                break;
+        }
+
+        try
+        {
+            // Review 13 A1: log occupancy so the harness can read actual
+            // concurrency off the worker log, not just infer it from timings.
+            Console.WriteLine($"ACTIVITY concurrency inFlight={now} peak={Volatile.Read(ref peakInFlight)}");
+            await Task.Delay(TimeSpan.FromSeconds(request.DurationSeconds));
+            return new AgentRunResult(Outcomes.Completed);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref inFlight);
+        }
     }
+
+    /// <summary>Review 13 A1: report observed concurrency to the harness.</summary>
+    public (int InFlight, int Peak) ObservedConcurrency() =>
+        (Volatile.Read(ref inFlight), Volatile.Read(ref peakInFlight));
     [Activity]
     public Task<PlanPatch?> ProposePatchAsync(PatchRequest request)
     {

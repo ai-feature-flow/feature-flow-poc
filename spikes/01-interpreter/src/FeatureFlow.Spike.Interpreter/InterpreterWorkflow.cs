@@ -33,6 +33,15 @@ public class InterpreterWorkflow
     private bool continueAsNewRequested;
 
     /// <summary>
+    /// Review 13 A1: a barrier. When the input asks for it, the workflow waits
+    /// for a release signal before executing anything, so a harness can start
+    /// every run first and then release them all together. Without this, runs
+    /// start staggered and their steps never actually overlap, which is what
+    /// invalidated the first slot measurement.
+    /// </summary>
+    private bool released;
+
+    /// <summary>
     /// Per-step detail, kept out of carried state. Review 12 A1: this is what
     /// goes to the record store. It is rebuilt from the record store on replay,
     /// so it must never be read to make a routing decision.
@@ -47,6 +56,12 @@ public class InterpreterWorkflow
         state.Plan ??= input.Plan;
 
         var threshold = input.HistoryEventThreshold ?? DefaultHistoryEventThreshold;
+
+        // Review 13 A1: hold every step until the harness releases them all.
+        if (input.WaitForRelease && !released)
+        {
+            await Workflow.WaitConditionAsync(() => released);
+        }
 
         while (true)
         {
@@ -527,16 +542,23 @@ public class InterpreterWorkflow
     }
 
     /// <summary>
+    /// Tunables. These are static and mutable so a test can shorten them: the
+    /// real values make failure-path tests take many minutes each, which is the
+    /// single biggest cost in running this spike.
+    /// </summary>
+    public static TimeSpan HeartbeatTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// Review 12 A4: exponential backoff with a cap, so a long infrastructure
     /// outage neither fails the step nor floods history with retries.
     /// </summary>
-    public static readonly TimeSpan MaxBackoff = TimeSpan.FromMinutes(5);
+    public static TimeSpan MaxBackoff = TimeSpan.FromMinutes(5);
 
     /// <summary>
     /// Review 12 A4: past this many consecutive infrastructure failures the run
     /// is marked stalled on infrastructure (D24) and alerts. It does not fail.
     /// </summary>
-    public const int StalledAfterFailures = 8;
+    public static int StalledAfterFailures = 8;
 
     private static TimeSpan BackoffFor(int failures)
     {
@@ -583,7 +605,7 @@ public class InterpreterWorkflow
     private static ActivityOptions ActivityOptions(Step step) => new()
     {
         StartToCloseTimeout = TimeSpan.FromSeconds(ParseSeconds(step.SimulatedDuration, 5) + 120),
-        HeartbeatTimeout = TimeSpan.FromSeconds(30),
+        HeartbeatTimeout = HeartbeatTimeout,
         RetryPolicy = new Temporalio.Common.RetryPolicy
         {
             // The interpreter owns the attempt budget (docs/01 3.7), so Temporal
@@ -694,6 +716,10 @@ public class InterpreterWorkflow
     [WorkflowSignal]
     public Task RequestContinueAsNewAsync() => Task.FromResult(continueAsNewRequested = true);
 
+    /// <summary>Review 13 A1: release the barrier, so all runs start together.</summary>
+    [WorkflowSignal]
+    public Task ReleaseAsync() => Task.FromResult(released = true);
+
     [WorkflowQuery]
     public InterpreterState State() => state;
 
@@ -726,4 +752,7 @@ public sealed class InterpreterInput
     public InterpreterState? State { get; set; }
 
     public int? HistoryEventThreshold { get; set; }
+
+    /// <summary>Review 13 A1: wait for a release signal before executing.</summary>
+    public bool WaitForRelease { get; set; }
 }

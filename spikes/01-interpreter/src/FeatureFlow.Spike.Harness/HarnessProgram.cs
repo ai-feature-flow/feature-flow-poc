@@ -19,6 +19,18 @@ public static class HarnessProgram
         var command = args.Length > 0 ? args[0] : "help";
         var queue = Arg(args, "--queue") ?? "spike-1";
 
+        // Fast mode shortens the tunables that dominate test wall-clock time:
+        // the heartbeat timeout (how long a crash takes to be noticed) and the
+        // backoff cap. Production values are 30s and 5 minutes; a crash test
+        // costs about 30s per retry with them, and about 3s without.
+        if (args.Contains("--fast"))
+        {
+            InterpreterWorkflow.HeartbeatTimeout = TimeSpan.FromSeconds(3);
+            InterpreterWorkflow.MaxBackoff = TimeSpan.FromSeconds(5);
+            InterpreterWorkflow.StalledAfterFailures = 3;
+            Console.WriteLine("HARNESS fast mode: heartbeat=3s backoffCap=5s stalledAfter=3");
+        }
+
         var client = await TemporalClient.ConnectAsync(new(Address));
 
         return command switch

@@ -38,21 +38,69 @@ public static class SlotTests
         if (stepSeconds <= 0)
             stepSeconds = 20;
 
+        var slots = 0;
+        foreach (var i in Enumerable.Range(0, args.Length - 1))
+        {
+            if (args[i] == "--slots")
+                int.TryParse(args[i + 1], out slots);
+        }
+        if (slots <= 0)
+            slots = 10;
+
         Console.WriteLine($"SLOTS: {concurrency} concurrent long steps, " +
-                          $"each {stepSeconds}s, against 10 worker slots");
+                          $"each {stepSeconds}s, against {slots} worker slots");
 
         var ids = new List<string>();
         var started = DateTimeOffset.UtcNow;
 
+        // Review 13 A1: start every run first, each waiting on a release
+        // barrier. Starting them in a loop staggers them, because the dev server
+        // returns "busy" under load — which is exactly what invalidated the
+        // first measurement.
         for (var i = 0; i < concurrency; i++)
         {
             var plan = LongStepPlan($"s{i}", stepSeconds);
             var id = $"slot-{i}-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
             ids.Add(id);
             await client.StartWorkflowAsync(
-                (InterpreterWorkflow w) => w.RunAsync(new InterpreterInput { Plan = plan }),
+                (InterpreterWorkflow w) => w.RunAsync(new InterpreterInput
+                {
+                    Plan = plan,
+                    WaitForRelease = true,
+                }),
                 new(id, queue));
         }
+
+        Console.WriteLine($"SLOTS: all {concurrency} runs started in " +
+                          $"{(DateTimeOffset.UtcNow - started).TotalSeconds:F1}s; releasing together");
+
+        // Release them all, as close together as possible.
+        var releaseTasks = ids.Select(async id =>
+        {
+            try
+            {
+                await client.GetWorkflowHandle<InterpreterWorkflow>(id)
+                    .SignalAsync<InterpreterWorkflow>(w => w.ReleaseAsync());
+            }
+            catch
+            {
+                // Retry once; a missed release would hang the run.
+                await Task.Delay(500);
+                try
+                {
+                    await client.GetWorkflowHandle<InterpreterWorkflow>(id)
+                        .SignalAsync<InterpreterWorkflow>(w => w.ReleaseAsync());
+                }
+                catch
+                {
+                    // Give up; the run will time out and be reported.
+                }
+            }
+        }).ToList();
+        await Task.WhenAll(releaseTasks);
+
+        var releasedAt = DateTimeOffset.UtcNow;
+        Console.WriteLine($"SLOTS: released at {(releasedAt - started).TotalSeconds:F1}s");
 
         var tasks = ids.Select(async id =>
         {
@@ -105,6 +153,20 @@ public static class SlotTests
                               $"p50={latencies[latencies.Count / 2]:F2}s " +
                               $"p95={latencies[(int)(latencies.Count * 0.95)]:F2}s " +
                               $"max={latencies[^1]:F2}s");
+
+            // Review 13 A1: the sanity check. With C concurrent steps of D
+            // seconds against S slots, about (C - S) activities must wait roughly
+            // one step duration. If they do not, the steps did not overlap and
+            // the measurement is invalid.
+            var expectedWaiting = Math.Max(0, concurrency - slots);
+            var waiting = latencies.Count(l => l > stepSeconds * 0.5);
+            Console.WriteLine($"SLOTS: expected about {expectedWaiting} activities to wait " +
+                              $"(> {stepSeconds * 0.5:F1}s); observed {waiting}");
+
+            var valid = expectedWaiting == 0
+                ? waiting == 0
+                : waiting >= (int)(expectedWaiting * 0.5);
+            Console.WriteLine($"SLOTS: overlap sanity check: {(valid ? "PASS" : "FAIL")}");
         }
 
         var path = Path.Combine(ResultsDir(), $"slots-latency-{concurrency}.json");
