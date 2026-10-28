@@ -1,0 +1,91 @@
+apiVersion: feature-flow/v1
+kind: Organisation
+
+# ---------------------------------------------------------------- identity
+# The engine acts as a GitHub App. Agents never see this credential; they get
+# a short-lived, single-repository token minted from it (R6, docs/07 section 8).
+codeHost:
+  default: github
+  instances:
+    github:
+      name: github
+      config:
+        appId: 5507595
+        secretRef: secrets/github-app-key
+        installationRef: secrets/github-installation-id
+
+ci:
+  default: github-actions
+  instances:
+    github-actions:
+      name: github-actions
+      config:
+        # CI delegation is the default for Docker-dependent tiers (Q2), so this
+        # instance is on the main path, not a fallback.
+        secretRef: secrets/github-app-key
+        installationRef: secrets/github-installation-id
+
+# Two named instances of the agent runtime provider (review 07 Q3), selected by
+# roleMapping below. Nothing in the engine names either one.
+agentRuntime:
+  default: copilot-cli
+  instances:
+    copilot-cli:
+      name: copilot-cli
+      config:
+        executable: copilot
+        # Model and endpoint are configuration, never template content.
+        # An OpenAI-compatible router endpoint is how a role runs on an open
+        # model through bring-your-own-key.
+        modelRef: secrets/model-default
+        endpointRef: secrets/model-router-endpoint
+        keyRef: secrets/model-router-key
+    claude-code:
+      name: claude-code
+      config:
+        executable: claude
+        modelRef: secrets/model-claude
+        endpointRef: secrets/model-router-endpoint
+        keyRef: secrets/model-router-key
+
+# ------------------------------------------------------------------ policy
+policy:
+  approval:
+    ticket:  { roles: [approver], minCount: 1, agentCounts: false }
+    epic:    { roles: [approver], minCount: 1, agentCounts: false }
+    defaultBranch: { roles: [approver], minCount: 2, agentCounts: false }   # floor F1
+  merge:
+    defaultBranch: { methods: [squash], requireChecks: true, autoMerge: false }  # floor F1
+    integrationBranch: { methods: [merge], requireChecks: true, autoMerge: true }
+  findings:
+    mergeBar: noUnresolvedBlocking
+    requireDeclineReason: true
+  attempts:
+    ceiling: { agent.run: 5, perRun: 40 }
+    hardCeiling: { agent.run: 8, perRun: 60 }
+  timeouts:
+    heartbeat: 30s
+    stalledAfter: 5m
+  steering:
+    mayAmendStep: [steerer, admin]
+    mayOverrideContent: [admin]
+    mayGrantAttempts: [steerer, admin]
+    mayAbort: [steerer, admin]
+  chat:
+    allowedDecisions: [ticket.gate, epic.gate]    # default-branch merge is console only
+
+# -------------------------------------------------------------------- roles
+roles:
+  viewer:   { idpGroups: [acme-engineering] }
+  approver: { idpGroups: [acme-leads] }
+  steerer:  { idpGroups: [acme-leads] }
+  admin:    { idpGroups: [acme-platform] }
+
+# Which runtime instance each role uses (docs/09 11.1). This is the only place
+# a product name appears.
+roleMapping:
+  planner:     { agentRuntime: copilot-cli, model: default }
+  designer:    { agentRuntime: claude-code, model: default }
+  implementer: { agentRuntime: claude-code, model: default }
+  fixer:       { agentRuntime: copilot-cli, model: default }
+  reviewer:    { agentRuntime: copilot-cli, model: default }

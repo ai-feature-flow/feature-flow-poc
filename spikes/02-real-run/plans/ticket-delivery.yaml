@@ -1,0 +1,237 @@
+apiVersion: feature-flow/v1
+kind: Plan
+metadata:
+  name: ticket-delivery
+  scope: ticket
+  revision: 1
+  source: feature-flow-default:templates/ticket-delivery
+
+parameters:
+  ticket_id: { type: string, required: true }
+  repositories: { type: array, required: true }
+
+artifact_types:
+  - name: ticket-plan
+    version: 1
+    schema_ref: feature-flow-default:schemas/ticket-plan
+
+steps:
+  # ---------------------------------------------------------------- plan
+  - id: plan_spec
+    kind: agent.run
+    inputs:
+      role: feature-flow-default:roles/planner
+      task_ref: feature-flow-default:tasks/plan-ticket
+      write_access: none
+      bindings:
+        ticket_id: { expr: "params.ticket_id" }
+    requires: { capabilities: [sandbox, agent_runtime] }
+    limits: { attempts: 3, start_to_close: 4h, heartbeat: 30s, correction_turns: 2 }
+    produces: [{ name: plan, type: ticket-plan }]
+    outputs:
+      tier_tags: { type: array, max_size: 16 }
+    routes:
+      completed: design
+      blocked: gate_spec
+      failed: gate_spec
+      attempts_exhausted: gate_spec
+      replan_requested: replan
+
+  - id: design
+    kind: agent.run
+    protected: true
+    inputs:
+      role: feature-flow-default:roles/designer
+      task_ref: feature-flow-default:tasks/design
+      write_access: none
+      bindings:
+        plan_path: { from_artifact: "steps.plan_spec.artifacts.plan" }
+    consumes: [{ name: plan, type: ticket-plan, from: plan_spec }]
+    routes:
+      completed: implement
+      blocked: gate_design
+      failed: gate_design
+      attempts_exhausted: gate_design
+      replan_requested: replan
+
+  # ---------------------------------------------------------- implement
+  - id: implement
+    kind: agent.run
+    inputs:
+      role: feature-flow-default:roles/implementer
+      task_ref: feature-flow-default:tasks/implement-ticket
+      write_access: branch
+      resume_strategy: wip_commits_and_session
+      bindings:
+        plan_path: { from_artifact: "steps.plan_spec.artifacts.plan" }
+    requires: { capabilities: [sandbox, agent_runtime] }
+    limits: { attempts: 3, start_to_close: 4h, heartbeat: 30s }
+    routes:
+      completed: run_tests
+      blocked: replan
+      failed: replan
+      attempts_exhausted: gate_escalate
+      replan_requested: replan
+
+  # --------------------------------------------------------------- test
+  # Tiers come from feature-flow.yaml, read per step (docs/07 5.1.2). The
+  # integration tier is Docker-dependent, so it is delegated to CI (Q2).
+  - id: run_tests
+    kind: test.run_tiers
+    inputs:
+      tier_tags: { expr: "steps.plan_spec.outputs.tier_tags" }
+    consumes: [{ name: plan, type: ticket-plan, from: plan_spec }]
+    routes:
+      completed: review
+      failed: triage_findings
+      attempts_exhausted: gate_escalate
+
+  # ------------------------------------------------------------- review
+  # prior_findings is required: without it a verdict can change between
+  # passes on unchanged input (R4).
+  - id: review
+    kind: review.run
+    inputs:
+      scope: ticket
+      diff_ref: { expr: "steps.implement.artifacts.diff" }
+      checks: [feature-flow-default:checks/merge-bar]
+      prior_findings: { expr: "findings.all" }
+    routes:
+      completed: evaluate_readiness
+      findings_open: triage_findings
+      failed: gate_escalate
+      attempts_exhausted: gate_escalate
+
+  - id: triage_findings
+    kind: findings.triage
+    inputs:
+      finding_refs: { expr: "findings.open" }
+      mode: agent
+    limits: { attempts: 2 }
+    routes:
+      completed: fix_findings
+      blocked: gate_escalate
+      attempts_exhausted: gate_escalate
+
+  - id: fix_findings
+    kind: agent.run
+    inputs:
+      role: feature-flow-default:roles/fixer
+      task_ref: feature-flow-default:tasks/fix-findings
+      write_access: branch
+      bindings:
+        findings_path: { from_artifact: "steps.triage_findings.artifacts.selected" }
+    routes:
+      completed: verify_fix
+      blocked: gate_escalate
+      failed: gate_escalate
+      attempts_exhausted: gate_escalate
+      replan_requested: replan
+
+  # ---------------------------------------------------------- fix.verify
+  # The regression test requirement is a step invariant, not a template
+  # switch (review 09 C4). The fix is checked against the original finding
+  # on the full diff, not only the changed lines.
+  - id: verify_fix
+    kind: fix.verify
+    inputs:
+      finding_ref: { expr: "steps.triage_findings.artifacts.selected" }
+      diff_ref: { expr: "steps.fix_findings.artifacts.diff" }
+    routes:
+      completed: run_tests
+      failed: triage_findings
+      attempts_exhausted: gate_escalate
+
+  - id: evaluate_readiness
+    kind: findings.evaluate_readiness
+    routes:
+      ready: open_pr
+      findings_open: triage_findings
+
+  # --------------------------------------------------------------- ship
+  - id: open_pr
+    kind: scm.open_pr
+    inputs:
+      repository: { expr: "run.repositories[0]" }
+      branch: { expr: "run.branch" }
+      base: { expr: "run.integration_branch" }
+      body_ref: feature-flow-default:prompts/pr-body
+    routes:
+      completed: wait_checks
+      failed: gate_escalate
+      attempts_exhausted: gate_escalate
+
+  - id: wait_checks
+    kind: ci.wait_checks
+    inputs:
+      repository: { expr: "run.repositories[0]" }
+      commit_sha: { expr: "run.head_sha" }
+    routes:
+      completed: gate_merge
+      failed: triage_findings
+      blocked: gate_escalate
+      attempts_exhausted: gate_escalate
+
+  # Floor F1: a merge into a default branch needs a human. The spike targets
+  # an integration branch, so this gate is an expected decision, not an
+  # intervention (review 08 K6).
+  - id: gate_merge
+    kind: human.gate
+    gate: { decision_type: ticket.merge_approval }
+    inputs:
+      prompt_ref: feature-flow-default:prompts/merge-approval
+      context_refs: { expr: "[steps.review.artifacts.findings]" }
+    routes:
+      approved: merge_pr
+      rejected: { end: rejected }
+
+  - id: merge_pr
+    kind: scm.merge
+    inputs:
+      pr_ref: { expr: "steps.open_pr.artifacts.pr" }
+    routes:
+      completed: { end: completed }
+      blocked: gate_escalate
+      rejected: gate_merge
+      attempts_exhausted: gate_escalate
+
+  # ------------------------------------------------------------- gates
+  - id: gate_spec
+    kind: human.gate
+    gate: { decision_type: ticket.spec_approval }
+    inputs:
+      prompt_ref: feature-flow-default:prompts/spec-approval
+    routes:
+      approved: design
+      rejected: { end: rejected }
+
+  - id: gate_design
+    kind: human.gate
+    gate: { decision_type: ticket.design_approval }
+    inputs:
+      prompt_ref: feature-flow-default:prompts/design-approval
+    routes:
+      approved: implement
+      rejected: { end: rejected }
+
+  - id: gate_escalate
+    kind: human.gate
+    gate: { decision_type: ticket.escalation }
+    inputs:
+      prompt_ref: feature-flow-default:prompts/escalation
+    routes:
+      approved: replan
+      rejected: { end: failed }
+
+  # ------------------------------------------------------------ replan
+  - id: replan
+    kind: plan.replan
+    inputs:
+      mode: agent
+      reason: { expr: "steps.implement.outcome" }
+      context_refs: { expr: "[steps.plan_spec.artifacts.plan]" }
+    limits: { attempts: 2 }
+    routes:
+      replan_requested: { resume: true }
+      failed: gate_escalate
+      attempts_exhausted: gate_escalate
