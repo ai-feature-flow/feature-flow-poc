@@ -563,8 +563,19 @@ artifact reference and reading it in an activity.
 
 Predicates and selection only (review 09, answer 1). No comprehensions.
 
-`size`, `contains`, `all`, `any`, `exists`, `startsWith`, `endsWith`, `matches`,
-`lower`, `upper`, plus arithmetic, comparison and boolean operators.
+`size`, `contains`, `all`, `any`, `exists`, `startsWith`, `endsWith`, `lower`,
+`upper`, plus arithmetic, comparison and boolean operators.
+
+**`matches` is not in version 1** (review 13, answer 4). It brings a regex engine
+into workflow code, and a backtracking regex is a denial-of-service risk: a
+short expression can take exponential time on a hostile input, and evaluation is
+pure workflow code that must not delay a heartbeat (section 8.5). No worked
+example uses it. If it is needed later, reinstate it with .NET's
+non-backtracking regex and the length caps, and re-check the cost estimate
+covers it.
+
+`lower` and `upper` are **registered by the engine**, not provided by Cel.NET
+(section 8.1).
 
 ### 8.5 Bounds
 

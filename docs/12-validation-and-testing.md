@@ -57,6 +57,7 @@ Consequences:
 | 13 | **Unreachable step** | Load | Yes | Execution. A step named in an `expand` mapping's `target` or `on_other` counts as reachable — see section 2.3 |
 | 14 | **Every cycle has a route out** | Load | Yes | Execution |
 | 15 | **Producer and consumer contract compatibility** | Load | Yes | Execution |
+| 32 | **Plan size within the carried-state budget** | Load **and** Patch | Yes | See section 2.4. Carried state must stay under 1 MB, or continue-as-new cannot carry it |
 | 16 | Consumed artifact's producer step exists and declares it | Load | Yes | Execution |
 | 17 | Library reference resolves | Binding | Yes | Execution |
 | 18 | Package `requires` satisfied | Binding | Yes | Execution |
@@ -74,7 +75,29 @@ Consequences:
 | 30 | Deprecated library reference with a valid replacement | Load | **No** | Cosmetic |
 | 31 | Step id not in snake_case style | Load | **No** | Cosmetic |
 
-Checks 10, 13, 14, 15 and 25 are the ones review 09 F3 said were missing.
+Checks 10, 13, 14, 15 and 25 are the ones review 09 F3 said were missing. Check
+32 was added after Spike 1 measured carried state.
+
+### 2.4 Plan size limit (check 32)
+
+Spike 1 measured carried state at about **500 bytes per plan step**, stable
+across continue-as-new. The continue-as-new input is **one payload**, so its
+ceiling is the 2 MB payload limit, not the 50 MB history limit — and for large
+plans the payload ceiling binds before the event ceiling.
+
+> **A plan must be small enough that its carried state stays under 1 MB.** At the
+> measured 500 bytes per step that is about **2,000 steps**. The check runs at
+> load **and** at patch time, because a patch can add steps.
+
+The limit is a budget, not a step count: it is expressed in bytes so it stays
+correct if per-step state changes. Half the payload ceiling leaves room for the
+plan's own content, which varies with inputs and routes.
+
+**Large work is not meant to hit this.** It already splits naturally into child
+runs — one ticket, one plan (`docs/09` 13.1). A plan approaching the limit is a
+signal to split, not to raise the limit. This is why the answer to Spike 1's
+open question 1 is neither "split" nor "compact further" for now: the split
+already exists, and the limit makes it explicit and checkable.
 
 ### 2.1 On check 6
 

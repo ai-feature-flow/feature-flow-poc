@@ -54,6 +54,9 @@ failed — but the platform-status-versus-run-status distinction is untested,
 because the spike has no API layer. That half is deferred to the API work and
 recorded in `docs/08` 4.1 as an acceptance criterion.
 
+Criterion 9 was reported as met on the review-12 measurement, which review 13
+showed was invalid. It is met now, on the corrected measurement in section 6.3.
+
 ---
 
 ## 3. Failure injections
@@ -188,9 +191,16 @@ The first pass retried infrastructure failures with a fixed 1-second delay and
 threw after 50, so a sandbox host down for about 25 minutes **failed the step** —
 the R11/R19 class again, an interruption becoming a wrong outcome.
 
-Now: exponential backoff capped at 5 minutes, no count limit, and past 8
-consecutive failures the run is marked stalled on infrastructure (D24) and
-alerts. It never fails on its own; a human may abort it.
+Now: exponential backoff capped at 5 minutes, no count limit, and the run is
+marked stalled on infrastructure (D24) and alerts. It never fails on its own; a
+human may abort it.
+
+**Stalled is time-based, not count-based** (review 13 B1). The first version
+counted 8 failures, which took about 8 minutes because each failure costs a
+heartbeat timeout plus backoff — coupling the threshold to two other settings.
+It is now 5 minutes with no successful contact, configurable as
+`policy.timeouts.stalledAfter` in `docs/07`. Any successful contact resets the
+clock and clears the state.
 
 ```
 failure  1:       1s      failure  6:      32s
@@ -211,9 +221,16 @@ notFailed=True outageWasFree=True outageWasSeen=True stalledVisible=True
 ```
 
 The step did not fail, consumed no attempt, and the stalled state was visible
-while it was stalled. The run completed once the connection came back. Reaching
-the stalled threshold takes about 8 minutes, because each retry costs the 30s
-heartbeat timeout plus the backoff.
+while it was stalled. The run completed once the connection came back.
+
+With the time-based threshold, measured in fast mode with a 120s outage:
+
+```
+stalled observed at 15s, infrastructureFailures=2
+notFailed=True outageWasFree=True outageWasSeen=True stalledVisible=True
+```
+
+Previously the same state took 8 minutes and 10 failures.
 
 ---
 
@@ -350,31 +367,51 @@ activity per step holds (`docs/05` 1.2.1).
 
 ### 6.3 Worker slot capacity (exit criterion 9, H1)
 
-**The first pass's conclusion is withdrawn.** It claimed "ten slots means roughly
-four runs", but the test ran `Linear(3)` per run, one activity at a time, so 8
-runs never held more than 8 of 10 slots. Slot starvation could not explain the
-slowdown.
+**Two earlier conclusions are withdrawn.** The first pass claimed "ten slots
+means roughly four runs"; review 12 replaced it with "ten slots carries at least
+16 concurrent long steps". Review 13 showed the review-12 measurement was
+invalid: runs were started in a loop, the dev server returned "busy" under load,
+so they started staggered and their steps never overlapped. Per-run times of
+0.24s, 0.96s and 3.4s for 20-second steps gave it away.
 
-Replaced with **schedule-to-start latency** — the gap between
-`ActivityTaskScheduled` and `ActivityTaskStarted`, which is slot waiting by
-definition — using long single-step plans that hold a slot for the whole step:
+**The method is now valid.** Each run waits on a release signal; the harness
+starts every run first, then releases them all together. The worker also records
+actual occupancy, so concurrency is observed rather than inferred.
 
-| Concurrent long steps | p50 | p95 | Max |
-|---|---|---|---|
-| 4 | 0.00s | 0.00s | 0.00s |
-| 12 | 0.00s | 0.00s | 0.00s |
-| 16 | 0.00s | 0.00s | 0.00s |
-| 20 (run 1) | 1.03s | 92.53s | 104.98s |
-| 20 (run 2) | 0.00s | 0.00s | 0.00s |
-| 40 (run 1) | 0.00s | 46.09s | 59.61s |
-| 40 (run 2) | 0.00s | 12.05s | 15.55s |
+**Sanity check first**, as review 13 asked — 20 steps of 15s against **2** slots:
 
-**Ten slots carries at least 16 concurrent long steps with no measurable
-waiting.** Degradation appears somewhere between 16 and 40, and it is noisy: one
-run at 20 showed 92.5s p95 and the next showed none. The honest conclusion is
-that the first pass's slowdown was **not** slot starvation, and that a pool
-sizing rule needs more runs than this spike could afford before it is written
-into `docs/07`.
+```
+p50 88.83s  p95 183.27s  max 199.14s
+20 of 22 activities waited; peak observed concurrency 2
+```
+
+With 2 slots, peak occupancy is exactly 2 and almost every activity waits about
+one step duration. The method measures what it claims to.
+
+**Then 20 against 10**, two repetitions:
+
+| Concurrency | Slots | Rep | p50 | p95 | Max | Waiting | Peak observed |
+|---|---|---|---|---|---|---|---|
+| 20 | 2 | 1 | 88.83s | 183.27s | 199.14s | 20 of 22 | 2 |
+| 16 | 10 | 1 | 0.00s | 10.68s | 10.68s | 1 of 16 | 9 |
+| 20 | 10 | 1 | 3.45s | 105.75s | 106.51s | 6 of 25 | 9 |
+| 20 | 10 | 2 | 0.00s | 61.25s | 62.00s | 5 of 25 | 9 |
+
+**Ten slots does not carry 16 concurrent long steps without waiting.** Waiting
+begins somewhere between 10 and 16 concurrent steps, and peak occupancy never
+exceeded 9 of 10. The slot count is the binding constraint, as expected — which
+is the opposite of what review 12 concluded from the invalid measurement.
+
+The 16-against-10 row fails its own sanity check (only 1 activity waited where 6
+were expected), so it is reported but not relied on. The spread between the two
+20-against-10 runs (p95 105.75s and 61.25s) is wide; review 13 asks for three
+repetitions per level before a pool-sizing rule is written, and this spike has
+two.
+
+**The rule itself is arithmetic** (review 13, answer 2): slots at least equal to
+concurrent long steps, plus headroom. The measurement only has to confirm it, and
+it does — at 20 steps against 10 slots, roughly 10 activities wait about one step
+duration each.
 
 ### 6.4 Wall-clock time lost per crash
 
@@ -534,7 +571,9 @@ Stated explicitly, so nothing is silently revised.
 | First pass said | Now |
 |---|---|
 | Continue-as-new threshold: 500 events | **5,120 events**, derived from Temporal's limits. The 500 was circular |
-| "Ten slots means roughly four runs" | **Withdrawn.** At least 16 concurrent long steps with no measurable waiting |
+| "Ten slots means roughly four runs" | **Withdrawn.** Not slot starvation; the test never held more slots than it had |
+| "Ten slots carries at least 16 concurrent long steps" (review 12) | **Withdrawn.** That measurement was invalid — staggered starts, no overlap. Ten slots does **not** carry 16; waiting begins between 10 and 16 |
+| Stalled after 8 counted failures, ~8 minutes | **Time-based**: 5 minutes with no successful contact. Observed at 15s in fast mode |
 | Bytes grow monotonically across continue-as-new (159 KB → 273 KB → 268 KB) | **Superseded.** That was carried state growing with steps. After A1, carried state is ~500 B per plan step and stable (94 KB → 98 KB → 100 KB on a 200-step plan) |
 | Criterion 4 partial | **MET**, with the continue-as-new window test |
 | Criterion 8 measured indirectly at 6.2 events/step | **Measured directly**: 1 `ActivityTaskScheduled` for a 60s step |
@@ -545,11 +584,30 @@ Stated explicitly, so nothing is silently revised.
 
 ---
 
-## 13. Open questions
+## 13. What review 13 changed
+
+| Item | Change |
+|---|---|
+| A1 | The slot measurement was invalid (staggered starts, no overlap). Rebuilt with a release barrier and worker-side occupancy recording; sanity-checked against 2 slots first |
+| A2 | Criterion 9 reported as met on the corrected measurement |
+| B1 | Stalled state made time-based (5 minutes, configurable) rather than count-based |
+| Answers | Plan size limit added as check 32 in `docs/12`; `matches` dropped from the `docs/09` 8.4 allow-list for version 1 |
+
+## 14. Open questions
+
+All four questions from section 13 of the previous revision were answered in
+review 13 and are applied above:
+
+| # | Question | Answer |
+|---|---|---|
+| 1 | Large plans hit the 2 MB payload ceiling first. Split, or compact further? | **Neither for now.** Large work already splits into child runs. A **plan size limit** is now a blocking check at load and patch time (check 32 in `docs/12`), set so carried state stays under 1 MB — about 2,000 steps |
+| 2 | How many repetitions before a pool-sizing rule? | Fix validity first (done). Then three repetitions per level, reporting the spread. The rule is arithmetic — slots at least equal to concurrent long steps, plus headroom — and the measurement only confirms it |
+| 3 | 8 minutes to reach stalled | **Time-based**, not count-based (B1) |
+| 4 | Drop `matches` from the allow-list? | **Yes, dropped for version 1.** A backtracking regex is a denial-of-service risk in workflow code, and no worked example uses it |
+
+### Still open
 
 | # | Question |
 |---|---|
-| 1 | The payload ceiling binds before the event ceiling for large plans (a 4,194-step plan hits 2 MB at 51% of the event limit). Should very large plans be split, or should carried state be compacted further? |
-| 2 | The slot measurement is noisy — one run at 20 concurrent showed 92.5s p95, the next none. How many repetitions before a pool-sizing rule goes into `docs/07`? |
-| 3 | Reaching the stalled state takes about 8 minutes, because each retry costs the 30s heartbeat timeout plus backoff. Is that acceptable, or should the heartbeat timeout be shorter for steps known to be waiting on infrastructure? |
-| 4 | `docs/09` 8.4 allows `lower` and `upper`, which Cel.NET lacks. The engine now registers them. Should the allow-list also drop `matches`, which brings a regex engine into workflow code? |
+| 1 | The slot measurement has two repetitions at 20-against-10, with p95 of 105.75s and 61.25s. Review 13 asks for three per level. Is two enough to write the arithmetic rule into `docs/07`, or should a third run be done first? |
+| 2 | The 16-against-10 case failed its own sanity check (1 activity waited where 6 were expected). Worth a rerun, or is the 20-against-10 evidence sufficient? |
