@@ -43,7 +43,7 @@ public sealed class InMemoryArtifactStore : IArtifactStore
         content[uri] = bytes;
 
         return Task.FromResult(ProviderResult<ArtifactRef>.Ok(
-            new ArtifactRef(uri, hash, bytes.LongLength)));
+            new ArtifactRef(uri, ContentHash: hash, SizeBytes: bytes.LongLength)));
     }
 
     public bool TryGet(string uri, out byte[] bytes) => content.TryGetValue(uri, out bytes!);

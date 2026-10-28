@@ -138,15 +138,6 @@ public sealed record ReviewComment(
 public sealed record CommentRef(string Id, string? Url = null);
 
 /// <summary>
-/// A reference to stored content. The content itself never enters workflow
-/// state (DP10).
-/// </summary>
-public sealed record ArtifactRef(
-    string Uri,
-    string? ContentHash = null,
-    long? SizeBytes = null);
-
-/// <summary>
 /// A file read from a branch, with the hash of its content.
 ///
 /// <para>

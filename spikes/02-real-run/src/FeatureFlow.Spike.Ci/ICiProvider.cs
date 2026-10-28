@@ -1,5 +1,6 @@
 using FeatureFlow.Spike.Contracts;
 using FeatureFlow.Spike.Providers;
+using ArtifactRef = FeatureFlow.Spike.Contracts.ArtifactRef;
 
 namespace FeatureFlow.Spike.Ci;
 
@@ -235,15 +236,10 @@ public static class LogRefKind
 
 /// <summary>
 /// A reference to an artifact, not its content. Same rule as <see cref="LogRef"/>.
+///
+/// <para>
+/// The shared <see cref="FeatureFlow.Spike.Contracts.ArtifactRef"/> is aliased
+/// here so CI results and code-host diffs are the same type end to end.
+/// </para>
 /// </summary>
-public sealed record ArtifactRef(
-    string Id,
-    string Name,
-    string Uri,
-    long? SizeBytes = null,
-    string? Digest = null,
-    DateTimeOffset? ExpiresAt = null,
-    string? ContentType = null)
-{
-    public override string ToString() => $"{Name} ({Id})";
-}
+// ArtifactRef comes from FeatureFlow.Spike.Contracts (see the alias above).

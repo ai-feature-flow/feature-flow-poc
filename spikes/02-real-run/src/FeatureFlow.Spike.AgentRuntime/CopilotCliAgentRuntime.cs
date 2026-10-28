@@ -321,6 +321,18 @@ public sealed class CopilotCliAgentRuntime : IAgentRuntimeProvider
         if (string.IsNullOrWhiteSpace(idempotencyKey))
             return ProviderResult<AgentSession>.Work("validation_failed", "idempotency key is required");
 
+        // BYOK routing has no default model: the CLI exits 1 with "BYOK providers
+        // require an explicit model" before doing any work. That is a confusing
+        // failure for a caller who configured an endpoint but no model, so it is
+        // refused here with the requirement named.
+        if (options.HasEndpoint && string.IsNullOrWhiteSpace(options.Model))
+        {
+            return ProviderResult<AgentSession>.Work(
+                "validation_failed",
+                $"a model is required when an endpoint is configured "
+                + $"(endpoint '{options.Endpoint}'); BYOK routing has no default model");
+        }
+
         // A new session needs a UUID the runtime will accept, so a later resume
         // can name it. Generated here rather than read back from the runtime,
         // because StartAsync must return the reference without waiting for output.

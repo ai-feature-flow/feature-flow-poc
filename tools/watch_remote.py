@@ -213,7 +213,18 @@ def main() -> int:
 
     try:
         while True:
-            report = check(repo, branch, args.review_pattern)
+            try:
+                report = check(repo, branch, args.review_pattern)
+            except RuntimeError as exc:
+                # A transient network failure must not end the poll loop: the
+                # whole point of polling is to catch a review that lands while
+                # nobody is looking. Report and keep going.
+                print(f"warning: {exc}", file=sys.stderr)
+                if not args.interval:
+                    return 1
+                time.sleep(args.interval)
+                continue
+
             if report is not None:
                 if args.json:
                     print(json.dumps(report.as_dict(), indent=2))
@@ -224,9 +235,6 @@ def main() -> int:
             if not args.interval:
                 return 0
             time.sleep(args.interval)
-    except RuntimeError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
     except KeyboardInterrupt:
         print("\nstopped")
         return 0

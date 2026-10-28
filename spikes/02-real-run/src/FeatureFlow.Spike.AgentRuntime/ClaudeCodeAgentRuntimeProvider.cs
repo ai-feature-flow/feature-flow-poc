@@ -4,11 +4,9 @@ using System.Text.Json;
 using FeatureFlow.Spike.Contracts;
 using FeatureFlow.Spike.Providers;
 
-// ArtifactRef is owned by the code host project (docs/04 section 8). The agent
-// runtime needs only the type, and referencing the whole code host would drag in
-// its own duplicate ICredentialBroker seam, so it is aliased here. When the
-// shared type moves to FeatureFlow.Spike.Contracts, drop the alias.
-using ArtifactRef = FeatureFlow.Spike.CodeHost.ArtifactRef;
+// ArtifactRef is shared by every provider that produces stored content, so it
+// lives in FeatureFlow.Spike.Contracts rather than in any one provider.
+using ArtifactRef = FeatureFlow.Spike.Contracts.ArtifactRef;
 
 namespace FeatureFlow.Spike.AgentRuntime;
 
