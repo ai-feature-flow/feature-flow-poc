@@ -1,15 +1,22 @@
 # Spike 2 results: one real ticket run
 
-Written 2026-10-28.
+Written 2026-10-28. Revised 2026-10-29 after review 14.
 
 **Question** (`docs/08` 2.2): does one ticket run end to end against real
 providers, on a real repository?
 
-**Answer: yes.** One ticket ran the real 17-step `ticket-delivery` plan against
-real GitHub, real GitHub Actions, and two real agent runtimes, and merged
-**PR #3** into `main` as squash commit `5dd0108`. The cost of the run is known
-from the record store: **6,150 input tokens, 111 output tokens, 103.3 s of
-compute across 10 distinct steps**.
+**Answer: partly.** The plumbing is real and verified against live systems, and
+an agent now authors the change. But the first run's exit criterion was **not**
+met: floor F1 was bypassed, and the agent's output was canned content rather
+than model-authored work. Both are fixed and re-run; the corrected state is
+below, and section 9 records what remains open.
+
+**What is now evidenced.** One ticket ran the real 17-step `ticket-delivery`
+plan against real GitHub and real GitHub Actions, with the `copilot-cli`
+runtime on `z-ai/glm-5.3-flash` through OpenRouter **authoring the change**
+(commit `2c04e04`, `WidgetStore.IsEmpty()`) and the fixer authoring its
+regression test (commit `1b248db`). The run targeted the integration branch
+`ff/epic/spike-2`, not `main`. Cost is known from the record store.
 
 | Deliverable | Where |
 |---|---|
@@ -110,11 +117,32 @@ both visible in the record rather than hidden.
 
 ### R4 — a review run twice on unchanged input gives the same verdict
 
-Same diff hash, same prior findings, two passes: both `findings_open` with the
-same single finding. The control is the interesting part — decline the finding
-and the verdict changes to `completed`, and the declined finding is **not
-re-raised** on the next review. Determinism holds because `prior_findings` is
-passed; without it the verdict would drift.
+**Not met.** The first run's R4 was circular: `review.run` derived its verdict
+from the diff hash, so two passes agreed by construction. Review 14 A7 required
+re-running with a real reviewer model.
+
+Four real model passes on unchanged input:
+
+| pass | outcome | findings | prior findings passed |
+|---|---|---|---|
+| 1 | `findings_open` | 1 | 0 |
+| 2 | `findings_open` | 1 | 0 |
+| 3 | `findings_open` | 1 | 1 |
+| 4 | `findings_open` | 2 | 1 |
+
+**The verdicts do not agree, and passing prior findings did not stabilise
+them.** Two distinct instabilities:
+
+1. **A fixed finding is re-raised.** `f-review-1` is recorded `fixed=true` after
+   the fixer's commit, yet the next pass raises it again — the model is told the
+   finding exists and is fixed, and re-raises it anyway.
+2. **A new finding appears on unchanged input.** Pass 4 raises
+   `f-review-2` (`missing-eof-newline`), which passes 1-3 did not raise.
+
+This is precisely what R4 exists to detect, so it is reported rather than
+reconciled. The control still holds: declining a finding changes the verdict,
+and a declined finding is not re-raised — enforced by the engine (K4), not left
+to the model.
 
 ### R16 — a mid-run edit to `feature-flow.yaml` is picked up by the next step
 
@@ -203,31 +231,37 @@ requires.
 
 `docs/09` 15.3.1 argues for `insert_after` with rewiring over `add_step` plus
 `change_route`, on the grounds that it gives an LLM fewer things to get right.
-This is the measurement that settles it.
 
-| form | validation failure rate |
-|---|---|
-| `insert_after` | 25% |
-| `add_step` + `change_route` | 50% |
-| both, with `protected` cleared | 0% |
+The first measurement was **circular** — patches were generated in code by
+cycling targets, so the 25%/50% rates measured floor F3 refusals, not planner
+reliability. Review 14 A8 required re-running with a planner model authoring
+patches from the readable form.
 
-**Read this carefully, because the headline number is misleading.** The
-two-phase result separates two different things:
+**Re-run: 20 trials per form, planner-authored, against the real plan with
+`design` protected.**
 
-- **Phase 2 — rewiring correctness: both forms are 100% reliable.** Neither
-  form ever produced a wrong graph. The argument in `docs/09` 15.3.1 was about
-  *authoring difficulty*, not engine correctness, and the engine gets both
-  right.
-- **Phase 1 — the entire gap is floor F3.** `change_route` on a protected
-  step is refused. The two-op form therefore gets refused **twice** where
-  `insert_after` is refused **once** — it is the same single refusal, counted
-  once per operation.
+| form | authored | planner failures | validation failures | applied |
+|---|---|---|---|---|
+| `insert_after` | 20/20 | 0 (0%) | 4 (20%) | 16 (80%) |
+| `add_step` + `change_route` | 20/20 | 0 (0%) | 5 (25%) | 15 (75%) |
 
-So the measurement supports the `docs/09` 15.3.1 decision, but for a narrower
-reason than the document gives: not that `add_step` + `change_route` rewires
-incorrectly, but that it **doubles the author's exposure to a protected-step
-refusal** and requires knowing every inbound route. The document's reasoning
-survives; the evidence for it is different in kind than the document implies.
+The planner authored **every** patch — 0% planner failure rate on both forms.
+That is the number review 11 C2 asked for, and it is a real measurement rather
+than a floor-F3 artefact.
+
+The remaining 20%/25% is still floor F3, but now for a more informative
+reason: the planner **chose** `plan_spec` as its target, and inserting after
+`plan_spec` strands the protected `design` step. The earlier measurement forced
+that target by cycling; this one shows the planner picking it on its own.
+
+**What this does not say.** The gap between the forms (20% vs 25%, one trial) is
+**not** large enough to conclude that `insert_after` is safer as a mechanism.
+With 20 trials, one trial is the smallest difference the measurement can
+express. Reporting it as a reliability difference would repeat the mistake A8
+is about. The finding is narrower: a planner asked to insert a notification
+step will sometimes pick a target whose rewiring strands a protected step, and
+the two-op form hits that one extra time because it states the rewiring
+explicitly.
 
 ---
 
@@ -245,28 +279,32 @@ provided differs — this is the table the spike exists to produce.
 | `session_resume` | yes | yes |
 | `usage_reporting` | yes | yes |
 | `model_configuration` | yes | yes |
-| `custom_endpoint` | yes (BYOK router) | yes (`ANTHROPIC_BASE_URL`) |
+| `custom_endpoint` | yes (BYOK router) | no (Anthropic API only) |
 | `max_context_tokens` | unknown (not exposed) | 200000 |
 
-**The one real difference is hooks.** Claude Code fired all four events
-(`SessionStart`, `PreToolUse`, `PostToolUse`, `Stop`) on Windows. Copilot CLI
-fired `SessionStart` and `Stop`; `PreToolUse` and `PostToolUse` registered but
-never fired in these runs.
+**Two real differences.**
 
-That matters because **per-tool-call policy (deny before execution) depends on
-`PreToolUse`.** On Copilot CLI it is therefore unavailable, and the
-`docs/08` 2.5 fallback applies: sandbox-enforced write access, broker-scoped
-push, post-step diff check, and cost from the runtime's own usage output. The
-run records the coarser control rather than assuming the finer one.
+**Hooks.** Claude Code fired all four events (`SessionStart`, `PreToolUse`,
+`PostToolUse`, `Stop`) on Windows. Copilot CLI fired `SessionStart` and `Stop`;
+`PreToolUse` and `PostToolUse` registered but never fired in these runs.
 
-**Caveat, stated rather than smoothed over:** the Copilot CLI runs here used a
-local Ollama model through a BYOK router, because no Copilot subscription token
-is available in this environment. The local models emit tool calls as *prose
-text* rather than structured `tool_use` blocks, so the CLI may never have
-dispatched a real tool — which would explain the missing `PreToolUse` events
-without implying anything about Copilot CLI's behaviour with a first-party
-model. **This is unproven either way and should be re-tested with a real Copilot
-credential before it is treated as a finding about the runtime.**
+This matters because **per-tool-call policy (deny before execution) depends on
+`PreToolUse`.** On Copilot CLI it is therefore unavailable, and the `docs/08`
+2.5 fallback applies: sandbox-enforced write access, broker-scoped push,
+post-step diff check, and cost from the runtime's own usage output. The run
+records the coarser control rather than assuming the finer one.
+
+**Custom endpoints.** Copilot CLI honours `COPILOT_PROVIDER_BASE_URL` and will run
+against an OpenAI-compatible router. Claude Code validates model names against
+Anthropic's own list and speaks the Anthropic Messages API, so it **cannot** be
+pointed at an arbitrary router — it rejects the model before any request is made.
+This is why A3 is evidenced for `copilot-cli` only.
+
+**Caveat, stated rather than smoothed over:** the Copilot CLI runs here used
+`z-ai/glm-5.3-flash` through OpenRouter, because no Copilot subscription
+token is available in this environment. Whether `PreToolUse` fires on Copilot CLI
+with a first-party model is **unproven either way** and should be re-tested before
+it is treated as a finding about the runtime.
 
 ---
 
@@ -295,23 +333,32 @@ code host was given a bare repo name as its scope.
 
 ## 6. What could not be evidenced
 
-**The model behind the agent runtime cannot author code.** Ollama returns tool
-calls as prose text rather than structured `tool_use` blocks, so the runtime
-never acts on them. Verified directly: `qwen2.5-coder:32b` returns
-`stop_reason=end_turn` with the call sitting in `content[0].text`.
+**Claude Code on A3: not evidenced.** It rejects the router's model with
+`[claude-code:unrecognized_model]` (HTTP 404), because it validates model names
+against Anthropic's own list and speaks the Anthropic Messages API rather than the
+OpenAI-compatible shape this router serves. Per the product owner's decision of
+2026-10-29, no proxy was built to work around this. `organisation.yaml`'s
+`roleMapping` now maps every role to `copilot-cli`; the `claude-code` instance is
+still registered and probed, but maps to no role, because a runtime that cannot
+reach the model cannot evidence anything.
 
-No Copilot or Anthropic credential exists in this environment, and the GitHub
-App token cannot authenticate to Copilot's models. So in the merged run, each
-agent step's **content** was applied by `StepWork` rather than produced by the
-model.
+**A stable R4 verdict: not evidenced — and that is the finding.** With a real
+reviewer model in the loop, verdicts differ across passes on unchanged input
+(section 2, R4). The previous pass was an artefact of the verdict being a pure
+function of the diff hash. The engine-enforced control still holds: a declined
+finding is not re-raised.
 
-Everything *around* the model is real: the runtime process was started and
-polled, the commit was pushed, the diff was read back from the code host, CI
-was dispatched and its result read, and the PR was opened and merged. What is
-not evidenced is **model-authored code**.
+**K4-decline: not evidenced.** Opening a pull request returned
+`Infrastructure/server_error`, so the decline reason could not be posted on a real
+PR. This is pre-existing and unrelated to A3/A7/A8.
 
-This is the single largest gap in the spike, and it is a credential gap, not a
-design gap. It should be closed before Spike 3.
+**A2 residual risk, recorded not fixed.** The `administration` permission that
+lets the app create the `main` ruleset also lets it **edit** that ruleset — a no-op
+`PUT` was accepted with HTTP 200. So the code host is a backstop against an engine
+that is *wrong*, not one that is *hostile*. Narrowed by: the key lives outside the
+repo (floor F2), and the broker's grantable set excludes `administration`, so no
+agent can obtain a credential that could edit it. Closing it properly needs an
+org-level ruleset or an owner-held credential — a product-owner decision.
 
 ---
 
@@ -320,19 +367,64 @@ design gap. It should be closed before Spike 3.
 | Was | Now | Source |
 |---|---|---|
 | `outputs` cap of 16 entries / 256 bytes, a starting value | Measured: widest value 71 B, most entries 5. Cap not binding; keep it | review 11 C1 |
-| `insert_after` rewiring argued, not measured | 25% vs 50% validation failure rate; both 100% correct at rewiring | review 11 C2 |
 | Runtime capabilities assumed | Measured per runtime; hooks differ, `PreToolUse` unproven on Copilot CLI | `docs/08` 2.2 |
 | Sandbox/CI divergence (R5) | Docker-dependent tier delegated to CI, verified green | R5 |
 | Credential scoping asserted | 60 min, one repository, expiry assertable, wider requests refused | R6 |
+| F1 held by plan routing | F1 enforced by the engine; a harness approval is refused | review 14 A1 |
+| `main` unprotected on the code host | Ruleset `protect-main` active, no app bypass | review 14 A2 |
+
+The `insert_after` row is **deliberately absent**. The first measurement was
+circular; the re-run (section 3) reports a 0% planner failure rate on both forms
+and a 20%/25% validation failure rate that is still floor F3. Neither number
+supports replacing the `docs/09` 15.3.1 estimate with a measured reliability
+figure, so no row is claimed.
 
 ---
 
 ## 8. Open questions
 
+Review 14 answered all five questions from the first draft. The answers are
+recorded here, and the new questions they raise are listed below.
+
+### Answers from review 14
+
+| # | Question | Answer |
+|---|---|---|
+| 1 | Tighten the App installation from org-wide to the fixture repository | **Yes.** Least privilege is the design (R6); install it on `feature-flow-example` only |
+| 2 | A Copilot token or Anthropic key | Not for now: use OpenRouter, for both runtimes |
+| 3 | Is `PreToolUse` absent on Copilot CLI? | Re-test with a first-party model after A3. Until then, plan for the `docs/08` 2.5 fallback on Copilot |
+| 4 | Closed PRs #1–#4 | Leave them as the example's history |
+| 5 | `max_context_tokens` for Copilot CLI | Not needed for version 1. The runtime's usage output is enough; record it as unknown |
+
+### Still open
+
 | # | Question |
 |---|---|
-| 1 | Should the App installation be tightened from org-wide to `feature-flow-example` only? It is currently org-wide, which is wider than the spike needs |
-| 2 | Can we get a Copilot subscription token or an Anthropic key, so Spike 3 exercises model-authored code rather than `StepWork`? |
-| 3 | Is `PreToolUse` genuinely absent on Copilot CLI, or an artefact of the local model? Needs a first-party credential to settle |
-| 4 | Four closed PRs (#1–#4) remain on the fixture repo; GitHub has no API to delete a PR. Delete them in the web UI, or leave them as the example's history? |
-| 5 | `max_context_tokens` is unknown for Copilot CLI. Do we need it, or is the runtime's own usage output enough? |
+| 1 | **R4 is genuinely unstable with a real reviewer model** — a fixed finding is re-raised, and a new finding appears on unchanged input. Is this acceptable for version 1, or does the review loop need a stability mechanism (for example, requiring two agreeing passes before a finding is raised)? |
+| 2 | Claude Code cannot reach OpenRouter, so one of the two runtimes is unevidenced on A3. Should we obtain an Anthropic key, or accept `copilot-cli` as the only evidenced runtime for version 1? |
+| 3 | The `administration` permission lets the app edit the very ruleset that protects `main`. Accept the residual risk, or move to an org-level ruleset / owner-held credential? |
+| 4 | The `insert_after` gap (20% vs 25%) is within one trial of noise. Is a larger trial worth running, or is the qualitative finding (planners pick targets that strand protected steps) enough? |
+
+---
+
+## 9. What review 14 changed
+
+The first version of this document claimed the exit criterion was met. It was
+not. Review 14 identified four reasons, all of which are now addressed or
+recorded.
+
+| # | Review 14 finding | State |
+|---|---|---|
+| A1 | Floor F1 bypassed: `main` merged by the bot after the harness auto-approved every gate | **Fixed.** The engine enforces F1 itself; a harness approval is refused. Test added. The false comment claiming an integration-branch target is corrected. |
+| A2 | No code-host protection for `main` | **Fixed.** Ruleset `protect-main` (id 26099165) is active with no app bypass. Residual risk recorded in section 6. |
+| A3 | No real model authored the change | **Partly fixed.** Evidenced for `copilot-cli` on `z-ai/glm-5.3-flash` via OpenRouter; `StepWork` removed from the agent path. **Not evidenced for `claude-code`** — it cannot reach an OpenAI-compatible router. |
+| A5 | Plan and organisation config disagree on decision types | **Fixed.** Policy keyed by decision type; run-start checks 20-22 run in the worker. |
+| A6 | `policy.replan.allowed_roles` missing | **Fixed.** Added; a disallowed role becomes a pending human decision. |
+| A7 | R4 circular | **Fixed and now genuinely failing.** Real reviewer model; verdicts disagree across passes. Reported, not reconciled. |
+| A8 | `insert_after` measurement circular | **Fixed.** Planner-authored patches; 0% planner failure rate. The 20%/25% gap is within noise and is not claimed as a reliability difference. |
+| B1 | W0 evidence not recorded | **Fixed.** Section 4 carries the per-runtime hook evidence. |
+| B2 | `docs/16` overstated the result | **Fixed.** The answer is now "partly". |
+| B3 | Closed PRs on the fixture repo | **Noted.** Left as the example's history, per the product owner. |
+| B4 | `docs/15` 6.3 slot measurement inconsistent | **Open.** Not started; carried below. |
+
+**Not yet done:** B4, the Spike 1 correction — `docs/15` 6.3 says "roughly 10 activities wait" at 20 against 10, but its table shows 5 and 6; peak never above 9 of 10, and 25 activities for 20 runs are unexplained. This needs the third repetition and then a pool-sizing note in `docs/07`. It is independent of the Spike 2 exit criterion, which is why it is still open.
