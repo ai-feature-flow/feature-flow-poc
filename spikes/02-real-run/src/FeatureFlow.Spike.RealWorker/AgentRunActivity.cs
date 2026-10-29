@@ -51,6 +51,12 @@ public sealed partial class RealActivities
         var runtime = Context.Runtimes.ForRole(role);
         var instance = Context.Runtimes.InstanceForRole(role);
 
+        // The head before the agent runs. Comparing against it afterwards is
+        // what makes "the agent made no commit" detectable: reading HEAD after
+        // the run always succeeds, so a bare post-run read can never tell
+        // whether the agent committed anything.
+        var headBefore = await HeadShaAsync();
+
         // R16: read feature-flow.yaml from the branch this step works on, and
         // record its hash. A mid-run edit is visible rather than silently stale.
         var manifest = await ReadManifestAsync(step.Id);
@@ -112,14 +118,61 @@ public sealed partial class RealActivities
         var value = result.Value!;
         var compute = (DateTimeOffset.UtcNow - startedAt).TotalSeconds;
 
-        // The step's work. The runtime really ran and was really polled; the
-        // change itself is applied by StepWork because the model behind this
-        // spike's runtime cannot emit tool calls (see StepWork's header). The
-        // commit is real, on the real branch, and the diff is read back from the
-        // code host.
-        var commit = await StepWork.ApplyAsync(Context, step);
-        if (commit is not null)
-            Console.WriteLine($"STEP {step.Id}: committed {commit} on {Context.Branch}");
+        // The step's work is whatever the agent committed. Nothing here writes
+        // to the checkout: review 14 A3 removed StepWork from the agent path,
+        // because applying canned content made the run look like the agent had
+        // authored the change when it had not.
+        //
+        // The commit is read back from the branch and compared with the head
+        // from before the run. A step whose agent made no commit is a real
+        // failure, and it is reported as one rather than silently adopting
+        // whatever HEAD happens to be.
+        var commit = await HeadShaAsync();
+        if (commit is null)
+        {
+            Console.WriteLine($"STEP {step.Id}: the branch head could not be resolved; " +
+                              "reported as failed rather than faked");
+            return new AgentRunResult(
+                Outcomes.Failed,
+                SessionRef: value.SessionRef ?? handle.SessionRef,
+                SessionTurns: value.SessionTurns,
+                CommandHandle: handle.SessionRef,
+                SandboxKey: sandbox.Key,
+                ErrorReason: $"the branch head could not be resolved on {Context.Branch}");
+        }
+
+        if (string.Equals(commit, headBefore, StringComparison.Ordinal))
+        {
+            Console.WriteLine($"STEP {step.Id}: the agent made no commit on {Context.Branch} " +
+                              $"(head still {commit}); reported as failed rather than faked");
+            return new AgentRunResult(
+                Outcomes.Failed,
+                SessionRef: value.SessionRef ?? handle.SessionRef,
+                SessionTurns: value.SessionTurns,
+                CommandHandle: handle.SessionRef,
+                SandboxKey: sandbox.Key,
+                ErrorReason: $"the agent produced no commit on {Context.Branch}");
+        }
+
+        // The agent commits locally; the engine publishes. The prompt tells the
+        // agent not to push, because the push credential is the engine's to
+        // hold — an agent that can push can also rewrite history the engine
+        // has already recorded. The credential is the one minted for this step
+        // above, so no second grant is needed.
+        var pushed = await PushAsync(credential.Value!);
+        Console.WriteLine($"STEP {step.Id}: agent committed {commit} on {Context.Branch} " +
+                          $"(was {headBefore}); pushed={pushed}");
+
+        if (!pushed)
+        {
+            return new AgentRunResult(
+                Outcomes.Failed,
+                SessionRef: value.SessionRef ?? handle.SessionRef,
+                SessionTurns: value.SessionTurns,
+                CommandHandle: handle.SessionRef,
+                SandboxKey: sandbox.Key,
+                ErrorReason: $"the agent's commit {commit} could not be pushed to {Context.Branch}");
+        }
 
         // R13: tokens, model and compute time, per step.
         Context.RecordCost(new StepCost(
@@ -236,6 +289,48 @@ public sealed partial class RealActivities
 
             await Task.Delay(PollInterval);
         }
+    }
+
+    /// <summary>
+    /// Publishes the agent's commit to the branch.
+    ///
+    /// <para>
+    /// The agent is told not to push, so the engine does it here. The token goes
+    /// into the remote URL for one command only; it is never written to the
+    /// repository's config or to a file (floor F2).
+    /// </para>
+    /// </summary>
+    private async Task<bool> PushAsync(Credential credential)
+    {
+        var token = credential.Secret;
+        var remote = $"https://x-access-token:{token}@github.com/{RunContext.Owner}/{RunContext.Repository}.git";
+
+        var startInfo = new System.Diagnostics.ProcessStartInfo("git")
+        {
+            WorkingDirectory = Context.WorkingDirectory,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+        startInfo.ArgumentList.Add("push");
+        startInfo.ArgumentList.Add(remote);
+        startInfo.ArgumentList.Add(Context.Branch);
+
+        using var git = System.Diagnostics.Process.Start(startInfo);
+        if (git is null)
+            return false;
+
+        var error = await git.StandardError.ReadToEndAsync();
+        await git.WaitForExitAsync();
+
+        if (git.ExitCode != 0)
+        {
+            Console.WriteLine($"STEP push: exited {git.ExitCode}: {error.Trim()}");
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>

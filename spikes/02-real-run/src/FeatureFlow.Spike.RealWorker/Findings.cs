@@ -32,7 +32,12 @@ public sealed record ReviewVerdict(
     string? DiffHash,
     IReadOnlyList<string> PriorFindingIds,
     IReadOnlyList<Finding> Findings,
-    DateTimeOffset At);
+    DateTimeOffset At,
+    /// <summary>Which model produced this verdict. Null when no model was involved.</summary>
+    string? Model = null,
+    long? InputTokens = null,
+    long? OutputTokens = null,
+    double? CostUsd = null);
 
 public sealed record TriageRecord(
     string StepId,
@@ -140,6 +145,18 @@ public static class Findings
         {
             var store = Load(context);
             store.Verdicts.Add(verdict);
+
+            // The verdict's findings are the store's findings. Without this
+            // the findings a reviewer model raises are recorded in the verdict
+            // but never enter the store, so triage sees nothing open, selects
+            // nothing, and fix.verify fails forever — a loop that looks like a
+            // planner problem but is a persistence bug.
+            foreach (var finding in verdict.Findings)
+            {
+                store.Findings.RemoveAll(f => f.Id == finding.Id);
+                store.Findings.Add(finding);
+            }
+
             Save(context, store);
         }
     }
@@ -158,6 +175,22 @@ public static class Findings
         {
             var finding = Load(context).Findings.FirstOrDefault(f => f.Id == findingId);
             return finding?.DeclineReason is not null;
+        }
+    }
+
+    /// <summary>
+    /// The ids of every declined finding. A7: the reviewer is told which
+    /// findings were declined so it does not re-raise them, which is what
+    /// "passing prior findings stabilised them" measures.
+    /// </summary>
+    public static List<string> DeclinedIds(RunContext context)
+    {
+        lock (Gate)
+        {
+            return Load(context).Findings
+                .Where(f => f.DeclineReason is not null)
+                .Select(f => f.Id)
+                .ToList();
         }
     }
 

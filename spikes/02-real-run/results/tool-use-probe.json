@@ -1,0 +1,50 @@
+[
+  {
+    "label": "Ollama local",
+    "model": "qwen2.5-coder:7b",
+    "endpoint": "http://localhost:11434/v1",
+    "finish_reason": "stop",
+    "tool_call_count": 0,
+    "tool_names": [],
+    "content_excerpt": "{\n  \"name\": \"write_file\",\n  \"arguments\": {\n    \"path\": \"notes/hello.txt\",\n    \"content\": \"hello from the agent\"\n  }\n}",
+    "structured": false
+  },
+  {
+    "label": "Ollama local",
+    "model": "qwen2.5-coder:32b",
+    "endpoint": "http://localhost:11434/v1",
+    "finish_reason": "stop",
+    "tool_call_count": 0,
+    "tool_names": [],
+    "content_excerpt": "{\"name\": \"write_file\", \"arguments\": {\"content\": \"hello from the agent\", \"path\": \"notes/hello.txt\"}}",
+    "structured": false
+  },
+  {
+    "label": "Ollama local",
+    "model": "llama3.1:8b",
+    "endpoint": "http://localhost:11434/v1",
+    "finish_reason": "tool_calls",
+    "tool_call_count": 1,
+    "tool_names": [
+      "write_file"
+    ],
+    "content_excerpt": "",
+    "structured": true
+  },
+  {
+    "label": "Ollama local",
+    "model": "llama3:latest",
+    "structured": false,
+    "error": "HTTP 400"
+  },
+  {
+    "label": "Ollama local",
+    "model": "qwen2.5-coder:3b",
+    "endpoint": "http://localhost:11434/v1",
+    "finish_reason": "stop",
+    "tool_call_count": 0,
+    "tool_names": [],
+    "content_excerpt": "```json\n{\n  \"name\": \"write_file\",\n  \"arguments\": {\n    \"path\": \"notes/hello.txt\",\n    \"content\": \"hello from the agent\"\n  }\n}\n```",
+    "structured": false
+  }
+]

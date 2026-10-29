@@ -88,9 +88,22 @@ roles:
 
 # Which runtime instance each role uses (docs/09 11.1). This is the only place
 # a product name appears.
+#
+# Review 14 A3. designer and implementer were on claude-code. Claude Code
+# validates model names against Anthropic's own list and speaks the Anthropic
+# Messages API, not the OpenAI-compatible shape this router serves, so it
+# rejects z-ai/glm-5.3-flash with [claude-code:unrecognized_model] before
+# doing any work. The product owner decided on 2026-10-29 to report Claude Code
+# as NOT EVIDENCED on A3 and proceed with Copilot CLI only, rather than
+# build a proxy to work around it.
+#
+# So every role now runs on copilot-cli. The claude-code instance is still
+# registered above and still probed; it is simply not mapped to a role for
+# this run, because a runtime that cannot reach the model cannot evidence
+# anything.
 roleMapping:
   planner:     { agentRuntime: copilot-cli, model: default }
-  designer:    { agentRuntime: claude-code, model: default }
-  implementer: { agentRuntime: claude-code, model: default }
+  designer:    { agentRuntime: copilot-cli, model: default }
+  implementer: { agentRuntime: copilot-cli, model: default }
   fixer:       { agentRuntime: copilot-cli, model: default }
   reviewer:    { agentRuntime: copilot-cli, model: default }

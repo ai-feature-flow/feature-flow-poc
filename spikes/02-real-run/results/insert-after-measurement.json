@@ -1,0 +1,30 @@
+[
+  {
+    "Form": "insert_after",
+    "Trials": 20,
+    "Authored": 20,
+    "PlannerFailures": 0,
+    "ValidationFailures": 4,
+    "Applied": 16,
+    "Reasons": {
+      "protected step cannot be changed (floor F3)": 4
+    },
+    "PlannerFailureRate": 0,
+    "ValidationFailureRate": 0.2,
+    "AppliedRate": 0.8
+  },
+  {
+    "Form": "add_step_change_route",
+    "Trials": 20,
+    "Authored": 20,
+    "PlannerFailures": 0,
+    "ValidationFailures": 5,
+    "Applied": 15,
+    "Reasons": {
+      "protected step cannot be changed (floor F3)": 5
+    },
+    "PlannerFailureRate": 0,
+    "ValidationFailureRate": 0.25,
+    "AppliedRate": 0.75
+  }
+]
