@@ -51,9 +51,11 @@ agentRuntime:
 # ------------------------------------------------------------------ policy
 policy:
   approval:
-    ticket:  { roles: [approver], minCount: 1, agentCounts: false }
-    epic:    { roles: [approver], minCount: 1, agentCounts: false }
-    defaultBranch: { roles: [approver], minCount: 2, agentCounts: false }   # floor F1
+    ticket.merge_approval: { roles: [approver], minCount: 1, agentCounts: false }
+    ticket.spec_approval: { roles: [approver], minCount: 1, agentCounts: false }
+    ticket.design_approval: { roles: [approver], minCount: 1, agentCounts: false }
+    ticket.escalation: { roles: [approver], minCount: 1, agentCounts: false }
+    default_branch.merge_approval: { roles: [approver], minCount: 2, agentCounts: false } # floor F1
   merge:
     defaultBranch: { methods: [squash], requireChecks: true, autoMerge: false }  # floor F1
     integrationBranch: { methods: [merge], requireChecks: true, autoMerge: true }
@@ -63,6 +65,8 @@ policy:
   attempts:
     ceiling: { agent.run: 5, perRun: 40 }
     hardCeiling: { agent.run: 8, perRun: 60 }
+  replan:
+    allowed_roles: [feature-flow-default:roles/planner, feature-flow-default:roles/designer, feature-flow-default:roles/implementer, feature-flow-default:roles/fixer, feature-flow-default:roles/reviewer]
   timeouts:
     heartbeat: 30s
     stalledAfter: 5m
@@ -72,7 +76,8 @@ policy:
     mayGrantAttempts: [steerer, admin]
     mayAbort: [steerer, admin]
   chat:
-    allowedDecisions: [ticket.gate, epic.gate]    # default-branch merge is console only
+    allowedDecisions: [ticket.merge_approval, ticket.spec_approval, ticket.design_approval, ticket.escalation]
+    # default_branch.merge_approval is console only.
 
 # -------------------------------------------------------------------- roles
 roles:

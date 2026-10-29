@@ -48,7 +48,8 @@ public sealed class RunContext
         string branch,
         string integrationBranch,
         string ticketId,
-        string recordDirectory)
+        string recordDirectory,
+        OrganisationConfiguration? organisation = null)
     {
         RunId = runId;
         Plan = plan;
@@ -59,6 +60,8 @@ public sealed class RunContext
         RecordDirectory = recordDirectory;
 
         Directory.CreateDirectory(RecordDirectory);
+        Organisation = organisation ?? OrganisationConfiguration.Load();
+        Decisions = new DecisionLedger(RecordDirectory, RunId);
 
         CodeHostRepo = new CodeHost.RepoRef(Owner, Repository);
         CiRepo = new Ci.RepoRef(Owner, Repository);
@@ -115,6 +118,9 @@ public sealed class RunContext
     public string IntegrationBranch { get; }
     public string TicketId { get; }
     public string RecordDirectory { get; }
+
+    public OrganisationConfiguration Organisation { get; }
+    public DecisionLedger Decisions { get; }
 
     public CodeHost.RepoRef CodeHostRepo { get; }
     public Ci.RepoRef CiRepo { get; }

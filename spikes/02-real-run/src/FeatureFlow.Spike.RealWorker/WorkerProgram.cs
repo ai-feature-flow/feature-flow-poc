@@ -21,13 +21,15 @@ public static class WorkerProgram
         var taskQueue = Arg(args, "--queue") ?? "spike-2-real";
         var address = Arg(args, "--address") ?? "localhost:7333";
         var workingDirectory = Arg(args, "--repo") ?? @"D:\Dev\feature-flow-poc\spikes\02-real-run\fixture";
-        var branch = Arg(args, "--branch") ?? "main";
-        var integrationBranch = Arg(args, "--base") ?? "main";
+        var branch = Arg(args, "--branch") ?? "ff/ticket/spike-2-1";
+        var integrationBranch = Arg(args, "--base") ?? "ff/epic/spike-2";
         var ticketId = Arg(args, "--ticket") ?? "TICKET-SPIKE2-1";
         var runId = Arg(args, "--run-id") ?? $"real-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}";
         var recordDirectory = Arg(args, "--records")
                               ?? @"D:\Dev\feature-flow-poc\spikes\02-real-run\results\records";
         var maxConcurrentActivities = int.Parse(Arg(args, "--max-concurrent-activities") ?? "10");
+        var planPath = Arg(args, "--plan");
+        var organisationPath = Arg(args, "--organisation");
 
         if (args.Contains("--fast"))
         {
@@ -45,11 +47,23 @@ public static class WorkerProgram
                           $"repo={workingDirectory} branch={branch} base={integrationBranch} " +
                           $"run={runId} pid={Environment.ProcessId}");
 
-        var plan = PlanLoader.LoadTicketDelivery(ticketId);
+        var plan = planPath is null
+            ? PlanLoader.LoadTicketDelivery(ticketId)
+            : PlanLoader.Load(Path.GetFullPath(planPath), ticketId);
+        var organisation = OrganisationConfiguration.Load(
+            organisationPath is null ? null : Path.GetFullPath(organisationPath));
         Console.WriteLine($"WORKER plan {plan.Steps.Count} steps, entry {plan.Entry}");
 
+        var validation = RunStartValidator.Validate(plan, organisation);
+        validation.WriteTo(Console.Out);
+        if (!validation.Accepted)
+            return 2;
+        if (args.Contains("--validate-only"))
+            return 0;
+
         var context = new RunContext(
-            runId, plan, workingDirectory, branch, integrationBranch, ticketId, recordDirectory);
+            runId, plan, workingDirectory, branch, integrationBranch, ticketId, recordDirectory,
+            organisation);
 
         var client = await TemporalClient.ConnectAsync(new(address));
 

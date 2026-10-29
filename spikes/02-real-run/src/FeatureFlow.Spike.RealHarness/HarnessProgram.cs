@@ -85,6 +85,7 @@ public static class HarnessProgram
             "run" => await RunTicketAsync(args),
             "checks" => await Checks.RunAsync(args),
             "insert-after" => await InsertAfterMeasurement.RunAsync(args),
+            "review14" => await Review14Checks.RunAsync(),
             "cleanup" => await Cleanup.RunAsync(args),
             _ => Help(),
         };
@@ -96,9 +97,11 @@ public static class HarnessProgram
     private static async Task<int> RunTicketAsync(string[] args)
     {
         var ticketId = Arg(args, "--ticket") ?? "TICKET-SPIKE2-1";
-        var branch = Arg(args, "--branch") ?? "main";
-        var baseBranch = Arg(args, "--base") ?? "main";
+        var branch = Arg(args, "--branch") ?? "ff/ticket/spike-2-1";
+        var baseBranch = Arg(args, "--base") ?? "ff/epic/spike-2";
         var runId = Arg(args, "--run-id") ?? $"real-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}";
+        var humanApprovers = (Arg(args, "--human-approvers") ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         WriteHeader("Spike 2: one real ticket run");
         Console.WriteLine($"utc:        {DateTimeOffset.UtcNow:O}");
@@ -132,9 +135,10 @@ public static class HarnessProgram
         Console.WriteLine($"workflow:   {runId} started");
         Console.WriteLine();
 
-        // Approve gates as they open. A gate is an expected decision, not an
-        // intervention (review 08 K6): the spike targets an integration branch,
-        // and floor F1 is not waived.
+        // Every decision records its actor. Without --human-approvers the actor
+        // is the harness, which is deliberately unable to satisfy human policy
+        // or floor F1 even though it may route the workflow through a gate.
+        var decisionLedger = new DecisionLedger(RecordDirectory, runId);
         var approvals = Task.Run(async () =>
         {
             for (var i = 0; i < 600; i++)
@@ -148,9 +152,52 @@ public static class HarnessProgram
                         if (state.StepOutcomes.ContainsKey(step.Id))
                             continue;
 
+                        if (humanApprovers.Length == 0)
+                        {
+                            decisionLedger.Record(new DecisionRecord(
+                                step.Id,
+                                step.Gate!.DecisionType,
+                                Outcomes.Approved,
+                                new DecisionActor(
+                                    DecisionActorKind.Harness,
+                                    "real-harness",
+                                    Array.Empty<string>()),
+                                DateTimeOffset.UtcNow));
+                        }
+                        else
+                        {
+                            foreach (var identity in humanApprovers)
+                            {
+                                var human = new DecisionActor(
+                                    DecisionActorKind.Human,
+                                    identity,
+                                    new[] { "approver" });
+                                decisionLedger.Record(new DecisionRecord(
+                                    step.Id,
+                                    step.Gate!.DecisionType,
+                                    Outcomes.Approved,
+                                    human,
+                                    DateTimeOffset.UtcNow));
+
+                                if (step.Id == "gate_merge" &&
+                                    string.Equals(baseBranch, "main", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    decisionLedger.Record(new DecisionRecord(
+                                        step.Id,
+                                        OrganisationConfiguration.DefaultBranchMergeDecision,
+                                        Outcomes.Approved,
+                                        human,
+                                        DateTimeOffset.UtcNow));
+                                }
+                            }
+                        }
+
                         await handle.ExecuteUpdateAsync(w => w.SubmitDecisionAsync(
                             new StepDecision(step.Id, Outcomes.Approved)));
-                        Console.WriteLine($"  gate {step.Id} approved ({step.Gate!.DecisionType})");
+                        var actor = humanApprovers.Length == 0
+                            ? "harness:real-harness"
+                            : $"human:{string.Join(",human:", humanApprovers)}";
+                        Console.WriteLine($"  gate {step.Id} approved ({step.Gate!.DecisionType}) actor={actor}");
                     }
 
                     if (state.TerminalStatus is not null)
@@ -213,6 +260,7 @@ public static class HarnessProgram
         Console.WriteLine("  run           one real ticket to a merged PR");
         Console.WriteLine("  checks        the ten checks from docs/08 2.2");
         Console.WriteLine("  insert-after  review 11 C2 patch form measurement");
+        Console.WriteLine("  review14      A1, A5 and A6 executable regression checks");
         Console.WriteLine("  cleanup       delete branches and PRs created during verification");
         return 1;
     }

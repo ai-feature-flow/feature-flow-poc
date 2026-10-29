@@ -19,8 +19,8 @@ public static class Checks
     {
         var only = HarnessProgram.Arg(args, "--only");
         var runId = HarnessProgram.Arg(args, "--run-id") ?? $"checks-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}";
-        var branch = HarnessProgram.Arg(args, "--branch") ?? "main";
-        var baseBranch = HarnessProgram.Arg(args, "--base") ?? "main";
+        var branch = HarnessProgram.Arg(args, "--branch") ?? "ff/ticket/spike-2-1";
+        var baseBranch = HarnessProgram.Arg(args, "--base") ?? "ff/epic/spike-2";
 
         var report = new StringBuilder();
         var failures = 0;

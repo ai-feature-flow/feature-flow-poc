@@ -126,6 +126,32 @@ public static class Manifest
         return commands;
     }
 
+    /// <summary>The repository's default branch, used by the F1 merge floor.</summary>
+    public static string? DefaultBranch(FileContent? manifest)
+    {
+        if (manifest is null)
+            return null;
+
+        var inBranches = false;
+        foreach (var raw in manifest.Content.Split('\n'))
+        {
+            var line = raw.TrimEnd('\r');
+            if (line.StartsWith("branches:", StringComparison.Ordinal))
+            {
+                inBranches = true;
+                continue;
+            }
+
+            if (inBranches && line.TrimStart().StartsWith("default:", StringComparison.Ordinal))
+                return ValueAfter(line, "default:");
+
+            if (inBranches && line.Length > 0 && !line.StartsWith(" ", StringComparison.Ordinal))
+                inBranches = false;
+        }
+
+        return null;
+    }
+
     /// <summary>
     /// The repository's preferred merge method. docs/07 section 5: the repository
     /// states it, and the step reads it per step. No merge method in a plan

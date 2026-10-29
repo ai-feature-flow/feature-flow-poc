@@ -23,8 +23,11 @@ public static class PlanLoader
                 "the ticket plan was not found; looked for plans/ticket-delivery.yaml " +
                 "walking up from " + AppContext.BaseDirectory);
 
-        return Parse(File.ReadAllLines(path), ticketId);
+        return Load(path, ticketId);
     }
+
+    public static Plan Load(string path, string ticketId) =>
+        Parse(File.ReadAllLines(path), ticketId);
 
     /// <summary>
     /// Walks up from the assembly looking for <c>plans/ticket-delivery.yaml</c>,
@@ -132,10 +135,31 @@ public static class PlanLoader
 
             if (text.StartsWith("limits:", StringComparison.Ordinal))
             {
-                inLimits = true;
+                current.Limits ??= new StepLimits();
+                inLimits = text == "limits:";
                 inInputs = false;
                 inRoutes = false;
                 inGate = false;
+
+                if (InlineValue(text, "attempts") is { } attempts)
+                    current.Limits.Attempts = int.Parse(attempts);
+                if (InlineValue(text, "start_to_close") is { } startToClose)
+                    current.Limits.StartToClose = startToClose;
+                if (InlineValue(text, "heartbeat") is { } heartbeat)
+                    current.Limits.Heartbeat = heartbeat;
+                continue;
+            }
+
+            if (text.StartsWith("requires:", StringComparison.Ordinal))
+            {
+                var capabilities = InlineValue(text, "capabilities");
+                if (capabilities is not null)
+                {
+                    current.Requires = new StepRequires
+                    {
+                        Capabilities = ParseList(capabilities),
+                    };
+                }
                 continue;
             }
 
@@ -242,6 +266,39 @@ public static class PlanLoader
 
         return plan;
     }
+
+    private static string? InlineValue(string text, string name)
+    {
+        var marker = name + ":";
+        var at = text.IndexOf(marker, StringComparison.Ordinal);
+        if (at < 0)
+            return null;
+
+        var from = at + marker.Length;
+        var inList = false;
+        var to = text.Length;
+        for (var i = from; i < text.Length; i++)
+        {
+            if (text[i] == '[')
+                inList = true;
+            else if (text[i] == ']')
+                inList = false;
+            else if (!inList && (text[i] == ',' || text[i] == '}'))
+            {
+                to = i;
+                break;
+            }
+        }
+
+        return text[from..to].Trim();
+    }
+
+    private static List<string> ParseList(string text) => text
+        .Trim().Trim('[', ']')
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Select(value => value.Trim('"', '\''))
+        .Where(value => value.Length > 0)
+        .ToList();
 
     private static string? Between(string text, string start, string end)
     {

@@ -17,8 +17,8 @@ public static class Cleanup
     {
         HarnessProgram.WriteHeader("Cleanup: leave the fixture repository as it was found");
 
-        var branch = HarnessProgram.Arg(args, "--branch") ?? "main";
-        var baseBranch = HarnessProgram.Arg(args, "--base") ?? "main";
+        var branch = HarnessProgram.Arg(args, "--branch") ?? "ff/ticket/spike-2-1";
+        var baseBranch = HarnessProgram.Arg(args, "--base") ?? "ff/epic/spike-2";
         var runId = HarnessProgram.Arg(args, "--run-id") ?? $"cleanup-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}";
 
         var plan = PlanLoader.LoadTicketDelivery("TICKET-SPIKE2-1");

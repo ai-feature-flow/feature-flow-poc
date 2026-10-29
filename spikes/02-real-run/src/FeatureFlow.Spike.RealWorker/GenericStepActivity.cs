@@ -476,6 +476,26 @@ public sealed partial class RealActivities
             return Failed(step, startedAt, manifest, "no pull request was opened by this run");
 
         var pr = new PullRequestRef(Context.CodeHostRepo, prNumber.Value);
+        var observed = await Context.CodeHost.GetPullRequestAsync(pr, CancellationToken.None);
+        if (!observed.IsOk)
+            return Classified(step, startedAt, manifest, observed.Error!);
+
+        var defaultBranch = Manifest.DefaultBranch(manifest);
+        if (defaultBranch is null)
+        {
+            return Refused(
+                step, startedAt, manifest,
+                "REFUSED floor F1: repository default branch is unknown; scm.merge fails closed");
+        }
+
+        var authorization = MergeAuthorization.Evaluate(
+            observed.Value!.BaseBranch,
+            defaultBranch,
+            Context.Decisions.ReadAll(),
+            Context.Organisation);
+        Console.WriteLine($"STEP {step.Id}: {authorization.Message}");
+        if (!authorization.Allowed)
+            return Refused(step, startedAt, manifest, authorization.Message);
 
         // The repository states its preferred method in feature-flow.yaml
         // (docs/07 section 5). No merge method in a plan (review 09 C2).
@@ -594,6 +614,25 @@ public sealed partial class RealActivities
             ErrorReason: reason));
 
         return new AgentRunResult(Outcomes.Failed, ErrorReason: reason);
+    }
+
+    private AgentRunResult Refused(
+        Step step,
+        DateTimeOffset startedAt,
+        FileContent? manifest,
+        string reason)
+    {
+        Context.RecordCost(new StepCost(
+            RunId: Context.RunId, StepId: step.Id, StepKind: step.Kind,
+            Model: null, RuntimeInstance: "policy",
+            InputTokens: null, OutputTokens: null, Credits: null, CostUsd: null,
+            ComputeSeconds: (DateTimeOffset.UtcNow - startedAt).TotalSeconds,
+            UsageSource: "none", RecordedAt: DateTimeOffset.UtcNow,
+            ManifestHash: manifest?.ContentHash,
+            ErrorClass: ErrorClass.Work.ToString(),
+            ErrorReason: reason));
+
+        return new AgentRunResult(Outcomes.Rejected, ErrorReason: reason);
     }
 
     private AgentRunResult Classified(
