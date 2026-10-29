@@ -63,6 +63,12 @@ public sealed partial class RealActivities
 
         // R6: the credential is minted per step, short-lived and scoped to one
         // repository. It is never read from configuration (docs/04 section 1).
+        //
+        // The agent grant is deliberately the narrowest that still lets the
+        // agent do its job: write to the contents of this one repository, and
+        // nothing else. Pull request, checks and merge calls are made by the
+        // engine's own provider calls, not by the agent, so the agent's token
+        // does not carry those permissions (review 14 A4(b)).
         var credential = await Context.Broker.IssueAsync(
             Actor.Agent(instance).ForStep(Context.RunId, step.Id),
             GitHubAppCredentialBroker.TargetSystemName,
@@ -70,7 +76,6 @@ public sealed partial class RealActivities
                 $"{RunContext.Owner}/{RunContext.Repository}",
                 "contents:write",
                 "contents:read",
-                "pull_requests:write",
                 "metadata:read").Text,
             TimeSpan.FromMinutes(30),
             CancellationToken.None);

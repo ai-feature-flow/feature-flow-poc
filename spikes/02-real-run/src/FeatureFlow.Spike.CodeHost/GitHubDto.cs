@@ -12,6 +12,17 @@ namespace FeatureFlow.Spike.CodeHost;
 /// </summary>
 internal static class Dto
 {
+    /// <summary>
+    /// The repository object. Only <c>default_branch</c> is read, because that is
+    /// the authoritative source for the F1 merge floor — see
+    /// <c>GetDefaultBranchAsync</c>.
+    /// </summary>
+    public sealed class Repository
+    {
+        [JsonPropertyName("default_branch")]
+        public string DefaultBranch { get; set; } = "";
+    }
+
     public sealed class Ref
     {
         [JsonPropertyName("ref")] public string Name { get; set; } = "";

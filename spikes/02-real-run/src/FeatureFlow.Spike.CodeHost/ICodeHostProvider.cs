@@ -37,6 +37,18 @@ public interface ICodeHostProvider : IProvider
     /// </summary>
     Task<ProviderResult<Unit>> DeleteBranchAsync(RepoRef repo, string name, CancellationToken ct);
 
+    /// <summary>
+    /// The repository's default branch, as the code host reports it.
+    ///
+    /// <para>
+    /// This is the authoritative source for the F1 merge floor. It is
+    /// deliberately <b>not</b> read from <c>feature-flow.yaml</c>: that file
+    /// lives on the ticket branch, which the agent can write to, so a floor that
+    /// trusted it could be talked out of applying (review 14 A1).
+    /// </para>
+    /// </summary>
+    Task<ProviderResult<string>> GetDefaultBranchAsync(RepoRef repo, CancellationToken ct);
+
     // Pull requests
 
     /// <summary>

@@ -521,19 +521,23 @@ public sealed partial class RealActivities
         if (!observed.IsOk)
             return Classified(step, startedAt, manifest, observed.Error!);
 
-        var defaultBranch = Manifest.DefaultBranch(manifest);
-        if (defaultBranch is null)
-        {
-            return Refused(
-                step, startedAt, manifest,
-                "REFUSED floor F1: repository default branch is unknown; scm.merge fails closed");
-        }
+        // F1 must not depend on a file the governed party can edit. The agent
+        // can write to the ticket branch, so it could declare another branch as
+        // the default and be judged by the weaker ticket policy. The default
+        // branch therefore comes from the code host, read at merge time.
+        var defaultBranchResult = await Context.CodeHost.GetDefaultBranchAsync(
+            Context.CodeHostRepo, CancellationToken.None);
+        if (defaultBranchResult.Error is not null)
+            return Classified(step, startedAt, manifest, defaultBranchResult.Error);
+
+        var defaultBranch = defaultBranchResult.Value!;
 
         var authorization = MergeAuthorization.Evaluate(
             observed.Value!.BaseBranch,
             defaultBranch,
             Context.Decisions.ReadAll(),
-            Context.Organisation);
+            Context.Organisation,
+            declaredDefaultBranch: Manifest.DefaultBranch(manifest));
         Console.WriteLine($"STEP {step.Id}: {authorization.Message}");
         if (!authorization.Allowed)
             return Refused(step, startedAt, manifest, authorization.Message);

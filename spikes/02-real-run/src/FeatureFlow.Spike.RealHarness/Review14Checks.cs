@@ -79,6 +79,31 @@ public static class Review14Checks
             failures++;
         Console.WriteLine();
 
+        // A1, the hole review 15 found. The default branch must come from the
+        // code host, not from feature-flow.yaml on the ticket branch — the agent
+        // can write that file, so a floor that trusted it could be edited away.
+        //
+        // The attack: the agent edits feature-flow.yaml to declare some other
+        // branch as the default, then merges into the real default branch. If
+        // the floor read the manifest, the merge would be judged by the weaker
+        // ticket policy and allowed through. Here the code host says 'main'
+        // while the manifest claims 'ff/not-the-default', so the merge must be
+        // refused and the disagreement named.
+        var spoofed = MergeAuthorization.Evaluate(
+            baseBranch: "main",
+            defaultBranch: "main",                      // what the code host says
+            decisions: new[] { harnessDecision },
+            organisation: organisation,
+            declaredDefaultBranch: "ff/not-the-default"); // what the manifest claims
+        Console.WriteLine($"[A1] manifest declares a different default branch: {spoofed.Message}");
+        if (spoofed.Allowed ||
+            !spoofed.Message.Contains("floor F1", StringComparison.Ordinal) ||
+            !spoofed.Message.Contains("declares default branch", StringComparison.Ordinal))
+        {
+            failures++;
+        }
+        Console.WriteLine();
+
         var patch = new PlanPatch
         {
             BaseRevision = plan.Revision,
