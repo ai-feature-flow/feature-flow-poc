@@ -10,3 +10,10 @@ WORKER ready
 WORKER starting queue=spike-2-real address=localhost:7333 repo=D:\Dev\feature-flow-poc\spikes\02-real-run\fixture branch=ff/ticket/spike2-final base=main run=final-run pid=39156
 WORKER plan 17 steps, entry plan_spec
 WORKER ready
+WORKER starting queue=ff-a3-queue address=localhost:7433 repo=D:\Dev\feature-flow-poc\spikes\02-real-run\fixture branch=ff/ticket/spike-2-1 base=ff/epic/spike-2 run=checks-20261029075601 pid=28184
+WORKER plan 17 steps, entry plan_spec
+RUN START check 20: PASS
+RUN START check 21: PASS
+RUN START check 22: PASS
+RUN START validation: ACCEPTED
+WORKER ready

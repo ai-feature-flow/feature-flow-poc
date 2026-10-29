@@ -1,0 +1,95 @@
+WORKER starting queue=ff-a3-queue address=localhost:7433 repo=D:\Dev\feature-flow-poc\spikes\02-real-run\fixture branch=ff/ticket/spike-2-1 base=ff/epic/spike-2 run=a3-authors pid=34380
+WORKER plan 17 steps, entry plan_spec
+RUN START check 20: PASS
+RUN START check 21: PASS
+RUN START check 22: PASS
+RUN START validation: ACCEPTED
+WORKER ready
+STEP plan_spec: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP plan_spec: agent committed 882baab86c507101df7ffa8b17acc8fb67296bce on ff/ticket/spike-2-1 (was 5dd0108fc9e9a3e4af18995fc68eed6f0a9231ac); pushed=True
+STEP design: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP design: agent committed 77fb3e5b29871a84eb338259571b5c1bebb19ba6 on ff/ticket/spike-2-1 (was 882baab86c507101df7ffa8b17acc8fb67296bce); pushed=True
+STEP implement: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP implement: agent committed 1078f16c2bff142c9859bcf2173d3ded718a3947 on ff/ticket/spike-2-1 (was 77fb3e5b29871a84eb338259571b5c1bebb19ba6); pushed=True
+STEP run_tests: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP run_tests: tiers [unit=success, integration=Success], delegated to CI: [integration]
+STEP review: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP review: diffHash=59017a33120d0752ae31685edc169bb3959e76afa59ba13010c469ad308aaa86 priorFindings=0 verdict=findings_open findings=1 model=z-ai/glm-5.3-flash
+STEP triage_findings: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP triage_findings: open=0 selected=0
+STEP fix_findings: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP fix_findings: agent committed c424c7305d5da9a08fd39261c6b54b2199fd75a2 on ff/ticket/spike-2-1 (was 1078f16c2bff142c9859bcf2173d3ded718a3947); pushed=True
+STEP verify_fix: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP verify_fix: finding=(none) fullDiff=f52109f03689d73da62ca33bcaf3d1eae664bcd8ab79f66f71dcc0d4da5cf6a8 regressionTest=False notApplicable=False => failed
+WORKER starting queue=ff-a3-queue address=localhost:7433 repo=D:\Dev\feature-flow-poc\spikes\02-real-run\fixture branch=ff/ticket/spike-2-1 base=ff/epic/spike-2 run=a3-authors pid=38780
+WORKER plan 17 steps, entry plan_spec
+RUN START check 20: PASS
+RUN START check 21: PASS
+RUN START check 22: PASS
+RUN START validation: ACCEPTED
+WORKER ready
+STEP plan_spec: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP plan_spec: agent committed 8497c07dfe634f70d8142f5c708ff9556ddfcc2b on ff/ticket/spike-2-1 (was 5dd0108fc9e9a3e4af18995fc68eed6f0a9231ac); pushed=True
+STEP design: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP design: agent committed 8cffa5246a60cec70c378c56ea39e66714a06e62 on ff/ticket/spike-2-1 (was 8497c07dfe634f70d8142f5c708ff9556ddfcc2b); pushed=True
+STEP implement: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP implement: agent committed 3dd1f6082428ec8c880c9630ad496308ae167533 on ff/ticket/spike-2-1 (was 8cffa5246a60cec70c378c56ea39e66714a06e62); pushed=True
+STEP run_tests: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP run_tests: tiers [unit=success, integration=Success], delegated to CI: [integration]
+STEP review: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP review: diffHash=2d7d4016cd9466ec8dbc534a60fb001e702e656522f839fba68637ea035e6ac9 priorFindings=0 verdict=findings_open findings=1 model=z-ai/glm-5.3-flash
+STEP triage_findings: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP triage_findings: open=1 selected=1
+STEP fix_findings: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP fix_findings: agent committed 47345ddd98a8ee25f1b57457644137d9b7f902b4 on ff/ticket/spike-2-1 (was 3dd1f6082428ec8c880c9630ad496308ae167533); pushed=True
+STEP verify_fix: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP verify_fix: finding=f-review-1 fullDiff=915af30e1c91b5f791e50848f3f82c3d62f41bd0ad99b73e7d8806a9dac54ce7 regressionTest=False notApplicable=False => failed
+WORKER starting queue=ff-a3-queue address=localhost:7433 repo=D:\Dev\feature-flow-poc\spikes\02-real-run\fixture branch=ff/ticket/spike-2-1 base=ff/epic/spike-2 run=a3-authors pid=38248
+WORKER plan 17 steps, entry plan_spec
+RUN START check 20: PASS
+RUN START check 21: PASS
+RUN START check 22: PASS
+RUN START validation: ACCEPTED
+WORKER ready
+STEP plan_spec: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+[2m2026-10-29T07:39:33.209664Z[0m [33m WARN[0m [2mtemporalio_sdk_core::worker::workflow[0m[2m:[0m Task not found when completing [3merror[0m[2m=[0mcode: 'Some requested entity was not found', message: "Workflow task not found." [3mrun_id[0m[2m=[0m"01a18697-a000-7d40-a362-dfa0ef5eb681"
+STEP plan_spec: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP plan_spec: agent committed 1ff56b96c7451c5a4e969812553b22b8c49afccc on ff/ticket/spike-2-1 (was 5dd0108fc9e9a3e4af18995fc68eed6f0a9231ac); pushed=True
+STEP design: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP plan_spec: agent committed 1ff56b96c7451c5a4e969812553b22b8c49afccc on ff/ticket/spike-2-1 (was 5dd0108fc9e9a3e4af18995fc68eed6f0a9231ac); pushed=True
+STEP design: agent committed a58af5274bc453b9e52b530ba203065c3ee1fbe8 on ff/ticket/spike-2-1 (was 1ff56b96c7451c5a4e969812553b22b8c49afccc); pushed=True
+STEP implement: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP implement: agent committed 2c04e0447acaae8df39ae2a8f329206bb9c23d98 on ff/ticket/spike-2-1 (was a58af5274bc453b9e52b530ba203065c3ee1fbe8); pushed=True
+STEP run_tests: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP run_tests: tiers [unit=success, integration=Success], delegated to CI: [integration]
+STEP review: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP review: diffHash=46399302dd65b6dec209a2d0c75ed6a5ba4c87ebfd3096b57afcd5a16f39f54d priorFindings=1 verdict=findings_open findings=1 model=z-ai/glm-5.3-flash
+STEP triage_findings: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP triage_findings: open=1 selected=1
+STEP fix_findings: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP fix_findings: agent committed 6384266770caeade2afcd2937f0f410acb59a138 on ff/ticket/spike-2-1 (was 2c04e0447acaae8df39ae2a8f329206bb9c23d98); pushed=True
+STEP verify_fix: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP verify_fix: finding=f-review-1 fullDiff=ee023ab17ec5474d737039e0760ff4ca58f380d9bfa54879590ae83136b9148b regressionTest=True notApplicable=False => completed
+WORKER starting queue=ff-a3-queue address=localhost:7433 repo=D:\Dev\feature-flow-poc\spikes\02-real-run\fixture branch=ff/ticket/spike-2-1 base=ff/epic/spike-2 run=a3-authors pid=10108
+WORKER plan 17 steps, entry plan_spec
+RUN START check 20: PASS
+RUN START check 21: PASS
+RUN START check 22: PASS
+RUN START validation: ACCEPTED
+WORKER ready
+STEP plan_spec: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP plan_spec: agent committed dad0a1d378f36933b1cf4a8c1746dd2344c1a207 on ff/ticket/spike-2-1 (was 5dd0108fc9e9a3e4af18995fc68eed6f0a9231ac); pushed=True
+STEP design: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP design: agent committed 9bc90f8643ebf2040a80a0891a7c51f9ffe84b40 on ff/ticket/spike-2-1 (was dad0a1d378f36933b1cf4a8c1746dd2344c1a207); pushed=True
+STEP implement: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP implement: agent committed 8fbbdf7ef91283f26013c716a89d16e7d922a1c6 on ff/ticket/spike-2-1 (was 9bc90f8643ebf2040a80a0891a7c51f9ffe84b40); pushed=True
+STEP run_tests: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP run_tests: tiers [unit=success, integration=Success], delegated to CI: [integration]
+STEP review: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP review: diffHash=ff95cf9ab1d00180fdd14ed9792b978764c5b08d43de42182bb2ae8afe45414c priorFindings=0 verdict=findings_open findings=2 model=z-ai/glm-5.3-flash
+STEP triage_findings: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP triage_findings: open=2 selected=2
+STEP fix_findings: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP fix_findings: agent committed 1b248db2fac7c39ce154e0e87ddbd4ce7d6f9c61 on ff/ticket/spike-2-1 (was 8fbbdf7ef91283f26013c716a89d16e7d922a1c6); pushed=True
+STEP verify_fix: feature-flow.yaml ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP verify_fix: finding=f-review-1 fullDiff=483dfadb749cce17b547b6b2a963c4227ec25a89ae2cd967e7fadf38f34e134e regressionTest=True notApplicable=False => completed
