@@ -1,0 +1,43 @@
+diff --git a/src/FeatureFlow.Example.Api/WidgetStore.cs b/src/FeatureFlow.Example.Api/WidgetStore.cs
+index 154664f..eefc5c7 100644
+--- a/src/FeatureFlow.Example.Api/WidgetStore.cs
++++ b/src/FeatureFlow.Example.Api/WidgetStore.cs
+@@ -30,7 +30,7 @@ public sealed class WidgetStore
+     {
+         lock (_gate)
+         {
+-            var widget = new Widget(_nextId++, name);
++            var widget = new Widget(_nextId++, Normalise(name));
+             _widgets.Add(widget);
+             return widget;
+         }
+@@ -44,4 +44,7 @@ public sealed class WidgetStore
+             return _widgets.Count;
+         }
+     }
++
++    private static string Normalise(string name) =>
++        name.Trim().ToLowerInvariant();
+ }
+\ No newline at end of file
+diff --git a/tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs b/tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs
+new file mode 100644
+index 0000000..b5e70b4
+--- /dev/null
++++ b/tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs
+@@ -0,0 +1,15 @@
++using FeatureFlow.Example.Api;
++using Xunit;
++
++namespace FeatureFlow.Example.Api.UnitTests;
++
++public class WidgetNameNormalisationTests
++{
++    [Fact]
++    public void Add_trims_and_lower_cases_the_name()
++    {
++        var store = new WidgetStore();
++        var widget = store.Add("  Alpha ");
++        Assert.Equal("alpha", widget.Name);
++    }
++}

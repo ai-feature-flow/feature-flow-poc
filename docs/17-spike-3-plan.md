@@ -1,6 +1,6 @@
 # Spike 3 plan: concurrent tickets
 
-Written 2026-10-30. **A plan for review, not a result.** Nothing here is built.
+Written 2026-10-30. **Accepted by the product owner, 2026-10-30**, with the changes from the pilot (section 6.6). Not yet built.
 
 Review 16: *"Propose the Spike 3 plan (`docs/08` 2.3, concurrent tickets with the
 seeded cross-ticket defect) in light of what Spikes 1 and 2 changed, before
@@ -58,9 +58,13 @@ tickets do not all collide on `WidgetStoreTests.cs`.
 | **B** `EPIC3-B` | Add `WidgetStore.FindByName(string)` **after `Count()`**, using an **exact, ordinal comparison**, and `GET /widgets/by-name/{name}` (200 or 404). Tests in `WidgetFindByNameTests.cs`: `FindByName("alpha")` finds `Add("alpha")`; `FindByName("ALPHA")` is null |
 | **C** `EPIC3-C` | Add `DateTimeOffset CreatedAt` as the third member of `Widget`, set to `DateTimeOffset.UtcNow` **inside the `new Widget(...)` expression in `Add`**. Tests in `WidgetCreatedAtTests.cs` |
 
-**Epic description**, given to reviews at both scopes: *"Widget names: a client
-can always look up a widget by the name it created it with. Widgets record their
-creation time."*
+**Epic description**, given to the epic review only (section 6.1): *"Widget names
+are case- and whitespace-insensitive: the store keeps each name normalised
+(trimmed, lower-case), and a client can always look a widget up by the name it
+created it with, in any case or spacing. Widgets record their creation time."*
+Normalisation is part of the contract, so A is correct by definition and the only
+cross-ticket defect is B's raw lookup. The first wording left normalisation out,
+and the pilot showed the reviewer then objects to A itself (section 6.6).
 
 ### 3.2 The seeds
 
@@ -255,6 +259,11 @@ inputs.
 Sanity check: with the base set to `main`, and with prior findings omitted, the
 hash must differ from the gated step's.
 
+**Stated plainly:** if `ff-presubmit` calls the gated step's code path, an
+identical hash is close to guaranteed. The sanity check proves the hash covers the
+inputs, not that parity is hard to achieve. C5 is evidenced at the level a spike
+can reach, and `docs/18` will say so rather than claim more.
+
 ## 6. R4: measuring the epic review deliberately
 
 `docs/16` 2: four passes on unchanged input gave 1, 1, 1, 2 findings, re-raising
@@ -262,10 +271,17 @@ a fixed one. So E2 is a rate, compared across scopes, with controls.
 
 ### 6.1 Inputs held constant
 
-Both scopes: same prompt, runtime, model, `checks` and epic description, and a
-reviewer **with no repository access**, so only the diff differs and E2 measures
-scope, not context. Output gains a one-sentence `message`. Every pass records its
-rendered-input hash, so "unchanged input" is checked.
+Both scopes: same prompt, runtime, model and `checks`, and a reviewer **with no
+repository access**. A ticket review is given **its ticket text**; the epic review
+is given **the epic description**. Each review checks against its own
+specification, as it would in use. Output gains a one-sentence `message`. Every
+pass records its rendered-input hash, so "unchanged input" is checked.
+
+This is a change from the first version of this plan, which gave the epic
+description to both scopes. The pilot (section 6.6) showed that a ticket review
+given the epic contract catches B's departure from it 8 times in 10. That is a
+finding about the design, recorded in section 6.6, but it means the defect is no
+longer cross-ticket: it is B's ticket text contradicting the epic.
 
 ### 6.2 The series
 
@@ -273,10 +289,10 @@ rendered-input hash, so "unchanged input" is checked.
 |---|---|---|---|---|
 | In-run | Aggregate, as the plan runs it | 1 | `findings.all` | What the engine did |
 | **Pos** | Aggregate plus a comment beside `FindByName` saying names are stored lower-cased | 5 | None | Can the reviewer and rubric see the obvious case |
-| **Neg** | Aggregate with `FindByName` comparing against `Normalise(name)`: the contract holds for case and whitespace (oracle with `"Alpha"` and `"  Alpha "`) | 20 | None | False detection rate *f* |
+| **Neg** | Aggregate with `FindByName` comparing against `Normalise(name)`, and B's case-sensitivity test replaced by one that agrees with the contract: the contract holds for case and whitespace (oracle with `"Alpha"` and `"  Alpha "`) | 20 | None | False detection rate *f* |
 | **I-epic** | Aggregate, after the run | 20 | None | *d*<sub>epic</sub> |
 | **I-A**, **I-B** | The diff each of A's and B's in-run `review` saw | 20 each | None | *d*<sub>A</sub>, *d*<sub>B</sub> |
-| **Chain** | Aggregate | 5 | The ledger after the previous pass | Re-raised, new and dropped findings |
+| **Chain** | Aggregate | 5 | The ledger after the previous pass | *Optional, only if time.* Re-raised, new and dropped findings |
 
 Pos and Neg are the sanity check and run first: if Pos misses, the method cannot
 see the defect; if Neg detects as often as I-epic, the reviewer reacts to words.
@@ -287,10 +303,14 @@ see the defect; if Neg detects as often as I-epic, the reviewer reacts to words.
 Fixed before the run; every finding is dumped for manual audit and disagreements
 reported. A finding **detects the seed** if its `rule`, `symbol`,
 `snippet` or `message` mentions case or normalisation (`case`, `lower`,
-`ToLower`, `normalis`, `normaliz`, `Ordinal`, `IgnoreCase`) **and** lookup by name
-(`FindByName`, `by-name`, `lookup`, `look up`). A pass detects if any finding does.
+`ToLower`, `normalis`, `normaliz`, `Ordinal`, `IgnoreCase`), **and** lookup by
+name (`FindByName`, `by-name`, `lookup`, `look up`, `look-up`), **and** a failure
+(`cannot`, `can't`, `not found`, `404`, `miss`, `fail`, `return(s) null`, `no
+longer`, `never`, `break`, `won't`). A pass detects if any finding does. The
+failure term was added after the pilot: without it, a finding about duplicate
+names after normalisation matched the rubric (section 6.6).
 
-In Chain, with the `docs/01` 7.2 fingerprint, each finding in pass *k* is
+Chain is optional. If it runs, then with the `docs/01` 7.2 fingerprint, each finding in pass *k* is
 **re-raised** (fingerprint open after *k*−1), **re-raised, drifted** (not
 fingerprint-equal, but the same issue by rubric or audit), or **new**; each ledger
 finding not raised is **dropped**. Also reported: how many distinct fingerprints
@@ -310,9 +330,11 @@ Set now, so the result cannot choose them:
 Results give exact counts with 95% Wilson intervals (10/20 is 0.30 to 0.70).
 Failed controls make E2 **inconclusive**, not failed (`docs/16` 3).
 
-### 6.5 A proposed position on the findings ledger
+### 6.5 The findings ledger: version 1 position
 
-`docs/16` 8, still-open 1, for the product owner to decide (open question 2):
+`docs/16` 8, still-open 1. **Accepted by the product owner, 2026-10-30, as the
+version 1 design position now**, not conditional on Spike 3's numbers. Spike 3
+reports what its numbers say about each row, but does not reopen them.
 
 | # | Position | What Spike 3's numbers could change |
 |---|---|---|
@@ -321,18 +343,64 @@ Failed controls make E2 **inconclusive**, not failed (`docs/16` 3).
 | L3 | **New findings on unchanged input are kept; no agreement voting in version 1.** Two-of-three voting keeps a real finding with probability 3*d*²−2*d*³: 0.5 at *d* = 0.5, 0.22 at *d* = 0.3. Noise costs a triage; a suppressed defect costs a wrong outcome | Low *f* and high *d*<sub>epic</sub> make voting cheap. Results report what two-of-three would have done to both |
 | L4 | **At epic scope `findings.all` includes the children's ledgers**, so the engine matches epic findings against ticket findings by L2's rule. Telling the reviewer too is harmless but, per Spike 2, does not stop re-raises | — |
 
+### 6.6 Pilot, run before building (2026-10-30)
+
+Before any engine work, the review series was piloted with no engine at all. The
+three tickets were written by hand on a copy of the fixture, and their diffs were
+reviewed through `claude -p --model haiku` with Spike 2's reviewer prompt (plus
+`message`), 10 passes per variant. Artefacts: `spikes/03-concurrent/pilot/`.
+
+Seeds checked first, with real tests on the .NET 10 runtime
+(`DOTNET_ROLL_FORWARD=Major`): every ticket branch, the aggregate and Neg pass
+their own unit tests. The section 3.4 defect oracle **fails on the aggregate**
+(the defect is present and no test catches it) and **passes on Neg**.
+
+| Variant | Diff | Review given | v1: first epic wording, first rubric | v2: sections 3.1 and 6.3 as now |
+|---|---|---|---|---|
+| epic | Aggregate | Epic description | 10/10 | **10/10** |
+| neg | Neg | Epic description | **10/10** (control failed) | **0/10** |
+| A+epic | A | Ticket A and epic description | **8/10** | 0/10 |
+| B+epic | B | Ticket B and epic description | 0/10 | **8/10** |
+| A-only | A | Ticket A text | 0/10 | **0/10** |
+| B-only | B | Ticket B text | 0/10 | **0/10** |
+
+Total reported cost: about $0.05 for each 60-pass run.
+
+**What it changed.**
+
+1. **v1's Neg control failed.** The first epic wording ("look up by the name it
+   created it with") made A's normalisation itself a violation, so the reviewer
+   flagged every diff containing A, correct lookup or not. That was a defect in the
+   seed, not in the reviewer. Putting normalisation into the contract fixed it:
+   Neg went from 10/10 to 0/10. The rubric gained a failure term at the same time
+   (section 6.3).
+2. **Which specification a ticket review is given decides whether a defect is
+   cross-ticket.** Given the epic contract, whichever ticket departs from it is
+   caught by its own review: A in v1 (8/10), B in v2 (8/10). Given only its ticket
+   text, neither is (0/10 each). So ticket reviews get the ticket text (section
+   6.1, J4).
+3. **This is a design finding.** If ticket reviews are routinely given the epic's
+   contract, a class of cross-ticket defects becomes a per-ticket finding — caught
+   earlier and cheaper. What remains for the epic review is the defects no single
+   ticket's diff can show. Recorded for the design, not built in Spike 3.
+4. **E2 looks reachable.** 10/10 against 0/10 is well past the section 6.4
+   thresholds at n = 10; the run uses n = 20 as planned. The pilot does not replace
+   the in-run evidence: there, agents author the tickets, and the reviewer sees
+   what they actually wrote.
+
 ## 7. Building it
 
 ### 7.1 Reused and new
 
 | Reused unchanged | New (smallest delta) |
 |---|---|
-| Interpreter: `parallel`, `max_concurrency`, guarded routes, `applyPatch` (Spike 1) | N1 `run.child` as a Temporal child workflow, id `<epic run id>/<step id>` (`docs/06` 4.1) |
-| Every ticket activity, the GitHub code host and CI providers, credential broker, cost, decision and findings records, F1 in `scm.merge`, harness gate approval (Spike 2) | N2 Lock workflow with holder-liveness check; acquire and release in the interpreter (section 4.3) |
-| `ticket-delivery.yaml`, with the section 4.2 delta | N3 `scm.create_branch` and `scm.merge_base_forward` steps; the latter publishes `branch_changed` |
-| Worker A's `claude-code` runtime on `haiku`, every role including reviewer | N4 Sync the worktree to the remote head at every step start, since the forward merge is server-side (`docs/01` 5.1.2) |
+| Interpreter: `parallel`, `max_concurrency`, guarded routes, `applyPatch` (Spike 1) | **N0 Loops: a step that already has an outcome can run again when routed to.** `PlanReady.Ready` skips any step with an outcome, so the section 4.2 conflict path (and Spike 2's fix loop) dead-ends. Found by worker A during the Claude Code proof; its fix lands first, and Spike 1's replay tests are re-run after it |
+| Every ticket activity, the GitHub code host and CI providers, credential broker, cost, decision and findings records, F1 in `scm.merge`, harness gate approval (Spike 2) | N1 `run.child` as a Temporal child workflow, id `<epic run id>/<step id>` (`docs/06` 4.1) |
+| `ticket-delivery.yaml`, with the section 4.2 delta | N2 Lock workflow with holder-liveness check; acquire and release in the interpreter (section 4.3) |
+| Worker A's `claude-code` runtime on `haiku`, every role including reviewer | N3 `scm.create_branch` and `scm.merge_base_forward` steps; the latter publishes `branch_changed` |
+| The pilot's diffs, oracle and rubric (section 6.6) | N4 Sync the worktree to the remote head at every step start, since the forward merge is server-side (`docs/01` 5.1.2) |
 | | N5 Epic plan, `resolve-merge-conflict` task, decision types `epic.findings_review` and `epic.escalation` in the organisation (run-start checks 20 to 22 refuse unknown types) |
-| | N6 Reviewer: `message` field, epic description, `docs/01` 7.2 fingerprints |
+| | N6 Reviewer: `message` field, ticket text or epic description by scope (section 6.1). The `docs/01` 7.2 fingerprints only if Chain runs |
 | | N7 `ff-presubmit` (section 5.2) |
 | | N8 Harness: worktrees and workers, gate timing, injections, R4 series, oracles, evidence |
 
@@ -369,13 +437,14 @@ confinement and per-ticket credentials; it is not in scope.
 | Credentials | The existing GitHub App, from a secrets file outside the repository (`HANDOVER-spike-3.md` section 5); the Anthropic subscription login, via worker A |
 | CI | The fixture's existing workflows |
 
-1. Prerequisites: worker A merged; Temporal on 7533; four worktrees;
-   `ff/epic/spike-3` from `main`; confirm the fixture's unit tier passes locally
-   with `DOTNET_ROLL_FORWARD=Major`.
+1. Prerequisites: worker A merged, including N0 and a green Spike 1 replay;
+   Temporal on 7533; four worktrees; `ff/epic/spike-3` from `main`; confirm the
+   fixture's unit tier passes locally with `DOTNET_ROLL_FORWARD=Major` (done in
+   the pilot, section 6.6).
 2. Method sanity checks: lock (obvious and bypassed), conflict, I3.
 3. The main run, with I1, I2 and the simultaneous approval. Then I4 if time.
 4. Oracles (section 3.4). If a seed is absent, stop and report.
-5. Pos and Neg, then I-epic, I-A, I-B and Chain; then C5.
+5. Pos and Neg, then I-epic, I-A and I-B; then C5. Chain only if time.
 6. Write `docs/18-spike-3-results.md`.
 
 The cross-platform requirement is design requirement R5 in `docs/08` 1.3. Spike 3
@@ -400,7 +469,7 @@ not); Copilot CLI.
 | J1 | The lock spans forward, rerun and merge, never an agent step or gate (section 4.3) | `docs/06` 6.5: inside `scm.merge` only |
 | J2 | One worker process and queue per ticket (section 7.2) | One worker, context per run |
 | J3 | Prescriptive ticket texts and separate test files (section 3.1) | Natural texts, accepting the seeds may not appear |
-| J4 | Both review scopes get the epic description; the reviewer is diff-only (section 6.1) | Ticket text only at ticket scope, or repository access |
+| J4 | A ticket review is given its ticket text and the epic review the epic description; the reviewer is diff-only (section 6.1). Changed after the pilot (section 6.6) | Both scopes get the epic description, which turns this seed into a per-ticket finding |
 | J5 | E2 is a rate over 20 passes with controls, thresholds and a Fisher test (section 6.4) | One in-run pass, as `docs/08` 2.3 literally reads |
 | J6 | A resolved ticket is re-tested and re-reviewed in full (section 4.2) | Merge straight after resolution |
 | J7 | The run ends at the epic review, with no fix path (section 4.1) | `docs/13` section 2's fix loop, which changes the R4 input |
@@ -410,19 +479,20 @@ not); Copilot CLI.
 | J11 | The lock workflow releases a lock whose holder has closed, checked every 30 s (section 4.3) | A lease with expiry and renewal |
 | J12 | Each child creates its own branch (section 4.2) | Harness-created branches, giving B the same base as A and C |
 | J13 | I4 is optional (section 5.1) | Required |
+| J14 | The epic contract states that names are normalised (section 3.1), so A is correct by definition. Made by the orchestrator after the pilot's v1 control failed | The first wording, under which A itself violates the contract |
+| J15 | Chain and the `docs/01` 7.2 fingerprints are optional (section 6.2). Made by the orchestrator: they feed the ledger question, which is now decided (section 6.5), not the spike's question | Required |
 
 ## 10. Open questions
 
-| # | Question | Proposed answer |
-|---|---|---|
-| 1 | **Merge lock span.** Hold it across forward, rerun and merge (section 4.3) and amend `docs/06` 6.5? Or keep it inside `scm.merge` and accept that the checked combination may not be the merged one? | Hold it across the span; amend `docs/06` 6.5 after Spike 3 |
-| 2 | **The findings ledger** (`docs/16` 8, still-open 1). Accept L1 to L4 (section 6.5), in particular L3, no agreement voting, subject to Spike 3's numbers? | Yes |
-| 3 | **E2 thresholds** (section 6.4). The right bar for a feasibility claim? | Yes; set now so the result cannot choose them |
-| 4 | **Starting the build.** As soon as worker A's proof is merged, or after review of this plan? | After review: review 16 asked for the plan first |
+None open.
 
 ### Answered
 
 | Question | Answer |
 |---|---|
+| Merge lock span | **Hold it across forward, rerun and merge** (section 4.3); amend `docs/06` 6.5 after Spike 3. Product owner, 2026-10-30 |
+| The findings ledger (`docs/16` 8, still-open 1) | **L1 to L4 accepted as the version 1 design position now** (section 6.5). Product owner, 2026-10-30 |
+| E2 thresholds | **Accepted** (section 6.4), conditional on the pilot, which supports them (section 6.6). Product owner, 2026-10-30 |
+| Starting the build | **After the pilot and the N0 interpreter fix; then build, run and report without stopping unless a major decision is needed.** Product owner, 2026-10-30 |
 | Record the cross-platform requirement? | **Decided by the product owner, 2026-10-30.** Recorded as R5 in `docs/08` 1.3 |
 | .NET version | **.NET 10 for everything** (product owner); `DOTNET_ROLL_FORWARD=Major` for the fixture (section 7.3) |

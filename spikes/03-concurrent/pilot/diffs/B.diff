@@ -1,0 +1,62 @@
+diff --git a/src/FeatureFlow.Example.Api/Program.cs b/src/FeatureFlow.Example.Api/Program.cs
+index 9113cc1..dd891dd 100644
+--- a/src/FeatureFlow.Example.Api/Program.cs
++++ b/src/FeatureFlow.Example.Api/Program.cs
+@@ -13,6 +13,9 @@ app.MapGet("/widgets", (WidgetStore store) => Results.Ok(store.All()));
+ app.MapGet("/widgets/{id:int}", (int id, WidgetStore store) =>
+     store.Find(id) is { } widget ? Results.Ok(widget) : Results.NotFound());
+ 
++app.MapGet("/widgets/by-name/{name}", (string name, WidgetStore store) =>
++    store.FindByName(name) is { } widget ? Results.Ok(widget) : Results.NotFound());
++
+ app.MapPost("/widgets", (WidgetCreateRequest request, WidgetStore store) =>
+ {
+     if (string.IsNullOrWhiteSpace(request.Name))
+diff --git a/src/FeatureFlow.Example.Api/WidgetStore.cs b/src/FeatureFlow.Example.Api/WidgetStore.cs
+index 154664f..9597560 100644
+--- a/src/FeatureFlow.Example.Api/WidgetStore.cs
++++ b/src/FeatureFlow.Example.Api/WidgetStore.cs
+@@ -44,4 +44,13 @@ public sealed class WidgetStore
+             return _widgets.Count;
+         }
+     }
++
++    /// <summary>The first widget whose name equals <paramref name="name"/>, or null.</summary>
++    public Widget? FindByName(string name)
++    {
++        lock (_gate)
++        {
++            return _widgets.FirstOrDefault(w => string.Equals(w.Name, name, StringComparison.Ordinal));
++        }
++    }
+ }
+\ No newline at end of file
+diff --git a/tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs b/tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs
+new file mode 100644
+index 0000000..bcd4afc
+--- /dev/null
++++ b/tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs
+@@ -0,0 +1,23 @@
++using FeatureFlow.Example.Api;
++using Xunit;
++
++namespace FeatureFlow.Example.Api.UnitTests;
++
++public class WidgetFindByNameTests
++{
++    [Fact]
++    public void FindByName_returns_the_widget_with_that_name()
++    {
++        var store = new WidgetStore();
++        var added = store.Add("alpha");
++        Assert.Equal(added, store.FindByName("alpha"));
++    }
++
++    [Fact]
++    public void FindByName_is_case_sensitive()
++    {
++        var store = new WidgetStore();
++        store.Add("alpha");
++        Assert.Null(store.FindByName("ALPHA"));
++    }
++}

@@ -1,0 +1,1185 @@
+[
+ {
+  "v": "epic",
+  "i": 0,
+  "findings": [
+   {
+    "rule": "ticket-requirement-name-lookup",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "Add stores a trimmed, lower-cased name, and FindByName compares ordinally, so a client that creates a widget as \"  Alpha \" cannot look it up by that same name, violating the requirement that lookup always works with the creation name.",
+    "blocking": true
+   },
+   {
+    "rule": "ticket-requirement-name-lookup",
+    "path": "src/FeatureFlow.Example.Api/Program.cs",
+    "symbol": "/widgets/by-name/{name}",
+    "snippet": "app.MapGet(\"/widgets/by-name/{name}\", (string name, WidgetStore store) =>",
+    "message": "The single-segment route cannot match names containing '/', so some widgets created with such names cannot be looked up by name, contrary to the 'always' requirement.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.0013676,
+  "ok": true
+ },
+ {
+  "v": "epic",
+  "i": 1,
+  "findings": [
+   {
+    "rule": "ticket-name-lookup-roundtrip",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add / Normalise",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "Add stores a trimmed, lower-cased name while FindByName does an exact ordinal match, so a widget created as \"  Alpha \" cannot be found by the name the client created it with, violating the requirement that a client can always look up a widget by its creation name.",
+    "blocking": true
+   },
+   {
+    "rule": "ticket-name-lookup-roundtrip",
+    "path": "tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs",
+    "symbol": "WidgetNameNormalisationTests.Add_trims_and_lower_cases_the_name",
+    "snippet": "Assert.Equal(\"alpha\", widget.Name);",
+    "message": "The test locks in the normalisation that breaks name lookup by the original creation name, so it enshrines the defect rather than guarding against it.",
+    "blocking": true
+   }
+  ],
+  "cost": 0.0013046,
+  "ok": true
+ },
+ {
+  "v": "epic",
+  "i": 2,
+  "findings": [
+   {
+    "rule": "ticket-requirement: widget can always be looked up by its creation name",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "Add stores a trimmed, lower-cased name, so a widget created as \"  Alpha \" can no longer be found by that name, which breaks the requirement that lookup always works by the creation name.",
+    "blocking": true
+   },
+   {
+    "rule": "ticket-requirement: widget can always be looked up by its creation name",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.FindByName",
+    "snippet": "return _widgets.FirstOrDefault(w => string.Equals(w.Name, name, StringComparison.Ordinal));",
+    "message": "FindByName is case-sensitive and compares against the normalised stored name, so lookup by the original creation name (for example \"Alpha\" or with surrounding spaces) returns null.",
+    "blocking": true
+   },
+   {
+    "rule": "ticket-requirement: widget can always be looked up by its creation name",
+    "path": "src/FeatureFlow.Example.Api/Program.cs",
+    "symbol": "/widgets/by-name/{name}",
+    "snippet": "app.MapGet(\"/widgets/by-name/{name}\", (string name, WidgetStore store) =>",
+    "message": "The single-segment route parameter cannot match names containing '/', so a widget created with such a name cannot be looked up by name at all.",
+    "blocking": true
+   }
+  ],
+  "cost": 0.00199717,
+  "ok": true
+ },
+ {
+  "v": "epic",
+  "i": 3,
+  "findings": [
+   {
+    "rule": "name-lookup-round-trip",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "Add stores a trimmed, lower-cased name while FindByName matches ordinally on the raw input, so a widget created as \"Alpha\" is stored as \"alpha\" and GET /widgets/by-name/Alpha returns 404, breaking the requirement that a client can always look up a widget by the name it created it with.",
+    "blocking": true
+   },
+   {
+    "rule": "name-lookup-round-trip",
+    "path": "tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs",
+    "symbol": "WidgetNameNormalisationTests.Add_trims_and_lower_cases_the_name",
+    "snippet": "Assert.Equal(\"alpha\", widget.Name);",
+    "message": "The test locks in the alteration of the client-supplied name, so it cannot catch the lookup regression and will fail once the normalisation is corrected.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.0014211000000000002,
+  "ok": true
+ },
+ {
+  "v": "epic",
+  "i": 4,
+  "findings": [
+   {
+    "rule": "ticket-requirement: client can always look up a widget by the name it was created with",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "Add stores a trimmed, lower-cased name, while FindByName matches case-sensitively on the stored value, so creating with \"Alpha\" or \"  Alpha \" and then looking up by that same name returns 404.",
+    "blocking": true
+   },
+   {
+    "rule": "ticket-requirement: client can always look up a widget by the name it was created with",
+    "path": "tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs",
+    "symbol": "WidgetNameNormalisationTests.Add_trims_and_lower_cases_the_name",
+    "snippet": "Assert.Equal(\"alpha\", widget.Name);",
+    "message": "This test locks in the name normalisation that breaks lookup by the creation name, and WidgetFindByNameTests.FindByName_is_case_sensitive does the same for lookup, so both need to change with the fix.",
+    "blocking": true
+   }
+  ],
+  "cost": 0.0018559700000000002,
+  "ok": true
+ },
+ {
+  "v": "epic",
+  "i": 5,
+  "findings": [
+   {
+    "rule": "name-lookup-by-creation-name",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add / Normalise",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "Add stores a trimmed, lower-cased name while FindByName does an exact ordinal match, so a client that creates a widget as \"Alpha\" or \"  Alpha \" cannot look it up by that name, violating the ticket requirement.",
+    "blocking": true
+   },
+   {
+    "rule": "name-lookup-route-coverage",
+    "path": "src/FeatureFlow.Example.Api/Program.cs",
+    "symbol": "MapGet /widgets/by-name/{name}",
+    "snippet": "app.MapGet(\"/widgets/by-name/{name}\", (string name, WidgetStore store) =>",
+    "message": "The single-segment route cannot match widget names containing '/', so those widgets cannot be looked up by name despite the \"always\" requirement.",
+    "blocking": false
+   },
+   {
+    "rule": "name-lookup-uniqueness",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.FindByName",
+    "snippet": "return _widgets.FirstOrDefault(w => string.Equals(w.Name, name, StringComparison.Ordinal));",
+    "message": "Duplicate names are not prevented and FindByName returns the first match, so a client may get a different widget than the one it created under that name.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.0019851,
+  "ok": true
+ },
+ {
+  "v": "epic",
+  "i": 6,
+  "findings": [
+   {
+    "rule": "ticket-requirement: lookup by creation name",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "Add stores a trimmed, lower-cased name, but FindByName matches the raw client-supplied string ordinally, so a client that creates a widget as \"Alpha\" cannot find it by \"Alpha\" (the stored name is \"alpha\").",
+    "blocking": true
+   },
+   {
+    "rule": "correctness: name round-trip",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Normalise",
+    "snippet": "private static string Normalise(string name) =>\n    name.Trim().ToLowerInvariant();",
+    "message": "Normalisation is not in the ticket and changes the stored name away from the name the client created the widget with, which is the root cause of the lookup failure.",
+    "blocking": true
+   },
+   {
+    "rule": "test: locks in defect",
+    "path": "tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs",
+    "symbol": "WidgetNameNormalisationTests.Add_trims_and_lower_cases_the_name",
+    "snippet": "Assert.Equal(\"alpha\", widget.Name);",
+    "message": "The new test asserts that the stored name is altered, codifying the behaviour that breaks lookup by creation name.",
+    "blocking": true
+   },
+   {
+    "rule": "correctness: route coverage",
+    "path": "src/FeatureFlow.Example.Api/Program.cs",
+    "symbol": "app.MapGet /widgets/by-name/{name}",
+    "snippet": "app.MapGet(\"/widgets/by-name/{name}\", (string name, WidgetStore store) =>",
+    "message": "The single-segment route parameter cannot match names containing '/', so such widgets cannot be looked up by name, which conflicts with the 'always' requirement.",
+    "blocking": false
+   },
+   {
+    "rule": "correctness: duplicate names",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.FindByName",
+    "snippet": "return _widgets.FirstOrDefault(w => string.Equals(w.Name, name, StringComparison.Ordinal));",
+    "message": "When several widgets share a creation name, lookup silently returns the first one with no defined behaviour for duplicates.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.0010355699999999998,
+  "ok": true
+ },
+ {
+  "v": "epic",
+  "i": 7,
+  "findings": [
+   {
+    "rule": "ticket-name-lookup-roundtrip",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add / Normalise",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "Add stores a trimmed, lower-cased name while FindByName matches ordinally on the raw input, so a client that creates a widget as \"Alpha\" cannot look it up by \"Alpha\" (it is stored as \"alpha\" and returns 404), violating the requirement that a client can always find a widget by the name it was created with.",
+    "blocking": true
+   },
+   {
+    "rule": "ticket-name-lookup-roundtrip",
+    "path": "tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs",
+    "symbol": "Add_trims_and_lower_cases_the_name",
+    "snippet": "Assert.Equal(\"alpha\", widget.Name);",
+    "message": "The test codifies the normalisation that breaks the create-then-lookup contract, and no test covers creating with mixed case and finding by that same name.",
+    "blocking": true
+   },
+   {
+    "rule": "ticket-name-lookup-roundtrip",
+    "path": "src/FeatureFlow.Example.Api/Program.cs",
+    "symbol": "MapGet /widgets/by-name/{name}",
+    "snippet": "app.MapGet(\"/widgets/by-name/{name}\", (string name, WidgetStore store) =>",
+    "message": "A name containing a '/' cannot be matched by the single-segment route, so some created widgets cannot be looked up by name, contrary to the \"always\" requirement.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00085157,
+  "ok": true
+ },
+ {
+  "v": "epic",
+  "i": 8,
+  "findings": [
+   {
+    "rule": "ticket-requirement-name-lookup",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add / Normalise / FindByName",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "Add stores a trimmed, lower-cased name while FindByName does an ordinal match, so a client that created a widget as \"Alpha\" gets a NotFound when looking it up by \"Alpha\", violating the requirement that a widget is always findable by its creation name.",
+    "blocking": true
+   },
+   {
+    "rule": "ticket-requirement-name-lookup",
+    "path": "src/FeatureFlow.Example.Api/Program.cs",
+    "symbol": "MapGet /widgets/by-name/{name}",
+    "snippet": "app.MapGet(\"/widgets/by-name/{name}\", (string name, WidgetStore store) =>",
+    "message": "The route accepts any non-empty name at creation time, but a name containing '/' or other path-significant characters cannot be matched by a single-segment route parameter, so those widgets cannot be looked up by name.",
+    "blocking": true
+   },
+   {
+    "rule": "test-coverage-name-roundtrip",
+    "path": "tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs",
+    "symbol": "Add_trims_and_lower_cases_the_name",
+    "snippet": "Assert.Equal(\"alpha\", widget.Name);",
+    "message": "No test checks that a widget created with a mixed-case or padded name can be found by that exact name, which is why the normalisation defect goes uncaught.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.0008930699999999999,
+  "ok": true
+ },
+ {
+  "v": "epic",
+  "i": 9,
+  "findings": [
+   {
+    "rule": "name-lookup-roundtrip",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add / Normalise / FindByName",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "Add stores a trimmed, lower-cased name while FindByName compares case-sensitively against the raw input, so a client that creates a widget as \"  Alpha \" or \"Alpha\" cannot look it up by that same name, violating the ticket requirement.",
+    "blocking": true
+   },
+   {
+    "rule": "test-contradicts-requirement",
+    "path": "tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs",
+    "symbol": "FindByName_is_case_sensitive",
+    "snippet": "Assert.Null(store.FindByName(\"ALPHA\"));",
+    "message": "The test locks in case-sensitive lookup while the store lower-cases names on creation, so no test covers finding a widget by the name it was created with.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00056007,
+  "ok": true
+ },
+ {
+  "v": "neg",
+  "i": 0,
+  "findings": [
+   {
+    "rule": "name-lookup-uniqueness",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add / FindByName",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "Because names are lowercased and trimmed before storage and Add does not reject duplicates, creating \"Alpha\" and then \"alpha\" stores two widgets both named \"alpha\", and FindByName always returns the first, so the second widget cannot be looked up by the name it was created with.",
+    "blocking": true
+   },
+   {
+    "rule": "name-lookup-routable",
+    "path": "src/FeatureFlow.Example.Api/Program.cs",
+    "symbol": "MapGet /widgets/by-name/{name}",
+    "snippet": "app.MapGet(\"/widgets/by-name/{name}\", (string name, WidgetStore store) =>",
+    "message": "The create endpoint accepts any non-blank name, but names containing '/' or other characters that are not valid in a single route segment (or percent-encoded edge cases) cannot be matched by this route, so a widget cannot always be looked up by its name as the ticket requires.",
+    "blocking": true
+   },
+   {
+    "rule": "name-preserved-as-created",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "The stored and returned Name is now the trimmed, lower-cased form rather than the name the client created the widget with, which changes the existing contract for Name.",
+    "blocking": false
+   },
+   {
+    "rule": "test-accuracy",
+    "path": "tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs",
+    "symbol": "FindByName_matches_the_name_as_created",
+    "snippet": "Assert.NotNull(store.FindByName(\"  ALPHA \"));",
+    "message": "The test name says it matches the name as created, but it actually verifies normalised case-insensitive matching, and no test covers duplicate names or names with special characters.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00161041,
+  "ok": true
+ },
+ {
+  "v": "neg",
+  "i": 1,
+  "findings": [
+   {
+    "rule": "name-lookup-uniqueness",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add / FindByName",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "Normalising to trimmed lower case on Add lets distinct creation names such as \"Alpha\" and \"ALPHA\" collide, so FindByName returns only the first widget and the second cannot be looked up by the name it was created with.",
+    "blocking": true
+   },
+   {
+    "rule": "name-as-created",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "The stored and returned Name is rewritten (trimmed and lower-cased), so the widget no longer carries the name the client created it with, and the test Add_trims_and_lower_cases_the_name enshrines this change.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00076468,
+  "ok": true
+ },
+ {
+  "v": "neg",
+  "i": 2,
+  "findings": [
+   {
+    "rule": "name-lookup-uniqueness",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.FindByName",
+    "snippet": "return _widgets.FirstOrDefault(w => string.Equals(w.Name, Normalise(name), StringComparison.Ordinal));",
+    "message": "Because names are case- and whitespace-folded on Add and no uniqueness check exists, a later widget whose name normalises to the same value (e.g. \"ALPHA\" after \"alpha\") can never be found by its own name, since FindByName returns the first match.",
+    "blocking": true
+   },
+   {
+    "rule": "name-as-created",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "The stored and returned name is trimmed and lower-cased rather than the name the client created the widget with, so the client's name is altered in the response.",
+    "blocking": true
+   },
+   {
+    "rule": "route-coverage",
+    "path": "src/FeatureFlow.Example.Api/Program.cs",
+    "symbol": "/widgets/by-name/{name}",
+    "snippet": "app.MapGet(\"/widgets/by-name/{name}\", (string name, WidgetStore store) =>",
+    "message": "The single-segment route parameter cannot match names containing '/' or other reserved URL characters, so a widget created with such a name cannot be looked up, contrary to the \"always\" requirement.",
+    "blocking": true
+   }
+  ],
+  "cost": 0.00125526,
+  "ok": true
+ },
+ {
+  "v": "neg",
+  "i": 3,
+  "findings": [
+   {
+    "rule": "name-preserved-as-created",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "Add stores a trimmed, lower-cased name, so the widget no longer carries the name the client created it with, and WidgetNameNormalisationTests locks in that altered behaviour.",
+    "blocking": true
+   },
+   {
+    "rule": "lookup-by-creation-name-unambiguous",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.FindByName",
+    "snippet": "return _widgets.FirstOrDefault(w => string.Equals(w.Name, Normalise(name), StringComparison.Ordinal));",
+    "message": "Because names are case-folded on creation, creating 'Alpha' after 'alpha' yields two widgets with the same stored name and FindByName returns the first, so the second creator cannot look up their own widget by the name they used.",
+    "blocking": true
+   },
+   {
+    "rule": "lookup-by-creation-name-always",
+    "path": "src/FeatureFlow.Example.Api/Program.cs",
+    "symbol": "MapGet /widgets/by-name/{name}",
+    "snippet": "app.MapGet(\"/widgets/by-name/{name}\", (string name, WidgetStore store) =>",
+    "message": "The single-segment route cannot match widget names containing '/' (or other reserved characters unless encoded), so some created names cannot be looked up, contrary to the 'always' requirement.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00095468,
+  "ok": true
+ },
+ {
+  "v": "neg",
+  "i": 4,
+  "findings": [
+   {
+    "rule": "name-lookup-uniqueness",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.FindByName",
+    "snippet": "return _widgets.FirstOrDefault(w => string.Equals(w.Name, Normalise(name), StringComparison.Ordinal));",
+    "message": "Because Add lowercases names and FindByName returns the first match, two widgets created as \"Alpha\" and \"ALPHA\" collide, and the second one can never be looked up by the name it was created with; Add also performs no duplicate check.",
+    "blocking": true
+   },
+   {
+    "rule": "name-round-trip",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "The stored and returned Name is trimmed and lowercased, so the widget no longer carries the name the client created it with, contrary to the ticket.",
+    "blocking": true
+   },
+   {
+    "rule": "route-name-encoding",
+    "path": "src/FeatureFlow.Example.Api/Program.cs",
+    "symbol": "/widgets/by-name/{name}",
+    "snippet": "app.MapGet(\"/widgets/by-name/{name}\", (string name, WidgetStore store) =>",
+    "message": "A widget name containing a slash cannot be matched by this single-segment route, so some names created via POST cannot be looked up by name.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.0008081799999999999,
+  "ok": true
+ },
+ {
+  "v": "neg",
+  "i": 5,
+  "findings": [
+   {
+    "rule": "name-lookup-uniqueness",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add / FindByName",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "Names are normalised on Add with no uniqueness check, so creating \"Alpha\" then \"alpha\" stores two widgets with the same name and FindByName always returns the first, so the second creator cannot look up its own widget by the name it used.",
+    "blocking": true
+   },
+   {
+    "rule": "name-route-coverage",
+    "path": "src/FeatureFlow.Example.Api/Program.cs",
+    "symbol": "app.MapGet(\"/widgets/by-name/{name}\")",
+    "snippet": "app.MapGet(\"/widgets/by-name/{name}\", (string name, WidgetStore store) =>",
+    "message": "The single-segment route parameter cannot match names containing '/' (and similar path characters), so a widget created with such a name cannot be looked up by it, violating the \"always\" requirement.",
+    "blocking": true
+   },
+   {
+    "rule": "name-preservation",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "The stored and returned Name is trimmed and lower-cased, so clients see a name different from the one they created the widget with.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00141416,
+  "ok": true
+ },
+ {
+  "v": "neg",
+  "i": 6,
+  "findings": [
+   {
+    "rule": "ticket-requirement: lookup by creation name always succeeds",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add / FindByName",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "Because names are lowercased before storage and lookup, creating both \"Alpha\" and \"alpha\" stores two widgets with the same normalised name, and FindByName returns only the first, so the second widget cannot be found by the name it was created with.",
+    "blocking": true
+   },
+   {
+    "rule": "ticket-requirement: widget is stored under the name the client created it with",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "The stored and returned Name is trimmed and lowercased rather than the name as created, so the widget no longer reports the name the client supplied, which the ticket's name-as-created requirement does not allow.",
+    "blocking": true
+   },
+   {
+    "rule": "route-coverage: by-name route accepts any widget name",
+    "path": "src/FeatureFlow.Example.Api/Program.cs",
+    "symbol": "MapGet /widgets/by-name/{name}",
+    "snippet": "app.MapGet(\"/widgets/by-name/{name}\", (string name, WidgetStore store) =>",
+    "message": "The route template {name} does not match names containing '/' (or other characters that do not survive path routing), so a widget created with such a name cannot be looked up by name, contrary to the always-findable requirement.",
+    "blocking": false
+   },
+   {
+    "rule": "test-quality: misleading test name",
+    "path": "tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs",
+    "symbol": "FindByName_matches_the_name_as_created",
+    "snippet": "public void FindByName_matches_the_name_as_created()",
+    "message": "The test asserts case- and whitespace-insensitive matching against a normalised name, so its name contradicts what it checks and the test does not verify lookup by the name as created.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00172616,
+  "ok": true
+ },
+ {
+  "v": "neg",
+  "i": 7,
+  "findings": [
+   {
+    "rule": "ticket-requirement/lookup-by-created-name",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add / Normalise",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "Add stores a trimmed, lower-cased name, so the widget no longer carries the name the client created it with, which the ticket requires lookups to use.",
+    "blocking": true
+   },
+   {
+    "rule": "ticket-requirement/unique-name-lookup",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.FindByName",
+    "snippet": "return _widgets.FirstOrDefault(w => string.Equals(w.Name, Normalise(name), StringComparison.Ordinal));",
+    "message": "Names are not enforced unique and normalisation folds case, so two widgets created as 'Beta' and 'beta' are indistinguishable and FindByName always returns the first, so a client cannot always look up the widget it created.",
+    "blocking": true
+   },
+   {
+    "rule": "test-quality/misleading-test-name",
+    "path": "tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs",
+    "symbol": "FindByName_matches_the_name_as_created",
+    "snippet": "Assert.NotNull(store.FindByName(\"  ALPHA \"));",
+    "message": "The test named 'matches_the_name_as_created' actually asserts a normalised, case-insensitive match, which contradicts the name and the ticket's exact-name requirement.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00088518,
+  "ok": true
+ },
+ {
+  "v": "neg",
+  "i": 8,
+  "findings": [
+   {
+    "rule": "ticket-requirement/name-as-created",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "Add stores a trimmed, lower-cased name, so the widget no longer carries the name the client created it with (e.g. \"  Alpha \" is stored and returned as \"alpha\").",
+    "blocking": true
+   },
+   {
+    "rule": "ticket-requirement/lookup-always",
+    "path": "src/FeatureFlow.Example.Api/Program.cs",
+    "symbol": "MapGet /widgets/by-name/{name}",
+    "snippet": "app.MapGet(\"/widgets/by-name/{name}\", (string name, WidgetStore store) =>",
+    "message": "A single route segment cannot carry names containing '/' (or other reserved characters), so widgets created with such names cannot be looked up by name as the ticket requires.",
+    "blocking": true
+   },
+   {
+    "rule": "ticket-requirement/lookup-uniqueness",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.FindByName",
+    "snippet": "return _widgets.FirstOrDefault(w => string.Equals(w.Name, Normalise(name), StringComparison.Ordinal));",
+    "message": "Add does not reject duplicates and names are case-folded, so two creations that normalise equal make FindByName return the first widget rather than the one the client created.",
+    "blocking": true
+   },
+   {
+    "rule": "test-quality",
+    "path": "tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs",
+    "symbol": "FindByName_matches_the_name_as_created",
+    "snippet": "public void FindByName_matches_the_name_as_created()",
+    "message": "The test name says 'as created' but it asserts a differently cased and padded lookup matches, which contradicts the test's title and does not verify the ticket's requirement.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.0010176799999999998,
+  "ok": true
+ },
+ {
+  "v": "neg",
+  "i": 9,
+  "findings": [
+   {
+    "rule": "name-lookup-uniqueness",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add / FindByName",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "Names are normalised (trim and lowercase) before storage but duplicates are not rejected, so 'Alpha' and 'ALPHA' both store as 'alpha' and FindByName returns only the first, so the second widget cannot be looked up by the name it was created with.",
+    "blocking": true
+   },
+   {
+    "rule": "name-lookup-routable",
+    "path": "src/FeatureFlow.Example.Api/Program.cs",
+    "symbol": "MapGet /widgets/by-name/{name}",
+    "snippet": "app.MapGet(\"/widgets/by-name/{name}\", (string name, WidgetStore store) =>",
+    "message": "POST accepts any non-blank name, but a name containing '/' cannot match the single route segment {name}, so such widgets cannot be looked up by name, violating the 'always' requirement.",
+    "blocking": true
+   },
+   {
+    "rule": "name-preservation",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);",
+    "message": "The stored and returned Widget.Name is altered from the name the client supplied, which changes the visible contract rather than just indexing on a normalised key.",
+    "blocking": false
+   },
+   {
+    "rule": "test-accuracy",
+    "path": "tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs",
+    "symbol": "FindByName_matches_the_name_as_created",
+    "snippet": "public void FindByName_matches_the_name_as_created()",
+    "message": "The test name says it matches the name as created, but it actually asserts that a differently-cased, padded query matches, and no test covers collisions or names with special characters.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00098268,
+  "ok": true
+ },
+ {
+  "v": "A+epic",
+  "i": 0,
+  "findings": [
+   {
+    "rule": "epic-requirement-lookup-by-creation-name",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name));",
+    "message": "Names are now stored lower-cased, so any lookup that matches the exact name a client created with (for example \"Alpha\") will miss unless lookup applies the same normalisation; the lookup code is not in this diff, so this cannot be verified here.",
+    "blocking": false
+   },
+   {
+    "rule": "epic-requirement-creation-time",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "Widget",
+    "snippet": "new Widget(_nextId++, Normalise(name))",
+    "message": "The epic requires that widgets record their creation time, but the diff adds no creation-time property or value to Widget or its construction.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00097551,
+  "ok": true
+ },
+ {
+  "v": "A+epic",
+  "i": 1,
+  "findings": [
+   {
+    "rule": "epic-lookup-by-creation-name",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name));",
+    "message": "The epic requires a client to always look up a widget by the name it was created with, but the diff stores the normalised name and shows no change to any lookup path, so a lookup using the original name such as \"  Alpha \" or \"Alpha\" may fail; confirm lookup normalises the same way.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00055181,
+  "ok": true
+ },
+ {
+  "v": "A+epic",
+  "i": 2,
+  "findings": [
+   {
+    "rule": "epic-lookup-by-creation-name",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name));",
+    "message": "The epic requires a client to always find a widget by the name it was created with, but the diff has no lookup path, so any future lookup must apply the same Normalise to its query or lookups with the original untrimmed or mixed-case name will miss.",
+    "blocking": false
+   },
+   {
+    "rule": "epic-widget-creation-time",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name));",
+    "message": "The epic states widgets record their creation time, but this diff does not add a creation timestamp to Widget or its construction, so that requirement is not covered here.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00065481,
+  "ok": true
+ },
+ {
+  "v": "A+epic",
+  "i": 3,
+  "findings": [
+   {
+    "rule": "epic-lookup-by-creation-name",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name));",
+    "message": "The epic requires a client to always look up a widget by the name it created it with, but the diff stores the normalised name and shows no matching normalisation on the lookup path, so Add(\"  Alpha \") followed by a lookup of \"  Alpha \" would miss; the diff does not show the lookup code, so this cannot be verified.",
+    "blocking": true
+   },
+   {
+    "rule": "epic-creation-time",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name));",
+    "message": "The epic requires widgets to record their creation time, and the diff does not add any creation timestamp to Widget or Add.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00079081,
+  "ok": true
+ },
+ {
+  "v": "A+epic",
+  "i": 4,
+  "findings": [
+   {
+    "rule": "epic-lookup-by-creation-name",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name));",
+    "message": "The epic requires a client to always look up a widget by the name it was created with, but the diff stores only the normalised name and adds no lookup that normalises its input, so \"  Alpha \" created then queried as \"  Alpha \" would not match.",
+    "blocking": false
+   },
+   {
+    "rule": "null-name-handling",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Normalise",
+    "snippet": "private static string Normalise(string name) =>\n        name.Trim().ToLowerInvariant();",
+    "message": "Normalise dereferences name without a null check, so a null name that Add previously accepted now throws NullReferenceException; this behaviour change is not covered by a test or guard.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00077131,
+  "ok": true
+ },
+ {
+  "v": "A+epic",
+  "i": 5,
+  "findings": [
+   {
+    "rule": "epic-lookup-by-created-name",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name));",
+    "message": "The epic requires a client to always look up a widget by the name it was created with, but names are now stored normalised while the diff shows no lookup path also normalising its input, so creating with \"  Alpha \" and looking up with the same string may fail.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00058131,
+  "ok": true
+ },
+ {
+  "v": "A+epic",
+  "i": 6,
+  "findings": [],
+  "cost": 0.00045031,
+  "ok": true
+ },
+ {
+  "v": "A+epic",
+  "i": 7,
+  "findings": [
+   {
+    "rule": "epic-lookup-by-name",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name));",
+    "message": "Names are now stored lower-cased, but the diff shows no lookup path that normalises its input, so a client looking up a widget with the name it created it with (for example \"  Alpha \") may not find it; the lookup code is not in this diff and should be checked.",
+    "blocking": false
+   },
+   {
+    "rule": "epic-creation-time",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name));",
+    "message": "The epic requires widgets to record their creation time, but this diff does not touch Widget or set any creation timestamp; this may belong to another ticket but is not covered here.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00065981,
+  "ok": true
+ },
+ {
+  "v": "A+epic",
+  "i": 8,
+  "findings": [
+   {
+    "rule": "null-input-guard",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "Normalise",
+    "snippet": "name.Trim().ToLowerInvariant();",
+    "message": "Normalise dereferences name without a null check, so Add(null) now throws NullReferenceException at this call site; if null was previously accepted or validated differently, that behaviour has changed.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00069531,
+  "ok": true
+ },
+ {
+  "v": "A+epic",
+  "i": 9,
+  "findings": [
+   {
+    "rule": "epic-lookup-by-creation-name",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name));",
+    "message": "Names are now stored lower-cased and trimmed, but the diff adds no matching normalisation on lookup, so a client that created a widget as \"Alpha\" may not be able to find it by that same name, which breaks the epic guarantee.",
+    "blocking": true
+   },
+   {
+    "rule": "epic-creation-time",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Add",
+    "snippet": "var widget = new Widget(_nextId++, Normalise(name));",
+    "message": "The epic requires widgets to record their creation time, but the diff does not add any creation timestamp to Widget or Add; this may belong to a separate ticket but is not covered here.",
+    "blocking": false
+   },
+   {
+    "rule": "null-name-handling",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Normalise",
+    "snippet": "private static string Normalise(string name) =>",
+    "message": "Normalise calls name.Trim() without a null guard, so a null name now throws NullReferenceException inside the lock instead of a deliberate argument error.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00075031,
+  "ok": true
+ },
+ {
+  "v": "B+epic",
+  "i": 0,
+  "findings": [
+   {
+    "rule": "epic-always-lookup",
+    "path": "src/FeatureFlow.Example.Api/Program.cs",
+    "symbol": "MapGet /widgets/by-name/{name}",
+    "snippet": "app.MapGet(\"/widgets/by-name/{name}\", (string name, WidgetStore store) =>",
+    "message": "The route parameter {name} does not match names containing '/', so a widget created with such a name cannot be looked up by it, which conflicts with the epic's 'always' requirement.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00104961,
+  "ok": true
+ },
+ {
+  "v": "B+epic",
+  "i": 1,
+  "findings": [
+   {
+    "rule": "epic-always-lookup",
+    "path": "src/FeatureFlow.Example.Api/Program.cs",
+    "symbol": "MapGet /widgets/by-name/{name}",
+    "snippet": "app.MapGet(\"/widgets/by-name/{name}\", (string name, WidgetStore store) =>",
+    "message": "The default route parameter does not match names containing '/', and POST accepts any non-whitespace name, so a widget named with a slash can be created but never looked up by name, which breaks the epic's 'always look up' requirement.",
+    "blocking": true
+   }
+  ],
+  "cost": 0.0009551100000000001,
+  "ok": true
+ },
+ {
+  "v": "B+epic",
+  "i": 2,
+  "findings": [
+   {
+    "rule": "epic-always-lookup",
+    "path": "src/FeatureFlow.Example.Api/Program.cs",
+    "symbol": "MapGet /widgets/by-name/{name}",
+    "snippet": "app.MapGet(\"/widgets/by-name/{name}\", (string name, WidgetStore store) =>",
+    "message": "The default route parameter does not match names containing '/', so a widget created with such a name cannot be looked up by name, which the epic requires to always work.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00102711,
+  "ok": true
+ },
+ {
+  "v": "B+epic",
+  "i": 3,
+  "findings": [
+   {
+    "rule": "epic-invariant-lookup-by-created-name",
+    "path": "src/FeatureFlow.Example.Api/Program.cs",
+    "symbol": "MapGet /widgets/by-name/{name}",
+    "snippet": "app.MapGet(\"/widgets/by-name/{name}\", (string name, WidgetStore store) =>",
+    "message": "The single-segment {name} route cannot match names containing '/', so a widget created with such a name cannot be looked up, which conflicts with the epic's 'always' guarantee unless create-time validation rejects slashes (not shown in this diff).",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00072299,
+  "ok": true
+ },
+ {
+  "v": "B+epic",
+  "i": 4,
+  "findings": [
+   {
+    "rule": "epic-always-lookup-by-created-name",
+    "path": "src/FeatureFlow.Example.Api/Program.cs",
+    "symbol": "MapGet /widgets/by-name/{name}",
+    "snippet": "app.MapGet(\"/widgets/by-name/{name}\", (string name, WidgetStore store) =>",
+    "message": "The default route parameter {name} does not match '/', so a widget created with a name containing a slash can never be looked up by that name, which breaks the epic's 'always' guarantee; a catch-all {*name} segment would be needed.",
+    "blocking": true
+   }
+  ],
+  "cost": 0.0006679899999999999,
+  "ok": true
+ },
+ {
+  "v": "B+epic",
+  "i": 5,
+  "findings": [
+   {
+    "rule": "epic-requirement-coverage",
+    "path": "src/FeatureFlow.Example.Api/Program.cs",
+    "symbol": "MapGet /widgets/by-name/{name}",
+    "snippet": "app.MapGet(\"/widgets/by-name/{name}\", (string name, WidgetStore store) =>",
+    "message": "The single-segment route {name} cannot match widget names containing '/', so a client cannot look up every widget by the name it was created with, which the epic states as a goal.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00057099,
+  "ok": true
+ },
+ {
+  "v": "B+epic",
+  "i": 6,
+  "findings": [
+   {
+    "rule": "epic-requirement: client can always look up a widget by the name it created it with",
+    "path": "src/FeatureFlow.Example.Api/Program.cs",
+    "symbol": "app.MapGet(\"/widgets/by-name/{name}\")",
+    "snippet": "app.MapGet(\"/widgets/by-name/{name}\", (string name, WidgetStore store) =>",
+    "message": "The POST endpoint accepts any non-whitespace name, but a name containing '/' cannot match the single-segment {name} route parameter, so a widget created as \"a/b\" cannot be looked up by name, which violates the epic's \"always\" requirement.",
+    "blocking": true
+   }
+  ],
+  "cost": 0.00097868,
+  "ok": true
+ },
+ {
+  "v": "B+epic",
+  "i": 7,
+  "findings": [
+   {
+    "rule": "epic-lookup-by-created-name",
+    "path": "src/FeatureFlow.Example.Api/Program.cs",
+    "symbol": "MapGet /widgets/by-name/{name}",
+    "snippet": "app.MapGet(\"/widgets/by-name/{name}\", (string name, WidgetStore store) =>",
+    "message": "The single-segment {name} route cannot match names containing '/', so a widget created with such a name cannot be looked up by name, which the epic's 'always look up by the name it created it with' goal requires; the POST validation does not reject '/' either.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.0007364899999999999,
+  "ok": true
+ },
+ {
+  "v": "B+epic",
+  "i": 8,
+  "findings": [
+   {
+    "rule": "epic-requirement-always-lookup",
+    "path": "src/FeatureFlow.Example.Api/Program.cs",
+    "symbol": "MapGet /widgets/by-name/{name}",
+    "snippet": "app.MapGet(\"/widgets/by-name/{name}\", (string name, WidgetStore store) =>",
+    "message": "The default route segment does not match names containing '/', and POST only rejects whitespace names, so a widget created as 'a/b' can never be looked up by name, which breaks the epic's 'always look up by the name it created it with' guarantee.",
+    "blocking": true
+   }
+  ],
+  "cost": 0.00056899,
+  "ok": true
+ },
+ {
+  "v": "B+epic",
+  "i": 9,
+  "findings": [
+   {
+    "rule": "epic-requirement-coverage",
+    "path": "src/FeatureFlow.Example.Api/Program.cs",
+    "symbol": "MapGet /widgets/by-name/{name}",
+    "snippet": "app.MapGet(\"/widgets/by-name/{name}\", (string name, WidgetStore store) =>",
+    "message": "The default route segment does not match names containing '/' (or names whose encoded slash decodes to '/'), and POST accepts such names, so a widget created with such a name cannot be looked up by name, contrary to the epic's 'always' requirement.",
+    "blocking": true
+   }
+  ],
+  "cost": 0.00071999,
+  "ok": true
+ },
+ {
+  "v": "A-only",
+  "i": 0,
+  "findings": [],
+  "cost": 0.00057061,
+  "ok": true
+ },
+ {
+  "v": "A-only",
+  "i": 1,
+  "findings": [
+   {
+    "rule": "null-input-handling",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Normalise",
+    "snippet": "name.Trim().ToLowerInvariant();",
+    "message": "Normalise dereferences name without a null check, so a null name now throws NullReferenceException inside the lock after _nextId++ has already been evaluated, consuming an id without adding a widget; the diff does not show whether Add validated null before this change.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00050794,
+  "ok": true
+ },
+ {
+  "v": "A-only",
+  "i": 2,
+  "findings": [],
+  "cost": 0.00028293999999999997,
+  "ok": true
+ },
+ {
+  "v": "A-only",
+  "i": 3,
+  "findings": [
+   {
+    "rule": "null-handling",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Normalise",
+    "snippet": "name.Trim().ToLowerInvariant();",
+    "message": "Normalise dereferences name without a null check, so a null argument to Add now throws NullReferenceException; the diff does not show whether Widget or Add previously guarded against null.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00042194,
+  "ok": true
+ },
+ {
+  "v": "A-only",
+  "i": 4,
+  "findings": [
+   {
+    "rule": "null-handling",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "Normalise",
+    "snippet": "name.Trim().ToLowerInvariant();",
+    "message": "Normalise dereferences name without a null check, so a null argument to Add now throws NullReferenceException where the previous code passed it through to the Widget constructor; consider an explicit guard or ArgumentNullException.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00041044,
+  "ok": true
+ },
+ {
+  "v": "A-only",
+  "i": 5,
+  "findings": [],
+  "cost": 0.00030094,
+  "ok": true
+ },
+ {
+  "v": "A-only",
+  "i": 6,
+  "findings": [],
+  "cost": 0.00028194000000000006,
+  "ok": true
+ },
+ {
+  "v": "A-only",
+  "i": 7,
+  "findings": [],
+  "cost": 0.00034394000000000004,
+  "ok": true
+ },
+ {
+  "v": "A-only",
+  "i": 8,
+  "findings": [
+   {
+    "rule": "null-input-handling",
+    "path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+    "symbol": "WidgetStore.Normalise",
+    "snippet": "name.Trim().ToLowerInvariant();",
+    "message": "Normalise dereferences name without a null check, so a null argument now throws NullReferenceException where the previous code passed it through; the diff does not show whether Widget or callers already reject null.",
+    "blocking": false
+   }
+  ],
+  "cost": 0.00043393999999999996,
+  "ok": true
+ },
+ {
+  "v": "A-only",
+  "i": 9,
+  "findings": [],
+  "cost": 0.00038743999999999996,
+  "ok": true
+ },
+ {
+  "v": "B-only",
+  "i": 0,
+  "findings": [],
+  "cost": 0.0006352100000000001,
+  "ok": true
+ },
+ {
+  "v": "B-only",
+  "i": 1,
+  "findings": [],
+  "cost": 0.0007242100000000001,
+  "ok": true
+ },
+ {
+  "v": "B-only",
+  "i": 2,
+  "findings": [],
+  "cost": 0.00037562,
+  "ok": true
+ },
+ {
+  "v": "B-only",
+  "i": 3,
+  "findings": [],
+  "cost": 0.00038144000000000003,
+  "ok": true
+ },
+ {
+  "v": "B-only",
+  "i": 4,
+  "findings": [],
+  "cost": 0.00031862,
+  "ok": true
+ },
+ {
+  "v": "B-only",
+  "i": 5,
+  "findings": [],
+  "cost": 0.00033912,
+  "ok": true
+ },
+ {
+  "v": "B-only",
+  "i": 6,
+  "findings": [],
+  "cost": 0.00038144000000000003,
+  "ok": true
+ },
+ {
+  "v": "B-only",
+  "i": 7,
+  "findings": [],
+  "cost": 0.00035361999999999997,
+  "ok": true
+ },
+ {
+  "v": "B-only",
+  "i": 8,
+  "findings": [],
+  "cost": 0.00035212,
+  "ok": true
+ },
+ {
+  "v": "B-only",
+  "i": 9,
+  "findings": [],
+  "cost": 0.00034412,
+  "ok": true
+ }
+]

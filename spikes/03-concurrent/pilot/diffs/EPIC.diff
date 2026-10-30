@@ -1,0 +1,124 @@
+diff --git a/src/FeatureFlow.Example.Api/Program.cs b/src/FeatureFlow.Example.Api/Program.cs
+index 9113cc1..dfc0e6e 100644
+--- a/src/FeatureFlow.Example.Api/Program.cs
++++ b/src/FeatureFlow.Example.Api/Program.cs
+@@ -13,6 +13,9 @@ app.MapGet("/widgets", (WidgetStore store) => Results.Ok(store.All()));
+ app.MapGet("/widgets/{id:int}", (int id, WidgetStore store) =>
+     store.Find(id) is { } widget ? Results.Ok(widget) : Results.NotFound());
+ 
++app.MapGet("/widgets/by-name/{name}", (string name, WidgetStore store) =>
++    store.FindByName(name) is { } widget ? Results.Ok(widget) : Results.NotFound());
++
+ app.MapPost("/widgets", (WidgetCreateRequest request, WidgetStore store) =>
+ {
+     if (string.IsNullOrWhiteSpace(request.Name))
+@@ -26,6 +29,6 @@ app.MapPost("/widgets", (WidgetCreateRequest request, WidgetStore store) =>
+ 
+ app.Run();
+ 
+-public record Widget(int Id, string Name);
++public record Widget(int Id, string Name, DateTimeOffset CreatedAt);
+ 
+ public record WidgetCreateRequest(string Name);
+diff --git a/src/FeatureFlow.Example.Api/WidgetStore.cs b/src/FeatureFlow.Example.Api/WidgetStore.cs
+index 154664f..6682e7f 100644
+--- a/src/FeatureFlow.Example.Api/WidgetStore.cs
++++ b/src/FeatureFlow.Example.Api/WidgetStore.cs
+@@ -30,7 +30,7 @@ public sealed class WidgetStore
+     {
+         lock (_gate)
+         {
+-            var widget = new Widget(_nextId++, name);
++            var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);
+             _widgets.Add(widget);
+             return widget;
+         }
+@@ -44,4 +44,16 @@ public sealed class WidgetStore
+             return _widgets.Count;
+         }
+     }
++
++    /// <summary>The first widget whose name equals <paramref name="name"/>, or null.</summary>
++    public Widget? FindByName(string name)
++    {
++        lock (_gate)
++        {
++            return _widgets.FirstOrDefault(w => string.Equals(w.Name, name, StringComparison.Ordinal));
++        }
++    }
++
++    private static string Normalise(string name) =>
++        name.Trim().ToLowerInvariant();
+ }
+\ No newline at end of file
+diff --git a/tests/FeatureFlow.Example.Api.UnitTests/WidgetCreatedAtTests.cs b/tests/FeatureFlow.Example.Api.UnitTests/WidgetCreatedAtTests.cs
+new file mode 100644
+index 0000000..9ee8a06
+--- /dev/null
++++ b/tests/FeatureFlow.Example.Api.UnitTests/WidgetCreatedAtTests.cs
+@@ -0,0 +1,15 @@
++using FeatureFlow.Example.Api;
++using Xunit;
++
++namespace FeatureFlow.Example.Api.UnitTests;
++
++public class WidgetCreatedAtTests
++{
++    [Fact]
++    public void Add_records_the_creation_time()
++    {
++        var before = DateTimeOffset.UtcNow;
++        var widget = new WidgetStore().Add("alpha");
++        Assert.InRange(widget.CreatedAt, before, DateTimeOffset.UtcNow);
++    }
++}
+diff --git a/tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs b/tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs
+new file mode 100644
+index 0000000..bcd4afc
+--- /dev/null
++++ b/tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs
+@@ -0,0 +1,23 @@
++using FeatureFlow.Example.Api;
++using Xunit;
++
++namespace FeatureFlow.Example.Api.UnitTests;
++
++public class WidgetFindByNameTests
++{
++    [Fact]
++    public void FindByName_returns_the_widget_with_that_name()
++    {
++        var store = new WidgetStore();
++        var added = store.Add("alpha");
++        Assert.Equal(added, store.FindByName("alpha"));
++    }
++
++    [Fact]
++    public void FindByName_is_case_sensitive()
++    {
++        var store = new WidgetStore();
++        store.Add("alpha");
++        Assert.Null(store.FindByName("ALPHA"));
++    }
++}
+diff --git a/tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs b/tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs
+new file mode 100644
+index 0000000..b5e70b4
+--- /dev/null
++++ b/tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs
+@@ -0,0 +1,15 @@
++using FeatureFlow.Example.Api;
++using Xunit;
++
++namespace FeatureFlow.Example.Api.UnitTests;
++
++public class WidgetNameNormalisationTests
++{
++    [Fact]
++    public void Add_trims_and_lower_cases_the_name()
++    {
++        var store = new WidgetStore();
++        var widget = store.Add("  Alpha ");
++        Assert.Equal("alpha", widget.Name);
++    }
++}
