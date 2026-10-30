@@ -1,21 +1,23 @@
 # Provider method contracts
 
-Status: first pass, revised for review 06. Date: 2026-10-26. Deliverable 2 of
-`brief.md` section 11. Companion to `docs/04-provider-interfaces.md`, which holds
-the signatures. This document holds the contract for each method.
+Status: revised 2026-10-31 for the spike results (`docs/15`, `docs/16`,
+`docs/18`), the code review design (`docs/19`) and the merge design (`docs/20`).
 
-**Scope.** Every method gets: required capability, idempotency strategy, timeout
-and heartbeat, error codes, and semantics where the signature alone is ambiguous.
-Inputs and outputs are given by the signatures; this document states what they
-*mean* and what the caller may rely on.
+This document gives the **contract for each provider method**: required
+capability, idempotency, timeout and heartbeat, error codes, and what the caller
+may rely on. The signatures and capability records are in
+`docs/04-provider-interfaces.md`; section numbers here match the provider
+sections there (section 2 is the sandbox in both, and so on).
 
-**Review 06 applied.** Sandbox commands are **started and polled**, not awaited
-(C1): `StartCommandAsync`, `AttachCommandAsync`, `GetCommandStatusAsync`,
-`CancelCommandAsync` replace `ExecuteAsync`, and `IProgress` is gone. The hook
-endpoint distinguishes **unreachable from denied** (C2). `MergeResult` states
-whether the branch changed (C3). Findings are keyed by scope plus fingerprint and
-triage is **append-only** (C4). The inbound gateway is defined (C5), and
-`GetResultAsync` does not block (C6).
+Terms used throughout:
+
+| Term | Meaning |
+|---|---|
+| Step | One node of a workflow plan, run by the engine (`docs/06`) |
+| Activity | A Temporal unit of work the engine runs for a step. Temporal retries it on failure |
+| Heartbeat | A periodic "still alive, here is progress" report from a long activity, so Temporal can tell a slow call from a dead one |
+| Idempotency marker | A hidden marker written into every remote object the engine creates, so a retry finds and adopts it (section 1.1) |
+| Integration branch | An epic's branch. Ticket branches merge into it; it merges into `main` |
 
 ---
 
@@ -23,27 +25,28 @@ triage is **append-only** (C4). The inbound gateway is defined (C5), and
 
 | Element | Meaning |
 |---|---|
-| Requires | The capability the provider must declare. The caller checks before use and fails with a named missing capability |
-| Idempotency | How a retry avoids duplicating work. `key` means the caller passes a deterministic key; `none` means the call is naturally idempotent or safe to repeat |
+| Requires | The capability the provider must declare (`docs/04` gives each provider's capability record). The caller checks before use and fails with a named missing capability |
+| Idempotency | How a retry avoids duplicating work. `key` means the caller passes a deterministic key (section 1.1); `none` means the call is naturally safe to repeat |
 | Timeout | The default. A step may tighten it, never loosen it beyond the policy ceiling |
-| Heartbeat | Whether a call longer than 30 seconds must report progress |
-| Errors | Codes beyond the common set in section 2.2. Anything not listed falls back to section 2.2 |
-| Semantics | What the caller may rely on, where the signature is ambiguous |
+| Heartbeat | Whether the call must report progress while it runs |
+| Errors | Reason codes beyond the common set in section 1.3. Anything not listed falls back to section 1.3 |
+| Semantics | What the caller may rely on, where the signature alone is ambiguous |
 
 ### 1.1 Idempotency keys
 
 A key is `hash(runId, stepId, stableInputs)`. **Stable inputs exclude anything
-that changes per attempt**: no timestamps, no attempt numbers, no session
+that changes per attempt**: no timestamps, attempt numbers or session
 references. A resumed attempt must produce the same key as the attempt it
-continues, which is what lets a retry re-attach to an existing sandbox (section
-3.6) or adopt an existing branch or PR (S4).
+continues. That is what lets a retry re-attach to an existing sandbox
+(`docs/01` section 3.6, resumable agent steps) or adopt an existing branch or
+pull request (`docs/02` S4).
 
-Two mechanisms, per architecture section 7.1:
+Two mechanisms (`docs/01` section 7.1, idempotency):
 
-1. **Marker-based discovery.** The provider writes a stable hidden marker into
-   every remote object it creates. On retry the caller searches by marker and
-   adopts the existing object.
-2. **Provider-side dedupe** where the remote system supports a key.
+1. **Marker-based discovery.** The provider writes the marker into every remote
+   object it creates. On retry the caller searches by marker and adopts the
+   object.
+2. **Provider-side deduplication**, where the remote system supports a key.
 
 ### 1.2 Timeouts
 
@@ -52,108 +55,152 @@ Two mechanisms, per architecture section 7.1:
 | Metadata read | 15s | No |
 | Write | 30s | No |
 | Sandbox create or dispose | 5 min | Yes |
-| Command execution | Step-defined, bounded by `start_to_close` | Yes |
-| Artifact put or get | 5 min | Yes for large payloads |
-| Review | Step-defined | Yes |
+| Command execution | Set by the step, bounded by its `start_to_close` (the activity's overall time limit) | Yes |
+| Artifact put or get | 5 min | Yes, for large payloads |
+| Review | Set by the step | Yes |
 
-No method waits on human or external completion (section 1.3 of the interfaces
-document). A step that must wait uses a durable timer and polls, or an inbound
+**No method waits on human or external completion** (`docs/04` section 1.3). A
+step that must wait uses a durable timer and polls, or waits for an inbound
 event.
 
 ### 1.2.1 Polling happens inside one activity
 
-Added for review 08 (K1). Polling must **not** be one short activity per poll. A
-4-hour agent step polled every 30 seconds would add about 480 activities and well
-over 1,000 history events for a single step, which alone can hit the history limit
-(R1).
-
 > **Poll inside one long-running activity.** The activity loops on
 > `GetCommandStatusAsync` or `GetProgressAsync` and heartbeats. History cost is
-> **one activity per step**. After a worker crash the activity retry re-attaches by
-> handle.
+> **one activity per step**. After a worker crash, the activity's retry
+> re-attaches by handle.
 
-This applies to every poll loop: sandbox commands, agent progress, CI run status,
-PR state, and the fallback when an inbound event is lost. The durable-timer form is
-for waits that may be long and idle (a human gate); the in-activity loop is for
-waits that are actively progressing.
+One short activity per poll would not scale: a 4-hour agent step polled every
+30 seconds would add about 480 activities and over 1,000 history events, which
+alone can hit Temporal's history limit (risk R1 in `docs/08`, history
+growth). Spike 1 measured the single-activity form: a 60-second step polled
+every 500 ms cost 1 activity and 11 history events, and a 20-second connection
+break inside it cost no extra activity (`docs/15` section 6.2).
+
+This applies to every poll loop: sandbox commands, agent progress, CI run
+status, pull request state, and the fallback when an inbound event is lost. Use
+a **durable timer** for waits that may be long and idle (a human gate); use the
+**in-activity loop** for waits on work that is actively progressing.
 
 ### 1.3 Error codes
+
+**Infrastructure** means the remote system or network failed and the work did
+not happen: the engine retries with backoff, and the retry does not use up one
+of the step's attempts. **Work** means the work happened and produced an
+outcome: no retry; the plan routes by outcome. The step may override the class,
+because it knows the intent.
 
 | Reason | Class | Retry | Meaning |
 |---|---|---|---|
 | `unreachable` | Infrastructure | Yes, backoff | Network or DNS failure |
-| `timeout` | Infrastructure | Yes | The call exceeded its timeout. **The work may or may not have happened** — see section 1.4 |
+| `timeout` | Infrastructure | Yes | The call exceeded its timeout. **The work may or may not have happened** (section 1.4) |
 | `server_error` | Infrastructure | Yes | 5xx from the remote |
 | `rate_limited` | Infrastructure | Yes, honour `RetryAfter` | 429 |
-| `internal_error` | Infrastructure | Yes | Unexpected exception in the provider. Set by the engine's decorator, with a distinct reason so it is visible |
-| `unauthenticated` | Infrastructure | Short budget, then fail | 401. Almost always a configuration fault (S9) |
+| `internal_error` | Infrastructure | Yes | Unexpected exception in the provider. Set by the engine's decorator, with its own reason so it is visible |
+| `unauthenticated` | Infrastructure | Short budget, then fail | 401. Almost always a configuration fault (`docs/02` S9) |
 | `forbidden` | Infrastructure | Short budget, then fail | 403. Same |
 | `not_found` | Work | No | The object does not exist |
 | `conflict` | Work | No | Remote state conflicts: merge conflict, branch already exists |
+| `base_moved` | Work | No | A merge was refused because the target branch moved since the ticket caught up. The ticket catches up again (section 4.3) |
 | `validation_failed` | Work | No | The request was rejected as invalid |
 | `rejected` | Work | No | Branch protection or policy refused it |
-| `partial` | Work | Step decides | Some of the work happened; usually reconcile then retry once |
+| `partial` | Work | Step decides | Some of the work happened; usually reconcile, then retry once |
 | `capability_missing` | Work | No | The provider does not declare the needed capability |
+| `unexpected_response` | Work | No | The remote answered with a success response the provider does not map (section 1.5) |
 
 ### 1.4 The timeout ambiguity
 
-A `timeout` on a **create** method is ambiguous: the object may have been created.
-The contract for every create method is therefore:
+A `timeout` on a **create** method is ambiguous: the object may have been
+created. Every create method therefore follows this rule:
 
-> On `timeout`, do not retry blindly. Call the corresponding find-by-marker method
-> and adopt the object if it exists. Only if it does not exist, retry the create
-> with the same key.
+> On `timeout`, do not retry blindly. Call the matching find method and adopt
+> the object if it exists. Only if it does not exist, retry the create with the
+> same key.
 
-This is why `FindByMarkerAsync` exists on the code host and why sandbox
-`CreateAsync` has `AttachAsync` as its pair.
+This is why the code host has `FindByMarkerAsync` and why sandbox `CreateAsync`
+is paired with `AttachAsync`.
+
+### 1.5 Every documented success response is mapped
+
+A provider maps **every documented success response** of its remote system to an
+outcome, including empty ones (DR8). Any success response it does not map is
+returned as **`unexpected_response`, a work error**, never as infrastructure.
+
+Why: an infrastructure error is retried free and indefinitely. Spike 3's code
+host read GitHub's 204 (no body) for a catch-up with nothing to merge as a
+server error, and retried it forever; the first ticket to merge would have hung
+(`docs/18` section 4, item 2). The contract tests for each interface include
+every documented success response.
 
 ---
 
 ## 2. Sandbox provider
 
+The agent runs in the sandbox, separate from the agent worker that supervises
+it, so a worker restart (including every deploy) costs nothing: the new worker
+re-attaches.
+
 | Method | Requires | Idempotency | Timeout | Heartbeat | Errors | Semantics |
 |---|---|---|---|---|---|---|
-| `CreateAsync` | — | `key` | 5 min | Yes | `conflict` (already exists), `capability_missing` (no provider for the requested `Os`) | Creates the environment and performs the checkout. On `timeout`, call `AttachAsync` with the same key before retrying |
-| `AttachAsync` | `PersistentAcrossSteps` | `key` | 30s | No | `not_found` (no sandbox for this key) | Re-attaches to a sandbox that outlived a worker crash. Returns `not_found` rather than creating one; the step decides |
-| `StartCommandAsync` | — | `key` | 30s | No | `validation_failed` (unknown command) | Starts a command and returns a handle. **Does not wait for it to finish** (review 06, C1) |
-| `AttachCommandAsync` | `PersistentAcrossSteps` | `key` | 30s | No | `not_found` | Re-attaches to a **running** command by key after a worker crash. This is what keeps a long command from being lost when the sandbox survives |
-| `GetCommandStatusAsync` | — | none | 15s | No | `not_found` | Returns status, exit code, and output since `outputCursor`. Non-blocking. **The step polls it inside one long-running activity**, not one activity per poll (section 1.2.1) |
-| `CancelCommandAsync` | — | `key` | 30s | No | `not_found` | Idempotent. Cancelling a finished command succeeds |
+| `CreateAsync` | — | `key` | 5 min | Yes | `conflict` (already exists), `capability_missing` (no provider for the requested `Os`) | Creates the environment and performs the checkout, read-only or writable as the checkout spec says. On `timeout`, call `AttachAsync` with the same key before retrying |
+| `AttachAsync` | `PersistentAcrossSteps` | `key` | 30s | No | `not_found` (no sandbox for this key) | Re-attaches to a sandbox that outlived a worker crash. Its **uncommitted files are kept**. Returns `not_found` rather than creating a sandbox; the step then creates one and restarts from the last pushed commit |
+| `StartCommandAsync` | — | `key` | 30s | No | `validation_failed` (unknown command) | Starts a command and returns a handle. **Does not wait for it to finish** |
+| `AttachCommandAsync` | `PersistentAcrossSteps` | `key` | 30s | No | `not_found` | Re-attaches to a **running** command by key after a worker crash, so a long command is not lost when the sandbox survives |
+| `GetCommandStatusAsync` | — | none | 15s | No | `not_found` | Returns status, exit code, and output since `outputCursor`. Does not block. **The step polls it inside one long-running activity** (section 1.2.1) |
+| `CancelCommandAsync` | — | `key` | 30s | No | `not_found` | Cancelling a finished command succeeds |
 | `CopyInAsync` | — | none | 5 min | Yes | `not_found` (source artifact) | Places an input artifact into the sandbox |
 | `CopyOutAsync` | — | none | 5 min | Yes | `not_found` (path) | Returns an `ArtifactRef`; the content goes to the artifact store, not to workflow state |
-| `DisposeAsync` | — | `key` | 5 min | Yes | — | Idempotent: disposing twice succeeds. A sandbox that outlives a worker crash is **not** disposed on worker failure |
+| `DisposeAsync` | — | `key` | 5 min | Yes | — | Disposing twice succeeds. A sandbox that outlives a worker crash is **not** disposed because the worker failed |
 
 Notes:
 
-- `CreateAsync` takes the credential from the broker, not from configuration. The
-  provider never reads credentials itself.
-- **Commands are started and polled, not awaited** (review 06, C1). A command may
-  run for hours; awaiting it inside one call would break the "short and bounded"
-  rule and would lose the command on a worker crash even when the sandbox
-  survives.
-- `GetCommandStatusAsync` covers agent steps and test tiers alike. The difference
-  is the command and its limits, not the method.
-- `StreamingOutput` means incremental output through the cursor. A provider
-  without it returns output only at completion, which is conformant but coarser.
+- **Resume after a crash** (DR9). If the sandbox survived, uncommitted files are
+  kept. If it was lost, the step restarts from the last pushed commit. Version 1
+  takes no snapshots of uncommitted work.
+- **Commands are started and polled, not awaited.** A command may run for
+  hours; awaiting it would break the "short and bounded" rule and lose the
+  command with a crashed worker even when the sandbox survives. Spike 1 broke
+  the worker-to-sandbox connection mid-command: the command kept running and
+  the step re-attached by handle (`docs/15` section 3.4).
+- `CreateAsync` gets its checkout credential from the credential broker, never
+  from configuration. **The agent is left with no credential that can push**
+  (DR13); the engine pushes the ticket branch at the end of each step and at
+  work-in-progress points. The push mechanism is not yet specified (`docs/04`
+  section 16).
+- A read-only checkout (for the code reviewer, and for any role that may not
+  write) is enforced by the sandbox, not by the agent.
+- `GetCommandStatusAsync` serves agent steps and test tiers alike; the
+  difference is the command and its limits.
+- `StreamingOutput` means output arrives incrementally through the cursor. A
+  provider without it returns output only at completion, which conforms but is
+  coarser.
 
 ---
 
 ## 3. Agent runtime provider
 
+The runtime (for example Claude Code or Copilot CLI) runs inside the sandbox;
+this provider starts and supervises it. Measured capabilities of both runtimes
+are in `docs/04` section 3.2.
+
 | Method | Requires | Idempotency | Timeout | Heartbeat | Errors | Semantics |
 |---|---|---|---|---|---|---|
-| `StartAsync` | — | `key` | 30s | No | `validation_failed` (task or limits), `capability_missing` | Starts the runtime inside the sandbox. Returns a session handle; it does **not** wait for the agent to finish |
-| `ResumeAsync` | `SessionResume` | `key` | 30s | No | `not_found` (session gone) | Takes the sandbox handle as well as the session reference, because the session lives inside a sandbox that may have been re-attached or recreated |
-| `GetProgressAsync` | — | none | 15s | No | `not_found` | Returns session size or turn count. This is what the attempt-budget progress rule needs (section 3.7) |
-| `GetResultAsync` | — | none | 30s | No | `not_found` | **The source of truth for the outcome**: outcome, structured output, produced artifact references, session reference, usage. The session-end hook is a signal, not the source of truth |
-| `StopAsync` | — | `key` | 30s | No | — | Idempotent. Stops the runtime; does not dispose the sandbox |
+| `StartAsync` | — | `key` | 30s | No | `validation_failed` (task or limits), `capability_missing` | Starts the runtime inside the sandbox and returns a session handle. Does **not** wait for the agent to finish |
+| `ResumeAsync` | `SessionResume` | `key` | 30s | No | `not_found` (session gone) | **Reloads the conversation from the stored session reference** (DR9). Must work in a fresh worker process: nothing comes from the crashed worker's memory. Takes the sandbox handle too, because the sandbox may have been re-attached or recreated |
+| `GetProgressAsync` | — | none | 15s | No | `not_found` | Returns session size or turn count, which the attempt budget's progress rule needs (`docs/01` section 3.7: a resume is free only if the session grew or a commit was pushed) |
+| `GetResultAsync` | — | none | 30s | No | `not_found` | **The source of truth for the outcome**: outcome, structured output, produced artifact references, session reference, usage. Does not block |
+| `StopAsync` | — | `key` | 30s | No | — | Stopping twice succeeds. Stops the runtime; does not dispose the sandbox |
 
 Notes:
 
+- Spike 3 found Claude Code resume relied on state held in the worker process,
+  so it failed after a worker restart (`docs/18` section 4, item 4). That is the
+  failure the `ResumeAsync` contract rules out.
 - A runtime without `Hooks` gets process-level control only, and the engine
-  records the coarser control in the run.
-- Model credentials are short-lived and scoped to the step, issued by the broker,
-  preferably through a model gateway.
+  records the coarser control in the run (`docs/08` section 2.5 lists the
+  fallback controls).
+- **Model credentials never enter the agent's environment** (DR1): a proxy adds
+  the key, or per-run keys carry a spend limit and an expiry.
 
 ### 3.1 Hook endpoint contract
 
@@ -161,33 +208,36 @@ The engine HTTP contract the runtime calls from inside the sandbox.
 
 | Hook | Payload | Response | Failure behaviour |
 |---|---|---|---|
-| Session start | run id, step id, per-step token | Ack, policy for the step | Deny: the step fails with `rejected` |
+| Session start | run id, step id, per-step token | Ack, and the policy for the step | Deny: the step fails with `rejected` |
 | Before tool call | tool name, arguments | Allow, or deny with a reason | Deny: the tool call is skipped and reported to the runtime |
 | After tool call | tool name, result summary, token usage | Ack | — |
 | Session end | outcome, session reference | Ack | — |
 
-- Authenticated with the per-step token, scoped to this run and step's hook
-  endpoint (section 5.4).
-- Token and cost events arrive here, which is how per-step cost is recorded
-  without parsing transcripts (section 5.5).
-- Heartbeats arrive here, so a stalled agent is distinguishable from a slow one.
-- **Events wake, reads confirm** (section 1.3.1 of the interfaces document). The
-  session-end hook wakes the workflow; `GetResultAsync` confirms the outcome.
+- Authenticated with the per-step token, valid only for this run and step's
+  hook endpoint (`docs/01` section 5.4, API authorisation).
+- Token and cost events arrive here, so per-step cost is recorded without
+  parsing transcripts (`docs/01` section 5.5, cost accounting).
+- Heartbeats arrive here, so a stalled agent can be told from a slow one.
+- Before-tool-call events record which files the agent opened. The review
+  coverage check uses that record (section 7).
+- **Events wake, reads confirm** (`docs/04` section 1.3.1). The session-end hook
+  wakes the workflow; `GetResultAsync` confirms the outcome.
 
 ### 3.1.1 Unreachable is not denied
 
-Added for review 06 (C2). If the engine is unreachable — network drop, engine
-restart — treating that as a deny would deny every tool call, and the agent would
-flail or give up with a wrong outcome. That repeats the prototype's network-drop
-failure in a new form.
+If the engine is unreachable (network drop, engine restart), treating that as a
+deny would deny every tool call, and the agent would flail or stop with a wrong
+outcome.
 
 | Case | Behaviour |
 |---|---|
-| **Unreachable** | The hook client in the sandbox retries with backoff and **holds the tool call** — the agent pauses — for a bounded time. Past that, the session stops in a resumable state and the step classifies it as **infrastructure** |
-| **Denied** | Only when the engine answers deny, or when the engine itself cannot evaluate the policy. The tool call is skipped and reported to the runtime |
+| **Unreachable** | The hook client in the sandbox retries with backoff and **holds the tool call** (the agent pauses) for a bounded time. Past that, the session stops in a resumable state and the step classifies it as **infrastructure** |
+| **Denied** | Only when the engine answers deny, or cannot evaluate the policy. The tool call is skipped and reported to the runtime |
 
-So: a hook call that fails does not fail the step, and an unreachable engine is
-never a policy decision.
+A hook call that fails does not fail the step, and an unreachable engine is never
+a policy decision. Spike 1 made the hook endpoint unreachable mid-step: the step
+retried 3 times free and completed once the endpoint returned (`docs/15` section
+3.3).
 
 ---
 
@@ -197,51 +247,62 @@ never a policy decision.
 
 | Method | Requires | Idempotency | Timeout | Errors | Semantics |
 |---|---|---|---|---|---|
-| `CreateBranchAsync` | `PullRequest` | `key` | 30s | `conflict` (exists at a different SHA) | Creates from `fromRef`. On `timeout`, `FindByMarkerAsync` then adopt |
+| `CreateBranchAsync` | `PullRequest` | `key` | 30s | `conflict` (exists at a different SHA) | Creates from `fromRef`. On `timeout`, `FindByMarkerAsync`, then adopt |
 
 ### 4.2 Pull requests
 
 | Method | Requires | Idempotency | Timeout | Errors | Semantics |
 |---|---|---|---|---|---|
-| `OpenPullRequestAsync` | `PullRequest` | `key` | 30s | `conflict`, `validation_failed` | Writes the hidden marker into the PR body. On `timeout`, find by marker then adopt |
+| `OpenPullRequestAsync` | `PullRequest` | `key` | 30s | `conflict`, `validation_failed` | Writes the marker into the pull request body. On `timeout`, find by marker, then adopt |
 | `UpdatePullRequestAsync` | `PullRequest` | none | 30s | `not_found`, `conflict` | Last write wins. Safe to repeat |
-| `GetPullRequestAsync` | `PullRequest` | none | 15s | `not_found` | Returns state, head SHA, approvals, mergeability. This is what "the human approves on the code host and the engine waits" needs (Q5) |
-| `ClosePullRequestAsync` | `PullRequest` | `key` | 30s | `not_found` | Idempotent. Used when an abort explicitly asks for it |
-| `CreateRevertPullRequestAsync` | `PullRequest` | `key` | 30s | `conflict` | Serves the revert option of a partial delivery (section 7.3) |
+| `GetPullRequestAsync` | `PullRequest` | none | 15s | `not_found` | Returns state, head SHA, approvals, mergeability. Where the code host requires its own review, this is how the engine sees the human's approval (`docs/02` Q5) |
+| `ClosePullRequestAsync` | `PullRequest` | `key` | 30s | `not_found` | Closing twice succeeds. Used when an abort explicitly asks for it |
+| `CreateRevertPullRequestAsync` | `PullRequest` | `key` | 30s | `conflict` | Serves the revert option when a delivery across several repositories only partly succeeds (`docs/01` section 7.3) |
 
 ### 4.3 Merging
 
+There is no merge lock (`docs/20`, the merge design). A ticket **catches up**
+(the integration branch is merged into it), re-tests if that changed anything,
+then **merges**. The engine performs every merge; agents never hold a
+credential that can push (DR13).
+
 | Method | Requires | Idempotency | Timeout | Errors | Semantics |
 |---|---|---|---|---|---|
-| `MergeBaseForwardAsync` | `PullRequest` | none | 30s | `conflict` | Merges the integration base forward into a ticket branch. **`MergeResult` must state whether the branch changed, and the new head SHA** (review 06, C3), because review 03 decided checks rerun only if the merge changed the branch. A `conflict` routes to an agent step that resolves it, not to a human first (section 6.3) |
-| `MergeAsync` | `PullRequest` | `key` | 30s | `conflict`, `rejected` (branch protection), `not_found` | `rejected` means protection or policy refused it. The method must declare the required `MergeMethods` capability |
-| `EnqueueMergeAsync` | `MergeQueue` | `key` | 30s | `rejected`, `not_found` | Enqueues and returns. **It does not wait** — the engine polls `GetPullRequestAsync` or receives an inbound event |
-| `GetBranchProtectionAsync` | `BranchProtection` | none | 15s | `not_found` | Read-only. Used to decide whether a human must approve on the code host |
+| `MergeBaseForwardAsync` | `PullRequest` | none | 30s | `conflict` | The catch-up. Merges `branch` (the integration branch, merged **from**) into `into` (the ticket branch, merged **into**). **`MergeResult` states whether the ticket branch changed, and its new head SHA**: tests re-run only if it changed. "Nothing to merge" (GitHub's 204 with no body) is a completed merge with the branch unchanged (DR8). A `conflict` routes to an agent step that resolves it, not to a human first (`docs/06` section 6.2) |
+| `MergeAsync` | `PullRequest`, and `MergeMethods[method]` | `key` | 30s | `base_moved`, `conflict`, `rejected` (protection or policy), `not_found` | **The engine builds a merge commit from exactly `testedHeadSha` and pushes it to the base.** If the base is no longer `expectedBaseSha`, Git refuses the push and the result is `base_moved`: the ticket catches up again, and about 3 refusals in a row escalate to a human (`docs/06` section 6.5). The code host marks the pull request merged once its commits reach the base. On `timeout`, read the base first: if it already contains the tested head, the merge happened (section 1.4) |
+| `EnqueueMergeAsync` | `MergeQueue` | `key` | 30s | `rejected`, `not_found` | Optional path, for repositories that require a merge queue. Enqueues and returns. **It does not wait**: the engine polls `GetPullRequestAsync` or receives an inbound event |
+| `GetBranchProtectionAsync` | `BranchProtection` | none | 15s | `not_found` | Read-only. The engine only checks that protection exists; it is set by an identity the engine does not hold (DR3) |
+
+Merges into `main` need human approval (floor F1). The engine enforces it at
+merge time, reading the base and default branch from the code host, and code
+host protection on the default branch backs it up (DR2). As a further backstop,
+code host rules allow only the engine's identity to update `main` and
+integration branches.
 
 ### 4.4 Checks
 
 | Method | Requires | Idempotency | Timeout | Errors | Semantics |
 |---|---|---|---|---|---|
-| `GetCheckStatusAsync` | `CheckStatus` | none | 15s | `not_found` | Takes `RepoRef` as well as the SHA: a SHA alone is not unique across repositories. Must include checks that register late |
+| `GetCheckStatusAsync` | `CheckStatus` | none | 15s | `not_found` | Takes the repository as well as the SHA: a SHA alone is not unique across repositories. Must include checks that register late |
 
 ### 4.5 Review comments
 
 | Method | Requires | Idempotency | Timeout | Errors | Semantics |
 |---|---|---|---|---|---|
 | `ListReviewCommentsAsync` | `ReviewComments` | none | 15s | `not_found` | Returns threads, not flat comments, so a thread can be resolved |
-| `AddReviewCommentAsync` | `ReviewComments` | `key` | 30s | `validation_failed`, `not_found` | Writes the marker. Used to post decline reasons |
+| `AddReviewCommentAsync` | `ReviewComments` | `key` | 30s | `validation_failed`, `not_found` | Writes the marker. Used to post the reason a finding was declined |
 | `ReplyToReviewCommentAsync` | `ReviewComments` | `key` | 30s | `not_found` | — |
-| `ResolveReviewThreadAsync` | `ReviewComments` | `key` | 30s | `not_found` | Idempotent. Closes a thread after a fix or a decline |
+| `ResolveReviewThreadAsync` | `ReviewComments` | `key` | 30s | `not_found` | Resolving twice succeeds. Closes a thread after a fix or a decline |
 
 ### 4.6 Diffs and discovery
 
 | Method | Requires | Idempotency | Timeout | Errors | Semantics |
 |---|---|---|---|---|---|
-| `GetDiffAsync` | `PullRequest` | none | 5 min | `not_found` | Returns an `ArtifactRef`, not the diff. A large aggregate diff never enters workflow state (DP10) |
-| `FindByMarkerAsync` | `PullRequest` | none | 30s | — | Searches branches and PRs by marker. Returns empty, not `not_found`, when nothing matches |
+| `GetDiffAsync` | `PullRequest` | none | 5 min | `not_found` | Returns an `ArtifactRef`, not the diff, so a large diff never enters workflow state |
+| `FindByMarkerAsync` | `PullRequest` | none | 30s | — | Searches branches and pull requests by marker. Returns empty, not `not_found`, when nothing matches |
 
-Note: `RequestAiReviewAsync` is deliberately absent. An AI review on a PR is a
-**review provider** implementation composed with the code host provider.
+There is no `RequestAiReviewAsync`. An AI review on a pull request is a **review
+provider** composed with the code host provider (`docs/04` section 7).
 
 ---
 
@@ -249,14 +310,14 @@ Note: `RequestAiReviewAsync` is deliberately absent. An AI review on a PR is a
 
 | Method | Requires | Idempotency | Timeout | Errors | Semantics |
 |---|---|---|---|---|---|
-| `TriggerAsync` | `Trigger` | `key` | 30s | `validation_failed` (unknown tier), `not_found` | Starts a run for a tier at a commit. Returns a reference; does not wait |
-| `GetRunStatusAsync` | `Trigger` | none | 15s | `not_found` | Non-blocking. Must handle checks that register late, and must report results for **queue builds** (for example the GitHub Actions `merge_group` event) |
+| `TriggerAsync` | `Trigger` | `key` | 30s | `validation_failed` (unknown tier), `not_found` | Starts a run for a test tier at a commit and returns a reference. Does not wait. Spike 2's GitHub Actions dispatch returned in 22.7 s (`docs/16` section 2, check R5: a Docker tier run through CI) |
+| `GetRunStatusAsync` | `Trigger` | none | 15s | `not_found` | Does not block. Must handle checks that register late, and, where a merge queue is used, report results for **queue builds** (for example the GitHub Actions `merge_group` event) |
 | `ReadResultsAsync` | `Trigger` | none | 30s | `not_found`, `partial` | Structured results. `partial` means some jobs have not finished |
 | `ReadLogsAsync` | `ReadLogs` | none | 5 min | `not_found` | Returns a log reference, not the log body |
 | `GetArtifactsAsync` | `Artifacts` | none | 5 min | `not_found` | Returns artifact references |
 
-Note: waiting is an engine mechanism. The step polls `GetRunStatusAsync` **inside
-one long-running activity** (section 1.2.1), or waits for an inbound event.
+Waiting is an engine mechanism. The step polls `GetRunStatusAsync` **inside one
+long-running activity** (section 1.2.1), or waits for an inbound event.
 
 ---
 
@@ -265,19 +326,19 @@ one long-running activity** (section 1.2.1), or waits for an inbound event.
 | Method | Requires | Idempotency | Timeout | Errors | Semantics |
 |---|---|---|---|---|---|
 | `GetIssueAsync` | `Issues` | none | 15s | `not_found` | — |
-| `SearchIssuesAsync` | `Issues` | none | 30s | — | Finds issues by marker (idempotency) and lists an epic's children. Returns empty, not `not_found`, when nothing matches |
-| `CreateIssueAsync` | `Issues` | `key` | 30s | `validation_failed` | Writes the marker. On `timeout`, search by marker then adopt |
+| `SearchIssuesAsync` | `Issues` | none | 30s | — | Finds issues by marker (for idempotency) and lists an epic's children. Returns empty, not `not_found`, when nothing matches |
+| `CreateIssueAsync` | `Issues` | `key` | 30s | `validation_failed` | Writes the marker. On `timeout`, search by marker, then adopt |
 | `UpdateIssueAsync` | `Issues` | none | 30s | `not_found`, `validation_failed` | Last write wins |
-| `TransitionAsync` | `Transitions` | `key` | 30s | `not_found`, `rejected` (workflow refuses the transition) | Idempotent: transitioning to the current state succeeds |
-| `LinkAsync` | `Links` | `key` | 30s | `not_found`, `validation_failed` | Idempotent: an existing link of the same type succeeds |
+| `TransitionAsync` | `Transitions` | `key` | 30s | `not_found`, `rejected` (the tracker's workflow refuses the transition) | Transitioning to the current state succeeds |
+| `LinkAsync` | `Links` | `key` | 30s | `not_found`, `validation_failed` | An existing link of the same type succeeds |
 | `CommentAsync` | `Comments` | `key` | 30s | `not_found` | — |
 
 Notes:
 
-- Agents have **no** tracker identity. Tracker writes go through engine steps only
-  (section 4.6).
-- **Field mapping is configuration, not code.** `IssueSpec` carries engine-level
-  fields; the provider maps them to provider-specific fields through its own
+- Agents have **no** tracker identity. Tracker writes go through engine steps
+  only (`docs/01` section 4.6).
+- **Field mapping is configuration, not code.** `IssueSpec` carries
+  engine-level fields; the provider maps them to its own fields through its
   configuration. `CustomFields` declares support.
 
 ---
@@ -286,20 +347,38 @@ Notes:
 
 | Method | Requires | Idempotency | Timeout | Heartbeat | Errors | Semantics |
 |---|---|---|---|---|---|---|
-| `ReviewAsync` | `Scopes[scope]` | none | Step-defined | Yes | `validation_failed` (unknown check), `not_found` (input artifact) | Produces structured findings for one scope |
+| `ReviewAsync` | `Scopes[scope]` | none | Set by the step | Yes | `validation_failed` (unknown check), `not_found` (input artifact) | Produces structured findings for one scope |
 
 Contract details:
 
-- **`priorFindings` is required.** The prior findings for the same scope come from
-  the ledger. Without them a verdict can change between passes on unchanged input,
-  which is R4. A provider that ignores them is non-conformant.
+- **The version 1 reviewer is an agent on a read-only checkout** (`docs/04`
+  section 7.1, from the code review design in `docs/19`). It is told the branch,
+  the base and the changed files, reads the diff itself, and may open any file
+  and build and run tests. It reviews against the ticket's acceptance criteria,
+  the epic's contract and the repository's conventions. A different, ideally
+  stronger, model reviews than wrote the code.
+- **Coverage is checked by the engine**, from the hook record of files the
+  reviewer opened (section 3.1). A review that never opened a changed file is
+  re-run, not accepted. The reviewer's runtime therefore needs the
+  before-tool-call hook.
+- **Bug findings carry evidence**: a throwaway failing test where possible.
+  Demonstrated findings block; reasoned ones are labelled and ranked lower.
+- **`priorFindings` is required.** They come from the findings ledger, which is
+  the source of truth over any single pass (`docs/17` section 6.5, position L1).
+  Without them a verdict can change between passes on unchanged input (DR4:
+  verdicts are unstable with a real model). A provider that ignores them does
+  not conform. At epic scope they include the child tickets' ledgers (DR11).
 - Findings are fingerprinted on rule, repository, path, symbol and normalised
-  snippet. **Never on line numbers** (section 7.2). A provider without
+  snippet, **never on line numbers** (`docs/01` section 7.2). A provider without
   `Fingerprints` cannot guarantee a declined finding stays declined, and the
   engine records that.
-- Epic scope reviews the aggregate diff (DP10).
-- The same provider serves the **on-demand** check action in interactive sessions
-  (section 7.4), so a check never appears for the first time after submission.
+- **Two levels.** Ticket scope reviews the ticket branch against the
+  integration branch, given the ticket and the epic contract. Epic scope reviews
+  the integration branch against `main`.
+- The same provider serves the **on-demand** check in interactive sessions
+  (`docs/01` section 7.4), so a check never appears for the first time after
+  submission. A developer's pre-submit run matches the gated review when it uses
+  the same brief, tools, model and commit.
 - Fix verification passes the original finding as an input, for the same reason
   `priorFindings` is required.
 
@@ -315,8 +394,9 @@ Contract details:
 
 Notes:
 
-- Immutable and content-addressed (Q2). A new version is a new hash plus a named
-  pointer, and **the pointer lives in the record store** (section 9).
+- Immutable and content-addressed (`docs/02` Q2). A new version is a new hash
+  plus a named pointer, and **the pointer lives in the record store** (section
+  9).
 - Holds specs, plans and every plan revision, diffs, transcripts, logs and
   reports. Workflow state holds references only.
 
@@ -329,29 +409,35 @@ Notes:
 | `UpsertRunAsync` | By run id | 15s | — | Last write wins |
 | `UpsertStepRunAsync` | By step run id | 15s | — | Last write wins |
 | `AppendTimelineAsync` | none | 15s | — | **Append-only.** Never updated or deleted |
-| `RecordFindingAsync` | By **scope plus fingerprint** | 15s | — | Records the finding. Keyed by run, scope, repository and fingerprint: the same fingerprint can legitimately appear at ticket and epic scope, and in later runs (review 06, C4) |
-| `RecordTriageAsync` | none | 15s | — | **Append-only.** One `TriageRecord` per decision, with a supersedes link. The current triage is the latest record |
+| `RecordFindingAsync` | By **scope plus fingerprint** | 15s | — | Keyed by run, scope, repository and fingerprint: the same fingerprint can legitimately appear at ticket and epic scope, and in later runs |
+| `RecordTriageAsync` | none | 15s | — | **Append-only.** One `TriageRecord` per decision, with a link to the record it supersedes. The current triage is the latest record |
 | `RecordDecisionAsync` | By decision id | 15s | — | Append-only in practice: a decision is not revised |
 | `RecordSteeringAsync` | By steering id | 15s | — | Append-only. Audited |
 | `RecordCostAsync` | By step run id | 15s | — | Accumulates per step run |
 | `UpsertDeliveryLedgerAsync` | By repository and run | 15s | — | Which repositories delivered, and their status |
-| `PutPointerAsync` | By name | 15s | — | Named pointer to an artifact. This is where pointers live |
+| `PutPointerAsync` | By name | 15s | — | Named pointer to an artifact. Pointers live here |
 | `ResolvePointerAsync` | none | 15s | `not_found` | — |
 | `QueryAsync` | none | 30s | `validation_failed` (unknown query name) | Named queries only. The catalogue lives in the engine, in one place |
 
 Notes:
 
-- Relational, queried through the API (Q3). This is the long-term audit record
-  (Q13).
-- **Findings are keyed by scope plus fingerprint**, and **triage is append-only**
-  (review 06, C4). A finding is still triaged once in effect (D8) — a declined
-  finding stays declined until the code its fingerprint points at changes — but
-  the history of decisions is kept rather than rejected with `conflict`.
+- Relational, queried through the API (`docs/02` Q3). This is the long-term
+  audit record (`docs/02` Q13).
+- **Triage is append-only**, but a finding is still triaged once in effect
+  (decision D8, the merge bar: no unresolved blocking finding, and every finding
+  fixed or declined with a reason). A declined finding stays declined until the
+  code its fingerprint points at changes. The history of decisions is kept
+  rather than a re-triage being rejected with `conflict`.
+- "Fixed" is sticky, enforced by the engine: when a fix is verified the ledger
+  records the location and that code's hash, and a later finding there is
+  recorded as a re-raise, not acted on, while the hash is unchanged (`docs/17`
+  section 6.5, position L2).
 - The workflow reads the delivery ledger through an activity, never directly
-  (section 7.3).
-- `org_id` is part of the key from version 1 (Q15).
-- **Query catalogue ownership** (review 06, C7): a distribution may add
-  **read-only** named queries over published views, shipped in its own package. No
+  (`docs/01` section 7.3).
+- `org_id` is part of the key from version 1 (`docs/02` Q15).
+- **Query catalogue ownership:** a distribution (an organisation's own package
+  of providers and configuration, `docs/01` section 4.5) may add **read-only**
+  named queries over published views, shipped in its own package. No
   third-party schema changes in version 1.
 
 ---
@@ -360,7 +446,7 @@ Notes:
 
 | Method | Idempotency | Timeout | Errors | Semantics |
 |---|---|---|---|---|
-| `ResolveAsync` | none | 15s | `not_found`, `forbidden` | Returns the value. Secrets are referenced from configuration, never stored in it. Values are scrubbed at the logging layer |
+| `ResolveAsync` | none | 15s | `not_found`, `forbidden` | Returns the value. Configuration refers to secrets and never contains them. Values are scrubbed at the logging layer |
 
 ---
 
@@ -371,9 +457,10 @@ Notes:
 | `SendAsync` | `Channels[channel]` | `key` | 30s | `validation_failed` (unknown channel), `not_found` | Fire and forget. A failure is infrastructure and retries |
 | `PostDecisionRequestAsync` | `Interactive` | `key` | 30s | `capability_missing`, `not_found` | Posts the request and returns a message reference. **Does not wait for the answer** |
 
-The answer arrives through an inbound endpoint, which the provider translates into
-an **API decision call** — the same path as any other decision (Q4). The policy
-model states which decisions may be made from chat (section 5.4).
+The answer arrives through the inbound gateway (`docs/04` section 1.3.2) and
+becomes an **API decision call**, the same path as any other decision (`docs/02`
+Q4). The policy model states which decisions may be made from chat (`docs/01`
+section 5.4).
 
 ---
 
@@ -381,15 +468,19 @@ model states which decisions may be made from chat (section 5.4).
 
 | Method | Idempotency | Timeout | Errors | Semantics |
 |---|---|---|---|---|
-| `IssueAsync` | none | 15s | `forbidden` (scope not grantable), `validation_failed` | Returns a short-lived credential for an actor, target system and scope |
+| `IssueAsync` | none | 15s | `forbidden` (scope not grantable), `validation_failed` | Returns a short-lived credential for an actor, target system and scope. **Refuses a request wider than it may grant; never silently narrows it**, because a narrowed grant looks correct at the call site |
 | `RefreshAsync` | none | 15s | `forbidden`, `not_found` (expired beyond refresh) | — |
 
 Notes:
 
-- **No provider reads credentials directly from configuration.** This is what
-  keeps identity choices from leaking into provider interfaces (section 4.6).
-- Agents in the sandbox get a token minted per step: one repository, minimum
-  permissions, about an hour, refreshable through the hook endpoint.
+- **No provider reads credentials from configuration** (`docs/01` section 4.6,
+  credential broker).
+- **Agents are never issued a credential that can push** (DR13).
+- **Model credentials never enter the agent's environment** (DR1).
+- Measured in Spike 2: a one-repository token expired after 60 minutes, with the
+  expiry read from the remote rather than computed; a wider access level,
+  another repository and a TTL over the maximum were all refused (`docs/16`
+  section 2, check R6: short-lived, scoped credentials).
 
 ---
 
@@ -397,15 +488,18 @@ Notes:
 
 | Method | Requires | Idempotency | Timeout | Errors | Semantics |
 |---|---|---|---|---|---|
-| `PrepareAsync` | — | `key` | 5 min | `validation_failed` | Prepares the workspace and returns how the human reaches it |
+| `PrepareAsync` | — | `key` | 5 min | `validation_failed` | Prepares the workspace for a human's interactive session and returns how the human reaches it |
 
-The surface **only** prepares the workspace. Submission and running checks are API
-actions, not provider methods (review 05, P1):
+The surface **only** prepares the workspace. Everything else is an API action,
+not a provider method:
 
-- Submission comes from the human's CLI or MCP through the API and becomes an
-  Update.
-- Checks are run by the engine — validators and review providers — not by the
-  surface. The human's CLI or MCP calls the API, and the engine runs the check.
+- Submission comes from the human's CLI or MCP server through the API and
+  becomes a Temporal Update (a message the workflow validates and answers).
+- Checks are run by the engine (validators and review providers), not by the
+  surface. The human's CLI or MCP server asks the API, and the engine runs the
+  check.
+- A "merge when ready" tool, if offered, only asks the engine to run the merge
+  step (`docs/20`).
 
 Hooks and policy do not apply in the human's environment. The trust boundary is
 the submission, and the human is the accountable actor in the audit record.
@@ -417,28 +511,29 @@ the submission, and the human is the accountable actor in the audit record.
 | Rule | Detail |
 |---|---|
 | Capability check | The caller checks before use and fails with a named missing capability. It never assumes success |
-| Credentials | Through the broker only |
-| Observability | The engine decorates every call, so providers get spans, timeouts and error classification without extra code. Providers only add attributes |
-| Contract tests | One suite per interface, shipped with the engine (S5). A provider is conformant only if it passes |
+| Credentials | Through the broker only. Agents hold no credential that can push (DR13) and no model credential (DR1) |
+| Success mapping | Every documented success response is mapped; an unmapped one is `unexpected_response`, a work error (DR8; section 1.5) |
+| Observability | The engine wraps every call, so providers get spans, timeouts and error classification without extra code. Providers only add attributes |
+| Contract tests | One suite per interface, shipped with the engine (`docs/02` S5). A provider conforms only if it passes |
 | No waiting | No method waits on human or external completion |
-| Timeout ambiguity | On `timeout` from a create method, find by marker before retrying |
+| Timeout ambiguity | On `timeout` from a create method, find by marker before retrying (section 1.4) |
 
 ---
 
 ## 15. Open questions
 
-All five questions from the first pass were answered in review 06 and are applied
-above:
+The first-pass questions are answered and applied above:
 
-| # | Question | Answer |
-|---|---|---|
-| 1 | The `InboundEvents` endpoint contract | One inbound gateway in the API: verify the signature, deduplicate by remote delivery id, translate to an engine event. Events are Signals that only wake the workflow (interfaces section 1.3.2) |
-| 2 | `IProgress<CommandProgress>` | Removed. Commands are started and polled, so incremental output comes through a cursor on `GetCommandStatusAsync`, which is serialisable (section 2) |
-| 3 | Should `GetResultAsync` block | No. The session-end hook wakes the workflow; `GetResultAsync` confirms; polling is the fallback if the event is lost (section 3) |
-| 4 | Reject a re-triage, or append | **Append-only.** One `TriageRecord` per decision with a supersedes link; the current triage is the latest record (section 9) |
-| 5 | Query catalogue ownership | A distribution may add **read-only** named queries over published views, shipped in its own package. No third-party schema changes in version 1 (section 9) |
+| Question | Answer, and where |
+|---|---|
+| The inbound events contract | One inbound gateway: verify signature, deduplicate, translate; events only wake the workflow (`docs/04` section 1.3.2) |
+| Progress callbacks on commands | Removed; output comes through a cursor on `GetCommandStatusAsync` (section 2) |
+| Should `GetResultAsync` block | No. The session-end hook wakes the workflow; `GetResultAsync` confirms (section 3) |
+| Reject a re-triage, or append | Append-only (section 9) |
+| Query catalogue ownership | A distribution may add read-only named queries (section 9) |
 
 ### Still open
 
-None carried forward. The general rule that answered several of these — **events
-wake, reads confirm** — is in section 1.3.1 of the interfaces document.
+The open questions on the interfaces (how the engine pushes a ticket branch,
+whether merge methods still apply, the agent reviewer's inputs) are listed in
+`docs/04` section 16.

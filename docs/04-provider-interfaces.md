@@ -1,29 +1,29 @@
-# Provider interfaces, first pass
+# Provider interfaces
 
-Status: shape only, revised for review 05. Date: 2026-10-26. Deliverable 2 of
-`brief.md` section 11. Companion to `docs/01-architecture-first-pass.md` section 4.
+Status: revised 2026-10-31 for the spike results (`docs/15`, `docs/16`,
+`docs/18`), the code review design (`docs/19`) and the merge design (`docs/20`).
 
-**Scope of this pass.** Every interface is given its capability record and its
-method signatures. Per-method contracts — idempotency keys, error codes, timeouts,
-heartbeat behaviour, semantics — are in `docs/05-provider-contracts.md`.
+This document gives each provider its **capability record** and **method
+signatures**. The contract for each method (idempotency, timeouts, heartbeats,
+error codes, semantics) is in `docs/05-provider-contracts.md`. The architecture
+behind the providers is in `docs/01-architecture-first-pass.md` section 4
+(providers).
 
-**Review 05 applied.** The main change is a new rule: **no provider method waits
-on human or external time** (section 1.3). That removed `AskAsync`,
-`WaitForSubmissionAsync`, `RunCheckAsync` and `WaitForRunAsync`, and added an
-`InboundEvents` capability. Also applied: code host gaps (P2), agent runtime
-result and resume (P3), sandbox checkout, file transfer and progress (P4), prior
-findings as a review input (P5), tracker search and field mapping (P6), and
-moving named pointers from the artifact store to the record store (P7).
+The language is C# (.NET was chosen over Python: `docs/02` DP2). Interfaces are
+**transport-neutral** (`docs/01` section 4.5: plain serialisable types, no
+third-party SDK types), so a remote provider adapter stays possible later.
+Version 1 does not build one.
 
-**Review 06 applied.** Sandbox commands are **started and polled**, not awaited
-(C1): `StartCommandAsync`, `AttachCommandAsync`, `GetCommandStatusAsync` and
-`CancelCommandAsync` replace `ExecuteAsync`, and `IProgress` is gone. Added
-**events wake, reads confirm** (section 1.3.1) and the **inbound gateway**
-(section 1.3.2). `RecordTriageAsync` added for append-only triage (C4).
+Terms used throughout:
 
-Language is C#, per DP2. The interfaces are transport-neutral by rule (section
-4.5 of the architecture document), so a remote provider adapter stays possible
-later even though it is not built in version 1.
+| Term | Meaning |
+|---|---|
+| Step | One node of a workflow plan, run by the engine. Step contracts are in `docs/06` |
+| Activity | A Temporal unit of work the engine runs for a step. Temporal retries it on failure |
+| Sandbox | The isolated environment (container or VM) where an agent and its tools run |
+| Agent worker | The engine process that starts and supervises agents. It is **separate from the sandbox**, so a worker restart does not stop the agent |
+| Integration branch | An epic's branch. Ticket branches merge into it; it merges into `main` when the epic is delivered |
+| Idempotency marker | A hidden marker the engine writes into every remote object it creates, so a retry finds and adopts the object instead of duplicating it (`docs/01` section 7.1) |
 
 ---
 
@@ -32,15 +32,16 @@ later even though it is not built in version 1.
 | Rule | Detail |
 |---|---|
 | Base contract | Every provider implements `IProvider`: `Describe()` and `CheckAsync()` |
-| Async | Every method is `Task`-returning |
+| Async | Every method returns a `Task` |
 | Cancellation | Every method takes a `CancellationToken` |
-| **Short and bounded** | **No provider method waits on human or external time.** Waiting is an engine mechanism: durable timers, polling, or inbound events. See section 1.3 |
-| Classified result | Every method returns `ProviderResult<T>` for expected outcomes. Exceptions only for programming errors and bugs; the engine's decorator turns an unexpected exception into an infrastructure error with a distinct reason so it is visible |
-| Transport-neutral | Signatures use plain serialisable records only. No third-party SDK types (no Octokit, no Temporal types, no cloud SDK types) |
+| **Short and bounded** | **No provider method waits on human or external time.** Waiting is an engine mechanism: durable timers, polling or inbound events (section 1.3) |
+| Classified result | Every method returns `ProviderResult<T>` for expected outcomes. Exceptions are only for programming errors; the engine's decorator turns an unexpected exception into an infrastructure error with its own reason, so it is visible |
+| **Every success is mapped** | A provider maps every documented success response of its remote system to an outcome, including empty ones (for example GitHub's 204 for a merge with nothing to merge). An unmapped success is a **work** error, so it cannot be retried forever (DR8) |
+| Transport-neutral | Signatures use plain serialisable records only. No third-party SDK types (no Octokit, Temporal or cloud SDK types) |
 | Capabilities | Declared as typed records, never strings. A step checks before use and fails with a named missing capability |
-| Credentials | No provider reads credentials from configuration. All go through `ICredentialBroker` (section 4.6) |
-| Observability | The engine decorates every call, so providers get spans, timeouts and error classification without extra code. Providers only add attributes (section 4.8) |
-| Contract tests | One suite per interface, shipped with the engine (S5) |
+| Credentials | No provider reads credentials from configuration; all go through the credential broker (section 12). **Agents never hold a credential that can push** (DR13), and **model credentials never enter the agent's environment** (DR1) |
+| Observability | The engine wraps every call in a decorator, so providers get spans, timeouts and error classification without extra code. Providers only add attributes (`docs/01` section 4.8, the observability contract) |
+| Contract tests | One test suite per interface, shipped with the engine, so any provider can prove it conforms (`docs/02` S5) |
 
 ### 1.1 Shared types
 
@@ -72,73 +73,85 @@ public readonly record struct ProviderResult<T> {
 }
 ```
 
-`ProviderResult<T>` is a struct so the transport-neutral rule holds: it
-serialises without a third-party dependency.
+| Error class | Meaning | Engine behaviour |
+|---|---|---|
+| Infrastructure | The remote system or network failed; the work did not happen | Retry with backoff. Does not use up one of the step's attempts |
+| Work | The work happened and produced an outcome | No retry. The plan routes by outcome |
+
+The reason codes are listed in `docs/05` section 1.3. `ProviderResult<T>` is a
+struct with no third-party dependency, so it serialises under the
+transport-neutral rule.
 
 ### 1.2 Capability negotiation
 
-Runs at run start (S3), so a run fails in the first minute rather than at step 40.
-The engine asks each configured provider for its capabilities, compares them with
-what the plan's steps require, and fails with a named missing capability.
+Runs at run start (`docs/02` S3), so a run fails in its first minute rather than
+at step 40. The engine asks each configured provider for its capabilities,
+compares them with what the plan's steps need, and fails with a named missing
+capability.
 
-Negotiation runs **again** if `feature-flow.yaml` changes mid-run and removes a
-capability the run needs (section 5.1.2).
+Negotiation runs **again** if the repository's manifest (`feature-flow.yaml`, read
+per step: `docs/01` section 5.1.2) changes mid-run and removes a capability the
+run needs.
 
-`Requires` declares a capability a provider needs **from another provider** — for
-example "code host with `ReviewComments`". Negotiation checks it. Where the
-dependency is real rather than declarative, prefer composition: the provider
-receives the other through dependency injection (see the AI review case, section 7).
+`Requires` declares a capability a provider needs **from another provider**, for
+example "a code host with `ReviewComments`". Negotiation checks it. Where the
+dependency is real rather than declared, the provider receives the other provider
+through dependency injection (composition). The review providers in section 7 are
+the main case.
 
 ### 1.3 No provider method waits on human or external time
 
-Added for review 05 (P1). A human may answer days later, and a CI run may take an
-hour. Neither can block inside a provider call, because decisions reach the
-workflow as Temporal Updates through the API (Q4) and because a blocked activity
-is indistinguishable from a stuck one.
+A human may answer days later and a CI run may take an hour. Neither can block a
+provider call: a blocked activity looks the same as a stuck one, and human
+decisions reach the workflow as Temporal **Updates** (messages the workflow
+validates and answers) through the API (`docs/02` Q4).
 
 - Provider methods are **short, bounded calls**.
-- Waiting is done by the engine: durable timers, polling, or inbound events.
-- **Polling happens inside one long-running activity**, not one short activity per
-  poll. A 4-hour step polled every 30 seconds would add about 480 activities and
-  well over 1,000 history events for one step (review 08, K1). See section 1.2.1 of
-  `docs/05-provider-contracts.md`.
-- A provider that can receive push events declares an **`InboundEvents`**
-  capability and translates incoming webhooks into engine events through the API.
+- Waiting is done by the engine: durable timers, polling or inbound events.
+- **Polling happens inside one long-running activity** that loops and
+  heartbeats, not one activity per poll (`docs/05` section 1.2.1). Measured in
+  Spike 1: a 60-second step polled every 500 ms cost one activity and 11 history
+  events in total, and a 20-second connection break inside it cost nothing extra
+  (`docs/15` section 6.2).
+- A provider that can receive push events (webhooks) declares an
+  **`InboundEvents`** capability. The inbound gateway (section 1.3.2) turns those
+  events into engine events.
 - Anything a human does arrives as an API action and becomes an Update.
 
 ### 1.3.1 Events wake, reads confirm
 
-Added for review 06 (C5, C6). The general rule for anything asynchronous:
+The rule for anything asynchronous:
 
-> **Events wake, reads confirm.** Hooks, webhooks and chat callbacks only wake the
-> workflow. The workflow then reads the truth through a short provider call:
+> **Events wake, reads confirm.** Hooks, webhooks and chat callbacks only wake
+> the workflow. The workflow then reads the truth through a short provider call:
 > `GetResultAsync`, `GetRunStatusAsync`, `GetPullRequestAsync`. Human decisions
-> remain Updates through the API.
+> stay Updates through the API.
 
-Consequences:
-
-- An event is never a source of truth. It is a hint that something may have
+- An event is never a source of truth, only a hint that something may have
   changed.
-- Polling is the fallback when an event is lost, not an error path.
-- This is why `GetResultAsync` does not block (C6): the session-end hook wakes the
-  workflow, and `GetResultAsync` confirms.
+- Polling is the fallback when an event is lost, not an error path. Spike 2
+  dropped a gate-approval event on purpose; polling read the remote state and
+  resolved the gate in 2 polls (`docs/16` section 2, check K5: approve a gate from chat, then drop the event).
+- This is why `GetResultAsync` (section 3) does not block: the session-end hook
+  wakes the workflow, and `GetResultAsync` confirms the outcome.
 
 ### 1.3.2 Inbound gateway
 
-One inbound gateway in the API, not one endpoint per provider. Per provider it:
+One inbound gateway in the API, not one endpoint per provider. For each
+provider it:
 
 1. **Verifies the webhook signature.**
-2. **Deduplicates by the remote delivery id.**
+2. **Deduplicates** by the remote delivery id.
 3. **Translates** the payload into an engine event.
 
-Engine events are delivered to the workflow as **Signals that only wake it**. The
-workflow then reads state through the provider (section 1.3.1). Human decisions
-stay Updates through the API.
+Engine events reach the workflow as Temporal **Signals** (one-way messages) that
+only wake it. The workflow then reads state through the provider (section
+1.3.1). Human decisions stay Updates through the API.
 
 ### 1.4 Two groups of providers
 
-Added for review 05 (answer 5). The credential broker is swappable but not
-step-facing, so the catalogue splits in two. **The same rules apply to both.**
+The credential broker can be swapped but is not used by steps, so the catalogue
+splits in two. **The same rules apply to both.**
 
 | Group | Members | Used by |
 |---|---|---|
@@ -149,23 +162,29 @@ step-facing, so the catalogue splits in two. **The same rules apply to both.**
 
 ## 2. Sandbox provider
 
-Creates the environment for one agent step. Receives the **resolved manifest**
-and runs the tiers for its **execution target** (section 5.1.1). It never parses
-`feature-flow.yaml` or `devcontainer.json`.
+Creates the environment for one agent step. It receives the **resolved
+manifest** (the repository's `feature-flow.yaml` after configuration layers are
+applied) and runs the test tiers for its **execution target** (`docs/01`
+section 5.1.1). It never parses `feature-flow.yaml` or `devcontainer.json`
+itself.
+
+The agent runs **in the sandbox**, which is separate from the agent worker that
+supervises it. A worker restart, including every deploy, costs the agent
+nothing: the new worker re-attaches to the sandbox and its running commands.
 
 ```csharp
 public sealed record SandboxCapabilities(
     IReadOnlyList<string> Os,          // "linux", "windows"
     bool Docker,
     bool NetworkPolicy,
-    bool PersistentAcrossSteps,        // can the sandbox outlive a worker crash (3.6)
-    bool StreamingOutput);             // can GetCommandStatusAsync return incremental output
+    bool PersistentAcrossSteps,        // the sandbox outlives a worker crash
+    bool StreamingOutput);             // GetCommandStatusAsync returns output as it is produced
 
 public interface ISandboxProvider : IProvider {
     Task<ProviderResult<SandboxHandle>> CreateAsync(
         ResolvedManifest manifest,
         ExecutionTarget target,
-        CheckoutSpec checkout,          // repository, branch, credential from the broker
+        CheckoutSpec checkout,          // repository, branch, read-only or writable
         IReadOnlyList<MountSpec> mounts, // input artifacts to place in the sandbox
         string idempotencyKey,
         CancellationToken ct);
@@ -192,39 +211,56 @@ public interface ISandboxProvider : IProvider {
 
 Notes:
 
-- `AttachAsync` is the re-attachment path for resumable agent steps (section 3.6).
-  A provider without `PersistentAcrossSteps` returns a classified error and the
-  step degrades to creating a new sandbox.
-- **Commands are started and polled, not awaited** (review 06, C1). A command may
-  run for hours, which would break the "short and bounded" rule and would be lost
-  on a worker crash even when the sandbox survives. `StartCommandAsync` returns a
-  handle; `GetCommandStatusAsync` returns status, exit code and output since a
-  cursor. `AttachCommandAsync` re-attaches to a **running** command by key after a
-  worker crash.
-- `GetCommandStatusAsync` covers both agent steps and test tiers. The distinction
-  is the command and its limits, not the method (review 05, answer 3).
-- `StreamingOutput` now means incremental output through the cursor, not an
-  `IProgress` callback. This also removes the transport-neutral problem that
-  `IProgress` had.
-- File transfer is either mounts declared at creation or `CopyIn`/`CopyOut`.
-- Windows is a capability, not a special case. Version 1 ships no Windows
-  provider; the hooks are in place (section 4.7).
+- **Resume after a crash** (DR9; `docs/01` section 3.6, resumable agent steps).
+  `AttachAsync` re-attaches to the sandbox by idempotency key. If the sandbox
+  survived, the agent's **uncommitted files are kept**. If it was lost, or the
+  provider lacks `PersistentAcrossSteps` (in which case `AttachAsync` returns a
+  classified error), the step creates a new sandbox and **restarts from the last
+  pushed commit**. Version 1 takes no snapshots of uncommitted work.
+- **Commands are started and polled, not awaited.** A command may run for
+  hours, which would break the "short and bounded" rule (section 1.3), and an
+  awaited command would be lost with a crashed worker even when the sandbox
+  survives. `StartCommandAsync` returns a handle; `GetCommandStatusAsync`
+  returns status, exit code and output since a cursor; `AttachCommandAsync`
+  re-attaches to a **running** command by key after a worker crash. Spike 1 broke
+  the worker-to-sandbox connection mid-command: the command kept running and the
+  step re-attached by handle without restarting (`docs/15` section 3.4).
+- `GetCommandStatusAsync` serves agent steps and test tiers alike. The
+  difference is the command and its limits, not the method.
+- **Read-only checkouts.** A role that must not change the branch, such as the
+  code reviewer (section 7.1), gets a read-only checkout. The sandbox enforces it,
+  not the agent (`docs/08` section 2.5, control without hooks).
+- **Agents do not push** (DR13). The agent commits inside the sandbox; the
+  engine pushes the ticket branch at the end of each step and at
+  work-in-progress points. No method in this document performs that push yet
+  (section 16).
+- `StreamingOutput` means incremental output through the cursor. A provider
+  without it returns output only when the command finishes.
+- Files reach the sandbox as mounts declared at creation, or through `CopyInAsync`
+  and `CopyOutAsync`.
+- Windows is a capability (`Os`), not a special case. Version 1 ships no Windows
+  provider; the hooks for one are in place (`docs/01` section 4.7).
 
 ---
 
 ## 3. Agent runtime provider
 
-Under pattern C (section 1.4) the runtime runs **inside** the sandbox. This
-provider starts and supervises it; it does not relay tool calls.
+The agent runtime (for example Claude Code or GitHub Copilot CLI) runs **inside
+the sandbox** with its own tools, and calls back to the engine through hooks
+(`docs/01` section 1.4, agent in sandbox with engine hooks). This provider starts
+and supervises it. It does not relay tool calls.
 
 ```csharp
 public sealed record AgentRuntimeCapabilities(
     bool StructuredOutput,
     bool Streaming,
     bool ToolAllowlist,
-    int MaxContextTokens,
-    bool Hooks,            // can the runtime call back to the engine per tool call
-    bool SessionResume);
+    int? MaxContextTokens,   // null when the runtime does not expose it
+    bool Hooks,              // the runtime calls the engine before and after each tool call
+    bool SessionResume,
+    bool UsageReporting,     // reports tokens and model per session
+    bool ModelConfiguration, // the model can be chosen per step
+    bool CustomEndpoint);    // can be pointed at a model endpoint other than the vendor's own
 
 public interface IAgentRuntimeProvider : IProvider {
     Task<ProviderResult<AgentSession>> StartAsync(
@@ -242,34 +278,78 @@ public interface IAgentRuntimeProvider : IProvider {
 
 Notes:
 
-- `GetProgressAsync` returns session size or turn count. That is what the attempt
-  budget progress rule needs: a resume is free only if the session has grown
-  (section 3.7).
-- **`GetResultAsync` is the source of truth for the outcome**: outcome, structured
-  output, produced artifact references, session reference, usage. The session-end
-  hook is a signal, not the source of truth (review 05, P3).
-- `ResumeAsync` takes the sandbox handle as well as the session reference, because
-  the session lives inside a sandbox that may have been re-attached or recreated.
+- `GetProgressAsync` returns session size or turn count. The attempt budget
+  needs it: a resume is free only if the agent made progress (a new pushed commit
+  or a grown session), and after 3 resumes in a row without progress the next
+  one counts as an attempt (`docs/01` section 3.7, attempt budgets).
+- **`GetResultAsync` is the source of truth for the outcome**: outcome,
+  structured output, produced artifact references, session reference and usage.
+  The session-end hook only wakes the workflow (section 1.3.1).
+- **`ResumeAsync` reloads the agent's conversation from the stored session
+  reference** (DR9). The reference is stored by the engine (`docs/01` section
+  3.6). Resume must work in a fresh worker process: nothing may come from the
+  crashed worker's memory. Spike 3 found Claude Code resume depended on state
+  held in the worker process and failed after a restart (`docs/18` section 4,
+  item 4). It takes the sandbox handle as well, because the sandbox may have
+  been re-attached or recreated (section 2).
+- **No push credential** (DR13). The agent commits in the sandbox; the engine
+  pushes.
+- **Model credentials never enter the agent's environment** (DR1). Version 1
+  uses either a proxy that adds the key to outbound model requests, or per-run
+  keys with a spend limit and an expiry. Each form's remaining risk is recorded
+  in `docs/01` section 4.6 (credential broker).
 - A runtime without `Hooks` gets process-level control only, and the engine
-  records the coarser control in the run.
-- Model credentials are short-lived and scoped to the step, issued by the
-  credential broker, preferably through a model gateway.
+  records the coarser control in the run. The fallback controls are in
+  `docs/08` section 2.5: sandbox-enforced write access, a post-step check of what
+  changed, and cost from the runtime's own usage output.
+- The code reviewer is an agent run through this provider, on a read-only
+  checkout (section 7.1).
+- Measured facts for Claude Code and Copilot CLI are in section 3.2.
 
 ### 3.1 The hook endpoint
 
 Not a provider interface: an engine HTTP contract that the agent runtime calls
-from inside the sandbox. Shape only.
+from inside the sandbox. Shape only; the contract is in `docs/05` section 3.1.
 
 | Hook | Payload | Engine response |
 |---|---|---|
-| Session start | run id, step id, per-step token | Ack, policy for the step |
+| Session start | run id, step id, per-step token | Ack, and the policy for the step |
 | Before tool call | tool name, arguments | Allow, or deny with a reason |
 | After tool call | tool name, result summary, token usage | Ack |
 | Session end | outcome, session reference | Ack |
 
-The engine uses these for per-tool-call policy checks, structured events, token
-and cost accounting, and heartbeats. The per-step token is issued by the
-credential broker and scoped to this run and step's hook endpoint (section 5.4).
+The engine uses the hooks for:
+
+- **policy checks on each tool call** (deny before the tool runs);
+- **structured events** for the run's timeline;
+- **token and cost accounting** per step (`docs/01` section 5.5);
+- **heartbeats**, so a stalled agent can be told from a slow one;
+- **the record of files read**, which the review coverage check uses (section
+  7.1).
+
+The per-step token is issued by the credential broker and is valid only for this
+run and step's hook endpoint (`docs/01` section 5.4, API authorisation).
+
+### 3.2 Measured runtime facts
+
+Measured in Spike 2 and the Claude Code proof that followed it (`docs/16`
+sections 4 and 12).
+
+| Capability | Claude Code | Copilot CLI |
+|---|---|---|
+| `Hooks` | **Yes.** Session start, before and after each tool call, and stop all fired, on Windows and macOS. A narrow command allowlist denied a call before it ran | **Partial.** Session start and stop fired. Before- and after-tool-call hooks registered but **did not fire** with a third-party model. Untested with a first-party model |
+| `CustomEndpoint` | **No.** Speaks only the Anthropic API and rejects non-Anthropic model names, so it cannot use an OpenAI-compatible model router. Works with a first-party Anthropic subscription or key | **Yes.** Runs through an OpenAI-compatible router (`COPILOT_PROVIDER_BASE_URL`) |
+| `MaxContextTokens` | 200,000 | Not exposed |
+| `StructuredOutput`, `Streaming`, `ToolAllowlist`, `SessionResume`, `UsageReporting`, `ModelConfiguration` | Yes | Yes |
+
+Consequences:
+
+- **Per-tool-call policy needs the before-tool-call hook.** On Copilot CLI with a
+  third-party model it is unavailable, so the fallback controls in `docs/08`
+  section 2.5 apply and the run records the coarser control.
+- The review coverage check (section 7.1) also relies on the before-tool-call hook.
+- Whether Claude Code works through a key-adding proxy (the proxy form of DR1)
+  was not measured.
 
 ---
 
@@ -283,7 +363,7 @@ public sealed record CodeHostCapabilities(
     IReadOnlyList<string> MergeMethods,   // "merge", "squash", "rebase"
     bool BranchProtection,
     bool MergeQueue,                      // optional; only some repositories enable it
-    bool InboundEvents);                  // can receive webhooks (section 1.3)
+    bool InboundEvents);                  // can receive webhooks (section 1.3.2)
 
 public interface ICodeHostProvider : IProvider {
     // Branches
@@ -298,7 +378,7 @@ public interface ICodeHostProvider : IProvider {
 
     // Merging
     Task<ProviderResult<MergeResult>> MergeBaseForwardAsync(RepoRef repo, string branch, string into, CancellationToken ct);
-    Task<ProviderResult<MergeResult>> MergeAsync(PullRequestRef pr, string method, CancellationToken ct);
+    Task<ProviderResult<MergeResult>> MergeAsync(PullRequestRef pr, string method, string testedHeadSha, string expectedBaseSha, CancellationToken ct);
     Task<ProviderResult<MergeResult>> EnqueueMergeAsync(PullRequestRef pr, CancellationToken ct);
     Task<ProviderResult<BranchProtection>> GetBranchProtectionAsync(RepoRef repo, string branch, CancellationToken ct);
 
@@ -321,27 +401,58 @@ public interface ICodeHostProvider : IProvider {
 
 Notes:
 
-- `EnqueueMergeAsync` is the `MergeQueue` path. When the target branch requires a
-  queue, a direct merge is refused, so the merge step enqueues and waits. The
-  engine's merge lock remains the default for integration branches (section 6.3).
-- Every object the engine creates carries a hidden idempotency marker (section
-  7.1), which is why `idempotencyKey` appears on the create methods and why
-  `FindByMarkerAsync` exists: on retry a step searches for the marker and adopts
-  the existing object instead of creating a duplicate (S4).
-- `GetPullRequestAsync` returns state, head SHA, approvals and mergeability. This
-  is what "the human approves on the code host and the engine waits" needs (Q5).
-- `GetCheckStatusAsync` takes `RepoRef` as well as the SHA: a SHA alone is not
-  unique across repositories.
-- `GetDiffAsync` returns an artifact reference, not the diff itself, so a large
-  aggregate diff never enters workflow state.
-- `CreateRevertPullRequestAsync` serves the revert option of a partial delivery
-  (section 7.3). `ClosePullRequestAsync` serves an abort that explicitly asks for
-  it.
+- How a merge works, without a merge lock, is in section 4.1.
+- **The engine performs every merge** (DR13). Agents never hold a credential
+  that can push. As a backstop, code host rules allow only the engine's identity
+  to update `main` and integration branches.
+- **Merging into `main`** needs human approval (floor F1). The engine enforces
+  it at merge time, reading the base and default branch from the code host
+  (DR2). Code host protection on the default branch backs it up, and is set by
+  an identity the engine does not hold; `GetBranchProtectionAsync` only checks
+  that it exists (DR3).
+- **Merge queue** (`EnqueueMergeAsync`, capability `MergeQueue`) is optional.
+  Where a repository requires a queue, a direct merge is refused, so the merge
+  step enqueues and then waits by polling or inbound event. It is not the
+  default; it is the managed answer if merge contention ever becomes real
+  (`docs/20`).
+- **Every documented success response is mapped** (DR8). GitHub answers a
+  catch-up with nothing to merge with 204 and no body; that is a completed merge
+  with the branch unchanged, not an error. Spike 3 found the unmapped 204 being
+  retried forever as an infrastructure error (`docs/18` section 4, item 2).
+- Every object the engine creates carries an idempotency marker, which is why
+  the create methods take `idempotencyKey` and why `FindByMarkerAsync` exists: on
+  retry a step finds the marker and adopts the existing object instead of
+  creating a duplicate (`docs/02` S4).
+- `GetPullRequestAsync` returns state, head SHA, approvals and mergeability.
+  Where the code host requires its own review, the human approves there and the
+  engine reads the approval through this method (`docs/02` Q5).
+- `GetCheckStatusAsync` takes the repository as well as the SHA: a SHA alone is
+  not unique across repositories.
+- `GetDiffAsync` returns an artifact reference, not the diff, so a large diff
+  never enters workflow state.
+- `CreateRevertPullRequestAsync` serves the revert option when a delivery across
+  several repositories only partly succeeds (`docs/01` section 7.3).
+  `ClosePullRequestAsync` serves an abort that explicitly asks for it.
+- **No `RequestAiReviewAsync`.** An AI review on a pull request (for example
+  Copilot review) is a **review provider** that uses this provider to request the
+  review and read the comments (section 7).
 
-**`RequestAiReviewAsync` is removed.** An AI review on a PR (for example Copilot
-review) is a **review provider** implementation that uses the code host provider
-to request the review and read the comments. It is composed, not a code host
-method (review 05, P2).
+### 4.1 How merging works
+
+From the merge design (`docs/20`). There is **no merge lock**; tickets merge the
+way developers do:
+
+1. **Catch up.** `MergeBaseForwardAsync` merges the integration branch into the
+   ticket branch. `branch` is the integration branch (merged **from**); `into` is
+   the ticket branch (merged **into**). The result reports whether the ticket
+   branch changed; tests re-run only if it did.
+2. **Merge.** `MergeAsync` merges the ticket into the integration branch. **The
+   engine performs the merge itself:** it builds a merge commit from exactly the
+   tested ticket head (`testedHeadSha`) and pushes it to the base. If the base
+   has moved since catch-up (it is no longer `expectedBaseSha`), Git refuses the
+   push, and the ticket catches up again. About 3 refusals in a row escalate to a
+   human (`docs/06` section 6.5, the merge step). The code host marks the pull
+   request merged once its commits reach the base.
 
 ---
 
@@ -361,16 +472,17 @@ public interface ICiProvider : IProvider {
 
 Notes:
 
-- CI delegation is the default for Docker-dependent tiers (Q2), so this provider
-  is on the main path, not a fallback.
-- It must report results for **queue builds** (for example the GitHub Actions
-  `merge_group` event), because the merge queue path depends on it.
-- **`WaitForRunAsync` is removed** (review 05, P1). Waiting is an engine
-  mechanism: a durable timer plus polling through `GetRunStatusAsync`, or an
-  inbound event. `GetRunStatusAsync` is non-blocking and must handle checks that
-  register late.
-- `InboundEvents` declares that the provider can receive push events and translate
-  them into engine events through the API (section 1.3).
+- Test tiers that need Docker run in CI by default (`docs/03` Q2), so this
+  provider is on the main path, not a fallback. Spike 2 dispatched such a tier to
+  GitHub Actions; the call returned in 22.7 s without waiting for the run, and
+  polling then read the result (`docs/16` section 2, check R5: a Docker tier run through CI).
+- There is no wait method. The engine waits with a durable timer plus
+  `GetRunStatusAsync`, or an inbound event (section 1.3). `GetRunStatusAsync` does
+  not block and must handle checks that register late.
+- Where a repository uses a merge queue, the provider must report results for
+  **queue builds** (for example the GitHub Actions `merge_group` event).
+- `InboundEvents` declares that the provider can receive push events (section
+  1.3.2).
 
 ---
 
@@ -392,14 +504,14 @@ public interface ITrackerProvider : IProvider {
 
 Notes:
 
-- Agents have **no** tracker identity. Tracker writes go through engine steps only
-  (section 4.6).
-- `SearchIssuesAsync` finds existing issues by marker (idempotency, S4) and lists
-  an epic's children.
+- Agents have **no** tracker identity. Tracker writes go through engine steps
+  only (`docs/01` section 4.6).
+- `SearchIssuesAsync` finds existing issues by idempotency marker and lists an
+  epic's children.
 - **Field mapping is configuration, not code.** Organisations use custom fields
-  (story points, components, team fields). `IssueSpec` carries engine-level
-  fields; the provider maps them to provider-specific fields through its own
-  configuration. `CustomFields` declares support.
+  (story points, components, team). `IssueSpec` carries engine-level fields; the
+  provider maps them to its own fields through its configuration. `CustomFields`
+  declares support.
 
 ---
 
@@ -416,28 +528,50 @@ public interface IReviewProvider : IProvider {
         ReviewScope scope,
         IReadOnlyList<ArtifactRef> inputs,
         IReadOnlyList<string> checks,
-        IReadOnlyList<FindingSummary> priorFindings,   // from the ledger, same scope
+        IReadOnlyList<FindingSummary> priorFindings,   // from the findings ledger, same scope
         CancellationToken ct);
 }
 ```
 
 Notes:
 
-- Findings are fingerprinted on rule, repository, path, symbol and normalised
-  snippet. **Never on line numbers** (section 7.2). A provider without
-  `Fingerprints` cannot guarantee a declined finding stays declined, so the engine
-  records that.
-- Epic scope reviews the aggregate diff (DP10).
-- **`priorFindings` is required** (review 05, P5). The prototype's spec check was
-  blind to its earlier findings and its verdicts changed between passes. Passing
-  the prior findings for the same scope is what makes a verdict stable across
-  passes (R4). Fix verification needs the original finding as an input for the
+- The version 1 reviewer is an agent on a read-only checkout (section 7.1).
+- `inputs` carries what the agent reviewer is given: the specification artifacts
+  and the machine check results. `checks` names what to review for.
+- **`priorFindings` is required.** The findings ledger (every finding and its
+  status) is the source of truth; a review pass is evidence (`docs/17` section
+  6.5, positions L1 to L4). Passing prior findings for the same scope makes
+  verdicts more stable across passes; it does not make them stable, which is why
+  the ledger decides (DR4). At epic scope, prior findings include the child
+  tickets' ledgers (DR11). Fix verification passes the original finding for the
   same reason.
-- The same provider is used for the **on-demand** check action in interactive
-  sessions (section 7.4), so a check never appears for the first time after
-  submission.
-- An AI review on a PR is a review provider implementation composed with the code
-  host provider, not a code host method (section 4).
+- Findings are **fingerprinted** on rule, repository, path, symbol and
+  normalised snippet, **never on line numbers** (`docs/01` section 7.2). A
+  provider without `Fingerprints` cannot guarantee a declined finding stays
+  declined, and the engine records that.
+- The same provider serves the **on-demand** check in interactive sessions
+  (`docs/01` section 7.4), so a check never appears for the first time after
+  submission. A developer's pre-submit run matches the gated one when it uses
+  the same brief, tools, model and commit.
+- An **AI review on a pull request** (for example Copilot review) is another
+  review provider, composed with the code host provider (section 4).
+
+### 7.1 The agent reviewer
+
+From the code review design (`docs/19`). The version 1 reviewer is **an agent on
+a read-only checkout of the branch**: a review provider composed with the sandbox
+provider (section 2) and the agent runtime provider (section 3).
+
+| Aspect | Design |
+|---|---|
+| What it is told | The branch, the base to compare against, and the changed files. It reads the diff itself, opens any other file, and may build and run tests. Nothing else is pre-loaded |
+| What it reviews against | A specification: the ticket's acceptance criteria, the epic's contract, the repository's conventions |
+| What runs first | Machine checks (build, tests, linters, analysers, coverage of changed lines). The reviewer gets their results |
+| Angles | Separate passes for correctness, design and structure, tests, security, and conformance to the specification |
+| Evidence | A bug finding carries a throwaway failing test where possible. Demonstrated findings block; reasoned ones are labelled and ranked lower |
+| Model | Different from, ideally stronger than, the model that wrote the code |
+| Coverage | The engine checks the hook record of files read (section 3.1). A review that never opened a changed file is re-run, not accepted |
+| Levels | **Ticket:** the ticket branch against the integration branch, given the ticket and the epic contract. **Epic:** the integration branch against `main` |
 
 ---
 
@@ -455,10 +589,9 @@ public interface IArtifactStoreProvider : IProvider {
 
 Notes:
 
-- Immutable and content-addressed (Q2). A new version is a new hash plus a named
-  pointer; **the pointer lives in the record store**, not here (review 05, P7).
-  `PutPointerAsync` and `ResolveAsync` were removed from this interface for that
-  reason; see section 9.
+- Immutable and content-addressed (`docs/02` Q2). A new version is a new hash
+  plus a named pointer, and **the pointer lives in the record store** (section
+  9), not here.
 - Holds specs, plans and every plan revision, diffs, transcripts, logs and
   reports. Workflow state holds references only.
 
@@ -485,16 +618,19 @@ public interface IRecordStoreProvider : IProvider {
 
 Notes:
 
-- Relational, queried through the API (Q3). The timeline is append-only. This is
-  the long-term audit record (Q13).
-- **Named pointers live here**, not in the artifact store (review 05, P7). A new
-  artifact version is a new hash plus a named pointer, and the pointer is a record.
-- `QueryAsync` is named-query based rather than raw SQL, so the schema can evolve
-  and so a provider cannot leak its storage engine into the interface. The query
-  catalogue lives in the engine, in one place (review 05, answer 2).
-- The workflow reads the delivery ledger through an activity, never directly
-  (section 7.3).
-- `org_id` is part of the key from version 1 (Q15).
+- Relational, queried through the API (`docs/02` Q3). The timeline is
+  append-only. This is the long-term audit record, because Temporal deletes
+  history (`docs/02` Q13).
+- **Named pointers live here**, not in the artifact store. A new artifact
+  version is a new hash plus a named pointer, and the pointer is a record.
+- `QueryAsync` takes a named query, not raw SQL, so the schema can change and a
+  provider cannot leak its storage engine into the interface. The query
+  catalogue lives in the engine, in one place.
+- The workflow reads the delivery ledger (which repositories delivered, for a
+  delivery across several) through an activity, never directly (`docs/01`
+  section 7.3).
+- `org_id` is part of the key from version 1 (`docs/02` Q15: one organisation
+  per installation, keyed for later).
 
 ---
 
@@ -506,8 +642,8 @@ public interface ISecretsProvider : IProvider {
 }
 ```
 
-Secrets are referenced from configuration, never stored in it. Values are scrubbed
-at the logging layer (section 4.8).
+Configuration refers to secrets; it never contains them. Values are scrubbed at
+the logging layer (`docs/01` section 4.8).
 
 ---
 
@@ -526,14 +662,14 @@ Notes:
 
 - Chat is pluggable: Slack first, others later through the same interface. **No
   Slack-specific types outside the Slack provider.**
-- **`AskAsync` is replaced by `PostDecisionRequestAsync`** (review 05, P1). A human
-  may answer days later, so the answer cannot block a provider call. The method
-  posts the request and returns a message reference. The chat platform's callback
-  goes to an inbound endpoint, which the provider translates into an **API decision
-  call** — the same path as any other decision (Q4).
-- `Interactive` declares that a human can answer in-channel. The policy model
-  states which decisions may be made from chat (section 5.4).
-- Covers "run stuck" as well as "decision needed" (S13).
+- `PostDecisionRequestAsync` posts the request and returns a message reference.
+  **It does not wait for the answer**: a human may answer days later. The chat
+  platform's callback reaches the inbound gateway (section 1.3.2), and the answer
+  becomes an **API decision call**, the same path as any other decision
+  (`docs/02` Q4).
+- `Interactive` declares that a human can answer in the channel. The policy
+  model states which decisions may be made from chat (`docs/01` section 5.4).
+- Covers "run stuck" as well as "decision needed" (`docs/02` S13).
 
 ---
 
@@ -549,19 +685,25 @@ public interface ICredentialBroker : IProvider {
 Notes:
 
 - Given an actor, a target system and a scope, it returns a short-lived
-  credential. GitHub App tokens, service accounts, personal tokens and future
+  credential. GitHub App tokens, service accounts, personal tokens and later
   mechanisms (OIDC workload identity) are implementations.
-- **No provider reads credentials directly from configuration.** This is what
-  keeps identity choices from leaking into provider interfaces (section 4.6).
-- Agents in the sandbox get a token minted per step: one repository, minimum
-  permissions, about an hour, refreshable through the hook endpoint.
+- **No provider reads credentials from configuration.** This keeps identity
+  choices out of provider interfaces (`docs/01` section 4.6).
+- **Agents are never issued a credential that can push** (DR13). The engine
+  pushes ticket branches and performs every merge with its own identity.
+- **Model credentials never enter the agent's environment** (DR1; section 3).
+- The broker refuses a request wider than it may grant; it never silently
+  narrows it. Spike 2 minted a one-repository token whose 60-minute expiry came
+  from the remote, and refused a wider access level, another repository and a
+  TTL over the maximum (`docs/16` section 2, check R6: short-lived, scoped credentials).
 
 ---
 
 ## 13. Session surface provider
 
-Added for Q20. The interactive session itself is an engine mechanism; **where the
-human works** is the pluggable part.
+An interactive session is one where a human does the work instead of an agent.
+The session itself is an engine mechanism; **where the human works** is the
+pluggable part.
 
 ```csharp
 public interface ISessionSurfaceProvider : IProvider {
@@ -571,17 +713,20 @@ public interface ISessionSurfaceProvider : IProvider {
 
 Notes:
 
-- Version 1 ships surface A only: hand-off to the human's own agent tool on their
-  own machine. Surfaces B, C and D are later and optional (section 7.4).
-- **The surface only prepares the workspace and tells the human how to reach it**
-  (review 05, P1). Two methods were removed:
-  - `WaitForSubmissionAsync` — submission comes from the human's CLI or MCP through
-    the API and becomes an Update, like every other decision.
-  - `RunCheckAsync` — checks are run by the engine (validators, review providers),
-    not by the surface. In surface A the human's CLI or MCP calls the API, and the
-    engine runs the check.
-- Hooks and policy do not apply in the human's environment. The trust boundary is
-  the submission, and the human is the accountable actor in the audit record.
+- Version 1 ships surface A only: hand-off to the human's own agent tool on
+  their own machine. Surfaces B, C and D are later and optional (`docs/01`
+  section 7.4).
+- **The surface only prepares the workspace and tells the human how to reach
+  it.** It has no other methods:
+  - Submission comes from the human's CLI or MCP server through the API and
+    becomes an Update, like every other decision.
+  - Checks are run by the engine (validators, review providers), not by the
+    surface. The human's CLI or MCP server asks the API, and the engine runs the
+    check.
+  - A "merge when ready" tool, if offered, only asks the engine to run the merge
+    step. It never merges itself (`docs/20`).
+- Hooks and policy do not apply in the human's environment. The trust boundary
+  is the submission, and the human is the accountable actor in the audit record.
 
 ---
 
@@ -601,34 +746,35 @@ configuration.
 
 | Item | Why |
 |---|---|
-| Remote provider adapter | Interfaces are transport-neutral so it stays possible; not built (section 4.5) |
-| Windows sandbox provider | Hooks are in v1, the provider is not (section 4.7) |
-| Feature-flag provider | Not an engine concern in v1 (section 1.5) |
-| Session surfaces B, C, D | Only surface A ships (section 7.4) |
+| Remote provider adapter | Interfaces are transport-neutral so it stays possible; not built (`docs/01` section 4.5) |
+| Windows sandbox provider | The hooks for it are in version 1, the provider is not (`docs/01` section 4.7) |
+| Feature-flag provider | Not an engine concern in version 1 (`docs/01` section 1.5, engine mechanism versus workflow policy) |
+| Session surfaces B, C, D | Only surface A, hand-off to the human's own tool, ships (`docs/01` section 7.4) |
 
 ---
 
 ## 16. Open questions
 
-All five questions from the first pass were answered in review 05 and are applied
-above:
+The first-pass questions are answered and applied above:
 
-| # | Question | Answer |
-|---|---|---|
-| 1 | `ProviderResult<T>` vs exceptions | Keep `ProviderResult<T>` for expected outcomes. Exceptions only for programming errors and bugs; the decorator turns an unexpected exception into an infrastructure error with a distinct reason (section 1) |
-| 2 | Named queries vs query object | Named queries, with the catalogue in the engine in one place (section 9) |
-| 3 | Split `ExecuteAsync` | Keep one method. Agent runtimes and test tiers both run commands; the difference is the command and its limits. **Review 06 (C1) then replaced it with start and poll**, so the single method is now `GetCommandStatusAsync` (section 2) |
-| 4 | Provider-to-provider capability dependencies | `Requires` on `ProviderDescriptor`, checked at run-start negotiation. Prefer composition through dependency injection where the dependency is real (sections 1.2, 4, 7) |
-| 5 | Is the credential broker a provider? | Swappable but not step-facing. The catalogue splits into **step providers** and **platform services**; same rules for both (section 1.4) |
+| Question | Answer, and where |
+|---|---|
+| `ProviderResult<T>` or exceptions | `ProviderResult<T>` for expected outcomes; exceptions for bugs only (section 1) |
+| Named queries or a query object | Named queries, catalogue in the engine (section 9) |
+| One command method or several | Start and poll; `GetCommandStatusAsync` serves agents and test tiers (section 2) |
+| Provider-to-provider dependencies | `Requires`, checked at run start; composition where the dependency is real (sections 1.2, 7) |
+| Is the credential broker a provider | Yes, as a platform service with the same rules (section 1.4) |
+| The `InboundEvents` shape | One inbound gateway (section 1.3.2) |
+| Progress callbacks | Removed; output comes through a cursor on `GetCommandStatusAsync` (section 2) |
 
 ### Still open
 
-Per-method contracts are now written in `docs/05-provider-contracts.md`. Both
-questions carried forward from the first pass are now answered by review 06:
-
-1. **The `InboundEvents` shape** — one inbound gateway in the API: verify the
-   signature, deduplicate by remote delivery id, translate to an engine event.
-   Events are Signals that only wake the workflow (section 1.3.2).
-2. **`IProgress<CommandProgress>`** — removed. Commands are started and polled
-   (C1), so incremental output comes through a cursor on
-   `GetCommandStatusAsync`, which is serialisable.
+1. **How the engine pushes a ticket branch** from the sandbox (DR13). No method
+   in this document does it: neither the sandbox nor the code host provider has
+   a push method.
+2. **Merge methods.** The engine pushes a merge commit (section 4.1). Whether the
+   `method` argument and the `MergeMethods` capability (squash, rebase) still
+   apply is not decided.
+3. **The agent reviewer's inputs.** The branch, base and changed files are not
+   explicit in the `ReviewAsync` signature, and a long agent review is one call
+   rather than started and polled like other agent work (section 7.1).
