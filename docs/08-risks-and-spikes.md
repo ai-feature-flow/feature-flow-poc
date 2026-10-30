@@ -221,7 +221,7 @@ intervention. The floor is not waived for the spike.
 
 **Question.** Do several tickets of one epic in one repository stay correct?
 
-**Plan:** `docs/17-spike-3-plan.md` (accepted 2026-10-30, not yet built).
+**Plan:** `docs/17-spike-3-plan.md` (accepted 2026-10-30). **Results:** `docs/18-spike-3-results.md` (run 2026-10-30: E1 and E3 met, E2 inconclusive because the reviewer silently truncated the aggregate diff; post-hoc full-diff series meets the thresholds).
 
 **Setup.** One epic, three tickets, one repository, `max_concurrency: 2`. At least
 two tickets touching overlapping code areas.
