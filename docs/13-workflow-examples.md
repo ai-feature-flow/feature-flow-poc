@@ -1,26 +1,34 @@
 # Worked examples
 
-Status: third draft. Date: 2026-10-27. Deliverable 6 of
-`docs/briefs/brief-02-workflow-language.md`.
+Status: fourth draft. Date: 2026-10-31. Deliverable 6 of
+`docs/briefs/brief-02-workflow-language.md` (the workflow language brief).
 
-**Review 10 applied.** The second draft's examples failed the document's own
-validation checks (A5): `apply_child_patch` did not exist, `verification_review`
-was unreachable, `params.platform_repository` was undeclared, and the child
-branches never passed the `ticket_id` their template requires. All four are fixed,
-and every example below has been run through the validation table — section 6
-records the result.
+Example plans and patches written in the workflow language. `docs/09` owns what
+the language means, `docs/10` owns the JSON Schema it must conform to, and
+`docs/06` (the step catalogue) owns each step kind's inputs and outcomes.
 
-Also applied: A2 (branch completion returns to the join), A3 (expressions read no
-artifact content), A4 (`run` and `findings` fields defined), A6 (`resume_at`),
-A7 (`insert_after` alone, no redundant `change_route`), A10 (the epic fix path),
-A11 (ordered two-repository delivery), B1 (deterministic expansion), B6 (bindings
-render paths), B9 (directives as a mapping), B12 (gate choice).
+| Section | Example |
+|---|---|
+| 1 | A single ticket: plan, implement, test, review, fix loop, catch up, merge |
+| 2 | An epic: plan tickets, run them in parallel, epic review, ordered delivery |
+| 3 | A mid-run re-plan: a ticket discovers a second repository |
+| 4 | A human session with pre-submit checks |
+| 5 | The epic fix path as a separate fix ticket |
+| 6 | How these examples were checked |
+| 7 | Open questions |
 
-Four examples: a single ticket, an epic, a mid-run re-plan, and a human session.
+This draft brings in three later decisions: the merge design (`docs/20`:
+tickets merge without a lock), the review design (`docs/19`: the reviewer is an
+agent on a read-only checkout), and design requirement DR12 (routing to a step
+that already ran runs it again).
 
 ---
 
 ## 1. Single ticket: implement, test, review, fix loop, merge
+
+A ticket run works on its own ticket branch and merges into its epic's
+**integration branch** (the branch every ticket of the epic merges into before
+the epic is delivered to `main`).
 
 ```yaml
 apiVersion: feature-flow/v1
@@ -34,6 +42,10 @@ metadata:
 parameters:
   ticket_id: { type: string, required: true }
   repositories: { type: array, required: true }
+  epic_contract:
+    type: string
+    required: false
+    description: "Artifact reference to the parent epic's contract, given to the ticket review"
 
 artifact_types:
   - name: ticket-plan
@@ -110,7 +122,9 @@ steps:
     kind: review.run
     inputs:
       scope: ticket
-      diff_ref: { expr: "steps.implement.artifacts.diff" }
+      branch: { expr: "run.branch" }
+      base: { expr: "run.integration_branch" }
+      context_refs: { expr: "[steps.plan_spec.artifacts.plan, steps.run_tests.artifacts.results, params.epic_contract]" }
       checks: [feature-flow-default:checks/merge-bar]
       prior_findings: { expr: "findings.all" }
     routes:
@@ -191,18 +205,58 @@ steps:
       prompt_ref: feature-flow-default:prompts/merge-approval
       context_refs: { expr: "[steps.review.artifacts.findings]" }
     routes:
-      approved: merge_pr
+      approved: catch_up
       rejected: { end: rejected }
+
+  - id: catch_up
+    kind: scm.merge_base_forward
+    inputs:
+      repository: { expr: "run.repositories[0]" }
+      branch: { expr: "run.integration_branch" }   # merged from
+      into: { expr: "run.branch" }                 # merged into
+    outputs:
+      branch_changed: { type: boolean }
+    routes:
+      completed:
+        - when: "steps.catch_up.outputs.branch_changed == true"
+          to: retest
+        - to: merge_pr
+      blocked: resolve_conflict
+      attempts_exhausted: gate_escalate
+
+  - id: retest
+    kind: test.run_tiers
+    inputs:
+      tier_tags: { expr: "steps.plan_spec.outputs.tier_tags" }
+    consumes: [{ name: plan, type: ticket-plan, from: plan_spec }]
+    routes:
+      completed: merge_pr
+      failed: triage_findings
+      attempts_exhausted: gate_escalate
 
   - id: merge_pr
     kind: scm.merge
     inputs:
       pr_ref: { expr: "steps.open_pr.artifacts.pr" }
+    limits: { attempts: 3 }
     routes:
       completed: { end: completed }
-      blocked: gate_escalate
+      blocked: catch_up
       rejected: gate_merge
       attempts_exhausted: gate_escalate
+
+  - id: resolve_conflict
+    kind: agent.run
+    inputs:
+      role: feature-flow-default:roles/implementer
+      task_ref: feature-flow-default:tasks/resolve-merge-conflict
+      write_access: branch
+    routes:
+      completed: run_tests
+      blocked: gate_escalate
+      failed: gate_escalate
+      attempts_exhausted: gate_escalate
+      replan_requested: replan
 
   - id: replan
     kind: plan.replan
@@ -245,25 +299,59 @@ steps:
       rejected: { end: failed }
 ```
 
-### 1.1 What this example gets right
+### 1.1 What this example shows
 
-| Decision | How |
+| Rule | How the example follows it |
 |---|---|
-| C1: tiers come from `feature-flow.yaml` | `run_tests` passes `tier_tags` from `plan_spec.outputs`, and consumes the plan artifact to read them in its activity |
-| A3: expressions read no content | `tier_tags` comes from `outputs`, not from dereferencing `artifacts.plan`. `run_tests` reads the artifact itself |
-| A4: `run` fields defined | `run.repositories[0]`, `run.branch`, `run.integration_branch`, `run.head_sha` — all in `docs/09` 8.3.1 |
-| A4: `findings` is a namespace | `findings.all`, `findings.open`. Not `run.findings` |
-| C2: no merge method in a template | `merge_pr` passes only `pr_ref` |
-| C3: no installation-specific names | `repositories` is a run parameter |
-| C4: no `allowRegression` | `verify_fix` has no such input |
-| C5: review feeds the findings ledger | `review.run`, `findings.triage`, `findings.evaluate_readiness` |
-| C7: no policy in a template | Every gate names a `decision_type` only |
-| A1: privilege from the role | `write_access` is a tightening on every step; no step sets `tools` or `capabilities` |
-| B5: correction turns | `plan_spec` sets `correction_turns: 2` |
-| B6: bindings render paths | `plan_path: { from_artifact: ... }`, not a hash |
-| B9: directives are a mapping | `{ end: completed }`, no quoting |
-| A6: resume point | `replan` routes `{ resume: true }`; the patch names `resume_at` |
-| B3: loops bounded by the engine | The cycle exits through `gate_escalate` on `attempts_exhausted` |
+| Test tiers are repository facts, not plan content (review 09 C1) | `run_tests` selects tiers by tag. `tier_tags` comes from `plan_spec`'s published outputs; the tiers themselves are defined in the repository's `feature-flow.yaml` |
+| Expressions never read artifact content (review 10 A3) | `tier_tags` is a small published output. `run_tests` reads the plan artifact itself, inside its activity |
+| Every `run` field used is defined | `run.repositories[0]`, `run.branch`, `run.integration_branch` and `run.head_sha` are all in `docs/09` section 8.3.1 (the `run` namespace) |
+| `findings` is a namespace, not a `run` field | `findings.all`, `findings.open` |
+| No merge method in a template (review 09 C2) | `merge_pr` passes only `pr_ref`; the repository's manifest names the method |
+| No installation-specific names (review 09 C3) | `repositories` is a run parameter |
+| No switch to skip regression tests (review 09 C4) | `verify_fix` has no such input; the regression-test rule is a step invariant (`docs/06` section 10.1, `fix.verify`) |
+| Review feeds the findings ledger (review 09 C5) | `review.run`, `findings.triage` and `findings.evaluate_readiness` read and write the ledger, the record of every finding and its status |
+| No policy in a template (review 09 C7) | Every gate names only a `decision_type`. The organisation's policy decides who may approve |
+| Privilege comes from the role (review 10 A1) | A step's `write_access` may only tighten its role's value. No step sets `tools` or `capabilities` |
+| Agents never hold a credential that can push (DR13) | `implement`, `fix_findings` and `resolve_conflict` have `write_access: branch`: the agent commits in its own sandbox, and the engine pushes the branch at the end of the step and at work-in-progress points |
+| Correction turns for a malformed artifact (review 10 B5) | `plan_spec` sets `correction_turns: 2`. The schema does not accept this field yet (section 7) |
+| Bindings pass file paths (review 10 B6) | `plan_path: { from_artifact: ... }` gives the agent a path, not a content hash |
+| Directives are mappings (review 10 B9) | `{ end: completed }` needs no YAML quoting |
+| A re-plan names where to resume (review 10 A6) | `replan` routes `{ resume: true }`; the patch it produces names `resume_at` |
+| Loops re-run steps (DR12) | `verify_fix` routes to `run_tests`, and `merge_pr` routes back to `catch_up`. Both targets have already run; the interpreter runs them again and clears their previous outcome |
+| Loops are bounded by the engine (review 09 B3, DR10) | Every entry to a step counts against its `limits.attempts`, including re-entry from a loop. A spent allowance returns `attempts_exhausted`, routed to `gate_escalate` |
+
+### 1.2 How the ticket merges
+
+Merge design, `docs/20`. There is no merge lock: the ticket merges the way a
+developer does.
+
+| Step | What happens |
+|---|---|
+| `gate_merge` | Approval to merge into the integration branch. Policy may approve it automatically. A merge into the default branch always needs a human (floor F1), but this merge targets the integration branch |
+| `catch_up` (`scm.merge_base_forward`) | The engine merges the latest integration branch into the ticket branch. `branch` is the branch merged **from** (integration), `into` the branch merged **into** (ticket). It publishes `branch_changed` |
+| `retest` | Runs only if catch-up changed the branch. Re-runs the ticket's test tiers on the new head |
+| `merge_pr` (`scm.merge`) | The engine builds the merge commit from exactly what was tested and pushes it to the integration branch. Git refuses the push if the integration branch moved since catch-up (another ticket merged first). The code host marks the pull request merged |
+| Refused merge | `merge_pr` returns `blocked` and routes back to `catch_up` |
+| Retry cap | `merge_pr` has `limits: { attempts: 3 }`. Each refusal re-enters it, so after three entries the next returns `attempts_exhausted` and the ticket escalates to a human. A slow ticket cannot be starved forever by faster siblings |
+| Conflict | `catch_up` returns `blocked`, and an agent resolves it (`resolve_conflict`), not a human first (`docs/06` section 6.2). The ticket then goes back through `run_tests`, `review` and `gate_merge`, so resolution code is never merged unreviewed |
+
+Nothing untested can land: the push succeeds only if the integration branch is
+exactly what the ticket was last tested against. Agents never merge or push; the
+engine does both (DR13).
+
+### 1.3 How the ticket is reviewed
+
+Review design, `docs/19`.
+
+| Element | In this example |
+|---|---|
+| Machine checks first | `run_tests` runs before `review`, and its results are passed to the reviewer in `context_refs` |
+| The reviewer is an agent on a read-only checkout | `review` names the `branch` and the `base`. The reviewer reads the diff itself and may open any file; nothing else is pre-loaded |
+| Review against a specification | `context_refs` carries the ticket plan (its acceptance criteria) and the epic's contract (`params.epic_contract`, passed by the parent epic) |
+| Prior findings | `prior_findings` is the findings ledger. A finding fixed and verified stays fixed while the code it points at is unchanged (findings ledger position L2, `docs/17` section 6.5) |
+| A different model reviews | Chosen by configuration, not by the template |
+| Coverage | The engine records every file the reviewer opens. A review that never opened a changed file is re-run, not accepted. Engine behaviour; nothing in the plan |
 
 ---
 
@@ -336,7 +424,8 @@ steps:
     kind: review.run
     inputs:
       scope: epic
-      diff_ref: { expr: "run.aggregate_diff" }
+      branch: { expr: "run.integration_branch" }
+      context_refs: { expr: "[steps.plan_tickets.artifacts.tickets]" }
       checks: [feature-flow-default:checks/epic-review]
       prior_findings: { expr: "findings.all" }
     routes:
@@ -472,11 +561,13 @@ steps:
       rejected: { end: failed }
 ```
 
-### 2.1 Ticket expansion (B1, D2)
+### 2.1 Ticket expansion
 
-`tickets` starts with `branches: []`. `expand_tickets` is a `plan.replan` in
-`mode: expand` — **no agent** (B1). It maps each item of the `ticket-list`
-artifact to a `run.child` and returns a patch. For a three-ticket epic:
+`tickets` is a `parallel` step that starts with no branches (`branches: []`).
+`expand_tickets` is a `plan.replan` in `mode: expand`: a deterministic expansion
+that runs **no agent** (review 10 B1). It maps each item of the `ticket-list`
+artifact to a `run.child` (a child ticket run) and returns a patch. For a
+three-ticket epic:
 
 ```yaml
 apiVersion: feature-flow/v1
@@ -523,22 +614,16 @@ changes:
           repositories: ["acme/api", "acme/web"]
 ```
 
-Four things the earlier drafts got wrong, fixed here:
+Rules this patch follows:
 
-- **A2: no `end: completed` on a branch.** A branch's terminal outcome returns to
-  the join.
-- **A1: no routes at all on a branch.** The third draft routed `blocked` and
-  `replan_parent` to parent steps, which left the join and the siblings undefined
-  while that ran. `blocked` is handled inside the child's own plan;
-  `replan_parent` is handled by the interpreter, and siblings keep running.
-- **A5: `ticket_id` is passed.** `ticket-delivery` declares it required, so a
-  branch omitting it would fail check 6 at binding.
-- **B4: the binding matches the patch.** The mapping binds
-  `repositories: "$.repositories"` from each ticket-list item, so the generated
-  patch carries the **bound value**, not `params.repositories`. The third draft
-  showed the mapping and the patch disagreeing.
+| Rule | Why |
+|---|---|
+| A branch has **no routes at all** (review 11 A1, review 10 A2) | Its terminal outcome returns to the join. `blocked` is handled inside the child's own plan. A child's request to re-plan the epic (`replan_parent`) is handled by the interpreter, and siblings keep running |
+| `ticket_id` is passed to every branch (review 10 A5) | `ticket-delivery` declares it required; a branch without it fails check 6 (unbound required parameter) at binding |
+| The patch carries the **bound values** (review 11 B4) | The mapping binds `repositories: "$.repositories"` from each ticket-list item, so the patch holds each ticket's list, not `params.repositories` |
+| `proposed_by.type` is `engine` | No agent ran, so the audit record does not attribute the change to one |
 
-### 2.2 Ordered two-repository delivery (A11)
+### 2.2 Ordered two-repository delivery
 
 `expand_delivery` is the same deterministic expansion, applied to repositories.
 It produces one `delivery.deploy` per repository, chained in order:
@@ -571,53 +656,50 @@ changes:
         repository: acme/web
 ```
 
-`proposed_by.type` is **`engine`**, not `agent` (review 11 B4): a deterministic
-expansion runs no agent, so attributing it to one is wrong in the audit record.
-
-**Order is a declared dependency, not a concurrency limit** (review 11 A2). The
-third draft used a `parallel` with `max_concurrency: 1`, which is wrong twice:
-with `join: all` a failure in `deliver_api` still lets `deliver_web` run, and
-"in the order added" is an implicit property of a limit rather than a declared
-dependency.
-
-`add_chain` rewires `target`'s `completed` route to the new step and points every
+`add_chain` points `target`'s `completed` route at the new step, and every
 other outcome at `on_other`. So `deliver_api` completing goes to `deliver_web`;
-`deliver_api` failing goes to `delivery_gate` and `deliver_web` never runs. One
-`delivery.deploy` **per repository**, chained in order — which answers the open
-question from the second draft.
+`deliver_api` failing goes to `delivery_gate`, and `deliver_web` never runs.
 
-`environment` is gone: it was an installation-specific name, the same problem as
-C3 in review 09. It comes from configuration.
+**Order is a declared dependency, not a concurrency limit** (review 11 A2). A
+`parallel` with `max_concurrency: 1` would still run `deliver_web` after
+`deliver_api` failed, because `join: all` waits for every branch.
 
-### 2.3 The epic fix path (A10)
+The deployment environment is not a step input. It is an installation-specific
+name (the problem review 09 C3 removed) and comes from configuration.
 
-The second draft's `epic_triage` routed `completed: epic_review`, so epic
-findings were triaged and re-reviewed but **never fixed**. `epic_fix` is added:
-an `agent.run` with `write_access: branch` on the integration branch, which then
-re-reviews. This is the seeded cross-ticket defect case (review 08, answer 4), so
-it has to be in the example.
+### 2.3 The epic fix path
 
-### 2.4 What this example gets right
+`epic_triage` routes to `epic_fix`, an `agent.run` that fixes epic findings on
+the integration branch and then routes back to `epic_review`. The agent commits
+in its sandbox; the engine pushes the integration branch (DR13). The route back
+re-runs `epic_review`, which already has an outcome (DR12). This path covers a
+defect that exists only once tickets are combined, the cross-ticket case the
+epic review exists for (review 08, answer 4).
 
-| Decision | How |
+### 2.4 What this example shows
+
+| Rule | How the example follows it |
 |---|---|
-| D2, B1: no hard-coded ticket ids, no agent | `branches: []`, filled by a deterministic `mode: expand` patch |
-| A5: a ticket branch is a `run.child` | Each branch is `run.child` with `plan_ref` and bound `ticket_id` |
-| A2: branch completion | No terminal routes on branches; the join aggregates |
-| A3: join semantics | `join: all`, `max_concurrency: 2`; `any_failed` to a gate |
-| A10: the epic fix path | `epic_triage` to `epic_fix` to `epic_review` |
-| A11: ordered delivery | One `delivery.deploy` per repository, chained by `add_chain` |
-| B12: gate choice | `delivery_gate` records a choice; guarded routes select on it |
-| C6: `partial` does not route to success | `rejected: { end: partial }`, never `{ end: completed }` |
-| A6: resume point | Every `plan.replan` routes `{ resume: true }` with `resume_at` in inputs |
+| No hard-coded ticket ids, no agent in expansion (review 09 D2, review 10 B1) | `branches: []`, filled by a deterministic `mode: expand` patch |
+| A ticket branch is a child run (review 10 A5) | Each branch is a `run.child` with `plan_ref` and a bound `ticket_id` |
+| Branch completion returns to the join (review 10 A2) | No routes on branches; the join aggregates |
+| Join semantics | `join: all`, `max_concurrency: 2`; `any_failed` goes to a gate |
+| The epic review sees the whole epic (review design, `docs/19`) | `epic_review` names the integration branch; the reviewer compares it with the default branch, looking for problems that exist only once every ticket is combined |
+| Epic prior findings include the tickets' findings (DR11) | `findings.all` at epic scope includes each child ticket's findings ledger. Engine behaviour; the plan does not list them |
+| The epic fix path (review 10 A10) | `epic_triage` to `epic_fix` to `epic_review` |
+| Ordered delivery (review 10 A11) | One `delivery.deploy` per repository, chained by `add_chain` |
+| A gate may record a choice (review 10 B12) | `delivery_gate` records `retry`, `fix_forward` or `revert`; guarded routes select on it |
+| `partial` never routes to success (review 09 C6) | `rejected: { end: partial }`, never `{ end: completed }` |
+| A re-plan names where to resume (review 10 A6) | Every `plan.replan` routes `{ resume: true }`, with `resume_at` in its inputs |
 
 ---
 
 ## 3. Mid-run re-plan: a ticket discovers a second repository
 
-Review 09 E7. This is the `docs/01` section 6.2 scenario: a ticket returns
-`replan_parent` with a patch adding a `run.child` for the second repository to the
-**epic** plan.
+The scenario of `docs/01` section 6.2 (an epic with a mid-run re-plan). A ticket
+returns `replan_parent` with a patch that adds a `run.child` for a second
+repository to the **epic** plan, and adds a cross-repository review after the
+epic review.
 
 ```yaml
 apiVersion: feature-flow/v1
@@ -650,7 +732,8 @@ changes:
       kind: review.run
       inputs:
         scope: epic
-        diff_ref: { expr: "run.aggregate_diff" }
+        branch: { expr: "run.integration_branch" }
+        context_refs: { expr: "[steps.plan_tickets.artifacts.tickets]" }
         checks: [feature-flow-default:checks/cross-repo-contract]
         prior_findings: { expr: "findings.all" }
       routes:
@@ -663,27 +746,33 @@ changes:
 ### 3.1 What happens
 
 1. The child run returns `replan_parent` with this patch.
-2. The parent applies it through the same `applyPatch` (`docs/01` 3.4).
-3. `base_revision: 4` must be the parent's current revision. If the parent has
-   moved on, the patch is rejected as stale and re-proposed (E3).
-4. `resume_at: tickets` — execution continues at the `tickets` parallel, which
-   starts the new branch.
-5. Already-completed steps are untouched. `design` is protected and intact.
-6. `insert_after epic_review` **rewires** `epic_review`'s `completed` route to
-   `cross_repo_review` (A7). The second draft also carried an explicit
-   `change_route` for the same thing, which was redundant; it is removed.
+2. The parent applies it through the single patch path, `applyPatch` (`docs/01`
+   section 3.4: re-planning and steering share one path).
+3. `base_revision: 4` must be the parent's current plan revision. If the parent
+   has moved on, the patch is rejected as stale and re-proposed (review 09 E3).
+4. `resume_at: tickets`: execution continues at the `tickets` parallel step,
+   which starts the new branch.
+5. Steps that already completed are untouched. The protected `design` step is
+   intact.
+6. `insert_after epic_review` points `epic_review`'s `completed` route at
+   `cross_repo_review` (review 10 A7). No separate `change_route` is needed.
 
 ### 3.2 If the patch had touched protected content
 
-If the patch had included `remove_step` on `design`, or a `change_route` making
-`design` unreachable, then because the proposer is an **agent** it would not be
-rejected: it would become a **pending human decision** (E2), recorded with the
-diff and the reason. A human may approve it with a reason. A patch that would
-relax a safety floor is rejected outright with no human override path.
+Suppose the patch had removed `design` (a protected step) or made it unreachable.
+Because the proposer is an **agent**, the patch is not rejected: it becomes a
+**pending human decision**, recorded with the diff and the reason (review 09
+E2). A human may approve it with a reason. A patch that would relax a safety
+floor (the organisation-wide minimums no workflow may relax, `docs/07` section
+2) is rejected outright, with no human override.
 
 ---
 
 ## 4. Human session with pre-submit checks
+
+A fragment of a ticket plan. A human drafts the specification in an interactive
+session, and can run the later automated reviews from inside that session
+before submitting.
 
 ```yaml
   - id: spec_session
@@ -726,27 +815,31 @@ relax a safety floor is rejected outright with no human override path.
       attempts_exhausted: gate_spec
 ```
 
-### 4.1 What this example gets right
+### 4.1 What this example shows
 
-| Decision | How |
+| Rule | How the example follows it |
 |---|---|
-| C9: checks derive from later steps | `checks_from: [plan_review, verification_review]` |
-| C9: ids are engine-generated | No `session_id` in the plan |
-| **A5: `verification_review` is reachable** | `plan_review` routes `completed: verification_review`. The second draft routed it to `implement`, leaving `verification_review` unreachable — check 13 |
-| D23: no check appears for the first time after submission | Both reviews can be run inside the session, before submitting |
-| The trust boundary is the submission | Hooks and policy do not apply in the human's environment (`docs/01` 7.4) |
+| Pre-submit checks are the later steps' own checks (review 09 C9) | `checks_from: [plan_review, verification_review]` |
+| Ids are engine-generated (review 09 C9) | No session id in the plan |
+| Every step is reachable (check 13) | `plan_review` routes `completed` to `verification_review` |
+| No check appears for the first time after submission (engine design decision D23) | Both reviews can be run inside the session, before submitting |
+| Pre-submit parity (review design, `docs/19`) | A check run from the session must match the gated step: same brief, same tools, same model, same commit |
+| The trust boundary is the submission | Hooks and policy do not apply in the human's own environment (`docs/01` section 7.4, interactive human sessions) |
 
-The prototype's spec session took eight rounds mostly because agent-drafted
-verification requirements were accepted without review and then failed the later
-plan review. `checks_from` is the mechanism that removes those round trips.
+These two reviews check a specification artifact, not a code branch, so they
+still pass the artifact as `diff_ref` (section 7).
+
+The prototype's specification session took eight rounds, mostly because
+agent-drafted verification requirements were accepted without review and then
+failed the later plan review. `checks_from` removes those round trips.
 
 ---
 
-## 5. The epic fix path as a fix ticket (A10, alternative)
+## 5. The epic fix path as a fix ticket
 
-Section 2.3 fixes epic findings on the integration branch. The alternative is a
-**fix ticket added by re-plan** — a `run.child` — which suits a defect that needs
-its own branch, tests and review:
+Section 2.3 fixes epic findings directly on the integration branch. The
+alternative is a **fix ticket added by re-plan**, a `run.child`, which suits a
+defect that needs its own branch, tests and review:
 
 ```yaml
 apiVersion: feature-flow/v1
@@ -771,61 +864,71 @@ changes:
           repositories: ["acme/api", "acme/web"]
 ```
 
-Both are valid. The integration-branch fix (2.3) is for a finding the epic review
-raised on the aggregate diff; the fix ticket is for one that needs independent
-verification. Which to use is workflow content (`docs/01` 1.5), not an engine
-decision.
+Both are valid. The integration-branch fix (section 2.3) suits a finding the epic
+review raised on the combined change; the fix ticket suits one that needs
+independent verification. Which to use is workflow content, not an engine choice
+(`docs/01` section 1.5: the engine provides mechanism, workflow content provides
+policy). The engine prefers neither.
 
 ---
 
 ## 6. Validation of these examples
 
-Review 10 A5 asks for this explicitly. Every example above was checked against
-the `docs/12` section 2 table.
+Every example was checked by script on 2026-10-31 against the `docs/10` JSON
+Schema and against the validation checks in `docs/12` section 2 (the validation
+table), using the outcome list in `docs/09` section 4.2 (which outcomes each
+kind may return).
 
-| Check | Result |
+| Check (`docs/12` section 2) | Result |
 |---|---|
-| 1 Schema conformance | Pass. All four parse as YAML; directives are mappings |
-| 2 Unknown step kind | Pass. 19 distinct kinds used, all in `docs/06` |
-| 3 Duplicate step id | Pass. Ids unique within each plan |
-| 4 Step id looks like a kind | Pass. `run_tests`, `plan_spec`, `epic_review` — none is a kind |
-| 5 Undeclared reference | Pass. `params.platform_repository` removed; every `params.*` is declared |
-| 6 Unbound required parameter | Pass. `ticket_id` is passed by every `run.child` branch |
-| 7-9 Expression parse, type, bounds | Pass by inspection. All expressions use declared namespaces |
-| 10 Every returnable outcome routed | Pass. Verified mechanically for examples 1 and 2 |
-| 11 Route target exists | Pass. `apply_child_patch` removed; every target resolves |
-| 12 Guarded list has a fallback | Pass. `delivery_gate` ends with an unguarded `to: delivery` |
-| 13 Unreachable step | Pass. `verification_review` is now reachable from `plan_review`. `delivery_gate` is reachable only through the delivery expansion's `on_other`, which `docs/12` 2.3 counts as reachable |
-| 14 Every cycle has an exit | Pass. The test-fix-retest cycle exits via `gate_escalate` |
-| 15 Contract compatibility | Pass. `run_tests` consumes `ticket-plan` from `plan_spec`, which produces it |
-| 16 Producer declares the consumed artifact | Pass |
-| 17-19 Library, requires, repository adds only | Pass. All refs use one format |
-| 20-22 Capabilities, decision types, ceilings | Pass. `decision_type` values are namespaced |
+| 1 Schema conformance | **Fails in two known places**, both schema gaps (section 7): `correction_turns` in example 1, and the route-less steps in every patch (parallel branches and chain steps). Everything else conforms. All blocks parse as YAML; directives are mappings |
+| 2 Unknown step kind | Pass. 20 distinct kinds used, all in the `docs/10` `StepKind` list |
+| 3 Duplicate step id | Pass |
+| 4 Step id looks like a step kind | Pass |
+| 5 Undeclared reference | Pass. Every `params.*` used is declared |
+| 6 Unbound required parameter | Pass. Every `run.child` branch passes `ticket_id` and `repositories`; `epic_contract` is optional |
+| 7-9 Expression parses, type checks, within bounds | Pass by inspection. All expressions use declared namespaces |
+| 10 Every outcome the kind can return is routed | Pass, by script, for both full plans, the fragment and every patch step that has routes |
+| 11 Route target exists | Pass, by script |
+| 12 Guarded route list ends with a fallback | Pass. `catch_up` ends with `to: merge_pr`; `delivery_gate` ends with `to: delivery_start` |
+| 13 Unreachable step | Pass. In example 2, `delivery_gate`, `revert_prs` and `gate_revert` are reached only through the delivery expansion's `on_other`, which `docs/12` section 2.3 counts as reachable |
+| 14 Every cycle has a route out | Pass. The test-fix-retest cycle and the catch-up-merge cycle both exit through `gate_escalate` on `attempts_exhausted` |
+| 15-16 Producer and consumer contracts | Pass. `run_tests` and `retest` consume `ticket-plan` from `plan_spec`, which produces it |
+| 17-19 Library references, package requirements, repository adds only | Pass. All references use one format |
+| 20-22 Capabilities, decision types, attempt ceilings | Pass. `decision_type` values are namespaced |
 | 23-26 Patch checks | Pass. `base_revision` present; `resume_at` resolves |
-| 27-28 Step inputs, artifacts | Pass |
-| A2 Branch terminal routes | Pass. No branch routes a terminal outcome or uses a directive |
+| 27-28 Step inputs, consumed artifacts | **Not checkable yet.** The new `review.run` inputs (`branch`, `base`, `context_refs`) are not in `docs/06` section 8.2 (section 7) |
 
-**Mechanically verified:** examples 1 and 2 were parsed and checked by script —
-every route target resolves to a declared step id or a directive, and every step
-routes every outcome its kind can return. Examples 3 and 4 are fragments of those
-plans and were checked by hand.
-
-**Long term** these become test fixtures in the `docs/12` 3.3 format, so the
-checks run in CI rather than by hand.
+**Long term** these become test fixtures in the `docs/12` section 3.3 format
+(the workflow test file), so the checks run in CI rather than by hand.
 
 ---
 
 ## 7. Open questions
 
-None open. Every question from the earlier drafts was answered in review 10 or 11:
+### Answered earlier
 
 | Question | Answer |
 |---|---|
-| `run.wait` is reserved and unused | Removed from the language per review 10. It returns only if a worked example needs it |
-| Fix ticket versus integration-branch fix (section 5) | Both are shown. **The engine prefers neither** — the choice is workflow content (review 11 D) |
-| `delivery.deploy` as a `parallel` branch | Superseded by A2: delivery is a **chain**, not a parallel. One `delivery.deploy` per repository, linked by routes |
-| One `delivery.deploy` re-entered, or one per repository | One per repository (review 10, answer) |
+| `run.wait` is reserved and unused | Out of the version 1 language. It returns only if a worked example needs it |
+| Fix ticket or integration-branch fix (section 5) | Both are shown. The engine prefers neither; the choice is workflow content |
+| `delivery.deploy` as a `parallel` branch | No: delivery is a **chain**, one `delivery.deploy` per repository, linked by routes (section 2.2) |
+| The `outputs` size cap (16 entries, 256 bytes per value) | Measured by Spike 2 and kept: the largest value was 71 bytes and the most entries 5 (`docs/16` section 2) |
+| `insert_after` with rewiring, or `add_step` plus `change_route` | Measured by Spike 2: a planner model authored all 20 patches in both forms; the forms did not differ reliably (`docs/16` section 3) |
 
-**Two measurements remain**, assigned to spikes rather than open as design
-questions: the `outputs` cap (Spike 2, review 11 C1) and `insert_after` rewiring
-versus `add_step` plus `change_route` (Spike 1 or 2, review 11 C2).
+### Still open
+
+These came up while bringing in the merge and review designs. The examples make
+a choice so that they are concrete; the owning document decides.
+
+| # | Question | What the examples assume |
+|---|---|---|
+| 1 | Which `scm.merge` outcome means "refused: the integration branch moved since catch-up"? `docs/06` section 6.5 defines `blocked` as checks or protection | `blocked`, routed back to `catch_up` |
+| 2 | Is the "about 3 refusals in a row" cap the merge step's attempt allowance, or a separate count that resets when a merge succeeds? | `limits: { attempts: 3 }` on `merge_pr`, which counts every entry, not only consecutive refusals |
+| 3 | What are `review.run`'s inputs now the reviewer reads the branch itself? `docs/06` section 8.2 still has `diff_ref` | `branch`, `base` and `context_refs` (the specification and machine-check results) |
+| 4 | How does an epic-scope review name its base (the default branch)? The `run` namespace has no field for it | The base is omitted at epic scope |
+| 5 | How does the epic contract reach a child ticket run? | An optional `epic_contract` parameter; the expansion patches in section 2.1 do not bind it |
+| 6 | Does a review of a specification artifact (section 4) keep a `diff_ref` input? | Yes |
+| 7 | The schema's `Limits` has no `correction_turns`, but `docs/09` and example 1 use it | Kept in the example; fails check 1 |
+| 8 | The schema requires `routes` on every step, but parallel branches carry no routes by design and chain steps get theirs from `add_chain` | Kept route-less; fails check 1 |
+| 9 | `findings.all` and `findings.open` are used throughout, but `docs/09` section 8.3 lists only `findings.blocking_count` and `findings.open_count` | Kept as written |
