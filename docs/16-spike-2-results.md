@@ -33,7 +33,7 @@ store.
 |---|---|
 | This document | `docs/16-spike-2-results.md` |
 | Spike code | `spikes/02-real-run/` |
-| Fixture repository | `ai-feature-flow/feature-flow-example` |
+| Fixture repository | `ai-feature-flow/feature-flow-example`. Its `ff/*` branches were deleted on 2026-10-31; the Claude Code proof's commits are kept under tags `claude-proof-evidence` (run 6) and `claude-proof-1-evidence` to `claude-proof-5-evidence` (earlier runs) |
 | The plan | `spikes/02-real-run/plans/ticket-delivery.yaml` |
 | Configuration | `spikes/02-real-run/plans/organisation.yaml` |
 | Check output | `spikes/02-real-run/results/spike2-checks.md` |

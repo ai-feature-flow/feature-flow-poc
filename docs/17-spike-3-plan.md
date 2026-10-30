@@ -434,7 +434,7 @@ confinement and per-ticket credentials; it is not in scope.
 |---|---|
 | Temporal | `~/.temporalio/bin/temporal server start-dev --port 7533 --ui-port 8533 --db-filename <spike-3 dir>/temporal.db --headless` (Spike 1: 7233; Spike 2: 7333) |
 | .NET | .NET 10 for everything. The fixture stays `net9.0`, untouched, and its CI is unchanged; the local unit tier runs on the .NET 10 runtime with `DOTNET_ROLL_FORWARD=Major` set in each ticket worker's environment. Known gap: local tests run on a newer runtime than CI |
-| Credentials | The existing GitHub App, from a secrets file outside the repository (`HANDOVER-spike-3.md` section 5); the Anthropic subscription login, via worker A |
+| Credentials | The existing GitHub App, from a secrets file outside the repository (`CONTRIBUTING.md`, local setup); the Anthropic subscription login, via worker A |
 | CI | The fixture's existing workflows |
 
 1. Prerequisites: worker A merged, including N0 and a green Spike 1 replay;

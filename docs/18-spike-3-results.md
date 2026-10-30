@@ -25,6 +25,7 @@ two attempts:
 | Code | `spikes/03-concurrent/` (engine deltas in `spikes/01-interpreter`, `spikes/02-real-run`) |
 | Plans | `spikes/03-concurrent/plans/` |
 | Main-run evidence | `spikes/03-concurrent/results/spike-3/` |
+| Fixture commits | The fixture's `ff/*` branches were deleted on 2026-10-31. The integration branch's final state, and every ticket commit merged into it, are kept under tag `spike-3-evidence`. The throwaway sanity-check branches were not kept |
 | Sanity checks | `spikes/03-concurrent/results/{sanity-lock,sanity-conflict,i3,i4,loop-cap}.json` |
 | R4 audit (every finding) | `results/spike-3/r4-replication/r4-audit.md` (E2); history: `results/spike-3/r4-audit.md`, `results/spike-3/r4-full/r4-audit.md` |
 
