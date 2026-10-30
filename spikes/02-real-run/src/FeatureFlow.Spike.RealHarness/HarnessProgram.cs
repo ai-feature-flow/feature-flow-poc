@@ -19,8 +19,16 @@ namespace FeatureFlow.Spike.RealHarness;
 /// </summary>
 public static class HarnessProgram
 {
-    public const string Address = "localhost:7333";
-    public const string Queue = "spike-2-real";
+    /// <summary>
+    /// The Temporal address. Overridable, because other agents share this tree
+    /// and each needs its own dev server.
+    /// </summary>
+    public static readonly string Address =
+        Environment.GetEnvironmentVariable("FF_TEMPORAL_ADDRESS") ?? "localhost:7333";
+
+    /// <summary>The task queue. Overridable for the same reason.</summary>
+    public static readonly string Queue =
+        Environment.GetEnvironmentVariable("FF_QUEUE") ?? "spike-2-real";
 
     /// <summary>
     /// The spike root: the directory holding <c>plans/</c>, <c>fixture/</c> and

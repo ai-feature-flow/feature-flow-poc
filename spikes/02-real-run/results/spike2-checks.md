@@ -1,26 +1,29 @@
-Captured 2026-10-28T16:25:11Z.
-Repository ai-feature-flow/feature-flow-example, checkout D:\Dev\feature-flow-poc\spikes\02-real-run\fixture, branch ff/ticket/spike2-final -> main.
-Temporal localhost:7333, queue spike-2-real, run final-run.
+Captured 2026-10-29T07:56:01Z.
+Repository ai-feature-flow/feature-flow-example, checkout D:\Dev\feature-flow-poc\spikes\02-real-run\fixture, branch ff/ticket/spike-2-1 -> ff/epic/spike-2.
+Temporal localhost:7433, queue ff-a3-queue, run checks-20261029075601.
 
 ## R5: a Docker-dependent tier runs through CI delegation
 
-  manifest: sha256:2f507523ca580eade86f36e3696f6d1473f0399466ff49664cf37cdbb7f129c8 (985 bytes) on ff/ticket/spike2-final
+  manifest: sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes) on ff/ticket/spike-2-1
   tiers declared: unit, integration
 
   tier unit: target=sandbox workflow=unit.yml
   tier integration: target=ci workflow=integration.yml
 
   Docker-dependent tier: integration
-  head: df3d0f41322b444f9b58cd4f9a76c849826158b7
+  head: 6384266770caeade2afcd2937f0f410acb59a138
 
-  dispatched:  run  workflow=integration.yml event=workflow_dispatch
-  url:         
-  returned in: 22.7s (without waiting for the run)
+  dispatched:  run 40838618182 workflow=integration.yml event=workflow_dispatch
+  url:         https://github.com/ai-feature-flow/feature-flow-example/actions/runs/40838618182
+  returned in: 5.3s (without waiting for the run)
 
-  poll  1: state=Completed conclusion=Success checks=1/1 registered=True
+  poll  1: state=Queued conclusion=None checks=0/1 registered=True
+  poll  2: state=InProgress conclusion=None checks=0/1 registered=True
+  poll  3: state=InProgress conclusion=None checks=0/1 registered=True
+  poll  4: state=Completed conclusion=Success checks=1/1 registered=True
 
   conclusion:  Success
-  url:         https://github.com/ai-feature-flow/feature-flow-example/actions/runs/40723029504
+  url:         https://github.com/ai-feature-flow/feature-flow-example/actions/runs/40838618182
   workflow matches the manifest mapping (integration.yml): True
   tier commands the workflow runs: docker compose -f compose.integration.yaml up --abort-on-container-exit --exit-code-from integration-tests
 
@@ -28,14 +31,14 @@ Temporal localhost:7333, queue spike-2-real, run final-run.
 
 ## R6: credentials are short-lived, scoped to one repository, and expire
 
-  credential id:   gh-3-1793204737
+  credential id:   gh-3-1793260602
   target system:   github
   scope:           repo:ai-feature-flow/feature-flow-example contents:write metadata:read pull_requests:write
-  issued at:       2026-10-28T16:25:37.4754537+00:00
-  expires at:      2026-10-28T17:25:37.0000000+00:00   (from the remote, not computed)
+  issued at:       2026-10-29T07:56:42.5078120+00:00
+  expires at:      2026-10-29T08:56:42.0000000+00:00   (from the remote, not computed)
   ttl:             60.0 min
-  secret:          390 chars, value withheld (sha256:b66755d3ab87)
-  actor:           agent:claude-code (run final-run, step implement)
+  secret:          390 chars, value withheld (sha256:537823f4720b)
+  actor:           agent:claude-code (run checks-20261029075601, step implement)
   permissions:
     contents: write
     metadata: read
@@ -55,70 +58,38 @@ Temporal localhost:7333, queue spike-2-real, run final-run.
 
 ## R13: tokens, model and compute time recorded per step
 
-  records: 13
+  NOT EVIDENCED: no cost records exist for this run. Run the ticket first
+  (RealHarness run), then re-run this check.
 
-  step                 kind                   model                in       out      compute   source
-  ----------------------------------------------------------------------------------------------------
-  plan_spec            agent.run              qwen2.5-coder:7b     2050     57       6.9       runtime_usage_output
-  design               agent.run              qwen2.5-coder:7b     2050     28       6.7       runtime_usage_output
-  implement            agent.run              qwen2.5-coder:7b     2050     26       17.8      runtime_usage_output
-  run_tests            test.run_tiers         -                    -        -        45.1      none
-  review               review.run             -                    -        -        2.3       none
-  evaluate_readiness   findings.evaluate_readiness -                    -        -        0.9       none
-  open_pr              scm.open_pr            -                    -        -        4.7       none
-  open_pr              scm.open_pr            -                    -        -        3.4       none
-  wait_checks          ci.wait_checks         -                    -        -        2.4       none
-  merge_pr             scm.merge              -                    -        -        5.8       none
-  verify_fix           fix.verify             -                    -        -        1.9       none
-  verify_fix           fix.verify             -                    -        -        1.8       none
-  verify_fix           fix.verify             -                    -        -        1.9       none
-
-  steps with a model recorded:  3/13
-  steps with tokens recorded:   3/13
-  steps with compute recorded:  13/13
-
-  run total: in=6150 out=111 compute=101.4s
-  every step recorded compute time: True
-  agent.run steps reporting usage: 3/3 (source: runtime_usage_output)
-
-  **PASS**
+  **NOT EVIDENCED**
 
 ## R4: a review run twice on unchanged input gives the same verdict
 
-  diff hash:      63cec8a2fee2f3349bb65075611445e7b293d2bca74c529f682f3e628f5a5eae
+  diff hash:      ee023ab17ec5474d737039e0760ff4ca58f380d9bfa54879590ae83136b9148b
   prior findings: 1 (f-r4-1)
+  declined:       0 ()
 
-  pass 1: outcome=findings_open findings=1 prior=1
-  pass 2: outcome=findings_open findings=1 prior=1
+  reviewer unavailable: Work/unparseable: the reviewer did not return a verdict object: 
 
-  same verdict:            True
-  same finding set:        True
-  prior findings passed:   True (1)
-
-  control: decline the finding, then re-run the verdict
-  after decline: outcome=completed findings=0
-  verdict changed when the prior findings changed: True
-  declined finding stays declined: True
-
-  **PASS**
+  **NOT EVIDENCED**: R4 needs a real reviewer model; the router call failed.
 
 ## R16: a mid-run edit to feature-flow.yaml is picked up by the next step
 
-  step N read:   ref=ff/ticket/spike2-final sha256:2f507523ca580eade86f36e3696f6d1473f0399466ff49664cf37cdbb7f129c8 (985 bytes)
-  mid-run edit:  committed 1bfe649a8c1b1386f5197d5b51676eca921c2f1b to ff/ticket/spike2-final
+  step N read:   ref=ff/ticket/spike-2-1 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+  mid-run edit:  committed fedf5e7572be09f4f93ecd31039ee4499efbdc78 to ff/ticket/spike-2-1
 
-  step N+1 read: ref=ff/ticket/spike2-final sha256:d4127d26e52d22bdc79a7e2bb991b019cab719e0b59d95bc5007eec2d32db951 (1015 bytes)
+  step N+1 read: ref=ff/ticket/spike-2-1 sha256:a62ee0c1b3d0fce344ebbc8dd708077a72f756f3d213d351a5feb013c84bf92e (955 bytes)
 
   hash changed between the two steps: True
-    2f507523ca580eade86f36e3696f6d1473f0399466ff49664cf37cdbb7f129c8 -> d4127d26e52d22bdc79a7e2bb991b019cab719e0b59d95bc5007eec2d32db951
+    a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c -> a62ee0c1b3d0fce344ebbc8dd708077a72f756f3d213d351a5feb013c84bf92e
   the edit is visible in the content the next step read: True
-  steps whose cost record carries the manifest hash: 12/13
+  steps whose cost record carries the manifest hash: 0/0
 
   **PASS**
 
 ## R8: a gate left open does not time out, and a reminder fires
 
-  workflow r8-1793204745 started; the gate is open and nobody has answered it
+  workflow r8-1793260640 started; the gate is open and nobody has answered it
 
   gate contract (docs/06 3.1): no timeout; reminders are timers, not timeouts
   heartbeat timeout in force: 00:00:30
@@ -146,7 +117,7 @@ Temporal localhost:7333, queue spike-2-real, run final-run.
 
   seeded finding: f-k4-1 (merge-bar/null-guard) at src/FeatureFlow.Example.Api/WidgetStore.cs
 
-  full diff hash: 00d9584b608afe0eaf0b1b0524487b786eccee3d9bf4e1f77ef2c38dfd0e9b97 (1049 bytes)
+  full diff hash: b78f2d67ff57dbc4f0b751451bef91329590b767ad900215d34bd9b0909c0e13 (3006 bytes)
 
   case 1: the fix lands with no regression test
     regression test present: False
@@ -200,33 +171,26 @@ Temporal localhost:7333, queue spike-2-real, run final-run.
 ## K4: the decline path (reason posted, finding not re-raised)
 
   seeded finding: f-decline-1 (merge-bar/magic-number)
-  open before decline: 2 (f-k4-2, f-decline-1)
+  open before decline: 3 (f-r4-1, f-k4-2, f-decline-1)
 
-  the run's PR #3 is unreadable; opening one for the decline
-  opened PR #4 on ff/ticket/final-run-decline-20261028162752 for the decline
-  decline posted on PR #4: https://github.com/ai-feature-flow/feature-flow-example/pull/4#issuecomment-6474611808
-  reason: accepted: the id sequence is internal to the store and is not part of the API contract
+  could not open a PR: Infrastructure/server_error 
+  NOT EVIDENCED: no pull request could be opened for the decline, so the
+  decline reason cannot be posted on a real PR.
 
-  finding recorded as declined: True
-  next review's prior findings: 1 (f-k4-2)
-  the declined finding was re-raised: False  (must be false)
-  verdict with the finding declined: completed (findings=0)
-  verdict is not findings_open: True
-
-  **PASS**
+  **NOT EVIDENCED**
 
 ## K5: approve a gate from chat, then drop one webhook and poll instead
 
   part 1: approve a gate from chat (inbound event path)
 
-  workflow k5-chat-1793204883 started; the gate is open
+  workflow k5-chat-1793260776 started; the gate is open
   gate open (workflow waiting): True
   chat approval delivered as a Temporal update (the inbound event path)
   result: completed
 
   part 2: drop the webhook deliberately, and poll instead
 
-  workflow k5-poll-1793204885 started; the gate is open
+  workflow k5-poll-1793260777 started; the gate is open
   the inbound event is deliberately NOT delivered (the webhook is dropped)
   gate open (workflow waiting): True
 
@@ -247,5 +211,6 @@ Temporal localhost:7333, queue spike-2-real, run final-run.
 ## Summary
 
 checks run:        10
-failed or not evidenced: 0
+failed or not evidenced: 3
+  R13, R4, K4-decline
 

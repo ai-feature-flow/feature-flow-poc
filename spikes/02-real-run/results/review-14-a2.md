@@ -163,7 +163,7 @@ so a later reader does not mistake it for the ruleset having been lost.
 ## Reproducing
 
 ```powershell
-$k = 'D:\Users\Stuart\keys\ai-feature-flow-agent-access.2026-10-28.private-key.pem'
+$k = $env:FF_GITHUB_APP_KEY        # path to the App private key, outside the repository
 
 # the three checks, with cleanup of the probe branch and pull request
 python tools\gh_ruleset_verify.py --app-id 5507595 --key $k --installation 176108462 --cleanup

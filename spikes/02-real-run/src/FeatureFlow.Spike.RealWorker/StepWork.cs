@@ -8,29 +8,36 @@ using System.Text;
 namespace FeatureFlow.Spike.RealWorker;
 
 /// <summary>
-/// Applies a step's work to the checkout and commits it.
+/// Applies an <b>orchestration</b> step's work to the checkout and commits it.
 ///
 /// <para>
-/// <b>Why this exists, stated plainly.</b> The model behind this spike's agent
-/// runtime is a local 7B/8B model reached through Ollama. Ollama returns a tool
-/// call as prose text rather than a structured <c>tool_use</c> block, so the
-/// runtime never acts on it: the agent describes the change instead of making
-/// it. That is an environment limitation, not a property of the engine.
+/// <b>Review 14 A3 changed what this is for.</b> It used to apply the content
+/// of every <c>agent.run</c> step, because the local Ollama models behind the
+/// runtime emitted tool calls as prose text rather than structured
+/// <c>tool_use</c> blocks, so the agent described the change instead of making
+/// it. The spike's first run therefore substituted canned content for the
+/// provider under test — the one provider the spike most needed to prove.
 /// </para>
 ///
 /// <para>
-/// So the step's work is applied here, and everything around it is real: the
-/// runtime is really started and polled, the commit is really made on the
-/// branch, the diff is really read back from the code host, CI is really
-/// dispatched, the PR is really opened and merged. The report names which part
-/// is model-authored and which is not.
+/// That is no longer necessary: <c>z-ai/glm-5.3-flash</c> through OpenRouter
+/// produces real structured tool calls, and the Copilot CLI authors real files
+/// with them. So <c>agent.run</c> steps now commit only what the agent wrote,
+/// and this class is used <b>only</b> for genuinely non-agent steps — the
+/// orchestration the engine performs itself, such as seeding the fixture's
+/// ticket plan before a run.
+/// </para>
+///
+/// <para>
+/// <see cref="RealActivities.RunAgentAsync"/> no longer calls this. The
+/// assertion in <c>Review14Checks</c> keeps it that way.
 /// </para>
 /// </summary>
 public static class StepWork
 {
     /// <summary>
-    /// Applies the work for a step and commits it. Returns the new commit sha,
-    /// or null when the step has no work to apply.
+    /// Applies the work for an orchestration step and commits it. Returns the
+    /// new commit sha, or null when the step has no work to apply.
     /// </summary>
     public static async Task<string?> ApplyAsync(RunContext context, Step step)
     {
@@ -126,134 +133,28 @@ public static class StepWork
     }
 
     /// <summary>
-    /// The change each step makes. Spike scope: a small, real change to the
-    /// fixture, so the run produces a real diff for review to look at.
+    /// The change an <b>orchestration</b> step makes.
+    ///
+    /// <para>
+    /// Review 14 A3: the four <c>agent.run</c> steps — <c>plan_spec</c>,
+    /// <c>design</c>, <c>implement</c> and <c>fix_findings</c> — are deliberately
+    /// absent. Their content is the agent's to write. A step id that is not
+    /// listed here gets no canned content, so adding one back is a visible
+    /// change to this file rather than an invisible substitution at run time.
+    /// </para>
     /// </summary>
     private static (string Path, string Content)? ChangeFor(string stepId) => stepId switch
     {
-        "plan_spec" => ("docs/ticket-plan.md",
-            "# Ticket plan\n\n" +
-            "Goal: expose the number of widgets held by the store.\n" +
-            "File to change: src/FeatureFlow.Example.Api/WidgetStore.cs\n" +
-            "Test to add: tests/FeatureFlow.Example.Api.UnitTests/WidgetStoreTests.cs\n"),
-
-        "design" => ("docs/ticket-plan.md",
-            "## Design\n\n" +
-            "`public int Count()` returns `_widgets.Count`.\n" +
-            "It belongs on WidgetStore because the store owns the collection and is the\n" +
-            "only type that may read it under its lock.\n"),
-
-        "implement" => ("src/FeatureFlow.Example.Api/WidgetStore.cs",
-            """
-            namespace FeatureFlow.Example.Api;
-
-            /// <summary>
-            /// In-memory store. The integration tier swaps this for the Postgres-backed
-            /// implementation, which is what makes the Docker-dependent tier meaningful.
-            /// </summary>
-            public sealed class WidgetStore
-            {
-                private readonly object _gate = new();
-                private readonly List<Widget> _widgets = new();
-                private int _nextId = 1;
-
-                public IReadOnlyList<Widget> All()
-                {
-                    lock (_gate)
-                    {
-                        return _widgets.ToList();
-                    }
-                }
-
-                public Widget? Find(int id)
-                {
-                    lock (_gate)
-                    {
-                        return _widgets.FirstOrDefault(w => w.Id == id);
-                    }
-                }
-
-                public Widget Add(string name)
-                {
-                    lock (_gate)
-                    {
-                        var widget = new Widget(_nextId++, name);
-                        _widgets.Add(widget);
-                        return widget;
-                    }
-                }
-
-                /// <summary>The number of widgets currently held by the store.</summary>
-                public int Count()
-                {
-                    lock (_gate)
-                    {
-                        return _widgets.Count;
-                    }
-                }
-            }
-            """),
-
-        "fix_findings" => ("tests/FeatureFlow.Example.Api.UnitTests/WidgetStoreTests.cs",
-            """
-            using FeatureFlow.Example.Api;
-            using Xunit;
-
-            namespace FeatureFlow.Example.Api.UnitTests;
-
-            [Trait("Category", "unit")]
-            public sealed class WidgetStoreTests
-            {
-                [Fact]
-                public void Add_assigns_sequential_ids()
-                {
-                    var store = new WidgetStore();
-
-                    var first = store.Add("alpha");
-                    var second = store.Add("beta");
-
-                    Assert.Equal(1, first.Id);
-                    Assert.Equal(2, second.Id);
-                }
-
-                [Fact]
-                public void Find_returns_null_for_unknown_id()
-                {
-                    var store = new WidgetStore();
-
-                    Assert.Null(store.Find(404));
-                }
-
-                [Fact]
-                public void All_reflects_added_widgets()
-                {
-                    var store = new WidgetStore();
-                    store.Add("alpha");
-
-                    var all = store.All();
-
-                    Assert.Single(all);
-                    Assert.Equal("alpha", all[0].Name);
-                }
-
-                /// <summary>
-                /// The regression test for the Count() finding. Without it the
-                /// fix.verify step fails (docs/06 10.1).
-                /// </summary>
-                [Fact]
-                public void Count_returns_the_number_of_widgets()
-                {
-                    var store = new WidgetStore();
-                    store.Add("alpha");
-                    store.Add("beta");
-
-                    Assert.Equal(2, store.Count());
-                }
-            }
-            """),
-
+        // No agent.run step appears here. See the header.
         _ => null,
     };
+
+    /// <summary>
+    /// Whether a step has canned content. Review 14 A3 asserts this is false for
+    /// every <c>agent.run</c> step, so a substitution cannot come back silently.
+    /// </summary>
+    public static bool HasChangeFor(string stepId) => ChangeFor(stepId) is not null;
+
 
     private static async Task<string?> HeadAsync(RunContext context)
     {

@@ -652,6 +652,13 @@ Authorisation:
   identity-provider groups, scoped by team or repository.
 - **Only the API authorises and writes the audit record.** The workflow trusts the
   API (DP8). Only the API and workers can reach the Temporal namespace.
+- **A decision's actor kind and roles come from the API's authenticated
+  identity, never from the request body.** A caller may not assert that it is a
+  human, or that it holds the approver role; the API derives both from the
+  authenticated session and writes them into the decision record. This is what
+  makes floor F1 enforceable: the merge step checks the actor kind the API
+  recorded, so a harness or policy actor cannot satisfy a human approval
+  (review 14 A1, review 15 A1).
 
 Chat integration (Slack first; Microsoft Teams later through the same interface):
 

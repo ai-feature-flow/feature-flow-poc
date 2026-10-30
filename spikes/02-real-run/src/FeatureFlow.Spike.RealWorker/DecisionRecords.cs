@@ -87,8 +87,25 @@ public static class MergeAuthorization
         string baseBranch,
         string defaultBranch,
         IEnumerable<DecisionRecord> decisions,
-        OrganisationConfiguration organisation)
+        OrganisationConfiguration organisation,
+        string? declaredDefaultBranch = null)
     {
+        // A1 / review 15. The default branch is authoritative from the code
+        // host. When the manifest declares a different one, that is the attack
+        // the floor exists to stop, so refuse and name the disagreement rather
+        // than resolving it in the agent's favour.
+        if (declaredDefaultBranch is not null &&
+            !string.Equals(declaredDefaultBranch, defaultBranch, StringComparison.OrdinalIgnoreCase))
+        {
+            return new MergeAuthorizationResult(
+                false,
+                OrganisationConfiguration.DefaultBranchMergeDecision,
+                0, 0,
+                $"REFUSED floor F1: feature-flow.yaml declares default branch "
+                + $"'{declaredDefaultBranch}' but the code host says '{defaultBranch}'; "
+                + $"scm.merge fails closed");
+        }
+
         var isDefaultBranch = string.Equals(
             baseBranch, defaultBranch, StringComparison.OrdinalIgnoreCase);
         var decisionType = isDefaultBranch

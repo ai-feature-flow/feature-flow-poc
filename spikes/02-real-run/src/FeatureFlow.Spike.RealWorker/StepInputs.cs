@@ -86,10 +86,9 @@ public static class Prompt
             ? "feature-flow.yaml was not readable on this branch."
             : $"feature-flow.yaml on {manifest.Ref} is {manifest.SizeBytes} bytes, hash sha256:{manifest.ContentHash}.";
 
-        // A concrete task, not an open-ended one. The spike's model is small, so
-        // the step must say exactly what to change and exactly what to run. An
-        // open-ended prompt makes the agent describe work instead of doing it,
-        // which produces no commit and no progress evidence.
+        // A concrete task, not an open-ended one. The step says exactly what to
+        // change and exactly what to run, so the agent's work is checkable: a
+        // commit either contains the change or it does not.
         var task = TaskFor(step.Id);
 
         return $"""
@@ -128,15 +127,16 @@ public static class Prompt
             "Count() method: its signature, what it returns, and why it belongs on WidgetStore.",
 
         "implement" =>
-            "Add a public method Count() to the WidgetStore class in " +
-            "src/FeatureFlow.Example.Api/WidgetStore.cs. It must return the number of " +
-            "widgets as an int. Place it immediately after the Add method.",
+            "Add a public method IsEmpty() to the WidgetStore class in " +
+            "src/FeatureFlow.Example.Api/WidgetStore.cs. It must return true when the " +
+            "store holds no widgets and false otherwise, as a bool. Place it " +
+            "immediately after the Count method.",
 
         "fix_findings" =>
             "Add a unit test to tests/FeatureFlow.Example.Api.UnitTests/WidgetStoreTests.cs " +
-            "named Count_returns_the_number_of_widgets. It must create a WidgetStore, add " +
-            "two widgets, and assert that Count() returns 2. Keep the [Trait(\"Category\", " +
-            "\"unit\")] attribute on the class.",
+            "named IsEmpty_is_true_for_a_new_store. It must create a WidgetStore, assert " +
+            "that IsEmpty() returns true, then add one widget and assert that IsEmpty() " +
+            "returns false. Keep the [Trait(\"Category\", \"unit\")] attribute on the class.",
 
         _ =>
             "Append one line to docs/ticket-plan.md noting that this step ran.",
@@ -147,20 +147,18 @@ public static class Prompt
     /// the model.
     ///
     /// <para>
-    /// The model behind this spike's runtime is a local 7B/8B model reached
-    /// through Ollama. It cannot reliably emit tool calls: Ollama returns the
-    /// tool call as prose text rather than a structured tool_use block, so the
-    /// runtime never acts on it. That is an environment limitation, not a
-    /// property of the engine.
+    /// <b>Review 14 A3: false.</b> It was true for the spike's first run,
+    /// because the local Ollama models behind the runtime emitted tool calls as
+    /// prose text rather than structured <c>tool_use</c> blocks, so the runtime
+    /// never acted on them and <c>StepWork</c> applied canned content instead.
     /// </para>
     ///
     /// <para>
-    /// So the step's <b>work</b> is applied by the runtime, and everything around
-    /// it stays real: the runtime is really started and polled, the commit is
-    /// really made on the branch, the diff is really read from the code host, CI
-    /// is really dispatched, the PR is really opened and merged. The report says
-    /// plainly which part is model-authored and which is not.
+    /// That is no longer the case. <c>z-ai/glm-5.3-flash</c> through OpenRouter
+    /// produces real structured tool calls, and the Copilot CLI authors real
+    /// files with them, so the agent writes the change and the engine commits
+    /// only what the agent wrote.
     /// </para>
     /// </summary>
-    public static bool WorkIsScripted => true;
+    public static bool WorkIsScripted => false;
 }

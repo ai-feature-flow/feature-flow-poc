@@ -8,9 +8,23 @@ namespace FeatureFlow.Spike.RealHarness;
 /// prior findings passed.
 ///
 /// <para>
-/// The verdict is a pure function of the diff hash, the prior findings and the
-/// checks, so running it twice on unchanged input must give the same answer.
-/// That is what makes this evidenceable rather than a claim about an LLM.
+/// <b>Review 14 A7.</b> This check used to pass by construction. The verdict was
+/// a pure function of the diff hash and the prior findings, so two passes on
+/// unchanged input were identical because there was no model in the loop to
+/// disagree. R4 exists precisely because LLM review gates were unstable in the
+/// prototype — a check that cannot fail does not test that.
+/// </para>
+///
+/// <para>
+/// It now runs a real reviewer model twice through the router and compares the
+/// verdicts. If they differ, that is reported as the finding rather than
+/// reconciled, because the honest answer is that the verdicts are unstable.
+/// </para>
+///
+/// <para>
+/// The control is unchanged and still matters: decline the finding and the
+/// verdict must change, which proves the verdict depends on the prior findings
+/// rather than being constant.
 /// </para>
 /// </summary>
 public static class CheckR4
@@ -35,30 +49,48 @@ public static class CheckR4
         Findings.Seed(context, finding);
 
         var diffHash = await CurrentDiffHashAsync(context);
+        var diffText = await CurrentDiffTextAsync(context);
         say($"  diff hash:      {diffHash ?? "(unresolved)"}");
 
         var prior = Findings.PriorFor(context, "review");
+        var declined = Findings.DeclinedIds(context);
         say($"  prior findings: {prior.Count} ({string.Join(", ", prior.Select(f => f.Id))})");
+        say($"  declined:       {declined.Count} ({string.Join(", ", declined)})");
         say("");
 
-        // Run the verdict twice on the same inputs.
-        var first = Findings.Verdict(diffHash, prior, "review");
-        var second = Findings.Verdict(diffHash, prior, "review");
+        // Two passes on the same inputs, through the real reviewer model.
+        var first = await context.Reviewer.ReviewAsync(
+            diffHash, diffText, prior, declined, "review", CancellationToken.None);
+        var second = await context.Reviewer.ReviewAsync(
+            diffHash, diffText, prior, declined, "review", CancellationToken.None);
 
-        say($"  pass 1: outcome={first.Outcome} findings={first.Findings.Count} " +
-            $"prior={first.PriorFindingIds.Count}");
-        say($"  pass 2: outcome={second.Outcome} findings={second.Findings.Count} " +
-            $"prior={second.PriorFindingIds.Count}");
+        if (!first.IsOk || !second.IsOk)
+        {
+            var error = (!first.IsOk ? first.Error : second.Error)!;
+            say($"  reviewer unavailable: {error.Class}/{error.Reason}: {error.Detail}");
+            say("");
+            say("  **NOT EVIDENCED**: R4 needs a real reviewer model; the router call failed.");
+            say("");
+            return 1;
+        }
+
+        var pass1 = first.Value!;
+        var pass2 = second.Value!;
+
+        say($"  pass 1: outcome={pass1.Outcome} findings={pass1.Findings.Count} " +
+            $"prior={pass1.PriorFindingIds.Count} model={pass1.Model ?? "(unreported)"}");
+        say($"  pass 2: outcome={pass2.Outcome} findings={pass2.Findings.Count} " +
+            $"prior={pass2.PriorFindingIds.Count} model={pass2.Model ?? "(unreported)"}");
         say("");
 
-        var sameOutcome = string.Equals(first.Outcome, second.Outcome, StringComparison.Ordinal);
-        var sameFindings = first.Findings.Count == second.Findings.Count &&
-                           first.Findings.Select(f => f.Id).SequenceEqual(second.Findings.Select(f => f.Id));
-        var priorPassed = first.PriorFindingIds.Count > 0;
+        var sameOutcome = string.Equals(pass1.Outcome, pass2.Outcome, StringComparison.Ordinal);
+        var sameFindings = pass1.Findings.Count == pass2.Findings.Count &&
+                           pass1.Findings.Select(f => f.Id).SequenceEqual(pass2.Findings.Select(f => f.Id));
+        var priorPassed = pass1.PriorFindingIds.Count > 0;
 
         say($"  same verdict:            {sameOutcome}");
         say($"  same finding set:        {sameFindings}");
-        say($"  prior findings passed:   {priorPassed} ({first.PriorFindingIds.Count})");
+        say($"  prior findings passed:   {priorPassed} ({pass1.PriorFindingIds.Count})");
         if (!sameOutcome) failures++;
         if (!sameFindings) failures++;
         if (!priorPassed) failures++;
@@ -78,13 +110,24 @@ public static class CheckR4
         var priorAfterDecline = Findings.PriorFor(context, "review")
             .Where(f => f.Id == finding.Id || !f.Id.StartsWith("f-k4-", StringComparison.Ordinal))
             .ToList();
+        var declinedAfter = Findings.DeclinedIds(context);
 
-        var afterDecline = Findings.Verdict(diffHash, priorAfterDecline, "review");
+        var afterDecline = await context.Reviewer.ReviewAsync(
+            diffHash, diffText, priorAfterDecline, declinedAfter, "review", CancellationToken.None);
 
-        say($"  after decline: outcome={afterDecline.Outcome} findings={afterDecline.Findings.Count}");
-        var changed = !string.Equals(first.Outcome, afterDecline.Outcome, StringComparison.Ordinal);
-        say($"  verdict changed when the prior findings changed: {changed}");
-        if (!changed) failures++;
+        if (!afterDecline.IsOk)
+        {
+            say($"  control reviewer unavailable: {afterDecline.Error!.Class}/{afterDecline.Error.Reason}");
+            failures++;
+        }
+        else
+        {
+            var changed = !string.Equals(pass1.Outcome, afterDecline.Value!.Outcome, StringComparison.Ordinal);
+            say($"  after decline: outcome={afterDecline.Value!.Outcome} " +
+                $"findings={afterDecline.Value!.Findings.Count}");
+            say($"  verdict changed when the prior findings changed: {changed}");
+            if (!changed) failures++;
+        }
 
         // And a declined finding is not re-raised: that is K4's decline path.
         var stillDeclined = Findings.IsDeclined(context, finding.Id);
@@ -103,5 +146,32 @@ public static class CheckR4
             context.CodeHostRepo, context.IntegrationBranch, context.Branch, CancellationToken.None);
 
         return diff.IsOk ? diff.Value!.ContentHash : null;
+    }
+
+    private static async Task<string> CurrentDiffTextAsync(RunContext context)
+    {
+        // The diff text is read from the checkout rather than through
+        // GetDiffAsync, which returns a reference only (DP10). The reviewer
+        // model needs the text; it is passed to the model and never written
+        // into workflow state.
+        var startInfo = new System.Diagnostics.ProcessStartInfo("git")
+        {
+            WorkingDirectory = context.WorkingDirectory,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+        startInfo.ArgumentList.Add("diff");
+        startInfo.ArgumentList.Add($"{context.IntegrationBranch}...{context.Branch}");
+
+        using var git = System.Diagnostics.Process.Start(startInfo);
+        if (git is null)
+            return "";
+
+        var text = await git.StandardOutput.ReadToEndAsync();
+        await git.WaitForExitAsync();
+
+        return git.ExitCode == 0 ? text : "";
     }
 }

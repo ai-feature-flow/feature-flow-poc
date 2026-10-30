@@ -202,9 +202,22 @@ public sealed partial class RealActivities
 
     /// <summary>
     /// R4: a review run twice on unchanged input gives the same verdict, with
-    /// prior findings passed. The verdict is derived from the diff hash and the
-    /// prior findings, so it is a pure function of its inputs — that is what
-    /// makes the check evidenceable rather than a claim.
+    /// prior findings passed.
+    ///
+    /// <para>
+    /// <b>Review 14 A7.</b> The verdict used to be derived from the diff hash
+    /// and the prior findings, which made it a pure function of its inputs and
+    /// therefore identical by construction — R4 passed without a model ever
+    /// being in the loop. It now calls a real reviewer model through the
+    /// router, so agreement between passes is a measurement rather than a
+    /// tautology.
+    /// </para>
+    ///
+    /// <para>
+    /// The verdict is deliberately not forced to agree. Two passes that
+    /// disagree are reported as a disagreement, because that is the finding R4
+    /// exists to detect.
+    /// </para>
     /// </summary>
     private async Task<AgentRunResult> RunReviewAsync(Step step)
     {
@@ -216,21 +229,43 @@ public sealed partial class RealActivities
             Context.CodeHostRepo, Context.IntegrationBranch, Context.Branch, CancellationToken.None);
 
         var diffHash = diff.IsOk ? diff.Value!.ContentHash : null;
+        var diffText = await DiffTextAsync(Context.IntegrationBranch, Context.Branch);
         var prior = Findings.PriorFor(Context, step.Id);
+        var declined = Findings.DeclinedIds(Context);
 
-        // The verdict is a pure function of (diff hash, prior findings, checks).
-        var verdict = Findings.Verdict(diffHash, prior, step.Id);
+        var reviewed = await Context.Reviewer.ReviewAsync(
+            diffHash, diffText, prior, declined, step.Id, CancellationToken.None);
+
+        ReviewVerdict verdict;
+        if (!reviewed.IsOk)
+        {
+            // A reviewer that cannot be reached is infrastructure, not a
+            // verdict. It is reported as failed with the reason named, rather
+            // than falling back to a hash-derived verdict that would make R4
+            // pass for the wrong reason.
+            Console.WriteLine($"STEP {step.Id}: reviewer unavailable: " +
+                              $"{reviewed.Error!.Class}/{reviewed.Error.Reason}: {reviewed.Error.Detail}");
+
+            return new AgentRunResult(
+                reviewed.Error!.Class == ErrorClass.Infrastructure ? "infrastructure" : Outcomes.Failed,
+                LastCommit: head,
+                ErrorReason: $"reviewer unavailable: {reviewed.Error!.Class}/{reviewed.Error.Reason}");
+        }
+
+        verdict = reviewed.Value!;
 
         Context.RecordCost(new StepCost(
             RunId: Context.RunId, StepId: step.Id, StepKind: step.Kind,
-            Model: null, RuntimeInstance: "review-local",
-            InputTokens: null, OutputTokens: null, Credits: null, CostUsd: null,
+            Model: verdict.Model, RuntimeInstance: "reviewer-model",
+            InputTokens: verdict.InputTokens, OutputTokens: verdict.OutputTokens,
+            Credits: null, CostUsd: verdict.CostUsd is double spent ? (decimal)spent : null,
             ComputeSeconds: (DateTimeOffset.UtcNow - startedAt).TotalSeconds,
-            UsageSource: "none", RecordedAt: DateTimeOffset.UtcNow,
+            UsageSource: "model_call", RecordedAt: DateTimeOffset.UtcNow,
             ManifestHash: manifest?.ContentHash));
 
         Console.WriteLine($"STEP {step.Id}: diffHash={diffHash} priorFindings={prior.Count} " +
-                          $"verdict={verdict.Outcome} findings={verdict.Findings.Count}");
+                          $"verdict={verdict.Outcome} findings={verdict.Findings.Count} " +
+                          $"model={verdict.Model ?? "(unreported)"}");
 
         Findings.Record(Context, step.Id, verdict);
 
@@ -287,7 +322,13 @@ public sealed partial class RealActivities
 
         // The invariant: a regression test is required unless the finding's
         // triage record carries an accepted "not applicable" reason.
-        var hasRegressionTest = Findings.HasRegressionTest(Context, finding?.Id);
+        //
+        // The test is detected in the diff the fixer actually produced, not
+        // read from a field only a check ever writes. Previously nothing on
+        // the real fixer path called AttachRegressionTest, so verify_fix
+        // failed on every fix and the run looped forever.
+        var hasRegressionTest = Findings.HasRegressionTest(Context, finding?.Id) ||
+                                DiffMentionsTest(await DiffTextAsync(Context.IntegrationBranch, Context.Branch));
         var notApplicable = finding is not null && Findings.NotApplicableReason(Context, finding.Id) is not null;
 
         var passed = hasRegressionTest || notApplicable;
@@ -480,19 +521,23 @@ public sealed partial class RealActivities
         if (!observed.IsOk)
             return Classified(step, startedAt, manifest, observed.Error!);
 
-        var defaultBranch = Manifest.DefaultBranch(manifest);
-        if (defaultBranch is null)
-        {
-            return Refused(
-                step, startedAt, manifest,
-                "REFUSED floor F1: repository default branch is unknown; scm.merge fails closed");
-        }
+        // F1 must not depend on a file the governed party can edit. The agent
+        // can write to the ticket branch, so it could declare another branch as
+        // the default and be judged by the weaker ticket policy. The default
+        // branch therefore comes from the code host, read at merge time.
+        var defaultBranchResult = await Context.CodeHost.GetDefaultBranchAsync(
+            Context.CodeHostRepo, CancellationToken.None);
+        if (defaultBranchResult.Error is not null)
+            return Classified(step, startedAt, manifest, defaultBranchResult.Error);
+
+        var defaultBranch = defaultBranchResult.Value!;
 
         var authorization = MergeAuthorization.Evaluate(
             observed.Value!.BaseBranch,
             defaultBranch,
             Context.Decisions.ReadAll(),
-            Context.Organisation);
+            Context.Organisation,
+            declaredDefaultBranch: Manifest.DefaultBranch(manifest));
         Console.WriteLine($"STEP {step.Id}: {authorization.Message}");
         if (!authorization.Allowed)
             return Refused(step, startedAt, manifest, authorization.Message);
@@ -599,6 +644,64 @@ public sealed partial class RealActivities
         var sha = await git.StandardOutput.ReadToEndAsync();
         await git.WaitForExitAsync();
         return git.ExitCode == 0 ? sha.Trim() : null;
+    }
+
+    /// <summary>
+    /// Whether a diff adds a test method. The K4 invariant is that a fix adds
+    /// a regression test; the evidence is the diff, not a field.
+    /// </summary>
+    private static bool DiffMentionsTest(string diffText)
+    {
+        if (string.IsNullOrWhiteSpace(diffText))
+            return false;
+
+        foreach (var line in diffText.Split('\n'))
+        {
+            if (!line.StartsWith('+') || line.StartsWith("+++", StringComparison.Ordinal))
+                continue;
+
+            if (line.Contains("[Fact]", StringComparison.Ordinal) ||
+                line.Contains("[Theory]", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// The diff text between two refs, read from the checkout.
+    ///
+    /// <para>
+    /// <c>GetDiffAsync</c> deliberately returns a reference rather than the
+    /// content, so a large aggregate diff never enters workflow state (DP10).
+    /// The reviewer model needs the text, and it runs inside an activity where
+    /// reading it is fine — the text goes to the model and is not written into
+    /// workflow state.
+    /// </para>
+    /// </summary>
+    private async Task<string> DiffTextAsync(string fromRef, string toRef)
+    {
+        var startInfo = new System.Diagnostics.ProcessStartInfo("git")
+        {
+            WorkingDirectory = Context.WorkingDirectory,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+        startInfo.ArgumentList.Add("diff");
+        startInfo.ArgumentList.Add($"{fromRef}...{toRef}");
+
+        using var git = System.Diagnostics.Process.Start(startInfo);
+        if (git is null)
+            return "";
+
+        var text = await git.StandardOutput.ReadToEndAsync();
+        await git.WaitForExitAsync();
+
+        return git.ExitCode == 0 ? text : "";
     }
 
     private AgentRunResult Failed(Step step, DateTimeOffset startedAt, FileContent? manifest, string reason)

@@ -16,12 +16,24 @@ namespace FeatureFlow.Spike.RealWorker;
 /// </summary>
 public sealed class RuntimeRegistry
 {
-    /// <summary>role -> runtime instance. From organisation.yaml roleMapping.</summary>
+    /// <summary>
+    /// role -> runtime instance. From organisation.yaml roleMapping.
+    ///
+    /// <para>
+    /// Review 14 A3: every role is on <c>copilot-cli</c>. <c>designer</c> and
+    /// <c>implementer</c> were on <c>claude-code</c>, but Claude Code rejects
+    /// the router's model with <c>[claude-code:unrecognized_model]</c> because it
+    /// validates model names against Anthropic's own list and speaks the
+    /// Anthropic Messages API rather than the OpenAI-compatible shape. The
+    /// product owner decided to report Claude Code as not evidenced on A3 and
+    /// proceed with Copilot CLI only.
+    /// </para>
+    /// </summary>
     private static readonly Dictionary<string, string> RoleMapping = new(StringComparer.OrdinalIgnoreCase)
     {
         ["planner"] = CopilotCliAgentRuntime.InstanceName,
-        ["designer"] = ClaudeCodeAgentRuntimeProvider.InstanceName,
-        ["implementer"] = ClaudeCodeAgentRuntimeProvider.InstanceName,
+        ["designer"] = CopilotCliAgentRuntime.InstanceName,
+        ["implementer"] = CopilotCliAgentRuntime.InstanceName,
         ["fixer"] = CopilotCliAgentRuntime.InstanceName,
         ["reviewer"] = CopilotCliAgentRuntime.InstanceName,
     };
@@ -42,23 +54,34 @@ public sealed class RuntimeRegistry
     /// <summary>
     /// Builds both instances. Model and endpoint are configuration, never
     /// template content (docs/09 11.1, brief lesson 5): they come from the
-    /// environment here, and from the organisation layer in production.
+    /// secrets store here, and from the organisation layer in production.
+    ///
+    /// <para>
+    /// Review 14 A3. The model and the router endpoint are resolved from the
+    /// secrets store <b>by reference</b> — <c>model-default</c> and
+    /// <c>model-router-endpoint</c> — and the router's key is resolved from
+    /// <c>openrouter-key-file</c>, which names a file outside the repository.
+    /// No credential value is ever in configuration, in code, or in the
+    /// repository (floor F2).
+    /// </para>
     /// </summary>
     public static RuntimeRegistry Create(
         ISecretsProvider secrets,
         SecretScrubber scrubber,
         string workingDirectory)
     {
-        var model = Environment.GetEnvironmentVariable("FF_MODEL") ?? "qwen2.5-coder:7b";
+        var model = ResolveSecret(secrets, "model-default") ?? "z-ai/glm-5.3-flash";
+        var endpoint = ResolveSecret(secrets, "model-router-endpoint")
+                       ?? "https://openrouter.ai/api/v1";
 
         // Copilot CLI speaks the OpenAI-compatible shape and appends
         // /chat/completions itself, so its base URL carries /v1. Claude Code
         // speaks the Anthropic Messages API and appends /v1/messages, so its
         // base URL does not. Both are configuration, not code.
         var copilotEndpoint = Environment.GetEnvironmentVariable("FF_MODEL_ENDPOINT_COPILOT")
-                              ?? "http://localhost:11434/v1";
+                              ?? endpoint;
         var claudeEndpoint = Environment.GetEnvironmentVariable("FF_MODEL_ENDPOINT_CLAUDE")
-                             ?? "http://localhost:11434";
+                             ?? endpoint;
 
         var workRoot = Path.Combine(workingDirectory, "..", "agent-runtime-work");
 
@@ -68,7 +91,7 @@ public sealed class RuntimeRegistry
                 Model: model,
                 Endpoint: copilotEndpoint,
                 EndpointType: "openai",
-                EndpointKeyReference: new SecretReference("secrets", "model-api-key"),
+                EndpointKeyReference: new SecretReference("secrets", "openrouter-key-file"),
                 WorkingRoot: workRoot),
             secrets: secrets,
             scrubber: scrubber);
@@ -77,7 +100,7 @@ public sealed class RuntimeRegistry
             new ModelGatewayCredentialBroker(
                 secrets,
                 scrubber: scrubber,
-                keyRef: new SecretReference("secrets", "model-api-key"),
+                keyRef: new SecretReference("secrets", "openrouter-key-file"),
                 grantable: new[]
                 {
                     GrantableScope.ForRepository(
@@ -128,5 +151,31 @@ public sealed class RuntimeRegistry
     {
         var slash = role.LastIndexOf('/');
         return slash >= 0 ? role[(slash + 1)..] : role;
+    }
+
+    /// <summary>
+    /// Reads one configuration value from the secrets store by reference.
+    ///
+    /// <para>
+    /// A value that names an existing absolute file is that file's content, so
+    /// a key reference can yield the key without the key ever being inlined —
+    /// the same rule <c>LocalFileSecretsProvider</c> applies. A missing key is
+    /// null rather than an exception, so the caller names its own fallback.
+    /// </para>
+    /// </summary>
+    private static string? ResolveSecret(ISecretsProvider secrets, string key)
+    {
+        try
+        {
+            var resolved = secrets.ResolveAsync(
+                new SecretReference("secrets", key), CancellationToken.None)
+                .GetAwaiter().GetResult();
+
+            return resolved.IsOk ? resolved.Value!.Value.Trim() : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 }

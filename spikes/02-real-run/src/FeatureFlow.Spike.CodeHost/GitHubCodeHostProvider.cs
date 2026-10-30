@@ -326,6 +326,30 @@ public sealed class GitHubCodeHostProvider : ICodeHostProvider
             Url: dto.HtmlUrl));
     }
 
+    public async Task<ProviderResult<string>> GetDefaultBranchAsync(RepoRef repo, CancellationToken ct)
+    {
+        if (repo is null) throw new ArgumentNullException(nameof(repo));
+
+        var credential = await GetCredentialAsync(repo, ct).ConfigureAwait(false);
+        if (credential.Error is not null) return ProviderResult<string>.Fail(credential.Error);
+
+        var result = await SendAsync<Dto.Repository>(
+            new HttpRequestMessage(HttpMethod.Get, $"repos/{repo.FullName}"),
+            credential.Value!.Token, "get_default_branch", ct).ConfigureAwait(false);
+        if (result.Error is not null) return ProviderResult<string>.Fail(result.Error);
+
+        var branch = result.Value!.DefaultBranch;
+        if (string.IsNullOrWhiteSpace(branch))
+        {
+            // Fails closed: an unknown default branch must never be treated as
+            // "not the default branch", which would apply the weaker policy.
+            return ProviderResult<string>.Work(
+                "not_found", "the code host did not report a default branch");
+        }
+
+        return ProviderResult<string>.Ok(branch);
+    }
+
     public async Task<ProviderResult<Unit>> ClosePullRequestAsync(PullRequestRef pr, CancellationToken ct)
     {
         if (pr is null) throw new ArgumentNullException(nameof(pr));
