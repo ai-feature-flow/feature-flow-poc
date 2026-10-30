@@ -289,16 +289,13 @@ The first twelve were accepted at the review gate.
 
 ## 8. Open questions
 
-1. **Keeping uncommitted work on resume** (requirement D5). When a worker
-   crashed mid-step, the agent restarted from scratch instead of resuming, and its
-   uncommitted edits were thrown away. Should a resumed step restore the
-   sandbox's uncommitted files, or should agents be required to make
-   work-in-progress commits so nothing is uncommitted for long?
+None open.
 
 ### Answered
 
 | Question | Answer |
 |---|---|
+| An agent's unfinished work when its worker crashes (requirement D5): restore uncommitted files, or require work-in-progress commits? | **Keep it simple; this is rare.** The agent runs in its own sandbox, separate from the worker, so routine worker restarts such as deploys cost nothing (already the design; the spikes ran both on one machine, which is why Spike 3's crash test lost work). On resume, uncommitted files are kept if the sandbox survived, and the agent's conversation is reloaded (fix the bug where resume relied on the crashed worker's memory). If the sandbox is lost, the step restarts from the last pushed commit. No snapshots; revisit only if real runs show sandbox loss is common. Product owner, 2026-10-31 |
 | A stuck ticket holding the merge lock blocks every other merge (requirement D3). Lease, or release on stall? | **Neither: drop the lock.** Tickets merge like developers do: catch up, re-test if changed, merge; a merge onto a moved base is refused by Git and the ticket catches up again, escalating after about 3 tries. Agents never hold a push credential; the engine pushes and merges. See `docs/20-merge-design.md`. Product owner, 2026-10-31 |
 | What should happen when a change is too big for the reviewer? (requirement D4) | **Redesign review instead.** The reviewer becomes a read-only agent that reviews the branch with full repository access; nothing is pre-loaded into its prompt, so there is no prompt size limit, and the engine checks it opened every changed file. See `docs/19-code-review-design.md`. Product owner, 2026-10-31 |
 | Should ticket reviews get the epic's contract? | **Yes.** Part of the same review design (`docs/19`, point 8). Product owner, 2026-10-31 |
