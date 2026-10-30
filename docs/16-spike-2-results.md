@@ -564,11 +564,11 @@ running, and each is recorded in the evidence file.
 - **R1:** the subscription token is in the agent's environment, and so are the
   agent's tools. This is the same gap as Spike 2's OpenRouter key (section 10).
   Version 1 still needs a proxy or per-run credential.
-- **Proposed design requirement:** a run that ends without reaching an `end:`
-  route must not report `completed`. Finding 1 shows this is easy to get wrong;
-  `docs/08` is not yet changed, pending the product owner.
+- **Design requirement R6** (`docs/08` 1.3): a run that ends without reaching an
+  `end:` route must not report `completed`. Finding 1 shows this is easy to get
+  wrong.
 - The merge approval is the harness's `--human-approvers` stand-in acting on
   the product owner's standing instruction, not a person at the gate.
 - The interpreter fix is not versioned for Temporal replay (a production
-  engine would use `Workflow.Patched`), and Spike 1's own suite was not re-run
-  against it.
+  engine would use `Workflow.Patched`). Spike 1's nine replay fixtures were
+  re-run against it on 2026-10-30 and all pass.
