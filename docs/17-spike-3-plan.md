@@ -490,7 +490,7 @@ None open.
 
 | Question | Answer |
 |---|---|
-| Merge lock span | **Hold it across forward, rerun and merge** (section 4.3); amend `docs/06` 6.5 after Spike 3. Product owner, 2026-10-30 |
+| Merge lock span | **Hold it across forward, rerun and merge** (section 4.3); amend `docs/06` 6.5 after Spike 3. Product owner, 2026-10-30. **Superseded 2026-10-31:** the lock is dropped for version 1; see `docs/20-merge-design.md` |
 | The findings ledger (`docs/16` 8, still-open 1) | **L1 to L4 accepted as the version 1 design position now** (section 6.5). Product owner, 2026-10-30 |
 | E2 thresholds | **Accepted** (section 6.4), conditional on the pilot, which supports them (section 6.6). Product owner, 2026-10-30 |
 | Starting the build | **After the pilot and the N0 interpreter fix; then build, run and report without stopping unless a major decision is needed.** Product owner, 2026-10-30 |

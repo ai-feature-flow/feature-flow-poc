@@ -289,13 +289,7 @@ The first twelve were accepted at the review gate.
 
 ## 8. Open questions
 
-1. **A stuck merge-lock holder** (requirement D3). Only one ticket may merge into
-   the integration branch at a time, and it holds a lock while it does. Today the
-   lock is freed only when the holding ticket's workflow closes, so a holder that
-   is still open but stuck blocks every other merge. Should it lose the lock after
-   a time limit it must keep renewing (a lease), or when the engine marks it as
-   stalled?
-2. **Keeping uncommitted work on resume** (requirement D5). When a worker
+1. **Keeping uncommitted work on resume** (requirement D5). When a worker
    crashed mid-step, the agent restarted from scratch instead of resuming, and its
    uncommitted edits were thrown away. Should a resumed step restore the
    sandbox's uncommitted files, or should agents be required to make
@@ -305,6 +299,7 @@ The first twelve were accepted at the review gate.
 
 | Question | Answer |
 |---|---|
+| A stuck ticket holding the merge lock blocks every other merge (requirement D3). Lease, or release on stall? | **Neither: drop the lock.** Tickets merge like developers do: catch up, re-test if changed, merge; a merge onto a moved base is refused by Git and the ticket catches up again, escalating after about 3 tries. Agents never hold a push credential; the engine pushes and merges. See `docs/20-merge-design.md`. Product owner, 2026-10-31 |
 | What should happen when a change is too big for the reviewer? (requirement D4) | **Redesign review instead.** The reviewer becomes a read-only agent that reviews the branch with full repository access; nothing is pre-loaded into its prompt, so there is no prompt size limit, and the engine checks it opened every changed file. See `docs/19-code-review-design.md`. Product owner, 2026-10-31 |
 | Should ticket reviews get the epic's contract? | **Yes.** Part of the same review design (`docs/19`, point 8). Product owner, 2026-10-31 |
 | Does the post-hoc full-diff R4 series count for E2? | **No.** It stays reported as post hoc. E2 is judged on a fresh, pre-registered replication with D4 fixed in the engine (section 3.1), which met every threshold. Orchestrator decision under the product owner's standing instruction, 2026-10-31; open to review |
