@@ -1,15 +1,20 @@
 # JSON Schema draft: plans and patches
 
-Status: second draft. Date: 2026-10-27. Deliverable 2 of
-`docs/briefs/brief-02-workflow-language.md`.
+Status: third draft. Date: 2026-10-31. Deliverable 2 of
+`docs/briefs/brief-02-workflow-language.md` (the workflow language brief).
 
-**Review 09 applied.** Two separate documents: a plan schema and a patch schema
-(E4). The step kind enum is generated from `docs/06` (A1). Inputs are typed per
-step kind (answer 5). `patches` is removed from the plan (E4). `base_revision`
-replaces `planVersion` (E3). Terminal directives are distinct from step ids (B2).
+The machine-checkable shape of a plan and a plan patch, as JSON Schema.
+`docs/09` (the workflow language) owns what the fields mean; `docs/06` (the step
+catalogue) owns the step kinds and their inputs and outcomes.
 
-Companion to `docs/09-workflow-language.md`, which owns the semantics. This
-document owns the machine-checkable shape.
+| Section | Contents |
+|---|---|
+| 1 | The two document types |
+| 2 | Plan schema |
+| 3 | Patch schema |
+| 4 | Typed inputs per step kind |
+| 5, 6 | Example plan and patch |
+| 7 | Open questions |
 
 ---
 
@@ -18,11 +23,10 @@ document owns the machine-checkable shape.
 | Document | `kind` | When it exists |
 |---|---|---|
 | Plan | `Plan` | One per plan revision. Immutable once written |
-| Plan patch | `PlanPatch` | One per re-plan or steering action |
+| Plan patch | `PlanPatch` | One per re-plan or steering action. Applied to a plan to produce the next revision |
 
-A patch is never embedded in a plan. The first draft had both a `patches` array
-inside the plan and a separate patch form, and its own design note contradicted
-the array.
+A patch is never embedded in a plan (review 09 E4): a plan has no `patches`
+array.
 
 ---
 
@@ -197,7 +201,7 @@ the array.
         },
         "additionalProperties": false
       },
-      "description": "Small typed values published into workflow state. Never artifact content (review 10 A3)"
+      "description": "Small typed values published into workflow state. Never artifact content (review 10 A3). The cap is a starting value; Spike 2 measured at most 5 entries and 71 bytes per value (docs/16 section 2)"
     },
     "Directive": {
       "type": "object",
@@ -254,17 +258,24 @@ the array.
 
 ### 2.1 Notes on the plan schema
 
-- **`Step.id` must not equal a step kind.** The `not: { enum: [...] }` clause is
-  written as `$stepKinds` above; in the real schema it is the same list as
-  `StepKind`. This is what makes `end: completed` unambiguous (B2).
-- **`routes` is required on every step.** An unrouted outcome is a blocking error,
-  and the schema cannot express "every outcome this kind can return" on its own,
-  so that check is in the validator, not the schema (`docs/12` section 2).
-- **`inputs` is `type: object` with no per-kind typing in this draft.** Review 09
-  answer 5 asks for typed inputs per kind. Section 4 gives the mechanism; the
-  full per-kind input schemas are generated from `docs/06` and are not written out
-  here, because they would duplicate that document and then drift from it.
-- **`LibraryRef` is one format** (D8). The first draft had three.
+- **A step id must not equal a step kind** (review 09 B2). The
+  `not: { enum: [...] }` clause is written as `$stepKinds` above; in the real
+  schema it is the same list as `StepKind`. This is what keeps a terminal
+  directive such as `{ end: completed }` distinct from a step id.
+- **`routes` is required on every step.** An outcome the kind can return but the
+  step does not route is a blocking error. JSON Schema cannot express "every
+  outcome this kind can return", so the validator checks that, not the schema
+  (`docs/12` section 2, the validation table, check 10). Section 7.1 records a
+  conflict with route-less parallel branches.
+- **`inputs` is an untyped object here.** Inputs are typed per step kind
+  (review 09, answer 5). Section 4 gives the mechanism. The per-kind input
+  schemas are generated from `docs/06` and are not written out here, so they
+  cannot drift from it.
+- **`LibraryRef` has one format**, `package[@version]:type/name` (review 09 D8;
+  `docs/11` section 3).
+- **No merge-lock fields.** The schema never had any, and the merge design
+  (`docs/20`: no lock; catch up, re-test if changed, merge) needs none. The
+  catch-up step's `branch_changed` result is an ordinary entry in `outputs`.
 
 ---
 
@@ -330,9 +341,9 @@ the array.
           ]
         },
         "target": { "type": "string" },
-        "step": { "$ref": "plan/v1#/$defs/Step" },
+        "step": { "$ref": "https://feature-flow.dev/schemas/plan/v1#/$defs/Step" },
         "inputs": { "type": "object" },
-        "limits": { "$ref": "plan/v1#/$defs/Limits" },
+        "limits": { "$ref": "https://feature-flow.dev/schemas/plan/v1#/$defs/Limits" },
         "role": { "type": "string" },
         "branch": { "type": "string" },
         "on_other": { "type": "string" },
@@ -370,9 +381,8 @@ the array.
 
 ## 4. Typed inputs per step kind
 
-Review 09 answer 5: inputs are typed per step kind, from the catalogue.
-
-The mechanism is a schema per kind, selected by `kind`:
+Inputs are typed per step kind, from the step catalogue (review 09, answer 5).
+The mechanism is one schema per kind, selected by `kind`. For `agent.run`:
 
 ```json
 {
@@ -390,7 +400,7 @@ The mechanism is a schema per kind, selected by `kind`:
               "task_ref": { "$ref": "#/$defs/LibraryRef" },
               "write_access": {
                 "enum": ["none", "branch", "repository"],
-                "description": "Optional TIGHTENING only. Defaults to the role's value. A step may never exceed its role (review 10 A1, review 11 A4)"
+                "description": "Optional TIGHTENING only. Defaults to the role's value. A step may never exceed its role (review 10 A1, review 11 A4). Governs what the agent may change in its sandbox; the agent never holds a credential that can push, and the engine pushes for it (DR13, docs/20)"
               },
               "bindings": { "type": "object" },
               "resume_strategy": { "type": "string" }
@@ -405,9 +415,8 @@ The mechanism is a schema per kind, selected by `kind`:
 ```
 
 The full set is one `if`/`then` per kind, generated from `docs/06`. It is not
-written out in this document for the reason given in section 2.1: it would
-duplicate `docs/06` and drift from it. **The generator, not the document, is the
-deliverable.**
+written out here, for the reason in section 2.1. **The generator, not this
+document, is the deliverable.**
 
 ---
 
@@ -523,20 +532,34 @@ deliverable.**
 }
 ```
 
-No `routes` on the branch: it reports its terminal outcome to the join, and
-`replan_parent` is handled by the interpreter (review 11 A1).
+The added branch has no `routes`: a parallel branch reports its terminal outcome
+to the join, and a child's request to re-plan its parent (`replan_parent`) is
+handled by the interpreter (review 11 A1). This conflicts with `routes` being
+required on every step (section 7.1).
 
 ---
 
 ## 7. Open questions
 
-None open. Every question from the first and second drafts was answered in review
-10 or 11:
+### Answered
 
 | Question | Answer |
 |---|---|
-| Per-kind input schemas: generated or hand-written | **Generated.** In implementation the catalogue becomes one machine-readable YAML file that `docs/06` and the schemas are both generated from. Recorded as an implementation task, not in scope for this brief |
+| Per-kind input schemas: generated or hand-written | **Generated.** In implementation the catalogue becomes one machine-readable YAML file that `docs/06` and the schemas are both generated from. An implementation task |
 | `$ref` across documents | Cross-document `$ref` in source; publish a bundled single file |
-| `schemaVersion` versus `apiVersion` | Redundant. `apiVersion: feature-flow/v1` **is** the plan schema version; `schemaVersion` is dropped, and a package's `requires.plan_schema_version` is expressed as an `apiVersion` |
-| Richer input types | Yes: inputs are typed per step kind, from the catalogue (section 4) |
+| `schemaVersion` versus `apiVersion` | `apiVersion: feature-flow/v1` **is** the plan schema version. `schemaVersion` is dropped, and a package's `requires.plan_schema_version` is expressed as an `apiVersion` |
+| Richer input types | Inputs are typed per step kind, from the catalogue (section 4) |
 | Reference format | One format, `package[@constraint]:type/name` (`docs/11` section 3) |
+| The `outputs` cap (16 entries, 256 bytes per value) | Kept as a starting value. Spike 2 measured at most 5 entries and 71 bytes (`docs/16` section 2) |
+
+### 7.1 Still open
+
+Found while checking the schema against the worked examples in `docs/13`. Not
+resolved here, because no decision covers them.
+
+| # | Question | Effect today |
+|---|---|---|
+| 1 | `Step` requires `routes`, but a parallel branch carries no routes by design (review 11 A1), and a step added by `add_chain` gets its routes from the chain | Every patch in section 6 and in `docs/13` fails schema validation. Options: make `routes` optional for steps inside a patch, or for `run.child` branches |
+| 2 | `Limits` has no `correction_turns` (the number of chances an agent gets to fix a malformed artifact), but `docs/09` and `docs/13` example 1 use it | `docs/13` example 1 fails schema validation |
+| 3 | A patch's `change_route` writes the target `to` as a string (`"end: completed"`), but a plan's routes use the `Directive` mapping (`{ end: completed }`, review 10 B9) and `{ resume: true }` | The two documents type the same thing differently |
+| 4 | `review.run` inputs under the review design (`docs/19`: the reviewer reads the branch itself, so no diff is passed) | None here: per-kind inputs are generated from `docs/06` section 8.2. Listed so the generator picks up the change |
