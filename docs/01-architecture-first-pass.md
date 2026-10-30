@@ -1262,3 +1262,18 @@ with each risk's current mitigation.
 | R18 | A long sandbox command is lost when the worker crashes, even though the sandbox survives | Commands are started and polled, not awaited: `StartCommandAsync` returns a handle and `AttachCommandAsync` re-attaches to a running command |
 | R19 | An unreachable hook endpoint denies every tool call, so the agent flails or gives up with a wrong outcome | Unreachable is distinguished from denied: the hook client retries and holds the tool call for a bounded time, then the session stops in a resumable state classified as infrastructure |
 | R20 | Polling inflates history: one short activity per poll adds hundreds of events for a single long step | Poll **inside one long-running activity** that loops and heartbeats. Spike 1 measured one activity and 11 events for a 60-second polled step (`docs/15` section 6.2) |
+
+---
+
+## 10. Open questions
+
+Raised while bringing this document up to date on 2026-10-31. Each needs a
+product owner decision.
+
+| # | Question |
+|---|---|
+| 1 | **A lost sandbox and the agent's conversation.** When the sandbox is lost, the step restarts from the last pushed commit. Claude Code keeps its conversation on the sandbox's disk, so it is lost too unless the engine also stores the conversation elsewhere. Should a restarted step get its conversation back, or start a fresh one? |
+| 2 | **Gate waits in the interpreter loop.** The loop sketch in section 3.1 waits for a human decision before starting other ready steps. With requirement DR7 (start a ready step as soon as a slot frees) the loop should not block on a gate. In practice gates sit in child ticket runs, so the parent is not held up, but the sketch should say so |
+| 3 | **Which base does an epic review compare against inside a project?** The review design (`docs/19`) reviews an epic's integration branch against `main`. With the project level, an epic merges into its project branch. Should the epic review compare against the project branch, and is there a project-level review against `main`? |
+| 4 | **Approval when the default-branch merge setting is relaxed.** The default-branch merge setting (floor F1) defaults to "a human merges". If an organisation lets the engine merge into `main`, is a human approval gate still required before it does, or none? |
+| 5 | **Where work-in-progress pushes go.** Commits are pushed at work-in-progress points during a step, and a failed step's commits go to a hidden reference. Do work-in-progress pushes during a running step go to the ticket branch, or to the hidden reference until the step succeeds? |
