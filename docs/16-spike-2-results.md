@@ -1,22 +1,32 @@
 # Spike 2 results: one real ticket run
 
-Written 2026-10-28. Revised 2026-10-29 after review 14.
+Written 2026-10-28. Revised 2026-10-29 after review 14, and 2026-10-30 after
+reviews 15 and 16.
+
+**Spike 2 is closed.** Review 16, 2026-10-30: *"Spike 2 has answered its
+question: yes, the design is feasible against real providers."*
 
 **Question** (`docs/08` 2.2): does one ticket run end to end against real
 providers, on a real repository?
 
-**Answer: partly.** The plumbing is real and verified against live systems, and
-an agent now authors the change. But the first run's exit criterion was **not**
-met: floor F1 was bypassed, and the agent's output was canned content rather
-than model-authored work. Both are fixed and re-run; the corrected state is
-below, and section 9 records what remains open.
+**Answer: yes, the design is feasible.** A model authored the change (Copilot
+CLI on `z-ai/glm-5.3-flash` through OpenRouter — `WidgetStore.IsEmpty()` and its
+regression test), the plumbing around it is real, and a PR was merged through
+the engine (PR #3). The two halves were shown in different runs; review 16
+accepted that as enough for feasibility.
 
-**What is now evidenced.** One ticket ran the real 17-step `ticket-delivery`
-plan against real GitHub and real GitHub Actions, with the `copilot-cli`
-runtime on `z-ai/glm-5.3-flash` through OpenRouter **authoring the change**
-(commit `2c04e04`, `WidgetStore.IsEmpty()`) and the fixer authoring its
-regression test (commit `1b248db`). The run targeted the integration branch
-`ff/epic/spike-2`, not `main`. Cost is known from the record store.
+**How the answer got here.** The first run claimed the exit criterion was met. It
+was not: floor F1 was bypassed, and the agent's output was canned content rather
+than model-authored work. Review 14 caught both. They are fixed and re-run, and
+the corrected state is below. Section 9 records what review 14 changed, and
+section 10 carries the design requirements the spike produced.
+
+**What is evidenced.** One ticket ran the real 17-step `ticket-delivery` plan
+against real GitHub and real GitHub Actions, with the `copilot-cli` runtime
+**authoring the change** (commit `2c04e04`, `WidgetStore.IsEmpty()`) and the
+fixer authoring its regression test (commit `1b248db`). The re-run targeted the
+integration branch `ff/epic/spike-2`, not `main`. Cost is known from the record
+store.
 
 | Deliverable | Where |
 |---|---|
@@ -396,14 +406,20 @@ recorded here, and the new questions they raise are listed below.
 | 4 | Closed PRs #1–#4 | Leave them as the example's history |
 | 5 | `max_context_tokens` for Copilot CLI | Not needed for version 1. The runtime's usage output is enough; record it as unknown |
 
+### Answers from reviews 15 and 16
+
+| # | Question | Answer |
+|---|---|---|
+| 2 | Claude Code cannot reach OpenRouter | **Deferred by the product owner, 2026-10-29.** No Anthropic credential on the machine, so Copilot CLI is used. The runtime stays pluggable. **Not a spike gap** |
+| 3 | The `administration` permission lets the app edit the ruleset | **Parked, to be done shortly.** Recorded as design requirement R3: code host protection is configured by an identity the engine does not hold |
+| 4 | Is a larger `insert_after` trial worth running? | **No.** Review 16: spikes prove feasibility; production concerns are recorded as design requirements, not fixed in spike code |
+| — | B4 (the `docs/15` 6.3 slot correction) and the K4 decline-path re-run | **Do them only if Spike 3 needs them** |
+
 ### Still open
 
 | # | Question |
 |---|---|
-| 1 | **R4 is genuinely unstable with a real reviewer model** — a fixed finding is re-raised, and a new finding appears on unchanged input. Is this acceptable for version 1, or does the review loop need a stability mechanism (for example, requiring two agreeing passes before a finding is raised)? |
-| 2 | Claude Code cannot reach OpenRouter, so one of the two runtimes is unevidenced on A3. Should we obtain an Anthropic key, or accept `copilot-cli` as the only evidenced runtime for version 1? |
-| 3 | The `administration` permission lets the app edit the very ruleset that protects `main`. Accept the residual risk, or move to an org-level ruleset / owner-held credential? |
-| 4 | The `insert_after` gap (20% vs 25%) is within one trial of noise. Is a larger trial worth running, or is the qualitative finding (planners pick targets that strand protected steps) enough? |
+| 1 | **R4 is genuinely unstable with a real reviewer model** — a fixed finding is re-raised, and a new finding appears on unchanged input. Is this acceptable for version 1, or does the review loop need a stability mechanism (for example, requiring two agreeing passes before a finding is raised)? Review 16 says the findings ledger's handling of re-raised findings is a Spike 3 or design question |
 
 ---
 
@@ -427,4 +443,49 @@ recorded.
 | B3 | Closed PRs on the fixture repo | **Noted.** Left as the example's history, per the product owner. |
 | B4 | `docs/15` 6.3 slot measurement inconsistent | **Open.** Not started; carried below. |
 
-**Not yet done:** B4, the Spike 1 correction — `docs/15` 6.3 says "roughly 10 activities wait" at 20 against 10, but its table shows 5 and 6; peak never above 9 of 10, and 25 activities for 20 runs are unexplained. This needs the third repetition and then a pool-sizing note in `docs/07`. It is independent of the Spike 2 exit criterion, which is why it is still open.
+**Not yet done:** B4, the Spike 1 correction — `docs/15` 6.3 says "roughly 10 activities wait" at 20 against 10, but its table shows 5 and 6; peak never above 9 of 10, and 25 activities for 20 runs are unexplained. Review 16 says do it only if Spike 3 needs it.
+
+---
+
+## 10. Design requirements the spike produced
+
+Review 16 decided that production concerns found during a spike are recorded as
+design requirements, not fixed in spike code. These four are now in `docs/08`
+section 1.3 and `docs/01` section 4.6.
+
+| # | Requirement | Where recorded |
+|---|---|---|
+| R1 | **Model credentials never enter the agent's environment.** Spike 2 passed the OpenRouter key as an environment variable with all tools allowed. Version 1 uses a proxy that adds the key, or per-run keys with a limit and expiry | `docs/01` 4.6 |
+| R2 | **The F1 floor is enforced by the engine at merge time**, reading the base and default branch from the code host, and backed by code host protection on the default branch | `docs/08` 1.3 |
+| R3 | **Code host protection is configured by an identity the engine does not hold.** The engine only checks that the protection exists | `docs/08` 1.3 |
+| R4 | **Review verdicts are unstable with a real model.** The findings ledger's handling of re-raised findings is a Spike 3 or design question | `docs/08` 1.2 and 1.3 |
+
+**The one that matters most is R4.** It is the prototype's lesson, now measured
+rather than remembered: with a real model in the review loop, the same diff
+produces different findings on different passes. Passing prior findings makes
+verdicts *more* stable, not stable. Whether the design needs a stability
+mechanism is the open question Spike 3 inherits.
+
+---
+
+## 11. What Spike 3 inherits
+
+Review 16: *"Propose the Spike 3 plan (`docs/08` 2.3, concurrent tickets with the
+seeded cross-ticket defect) in light of what Spikes 1 and 2 changed, before
+building it."*
+
+What changed that Spike 3 should account for:
+
+1. **The provider seam holds.** Spike 2 replaced the fake sandbox with real
+   providers behind `ISpikeActivities` without touching the workflow. Spike 3 can
+   add providers the same way.
+2. **A real model is available**, through OpenRouter on `copilot-cli`. Spike 3 can
+   exercise model-authored work from the start rather than discovering late that
+   it cannot.
+3. **R4 instability is real.** A cross-ticket review at epic scope will face the
+   same instability, and the seeded defect makes it measurable — which is a reason
+   to design the measurement deliberately rather than inherit it.
+4. **F1 and code host protection are settled** as design requirements R2 and R3,
+   so Spike 3 should not re-litigate them.
+5. **Claude Code is deferred, not dropped.** The runtime stays pluggable; if an
+   Anthropic credential appears, the second instance is already registered.

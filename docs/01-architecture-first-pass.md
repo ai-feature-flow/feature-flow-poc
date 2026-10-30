@@ -491,6 +491,19 @@ the engine waits for it; otherwise the human approves in the console or chat and
 the app merges. The audit record shows the bot as actor and the human as
 approver.
 
+**Model credentials never enter the agent's environment** (review 16, R1). Spike 2
+passed the model router key to the agent as an environment variable with all tools
+allowed, which means any tool the agent runs can read it. Version 1 uses one of:
+
+- a **local proxy** that adds the key to outbound model requests, so the agent
+  holds no secret at all; or
+- **per-run keys** issued by the router with a spend cap and an expiry.
+
+The residual risk of the proxy form is that the agent can still call the proxy;
+the residual risk of the per-run key form is that the key is in the environment
+for the life of the step. Whichever is chosen, the choice and its residual risk
+are recorded rather than assumed.
+
 ### 4.7 Windows support: deferred, with hooks in version 1
 
 Decided (review 03, Q9). Windows-only repositories are required later, not in

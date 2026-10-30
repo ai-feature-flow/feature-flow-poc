@@ -68,9 +68,22 @@ noting because it is the second time a fix for one risk has introduced another.
 | Risk | Why it is residual |
 |---|---|
 | R14 | Windows support is deferred. The spike decides whether pattern C holds there at all |
-| R4 | Passing prior findings makes verdicts *more* stable, not stable. Whether it is enough is unproven |
+| R4 | **Now measured, and the mitigation is not sufficient.** Spike 2 ran a real reviewer model four times on unchanged input: findings went 1, 1, 1, 2. A finding recorded `fixed=true` was re-raised on the next pass, and a new finding appeared on pass 4. Passing prior findings makes verdicts *more* stable, not stable. How the findings ledger should treat a re-raised finding is a Spike 3 or design question |
 | R1 | The continue-as-new threshold is "measured", and the measurement does not exist yet |
 | R9 | Contract tests make drift visible; they do not prevent it |
+
+### 1.3 Design requirements recorded from Spike 2
+
+Review 16 decided that production concerns found during a spike are recorded as
+design requirements, not fixed in spike code. These four came out of Spike 2 and
+belong in the design, not the spike.
+
+| # | Requirement |
+|---|---|
+| R1 | **Model credentials never enter the agent's environment.** Spike 2 passed the OpenRouter key as an environment variable with all tools allowed. Version 1 uses a proxy that adds the key, or per-run keys with a limit and expiry |
+| R2 | **The F1 floor is enforced by the engine at merge time**, reading the base and default branch from the code host, and backed by code host protection on the default branch. Done in the spike; keep it in the design |
+| R3 | **Code host protection is configured by an identity the engine does not hold.** The engine only checks that the protection exists. This is the parked review 15 A2: the App's `administration` permission lets it edit the very ruleset that protects `main` |
+| R4 | **Review verdicts are unstable with a real model.** See the R4 row above. Add to the risk register; the findings ledger's handling of re-raised findings is a Spike 3 or design question |
 
 ---
 
