@@ -42,12 +42,17 @@ precedence step (section 4).
 | Layer | May set | May not set |
 |---|---|---|
 | Installation | Temporal connection, worker platform, provider selection and instances, credential references, expected retention, payload codec, observability, API auth, defaults | Anything repository-specific |
-| Organisation / team | Policy floors, provider bindings, role-to-runtime mapping, notification routing, budgets, review policy, who may approve and steer, defaults overrides | Repository build and test detail |
-| Repository | Test tiers and how to run them, setup commands, static analysis, environment requirements, CI mapping, branch conventions, **merge method within what policy allows**, library additions (`docs/11` section 5) | Policy floors, credentials, role mapping |
-| Run | Scope, target repositories, plan overrides, attempt budgets within the ceiling, dry run | Policy floors, provider selection |
+| Organisation / team | Policy floors, the default-branch merge setting and whether it is locked, provider bindings, role-to-runtime mapping, notification routing, budgets, who may approve and steer, defaults overrides | Repository build and test detail |
+| Repository | Test tiers and how to run them, setup commands, static analysis, environment requirements, CI mapping, branch conventions, **the default-branch merge setting, unless the organisation locked it** (read from the default branch only), library additions (`docs/11` section 5) | Policy floors, credentials, role mapping |
+| Run | Scope, target repositories, plan overrides, attempt budgets within the ceiling, dry run | Policy floors, the default-branch merge setting, provider selection |
 
 The repository layer is the only one that lives in the repository and travels
 with the code. The others are deployment or organisation configuration.
+
+Workflow content (plans and library templates, `docs/09`) is not a
+configuration layer, but two kinds of setting also take a workflow value: the
+default-branch merge setting (section 2, F1) and limits such as attempt
+allowances (section 6).
 
 ---
 
@@ -56,7 +61,8 @@ with the code. The others are deployment or organisation configuration.
 A **floor** is a value no lower layer may relax. **Any layer may tighten one**,
 including a repository tightening a floor for itself. Validation checks that
 floors only move in the stricter direction down the layers. The list is short
-on purpose.
+on purpose. F1 is the exception: it is now a setting with a safe default that
+may be relaxed, unless the organisation locks it (below).
 
 Floors exist because the prototype failed with "settings conflicted": separate
 settings for merge gates, review mode, mandatory steps and auto-merge interacted
@@ -64,15 +70,16 @@ and stopped runs.
 
 | # | Floor | Meaning |
 |---|---|---|
-| F1 | Human approval for default-branch merges | A merge into a repository's default branch requires a human. No layer may set auto-merge for it. The engine enforces this **at merge time**, reading the merge's base branch and the repository's default branch from the code host, not from the plan (DR2). Code host protection on the default branch backs it up (section 9) |
+| F1 | Default-branch merge setting | Whether the engine may merge into a repository's default branch. **Default: it may not**, so a merge step into the default branch must have `engine_can_merge: false` and a human merges on the code host. No longer a fixed floor; see section 2.1 |
 | F2 | Secrets by reference | No layer may inline a secret value; only a reference to the secrets provider |
 | F3 | Protected steps | A step marked `protected` in the plan cannot be removed or weakened by a re-plan or by steering |
-| F4 | Attempt ceilings | A run may set attempt budgets **within** the configured ceiling, never above it. Steering may grant more up to a hard ceiling; beyond that needs the admin role. The ceiling is checked **on every execution of a step, including when a loop routes back to it** (DR10) |
+| F4 | Attempt ceilings | Attempt allowances (set hierarchically, section 6) stay **within** the organisation's ceiling, never above it. Steering may grant more up to a hard ceiling; beyond that needs the admin role. The ceiling is checked **on every execution of a step, including when a loop routes back to it** (DR10) |
 
 Consequences:
 
-- `policy.auto_approve` (the step that approves a gate automatically) cannot
-  approve a default-branch merge (F1).
+- With F1 at its default, no workflow can make the engine merge into the
+  default branch; the engine raises a human decision request, a human merges on
+  the code host, and the engine detects the merge and continues.
 - Neither a repository nor a run can grant itself unlimited attempts (F4).
 - A fix loop cannot spin. Spike 3 measured why this matters: with no ceiling on
   re-entry, a loop ran its fix step 213 times in 15 seconds (`docs/18` section 4,
@@ -82,6 +89,21 @@ The engine enforces floors, not workflow content. This is the one exception to
 the rule that the engine supplies mechanism and workflows supply policy
 (`docs/01` section 1.5): no workflow may relax a floor, so a workflow cannot be
 the thing that enforces it.
+
+### 2.1 F1: the default-branch merge setting
+
+F1 used to read "a human must approve every merge into the default branch; no
+layer may relax it". It is now a configurable setting with the same default.
+The ID F1 is kept so references still resolve.
+
+| Rule | Detail |
+|---|---|
+| Default | The engine may **not** merge into the default branch |
+| Levels | Organisation (`policy.merge.defaultBranch.engineMayMerge`), then repository (`merge.defaultBranch.engineMayMerge` in `feature-flow.yaml`), then workflow. The most specific level wins. It may be relaxed, for example for a proof-of-concept repository |
+| Lock | The organisation can set `locked: true`, so repositories and workflows cannot relax it |
+| Nothing an agent can edit changes it | The repository value is read from `feature-flow.yaml` **on the default branch only**, never from a ticket or integration branch. A plan patch (re-plan) during a run cannot change it. A run cannot set it |
+| Enforcement | At plan validation, and again at merge time, reading the merge's base branch and the repository's default branch from the code host, not from the plan (DR2) |
+| Final fallback | Code host branch protection on the default branch, requiring independent review. The engine never holds a bypass (DR3, section 9) |
 
 ---
 
@@ -180,7 +202,7 @@ observability:
   logLevel: info
 
 defaults:
-  attempts: { agent.run: 3, plan.replan: 2, findings.triage: 2 }
+  attempts: { agent.run: 3, plan.replan: 2, findings.triage: 2, scm.merge: 3 }
   timeouts: { agent.run: 4h }
 ```
 
@@ -203,9 +225,9 @@ Notes:
   | `claude-code` | Anthropic API only: a first-party subscription or key. **Cannot** be pointed at an OpenAI-compatible router; it rejects the model before any request | Session start, before and after each tool call, and stop all fired, on Windows and macOS |
   | `copilot-cli` | Works through an OpenAI-compatible router (`endpoint`) | Session start and stop fired. Before- and after-tool-call hooks did **not** fire with a third-party model; untested with a first-party model |
 
-  So `endpoint` is valid only on a runtime that supports a custom endpoint, and
-  a role whose `runtime.requires` lists `hooks` should be mapped to a runtime
-  whose hooks are proven (section 4).
+  So `endpoint` is valid only on a runtime that supports a custom endpoint.
+  Both runtimes can stream their tool calls, which the engine uses to record
+  what an agent opened when hooks are not available (section 4, review).
 - **`modelAccess` keeps model credentials out of the agent's environment**
   (DR1). Version 1 uses one of two modes: `proxy` (a proxy outside the agent's
   sandbox adds the key to each request) or `perRunKey` (a key issued per run,
@@ -228,9 +250,14 @@ Notes:
   steps on 10 slots, about 10 steps waited roughly one step's length, and peak
   occupancy never exceeded 9 of 10 (`docs/15` section 6.3). The measurement has
   two repetitions, not the three asked for, so the headroom figure is not set.
-- **`defaults` are starting values**, to be tuned from recorded data. They are
-  **not floors**: the installation provides them and the organisation may
-  override them within its ceilings.
+- **`defaults` are the engine defaults** for limits such as attempt allowances
+  and timeouts, to be tuned from recorded data. They are **not floors**: the
+  organisation may override them, and so may a workflow, a child workflow and a
+  step (section 6), all within the organisation's ceilings.
+- **`scm.merge: 3`** is the merge step's attempt allowance. Every attempt
+  counts, including a re-entry after the ticket catches up or after a conflict
+  is resolved. When it runs out the ticket escalates to a human (section 4,
+  merge policy).
 
 ---
 
@@ -245,22 +272,16 @@ policy:
   approval:
     ticket:  { roles: [approver], minCount: 1, agentCounts: false }
     epic:    { roles: [approver], minCount: 1, agentCounts: false }
-    defaultBranch: { roles: [approver], minCount: 2, agentCounts: false }   # floor F1
+    defaultBranch: { roles: [approver], minCount: 2, agentCounts: false }
   merge:
-    defaultBranch: { methods: [squash], requireChecks: true, autoMerge: false }  # floor F1
-    integrationBranch:
-      methods: [merge]
+    defaultBranch:
       requireChecks: true
-      autoMerge: true
-      maxCatchUpRetries: 3        # refused merges in a row before escalating to a human
+      engineMayMerge: false       # F1, the default
+      locked: true                # repositories and workflows may not relax it
+    integrationBranch: { requireChecks: true }    # epic and project branches
   findings:
     mergeBar: noUnresolvedBlocking
     requireDeclineReason: true
-  review:
-    reviewerModel: differentFromAuthor            # checked at run start
-    angles:
-      ticket: [correctness, design, tests, security, specification]
-      epic:   [correctness, design, tests, security, specification]
   replan:
     allowedRoles: [planner, implementer, fixer]   # roles an agent-proposed step may use
   attempts:
@@ -282,7 +303,7 @@ roleMapping:
   planner:     { agentRuntime: claude-code, model: claude-haiku }
   implementer: { agentRuntime: claude-code, model: claude-haiku }
   fixer:       { agentRuntime: claude-code, model: claude-haiku }
-  reviewer:    { agentRuntime: claude-code, model: claude-sonnet }
+  reviewer:    { agentRuntime: claude-code, model: claude-sonnet }   # example only
 
 roles:
   viewer:   { idpGroups: [acme-engineering] }
@@ -301,7 +322,7 @@ teams:
   payments:
     policy:
       approval:
-        defaultBranch: { minCount: 3 }        # tightens F1; never relaxes it
+        defaultBranch: { minCount: 3 }        # stricter approval for this team
       attempts:
         ceiling: { agent.run: 4 }
     roles:
@@ -323,42 +344,55 @@ Notes:
 
 ### Merge policy
 
-- **`policy.merge` states what is allowed; the repository chooses within it.**
-  The organisation says which methods are permitted and whether checks are
-  required; the repository names its preferred method (section 5). A repository
-  choice outside the allowed set is a validation error at run start.
+- **What the organisation sets:** whether checks are required at each branch
+  level, and the default-branch merge setting with its lock (F1, section 2.1).
+  `integrationBranch` covers the epic and project branches that tickets and
+  epics merge into.
+- **What the workflow sets:** each merge step takes `squash` (squash merge or
+  plain merge) and `engine_can_merge` (the engine merges, or a human merges on
+  the code host while the engine waits) (`docs/06` section 6.5, the merge step).
+  Usual values:
+
+  | Merge | `squash` | `engine_can_merge` |
+  |---|---|---|
+  | Ticket branch into epic branch | true | true |
+  | Epic branch into project branch | false (each ticket's commit stays visible) | true |
+  | Project branch into the default branch | false | false, required by F1 at its default |
+
 - **There is no merge lock.** Tickets merge the way developers do (`docs/20`,
-  the merge design): the engine catches the ticket branch up with the
-  integration branch, re-runs tests if that changed anything, then merges. The
-  engine performs the merge by pushing a merge commit built from exactly what
-  was tested, so if the integration branch moved in the meantime, Git refuses
-  the push and the ticket catches up again.
-- **`maxCatchUpRetries`** caps those refusals: after about 3 in a row the ticket
-  escalates to a human, so a slow ticket cannot be starved by faster siblings.
-  The value 3 comes from the merge design; it is a starting value, not measured.
-- **`autoMerge: true` on integration branches** means the engine may merge a
-  ticket into its epic's integration branch without a human gate. It is never
-  permitted on the default branch (F1).
+  the merge design): the engine catches the ticket branch up with the target
+  branch, re-runs tests if that changed anything, then merges. Where the engine
+  merges, it builds the merge or squash commit from exactly what was tested and
+  pushes it; if the target branch moved in the meantime, Git refuses the push
+  and the step reports `base_moved`, which routes back to catch-up.
+- **The cap on refused merges is the merge step's attempt allowance**
+  (`scm.merge`, engine default 3, section 3). Every attempt counts, including
+  re-entry after a conflict is resolved. Like every limit it may be overridden
+  by the workflow, a child workflow and the step (section 6). When it runs out
+  the ticket escalates to a human, so a slow ticket cannot be starved by faster
+  siblings. The value 3 is a starting value, not measured.
 
-### Review policy
+### Review
 
-From the code review design (`docs/19`):
+Review choices are workflow content, not engine configuration (`docs/19`, the
+code review design):
 
-- **`reviewerModel: differentFromAuthor`.** The model mapped to the `reviewer`
-  role must differ from the models of the roles that author code (here
-  `implementer` and `fixer`). A model is poor at spotting its own blind spots,
-  so ideally the reviewer's model is also stronger. Run-start validation checks
-  the difference (section 9); "stronger" is not checked.
-- **`angles`** lists the separate focused review passes at each level. Ticket
-  review compares the ticket branch with the integration branch; epic review
-  compares the integration branch with `main`. The five angles are correctness,
-  design and structure, tests, security, and conformance to the specification.
-  Which angles run at which level is not yet decided (`docs/19`, "Not decided
-  here"); the example runs all five at both.
-- **The coverage check is engine behaviour, not a setting.** The engine records
-  every file the reviewer opens through the runtime's before-tool-call hook. A
-  review that never opened a changed file is re-run, not accepted. This is why
-  the `reviewer` role must map to a runtime whose hooks are proven.
+- **Reviewer model.** Using a different, ideally stronger, model for review
+  than for authoring is **workflow policy**, set through `roleMapping`. The
+  engine does not enforce it, because another model may not be available. The
+  engine records which model authored and which reviewed, so the choice is
+  visible.
+- **Review angles** (correctness, design and structure, tests, security,
+  conformance to the specification) are steps in the library's review
+  templates.
+- **Coverage is engine mechanism, never an engine rule.** For every agent step
+  the engine records which files the agent opened, from hooks or from the
+  runtime's streamed tool-call output, or "unknown" if neither is available.
+  A review step publishes a coverage output (changed files, files read, files
+  not read, whether the record is verified). The engine never fails a step for
+  coverage; a review step may set `require_coverage` (`none` by default, `all`,
+  or a list of paths), or a route may act on the coverage output. The library's
+  standard code-review template sets `require_coverage: all`.
 
 ### Role mapping
 
@@ -366,10 +400,9 @@ From the code review design (`docs/19`):
   named `agentRuntime` instance (section 3) and a model. A role never names a
   runtime product or model itself, so the same library works in an installation
   that ships a different runtime.
-- **Measured constraint:** only `claude-code` has proven before-tool-call hooks
-  (section 3 notes). Map the `reviewer` role, and any role whose
-  `runtime.requires` lists `hooks`, to it unless `copilot-cli` hooks are later
-  proven with a first-party model.
+- **Any role may map to any runtime** that offers the capabilities the role's
+  `runtime.requires` lists (capability negotiation, decision S3). The reviewer
+  can run on either runtime. The mappings in this document are examples.
 - **`replan.allowedRoles`** limits which roles an agent-proposed step may use.
   A patch introducing any other role becomes a pending human decision, not a
   rejection (`docs/09` section 11.0).
@@ -450,9 +483,9 @@ branches:
   integrationPrefix: ff/epic/
   ticketPrefix: ff/ticket/
 
-# The repository chooses within what organisation policy allows.
+# F1: read only from this file on the default branch; ignored if the organisation locked it.
 merge:
-  method: squash               # must be in policy.merge.defaultBranch.methods
+  defaultBranch: { engineMayMerge: false }
 
 # Template choice and added skills and checks: docs/11 section 5.
 library:
@@ -471,11 +504,15 @@ Notes:
   (`docs/01` section 4.7).
 - **`ci.mapping`** selects a named CI instance per tier (section 3), so GitHub
   Actions and TeamCity coexist without special cases.
-- **`merge.method` is a choice, not policy.** It must be in the organisation's
-  allowed set, or run start fails validation. `requireChecks` is not repeated
-  here: it is policy, and only the organisation sets it.
-- **`branches`** names the default branch and the integration and ticket branch
-  prefixes. Code host rules must allow only the engine's identity to update the
+- **`merge.defaultBranch.engineMayMerge`** is the repository level of F1
+  (section 2.1). It is the one value in this file the engine reads from the
+  **default branch**, not from the branch a step is working on, so no agent
+  commit can change it. Setting it when the organisation has locked F1 is a
+  validation error. The merge method is not set here: it is the merge step's
+  `squash` parameter (section 4, merge policy). `requireChecks` is policy, and
+  only the organisation sets it.
+- **`branches`** names the default branch and the integration (epic) and
+  ticket branch prefixes. Code host rules must allow only the engine's identity to update the
   default branch and integration branches (section 9). Agents never push any
   branch; the engine pushes ticket branches for them (section 8).
 - **`library`** names the repository's default template and any skills and
@@ -490,7 +527,7 @@ Notes:
 ## 6. Run schema (API at start)
 
 ```yaml
-scope: epic                       # ticket | epic | delivery
+scope: epic                       # ticket | epic | project | delivery
 repositories: [ acme/api, acme/web ]
 plan:
   ref: artifact://plans/epic-42.yaml
@@ -502,9 +539,16 @@ dryRun: false
 
 Notes:
 
-- A run may set attempt budgets **within** the organisation's ceiling (F4: no
-  layer may exceed it, and it is checked on every execution of a step). A run
-  may not set policy floors or select providers.
+- **Every limit is set hierarchically:** the engine default (installation
+  `defaults`, which the organisation may override), then the workflow, a child
+  workflow, and the step. The most specific wins, within the organisation's
+  ceiling (F4: no level may exceed it, and it is checked on every execution of a
+  step). This includes the merge step's attempt allowance.
+- A run's `plan.overrides` set limits for named steps, within the same ceiling.
+  A run may not set policy floors, the default-branch merge setting (F1), or
+  select providers.
+- `scope: project` is a run that starts epic runs as children, the way an epic
+  run starts ticket runs.
 - **`dryRun` selects fake or recording providers.** The same plan runs against
   providers that record instead of act, chosen by configuration. No step
   declares dry-run support or needs a dry-run branch. Workflow testing uses the
@@ -521,11 +565,10 @@ plan.
 | Object | Contents |
 |---|---|
 | `approval` | Scope (ticket, epic, delivery into the default branch), required approvers by role, minimum count, whether an agent counts |
-| `merge` | Target branch pattern, allowed methods, required checks, whether auto-merge is permitted, how many refused merges in a row before escalating (`maxCatchUpRetries`) |
+| `merge` | Target branch level, required checks, and for the default branch whether the engine may merge (F1) and whether that is locked |
 | `findings` | The merge bar (decision D8): no unresolved blocking finding, and every finding fixed or declined with a recorded reason |
-| `review` | Reviewer model must differ from the authoring model; review angles per level (ticket, epic) |
 | `replan` | Roles an agent-proposed step may use without a human decision |
-| `attempts` | Ceilings per step kind and per run, checked on every execution; steering may grant more within a hard ceiling. Counting follows `docs/01` section 3.7 (attempt budgets) |
+| `attempts` | Ceilings per step kind and per run, checked on every execution; allowances below them are set hierarchically (section 6); steering may grant more within a hard ceiling. Counting follows `docs/01` section 3.7 (attempt budgets) |
 | `steering` | Who may amend a step, override content, grant attempts, abort |
 | `cost` | Not in version 1. When added: per-run and per-step budgets, with the action configurable (warn, gate, abort). Exceeding one always stops at a gate, never a hard stop |
 
@@ -570,15 +613,21 @@ or repository (`docs/01` section 5.4). They are not the library's agent roles
   short-lived credentials check).
 - **Model credentials never enter the agent's environment** (DR1). The agent
   runtime's `modelAccess` (section 3) uses a proxy that adds the key, or a per-run
-  key with a spending limit and expiry. Both spikes broke this rule knowingly
-  (an environment variable key, then a subscription token), so it is not yet
-  evidenced.
+  key with a spending limit and expiry. Not yet evidenced: Spike 2 passed the
+  model key in the agent's environment, and the Claude Code proof passed the
+  subscription token there; both are recorded as known gaps against DR1
+  (`docs/16` sections 10 and 12).
+- **Agents get read-only code host credentials, per step.** Scoped to the run's
+  repository plus any other repositories the workflow declares the agent may
+  read (for example to verify a contract).
 - **Agents never hold a credential that can push** (DR13). The broker issues
   push and merge credentials to the engine only. An agent commits in its own
-  sandbox; the engine pushes the ticket branch at the end of each step and at
-  work-in-progress points, and performs every merge. GitHub cannot limit a token
-  to particular branches, so withholding the credential is the only reliable
-  control (`docs/20`, "Who can push").
+  sandbox; as part of the agent step the engine fetches those commits and pushes
+  them with its own credential, at the end of the step and at work-in-progress
+  points. A failed step's commits go to a hidden work-in-progress ref, not the
+  ticket branch. The engine performs every merge it is allowed to (F1). GitHub
+  cannot limit a token to particular branches, so withholding the credential is
+  the only reliable control (`docs/20`, "Who can push").
 - **The engine's code host identity cannot change branch protection** (DR3).
 - Values are scrubbed at the logging layer (`docs/01` section 4.8,
   observability contract).
@@ -592,15 +641,17 @@ Validate at startup and again at run start, with clear errors (decision S10).
 | When | Checks |
 |---|---|
 | Startup | Schema validity; provider packages present; secret references resolvable; Temporal reachable; **expected retention matches (warn on mismatch)**; floor definitions internally consistent; every agent runtime instance has `modelAccess` (DR1); `endpoint` set only on a runtime that supports a custom endpoint |
-| Run start | Capability negotiation against the plan's steps (decision S3: every step's required capabilities are offered by some provider); policy floors satisfied; **floors only tightened down the layers**; attempt budgets within the ceiling; **repository merge method within the allowed set**; **reviewer model differs from the authoring roles' models**; target repositories reachable; **code host rules exist** on each target repository (below) |
-| Per step | `feature-flow.yaml` read from the branch and its hash recorded; capability negotiation re-run if a needed capability disappeared (`docs/01` section 5.1.2); **attempt ceiling checked on every execution, including loop re-entry** (DR10) |
+| Run start and plan validation (including after a re-plan) | Capability negotiation against the plan's steps (decision S3: every step's required capabilities are offered by some provider); policy floors satisfied; **floors only tightened down the layers**; limits within the ceiling; **F1: no merge step into the default branch has `engine_can_merge: true` unless the effective setting allows it**, with the repository value read from its default branch; no lower level relaxes a locked F1; target repositories reachable; **code host rules exist** on each target repository (below) |
+| Per step | `feature-flow.yaml` read from the branch and its hash recorded (F1 excepted: always from the default branch); capability negotiation re-run if a needed capability disappeared (`docs/01` section 5.1.2); **attempt ceiling checked on every execution, including loop re-entry** (DR10) |
+| Merge time | F1 checked again, reading the base and default branch from the code host (DR2) |
 
-**Code host rules** (DR2, DR3, and the merge design `docs/20`): the default
-branch requires a human approval to merge, and only the engine's identity may
-update the default branch and integration branches. The engine **checks these
-rules exist; it never creates or changes them.** They are configured by an
-identity the engine does not hold. They are a backstop: the engine already
-enforces F1 at merge time, and agents hold no push credential.
+**Code host rules** (DR2, DR3, and the merge design `docs/20`): branch
+protection on the default branch requires independent review, and only the
+engine's identity may update integration branches. The engine **checks these
+rules exist; it never creates or changes them, and never holds a bypass.**
+They are configured by an identity the engine does not hold. They are the final
+fallback: the engine already enforces F1 at plan validation and merge time, and
+agents hold no push credential.
 
 A validation failure is a clear error naming the layer, the key and the reason,
 never a silent fallback. A run should fail in its first minute, not at step 40.
@@ -697,11 +748,9 @@ name: solo
 policy:
   approval:
     ticket: { roles: [approver], minCount: 1 }
-    defaultBranch: { roles: [approver], minCount: 1 }    # floor F1 still applies
+    defaultBranch: { roles: [approver], minCount: 1 }
   merge:
-    defaultBranch: { methods: [squash], requireChecks: false, autoMerge: false }
-  review:
-    reviewerModel: differentFromAuthor
+    defaultBranch: { requireChecks: false, engineMayMerge: false }   # F1 default; not locked
   attempts:
     ceiling: { agent.run: 5, perRun: 40 }
     hardCeiling: { agent.run: 8, perRun: 60 }
@@ -721,8 +770,9 @@ roles:
 
 Notes:
 
-- The solo profile still cannot auto-merge into a default branch (F1). The
-  floor is invariant, not a profile convenience.
+- F1 keeps its safe default here: the engine does not merge into the default
+  branch. It is not locked, so a proof-of-concept repository may relax it in
+  its own `feature-flow.yaml` on the default branch.
 - Docker-dependent tiers may use a privileged container here, which is
   permitted **only** in this profile (decision Q2).
 - The personal token is the engine's credential, used by the engine to push
@@ -813,13 +863,11 @@ policy:
     epic:   { roles: [approver], minCount: 1 }
     defaultBranch: { roles: [approver], minCount: 1 }
   merge:
-    defaultBranch: { methods: [squash], requireChecks: true, autoMerge: false }
-    integrationBranch: { methods: [merge], requireChecks: true, autoMerge: true, maxCatchUpRetries: 3 }
+    defaultBranch: { requireChecks: true, engineMayMerge: false, locked: true }
+    integrationBranch: { requireChecks: true }
   findings:
     mergeBar: noUnresolvedBlocking
     requireDeclineReason: true
-  review:
-    reviewerModel: differentFromAuthor
   attempts:
     ceiling: { agent.run: 5, perRun: 40 }
     hardCeiling: { agent.run: 8, perRun: 60 }
@@ -937,7 +985,7 @@ observability:
   logLevel: info
 
 defaults:
-  attempts: { agent.run: 3, plan.replan: 2, findings.triage: 2 }
+  attempts: { agent.run: 3, plan.replan: 2, findings.triage: 2, scm.merge: 3 }
   timeouts: { agent.run: 4h }
 ```
 
@@ -952,16 +1000,11 @@ policy:
     epic:   { roles: [approver], minCount: 1, agentCounts: false }
     defaultBranch: { roles: [approver], minCount: 2, agentCounts: false }
   merge:
-    defaultBranch: { methods: [squash], requireChecks: true, autoMerge: false }
-    integrationBranch: { methods: [merge], requireChecks: true, autoMerge: true, maxCatchUpRetries: 3 }
+    defaultBranch: { requireChecks: true, engineMayMerge: false, locked: true }
+    integrationBranch: { requireChecks: true }
   findings:
     mergeBar: noUnresolvedBlocking
     requireDeclineReason: true
-  review:
-    reviewerModel: differentFromAuthor
-    angles:
-      ticket: [correctness, design, tests, security, specification]
-      epic:   [correctness, design, tests, security, specification]
   replan:
     allowedRoles: [planner, implementer, fixer]
   attempts:
@@ -1001,9 +1044,8 @@ Notes:
   runtimes.
 - **Two agent runtimes:** `copilot-cli` reaches models through the
   organisation's OpenAI-compatible router; `claude-code` cannot use the router
-  and talks to Anthropic directly. The `reviewer` role stays on `claude-code`
-  because the review coverage check needs before-tool-call hooks, which are
-  proven only there (section 4).
+  and talks to Anthropic directly. Which role runs where is a choice; the
+  mapping shown is an example.
 - **The `os-windows` pool is declared but has no provider in version 1.** A run
   needing a Windows **sandbox** fails at run-start capability negotiation with a
   clear message. A Windows tier delegated to **CI** works in version 1.
@@ -1031,6 +1073,6 @@ The first-pass questions are all decided and applied above:
 | # | Question |
 |---|---|
 | 1 | **Model access (DR1).** Which `modelAccess` mode is the default for each profile, and how is the proxy itself deployed and configured? |
-| 2 | **Review angles per level.** Which angles run at ticket level and which only at epic level (`docs/19`, "Not decided here")? |
-| 3 | **Pool sizing headroom.** Spike 1 has two repetitions at 20 steps on 10 slots, not the three asked for. Run a third before setting a headroom figure? |
-| 4 | **Copilot CLI hooks.** Re-test before- and after-tool-call hooks with a first-party model; until then `copilot-cli` cannot host the `reviewer` role |
+| 2 | **Pool sizing headroom.** Spike 1 has two repetitions at 20 steps on 10 slots, not the three asked for. Run a third before setting a headroom figure? |
+| 3 | **Copilot CLI hooks.** Re-test before- and after-tool-call hooks with a first-party model. Until then, deny-before-execution is unavailable on `copilot-cli` and coverage comes from its streamed tool calls |
+| 4 | **`policy.approval.defaultBranch` under F1.** With F1 at its default a human merges on the code host, under its branch protection. What does this approval policy govern then: the engine's decision request before that merge, or an engine merge where F1 is relaxed? |
