@@ -232,8 +232,10 @@ Decided by the product owner (decision D9, `docs/14`):
 
 **Role mapping is configuration, not library content.** The organisation's
 `roleMapping` (`docs/07` section 4) maps each role to an agent runtime instance
-and a model; the role itself never names one. The reviewer's model must differ from the
-authoring roles' models (`docs/19`, the code review design).
+and a model; the role itself never names one. Whether the reviewer uses a
+different model from the author is workflow policy, set through that mapping;
+the engine records both models but does not enforce a difference (`docs/19`,
+the code review design).
 
 Repository additions follow the configuration rule that a repository may not
 set role mapping or policy (`docs/07` section 1.1).
