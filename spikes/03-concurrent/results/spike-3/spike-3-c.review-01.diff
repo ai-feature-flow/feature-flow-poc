@@ -1,0 +1,70 @@
+diff --git a/docs/plans/EPIC3-C.md b/docs/plans/EPIC3-C.md
+new file mode 100644
+index 0000000..a94f2d6
+--- /dev/null
++++ b/docs/plans/EPIC3-C.md
+@@ -0,0 +1,13 @@
++Goal: each `Widget` records its creation time. Add `DateTimeOffset CreatedAt` as the third member of the `Widget` record, set to `DateTimeOffset.UtcNow` in the `new Widget(...)` call inside `WidgetStore.Add`.
++Files to change: `src/FeatureFlow.Example.Api/Program.cs` (the `Widget` record declaration, add the `CreatedAt` member) and `src/FeatureFlow.Example.Api/WidgetStore.cs` (`Add` passes `DateTimeOffset.UtcNow`).
++Tests to add: new `tests/FeatureFlow.Example.Api.UnitTests/WidgetCreatedAtTests.cs`, asserting that a widget returned by `WidgetStore.Add` has `CreatedAt` within one second of `DateTimeOffset.UtcNow`.
++
++## Design
++
++Changes:
++
++- `Program.cs`: `Widget` becomes `public record Widget(int Id, string Name, DateTimeOffset CreatedAt);`. `CreatedAt` is the third positional parameter, as the ticket specifies. Because the record is serialized in the `GET /widgets`, `GET /widgets/{id}`, and `POST /widgets` responses, each response gains a `createdAt` field.
++- `WidgetStore.cs`: `Add` calls `new Widget(_nextId++, name, DateTimeOffset.UtcNow)`. The clock is read inside the existing `lock`, next to the ID assignment, so the two values are taken in the same critical section. No other part of the store changes.
++- `tests/FeatureFlow.Example.Api.UnitTests/WidgetCreatedAtTests.cs` (new): one test, `Add_sets_created_at_to_now`. It calls `Add`, then asserts that `Math.Abs((DateTimeOffset.UtcNow - widget.CreatedAt).TotalSeconds) < 1`. The test uses the same `[Trait("Category", "unit")]` and xUnit style as `WidgetStoreTests.cs`.
++
++Not verified: the grep for other `new Widget(` call sites was denied, and `tests/FeatureFlow.Example.Api.IntegrationTests/WidgetRepositoryTests.cs` was not read. Any other constructor call of `Widget` with two arguments will fail to compile after the change and must also pass a `CreatedAt`.
+diff --git a/src/FeatureFlow.Example.Api/Program.cs b/src/FeatureFlow.Example.Api/Program.cs
+index 9113cc1..be408b3 100644
+--- a/src/FeatureFlow.Example.Api/Program.cs
++++ b/src/FeatureFlow.Example.Api/Program.cs
+@@ -26,6 +26,6 @@ app.MapPost("/widgets", (WidgetCreateRequest request, WidgetStore store) =>
+ 
+ app.Run();
+ 
+-public record Widget(int Id, string Name);
++public record Widget(int Id, string Name, DateTimeOffset CreatedAt);
+ 
+ public record WidgetCreateRequest(string Name);
+diff --git a/src/FeatureFlow.Example.Api/WidgetStore.cs b/src/FeatureFlow.Example.Api/WidgetStore.cs
+index 154664f..b865898 100644
+--- a/src/FeatureFlow.Example.Api/WidgetStore.cs
++++ b/src/FeatureFlow.Example.Api/WidgetStore.cs
+@@ -30,7 +30,7 @@ public sealed class WidgetStore
+     {
+         lock (_gate)
+         {
+-            var widget = new Widget(_nextId++, name);
++            var widget = new Widget(_nextId++, name, DateTimeOffset.UtcNow);
+             _widgets.Add(widget);
+             return widget;
+         }
+diff --git a/tests/FeatureFlow.Example.Api.UnitTests/WidgetCreatedAtTests.cs b/tests/FeatureFlow.Example.Api.UnitTests/WidgetCreatedAtTests.cs
+new file mode 100644
+index 0000000..f897794
+--- /dev/null
++++ b/tests/FeatureFlow.Example.Api.UnitTests/WidgetCreatedAtTests.cs
+@@ -0,0 +1,20 @@
++using FeatureFlow.Example.Api;
++using Xunit;
++
++namespace FeatureFlow.Example.Api.UnitTests;
++
++[Trait("Category", "unit")]
++public sealed class WidgetCreatedAtTests
++{
++    [Fact]
++    public void Add_sets_CreatedAt_within_a_second_of_now()
++    {
++        var store = new WidgetStore();
++
++        var before = DateTimeOffset.UtcNow;
++        var widget = store.Add("alpha");
++        var after = DateTimeOffset.UtcNow;
++
++        Assert.InRange(widget.CreatedAt, before.AddSeconds(-1), after.AddSeconds(1));
++    }
++}

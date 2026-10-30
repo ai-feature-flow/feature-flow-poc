@@ -1,0 +1,200 @@
+diff --git a/docs/plans/EPIC3-A.md b/docs/plans/EPIC3-A.md
+new file mode 100644
+index 0000000..5caf464
+--- /dev/null
++++ b/docs/plans/EPIC3-A.md
+@@ -0,0 +1,13 @@
++Goal: WidgetStore.Add stores widget names trimmed and lower-cased (invariant culture), via a new private static Normalise(string) used in the new Widget(...) expression.
++Files: src/FeatureFlow.Example.Api/WidgetStore.cs (add Normalise, apply it in Add); tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs (new).
++Tests: WidgetNameNormalisationTests.cs, Add("  Alpha ") returns a widget named "alpha".
++
++## Design
++
++Widget names are stored trimmed and lower-cased. The change touches three members.
++
++- `WidgetStore.Normalise(string name)`: new, `private static`, in `src/FeatureFlow.Example.Api/WidgetStore.cs`. Returns `name.Trim().ToLowerInvariant()`. The invariant culture makes the result independent of the host locale (for example, Turkish `I`/`ı`).
++- `WidgetStore.Add(string name)`: changed. The constructor call becomes `new Widget(_nextId++, Normalise(name))`. The signature does not change. Normalisation runs inside the existing `_gate` lock, so no new synchronisation is needed.
++- `WidgetNameNormalisationTests`: new test class in `tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs`. It asserts that `Add("  Alpha ")` returns a widget whose name is `"alpha"`.
++
++Unchanged: the `Widget` type, `All`, `Find`, `Count`, and `Program.cs`, which passes `request.Name` to `Add` without modification. The existing `WidgetStoreTests.cs` calls `Add("alpha")` and `Add("beta")`, which are already normalised, so its assertions are not affected.
+diff --git a/docs/plans/EPIC3-B.md b/docs/plans/EPIC3-B.md
+new file mode 100644
+index 0000000..570ced5
+--- /dev/null
++++ b/docs/plans/EPIC3-B.md
+@@ -0,0 +1,3 @@
++Goal: add `WidgetStore.FindByName(string name)`, placed after `Count()`, that returns the first widget whose stored `Name` equals `name` normalised the same way `Add` stores it, or `null` if none matches; and add `GET /widgets/by-name/{name}` that returns 200 with the widget or 404.
++Files to change: `src/FeatureFlow.Example.Api/WidgetStore.cs` (add `FindByName` after `Count()`) and `src/FeatureFlow.Example.Api/Program.cs` (add the `GET /widgets/by-name/{name}` route, returning 200 or 404).
++Tests to add: new `tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs` with two tests: `Add("alpha")` then `FindByName("alpha")` returns that widget, and `FindByName("ALPHA")` and `FindByName("  Alpha ")` return it too.
+diff --git a/docs/plans/EPIC3-C.md b/docs/plans/EPIC3-C.md
+new file mode 100644
+index 0000000..a94f2d6
+--- /dev/null
++++ b/docs/plans/EPIC3-C.md
+@@ -0,0 +1,13 @@
++Goal: each `Widget` records its creation time. Add `DateTimeOffset CreatedAt` as the third member of the `Widget` record, set to `DateTimeOffset.UtcNow` in the `new Widget(...)` call inside `WidgetStore.Add`.
++Files to change: `src/FeatureFlow.Example.Api/Program.cs` (the `Widget` record declaration, add the `CreatedAt` member) and `src/FeatureFlow.Example.Api/WidgetStore.cs` (`Add` passes `DateTimeOffset.UtcNow`).
++Tests to add: new `tests/FeatureFlow.Example.Api.UnitTests/WidgetCreatedAtTests.cs`, asserting that a widget returned by `WidgetStore.Add` has `CreatedAt` within one second of `DateTimeOffset.UtcNow`.
++
++## Design
++
++Changes:
++
++- `Program.cs`: `Widget` becomes `public record Widget(int Id, string Name, DateTimeOffset CreatedAt);`. `CreatedAt` is the third positional parameter, as the ticket specifies. Because the record is serialized in the `GET /widgets`, `GET /widgets/{id}`, and `POST /widgets` responses, each response gains a `createdAt` field.
++- `WidgetStore.cs`: `Add` calls `new Widget(_nextId++, name, DateTimeOffset.UtcNow)`. The clock is read inside the existing `lock`, next to the ID assignment, so the two values are taken in the same critical section. No other part of the store changes.
++- `tests/FeatureFlow.Example.Api.UnitTests/WidgetCreatedAtTests.cs` (new): one test, `Add_sets_created_at_to_now`. It calls `Add`, then asserts that `Math.Abs((DateTimeOffset.UtcNow - widget.CreatedAt).TotalSeconds) < 1`. The test uses the same `[Trait("Category", "unit")]` and xUnit style as `WidgetStoreTests.cs`.
++
++Not verified: the grep for other `new Widget(` call sites was denied, and `tests/FeatureFlow.Example.Api.IntegrationTests/WidgetRepositoryTests.cs` was not read. Any other constructor call of `Widget` with two arguments will fail to compile after the change and must also pass a `CreatedAt`.
+diff --git a/src/FeatureFlow.Example.Api/Program.cs b/src/FeatureFlow.Example.Api/Program.cs
+index 9113cc1..dfc0e6e 100644
+--- a/src/FeatureFlow.Example.Api/Program.cs
++++ b/src/FeatureFlow.Example.Api/Program.cs
+@@ -13,6 +13,9 @@ app.MapGet("/widgets", (WidgetStore store) => Results.Ok(store.All()));
+ app.MapGet("/widgets/{id:int}", (int id, WidgetStore store) =>
+     store.Find(id) is { } widget ? Results.Ok(widget) : Results.NotFound());
+ 
++app.MapGet("/widgets/by-name/{name}", (string name, WidgetStore store) =>
++    store.FindByName(name) is { } widget ? Results.Ok(widget) : Results.NotFound());
++
+ app.MapPost("/widgets", (WidgetCreateRequest request, WidgetStore store) =>
+ {
+     if (string.IsNullOrWhiteSpace(request.Name))
+@@ -26,6 +29,6 @@ app.MapPost("/widgets", (WidgetCreateRequest request, WidgetStore store) =>
+ 
+ app.Run();
+ 
+-public record Widget(int Id, string Name);
++public record Widget(int Id, string Name, DateTimeOffset CreatedAt);
+ 
+ public record WidgetCreateRequest(string Name);
+diff --git a/src/FeatureFlow.Example.Api/WidgetStore.cs b/src/FeatureFlow.Example.Api/WidgetStore.cs
+index 154664f..5d03dda 100644
+--- a/src/FeatureFlow.Example.Api/WidgetStore.cs
++++ b/src/FeatureFlow.Example.Api/WidgetStore.cs
+@@ -1,3 +1,5 @@
++using System.Globalization;
++
+ namespace FeatureFlow.Example.Api;
+ 
+ /// <summary>
+@@ -30,12 +32,15 @@ public sealed class WidgetStore
+     {
+         lock (_gate)
+         {
+-            var widget = new Widget(_nextId++, name);
++            var widget = new Widget(_nextId++, Normalise(name), DateTimeOffset.UtcNow);
+             _widgets.Add(widget);
+             return widget;
+         }
+     }
+ 
++    private static string Normalise(string name) =>
++        name.Trim().ToLower(CultureInfo.InvariantCulture);
++
+     /// <summary>The number of widgets currently held by the store.</summary>
+     public int Count()
+     {
+@@ -44,4 +49,17 @@ public sealed class WidgetStore
+             return _widgets.Count;
+         }
+     }
++
++    /// <summary>
++    /// Returns the first widget whose stored name equals <paramref name="name"/> once
++    /// normalised the same way Add stores it, or null when none matches.
++    /// </summary>
++    public Widget? FindByName(string name)
++    {
++        lock (_gate)
++        {
++            var key = Normalise(name);
++            return _widgets.FirstOrDefault(w => string.Equals(w.Name, key, StringComparison.Ordinal));
++        }
++    }
+ }
+\ No newline at end of file
+diff --git a/tests/FeatureFlow.Example.Api.UnitTests/WidgetCreatedAtTests.cs b/tests/FeatureFlow.Example.Api.UnitTests/WidgetCreatedAtTests.cs
+new file mode 100644
+index 0000000..f897794
+--- /dev/null
++++ b/tests/FeatureFlow.Example.Api.UnitTests/WidgetCreatedAtTests.cs
+@@ -0,0 +1,20 @@
++using FeatureFlow.Example.Api;
++using Xunit;
++
++namespace FeatureFlow.Example.Api.UnitTests;
++
++[Trait("Category", "unit")]
++public sealed class WidgetCreatedAtTests
++{
++    [Fact]
++    public void Add_sets_CreatedAt_within_a_second_of_now()
++    {
++        var store = new WidgetStore();
++
++        var before = DateTimeOffset.UtcNow;
++        var widget = store.Add("alpha");
++        var after = DateTimeOffset.UtcNow;
++
++        Assert.InRange(widget.CreatedAt, before.AddSeconds(-1), after.AddSeconds(1));
++    }
++}
+diff --git a/tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs b/tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs
+new file mode 100644
+index 0000000..d19953e
+--- /dev/null
++++ b/tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs
+@@ -0,0 +1,29 @@
++using FeatureFlow.Example.Api;
++using Xunit;
++
++namespace FeatureFlow.Example.Api.UnitTests;
++
++[Trait("Category", "unit")]
++public sealed class WidgetFindByNameTests
++{
++    [Fact]
++    public void FindByName_returns_widget_with_exact_name()
++    {
++        var store = new WidgetStore();
++        var added = store.Add("alpha");
++
++        var found = store.FindByName("alpha");
++
++        Assert.Same(added, found);
++    }
++
++    [Fact]
++    public void FindByName_finds_the_widget_in_any_case_or_spacing()
++    {
++        var store = new WidgetStore();
++        var added = store.Add("Alpha");
++
++        Assert.Same(added, store.FindByName("ALPHA"));
++        Assert.Same(added, store.FindByName("  Alpha "));
++    }
++}
+diff --git a/tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs b/tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs
+new file mode 100644
+index 0000000..36aa497
+--- /dev/null
++++ b/tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs
+@@ -0,0 +1,18 @@
++using FeatureFlow.Example.Api;
++using Xunit;
++
++namespace FeatureFlow.Example.Api.UnitTests;
++
++[Trait("Category", "unit")]
++public sealed class WidgetNameNormalisationTests
++{
++    [Fact]
++    public void Add_trims_and_lower_cases_name()
++    {
++        var store = new WidgetStore();
++
++        var widget = store.Add("  Alpha ");
++
++        Assert.Equal("alpha", widget.Name);
++    }
++}

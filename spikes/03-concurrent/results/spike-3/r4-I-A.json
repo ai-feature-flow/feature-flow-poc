@@ -1,0 +1,235 @@
+{
+  "series": "I-A",
+  "spec": "A",
+  "specification": "EPIC3-A: Names are stored normalised. In WidgetStore.Add, normalise the name with a new private static Normalise(string) that trims and lower-cases it (invariant culture), used inside the new Widget(...) expression. Add unit tests in WidgetNameNormalisationTests.cs: Add(\u0022  Alpha \u0022) returns a widget named alpha.",
+  "diff": "I-A.diff",
+  "diffHash": "997fff55e5a0cf1f",
+  "passes": 20,
+  "results": [
+    {
+      "pass": 1,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0009449199999999999,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 2,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00084201,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 3,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0012868200000000002,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "null-input-behaviour",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Normalise",
+          "Snippet": "name.Trim().ToLower(CultureInfo.InvariantCulture);",
+          "Message": "Normalise dereferences name without a null check, so a null name that Add previously stored now throws NullReferenceException, and Program.cs passes request.Name unchanged; confirm the request name cannot be null or guard it.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 4,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0009694199999999999,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 5,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00038192000000000006,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 6,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00071012,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "null-safety",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Normalise",
+          "Snippet": "name.Trim().ToLower(CultureInfo.InvariantCulture);",
+          "Message": "Normalise dereferences name without a null check, so a null name now throws NullReferenceException inside the lock where previously it was stored; consider validating or guarding against null.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 7,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00037002,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 8,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00069992,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "null-input-regression",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Normalise",
+          "Snippet": "name.Trim().ToLower(CultureInfo.InvariantCulture);",
+          "Message": "Normalise dereferences name without a null check, so a null name that Add previously stored now throws NullReferenceException; the ticket does not say how null should be handled.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 9,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00039872000000000003,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 10,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00035672000000000004,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 11,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00079682,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "null-input-regression",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Normalise",
+          "Snippet": "name.Trim().ToLower(CultureInfo.InvariantCulture);",
+          "Message": "Normalise has no null guard, so a null name (which Program.cs can pass from request.Name) now throws NullReferenceException where Add previously stored it; confirm nullability or add a guard.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 12,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00047222,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 13,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00056242,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 14,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00033082,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 15,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00058282,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 16,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00045682000000000003,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 17,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00029932,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 18,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00041482,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 19,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0006276200000000001,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "null-input-behaviour-change",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Normalise",
+          "Snippet": "name.Trim().ToLower(CultureInfo.InvariantCulture);",
+          "Message": "Normalise dereferences name without a null check, so a null name that was previously stored now throws NullReferenceException from Add; confirm the request path validates Name or add a guard.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 20,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00042672,
+      "Outcome": "completed",
+      "findings": []
+    }
+  ]
+}

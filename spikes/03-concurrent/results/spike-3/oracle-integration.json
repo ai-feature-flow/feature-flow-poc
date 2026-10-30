@@ -1,0 +1,75 @@
+{
+  "ref": "origin/ff/epic/spike-3",
+  "head": "fd463f04720f1004a6aee1045bc71d7e1e1c56df",
+  "applied": null,
+  "unitTier": {
+    "pass": true,
+    "compiled": true,
+    "summary": "Passed!  - Failed:     0, Passed:     7, Skipped:     0, Total:     7, Duration: 3 ms - FeatureFlow.Example.Api.UnitTests.dll (net9.0)"
+  },
+  "defectPresent": {
+    "pass": true,
+    "compiled": true,
+    "summary": "Passed!  - Failed:     0, Passed:     1, Skipped:     0, Total:     1, Duration: 1 ms - FeatureFlow.Example.Api.UnitTests.dll (net9.0)"
+  },
+  "contractHolds": {
+    "pass": false,
+    "compiled": true,
+    "summary": "Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 3 ms - FeatureFlow.Example.Api.UnitTests.dll (net9.0)"
+  },
+  "resolutionKeepsBothSides": {
+    "pass": true,
+    "compiled": true,
+    "summary": "Passed!  - Failed:     0, Passed:     1, Skipped:     0, Total:     1, Duration: 2 ms - FeatureFlow.Example.Api.UnitTests.dll (net9.0)"
+  },
+  "forwardMerges": [
+    {
+      "at": "2026-10-30T10:35:55.017846\u002B00:00",
+      "step": "merge_forward",
+      "from": "ff/epic/spike-3",
+      "into": "ff/ticket/spike-3-a",
+      "integrationHead": "9ae9879a85c29bfc3002225f0896f09142103464",
+      "ticketBefore": "0ec637e34a2e5185848b35fd2156333567c15d4c",
+      "ticketAfter": "0ec637e34a2e5185848b35fd2156333567c15d4c",
+      "outcome": "blocked",
+      "reason": "Work/conflict",
+      "conflictedFiles": [
+        "src/FeatureFlow.Example.Api/WidgetStore.cs"
+      ]
+    },
+    {
+      "at": "2026-10-30T10:37:59.720971\u002B00:00",
+      "step": "merge_forward",
+      "from": "ff/epic/spike-3",
+      "into": "ff/ticket/spike-3-a",
+      "integrationHead": "9ae9879a85c29bfc3002225f0896f09142103464",
+      "ticketBefore": "36d8f61da59640c44c629045efe572ad5e6e352f",
+      "ticketAfter": "36d8f61da59640c44c629045efe572ad5e6e352f",
+      "outcome": "completed",
+      "branchChanged": false
+    },
+    {
+      "at": "2026-10-30T10:44:07.844219\u002B00:00",
+      "step": "merge_forward",
+      "from": "ff/epic/spike-3",
+      "into": "ff/ticket/spike-3-b",
+      "integrationHead": "b4200202f569c5aa6126081a7302a993ae4d2ce8",
+      "ticketBefore": "b91b485d4497ce4187f34440e360d3485de7401e",
+      "ticketAfter": "55a95d02d01b05b4baf9b3388eb0550f190acdf6",
+      "outcome": "completed",
+      "branchChanged": true
+    },
+    {
+      "at": "2026-10-30T10:35:37.594248\u002B00:00",
+      "step": "merge_forward",
+      "from": "ff/epic/spike-3",
+      "into": "ff/ticket/spike-3-c",
+      "integrationHead": "5dd0108fc9e9a3e4af18995fc68eed6f0a9231ac",
+      "ticketBefore": "ce37bc30b8771d403c041e98939513f46045c977",
+      "ticketAfter": "ce37bc30b8771d403c041e98939513f46045c977",
+      "outcome": "completed",
+      "branchChanged": false
+    }
+  ],
+  "conflictOnWidgetStore": true
+}

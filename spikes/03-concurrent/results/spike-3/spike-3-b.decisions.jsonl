@@ -1,0 +1,2 @@
+{"stepId":"gate_design","decisionType":"ticket.design_approval","decision":"approved","actor":{"kind":"Human","identity":"stuart-parkinson","roles":["approver"]},"recordedAt":"2026-10-30T10:36:47.721234+00:00"}
+{"stepId":"gate_merge","decisionType":"ticket.merge_approval","decision":"approved","actor":{"kind":"Human","identity":"stuart-parkinson","roles":["approver"]},"recordedAt":"2026-10-30T10:44:01.734817+00:00"}

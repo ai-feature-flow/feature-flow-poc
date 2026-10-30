@@ -1,0 +1,81 @@
+diff --git a/docs/plans/EPIC3-B.md b/docs/plans/EPIC3-B.md
+new file mode 100644
+index 0000000..0649989
+--- /dev/null
++++ b/docs/plans/EPIC3-B.md
+@@ -0,0 +1,3 @@
++Goal: add `WidgetStore.FindByName(string name)`, placed after `Count()`, that returns the first widget whose `Name` equals `name` under an ordinal, case-sensitive comparison (`string.Equals(..., StringComparison.Ordinal)`), or `null` if none matches; and add `GET /widgets/by-name/{name}` that returns 200 with the widget or 404.
++Files to change: `src/FeatureFlow.Example.Api/WidgetStore.cs` (add `FindByName` after `Count()`) and `src/FeatureFlow.Example.Api/Program.cs` (add the `GET /widgets/by-name/{name}` route, returning 200 or 404).
++Tests to add: new `tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs` with two tests: `Add("alpha")` then `FindByName("alpha")` returns that widget, and `FindByName("ALPHA")` returns `null`.
+diff --git a/src/FeatureFlow.Example.Api/Program.cs b/src/FeatureFlow.Example.Api/Program.cs
+index be408b3..dfc0e6e 100644
+--- a/src/FeatureFlow.Example.Api/Program.cs
++++ b/src/FeatureFlow.Example.Api/Program.cs
+@@ -13,6 +13,9 @@ app.MapGet("/widgets", (WidgetStore store) => Results.Ok(store.All()));
+ app.MapGet("/widgets/{id:int}", (int id, WidgetStore store) =>
+     store.Find(id) is { } widget ? Results.Ok(widget) : Results.NotFound());
+ 
++app.MapGet("/widgets/by-name/{name}", (string name, WidgetStore store) =>
++    store.FindByName(name) is { } widget ? Results.Ok(widget) : Results.NotFound());
++
+ app.MapPost("/widgets", (WidgetCreateRequest request, WidgetStore store) =>
+ {
+     if (string.IsNullOrWhiteSpace(request.Name))
+diff --git a/src/FeatureFlow.Example.Api/WidgetStore.cs b/src/FeatureFlow.Example.Api/WidgetStore.cs
+index b865898..3eb7850 100644
+--- a/src/FeatureFlow.Example.Api/WidgetStore.cs
++++ b/src/FeatureFlow.Example.Api/WidgetStore.cs
+@@ -44,4 +44,16 @@ public sealed class WidgetStore
+             return _widgets.Count;
+         }
+     }
++
++    /// <summary>
++    /// Returns the first widget whose name equals <paramref name="name"/> using an
++    /// exact, ordinal (case-sensitive) comparison, or null when none matches.
++    /// </summary>
++    public Widget? FindByName(string name)
++    {
++        lock (_gate)
++        {
++            return _widgets.FirstOrDefault(w => string.Equals(w.Name, name, StringComparison.Ordinal));
++        }
++    }
+ }
+\ No newline at end of file
+diff --git a/tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs b/tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs
+new file mode 100644
+index 0000000..acbd259
+--- /dev/null
++++ b/tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs
+@@ -0,0 +1,30 @@
++using FeatureFlow.Example.Api;
++using Xunit;
++
++namespace FeatureFlow.Example.Api.UnitTests;
++
++[Trait("Category", "unit")]
++public sealed class WidgetFindByNameTests
++{
++    [Fact]
++    public void FindByName_returns_widget_with_exact_name()
++    {
++        var store = new WidgetStore();
++        var added = store.Add("alpha");
++
++        var found = store.FindByName("alpha");
++
++        Assert.Same(added, found);
++    }
++
++    [Fact]
++    public void FindByName_is_case_sensitive_and_returns_null_for_different_case()
++    {
++        var store = new WidgetStore();
++        store.Add("alpha");
++
++        var found = store.FindByName("ALPHA");
++
++        Assert.Null(found);
++    }
++}

@@ -1,0 +1,140 @@
+{
+  "series": "Pos",
+  "spec": "epic",
+  "specification": "Epic: Widget names are case- and whitespace-insensitive: the store keeps each name normalised (trimmed, lower-case), and a client can always look a widget up by the name it created it with, in any case or spacing. Widgets record their creation time.",
+  "diff": "Pos.diff",
+  "diffHash": "6a2d27dcb1810d6f",
+  "passes": 5,
+  "results": [
+    {
+      "pass": 1,
+      "ok": true,
+      "InputHash": "2c6052de9695335927d406dcdca0b502ad96ae4f0d0cba42a37a25abdedfa28f",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00177578,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "ticket-requirement: lookup by name in any case or spacing",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "app.MapGet(\u0022/widgets/by-name/{name}\u0022)",
+          "Snippet": "store.FindByName(name) is { } widget ? Results.Ok(widget) : Results.NotFound());",
+          "Message": "The by-name route passes the raw URL segment to FindByName, which per docs/plans/EPIC3-B.md is an ordinal, case-sensitive comparison with no normalisation, so GET /widgets/by-name/ALPHA or a padded name returns 404 even though the widget was created as \u0022Alpha\u0022, violating the ticket\u0027s requirement that lookup works in any case or spacing.",
+          "Blocking": true
+        }
+      ]
+    },
+    {
+      "pass": 2,
+      "ok": true,
+      "InputHash": "2c6052de9695335927d406dcdca0b502ad96ae4f0d0cba42a37a25abdedfa28f",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00243778,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "ticket-requirement-case-insensitive-lookup",
+          "Path": "docs/plans/EPIC3-B.md",
+          "Symbol": "FindByName",
+          "Snippet": "returns the first widget whose \u0060Name\u0060 equals \u0060name\u0060 under an ordinal, case-sensitive comparison (\u0060string.Equals(..., StringComparison.Ordinal)\u0060)",
+          "Message": "The plan makes FindByName case-sensitive and unnormalised, so a client cannot find a widget by the name it was created with in any case or spacing, which the ticket requires; the plan\u0027s own test asserting FindByName(\u0022ALPHA\u0022) returns null contradicts the ticket.",
+          "Blocking": true
+        },
+        {
+          "Rule": "ticket-requirement-case-insensitive-lookup",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "/widgets/by-name/{name}",
+          "Snippet": "store.FindByName(name) is { } widget ? Results.Ok(widget) : Results.NotFound());",
+          "Message": "The by-name route passes the raw route value to FindByName without trimming or lower-casing it, so lookups by mixed-case or padded names will return 404 as required by the ticket\u0027s case- and whitespace-insensitive lookup.",
+          "Blocking": true
+        },
+        {
+          "Rule": "compile-risk-widget-constructor",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "Adding a required third positional parameter breaks any existing two-argument \u0060new Widget(...)\u0060 call sites, and the plan admits the grep for them was denied and the integration test file was not read, so the change may not compile.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 3,
+      "ok": true,
+      "InputHash": "2c6052de9695335927d406dcdca0b502ad96ae4f0d0cba42a37a25abdedfa28f",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0017445800000000001,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "ticket-requirement",
+          "Path": "docs/plans/EPIC3-B.md",
+          "Symbol": "WidgetStore.FindByName",
+          "Snippet": "returns the first widget whose \u0060Name\u0060 equals \u0060name\u0060 under an ordinal, case-sensitive comparison (\u0060string.Equals(..., StringComparison.Ordinal)\u0060)",
+          "Message": "The plan specifies a case-sensitive FindByName, which violates the epic requirement that a client can look a widget up by its creation name in any case or spacing, and the plan\u0027s own test asserts FindByName(\u0022ALPHA\u0022) returns null.",
+          "Blocking": true
+        },
+        {
+          "Rule": "compile-risk",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "Adding a required CreatedAt parameter breaks any existing two-argument \u0060new Widget(...)\u0060 call site, and the plan admits these call sites were not checked.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 4,
+      "ok": true,
+      "InputHash": "2c6052de9695335927d406dcdca0b502ad96ae4f0d0cba42a37a25abdedfa28f",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00180838,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "case-insensitive-lookup",
+          "Path": "docs/plans/EPIC3-B.md",
+          "Symbol": "WidgetStore.FindByName",
+          "Snippet": "returns the first widget whose \u0060Name\u0060 equals \u0060name\u0060 under an ordinal, case-sensitive comparison (\u0060string.Equals(..., StringComparison.Ordinal)\u0060)",
+          "Message": "FindByName is specified as case-sensitive and does not trim input, so a client that created \u0022Alpha\u0022 (stored as \u0022alpha\u0022) gets a 404 from /widgets/by-name/Alpha, which breaks the ticket\u0027s requirement to look up by the creation name in any case or spacing.",
+          "Blocking": true
+        }
+      ]
+    },
+    {
+      "pass": 5,
+      "ok": true,
+      "InputHash": "2c6052de9695335927d406dcdca0b502ad96ae4f0d0cba42a37a25abdedfa28f",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00137894,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "ticket-requirement-case-insensitive-lookup",
+          "Path": "docs/plans/EPIC3-B.md",
+          "Symbol": "WidgetStore.FindByName",
+          "Snippet": "returns the first widget whose \u0060Name\u0060 equals \u0060name\u0060 under an ordinal, case-sensitive comparison (\u0060string.Equals(..., StringComparison.Ordinal)\u0060)",
+          "Message": "The ticket requires a client to look up a widget by the name it was created with in any case or spacing, but this plan makes FindByName case-sensitive and does not normalise the query, so FindByName(\u0022ALPHA\u0022) returns null and the new by-name route cannot satisfy the epic.",
+          "Blocking": true
+        },
+        {
+          "Rule": "ticket-requirement-case-insensitive-lookup",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "MapGet /widgets/by-name/{name}",
+          "Snippet": "store.FindByName(name) is { } widget ? Results.Ok(widget) : Results.NotFound());",
+          "Message": "The route passes the raw path segment to FindByName without trimming or lower-casing, so a lookup such as \u0022  Alpha \u0022 will miss a widget stored as \u0022alpha\u0022 even though the ticket requires any case or spacing to work.",
+          "Blocking": true
+        },
+        {
+          "Rule": "unverified-compile-impact",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "Adding a required third parameter to Widget will break any existing two-argument \u0060new Widget(...)\u0060 call sites, and the diff does not show that these were checked (the plan itself says the grep was denied and the integration test file was not read).",
+          "Blocking": false
+        }
+      ]
+    }
+  ]
+}

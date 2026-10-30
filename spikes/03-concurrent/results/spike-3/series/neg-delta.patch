@@ -1,0 +1,56 @@
+diff --git a/docs/plans/EPIC3-B.md b/docs/plans/EPIC3-B.md
+index 0649989..570ced5 100644
+--- a/docs/plans/EPIC3-B.md
++++ b/docs/plans/EPIC3-B.md
+@@ -1,3 +1,3 @@
+-Goal: add `WidgetStore.FindByName(string name)`, placed after `Count()`, that returns the first widget whose `Name` equals `name` under an ordinal, case-sensitive comparison (`string.Equals(..., StringComparison.Ordinal)`), or `null` if none matches; and add `GET /widgets/by-name/{name}` that returns 200 with the widget or 404.
++Goal: add `WidgetStore.FindByName(string name)`, placed after `Count()`, that returns the first widget whose stored `Name` equals `name` normalised the same way `Add` stores it, or `null` if none matches; and add `GET /widgets/by-name/{name}` that returns 200 with the widget or 404.
+ Files to change: `src/FeatureFlow.Example.Api/WidgetStore.cs` (add `FindByName` after `Count()`) and `src/FeatureFlow.Example.Api/Program.cs` (add the `GET /widgets/by-name/{name}` route, returning 200 or 404).
+-Tests to add: new `tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs` with two tests: `Add("alpha")` then `FindByName("alpha")` returns that widget, and `FindByName("ALPHA")` returns `null`.
++Tests to add: new `tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs` with two tests: `Add("alpha")` then `FindByName("alpha")` returns that widget, and `FindByName("ALPHA")` and `FindByName("  Alpha ")` return it too.
+diff --git a/src/FeatureFlow.Example.Api/WidgetStore.cs b/src/FeatureFlow.Example.Api/WidgetStore.cs
+index 7d1a457..5d03dda 100644
+--- a/src/FeatureFlow.Example.Api/WidgetStore.cs
++++ b/src/FeatureFlow.Example.Api/WidgetStore.cs
+@@ -51,14 +51,15 @@ public sealed class WidgetStore
+     }
+ 
+     /// <summary>
+-    /// Returns the first widget whose name equals <paramref name="name"/> using an
+-    /// exact, ordinal (case-sensitive) comparison, or null when none matches.
++    /// Returns the first widget whose stored name equals <paramref name="name"/> once
++    /// normalised the same way Add stores it, or null when none matches.
+     /// </summary>
+     public Widget? FindByName(string name)
+     {
+         lock (_gate)
+         {
+-            return _widgets.FirstOrDefault(w => string.Equals(w.Name, name, StringComparison.Ordinal));
++            var key = Normalise(name);
++            return _widgets.FirstOrDefault(w => string.Equals(w.Name, key, StringComparison.Ordinal));
+         }
+     }
+ }
+\ No newline at end of file
+diff --git a/tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs b/tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs
+index acbd259..d19953e 100644
+--- a/tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs
++++ b/tests/FeatureFlow.Example.Api.UnitTests/WidgetFindByNameTests.cs
+@@ -18,13 +18,12 @@ public sealed class WidgetFindByNameTests
+     }
+ 
+     [Fact]
+-    public void FindByName_is_case_sensitive_and_returns_null_for_different_case()
++    public void FindByName_finds_the_widget_in_any_case_or_spacing()
+     {
+         var store = new WidgetStore();
+-        store.Add("alpha");
++        var added = store.Add("Alpha");
+ 
+-        var found = store.FindByName("ALPHA");
+-
+-        Assert.Null(found);
++        Assert.Same(added, store.FindByName("ALPHA"));
++        Assert.Same(added, store.FindByName("  Alpha "));
+     }
+ }

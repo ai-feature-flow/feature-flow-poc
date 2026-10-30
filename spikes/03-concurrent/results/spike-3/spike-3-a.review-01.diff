@@ -1,0 +1,70 @@
+diff --git a/docs/plans/EPIC3-A.md b/docs/plans/EPIC3-A.md
+new file mode 100644
+index 0000000..5caf464
+--- /dev/null
++++ b/docs/plans/EPIC3-A.md
+@@ -0,0 +1,13 @@
++Goal: WidgetStore.Add stores widget names trimmed and lower-cased (invariant culture), via a new private static Normalise(string) used in the new Widget(...) expression.
++Files: src/FeatureFlow.Example.Api/WidgetStore.cs (add Normalise, apply it in Add); tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs (new).
++Tests: WidgetNameNormalisationTests.cs, Add("  Alpha ") returns a widget named "alpha".
++
++## Design
++
++Widget names are stored trimmed and lower-cased. The change touches three members.
++
++- `WidgetStore.Normalise(string name)`: new, `private static`, in `src/FeatureFlow.Example.Api/WidgetStore.cs`. Returns `name.Trim().ToLowerInvariant()`. The invariant culture makes the result independent of the host locale (for example, Turkish `I`/`ı`).
++- `WidgetStore.Add(string name)`: changed. The constructor call becomes `new Widget(_nextId++, Normalise(name))`. The signature does not change. Normalisation runs inside the existing `_gate` lock, so no new synchronisation is needed.
++- `WidgetNameNormalisationTests`: new test class in `tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs`. It asserts that `Add("  Alpha ")` returns a widget whose name is `"alpha"`.
++
++Unchanged: the `Widget` type, `All`, `Find`, `Count`, and `Program.cs`, which passes `request.Name` to `Add` without modification. The existing `WidgetStoreTests.cs` calls `Add("alpha")` and `Add("beta")`, which are already normalised, so its assertions are not affected.
+diff --git a/src/FeatureFlow.Example.Api/WidgetStore.cs b/src/FeatureFlow.Example.Api/WidgetStore.cs
+index 154664f..8874bd0 100644
+--- a/src/FeatureFlow.Example.Api/WidgetStore.cs
++++ b/src/FeatureFlow.Example.Api/WidgetStore.cs
+@@ -1,3 +1,5 @@
++using System.Globalization;
++
+ namespace FeatureFlow.Example.Api;
+ 
+ /// <summary>
+@@ -30,12 +32,15 @@ public sealed class WidgetStore
+     {
+         lock (_gate)
+         {
+-            var widget = new Widget(_nextId++, name);
++            var widget = new Widget(_nextId++, Normalise(name));
+             _widgets.Add(widget);
+             return widget;
+         }
+     }
+ 
++    private static string Normalise(string name) =>
++        name.Trim().ToLower(CultureInfo.InvariantCulture);
++
+     /// <summary>The number of widgets currently held by the store.</summary>
+     public int Count()
+     {
+diff --git a/tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs b/tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs
+new file mode 100644
+index 0000000..36aa497
+--- /dev/null
++++ b/tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs
+@@ -0,0 +1,18 @@
++using FeatureFlow.Example.Api;
++using Xunit;
++
++namespace FeatureFlow.Example.Api.UnitTests;
++
++[Trait("Category", "unit")]
++public sealed class WidgetNameNormalisationTests
++{
++    [Fact]
++    public void Add_trims_and_lower_cases_name()
++    {
++        var store = new WidgetStore();
++
++        var widget = store.Add("  Alpha ");
++
++        Assert.Equal("alpha", widget.Name);
++    }
++}

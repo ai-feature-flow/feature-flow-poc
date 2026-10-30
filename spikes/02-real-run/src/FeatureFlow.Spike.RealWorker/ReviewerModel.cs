@@ -58,6 +58,14 @@ public sealed class ReviewerModel
               "symbol":{"type":"string"},"snippet":{"type":"string"},"message":{"type":"string"},"blocking":{"type":"boolean"}}}}}}
         """;
 
+    /// <summary>
+    /// Characters of diff the reviewer is shown (Spike 2's value). Spike 3 found
+    /// that an epic's aggregate diff exceeds it and the cut is silent: the
+    /// reviewer is never told what it did not see. Settable for the post-hoc
+    /// R4 series only.
+    /// </summary>
+    public static int DiffLimit = 6000;
+
     private readonly ModelClient client;
 
     public ReviewerModel(ModelClient client) => this.client = client;
@@ -103,7 +111,7 @@ public sealed class ReviewerModel
 
             Unified diff:
 
-            {Truncate(diffText, 6000)}
+            {Truncate(diffText, DiffLimit)}
 
             Review the diff. Reply with the JSON object only.
             """;

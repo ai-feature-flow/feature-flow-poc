@@ -1,0 +1,190 @@
+{
+  "series": "I-B",
+  "spec": "B",
+  "specification": "EPIC3-B: Add WidgetStore.FindByName(string name) after Count(), returning the first widget whose name equals name using an exact, ordinal (case-sensitive) comparison, or null. Add GET /widgets/by-name/{name} returning 200 or 404. Add unit tests in WidgetFindByNameTests.cs: Add(\u0022alpha\u0022) then FindByName(\u0022alpha\u0022) returns it; FindByName(\u0022ALPHA\u0022) returns null.",
+  "diff": "I-B.diff",
+  "diffHash": "319673cc65ac419d",
+  "passes": 20,
+  "results": [
+    {
+      "pass": 1,
+      "ok": true,
+      "InputHash": "d783a9b3412b075950d69bc46353c274107c0ffd195a5317d6aa8e9c4bd5ccbf",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0009658500000000001,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 2,
+      "ok": true,
+      "InputHash": "d783a9b3412b075950d69bc46353c274107c0ffd195a5317d6aa8e9c4bd5ccbf",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0008951499999999999,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 3,
+      "ok": true,
+      "InputHash": "d783a9b3412b075950d69bc46353c274107c0ffd195a5317d6aa8e9c4bd5ccbf",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00094625,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 4,
+      "ok": true,
+      "InputHash": "d783a9b3412b075950d69bc46353c274107c0ffd195a5317d6aa8e9c4bd5ccbf",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00085875,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 5,
+      "ok": true,
+      "InputHash": "d783a9b3412b075950d69bc46353c274107c0ffd195a5317d6aa8e9c4bd5ccbf",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00042208,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 6,
+      "ok": true,
+      "InputHash": "d783a9b3412b075950d69bc46353c274107c0ffd195a5317d6aa8e9c4bd5ccbf",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00033808000000000004,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 7,
+      "ok": true,
+      "InputHash": "d783a9b3412b075950d69bc46353c274107c0ffd195a5317d6aa8e9c4bd5ccbf",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00034928,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 8,
+      "ok": true,
+      "InputHash": "d783a9b3412b075950d69bc46353c274107c0ffd195a5317d6aa8e9c4bd5ccbf",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00039128000000000003,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 9,
+      "ok": true,
+      "InputHash": "d783a9b3412b075950d69bc46353c274107c0ffd195a5317d6aa8e9c4bd5ccbf",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00031778000000000004,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 10,
+      "ok": true,
+      "InputHash": "d783a9b3412b075950d69bc46353c274107c0ffd195a5317d6aa8e9c4bd5ccbf",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00045987999999999997,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 11,
+      "ok": true,
+      "InputHash": "d783a9b3412b075950d69bc46353c274107c0ffd195a5317d6aa8e9c4bd5ccbf",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00032548000000000006,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 12,
+      "ok": true,
+      "InputHash": "d783a9b3412b075950d69bc46353c274107c0ffd195a5317d6aa8e9c4bd5ccbf",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00048018000000000003,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 13,
+      "ok": true,
+      "InputHash": "d783a9b3412b075950d69bc46353c274107c0ffd195a5317d6aa8e9c4bd5ccbf",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00033318000000000003,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 14,
+      "ok": true,
+      "InputHash": "d783a9b3412b075950d69bc46353c274107c0ffd195a5317d6aa8e9c4bd5ccbf",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00025198,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 15,
+      "ok": true,
+      "InputHash": "d783a9b3412b075950d69bc46353c274107c0ffd195a5317d6aa8e9c4bd5ccbf",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00036258000000000004,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 16,
+      "ok": true,
+      "InputHash": "d783a9b3412b075950d69bc46353c274107c0ffd195a5317d6aa8e9c4bd5ccbf",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00035418,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 17,
+      "ok": true,
+      "InputHash": "d783a9b3412b075950d69bc46353c274107c0ffd195a5317d6aa8e9c4bd5ccbf",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00040318000000000005,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 18,
+      "ok": true,
+      "InputHash": "d783a9b3412b075950d69bc46353c274107c0ffd195a5317d6aa8e9c4bd5ccbf",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00031148000000000005,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 19,
+      "ok": true,
+      "InputHash": "d783a9b3412b075950d69bc46353c274107c0ffd195a5317d6aa8e9c4bd5ccbf",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00041158,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 20,
+      "ok": true,
+      "InputHash": "d783a9b3412b075950d69bc46353c274107c0ffd195a5317d6aa8e9c4bd5ccbf",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00032548000000000006,
+      "Outcome": "completed",
+      "findings": []
+    }
+  ]
+}

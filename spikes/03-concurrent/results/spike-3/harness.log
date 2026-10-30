@@ -1,0 +1,83 @@
+10:30:59.3 EVENT integration-branch {"integration":"ff/epic/spike-3","sha":"5dd0108fc9e9a3e4af18995fc68eed6f0a9231ac"}
+10:31:13.4 WORKER epic started pid=57302
+10:31:13.4 WORKER a started pid=57303
+10:31:13.4 WORKER b started pid=57304
+10:31:13.4 WORKER c started pid=57305
+10:31:21.5 EVENT epic-started {"epicId":"spike-3","lockId":"lock:ai-feature-flow/feature-flow-example:ff/epic/spike-3","childQueues":{"ticket_a":"spike-3-ticket-a-spike-3","ticket_b":"spike-3-ticket-b-spike-3","ticket_c":"spike-3-ticket-c-spike-3"}}
+10:31:23.6 PROGRESS a: create_branch (steps 0)
+10:31:23.6 PROGRESS c: create_branch (steps 0)
+10:31:23.6 PROGRESS epic: ticket_a,ticket_c (steps 0)
+10:31:31.7 PROGRESS a: plan_spec (steps 1)
+10:31:31.7 PROGRESS c: plan_spec (steps 1)
+10:31:49.8 PROGRESS a: design (steps 2)
+10:31:53.8 PROGRESS c: design (steps 2)
+10:32:16.0 PROGRESS a: implement (steps 3)
+10:32:22.1 PROGRESS c: implement (steps 3)
+10:32:44.2 PROGRESS a: run_tests (steps 4)
+10:32:54.3 PROGRESS c: run_tests (steps 4)
+10:33:36.6 PROGRESS a: review (steps 5)
+10:33:48.7 PROGRESS c: review (steps 5)
+10:33:50.7 PROGRESS a: evaluate_readiness (steps 6)
+10:33:54.7 PROGRESS a: open_pr (steps 7)
+10:34:02.8 PROGRESS c: evaluate_readiness (steps 6)
+10:34:06.8 PROGRESS c: open_pr (steps 7)
+10:34:08.9 PROGRESS a: wait_checks (steps 8)
+10:34:14.9 PROGRESS a:  (steps 9)
+10:34:21.0 PROGRESS c: wait_checks (steps 8)
+10:34:27.0 PROGRESS c:  (steps 9)
+10:34:27.0 EVENT merge-gates-simultaneous {"tickets":["a","c"]}
+10:34:27.0 EVENT decision {"workflow":"spike-3/ticket_a","gate":"gate_merge","type":"ticket.merge_approval","decision":"approved"}
+10:34:27.0 EVENT decision {"workflow":"spike-3/ticket_c","gate":"gate_merge","type":"ticket.merge_approval","decision":"approved"}
+10:34:29.1 PROGRESS a: merge_forward (steps 10)
+10:34:29.1 PROGRESS c: merge_forward (steps 10)
+10:34:29.2 WORKER c killed pid=57305: I2: lock holder, just after the grant
+10:34:29.2 EVENT I2-kill {"holder":"spike-3/ticket_c","grantedAt":"2026-10-30T10:34:27.108383+00:00","killedAt":"2026-10-30T10:34:29.262902+00:00"}
+10:35:02.3 EVENT I2-query-during-outage {"holder":"spike-3/ticket_c","waiters":["spike-3/ticket_a"]}
+10:35:30.4 WORKER c started pid=58935
+10:35:30.4 EVENT I2-restart {"ticket":"c"}
+10:35:38.5 PROGRESS c: merge_pr (steps 11)
+10:35:50.6 PROGRESS b: create_branch (steps 0)
+10:35:50.6 PROGRESS c:  [completed] (steps 12)
+10:35:50.6 PROGRESS epic: ticket_a,ticket_b (steps 1)
+10:35:56.7 PROGRESS a: resolve_conflict (steps 11)
+10:36:00.8 PROGRESS b: plan_spec (steps 1)
+10:36:23.2 PROGRESS b: design (steps 2)
+10:36:27.3 PROGRESS a: run_tests (steps 12)
+10:36:47.7 PROGRESS b:  (steps 3)
+10:36:47.7 EVENT decision {"workflow":"spike-3/ticket_b","gate":"gate_design","type":"ticket.design_approval","decision":"approved"}
+10:36:49.7 PROGRESS b: implement (steps 4)
+10:37:06.2 WORKER b killed pid=57304: I1: third ticket, as its implement starts
+10:37:06.2 EVENT I1-kill {"ticket":"b","otherInFlight":"a","killedAt":"2026-10-30T10:37:06.232645+00:00"}
+10:37:26.3 PROGRESS a: review (steps 13)
+10:37:33.4 PROGRESS a: evaluate_readiness (steps 14)
+10:37:40.4 PROGRESS a: open_pr (steps 15)
+10:37:47.4 PROGRESS a: wait_checks (steps 16)
+10:37:54.5 PROGRESS a:  (steps 17)
+10:37:54.5 EVENT decision {"workflow":"spike-3/ticket_a","gate":"gate_merge","type":"ticket.merge_approval","decision":"approved"}
+10:38:01.5 PROGRESS a: merge_forward (steps 18)
+10:38:08.6 PROGRESS a: merge_pr (steps 19)
+10:38:15.6 PROGRESS epic: ticket_b (steps 2)
+10:38:22.7 PROGRESS a:  [completed] (steps 20)
+10:42:07.5 WORKER b started pid=60156
+10:42:07.5 EVENT I1-restart {"ticket":"b","otherInFlight":"a","downSeconds":301.308512}
+10:42:36.8 PROGRESS b: run_tests (steps 5)
+10:43:25.4 PROGRESS b: review (steps 6)
+10:43:36.0 PROGRESS b: evaluate_readiness (steps 7)
+10:43:40.3 PROGRESS b: open_pr (steps 8)
+10:43:55.3 PROGRESS b: wait_checks (steps 9)
+10:44:01.7 PROGRESS b:  (steps 10)
+10:44:01.7 EVENT decision {"workflow":"spike-3/ticket_b","gate":"gate_merge","type":"ticket.merge_approval","decision":"approved"}
+10:44:03.8 PROGRESS b: merge_forward (steps 11)
+10:44:08.1 PROGRESS b: recheck (steps 12)
+10:44:57.1 PROGRESS b: merge_pr (steps 13)
+10:45:07.7 PROGRESS b:  [completed] (steps 14)
+10:45:07.7 PROGRESS epic: epic_review (steps 4)
+10:45:22.7 PROGRESS epic:  (steps 5)
+10:45:22.7 EVENT decision {"workflow":"spike-3","gate":"gate_epic_findings","type":"epic.findings_review","decision":"approved"}
+10:45:24.9 PROGRESS epic:  [completed] (steps 6)
+10:45:24.9 EVENT epic-closed {"result":"completed"}
+10:45:32.8 WORKER epic killed pid=57302: run over
+10:45:32.8 WORKER a killed pid=57303: run over
+10:45:32.9 WORKER b killed pid=60156: run over
+10:45:33.0 WORKER c killed pid=58935: run over
+10:45:33.0 EPIC spike-3: completed

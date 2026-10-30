@@ -144,6 +144,8 @@ public static class R4Series
         var passes = int.Parse(Cli.Arg(args, "--passes") ?? "20");
         var parallel = int.Parse(Cli.Arg(args, "--parallel") ?? "4");
         var outPath = Path.GetFullPath(Cli.Arg(args, "--out")!);
+        if (Cli.Arg(args, "--diff-limit") is { } limit)
+            ReviewerModel.DiffLimit = int.Parse(limit);
 
         var specification = spec switch
         {
@@ -201,7 +203,7 @@ public static class R4Series
         Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
         File.WriteAllText(outPath, JsonSerializer.Serialize(new
         {
-            series, spec, specification, diff = Path.GetFileName(diffPath), diffHash, passes,
+            series, spec, specification, diff = Path.GetFileName(diffPath), diffHash, passes, diffLimit = ReviewerModel.DiffLimit,
             results = results.OrderBy(r => (int)r.GetType().GetProperty("pass")!.GetValue(r)!).ToList(),
         }, new JsonSerializerOptions { WriteIndented = true }));
         return 0;

@@ -1,0 +1,25 @@
+{
+  "ref": "fd463f04720f1004a6aee1045bc71d7e1e1c56df",
+  "head": "fd463f04720f1004a6aee1045bc71d7e1e1c56df",
+  "applied": "neg-delta.patch",
+  "unitTier": {
+    "pass": true,
+    "compiled": true,
+    "summary": "Passed!  - Failed:     0, Passed:     7, Skipped:     0, Total:     7, Duration: 3 ms - FeatureFlow.Example.Api.UnitTests.dll (net9.0)"
+  },
+  "defectPresent": {
+    "pass": false,
+    "compiled": true,
+    "summary": "Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 2 ms - FeatureFlow.Example.Api.UnitTests.dll (net9.0)"
+  },
+  "contractHolds": {
+    "pass": true,
+    "compiled": true,
+    "summary": "Passed!  - Failed:     0, Passed:     1, Skipped:     0, Total:     1, Duration: 2 ms - FeatureFlow.Example.Api.UnitTests.dll (net9.0)"
+  },
+  "resolutionKeepsBothSides": {
+    "pass": true,
+    "compiled": true,
+    "summary": "Passed!  - Failed:     0, Passed:     1, Skipped:     0, Total:     1, Duration: 2 ms - FeatureFlow.Example.Api.UnitTests.dll (net9.0)"
+  }
+}

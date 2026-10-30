@@ -1,0 +1,37 @@
+[
+  {
+    "id": "spike-3",
+    "status": "Completed",
+    "start": "2026-10-30T10:31:21.559745Z",
+    "close": "2026-10-30T10:45:22.778267Z",
+    "taskQueue": "spike-3-epic-spike-3"
+  },
+  {
+    "id": "spike-3/ticket_a",
+    "status": "Completed",
+    "start": "2026-10-30T10:31:21.626461Z",
+    "close": "2026-10-30T10:38:11.570879Z",
+    "taskQueue": "spike-3-ticket-a-spike-3"
+  },
+  {
+    "id": "spike-3/ticket_b",
+    "status": "Completed",
+    "start": "2026-10-30T10:35:49.533125Z",
+    "close": "2026-10-30T10:45:07.569169Z",
+    "taskQueue": "spike-3-ticket-b-spike-3"
+  },
+  {
+    "id": "spike-3/ticket_c",
+    "status": "Completed",
+    "start": "2026-10-30T10:31:21.617472Z",
+    "close": "2026-10-30T10:35:49.506091Z",
+    "taskQueue": "spike-3-ticket-c-spike-3"
+  },
+  {
+    "id": "lock:ai-feature-flow/feature-flow-example:ff/epic/spike-3",
+    "status": "Running",
+    "start": "2026-10-30T10:34:27.10278Z",
+    "close": null,
+    "taskQueue": "spike-3-epic-spike-3"
+  }
+]

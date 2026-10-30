@@ -1,0 +1,23 @@
+{
+  "summary": {
+    "head": "b91b485d4497ce4187f34440e360d3485de7401e",
+    "baseSha": "b4200202f569c5aa6126081a7302a993ae4d2ce8",
+    "seeded": true,
+    "sessions": [
+      "cebd9e43-53b6-43fe-be1b-ae97d5106148",
+      "42d8c129-2e45-45e5-b04c-bcce629c73e3"
+    ],
+    "presubmitHash": "d6d823fc6e415ead599bd1642fe1bb10d0fbdad9ff01b33b5c9637f69155067b",
+    "gatedHash": "d6d823fc6e415ead599bd1642fe1bb10d0fbdad9ff01b33b5c9637f69155067b",
+    "gatedHead": "b91b485d4497ce4187f34440e360d3485de7401e",
+    "presubmitPrior": "[\u0022f-c5-seed\u0022]",
+    "gatedPrior": "[\u0022f-c5-seed\u0022]",
+    "sanityBaseMainHash": "2c727d066f2721edea5012f41a3f3435341e98506cebe4bb087363e2d25126af",
+    "sanityNoPriorHash": "d1687957a9966678df22bf05b83819b86851936e6bcd8b78bba159e0985b9a03",
+    "presubmitReadiness": "{\u0022bar\u0022:\u0022noUnresolvedBlocking\u0022,\u0022open\u0022:[\u0022f-c5-seed\u0022],\u0022declined\u0022:[],\u0022unresolved\u0022:[],\u0022outcome\u0022:\u0022ready\u0022}",
+    "gatedReadiness": "{\u0022bar\u0022:\u0022noUnresolvedBlocking\u0022,\u0022open\u0022:[\u0022f-c5-seed\u0022],\u0022declined\u0022:[],\u0022unresolved\u0022:[],\u0022outcome\u0022:\u0022ready\u0022}"
+  },
+  "hashEqual": true,
+  "readinessEqual": true,
+  "sanity": true
+}

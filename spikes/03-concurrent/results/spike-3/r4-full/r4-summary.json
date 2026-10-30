@@ -1,0 +1,175 @@
+{
+ "series": {
+  "I-A": {
+   "k": 0,
+   "n": 20,
+   "failed": 0,
+   "ci": [
+    0.0,
+    0.16112516018512965
+   ],
+   "input_hashes": 1,
+   "findings_per_pass": [
+    0,
+    0,
+    1,
+    0,
+    0,
+    1,
+    0,
+    1,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0
+   ],
+   "cost_usd": 0.0119,
+   "spec": "A",
+   "diff": "I-A.diff"
+  },
+  "I-B": {
+   "k": 0,
+   "n": 20,
+   "failed": 0,
+   "ci": [
+    0.0,
+    0.16112516018512965
+   ],
+   "input_hashes": 1,
+   "findings_per_pass": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "cost_usd": 0.0095,
+   "spec": "B",
+   "diff": "I-B.diff"
+  },
+  "I-epic": {
+   "k": 19,
+   "n": 20,
+   "failed": 0,
+   "ci": [
+    0.7638688045357189,
+    0.9911185512976646
+   ],
+   "input_hashes": 1,
+   "findings_per_pass": [
+    3,
+    2,
+    3,
+    2,
+    3,
+    2,
+    3,
+    2,
+    2,
+    2,
+    3,
+    2,
+    3,
+    2,
+    2,
+    3,
+    3,
+    2,
+    2,
+    3
+   ],
+   "cost_usd": 0.032,
+   "spec": "epic",
+   "diff": "I-epic.diff"
+  },
+  "Neg": {
+   "k": 0,
+   "n": 20,
+   "failed": 0,
+   "ci": [
+    0.0,
+    0.16112516018512965
+   ],
+   "input_hashes": 1,
+   "findings_per_pass": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   "cost_usd": 0.0288,
+   "spec": "epic",
+   "diff": "Neg.diff"
+  },
+  "Pos": {
+   "k": 5,
+   "n": 5,
+   "failed": 0,
+   "ci": [
+    0.5655175313406071,
+    1.0
+   ],
+   "input_hashes": 1,
+   "findings_per_pass": [
+    4,
+    3,
+    3,
+    3,
+    2
+   ],
+   "cost_usd": 0.0107,
+   "spec": "epic",
+   "diff": "Pos.diff"
+  }
+ },
+ "fisher_epic_vs_A": 1.5234333559042173e-10,
+ "fisher_epic_vs_B": 1.5234333559042173e-10,
+ "two_of_three_keep_d_epic": 0.9927500000000002,
+ "two_of_three_keep_f": 0.0,
+ "conditions": {
+  "controls_valid": true,
+  "epic_detects": true,
+  "tickets_miss": true,
+  "rates_differ": true
+ },
+ "E2": "met"
+}

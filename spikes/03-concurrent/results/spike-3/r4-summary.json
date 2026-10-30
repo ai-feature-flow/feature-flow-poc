@@ -1,0 +1,175 @@
+{
+ "series": {
+  "I-A": {
+   "k": 0,
+   "n": 20,
+   "failed": 0,
+   "ci": [
+    0.0,
+    0.16112516018512965
+   ],
+   "input_hashes": 1,
+   "findings_per_pass": [
+    0,
+    0,
+    1,
+    0,
+    0,
+    1,
+    0,
+    1,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0
+   ],
+   "cost_usd": 0.0119,
+   "spec": "A",
+   "diff": "I-A.diff"
+  },
+  "I-B": {
+   "k": 0,
+   "n": 20,
+   "failed": 0,
+   "ci": [
+    0.0,
+    0.16112516018512965
+   ],
+   "input_hashes": 1,
+   "findings_per_pass": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "cost_usd": 0.0095,
+   "spec": "B",
+   "diff": "I-B.diff"
+  },
+  "I-epic": {
+   "k": 20,
+   "n": 20,
+   "failed": 0,
+   "ci": [
+    0.8388748398148705,
+    1.0
+   ],
+   "input_hashes": 1,
+   "findings_per_pass": [
+    4,
+    3,
+    3,
+    2,
+    4,
+    3,
+    1,
+    1,
+    3,
+    2,
+    3,
+    2,
+    3,
+    2,
+    2,
+    1,
+    3,
+    3,
+    2,
+    1
+   ],
+   "cost_usd": 0.0296,
+   "spec": "epic",
+   "diff": "I-epic.diff"
+  },
+  "Neg": {
+   "k": 15,
+   "n": 20,
+   "failed": 0,
+   "ci": [
+    0.5312991206074114,
+    0.8881382993000237
+   ],
+   "input_hashes": 1,
+   "findings_per_pass": [
+    2,
+    3,
+    2,
+    3,
+    2,
+    2,
+    2,
+    1,
+    3,
+    3,
+    2,
+    2,
+    2,
+    2,
+    0,
+    2,
+    1,
+    2,
+    2,
+    1
+   ],
+   "cost_usd": 0.0288,
+   "spec": "epic",
+   "diff": "Neg.diff"
+  },
+  "Pos": {
+   "k": 5,
+   "n": 5,
+   "failed": 0,
+   "ci": [
+    0.5655175313406071,
+    1.0
+   ],
+   "input_hashes": 1,
+   "findings_per_pass": [
+    1,
+    3,
+    2,
+    1,
+    3
+   ],
+   "cost_usd": 0.0091,
+   "spec": "epic",
+   "diff": "Pos.diff"
+  }
+ },
+ "fisher_epic_vs_A": 7.254444551924844e-12,
+ "fisher_epic_vs_B": 7.254444551924844e-12,
+ "two_of_three_keep_d_epic": 1.0,
+ "two_of_three_keep_f": 0.84375,
+ "conditions": {
+  "controls_valid": false,
+  "epic_detects": true,
+  "tickets_miss": true,
+  "rates_differ": true
+ },
+ "E2": "inconclusive (controls failed)"
+}

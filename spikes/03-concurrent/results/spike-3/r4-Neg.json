@@ -1,0 +1,521 @@
+{
+  "series": "Neg",
+  "spec": "epic",
+  "specification": "Epic: Widget names are case- and whitespace-insensitive: the store keeps each name normalised (trimmed, lower-case), and a client can always look a widget up by the name it created it with, in any case or spacing. Widgets record their creation time.",
+  "diff": "Neg.diff",
+  "diffHash": "bf25c5e0c82b84c3",
+  "passes": 20,
+  "results": [
+    {
+      "pass": 1,
+      "ok": true,
+      "InputHash": "d9120c043d5bafea96bb9231c5212a67b149323602d818be524e0d67f46e518d",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0020608500000000004,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "compile-break-unverified-callsites",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "Adding a required third positional parameter breaks every existing two-argument \u0060new Widget(...)\u0060 call, and the plan admits the integration test call sites (WidgetRepositoryTests.cs) were never checked or updated in this diff.",
+          "Blocking": false
+        },
+        {
+          "Rule": "diff-incomplete-review",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Add / Normalise / FindByName",
+          "Snippet": "using System.Globalization;",
+          "Message": "The WidgetStore.cs hunk is truncated, so the Normalise helper, the Add change, the lock-scoped CreatedAt assignment and the FindByName method that Program.cs calls cannot be verified from the diff, and the planned test files are not shown.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 2,
+      "ok": true,
+      "InputHash": "d9120c043d5bafea96bb9231c5212a67b149323602d818be524e0d67f46e518d",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00228175,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "unverifiable-change",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.FindByName",
+          "Snippet": "store.FindByName(name) is { } widget ? Results.Ok(widget) : Results.NotFound());",
+          "Message": "Program.cs calls WidgetStore.FindByName, but the WidgetStore.cs hunk is truncated before any FindByName addition, so the lookup\u0027s normalisation and its placement after Count() cannot be confirmed.",
+          "Blocking": false
+        },
+        {
+          "Rule": "unverifiable-change",
+          "Path": "tests/FeatureFlow.Example.Api.IntegrationTests/WidgetRepositoryTests.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "The plan says the other two-argument \u0060new Widget(...)\u0060 call sites were never checked and may no longer compile after the CreatedAt parameter was added, and the diff does not show them being updated.",
+          "Blocking": false
+        },
+        {
+          "Rule": "missing-test",
+          "Path": "tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs",
+          "Symbol": "WidgetNameNormalisationTests",
+          "Snippet": "Tests: WidgetNameNormalisationTests.cs, Add(\u0022  Alpha \u0022) returns a widget named \u0022alpha\u0022.",
+          "Message": "The plan lists new test files (WidgetNameNormalisationTests.cs, WidgetFindByNameTests.cs, WidgetCreatedAtTests.cs), but none of them appear in the diff, which may be truncated.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 3,
+      "ok": true,
+      "InputHash": "d9120c043d5bafea96bb9231c5212a67b149323602d818be524e0d67f46e518d",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0018850499999999999,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "incomplete-diff-evidence",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Add / FindByName",
+          "Snippet": "lock (_ga\u2026",
+          "Message": "The WidgetStore.cs hunk is cut off before the Add body, so the diff does not show that Add applies Normalise, sets CreatedAt, or that FindByName exists, although Program.cs already calls store.FindByName.",
+          "Blocking": true
+        },
+        {
+          "Rule": "compile-break-unverified-call-sites",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "Widget gains a required third parameter, and the plan says other two-argument \u0060new Widget(\u0060 call sites, including IntegrationTests/WidgetRepositoryTests.cs, were not checked and may no longer compile.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 4,
+      "ok": true,
+      "InputHash": "d9120c043d5bafea96bb9231c5212a67b149323602d818be524e0d67f46e518d",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00225925,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "diff-truncated-unverifiable",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Add / FindByName",
+          "Snippet": "lock (_ga\u2026",
+          "Message": "The WidgetStore.cs hunk is cut off, so the diff does not show Normalise being applied in Add, the CreatedAt argument, or the FindByName method that Program.cs now calls; these cannot be verified and FindByName\u0027s absence would break compilation.",
+          "Blocking": false
+        },
+        {
+          "Rule": "planned-tests-missing",
+          "Path": "tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs",
+          "Symbol": "WidgetNameNormalisationTests",
+          "Snippet": "",
+          "Message": "The plans call for WidgetNameNormalisationTests.cs, WidgetFindByNameTests.cs and WidgetCreatedAtTests.cs, but none of these new test files appear in the diff, so the normalisation, lookup and CreatedAt behaviour is untested.",
+          "Blocking": false
+        },
+        {
+          "Rule": "widget-ctor-call-sites",
+          "Path": "tests/FeatureFlow.Example.Api.IntegrationTests/WidgetRepositoryTests.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "The Widget record gained a required third parameter, and the plan itself notes that other two-argument \u0060new Widget(...)\u0060 call sites, including in the integration tests, were not checked and may no longer compile.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 5,
+      "ok": true,
+      "InputHash": "d9120c043d5bafea96bb9231c5212a67b149323602d818be524e0d67f46e518d",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00119558,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "unverified-change",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Add / Normalise / FindByName",
+          "Snippet": "lock (_ga\u2026",
+          "Message": "The WidgetStore.cs hunk is truncated, so the Add, Normalise, and FindByName changes that Program.cs depends on cannot be reviewed from this diff.",
+          "Blocking": false
+        },
+        {
+          "Rule": "compile-break-risk",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "The Widget record gained a required third parameter, and the plan itself notes that other two-argument \u0060new Widget(\u0060 call sites, such as in WidgetRepositoryTests.cs, were not checked and may no longer compile.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 6,
+      "ok": true,
+      "InputHash": "d9120c043d5bafea96bb9231c5212a67b149323602d818be524e0d67f46e518d",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00129528,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "unverified-change-coverage",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Add / FindByName",
+          "Snippet": "lock (_ga\u2026",
+          "Message": "The WidgetStore.cs hunk is truncated, so the Normalise call in Add, the CreatedAt argument, and the FindByName body cannot be verified from the diff.",
+          "Blocking": true
+        },
+        {
+          "Rule": "unverified-call-sites",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "The Widget record gained a required third parameter, and the plan notes that other two-argument \u0060new Widget(\u0060 call sites, including IntegrationTests/WidgetRepositoryTests.cs, were not checked and may not compile.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 7,
+      "ok": true,
+      "InputHash": "d9120c043d5bafea96bb9231c5212a67b149323602d818be524e0d67f46e518d",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00144318,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "diff-coverage",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Add / FindByName",
+          "Snippet": "lock (_ga\u2026",
+          "Message": "The WidgetStore.cs hunk is truncated, so the Normalise call in Add, the CreatedAt assignment, and the FindByName body that Program.cs now calls cannot be verified from the diff.",
+          "Blocking": true
+        },
+        {
+          "Rule": "compile-risk",
+          "Path": "tests/FeatureFlow.Example.Api.IntegrationTests/WidgetRepositoryTests.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "The Widget record now requires a third CreatedAt argument, and the plan admits other two-argument \u0060new Widget(\u0060 call sites (including the integration tests) were never checked, so the build may break.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 8,
+      "ok": true,
+      "InputHash": "d9120c043d5bafea96bb9231c5212a67b149323602d818be524e0d67f46e518d",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0006467399999999999,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "compile-call-site-coverage",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "The Widget record gains a required third parameter, but the visible diff does not show any other two-argument \u0060new Widget(...)\u0060 call sites being updated, and the plan itself notes the grep was denied and IntegrationTests/WidgetRepositoryTests.cs was not read, so the build may break.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 9,
+      "ok": true,
+      "InputHash": "d9120c043d5bafea96bb9231c5212a67b149323602d818be524e0d67f46e518d",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00154208,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "incomplete-diff-verification",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Add / FindByName",
+          "Snippet": "lock (_ga\u2026",
+          "Message": "The WidgetStore.cs hunk is truncated before the Add body, so the Normalise call, the CreatedAt argument, and the FindByName method that Program.cs now calls cannot be confirmed from the diff.",
+          "Blocking": false
+        },
+        {
+          "Rule": "compile-risk-unverified-call-sites",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "Adding a required third parameter to Widget will break any existing two-argument \u0060new Widget(...)\u0060 call sites, and the plan says the grep for them was denied and IntegrationTests/WidgetRepositoryTests.cs was not read, so the change may not compile.",
+          "Blocking": false
+        },
+        {
+          "Rule": "missing-test-files-in-diff",
+          "Path": "tests/FeatureFlow.Example.Api.UnitTests",
+          "Symbol": "WidgetNameNormalisationTests, WidgetFindByNameTests, WidgetCreatedAtTests",
+          "Snippet": "tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs (new)",
+          "Message": "The plans require three new unit test files, but none of them appear in the visible diff, so the planned test coverage cannot be confirmed.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 10,
+      "ok": true,
+      "InputHash": "d9120c043d5bafea96bb9231c5212a67b149323602d818be524e0d67f46e518d",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00156058,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "incomplete-diff-review",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore",
+          "Snippet": "@@ -30,12 \u002B32,15 @@ public sealed class WidgetStore",
+          "Message": "The diff is truncated mid-hunk, so the Add body (Normalise call and CreatedAt assignment) and the FindByName method that Program.cs now calls cannot be confirmed from the shown diff.",
+          "Blocking": false
+        },
+        {
+          "Rule": "compile-risk-unverified-call-sites",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "Adding a required third parameter to Widget breaks any two-argument \u0060new Widget(...)\u0060 call site, and the plan notes the grep was denied and WidgetRepositoryTests.cs was not read, so the integration tests may fail to compile.",
+          "Blocking": false
+        },
+        {
+          "Rule": "missing-test-coverage-in-diff",
+          "Path": "tests/FeatureFlow.Example.Api.UnitTests",
+          "Symbol": "WidgetNameNormalisationTests, WidgetFindByNameTests, WidgetCreatedAtTests",
+          "Snippet": "new file: tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs",
+          "Message": "The three new test files named in the plans do not appear in the visible diff, so the normalisation, FindByName, and CreatedAt behaviour is not shown to be tested.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 11,
+      "ok": true,
+      "InputHash": "d9120c043d5bafea96bb9231c5212a67b149323602d818be524e0d67f46e518d",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0010209799999999999,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "unverified-call-sites",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "The Widget record gains a required third parameter, and the plan notes that other two-argument \u0060new Widget(\u0060 call sites (e.g. IntegrationTests/WidgetRepositoryTests.cs) were not checked, so they may fail to compile.",
+          "Blocking": false
+        },
+        {
+          "Rule": "incomplete-diff",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore",
+          "Snippet": "lock (_ga\u2026",
+          "Message": "The WidgetStore.cs hunk is truncated, so the FindByName implementation and the Normalise/CreatedAt wiring in Add cannot be verified from the diff, and the new route in Program.cs depends on FindByName.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 12,
+      "ok": true,
+      "InputHash": "d9120c043d5bafea96bb9231c5212a67b149323602d818be524e0d67f46e518d",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00168678,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "compile-break-unverified-call-sites",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "The Widget record gains a required third parameter, and the plan itself says other two-argument \u0060new Widget(\u0060 call sites (including IntegrationTests/WidgetRepositoryTests.cs) were never checked, yet the diff contains no changes to them, so the solution may not compile.",
+          "Blocking": true
+        },
+        {
+          "Rule": "diff-truncated-unverifiable",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore",
+          "Snippet": "lock (_ga\u2026",
+          "Message": "The WidgetStore.cs hunk is cut off, so Normalise, the Add change, FindByName (which Program.cs now calls), and the CreatedAt assignment cannot be confirmed from the diff.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 13,
+      "ok": true,
+      "InputHash": "d9120c043d5bafea96bb9231c5212a67b149323602d818be524e0d67f46e518d",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0014116799999999998,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "record-arity-change-unverified-call-sites",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "Adding a required third positional parameter breaks any remaining two-argument \u0060new Widget(...)\u0060 call; the plan says WidgetRepositoryTests.cs was never read, and the diff shows no update to it, so the build may fail.",
+          "Blocking": false
+        },
+        {
+          "Rule": "diff-truncated-unverifiable",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore",
+          "Snippet": "lock (_ga\u2026",
+          "Message": "The diff is cut off inside WidgetStore.cs, so Normalise, the CreatedAt argument in Add, FindByName, and the three planned new test files cannot be checked against the ticket from what is shown.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 14,
+      "ok": true,
+      "InputHash": "d9120c043d5bafea96bb9231c5212a67b149323602d818be524e0d67f46e518d",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0014175799999999999,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "unverified-compile-compat",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "The Widget record gains a required third parameter, and the plan notes that other two-argument \u0060new Widget(...)\u0060 call sites (e.g. IntegrationTests/WidgetRepositoryTests.cs) were not checked and may no longer compile.",
+          "Blocking": false
+        },
+        {
+          "Rule": "incomplete-diff",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Add / FindByName",
+          "Snippet": "lock (_ga\u2026",
+          "Message": "The WidgetStore.cs hunk is truncated, so the Add body (Normalise, CreatedAt inside the lock) and the FindByName method that Program.cs calls cannot be verified from this diff.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 15,
+      "ok": true,
+      "InputHash": "d9120c043d5bafea96bb9231c5212a67b149323602d818be524e0d67f46e518d",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00076898,
+      "Outcome": "completed",
+      "findings": []
+    },
+    {
+      "pass": 16,
+      "ok": true,
+      "InputHash": "d9120c043d5bafea96bb9231c5212a67b149323602d818be524e0d67f46e518d",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00155578,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "compile-risk-unverified-call-sites",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "The Widget record gained a required third parameter, and EPIC3-C says other two-argument \u0060new Widget(...)\u0060 call sites (including IntegrationTests/WidgetRepositoryTests.cs) were never checked or updated, so the solution may not compile.",
+          "Blocking": true
+        },
+        {
+          "Rule": "missing-tests-from-plan",
+          "Path": "tests/FeatureFlow.Example.Api.UnitTests",
+          "Symbol": "WidgetNameNormalisationTests",
+          "Snippet": "tests/FeatureFlow.Example.Api.UnitTests/WidgetNameNormalisationTests.cs (new), WidgetFindByNameTests.cs (new), WidgetCreatedAtTests.cs (new)",
+          "Message": "The three new unit test files named in the EPIC3 plans do not appear in the visible diff, so the normalisation, lookup, and CreatedAt behaviour are not covered by tests in this change.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 17,
+      "ok": true,
+      "InputHash": "d9120c043d5bafea96bb9231c5212a67b149323602d818be524e0d67f46e518d",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00144798,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "diff-completeness",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.FindByName",
+          "Snippet": "store.FindByName(name) is { } widget ? Results.Ok(widget) : Results.NotFound());",
+          "Message": "Program.cs calls WidgetStore.FindByName, but the WidgetStore.cs hunk is truncated, so the definition of FindByName and the Normalise/CreatedAt wiring in Add cannot be confirmed from the diff.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 18,
+      "ok": true,
+      "InputHash": "d9120c043d5bafea96bb9231c5212a67b149323602d818be524e0d67f46e518d",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0015664799999999999,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "unverifiable-change",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Add / FindByName",
+          "Snippet": "lock (_ga\u2026",
+          "Message": "The WidgetStore.cs hunk is cut off, so the diff does not show the Normalise call in Add, the new CreatedAt argument, or the FindByName method that Program.cs now calls; these must be checked in the full file before merge.",
+          "Blocking": false
+        },
+        {
+          "Rule": "compile-risk",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "Adding a required third parameter breaks any remaining two-argument \u0060new Widget(...)\u0060 call sites, and the plan says the grep for them was denied and IntegrationTests/WidgetRepositoryTests.cs was not read, so the build is unverified.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 19,
+      "ok": true,
+      "InputHash": "d9120c043d5bafea96bb9231c5212a67b149323602d818be524e0d67f46e518d",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00066674,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "incomplete-diff-verification",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.FindByName",
+          "Snippet": "store.FindByName(name) is { } widget ? Results.Ok(widget) : Results.NotFound());",
+          "Message": "Program.cs calls store.FindByName, but the WidgetStore.cs hunk in the diff is truncated before any FindByName or Normalise body is visible, so the lookup normalisation and the Add change cannot be confirmed from this diff.",
+          "Blocking": false
+        },
+        {
+          "Rule": "incomplete-diff-verification",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "The Widget record gains a required third parameter, and the plan notes that other two-argument new Widget(...) call sites (e.g. WidgetRepositoryTests.cs) were not checked and may fail to compile.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 20,
+      "ok": true,
+      "InputHash": "d9120c043d5bafea96bb9231c5212a67b149323602d818be524e0d67f46e518d",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0011357799999999999,
+      "Outcome": "findings_open",
+      "findings": [
+        {
+          "Rule": "unverified-call-sites",
+          "Path": "docs/plans/EPIC3-C.md",
+          "Symbol": "Widget",
+          "Snippet": "Not verified: the grep for other \u0060new Widget(\u0060 call sites was denied, and \u0060tests/FeatureFlow.Example.Api.IntegrationTests/WidgetRepositoryTests.cs\u0060 was not read.",
+          "Message": "Changing the Widget record to three positional parameters will break any unseen two-argument \u0060new Widget(...)\u0060 call sites, and the integration tests were never checked, so the build may fail.",
+          "Blocking": false
+        }
+      ]
+    }
+  ]
+}

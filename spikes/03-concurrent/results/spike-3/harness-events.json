@@ -1,0 +1,144 @@
+[
+  {
+    "at": "2026-10-30T10:30:59.382195+00:00",
+    "kind": "integration-branch",
+    "detail": {
+      "integration": "ff/epic/spike-3",
+      "sha": "5dd0108fc9e9a3e4af18995fc68eed6f0a9231ac"
+    }
+  },
+  {
+    "at": "2026-10-30T10:31:21.565342+00:00",
+    "kind": "epic-started",
+    "detail": {
+      "epicId": "spike-3",
+      "lockId": "lock:ai-feature-flow/feature-flow-example:ff/epic/spike-3",
+      "childQueues": {
+        "ticket_a": "spike-3-ticket-a-spike-3",
+        "ticket_b": "spike-3-ticket-b-spike-3",
+        "ticket_c": "spike-3-ticket-c-spike-3"
+      }
+    }
+  },
+  {
+    "at": "2026-10-30T10:34:27.067305+00:00",
+    "kind": "merge-gates-simultaneous",
+    "detail": {
+      "tickets": [
+        "a",
+        "c"
+      ]
+    }
+  },
+  {
+    "at": "2026-10-30T10:34:27.0965+00:00",
+    "kind": "decision",
+    "detail": {
+      "workflow": "spike-3/ticket_c",
+      "gate": "gate_merge",
+      "type": "ticket.merge_approval",
+      "decision": "approved"
+    }
+  },
+  {
+    "at": "2026-10-30T10:34:27.096501+00:00",
+    "kind": "decision",
+    "detail": {
+      "workflow": "spike-3/ticket_a",
+      "gate": "gate_merge",
+      "type": "ticket.merge_approval",
+      "decision": "approved"
+    }
+  },
+  {
+    "at": "2026-10-30T10:34:29.263054+00:00",
+    "kind": "I2-kill",
+    "detail": {
+      "holder": "spike-3/ticket_c",
+      "grantedAt": "2026-10-30T10:34:27.108383+00:00",
+      "killedAt": "2026-10-30T10:34:29.262902+00:00"
+    }
+  },
+  {
+    "at": "2026-10-30T10:35:02.355914+00:00",
+    "kind": "I2-query-during-outage",
+    "detail": {
+      "holder": "spike-3/ticket_c",
+      "waiters": [
+        "spike-3/ticket_a"
+      ]
+    }
+  },
+  {
+    "at": "2026-10-30T10:35:30.461739+00:00",
+    "kind": "I2-restart",
+    "detail": {
+      "ticket": "c"
+    }
+  },
+  {
+    "at": "2026-10-30T10:36:47.735529+00:00",
+    "kind": "decision",
+    "detail": {
+      "workflow": "spike-3/ticket_b",
+      "gate": "gate_design",
+      "type": "ticket.design_approval",
+      "decision": "approved"
+    }
+  },
+  {
+    "at": "2026-10-30T10:37:06.232835+00:00",
+    "kind": "I1-kill",
+    "detail": {
+      "ticket": "b",
+      "otherInFlight": "a",
+      "killedAt": "2026-10-30T10:37:06.232645+00:00"
+    }
+  },
+  {
+    "at": "2026-10-30T10:37:54.54515+00:00",
+    "kind": "decision",
+    "detail": {
+      "workflow": "spike-3/ticket_a",
+      "gate": "gate_merge",
+      "type": "ticket.merge_approval",
+      "decision": "approved"
+    }
+  },
+  {
+    "at": "2026-10-30T10:42:07.541228+00:00",
+    "kind": "I1-restart",
+    "detail": {
+      "ticket": "b",
+      "otherInFlight": "a",
+      "downSeconds": 301.308512
+    }
+  },
+  {
+    "at": "2026-10-30T10:44:01.743617+00:00",
+    "kind": "decision",
+    "detail": {
+      "workflow": "spike-3/ticket_b",
+      "gate": "gate_merge",
+      "type": "ticket.merge_approval",
+      "decision": "approved"
+    }
+  },
+  {
+    "at": "2026-10-30T10:45:22.780752+00:00",
+    "kind": "decision",
+    "detail": {
+      "workflow": "spike-3",
+      "gate": "gate_epic_findings",
+      "type": "epic.findings_review",
+      "decision": "approved"
+    }
+  },
+  {
+    "at": "2026-10-30T10:45:24.960567+00:00",
+    "kind": "epic-closed",
+    "detail": {
+      "result": "completed"
+    }
+  }
+]
