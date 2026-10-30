@@ -46,7 +46,8 @@ public sealed record AgentRunResult(
     string? SandboxKey = null,
     string? PatchRef = null,
     string? ErrorReason = null,
-    int InfrastructureRetries = 0);
+    int InfrastructureRetries = 0,
+    Dictionary<string, string>? Outputs = null);
 
 /// <summary>
 /// What an agent.run activity heartbeats. docs/01 3.6: "Heartbeats carry

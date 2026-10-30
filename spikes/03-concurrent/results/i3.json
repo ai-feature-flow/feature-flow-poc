@@ -1,0 +1,27 @@
+{
+  "parent": "i3-1793355730",
+  "join": "any_failed",
+  "result": "failed",
+  "children": [
+    {
+      "Id": "c1",
+      "startS": 0.042024,
+      "closeS": 20.12631,
+      "Status": "Completed"
+    },
+    {
+      "Id": "c2",
+      "startS": 0.050358,
+      "closeS": 2.109692,
+      "Status": "Completed"
+    },
+    {
+      "Id": "c3",
+      "startS": 2.12771,
+      "closeS": 12.172979,
+      "Status": "Completed"
+    }
+  ],
+  "parentCloseS": 20.137914,
+  "pass": true
+}

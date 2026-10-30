@@ -55,7 +55,12 @@ public sealed partial class RealActivities
         // what makes "the agent made no commit" detectable: reading HEAD after
         // the run always succeeds, so a bare post-run read can never tell
         // whether the agent committed anything.
-        var headBefore = await HeadShaAsync();
+        await SyncWorktreeAsync(step.Id);
+
+        // Spike 3 (N4): with the checkout synced, "the agent committed" means
+        // the local head moved past the remote head. A commit made before a
+        // worker crash and not yet pushed then still counts on resume.
+        var headBefore = SyncWorktree ? await RemoteHeadAsync() ?? await HeadShaAsync() : await HeadShaAsync();
 
         // R16: read feature-flow.yaml from the branch this step works on, and
         // record its hash. A mid-run edit is visible rather than silently stale.

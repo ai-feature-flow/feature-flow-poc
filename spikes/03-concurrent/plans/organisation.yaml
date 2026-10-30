@@ -1,0 +1,112 @@
+apiVersion: feature-flow/v1
+kind: Organisation
+
+# ---------------------------------------------------------------- identity
+# The engine acts as a GitHub App. Agents never see this credential; they get
+# a short-lived, single-repository token minted from it (R6, docs/07 section 8).
+codeHost:
+  default: github
+  instances:
+    github:
+      name: github
+      config:
+        appId: 5507595
+        secretRef: secrets/github-app-key
+        installationRef: secrets/github-installation-id
+
+ci:
+  default: github-actions
+  instances:
+    github-actions:
+      name: github-actions
+      config:
+        # CI delegation is the default for Docker-dependent tiers (Q2), so this
+        # instance is on the main path, not a fallback.
+        secretRef: secrets/github-app-key
+        installationRef: secrets/github-installation-id
+
+# Two named instances of the agent runtime provider (review 07 Q3), selected by
+# roleMapping below. Nothing in the engine names either one.
+agentRuntime:
+  default: claude-code
+  instances:
+    copilot-cli:
+      name: copilot-cli
+      config:
+        executable: copilot
+        # Model and endpoint are configuration, never template content.
+        # An OpenAI-compatible router endpoint is how a role runs on an open
+        # model through bring-your-own-key.
+        modelRef: secrets/model-default
+        endpointRef: secrets/model-router-endpoint
+        keyRef: secrets/model-router-key
+    claude-code:
+      name: claude-code
+      config:
+        executable: claude
+        modelRef: secrets/model-default   # haiku for the 2026-10-30 proof
+        # First-party Anthropic subscription: no endpoint and no keyRef. The
+        # CLI uses the login token it inherits from the worker's environment
+        # (CLAUDE_CODE_OAUTH_TOKEN). That token reaching the agent is a known
+        # gap against design requirement R1 (docs/16 section 12).
+        auth: subscription
+
+# ------------------------------------------------------------------ policy
+policy:
+  approval:
+    ticket.merge_approval: { roles: [approver], minCount: 1, agentCounts: false }
+    ticket.spec_approval: { roles: [approver], minCount: 1, agentCounts: false }
+    ticket.design_approval: { roles: [approver], minCount: 1, agentCounts: false }
+    ticket.escalation: { roles: [approver], minCount: 1, agentCounts: false }
+    default_branch.merge_approval: { roles: [approver], minCount: 2, agentCounts: false } # floor F1
+    epic.findings_review: { roles: [approver], minCount: 1, agentCounts: false }  # Spike 3 (N5)
+    epic.escalation: { roles: [approver], minCount: 1, agentCounts: false }       # Spike 3 (N5)
+  merge:
+    defaultBranch: { methods: [squash], requireChecks: true, autoMerge: false }  # floor F1
+    integrationBranch: { methods: [merge], requireChecks: true, autoMerge: true }
+  findings:
+    mergeBar: noUnresolvedBlocking
+    requireDeclineReason: true
+  attempts:
+    ceiling: { agent.run: 5, perRun: 40 }
+    hardCeiling: { agent.run: 8, perRun: 60 }
+  replan:
+    allowed_roles: [feature-flow-default:roles/planner, feature-flow-default:roles/designer, feature-flow-default:roles/implementer, feature-flow-default:roles/fixer, feature-flow-default:roles/reviewer]
+  timeouts:
+    heartbeat: 30s
+    stalledAfter: 5m
+  steering:
+    mayAmendStep: [steerer, admin]
+    mayOverrideContent: [admin]
+    mayGrantAttempts: [steerer, admin]
+    mayAbort: [steerer, admin]
+  chat:
+    allowedDecisions: [ticket.merge_approval, ticket.spec_approval, ticket.design_approval, ticket.escalation, epic.findings_review, epic.escalation]
+    # default_branch.merge_approval is console only.
+
+# -------------------------------------------------------------------- roles
+roles:
+  viewer:   { idpGroups: [acme-engineering] }
+  approver: { idpGroups: [acme-leads] }
+  steerer:  { idpGroups: [acme-leads] }
+  admin:    { idpGroups: [acme-platform] }
+
+# Which runtime instance each role uses (docs/09 11.1). This is the only place
+# a product name appears.
+#
+# Review 14 A3 put every role on copilot-cli, because Claude Code validates
+# model names against Anthropic's own list and could not reach the OpenRouter
+# model (z-ai/glm-5.3-flash) — it failed with [claude-code:unrecognized_model].
+#
+# 2026-10-30: with a first-party Anthropic subscription on the machine, the
+# product owner decided to prove claude-code on its own. Every role, including
+# the reviewer (whose verdict is a `claude -p` structured-output call), runs on
+# claude-code with model haiku. Evidence: docs/16 section 12 and
+# results/claude-proof-run.md. The copilot-cli instance stays registered but
+# maps to no role.
+roleMapping:
+  planner:     { agentRuntime: claude-code, model: default }
+  designer:    { agentRuntime: claude-code, model: default }
+  implementer: { agentRuntime: claude-code, model: default }
+  fixer:       { agentRuntime: claude-code, model: default }
+  reviewer:    { agentRuntime: claude-code, model: default }

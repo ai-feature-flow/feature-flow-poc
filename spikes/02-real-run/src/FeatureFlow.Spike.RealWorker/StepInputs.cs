@@ -82,8 +82,20 @@ public static class Prompt
         "Add WidgetStore.Contains(int id), returning whether the store holds a widget " +
         "with that id, together with a unit test of it.";
 
+    /// <summary>Spike 3: per-ticket task prompts, supplied by the Spike 3 worker.</summary>
+    public static Func<Step, RunContext, FileContent?, string?>? Override;
+
+    /// <summary>
+    /// Spike 3 (docs/17 6.1): the specification a review checks against — the
+    /// ticket text at ticket scope, the epic description at epic scope.
+    /// </summary>
+    public static Func<Step, RunContext, string?>? ReviewSpecification;
+
     public static string For(Step step, RunContext context, FileContent? manifest)
     {
+        if (Override?.Invoke(step, context, manifest) is { } custom)
+            return custom;
+
         var role = Inputs.Role(step) ?? "implementer";
         var write = Inputs.WriteAccess(step);
 

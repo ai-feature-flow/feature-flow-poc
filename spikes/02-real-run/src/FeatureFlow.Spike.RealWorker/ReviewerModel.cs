@@ -31,7 +31,7 @@ public sealed class ReviewerModel
 
         {"outcome": "completed" | "findings_open",
          "findings": [{"rule": "<rule id>", "path": "<file path>", "symbol": "<symbol>",
-                       "snippet": "<the offending line>", "blocking": true|false}]}
+                       "snippet": "<the offending line>", "message": "<one sentence>", "blocking": true|false}]}
 
         Rules:
         - Raise a finding only for something the diff actually shows, or for
@@ -53,9 +53,9 @@ public sealed class ReviewerModel
         {"type":"object","required":["outcome","findings"],"properties":{
           "outcome":{"type":"string","enum":["completed","findings_open"]},
           "findings":{"type":"array","items":{"type":"object",
-            "required":["rule","path","symbol","snippet","blocking"],
+            "required":["rule","path","symbol","snippet","message","blocking"],
             "properties":{"rule":{"type":"string"},"path":{"type":"string"},
-              "symbol":{"type":"string"},"snippet":{"type":"string"},"blocking":{"type":"boolean"}}}}}}
+              "symbol":{"type":"string"},"snippet":{"type":"string"},"message":{"type":"string"},"blocking":{"type":"boolean"}}}}}}
         """;
 
     private readonly ModelClient client;
@@ -67,14 +67,18 @@ public sealed class ReviewerModel
     /// passes raised, and which of them were declined, so the model can
     /// stabilise rather than re-raise.
     /// </summary>
-    public async Task<ProviderResult<ReviewVerdict>> ReviewAsync(
+    /// <summary>
+    /// Spike 3 (docs/17 5.2 and 6.1): the fully rendered reviewer input and its
+    /// hash. The gated step and ff-presubmit both render through here, so equal
+    /// inputs give an equal hash, and the hash covers every input: prompt,
+    /// specification, diff, prior and declined findings, and model.
+    /// </summary>
+    public RenderedReview Render(
         string? diffHash,
         string diffText,
         IReadOnlyList<Finding> prior,
         IReadOnlyList<string> declinedIds,
-        string stepId,
-        CancellationToken ct,
-        string? ticket = null)
+        string? ticket)
     {
         var priorText = prior.Count == 0
             ? "(none)"
@@ -104,8 +108,25 @@ public sealed class ReviewerModel
             Review the diff. Reply with the JSON object only.
             """;
 
+        var material = $"model={client.Model}\nschema={VerdictSchema}\nsystem={SystemPrompt}\nuser={userPrompt}";
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(material))).ToLowerInvariant();
+        return new RenderedReview(SystemPrompt, userPrompt, VerdictSchema, client.Model, hash);
+    }
+
+    public async Task<ProviderResult<ReviewVerdict>> ReviewAsync(
+        string? diffHash,
+        string diffText,
+        IReadOnlyList<Finding> prior,
+        IReadOnlyList<string> declinedIds,
+        string stepId,
+        CancellationToken ct,
+        string? ticket = null)
+    {
+        var rendered = Render(diffHash, diffText, prior, declinedIds, ticket);
+
         var response = await client.CompleteAsync(
-            new ModelRequest(SystemPrompt, userPrompt, JsonSchema: VerdictSchema), ct).ConfigureAwait(false);
+            new ModelRequest(rendered.System, rendered.User, JsonSchema: rendered.Schema), ct).ConfigureAwait(false);
 
         if (!response.IsOk)
             return ProviderResult<ReviewVerdict>.Fail(response.Error!);
@@ -127,7 +148,11 @@ public sealed class ReviewerModel
             .Where(f => !declinedIds.Contains(f.Id, StringComparer.Ordinal))
             .ToList();
 
-        var effectiveOutcome = raised.Count > 0 ? Outcomes.FindingsOpen : outcome;
+        // With the documented bar (D8, Readiness.BlockingOnly) only a blocking
+        // finding opens the fix loop; non-blocking ones are still recorded.
+        var effectiveOutcome = Readiness.BlockingOnly
+            ? (raised.Any(f => f.Blocking) ? Outcomes.FindingsOpen : Outcomes.Completed)
+            : (raised.Count > 0 ? Outcomes.FindingsOpen : outcome);
 
         return ProviderResult<ReviewVerdict>.Ok(new ReviewVerdict(
             StepId: stepId,
@@ -139,7 +164,8 @@ public sealed class ReviewerModel
             Model: response.Value!.Model,
             InputTokens: response.Value!.InputTokens,
             OutputTokens: response.Value!.OutputTokens,
-            CostUsd: response.Value!.CostUsd));
+            CostUsd: response.Value!.CostUsd,
+            InputHash: rendered.Hash));
     }
 
     private static (string Outcome, List<Finding> Findings)? ParseVerdict(string text, string stepId)
@@ -192,7 +218,8 @@ public sealed class ReviewerModel
                         Path: finding["path"]?.GetValue<string>() ?? "",
                         Symbol: finding["symbol"]?.GetValue<string>() ?? "",
                         Snippet: finding["snippet"]?.GetValue<string>() ?? "",
-                        Blocking: finding["blocking"]?.GetValue<bool>() ?? false));
+                        Blocking: finding["blocking"]?.GetValue<bool>() ?? false,
+                        Message: finding["message"]?.GetValue<string>()));
                 }
             }
 
@@ -207,3 +234,5 @@ public sealed class ReviewerModel
     private static string Truncate(string text, int limit) =>
         text.Length <= limit ? text : text[..limit] + "…";
 }
+
+public sealed record RenderedReview(string System, string User, string Schema, string Model, string Hash);

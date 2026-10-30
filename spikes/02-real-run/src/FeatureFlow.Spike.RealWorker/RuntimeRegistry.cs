@@ -101,7 +101,11 @@ public sealed class RuntimeRegistry
         var hookSettings = ClaudeCodeCapabilityDetector.WriteHookSettings(
             hookLog,
             Path.GetFullPath(Path.Combine(workingDirectory, "..", "agent-runtime-work", $"{runId}.claude-settings.json")),
-            allow: new[] { "Bash(git add:*)", "Bash(git commit:*)", "Bash(git status:*)", "Bash(git diff:*)" });
+            allow: (Environment.GetEnvironmentVariable("FF_AGENT_ALLOW") is { Length: > 0 } extra
+                    ? new[] { "Bash(git add:*)", "Bash(git commit:*)", "Bash(git status:*)", "Bash(git diff:*)" }
+                        .Concat(extra.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    : new[] { "Bash(git add:*)", "Bash(git commit:*)", "Bash(git status:*)", "Bash(git diff:*)" })
+                .ToArray());
 
         var claude = new ClaudeCodeAgentRuntimeProvider(
             new ModelGatewayCredentialBroker(

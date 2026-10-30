@@ -1,0 +1,123 @@
+{
+  "locked": {
+    "holders": [
+      {
+        "holder": "sanity-1793355642-locked-1",
+        "waitedSeconds": 0.1,
+        "startS": 0.1,
+        "endS": 20.1
+      },
+      {
+        "holder": "sanity-1793355642-locked-3",
+        "waitedSeconds": 20.2,
+        "startS": 20.2,
+        "endS": 40.2
+      },
+      {
+        "holder": "sanity-1793355642-locked-2",
+        "waitedSeconds": 40.3,
+        "startS": 40.3,
+        "endS": 60.3
+      }
+    ],
+    "overlaps": [],
+    "audit": [
+      {
+        "Kind": "requested",
+        "HolderId": "sanity-1793355642-locked-1",
+        "At": "2026-10-30T10:20:43.462893+00:00",
+        "Detail": null
+      },
+      {
+        "Kind": "requested",
+        "HolderId": "sanity-1793355642-locked-3",
+        "At": "2026-10-30T10:20:43.462893+00:00",
+        "Detail": null
+      },
+      {
+        "Kind": "requested",
+        "HolderId": "sanity-1793355642-locked-2",
+        "At": "2026-10-30T10:20:43.462893+00:00",
+        "Detail": null
+      },
+      {
+        "Kind": "granted",
+        "HolderId": "sanity-1793355642-locked-1",
+        "At": "2026-10-30T10:20:43.462893+00:00",
+        "Detail": null
+      },
+      {
+        "Kind": "released",
+        "HolderId": "sanity-1793355642-locked-1",
+        "At": "2026-10-30T10:21:03.571943+00:00",
+        "Detail": "run ended"
+      },
+      {
+        "Kind": "granted",
+        "HolderId": "sanity-1793355642-locked-3",
+        "At": "2026-10-30T10:21:03.571943+00:00",
+        "Detail": null
+      },
+      {
+        "Kind": "released",
+        "HolderId": "sanity-1793355642-locked-3",
+        "At": "2026-10-30T10:21:23.646385+00:00",
+        "Detail": "run ended"
+      },
+      {
+        "Kind": "granted",
+        "HolderId": "sanity-1793355642-locked-2",
+        "At": "2026-10-30T10:21:23.646385+00:00",
+        "Detail": null
+      },
+      {
+        "Kind": "released",
+        "HolderId": "sanity-1793355642-locked-2",
+        "At": "2026-10-30T10:21:43.726785+00:00",
+        "Detail": "run ended"
+      }
+    ],
+    "expectationMet": true
+  },
+  "bypassed": {
+    "holders": [
+      {
+        "holder": "sanity-1793355642-bypassed-1",
+        "waitedSeconds": 0,
+        "startS": 0,
+        "endS": 20.1
+      },
+      {
+        "holder": "sanity-1793355642-bypassed-3",
+        "waitedSeconds": 0,
+        "startS": 0,
+        "endS": 20.1
+      },
+      {
+        "holder": "sanity-1793355642-bypassed-2",
+        "waitedSeconds": 0,
+        "startS": 0,
+        "endS": 20.1
+      }
+    ],
+    "overlaps": [
+      {
+        "a": "sanity-1793355642-bypassed-1",
+        "b": "sanity-1793355642-bypassed-3",
+        "seconds": 20
+      },
+      {
+        "a": "sanity-1793355642-bypassed-1",
+        "b": "sanity-1793355642-bypassed-2",
+        "seconds": 20
+      },
+      {
+        "a": "sanity-1793355642-bypassed-3",
+        "b": "sanity-1793355642-bypassed-2",
+        "seconds": 20
+      }
+    ],
+    "audit": null,
+    "expectationMet": true
+  }
+}

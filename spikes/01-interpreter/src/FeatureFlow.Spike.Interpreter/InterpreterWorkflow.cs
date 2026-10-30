@@ -8,7 +8,7 @@ namespace FeatureFlow.Spike.Interpreter;
 /// plan, not from code. docs/01 3.1.
 /// </summary>
 [Workflow]
-public class InterpreterWorkflow
+public partial class InterpreterWorkflow
 {
     /// <summary>
     /// Continue-as-new threshold. Review 12 A2: derived from Temporal's limits
@@ -61,6 +61,14 @@ public class InterpreterWorkflow
         if (input.WaitForRelease && !released)
         {
             await Workflow.WaitConditionAsync(() => released);
+        }
+
+        // Spike 3: dispatch on first completion. Versioned so Spike 1's recorded
+        // histories (batch-and-wait-all) still replay.
+        if (Workflow.Patched(DispatchAnyPatch))
+        {
+            runInput = input;
+            return await RunDispatchAnyAsync(threshold);
         }
 
         while (true)
@@ -551,6 +559,11 @@ public class InterpreterWorkflow
                 run.Outcome = result.Outcome;
                 run.Attempts = attempts + 1;
                 state.AttemptBudgets[step.Id] = run.Attempts;
+                // Spike 3: declared outputs (e.g. branch_changed) are what a
+                // guarded route reads, so they must reach carried state.
+                run.Outputs = result.Outputs is null
+                    ? new Dictionary<string, string>(StringComparer.Ordinal)
+                    : new Dictionary<string, string>(result.Outputs, StringComparer.Ordinal);
                 stepDetails[step.Id] = run;
                 CompleteStep(step.Id, result.Outcome);
                 state.StepsExecuted++;
@@ -816,4 +829,19 @@ public sealed class InterpreterInput
 
     /// <summary>Review 13 A1: wait for a release signal before executing.</summary>
     public bool WaitForRelease { get; set; }
+
+    /// <summary>Spike 3 N1: child plans by plan_ref, resolved before the run starts.</summary>
+    public Dictionary<string, Plan>? ChildPlans { get; set; }
+
+    /// <summary>Spike 3: the task queue each run.child step's child runs on (one worker per ticket).</summary>
+    public Dictionary<string, string>? ChildQueues { get; set; }
+
+    /// <summary>Spike 3 N2: the merge lock workflow id this run must hold across forward-merge-to-merge.</summary>
+    public string? MergeLock { get; set; }
+
+    /// <summary>Spike 3 N2: the task queue the lock workflow runs on.</summary>
+    public string? MergeLockQueue { get; set; }
+
+    /// <summary>Spike 3 N2: the merge lock passed to children (the integration branch's lock).</summary>
+    public string? ChildMergeLock { get; set; }
 }

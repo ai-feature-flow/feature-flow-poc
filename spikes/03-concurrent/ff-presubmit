@@ -1,0 +1,5 @@
+#!/bin/sh
+# N7 (docs/17 5.2): run a ticket plan's step through the gated step's code path
+# from a ticket worktree. Usage: ff-presubmit --worktree . --step review
+here="$(cd "$(dirname "$0")" && pwd)"
+DOTNET_ROLL_FORWARD=Major exec dotnet "$here/src/FeatureFlow.Spike3/bin/Debug/net10.0/FeatureFlow.Spike3.dll" presubmit "$@"

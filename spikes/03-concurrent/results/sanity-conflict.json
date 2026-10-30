@@ -1,0 +1,33 @@
+{
+  "prefix": "ff/spike-3-sanity-1793355852",
+  "results": [
+    {
+      "from": "c",
+      "into": "a",
+      "got": "Work/conflict",
+      "expect": "Work/conflict",
+      "pass": true,
+      "newHead": null
+    },
+    {
+      "from": "b",
+      "into": "c",
+      "got": "completed branchChanged=True",
+      "expect": "completed branchChanged=True",
+      "pass": true,
+      "newHead": "c59263c3713e5fa52eedf081e3efa1870c7e992d"
+    },
+    {
+      "from": "b",
+      "into": "c",
+      "got": "completed branchChanged=False",
+      "expect": "completed branchChanged=False",
+      "pass": true,
+      "newHead": "c59263c3713e5fa52eedf081e3efa1870c7e992d"
+    }
+  ],
+  "conflictedFiles": [
+    "src/FeatureFlow.Example.Api/WidgetStore.cs"
+  ],
+  "pass": true
+}

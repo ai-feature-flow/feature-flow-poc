@@ -23,3 +23,6 @@ spikes/02-real-run/fixture/
 spikes/02-real-run/src/fixture/
 spikes/02-real-run/src/agent-runtime-work/
 spikes/02-real-run/src/results/
+
+# Spike 3 local run state: per-ticket clones, records scratch, Temporal db
+spikes/03-concurrent/work/

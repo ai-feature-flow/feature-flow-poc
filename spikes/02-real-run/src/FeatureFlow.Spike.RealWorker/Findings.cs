@@ -24,7 +24,8 @@ public sealed record Finding(
     string? DeclineReason = null,
     bool Fixed = false,
     string? RegressionTest = null,
-    string? NotApplicableReason = null);
+    string? NotApplicableReason = null,
+    string? Message = null);
 
 public sealed record ReviewVerdict(
     string StepId,
@@ -37,7 +38,8 @@ public sealed record ReviewVerdict(
     string? Model = null,
     long? InputTokens = null,
     long? OutputTokens = null,
-    double? CostUsd = null);
+    double? CostUsd = null,
+    string? InputHash = null);
 
 public sealed record TriageRecord(
     string StepId,

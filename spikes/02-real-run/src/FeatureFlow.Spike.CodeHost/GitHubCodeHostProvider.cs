@@ -494,7 +494,11 @@ public sealed class GitHubCodeHostProvider : ICodeHostProvider
         var before = await ResolveRefAsync(repo, into, token, ct).ConfigureAwait(false);
         if (before.Error is not null) return ProviderResult<MergeResult>.Fail(before.Error);
 
-        var merged = await SendAsync<Dto.Commit>(
+        // Spike 3: SendRawAsync, not SendAsync. GitHub answers 204 with no body
+        // when `into` already contains `branch` ("nothing to merge"); SendAsync
+        // read the empty body as Infrastructure/server_error, which the engine
+        // retries free, forever. A no-op is a completed merge with no change.
+        var raw = await SendRawAsync(
             new HttpRequestMessage(HttpMethod.Post, $"repos/{repo.FullName}/merges")
             {
                 Content = JsonBody(new
@@ -508,7 +512,15 @@ public sealed class GitHubCodeHostProvider : ICodeHostProvider
 
         // GitHub reports a merge conflict as 409, which FromStatus already maps
         // to Work/conflict. Pass it through unchanged.
-        if (merged.Error is not null) return ProviderResult<MergeResult>.Fail(merged.Error);
+        if (raw.Error is not null) return ProviderResult<MergeResult>.Fail(raw.Error);
+
+        Dto.Commit? mergedCommit = null;
+        if (!string.IsNullOrWhiteSpace(raw.Value))
+        {
+            try { mergedCommit = JsonSerializer.Deserialize<Dto.Commit>(raw.Value!, Json); }
+            catch (JsonException) { }
+        }
+        var merged = ProviderResult<Dto.Commit?>.Ok(mergedCommit);
 
         var after = await ResolveRefAsync(repo, into, token, ct).ConfigureAwait(false);
         if (after.Error is not null) return ProviderResult<MergeResult>.Fail(after.Error);

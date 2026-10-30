@@ -35,8 +35,12 @@ public sealed partial class RealActivities
         if (step is null)
             return new AgentRunResult(Outcomes.Failed, ErrorReason: $"no step '{request.StepId}' in the plan");
 
+        await SyncWorktreeAsync(step.Id);
+
         return step.Kind switch
         {
+            "scm.create_branch" => await CreateBranchAsync(step),
+            "scm.merge_base_forward" => await MergeBaseForwardStepAsync(step),
             "test.run_tiers" => await RunTestTiersAsync(step),
             "review.run" => await RunReviewAsync(step),
             "findings.triage" => await RunTriageAsync(step),
@@ -95,6 +99,10 @@ public sealed partial class RealActivities
                 if (!run.IsOk)
                     return Classified(step, startedAt, manifest, run.Error!);
 
+                if (SyncWorktree)
+                    Evidence("tiers", new { at = DateTimeOffset.UtcNow, step = step.Id, tier, head,
+                        dispatchKey = Context.IdempotencyKey(step.Id, tier, head) });
+
                 // Poll inside this activity, heartbeating. One activity per step.
                 var status = await PollCiAsync(run.Value!, step.Id);
                 if (status is null)
@@ -111,7 +119,7 @@ public sealed partial class RealActivities
             else
             {
                 // A sandbox tier runs the manifest's own commands locally.
-                var exit = await RunTierLocallyAsync(manifest, tier);
+                var exit = await RunTierLocallyAsync(manifest, tier, step.Id);
                 results.Add($"{tier}={(exit == 0 ? "success" : "failure")}");
                 if (exit != 0)
                     return Failed(step, startedAt, manifest, $"tier '{tier}' exited {exit}");
@@ -169,7 +177,7 @@ public sealed partial class RealActivities
     }
 
     /// <summary>Runs a sandbox tier's own commands from the manifest.</summary>
-    private async Task<int> RunTierLocallyAsync(FileContent? manifest, string tier)
+    private async Task<int> RunTierLocallyAsync(FileContent? manifest, string tier, string stepId)
     {
         var commands = Manifest.TierCommands(manifest, tier);
         if (commands.Count == 0)
@@ -191,7 +199,14 @@ public sealed partial class RealActivities
             if (process is null)
                 return 1;
 
-            await process.WaitForExitAsync();
+            // Heartbeat while the tier runs: a cold build takes longer than the
+            // heartbeat timeout, and a silent activity is read as a dead worker.
+            var exited = process.WaitForExitAsync();
+            while (!exited.IsCompleted)
+            {
+                await Task.WhenAny(exited, Task.Delay(HeartbeatInterval));
+                Heartbeat(stepId, new AgentProgress(null, 0, null, true, TimeSpan.Zero));
+            }
             if (process.ExitCode != 0)
                 return process.ExitCode;
         }
@@ -225,17 +240,17 @@ public sealed partial class RealActivities
         var startedAt = DateTimeOffset.UtcNow;
         var manifest = await ReadManifestAsync(step.Id);
 
-        var head = await HeadShaAsync();
-        var diff = await Context.CodeHost.GetDiffAsync(
-            Context.CodeHostRepo, Context.IntegrationBranch, Context.Branch, CancellationToken.None);
-
-        var diffHash = diff.IsOk ? diff.Value!.ContentHash : null;
-        var diffText = await DiffTextAsync(Context.IntegrationBranch, Context.Branch);
-        var prior = Findings.PriorFor(Context, step.Id);
-        var declined = Findings.DeclinedIds(Context);
+        var inputs = await BuildReviewInputsAsync(step);
+        var head = inputs.HeadSha;
+        var diffHash = inputs.DiffHash;
+        var prior = inputs.Prior;
 
         var reviewed = await Context.Reviewer.ReviewAsync(
-            diffHash, diffText, prior, declined, step.Id, CancellationToken.None, Prompt.TicketSummary);
+            inputs.DiffHash, inputs.DiffText, inputs.Prior, inputs.Declined, step.Id, CancellationToken.None,
+            inputs.Specification);
+
+        if (SyncWorktree)
+            RecordReviewEvidence(step, inputs, reviewed);
 
         ReviewVerdict verdict;
         if (!reviewed.IsOk)
@@ -372,9 +387,12 @@ public sealed partial class RealActivities
         var manifest = await ReadManifestAsync(step.Id);
 
         var open = Findings.Open(Context);
-        var unresolved = open.Where(f => !Findings.IsDeclined(Context, f.Id)).ToList();
+        var unresolved = Readiness.Unresolved(open, Findings.DeclinedIds(Context));
 
         var ready = unresolved.Count == 0;
+        if (SyncWorktree)
+            Evidence("readiness", new { at = DateTimeOffset.UtcNow, step = step.Id,
+                readiness = Readiness.Describe(open, Findings.DeclinedIds(Context)) });
 
         Context.RecordCost(new StepCost(
             RunId: Context.RunId, StepId: step.Id, StepKind: step.Kind,

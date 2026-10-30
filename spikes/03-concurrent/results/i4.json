@@ -1,0 +1,43 @@
+{
+  "terminatedAt": "2026-10-30T10:22:32.643392+00:00",
+  "audit": [
+    {
+      "Kind": "requested",
+      "HolderId": "i4-1793355751-holder",
+      "At": "2026-10-30T10:22:32.247202+00:00",
+      "Detail": null
+    },
+    {
+      "Kind": "granted",
+      "HolderId": "i4-1793355751-holder",
+      "At": "2026-10-30T10:22:32.247202+00:00",
+      "Detail": null
+    },
+    {
+      "Kind": "requested",
+      "HolderId": "i4-1793355751-waiter",
+      "At": "2026-10-30T10:22:32.446361+00:00",
+      "Detail": "held by i4-1793355751-holder"
+    },
+    {
+      "Kind": "released",
+      "HolderId": "i4-1793355751-holder",
+      "At": "2026-10-30T10:23:02.300125+00:00",
+      "Detail": "holder closed (liveness check)"
+    },
+    {
+      "Kind": "granted",
+      "HolderId": "i4-1793355751-waiter",
+      "At": "2026-10-30T10:23:02.300125+00:00",
+      "Detail": null
+    },
+    {
+      "Kind": "released",
+      "HolderId": "i4-1793355751-waiter",
+      "At": "2026-10-30T10:23:04.346228+00:00",
+      "Detail": "run ended"
+    }
+  ],
+  "grantDelaySeconds": 29.7,
+  "pass": true
+}

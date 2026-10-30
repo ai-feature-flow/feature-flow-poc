@@ -1,0 +1,38 @@
+# Spike 3 epic plan (docs/17 4.1): a reduction of docs/13 section 2. Fixed
+# tickets, no fix path, no delivery. The run ends at the epic review so the
+# aggregate diff stays fixed for the R4 series (docs/17 section 6).
+apiVersion: feature-flow/v1
+kind: Plan
+metadata: { name: spike-3-epic, scope: epic, revision: 1 }
+parameters: { epic_id: { type: string, required: true }, repositories: { type: array, required: true } }
+steps:
+  - id: tickets
+    kind: parallel
+    inputs: { branches: [ticket_a, ticket_c, ticket_b], join: all, max_concurrency: 2 }
+    routes: { completed: epic_review, any_failed: gate_epic_escalate }
+  - id: ticket_a
+    kind: run.child
+    inputs: { child_scope: ticket, plan_ref: "spike-3:templates/ticket-delivery",
+              parameters: { ticket_id: "EPIC3-A", repositories: [ai-feature-flow/feature-flow-example] } }
+  - id: ticket_c
+    kind: run.child
+    inputs: { child_scope: ticket, plan_ref: "spike-3:templates/ticket-delivery",
+              parameters: { ticket_id: "EPIC3-C", repositories: [ai-feature-flow/feature-flow-example] } }
+  - id: ticket_b
+    kind: run.child
+    inputs: { child_scope: ticket, plan_ref: "spike-3:templates/ticket-delivery",
+              parameters: { ticket_id: "EPIC3-B", repositories: [ai-feature-flow/feature-flow-example] } }
+  - id: epic_review
+    kind: review.run
+    inputs: { scope: epic, diff_ref: { expr: "run.aggregate_diff" },
+              checks: ["feature-flow-default:checks/epic-review"], prior_findings: { expr: "findings.all" } }
+    routes: { completed: { end: completed }, findings_open: gate_epic_findings,
+              failed: gate_epic_escalate, attempts_exhausted: gate_epic_escalate }
+  - id: gate_epic_findings
+    kind: human.gate
+    gate: { decision_type: epic.findings_review }
+    routes: { approved: { end: completed }, rejected: { end: failed } }
+  - id: gate_epic_escalate
+    kind: human.gate
+    gate: { decision_type: epic.escalation }
+    routes: { approved: { end: failed }, rejected: { end: failed } }
