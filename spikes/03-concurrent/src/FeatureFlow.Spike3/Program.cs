@@ -15,6 +15,7 @@ return command switch
     "sanity-conflict" => await ConflictSanity.RunAsync(),
     "i3" => await Sanity.I3Async(await Connect()),
     "i4" => await Sanity.I4Async(await Connect()),
+    "loop-cap" => await Sanity.LoopCapAsync(await Connect()),
     "epic-run" => await EpicRun.RunAsync(await Connect(), rest),
     "oracle" => await Oracles.RunAsync(rest),
     "r4" => await R4Series.RunAsync(rest),

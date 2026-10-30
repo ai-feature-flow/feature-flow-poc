@@ -309,6 +309,50 @@ public static class Sanity
         return ok ? 0 : 1;
     }
 
+    // ------------------------------------------------------------ loop cap
+
+    /// <summary>
+    /// A fix loop whose steps always complete: agent "fix" -> "check" fails ->
+    /// "fix". Without ceilings it spins; with agent.run 5 it must stop at five
+    /// fix executions and end failed through attempts_exhausted.
+    /// </summary>
+    public static async Task<int> LoopCapAsync(ITemporalClient client)
+    {
+        var (worker, running, cts, queue, _) = await StartFakeWorkerAsync(client, "loopcap");
+        var stamp = queue.Split('-').Last();
+        Plan Loop() => new()
+        {
+            Entry = "fix",
+            Steps =
+            {
+                new Step { Id = "fix", Kind = "agent.run", SimulatedDuration = "1",
+                    Routes = new() { ["completed"] = RouteTarget.ToStep("check"), ["attempts_exhausted"] = RouteTarget.ToEnd("failed") } },
+                new Step { Id = "check", Kind = "noop.fail", SimulatedDuration = "0",
+                    Routes = new() { ["failed"] = RouteTarget.ToStep("fix"), ["completed"] = RouteTarget.ToEnd("completed") } },
+            },
+        };
+
+        var uncappedInput = new InterpreterInput { Plan = Loop() };
+        var uncapped = await client.StartWorkflowAsync((InterpreterWorkflow w) => w.RunAsync(uncappedInput),
+            new WorkflowOptions($"loopcap-{stamp}-uncapped", queue));
+        await Task.Delay(TimeSpan.FromSeconds(15));
+        var spun = (await uncapped.QueryAsync(w => w.State())).AttemptBudgets.GetValueOrDefault("fix");
+        await uncapped.TerminateAsync("loop-cap control: would spin");
+        Cli.Log($"LOOPCAP without ceilings: fix executed {spun} times in 15 s, still running (terminated)");
+
+        var cappedInput = new InterpreterInput { Plan = Loop(), AgentRunCeiling = 5, PerRunCeiling = 40 };
+        var capped = await client.StartWorkflowAsync((InterpreterWorkflow w) => w.RunAsync(cappedInput),
+            new WorkflowOptions($"loopcap-{stamp}-capped", queue));
+        var result = await capped.GetResultAsync();
+        var state = await capped.QueryAsync(w => w.State());
+        var fixes = state.AttemptBudgets.GetValueOrDefault("fix");
+        var ok = spun > 5 && fixes == 5 && result == "failed" && state.StepOutcomes["fix"].Outcome == Outcomes.AttemptsExhausted;
+        Cli.Log($"LOOPCAP with agent.run 5: fix executed {fixes} times, outcome {state.StepOutcomes["fix"].Outcome}, run {result}: {(ok ? "PASS" : "FAIL")}");
+        await StopAsync(worker, running, cts);
+        Save("loop-cap.json", new { uncappedExecutionsIn15s = spun, cappedExecutions = fixes, cappedResult = result, pass = ok });
+        return ok ? 0 : 1;
+    }
+
     private static DateTimeOffset Min(DateTimeOffset a, DateTimeOffset b) => a < b ? a : b;
     private static DateTimeOffset Max(DateTimeOffset a, DateTimeOffset b) => a > b ? a : b;
 

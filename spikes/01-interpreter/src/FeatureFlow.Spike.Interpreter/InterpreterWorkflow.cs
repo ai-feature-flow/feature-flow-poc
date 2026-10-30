@@ -844,4 +844,10 @@ public sealed class InterpreterInput
 
     /// <summary>Spike 3 N2: the merge lock passed to children (the integration branch's lock).</summary>
     public string? ChildMergeLock { get; set; }
+
+    /// <summary>Spike 3: policy.attempts.ceiling.agent.run, enforced per step on every execution.</summary>
+    public int? AgentRunCeiling { get; set; }
+
+    /// <summary>Spike 3: policy.attempts.ceiling.perRun, enforced on the run's total attempts.</summary>
+    public int? PerRunCeiling { get; set; }
 }

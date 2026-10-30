@@ -58,6 +58,8 @@ public partial class InterpreterWorkflow
                         MergeLock = runInput.MergeLock,
                         MergeLockQueue = runInput.MergeLockQueue,
                         ChildMergeLock = runInput.ChildMergeLock,
+                        AgentRunCeiling = runInput.AgentRunCeiling,
+                        PerRunCeiling = runInput.PerRunCeiling,
                     }));
             }
 
@@ -144,6 +146,22 @@ public partial class InterpreterWorkflow
         if (step.Kind == "run.child")
             return await ExecuteChildAsync(step);
 
+        // Organisation attempt ceilings, enforced on every execution including
+        // loop re-entry. Spike 1 compared attempts with the allowance only after
+        // a failed attempt, so a review -> fix loop whose steps keep completing
+        // was unbounded; run-start check 22 only checks declared limits.
+        var used = state.AttemptBudgets.TryGetValue(step.Id, out var u) ? u : 0;
+        var total = state.AttemptBudgets.Values.Sum();
+        if ((step.Kind == "agent.run" && runInput.AgentRunCeiling is { } perStep && used >= perStep) ||
+            (runInput.PerRunCeiling is { } perRun && total >= perRun))
+        {
+            state.LastInfrastructureError =
+                $"step {step.Id}: attempt ceiling reached (step {used}, run {total}); not executed";
+            CompleteStep(step.Id, Outcomes.AttemptsExhausted);
+            state.StepsExecuted++;
+            return new StepOutcome(step.Id, Outcomes.AttemptsExhausted, null);
+        }
+
         if (step.Kind == "scm.merge_base_forward" && runInput.MergeLock is not null && !lockHeld)
             await AcquireLockAsync();
 
@@ -179,6 +197,8 @@ public partial class InterpreterWorkflow
                     Plan = plan,
                     MergeLock = runInput.ChildMergeLock,
                     MergeLockQueue = runInput.MergeLockQueue,
+                    AgentRunCeiling = runInput.AgentRunCeiling,
+                    PerRunCeiling = runInput.PerRunCeiling,
                 }),
                 new ChildWorkflowOptions
                 {

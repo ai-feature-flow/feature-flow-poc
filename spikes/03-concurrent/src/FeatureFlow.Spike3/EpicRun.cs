@@ -130,6 +130,7 @@ public static class EpicRun
         await Task.Delay(TimeSpan.FromSeconds(8));
 
         // 3. The epic run.
+        var organisation = OrganisationConfiguration.Load(Path.Combine(Cli.PlansDir, "organisation.yaml"));
         var ticketPlan = PlanYaml.Load(Path.Combine(Cli.PlansDir, "ticket-delivery.yaml"));
         var epicPlan = PlanYaml.Load(Path.Combine(Cli.PlansDir, "epic.yaml"),
             new Dictionary<string, string> { ["epic_id"] = suffix });
@@ -140,6 +141,8 @@ public static class EpicRun
             ChildQueues = childQueues,
             ChildMergeLock = lockId,
             MergeLockQueue = epicQueue,
+            AgentRunCeiling = organisation.AttemptCeilings.GetValueOrDefault("agent.run", 5),
+            PerRunCeiling = organisation.PerRunAttemptCeiling ?? 40,
         };
         var epic = await client.StartWorkflowAsync(
             (InterpreterWorkflow w) => w.RunAsync(epicInput), new WorkflowOptions(epicId, epicQueue));
@@ -218,8 +221,10 @@ public static class EpicRun
                         continue;
                     }
                     if (!seenArrival.Add(key)) continue;
-                    var n = arrivals[$"{t.Key}:{gate.Id}"] = arrivals.GetValueOrDefault($"{t.Key}:{gate.Id}") + 1;
-                    var decision = gate.Gate!.DecisionType == "ticket.escalation" && n > 1 ? Outcomes.Rejected : Outcomes.Approved;
+                    arrivals[$"{t.Key}:{gate.Id}"] = arrivals.GetValueOrDefault($"{t.Key}:{gate.Id}") + 1;
+                    // Spike 3: an escalation is rejected, so the ticket ends failed
+                    // (approval would only route to replan, which resumes nowhere).
+                    var decision = gate.Gate!.DecisionType == "ticket.escalation" ? Outcomes.Rejected : Outcomes.Approved;
                     await Decide(Child(t), $"{suffix}-{t.Key}", gate, decision);
                 }
             }
