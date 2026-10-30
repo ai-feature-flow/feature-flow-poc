@@ -59,12 +59,12 @@ public sealed class ReviewerModel
         """;
 
     /// <summary>
-    /// Characters of diff the reviewer is shown (Spike 2's value). Spike 3 found
-    /// that an epic's aggregate diff exceeds it and the cut is silent: the
-    /// reviewer is never told what it did not see. Settable for the post-hoc
-    /// R4 series only.
+    /// D4 (docs/18): the most diff the reviewer is given. Spike 2 cut every diff
+    /// to 6000 characters silently, which hid most of an epic's aggregate diff.
+    /// Now the limit is well above a spike-sized aggregate, and a larger diff is
+    /// refused visibly (Work/diff_too_large), never cut.
     /// </summary>
-    public static int DiffLimit = 6000;
+    public static int DiffLimit = 32000;
 
     private readonly ModelClient client;
 
@@ -111,7 +111,7 @@ public sealed class ReviewerModel
 
             Unified diff:
 
-            {Truncate(diffText, DiffLimit)}
+            {diffText}
 
             Review the diff. Reply with the JSON object only.
             """;
@@ -131,6 +131,12 @@ public sealed class ReviewerModel
         CancellationToken ct,
         string? ticket = null)
     {
+        if (diffText.Length > DiffLimit)
+        {
+            return ProviderResult<ReviewVerdict>.Work(
+                "diff_too_large", $"diffChars={diffText.Length} limit={DiffLimit}");
+        }
+
         var rendered = Render(diffHash, diffText, prior, declinedIds, ticket);
 
         var response = await client.CompleteAsync(

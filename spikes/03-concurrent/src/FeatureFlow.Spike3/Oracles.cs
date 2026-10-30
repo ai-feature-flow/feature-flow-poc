@@ -179,12 +179,19 @@ public static class R4Series
                         lock (results) results.Add(new
                         {
                             pass = i, ok = true, v.InputHash, v.Model, v.CostUsd, v.Outcome,
+                            diffChars = diffText.Length, diffLimit = ReviewerModel.DiffLimit, truncated = false,
                             findings = v.Findings.Select(f => new { f.Rule, f.Path, f.Symbol, f.Snippet, f.Message, f.Blocking }),
                         });
                         Cli.Log($"R4 {series} pass {i}: {v.Findings.Count} finding(s)");
                         return;
                     }
                     Cli.Log($"R4 {series} pass {i} attempt {attempt}: {r.Error!.Class}/{r.Error.Reason} {r.Error.Detail}");
+                    if (r.Error.Reason == "diff_too_large")
+                    {
+                        lock (results) results.Add(new { pass = i, ok = false, error = $"{r.Error.Class}/{r.Error.Reason}: {r.Error.Detail}",
+                            diffChars = diffText.Length, diffLimit = ReviewerModel.DiffLimit, truncated = true });
+                        return;
+                    }
                     if (attempt >= 4)
                     {
                         lock (results) results.Add(new { pass = i, ok = false, error = $"{r.Error.Class}/{r.Error.Reason}: {r.Error.Detail}" });
