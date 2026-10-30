@@ -153,6 +153,7 @@ public static class HarnessProgram
         // merge authorisation passed by construction.
         var decisionLedger = new DecisionLedger(RecordDirectory, runId);
         var approvedAt = new Dictionary<string, int>(StringComparer.Ordinal);
+        var arrivals = new Dictionary<string, int>(StringComparer.Ordinal);
         var workflowClosed = false;
         var approvals = Task.Run(async () =>
         {
@@ -171,12 +172,20 @@ public static class HarnessProgram
                             continue;
                         approvedAt[step.Id] = state.StepsExecuted;
 
+                        // Standing in for a human, the harness approves an
+                        // escalation once. A second escalation is rejected, so
+                        // the run ends rather than cycling escalate -> replan.
+                        arrivals[step.Id] = arrivals.GetValueOrDefault(step.Id) + 1;
+                        var decision = step.Gate!.DecisionType == "ticket.escalation" && arrivals[step.Id] > 1
+                            ? Outcomes.Rejected
+                            : Outcomes.Approved;
+
                         if (humanApprovers.Length == 0)
                         {
                             decisionLedger.Record(new DecisionRecord(
                                 step.Id,
                                 step.Gate!.DecisionType,
-                                Outcomes.Approved,
+                                decision,
                                 new DecisionActor(
                                     DecisionActorKind.Harness,
                                     "real-harness",
@@ -194,7 +203,7 @@ public static class HarnessProgram
                                 decisionLedger.Record(new DecisionRecord(
                                     step.Id,
                                     step.Gate!.DecisionType,
-                                    Outcomes.Approved,
+                                    decision,
                                     human,
                                     DateTimeOffset.UtcNow));
 
@@ -212,11 +221,11 @@ public static class HarnessProgram
                         }
 
                         await handle.ExecuteUpdateAsync(w => w.SubmitDecisionAsync(
-                            new StepDecision(step.Id, Outcomes.Approved)));
+                            new StepDecision(step.Id, decision)));
                         var actor = humanApprovers.Length == 0
                             ? "harness:real-harness"
                             : $"human:{string.Join(",human:", humanApprovers)}";
-                        Console.WriteLine($"  gate {step.Id} approved ({step.Gate!.DecisionType}) actor={actor}");
+                        Console.WriteLine($"  gate {step.Id} {decision} ({step.Gate!.DecisionType}) actor={actor}");
                     }
                 }
                 catch (Exception ex)

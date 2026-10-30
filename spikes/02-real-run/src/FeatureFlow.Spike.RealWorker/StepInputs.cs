@@ -148,9 +148,7 @@ public static class Prompt
             "src/FeatureFlow.Example.Api/WidgetStore.cs. It must return true when the " +
             "store holds a widget with that id and false otherwise, as a bool, taking the " +
             "same lock as the other methods. Place it immediately after the Count method. " +
-            "Then add an xUnit [Fact] to tests/FeatureFlow.Example.Api.UnitTests/WidgetStoreTests.cs " +
-            "that checks Contains is false for an unknown id and true for the id of an added " +
-            "widget. Commit both files in one commit.",
+            "Change only this file; the regression test is the fixer's work if the reviewer asks for it.",
 
         "fix_findings" =>
             "Fix the open review findings listed below. " +

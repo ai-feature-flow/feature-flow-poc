@@ -238,6 +238,24 @@ public static class Findings
         }
     }
 
+    /// <summary>Every finding the last triage selected for the fixer.</summary>
+    public static List<Finding> SelectedAll(RunContext context)
+    {
+        lock (Gate)
+        {
+            var store = Load(context);
+            var last = store.Triages.LastOrDefault();
+            if (last is null)
+                return new List<Finding>();
+
+            return last.SelectedFindingIds
+                .Select(id => store.Findings.FirstOrDefault(f => f.Id == id))
+                .Where(f => f is not null)
+                .Select(f => f!)
+                .ToList();
+        }
+    }
+
     /// <summary>
     /// docs/06 10.1: a fix must add a regression test. The requirement is a step
     /// invariant, not a template switch (review 09 C4).

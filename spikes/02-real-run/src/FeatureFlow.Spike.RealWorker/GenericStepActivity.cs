@@ -313,7 +313,10 @@ public sealed partial class RealActivities
         var startedAt = DateTimeOffset.UtcNow;
         var manifest = await ReadManifestAsync(step.Id);
 
-        var finding = Findings.Selected(Context);
+        // Every finding the triage selected is verified, not only the first:
+        // a fixer that fixes two findings in one commit otherwise leaves the
+        // second "open", is sent back with nothing to change, and fails.
+        var selected = Findings.SelectedAll(Context);
         var diff = await Context.CodeHost.GetDiffAsync(
             Context.CodeHostRepo, Context.IntegrationBranch, Context.Branch, CancellationToken.None);
 
@@ -322,17 +325,16 @@ public sealed partial class RealActivities
         var fullDiff = diff.IsOk ? diff.Value!.ContentHash : null;
 
         // The invariant: a regression test is required unless the finding's
-        // triage record carries an accepted "not applicable" reason.
-        //
-        // The test is detected in the diff the fixer actually produced, not
-        // read from a field only a check ever writes. Previously nothing on
-        // the real fixer path called AttachRegressionTest, so verify_fix
-        // failed on every fix and the run looped forever.
-        var hasRegressionTest = Findings.HasRegressionTest(Context, finding?.Id) ||
-                                DiffMentionsTest(await DiffTextAsync(Context.IntegrationBranch, Context.Branch));
-        var notApplicable = finding is not null && Findings.NotApplicableReason(Context, finding.Id) is not null;
+        // triage record carries an accepted "not applicable" reason. The test
+        // is detected in the diff the fixer actually produced.
+        var diffHasTest = DiffMentionsTest(await DiffTextAsync(Context.IntegrationBranch, Context.Branch));
+        var verdicts = selected
+            .Select(f => (Finding: f,
+                          Test: Findings.HasRegressionTest(Context, f.Id) || diffHasTest,
+                          NotApplicable: Findings.NotApplicableReason(Context, f.Id) is not null))
+            .ToList();
 
-        var passed = hasRegressionTest || notApplicable;
+        var passed = verdicts.Count > 0 && verdicts.All(v => v.Test || v.NotApplicable);
 
         Context.RecordCost(new StepCost(
             RunId: Context.RunId, StepId: step.Id, StepKind: step.Kind,
@@ -342,9 +344,8 @@ public sealed partial class RealActivities
             UsageSource: "none", RecordedAt: DateTimeOffset.UtcNow,
             ManifestHash: manifest?.ContentHash));
 
-        Console.WriteLine($"STEP {step.Id}: finding={finding?.Id ?? "(none)"} fullDiff={fullDiff} " +
-                          $"regressionTest={hasRegressionTest} notApplicable={notApplicable} => " +
-                          $"{(passed ? "completed" : "failed")}");
+        Console.WriteLine($"STEP {step.Id}: findings=[{string.Join(", ", verdicts.Select(v => $"{v.Finding.Id} test={v.Test} na={v.NotApplicable}"))}] " +
+                          $"fullDiff={fullDiff} => {(passed ? "completed" : "failed")}");
 
         if (!passed)
         {
@@ -354,7 +355,8 @@ public sealed partial class RealActivities
                              "'not applicable' reason was recorded");
         }
 
-        Findings.MarkFixed(Context, finding!.Id);
+        foreach (var v in verdicts)
+            Findings.MarkFixed(Context, v.Finding.Id);
         return new AgentRunResult(Outcomes.Completed);
     }
 
