@@ -147,15 +147,16 @@ public static class HarnessProgram
         // is the harness, which is deliberately unable to satisfy human policy
         // or floor F1 even though it may route the workflow through a gate.
         //
-        // A gate is approved only while the workflow is waiting at it (it is a
-        // cursor), and once per arrival. Approving every gate on every poll
+        // A gate is approved only while the workflow is waiting at it (the
+        // interpreter's own PlanReady says it is ready), and once per arrival. Approving every gate on every poll
         // recorded a merge approval before the first step had run, so the
         // merge authorisation passed by construction.
         var decisionLedger = new DecisionLedger(RecordDirectory, runId);
         var approvedAt = new Dictionary<string, int>(StringComparer.Ordinal);
+        var workflowClosed = false;
         var approvals = Task.Run(async () =>
         {
-            for (var i = 0; i < 600; i++)
+            for (var i = 0; i < 600 && !Volatile.Read(ref workflowClosed); i++)
             {
                 await Task.Delay(2000);
                 try
@@ -164,7 +165,7 @@ public static class HarnessProgram
                     if (state.TerminalStatus is not null)
                         return;
 
-                    foreach (var step in state.Plan.Steps.Where(s => s.Gate is not null && state.Cursors.Contains(s.Id)))
+                    foreach (var step in PlanReady.Ready(state).Where(s => s.Gate is not null))
                     {
                         if (approvedAt.TryGetValue(step.Id, out var seen) && seen == state.StepsExecuted)
                             continue;
@@ -237,6 +238,9 @@ public static class HarnessProgram
             result = $"threw {ex.GetType().Name}: {ex.Message}";
         }
 
+        // The workflow can end with no terminal status (nothing left ready),
+        // so the approvals loop is told directly rather than polling for one.
+        Volatile.Write(ref workflowClosed, true);
         await approvals;
 
         var final = await handle.QueryAsync(w => w.State());

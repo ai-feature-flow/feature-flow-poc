@@ -147,7 +147,10 @@ public static class Prompt
             "Add a public method Contains(int id) to the WidgetStore class in " +
             "src/FeatureFlow.Example.Api/WidgetStore.cs. It must return true when the " +
             "store holds a widget with that id and false otherwise, as a bool, taking the " +
-            "same lock as the other methods. Place it immediately after the Count method.",
+            "same lock as the other methods. Place it immediately after the Count method. " +
+            "Then add an xUnit [Fact] to tests/FeatureFlow.Example.Api.UnitTests/WidgetStoreTests.cs " +
+            "that checks Contains is false for an unknown id and true for the id of an added " +
+            "widget. Commit both files in one commit.",
 
         "fix_findings" =>
             "Fix the open review findings listed below. " +

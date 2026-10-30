@@ -708,6 +708,13 @@ public class InterpreterWorkflow
                 state.StepsExecuted++;
                 return;
             }
+
+            // A route back to a step that has already run (a loop, such as
+            // verify_fix -> run_tests) re-enters it. Without clearing its
+            // outcome PlanReady never treats it as ready again, nothing is
+            // left to run, and the workflow ends "completed" — a false success.
+            if (target.Step is not null)
+                state.StepOutcomes.Remove(target.Step);
         }
     }
 
