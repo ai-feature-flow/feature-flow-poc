@@ -111,10 +111,16 @@ Forty kinds, taken from `docs/06`, which owns their contracts.
 - **`run.wait` is not in the version 1 language.** `parallel` with `run.child`
   branches covers every case in the worked examples. It is reserved in `docs/06`
   section 4.2 and comes back only with an example that needs it.
-- **How tickets merge** (catch up with the integration branch, re-test if that
-  changed anything, then merge; no merge lock; the engine performs every merge)
-  is the merge design in `docs/20`. The source control steps that carry it are
-  in `docs/06` section 6.
+- **How branches merge** is the merge design in `docs/20`: catch up with the
+  target branch, re-test if that changed anything, then merge; no merge lock.
+  `scm.merge` takes `engine_can_merge` (true: the engine builds the merge or
+  squash commit from exactly what was tested and pushes it; false: the engine
+  raises a human decision request, waits for a human to merge on the code host,
+  detects the merge and continues) and `squash` (true for a squash merge). Usual
+  settings: ticket into epic branch, squash, engine merges; epic into project
+  branch, no squash, engine merges; project branch into `main`, no squash,
+  engine does not merge by default (floor F1, section 14). The source control
+  steps are in `docs/06` section 6.
 
 ---
 
@@ -137,6 +143,7 @@ From `docs/06` section 1.1, plus `any_failed` and `not_approved`.
 | `rejected` | A human rejected |
 | `not_approved` | `policy.auto_approve` did not approve; a human gate follows |
 | `findings_open` | Blocking review findings remain |
+| `base_moved` | `scm.merge` was refused because the target branch moved since the ticket caught up. Routed back to the catch-up step |
 | `ready` | The merge bar is met (decision D8: no unresolved blocking finding, and every finding fixed or declined with a recorded reason) |
 | `any_failed` | Aggregate outcome of `parallel` (and the reserved `run.wait`) when a branch fails and the join is not satisfied |
 
@@ -161,7 +168,7 @@ it.
 | `scm.merge_base_forward` | `completed`, `blocked`, `attempts_exhausted` |
 | `scm.open_pr` | `completed`, `failed`, `attempts_exhausted` |
 | `scm.update_pr` | `completed`, `failed`, `attempts_exhausted` |
-| `scm.merge` | `completed`, `blocked`, `rejected`, `attempts_exhausted` |
+| `scm.merge` | `completed`, `blocked` (checks or protection), `base_moved`, `rejected`, `attempts_exhausted` |
 | `scm.revert` | `completed`, `failed`, `attempts_exhausted` |
 | `ci.trigger` | `completed`, `failed`, `attempts_exhausted` |
 | `ci.wait_checks` | `completed`, `failed`, `blocked`, `attempts_exhausted` |
@@ -193,8 +200,9 @@ it.
 - Local, pure steps (`plan.validate`, `policy.auto_approve`,
   `findings.evaluate_readiness`, `delivery.deploy_order`, `artifact.validate`)
   do not consume attempts, so they do not return `attempts_exhausted`.
-- A `run.child` step never returns `completed` for a child run that ended
-  without reaching an `end:` route (DR6: such a run never reports `completed`).
+- A child run that ended without reaching an `end:` route has run status
+  `incomplete` (DR6: such a run never reports `completed`). Its parent's
+  `run.child` step returns `failed` for it.
 
 ---
 
@@ -230,10 +238,10 @@ From `docs/01` section 3.3 (plan as data). One field set, snake_case.
 |---|---|---|
 | `id` | Yes | Unique in the plan. **Must not look like a step kind**: `run_tests`, not `test.run_tiers`, so a step id is never confused with a kind or a directive |
 | `kind` | Yes | From section 3 |
-| `scope` | No | `ticket`, `epic`, `delivery`, `any`. Defaults to the plan's scope |
+| `scope` | No | `project`, `epic`, `ticket`, `delivery`, `any`. Defaults to the plan's scope |
 | `inputs` | No | Per kind, from `docs/06`. Artifact references, never inline content |
 | `requires` | No | Provider capabilities. Checked at run start (capability negotiation, decision S3) and again if `feature-flow.yaml` changes |
-| `limits` | No | `attempts`, `start_to_close`, `heartbeat`. Within policy ceilings (floor F4: attempt budgets stay within the ceiling; beyond the hard ceiling needs the admin role) |
+| `limits` | No | `attempts`, `start_to_close`, `heartbeat`, `correction_turns` (section 10.3). Within policy ceilings (floor F4: attempt budgets stay within the ceiling; beyond the hard ceiling needs the admin role). Every limit has an engine default, overridable by the workflow, a child workflow and the step |
 | `routes` | Yes | Outcome to step id or terminal directive. Section 6 |
 | `protected` | No | Cannot be removed or weakened by a re-plan or by steering (floor F3; section 15.2) |
 | `gate` | No | A decision type, not policy content. Section 14 |
@@ -291,11 +299,13 @@ routes:
 | `{ end: rejected }` | A human rejected and the plan has nowhere else to go |
 
 **A run ends only by reaching a directive.** If the interpreter has nothing
-ready to run and no step has routed to `{ end: ... }`, the run does not report
-`completed` (DR6: a run that ends without reaching an `end:` route never reports
-`completed`). Spike 2 showed why this matters: an interpreter that could not
-loop stopped with nothing ready and reported `completed` without a pull request
-(`docs/16` section 12).
+ready to run and no step has routed to `{ end: ... }`, the run ends with status
+**`incomplete`**, never `completed` (DR6: a run that ends without reaching an
+`end:` route never reports `completed`). `incomplete` is a run status, not a
+directive: no route can target it. A parent's `run.child` step sees an
+`incomplete` child as `failed`. Spike 2 showed why this matters: an interpreter
+that could not loop stopped with nothing ready and reported `completed` without
+a pull request (`docs/16` section 12).
 
 **Resuming after a re-plan is not a directive.** `end` values are run statuses,
 and resuming is not one: the run has not ended. Resuming has its own form:
@@ -316,8 +326,9 @@ not count iterations; the engine bounds them.
 
 | Rule | Mechanism |
 |---|---|
-| Re-entry runs the step again | Routing to a step that already has an outcome runs it again, and its previous outcome is cleared (DR12). This is what makes a loop work |
-| Per-step allowance | `limits.attempts`. Every entry into the step counts, whatever routed there (`docs/01` section 3.7). The allowance is checked on every execution, including when a loop re-enters the step (DR10). Clearing the outcome does not reset the count |
+| Re-entry runs the step again | Routing to a step that already has an outcome runs it again (DR12). Its current outcome, outputs and artifacts are cleared, so a route condition never mistakes a stale value for the latest. The previous execution's results stay readable as `steps.<id>.previous`, and `steps.<id>.executions` counts executions (section 8.3). This is what makes a loop work |
+| Per-step allowance | `limits.attempts`. Every entry into the step counts, whatever routed there (`docs/01` section 3.7). The allowance is checked on every execution, including when a loop re-enters the step (DR10). Clearing the outcome does not reset the count. Like every limit, it has an engine default, overridable by the workflow, a child workflow and the step |
+| Merge refusals | `scm.merge` returning `base_moved` routes back to catch-up and re-enters the merge step, so its attempt allowance (default 3, counting every attempt including re-entry after conflict resolution) caps the refusals; then `attempts_exhausted` goes to a human |
 | Per-run ceiling | `policy.attempts.ceiling` (`docs/07` section 4) |
 | Findings loop | Governed by the findings ledger, not a count (`docs/17` section 6.5). The ledger is the source of truth and each review pass is evidence (position L1). A finding verified fixed stays fixed while its code is unchanged; a re-raise there is recorded, not acted on (L2). A finding that reappears after being fixed twice **escalates** instead of looping (`docs/06` section 9.1). A declined finding never restarts the loop |
 | Exhaustion | Surfaces as `attempts_exhausted`, which the plan routes to a re-plan or a human gate. Never a silent failure |
@@ -373,8 +384,8 @@ finished. So a branch does not route; it reports.
 
 | Branch outcome | Who handles it | Effect on the join |
 |---|---|---|
-| `completed` | The join | Counts towards `all`, `any` or `n`. Only reported if the child reached an `end:` route (DR6) |
-| `failed` | The join | Counts towards `any_failed` |
+| `completed` | The join | Counts towards `all`, `any` or `n`. Only reported if the child reached `{ end: completed }` |
+| `failed` | The join | Counts towards `any_failed`. Includes a child that ended `incomplete`, without reaching an `end:` route (DR6, section 6.2) |
 | `attempts_exhausted` | The join | Counts towards `any_failed` |
 | `replan_parent` | **The interpreter** | The child's patch goes through `applyPatch` (the single path every patch takes, `docs/01` section 3.4). **Siblings keep running.** The branch **counts as completed for the join** |
 | `blocked` | The child's own plan | Never reaches the parent |
@@ -422,6 +433,10 @@ A branch is a step or a sub-plan. A ticket branch is a `run.child` step carrying
 
 A re-plan may add branches to a `parallel` step that has not started. It may not
 remove a protected branch (`docs/01` section 3.3.1).
+
+The same shape works one level up: a **project** run (scope `project`) starts
+one `run.child` per epic, with `child_scope: epic`, the way an epic run starts
+its tickets.
 
 ---
 
@@ -496,9 +511,11 @@ scope.
 | Namespace | Contents | Example |
 |---|---|---|
 | `params` | Bound run parameters | `params.ticket_id` |
-| `steps.<id>.outcome` | The outcome of the step's most recent execution. Cleared when a route re-enters the step (section 6.3) | `steps.review.outcome == 'findings_open'` |
+| `steps.<id>.outcome` | The outcome of the step's current execution. Cleared, with its outputs and artifacts, when a route re-enters the step (section 6.3) | `steps.review.outcome == 'findings_open'` |
 | `steps.<id>.artifacts.<name>` | An artifact **reference** produced by the step. Never content | `steps.plan_spec.artifacts.plan` |
 | `steps.<id>.outputs.<name>` | A small typed value the step published. Section 8.3.2 | `steps.plan_spec.outputs.tier_tags` |
+| `steps.<id>.previous` | The previous execution's results (its outcome, outputs and artifacts), kept when a loop re-runs the step | `steps.review.previous.outcome == 'findings_open'` |
+| `steps.<id>.executions` | How many times the step has executed in this run | `steps.fix.executions < 3` |
 | `steps.<id>.choice` | A choice recorded by a gate. Section 14.1 | `steps.delivery_gate.choice == 'revert'` |
 | `run` | Run facts. Section 8.3.1 | `size(run.repositories) > 1` |
 | `findings` | `findings.blocking_count`, `findings.open_count` | `findings.blocking_count == 0` |
@@ -513,7 +530,7 @@ staleness back. There are no `facts` or `repo` namespaces either.
 | Field | Type | Source |
 |---|---|---|
 | `run.id` | string | The run id, assigned at start |
-| `run.scope` | string | `ticket`, `epic`, `delivery`. From the run request |
+| `run.scope` | string | `project`, `epic`, `ticket`, `delivery`. From the run request |
 | `run.repositories` | list of string | The run request. Not the manifest |
 | `run.branch` | string | Resolved by the step that needs it, from the branch convention |
 | `run.integration_branch` | string | Same |
@@ -746,11 +763,21 @@ roles:
 | `runtime.requires` | Capabilities the agent runtime must declare. **Not** a product name |
 | `skills` | Library references |
 
-**No role can push.** Agents never hold a credential that can push (DR13). An
-agent commits in its own sandbox; the engine pushes the ticket branch at the end
-of each step and at work-in-progress points, and the engine performs every merge
-(`docs/20`, the merge design). `write_access` limits what the agent may change;
-it never includes pushing.
+**No agent can push.** Agents never hold a credential that can push (DR13). An
+agent's code host credential is read-only, per step, scoped to the run's
+repository plus any other repositories the workflow declares the agent may read
+(for example to verify a contract).
+
+The push is part of the agent step. The engine fetches the agent's commits from
+the sandbox's checkout and pushes them to the ticket's own branch with its own
+credential, at the end of the step and at work-in-progress points. This is a
+push, not a merge; merges are `scm.merge` (section 3).
+
+| Rule | Detail |
+|---|---|
+| Push follows `write_access` | A step with `write_access: none` pushes nothing; commits made anyway fail the step (the existing after-step check) |
+| `push` input on `agent.run` | Default `true`. A workflow sets `false` for scratch steps whose commits should not reach the branch |
+| A failed step's commits | Pushed to a hidden work-in-progress ref, not the ticket branch, so a retry can pick them up |
 
 ### 11.0 Privilege comes from the role, never from the step
 
@@ -800,8 +827,11 @@ A role that named `claude-code` would break in an installation that ships only
 `copilot-cli`. Templates refer to capabilities and roles, never to names that
 exist only in some installations.
 
-The review design (`docs/19`) asks for a different, ideally stronger, model to
-review than to author. That is a `roleMapping` choice, not a role field.
+The review design (`docs/19`) recommends a different, ideally stronger, model
+to review than to author. That is a `roleMapping` choice and workflow policy, not
+an engine rule, because other models may not be available. The engine records
+which model authored and which reviewed, so the choice is visible. The reviewer
+may run on any agent runtime.
 
 ### 11.2 What each layer may do to a library role
 
@@ -1000,7 +1030,8 @@ A template names a **decision type**. It does not contain policy.
 | What is being decided | The plan: `gate.decision_type` | Template |
 | Who may approve, minimum count, whether an agent counts | `policy.approval` | Organisation layer (`docs/07` section 4) |
 | Whether it may be decided from chat | `policy.chat.allowedDecisions` | Organisation layer |
-| Whether it may be auto-approved | `policy.auto_approve`, bounded by floor F1 (a human must approve any merge into the default branch; the engine enforces it at merge time, DR2) | Organisation layer, bounded by the floor |
+| Whether it may be auto-approved | `policy.auto_approve` | Organisation layer |
+| Whether the engine may merge into the default branch | Floor F1, a configurable setting (section 14.2) | Organisation, then repository, then workflow |
 
 Approval rules such as `required_role` or `min_approvers` are not gate inputs.
 In a template they would let the template relax an organisation's approval rule.
@@ -1037,6 +1068,22 @@ vocabulary. Instead:
 ```
 
 The choice is visible in the audit record and in the readable form.
+
+### 14.2 Engine merges into the default branch (floor F1)
+
+Floor F1 is now a **configurable setting with a safe default**, not a fixed
+floor. The ID F1 is kept so existing references resolve.
+
+| Rule | Detail |
+|---|---|
+| Default | The engine may not merge into the default branch, so `scm.merge` there must have `engine_can_merge: false`: the engine raises a human decision request, a human merges on the code host, and the engine detects the merge and continues |
+| Who sets it | Hierarchically: organisation, then repository, then workflow. It may be relaxed, for example for a proof-of-concept repository. The organisation can lock it so lower levels cannot relax it |
+| What can never change it | Anything an agent can edit. The repository setting is read from the repository's configuration **on its default branch**, never from the ticket branch, and no plan patch during a run can change it |
+| Enforcement | At plan validation, and again at merge time, reading the default branch from the code host (DR2) |
+| Final fallback | Code host branch protection on `main` (requiring independent review). The engine never holds a bypass |
+
+A template naming a decision type for the merge gate (section 14) is unchanged:
+when the engine may not merge, the human decision request is that gate.
 
 ---
 
@@ -1246,10 +1293,12 @@ silently changed a ratified detail.
   becomes a **pending human decision**, recorded with the diff and the reason.
 - A **human** may approve it with a reason. The approval is audited like any
   steering action.
-- **Safety floors stay absolute.** No patch, human or agent, relaxes floors F1
-  to F4 (`docs/07` section 2: human approval for default-branch merges, secrets
-  by reference, protected steps, attempt ceilings). A patch that would relax a
-  floor is rejected outright, with no human override.
+- **Safety floors stay absolute against patches.** No patch, human or agent,
+  relaxes floors F1 to F4 (`docs/07` section 2: whether the engine may merge
+  into the default branch, secrets by reference, protected steps, attempt
+  ceilings). F1 is configurable, but only through configuration (section 14.2),
+  never by a patch. A patch that would relax a floor is rejected outright, with
+  no human override.
 
 So a patch has three possible results: applied, pending human decision,
 rejected.
@@ -1311,7 +1360,7 @@ that document:
 |---|---|---|
 | `docs/06` section 3.1, `human.gate` | Inputs `required_role` and `min_approvers` removed; `gate.decision_type` added | Approval policy is organisation configuration, not template content (L12, section 14) |
 | `docs/06` section 3.2, `human.session` | `session_id` removed (the engine generates it); `checks` replaced by `checks_from` (step ids whose validators to offer) | So the checks offered in a session are the same ones the run will apply later; no check appears for the first time after submission |
-| `docs/06` section 6.5, `scm.merge` | `method` removed; `require_human` removed | The organisation allows merge methods and the repository chooses one; human approval for default-branch merges is floor F1, not an input |
+| `docs/06` section 6.5, `scm.merge` | `method` removed; `require_human` removed (now `engine_can_merge` and `squash`, section 3) | The organisation allows merge methods and the repository chooses one; whether the engine may merge into the default branch is floor F1, a setting (section 14.2), not a free input |
 | `docs/06` section 7.4, `test.run_tiers` | `tiers` replaced by `tier_tags`; `execution_target` removed | Tiers come from `feature-flow.yaml`, read per step |
 | `docs/06` section 10.1, `fix.verify` | `regression_test_required` removed | A regression test for every fix is a step invariant, not a template switch |
 | `docs/08` | Spike 1 gained a worker slot capacity measurement; the Temporal-unavailable injection states that workers re-attach by handle; the `wait.for_state` poll form is stated | Gaps in the spike plan found while designing the language |
@@ -1331,12 +1380,12 @@ that document:
 | Per-kind input schemas: generated or hand-written? | Generated, as an implementation task |
 | Is the `outputs` cap of 16 entries and 256 bytes right? | Kept. Spike 2 measured at most 5 entries and 71 bytes (section 8.3.2) |
 | Is `insert_after` with rewiring easier for a planner than `add_step` plus `change_route`? | Spike 2 found no meaningful difference: 0% planner failures with both. `insert_after` stays (section 15.3.1) |
+| Which outcome does `scm.merge` return when the target branch moved since catch-up? | `base_moved`, routed back to catch-up; the merge step's attempt allowance (default 3) caps the refusals (sections 4.2, 6.3) |
+| What status does a run report when it stops without reaching an `end:` route? | `incomplete`; a parent's `run.child` sees it as `failed` (section 6.2) |
+| When a loop re-runs a step, what happens to its earlier results? | Outcome, outputs and artifacts are cleared; the previous execution stays readable as `steps.<id>.previous`, with `steps.<id>.executions` counting executions (sections 6.3, 8.3) |
 
-**Open** (raised by the 2026-10-31 update; not resolved here):
+**Open:**
 
 | Question | Why it is open |
 |---|---|
-| Which outcome does `scm.merge` return when the merge is refused because the integration branch moved since catch-up (`docs/20`)? | The run must route it back to catch-up, and after about 3 refusals in a row to a human. Section 4.2 mirrors whatever `docs/06` section 6.5 decides |
-| What status does a run report when it ends without reaching an `end:` route, and which outcome does a `run.child` step return for such a child? | DR6 says only that it is never `completed`. Spike 3 used `incomplete` (`docs/18` section 7), which is not in the `end` enum or the outcome vocabulary |
-| How a child run's `{ end: partial }` or `{ end: rejected }` maps to a `run.child` outcome | `run.child` returns `completed`, `failed`, `replan_parent` or `attempts_exhausted`; the mapping from child run status is not stated |
-| When a loop re-enters a step (DR12), are its `artifacts`, `outputs` and `choice` cleared with its outcome? | DR12 says the outcome is cleared; the rest is not stated |
+| How a child run's `{ end: partial }` or `{ end: rejected }` maps to a `run.child` outcome | `run.child` returns `completed`, `failed`, `replan_parent` or `attempts_exhausted`; the mapping from those child run statuses is not stated |
