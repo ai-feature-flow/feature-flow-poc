@@ -63,7 +63,7 @@ array.
       "required": ["name", "scope", "revision"],
       "properties": {
         "name": { "type": "string" },
-        "scope": { "enum": ["ticket", "epic", "delivery", "any"] },
+        "scope": { "enum": ["ticket", "epic", "project", "delivery", "any"] },
         "revision": { "type": "integer", "minimum": 1 },
         "description": { "type": "string" },
         "source": { "$ref": "#/$defs/LibraryRef" }
@@ -99,7 +99,7 @@ array.
     },
     "Step": {
       "type": "object",
-      "required": ["id", "kind", "routes"],
+      "required": ["id", "kind"],
       "properties": {
         "id": {
           "type": "string",
@@ -108,7 +108,7 @@ array.
           "description": "snake_case. Must not look like a step kind (review 09 B2)"
         },
         "kind": { "$ref": "#/$defs/StepKind" },
-        "scope": { "enum": ["ticket", "epic", "delivery", "any"] },
+        "scope": { "enum": ["ticket", "epic", "project", "delivery", "any"] },
         "protected": { "type": "boolean" },
         "inputs": { "type": "object" },
         "requires": {
@@ -119,7 +119,10 @@ array.
           "additionalProperties": false
         },
         "limits": { "$ref": "#/$defs/Limits" },
-        "routes": { "$ref": "#/$defs/Routes" },
+        "routes": {
+          "$ref": "#/$defs/Routes",
+          "description": "Required on every step except a parallel branch and a step added by add_chain. The schema cannot tell those apart, so the validator enforces it (docs/12 check 10)"
+        },
         "gate": { "$ref": "#/$defs/Gate" },
         "produces": { "type": "array", "items": { "$ref": "#/$defs/ArtifactDecl" } },
         "consumes": { "type": "array", "items": { "$ref": "#/$defs/ArtifactDecl" } },
@@ -153,6 +156,11 @@ array.
       "type": "object",
       "properties": {
         "attempts": { "type": "integer", "minimum": 1 },
+        "correction_turns": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Chances an agent gets to fix an artifact that failed its schema, within one attempt"
+        },
         "start_to_close": { "type": "string", "pattern": "^[0-9]+(s|m|h)$" },
         "heartbeat": { "type": "string", "pattern": "^[0-9]+(s|m|h)$" }
       },
@@ -224,7 +232,19 @@ array.
     "Expression": {
       "type": "string",
       "maxLength": 1000,
-      "description": "CEL. Namespaces: params, steps, run, findings"
+      "description": "CEL. Namespaces: params, steps, run, findings. steps.<id>.previous holds a re-run step's previous results; steps.<id>.executions its execution count"
+    },
+    "StringOrExpr": {
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "object",
+          "required": ["expr"],
+          "properties": { "expr": { "$ref": "#/$defs/Expression" } },
+          "additionalProperties": false
+        }
+      ],
+      "description": "An input value given literally or as a CEL expression"
     },
     "Gate": {
       "type": "object",
@@ -232,7 +252,7 @@ array.
       "properties": {
         "decision_type": {
           "type": "string",
-          "pattern": "^(ticket|epic|delivery)\\.[a-z_]+$"
+          "pattern": "^(ticket|epic|project|delivery)\\.[a-z_]+$"
         }
       },
       "additionalProperties": false
@@ -262,17 +282,27 @@ array.
   `not: { enum: [...] }` clause is written as `$stepKinds` above; in the real
   schema it is the same list as `StepKind`. This is what keeps a terminal
   directive such as `{ end: completed }` distinct from a step id.
-- **`routes` is required on every step.** An outcome the kind can return but the
-  step does not route is a blocking error. JSON Schema cannot express "every
-  outcome this kind can return", so the validator checks that, not the schema
-  (`docs/12` section 2, the validation table, check 10). Section 7.1 records a
-  conflict with route-less parallel branches.
+- **`routes` is optional in the schema, required by the validator.** Every step
+  must route every outcome its kind can return (`docs/12` section 2, the
+  validation table, check 10), except a parallel branch, which reports to its
+  join, and a step added by `add_chain`, whose routes the chain supplies. JSON
+  Schema can tell neither which outcomes a kind returns nor which steps are
+  branches, so the validator enforces both.
 - **`inputs` is an untyped object here.** Inputs are typed per step kind
   (review 09, answer 5). Section 4 gives the mechanism. The per-kind input
   schemas are generated from `docs/06` and are not written out here, so they
   cannot drift from it.
 - **`LibraryRef` has one format**, `package[@version]:type/name` (review 09 D8;
   `docs/11` section 3).
+- **Scopes.** `ticket`, `epic`, `project`, `delivery` and `any`. A project run
+  starts epic runs with `run.child`, the way an epic run starts ticket runs.
+- **Run statuses are not all directives.** `end` takes `completed`, `failed`,
+  `partial` or `rejected`. A run that stops without reaching an `end:` route has
+  the status `incomplete` (DR6), which no route can choose; a parent's
+  `run.child` sees such a child as `failed`.
+- **Loops re-run steps** (DR12). Re-running a step clears its outcome, outputs
+  and artifacts. Expressions can read the previous execution's results as
+  `steps.<id>.previous` and the count as `steps.<id>.executions`.
 - **No merge-lock fields.** The schema never had any, and the merge design
   (`docs/20`: no lock; catch up, re-test if changed, merge) needs none. The
   catch-up step's `branch_changed` result is an ordinary entry in `outputs`.
@@ -350,9 +380,11 @@ array.
         "outcome": { "type": "string" },
         "to": {
           "oneOf": [
-            { "type": "string", "pattern": "^end: (completed|failed|partial|rejected)$" },
+            { "$ref": "https://feature-flow.dev/schemas/plan/v1#/$defs/Directive" },
+            { "$ref": "https://feature-flow.dev/schemas/plan/v1#/$defs/Resume" },
             { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }
-          ]
+          ],
+          "description": "The same forms as a plan route: a step id, { end: ... } or { resume: true }"
         }
       },
       "additionalProperties": false
@@ -382,7 +414,8 @@ array.
 ## 4. Typed inputs per step kind
 
 Inputs are typed per step kind, from the step catalogue (review 09, answer 5).
-The mechanism is one schema per kind, selected by `kind`. For `agent.run`:
+The mechanism is one schema per kind, selected by `kind`. Three kinds are shown:
+`agent.run`, `review.run` and `scm.merge`.
 
 ```json
 {
@@ -402,8 +435,63 @@ The mechanism is one schema per kind, selected by `kind`. For `agent.run`:
                 "enum": ["none", "branch", "repository"],
                 "description": "Optional TIGHTENING only. Defaults to the role's value. A step may never exceed its role (review 10 A1, review 11 A4). Governs what the agent may change in its sandbox; the agent never holds a credential that can push, and the engine pushes for it (DR13, docs/20)"
               },
+              "push": {
+                "type": "boolean",
+                "default": true,
+                "description": "Whether the engine pushes the agent's commits to the branch at the end of the step and at work-in-progress points. False for scratch steps. Pushing follows write_access: with none, nothing is pushed"
+              },
               "bindings": { "type": "object" },
               "resume_strategy": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "review.run" } }, "required": ["kind"] },
+      "then": {
+        "properties": {
+          "inputs": {
+            "type": "object",
+            "required": ["scope", "prior_findings"],
+            "properties": {
+              "scope": { "enum": ["ticket", "epic", "project", "delivery"] },
+              "branch": { "$ref": "#/$defs/StringOrExpr", "description": "The branch to review, on a read-only checkout" },
+              "base": { "$ref": "#/$defs/StringOrExpr", "description": "The branch it is compared with" },
+              "diff_ref": { "$ref": "#/$defs/StringOrExpr", "description": "Only for a review of a specification document rather than code: the document to review" },
+              "spec_refs": { "$ref": "#/$defs/StringOrExpr", "description": "The specification documents to review against: acceptance criteria, the epic contract" },
+              "machine_results": { "$ref": "#/$defs/StringOrExpr", "description": "Results of the machine checks that ran first: build, tests, linters, analysers" },
+              "checks": { "type": "array", "items": { "$ref": "#/$defs/LibraryRef" } },
+              "prior_findings": { "$ref": "#/$defs/StringOrExpr" },
+              "require_coverage": {
+                "oneOf": [
+                  { "enum": ["none", "all"] },
+                  { "type": "array", "minItems": 1, "items": { "type": "string" } }
+                ],
+                "default": "none",
+                "description": "Which changed files the reviewer must have read: none, all, or a list of paths. The engine publishes coverage as an output either way and never fails a step for coverage on its own"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "scm.merge" } }, "required": ["kind"] },
+      "then": {
+        "properties": {
+          "inputs": {
+            "type": "object",
+            "required": ["pr_ref", "engine_can_merge", "squash"],
+            "properties": {
+              "pr_ref": { "$ref": "#/$defs/StringOrExpr" },
+              "engine_can_merge": {
+                "type": "boolean",
+                "description": "True: the engine builds the merge commit from what was tested and pushes it. False: the engine raises a human decision request, a human merges on the code host, and the engine detects the merge. Checked against the default-branch merge setting (floor F1) at validation and at merge time"
+              },
+              "squash": { "type": "boolean", "description": "True for a squash merge, false for a plain merge" }
             },
             "additionalProperties": false
           }
@@ -534,8 +622,7 @@ document, is the deliverable.**
 
 The added branch has no `routes`: a parallel branch reports its terminal outcome
 to the join, and a child's request to re-plan its parent (`replan_parent`) is
-handled by the interpreter (review 11 A1). This conflicts with `routes` being
-required on every step (section 7.1).
+handled by the interpreter (review 11 A1).
 
 ---
 
@@ -552,14 +639,14 @@ required on every step (section 7.1).
 | Reference format | One format, `package[@constraint]:type/name` (`docs/11` section 3) |
 | The `outputs` cap (16 entries, 256 bytes per value) | Kept as a starting value. Spike 2 measured at most 5 entries and 71 bytes (`docs/16` section 2) |
 
-### 7.1 Still open
+### 7.1 Answered in round 2
 
-Found while checking the schema against the worked examples in `docs/13`. Not
-resolved here, because no decision covers them.
+Found while checking the schema against the worked examples in `docs/13`, and
+decided by the product owner on 2026-10-31.
 
-| # | Question | Effect today |
+| # | Question | Answer, applied in this document |
 |---|---|---|
-| 1 | `Step` requires `routes`, but a parallel branch carries no routes by design (review 11 A1), and a step added by `add_chain` gets its routes from the chain | Every patch in section 6 and in `docs/13` fails schema validation. Options: make `routes` optional for steps inside a patch, or for `run.child` branches |
-| 2 | `Limits` has no `correction_turns` (the number of chances an agent gets to fix a malformed artifact), but `docs/09` and `docs/13` example 1 use it | `docs/13` example 1 fails schema validation |
-| 3 | A patch's `change_route` writes the target `to` as a string (`"end: completed"`), but a plan's routes use the `Directive` mapping (`{ end: completed }`, review 10 B9) and `{ resume: true }` | The two documents type the same thing differently |
-| 4 | `review.run` inputs under the review design (`docs/19`: the reviewer reads the branch itself, so no diff is passed) | None here: per-kind inputs are generated from `docs/06` section 8.2. Listed so the generator picks up the change |
+| 1 | `Step` required `routes`, but parallel branches and `add_chain` steps carry none | `routes` is optional in the schema; the validator requires it on every other step (section 2.1) |
+| 2 | `Limits` had no `correction_turns` | Added |
+| 3 | A patch's `change_route` typed directives as strings | `to` uses the plan's forms: a step id, `{ end: ... }` or `{ resume: true }` |
+| 4 | `review.run` inputs under the review design | `branch`, `base`, `spec_refs`, `machine_results`; `diff_ref` only for reviewing a document; plus `require_coverage` (section 4) |

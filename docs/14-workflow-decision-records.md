@@ -133,7 +133,10 @@ runtime and a model, and may **tighten** `write_access`. It may not relax
 
 **Later:** `write_access` governs what the agent may change in its own sandbox.
 Agents never hold a credential that can push; the engine pushes ticket branches
-and performs every merge (DR13, `docs/20`, the merge design).
+and performs every merge (DR13, `docs/20`, the merge design). An agent's code
+host credential is read-only, per step. The push is part of the agent step, and
+an `agent.run` input `push` (default true) can switch it off for a scratch step
+(`docs/10` section 4).
 
 **Applied:** `docs/09` section 11, `docs/11` section 5.
 
@@ -275,6 +278,9 @@ validation table (`docs/12` section 2).
 a patch for the parent plan, and the parent applies it through the same
 `applyPatch` (`docs/01` section 3.4: re-planning and steering share one path).
 
+**Later:** a `project` scope sits above epics. A project run starts epic runs
+the same way an epic run starts ticket runs (`docs/13` section 8).
+
 **Applied:** `docs/09` section 13, `docs/13` sections 2.1 and 3.
 
 ---
@@ -304,6 +310,10 @@ contract compatibility; expression type checks; a patch must not make a protecte
 step unreachable.
 
 **No runtime warnings** (review 09, answer 12). Validation is static only.
+
+**Later:** plan validation also checks each merge step's `engine_can_merge`
+against floor F1's setting (whether the engine may merge into the default
+branch); the engine checks it again at merge time.
 
 **Applied:** `docs/12` sections 1 and 2, `docs/09` section 16.
 
@@ -351,7 +361,7 @@ else.**
 | What is being decided | `gate.decision_type` | Template |
 | Who may approve, minimum count, whether an agent counts | `policy.approval` | Organisation layer (`docs/07` section 4) |
 | Whether it may be decided from chat | `policy.chat.allowedDecisions` | Organisation layer |
-| Whether it may be approved automatically | `policy.auto_approve`, bounded by floor F1 (a human must approve any merge into the default branch) | Organisation layer |
+| Whether it may be approved automatically | `policy.auto_approve`, bounded by floor F1 (whether the engine may merge into the default branch) | Organisation layer |
 
 Putting `required_role` or `min_approvers` in a gate's inputs would be policy in a
 template, and would let a template relax an organisation's approval rule.
@@ -361,7 +371,11 @@ template, and would let a template relax an organisation's approval rule.
 is a blocking error at run start.
 
 **Later:** floor F1 is enforced by the engine at merge time, not only by plan
-routing (DR2).
+routing (DR2). F1 is now a configurable setting with the same safe default: the
+engine may not merge into the default branch. It is set by the organisation,
+then the repository's configuration read from its default branch, then the
+workflow; the organisation can lock it, and no plan patch or anything an agent
+can edit may change it. A merge step states it with `engine_can_merge`.
 
 **Applied:** `docs/09` section 14; `docs/10` section 2 (`Gate`); `docs/13`
 sections 1, 2 and 4.
