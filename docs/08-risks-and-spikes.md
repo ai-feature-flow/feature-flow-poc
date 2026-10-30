@@ -1,287 +1,235 @@
 # Risks and spike plan
 
-Status: first pass, revised for review 08. Date: 2026-10-26, updated 2026-10-27.
-Deliverable 6 of `brief.md` section 11. Companion to
-`docs/01-architecture-first-pass.md` section 9, which holds the risk register. This
-document holds the register with mitigations, and the spike plan.
+Status: updated 2026-10-31, after Spikes 1 to 3 and the merge and review design
+decisions. First written 2026-10-26.
 
-**Review 08 applied.** Adds **R20**, polling inflating history, with the mitigation
-that polling happens inside one long-running activity. Adds three failure
-injections to Spike 1 (Temporal unavailable, worker-to-sandbox network break, and
-sizing by history events) and two to Spike 2 (fix verification and the decline
-path, and the events-wake-reads-confirm path). Clarifies the Spike 2 exit criterion
-against floor F1. Applies all five answers, including the W0 fallback decision.
+| Section | Contents |
+|---|---|
+| 1 | Risk register: twenty risks, R1 to R20, each with its mitigation and current status |
+| 1.3 | Design requirements DR1 to DR13: what the spikes showed the design must do |
+| 2 | Spike plan: Spikes 1, 2 and 3 are closed; Spike W0 (Windows agent runtimes) is partly answered |
+| 3 to 5 | Spike order, what the spikes did not cover, open questions |
+
+`docs/01` section 9 (principal risks) carries a short copy of the register. This
+document is the full version.
+
+**Two numbering schemes.** Risks are R1 to R20. The spike results documents also
+used R1 to R6 for design requirements; those are now DR1 to DR6 and are not the
+same as risks R1 to R6 (section 1.3 maps them).
 
 ---
 
 ## 1. Risk register
 
-Twenty risks. Each has a first mitigation and, where it exists, a spike that tests
-it.
+Status as of 2026-10-31:
 
-| # | Risk | First mitigation | Tested by |
+- **Mitigated**: a spike exercised the mitigation and it held.
+- **Handled by design**: a later design decision addresses the risk, but no spike
+  has exercised that design yet.
+- **Residual**: the mitigation reduces the risk but does not remove it.
+
+| # | Risk | Mitigation | Status |
 |---|---|---|---|
-| R1 | History growth on a 27-hour, hundreds-of-steps run | References only, capped findings summary, measured continue-as-new threshold, replay tests | Spike 1 |
-| R2 | Non-determinism leaks into the interpreter | Pure-function discipline, replay test suite in CI, code review rule | Spike 1, CI |
-| R3 | Decision or steering lost during continue-as-new | Continue-as-new only at safe points; API retries when no gate is open | Spike 1 |
-| R4 | LLM gates unstable across passes | Structured, fingerprinted findings carried between passes; prior findings passed to every review | Spike 2 |
-| R5 | Sandbox does not match CI | `feature-flow.yaml` declares tiers; CI delegation is the default for Docker-dependent tiers | Spike 2 |
-| R6 | Credential exposure in sandboxes or payloads | Short-lived, least-privilege, per-step credentials; secrets by reference; encrypted payload codec available | Spike 2 |
-| R7 | Re-plan agent removes or weakens protected steps | Protected flag enforced in the single `applyPatch` path | Spike 1 |
-| R8 | Runs stall on human latency | Unbounded durable waits with reminders, never activity timeouts; "stuck run" notification | Spike 2 |
-| R9 | Organisation fork drifts from upstream | All organisation behaviour in configuration and providers; contract tests make drift visible. A distribution repository, not a fork, is the default customisation path | Contract tests |
-| R10 | Concurrent tickets in one repository conflict | Epic integration branch plus per-ticket branches; `scm.merge_base_forward`; merge lock per target branch as a Temporal-native mutex; `max_concurrency` on the `parallel` step | Spike 3 |
-| R11 | A long agent step loses its worker or sandbox and restarts from scratch | Resumable agent steps: WIP commits pushed to the branch, session reference in the artifact store, sandbox re-attachment by idempotency key | Spike 1 |
-| R12 | Non-determinism in .NET workflow code is not caught at runtime | Replay tests in CI mandatory from the first workflow; workflow-code review rule: no `Task.Run`, no wall clock, no unordered collections, no I/O | CI, review |
-| R13 | A run's cost is unknown after the fact | Tokens, model and compute time recorded per step from the first version | Spike 2 |
-| R14 | Pattern C does not hold on Windows: the agent runtime may not run there with hook support | Spike W0 before committing to a Windows sandbox | Spike W0 |
-| R15 | A resumed agent step makes no progress and never exhausts its budget | Progress rule: a resume is free only with a new commit or session growth; after 3 consecutive resumes with no progress the next counts as a restart | Spike 1 |
-| R16 | Repository settings go stale mid-run because they were copied into the plan | Each step reads `feature-flow.yaml` from its branch when it starts and records the hash of the resolved manifest | Spike 2 |
-| R17 | A check appears for the first time after work is submitted, causing review round trips | Pre-submit checks in interactive sessions: any validator is exposed as an on-demand action | Spike 3 |
-| R18 | A long sandbox command is lost when the worker crashes, even though the sandbox survives | Commands are started and polled, not awaited: `StartCommandAsync` returns a handle and `AttachCommandAsync` re-attaches to a running command | Spike 1 |
-| R19 | An unreachable hook endpoint denies every tool call, so the agent flails or gives up with a wrong outcome | Unreachable is distinguished from denied: the hook client retries and holds the tool call for a bounded time, then the session stops in a resumable state classified as infrastructure | Spike 1 |
-| R20 | Polling inflates history: one short activity per poll adds hundreds of events for one long step | Poll **inside one long-running activity** that loops and heartbeats. History cost is one activity per step; after a worker crash the activity retry re-attaches by handle | Spike 1 |
+| R1 | Workflow history grows too large on a 27-hour run with hundreds of steps | Workflow state holds references only; findings summary is capped; continue-as-new (Temporal restarting the workflow with fresh history) at a measured threshold; replay tests | **Mitigated, measured in Spike 1.** 6.28 history events per step; carried state about 500 bytes per plan step, stable across continue-as-new. Threshold: 5,120 events or the 2 MB payload limit, whichever comes first. A plan size limit (`docs/12` section 2.4, check 32) keeps carried state under 1 MB, about 2,000 steps. Evidence: `docs/15` section 6.1 |
+| R2 | Non-determinism leaks into the interpreter | Pure-function discipline; replay test suite in CI; code review rule | **Mitigated.** Nine recorded histories replay cleanly (`docs/15` section 7). In Spike 3 a fixture failed replay when an interpreter change lacked its version marker, so the tests catch this class (`docs/18` section 4) |
+| R3 | A decision or steering request is lost during continue-as-new | Continue-as-new only between steps with no pending decision; the API retries against the new run | **Mitigated.** Spike 1: no update lost (`docs/15` section 3.6) |
+| R4 | Review verdicts are unstable across passes | Findings ledger as source of truth, with "fixed" sticky while the code is unchanged; review design with evidence-backed bug findings, separate review angles and a different model from the author (DR4, section 1.3) | **Handled by design, not re-measured.** Spike 2 measured the instability: four passes on unchanged input gave 1, 1, 1 and 2 findings, and a fixed finding was re-raised (`docs/16` section 2). The ledger (`docs/17` section 6.5) and review design (`docs/19`) respond to it; no spike has run the new reviewer |
+| R5 | Sandbox does not match CI | `feature-flow.yaml` declares test tiers; CI delegation (running a tier in the real CI system) is the default for Docker-dependent tiers | **Mitigated.** Spike 2: a Docker-dependent tier ran through CI delegation and passed (`docs/16` section 2) |
+| R6 | Credentials exposed in sandboxes or payloads | Short-lived, least-privilege, per-step credentials; secrets by reference; encrypted payload codec available | **Partly mitigated.** Spike 2: tokens lasted 60 minutes, covered one repository, and wider requests were refused. Two gaps became requirements, neither built in the spikes: model credentials stay out of the agent's environment (DR1), and agents hold no push credential (DR13) |
+| R7 | A re-plan removes or weakens protected steps | Protected flag enforced in `applyPatch`, the one function that applies re-plans and steering | **Mitigated.** Spike 1: the patch was rejected and recorded (`docs/15` section 4.1) |
+| R8 | Runs stall on human latency | Unbounded durable waits with reminders, never activity timeouts; "stuck run" notification | **Mitigated in mechanism.** Spike 2: a gate open for 2 minutes did not time out and reminders fired (`docs/16` section 2). Hours were not tested; the wait holds no timer, so nothing can time out |
+| R9 | An organisation's fork drifts from upstream | Organisation behaviour lives in configuration and providers; contract tests make drift visible; the default is a distribution repository (the organisation's own providers and host project), not a fork | **Residual.** Not spiked. Contract tests show drift; they do not prevent it |
+| R10 | Concurrent tickets in one repository conflict | Epic integration branch plus per-ticket branches. Before merging, the ticket catches up (`scm.merge_base_forward` merges the integration branch into it) and re-tests if that changed anything. The engine performs the merge, and Git refuses a push onto a branch that moved. `max_concurrency` on the `parallel` step | **Handled by design** (`docs/20`, the merge design). Spike 3 ran three concurrent tickets correctly under a merge lock (`docs/18`). The lock is now dropped because a stuck ticket holding it blocked every merge. Spike 3's catch-up, re-test-only-on-change and conflict-to-agent results still apply; the lock-free merge has not been spiked |
+| R11 | A long agent step loses its worker or sandbox and restarts from scratch | Resumable agent steps: work-in-progress commits pushed (by the engine, DR13); session reference in the artifact store; sandbox re-attached by idempotency key; resume as DR9 | **Mitigated, with a gap fixed in design.** Spike 1 resumed rather than restarted on every crash (`docs/15` section 3.1). In Spike 3 the real `claude-code` runtime restarted its session after a worker crash, because resume relied on the crashed worker's memory (`docs/18` section 4). DR9 removes that dependency |
+| R12 | Non-determinism in .NET workflow code is not caught at runtime | Replay tests mandatory in CI from the first workflow; workflow-code review rule: no `Task.Run`, no wall clock, no unordered collections, no I/O | **Mitigated by process.** Replay tests work (R2). The review rule is a standing rule a spike cannot close |
+| R13 | A run's cost is unknown after the fact | Tokens, model and compute time recorded per step | **Mitigated.** Spike 2 recorded cost per step; the Claude Code proof's run cost (USD 0.0168) was read from the record store (`docs/16` sections 2 and 12) |
+| R14 | Pattern C (agent runtime inside the sandbox, its hooks calling the engine) does not hold on Windows | Spike W0 before committing to a Windows sandbox; fallback controls in section 2.5 | **Partly answered** (section 2.4). Claude Code's hooks fired on Windows. Copilot CLI's before- and after-tool-call hooks did not fire with a third-party model. Session resume on Windows is untested |
+| R15 | A resumed agent step makes no progress and never exhausts its budget | Progress rule: a resume is free only with a new commit or session growth; after 3 progress-free resumes the next counts as a restart | **Mitigated.** Spike 1 (`docs/15` sections 3.2 and 6.5) |
+| R16 | Repository settings go stale mid-run because they were copied into the plan | Each step reads `feature-flow.yaml` from its branch when it starts and records the manifest's hash | **Mitigated.** Spike 2: a mid-run edit was read by the next step (`docs/16` section 2) |
+| R17 | A check appears for the first time after work is submitted, causing review round trips | Pre-submit checks: any validator can be run on demand from an interactive session | **Partly evidenced.** Spike 3 showed parity at spike level, close to by construction (`docs/18` section 5). Under the review design, parity means same brief, tools, model and commit (`docs/19`); not yet exercised |
+| R18 | A long sandbox command is lost when the worker crashes, though the sandbox survives | Commands are started and polled: `StartCommandAsync` returns a handle; `AttachCommandAsync` re-attaches | **Mitigated.** Spike 1: the running command was re-attached by handle (`docs/15` section 3.1) |
+| R19 | An unreachable hook endpoint is read as a denied tool call, so the agent gives up with a wrong outcome | The hook client retries and holds the tool call for a bounded time, then the session stops in a resumable state classified as infrastructure | **Mitigated.** Spike 1 (`docs/15` section 3.3) |
+| R20 | Polling inflates history: one short activity per poll adds hundreds of events for one long step | Poll inside one long-running activity that loops and heartbeats | **Mitigated.** Spike 1: a 60-second step polled every 500 ms cost one activity and 11 events (`docs/15` section 6.2) |
 
 ### 1.1 The four that matter most
 
-If the spike plan can only cover a little, cover these:
+| # | Why | Status |
+|---|---|---|
+| R1 | History limits are a hard wall, not a gradual degradation, and a 27-hour run with hundreds of steps is the known hard case | Measured; threshold set (R1 row above) |
+| R11 | Interruptions were the prototype's main operational pain | Mitigated; the real-runtime resume gap is covered by DR9 |
+| R18 | The same failure in a new form: the sandbox survives but the command is lost | Mitigated |
+| R19 | The same failure again: a network drop becomes a wrong outcome rather than a retry | Mitigated |
 
-| # | Why |
+R11, R18 and R19 are one class: **an interruption becomes a wrong outcome instead
+of a continuation**. That was the prototype's defining failure. The spikes found
+it twice more: a failed merge that ended a run looking `completed`, and a loop
+that dead-ended and did the same (DR6).
+
+R20 is a mitigation's own risk. Start-and-poll fixed R18, but one short activity
+per poll would add well over 1,000 history events to a 4-hour step. Polling
+inside one long-running activity fixes it.
+
+### 1.2 Residual risks
+
+Risks still open after the spikes:
+
+| Risk | Why it is still open |
 |---|---|
-| R1 | A 27-hour run with hundreds of steps is the known hard case, and history limits are a hard wall, not a degradation |
-| R11 | Interruptions were the prototype's main operational pain |
-| R18 | Same failure in a new form: the sandbox survives but the command is lost |
-| R19 | Same failure again: a network drop becomes a wrong outcome rather than a retry |
+| R4, review verdicts unstable | The response (findings ledger and review design, DR4) has not been run against a real model |
+| R10, concurrent tickets conflict | The lock-free merge design (`docs/20`) has not been spiked |
+| R14, pattern C on Windows | Partly answered; session resume and Copilot CLI hooks with a first-party model are untested (section 2.4) |
+| R6, credential exposure | DR1 (model credentials kept out of the agent's environment) and DR13 (no push credential for agents) are not built |
+| R9, distribution drift | Contract tests make drift visible; they do not prevent it |
 
-R11, R18 and R19 are the same class — **an interruption becomes a wrong outcome
-instead of a continuation**. That was the prototype's defining failure, and it is
-worth treating as one theme rather than three risks.
+R1 is no longer residual: Spike 1 measured the threshold.
 
-**R20 is the mitigation's own risk.** Start-and-poll (review 06, C1) fixed R18, but
-done naively — one short activity per poll — it would add about 480 activities and
-well over 1,000 history events for a single 4-hour step, which alone can hit the
-history limit. The fix is to poll inside one long-running activity. It is worth
-noting because it is the second time a fix for one risk has introduced another.
+### 1.3 Design requirements (DR1 to DR13)
 
-### 1.2 Residual risks not yet mitigated
+Production concerns found in the spikes are recorded as design requirements, not
+fixed in spike code. The spike results documents use older names; the "Was" column
+maps them. R1 to R6 come from Spike 2 and the Claude Code proof (`docs/16`
+sections 10 and 12); D1 to D7 come from Spike 3 (`docs/18` section 6). These
+old R names are not risks R1 to R6.
 
-| Risk | Why it is residual |
+"Where it is specified" names the design document section that now carries the
+requirement.
+
+| # | Was | Requirement | Where it is specified |
+|---|---|---|---|
+| DR1 | R1 | **Model credentials never enter the agent's environment.** Version 1 uses a proxy that adds the key, or per-run keys with a limit and expiry. Spike 2 and the Claude Code proof both left the model credential in the agent's environment | `docs/01` section 4.6 (credential broker) |
+| DR2 | R2 | **Floor F1 (a human must approve any merge into the default branch) is enforced by the engine at merge time**, reading the base and default branch from the code host, and backed by code host protection on the default branch | `docs/06` section 6.5 (`scm.merge`); `docs/07` section 2 (safety floors) |
+| DR3 | R3 | **Code host protection is configured by an identity the engine does not hold.** The engine only checks that the protection exists. Spike 2 found the GitHub App's `administration` permission could edit the ruleset protecting `main` | `docs/01` section 4.6 (credential broker) |
+| DR4 | R4 | **Review verdicts are unstable with a real model.** Handled by the findings ledger positions below and the review design | `docs/19` (code review design); `docs/06` sections 8.2 (`review.run`) and 9 (findings steps) |
+| DR5 | R5 | **Development on Windows or macOS; runtime on Windows, macOS or Linux containers.** Docker is used only for packaging and sandboxes. The spikes ran on macOS, with Claude Code hooks also shown on Windows | `docs/01` section 1.1 (components) |
+| DR6 | R6 | **A run that ends without reaching an `end:` route never reports `completed`.** (`end:` is the plan's terminal directive.) Spike 3 returns `incomplete` instead | `docs/09` section 6.2 (terminal directives); `docs/01` section 3.1 (the loop) |
+| DR7 | D1 | **The interpreter starts a ready step as soon as a concurrency slot frees**, not when a whole batch finishes. Interpreter changes are versioned for replay (Temporal `Workflow.Patched`) | `docs/01` sections 3.1 (the loop) and 3.3.1 (parallel branches and joins) |
+| DR8 | D2 | **A provider maps every documented success response to an outcome**, including empty ones such as GitHub's 204 for a no-op merge. An unmapped success is a work error, not an infrastructure error, so it cannot be retried forever | `docs/05` section 1.3 (error codes); `docs/01` section 4.3 (error classification) |
+| DR9 | D5 | **Resume after a crash.** The agent runs in its own sandbox, separate from the agent worker, so a worker restart (including every deploy) costs nothing: the new worker reconnects. Uncommitted files are kept if the sandbox survived, and the agent's conversation is reloaded; resume never depends on the crashed worker's memory. If the sandbox is lost, the step restarts from the last pushed commit. No snapshots of uncommitted work; revisit only if real runs show sandbox loss is common | `docs/01` section 3.6 (resumable agent steps) |
+| DR10 | D6 | **Attempt ceilings are enforced on every execution of a step**, including when a loop re-enters it. Without this, a Spike 3 loop ran its fix step 213 times in 15 seconds | `docs/01` section 3.7 (attempt budgets); `docs/09` section 6.3 (loops are bounded by the engine) |
+| DR11 | D7 | **The epic review's prior findings include the child tickets' findings ledgers** | `docs/06` section 8.2 (`review.run`) |
+| DR12 | new | **Routing to a step that already has an outcome runs it again**, so loops work; its previous outcome is cleared. Found by the Claude Code proof (`docs/16` section 12) | `docs/09` section 6 (routing); `docs/01` section 3.1 (the loop) |
+| DR13 | new | **Agents never hold a credential that can push.** The engine pushes ticket branches at the end of each step and at work-in-progress points, and performs every merge | `docs/20` (merge design); `docs/01` section 4.6 (credential broker); `docs/06` section 6.5 (`scm.merge`) |
+
+**Findings ledger positions** (`docs/17` section 6.5, accepted 2026-10-30), which
+DR4 and DR11 rely on:
+
+| | Position |
 |---|---|
-| R14 | Windows support is deferred. The spike decides whether pattern C holds there at all |
-| R4 | **Now measured, and the mitigation is not sufficient.** Spike 2 ran a real reviewer model four times on unchanged input: findings went 1, 1, 1, 2. A finding recorded `fixed=true` was re-raised on the next pass, and a new finding appeared on pass 4. Passing prior findings makes verdicts *more* stable, not stable. How the findings ledger should treat a re-raised finding is a Spike 3 or design question |
-| R1 | The continue-as-new threshold is "measured", and the measurement does not exist yet |
-| R9 | Contract tests make drift visible; they do not prevent it |
+| L1 | The ledger is the source of truth; a review pass is evidence |
+| L2 | "Fixed" is sticky, enforced by the engine. When a fix is verified, the ledger records the location (path, enclosing symbol) and that symbol's code hash. A later finding there is recorded as a re-raise, not acted on, while the hash is unchanged |
+| L3 | New findings on unchanged input are kept; no voting between passes in version 1 |
+| L4 | At epic scope, prior findings include the children's ledgers (DR11) |
 
-### 1.3 Design requirements recorded from Spike 2
+**Superseded, not requirements.** Two Spike 3 requirements were overtaken by
+later design decisions:
 
-Review 16 decided that production concerns found during a spike are recorded as
-design requirements, not fixed in spike code. R1 to R4 came out of Spike 2, and R6
-out of the Claude Code proof that followed it; R5 is a product owner direction.
-All belong in the design, not the spike.
-
-| # | Requirement |
-|---|---|
-| R1 | **Model credentials never enter the agent's environment.** Spike 2 passed the OpenRouter key as an environment variable with all tools allowed. Version 1 uses a proxy that adds the key, or per-run keys with a limit and expiry |
-| R2 | **The F1 floor is enforced by the engine at merge time**, reading the base and default branch from the code host, and backed by code host protection on the default branch. Done in the spike; keep it in the design |
-| R3 | **Code host protection is configured by an identity the engine does not hold.** The engine only checks that the protection exists. This is the parked review 15 A2: the App's `administration` permission lets it edit the very ruleset that protects `main` |
-| R4 | **Review verdicts are unstable with a real model.** See the R4 row above. Add to the risk register; the findings ledger's handling of re-raised findings is a Spike 3 or design question |
-| R5 | **Development on Windows or macOS; runtime on Windows, macOS or Linux containers** (product owner, 2026-10-30). .NET is cross-platform; Docker is used only for packaging and sandboxes. The spikes run on macOS only and do not evidence it |
-| R6 | **A run that ends without reaching an `end:` route never reports `completed`.** Found by the Claude Code proof (`docs/16` 12): a fix loop that dead-ended in the interpreter ended the workflow `completed` with no PR. The same class as `docs/16` 5, bug 2. Recorded by the orchestrator, 2026-10-30, under the product owner's standing instruction; open to review |
+- **D3**, a stalled ticket must lose the merge lock: superseded by the merge
+  design (`docs/20`), which has no lock.
+- **D4**, the reviewer sees the whole diff or fails visibly: superseded by the
+  review design (`docs/19`). The reviewer reads the branch itself, so nothing is
+  pre-loaded and there is no prompt size limit; the engine checks that it opened
+  every changed file instead.
 
 ---
 
 ## 2. Spike plan
 
-Four spikes. Spike 1 is the one the brief names explicitly and is the gate on
-everything else.
+| Spike | Question | Risks tested | Status |
+|---|---|---|---|
+| 1 | Does the interpreter survive a worker crash and apply a mid-run re-plan? | R1, R2, R3, R7, R11, R15, R18, R19, R20 | **Closed** |
+| 2 | Does one real ticket run end to end, with real providers? | R4, R5, R6, R8, R13, R16 | **Closed** 2026-10-30 |
+| 3 | Do concurrent tickets in one repository stay correct? | R10, R17 | **Closed** 2026-10-31 |
+| W0 | Do agent runtimes run on Windows with hook support? | R14 | **Partly answered** |
 
-| Spike | Question it answers | Risks |
-|---|---|---|
-| 1 | Does the interpreter survive a worker crash and apply a mid-run re-plan? | R1, R2, R3, R7, R11, R15, R18, R19 |
-| 2 | Does one real ticket run end to end, with real providers? | R4, R5, R6, R8, R13, R16 |
-| 3 | Do concurrent tickets in one repository stay correct? | R10, R17 |
-| W0 | Do agent runtimes run on Windows with hook support? | R14 |
+The full specifications and results are in the results documents. This section
+keeps only the outcome of each.
 
 ### 2.1 Spike 1: the interpreter under failure
 
-**The brief's spike.** An interpreter workflow that survives a worker crash and
-applies a mid-run re-plan.
+**Question.** Does the interpreter workflow survive a worker crash and apply a
+mid-run re-plan?
 
-**Setup.** Sized by **history events, not steps** (review 08, answer 1). Use fake
-providers — the dry-run mechanism from review 07 — to generate synthetic plans from
-about 50 to 400 steps cheaply, and find where continue-as-new triggers. For
-reference, the prototype's production run reached about 325 steps across an
-initiative with 16 child ticket runs. Then one shorter run with real providers.
+**Outcome.** All nine exit criteria met. Crashed steps resumed rather than
+restarted, re-plans left protected and in-flight steps alone, and continue-as-new
+lost no decision. It measured the history budget (6.28 events per step; threshold
+5,120 events or 2 MB) and closed brief question Q6 (`docs/03` Q6, plan-as-data
+within Temporal limits). Cel.NET was kept as the expression library.
 
-The plan includes:
+**Results:** `docs/15-spike-1-results.md`. Its section 2 restates the exit
+criteria with their results.
 
-- several `agent.run` steps with a long `start_to_close`;
-- a `parallel` step with three branches and `join: all`;
-- a protected step that a re-plan will try to remove;
-- a `human.gate` mid-run;
-- at least three re-plans, one of which arrives while a branch is in flight.
-
-**Failure injection.** Kill the worker, not the sandbox:
-
-| Injection | What must happen |
-|---|---|
-| Kill the worker mid-`agent.run` | The step resumes: WIP commits are on the branch, the session reference is in the artifact store, the sandbox is re-attached by idempotency key, and the **running command** is re-attached by handle (R11, R18) |
-| Kill the worker repeatedly with no progress | After 3 consecutive resumes with no progress, the next counts as a restart and the attempt allowance is consumed (R15) |
-| Make the hook endpoint unreachable mid-step | The agent pauses, the session stops in a resumable state, and the step classifies it as **infrastructure** — not as a denied tool call (R19) |
-| **Stop the Temporal server (or block access) for several minutes mid-run** | Workers wait and resume; **no step fails**; the API reports platform status distinctly from run status (K2). **If the outage exceeds the heartbeat timeout the activity times out — the retry re-attaches by handle and the step does not fail** (H2). This is the case to prove: a timeout here must not become a work outcome |
-| **Break the worker-to-sandbox connection mid-command** | The activity retries and re-attaches; the command keeps running (K3) |
-| Send a re-plan that removes a protected step | `applyPatch` rejects it, and the rejection is recorded rather than silently dropped (R7) |
-| Send a decision while the workflow is continuing-as-new | The update is rejected as stale and the API retries against the current run (R3) |
-| Send a re-plan while a `parallel` branch is in flight | The patch applies to future steps; the in-flight branch is untouched |
-
-**Measurements.** These are the deliverable, not the run:
-
-| Measurement | Why |
-|---|---|
-| **History size and event count at each continue-as-new** | Discharges the brief Q6 condition. The threshold is "measured", and this is the measurement |
-| **Events per step, especially for long polled steps** | Whether R20's mitigation holds: one activity per step, not one per poll |
-| **Worker slot capacity: how many concurrent long polled steps before a queue starves** | H1. A poll loop inside one activity holds a worker slot for the whole step, possibly hours. `max_concurrency` on a `parallel` step bounds branches, but nothing bounds how many *runs* occupy slots. This decides worker pool sizing |
-| Wall-clock time lost per crash | Whether resume is actually cheaper than restart |
-| Attempts consumed versus resumes | Whether the progress rule behaves |
-| Whether any step restarted that should have resumed | The failure mode the whole design exists to prevent |
-
-**Exit criteria.**
-
-1. A worker crash mid-`agent.run` resumes rather than restarts, at least once with
-   the sandbox surviving.
-2. A re-plan that removes a protected step is rejected and recorded.
-3. A re-plan applied mid-run leaves completed and in-flight steps untouched.
-4. Continue-as-new happens between steps only, and no decision is lost.
-5. History size is recorded, and the continue-as-new threshold is set from it.
-6. Replay tests pass against the recorded histories (R2, R12).
-7. **Temporal unavailable for several minutes: no step fails, and the API reports
-   platform status distinctly from run status** (K2). **Including an outage longer
-   than the heartbeat timeout: the activity times out, the retry re-attaches by
-   handle, and the step does not fail** (H2).
-8. **A long polled step costs one activity, not one per poll** (R20).
-9. **Worker slot capacity is measured**: how many concurrent long polled steps
-   before a task queue starves, and what pool size the answer implies (H1).
-
-Criterion 5 is what closes brief Q6. Until it is measured, that decision record
-stays provisional.
-
-**Simulated versus real** (review 08, answer 2): both. Simulated for fast
-iteration; killing the real process — and a real sandbox and agent CLI — is the
-exit criterion.
-
-**Also in scope** (review 11 E): the Cel.NET checks from `docs/09` 8.1 — a
-restricted checker, replay determinism, cost estimation, and an enforceable cost
-limit. And, if the agent runtime part is ready, the `insert_after` measurement
-below; otherwise that moves to Spike 2.
-
-| Additional measurement | Why |
-|---|---|
-| **Cel.NET**: restricted checker, replay determinism, cost estimation, cost limit | Closes or changes the CEL choice (`docs/09` 8.1). The fallback is a hand-written subset with a published grammar, accepted by the product owner |
-| **`insert_after` rewiring versus `add_step` plus `change_route`** (review 11 C2) | Have the planner agent author patches with both forms on the fixture plans and record **validation failure rates**. `docs/09` 15.3.1 argues for rewiring; this settles it. Cheap, and it moves to Spike 2 if the agent runtime is not ready |
+**Left open:** the API must report platform status separately from run status
+(section 4.1); worker pool sizing has two measurement repetitions where three were
+asked (`docs/15` section 14).
 
 ### 2.2 Spike 2: one real ticket run
 
 **Question.** Does one ticket run end to end against real providers, on a real
 repository?
 
-**Setup.** One real repository with a `feature-flow.yaml` declaring at least two
-test tiers, one of them Docker-dependent. Real code host, real CI, real agent
-runtime. Run it to a merged PR.
+**Outcome.** Yes. A model-authored change reached a merged pull request through
+the engine on a purpose-built fixture repository, with the run's cost read from
+the record store; the Claude Code proof repeated it with every agent role on
+`claude-code`. Nine of the ten checks held; the tenth showed review verdicts are
+unstable with a real model (R4), and the spike produced DR1 to DR4 and DR6.
 
-**Setup.** A **purpose-built fixture repository owned by the project** (review 08,
-answer 3): a small .NET API with a Postgres-backed integration tier (Testcontainers)
-and a GitHub Actions workflow. It doubles as the open-source example and an
-end-to-end test. A production repository comes later, in the first enterprise
-adopter's distribution.
-
-**What it must show:**
-
-| Check | Risk |
-|---|---|
-| A Docker-dependent tier runs through CI delegation and matches what CI would do | R5 |
-| The agent's credentials are short-lived, scoped to one repository, and expire | R6 |
-| Tokens, model and compute time are recorded per step | R13 |
-| A review run twice on unchanged input gives the same verdict, with prior findings passed | R4 |
-| Editing `feature-flow.yaml` mid-run is picked up by the next step, and the hash is recorded | R16 |
-| A gate left open for hours does not time out, and a reminder fires | R8 |
-| **Seed a finding, fix it, run `fix.verify`**: regression test required, checked on the full diff | K4 |
-| **Record actual `outputs` sizes per step kind** (review 11 C1) | The cap of 16 entries and 256 bytes per value is a starting value. This is the measurement that replaces it |
-| **The decline path**: decline reason posted on the PR, and the finding is not re-raised on the next review | K4 |
-| **Approve a gate from chat** (inbound event path), then **drop one webhook deliberately** and show the polling fallback completes the step | K5 |
-
-**Exit criteria.** One ticket runs to a merged PR, and the cost of the run is known
-from the record store.
-
-**On "without manual intervention"** (review 08, K6): that criterion conflicts with
-floor F1 if the PR targets a default branch. Clarified — target an integration
-branch, or count the default-branch approval as an **expected decision**, not an
-intervention. The floor is not waived for the spike.
+**Results:** `docs/16-spike-2-results.md`. The runtime comparison (hooks, custom
+model endpoints) is in its section 4.
 
 ### 2.3 Spike 3: concurrent tickets
 
 **Question.** Do several tickets of one epic in one repository stay correct?
 
-**Plan:** `docs/17-spike-3-plan.md` (accepted 2026-10-30). **Results:** `docs/18-spike-3-results.md` (run 2026-10-30: E1 and E3 met; E2 met on a pre-registered replication, 2026-10-31, after the first series was inconclusive because the reviewer silently truncated the aggregate diff).
+**Outcome.** Yes. Three agent-authored tickets ran two at a time and merged
+correctly, an agent resolved a real merge conflict, and the epic review caught a
+seeded cross-ticket defect in 20 of 20 passes where ticket reviews caught it in 0
+of 20. It produced DR7 to DR11; its merge lock and diff-only reviewer were then
+replaced by the merge design (`docs/20`) and the review design (`docs/19`).
 
-**Setup.** One epic, three tickets, one repository, `max_concurrency: 2`. At least
-two tickets touching overlapping code areas.
-
-**Synthetic tickets, but with a seeded cross-ticket defect** (review 08, answer 4) —
-for example two tickets that each change one side of the same contract. LLM
-behaviour makes an unseeded result inconclusive: without a known defect, an
-epic-level review that finds nothing proves nothing.
-
-**What it must show:**
-
-| Check | Risk |
-|---|---|
-| Ticket branches merge into the integration branch serially, under the merge lock | R10 |
-| `scm.merge_base_forward` runs before merge, and checks rerun only when the branch changed | R10 |
-| A merge conflict routes to an agent step, not to a human | R10 |
-| Epic-level review runs on the aggregate diff of the integration branch | R10 |
-| An interactive session can run a pre-submit check and get the same findings the gated step would produce | R17 |
-
-**Exit criteria.** Three tickets complete, the epic-level review sees cross-ticket
-findings that per-ticket review missed, and no ticket is blocked by another's
-failure.
+**Plan:** `docs/17-spike-3-plan.md`. **Results:** `docs/18-spike-3-results.md`.
 
 ### 2.4 Spike W0: Windows agent runtimes
 
 **Question.** Do agent runtimes run on Windows with hook support?
 
-This is the one place pattern C could fail on the adopter's actual repositories:
-under pattern C the runtime runs *inside* the sandbox, so a Windows sandbox needs a
-Windows runtime with hook support. It gates W1, the Windows VM sandbox provider.
+Under pattern C the agent runtime runs inside the sandbox, so a Windows sandbox
+needs a Windows runtime whose hooks call the engine. W0 gates W1, the Windows VM
+sandbox provider (`docs/03` Q9, the Windows roadmap).
 
-**What it must show:**
+**Partly answered** by Spike 2 and the Claude Code proof (`docs/16` sections 4
+and 12):
 
-| Check |
-|---|
-| The candidate runtimes (Claude Code, GitHub Copilot CLI) run on Windows |
-| Their hooks fire and reach the engine endpoint |
-| Session resume works on Windows |
-| If hooks do not work: what coarser control is available, and is it acceptable |
+| Check | Result so far |
+|---|---|
+| The candidate runtimes (Claude Code, GitHub Copilot CLI) run on Windows | Claude Code: yes. Copilot CLI: not recorded by platform |
+| Their hooks fire and reach the engine | Claude Code: all four hooks (session start, before and after each tool call, stop) fired on Windows and macOS. Copilot CLI: session start and stop fired; the before- and after-tool-call hooks did not fire with a third-party model. Untested with a first-party model |
+| Session resume works on Windows | Not tested |
+| If hooks do not work: what coarser control is available | Decided (section 2.5) |
 
-**Exit criteria.** A documented answer, including the fallback if hooks are
-unavailable. Also research before W1: image size and start time, and licensing of
-Windows Server and build tools in VMs and containers.
+**Still to do before W1:** session resume on Windows; Copilot CLI hooks with a
+first-party model; research on image size, start time, and licensing of Windows
+Server and build tools in VMs and containers.
+
+**Runtime constraint found on the way:** Claude Code speaks only the Anthropic API,
+so it cannot use an OpenAI-compatible model router; Copilot CLI can.
 
 ### 2.5 W0 fallback without hooks (decided)
 
-Decided by the product owner, 2026-10-27 (review 08, answer 5). If an agent runtime
-has no working hooks on Windows, version-1-acceptable control is:
+Decided by the product owner, 2026-10-27. If an agent runtime has no working
+before-tool-call hook, version 1 accepts this coarser control. It applies on any
+platform, and today applies to Copilot CLI with a third-party model (section 2.4).
 
 | Control | Mechanism |
 |---|---|
-| Write access | Enforced by the **sandbox itself**: read-only checkout for roles with `write_access: none`, and no push credential issued |
-| Push restriction | The **credential broker**: per-step token, one repository, ticket branch only where the code host supports branch-scoped rules |
-| Post-step diff check | The engine compares the branch before and after, and **fails a step that changed what its role may not change** |
+| Write access | Enforced by the sandbox: a read-only checkout for roles with `write_access: none` |
+| Push restriction | No agent holds a credential that can push (DR13); the engine pushes ticket branches |
+| Post-step diff check | The engine compares the branch before and after, and fails a step that changed what its role may not change |
 | Cost | Recorded from the runtime's own usage output instead of hook events |
 
-**Per-tool-call policy (deny before execution) is then unavailable on Windows**, and
-the run records the coarser control. This is the same principle as a runtime without
-the `Hooks` capability on any platform (section 1.4 of the architecture document):
-the engine records what control it actually had.
+Per-tool-call policy (deny before execution) is then unavailable, and the run
+records the coarser control. This is the same rule as for any runtime without the
+`Hooks` capability (`docs/01` section 1.4, pattern C): the engine records what
+control it actually had.
 
 ---
 
@@ -289,18 +237,18 @@ the engine records what control it actually had.
 
 ```mermaid
 graph LR
-    W0[W0: Windows runtimes] --> W1[W1: Windows sandbox]
-    S1[Spike 1: interpreter under failure] --> S2[Spike 2: one real ticket]
-    S2 --> S3[Spike 3: concurrent tickets]
+    W0[W0: Windows runtimes - partly answered] --> W1[W1: Windows sandbox]
+    S1[Spike 1: interpreter under failure - closed] --> S2[Spike 2: one real ticket - closed]
+    S2 --> S3[Spike 3: concurrent tickets - closed]
     S1 --> Q6[Brief Q6 closed by measurement]
 ```
 
-- **Spike 1 first.** It is the brief's spike, it gates the Q6 decision record, and
-  it tests the failure class that motivated the whole design.
-- **Spike 2 second.** It needs a working interpreter, and it is the first time real
-  providers are exercised.
-- **Spike 3 third.** It needs a working ticket run to compose.
-- **W0 is independent** and can run in parallel. It gates Windows work only.
+- **Spike 1 first**: it tested the failure class that motivated the design and
+  measured what closed brief Q6.
+- **Spike 2 second**: it needed a working interpreter and first exercised real
+  providers.
+- **Spike 3 third**: it composed working ticket runs.
+- **W0 is independent** and gates Windows work only.
 
 ---
 
@@ -309,33 +257,36 @@ graph LR
 | Not covered | Why |
 |---|---|
 | Workflow content quality | Out of scope for the brief. The spikes use throwaway plans |
-| Multi-tenancy | Q15: one organisation per installation in version 1 |
-| Cost budgets | Q16: recording only in version 1 |
-| Disaster recovery | Q18: no custom mechanism; standard backups |
-| Performance at scale | One run at a time is enough to answer these questions |
+| Multi-tenancy | One organisation per installation in version 1 (`docs/02` Q15) |
+| Cost budgets | Recording only in version 1 (`docs/02` Q16) |
+| Disaster recovery | No custom mechanism; standard backups (`docs/02` Q18) |
+| Performance at scale | One run at a time was enough to answer the spike questions |
 
 ### 4.1 Carried to later work
 
 | Item | Where it lands |
 |---|---|
-| **The API must report platform status distinctly from run status** (K2, half of Spike 1 exit criterion 7) | Deferred to the API work (review 12, answer 1). Spike 1 proved the other half — no step fails during a platform outage — but the spike has no API layer, only a client. This is an **acceptance criterion the API must meet**, recorded here so it is not lost |
-| Worker pool sizing | `docs/07`, once Spike 1's slot measurement is reproducible (review 12, answer 5) |
+| **The API must report platform status separately from run status** | An acceptance criterion for the API work. Spike 1 showed no step fails during a Temporal outage, but had no API layer to show the reporting half |
+| Worker pool sizing | `docs/07`, once Spike 1's slot measurement is reproducible. The rule is arithmetic (slots at least equal to concurrent long steps, plus headroom); a third measurement repetition is still open (`docs/15` section 14) |
+| The lock-free merge flow | `docs/20`; not yet exercised by a spike (R10) |
+| The review design and its effect on verdict stability | `docs/19`; not yet exercised by a spike (R4). Its own undecided points are listed there |
+| Copilot CLI hooks with a first-party model | Re-test before treating the missing hooks as a property of the runtime (section 2.4) |
 
 ---
 
 ## 5. Open questions
 
-All five questions from the first pass were answered in review 08 and are applied
-above:
+The five first-pass questions were answered by the product owner on 2026-10-27:
 
 | # | Question | Answer |
 |---|---|---|
-| 1 | Spike 1 plan length | **Size by history events, not steps.** Fake providers generate synthetic plans from about 50 to 400 steps cheaply; find where continue-as-new triggers. Then one shorter run with real providers (section 2.1) |
-| 2 | Kill the worker or simulate | **Both.** Simulated for fast iteration; killing the real process, sandbox and agent CLI is the exit criterion (section 2.1) |
-| 3 | Spike 2 repository | **A purpose-built fixture repository owned by the project**: a small .NET API with a Postgres-backed integration tier and a GitHub Actions workflow. It doubles as the open-source example and an end-to-end test (section 2.2) |
-| 4 | Real epic for Spike 3 | **Synthetic tickets with a seeded cross-ticket defect.** Unseeded LLM results are inconclusive (section 2.3) |
-| 5 | Acceptable W0 fallback without hooks | **Decided, accepted.** Sandbox-enforced write access, broker-restricted push, post-step diff check, cost from runtime usage output. Per-tool-call policy unavailable and recorded (section 2.5) |
+| 1 | How long should the Spike 1 plan be? | Size by history events, not steps: fake providers generated plans of about 50 to 400 steps to find where continue-as-new triggers |
+| 2 | Kill the worker for real or simulate? | Both: simulated for fast iteration, a real process kill as the exit criterion |
+| 3 | Which repository for Spike 2? | A purpose-built fixture repository owned by the project: a small .NET API with a Postgres-backed integration tier and a GitHub Actions workflow |
+| 4 | A real epic for Spike 3? | Synthetic tickets with a seeded cross-ticket defect, because an unseeded LLM result is inconclusive |
+| 5 | Acceptable W0 fallback without hooks? | Section 2.5 |
 
 ### Still open
 
-None carried forward.
+None in this document. Open points from the spikes are in the results documents
+and in section 4.1.
