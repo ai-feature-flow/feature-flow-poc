@@ -218,6 +218,8 @@ intervention. The floor is not waived for the spike.
 
 **Question.** Do several tickets of one epic in one repository stay correct?
 
+**Plan:** `docs/17-spike-3-plan.md` (proposed for review, not yet built).
+
 **Setup.** One epic, three tickets, one repository, `max_concurrency: 2`. At least
 two tickets touching overlapping code areas.
 
