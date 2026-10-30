@@ -23,7 +23,7 @@ DR13) are in `docs/08` section 1.3.
 | Q5 | Decisions and steering transport, API auth | Temporal Updates; OIDC, service-account tokens, per-step hook tokens | Stands; shown in Spikes 1 and 2 |
 | Q6 | Plan-as-data within Temporal limits | Closed by architecture section 3.5 plus the storage decision, conditional on measuring history size | **Closed by Spike 1**, with a change to the threshold |
 | Q7 | Provider packaging | In-process NuGet in version 1; transport-neutral interfaces; distribution repository | Stands |
-| Q8 | Identity | GitHub App, per-step minted tokens, behind a credential broker | Stands, **narrowed**: agents hold no push credential (DR13) and no model credential (DR1) |
+| Q8 | Identity | GitHub App, per-step minted tokens, behind a credential broker | Stands, **narrowed**: agents hold read-only code host credentials and no model credential (DR13, DR1); default-branch merges follow a configurable setting (floor F1) |
 | Q9 | Windows-only repositories | Not in version 1; hooks in version 1; spike before a Windows sandbox | Stands; Spike W0 partly answered |
 
 ---
@@ -274,16 +274,27 @@ approver.
 section 1.3):
 
 - **Agents never hold a credential that can push** (DR13, from the merge design
-  `docs/20`). The "contents write" agent token above is superseded: an agent
-  commits in its sandbox, and the engine pushes the ticket branch and performs
-  every merge. GitHub cannot limit a token to particular branches, so withholding
-  the credential is the only reliable control.
+  `docs/20`). The "contents write" agent token above is superseded: an agent's
+  code host token is read-only and per step, scoped to the run's repository plus
+  any repositories the workflow declares it may read. The agent commits in its
+  sandbox; the engine pushes the commits as part of the agent step. GitHub cannot
+  limit a token to particular branches, so withholding the credential is the only
+  reliable control.
+- **Merges into the default branch** now follow the merge model (product owner,
+  2026-10-31). The merge step's `engine_can_merge` parameter says whether the
+  engine merges; when false, the engine asks a human, who merges on the code
+  host, and the engine detects the merge and continues. Floor F1 is now a
+  configurable setting with a safe default: the engine may not merge into the
+  default branch. It is set by organisation, repository and workflow, can be
+  locked by the organisation, and cannot be changed by anything an agent can
+  edit (the repository value is read from the default branch; a re-plan cannot
+  change it). Code host branch protection on `main` stays as the final fallback,
+  and the engine never holds a bypass.
 - **Model credentials never enter the agent's environment** (DR1): a proxy that
   adds the key, or per-run keys with a limit and expiry.
-- **Floor F1** (a human must approve any merge into the default branch) **is
-  enforced by the engine at merge time** and backed by code host protection
-  (DR2). That protection is configured by an identity the engine does not hold
-  (DR3).
+- **The engine enforces the default-branch setting** at plan validation and
+  again at merge time, reading the default branch from the code host (DR2). Code
+  host protection is configured by an identity the engine does not hold (DR3).
 - Spike 2 showed broker tokens lasting 60 minutes, covering one repository, with
   wider requests refused (`docs/16` section 2).
 

@@ -26,8 +26,20 @@ current design is. The main later changes are:
   read-only checkout of the branch. It reads the diff and any file itself; no diff
   is pre-loaded into its prompt.
 - **Design requirement DR13** (`docs/08` section 1.3): agents never hold a
-  credential that can push; the engine pushes ticket branches and performs every
-  merge.
+  credential that can push; their code host credentials are read-only and per
+  step. The engine pushes ticket branches as part of the agent step.
+- **Merge model** (product owner, 2026-10-31): the merge step takes
+  `engine_can_merge` (the engine merges, or a human merges on the code host and
+  the engine detects it) and `squash`. Usual settings: ticket into epic branch,
+  squash, engine merges; epic into project branch, plain merge, engine merges;
+  project branch into `main`, plain merge, human merges by default.
+- **Default-branch merge setting**: floor F1 (a human must approve any merge into
+  the default branch) is now a configurable setting with the same safe default:
+  the engine may not merge into the default branch. It is set by organisation,
+  repository and workflow, can be locked by the organisation, and nothing an agent
+  can edit can change it.
+- **Project level**: a project run starts epic runs the way an epic run starts
+  ticket runs (`run.child`), adding a `project` scope above `epic` and `ticket`.
 
 ---
 
@@ -35,7 +47,7 @@ current design is. The main later changes are:
 
 | # | Assumption | If wrong |
 |---|---|---|
-| A1 | A run maps to exactly one Temporal workflow execution; a ticket inside an epic is a child workflow | Changes the composition model and the epic-level review design |
+| A1 | A run maps to exactly one Temporal workflow execution; a ticket inside an epic is a child workflow. **Now:** a project level sits above epics; a project run starts epic runs as child workflows the same way | Changes the composition model and the epic-level review design |
 | A2 | The engine never stores code, diffs or transcripts in workflow state; references only | Changes the artifact store design and history budget |
 | A3 | Human waits are unbounded. A run may sit at a gate for days | Changes timeout and reminder design |
 | A4 | The engine is the only writer to the branches and PRs it creates. **Now:** strengthened by DR13: agents commit in their sandbox and the engine pushes for them | Changes conflict handling and merge design |
@@ -152,7 +164,10 @@ except for a defined set of floors that no lower layer may relax.
 **Accepted (review 01): (b).** The prototype's "settings conflicted" failure was
 exactly this. Floors: human approval for default-branch merges, secrets by
 reference, protected steps, attempt ceilings. Keep the list short and explicit.
-The floors are F1 to F4 in `docs/07` section 2.
+The floors are F1 to F4 in `docs/07` section 2. **Now:** F1 is a configurable
+setting with the same safe default (the engine may not merge into the default
+branch), set by organisation, repository and workflow; the organisation can lock
+it, and nothing an agent can edit can change it.
 
 ### DP7. May a re-plan change a completed step?
 
@@ -185,11 +200,13 @@ Temporal-specific types where cheap, but do not build a second backend.
 cross-ticket findings were only visible across tickets; a roll-up of per-ticket
 findings would have missed them. Spike 3 confirmed it: the epic review caught a
 seeded cross-ticket defect that both ticket reviews missed (`docs/18` section 3).
+Cost: the aggregate change can be large, so the review is scoped by the
+repositories and paths the epic touched.
 
-**Now:** how the reviewer gets the change is superseded by the review design
-(`docs/19`). The epic reviewer is an agent on a read-only checkout of the
-integration branch, reviewing it against `main`; it reads the diff and any file
-itself, so there is no pre-loaded aggregate diff and no size limit to scope.
+**Now:** the reviewer reads the change from a checkout rather than being given
+the diff (review design, `docs/19`). The epic reviewer is an agent on a read-only
+checkout of the integration branch, reviewing it against `main`, and reads the
+diff and any file itself.
 
 ### DP11. Where does the agent loop run? — settled
 
@@ -233,7 +250,7 @@ All decided. Full reasoning is in `docs/reviews/review-01.md`, `review-03.md` an
 | Q2 | Is the artifact store content-addressed and immutable, or mutable with versions? | **Content-addressed and immutable.** A new version is a new hash plus a named pointer in the record store |
 | Q3 | What is in the record store, and what is its query model? | **Relational, queried through the API.** Runs, step runs, findings ledger, decisions, steering log, timeline events, cost per step. Timeline append-only |
 | Q4 | How do human decisions and steering reach the workflow: signals or updates (brief Q5)? How does the API authenticate and authorise them? | **Updates**, carrying gate id and plan revision, with a validator that rejects stale or invalid requests. Reads come from the record store, not Temporal queries. OIDC for humans, service-account tokens for automation, per-step short-lived tokens for sandbox hooks. Roles from the policy model, scoped by team or repository |
-| Q5 | What identity do agents and the engine use against the tracker and code host, per profile (brief Q8)? | **GitHub App** (or host equivalent) for the engine; a token minted per step for agents; a service account for the tracker; the developer's own token in the solo profile. All behind a **credential broker** interface. **Now:** an agent's token never carries push access; the engine pushes and merges (DR13, `docs/20`) |
+| Q5 | What identity do agents and the engine use against the tracker and code host, per profile (brief Q8)? | **GitHub App** (or host equivalent) for the engine; a token minted per step for agents; a service account for the tracker; the developer's own token in the solo profile. All behind a **credential broker** interface. **Now:** an agent's code host token is read-only and per step, scoped to the run's repository plus any repositories the workflow declares it may read; it never carries push access. The engine pushes the agent's commits and runs every merge step (DR13, `docs/20`) |
 | Q6 | Provider packaging: in-process packages, out-of-process plug-ins, or both (brief Q7)? | **In-process .NET packages (NuGet) in version 1**, with transport-neutral interfaces so a remote provider adapter stays possible. Organisation customisation through a **distribution repository**, not a fork |
 | Q10 | Artifact and audit store: Git, object storage, a database, or a combination (brief Q4)? | **A combination; Git is not a store.** Artifact store (local filesystem solo; S3 or Azure Blob) plus record store (SQLite solo; Postgres). Publishing artifacts to a repository for human review is an `artifact.publish` step |
 | Q13 | Retention and archival of a finished run, given Temporal deletes history? | **The record store is the long-term audit record.** Temporal history is transient and deleted after namespace retention |
@@ -245,8 +262,8 @@ All decided. Full reasoning is in `docs/reviews/review-01.md`, `review-03.md` an
 | Q7 | Sandbox definition: `devcontainer.json`, the engine's own manifest, or both (brief Q3)? | **Both; the manifest is root `feature-flow.yaml`** and is authoritative. `devcontainer.json` is an optional input. `.feature-flow/` is reserved but unused in version 1 |
 | Q8 | Docker-dependent tests on Kubernetes: privileged pods, sysbox, remote Docker host, or CI delegation (brief Q2)? | **CI delegation by default**, sysbox where the platform supports it, privileged pods in the solo profile only. Per tier, declared in `feature-flow.yaml`. **Now:** CI delegation shown working in Spike 2 (`docs/16` section 2) |
 | Q9 | Can a sandbox provider support Windows hosts (brief Q9)? | **Not in version 1.** Version 1 has the hooks for it: `Os[linux, windows]` capability, `os: windows` in the manifest, `os-windows` queue routing, CI delegation. Spike W0 (agent runtimes and hooks on Windows) comes before a Windows VM sandbox. **Now:** W0 partly answered (`docs/08` section 2.4) |
-| Q11 | Concurrency model for several tickets in one repository | **Per-ticket branches plus `scm.merge_base_forward` plus a serialised merge lock.** One epic integration branch per repository. `max_concurrency` on the `parallel` step confirmed. Optional `MergeQueue` capability. **Now: the merge lock is superseded** by the merge design (`docs/20`): no lock; catch up, re-test if changed, and the engine merges, with a merge onto a moved branch refused. Per-ticket branches, the integration branch, `scm.merge_base_forward` and `max_concurrency` stay. GitHub's merge queue is the answer if contention ever becomes real |
-| Q12 | How are attempt budgets counted, and can steering exceed the configured ceiling? | **One counting rule:** every entry into a step counts. Infrastructure failures are free. Resumes are free only with progress (a new commit, or session growth); after 3 consecutive resumes with no progress the next counts as a restart. Steering grants extra attempts up to a hard ceiling. **Now:** ceilings are enforced on every execution, including loop re-entry (DR10, `docs/08` section 1.3) |
+| Q11 | Concurrency model for several tickets in one repository | **Per-ticket branches plus `scm.merge_base_forward` plus a serialised merge lock.** One epic integration branch per repository. `max_concurrency` on the `parallel` step confirmed. Optional `MergeQueue` capability. **Now: the merge lock is superseded** by the merge design (`docs/20`): no lock; catch up, re-test if changed, then merge. Where the engine merges, a merge onto a moved branch is refused and returns `base_moved`, and the ticket catches up again, up to the merge step's attempt allowance (default 3). Per-ticket branches, the integration branch, `scm.merge_base_forward`, `max_concurrency` and the optional `MergeQueue` capability stay; GitHub's merge queue is an example of that capability |
+| Q12 | How are attempt budgets counted, and can steering exceed the configured ceiling? | **One counting rule:** every entry into a step counts. Infrastructure failures are free. Resumes are free only with progress (a new commit, or session growth); after 3 consecutive resumes with no progress the next counts as a restart. Steering grants extra attempts up to a hard ceiling. **Now:** ceilings are enforced on every execution, including loop re-entry (DR10, `docs/08` section 1.3). Like every limit, they are configured hierarchically: engine default, then workflow, child workflow and step |
 | Q14 | How does a run resume or retry after a partial delivery across several repositories? | **One idempotent child workflow per repository plus a delivery ledger in the record store.** No compensating action; A7 (deploy means trigger an external system) holds. On failure: retry, fix forward, or revert |
 | Q16 | Cost controls: per-run token and compute budgets, and what happens when exceeded? | **Policy-driven, not in version 1.** Version 1 records tokens, model and compute time per step. When budgets arrive, exceeding one stops at a gate, never a hard stop |
 
@@ -257,7 +274,7 @@ All decided. Full reasoning is in `docs/reviews/review-01.md`, `review-03.md` an
 | Q15 | Is one installation ever shared across organisations? | **One organisation per installation** (A10 holds). Teams scoped by the policy model. `org_id` in record store keys from version 1; no other multi-tenant features |
 | Q17 | What metrics, traces and logs must every provider emit? | **OpenTelemetry**, OTLP exporter. One trace per run; spans per step, activity and provider call. The engine decorates every provider call, so providers only add attributes |
 | Q18 | What happens to in-flight runs if the record store is lost? | **No custom disaster recovery.** Database backups with point-in-time restore; artifact store versioning and replication; a reconcile job rebuilds the run index from Temporal |
-| Q19 | How does the engine handle a repository that changes its manifest mid-run? | **Each step reads `feature-flow.yaml` from its branch when it starts** and records the hash of the resolved manifest. Nothing is copied into the plan. Capability negotiation re-runs if a needed capability disappears. **Now:** shown working in Spike 2 (`docs/16` section 2) |
+| Q19 | How does the engine handle a repository that changes its manifest mid-run? | **Each step reads `feature-flow.yaml` from its branch when it starts** and records the hash of the resolved manifest. Nothing is copied into the plan. Capability negotiation re-runs if a needed capability disappears. **Now:** shown working in Spike 2 (`docs/16` section 2). One exception: the repository's default-branch merge setting (floor F1) is read from the default branch, never the ticket branch, so an agent cannot change it |
 | Q20 | Interactive human sessions: chat in the console, or hand off to an external tool? | **Hand-off to the human's own agent tool (surface A) is the version 1 MVP.** The session is an engine mechanism; the surface is pluggable. Pre-submit checks run the same validators as the gated steps. **Now:** for review, parity means same brief, same tools, same model, same commit (`docs/19`). A "merge when ready" tool may only ask the engine to run the merge step (`docs/20`) |
 
 ### Open
