@@ -26,7 +26,7 @@ states that logic.
 |---|---|
 | Kind | The step's identifier in a plan |
 | Form | Local (pure code inside the workflow), Activity, or Child workflow (`docs/01` section 3.2, the three execution forms) |
-| Scope | Ticket, epic or delivery. `any` means the step does not care |
+| Scope | Ticket, epic, project or delivery. `any` means the step does not care. A project run starts epic runs the way an epic run starts ticket runs (section 4.1) |
 | Inputs | What the plan supplies. Artifact references, never inline content |
 | Requires | Provider capabilities. Checked when the run starts, and again if `feature-flow.yaml` changes (`docs/01` section 5.1.2) |
 | Outcomes | Named results the plan routes on (section 1.1) |
@@ -49,7 +49,7 @@ Outcomes are what a plan routes on. A step returns exactly one.
 | `replan_requested` | The step produced a plan patch |
 | `replan_parent` | A child run asks its parent to re-plan |
 | `partial` | Some of the work happened (delivery) |
-| `approved` / `rejected` | A human decision. `scm.merge` also uses `rejected` (section 6.5) |
+| `approved` / `rejected` | A human decision. `scm.merge` also returns `rejected` when the human it asked to merge declines (section 6.5) |
 | `not_approved` | `policy.auto_approve` did not approve; a human gate follows |
 | `findings_open` | Blocking findings remain |
 | `ready` | The merge bar is met: no unresolved blocking finding, and every finding fixed or declined with a recorded reason (decision D8) |
@@ -65,14 +65,15 @@ applies.
 | Rule | Detail |
 |---|---|
 | Idempotency key | `hash(runId, stepId, stableInputs)`. Stable inputs exclude anything that changes per attempt |
-| Manifest | A step reads `feature-flow.yaml` from its branch when it starts and records the hash of what it read (`docs/01` section 5.1.2) |
+| Manifest | A step reads `feature-flow.yaml` from its branch when it starts and records the hash of the resolved manifest (`docs/01` section 5.1.2) |
 | No human waits inside an activity | A wait for a human is a durable wait in the workflow, never an activity timeout. Risk R8 in `docs/08` (runs stall on human latency) |
 | Cost | Every step records tokens, model and compute time (`docs/01` section 5.5) |
 | Attempts | Counted by `docs/01` section 3.7: infrastructure failures are free; a resume is free only if the agent made progress |
+| Limits are configured hierarchically | Every limit (attempts, timeouts) has an engine default, overridable by the workflow, then a child workflow, then the step. The defaults in this document are the engine defaults. Policy ceilings still apply (floor F4: a run sets budgets within the configured ceiling, never above it) |
 | Ceilings on every execution | Attempt ceilings apply every time a step runs, including when a loop routes back into it (DR10). Without this, Spike 3 saw a loop with no agent run its fix step 213 times in 15 seconds (`docs/18` section 4) |
-| Re-entry | Routing to a step that already has an outcome runs it again and clears the previous outcome (DR12). This is what makes loops work |
+| Re-entry | Routing to a step that already has an outcome runs it again (DR12). This is what makes loops work. Re-running clears the step's current outcome, outputs and artifacts, so a route condition never mistakes a stale value for the latest. The previous execution's results stay readable as `steps.<id>.previous`, and `steps.<id>.executions` gives the execution count |
 | Unexpected success | A provider maps every documented success response to an outcome, including empty ones such as GitHub's 204 for a no-op merge. An unmapped success is a work error, not an infrastructure error, so it cannot be retried forever (DR8) |
-| No push credential for agents | An agent commits in its own sandbox; the engine pushes the branch at the end of each step and at work-in-progress points (DR13). Model credentials never enter the agent's environment either (DR1) |
+| No push credential for agents | An agent commits in its own sandbox; the engine pushes for it (DR13; section 2.1). An agent's code host credential is read-only and per step, scoped to the run's repository plus any other repositories the workflow declares the agent may read (for example to verify a contract). Model credentials never enter the agent's environment (DR1) |
 | Audit | Every step writes a timeline event on entry and on outcome |
 
 ---
@@ -89,13 +90,13 @@ engine before and after each tool call), the engine sees every tool call.
 |---|---|
 | Form | Activity (agent worker) |
 | Scope | any |
-| Inputs | `role`, `task_ref` (artifact), `write_access` (optional, may only **tighten** the role's value), `limits`, `resume_strategy` |
+| Inputs | `role`, `task_ref` (artifact), `write_access` (optional, may only **tighten** the role's value), `limits`, `resume_strategy`, `push` (default true) |
 | Requires | Sandbox `Os[target]`, agent runtime. `Hooks` optional; `SessionResume` optional |
 | Outcomes | `completed`, `blocked`, `failed`, `attempts_exhausted`, `replan_requested` |
 | Idempotency | Key from run, step and stable inputs. On retry: re-attach to the sandbox by key (`AttachAsync`), else create one; resume the agent session by its stored reference |
 | Limits | `start_to_close` from the plan (default 4h), heartbeat 30s, attempts 3, enforced on every execution (DR10) |
 | Error overrides | An agent that ran out of time is a **work** failure (error code `timeout`), not infrastructure. The provider may classify it as infrastructure; the step overrides |
-| Artifacts | In: task, context. Out: transcript, produced artifacts, session reference |
+| Artifacts | In: task, context. Out: transcript, produced artifacts, session reference, and the record of files the agent opened |
 | Audit | Step start, each resume, outcome, cost |
 
 Contract details:
@@ -116,10 +117,22 @@ Contract details:
 - **Progress**, for the attempt budget, comes from `GetProgressAsync`: a new
   commit, or growth of the agent session. After 3 consecutive resumes with no
   progress, the next counts as a restart (`docs/01` section 3.7).
-- **The engine pushes, the agent commits** (DR13). The engine pushes the
-  branch at the end of the step and at work-in-progress points. GitHub cannot
-  limit a token to particular branches, so withholding the push credential is
-  the only reliable control.
+- **The engine pushes, the agent commits** (DR13). The push is part of the
+  step: the engine fetches the commits from the sandbox's checkout and pushes
+  them to the ticket's own branch with its own credential, at the end of the
+  step and at work-in-progress points. This is a push, not a merge. GitHub
+  cannot limit a token to particular branches, so withholding the push
+  credential is the only reliable control.
+  - Pushing follows the step's write access. A role with no write access pushes
+    nothing, and commits made anyway fail the step (the after-step check).
+  - `push: false` switches pushing off, for scratch steps.
+  - A failed step's commits go to a hidden work-in-progress ref, not the ticket
+    branch, so a retry can pick them up.
+- **The engine records what the agent opened**, for every agent step: from the
+  runtime's hooks, or from its streamed tool-call output (Claude Code and
+  Copilot CLI can both stream tool calls), or "unknown" if neither is
+  available. This is a mechanism only; the engine never fails a step on it.
+  `review.run` publishes it as a coverage output (section 8.2).
 - **Write access is enforced twice**: by the sandbox (what the role can reach) and
   by the hook endpoint on each tool call. A reviewer role cannot change the
   repository. Per-tool-call enforcement needs the runtime's pre-tool-call hook:
@@ -239,9 +252,10 @@ Contract details:
 | Limits | None |
 | Audit | Recorded as a decision with actor `policy` |
 
-Contract detail: it **cannot** approve a merge into a default branch. Floor F1
-(`docs/07` section 2: a human must approve any merge into the default branch) is a
-safety floor that no configuration may relax.
+Contract detail: by default it **cannot** approve a merge into a default branch.
+That is governed by the default-branch setting (floor F1, `docs/07` section 2):
+by default the engine may not merge into the default branch, so a human does. F1
+is now a configurable setting with that safe default; see section 6.5.
 
 ---
 
@@ -249,13 +263,13 @@ safety floor that no configuration may relax.
 
 ### 4.1 `run.child`
 
-Starts a child run on the same interpreter with a scoped plan, for example one
-ticket inside an epic.
+Starts a child run on the same interpreter with a scoped plan: an epic inside a
+project, or a ticket inside an epic.
 
 | Element | Detail |
 |---|---|
 | Form | Child workflow |
-| Scope | epic or delivery |
+| Scope | project, epic or delivery |
 | Inputs | `child_scope`, `plan_ref`, `repositories`, `protected` |
 | Requires | Whatever the child plan requires |
 | Outcomes | `completed`, `failed`, `replan_parent`, `attempts_exhausted` |
@@ -270,10 +284,12 @@ Contract details:
   stops without reaching an `end:` route never reports `completed` (DR6). Spike 2
   showed why: a merge step's unrouted failure ended a run that looked
   successful (`docs/16` section 5). A child that stops with no step ready and
-  no `end:` route returns `failed` to its parent.
+  no `end:` route ends with run status `incomplete`, and its parent's
+  `run.child` sees it as `failed`.
 - **`replan_parent`** carries a plan patch for the parent, applied through the
   same `applyPatch` path as any re-plan (`docs/01` section 3.4). This is how
-  discovery inside a ticket changes the epic.
+  discovery inside a ticket changes the epic, or inside an epic changes the
+  project.
 - **The child's findings ledger is returned** so that the epic review's prior
   findings include every ticket's ledger (DR11; section 9.4, position L4).
 
@@ -384,13 +400,15 @@ remote object they create, and adopt an existing object on retry (decision S4).
 
 ### 6.2 `scm.merge_base_forward`
 
-**Catch-up**: merges the integration branch into a ticket branch, so the ticket is
-tested against what it will merge into (section 6.5).
+**Catch-up**: merges the integration branch into the branch that will merge into
+it, so the work is tested against what it will merge into (section 6.5). The
+integration branch is the branch one level up: the epic branch for a ticket, the
+project branch for an epic. The text below uses a ticket as the example.
 
 | Element | Detail |
 |---|---|
 | Form | Activity |
-| Scope | ticket |
+| Scope | ticket or epic |
 | Inputs | `repository`; `branch`: the integration branch, merged **from**; `into`: the ticket branch, merged **into** |
 | Requires | Code host `PullRequest` |
 | Outcomes | `completed`, `blocked` (conflict), `attempts_exhausted` |
@@ -441,63 +459,87 @@ Contract details:
 
 ### 6.5 `scm.merge`
 
-Merges a pull request's branch into its target: a ticket branch into the epic's
-integration branch, or a delivery branch into the default branch. The engine
-performs every merge itself. **There is no merge lock** (`docs/20`, the merge
-design).
+Merges a pull request's branch into its target, one level up: a ticket branch
+into its epic branch, an epic branch into its project branch, or a project (or
+delivery) branch into the default branch. Either the engine performs the merge,
+or it asks a human to merge on the code host and waits. **There is no merge
+lock** (`docs/20`, the merge design).
 
 | Element | Detail |
 |---|---|
-| Form | Activity |
+| Form | Activity to merge or to raise the intervention; a durable wait while a human merges |
 | Scope | any |
-| Inputs | `pr_ref` |
-| Requires | Code host `PullRequest`. `MergeMethods[method]` for the method the repository chose. `MergeQueue` when the target requires one |
+| Inputs | `pr_ref`; `engine_can_merge` (boolean: true, the engine merges; false, a human merges); `squash` (boolean: true for a squash merge, false for a plain merge) |
+| Requires | Code host `PullRequest`. `MergeQueue` when the target requires one |
 | Outcomes | `completed`, `base_moved`, `blocked` (checks or protection), `rejected`, `attempts_exhausted` |
-| Idempotency | Key from run, step, PR. If the target already contains the tested commits, the merge already happened: `completed` |
-| Limits | 30s for the push; a merge queue wait is a durable wait, not an activity timeout. Attempts 3, which bounds repeated `base_moved` refusals (see below) |
-| Error overrides | A push refused because the target moved is a **work** outcome, `base_moved`, never an infrastructure retry: the ticket must catch up and re-test first. `rejected` from code host protection is also a **work** outcome: a human must act on the code host |
-| Audit | Merge attempted, method, actor, approver, and each `base_moved` refusal |
+| Idempotency | Key from run, step, PR. If the target already contains the merge, or the human's merge is already on the code host, the merge already happened: `completed` |
+| Limits | 30s for the push. A wait for a human or a merge queue is a durable wait, not an activity timeout. Attempts 3 by default, which bounds repeated `base_moved` refusals (see below) |
+| Error overrides | A push refused because the target moved is a **work** outcome, `base_moved`, never an infrastructure retry: the ticket must catch up and re-test first. A refusal by checks or code host protection is a **work** outcome, `blocked` |
+| Audit | Merge attempted, `squash`, who merged (engine or human), approver, and each `base_moved` refusal |
 
 Contract details:
 
-- **The flow.** Tickets merge the way developers do:
+- **Usual settings per level** (set in the workflow):
+
+  | Merge | `squash` | `engine_can_merge` |
+  |---|---|---|
+  | Ticket branch into epic branch | true (no need to keep every commit) | true |
+  | Epic branch into project branch | false (each ticket's commit stays visible) | true |
+  | Project branch into the default branch | false | false by default (the default-branch setting, below) |
+
+- **The flow when the engine merges.** Tickets merge the way developers do:
   1. Catch up: `scm.merge_base_forward` (section 6.2).
   2. Re-test if catch-up changed the branch.
-  3. Merge. If the integration branch moved since step 1 (a sibling merged
-     first), the merge is refused with `base_moved`, and the plan routes back
-     to step 1.
+  3. Merge. If the target moved since step 1 (a sibling merged first), the
+     merge is refused with `base_moved`, and the plan routes back to step 1.
 
-  After about 3 refusals the plan escalates to a human, so a slow ticket cannot
-  be starved by faster siblings. Each entry into the step counts against its
-  allowance (DR10), so the default of 3 attempts gives that bound, and
-  `attempts_exhausted` routes to a human gate.
-- **Nothing untested can land.** The engine builds the merge commit locally from
-  exactly the commits that were tested and pushes it to the target. Git refuses a
-  push onto a branch that moved since it was fetched, which is what produces
-  `base_moved`. The code host marks the pull request merged once its commits
-  reach the base. This needs no branch protection settings and no extra
-  permissions.
-- **Only the engine merges.** The merge is a workflow step, so after a crash it
-  resumes and completes exactly once (proved in Spike 1, `docs/15`). Agents hold
-  no push credential (DR13). A human session's "merge when ready" tool only asks
-  the engine to run this step (section 3.2).
-- **Code host backstop.** Rules on the default branch and on integration branches
-  allow only the engine's identity to update them, so an engine bug is also
-  caught by the code host. That protection is configured by an identity the
-  engine does not hold; the engine only checks it exists (DR3).
-- **Default branch: floor F1** (a human must approve any merge into the default
-  branch). The engine enforces it at merge time, reading the base and the default
-  branch from the code host, and code host protection backs it (DR2). The audit
-  record shows the engine as actor and the human as approver (`docs/01` section
-  4.6). `policy.auto_approve` cannot approve it.
-- **No merge method in a plan.** The organisation states which methods are
-  allowed and whether checks are required; the repository states its preferred
-  method in `feature-flow.yaml` (`docs/07` section 5). The step reads it when it
-  starts, like any other manifest fact.
+  Repeated refusals escalate to a human, so a slow ticket cannot be starved by
+  faster siblings. The bound is the step's attempt allowance, default 3. It
+  counts every attempt, including re-entry after a conflict was resolved
+  (DR10), and like every limit it can be overridden by the workflow, a child
+  workflow and the step (section 1.2). `attempts_exhausted` routes to a human
+  gate.
+- **Nothing untested can land.** The engine builds the merge commit, or the
+  squash commit, from exactly the commits that were tested, and pushes it to the
+  target. Git refuses a push onto a branch that moved since it was fetched,
+  which is what produces `base_moved`. This needs no branch protection settings
+  and no extra permissions.
+- **Squash merges and the pull request.** After a plain merge the code host
+  marks the pull request merged, because its commits reach the base. After a
+  squash it does not (its commits are not in the base), so the engine closes the
+  pull request with a comment linking the squash commit.
+- **When a human merges** (`engine_can_merge: false`). The step raises an
+  intervention (a human decision request) and waits. The human merges on the
+  code host; the engine detects the merge there and the step returns
+  `completed`. If the human declines, the step returns `rejected`.
+- **The default-branch setting (floor F1).** By default the engine may not merge
+  into the default branch, so `engine_can_merge` must be false there. F1 used to
+  be a fixed floor ("a human must approve every merge into the default
+  branch"); it is now a configurable setting with that safe default.
+  - It is set by the organisation, then the repository, then the workflow, and
+    may be relaxed, for example for a proof-of-concept repository. The
+    organisation can lock it so lower levels cannot relax it.
+  - **Nothing an agent can edit can change it.** The repository's value is read
+    from its configuration on its default branch, never the ticket branch, and a
+    plan patch during a run cannot change it.
+  - The engine enforces it when the plan is validated (`docs/12` check 33) and
+    again at merge time, reading the default branch from the code host (DR2).
+  - `policy.auto_approve` cannot approve a default-branch merge while the
+    setting is at its default.
+- **Only the engine merges, unless a human does.** An engine merge is a workflow
+  step, so after a crash it resumes and completes exactly once (proved in Spike
+  1, `docs/15`). Agents hold no push credential (DR13). A human session's "merge
+  when ready" tool only asks the engine to run this step (section 3.2).
+- **Code host backstop.** Rules on epic and project branches allow only the
+  engine's identity to update them, so an engine bug is also caught by the code
+  host. On the default branch, code host protection requiring independent review
+  stays as the final fallback, and the engine never holds a bypass. This
+  protection is configured by an identity the engine does not hold; the engine
+  only checks it exists (DR3).
 - **Merge queue.** When a target requires a queue, the step enqueues
   (`EnqueueMergeAsync`) and waits by polling `GetPullRequestAsync` or by inbound
-  event. A merge queue is also the managed answer if contention between
-  tickets ever becomes real (`docs/20`).
+  event. A merge queue is also the managed answer if contention between tickets
+  ever becomes real (`docs/20`).
 - **What the lock bought, and its replacement does not.** Under a lock a ticket
   never re-ran its tests because it lost a race. With two or three tickets in
   flight, races are rare and a re-run costs one CI run. The lock's failure mode
@@ -518,7 +560,7 @@ Contract details:
 Contract detail: serves the revert choice after a partial delivery (`docs/01`
 section 7.3). It opens revert PRs and **always gates**: it never merges
 automatically after approval. Reverts usually target a default branch, where
-floor F1 requires a human anyway.
+the default-branch setting (floor F1, section 6.5) means a human merges anyway.
 
 ---
 
@@ -653,13 +695,14 @@ a read-only checkout. The design is in `docs/19` (code review design).
 |---|---|
 | Form | Activity (agent worker): an agent with a reviewer role and `write_access: none`, wrapped by engine checks |
 | Scope | ticket, epic or delivery |
-| Inputs | `scope`, `branch` (under review), `base`, `spec_refs` (acceptance criteria, epic contract, repository conventions), `machine_results` (results of the machine checks), `checks` (the review angles to run), `prior_findings` |
-| Requires | Sandbox, agent runtime with `Hooks` (the pre-tool-call hook records which files the reviewer opened) |
+| Inputs | `scope`; `branch` (under review); `base`; `spec_refs` (the specification documents to review against: acceptance criteria, epic contract, repository conventions); `machine_results` (results of the machine checks); `checks` (the review angles to run); `prior_findings`; `require_coverage` (`none`, the default; `all`; or a list of paths). A review of a specification document rather than code keeps a document reference input (`diff_ref`) instead of `branch` and `base` |
+| Requires | Sandbox, agent runtime. Any runtime can review |
 | Outcomes | `completed`, `findings_open`, `failed`, `attempts_exhausted` |
-| Idempotency | Key from run, step, scope, branch head and base commits |
+| Outputs | `coverage`: changed files, files read, files not read, and whether the record is verified |
+| Idempotency | Key from run, step, scope, branch head and base commits (or the document reference) |
 | Limits | Step-defined, heartbeat required |
-| Artifacts | In: the specification, machine-check results, prior findings. Out: structured findings, and the record of files the reviewer opened |
-| Audit | Review run, angles run, files opened, findings recorded |
+| Artifacts | In: the specification, machine-check results, prior findings. Out: structured findings, the record of files the reviewer opened, and which model authored and which reviewed |
+| Audit | Review run, angles run, files opened, authoring and reviewing models, findings recorded |
 
 Contract details:
 
@@ -683,17 +726,27 @@ Contract details:
   triaged is not yet decided. Demonstrated findings do not change between runs,
   so evidence is the main defence against unstable verdicts (DR4: review
   verdicts are unstable with a real model).
-- **A different, ideally stronger, model reviews** than the one that authored the
-  change. The model comes from the role mapping in the organisation layer
-  (`docs/09` section 11.1).
-- **The engine checks coverage.** A review that never opened a changed file is
-  incomplete and is re-run, not accepted.
+- **Reviewer model: workflow policy, not an engine rule.** A different, ideally
+  stronger, model than the author's is recommended, but other models may not be
+  available. The model comes from the role mapping in the organisation layer
+  (`docs/09` section 11.1). The engine records which model authored and which
+  reviewed, so the choice is visible.
+- **Coverage is a mechanism, not an engine rule.** The engine records what the
+  reviewer opened, from hooks or from the runtime's streamed tool-call output,
+  or "unknown" if neither is available (section 2.1). It publishes this as the
+  `coverage` output; it never fails a step on coverage itself. The workflow
+  decides what coverage it needs:
+  - `require_coverage` on the step: `none` (default), `all` changed files, or a
+    list of paths. A review that does not meet it is not accepted as complete.
+  - Or a route condition on the `coverage` output.
+  - The library's standard code-review template sets `require_coverage: all`;
+    specialised reviews may narrow or omit it.
 - **Two levels, both with repository access:**
-  - **Ticket review**: the ticket branch against the integration branch, given
+  - **Ticket review**: the ticket branch against the epic branch, given
     the ticket and the epic's contract. Given the epic contract, a ticket review
     catches a ticket that departs from it (`docs/17` section 6.6, the review
     pilot).
-  - **Epic review**: the whole integration branch against `main`, for problems
+  - **Epic review**: the whole epic branch against `main`, for problems
     that exist only once every ticket is combined. Its prior findings include
     every child ticket's findings ledger (DR11). In Spike 3 the epic review caught
     a seeded cross-ticket defect 20 times out of 20, which both ticket reviews,
@@ -905,7 +958,8 @@ Contract detail: the order comes from plan data (`docs/01` section 7.3).
 Contract details:
 
 - **In version 1, delivery is merging the repository's delivery PR** (through
-  `scm.merge`, section 6.5), then optionally `wait.for_state` on a deployment
+  `scm.merge`, section 6.5; into the default branch a human merges unless the
+  default-branch setting allows the engine), then optionally `wait.for_state` on a deployment
   status the code host or CI reports. Many organisations deploy on merge.
   **There is no deployment provider in version 1**; add one only if workflows need
   to trigger deploys directly.
@@ -966,7 +1020,7 @@ The areas `brief.md` section 8 says the catalogue must cover:
 |---|---|
 | Agents | `agent.run` (with `write_access`; roles are workflow content) |
 | Humans | `human.gate`, `human.session`, `policy.auto_approve` |
-| Composition | `run.child`, `parallel`; `run.wait` reserved |
+| Composition | `run.child` (project to epic, epic to ticket), `parallel`; `run.wait` reserved |
 | Re-planning | `plan.replan`, `plan.validate` |
 | Steering | Not a step. A control-plane capability (`docs/01` section 3.4) |
 | Source control | `scm.create_branch`, `scm.merge_base_forward`, `scm.open_pr`, `scm.update_pr`, `scm.merge`, `scm.revert` |

@@ -73,12 +73,16 @@ runs).
 | 27 | Step inputs satisfy the kind's contract | Step start | Yes | Execution |
 | 28 | Consumed artifact exists and validates | Step start | Yes | Execution |
 | 32 | **Plan size within the carried-state budget** | Load **and** Patch | Yes | Carried state must stay under 1 MB, or continue-as-new cannot carry it (section 2.4) |
+| 33 | **`engine_can_merge: true` on a merge into the default branch** while the default-branch setting does not allow the engine to merge there | Run start **and** Patch | Yes | Floor F1, now a configurable setting with a safe default: by default the engine may not merge into the default branch (`docs/06` section 6.5). The default branch is read from the code host (DR2). Enforced again at merge time (section 2.5) |
+| 34 | A lower layer (repository or workflow) relaxes the default-branch setting that the organisation has locked | Binding | Yes | Floor F1: the organisation can lock the setting. The repository's value is read from its configuration on its default branch, never the ticket branch |
+| 35 | Patch: changes the default-branch setting | Patch | Yes (rejected) | Floor F1: nothing an agent can edit may change it, and a plan patch during a run cannot |
 | 29 | Unused parameter | Load | **No** | Cosmetic |
 | 30 | Deprecated library reference with a valid replacement | Load | **No** | Cosmetic |
 | 31 | Step id not in snake_case style | Load | **No** | Cosmetic |
 
-Check numbers are stable identifiers; other documents cite them. Check 32 was
-added after Spike 1 measured carried state, so it is out of numeric order.
+Check numbers are stable identifiers; other documents cite them. Checks 32 to 35
+were added later (32 after Spike 1 measured carried state; 33 to 35 for the
+default-branch setting), so they are out of numeric order.
 
 ### 2.1 On check 6
 
@@ -161,10 +165,11 @@ them. The engine enforces them; a template cannot turn them off.
 | Rule | What the engine does | Evidence |
 |---|---|---|
 | Attempt ceilings on every execution (DR10) | Each entry into a step counts against its allowance and the run's ceiling, including when a loop routes back. Exhaustion returns `attempts_exhausted` | Without it, a loop with no agent ran its fix step 213 times in 15 seconds (`docs/18` section 4) |
-| Re-entry runs the step again (DR12) | Routing to a step that already has an outcome clears that outcome and runs the step | Loops depend on it (`docs/16` section 12) |
-| No `completed` without an `end:` route (DR6) | A run that stops with no step ready and no `end:` route never reports `completed` | Spike 2's silent "completed" after an unrouted merge failure (`docs/16` section 5) |
+| Re-entry runs the step again (DR12) | Routing to a step that already has an outcome runs it again, clearing its current outcome, outputs and artifacts so a route condition never reads a stale value. The previous execution stays readable as `steps.<id>.previous`; `steps.<id>.executions` gives the count | Loops depend on it (`docs/16` section 12) |
+| No `completed` without an `end:` route (DR6) | A run that stops with no step ready and no `end:` route ends with status `incomplete`. A parent's `run.child` sees it as `failed` | Spike 2's silent "completed" after an unrouted merge failure (`docs/16` section 5) |
+| The default-branch setting at merge time (floor F1, DR2) | `scm.merge` re-reads the default branch from the code host and refuses an engine merge there unless the setting allows it, even if validation passed | Validation alone is not enough: the plan could name a branch that becomes the default |
 | An unmapped success is a work error (DR8) | A provider response that is a success but maps to no outcome fails the step as work, so it is not retried forever | GitHub's empty 204 for a no-op merge was retried as infrastructure until fixed (`docs/18` section 4) |
-| Review coverage (`docs/06` section 8.2) | A review that never opened a changed file is re-run, not accepted | Spike 3's reviewer missed a bug in code it never saw (`docs/18` section 4) |
+| Review coverage is measured, never enforced by the engine (`docs/06` section 8.2) | The engine records what each agent opened, from hooks or streamed tool-call output, or "unknown", and `review.run` publishes it as a `coverage` output. Only the workflow acts on it, through `require_coverage` or a route condition | Spike 3's reviewer missed a bug in code it never saw (`docs/18` section 4) |
 
 ---
 
@@ -205,7 +210,8 @@ Replay is proven to catch what it should:
 | Failure injection | Worker crash, Temporal unavailable, protected-step patch, stale `base_revision`. Spikes 1 and 3 ran these first (`docs/15` section 3; `docs/18` section 2) | Engine CI |
 | Run-time rules | Each rule in section 2.5. For example: a loop with no agent stops at its ceiling; a run with no `end:` route does not report `completed` | Engine CI |
 | Provider response mapping | Every documented success response of each provider call, including empty ones, maps to an outcome (DR8) | Provider package CI |
-| Merge race | Two tickets catch up from the same integration head; the second merge returns `base_moved` and routes back to catch-up; repeated refusals escalate (`docs/06` section 6.5) | Engine CI |
+| Merge race | Two tickets catch up from the same integration head; the second merge returns `base_moved` and routes back to catch-up; repeated refusals exhaust the allowance and escalate (`docs/06` section 6.5) | Engine CI |
+| Human merge | With `engine_can_merge: false` the step raises an intervention, the merge is made on the code host, and the engine detects it and continues | Engine CI |
 | Pre-submit parity | The pre-submit check and the gated step get the same brief, tools, model and commit (`docs/06` section 3.2) | Engine CI |
 
 ### 3.3 The test file format
@@ -240,7 +246,7 @@ expected_validation_errors: []
 | `parameters` | Bound parameters |
 | `provider_script` | Step id to outcome, **per visit**. A scalar means every visit; a list gives one outcome per visit, in order. A step not listed returns `completed` |
 | `expected_path` | The ordered list of step ids the run executes |
-| `expected_status` | `completed`, `failed`, `partial`, `rejected`, or `null` for still in flight |
+| `expected_status` | `completed`, `failed`, `partial`, `rejected`, `incomplete` (stopped without reaching an `end:` route), or `null` for still in flight |
 | `expected_validation_errors` | Expected blocking errors, by check number |
 
 **Per-visit scripting.** A step may be visited more than once (test, fix, re-test
@@ -342,6 +348,8 @@ This is the only golden-tested output (section 3.6).
 
 ### Answered
 
+- **The status of a run that stops without an `end:` route** is `incomplete`
+  (product owner, 2026-10-31).
 - **Replay history storage.** Recorded histories contain references only (the
   payload codec, `docs/07`), are recorded from runs against fixture repositories,
   and are stored with the engine tests. A CI check rejects anything the secret
@@ -354,6 +362,3 @@ This is the only golden-tested output (section 3.6).
   `expected_branch_paths` entry, with no interleaving assertions. Is one path per
   branch enough, or do concurrent branches in one repository need an ordering
   assertion?
-- **The status of a run that stops without an `end:` route.** DR6 says it is never
-  `completed`; `expected_status` has no value for it. Spike 3 used `incomplete`
-  (`docs/18` section 7).
