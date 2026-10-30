@@ -25,11 +25,13 @@ results).
    changed lines. The reviewer gets these results instead of rediscovering
    them.
 
-2. **The reviewer is an agent on a read-only checkout of the branch.** It is
-   told which branch to review and against which base, and given the list of
-   changed files. It reads the diff itself (`git diff`), opens any other file it
-   needs (callers, contracts, tests), and may build and run tests. It cannot
-   change the branch. Nothing is pre-loaded into its prompt beyond the brief.
+2. **The reviewer is an agent on a read-only checkout of the branch.** The
+   review step takes `branch`, `base`, `spec_refs` (the specification documents
+   to review against) and `machine_results`. The reviewer reads the diff itself
+   (`git diff`), opens any other file it needs (callers, contracts, tests), and
+   may build and run tests. It cannot change the branch. Nothing is pre-loaded
+   into its prompt beyond the brief. A review of a specification document
+   rather than code takes a reference to that document instead.
 
 3. **It reviews against a specification,** not just for general quality:
    - the ticket's acceptance criteria;
@@ -55,12 +57,22 @@ results).
 
 6. **A different, ideally stronger, model reviews,** for example Sonnet or Opus
    reviewing work authored on Haiku. A model is poor at spotting its own blind
-   spots.
+   spots. **This is workflow policy, not an engine rule:** another model may
+   not be available. The engine records which model authored and which
+   reviewed, so it is always visible.
 
-7. **The engine checks coverage.** Every file the reviewer opens is recorded
-   through the agent runtime's pre-tool-call hook, which fired reliably in
-   Spikes 2 and 3. A review that never opened a changed file is incomplete and
-   is re-run, not accepted.
+7. **The engine records coverage; the workflow decides whether it matters.**
+   For any agent step, the engine records which files the agent opened: from
+   the runtime's hooks, or from its streamed tool-call output (Claude Code and
+   Copilot CLI can both stream tool calls), or "unknown" if neither is
+   available. For a review step it publishes a coverage output: changed files,
+   files read, files not read, and whether the record is verified. The engine
+   never fails a step for coverage. A review step may set `require_coverage`:
+   `none` (the default), `all`, or a list of paths; a route condition can also
+   act on the coverage output. The standard code-review template in the
+   library sets `require_coverage: all`. A specialised review, looking at one
+   part of a change on purpose, narrows or omits it. The reviewer can run on
+   any runtime.
 
 8. **Two review levels, both with repository access:**
    - **Ticket review:** the ticket branch against the integration branch,
@@ -76,14 +88,15 @@ results).
      fixed stays fixed while the code it was about is unchanged. There is no
      voting between passes (`docs/17` section 6.5, accepted 2026-10-30).
    - **The fix loop** requires a regression test for every fixed finding.
-   - **A human approves** any merge into the default branch (floor F1, which
-     no workflow may relax).
+   - **Merges into the default branch** are made by a human by default; a
+     setting that no agent can change may allow the engine (`docs/20`, the
+     merge design).
 
 ## What changes elsewhere
 
 | Area | Change |
 |---|---|
-| Size limit | No diff in the prompt, so no prompt limit. The engine's coverage check replaces it. The visible `diff_too_large` failure added in Spike 3 stays only for the spike's diff-only reviewer |
+| Size limit | No diff in the prompt, so no prompt limit. Coverage is recorded and, where the workflow requires it, acted on. The visible `diff_too_large` failure added in Spike 3 stays only for the spike's diff-only reviewer |
 | Pre-submit check (a developer running the gated review from their own session) | "Identical input" no longer proves parity, because the reviewer explores. Parity becomes: same brief, same tools, same model, same commit |
 | Cost | More tokens per review: reading files, separate angles, a stronger model. Accepted; cheap relative to a defect reaching `main` |
 | Run-to-run variation | Exploration varies between runs. The findings ledger and evidence-backed bug findings are what absorb it |
