@@ -105,7 +105,7 @@ Each has bitten the project or its prototype at least once.
   Spike 2's merge check read the default branch from a file the agent could
   change.
 - **Who made a decision comes from the authenticated identity, never the
-  request body.** That is what makes "a human must approve merges to `main`"
-  enforceable.
+  request body.** That is what makes "only a human merges into `main`" (the default
+  setting in `docs/20`) enforceable.
 - **Agents never hold a credential that can push,** and model credentials stay
   out of the agent's environment (`docs/20`, the merge design).
