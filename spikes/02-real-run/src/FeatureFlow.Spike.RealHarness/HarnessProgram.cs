@@ -146,7 +146,13 @@ public static class HarnessProgram
         // Every decision records its actor. Without --human-approvers the actor
         // is the harness, which is deliberately unable to satisfy human policy
         // or floor F1 even though it may route the workflow through a gate.
+        //
+        // A gate is approved only while the workflow is waiting at it (it is a
+        // cursor), and once per arrival. Approving every gate on every poll
+        // recorded a merge approval before the first step had run, so the
+        // merge authorisation passed by construction.
         var decisionLedger = new DecisionLedger(RecordDirectory, runId);
+        var approvedAt = new Dictionary<string, int>(StringComparer.Ordinal);
         var approvals = Task.Run(async () =>
         {
             for (var i = 0; i < 600; i++)
@@ -155,10 +161,14 @@ public static class HarnessProgram
                 try
                 {
                     var state = await handle.QueryAsync(w => w.State());
-                    foreach (var step in state.Plan.Steps.Where(s => s.Gate is not null))
+                    if (state.TerminalStatus is not null)
+                        return;
+
+                    foreach (var step in state.Plan.Steps.Where(s => s.Gate is not null && state.Cursors.Contains(s.Id)))
                     {
-                        if (state.StepOutcomes.ContainsKey(step.Id))
+                        if (approvedAt.TryGetValue(step.Id, out var seen) && seen == state.StepsExecuted)
                             continue;
+                        approvedAt[step.Id] = state.StepsExecuted;
 
                         if (humanApprovers.Length == 0)
                         {
@@ -207,9 +217,6 @@ public static class HarnessProgram
                             : $"human:{string.Join(",human:", humanApprovers)}";
                         Console.WriteLine($"  gate {step.Id} approved ({step.Gate!.DecisionType}) actor={actor}");
                     }
-
-                    if (state.TerminalStatus is not null)
-                        return;
                 }
                 catch (Exception ex)
                 {

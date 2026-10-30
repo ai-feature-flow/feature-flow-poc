@@ -47,6 +47,14 @@ public sealed class PlannerModel
           target's completed route at it.
         """;
 
+    /// <summary>The patch shape, for runtimes that support structured output.</summary>
+    private const string PatchSchema =
+        """
+        {"type":"object","required":["op","target","new_step_id"],"properties":{
+          "op":{"type":"string","enum":["insert_after","add_step_change_route"]},
+          "target":{"type":"string"},"new_step_id":{"type":"string"}}}
+        """;
+
     private readonly ModelClient client;
 
     public PlannerModel(ModelClient client) => this.client = client;
@@ -75,7 +83,7 @@ public sealed class PlannerModel
             """;
 
         var response = await client.CompleteAsync(
-            new ModelRequest(SystemPrompt, userPrompt), ct).ConfigureAwait(false);
+            new ModelRequest(SystemPrompt, userPrompt, JsonSchema: PatchSchema), ct).ConfigureAwait(false);
 
         if (!response.IsOk)
             return ProviderResult<PlanPatch>.Fail(response.Error!);

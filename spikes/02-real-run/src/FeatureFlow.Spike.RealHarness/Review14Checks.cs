@@ -175,9 +175,11 @@ public static class Review14Checks
         // resolved from the secrets store by reference (floor F2).
         var secrets = new FeatureFlow.Spike.Providers.LocalFileSecretsProvider();
         var registry = RuntimeRegistry.Create(
-            secrets, new FeatureFlow.Spike.Providers.SecretScrubber(), HarnessProgram.Fixture);
+            secrets, new FeatureFlow.Spike.Providers.SecretScrubber(), HarnessProgram.Fixture,
+            HarnessProgram.Records, "review14-a3");
 
-        var copilot = (CopilotCliAgentRuntime)registry.ForRole("planner");
+        // The copilot-cli instance by name: since 2026-10-30 no role maps to it.
+        var copilot = (CopilotCliAgentRuntime)registry.Instance(CopilotCliAgentRuntime.InstanceName);
         var options = copilot.Options;
 
         Console.WriteLine($"[A3] runtime instance:       {CopilotCliAgentRuntime.InstanceName}");

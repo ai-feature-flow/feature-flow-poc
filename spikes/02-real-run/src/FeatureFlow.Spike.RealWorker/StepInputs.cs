@@ -77,6 +77,11 @@ public static class Limits
 /// </summary>
 public static class Prompt
 {
+    /// <summary>What the ticket asks for. The reviewer judges the diff against it.</summary>
+    public const string TicketSummary =
+        "Add WidgetStore.Contains(int id), returning whether the store holds a widget " +
+        "with that id, together with a unit test of it.";
+
     public static string For(Step step, RunContext context, FileContent? manifest)
     {
         var role = Inputs.Role(step) ?? "implementer";
@@ -90,6 +95,18 @@ public static class Prompt
         // change and exactly what to run, so the agent's work is checkable: a
         // commit either contains the change or it does not.
         var task = TaskFor(step.Id);
+
+        // The fixer is given the findings it is fixing: the open ones the
+        // reviewer raised, as recorded in the findings store.
+        if (step.Id == "fix_findings")
+        {
+            var open = Findings.Open(context);
+            var listed = open.Count == 0
+                ? "(none recorded)"
+                : string.Join("\n", open.Select(f =>
+                    $"- {f.Id}: rule={f.Rule} path={f.Path} symbol={f.Symbol} blocking={f.Blocking} snippet={f.Snippet}"));
+            task += "\n\nOpen review findings:\n" + listed;
+        }
 
         return $"""
             You are the {role} for ticket {context.TicketId} in the repository
@@ -119,24 +136,26 @@ public static class Prompt
     private static string TaskFor(string stepId) => stepId switch
     {
         "plan_spec" =>
-            "Create the file docs/ticket-plan.md containing a three-line plan: the goal, " +
-            "the file to change, and the test to add.",
+            "Create the file docs/ticket-plan.md containing a three-line plan for adding " +
+            "WidgetStore.Contains(int id): the goal, the file to change, and the test to add.",
 
         "design" =>
             "Append a short '## Design' section to docs/ticket-plan.md describing the " +
-            "Count() method: its signature, what it returns, and why it belongs on WidgetStore.",
+            "Contains(int id) method: its signature, what it returns, and why it belongs on WidgetStore.",
 
         "implement" =>
-            "Add a public method IsEmpty() to the WidgetStore class in " +
+            "Add a public method Contains(int id) to the WidgetStore class in " +
             "src/FeatureFlow.Example.Api/WidgetStore.cs. It must return true when the " +
-            "store holds no widgets and false otherwise, as a bool. Place it " +
-            "immediately after the Count method.",
+            "store holds a widget with that id and false otherwise, as a bool, taking the " +
+            "same lock as the other methods. Place it immediately after the Count method.",
 
         "fix_findings" =>
-            "Add a unit test to tests/FeatureFlow.Example.Api.UnitTests/WidgetStoreTests.cs " +
-            "named IsEmpty_is_true_for_a_new_store. It must create a WidgetStore, assert " +
-            "that IsEmpty() returns true, then add one widget and assert that IsEmpty() " +
-            "returns false. Keep the [Trait(\"Category\", \"unit\")] attribute on the class.",
+            "Fix the open review findings listed below. " +
+            "Every fix must come with a regression test: if " +
+            "tests/FeatureFlow.Example.Api.UnitTests/WidgetStoreTests.cs has no test of " +
+            "WidgetStore.Contains yet, add an xUnit [Fact] that checks Contains is false for an " +
+            "unknown id and true for the id of an added widget. Keep the " +
+            "[Trait(\"Category\", \"unit\")] attribute on the class.",
 
         _ =>
             "Append one line to docs/ticket-plan.md noting that this step ran.",

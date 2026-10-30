@@ -34,13 +34,28 @@ public sealed class ReviewerModel
                        "snippet": "<the offending line>", "blocking": true|false}]}
 
         Rules:
-        - Raise a finding only for something the diff actually shows.
+        - Raise a finding only for something the diff actually shows, or for
+          something the ticket requires that the diff does not contain.
         - A finding listed in the prior findings is already known. Raise it again
           only if the diff still shows it; if it was fixed, do not raise it.
         - A finding that was declined must not be raised again.
         - "blocking" is true only when the issue should stop the merge.
         - If the diff shows no problem, return an empty findings list and
           outcome "completed".
+        """;
+
+    /// <summary>
+    /// The verdict shape, for runtimes that support structured output. The
+    /// prompt states the same shape, so a runtime without it still works.
+    /// </summary>
+    private const string VerdictSchema =
+        """
+        {"type":"object","required":["outcome","findings"],"properties":{
+          "outcome":{"type":"string","enum":["completed","findings_open"]},
+          "findings":{"type":"array","items":{"type":"object",
+            "required":["rule","path","symbol","snippet","blocking"],
+            "properties":{"rule":{"type":"string"},"path":{"type":"string"},
+              "symbol":{"type":"string"},"snippet":{"type":"string"},"blocking":{"type":"boolean"}}}}}}
         """;
 
     private readonly ModelClient client;
@@ -58,7 +73,8 @@ public sealed class ReviewerModel
         IReadOnlyList<Finding> prior,
         IReadOnlyList<string> declinedIds,
         string stepId,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? ticket = null)
     {
         var priorText = prior.Count == 0
             ? "(none)"
@@ -72,6 +88,8 @@ public sealed class ReviewerModel
 
         var userPrompt =
             $"""
+            Ticket: {ticket ?? "(not given)"}
+
             Diff hash: {diffHash ?? "(unresolved)"}
 
             Prior findings:
@@ -87,7 +105,7 @@ public sealed class ReviewerModel
             """;
 
         var response = await client.CompleteAsync(
-            new ModelRequest(SystemPrompt, userPrompt), ct).ConfigureAwait(false);
+            new ModelRequest(SystemPrompt, userPrompt, JsonSchema: VerdictSchema), ct).ConfigureAwait(false);
 
         if (!response.IsOk)
             return ProviderResult<ReviewVerdict>.Fail(response.Error!);

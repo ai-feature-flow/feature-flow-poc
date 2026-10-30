@@ -9,9 +9,8 @@ namespace FeatureFlow.Spike.RealWorker;
 /// nothing in the engine names a product.
 ///
 /// <para>
-/// The mapping below is <c>organisation.yaml</c>'s <c>roleMapping</c>, read as
-/// data rather than hardcoded in a step: planner and fixer run on
-/// <c>copilot-cli</c>, designer and implementer on <c>claude-code</c>.
+/// The mapping below mirrors <c>organisation.yaml</c>'s <c>roleMapping</c>:
+/// every role runs on <c>claude-code</c>.
 /// </para>
 /// </summary>
 public sealed class RuntimeRegistry
@@ -20,22 +19,19 @@ public sealed class RuntimeRegistry
     /// role -> runtime instance. From organisation.yaml roleMapping.
     ///
     /// <para>
-    /// Review 14 A3: every role is on <c>copilot-cli</c>. <c>designer</c> and
-    /// <c>implementer</c> were on <c>claude-code</c>, but Claude Code rejects
-    /// the router's model with <c>[claude-code:unrecognized_model]</c> because it
-    /// validates model names against Anthropic's own list and speaks the
-    /// Anthropic Messages API rather than the OpenAI-compatible shape. The
-    /// product owner decided to report Claude Code as not evidenced on A3 and
-    /// proceed with Copilot CLI only.
+    /// Review 14 A3 put every role on <c>copilot-cli</c>, because Claude Code
+    /// could not reach the OpenRouter model. With a first-party Anthropic
+    /// subscription on the machine, the product owner decided (2026-10-30) to
+    /// prove <c>claude-code</c> on its own: every role, model <c>haiku</c>.
     /// </para>
     /// </summary>
     private static readonly Dictionary<string, string> RoleMapping = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["planner"] = CopilotCliAgentRuntime.InstanceName,
-        ["designer"] = CopilotCliAgentRuntime.InstanceName,
-        ["implementer"] = CopilotCliAgentRuntime.InstanceName,
-        ["fixer"] = CopilotCliAgentRuntime.InstanceName,
-        ["reviewer"] = CopilotCliAgentRuntime.InstanceName,
+        ["planner"] = ClaudeCodeAgentRuntimeProvider.InstanceName,
+        ["designer"] = ClaudeCodeAgentRuntimeProvider.InstanceName,
+        ["implementer"] = ClaudeCodeAgentRuntimeProvider.InstanceName,
+        ["fixer"] = ClaudeCodeAgentRuntimeProvider.InstanceName,
+        ["reviewer"] = ClaudeCodeAgentRuntimeProvider.InstanceName,
     };
 
     private readonly Dictionary<string, IAgentRuntimeProvider> byInstance =
@@ -68,20 +64,18 @@ public sealed class RuntimeRegistry
     public static RuntimeRegistry Create(
         ISecretsProvider secrets,
         SecretScrubber scrubber,
-        string workingDirectory)
+        string workingDirectory,
+        string recordDirectory,
+        string runId)
     {
         var model = ResolveSecret(secrets, "model-default") ?? "z-ai/glm-5.3-flash";
         var endpoint = ResolveSecret(secrets, "model-router-endpoint")
                        ?? "https://openrouter.ai/api/v1";
 
         // Copilot CLI speaks the OpenAI-compatible shape and appends
-        // /chat/completions itself, so its base URL carries /v1. Claude Code
-        // speaks the Anthropic Messages API and appends /v1/messages, so its
-        // base URL does not. Both are configuration, not code.
+        // /chat/completions itself, so its base URL carries /v1.
         var copilotEndpoint = Environment.GetEnvironmentVariable("FF_MODEL_ENDPOINT_COPILOT")
                               ?? endpoint;
-        var claudeEndpoint = Environment.GetEnvironmentVariable("FF_MODEL_ENDPOINT_CLAUDE")
-                             ?? endpoint;
 
         var workRoot = Path.Combine(workingDirectory, "..", "agent-runtime-work");
 
@@ -96,6 +90,19 @@ public sealed class RuntimeRegistry
             secrets: secrets,
             scrubber: scrubber);
 
+        // First-party subscription (2026-10-30): the CLI inherits the login
+        // token from the worker's environment, so no key is brokered and no
+        // router endpoint is set. Every session installs hooks that log each
+        // event with its session id to the record store, so which events fired
+        // is observed per step rather than asserted from a probe. User-level
+        // settings, plugins and MCP servers are excluded so the session runs
+        // only what the engine configured.
+        var hookLog = Path.Combine(recordDirectory, $"{runId}.hook-events.jsonl");
+        var hookSettings = ClaudeCodeCapabilityDetector.WriteHookSettings(
+            hookLog,
+            Path.GetFullPath(Path.Combine(workingDirectory, "..", "agent-runtime-work", $"{runId}.claude-settings.json")),
+            allow: new[] { "Bash(git add:*)", "Bash(git commit:*)", "Bash(git status:*)", "Bash(git diff:*)" });
+
         var claude = new ClaudeCodeAgentRuntimeProvider(
             new ModelGatewayCredentialBroker(
                 secrets,
@@ -108,10 +115,12 @@ public sealed class RuntimeRegistry
                 }),
             new ClaudeCodeRuntimeOptions(
                 Model: model,
-                Endpoint: claudeEndpoint,
+                HookSettingsPath: hookSettings,
                 PermissionMode: "acceptEdits",
                 ProbeOnCheck: true,
-                ProbeTimeout: TimeSpan.FromSeconds(180)));
+                ProbeTimeout: TimeSpan.FromSeconds(180),
+                SubscriptionAuth: true,
+                ExtraArguments: new[] { "--setting-sources", "project,local", "--strict-mcp-config" }));
 
         return new RuntimeRegistry(
             new Dictionary<string, IAgentRuntimeProvider>(StringComparer.OrdinalIgnoreCase)
@@ -119,7 +128,7 @@ public sealed class RuntimeRegistry
                 [CopilotCliAgentRuntime.InstanceName] = copilot,
                 [ClaudeCodeAgentRuntimeProvider.InstanceName] = claude,
             },
-            CopilotCliAgentRuntime.InstanceName);
+            ClaudeCodeAgentRuntimeProvider.InstanceName);
     }
 
     /// <summary>The instance a role runs on. Unknown roles get the default.</summary>
@@ -142,6 +151,9 @@ public sealed class RuntimeRegistry
             : defaultInstance;
 
     public IReadOnlyDictionary<string, string> Mapping => RoleMapping;
+
+    /// <summary>A named instance, whether or not any role maps to it.</summary>
+    public IAgentRuntimeProvider Instance(string name) => byInstance[name];
 
     /// <summary>
     /// "feature-flow-default:roles/planner" -> "planner". A role reference is

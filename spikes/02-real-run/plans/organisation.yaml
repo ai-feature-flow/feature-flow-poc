@@ -28,7 +28,7 @@ ci:
 # Two named instances of the agent runtime provider (review 07 Q3), selected by
 # roleMapping below. Nothing in the engine names either one.
 agentRuntime:
-  default: copilot-cli
+  default: claude-code
   instances:
     copilot-cli:
       name: copilot-cli
@@ -44,9 +44,12 @@ agentRuntime:
       name: claude-code
       config:
         executable: claude
-        modelRef: secrets/model-claude
-        endpointRef: secrets/model-router-endpoint
-        keyRef: secrets/model-router-key
+        modelRef: secrets/model-default   # haiku for the 2026-10-30 proof
+        # First-party Anthropic subscription: no endpoint and no keyRef. The
+        # CLI uses the login token it inherits from the worker's environment
+        # (CLAUDE_CODE_OAUTH_TOKEN). That token reaching the agent is a known
+        # gap against design requirement R1 (docs/16 section 12).
+        auth: subscription
 
 # ------------------------------------------------------------------ policy
 policy:
@@ -89,21 +92,19 @@ roles:
 # Which runtime instance each role uses (docs/09 11.1). This is the only place
 # a product name appears.
 #
-# Review 14 A3. designer and implementer were on claude-code. Claude Code
-# validates model names against Anthropic's own list and speaks the Anthropic
-# Messages API, not the OpenAI-compatible shape this router serves, so it
-# rejects z-ai/glm-5.3-flash with [claude-code:unrecognized_model] before
-# doing any work. The product owner decided on 2026-10-29 to report Claude Code
-# as NOT EVIDENCED on A3 and proceed with Copilot CLI only, rather than
-# build a proxy to work around it.
+# Review 14 A3 put every role on copilot-cli, because Claude Code validates
+# model names against Anthropic's own list and could not reach the OpenRouter
+# model (z-ai/glm-5.3-flash) — it failed with [claude-code:unrecognized_model].
 #
-# So every role now runs on copilot-cli. The claude-code instance is still
-# registered above and still probed; it is simply not mapped to a role for
-# this run, because a runtime that cannot reach the model cannot evidence
-# anything.
+# 2026-10-30: with a first-party Anthropic subscription on the machine, the
+# product owner decided to prove claude-code on its own. Every role, including
+# the reviewer (whose verdict is a `claude -p` structured-output call), runs on
+# claude-code with model haiku. Evidence: docs/16 section 12 and
+# results/claude-proof-run.md. The copilot-cli instance stays registered but
+# maps to no role.
 roleMapping:
-  planner:     { agentRuntime: copilot-cli, model: default }
-  designer:    { agentRuntime: copilot-cli, model: default }
-  implementer: { agentRuntime: copilot-cli, model: default }
-  fixer:       { agentRuntime: copilot-cli, model: default }
-  reviewer:    { agentRuntime: copilot-cli, model: default }
+  planner:     { agentRuntime: claude-code, model: default }
+  designer:    { agentRuntime: claude-code, model: default }
+  implementer: { agentRuntime: claude-code, model: default }
+  fixer:       { agentRuntime: claude-code, model: default }
+  reviewer:    { agentRuntime: claude-code, model: default }

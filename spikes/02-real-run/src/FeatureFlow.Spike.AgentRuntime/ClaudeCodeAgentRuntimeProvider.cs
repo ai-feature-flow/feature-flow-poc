@@ -300,6 +300,24 @@ public sealed class ClaudeCodeAgentRuntimeProvider : IAgentRuntimeProvider
 
     private Task<ProviderResult<Credential>> IssueModelCredentialAsync(CancellationToken ct)
     {
+        // First-party subscription: the CLI uses the login token it inherits
+        // from the worker's environment, so there is no per-step key to issue.
+        // That token being in the agent's environment is a known gap against
+        // design requirement R1 (docs/16 section 12).
+        if (options.SubscriptionAuth)
+        {
+            return Task.FromResult(ProviderResult<Credential>.Ok(new Credential(
+                Id: "subscription",
+                TargetSystem: "anthropic",
+                Scope: "subscription",
+                Secret: "",
+                IssuedAt: clock(),
+                ExpiresAt: clock().AddHours(1),
+                Permissions: new Dictionary<string, string>(),
+                Actor: Actor.Engine("agent-runtime"),
+                Refreshable: false)));
+        }
+
         // Scoped to one repository and short-lived, from the broker. The
         // provider never reads a credential from configuration (docs/04 1).
         //
@@ -361,6 +379,9 @@ public sealed class ClaudeCodeAgentRuntimeProvider : IAgentRuntimeProvider
         if (!string.IsNullOrWhiteSpace(hookSettings))
             args.AddRange(new[] { "--settings", hookSettings! });
 
+        if (options.ExtraArguments is { Count: > 0 })
+            args.AddRange(options.ExtraArguments);
+
         // The prompt goes on stdin, so a prompt containing quotes, newlines or
         // shell metacharacters cannot be reinterpreted as arguments.
         args.Add("-");
@@ -383,9 +404,19 @@ public sealed class ClaudeCodeAgentRuntimeProvider : IAgentRuntimeProvider
         // The credential reaches the child through its environment only. It is
         // never written to a file and never appears in the argument list, where
         // it would be visible to anything reading the process table.
-        startInfo.Environment["ANTHROPIC_API_KEY"] = apiKey;
-        if (!string.IsNullOrWhiteSpace(options.Endpoint))
-            startInfo.Environment["ANTHROPIC_BASE_URL"] = options.Endpoint;
+        if (options.SubscriptionAuth)
+        {
+            // An API key would override the subscription login, and a base URL
+            // would send the request somewhere else.
+            startInfo.Environment.Remove("ANTHROPIC_API_KEY");
+            startInfo.Environment.Remove("ANTHROPIC_BASE_URL");
+        }
+        else
+        {
+            startInfo.Environment["ANTHROPIC_API_KEY"] = apiKey;
+            if (!string.IsNullOrWhiteSpace(options.Endpoint))
+                startInfo.Environment["ANTHROPIC_BASE_URL"] = options.Endpoint;
+        }
 
         try
         {
@@ -804,8 +835,7 @@ public sealed class ClaudeCodeAgentRuntimeProvider : IAgentRuntimeProvider
             if (!root.TryGetProperty("usage", out var usage))
                 return null;
 
-            long? input = usage.TryGetProperty("input_tokens", out var i) && i.TryGetInt64(out var iv) ? iv : null;
-            long? output = usage.TryGetProperty("output_tokens", out var o) && o.TryGetInt64(out var ov) ? ov : null;
+            var (input, output) = ClaudeUsage.Tokens(root);
 
             decimal? cost = root.TryGetProperty("total_cost_usd", out var c) && c.TryGetDecimal(out var cv)
                 ? cv

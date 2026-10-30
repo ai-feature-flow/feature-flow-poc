@@ -177,13 +177,14 @@ public sealed partial class RealActivities
 
         foreach (var command in commands)
         {
-            var startInfo = new System.Diagnostics.ProcessStartInfo("cmd")
+            var windows = OperatingSystem.IsWindows();
+            var startInfo = new System.Diagnostics.ProcessStartInfo(windows ? "cmd" : "sh")
             {
                 WorkingDirectory = Context.WorkingDirectory,
                 UseShellExecute = false,
                 CreateNoWindow = true,
             };
-            startInfo.ArgumentList.Add("/c");
+            startInfo.ArgumentList.Add(windows ? "/c" : "-c");
             startInfo.ArgumentList.Add(command);
 
             using var process = System.Diagnostics.Process.Start(startInfo);
@@ -234,7 +235,7 @@ public sealed partial class RealActivities
         var declined = Findings.DeclinedIds(Context);
 
         var reviewed = await Context.Reviewer.ReviewAsync(
-            diffHash, diffText, prior, declined, step.Id, CancellationToken.None);
+            diffHash, diffText, prior, declined, step.Id, CancellationToken.None, Prompt.TicketSummary);
 
         ReviewVerdict verdict;
         if (!reviewed.IsOk)
@@ -256,7 +257,7 @@ public sealed partial class RealActivities
 
         Context.RecordCost(new StepCost(
             RunId: Context.RunId, StepId: step.Id, StepKind: step.Kind,
-            Model: verdict.Model, RuntimeInstance: "reviewer-model",
+            Model: verdict.Model, RuntimeInstance: Context.Model.RuntimeInstance,
             InputTokens: verdict.InputTokens, OutputTokens: verdict.OutputTokens,
             Credits: null, CostUsd: verdict.CostUsd is double spent ? (decimal)spent : null,
             ComputeSeconds: (DateTimeOffset.UtcNow - startedAt).TotalSeconds,

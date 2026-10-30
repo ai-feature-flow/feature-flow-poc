@@ -14,7 +14,8 @@ public sealed record ModelRequest(
     string SystemPrompt,
     string UserPrompt,
     double Temperature = 0.0,
-    int MaxTokens = 2048);
+    int MaxTokens = 2048,
+    string? JsonSchema = null);
 
 public sealed record ModelResponse(
     string Text,
@@ -75,9 +76,25 @@ public sealed class ModelClient
     /// <summary>The model this client asks for. Safe to log.</summary>
     public string Model => model;
 
+    /// <summary>
+    /// The endpoint value that routes calls through the <c>claude</c> CLI
+    /// (<c>claude -p --output-format json</c>) instead of a chat-completions
+    /// router. The CLI authenticates with the subscription token it inherits
+    /// from the worker's environment, so no key is resolved here.
+    /// </summary>
+    public const string ClaudeCliEndpoint = "claude-cli";
+
+    private bool UsesClaudeCli => string.Equals(endpoint, ClaudeCliEndpoint, StringComparison.Ordinal);
+
+    /// <summary>The runtime instance the calls run on, for the cost record.</summary>
+    public string RuntimeInstance => UsesClaudeCli ? ClaudeCodeAgentRuntimeProvider.InstanceName : "model-router";
+
     public async Task<ProviderResult<ModelResponse>> CompleteAsync(
         ModelRequest request, CancellationToken ct)
     {
+        if (UsesClaudeCli)
+            return await CompleteWithClaudeCliAsync(request, ct).ConfigureAwait(false);
+
         var key = await secrets.ResolveAsync(keyRef, ct).ConfigureAwait(false);
         if (!key.IsOk)
             return ProviderResult<ModelResponse>.Fail(key.Error!);
@@ -182,6 +199,133 @@ public sealed class ModelClient
 
     private static TimeSpan? RetryAfter(int status) =>
         status is 408 or 429 or 502 or 503 or 504 ? TimeSpan.FromSeconds(5) : null;
+
+    /// <summary>
+    /// One model call through <c>claude -p</c>. Tools, MCP servers and user
+    /// settings are switched off, so the call is a single completion: the
+    /// reviewer and planner author a JSON answer, they do not act. When the
+    /// request carries a JSON schema the CLI's structured output is used.
+    /// </summary>
+    private async Task<ProviderResult<ModelResponse>> CompleteWithClaudeCliAsync(
+        ModelRequest request, CancellationToken ct)
+    {
+        var executable = ClaudeCodeExecutable.Resolve();
+        if (executable is null)
+            return ProviderResult<ModelResponse>.Infrastructure(
+                "not_found", detail: "the claude CLI is not installed or not on PATH");
+
+        var startInfo = new System.Diagnostics.ProcessStartInfo(executable)
+        {
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+        };
+
+        foreach (var arg in new[]
+                 {
+                     "-p", "--model", model, "--output-format", "json",
+                     "--tools", "", "--setting-sources", "", "--strict-mcp-config",
+                     "--no-session-persistence", "--system-prompt", request.SystemPrompt,
+                 })
+        {
+            startInfo.ArgumentList.Add(arg);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.JsonSchema))
+        {
+            startInfo.ArgumentList.Add("--json-schema");
+            startInfo.ArgumentList.Add(request.JsonSchema!);
+        }
+
+        startInfo.ArgumentList.Add("-");
+
+        // An API key in the environment would override the subscription login.
+        startInfo.Environment.Remove("ANTHROPIC_API_KEY");
+        startInfo.Environment.Remove("ANTHROPIC_BASE_URL");
+
+        try
+        {
+            using var process = System.Diagnostics.Process.Start(startInfo);
+            if (process is null)
+                return ProviderResult<ModelResponse>.Infrastructure("unreachable");
+
+            var stdout = process.StandardOutput.ReadToEndAsync(ct);
+            var stderr = process.StandardError.ReadToEndAsync(ct);
+            await process.StandardInput.WriteAsync(request.UserPrompt).ConfigureAwait(false);
+            process.StandardInput.Close();
+
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromMinutes(5));
+            await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
+
+            var text = await stdout.ConfigureAwait(false);
+            var error = await stderr.ConfigureAwait(false);
+
+            if (process.ExitCode != 0 && string.IsNullOrWhiteSpace(text))
+            {
+                return ProviderResult<ModelResponse>.Infrastructure(
+                    "model_call_failed", null,
+                    scrubber.Scrub($"claude exited {process.ExitCode}: {Truncate(error)}"));
+            }
+
+            return ParseClaudeResult(text);
+        }
+        catch (OperationCanceledException)
+        {
+            return ProviderResult<ModelResponse>.Infrastructure("timeout");
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            return ProviderResult<ModelResponse>.Infrastructure("unreachable", null, ex.Message);
+        }
+    }
+
+    private ProviderResult<ModelResponse> ParseClaudeResult(string text)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(text);
+            var root = document.RootElement;
+
+            if (root.TryGetProperty("is_error", out var isError) && isError.ValueKind == JsonValueKind.True)
+            {
+                var reason = root.TryGetProperty("result", out var r) ? r.ToString() : "(no detail)";
+                return ProviderResult<ModelResponse>.Fail(new ProviderError(
+                    ErrorClass.Work, "model_call_failed", null, null, scrubber.Scrub(Truncate(reason))));
+            }
+
+            var content = root.TryGetProperty("structured_output", out var structured) &&
+                          structured.ValueKind == JsonValueKind.Object
+                ? structured.GetRawText()
+                : root.TryGetProperty("result", out var result) ? result.GetString() ?? "" : "";
+
+            string? reportedModel = null;
+            if (root.TryGetProperty("modelUsage", out var modelUsage))
+            {
+                foreach (var property in modelUsage.EnumerateObject())
+                {
+                    reportedModel = property.Name;
+                    break;
+                }
+            }
+
+            var (input, output) = ClaudeUsage.Tokens(root);
+            double? cost = root.TryGetProperty("total_cost_usd", out var spent) && spent.TryGetDouble(out var c)
+                ? c
+                : null;
+
+            return ProviderResult<ModelResponse>.Ok(new ModelResponse(
+                content, reportedModel ?? model, input, output, cost));
+        }
+        catch (JsonException ex)
+        {
+            return ProviderResult<ModelResponse>.Infrastructure(
+                "malformed_response", null, scrubber.Scrub(ex.Message));
+        }
+    }
 
     private static string Truncate(string text) =>
         text.Length <= 400 ? text : text[..400] + "…";

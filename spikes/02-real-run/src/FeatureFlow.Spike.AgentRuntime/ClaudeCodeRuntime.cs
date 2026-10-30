@@ -32,6 +32,13 @@ namespace FeatureFlow.Spike.AgentRuntime;
 /// <param name="SystemPromptSuffix">Appended to the runtime's own system prompt.</param>
 /// <param name="ProbeOnCheck">Whether <c>CheckAsync</c> runs one real session to measure capabilities.</param>
 /// <param name="ProbeTimeout">Bound on the probe. docs/05 1.2: a metadata read is 15s; a probe is a session, so it gets more.</param>
+/// <param name="SubscriptionAuth">
+/// First-party use: the CLI authenticates with the subscription login it
+/// inherits from the worker's environment (<c>CLAUDE_CODE_OAUTH_TOKEN</c>), so
+/// no key is issued and neither <c>ANTHROPIC_API_KEY</c> nor
+/// <c>ANTHROPIC_BASE_URL</c> is set — an API key would override the login.
+/// </param>
+/// <param name="ExtraArguments">Appended to every launch, e.g. to isolate the session from user settings.</param>
 public sealed record ClaudeCodeRuntimeOptions(
     string? ExecutablePath = null,
     string? Model = null,
@@ -41,7 +48,9 @@ public sealed record ClaudeCodeRuntimeOptions(
     string? PermissionMode = null,
     string? SystemPromptSuffix = null,
     bool ProbeOnCheck = true,
-    TimeSpan? ProbeTimeout = null)
+    TimeSpan? ProbeTimeout = null,
+    bool SubscriptionAuth = false,
+    IReadOnlyList<string>? ExtraArguments = null)
 {
     public TimeSpan EffectiveProbeTimeout => ProbeTimeout ?? TimeSpan.FromSeconds(120);
 
@@ -111,7 +120,7 @@ public static class ClaudeCodeExecutable
             string candidate;
             try
             {
-                candidate = Path.Combine(dir.Trim('"'), "claude.exe");
+                candidate = Path.Combine(dir.Trim('"'), OperatingSystem.IsWindows() ? "claude.exe" : "claude");
             }
             catch (ArgumentException)
             {
@@ -285,34 +294,45 @@ public static class ClaudeCodeCapabilityDetector
     /// <see cref="ClaudeCodeRuntimeOptions.HookSettingsPath"/> so launched
     /// sessions install the same hooks the probe measured.
     /// </summary>
-    public static string WriteHookSettings(string logPath, string settingsPath)
+    public static string WriteHookSettings(string logPath, string settingsPath, IReadOnlyList<string>? allow = null)
     {
         var directory = Path.GetDirectoryName(settingsPath);
         if (!string.IsNullOrEmpty(directory))
             Directory.CreateDirectory(directory);
 
-        var escaped = logPath.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("'", "''", StringComparison.Ordinal);
+        // Windows appends the event name; elsewhere the hook's stdin payload is
+        // reduced to event, session and tool, so the log ties each event to a
+        // session id.
+        string Command(string name) => OperatingSystem.IsWindows()
+            ? "powershell -NoProfile -Command \"Add-Content -Path '" + logPath.Replace("'", "''", StringComparison.Ordinal) +
+              "' -Value '" + name + "'\""
+            : "jq -c '{event:.hook_event_name,session:.session_id,tool:.tool_name}' >> '" +
+              logPath.Replace("'", "'\\''", StringComparison.Ordinal) + "'";
 
-        string Hook(string name)
+        var hooks = new System.Text.Json.Nodes.JsonObject();
+        foreach (var name in new[] { "SessionStart", "PreToolUse", "PostToolUse", "Stop" })
         {
-            var command =
-                "powershell -NoProfile -Command \\\"Add-Content -Path '" + escaped +
-                "' -Value '" + name + "'\\\"";
-
-            return "{ \"matcher\": \"\", \"hooks\": [ { \"type\": \"command\", \"command\": \"" + command + "\" } ] }";
+            hooks[name] = new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonObject
+            {
+                ["matcher"] = "",
+                ["hooks"] = new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonObject
+                {
+                    ["type"] = "command",
+                    ["command"] = Command(name),
+                }),
+            });
         }
 
-        var json =
-            "{\n" +
-            "  \"hooks\": {\n" +
-            "    \"SessionStart\": [ " + Hook("SessionStart") + " ],\n" +
-            "    \"PreToolUse\":   [ " + Hook("PreToolUse") + " ],\n" +
-            "    \"PostToolUse\":  [ " + Hook("PostToolUse") + " ],\n" +
-            "    \"Stop\":         [ " + Hook("Stop") + " ]\n" +
-            "  }\n" +
-            "}";
+        var settings = new System.Text.Json.Nodes.JsonObject { ["hooks"] = hooks };
+        if (allow is { Count: > 0 })
+        {
+            var list = new System.Text.Json.Nodes.JsonArray();
+            foreach (var rule in allow)
+                list.Add(rule);
+            settings["permissions"] = new System.Text.Json.Nodes.JsonObject { ["allow"] = list };
+        }
 
-        File.WriteAllText(settingsPath, json);
+        File.WriteAllText(settingsPath, settings.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         return settingsPath;
     }
 
@@ -388,5 +408,32 @@ public static class ClaudeCodeCapabilityDetector
         {
             return null;
         }
+    }
+}
+
+/// <summary>
+/// Token counts from a Claude Code result line. Input includes cache creation
+/// and cache reads, because with prompt caching <c>input_tokens</c> alone is
+/// only the uncached remainder and would under-report what the step consumed.
+/// </summary>
+public static class ClaudeUsage
+{
+    public static (long? Input, long? Output) Tokens(JsonElement root)
+    {
+        if (!root.TryGetProperty("usage", out var usage))
+            return (null, null);
+
+        long? Read(string name) =>
+            usage.TryGetProperty(name, out var value) && value.TryGetInt64(out var n) ? n : null;
+
+        var input = Read("input_tokens");
+        var created = Read("cache_creation_input_tokens");
+        var cached = Read("cache_read_input_tokens");
+
+        long? total = input is null && created is null && cached is null
+            ? null
+            : (input ?? 0) + (created ?? 0) + (cached ?? 0);
+
+        return (total, Read("output_tokens"));
     }
 }
