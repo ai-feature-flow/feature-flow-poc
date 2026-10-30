@@ -1,0 +1,35 @@
+WORKER starting queue=claude-proof-4 address=localhost:7333 repo=/Users/stuart.parkinson/hacks/feature-flow-poc-wt/claude-proof/spikes/02-real-run/fixture branch=ff/ticket/claude-proof-4 base=ff/epic/claude-proof-4 run=claude-proof-4 pid=42592
+WORKER plan 17 steps, entry plan_spec
+RUN START check 20: PASS
+RUN START check 21: PASS
+RUN START check 22: PASS
+RUN START validation: ACCEPTED
+WORKER ready
+STEP plan_spec: feature-flow.yaml ref=ff/ticket/claude-proof-4 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP plan_spec: agent committed c03c9504e1838564379237f50a35be23c5f280c9 on ff/ticket/claude-proof-4 (was 5dd0108fc9e9a3e4af18995fc68eed6f0a9231ac); pushed=True
+STEP design: feature-flow.yaml ref=ff/ticket/claude-proof-4 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP design: agent committed df14f19954a62d135e23f1c169b5c80db8d80ace on ff/ticket/claude-proof-4 (was c03c9504e1838564379237f50a35be23c5f280c9); pushed=True
+STEP implement: feature-flow.yaml ref=ff/ticket/claude-proof-4 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP implement: agent committed f6efb772eb89bd4248a686d54125a9f5ee88b969 on ff/ticket/claude-proof-4 (was df14f19954a62d135e23f1c169b5c80db8d80ace); pushed=True
+STEP run_tests: feature-flow.yaml ref=ff/ticket/claude-proof-4 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  FeatureFlow.Example.Api -> /Users/stuart.parkinson/hacks/feature-flow-poc-wt/claude-proof/spikes/02-real-run/fixture/src/FeatureFlow.Example.Api/bin/Debug/net9.0/FeatureFlow.Example.Api.dll
+  FeatureFlow.Example.Api.UnitTests -> /Users/stuart.parkinson/hacks/feature-flow-poc-wt/claude-proof/spikes/02-real-run/fixture/tests/FeatureFlow.Example.Api.UnitTests/bin/Debug/net9.0/FeatureFlow.Example.Api.UnitTests.dll
+Test run for /Users/stuart.parkinson/hacks/feature-flow-poc-wt/claude-proof/spikes/02-real-run/fixture/tests/FeatureFlow.Example.Api.UnitTests/bin/Debug/net9.0/FeatureFlow.Example.Api.UnitTests.dll (.NETCoreApp,Version=v9.0)
+A total of 1 test files matched the specified pattern.
+
+Passed!  - Failed:     0, Passed:     4, Skipped:     0, Total:     4, Duration: 4 ms - FeatureFlow.Example.Api.UnitTests.dll (net9.0)
+STEP run_tests: tiers [unit=success, integration=Success], delegated to CI: [integration]
+STEP review: feature-flow.yaml ref=ff/ticket/claude-proof-4 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP review: diffHash=299091f0d1078b7b1f69d95a2f592b0c64065585268eb0da8fc942ed669c9166 priorFindings=0 verdict=completed findings=0 model=claude-haiku-5-5
+STEP evaluate_readiness: feature-flow.yaml ref=ff/ticket/claude-proof-4 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP evaluate_readiness: open=0 unresolved=0 => ready
+STEP open_pr: feature-flow.yaml ref=ff/ticket/claude-proof-4 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP open_pr: feature-flow.yaml ref=ff/ticket/claude-proof-4 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP open_pr: PR #10 ff/ticket/claude-proof-4 -> ff/epic/claude-proof-4
+STEP wait_checks: feature-flow.yaml ref=ff/ticket/claude-proof-4 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP wait_checks: checks success (3 check(s)) at f6efb772eb89bd4248a686d54125a9f5ee88b969
+STEP merge_pr: feature-flow.yaml ref=ff/ticket/claude-proof-4 sha256:a5c19dc3243bbb480f7c3d139f0deb17a43b683173b950ff828bedf14a40038c (926 bytes)
+STEP merge_pr: AUTHORIZED integration branch 'ff/epic/claude-proof-4': 1/1 human approval(s) satisfy 'ticket.merge_approval'
+STEP merge_pr: merged PR #10 method=squash merged=True branchChanged=True head=e5899b297cba929720dffae6dc897eff6d19b055

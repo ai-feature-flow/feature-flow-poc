@@ -1,0 +1,1 @@
+{"findings":[],"verdicts":[{"stepId":"review","outcome":"completed","diffHash":"299091f0d1078b7b1f69d95a2f592b0c64065585268eb0da8fc942ed669c9166","priorFindingIds":[],"findings":[],"at":"2026-10-30T09:36:19.059292+00:00","model":"claude-haiku-5-5","inputTokens":6869,"outputTokens":466,"costUsd":0.00082302}],"triages":[],"prNumber":10}

@@ -1,7 +1,8 @@
 # Spike 2 results: one real ticket run
 
 Written 2026-10-28. Revised 2026-10-29 after review 14, and 2026-10-30 after
-reviews 15 and 16.
+reviews 15 and 16. Section 12 added 2026-10-30: the `claude-code` runtime proven
+end to end on a first-party Anthropic subscription.
 
 **Spike 2 is closed.** Review 16, 2026-10-30: *"Spike 2 has answered its
 question: yes, the design is feasible against real providers."*
@@ -38,6 +39,7 @@ store.
 | Check output | `spikes/02-real-run/results/spike2-checks.md` |
 | Run narrative | `spikes/02-real-run/results/spike2-real-run.md` |
 | Output sizes | `spikes/02-real-run/results/outputs-sizes.json` |
+| Claude Code proof (section 12) | `spikes/02-real-run/results/claude-proof-run.md` |
 
 ---
 
@@ -285,17 +287,19 @@ provided differs — this is the table the spike exists to produce.
 | `structured_output` | yes | yes |
 | `streaming` | yes | yes |
 | `tool_allowlist` | yes | yes |
-| `hooks` | **partial** | **yes** |
+| `hooks` | **partial** | **yes** (Windows in Spike 2; macOS in section 12) |
 | `session_resume` | yes | yes |
 | `usage_reporting` | yes | yes |
 | `model_configuration` | yes | yes |
-| `custom_endpoint` | yes (BYOK router) | no (Anthropic API only) |
+| `custom_endpoint` | yes (BYOK router) | no (Anthropic API only; first-party subscription works, section 12) |
 | `max_context_tokens` | unknown (not exposed) | 200000 |
 
 **Two real differences.**
 
 **Hooks.** Claude Code fired all four events (`SessionStart`, `PreToolUse`,
-`PostToolUse`, `Stop`) on Windows. Copilot CLI fired `SessionStart` and `Stop`;
+`PostToolUse`, `Stop`) on Windows, and on macOS in every agent session of the
+section 12 run, where a narrow Bash allowlist also denied a call before it
+ran. Copilot CLI fired `SessionStart` and `Stop`;
 `PreToolUse` and `PostToolUse` registered but never fired in these runs.
 
 This matters because **per-tool-call policy (deny before execution) depends on
@@ -308,7 +312,8 @@ records the coarser control rather than assuming the finer one.
 against an OpenAI-compatible router. Claude Code validates model names against
 Anthropic's own list and speaks the Anthropic Messages API, so it **cannot** be
 pointed at an arbitrary router — it rejects the model before any request is made.
-This is why A3 is evidenced for `copilot-cli` only.
+This is why Spike 2 evidenced A3 for `copilot-cli` only. Section 12 evidences
+it for `claude-code` against Anthropic's own models on a subscription.
 
 **Caveat, stated rather than smoothed over:** the Copilot CLI runs here used
 `z-ai/glm-5.3-flash` through OpenRouter, because no Copilot subscription
@@ -343,14 +348,15 @@ code host was given a bare repo name as its scope.
 
 ## 6. What could not be evidenced
 
-**Claude Code on A3: not evidenced.** It rejects the router's model with
+**Claude Code on A3: not evidenced in Spike 2, evidenced 2026-10-30 (section
+12).** Through OpenRouter it rejects the router's model with
 `[claude-code:unrecognized_model]` (HTTP 404), because it validates model names
 against Anthropic's own list and speaks the Anthropic Messages API rather than the
 OpenAI-compatible shape this router serves. Per the product owner's decision of
-2026-10-29, no proxy was built to work around this. `organisation.yaml`'s
-`roleMapping` now maps every role to `copilot-cli`; the `claude-code` instance is
-still registered and probed, but maps to no role, because a runtime that cannot
-reach the model cannot evidence anything.
+2026-10-29, no proxy was built to work around this. Once an Anthropic subscription
+was available, every role was mapped to `claude-code` on `haiku`, and one ticket
+ran to a merged PR (section 12). `organisation.yaml`'s `roleMapping` now maps
+every role to `claude-code`; `copilot-cli` stays registered and maps to no role.
 
 **A stable R4 verdict: not evidenced — and that is the finding.** With a real
 reviewer model in the loop, verdicts differ across passes on unchanged input
@@ -433,7 +439,7 @@ recorded.
 |---|---|---|
 | A1 | Floor F1 bypassed: `main` merged by the bot after the harness auto-approved every gate | **Fixed.** The engine enforces F1 itself; a harness approval is refused. Test added. The false comment claiming an integration-branch target is corrected. |
 | A2 | No code-host protection for `main` | **Fixed.** Ruleset `protect-main` (id 26099165) is active with no app bypass. Residual risk recorded in section 6. |
-| A3 | No real model authored the change | **Partly fixed.** Evidenced for `copilot-cli` on `z-ai/glm-5.3-flash` via OpenRouter; `StepWork` removed from the agent path. **Not evidenced for `claude-code`** — it cannot reach an OpenAI-compatible router. |
+| A3 | No real model authored the change | **Partly fixed.** Evidenced for `copilot-cli` on `z-ai/glm-5.3-flash` via OpenRouter; `StepWork` removed from the agent path. **Not evidenced for `claude-code`** — it cannot reach an OpenAI-compatible router. Evidenced 2026-10-30 on a first-party subscription (section 12). |
 | A5 | Plan and organisation config disagree on decision types | **Fixed.** Policy keyed by decision type; run-start checks 20-22 run in the worker. |
 | A6 | `policy.replan.allowed_roles` missing | **Fixed.** Added; a disallowed role becomes a pending human decision. |
 | A7 | R4 circular | **Fixed and now genuinely failing.** Real reviewer model; verdicts disagree across passes. Reported, not reconciled. |
@@ -487,5 +493,82 @@ What changed that Spike 3 should account for:
    to design the measurement deliberately rather than inherit it.
 4. **F1 and code host protection are settled** as design requirements R2 and R3,
    so Spike 3 should not re-litigate them.
-5. **Claude Code is deferred, not dropped.** The runtime stays pluggable; if an
-   Anthropic credential appears, the second instance is already registered.
+5. **Claude Code is proven, not just registered.** Section 12: every role on
+   `claude-code`/`haiku`, one ticket to a merged PR, with the fix loop exercised.
+   Both runtimes now have a run behind them.
+
+---
+
+## 12. Claude Code proof (2026-10-30)
+
+**Question.** Section 6 left `claude-code` not evidenced on A3. With a
+first-party Anthropic subscription now on the machine, does one ticket run
+through the real `ticket-delivery` plan with every agent role on `claude-code`?
+
+**Answer: yes.** Run `claude-proof-6` ran planner, designer, implementer,
+reviewer and fixer on `claude-code` with model `haiku` (`claude-haiku-5-5`). The
+reviewer raised a blocking "missing unit test" finding. The fixer authored the
+test. The loop re-ran tests and review, which came back clean. **PR #11** was
+merged into the integration branch `ff/epic/claude-proof-6` (merge commit
+`f9b74a2`), and fixture `main` is untouched. Cost from the record store:
+**USD 0.0168**, 485,283 input and 7,230 output tokens. Full evidence:
+`spikes/02-real-run/results/claude-proof-run.md`.
+
+| Evidence | Where it comes from |
+|---|---|
+| Model-authored commits `15c99b1`, `7acbf1b`, `eb16872`, `bd5e3e4` | Each SHA appears in the tool output of its own Claude Code session transcript, and every assistant turn reports `claude-haiku-5-5`. The method body and test name appear nowhere in spike source. |
+| PR #11, base `ff/epic/claude-proof-6`, merged | `gh api` on the fixture repository |
+| Runtime, model, tokens, cost per step | `records/claude-proof-6.cost.jsonl` (`runtimeInstance: claude-code` for all 6 model steps) |
+| Hooks on macOS | `records/claude-proof-6.hook-events.jsonl`: `SessionStart`, `PreToolUse`, `PostToolUse` and `Stop` in all 4 agent sessions |
+| Merge approval after checks | One decision, 1.5 s after `wait_checks` and before `merge_pr` |
+
+**What changed to get there**, kept spike-cheap:
+
+- Claude Code uses the subscription login inherited from the worker
+  (`CLAUDE_CODE_OAUTH_TOKEN`). The provider removes `ANTHROPIC_API_KEY` and
+  `ANTHROPIC_BASE_URL` from the child, because an API key would override the
+  login. User settings, plugins and MCP servers are excluded, and the engine's
+  hook settings and a Bash allowlist (`git add/commit/status/diff`) are
+  installed.
+- The reviewer and planner models run as `claude -p --output-format json` with
+  `--json-schema`, tools off.
+- On macOS: `claude` on `PATH`, `sh -c` for local tiers, `jq` hooks, and
+  `DOTNET_ROLL_FORWARD=Major` for the net9.0 fixture.
+
+**What the runs found.** Seven runs were needed. Each failure was found by
+running, and each is recorded in the evidence file.
+
+1. **The Spike 1 interpreter could not loop, and that looked like success.**
+   A step with an outcome was never ready again, so `verify_fix → run_tests`
+   routed nowhere. With nothing ready, the workflow returned `completed` with no
+   PR. This is the class of section 5 bug 2, and it is why Spike 2's A3 run
+   never reached a merge in one run: each of its record sets stops at
+   `verify_fix`. Fixed with the product owner's approval: a route back to a
+   step that already ran clears its outcome.
+2. **The harness pre-approved the merge.** It approved every gate on every poll,
+   so in run 1 `ticket.merge_approval` was recorded 2 s into the run and the
+   merge authorisation passed by construction. It now approves only a gate the
+   interpreter reports as ready, once per arrival, and rejects a second
+   escalation.
+3. **`fix.verify` verified only the first selected finding**, so a fixer that
+   fixed two findings in one commit was sent back with nothing to do. It now
+   verifies every selected finding.
+4. **Deny before execution works on macOS.** A planner command outside the
+   allowlist was denied before it ran. That is the per-tool control `docs/08`
+   2.5 depends on, now observed on `claude-code`.
+5. **R4 shows on haiku as well**: the same kind of diff got 0, 1 blocking, or 1
+   non-blocking finding across runs.
+
+**Known gaps, recorded not fixed.**
+
+- **R1:** the subscription token is in the agent's environment, and so are the
+  agent's tools. This is the same gap as Spike 2's OpenRouter key (section 10).
+  Version 1 still needs a proxy or per-run credential.
+- **Proposed design requirement:** a run that ends without reaching an `end:`
+  route must not report `completed`. Finding 1 shows this is easy to get wrong;
+  `docs/08` is not yet changed, pending the product owner.
+- The merge approval is the harness's `--human-approvers` stand-in acting on
+  the product owner's standing instruction, not a person at the gate.
+- The interpreter fix is not versioned for Temporal replay (a production
+  engine would use `Workflow.Patched`), and Spike 1's own suite was not re-run
+  against it.

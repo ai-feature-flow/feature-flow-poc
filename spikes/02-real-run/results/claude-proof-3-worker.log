@@ -1,0 +1,7 @@
+WORKER starting queue=spike-2-real address=localhost:7333 repo=/Users/stuart.parkinson/hacks/feature-flow-poc-wt/claude-proof/spikes/02-real-run/fixture branch=ff/ticket/claude-proof-3 base=ff/epic/claude-proof-3 run=claude-proof-3 pid=38362
+WORKER plan 17 steps, entry plan_spec
+RUN START check 20: PASS
+RUN START check 21: PASS
+RUN START check 22: PASS
+RUN START validation: ACCEPTED
+WORKER ready
