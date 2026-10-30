@@ -125,6 +125,37 @@ rubric miss (pass 6) says FindByName "gets null… which violates the requiremen
 the defect, but "gets null" is not in the failure term. That is the only disagreement
 between rubric and audit. No Neg pass raised anything about case or normalisation.
 
+### 3.1 Replication (pre-registered 2026-10-31, before any pass ran)
+
+Decided by the orchestrator under the product owner's standing instruction, 2026-10-31:
+**E2 is judged on this replication.** The pre-registered (truncated) result and the
+post-hoc full-diff result above stay as history.
+
+- **Reviewer.** The engine's reviewer with D4 fixed (commit `6684f5d`): limit 32000
+  characters; a larger diff fails visibly with `Work/diff_too_large`, and is never cut.
+  Every pass records `diffChars`, `diffLimit` and `truncated`.
+- **Inputs.** The same `results/spike-3/series/*.diff` files, by SHA-256 prefix:
+
+  | File | SHA-256 prefix | Size |
+  |---|---|---|
+  | Pos | `6a2d27dcb1810d6f` | 9642 B |
+  | Neg | `bf25c5e0c82b84c3` | 9615 B |
+  | I-epic | `fbf3b7f7a35f2aab` | 9561 B |
+  | I-A | `997fff55e5a0cf1f` | 3280 B |
+  | I-B | `319673cc65ac419d` | 3436 B |
+
+  Specifications: the epic description for Pos, Neg and I-epic; ticket A's text for I-A;
+  ticket B's text for I-B. No prior findings.
+- **Passes.** Fresh: Pos 5; Neg, I-epic, I-A and I-B 20 each. No pass is re-run or
+  discarded except for an infrastructure error, which is retried and reported.
+- **Rubric and thresholds.** Unchanged: docs/17 6.3, and the 6.4 thresholds in
+  `tools/r4_analyse.py` (Pos ≥ 4/5, f ≤ 2/20, d<sub>epic</sub> ≥ 10/20, d<sub>A</sub> and
+  d<sub>B</sub> ≤ 2/20, one-sided Fisher p < 0.05 against each ticket series). Failed
+  controls make E2 inconclusive.
+- **Reporting.** Counts with 95% Wilson intervals; every detection audited by hand, with any
+  disagreement between rubric and audit reported. The rubric count decides.
+- **Output.** `results/spike-3/r4-replication/`.
+
 **Two-of-three voting** (L3, reported as asked). Pre-registered: it would keep a real
 finding with probability 1.00 and a Neg false finding with 0.84. Post hoc: 0.99 and 0.00.
 The ledger positions are not reopened (docs/17 6.5).
