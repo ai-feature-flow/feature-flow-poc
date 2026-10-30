@@ -1,19 +1,24 @@
 # Spike 3 results: concurrent tickets
 
-Written 2026-10-30 by worker C from the run of that day. Plan: `docs/17-spike-3-plan.md`.
+Written 2026-10-30 by worker C from the run of that day. Section 3.1 was added on
+2026-10-31: a pre-registered replication of the R4 series with D4 fixed, on which E2 is
+judged. Plan: `docs/17-spike-3-plan.md`.
 
 **Question** (`docs/08` 2.3): do several tickets of one epic in one repository stay correct?
 
-**Answer: yes for the engine mechanics; the review half is not yet evidenced as the plan
-defined it.** Three agent-authored tickets ran concurrently (`max_concurrency: 2`), merged
-serially under the merge lock, with a real conflict routed to an agent and resolved without
-a human. Injected failures did not block siblings. That much is shown. The epic-review
-measurement (E2) is **inconclusive**: its Neg control failed. The cause is a method defect,
-not reviewer behaviour. The engine's reviewer silently cuts every diff to 6000 characters,
-and the aggregate diff is about 9.5 KB, so the reviewer never saw `FindByName` at all. A
-post-hoc re-run with the whole diff meets every pre-set threshold. It was not
-pre-registered, so it is reported beside the result and does not replace it (open
-question 1).
+**Answer: yes.** Three agent-authored tickets ran concurrently (`max_concurrency: 2`),
+merged serially under the merge lock, with a real conflict routed to an agent and resolved
+without a human. Injected failures did not block siblings.
+
+The epic review catches the seeded cross-ticket defect that both ticket reviews miss:
+20/20 against 0/20 and 0/20, with Neg at 0/20 (E2 met, section 3.1). Getting there took
+two attempts:
+
+- **First, inconclusive.** The pre-registered series failed its Neg control (15/20). The
+  engine's reviewer silently cut every diff to 6000 characters, and the aggregate is about
+  9.5 KB, so the reviewer never saw `FindByName`.
+- **Then met.** With that fixed (requirement D4: never cut, refuse visibly), a fresh
+  pre-registered replication on the same inputs met every pre-set threshold.
 
 | Deliverable | Where |
 |---|---|
@@ -21,7 +26,7 @@ question 1).
 | Plans | `spikes/03-concurrent/plans/` |
 | Main-run evidence | `spikes/03-concurrent/results/spike-3/` |
 | Sanity checks | `spikes/03-concurrent/results/{sanity-lock,sanity-conflict,i3,i4,loop-cap}.json` |
-| R4 audit (every finding) | `results/spike-3/r4-audit.md`, `results/spike-3/r4-full/r4-audit.md` |
+| R4 audit (every finding) | `results/spike-3/r4-replication/r4-audit.md` (E2); history: `results/spike-3/r4-audit.md`, `results/spike-3/r4-full/r4-audit.md` |
 
 ## 1. The run
 
@@ -52,7 +57,7 @@ scratch clone (`results/spike-3/oracle-integration.json`). Seeds present:
 | # | Result | Decisive evidence | What would have made it come out differently |
 |---|---|---|---|
 | **E1** | **met** | All three children `Completed` with result `completed`; PRs #12–#14 merged into `ff/epic/spike-3` (`gh api`) | Any child ending `failed`/`incomplete` (the loop cap, section 4, would have ended a spinning ticket `failed`) |
-| **E2** | **inconclusive** | Section 3: Neg 15/20 against f ≤ 2/20, so the controls failed | — |
+| **E2** | **met** (on the pre-registered replication, 3.1) | I-epic 20/20 [0.84, 1.00]; I-A and I-B 0/20 [0.00, 0.16]; Pos 5/5; Neg 0/20; Fisher p = 7.3 × 10⁻¹² against each ticket series. The first pre-registered series was inconclusive (Neg 15/20, truncated input) | Neg detecting (the reviewer reacting to words); Pos missing; ticket reviews catching the seed |
 | **E3** | **met** (C7, with a caveat) | I1: A merged while B's worker was down; I3; the lock was free while the resolver ran | A sibling waiting on a slot, the lock or the join because of another ticket |
 | C1 | **met** | Lock audit: C and A requested at the same instant (10:34:27.108); C granted; **A waited 82 s**. Holder intervals C [10:34:27.1, 10:35:49.5], A [10:35:49.5, 10:35:55.0] then [10:37:54.5, 10:38:11.6], B [10:44:01.8, 10:45:07.6] do not overlap. GitHub `merged_at` C 10:35:47, A 10:38:09, B 10:45:05, each inside its holder's interval | Overlapping intervals; a merge outside its interval; no wait (would be inconclusive). Sanity: bypassed lock overlaps 3/3 pairs |
 | C2 | **met** (both cases seen) | `branch_changed` against the oracle `git merge-base --is-ancestor <integration> <ticket before>`: C (`5dd0108` in `ce37bc3`) false, no rerun; A after resolution (`9ae9879` in `36d8f61`) false, no rerun; B (`b420020` not in `b91b485`) **true**, `recheck` ran and dispatched the integration tier on the new head `55a95d0` (key `c760c1dc…`, `workflow_dispatch` run success) | Disagreement with the oracle; a rerun on no change, or none on change. Push-triggered CI runs are not the evidence; the step and its dispatch key are |
@@ -79,7 +84,7 @@ ran. Each series has one rendered-input hash, so the input was unchanged across 
 The reviewer has no repository access. A and B ticket reviews get their ticket text; the
 epic review gets the epic description.
 
-**As pre-registered** (`results/spike-3/r4-summary.json`). Series inputs:
+**First series, as pre-registered** (`results/spike-3/r4-summary.json`). Series inputs:
 
 - **I-epic:** the in-run aggregate.
 - **I-A:** A's last in-run review diff (the pass that cleared it for merge).
@@ -97,7 +102,7 @@ epic review gets the epic description.
 | I-B | 0/20 | 0.00–0.16 | ≤ 2/20 | ok |
 
 Fisher one-sided, epic against each ticket series: p = 7.3 × 10⁻¹². **Controls failed, so
-E2 is inconclusive.**
+this series was inconclusive** (history; E2 is judged in 3.1).
 
 **Why Neg failed.** Every Neg detection reads "the WidgetStore.cs hunk is truncated, so
 FindByName and Normalise cannot be verified". `ReviewerModel` (Spike 2) inserts
@@ -156,8 +161,40 @@ post-hoc full-diff result above stay as history.
   disagreement between rubric and audit reported. The rubric count decides.
 - **Output.** `results/spike-3/r4-replication/`.
 
-**Two-of-three voting** (L3, reported as asked). Pre-registered: it would keep a real
-finding with probability 1.00 and a Neg false finding with 0.84. Post hoc: 0.99 and 0.00.
+**Result** (`results/spike-3/r4-replication/r4-summary.json`):
+
+| Series | Detected | 95% Wilson | Threshold | |
+|---|---|---|---|---|
+| Pos | 5/5 | 0.57–1.00 | ≥ 4/5 | ok |
+| Neg | 0/20 | 0.00–0.16 | f ≤ 2/20 | ok |
+| I-epic | 20/20 | 0.84–1.00 | ≥ 10/20 | ok |
+| I-A | 0/20 | 0.00–0.16 | ≤ 2/20 | ok |
+| I-B | 0/20 | 0.00–0.16 | ≤ 2/20 | ok |
+
+Fisher one-sided, epic against each ticket series: p = 7.3 × 10⁻¹². **E2 is met.**
+
+- **Inputs.** Every pass recorded `diffChars` equal to its file (9641, 9614, 9560, 3279,
+  3436), limit 32000, `truncated=false`. Each series' rendered-input hash is identical to
+  the post-hoc run's, so the inputs are the planned ones. No infrastructure retries.
+- **Manual audit.** It agrees with the rubric in every pass:
+  - I-epic and Pos: all 25 detections describe the seed. They name the raw-input ordinal
+    `FindByName`, the by-name route, or the test that locks in case sensitivity.
+  - Neg: 23 findings. One (pass 19) concerns interior whitespace ("Big  Alpha"), a real
+    but different gap; neither the rubric nor the audit counts it.
+  - I-A: 14 findings, all about null handling in `Normalise`.
+  - I-B: no findings at all.
+- **Cost.** USD 0.08 for 85 passes.
+
+**What the in-run epic review saw.** The main run was not re-run. Its epic review got the
+truncated aggregate: the first 6000 of 9561 characters, cut inside `WidgetStore.cs`. It
+still raised the seed as a blocking finding, but **from the plan document
+`docs/plans/EPIC3-B.md`, not from the code**: B's planner had written "ordinal,
+case-sensitive" there. The code-level detection rate above comes from the replication, not
+from the in-run pass.
+
+**Two-of-three voting** (L3, reported as asked). Replication: it would keep a real
+finding with probability 1.00 and a Neg false finding with 0.00. The first pre-registered
+series gives 1.00 and 0.84; the post-hoc series 0.99 and 0.00.
 The ledger positions are not reopened (docs/17 6.5).
 
 ## 4. What Spike 3 taught that changes the design
@@ -174,8 +211,9 @@ The ledger positions are not reopened (docs/17 6.5).
    (judgement call 4).*
 3. **The reviewer's input budget is silent.** An epic's aggregate diff is the largest input
    a review gets, and the 6000-character cut hid most of it. The in-run epic review was
-   right for a reason that would not survive a planner that wrote no plan doc. This is what
-   made E2 inconclusive.
+   right for a reason that would not survive a planner that wrote no plan doc. This made the
+   first E2 series inconclusive. D4 is now fixed in the engine: limit 32000, and a larger
+   diff fails the step visibly with `diff_too_large`.
 4. **Resume after a worker restart does not work** for `claude-code`. Resume depends on
    process memory (the capability probe), and the sync discards uncommitted edits. The free
    attempt (docs/01 3.7) still held.
@@ -220,7 +258,7 @@ base and prior findings. Readiness was "ready" on a non-blocking seed, a trivial
 | D1 | The interpreter starts a ready step as soon as a slot frees; interpreter changes are versioned for replay | 4.1 |
 | D2 | A provider maps every documented success response, including empty ones, to an outcome; an unmapped success is Work, not Infrastructure, so it cannot retry forever | 4.2 |
 | D3 | A lock holder that is open but stalled (D24) must lose the lock by lease or by the stalled state, not only when it closes. Amend `docs/06` 6.5 to the J1 span | 4.6, I2 |
-| D4 | The reviewer sees the whole diff, or the engine chunks it, or the step fails visibly; the coverage of what it saw is recorded. Never a silent cut | 4.3 |
+| D4 | The reviewer sees the whole diff, or the engine chunks it, or the step fails visibly; the coverage of what it saw is recorded. Never a silent cut. **Minimal form built** (refuse above 32000 characters, recording `diffChars`, limit and `truncated`); whether to chunk is open | 4.3 |
 | D5 | Session resume must not depend on worker-process memory; a resumed agent step must keep the sandbox's uncommitted work | 4.4 |
 | D6 | Attempt ceilings are enforced on every execution, including loop re-entry | 4.5 |
 | D7 | The epic review's prior findings include the children's ledgers (L4; not built here) | judgement call 11 |
@@ -246,16 +284,19 @@ The first twelve were accepted at the review gate.
 | 13 | **Attempt ceilings enforced on re-entry** (orchestrator's condition): attempts_exhausted -> `gate_escalate`, and the harness rejects every escalation, so the ticket ends failed. Not triggered in the run | Uncapped loops |
 | 14 | Neg also corrects B's doc comment and plan doc, so Neg has no contract violation anywhere | Code and test only, leaving a document that contradicts the epic |
 | 15 | I-A uses A's last in-run review diff (after resolution) | Its first |
-| 16 | The post-hoc full-diff series was run and reported beside the result, not in its place | Report only the inconclusive result, or replace it |
+| 16 | The post-hoc full-diff series was run and reported beside the result, not in its place. Superseded by the orchestrator's decision to judge E2 on a pre-registered replication (3.1) | Report only the inconclusive result, or replace it |
 | 17 | The lock request is signal-with-start **from an activity**; a workflow cannot signal-with-start | Pre-start the lock workflow |
 
 ## 8. Open questions
 
-1. **Does the post-hoc full-diff R4 series count for E2?** As pre-registered, E2 is
-   inconclusive. A fresh, pre-registered series with D4 in place would settle it at a cost
-   of about USD 0.10.
-2. D4: chunk, raise the budget, or fail visibly when a diff exceeds the reviewer's input?
-3. D3: a lease, or release on the stalled state?
-4. D5: should resume restore the sandbox's uncommitted working tree, or require WIP commits
+1. D4 beyond the minimal form: chunk large diffs, raise the budget, or keep failing visibly?
+2. D3: a lease, or release on the stalled state?
+3. D5: should resume restore the sandbox's uncommitted working tree, or require WIP commits
    (`resume_strategy: wip_commits_and_session`)?
-5. Should ticket reviews routinely get the epic contract (docs/17 6.6, item 3)?
+4. Should ticket reviews routinely get the epic contract (docs/17 6.6, item 3)?
+
+### Answered
+
+| Question | Answer |
+|---|---|
+| Does the post-hoc full-diff R4 series count for E2? | **No.** It stays reported as post hoc. E2 is judged on a fresh, pre-registered replication with D4 fixed in the engine (section 3.1), which met every threshold. Orchestrator decision under the product owner's standing instruction, 2026-10-31; open to review |

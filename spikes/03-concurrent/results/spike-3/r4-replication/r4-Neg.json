@@ -1,0 +1,453 @@
+{
+  "series": "Neg",
+  "spec": "epic",
+  "specification": "Epic: Widget names are case- and whitespace-insensitive: the store keeps each name normalised (trimmed, lower-case), and a client can always look a widget up by the name it created it with, in any case or spacing. Widgets record their creation time.",
+  "diff": "Neg.diff",
+  "diffHash": "bf25c5e0c82b84c3",
+  "passes": 20,
+  "diffLimit": 32000,
+  "results": [
+    {
+      "pass": 1,
+      "ok": true,
+      "InputHash": "8dee5f4f69866004feb6fd54808ec5816b9d024565e13738dd38ceefc765915c",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00144934,
+      "Outcome": "findings_open",
+      "diffChars": 9614,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "unverified-call-sites",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "The record gained a required third parameter, but the plan says other two-argument \u0060new Widget(...)\u0060 call sites, such as in WidgetRepositoryTests.cs, were never checked and are not updated in this diff, so the build may break.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 2,
+      "ok": true,
+      "InputHash": "8dee5f4f69866004feb6fd54808ec5816b9d024565e13738dd38ceefc765915c",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0009911400000000002,
+      "Outcome": "completed",
+      "diffChars": 9614,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": []
+    },
+    {
+      "pass": 3,
+      "ok": true,
+      "InputHash": "8dee5f4f69866004feb6fd54808ec5816b9d024565e13738dd38ceefc765915c",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0013138400000000001,
+      "Outcome": "findings_open",
+      "diffChars": 9614,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "compile-call-sites",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "The Widget record\u0027s arity changed from two to three parameters, and the plan notes that other two-argument \u0060new Widget(...)\u0060 call sites (such as IntegrationTests/WidgetRepositoryTests.cs) were never checked, so they will fail to compile.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 4,
+      "ok": true,
+      "InputHash": "8dee5f4f69866004feb6fd54808ec5816b9d024565e13738dd38ceefc765915c",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0014653399999999999,
+      "Outcome": "findings_open",
+      "diffChars": 9614,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "unverified-call-sites",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "The Widget record gained a required third parameter, but the plan says other two-argument \u0060new Widget(...)\u0060 call sites (e.g. tests/FeatureFlow.Example.Api.IntegrationTests/WidgetRepositoryTests.cs) were never checked and may no longer compile.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 5,
+      "ok": true,
+      "InputHash": "8dee5f4f69866004feb6fd54808ec5816b9d024565e13738dd38ceefc765915c",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00101819,
+      "Outcome": "findings_open",
+      "diffChars": 9614,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "unverified-call-sites",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "The Widget record gained a required third parameter, and docs/plans/EPIC3-C.md states that other two-argument \u0060new Widget(...)\u0060 call sites (e.g. WidgetRepositoryTests.cs) were not checked, so they may fail to compile; verify and update them before merge.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 6,
+      "ok": true,
+      "InputHash": "8dee5f4f69866004feb6fd54808ec5816b9d024565e13738dd38ceefc765915c",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00169188,
+      "Outcome": "findings_open",
+      "diffChars": 9614,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "ticket-coverage",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "MapGet /widgets/by-name/{name}",
+          "Snippet": "app.MapGet(\u0022/widgets/by-name/{name}\u0022, (string name, WidgetStore store) =\u003E",
+          "Message": "A widget name containing \u0027/\u0027 can be created via POST but cannot be matched by this single-segment route, so the lookup returns 404 instead of the widget the client created, which breaks the \u0027look up by the name it created it with\u0027 requirement.",
+          "Blocking": false
+        },
+        {
+          "Rule": "build-risk",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "The plan says other two-argument \u0060new Widget(...)\u0060 call sites, such as in IntegrationTests/WidgetRepositoryTests.cs, were not checked and will not compile, yet the diff does not update them or show that they were verified.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 7,
+      "ok": true,
+      "InputHash": "8dee5f4f69866004feb6fd54808ec5816b9d024565e13738dd38ceefc765915c",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00110919,
+      "Outcome": "findings_open",
+      "diffChars": 9614,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "unverified-compile-impact",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "The Widget record gains a required third parameter, and the plan itself says other two-argument \u0060new Widget(\u0060 call sites (including IntegrationTests/WidgetRepositoryTests.cs) were not checked and may no longer compile; this needs confirming before merge.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 8,
+      "ok": true,
+      "InputHash": "8dee5f4f69866004feb6fd54808ec5816b9d024565e13738dd38ceefc765915c",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00097718,
+      "Outcome": "completed",
+      "diffChars": 9614,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": []
+    },
+    {
+      "pass": 9,
+      "ok": true,
+      "InputHash": "8dee5f4f69866004feb6fd54808ec5816b9d024565e13738dd38ceefc765915c",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0014598800000000002,
+      "Outcome": "findings_open",
+      "diffChars": 9614,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "compile-risk-unverified-call-site",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "The Widget record gained a required third parameter, and the plan says tests/FeatureFlow.Example.Api.IntegrationTests/WidgetRepositoryTests.cs was never read, so any two-argument new Widget(...) there will fail to compile.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 10,
+      "ok": true,
+      "InputHash": "8dee5f4f69866004feb6fd54808ec5816b9d024565e13738dd38ceefc765915c",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00110469,
+      "Outcome": "findings_open",
+      "diffChars": 9614,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "ticket-coverage",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "MapGet /widgets/by-name/{name}",
+          "Snippet": "app.MapGet(\u0022/widgets/by-name/{name}\u0022, (string name, WidgetStore store) =\u003E",
+          "Message": "The route template {name} does not match names containing \u0027/\u0027, so a widget created with such a name cannot be looked up by it, which the ticket requires to always work.",
+          "Blocking": false
+        },
+        {
+          "Rule": "verification-gap",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "Changing the Widget record arity breaks any remaining two-argument \u0060new Widget(...)\u0060 call sites, and the plan admits the integration test file was never read, so the build may fail.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 11,
+      "ok": true,
+      "InputHash": "8dee5f4f69866004feb6fd54808ec5816b9d024565e13738dd38ceefc765915c",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00110418,
+      "Outcome": "findings_open",
+      "diffChars": 9614,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "unverified-call-sites",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "The Widget record gained a required third parameter, and the plan notes that other two-argument \u0060new Widget(\u0060 call sites (including IntegrationTests/WidgetRepositoryTests.cs) were never checked, so the solution may fail to compile.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 12,
+      "ok": true,
+      "InputHash": "8dee5f4f69866004feb6fd54808ec5816b9d024565e13738dd38ceefc765915c",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00155418,
+      "Outcome": "findings_open",
+      "diffChars": 9614,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "route-coverage",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "MapGet /widgets/by-name/{name}",
+          "Snippet": "app.MapGet(\u0022/widgets/by-name/{name}\u0022, (string name, WidgetStore store) =\u003E",
+          "Message": "The single-segment route cannot match names containing \u0027/\u0027, so a widget created with such a name via POST cannot be looked up by name, which the ticket says must always work.",
+          "Blocking": false
+        },
+        {
+          "Rule": "compile-risk",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "Adding a required third positional parameter breaks any remaining two-argument \u0060new Widget(...)\u0060 call sites, such as in WidgetRepositoryTests.cs, which the plan says were not checked.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 13,
+      "ok": true,
+      "InputHash": "8dee5f4f69866004feb6fd54808ec5816b9d024565e13738dd38ceefc765915c",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00140458,
+      "Outcome": "findings_open",
+      "diffChars": 9614,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "unverified-call-sites",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "The Widget record gained a required third parameter, but the plan says other two-argument \u0060new Widget(\u0060 call sites (including IntegrationTests/WidgetRepositoryTests.cs) were never checked, so the solution may fail to compile.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 14,
+      "ok": true,
+      "InputHash": "8dee5f4f69866004feb6fd54808ec5816b9d024565e13738dd38ceefc765915c",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00133398,
+      "Outcome": "findings_open",
+      "diffChars": 9614,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "compile-safety",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "Adding a required third parameter to Widget breaks any two-argument \u0060new Widget(...)\u0060 call site outside the files this diff updates, and the plan admits the integration test WidgetRepositoryTests.cs was never checked, so the build may fail.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 15,
+      "ok": true,
+      "InputHash": "8dee5f4f69866004feb6fd54808ec5816b9d024565e13738dd38ceefc765915c",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00134778,
+      "Outcome": "findings_open",
+      "diffChars": 9614,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "unverified-call-sites",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "The Widget record gained a required third parameter, and the plan notes that other two-argument \u0060new Widget(...)\u0060 call sites, such as in IntegrationTests/WidgetRepositoryTests.cs, were never checked, so they may fail to compile.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 16,
+      "ok": true,
+      "InputHash": "8dee5f4f69866004feb6fd54808ec5816b9d024565e13738dd38ceefc765915c",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00093519,
+      "Outcome": "findings_open",
+      "diffChars": 9614,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "compile-risk/unverified-call-sites",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "The Widget record gained a required third parameter, but the diff does not update any other two-argument \u0060new Widget(...)\u0060 call sites, and the plan itself says the grep was denied and IntegrationTests/WidgetRepositoryTests.cs was not read, so the build may break.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 17,
+      "ok": true,
+      "InputHash": "8dee5f4f69866004feb6fd54808ec5816b9d024565e13738dd38ceefc765915c",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00130228,
+      "Outcome": "findings_open",
+      "diffChars": 9614,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "ticket-requirement",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "app.MapGet(\u0022/widgets/by-name/{name}\u0022)",
+          "Snippet": "app.MapGet(\u0022/widgets/by-name/{name}\u0022, (string name, WidgetStore store) =\u003E",
+          "Message": "The ticket requires a client to always look a widget up by the name it was created with, but the default route parameter does not match names containing \u0027/\u0027 (or other reserved characters unless URL-encoded), so such widgets created via POST cannot be found through this endpoint.",
+          "Blocking": true
+        }
+      ]
+    },
+    {
+      "pass": 18,
+      "ok": true,
+      "InputHash": "8dee5f4f69866004feb6fd54808ec5816b9d024565e13738dd38ceefc765915c",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00129338,
+      "Outcome": "findings_open",
+      "diffChars": 9614,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "breaking-change-call-sites",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "The Widget record gains a required third parameter, and the plan admits the grep for other \u0060new Widget(\u0060 call sites was denied and WidgetRepositoryTests.cs was never read, so any two-argument construction elsewhere will not compile and the diff does not show that it was checked.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 19,
+      "ok": true,
+      "InputHash": "8dee5f4f69866004feb6fd54808ec5816b9d024565e13738dd38ceefc765915c",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00208978,
+      "Outcome": "findings_open",
+      "diffChars": 9614,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "name-lookup-always-succeeds",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "MapGet /widgets/by-name/{name}",
+          "Snippet": "app.MapGet(\u0022/widgets/by-name/{name}\u0022, (string name, WidgetStore store) =\u003E",
+          "Message": "The route template \u0060{name}\u0060 does not match path segments containing \u0027/\u0027, and POST accepts any non-whitespace name, so a widget named like \u0027a/b\u0027 can be created but never looked up by name, which breaks the ticket\u0027s \u0027always look up by the name it created it with\u0027 guarantee.",
+          "Blocking": true
+        },
+        {
+          "Rule": "compile-break-risk",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "public record Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "Adding a required third positional parameter breaks any remaining two-argument \u0060new Widget(...)\u0060 call sites, and the plan admits the grep for them was denied and WidgetRepositoryTests.cs was not read, so the build is unverified.",
+          "Blocking": false
+        },
+        {
+          "Rule": "normalisation-scope",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "Normalise",
+          "Snippet": "name.Trim().ToLower(CultureInfo.InvariantCulture);",
+          "Message": "Normalisation only trims the ends, so a widget created as \u0027Big  Alpha\u0027 cannot be found by \u0027big alpha\u0027, which may fall short of the ticket\u0027s \u0027any case or spacing\u0027 wording if internal spacing is meant to be covered.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 20,
+      "ok": true,
+      "InputHash": "8dee5f4f69866004feb6fd54808ec5816b9d024565e13738dd38ceefc765915c",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00126128,
+      "Outcome": "findings_open",
+      "diffChars": 9614,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "compile-call-site-coverage",
+          "Path": "src/FeatureFlow.Example.Api/Program.cs",
+          "Symbol": "Widget",
+          "Snippet": "public record Widget(int Id, string Name, DateTimeOffset CreatedAt);",
+          "Message": "The Widget record gained a required third parameter, and the plan itself says the call-site grep was denied and IntegrationTests/WidgetRepositoryTests.cs was not read, so any remaining two-argument \u0060new Widget(\u0060 call will fail to compile and the diff does not show that it was checked.",
+          "Blocking": false
+        }
+      ]
+    }
+  ]
+}

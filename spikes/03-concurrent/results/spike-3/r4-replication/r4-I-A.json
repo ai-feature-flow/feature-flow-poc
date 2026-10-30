@@ -1,0 +1,377 @@
+{
+  "series": "I-A",
+  "spec": "A",
+  "specification": "EPIC3-A: Names are stored normalised. In WidgetStore.Add, normalise the name with a new private static Normalise(string) that trims and lower-cases it (invariant culture), used inside the new Widget(...) expression. Add unit tests in WidgetNameNormalisationTests.cs: Add(\u0022  Alpha \u0022) returns a widget named alpha.",
+  "diff": "I-A.diff",
+  "diffHash": "997fff55e5a0cf1f",
+  "passes": 20,
+  "diffLimit": 32000,
+  "results": [
+    {
+      "pass": 1,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0005974800000000001,
+      "Outcome": "completed",
+      "diffChars": 3279,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": []
+    },
+    {
+      "pass": 2,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0007716800000000001,
+      "Outcome": "findings_open",
+      "diffChars": 3279,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "null-safety",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Normalise",
+          "Snippet": "name.Trim().ToLower(CultureInfo.InvariantCulture);",
+          "Message": "Normalise has no null guard, so Add(null) now throws NullReferenceException where it previously stored a null name; confirm whether request.Name in Program.cs can be null and whether that path needs handling.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 3,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00072568,
+      "Outcome": "findings_open",
+      "diffChars": 3279,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "null-input-handling",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Normalise",
+          "Snippet": "name.Trim().ToLower(CultureInfo.InvariantCulture);",
+          "Message": "Normalise dereferences name without a null check, so a null name that was previously stored now throws NullReferenceException in Add; the diff does not show whether Program.cs validates request.Name before calling Add.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 4,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0007795800000000001,
+      "Outcome": "findings_open",
+      "diffChars": 3279,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "null-safety",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Normalise",
+          "Snippet": "name.Trim().ToLower(CultureInfo.InvariantCulture);",
+          "Message": "Normalise dereferences name without a null check, so a null name that was previously accepted by Add now throws NullReferenceException; the diff does not show whether Program.cs validates request.Name.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 5,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00068442,
+      "Outcome": "findings_open",
+      "diffChars": 3279,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "null-handling",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Normalise",
+          "Snippet": "name.Trim().ToLower(CultureInfo.InvariantCulture);",
+          "Message": "Normalise has no null guard, so a null name that previously was stored now throws NullReferenceException; the diff does not show whether Program.cs\u0027s request.Name can be null.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 6,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0005976200000000001,
+      "Outcome": "findings_open",
+      "diffChars": 3279,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "null-handling",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Normalise",
+          "Snippet": "name.Trim().ToLower(CultureInfo.InvariantCulture);",
+          "Message": "Normalise dereferences name without a null check, so a null name that Add previously stored now throws NullReferenceException; the diff does not show whether Program.cs can pass null, so confirm the request path cannot send one.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 7,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0008575200000000001,
+      "Outcome": "findings_open",
+      "diffChars": 3279,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "null-input-handling",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Normalise",
+          "Snippet": "name.Trim().ToLower(CultureInfo.InvariantCulture);",
+          "Message": "Normalise dereferences name without a null check, so a null name from Program.cs (which passes request.Name unvalidated) now throws NullReferenceException inside the lock, where it previously stored a widget. Because _nextId\u002B\u002B is evaluated before Normalise, the id is also consumed without a widget being added.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 8,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00036512000000000003,
+      "Outcome": "completed",
+      "diffChars": 3279,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": []
+    },
+    {
+      "pass": 9,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00053181,
+      "Outcome": "findings_open",
+      "diffChars": 3279,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "null-input-handling",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Normalise",
+          "Snippet": "name.Trim().ToLower(CultureInfo.InvariantCulture);",
+          "Message": "Normalise dereferences name without a null check, so Add(null), which Program.cs can reach via request.Name, now throws NullReferenceException inside the lock after _nextId\u002B\u002B has already consumed an id; the diff does not show whether null was rejected before this change.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 10,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00047782,
+      "Outcome": "completed",
+      "diffChars": 3279,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": []
+    },
+    {
+      "pass": 11,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00036232,
+      "Outcome": "completed",
+      "diffChars": 3279,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": []
+    },
+    {
+      "pass": 12,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00079562,
+      "Outcome": "findings_open",
+      "diffChars": 3279,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "null-input-handling",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Normalise",
+          "Snippet": "name.Trim().ToLower(CultureInfo.InvariantCulture);",
+          "Message": "Normalise has no null guard, so a null name now throws NullReferenceException inside the lock where it previously was stored, and _nextId\u002B\u002B is evaluated before the throw, consuming an ID without adding a widget.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 13,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00081142,
+      "Outcome": "findings_open",
+      "diffChars": 3279,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "null-input-regression",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Normalise",
+          "Snippet": "name.Trim().ToLower(CultureInfo.InvariantCulture);",
+          "Message": "Normalise dereferences name without a null check, so a null name that Add previously stored would now throw NullReferenceException; confirm that Program.cs cannot pass null from request.Name.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 14,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00028812,
+      "Outcome": "completed",
+      "diffChars": 3279,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": []
+    },
+    {
+      "pass": 15,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00076662,
+      "Outcome": "findings_open",
+      "diffChars": 3279,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "null-handling",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Normalise",
+          "Snippet": "name.Trim().ToLower(CultureInfo.InvariantCulture);",
+          "Message": "Normalise has no null guard, so a null name (passed unchanged from Program.cs) now throws NullReferenceException where it was previously stored; confirm the request model guarantees a non-null name.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 16,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00044352000000000004,
+      "Outcome": "completed",
+      "diffChars": 3279,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": []
+    },
+    {
+      "pass": 17,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00071542,
+      "Outcome": "findings_open",
+      "diffChars": 3279,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "null-input-behaviour",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Normalise",
+          "Snippet": "name.Trim().ToLower(CultureInfo.InvariantCulture);",
+          "Message": "Normalise calls Trim on the argument without a null check, so a null name that Add previously stored now throws NullReferenceException; this is not covered by the ticket or tests.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 18,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.0007623199999999999,
+      "Outcome": "findings_open",
+      "diffChars": 3279,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "null-input-regression",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Normalise",
+          "Snippet": "name.Trim().ToLower(CultureInfo.InvariantCulture);",
+          "Message": "Normalise has no null guard, so a null name that Add previously stored now throws NullReferenceException; confirm the caller validates the name or add an explicit ArgumentNullException.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 19,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00081832,
+      "Outcome": "findings_open",
+      "diffChars": 3279,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "null-input-guard",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Normalise",
+          "Snippet": "name.Trim().ToLower(CultureInfo.InvariantCulture);",
+          "Message": "Normalise dereferences name without a null check, so a null name that previously was stored would now throw NullReferenceException inside the lock; the diff does not show whether Program.cs validates request.Name.",
+          "Blocking": false
+        }
+      ]
+    },
+    {
+      "pass": 20,
+      "ok": true,
+      "InputHash": "8b9990e594ee4c52d30d3d3ad7b70fd50e68181d61246eea4d11105f7dba23cb",
+      "Model": "claude-haiku-5-5",
+      "CostUsd": 0.00082452,
+      "Outcome": "findings_open",
+      "diffChars": 3279,
+      "diffLimit": 32000,
+      "truncated": false,
+      "findings": [
+        {
+          "Rule": "null-input-behaviour",
+          "Path": "src/FeatureFlow.Example.Api/WidgetStore.cs",
+          "Symbol": "WidgetStore.Normalise",
+          "Snippet": "name.Trim().ToLower(CultureInfo.InvariantCulture);",
+          "Message": "Normalise dereferences name without a null check, so a null name (possible from Program.cs passing request.Name) now throws inside the lock after _nextId\u002B\u002B has already been consumed; the diff neither guards this nor documents the change.",
+          "Blocking": false
+        }
+      ]
+    }
+  ]
+}
