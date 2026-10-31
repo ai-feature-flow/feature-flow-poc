@@ -23,6 +23,8 @@ uses it.
 | Configuration schema | `docs/07-configuration.md` |
 | Risks and spikes | `docs/08-risks-and-spikes.md` |
 | Workflow language | `docs/09-workflow-language.md` |
+| Code review design | `docs/19-code-review-design.md` |
+| Merge design: branch levels, merging, commits and pushes | `docs/20-merge-design.md` |
 
 ---
 
@@ -34,7 +36,7 @@ uses it.
 |---|---|---|---|
 | API service | Long-lived service | Start, steer, decide on, abort and query runs. Authentication and authorisation. Writes the audit record. Owns the Temporal client for control operations. Serves the **hook endpoint** that agent runtimes in sandboxes call (section 1.4) | No (uses the record store) |
 | Orchestration worker | Long-lived service, N replicas | Hosts the interpreter workflow and *light* activities: tracker metadata, PR state reads, artifact metadata, notifications, validation | No |
-| Agent worker | Long-lived service, N replicas, possibly one pool per capability | Hosts agent step activities. Creates and disposes sandboxes through the sandbox provider, starts the agent runtime in the sandbox, supervises it and streams heartbeats. Fetches the agent's commits from the sandbox and pushes them with the engine's credential (agents hold no push credential, section 4.6) | No. The agent's working state is in the sandbox, which is separate from the worker and outlives a worker restart (section 3.6) |
+| Agent worker | Long-lived service, N replicas, possibly one pool per capability | Hosts agent step activities. Creates and disposes sandboxes through the sandbox provider, starts the agent runtime in the sandbox, supervises it and streams heartbeats. At each check-in on a running step it asks the VCS provider whether the sandbox's working copy has new commits, fetches them and pushes them with the engine's credential (agents hold no push credential; section 3.6) | No. The agent's working state is in the sandbox, which is separate from the worker and outlives a worker restart (section 3.6) |
 | Sandbox | Created per agent step by the sandbox provider | Runs the agent runtime and its tools against a checkout of the branch | Yes, for the life of the step |
 | Artifact store | External | Content-addressed, immutable blobs: plans, specs, diffs, transcripts, logs, reports | Yes |
 | Record store | External | Queryable records: findings ledger, decisions, steering log, run index, run timeline | Yes |
@@ -98,7 +100,7 @@ graph TB
     OW --> EXT
     WF -->|activity tasks| AW
     AW -->|creates, reconnects| SB
-    AW -->|pushes branch| EXT
+    AW -->|pushes commits, via VCS provider| EXT
     AW --> AS
     SB -->|hooks: policy, events, cost, heartbeat| API
 ```
@@ -122,12 +124,15 @@ before and after each tool call, stop) call the engine's hook endpoint for:
 - **Token and cost accounting** per step (section 5.5).
 - **Heartbeats**, so a stalled agent is detected without polling the sandbox.
 
+Nothing essential depends on hooks. For example, new commits are detected
+through the VCS provider; a hook may only trigger an earlier push (section 3.6).
+
 Supporting rules:
 
 | Rule | Detail |
 |---|---|
 | No push credential | Agents never hold a credential that can push (DR13). Their code host credential is read-only, per step, scoped to the run's repository plus any repositories the workflow declares the agent may read. The agent commits in the sandbox; pushing is part of the agent step (section 3.6) |
-| Resumability | The sandbox outlives a worker restart; the runtime's own session is reloaded on resume; if the sandbox is lost, the step restarts from the last pushed commit (section 3.6) |
+| Resumability | The sandbox outlives a worker restart, and the runtime's own session is reloaded on resume. If the sandbox is lost, the step restarts from the last pushed commit in a fresh agent session (section 3.6) |
 | Model credentials | Never enter the agent's environment (DR1). Version 1 uses a proxy that adds the key, or per-run keys with a spend limit and expiry (section 4.6) |
 | Hooks are a declared capability | The agent runtime provider declares `Hooks`. A runtime without working hooks gets coarser control (sandbox-enforced write access, a post-step diff check, cost from the runtime's own usage output; `docs/08` section 2.5, the no-hooks fallback), and the engine records that in the run |
 
@@ -156,18 +161,27 @@ call executed remotely in the sandbox. Rejected, not deferred, because:
 
 ### 1.5 Principle: engine mechanism vs workflow policy
 
-When a design question arises, first decide which side it belongs to.
+**The engine provides mechanisms and guardrails; the workflow decides.** The
+engine makes things possible and safe; it does not dictate how a workflow is
+shaped. When a design question arises, first decide which side it belongs to.
 
 | Side | Provides |
 |---|---|
-| **Engine** | Mechanisms: steps, routing, gates, providers, policy evaluation and safety floors |
-| **Workflow content** (the library, `docs/11`) | What agents do and how delivery is approached: planning rules, feature flagging, deploy ordering, contract compatibility, review checklists |
+| **Engine** | Mechanisms and guardrails: steps, routing, gates, providers, policy evaluation and safety floors |
+| **Workflow content** (the library, `docs/11`) | What agents do and how delivery is approached: planning rules, how many branch levels there are and what they are called, where delivery to `main` happens, feature flagging, deploy ordering, contract compatibility, review checklists |
+
+A template's step parameters are the workflow's default policy, overridable
+down the levels (workflow, child workflow, step). The one thing a template may
+not set is **who may approve a decision** (roles, minimum approvers, approval
+from chat, auto-approval): that is organisation governance, tied to identities
+(rule L12, `docs/09` section 14, policy references).
 
 **Safety floors are the exception.** The engine enforces them because no
 workflow may relax them (decision DP6: the most specific configuration layer
 wins, except a short list of floors; section 5.1). Floor F1, the default-branch
 merge setting, is the one floor that can be relaxed, and only by configuration
-no agent can edit (section 5.1).
+no agent can edit (section 5.1). Within it, a template's `engine_can_merge` for
+`main` is workflow policy; the organisation can cap it ("never the engine").
 
 Example: shipping dark behind feature flags is not an engine concern. Whether
 it is required depends on the adopter; some require every significant change to
@@ -180,7 +194,7 @@ feature-flag provider. Not in version 1.
 
 | Entity | Where it lives | Notes |
 |---|---|---|
-| Run | Temporal workflow state (compact) + record store (index) | One workflow execution. Has a scope: ticket, epic, project or delivery. A project run starts epic runs, as an epic run starts ticket runs (`run.child`) |
+| Run | Temporal workflow state (compact) + record store (index) | One workflow execution. Has a scope: a workflow-defined level (typically ticket, epic or project) or delivery. A run at one level starts the runs of the level below with `run.child`, as an epic run starts ticket runs |
 | Plan | Workflow state (current revision) + artifact store (every revision) | Data. Append-only revision history |
 | Step run | Workflow state (compact) + record store | One execution of one step: status, attempts, outcome, artifact references |
 | Artifact | Artifact store | Content-addressed by hash. Referenced by URI, never inlined |
@@ -234,28 +248,32 @@ other multi-tenant features.
 
 ### 3.1 The loop
 
-One workflow type for every run. A ticket run, an epic run, a project run and a
-delivery run differ only in their plan, not in code.
+One workflow type for every run. A ticket run, an epic run, a run at any other
+workflow-defined level, and a delivery run differ only in their plan, not in
+code.
 
 ```
-state = { planRevision, cursors[], stepRuns[], findingsSummary[], attemptBudgets, inFlight[], pendingDecision? }
+state = { planRevision, cursors[], stepRuns[], findingsSummary[], attemptBudgets, inFlight[], pendingDecisions[] }
 
 loop:
   ready = plan.ready(cursors, state)          # pure: steps whose joins are satisfied and that fit a free concurrency slot
-  if ready is empty and inFlight is empty:
+  if ready is empty and inFlight is empty and pendingDecisions is empty:
       endRun(state)                           # see "How a run ends" below
 
   for each step in ready:
-    if step.gate and not policy.autoApprove(step, state):   # pure
-        decision = await decision(step)       # durable wait, no timeout
-        state    = applyDecision(state, decision)           # pure
-    inFlight.add(start(step))                 # activity or child workflow; attempt ceiling checked first (section 3.7)
+    if step.gate and not approved(step, state):   # pure: auto-approved by policy, or a recorded decision
+        pendingDecisions.add(step)            # durable wait, no timeout; other steps keep running
+    else:
+        inFlight.add(start(step))             # activity or child workflow; attempt ceiling checked first (section 3.7)
 
-  result  = await first(inFlight)             # the first step to finish, not the whole batch
-  state   = applyResult(state, result)        # pure
-  cursors = plan.route(result, state)         # pure: advance, open or satisfy joins
+  event = await first(inFlight, pendingDecisions)   # the first step to finish or decision to arrive
+  if event is a decision:
+      state = applyDecision(state, event)     # pure; an approved step is ready on the next pass
+  else:
+      state   = applyResult(state, event)     # pure
+      cursors = plan.route(event, state)      # pure: advance, open or satisfy joins
 
-  if historyBudgetExceeded(state) and inFlight is empty and no pendingDecision:
+  if historyBudgetExceeded(state) and inFlight is empty and pendingDecisions is empty:
       continueAsNew(state)                    # section 3.5
 ```
 
@@ -265,6 +283,7 @@ is the determinism boundary.
 | Rule | Detail |
 |---|---|
 | Start a step when a slot frees (DR7) | The loop waits for the **first** in-flight step to finish, then starts whatever is now ready. Spike 1's loop waited for a whole batch, so a third ticket could not start until both running tickets finished (`docs/18` section 4, what Spike 3 changed) |
+| A gate never blocks other steps | A step waiting for a human decision is a durable wait alongside the running steps, not a pause of the loop. Other ready steps start and finish while it waits |
 | Interpreter changes are versioned (DR7) | Any change to interpreter behaviour is wrapped in a Temporal patch marker (`Workflow.Patched`) so recorded histories still replay. Spike 3's dispatch change is one: with the patch removed, a Spike 1 history fails replay |
 | Loops re-run a step (DR12) | Routing to a step that already has an outcome runs it again. Re-running clears the step's current outcome, outputs and artifacts, so a route condition never mistakes a stale value for the latest. The previous execution's results stay readable as `steps.<id>.previous`, and `steps.<id>.executions` gives the execution count. This is how test, fix, retest loops work. Without it a looping route found nothing ready and the run ended early (`docs/16` section 12, the Claude Code proof) |
 | Every execution counts (DR10) | Each start, including re-entry by a loop, is checked against the step's attempt allowance and the run's ceiling (section 3.7) |
@@ -272,8 +291,9 @@ is the determinism boundary.
 
 **How a run ends.** A run ends when a step routes to a terminal directive
 `{ end: <status> }` (`docs/09` section 6.2, terminal directives), and the run
-takes that status. A run that stops because nothing is ready and nothing is in
-flight, without reaching an `end:` route, ends with status **`incomplete`**,
+takes that status. A run that stops because nothing is ready, nothing is in
+flight and no decision is pending, without reaching an `end:` route, ends with
+status **`incomplete`**,
 never `completed` (DR6). A parent's `run.child` step sees an `incomplete` child
 as `failed`. The Claude Code proof found a fix loop that dead-ended and
 reported `completed` with no PR.
@@ -327,7 +347,7 @@ steps:
     scope: epic
     inputs:
       branch: ff/epic/payments       # the epic's integration branch
-      base: main
+      base: main                     # the branch it was taken from and merges back into
       spec_refs: [artifact://epic/contract.md]
       machine_results: artifact://checks/epic.json
 ```
@@ -336,7 +356,7 @@ A step has:
 
 | Field | Meaning |
 |---|---|
-| `id`, `kind`, `scope` | Identity, step kind, and scope: ticket, epic, project or delivery |
+| `id`, `kind`, `scope` | Identity, step kind, and scope: a workflow-defined level (typically ticket, epic or project) or delivery |
 | `inputs` | Artifact references and parameters |
 | `requires` | Capabilities the step needs |
 | `limits` | Attempts, timeouts, heartbeat |
@@ -439,8 +459,8 @@ the new worker reconnects to the running sandbox by the step's idempotency key
 
 | What survived | What happens |
 |---|---|
-| The sandbox | Reconnect. Uncommitted files are kept. The agent's conversation is reloaded from the session reference stored in the artifact store |
-| Nothing: the sandbox is lost | A new sandbox; the step restarts from the last pushed commit (on the ticket branch, or on the step's hidden work-in-progress ref) |
+| The sandbox | Reconnect. Uncommitted files are kept. The runtime reloads the agent's conversation from the sandbox, using the session reference the engine recorded |
+| Nothing: the sandbox is lost | A new sandbox, checked out at the last pushed commit (the step's hidden work-in-progress reference, below). The step starts a **fresh agent session**: the agent sees the pushed commits and a note that the previous attempt was interrupted |
 
 Rules:
 
@@ -449,23 +469,27 @@ Rules:
   state. Spike 3 broke this rule: the Claude Code provider's resume needed an
   in-memory capability check that a fresh worker had not run, so the agent
   started a new session and redid its work (`docs/18` section 2, injection I1).
-- **Pushed commits are what survive a lost sandbox.** Pushing is part of the
-  agent step. The agent commits in the sandbox; the engine fetches the commits
-  from the sandbox's checkout and pushes them with its own credential, at
-  work-in-progress points and at the end of the step (DR13, section 4.6). This
-  is a push to the ticket's own branch, not a merge.
-  - Pushing follows the step's write access: a role with no write access pushes
-    nothing, and commits it made anyway fail the step (the after-step diff
-    check).
-  - A `push` step parameter, default true, lets a workflow switch pushing off
-    for scratch steps.
-  - A failed step's commits go to a hidden work-in-progress ref, not the ticket
-    branch, so a retry can pick them up.
+- **The engine does not save the conversation mid-step.** The full transcript
+  is stored as the step's artifact when the step ends, for audit.
 - **No snapshots of uncommitted work.** Revisit only if real runs show sandbox
   loss is common.
 - Sandbox survival across a worker restart is a sandbox provider capability,
   `PersistentAcrossSteps`. Without it, a worker loss is treated as a lost
   sandbox.
+
+**Commits and pushes** (DR13: agents never hold a credential that can push;
+`docs/20`, the merge design). Pushed commits are what survive a lost sandbox.
+
+| Rule | Detail |
+|---|---|
+| The agent commits locally | As often as its prompt or skill says ("commit after each meaningful change"). It never pushes |
+| The engine detects new commits | At each check-in on a running step (about every 30 seconds) the agent worker asks the **VCS provider** for the working copy's current revision. If it moved, the engine fetches the new commits and pushes them with its own credential. A runtime's hooks may trigger an immediate push, but nothing depends on them, so every agent runtime works the same way |
+| While the step runs, pushes go to a hidden reference | For example `refs/ff/wip/<ticket>`. It is not a branch, so it does not trigger CI and does not expose half-finished work to pull requests, reviewers or a sibling ticket's catch-up |
+| When the step succeeds, the ticket branch moves | The engine moves the ticket branch to the final commit, once. This is a push to the ticket's own branch, not a merge. A failed step's commits stay on the hidden reference for a retry to continue from |
+| Uncommitted changes at step end | By default the engine commits them with a clear message ("left uncommitted by the agent"), so nothing is lost silently. A workflow can make the step fail instead |
+| Write access | A role with no write access pushes nothing, and its step fails if it made commits anyway (the after-step diff check) |
+| `push` parameter | Default true. A workflow can switch pushing off for scratch steps |
+| Optional `checkpoint` tool | Offered through the engine's MCP server (the one planned for interactive sessions, section 7.4). Lets an agent commit and have the engine push without knowing the version control system. A convenience; the engine's own detection is the backstop |
 
 The step contract therefore requires:
 
@@ -491,9 +515,9 @@ Decided. The complete rule set:
 | One counting rule | Every entry into a step counts against that step's allowance, whatever routed there: retry, route back, redirect |
 | Enforced on every execution (DR10) | The allowance and the run ceiling are checked each time a step starts, including when a loop re-enters it. Spike 3 found the gap: without it, a loop with no agent ran its fix step 213 times in 15 s |
 | Infrastructure failures are free | Classified infrastructure failures retry with backoff and do not count (section 4.3) |
-| Resumes are free only with progress | **Progress = a new commit pushed to the branch, or the agent session has grown since the previous attempt.** The agent runtime provider reports session size or a turn count. After **3 consecutive resumes with no progress**, the next one counts as a restart. `start_to_close` remains the outer bound. Spike 1 confirmed infrastructure never consumed an attempt |
+| Resumes are free only with progress | **Progress = a new commit detected and pushed since the previous attempt, or the agent session has grown since then.** The agent runtime provider reports session size or a turn count. After **3 consecutive resumes with no progress**, the next one counts as a restart. `start_to_close` remains the outer bound. Spike 1 confirmed infrastructure never consumed an attempt |
 | Two limits | A per-step allowance and a per-run ceiling. Like every limit, the allowance is configured hierarchically: an engine default (by step kind), overridable by the workflow, a child workflow, and the step |
-| Merge retries | The merge step's allowance defaults to 3 and counts every attempt, including re-entry after catch-up or conflict resolution. It is what escalates a ticket whose merge keeps being refused because the target moved (section 6.3) |
+| Merge retries | The merge step's allowance defaults to 3 and counts every attempt, including re-entry after catch-up or conflict resolution. It is what escalates work whose merge keeps being refused because the target moved (section 6.3) |
 | Exhaustion | Outcome `attempts_exhausted`, routed by the plan to a re-plan or a human gate. Never a silent failure |
 | Steering grants | Extra attempts up to a hard ceiling, which is safety floor F4 (attempt ceilings, section 5.1); beyond it needs the admin role. Always audited |
 | Review and fix loops | Governed by the findings ledger (section 7.2), not a raw count. The loop ends when no blocking finding is unresolved (decision D8, the merge bar). A finding that reappears after being fixed twice escalates instead of looping. A declined finding never restarts the loop |
@@ -529,7 +553,7 @@ question.
 
 | Provider | Example capabilities |
 |---|---|
-| Code host | `PullRequest`, `ReviewComments`, `CheckStatus`, `MergeMethods[merge, squash, rebase]`, `BranchProtection`, `MergeQueue` (optional; only some repositories have it enabled, section 6.3), `InboundEvents` |
+| Code host | `PullRequest`, `ReviewComments`, `CheckStatus`, `MergeMethods[merge, squash, rebase]` (for merges made on the code host; engine merges are built by the VCS provider, section 4.4), `BranchProtection`, `MergeQueue` (optional; only some repositories have it enabled, section 6.3), `InboundEvents` |
 | CI | `Trigger`, `ReadLogs`, `Artifacts`, `InboundEvents` |
 | Sandbox | `Os[linux, windows]`, `Docker`, `NetworkPolicy`, `PersistentAcrossSteps` (the sandbox outlives a worker restart, section 3.6), `StreamingOutput` |
 | Agent runtime | `StructuredOutput`, `Streaming`, `ToolAllowlist`, `MaxContextTokens`, `Hooks` (the runtime calls the engine per tool call, section 1.4), `SessionResume` |
@@ -569,11 +593,18 @@ which would have retried indefinitely.
 
 ### 4.4 Provider catalogue
 
-Temporal platform, worker platform, sandbox, tracker, code host, CI, agent
-runtime, review, artifact store, record store, secrets, notifications,
-credential broker, session surface. Each has a contract test suite shipped with
-the engine (decision S5), so a new provider can prove conformance without the
-engine changing.
+Temporal platform, worker platform, sandbox, tracker, code host, version control
+(VCS), CI, agent runtime, review, artifact store, record store, secrets,
+notifications, credential broker, session surface. Each has a contract test
+suite shipped with the engine (decision S5), so a new provider can prove
+conformance without the engine changing.
+
+Two providers worth singling out:
+
+| Provider | Role |
+|---|---|
+| VCS | Owns the version-control operations the engine performs: the current revision of a working copy, fetching commits from a sandbox's working copy, pushing to a branch or reference (refused if the target moved), and building merge or squash commits. The code host provider keeps pull requests, comments, branch protection and other hosting APIs. **Version 1 implements Git only**; the interface stays VCS-neutral so another system can be added later, and nothing in version 1 depends on that |
+| Review | The plug point for anything that reviews a change and returns structured findings. In version 1 the standard one is the agent reviewer, built from the sandbox and agent runtime providers (section 7.5). Others, such as an external AI review service or a code host's pull request review, can plug in alongside; their findings go into the same ledger (section 7.2). Steps such as fix verification use whichever reviewer the workflow names |
 
 | Document | Holds |
 |---|---|
@@ -619,9 +650,10 @@ implementations.
 | Agents against the tracker | None. Tracker writes go only through engine steps |
 | Solo profile | The developer's own token, used by the engine. Agents still get only read-only access |
 
-**Who may update protected branches.** Code host rules on the default branch,
-project branches and epic integration branches allow only the engine's identity
-(and, on the default branch, the humans who merge there) to update them, as a
+**Who may update protected branches.** Code host rules on the default branch and
+on the branches of every level above the ticket (epic, project, or whatever
+levels the workflow uses) allow only the engine's identity (and, on the default
+branch, the humans who merge there) to update them, as a
 backstop to the engine's own checks (`docs/20`, the merge design). The engine
 never holds a bypass of default-branch protection.
 
@@ -630,10 +662,15 @@ safe default; section 5.1):
 
 - **Default: the engine may not merge into the default branch.** The merge step
   there runs with `engine_can_merge: false`: the engine raises an intervention
-  (a human decision request), waits, a human merges on the code host, and the
-  engine detects the merge and continues (section 6.3).
+  (a request for a human to act), waits, a human merges on the code host, and
+  the engine detects the merge and continues (section 6.3).
 - The setting can be relaxed (for example for a proof-of-concept repository),
-  but never by anything an agent can edit (section 5.1).
+  but never by anything an agent can edit (section 5.1). Where it allows, whether
+  the engine or a human merges into `main` is the workflow's choice
+  (`engine_can_merge`). The setting implies no separate approval rule.
+- If the engine is allowed but the code host refuses (for example because its
+  protection requires an independent review), that is an ordinary
+  intervention: the engine asks a human to act.
 - The engine enforces the setting at plan validation and again at merge time,
   reading the base and default branch from the code host, not from
   configuration (DR2).
@@ -743,6 +780,9 @@ default is the same:
   ticket branch, and no plan patch during a run may change it (section 3.4).
 - The engine enforces it at plan validation and again at merge time, reading
   the default branch from the code host (DR2).
+- Within the setting, the template's `engine_can_merge` for the default branch
+  is workflow policy; the organisation can cap it ("never the engine"). The
+  setting implies no separate approval rule.
 - Code host protection on the default branch, requiring independent review, is
   the final fallback; the engine never holds a bypass (DR3).
 
@@ -791,8 +831,8 @@ One model, one evaluation function, used by gates, merges and steering.
 
 | Policy object | Contents |
 |---|---|
-| `approval` | Scope (ticket, epic, project, delivery into the default branch), required approvers by role, minimum count, whether an agent counts |
-| `merge` | Target branch pattern, `squash` (squash or plain merge), `engine_can_merge` (engine merges, or a human merges on the code host), required checks. Bounded by floor F1 on the default branch (section 5.1) |
+| `approval` | Scope (a level such as ticket, epic or project, or delivery into the default branch), required approvers by role, minimum count, whether an agent counts. Organisation governance: templates may not set it (rule L12, section 1.5) |
+| `merge` | Target branch pattern, `squash` (squash or plain merge), `engine_can_merge` (engine merges, or a human merges on the code host), required checks. Workflow policy: a template's step parameters are the default, overridable down the levels. Bounded by floor F1 on the default branch (section 5.1) |
 | `findings` | The merge bar (decision D8): no unresolved blocking finding, and every finding fixed or declined with a recorded reason |
 | `attempts` | Per step kind and per run ceilings; steering may grant more within a hard ceiling. Counting follows section 3.7 |
 | `steering` | Who may amend a step, override content, grant attempts, abort |
@@ -909,11 +949,14 @@ sequenceDiagram
     AW->>S: create sandbox, check out ticket branch, start agent runtime
     S->>A: hook: session start (per-step hook token)
     S->>A: hook: before/after each tool call (policy, events, cost, heartbeat)
-    AW->>G: push work-in-progress commits (engine identity)
-    AW->>G: push ticket branch at step end
+    loop each check-in (about every 30 s)
+      AW->>S: VCS provider: current revision moved?
+      AW->>G: fetch new commits, push to hidden ref refs/ff/wip/ticket (engine identity)
+    end
+    AW->>G: step succeeded: move ticket branch to the final commit
     W->>OW: test.run_tiers, analysis.run (machine checks)
     W->>OW: scm.open_pr
-    W->>AW: review.run (ticket scope: reviewer agent, read-only checkout) -> findings
+    W->>AW: review.run (ticket against its epic branch: reviewer agent, read-only checkout) -> findings
     W->>OW: findings.evaluate_readiness
     alt blocking finding
       W->>AW: agent.run (fixer) -> fix.verify
@@ -933,8 +976,9 @@ Notes:
 
 - The agent runtime runs inside the sandbox (pattern C, section 1.4). Its hooks
   call the API, which is why the sandbox talks to the API. It does not push to
-  GitHub: the agent worker fetches the agent's commits from the sandbox and
-  pushes them with the engine's identity (DR13, section 3.6).
+  GitHub: the agent worker detects the agent's commits through the VCS provider
+  and pushes them with the engine's identity, to a hidden reference until the
+  step succeeds (DR13, section 3.6).
 - The reviewer is an agent on a read-only checkout, given the machine check
   results (section 7.5).
 - If the integration branch moved after catch-up, the merge returns
@@ -956,76 +1000,87 @@ Notes:
 5. The epic run applies the patch through the same `applyPatch` (section 3.4).
    Already-completed steps are untouched. Protected steps are intact.
 6. The epic run starts the new child run. When the tickets have merged, it runs
-   the epic review (`review.run` at epic scope: the integration branch against
-   `main`, with the children's findings ledgers as prior findings, DR11; section
-   7.2), then `delivery.*` across repositories in declared order.
+   the epic review (`review.run` at epic scope: the epic's integration branch
+   against the branch it was taken from, with the children's findings ledgers
+   as prior findings, DR11; section 7.2). Then, as its workflow says, it merges
+   into that branch or runs `delivery.*` across repositories in declared order.
 
-A **project run** works the same way one level up: its `run.child` steps start
-epic runs, each epic's integration branch merges into the project branch, and
-the project branch merges into `main` (branch levels in section 6.3).
+Levels are workflow-defined and recursive. A **project run**, where a workflow
+has one, works the same way one level up: its `run.child` steps start epic
+runs, each epic is reviewed against and merged into the project branch, and the
+project branch is reviewed against and merged into `main` (section 6.3).
 
 ### 6.3 Concurrency in one repository
 
-Decided 2026-10-31 (`docs/20`, the merge design, with the merge model of the
-same day). **There is no merge lock.** Tickets merge into the integration branch
-the way a team of developers does.
+Decided 2026-10-31 (`docs/20`, the merge design). **There is no merge lock.**
+Work merges into its parent branch the way a team of developers does.
 
-**Branches:**
+**Branch levels** are workflow-defined and recursive. At every level, work is
+reviewed against the branch it was taken from (its parent) and merged back into
+it; the parent is then reviewed against and merged into its own parent, up to
+and including `main`. Ticket, epic and project are typical; a workflow may use
+fewer or more levels, and the engine supports the pattern at any depth. Where
+delivery to `main` happens is also the workflow's choice: once at the end, or
+several times along the way.
 
-- One **epic integration branch** per repository. It is the base of every
-  ticket branch in the epic. It merges into the project branch when the epic is
-  part of a project, otherwise it is the source of the delivery PR into the
-  default branch.
-- Each ticket works on its **own ticket branch**. It merges into the
-  integration branch only after its own checks, review and findings bar pass.
-  Tickets do not share a working branch, so a failing ticket blocks no one.
+- Each ticket works on its **own ticket branch**, taken from its epic's
+  integration branch. It merges back only after its own checks, review and
+  findings bar pass. Tickets do not share a working branch, so a failing ticket
+  blocks no one.
 - `max_concurrency` on the `parallel` step (section 3.3.1) bounds how many
-  tickets run at once.
+  children run at once.
 
 **The merge step** (`scm.merge`) takes two parameters:
 
 | Parameter | Meaning |
 |---|---|
-| `engine_can_merge` | True: the engine performs the merge. False: the engine raises an intervention (a human decision request), waits, a human merges on the code host, and the engine detects the merge and continues |
+| `engine_can_merge` | True: the engine performs the merge. False: the engine raises an intervention (a request for a human to act), waits, a human merges on the code host, and the engine detects the merge and continues |
 | `squash` | True: squash merge. False: plain merge |
 
-Usual settings by branch level:
+Settings in a typical three-level workflow:
 
 | Merge | `squash` | `engine_can_merge` |
 |---|---|---|
 | Ticket branch into epic branch | true (no need to keep every commit) | true |
 | Epic branch into project branch | false (each ticket's commit stays visible) | true |
-| Project branch (or epic branch, without a project) into `main` | false | false by default (floor F1, section 5.1) |
+| Project branch into `main` | false | false by default (floor F1, section 5.1); the workflow's choice where F1 allows |
 
-**Merging a ticket:**
+If the engine is allowed to merge but the code host refuses (for example its
+protection requires an independent review), that is an ordinary intervention: a
+request for a human to act.
+
+**Merging work into its parent, where the engine merges:**
 
 | Step | What happens |
 |---|---|
-| 1. Catch up | `scm.merge_base_forward` merges the latest integration branch into the ticket branch. In its inputs `branch` is the integration branch (merged from) and `into` is the ticket branch (merged into). It reports `branch_changed` |
+| 1. Catch up | `scm.merge_base_forward` merges the latest parent branch into the work branch. In its inputs `branch` is the parent branch (merged from) and `into` is the work branch (merged into). It reports `branch_changed` |
 | 2. Re-test | Only if `branch_changed` is true |
-| 3. Merge | The engine builds the merge (or squash) commit from exactly what was tested and pushes it to the integration branch. Git refuses a push onto a branch that has moved since it was fetched. If another ticket merged first, the merge step returns outcome **`base_moved`**, which the plan routes back to step 1. (`blocked` keeps its meaning: checks or protection stopped the merge) |
-| Escalate | The merge step's attempt allowance, default 3, counts every attempt, including re-entry after conflict resolution (section 3.7). When it is exhausted the ticket escalates to a human, so a slow ticket cannot be starved by faster siblings |
+| 3. Merge | The engine builds the merge (or squash) commit from exactly what was tested and pushes it to the parent branch. Git refuses a push onto a branch that has moved since it was fetched. If a sibling merged first, the merge step returns outcome **`base_moved`**, which the plan routes back to step 1. (`blocked` keeps its meaning: checks or protection stopped the merge) |
+| Escalate | The merge step's attempt allowance, default 3, counts every attempt, including re-entry after conflict resolution (section 3.7). When it is exhausted the work escalates to a human, so slow work cannot be starved by faster siblings |
+
+Building and pushing the merge commit are VCS provider operations (section
+4.4); Git only in version 1.
 
 Consequences:
 
-- **Nothing untested can land.** A merge succeeds only if the integration branch
-  is exactly what the ticket was last tested against.
+- **Nothing untested can land.** A merge succeeds only if the parent branch is
+  exactly what the work was last tested against.
 - **A squash-merged ticket's PR does not show as merged on GitHub,** because its
   commits are not in the base. The engine closes it with a comment linking the
   squash commit.
 - The merge needs no branch protection settings and no extra permissions. Code
-  host rules allowing only the engine's identity to update integration branches
-  are a backstop (section 4.6).
-- The cost compared with a lock: a ticket that loses a race re-runs its tests,
-  one CI run. With two or three tickets at once, races are rare.
+  host rules allowing only the engine's identity to update the branches above
+  the ticket level are a backstop (section 4.6).
+- The cost compared with a lock: work that loses a race re-runs its tests, one
+  CI run. With two or three tickets at once, races are rare.
 - A merge conflict routes to an agent step that resolves it, not to a human
   first. Spike 3 evidenced this with a real conflict.
 - The planner declares the code areas each ticket expects to touch, and the
   scheduler prefers not to run tickets with overlapping areas at the same time.
   This is a preference, not a rule; how the planner does it is workflow content
   (section 1.5).
-- The epic review covers the whole integration branch against `main` (decision
-  DP10: an aggregate review, not a roll-up of ticket findings), which keeps
+- Each level's review covers its whole branch against its parent (decision
+  DP10: an aggregate review, not a roll-up of child findings), which keeps
   attribution simple (section 7.5).
 
 **Code host merge queues** (GitHub merge queue, GitLab merge trains):
@@ -1054,11 +1109,11 @@ step's full contract is in `docs/06-step-catalogue.md`.
 | Human | `human.gate`, `human.session` (section 7.4), `policy.auto_approve` |
 | Composition | `run.child`, `run.wait`, `parallel` (fan-out and join, section 3.3.1) |
 | Planning | `plan.replan`, `plan.validate` |
-| Source control | `scm.create_branch`, `scm.merge_base_forward` (catch-up, section 6.3), `scm.open_pr`, `scm.update_pr`, `scm.merge` (`engine_can_merge`, `squash`; outcome `base_moved` when the target moved, section 6.3) |
+| Source control | `scm.create_branch`, `scm.merge_base_forward` (catch-up, section 6.3), `scm.open_pr`, `scm.update_pr`, `scm.merge` (`engine_can_merge`, `squash`; outcome `base_moved` when the target moved, section 6.3). Version-control operations go through the VCS provider; pull requests through the code host provider (section 4.4) |
 | CI | `ci.wait_checks` (handles checks that register late), `ci.trigger`, `ci.read_results` |
 | Testing | `test.run_tiers`, `test.run_composition` (several repositories as services) |
 | Analysis | `analysis.run` (fail on new issues, analyser from `feature-flow.yaml`) |
-| Review | `review.run` (any scope; inputs `branch`, `base`, `spec_refs`, `machine_results`; the reviewer is an agent on a read-only checkout, section 7.5) |
+| Review | `review.run` (any level; inputs `branch`, `base`, `spec_refs`, `machine_results`; uses whichever review provider the workflow names, by default the agent reviewer on a read-only checkout, section 7.5) |
 | Findings | `findings.triage`, `findings.post_declines`, `findings.evaluate_readiness` |
 | Fix verification | `fix.verify` (regression test required, re-check against the original finding on the full diff) |
 | Waiting | `wait.for_state` (PR, check, tracker issue) |
@@ -1172,15 +1227,16 @@ Requirements for A:
 
 ### 7.5 Code review
 
-Decided 2026-10-31 (`docs/19`, the code review design, with the gap answers of
-the same day). Review is the main control between an agent's work and the final
-merge.
+Decided 2026-10-31 (`docs/19`, the code review design). Review is the main
+control between an agent's work and the final merge. The rules below describe
+the version 1 standard reviewer, an agent; other reviewers can plug in through
+the review provider (section 4.4).
 
 | # | Rule |
 |---|---|
 | 1 | **Machines check first:** build, tests, linters, analysers, formatting, and test coverage of the changed lines. The reviewer is given the results |
 | 2 | **The reviewer is an agent on a read-only checkout** of the branch. `review.run` takes `branch`, `base`, `spec_refs` (the specification documents to review against) and `machine_results`. The reviewer reads the diff itself, opens any file, and may build and run tests. Nothing else is pre-loaded, so there is no prompt size limit. A review of a specification document rather than code keeps a document reference input (`diff_ref` or equivalent) |
-| 3 | **It reviews against a specification:** the ticket's acceptance criteria, the epic's contract, the repository's conventions |
+| 3 | **It reviews against a specification:** the work's acceptance criteria, its parent's contract (for a ticket, the epic's), the repository's conventions |
 | 4 | **Separate review angles,** each a focused pass: correctness, design and structure, tests, security, conformance to the specification |
 | 5 | **Bug findings carry evidence:** a throwaway failing test where possible. Demonstrated findings block; reasoned ones are labelled and ranked lower |
 | 6 | **A different, ideally stronger, model reviews** than the one that authored the work. This is **workflow policy, not enforced by the engine**, because other models may not be available. The engine records which model authored and which reviewed, so it is visible |
@@ -1194,18 +1250,25 @@ merge.
   can therefore run on any runtime.
 - For a review step the engine publishes a coverage output: changed files,
   files read, files not read, and whether the record is verified.
-- The engine never fails a step for coverage. A review step may set
-  `require_coverage`: `none` (default), `all`, or a list of paths; or a route
-  condition can act on the coverage output.
+- The engine never fails a step for coverage on its own account. A review step
+  may set `require_coverage`: `none` (default), `all`, or a list of paths; or a
+  route condition can act on the coverage output. A step whose
+  `require_coverage` is not met retries up to its attempt limit (section 3.7),
+  then escalates.
 - The library's standard code-review template sets `require_coverage: all`;
   specialised reviews may narrow or omit it.
 
-Two levels, both with repository access:
+**Reviews follow the branch tree.** At every level (ticket, epic, project, or
+whatever levels the workflow uses) a review compares the work against the
+branch it was taken from and will merge back into, and looks for problems that
+only exist once its children are combined. A project-level review exists when a
+workflow has a project level.
 
-| Level | Reviews | Given |
+| Level, typical | Reviews | Given |
 |---|---|---|
-| Ticket review | The ticket branch against the integration branch | The ticket and the epic's contract |
-| Epic review | The integration branch against `main` | The children's findings ledgers as prior findings (DR11, section 7.2) |
+| Ticket | The ticket branch against its epic branch | The ticket and the epic's contract |
+| Epic | The epic branch against its parent: the project branch, or `main` without a project | The children's findings ledgers as prior findings (DR11, section 7.2) |
+| Project | The project branch against `main` | The children's findings ledgers as prior findings |
 
 Not decided yet: which angles run at ticket level and which only at epic level;
 whether a reviewer may run the full test suite or only targeted tests; how a
@@ -1231,6 +1294,8 @@ reasoned (undemonstrated) finding is triaged.
 - A deployment provider. Version 1 delivery is merging the delivery PR, then
   optionally waiting on a deployment status the code host or CI reports.
 - The open points of the code review design (section 7.5, last paragraph).
+- Version control systems other than Git. The VCS provider interface is neutral
+  so one can be added; version 1 implements Git only (section 4.4).
 
 ---
 
@@ -1251,8 +1316,8 @@ with each risk's current mitigation.
 | R7 | Re-plan agent removes or weakens protected steps | Protected flag enforced in the single `applyPatch` path (section 3.4) |
 | R8 | Runs stall on human latency | Unbounded durable waits with reminders, never activity timeouts; "stuck run" notification |
 | R9 | Organisation fork drifts from upstream | All organisation behaviour in configuration and providers; contract tests make drift visible. A distribution repository, not a fork, is the default customisation path (section 4.5) |
-| R10 | Concurrent tickets in one repository conflict | Epic integration branch plus per-ticket branches; catch up, re-test if changed, then merge by a push Git refuses if the integration branch moved (outcome `base_moved`, routed back to catch-up); the merge step's attempt allowance (default 3) escalates to a human; no merge lock; `max_concurrency` on the `parallel` step (section 6.3) |
-| R11 | A long agent step loses its worker or sandbox and restarts from scratch | The sandbox is separate from the worker and survives worker restarts; resume reloads the conversation and does not depend on worker memory; a lost sandbox restarts from the last pushed commit (section 3.6) |
+| R10 | Concurrent tickets in one repository conflict | Each piece of work on its own branch, taken from its parent; catch up, re-test if changed, then merge by a push Git refuses if the parent branch moved (outcome `base_moved`, routed back to catch-up); the merge step's attempt allowance (default 3) escalates to a human; no merge lock; `max_concurrency` on the `parallel` step (section 6.3) |
+| R11 | A long agent step loses its worker or sandbox and restarts from scratch | The sandbox is separate from the worker and survives worker restarts; resume reloads the conversation and does not depend on worker memory. Commits are detected through the VCS provider and pushed to a hidden reference during the step, so a lost sandbox restarts from them, in a fresh agent session (section 3.6) |
 | R12 | Non-determinism in .NET workflow code is not caught at runtime | Replay tests in CI from the first workflow (decision S8); workflow-code review rule: no `Task.Run`, no wall clock, no unordered collections, no I/O |
 | R13 | A run's cost is unknown after the fact | Tokens, model and compute time recorded per step from the first version (section 5.5) |
 | R14 | Pattern C does not hold on Windows: the agent runtime may not run there with hook support | Claude Code's hooks fired on Windows (Spike 2). Session resume on Windows not measured; Spike W0 (agent runtimes on Windows) completes the answer before a Windows sandbox provider is built (section 4.7) |
@@ -1267,13 +1332,17 @@ with each risk's current mitigation.
 
 ## 10. Open questions
 
-Raised while bringing this document up to date on 2026-10-31. Each needs a
-product owner decision.
+None open.
 
-| # | Question |
-|---|---|
-| 1 | **A lost sandbox and the agent's conversation.** When the sandbox is lost, the step restarts from the last pushed commit. Claude Code keeps its conversation on the sandbox's disk, so it is lost too unless the engine also stores the conversation elsewhere. Should a restarted step get its conversation back, or start a fresh one? |
-| 2 | **Gate waits in the interpreter loop.** The loop sketch in section 3.1 waits for a human decision before starting other ready steps. With requirement DR7 (start a ready step as soon as a slot frees) the loop should not block on a gate. In practice gates sit in child ticket runs, so the parent is not held up, but the sketch should say so |
-| 3 | **Which base does an epic review compare against inside a project?** The review design (`docs/19`) reviews an epic's integration branch against `main`. With the project level, an epic merges into its project branch. Should the epic review compare against the project branch, and is there a project-level review against `main`? |
-| 4 | **Approval when the default-branch merge setting is relaxed.** The default-branch merge setting (floor F1) defaults to "a human merges". If an organisation lets the engine merge into `main`, is a human approval gate still required before it does, or none? |
-| 5 | **Where work-in-progress pushes go.** Commits are pushed at work-in-progress points during a step, and a failed step's commits go to a hidden reference. Do work-in-progress pushes during a running step go to the ticket branch, or to the hidden reference until the step succeeds? |
+### Answered
+
+Raised while bringing this document up to date; answered by the product owner
+on 2026-10-31.
+
+| # | Question | Answer |
+|---|---|---|
+| 1 | A lost sandbox and the agent's conversation | A fresh agent session from the pushed commits, with a note that the previous attempt was interrupted. The conversation is not saved mid-step (section 3.6) |
+| 2 | Gate waits in the interpreter loop | A gate is a durable wait alongside running steps; it never blocks other ready steps. The loop sketch now shows this (section 3.1) |
+| 3 | Which base an epic review compares against inside a project | Recursive: every level is reviewed against the branch it was taken from and merges back into, up to `main`. Levels are workflow-defined; a project-level review exists when a workflow has a project level (sections 6.3 and 7.5) |
+| 4 | Approval when the default-branch merge setting is relaxed | Workflow-dependent: the setting implies no separate approval rule. If the engine is allowed but the code host refuses, that is an ordinary intervention (sections 4.6 and 5.1) |
+| 5 | Where work-in-progress pushes go | To a hidden reference while the step runs; the ticket branch moves once, when the step succeeds (section 3.6) |
