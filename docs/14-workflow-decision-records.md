@@ -21,7 +21,7 @@ changes them; a **Later** line points to what changed.
 | L9 | Child plans | A patch adding `run.child` steps, from a ticket-list artifact. Not dynamic binding | Review 09 D2 |
 | L10 | Validation tiers | Four phases; anything that can change routing or execution blocks | Review 09 F1-F3 |
 | L11 | Testing | Temporal replay for interpreter changes; recorded providers re-drive a changed template | Review 09 G1, G2 |
-| L12 | Policy references | A gate names a decision type; the policy model resolves who may approve | Review 09 D3, C7 |
+| L12 | Policy references | A gate names a decision type; the organisation's policy model resolves who may approve. This covers approval only; the rest of a template is workflow policy | Review 09 D3, C7 |
 
 ---
 
@@ -136,7 +136,9 @@ Agents never hold a credential that can push; the engine pushes ticket branches
 and performs every merge (DR13, `docs/20`, the merge design). An agent's code
 host credential is read-only, per step. The push is part of the agent step, and
 an `agent.run` input `push` (default true) can switch it off for a scratch step
-(`docs/10` section 4).
+(`docs/10` section 4). The engine detects new commits through the VCS provider,
+pushes them to a hidden work-in-progress reference while the step runs, and
+moves the branch to the final commit once when the step succeeds (`docs/20`).
 
 **Applied:** `docs/09` section 11, `docs/11` section 5.
 
@@ -278,8 +280,10 @@ validation table (`docs/12` section 2).
 a patch for the parent plan, and the parent applies it through the same
 `applyPatch` (`docs/01` section 3.4: re-planning and steering share one path).
 
-**Later:** a `project` scope sits above epics. A project run starts epic runs
-the same way an epic run starts ticket runs (`docs/13` section 8).
+**Later:** levels are workflow-defined, not fixed by the engine. A run at one
+level starts the runs of the level below the same way; ticket, epic and project
+are typical (`docs/13` section 8, a project run starting epic runs). The scope
+name in a plan is any snake_case name (`docs/10` section 2.1).
 
 **Applied:** `docs/09` section 13, `docs/13` sections 2.1 and 3.
 
@@ -363,8 +367,9 @@ else.**
 | Whether it may be decided from chat | `policy.chat.allowedDecisions` | Organisation layer |
 | Whether it may be approved automatically | `policy.auto_approve`, bounded by floor F1 (whether the engine may merge into the default branch) | Organisation layer |
 
-Putting `required_role` or `min_approvers` in a gate's inputs would be policy in a
-template, and would let a template relax an organisation's approval rule.
+Putting `required_role` or `min_approvers` in a gate's inputs would put approval
+rules in a template, and would let a template relax an organisation's approval
+rule.
 
 `decision_type` values are namespaced (`ticket.merge_approval`,
 `epic.delivery_approval`, `delivery.partial_approval`). An unknown decision type
@@ -376,6 +381,16 @@ engine may not merge into the default branch. It is set by the organisation,
 then the repository's configuration read from its default branch, then the
 workflow; the organisation can lock it, and no plan patch or anything an agent
 can edit may change it. A merge step states it with `engine_can_merge`.
+
+**Later: what this record covers.** L12 covers only **who may approve a
+decision**: roles, minimum approvers, whether chat may decide it, and
+auto-approval. That is organisation governance, tied to identities, so it stays
+out of templates. It does not mean "templates contain no policy". Everything
+else in a template is workflow policy, and a step's parameters are the default
+policy, overridable down the levels. For example, `engine_can_merge` on a merge
+into `main` is workflow policy; the organisation can cap it ("never the
+engine") through floor F1, and no agent can change it during a run. The
+principle: the engine provides mechanisms and guardrails; the workflow decides.
 
 **Applied:** `docs/09` section 14; `docs/10` section 2 (`Gate`); `docs/13`
 sections 1, 2 and 4.
@@ -401,14 +416,10 @@ sections 1, 2 and 4.
 
 ## Open questions
 
-None open. Earlier questions and their answers:
-
-| Question | Answer |
-|---|---|
-| CEL fallback: a hand-written subset with a published grammar | **Acceptable** (product owner, 2026-10-27). **Later:** not needed; `Cel.NET` passed Spike 1 (`docs/15` section 9.2) |
-| Per-kind input schemas: generated or hand-written | **Generated.** In implementation the catalogue becomes one machine-readable YAML file that `docs/06` and the schemas are both generated from. An implementation task |
-| `run.wait` versus `parallel` | **`run.wait` is out of the version 1 language** unless a worked example needs it. Reserved in `docs/06` |
-| Artifact type compatibility | Declared with `compatible_with`: explicit, checkable, and an author's decision rather than an accident of shape |
+None open. Earlier questions were answered where they belong: the CEL fallback
+in L2 (not needed), `compatible_with` in L6, generated per-kind input schemas in
+`docs/10` section 4, and `run.wait` (out of the version 1 language) in `docs/06`
+section 4.2.
 
 ## Decisions taken from review 11
 
