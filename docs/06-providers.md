@@ -328,8 +328,9 @@ interface INotificationsProvider : IProvider {
 ```
 
 - Slack first; no chat-specific types outside its provider.
-- Events: decision needed (with its kind), resumed, run completed, run failed,
-  run stalled or stuck. One thread per root run; children reply in it (from FF).
+- Events, by name: `decision_needed` (with its kind), `resumed`, `completed`,
+  `failed`, `stalled`, `stuck`. Configuration routes and filters by these names.
+  One thread per root run; children reply in it (from FF).
 - `PostDecisionAsync` does not wait for the answer. A chat answer reaches the
   inbound gateway and becomes an API decision call.
 - De-duplicated per run, step, attempt and event, so a restart does not repeat a

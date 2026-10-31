@@ -31,8 +31,8 @@ Stated fully in `docs/00-principles.md`. In short:
 
 ## 3. Decisions taken for the rewrite
 
-Product owner, 2026-10-31. Recorded here until the decision register
-(`docs/10`) exists, then moved there.
+Product owner, 2026-10-31. These stay here; `docs/10` section 1.4 refers to
+them.
 
 | # | Decision |
 |---|---|
@@ -51,7 +51,7 @@ Product owner, 2026-10-31. Recorded here until the decision register
 | RW13 | The list order of steps gives the default next step for an outcome of class `success`. Explicit routes override it |
 | RW14 | `ask_human` (an agent asks a person a question during its step and waits) is in version 1 |
 | RW15 | Delivery in version 1: merging delivery pull requests in a declared order and reporting which repositories merged. No deploy triggering |
-| RW16 | `clean_up` stays as a route option: a route back to redo work can reset the working state to the parent branch |
+| RW16 | `clean_up` stays as a route option: a route back to redo work can reset the work branch to the commit the target step started from |
 | RW17 | The agent hook endpoint is served by the agent worker, not the API and not inside the sandbox. Detail in `02` |
 | RW18 | Interactive human sessions (a person working in their own agent tool, with pre-submit checks) are in version 1 |
 
@@ -99,7 +99,7 @@ Paths in all design documents are relative to the repository root.
 | Consistency pass over 00 to 10 | In progress |
 | Product owner review of the drafts and `LOG.md` | Next |
 | Update `CONTRIBUTING.md` paths to the new structure | Done 2026-10-31 |
-| Spikes S4.1 to S4.3 (`docs/10` section 4) | Not started |
+| Spikes SP1 to SP3 (`docs/10` section 4) | Not started |
 
 ## 7. How to resume
 

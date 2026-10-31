@@ -22,12 +22,12 @@ the values a floor allows, and some floors have no setting at all.
 | F1 | **Default-branch merges.** The engine merges into a repository's default branch only where the organisation allows it. Default: never; a person merges on the code host (section 2) | Organisation, per repository pattern |
 | F2 | **Secrets by reference.** No configuration, template or input may hold a secret value, only a reference to the secrets provider | None |
 | F3 | **Protected content.** An agent cannot change, remove or bypass a protected step, or make it unreachable; such a change becomes a decision for a person (section 6) | None |
-| F4 | **Attempt ceilings.** Allowances stay within the organisation's ceiling per step and per run, checked on every execution of a step, including when a loop re-enters it. Grants by a person stay within the hard ceiling unless made by an administrator | Organisation |
+| F4 | **Attempt ceilings.** Allowances stay within the organisation's ceiling per step and per run, checked on every execution of a step, including when a loop re-enters it. Grants by a person stay within the hard ceiling. Only a change to organisation configuration raises a ceiling | Organisation |
 | F5 | **No push credential for agents.** Agents hold a read-only code host credential, per step. Only the engine pushes and merges. The engine's own identity cannot change branch protection | None |
-| F6 | **Model credentials stay out of the sandbox.** A proxy adds the key, or a per-run key with a spend limit and expiry is used (`docs/02`) | Installation chooses the mode |
+| F6 | **Model credentials stay out of the sandbox.** A proxy adds the key, or a per-run key with a spend limit and expiry is used (`docs/07` section 2, `model_access`) | Installation chooses the mode |
 | F7 | **Evidence integrity.** Evidence artifact types are produced only by engine actions (`docs/01` section 5.2) | None |
 | F8 | **Record integrity.** Every decision and override records the actor from authentication, never from the request. An answer that requires a person cannot be given by policy, automation or an agent | None |
-| F9 | **Run status integrity.** A run reports `completed` only by reaching `{ end: completed }`; otherwise it is `incomplete` | None |
+| F9 | **Run status integrity.** A run reports `completed` only by reaching `{ end: completed }`. A run that stops without reaching any `end` route is `incomplete` | None |
 | F10 | **Privilege from role.** A step may tighten its role's write access, never widen it, and may not change its tools. A setting that governs safety is never read from a file an agent can edit | None |
 | F11 | **Work-item budget.** A run tree creates no more descendant runs than its budget, within the organisation's ceiling | Organisation |
 
@@ -70,7 +70,7 @@ limit. Validation reports where a request was capped.
 | Checks before merging | `require_checks` on `scm.merge` | `merge.require_checks`: if set, a workflow cannot turn checks off |
 | Attempts | `limits.attempts` | Ceilings per step form and per run (F4) |
 | Work items | `budget.max_work_items` on the root template | Ceiling (F11) |
-| Review of agent patches | `planning.review` | `planning.require_review`, per level pattern |
+| Review of agent patches | `planning.review` | `planning.require_review`, per template name pattern |
 | Agent roles | The roles a template's steps name | `planning.allowed_roles` for steps an agent adds (section 6) |
 | Toolsets | The role's toolsets | `toolsets.allowed`: which external tool servers exist at all |
 
@@ -87,7 +87,7 @@ decision**. It is identity governance, so templates do not carry it.
 approval:
   - match: "*.merge_action"        # decision type pattern
     roles: [approver]
-    min_count: 1
+    min_count: 2
     from_chat: false
     auto: false
   - match: "*"
@@ -115,7 +115,7 @@ are the workflow's (review finding 3.4).
 | `viewer` | Read runs, artifacts, findings, decisions |
 | `approver` | Answer decisions where approval rules name the role |
 | `steerer` | The run-time overrides in section 5, except those reserved for `admin` |
-| `admin` | Everything, including changes to protected steps and grants beyond the hard ceiling |
+| `admin` | Everything `steerer` may do, plus changes to protected steps, role changes, and library overrides affecting protected steps |
 
 Roles map to identity-provider groups and may be scoped by team or repository.
 These are people's roles, distinct from the library's agent roles (planner,
@@ -140,7 +140,7 @@ decision_types:
 |---|---|
 | Unknown type | A decision type no library declares is a validation error at load |
 | Precedence | An organisation rule that matches wins over the library's default |
-| Engine-raised types | The engine raises decisions of type `<level>.escalation`, `<level>.question`, `<level>.patch_approval`, `<level>.breakpoint` and `<level>.merge_action`, with `<level>` the run's level. The standard library declares them with patterns (`*.escalation` and so on) |
+| Engine-raised types | The engine raises decisions of type `<level>.escalation`, `<level>.question`, `<level>.patch_approval`, `<level>.breakpoint` and `<level>.merge_action`, with `<level>` the run's level. Every intervention, whatever raised it (an `escalate` route, a step that cannot answer, a timeout), has type `<level>.escalation`. The standard library declares them with patterns (`*.escalation` and so on) |
 
 ---
 
@@ -150,24 +150,25 @@ A person may change a running run in any way the organisation's roles allow
 (P3). Every override goes through the API, is authorised by role, and is
 recorded with the actor, reason and the change.
 
-| Override | Effect | Default role |
-|---|---|---|
-| Answer a decision | `docs/04` section 4 | Per approval rules |
-| Recovery action at an intervention | Retry, go to, re-plan, grant attempts, end (`docs/01` section 7.2) | `steerer` |
-| Set or clear a breakpoint | Pause before a step | `steerer` |
-| Skip a step | Mark it as having ended with a chosen outcome, without running it. The record shows it was skipped | `steerer`; `admin` for a protected step |
-| Amend the plan | Apply a patch (`docs/03` section 10). Not bound by F3 | `steerer`; `admin` for protected content |
-| Change a step's role | Only by a person, never by an agent's patch | `admin` |
-| Grant attempts | Within the hard ceiling; beyond it | `steerer`; `admin` |
-| Override library content | For future steps (`docs/08`) | `steerer` |
-| Answer for an agent | Answer an agent's question | Per approval rules |
-| Abort | End the run with status `aborted`. Branches and pull requests are left as they are unless the person asks otherwise | `steerer` |
+| Override | Key | Effect | Default role |
+|---|---|---|---|
+| Answer a decision | `answer` | `docs/04` section 4 | Per approval rules |
+| Recovery action at an intervention | `recover` | Retry, go to, re-plan, grant attempts, end (`docs/01` section 7.2) | `steerer` |
+| Set or clear a breakpoint | `breakpoint` | Pause before a step | `steerer` |
+| Skip a step | `skip` | Mark it as having ended with a chosen outcome, without running it. The record shows it was skipped | `steerer`; `admin` for a protected step |
+| Amend the plan | `amend` | Apply a patch (`docs/03` section 10). Not bound by F3 | `steerer`; `admin` for protected content |
+| Change a step's role | `change_role` | Only by a person, never by an agent's patch | `admin` |
+| Grant attempts | `grant_attempts` | Up to the hard ceiling (F4), never beyond | `steerer` |
+| Override library content | `override_library` | For future steps (`docs/08` section 5.2) | `steerer`; `admin` where a protected step resolves the content |
+| Answer for an agent | `answer_question` | Answer an agent's question | Per approval rules |
+| Abort | `abort` | End the run with status `aborted`. Branches and pull requests are left as they are unless the person asks otherwise | `steerer` |
 
 **Never overridable:** the floors in section 1. A patch or override that would
 relax one is rejected outright and recorded.
 
-The organisation may change the default role for any override, for example
-reserving skips for `admin`.
+The organisation may change the default role for any override by key, in
+`policy.overrides` (`docs/07` section 3). A `_protected` suffix (`skip_protected`,
+`amend_protected`) sets the role for the same override on protected content.
 
 ---
 

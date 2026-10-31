@@ -160,14 +160,14 @@ What must be evidenced before the parts that depend on it are built.
 
 | # | Spike | Proves | Risks |
 |---|---|---|---|
-| S4.1 | Continue-as-new in a parent with running children, an open decision and a gate answered during the hand-over | The new safe-point rule loses nothing | R21, R3 |
-| S4.2 | `ask_human` with Claude Code: a question open across a worker restart, answered afterwards | Question durability on the agent worker | R22, R19 |
-| S4.3 | The agent reporting contract over MCP on Claude Code and Copilot CLI, including correction turns | Runtimes use the engine tools reliably | R23 |
-| S4.4 | Lock-free merging with three or more concurrent tickets and forced races | `base_moved` loops and the allowance behave | R10 |
-| S4.5 | Model proxy: an agent completes a step with no model key in its environment | Floor F6 can be met with both runtimes | R6 |
-| S4.6 | Session resume on Windows (W0 from the first design) | Pattern C on Windows | R14 |
+| SP1 | Continue-as-new in a parent with running children, an open decision and a gate answered during the hand-over | The new safe-point rule loses nothing | R21, R3 |
+| SP2 | `ask_human` with Claude Code: a question open across a worker restart, answered afterwards | Question durability on the agent worker | R22, R19 |
+| SP3 | The agent reporting contract over MCP on Claude Code and Copilot CLI, including correction turns | Runtimes use the engine tools reliably | R23 |
+| SP4 | Lock-free merging with three or more concurrent tickets and forced races | `base_moved` loops and the allowance behave | R10 |
+| SP5 | Model proxy: an agent completes a step with no model key in its environment | Floor F6 can be met with both runtimes | R6 |
+| SP6 | Session resume on Windows (W0 from the first design) | Pattern C on Windows | R14 |
 
-S4.1 to S4.3 change how the engine is built and should run first.
+SP1 to SP3 change how the engine is built and should run first.
 
 ---
 

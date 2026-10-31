@@ -378,11 +378,11 @@ stop the run before anything merges.
 | Concept | Meaning |
 |---|---|
 | Run repositories | The repositories a run works on. A step works on one, or fans out over several (`docs/03`) |
-| Repository manifest | `feature-flow.yaml` at the repository root: how to set up, test, analyse and run the repository. Read fresh from the branch at every step, with its hash recorded (RW11). Settings that govern safety are read only from the default branch (P8) |
+| Repository manifest | `feature-flow.yaml` at the repository root: how to set up, test, analyse and run the repository. Read fresh from the branch at every step, with its hash recorded (RW11). Its `library` section is read from the default branch only, so an agent cannot change what it is given (`docs/07` section 4) |
 | Work branch | Each run has its own branch in each repository it changes, taken from a **parent branch**: the parent run's branch, or a base the workflow names (usually the default branch) |
 | Baseline | The commit a run started from in each repository, recorded when the run first touches it. Baseline test and analysis results let later failures be attributed to the run's own work (from FF) |
 | Hidden work-in-progress reference | Where the engine pushes an agent's commits while its step runs. It is not a branch, so it triggers no CI and exposes no half-finished work. The work branch moves only when the step succeeds |
-| Merge | Work merges back into its parent branch. The engine catches the work up with the parent, re-tests if that changed anything, and merges only what was tested (`docs/04`) |
+| Merge | Work merges back into its parent branch. The workflow catches the work up with the parent and re-tests if that changed anything; the engine refuses to merge a commit that has no passing test or check evidence, where the merge step requires it (`docs/04` section 7.3) |
 | Default branch | The repository's main branch, read from the code host. Whether the engine may ever merge into it is a safety floor (`docs/05`) |
 
 Agents never hold a credential that can push or merge. They commit in their

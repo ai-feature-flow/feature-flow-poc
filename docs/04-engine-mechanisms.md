@@ -20,7 +20,7 @@ the standard library's templates set it.
 |---|---|
 | Contract | Each step's inputs, outcomes with classes, required capabilities, idempotency, limits, artifacts and audit events are stated here |
 | Idempotency | Every step has a key: a hash of run id, step id, execution number and its stable inputs. A remote object the engine creates carries a hidden marker (a branch suffix, a pull request body comment, a commit trailer, a tracker label), so a retry finds and adopts it instead of creating a duplicate |
-| Repository manifest | A step that touches a repository reads `feature-flow.yaml` from the branch when it starts and records the hash (RW11). Safety settings are read from the default branch only (`docs/05`) |
+| Repository manifest | A step that touches a repository reads `feature-flow.yaml` from the branch when it starts and records the hash (RW11). The `library` section is read from the default branch only (`docs/07` section 4) |
 | Errors | Provider errors are classified as infrastructure (retried with backoff, free) or work (routed by outcome) (`docs/06`). A step may reclassify because it knows the intent: an agent that ran out of time is a work result |
 | Cannot answer | When a step cannot produce a trustworthy outcome (no manifest, a checkout not at the expected commit, results it cannot parse, a missing capability), it raises an **intervention** instead of guessing an outcome (P11, from FF) |
 | Waiting | No step waits on human or external time inside a provider call. Human waits are durable workflow waits; external waits poll inside one long-running, heartbeating activity, or wake on an inbound event and then confirm by reading (`docs/02`) |
@@ -43,7 +43,7 @@ the standard library's templates set it.
 | | `scm.revert` | `opened` (success) |
 | Waiting | `ci.checks` | `passed` (success), `failed` (failure) |
 | | `wait.condition` | `met` (success), `unmet` (failure) |
-| Testing and analysis | `test.run` | `passed` (success), `failed` (failure) |
+| Testing and analysis | `test.run` | `passed` (success), `failed` (failure), `baseline_failed` (blocked) |
 | | `test.integration` | `passed` (success), `failed` (failure) |
 | | `analysis.run` | `passed` (success), `failed` (failure) |
 | Evidence | `artifact.validate` | `valid` (success), `invalid` (failure) |
@@ -260,7 +260,7 @@ person declines.
 | Element | Detail |
 |---|---|
 | Form | Child workflow |
-| Inputs | `template`, `level`, `repositories`, `parameters`, `run_gate` (`auto` or `manual`: whether the child starts at once or waits for a person to start it, from FF) |
+| Inputs | `template`, `level`, `repositories`, `parameters`, `run_gate` (`auto` or `manual`, from FF). `manual` starts the child with a breakpoint before its first step, so a person starts it by answering the breakpoint decision |
 | Outcomes | From the child's status (`docs/03` section 9.3) |
 | Idempotency | By run id and step key: a retry adopts the existing child |
 | Checks | The root's work-item budget before creating the child |
@@ -291,7 +291,7 @@ them (from FF).
 
 | Element | Detail |
 |---|---|
-| Form | Local: pure workflow code over a list already in an artifact the step's activity has read |
+| Form | Activity: reads the list artifact (at most 500 items), builds the patch, and returns it; the workflow applies it through the patch path. A list from a parameter is expanded locally |
 | Inputs | `from` (a list artifact, or a parameter), `shape` (`parallel` or `chain`), `target` (the `parallel` to fill, or the step to chain after), `on_other` (for a chain), `step` (the step to create per item, with `$.<field>` paths into the item) |
 | Outcomes | `expanded` |
 | Effect | A patch, applied like any other and recorded with `proposed_by: engine` |
@@ -332,14 +332,18 @@ Merges the work branch into its parent branch.
 
 | Element | Detail |
 |---|---|
-| Inputs | `engine_can_merge` (default `true`), `squash` (default `false`), `require_checks` (default `true`: a `ci.checks` result for the head being merged must exist and have passed) |
+| Inputs | `engine_can_merge` (default `true`), `squash` (default `false`), `require_checks` (default `true`: a passing `ci.checks` result for the exact head being merged must exist), `require_tested` (default `true`: a passing `test.run` result for the exact head being merged must exist). The organisation may lock either (`docs/05` section 3.1) |
 | Outcomes | `merged`; `base_moved` (the parent moved since catch-up); `checks_failed`; `declined` (a person asked to merge declined) |
 | Idempotency | If the parent already contains the merge, or a person's merge is on the code host, the merge happened: `merged` |
 | Limits | Attempts 3 by default. Every `base_moved` loop through catch-up re-enters this step, so the allowance bounds a work branch that keeps losing races, then escalates |
 
 When the engine merges: it builds the merge commit (or squash commit) from
-exactly the tested commit and pushes it to the parent, refusing if the parent
-is no longer the commit the work was tested against. Nothing untested can land.
+exactly the head the evidence was recorded for, and pushes it to the parent,
+refusing if the parent has moved since that head was caught up. The tested head
+is whatever the run's own `test.run` and `ci.checks` evidence names; the
+standard fragment re-tests after a catch-up that changed the branch (`docs/08`
+section 6.3). With `require_tested` and `require_checks` on, nothing without
+evidence can land.
 There is no merge lock: work merges the way a team of developers does
 (`archive/docs/20`). After a squash, the engine closes the pull request with a
 link to the squash commit, because the code host does not show it as merged.
@@ -385,7 +389,7 @@ Waits for an external state, from FF's `awaitCondition`.
 |---|---|
 | Inputs | One condition: `pull_request` (`approved`, `merged` or `mergeable`), `checks`, or `tracker` (an issue reaching one of some statuses); `poll_every`; `timeout` (default 7 days) |
 | Outcomes | `met`; `unmet` (closed unmerged, changes requested, an issue in an `unmet` status) |
-| Behaviour | Holds no worker slot. A durable timer polls; an inbound event wakes it early; a read confirms. A person may end the wait by hand with `met` or `unmet`. The timeout raises an intervention |
+| Behaviour | Holds no worker slot. A durable timer polls; an inbound event wakes it early; a read confirms. A person may end the wait by hand with `met` or `unmet`, which is the "skip a step" override with a chosen outcome (`docs/05` section 5). The timeout raises an intervention |
 
 ---
 
@@ -398,9 +402,9 @@ Runs a repository's declared test tiers.
 | Element | Detail |
 |---|---|
 | Inputs | `tier_tags` (select tiers by tag; the tiers themselves are repository facts), `baseline` (true: this run records the baseline) |
-| Outcomes | `passed`, `failed` |
+| Outcomes | `passed`, `failed`, `baseline_failed` |
 | Behaviour | Tiers run where the manifest says: in a sandbox, or delegated to CI through the CI provider inside the same step (the default for tiers that need Docker or Windows). Results are parsed from the declared format (TRX, JUnit) into **test results evidence** |
-| Baseline | The first `test.run` with `baseline: true` records the baseline. A baseline that is not clean raises an intervention, because later failures could not be attributed (from FF) |
+| Baseline | The first `test.run` with `baseline: true` records the baseline. A baseline that is not clean returns `baseline_failed`, because later failures could not be attributed; the standard `baseline` fragment escalates it (from FF) |
 | Carried result | If a catch-up left the tree identical to one already tested, the earlier result is adopted and nothing runs (from FF) |
 | Cannot answer | No manifest, a tag with no tier, a checkout not at the expected commit, unparseable results: an intervention |
 
@@ -414,9 +418,12 @@ platform failure is infrastructure (from FF).
 
 ### 9.3 `analysis.run`
 
-Runs the static analyser the manifest declares, or reads it from CI
-(SonarCloud), and fails a change that **adds** issues at a blocking level
-relative to the baseline. Inputs: `baseline`. Outcomes `passed`, `failed`.
+Runs the static analyser the manifest declares (`static_analysis`: `analyser`
+of `sarif`, `sonarcloud` or `none`; for `sarif`, the `command` and
+`sarif_path`), or reads it from CI (SonarCloud), and compares with the baseline.
+Inputs: `baseline`; `fail_on` (`new_issues`, the default, `any_issues`, or
+`never`); `min_level` (the lowest severity that counts, default `warning`).
+Outcomes `passed`, `failed`.
 Produces **analysis results evidence**. No analyser declared: `passed`, with a
 note.
 
@@ -474,7 +481,7 @@ workflow's (`docs/01` section 6, RW4).
 
 | Element | Detail |
 |---|---|
-| Inputs | `source`: an artifact of type findings report (from a reviewer agent step), or a findings source provider by name (an external AI review on the pull request, SonarCloud, a SARIF file). `reopen_on`: when a re-raise of a `fixed` or `declined` finding reopens it: `code_change` (default), `always` or `never` |
+| Inputs | `source`: an artifact of type findings report (from a reviewer agent step), or a findings source provider by name (an external AI review on the pull request, SonarCloud, a SARIF file). `reopen_on`: when a re-raise of a `fixed` or `declined` finding reopens it: `code_change`, `always` or `never`. The engine default, `code_change`, is a fallback; the standard library sets it explicitly |
 | Outcomes | `recorded`, with outputs `new`, `reraised`, `reopened`, `repeat_fixes` (findings reopened after being fixed at least twice); `unavailable` (the external source could not review, for example Copilot review not enabled) |
 | Behaviour | Fingerprints each finding, matches it against the ledger (including children's), and records it as new or as a re-raise, with whether the code at the fingerprint changed since the finding last changed state. Applies `reopen_on` |
 

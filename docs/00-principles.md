@@ -184,8 +184,9 @@ effect, and a failure blocks with a message naming the field and the rule.
 Warnings are cosmetic only. An unexpected condition stops the run with an
 intervention; the engine never guesses.
 
-Why: in FF, warnings about workflow logic were easy to ignore, and a guessed
-success (an unrouted merge failure) once looked like a completed run.
+Why: in FF, warnings about workflow logic were easy to ignore. In Spike 2 a
+guessed success (an unrouted merge failure) looked like a completed run
+(`archive/docs/16` section 5).
 
 ### P12. One fact, one place
 

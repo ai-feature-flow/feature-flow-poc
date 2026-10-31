@@ -124,7 +124,7 @@ policy:                                     # meanings in docs/05
     max_work_items: { ceiling: 30 }
   planning:
     allowed_roles: [planner, implementer, fixer]
-    require_review: [{ match: "project", value: true }]
+    require_review: [{ match: "*:templates/project_*", value: true }]
   toolsets:
     allowed: [jira, confluence]
   overrides:                                # default roles for run-time overrides (docs/05 section 5)
@@ -146,8 +146,10 @@ role_mapping:                               # library agent roles to runtime and
 notifications:
   routing:
     decision_needed: { channel: "#ff-decisions" }
-    run_stuck:       { channel: "#ff-ops" }
-    run_finished:    { channel: "#ff-runs" }
+    stuck:           { channel: "#ff-ops" }
+    stalled:         { channel: "#ff-ops" }
+    completed:       { channel: "#ff-runs" }
+    failed:          { channel: "#ff-runs" }
   events: [decision_needed, failed, completed]
 
 timeouts:
@@ -212,7 +214,6 @@ static_analysis:
   analyser: sarif                          # sarif | sonarcloud | none
   command: dotnet build -warnaserror -p:ErrorLog=analysis.sarif
   sarif_path: analysis.sarif
-  fail_on: new_issues
 
 integration_environment:                   # for test.integration
   image: mcr.microsoft.com/dotnet/aspnet:9.0
@@ -232,6 +233,7 @@ library:                                   # docs/08 section 4; read from the de
 | `environment` | Inline, or a referenced `devcontainer.json`. The engine merges the two into the **resolved manifest**, which providers receive |
 | `test_tiers[].tags` | What templates select by (`test.run` `tier_tags`), so a template never lists a repository's tiers |
 | `test_tiers[].targets` | Where the tier may run. A tier that needs Docker or Windows normally lists only `ci` |
+| `test_tiers[].prerequisites` | `env`: environment variable names the tier needs. `test.run` raises an intervention if one is missing where the tier runs, rather than reporting the tests as failed |
 | `test_tiers[].result` | Parsed format and path. Without it the tier is judged by exit code only, and its tests cannot be claimed as evidence |
 | `library` | The only section read from the default branch rather than the working branch |
 | `.feature-flow/` | Holds only the content files `library.adds` references |

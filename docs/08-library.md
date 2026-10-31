@@ -123,7 +123,7 @@ from (from FF).
 | Run: a library override | Replace content for this run's future steps (section 5.2) |
 
 A template refers to content by library name, so an organisation override is
-explicit: `acme:tasks/implement_ticket` replaces `std:tasks/implement_ticket`
+explicit: `acme_delivery:tasks/implement_ticket` replaces `std:tasks/implement_ticket`
 only where the organisation's configuration maps one to the other.
 
 ---
@@ -147,7 +147,7 @@ resolve, for example a corrected task prompt. It does not change the plan.
 | Who | A person with the role for content overrides (`docs/05` section 5). An agent may propose one, which becomes a decision |
 | Scope | Steps that start after the override; steps in flight keep what they resolved. It applies to the run tree from that run down |
 | Record | Actor, reason, old and new hash, and the step it applies from. A lock entry, not a plan revision |
-| Protected steps | Allowed: correcting a broken prompt on a protected step is the main case. The decision shows that a protected step is affected |
+| Protected steps | Allowed, with the `admin` role (`docs/05` section 5): correcting a broken prompt on a protected step is the main case. The record shows that a protected step is affected |
 | Any run | Works on every run, whatever its template. FF could override only runs whose template spawned children (`../feature-factory/issues.md`) |
 
 ---
@@ -188,27 +188,27 @@ and permission.
 
 ### 6.3 Fragments
 
-| Fragment | Steps | Exits |
-|---|---|---|
-| `baseline` | `test.run` and `analysis.run` with `baseline: true` | `done` |
-| `plan_and_validate` | Planner agent producing `requirements` and `delivery_plan`; `artifact.validate` with `requirement_support`, `requirement_ownership` or `requirement_inheritance` (by level), `verification_method_support`; on `invalid` back to the planner | `planned` |
-| `standard_review` | `for_each` over `angles` (default: correctness, design, tests, security, specification) of a reviewer agent step, each producing a `findings_report`; `findings.record` for each; a reviewer with `changed_files_unread > 0` re-runs | `reviewed` |
-| `fix_loop` | Triager agent producing `triage`; `findings.triage`; fixer agent; a verifying reviewer checking the fix against the original finding on the full diff; `artifact.validate` with `tests_added`; back to tests | `fixed`, `escalated` |
-| `verify_and_review` | `test.run`; `analysis.run`; `artifact.validate` with `verification_satisfaction`; `standard_review`; then the merge bar: `findings.open_blocking == 0` to `ready`, otherwise `fix_loop`. `repeat_fixes > 0` escalates | `ready`, `escalated` |
-| `merge_into_parent` | `scm.pull_request`; optionally `findings.record` from an external source; `ci.checks`; `scm.catch_up`; re-test if `changed`; `scm.merge`; `base_moved` back to catch-up; `conflict` to a conflict-resolver agent, then back through tests and review | `merged`, `declined` |
-| `plan_children` | Planner producing a `work_list` and child-level requirements; validation; an approval decision that ratifies them; `plan.expand` into a `parallel` of `run.child` | `planned` |
-| `trace` | `artifact.validate` with `requirement_trace`, producing a `trace_report` | `traced` |
-| `deliver_in_order` | A `for_each` chain of `merge_into_parent` per repository; `delivery.report`; on `partial`, a decision offering retry, fix forward or revert | `delivered`, `partial` |
+| Fragment | Steps | Parameters | Exits |
+|---|---|---|---|
+| `baseline` | `test.run` and `analysis.run` with `baseline: true` | `tier_tags` (default all) | `done` |
+| `plan_and_validate` | Planner agent producing `requirements` and `delivery_plan`; `artifact.validate` with `requirement_support`, `requirement_ownership` or `requirement_inheritance` (by level), `verification_method_support`; on `invalid` back to the planner | `planner_task`, `level_validators` | `planned` |
+| `standard_review` | `for_each` over `angles` (default: correctness, design, tests, security, specification) of a reviewer agent step, each producing a `findings_report`; `findings.record` for each; a reviewer with `changed_files_unread > 0` re-runs | `spec_refs`, `angles`, `reviewer_task`, `reopen_on` (set to `code_change`) | `reviewed` |
+| `fix_loop` | Triager agent producing `triage`; `findings.triage`; fixer agent; a verifying reviewer checking the fix against the original finding on the full diff; `artifact.validate` with `tests_added`; back to tests | `fixer_task`, `triager_task`, `tier_tags` | `fixed`, `escalated` |
+| `verify_and_review` | `test.run`; `analysis.run`; `artifact.validate` with `verification_satisfaction`; `standard_review`; then the merge bar: `findings.open_blocking == 0` to `ready`, otherwise `fix_loop`. `findings.repeat_fixes > 0` escalates | `tier_tags`, `spec_refs`, `fixer_task`, `angles` | `ready`, `escalated` |
+| `merge_into_parent` | `scm.pull_request`; optionally `findings.record` from an external source; `ci.checks`; `scm.catch_up`; re-test if `changed`; `scm.merge`; `base_moved` back to catch-up; `conflict` to a conflict-resolver agent, then back through tests and review | `squash`, `engine_can_merge`, `external_findings` (a findings source name, optional) | `merged`, `declined` |
+| `plan_children` | Planner producing a `work_list` and child-level requirements; validation; an approval decision that ratifies them; `plan.expand` into a `parallel` of `run.child` | `planner_task`, `child_template`, `max_concurrency` | `planned` |
+| `trace` | `artifact.validate` with `requirement_trace`, producing a `trace_report` | `requirements` (the artifact to trace) | `traced` |
+| `deliver_in_order` | A `for_each` chain of `merge_into_parent` per repository; `delivery.report`; on `partial`, a decision offering retry, fix forward or revert | `repositories`, `squash`, `engine_can_merge` | `delivered`, `partial` |
 
 ### 6.4 Templates
 
 | Template | Level | Shape |
 |---|---|---|
-| `ticket_delivery` | ticket | `baseline`; `plan_and_validate`; spec approval (auto-resolvable); implement; `verify_and_review`; `merge_into_parent`. Works standalone (parent branch is the default branch) or as a child |
+| `ticket_delivery` | ticket | `baseline`; `plan_and_validate`; spec approval (auto-resolvable); implement; `verify_and_review`; `merge_into_parent`. Works standalone (parent branch is the default branch) or as a child. Parameter `engine_can_merge`, default `false`, so a standalone ticket passes F1 in a default organisation; `epic_delivery` passes `true` to its tickets |
 | `epic_delivery` | epic | Design and contract; `plan_children` (tickets); the epic's own `verify_and_review` over the combined branch with the tickets' ledgers as prior findings; `trace`; `merge_into_parent` or `deliver_in_order` |
 | `project_delivery` | project | An interactive session for the project's requirements and architecture; approval that ratifies them; `plan_children` (epics); integration tests where the project owns requirements itself; `trace`; `deliver_in_order` into the default branch, where by default a person merges (F1) |
 
-Budget: `project_delivery` sets `max_work_items: 20`, within the organisation's
+Budget: `project_delivery` sets `budget.max_work_items: 20`, within the organisation's
 ceiling.
 
 ### 6.5 Default policies moved out of the engine
@@ -222,7 +222,7 @@ by the standard library. The last column says how to change it.
 | A demonstrated bug blocks; a reasoned finding does not | The reviewer task's rule for setting `blocking` | Edit the reviewer task |
 | A fix adds a regression test, unless the triage says why not | The fixer task, and `tests_added` in `fix_loop` | Remove the validator from the fragment |
 | A fixed or declined finding reopens only when its code changes | `reopen_on: code_change` in `standard_review` | Set `reopen_on` |
-| A finding fixed twice and raised again escalates | The `repeat_fixes` guard in `verify_and_review` | Change or remove the guard |
+| A finding fixed twice and raised again escalates | The `findings.repeat_fixes` guard in `verify_and_review` | Change or remove the guard |
 | The reviewer reads every changed file | The `changed_files_unread` guard in `standard_review` | Narrow or remove it for a specialised review |
 | A merge conflict goes to an agent first | `merge_into_parent` | Route `conflict` to a decision instead |
 | Squash tickets into the epic; plain merges above | `with: { squash: ... }` on each template's `merge_into_parent` | Change the parameter |

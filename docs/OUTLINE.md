@@ -13,6 +13,10 @@ the outline raises.
 
 ## 1. The documents
 
+This section is the plan as accepted before drafting. Where the written
+documents differ (for example, no `resume` directive; a person's merge on the
+code host is an "action request" decision), the documents win.
+
 ### 01 Concepts
 
 Owns the domain model. Every other document uses these terms as defined here.
@@ -287,6 +291,6 @@ None open. All seven were answered as recommended by the product owner on
 | 2 | Step order: is the list order of steps meaningful (default next step, as in FF), or is the plan purely a graph? | List order gives the default next step for a `success` outcome. Explicit routes override it |
 | 3 | Is `ask_human` in version 1? The agent waits inside its step; the sandbox and session survive a worker restart (first design, resumable agent steps) | Yes. It is the main FF facility for unattended runs, and the first design's resume model covers it |
 | 4 | Is delivery (deploying across repositories in order) in version 1, beyond merging the delivery pull requests? | Merging in declared order and reporting which repositories merged, yes. Deploy triggering, no |
-| 5 | Does `clean_up` (resetting the working state when a route goes back to redo work) still need to exist? | Yes, as a route option: going back to re-plan should start from the parent branch, not the failed attempt's commits |
+| 5 | Does `clean_up` (resetting the working state when a route goes back to redo work) still need to exist? | Yes, as a route option: going back to redo work should start from where that work started, not from the failed attempt's commits |
 | 6 | Where is the agent hook endpoint served: the API, or the agent worker? | The agent worker, so an API outage does not pause agents. Not inside the sandbox, where the agent could reach it. Decide in 02 |
 | 7 | Do interactive human sessions (a person working in their own agent tool, with pre-submit checks) stay in version 1? | Yes, as in both prototypes |

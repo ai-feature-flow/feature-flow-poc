@@ -35,7 +35,7 @@ share no process state.
 |---|---|
 | `feature-flow-orchestration` | Orchestration workers |
 | `feature-flow-agent` | Agent workers, default sandbox capabilities |
-| `feature-flow-agent:<capability>` | Agent workers whose sandboxes offer a capability, for example `os-windows`, `docker`, `gpu` |
+| `feature-flow-agent:<capability>` | Agent workers whose sandboxes offer a capability, for example `os_windows`, `docker`, `gpu` |
 
 A step's queue follows from the capabilities its role (or its action) needs.
 Windows-only repositories, Docker-dependent tiers and restricted networks need
@@ -88,7 +88,7 @@ change (`docs/09`).
 
 | Form | Used for |
 |---|---|
-| Local (pure, in workflow code) | Decisions resolved by policy, `plan.expand` once its input is read, route evaluation |
+| Local (pure, in workflow code) | Decisions resolved by policy, `plan.expand` over a parameter, route evaluation, applying patches |
 | Activity | Everything that touches the outside world |
 | Child workflow | `run.child` |
 
@@ -174,7 +174,7 @@ Not inside the sandbox, where the agent could reach and alter it.
 | The sandbox outlives the worker | A new worker re-attaches by the step's idempotency key. A worker deploy costs the agent nothing |
 | Resume from durable state only | Sandbox handle, session reference and last pushed commit are in workflow state or the record store |
 | Commands are started and polled | A long command survives a worker restart; the new worker re-attaches to it by handle (risk R18) |
-| Commit detection | About every 30 seconds, the worker asks the VCS provider whether the working copy moved; if so it fetches the commits (as a bundle copied out of the sandbox) and pushes them with the engine's identity to the hidden work-in-progress reference |
+| Commit detection | About every 30 seconds, the worker asks the VCS provider whether the working copy moved; if so it fetches the commits (as a bundle copied out of the sandbox), unpacks the bundle into a temporary bare repository on the agent worker, and pushes from it with the engine's identity to the hidden work-in-progress reference. No working tree and no cached clone are needed |
 | Branch moves once | On success, the work branch moves to the final commit |
 | Sandbox lost | A new sandbox from the hidden reference, with a fresh session |
 | Graceful shutdown | A worker stopping deliberately finishes its heartbeat and releases its slots, so only a crash costs a heartbeat timeout. Spike 1 measured 87.4 seconds from a kill to progress, almost all of it detection (`archive/docs/15` section 6.4) |

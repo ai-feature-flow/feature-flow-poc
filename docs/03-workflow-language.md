@@ -31,7 +31,7 @@ parameters:                     # section 6
 artifact_types:                 # library types this workflow uses (section 7)
   - std:artifact_types/delivery_plan
 
-defaults:                       # section 4.3 and section 2.3
+defaults:                       # section 4.3 and section 2.1
   routes:
     by_class: { failure: { escalate: true }, blocked: { escalate: true } }
   limits: { attempts: 3 }
@@ -49,6 +49,7 @@ steps:                          # an ordered list (section 2)
 | `parameters` | No | Section 6 |
 | `artifact_types` | No | Library references. A step may use only types listed here or in a fragment it uses |
 | `defaults` | No | Route defaults and limits for every step, overridable per step |
+| `budget.max_work_items` | No | Root templates: the most descendant runs the tree may create, within the organisation's ceiling (F11) |
 | `steps` | Yes | The ordered step list |
 
 ---
@@ -106,7 +107,7 @@ its form (`docs/01` section 2.1). A list entry may instead be `parallel`,
 | `skills` | Library skills, mounted for the agent to read on demand. Added to the role's |
 | `write_access` | `none`, `branch` or `repository`. Tightens only |
 | `context` | `full` (default): the agent is given the run's step summaries. `none`: it is not, so a reviewer judges independently (from FF) |
-| `planning` | Lets the agent propose patches to this plan (`self`) or the parent's (`parent`), and names the templates it may start child runs from |
+| `planning` | Lets the agent propose patches to this plan (`self`) or the parent's (`parent`), and names the templates it may start child runs from. `review: required` makes every proposal a patch approval decision; default `auto` (`docs/05` section 6) |
 | `push` | Default `true`. `false`: the agent's commits are not pushed (scratch work) |
 | `on_uncommitted` | `commit` (default) or `fail`: what to do with changes left uncommitted at the end |
 
@@ -197,6 +198,7 @@ routes:
 | `{ end: <status> }` | `completed`, `failed`, `rejected` or `partial` |
 | `{ escalate: true }` | Raise an intervention. Optional `type` (a decision type, default `<level>.escalation`) and `prompt` |
 | Guarded list | Conditions in order; the first true one wins; the last entry has no `when` |
+| `{ exit: <name> }` | Inside a fragment only: leave the fragment by a named exit (section 11) |
 
 `clean_up: true` on a `to` route resets the work branch to the commit the target
 step started from, before the target runs. Default `false`. A human answering an
@@ -271,7 +273,7 @@ environment, which registers more than this list.
 | `params` | Bound parameters |
 | `steps.<id>` | `outcome`, `outputs.<name>`, `artifacts.<name>` (a reference, never content), `previous`, `executions` |
 | `run` | `id`, `level`, `repositories`, `branch` (this run's work branch, per repository: `run.branch['acme/api']`), `parent_branch` (likewise), `tracker_issue`, `parent_id` |
-| `findings` | Counts from the ledger for this run and its children: `open`, `open_blocking`, `open_demonstrated`, `fixed`, `declined`, `escalated`, `reraised_unchanged` |
+| `findings` | Counts from the ledger for this run and its children: `open`, `open_blocking`, `open_demonstrated`, `fixed`, `declined`, `escalated`, `reraised_unchanged`, `repeat_fixes` (findings reopened after being fixed at least twice) |
 | `item` | Inside `for_each` only: the current item (section 8.2) |
 
 **Expressions never read artifact content or call providers.** That would be
@@ -440,8 +442,13 @@ repository per ticket).
   routes: { completed: review, any_failed: fix }
 ```
 
+- `step` may be one step, a `use` of a fragment, or a list of steps. Each item
+  becomes one branch of the expansion; for a fragment or a list, the branch
+  ends at the fragment's exit or the list's last step, and that outcome's class
+  is what the join sees.
 - At binding, `for_each` expands into a `parallel` (`mode: parallel`, join
-  `all`) or a chain (`mode: chain`), with step ids `<id>_<index>`. The plan,
+  `all`) or a chain (`mode: chain`), with step ids `<id>_<index>`, and inner ids
+  `<id>_<index>.<inner id>`. The plan,
   validation and the readable form see the expanded steps.
 - A **chain** runs the items in order. Each item's `success` goes to the next;
   any other outcome ends the chain with `any_failed`, and later items do not run.
@@ -540,7 +547,7 @@ changes:
 | `remove` | Remove the step at the target. Routes that pointed at it must be given new targets in the same patch |
 | `set` | Change one field of the target: `with`, `limits`, `outputs`, `consumes`, `produces`, or `routes.<outcome>` |
 | `add_branch`, `remove_branch` | Add or remove a branch of a `parallel` that has not started |
-| `chain` | Add a step after the target: the target's `success` routes go to the new step, every other outcome to `on_other` |
+| `chain` | Add a step after the target: the target's `success` routes go to the new step, every other outcome to `on_other`, a step id given in the operation |
 
 There is no operation to change a step's role: privilege comes from the role
 (P8). A human changes a role through an override (`docs/05`).
@@ -578,7 +585,7 @@ standard review, the fix loop, or catch-up and merge (RW5).
   with:
     spec_refs: { expr: "[steps.plan_spec.artifacts.plan]" }
     angles: [correctness, tests, security]
-  routes: { ready: open_pr, escalated: { escalate: true } }
+  routes: { reviewed: open_pr }
   protected: true
 ```
 
@@ -596,6 +603,8 @@ standard review, the fix loop, or catch-up and merge (RW5).
 
 The standard single-ticket template, written with defaults and fragments. It
 replaces the first design's 270-line example (`archive/docs/13` section 1).
+It is illustrative: the shipped `std` template uses the `plan_and_validate`
+fragment where this example has an inline planner (`docs/08` section 6.4).
 
 ```yaml
 api_version: feature-flow/v1
@@ -605,8 +614,9 @@ metadata: { name: ticket_delivery, level: ticket }
 parameters:
   ticket_id: { type: string, required: true }
   epic_contract: { type: artifact, required: false }
+  engine_can_merge: { type: boolean, default: false }   # an epic passes true for its tickets
 
-artifact_types: [std:artifact_types/delivery_plan]
+artifact_types: [std:artifact_types/delivery_plan, std:artifact_types/evidence_claims]
 
 defaults:
   routes:
@@ -651,7 +661,7 @@ steps:
 
   - id: deliver
     use: std:fragments/merge_into_parent   # pull request, checks, catch up, re-test, merge
-    with: { squash: true, engine_can_merge: true }
+    with: { squash: true, engine_can_merge: { expr: "params.engine_can_merge" } }
     routes: { merged: { end: completed } }
     tracker: { on: { merged: done } }
 ```
