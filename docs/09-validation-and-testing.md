@@ -147,9 +147,8 @@ repositories: [acme/api]
 
 script:                           # outcome per step id, per visit; unlisted steps take their first success outcome
   verify.review.findings_record: [recorded, recorded]
-  verify.check_bar: [open_blocking, clear]   # a guard outcome is scripted through outputs
   verify.fix_loop.fix: done
-outputs:
+outputs:                          # outputs and namespace values per visit, to drive route guards
   verify.review.findings_record: [{ new: 1 }, { new: 0 }]
   "findings.open_blocking": [1, 0]
 
