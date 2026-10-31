@@ -96,7 +96,8 @@ with a change, and by what), or **superseded** (replaced).
 
 RW1 to RW18 are listed in `docs/PLAN.md` section 3 and applied throughout.
 LOG 1 to LOG 57, the judgement calls made while writing the drafts, were
-approved by the product owner on 2026-11-01 and are decisions. They stay in
+approved by the product owner on 2026-11-01 and are decisions. LOG 58, from
+SP1 (answers accepted during a continue-as-new drain), was approved the same day. They stay in
 `docs/LOG.md`, which owns them; this register does not copy them (P12).
 
 ---

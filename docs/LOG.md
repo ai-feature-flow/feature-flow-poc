@@ -5,7 +5,8 @@ present, 2026-10-31. Each entry says what was decided, why, and where.
 
 **Status: reviewed and approved by the product owner on 2026-11-01, as it
 stands**, including the reversal of entry 50. These entries are now decisions,
-cited as LOG 1 to LOG 57 (`docs/10` section 1.4). The "Needs a look?" column is
+cited as LOG 1 to LOG 57 (`docs/10` section 1.4). Later entries record their
+own approval. The "Needs a look?" column is
 kept as a record of how each was flagged.
 
 New judgement calls go in a new table at the end, marked unreviewed, until the
@@ -71,8 +72,10 @@ product owner reviews them.
 | 56 | 10 s4 | Spikes renamed SP1 to SP6 | `S4` collided with decision S4 | Low |
 | 57 | 05 s8 | Settings the API checks at use (who may answer or override) apply to running runs at once; settings enforced inside the run (ceilings, caps, F1, budgets) are fixed at run start; there is no push of new configuration into running runs; an override is the way to change a running run | Answers "can organisation configuration change mid-run?", which the drafts did not say | Medium |
 
-## Unreviewed
+## From the spikes
+
+Entry 58 approved by the product owner on 2026-11-01.
 
 | # | Where | Decision | Why | Needs a look? |
 |---|---|---|---|---|
-| 58 | 02 s3 | Answers to decisions are accepted during a continue-as-new drain, not rejected as stale. The validator still rejects unknown and conflicting answers. Replaces the Spike 1 mitigation for R3 | SP1: with the rejection off, nothing was lost, because the handler only records state and the hand-over waits for handlers (`docs/spikes/sp1-results.md` section 5.3). With it on, an answer is refused for as long as the longest in-flight activity, which may be hours | **Yes**: changes an approved rule on one exploratory run |
+| 58 | 02 s3 | Answers to decisions are accepted during a continue-as-new drain, not rejected as stale. The validator still rejects unknown and conflicting answers. Replaces the Spike 1 mitigation for R3 | SP1: with the rejection off, nothing was lost, because the handler only records state and the hand-over waits for handlers (`docs/spikes/sp1-results.md` section 5.3). With it on, an answer is refused for as long as the longest in-flight activity, which may be hours | **Yes**: changes an approved rule on one exploratory run. Approved 2026-11-01 |

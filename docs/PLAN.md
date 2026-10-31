@@ -99,7 +99,7 @@ Paths in all design documents are relative to the repository root.
 | Consistency pass over 00 to 10 | Done 2026-10-31: an independent review found 39 issues, all fixed (`LOG.md` entries 49 to 56) |
 | Product owner review of the drafts and `LOG.md` | Done 2026-11-01: approved as it stands; LOG 50 reversed (an administrator may grant beyond the hard ceiling) |
 | Update `CONTRIBUTING.md` paths to the new structure | Done 2026-10-31 |
-| Spike SP1 (`docs/10` section 4): continue-as-new with running children, open decisions and answers during the hand-over | Done 2026-11-01: the rule holds. Results in `docs/spikes/sp1-results.md`; one unreviewed design change, LOG 58 (accept answers during the drain) |
+| Spike SP1 (`docs/10` section 4): continue-as-new with running children, open decisions and answers during the hand-over | Done 2026-11-01: the rule holds. Results in `docs/spikes/sp1-results.md`; one design change, LOG 58 (accept answers during the drain), approved |
 | Spikes SP2 and SP3 | **Next.** SP2: `ask_human` across an agent worker restart. SP3: the agent reporting contract over MCP on Claude Code and Copilot CLI |
 | Spikes SP4 to SP6 | Not started |
 | The standard library as files (`docs/08` section 6) | Not started |

@@ -150,7 +150,7 @@ budget.
 | Finding | Change | Where |
 |---|---|---|
 | The rule loses nothing | R21 (the new rule loses a child's end or an answer) and R3 (a decision lost at continue-as-new) mitigated | `docs/10` section 2 |
-| Rejecting answers during the drain is unnecessary (X1) and would refuse answers for as long as the longest activity | Answers are accepted during the drain. The validator still rejects unknown and conflicting answers | `docs/02` section 3; LOG 58, unreviewed |
+| Rejecting answers during the drain is unnecessary (X1) and would refuse answers for as long as the longest activity | Answers are accepted during the drain. The validator still rejects unknown and conflicting answers | `docs/02` section 3; LOG 58, approved |
 | Signals and updates can reach a new run before its run method starts (Temporal delivers buffered ones first) | The carried state is set in the workflow's initialiser, not the run method | `docs/10` section 1.2, DR14 |
 | The hand-over must wait for running handlers; signals must address the workflow id; children must use the abandon policy (N1, N2) | Already in the rule; the first is added as a requirement | `docs/10` section 1.2, DR15 |
 
@@ -169,6 +169,7 @@ budget.
 
 ## 6. Open questions
 
-1. Should answers be accepted during the drain (LOG 58)? The spike recommends
-   it; the alternative keeps the rejection and caps how long an activity in a
-   parent may run.
+None open.
+
+1. Should answers be accepted during the drain (LOG 58)? **Yes**: approved by
+   the product owner, 2026-11-01.
