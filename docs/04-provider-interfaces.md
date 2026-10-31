@@ -2,8 +2,8 @@
 
 Status: revised 2026-10-31 for the spike results (`docs/15`, `docs/16`,
 `docs/18`), the code review design (`docs/19`), the merge design (`docs/20`) and
-the product owner's merge model of the same day (squash and engine-merge
-parameters, a project level, F1 as a configurable setting).
+the product owner's decisions of the same day (merge parameters, workflow-defined
+branch levels, F1 as a configurable setting, a VCS provider).
 
 This document gives each provider its **capability record** and **method
 signatures**. The contract for each method (idempotency, timeouts, heartbeats,
@@ -24,9 +24,10 @@ Terms used throughout:
 | Activity | A Temporal unit of work the engine runs for a step. Temporal retries it on failure |
 | Sandbox | The isolated environment (container or VM) where an agent and its tools run |
 | Agent worker | The engine process that starts and supervises agents. It is **separate from the sandbox**, so a worker restart does not stop the agent |
-| Integration branch | An epic's branch (the epic branch). Ticket branches merge into it |
-| Project branch | A project's branch. A project run starts epic runs, and epic branches merge into it; it merges into `main` |
-| Target branch | The branch a ticket, epic or project merges into |
+| Branch level | A level of work such as ticket, epic or project. **The levels and their names are workflow-defined**, not fixed by the engine |
+| Parent branch | The branch a piece of work was taken from. Work is reviewed against its parent and merged back into it; the parent is then reviewed against and merged into its own parent, up to and including `main` |
+| Integration branch | A branch other work merges into, such as an epic's branch in a typical ticket, epic, project workflow |
+| Hidden work-in-progress reference | A Git reference that is not a branch (for example `refs/ff/wip/<ticket>`). Pushes go there while an agent step runs, so they trigger no CI and expose no half-finished work (section 17.1) |
 | Idempotency marker | A hidden marker the engine writes into every remote object it creates, so a retry finds and adopts the object instead of duplicating it (`docs/01` section 7.1) |
 
 ---
@@ -46,6 +47,7 @@ Terms used throughout:
 | Credentials | No provider reads credentials from configuration; all go through the credential broker (section 12). **Agents get read-only code host credentials and never one that can push** (DR13), and **model credentials never enter the agent's environment** (DR1) |
 | Observability | The engine wraps every call in a decorator, so providers get spans, timeouts and error classification without extra code. Providers only add attributes (`docs/01` section 4.8, the observability contract) |
 | Contract tests | One test suite per interface, shipped with the engine, so any provider can prove it conforms (`docs/02` S5) |
+| Mechanism, not policy | **The engine provides mechanisms and guardrails; the workflow decides.** Interfaces support what a workflow may choose (branch levels, review bases, where delivery happens) without fixing it |
 
 ### 1.1 Shared types
 
@@ -160,7 +162,7 @@ splits in two. **The same rules apply to both.**
 
 | Group | Members | Used by |
 |---|---|---|
-| Step providers | Sandbox, agent runtime, code host, CI, tracker, review, notifications, session surface | Engine steps |
+| Step providers | Sandbox, agent runtime, VCS, code host, CI, tracker, review, notifications, session surface | Engine steps |
 | Platform services | Credential broker, secrets, artifact store, record store | The engine itself |
 
 ---
@@ -210,8 +212,6 @@ public interface ISandboxProvider : IProvider {
 
     Task<ProviderResult<ArtifactRef>> CopyOutAsync(SandboxHandle handle, string path, CancellationToken ct);
 
-    Task<ProviderResult<CommitBundle>> FetchCommitsAsync(SandboxHandle handle, string branch, CancellationToken ct);
-
     Task<ProviderResult<Unit>> DisposeAsync(SandboxHandle handle, CancellationToken ct);
 }
 ```
@@ -222,8 +222,11 @@ Notes:
   `AttachAsync` re-attaches to the sandbox by idempotency key. If the sandbox
   survived, the agent's **uncommitted files are kept**. If it was lost, or the
   provider lacks `PersistentAcrossSteps` (in which case `AttachAsync` returns a
-  classified error), the step creates a new sandbox and **restarts from the last
-  pushed commit**. Version 1 takes no snapshots of uncommitted work.
+  classified error), the step creates a new sandbox from the hidden
+  work-in-progress reference (section 17.1) and starts a **fresh agent
+  session**: the agent sees the pushed commits and a note that the previous
+  attempt was interrupted. Version 1 takes no snapshots of uncommitted work and
+  does not save the conversation mid-step.
 - **Commands are started and polled, not awaited.** A command may run for
   hours, which would break the "short and bounded" rule (section 1.3), and an
   awaited command would be lost with a crashed worker even when the sandbox
@@ -237,11 +240,9 @@ Notes:
 - **Read-only checkouts.** A role that must not change the branch, such as the
   code reviewer (section 7.1), gets a read-only checkout. The sandbox enforces it,
   not the agent (`docs/08` section 2.5, control without hooks).
-- **Agents do not push** (DR13). The agent commits inside the sandbox. As part
-  of the agent step, the engine takes the commits out with `FetchCommitsAsync`
-  and pushes them with its own credential through the code host's `PushAsync`
-  (section 4), at the end of the step and at work-in-progress points (section
-  2.1).
+- **Agents do not push** (DR13). The agent commits inside the sandbox; the
+  engine detects, fetches and pushes the commits through the VCS provider
+  (section 2.1).
 - `StreamingOutput` means incremental output through the cursor. A provider
   without it returns output only when the command finishes.
 - Files reach the sandbox as mounts declared at creation, or through `CopyInAsync`
@@ -251,21 +252,12 @@ Notes:
 
 ### 2.1 How an agent's commits reach the code host
 
-The push is part of the agent step (`docs/06` section 2.1, `agent.run`). The
-agent never pushes (DR13).
+The agent commits locally in the sandbox and never pushes (DR13). The engine
+does the rest as part of the agent step (`docs/06` section 2.1, `agent.run`),
+using the **VCS provider** (section 17), so it works the same for every agent
+runtime. The full sequence is in section 17.1.
 
-1. `FetchCommitsAsync` fetches the commits on the branch from the sandbox's
-   checkout and returns them as a `CommitBundle` (an artifact reference plus the
-   head SHA), so no commit content enters workflow state.
-2. The code host's `PushAsync` (section 4) pushes them with the engine's own
-   credential, at the end of the step and at work-in-progress points.
-
-| Case | What is pushed |
-|---|---|
-| The step succeeds | The ticket's own branch. This is a push, not a merge |
-| The step fails | A hidden work-in-progress ref, not the ticket branch, so a retry can pick the commits up |
-| The role has no write access | Nothing. Commits made anyway fail the step (the after-step check of what changed) |
-| The step's `push` parameter is false (scratch steps; default true) | Nothing |
+---
 
 ---
 
@@ -316,10 +308,13 @@ Notes:
   3.6). Resume must work in a fresh worker process: nothing may come from the
   crashed worker's memory. Spike 3 found Claude Code resume depended on state
   held in the worker process and failed after a restart (`docs/18` section 4,
-  item 4). It takes the sandbox handle as well, because the sandbox may have
-  been re-attached or recreated (section 2).
+  item 4). It is used only when the sandbox survived and was re-attached
+  (section 2). If the sandbox was lost, the step calls `StartAsync` for a fresh
+  session instead. The full transcript is still kept as the step's artifact at
+  the end of the step, for audit.
 - **No push credential** (DR13). The agent commits in the sandbox; the engine
-  pushes (section 2.1).
+  detects new commits through the VCS provider, not this provider, so commit
+  detection does not depend on the runtime (section 17.1).
 - **Files opened.** `GetResultAsync` includes the files the agent opened,
   recorded from hooks or from the runtime's streamed tool-call output, or
   "unknown" if neither is available. The review coverage output is built from it
@@ -354,6 +349,8 @@ The engine uses the hooks for:
 - **structured events** for the run's timeline;
 - **token and cost accounting** per step (`docs/01` section 5.5);
 - **heartbeats**, so a stalled agent can be told from a slow one;
+- **an immediate push**, optionally: a hook may prompt the engine to check for
+  new commits at once. Nothing depends on it (section 17.1);
 - **the record of files the agent opened**, one of its two sources (the other
   is the runtime's streamed tool-call output; section 3).
 
@@ -407,12 +404,7 @@ public interface ICodeHostProvider : IProvider {
     Task<ProviderResult<Unit>> ClosePullRequestAsync(PullRequestRef pr, string? comment, CancellationToken ct);
     Task<ProviderResult<PullRequestRef>> CreateRevertPullRequestAsync(PullRequestRef pr, string idempotencyKey, CancellationToken ct);
 
-    // Pushing (the engine pushes an agent's commits; section 2.1)
-    Task<ProviderResult<PushResult>> PushAsync(RepoRef repo, string refName, CommitBundle commits, string? expectedOldSha, CancellationToken ct);
-
-    // Merging
-    Task<ProviderResult<MergeResult>> MergeBaseForwardAsync(RepoRef repo, string branch, string into, CancellationToken ct);
-    Task<ProviderResult<MergeResult>> MergeAsync(PullRequestRef pr, bool squash, string testedHeadSha, string expectedBaseSha, CancellationToken ct);
+    // Merging. Catch-up and engine merges are VCS operations (section 17).
     Task<ProviderResult<MergeResult>> EnqueueMergeAsync(PullRequestRef pr, CancellationToken ct);
     Task<ProviderResult<BranchProtection>> GetBranchProtectionAsync(RepoRef repo, string branch, CancellationToken ct);
 
@@ -436,10 +428,12 @@ public interface ICodeHostProvider : IProvider {
 Notes:
 
 - How a merge works, without a merge lock, is in section 4.1.
-- **Agents never push** (DR13). The engine pushes their commits with
-  `PushAsync` (section 2.1) and performs every merge it is allowed to. As a
-  backstop, code host rules allow only the engine's identity to update epic and
-  project branches.
+- **This provider keeps the hosting APIs**: pull requests, comments, checks,
+  protection, merge queue. Pushing, catch-up and building merge commits are
+  version-control operations on the VCS provider (section 17).
+- **Agents never push** (DR13). The engine pushes their commits and performs
+  every merge it is allowed to. As a backstop, code host rules allow only the
+  engine's identity to update the integration branches below `main`.
 - **Merging into `main`** is governed by setting F1 (the engine may not merge
   into the default branch). It is configurable, and its default is the safe
   one, so by default a human merges into `main` (section 4.1). The engine
@@ -447,15 +441,17 @@ Notes:
   branch from the code host (DR2). Code host protection on `main` (requiring
   independent review) is the final fallback; it is set by an identity the engine
   does not hold, and the engine never holds a bypass. `GetBranchProtectionAsync`
-  only checks that it exists (DR3).
+  only checks that it exists (DR3). If the engine is allowed to merge but the
+  code host refuses (for example its protection requires an independent review),
+  that is an ordinary **intervention**: a request for a human to act.
 - **Merge queue** (`EnqueueMergeAsync`, capability `MergeQueue`) is optional.
   Where a repository requires a queue, a direct merge is refused, so the merge
   step enqueues and then waits by polling or inbound event. It is not the
   default; it is the managed answer if merge contention ever becomes real
   (`docs/20`).
-- **Every documented success response is mapped** (DR8). GitHub answers a
-  catch-up with nothing to merge with 204 and no body; that is a completed merge
-  with the branch unchanged, not an error. Spike 3 found the unmapped 204 being
+- **Every documented success response is mapped** (DR8). Spike 3's catch-up
+  used GitHub's merge API, which answers "nothing to merge" with 204 and no body;
+  that is a completed merge with the branch unchanged, not an error. Spike 3 found the unmapped 204 being
   retried forever as an infrastructure error (`docs/18` section 4, item 2).
 - Every object the engine creates carries an idempotency marker, which is why
   the create methods take `idempotencyKey` and why `FindByMarkerAsync` exists: on
@@ -478,13 +474,15 @@ Notes:
 
 ### 4.1 How merging works
 
-From the merge design (`docs/20`) and the product owner's merge model. There is
-**no merge lock**; work merges the way developers do.
+From the merge design (`docs/20`). There is **no merge lock**; work merges the
+way developers do, at every branch level: into its parent branch. The catch-up
+and merge methods are on the VCS provider (section 17); this provider supplies
+the pull request, protection and merge queue.
 
-1. **Catch up.** `MergeBaseForwardAsync` merges the target branch into the
-   branch being delivered. `branch` is the target branch (merged **from**);
-   `into` is the ticket or epic branch (merged **into**). The result reports
-   whether `into` changed; tests re-run only if it did.
+1. **Catch up.** `MergeBaseForwardAsync` merges the parent branch into the
+   branch being delivered. `branch` is the parent (merged **from**); `into` is
+   the child branch (merged **into**). The result reports whether `into`
+   changed; tests re-run only if it did.
 2. **Merge.** The merge step has two parameters (`docs/06` section 6.5, the
    merge step):
    - `squash`: a squash merge if true, a plain merge if false;
@@ -492,21 +490,27 @@ From the merge design (`docs/20`) and the product owner's merge model. There is
      a human decision request, waits, a human merges on the code host, and the
      engine detects the merge through `GetPullRequestAsync` and continues.
 
+Typical settings in a ticket, epic, project workflow (the levels are the
+workflow's choice):
+
 | Merge | `squash` | `engine_can_merge` |
 |---|---|---|
 | Ticket branch into epic branch | true | true |
 | Epic branch into project branch | false (each ticket's commit stays visible) | true |
 | Project branch into `main` | false | false by default (setting F1) |
 
-**When the engine merges**, `MergeAsync` builds the merge or squash commit from
-exactly the tested head (`testedHeadSha`) and pushes it to the target. If the
-target has moved since catch-up (it is no longer `expectedBaseSha`), Git refuses
-the push. The outcome is `base_moved`, and the step routes back to catch-up. The
-merge step's attempt allowance (default 3, counting every attempt) bounds the
-retries, then escalates; like every limit it is configurable.
+Where delivery to `main` happens (once at the end, or several times along the
+way) is also the workflow's choice.
+
+**When the engine merges**, the VCS provider's `MergeAsync` builds the merge or
+squash commit from exactly the tested revision and pushes it to the parent. If
+the parent has moved since catch-up, the push is refused. The outcome is
+`base_moved`, and the step routes back to catch-up. The merge step's attempt
+allowance (default 3, counting every attempt) bounds the retries, then
+escalates; like every limit it is configurable.
 
 After a plain merge, the code host marks the pull request merged because its
-commits reach the target. After a **squash** merge it does not, so the engine
+commits reach the parent. After a **squash** merge it does not, so the engine
 closes the pull request with a comment linking the squash commit.
 
 **Setting F1** (the engine may not merge into the default branch) replaces the
@@ -514,7 +518,10 @@ old fixed floor with the same default. It is set by organisation, then
 repository, then workflow, and the organisation can lock it. Nothing an agent can
 edit can change it: the repository setting is read from the repository's
 configuration on its default branch, never the ticket branch, and a re-plan
-during a run cannot change it.
+during a run cannot change it. The template's `engine_can_merge` is workflow
+policy; the organisation can cap it ("never the engine"). Allowing the engine
+implies no separate approval rule; if the code host refuses, a human is asked
+to act (an intervention).
 
 ---
 
@@ -581,7 +588,7 @@ Notes:
 
 ```csharp
 public sealed record ReviewCapabilities(
-    IReadOnlyList<string> Scopes,   // "ticket", "epic", "project", "delivery"
+    IReadOnlyList<string> Scopes,   // level names it serves, or "any"; levels are workflow-defined
     bool StructuredFindings,
     bool Fingerprints);
 
@@ -604,7 +611,14 @@ public interface IReviewProvider : IProvider {
 
 Notes:
 
-- The version 1 reviewer is an agent on a read-only checkout (section 7.1).
+- **This is the plug point for anything that reviews a change and returns
+  structured findings.** In version 1 the standard one is the agent reviewer
+  (section 7.1). Others, such as an external AI review service or a code host's
+  pull request review, can plug in alongside; their findings go into the same
+  ledger. Steps such as fix verification use whichever reviewer the workflow
+  names.
+- `Scopes` lists the branch levels the provider serves. Levels are
+  workflow-defined, so the agent reviewer declares `"any"`.
 - The arguments mirror the `review.run` step's inputs (`docs/06` section 8.2):
   `branch` and `base` (in `target`), `spec_refs` (the specification documents to
   review against) and `machine_results`. A review of a specification document
@@ -614,8 +628,8 @@ Notes:
   status) is the source of truth; a review pass is evidence (`docs/17` section
   6.5, positions L1 to L4). Passing prior findings for the same scope makes
   verdicts more stable across passes; it does not make them stable, which is why
-  the ledger decides (DR4). At epic scope, prior findings include the child
-  tickets' ledgers (DR11). Fix verification passes the original finding for the
+  the ledger decides (DR4). At any level above the lowest, prior findings
+  include the children's ledgers (DR11, stated for epics). Fix verification passes the original finding for the
   same reason.
 - Findings are **fingerprinted** on rule, repository, path, symbol and
   normalised snippet, **never on line numbers** (`docs/01` section 7.2). A
@@ -642,9 +656,9 @@ provider (section 2) and the agent runtime provider (section 3).
 | Angles | Separate passes for correctness, design and structure, tests, security, and conformance to the specification |
 | Evidence | A bug finding carries a throwaway failing test where possible. Demonstrated findings block; reasoned ones are labelled and ranked lower |
 | Model | A different, ideally stronger, model than the author is **workflow policy**, not enforced by the engine (another model may not be available). The engine records which model authored and which reviewed |
-| Coverage | **An engine mechanism, never an engine rule.** The engine publishes a coverage output: changed files, files read, files not read, and whether the record is verified (section 3). It never fails a step for coverage. A review step may set `require_coverage` (`none` by default, `all`, or a list of paths), or a route condition may act on the output; the library's standard code-review template sets `all` |
+| Coverage | **An engine mechanism, never an engine rule.** The engine publishes a coverage output: changed files, files read, files not read, and whether the record is verified (section 3). A review step may set `require_coverage` (`none` by default, `all`, or a list of paths); if it is not met, the step retries up to its attempt limit, then escalates. A route condition may also act on the output. The library's standard code-review template sets `all` |
 | Runtime | Any. Files read come from hooks or streamed tool-call output |
-| Levels | **Ticket:** the ticket branch against the integration branch, given the ticket and the epic contract. **Epic:** the integration branch against `main` |
+| Levels | **Recursive.** At every level, work is reviewed against its parent branch: for example a ticket against its epic branch (given the ticket and the epic contract), an epic against its project branch, a project against `main`. The levels are workflow-defined; a project-level review exists when the workflow has a project level |
 
 ---
 
@@ -824,30 +838,86 @@ configuration.
 | Windows sandbox provider | The hooks for it are in version 1, the provider is not (`docs/01` section 4.7) |
 | Feature-flag provider | Not an engine concern in version 1 (`docs/01` section 1.5, engine mechanism versus workflow policy) |
 | Session surfaces B, C, D | Only surface A, hand-off to the human's own tool, ships (`docs/01` section 7.4) |
+| VCS providers other than Git | The VCS interface is neutral so one can be added; version 1 ships Git only (section 17) |
 
 ---
 
 ## 16. Open questions
 
-These questions are answered and applied above:
-
-| Question | Answer, and where |
-|---|---|
-| `ProviderResult<T>` or exceptions | `ProviderResult<T>` for expected outcomes; exceptions for bugs only (section 1) |
-| Named queries or a query object | Named queries, catalogue in the engine (section 9) |
-| One command method or several | Start and poll; `GetCommandStatusAsync` serves agents and test tiers (section 2) |
-| Provider-to-provider dependencies | `Requires`, checked at run start; composition where the dependency is real (sections 1.2, 7) |
-| Is the credential broker a provider | Yes, as a platform service with the same rules (section 1.4) |
-| The `InboundEvents` shape | One inbound gateway (section 1.3.2) |
-| Progress callbacks | Removed; output comes through a cursor on `GetCommandStatusAsync` (section 2) |
-| How the engine pushes an agent's commits | `FetchCommitsAsync` from the sandbox, then `PushAsync` on the code host, as part of the agent step (section 2.1) |
-| Merge methods | `squash` is a merge parameter, beside `engine_can_merge` (section 4.1) |
-| The agent reviewer's inputs | Branch and base, specification references and machine results (section 7) |
-
-### Still open
-
 1. **A long agent review** is one `ReviewAsync` call, not started and polled
    like other agent work (section 7.1).
-2. **Review at project level.** `project` is a review scope, but which branch a
-   project or epic review compares against (`main` or the project branch) is
-   not stated (section 7.1).
+2. **How the VCS provider reaches the sandbox's working copy**: through the
+   sandbox provider (declared in `Requires`), or directly. Section 17 assumes the
+   former.
+
+---
+
+## 17. VCS provider
+
+Owns the **version-control operations the engine performs**. The code host
+provider (section 4) keeps the hosting APIs. **Version 1 implements Git only**;
+the interface is VCS-neutral (revisions and references, not Git types) so
+another version-control system can be added later, and nothing in version 1
+depends on that.
+
+```csharp
+public sealed record VcsCapabilities(
+    string System,          // "git" in version 1
+    bool HiddenReferences,  // can push to a reference that is not a branch
+    bool Squash);
+
+// A working copy inside a sandbox, reached through the sandbox provider.
+public sealed record WorkingCopyRef(SandboxHandle Sandbox, string Path);
+
+public interface IVcsProvider : IProvider {
+    // Working copy in a sandbox
+    Task<ProviderResult<string>> GetRevisionAsync(WorkingCopyRef copy, CancellationToken ct);
+    Task<ProviderResult<string?>> CommitAllAsync(WorkingCopyRef copy, string message, CancellationToken ct);
+    Task<ProviderResult<CommitBundle>> FetchCommitsAsync(WorkingCopyRef copy, string? sinceRevision, CancellationToken ct);
+
+    // Remote repository
+    Task<ProviderResult<PushResult>> PushAsync(RepoRef repo, string reference, string revision, CommitBundle? commits, string? expectedOldRevision, CancellationToken ct);
+    Task<ProviderResult<MergeResult>> MergeBaseForwardAsync(RepoRef repo, string branch, string into, CancellationToken ct);
+    Task<ProviderResult<MergeResult>> MergeAsync(RepoRef repo, string testedRevision, string target, string expectedTargetRevision, bool squash, string message, CancellationToken ct);
+}
+```
+
+Notes:
+
+- `GetRevisionAsync` returns the working copy's current revision.
+  `CommitAllAsync` commits any uncommitted changes and returns the new revision,
+  or null if there was nothing to commit. `FetchCommitsAsync` returns the
+  commits since a revision as a `CommitBundle` (an artifact reference plus the
+  head revision), so no commit content enters workflow state.
+- `PushAsync` moves `reference` (a branch or a hidden reference) to `revision`,
+  sending `commits` if the remote does not have them yet. With
+  `expectedOldRevision` set, **it refuses if the reference has moved**.
+- `MergeBaseForwardAsync` is the catch-up: it merges `branch` (the parent,
+  merged from) into `into` (the child, merged into), and reports whether `into`
+  changed and its new head.
+- `MergeAsync` is the engine merge: it **builds the merge commit, or the squash
+  commit if `squash`, from exactly `testedRevision`** and pushes it to `target`,
+  refusing if `target` is no longer `expectedTargetRevision` (outcome
+  `base_moved`). The flow, and setting F1 for `main`, are in section 4.1.
+- Credentials come from the credential broker under the engine's own identity
+  (section 12). Agents never call this provider.
+
+### 17.1 Commits and pushes during an agent step
+
+From the merge design (`docs/20`, commits and pushes).
+
+| When | What the engine does |
+|---|---|
+| The agent works | The agent **commits locally**, as often as its prompt or skill says. It never pushes |
+| Each check-in on a running step (the agent worker checks in about every 30 seconds) | `GetRevisionAsync`. If the revision moved, `FetchCommitsAsync`, then `PushAsync` to the **hidden work-in-progress reference** |
+| A hook fires, where the runtime has hooks | Optionally checks at once. Nothing depends on hooks, so every runtime works the same way |
+| The agent calls the optional `checkpoint` tool (engine MCP server) | Commits and pushes at once, without the agent needing to know the version-control system. A convenience; detection is the backstop |
+| The step ends with uncommitted changes | By default `CommitAllAsync` with the message "left uncommitted by the agent", so nothing is lost silently. A workflow can make the step fail instead |
+| The step succeeds | `PushAsync` moves the ticket branch to the final commit, **once**. This is a push to the ticket's own branch, not a merge |
+| The step fails | The commits stay on the hidden reference, so a retry continues from them |
+| The sandbox is lost | The restarted step continues from the hidden reference, with a fresh agent session (section 2) |
+| The role has no write access | Nothing is pushed. Commits made anyway fail the step (the after-step check of what changed) |
+| The step's `push` parameter is false (scratch steps; default true) | Nothing is pushed |
+
+The hidden reference is not a branch, so it triggers no CI and does not expose
+half-finished work to pull requests, reviewers or a sibling's catch-up.
