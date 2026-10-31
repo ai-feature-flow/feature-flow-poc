@@ -157,8 +157,8 @@ close it.
 |---|---|---|
 | The question survives the loss of its replica | R22 (an answer lost across a worker restart) mitigated; `docs/04` section 3.4 no longer marked unspiked | `docs/10` section 2 |
 | A hook call during an outage holds and is then allowed | R19 (an unreachable hook endpoint reads as a denial) re-tested on the agent worker, mitigated | `docs/10` section 2 |
-| The durability depends on the sandbox client owning the question id and opening idempotently by it | The client in the sandbox is a local stdio MCP server for the engine tools. It assigns each question's id, and opening is idempotent by that id | `docs/02` section 4.2; LOG 59, unreviewed |
-| An engine-tool error makes the agent improvise a result (N1) | The sandbox client never returns an infrastructure error to the agent. When its retry budget runs out, it ends the session in a resumable state, as the hook client does | `docs/02` section 4.2; LOG 60, unreviewed |
+| The durability depends on the sandbox client owning the question id and opening idempotently by it | The client in the sandbox is a local stdio MCP server for the engine tools. It assigns each question's id, and opening is idempotent by that id | `docs/02` section 4.2; LOG 59, approved |
+| An engine-tool error makes the agent improvise a result (N1) | The sandbox client never returns an infrastructure error to the agent. When its retry budget runs out, it ends the session in a resumable state, as the hook client does | `docs/02` section 4.2; LOG 60, approved |
 | Long tool calls need runtime settings | The runtime's MCP tool timeout must exceed `questions.timeout`, and the hook command's timeout must exceed the hook client's hold | `docs/10` section 1.2, DR16 |
 
 ### 5.5 Limits of the evidence
@@ -176,8 +176,10 @@ close it.
 
 ## 6. Open questions
 
+None open.
+
 1. LOG 59: should the sandbox client be fixed as a local stdio MCP server that
-   owns question ids?
+   owns question ids? **Yes**: approved by the product owner, 2026-11-01.
 2. LOG 60: should the sandbox client end the session resumably, rather than
-   return an error, when the engine stays unreachable? The alternative is to
-   return the error and have the engine distrust any report that follows it.
+   return an error, when the engine stays unreachable? **Yes**: approved by the
+   product owner, 2026-11-01.
