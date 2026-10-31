@@ -1,0 +1,20 @@
+SP1 sp1-n3-s1-1793475811: started, timeout 4 min
+SP1 sp1-n3-s1-1793475811: result=<incomplete: OperationCanceledException> elapsed=240s handOvers=13 withBoth=13 signalsWhileDraining=4 staleThenAccepted=11 wtFailed=0
+  PASS  E1 hand-overs with children running and decisions open >= 3
+  PASS  C1 every child end recorded once, matching Temporal
+  FAIL  C2 every answer recorded once as sent; conflicts rejected; duplicates acknowledged
+  PASS  C3 no start while draining; nothing in flight at a hand-over
+  FAIL  C4 completed within the timeout
+  PASS  C5 no workflow task failures, unanswered decisions or failed child signals
+    d_00: sent=rejected recorded= records=1
+    d_01: sent=approved recorded= records=1
+    d_02: sent=rejected recorded= records=1
+    d_03: sent=approved recorded= records=1
+    d_04: sent=rejected recorded= records=1
+    d_05: sent=approved recorded= records=1
+    d_06: sent=rejected recorded= records=1
+    d_07: sent=approved recorded= records=1
+    d_08: sent=rejected recorded= records=1
+    d_09: sent=approved recorded= records=1
+    answer error x93: WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new
+  written /Users/stuart.parkinson/hacks/feature-flow-poc/spikes/04-continue-as-new/results/n3-s1.json

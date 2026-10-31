@@ -72,6 +72,8 @@ with a change, and by what), or **superseded** (replaced).
 | DR11 | A parent's review includes its children's ledgers | Kept | `docs/01` section 6 |
 | DR12 | Re-entry runs a step again | Kept | `docs/03` section 4.2 |
 | DR13 | Agents never hold a credential that can push | Kept as floor F5 | `docs/05` section 1 |
+| DR14 | The interpreter sets its carried state in the workflow initialiser, because Temporal can deliver signals and updates before the run method starts (SP1) | New | `docs/spikes/sp1-results.md` section 5.4 |
+| DR15 | A hand-over waits for running signal and update handlers to finish before it continues-as-new (SP1) | New | `docs/02` section 3 |
 
 ### 1.3 Workflow language
 
@@ -105,7 +107,7 @@ approved by the product owner on 2026-11-01 and are decisions. They stay in
 |---|---|---|---|
 | R1 | History limits on long runs | References only; capped summaries; continue-as-new at a measured threshold; plan size check | Mitigated, measured (Spike 1) |
 | R2 | Non-determinism in the interpreter | Pure-function discipline; replay tests | Mitigated (Spikes 1 and 3) |
-| R3 | A decision lost during continue-as-new | Update validator rejects during the hand-over; the API retries | Mitigated (Spike 1); to re-test under the new rule (R21) |
+| R3 | A decision lost during continue-as-new | Answers recorded by the handler; the hand-over waits for running handlers (LOG 58) | Mitigated (SP1) |
 | R4 | Unstable review verdicts | Ledger; evidence-backed findings; separate review angles | Handled by design; the new reviewer not yet run |
 | R5 | Sandbox does not match CI | Tiers declared per repository; CI delegation | Mitigated (Spike 2) |
 | R6 | Credential exposure | Floors F2, F5, F6; per-step tokens | Partly mitigated; F5 and F6 not yet built |
@@ -122,7 +124,7 @@ approved by the product owner on 2026-11-01 and are decisions. They stay in
 | R18 | A long command is lost with the worker | Start and poll; re-attach by handle | Mitigated (Spike 1) |
 | R19 | An unreachable hook endpoint reads as a denial | Hold and retry; then a resumable stop | Mitigated (Spike 1); to re-test on the agent worker (RW17) |
 | R20 | Polling inflates history | Poll inside one activity | Mitigated (Spike 1) |
-| R21 | **New.** The continue-as-new rule with detached children and carried decisions loses a child's end or an answer | Children signal the parent's workflow id; the parent confirms by reading; Update validator and API retry | Not spiked |
+| R21 | The continue-as-new rule with detached children and carried decisions loses a child's end or an answer | Children signal the parent's workflow id; the parent confirms by reading; answers carried as state | Mitigated (SP1) |
 | R22 | **New.** `ask_human` across a worker restart: the agent waits, the worker goes, the answer is lost | Question state in the workflow and record store; stateless MCP replicas; client reconnects | Not spiked |
 | R23 | **New.** Agent runtimes do not call the engine's MCP tools reliably (reporting, questions, patches) | File fallback for reporting; contract tests per runtime | Not measured |
 | R24 | **New.** Policy now lives in the standard library, so a weak `std` gives weak delivery | `std` is versioned and tested like engine code; its tests run in engine CI | Residual |
@@ -151,6 +153,7 @@ Where the claims this design relies on were evidenced.
 | Concurrent tickets, catch-up, re-test on change, conflicts resolved by an agent | Spike 3, `archive/docs/18` section 2 |
 | An epic-level review catches cross-ticket defects ticket reviews miss | Spike 3, `archive/docs/18` section 3 |
 | Attempt ceilings must be checked on loop re-entry | Spike 3, `archive/docs/18` section 4 |
+| Continue-as-new with running children and open decisions loses nothing | SP1, `docs/spikes/sp1-results.md` section 5 |
 | The delivery model (library, free outcomes, traceability, engine evidence) works on a real feature | FF: 2 epics, 16 tickets, 3 repositories (`brief.md` section 3) |
 
 ---
@@ -161,7 +164,7 @@ What must be evidenced before the parts that depend on it are built.
 
 | # | Spike | Proves | Risks |
 |---|---|---|---|
-| SP1 | Continue-as-new in a parent with running children, an open decision and a gate answered during the hand-over | The new safe-point rule loses nothing | R21, R3 |
+| SP1 | Continue-as-new in a parent with running children, an open decision and a gate answered during the hand-over | The new safe-point rule loses nothing. **Done 2026-11-01: holds** (`docs/spikes/sp1-results.md`) | R21, R3 |
 | SP2 | `ask_human` with Claude Code: a question open across a worker restart, answered afterwards | Question durability on the agent worker | R22, R19 |
 | SP3 | The agent reporting contract over MCP on Claude Code and Copilot CLI, including correction turns | Runtimes use the engine tools reliably | R23 |
 | SP4 | Lock-free merging with three or more concurrent tickets and forced races | `base_moved` loops and the allowance behave | R10 |

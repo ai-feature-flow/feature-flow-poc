@@ -70,3 +70,9 @@ product owner reviews them.
 | 55 | 05 s5 | Consistency fix: every override has a key (`answer`, `recover`, `breakpoint`, `skip`, `amend`, `change_role`, `grant_attempts`, `override_library`, `answer_question`, `abort`); `_protected` variants set the role for protected content; a library override touching a protected step needs `admin` | Keys for configuration; closes a route around F3 | Low |
 | 56 | 10 s4 | Spikes renamed SP1 to SP6 | `S4` collided with decision S4 | Low |
 | 57 | 05 s8 | Settings the API checks at use (who may answer or override) apply to running runs at once; settings enforced inside the run (ceilings, caps, F1, budgets) are fixed at run start; there is no push of new configuration into running runs; an override is the way to change a running run | Answers "can organisation configuration change mid-run?", which the drafts did not say | Medium |
+
+## Unreviewed
+
+| # | Where | Decision | Why | Needs a look? |
+|---|---|---|---|---|
+| 58 | 02 s3 | Answers to decisions are accepted during a continue-as-new drain, not rejected as stale. The validator still rejects unknown and conflicting answers. Replaces the Spike 1 mitigation for R3 | SP1: with the rejection off, nothing was lost, because the handler only records state and the hand-over waits for handlers (`docs/spikes/sp1-results.md` section 5.3). With it on, an answer is refused for as long as the longest in-flight activity, which may be hours | **Yes**: changes an approved rule on one exploratory run |

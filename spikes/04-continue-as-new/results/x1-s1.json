@@ -1,0 +1,435 @@
+{
+  "id": "sp1-x1-s1-1793474823",
+  "mode": "x1",
+  "seed": 1,
+  "result": "completed",
+  "elapsedSeconds": 93,
+  "handOvers": 12,
+  "handOversWithBoth": 6,
+  "runsInHistory": 13,
+  "signalsReceived": 20,
+  "signalsWhileDraining": 3,
+  "staleThenAccepted": 0,
+  "answersTimedToDrainThatSawDraining": 10,
+  "activitiesStarted": 320,
+  "activitiesCompleted": 320,
+  "workflowTaskFailed": 0,
+  "checks": {
+    "E1 hand-overs with children running and decisions open \u003E= 3": true,
+    "C1 every child end recorded once, matching Temporal": true,
+    "C2 every answer recorded once as sent; conflicts rejected; duplicates acknowledged": true,
+    "C3 no start while draining; nothing in flight at a hand-over": true,
+    "C4 completed within the timeout": true,
+    "C5 no workflow task failures, unanswered decisions or failed child signals": true
+  },
+  "childMismatches": [],
+  "answerMismatches": [],
+  "leftInFlight": [],
+  "distinctAnswerErrors": {},
+  "answers": [
+    {
+      "DecisionId": "d_00",
+      "Accepted": true,
+      "SawDraining": true,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": "duplicate",
+      "ExtraResult": "ok:duplicate"
+    },
+    {
+      "DecisionId": "d_01",
+      "Accepted": true,
+      "SawDraining": false,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": "duplicate",
+      "ExtraResult": "ok:duplicate"
+    },
+    {
+      "DecisionId": "d_02",
+      "Accepted": true,
+      "SawDraining": true,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": "duplicate",
+      "ExtraResult": "ok:duplicate"
+    },
+    {
+      "DecisionId": "d_03",
+      "Accepted": true,
+      "SawDraining": false,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": "duplicate",
+      "ExtraResult": "ok:duplicate"
+    },
+    {
+      "DecisionId": "d_04",
+      "Accepted": true,
+      "SawDraining": true,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": "duplicate",
+      "ExtraResult": "ok:duplicate"
+    },
+    {
+      "DecisionId": "d_05",
+      "Accepted": true,
+      "SawDraining": false,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": "conflict",
+      "ExtraResult": "rejected:conflict"
+    },
+    {
+      "DecisionId": "d_06",
+      "Accepted": true,
+      "SawDraining": true,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": "conflict",
+      "ExtraResult": "rejected:conflict"
+    },
+    {
+      "DecisionId": "d_07",
+      "Accepted": true,
+      "SawDraining": false,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    },
+    {
+      "DecisionId": "d_08",
+      "Accepted": true,
+      "SawDraining": true,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    },
+    {
+      "DecisionId": "d_09",
+      "Accepted": true,
+      "SawDraining": false,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    },
+    {
+      "DecisionId": "d_10",
+      "Accepted": true,
+      "SawDraining": true,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    },
+    {
+      "DecisionId": "d_11",
+      "Accepted": true,
+      "SawDraining": false,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    },
+    {
+      "DecisionId": "d_12",
+      "Accepted": true,
+      "SawDraining": true,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    },
+    {
+      "DecisionId": "d_13",
+      "Accepted": true,
+      "SawDraining": false,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    },
+    {
+      "DecisionId": "d_14",
+      "Accepted": true,
+      "SawDraining": true,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    },
+    {
+      "DecisionId": "d_15",
+      "Accepted": true,
+      "SawDraining": false,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    },
+    {
+      "DecisionId": "d_16",
+      "Accepted": true,
+      "SawDraining": true,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    },
+    {
+      "DecisionId": "d_17",
+      "Accepted": true,
+      "SawDraining": false,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    },
+    {
+      "DecisionId": "d_18",
+      "Accepted": true,
+      "SawDraining": true,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    },
+    {
+      "DecisionId": "d_19",
+      "Accepted": true,
+      "SawDraining": false,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    }
+  ],
+  "handOverLog": [
+    {
+      "Run": 0,
+      "HistoryEvents": 167,
+      "InFlight": 0,
+      "RunningChildren": 10,
+      "OpenDecisions": 20,
+      "PendingConfirms": 0
+    },
+    {
+      "Run": 1,
+      "HistoryEvents": 178,
+      "InFlight": 0,
+      "RunningChildren": 10,
+      "OpenDecisions": 18,
+      "PendingConfirms": 1
+    },
+    {
+      "Run": 2,
+      "HistoryEvents": 191,
+      "InFlight": 0,
+      "RunningChildren": 9,
+      "OpenDecisions": 12,
+      "PendingConfirms": 1
+    },
+    {
+      "Run": 3,
+      "HistoryEvents": 177,
+      "InFlight": 0,
+      "RunningChildren": 8,
+      "OpenDecisions": 9,
+      "PendingConfirms": 0
+    },
+    {
+      "Run": 4,
+      "HistoryEvents": 180,
+      "InFlight": 0,
+      "RunningChildren": 8,
+      "OpenDecisions": 6,
+      "PendingConfirms": 0
+    },
+    {
+      "Run": 5,
+      "HistoryEvents": 173,
+      "InFlight": 0,
+      "RunningChildren": 7,
+      "OpenDecisions": 4,
+      "PendingConfirms": 1
+    },
+    {
+      "Run": 6,
+      "HistoryEvents": 189,
+      "InFlight": 0,
+      "RunningChildren": 16,
+      "OpenDecisions": 0,
+      "PendingConfirms": 0
+    },
+    {
+      "Run": 7,
+      "HistoryEvents": 165,
+      "InFlight": 0,
+      "RunningChildren": 13,
+      "OpenDecisions": 0,
+      "PendingConfirms": 0
+    },
+    {
+      "Run": 8,
+      "HistoryEvents": 170,
+      "InFlight": 0,
+      "RunningChildren": 11,
+      "OpenDecisions": 0,
+      "PendingConfirms": 0
+    },
+    {
+      "Run": 9,
+      "HistoryEvents": 170,
+      "InFlight": 0,
+      "RunningChildren": 10,
+      "OpenDecisions": 0,
+      "PendingConfirms": 1
+    },
+    {
+      "Run": 10,
+      "HistoryEvents": 168,
+      "InFlight": 0,
+      "RunningChildren": 6,
+      "OpenDecisions": 0,
+      "PendingConfirms": 0
+    },
+    {
+      "Run": 11,
+      "HistoryEvents": 170,
+      "InFlight": 0,
+      "RunningChildren": 4,
+      "OpenDecisions": 0,
+      "PendingConfirms": 0
+    }
+  ],
+  "runs": [
+    {
+      "RunId": "8d517e2b-1d64-46b9-b709-fbd636fb1074",
+      "Events": 111,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 16,
+      "ActivitiesCompleted": 16,
+      "LastEvent": "WorkflowExecutionCompleted"
+    },
+    {
+      "RunId": "ce46f65e-1512-4a7c-bff6-97be8aadcc59",
+      "Events": 172,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 27,
+      "ActivitiesCompleted": 27,
+      "LastEvent": "WorkflowExecutionContinuedAsNew"
+    },
+    {
+      "RunId": "7472905b-1aa8-440e-83f5-03fa6e497fd9",
+      "Events": 170,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 27,
+      "ActivitiesCompleted": 27,
+      "LastEvent": "WorkflowExecutionContinuedAsNew"
+    },
+    {
+      "RunId": "3a8c3c81-5094-46d4-94ee-bb0ff6d0adfb",
+      "Events": 172,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 27,
+      "ActivitiesCompleted": 27,
+      "LastEvent": "WorkflowExecutionContinuedAsNew"
+    },
+    {
+      "RunId": "57b74b46-349c-4d36-905a-07e075e37f70",
+      "Events": 172,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 27,
+      "ActivitiesCompleted": 27,
+      "LastEvent": "WorkflowExecutionContinuedAsNew"
+    },
+    {
+      "RunId": "ea97e8c0-ded3-4198-a29c-029ef2c6087c",
+      "Events": 167,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 26,
+      "ActivitiesCompleted": 26,
+      "LastEvent": "WorkflowExecutionContinuedAsNew"
+    },
+    {
+      "RunId": "f2c61a5f-632d-480d-b7d3-cb8ccdbbdc23",
+      "Events": 191,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 20,
+      "ActivitiesCompleted": 20,
+      "LastEvent": "WorkflowExecutionContinuedAsNew"
+    },
+    {
+      "RunId": "3ee2169b-67d5-45db-a53c-0d43f40ae155",
+      "Events": 175,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 26,
+      "ActivitiesCompleted": 26,
+      "LastEvent": "WorkflowExecutionContinuedAsNew"
+    },
+    {
+      "RunId": "c3149ad8-e462-4112-898a-7bced39942db",
+      "Events": 182,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 27,
+      "ActivitiesCompleted": 27,
+      "LastEvent": "WorkflowExecutionContinuedAsNew"
+    },
+    {
+      "RunId": "c62f25dc-8400-43a5-ae0d-fae29e9f7deb",
+      "Events": 179,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 27,
+      "ActivitiesCompleted": 27,
+      "LastEvent": "WorkflowExecutionContinuedAsNew"
+    },
+    {
+      "RunId": "1ae96559-28fd-4d26-9a2e-8f0a9c4568a7",
+      "Events": 193,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 25,
+      "ActivitiesCompleted": 25,
+      "LastEvent": "WorkflowExecutionContinuedAsNew"
+    },
+    {
+      "RunId": "7259678e-096a-4c88-aac4-f31d714c74ac",
+      "Events": 180,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 26,
+      "ActivitiesCompleted": 26,
+      "LastEvent": "WorkflowExecutionContinuedAsNew"
+    },
+    {
+      "RunId": "01a1936e-063e-7bdb-9236-b046eae31cf5",
+      "Events": 169,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 19,
+      "ActivitiesCompleted": 19,
+      "LastEvent": "WorkflowExecutionContinuedAsNew"
+    }
+  ]
+}

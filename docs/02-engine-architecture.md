@@ -124,10 +124,13 @@ that point. The new rule:
 |---|---|
 | Activities | **Drain**: stop starting new activities, let in-flight ones finish, then continue-as-new. Activities are at most hours long, and their heartbeats add no history |
 | Child runs | **Do not block.** Children are started with a parent-close policy that leaves them running. A child reports its end to the parent's workflow id by signal, which reaches whichever run of the parent is current; the parent then reads the child's result to confirm |
-| Open decisions | **Do not block.** They are state, carried over. Answers are Temporal Updates addressed by workflow id; the update validator rejects an answer during the hand-over, and the API retries against the new run (risk R3, mitigated in Spike 1) |
+| Open decisions | **Do not block.** They are state, carried over. Answers are Temporal Updates addressed by workflow id, which Temporal delivers to the current run. They are **accepted during the drain**: the handler only records the answer, and the hand-over waits for running handlers to finish, so the answer is in the carried state (LOG 58). The validator rejects unknown and conflicting answers only |
 | Timers | Re-created from state in the new run |
 
-This rule is **not yet spiked** (`docs/10`).
+Spiked in SP1 (`docs/spikes/sp1-results.md`): in 39 hand-overs, 24 with
+children running and decisions open, no child's end, answer or activity was
+lost. Negative controls showed that signalling a run id instead of the workflow
+id, or the default parent-close policy (terminate), loses every child's end.
 
 ---
 

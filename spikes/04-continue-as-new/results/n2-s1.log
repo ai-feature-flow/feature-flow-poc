@@ -1,0 +1,20 @@
+SP1 sp1-n2-s1-1793475811: started, timeout 4 min
+SP1 sp1-n2-s1-1793475811: result=<incomplete: OperationCanceledException> elapsed=240s handOvers=12 withBoth=7 signalsWhileDraining=0 staleThenAccepted=12 wtFailed=0
+  PASS  E1 hand-overs with children running and decisions open >= 3
+  FAIL  C1 every child end recorded once, matching Temporal
+  PASS  C2 every answer recorded once as sent; conflicts rejected; duplicates acknowledged
+  PASS  C3 no start while draining; nothing in flight at a hand-over
+  FAIL  C4 completed within the timeout
+  PASS  C5 no workflow task failures, unanswered decisions or failed child signals
+    sp1-n2-s1-1793475811-child-00: ended=False records=0 recorded= direct=Terminated:
+    sp1-n2-s1-1793475811-child-01: ended=False records=0 recorded= direct=Terminated:
+    sp1-n2-s1-1793475811-child-02: ended=False records=0 recorded= direct=Terminated:
+    sp1-n2-s1-1793475811-child-03: ended=False records=0 recorded= direct=Terminated:
+    sp1-n2-s1-1793475811-child-04: ended=False records=0 recorded= direct=Terminated:
+    sp1-n2-s1-1793475811-child-05: ended=False records=0 recorded= direct=Terminated:
+    sp1-n2-s1-1793475811-child-06: ended=False records=0 recorded= direct=Terminated:
+    sp1-n2-s1-1793475811-child-07: ended=False records=0 recorded= direct=Terminated:
+    sp1-n2-s1-1793475811-child-08: ended=False records=0 recorded= direct=Terminated:
+    sp1-n2-s1-1793475811-child-09: ended=False records=0 recorded= direct=Terminated:
+    answer error x82: WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new
+  written /Users/stuart.parkinson/hacks/feature-flow-poc/spikes/04-continue-as-new/results/n2-s1.json

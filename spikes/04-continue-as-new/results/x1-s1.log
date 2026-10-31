@@ -1,0 +1,9 @@
+SP1 sp1-x1-s1-1793474823: started, timeout 4 min
+SP1 sp1-x1-s1-1793474823: result=completed elapsed=93s handOvers=12 withBoth=6 signalsWhileDraining=3 staleThenAccepted=0 wtFailed=0
+  PASS  E1 hand-overs with children running and decisions open >= 3
+  PASS  C1 every child end recorded once, matching Temporal
+  PASS  C2 every answer recorded once as sent; conflicts rejected; duplicates acknowledged
+  PASS  C3 no start while draining; nothing in flight at a hand-over
+  PASS  C4 completed within the timeout
+  PASS  C5 no workflow task failures, unanswered decisions or failed child signals
+  written /Users/stuart.parkinson/hacks/feature-flow-poc/spikes/04-continue-as-new/results/x1-s1.json

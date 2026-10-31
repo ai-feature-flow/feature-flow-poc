@@ -1,0 +1,540 @@
+{
+  "id": "sp1-n2-s1-1793475811",
+  "mode": "n2",
+  "seed": 1,
+  "result": "\u003Cincomplete: OperationCanceledException\u003E",
+  "elapsedSeconds": 240,
+  "handOvers": 12,
+  "handOversWithBoth": 7,
+  "runsInHistory": 13,
+  "signalsReceived": 0,
+  "signalsWhileDraining": 0,
+  "staleThenAccepted": 12,
+  "answersTimedToDrainThatSawDraining": 10,
+  "activitiesStarted": 300,
+  "activitiesCompleted": 300,
+  "workflowTaskFailed": 0,
+  "checks": {
+    "E1 hand-overs with children running and decisions open \u003E= 3": true,
+    "C1 every child end recorded once, matching Temporal": false,
+    "C2 every answer recorded once as sent; conflicts rejected; duplicates acknowledged": true,
+    "C3 no start while draining; nothing in flight at a hand-over": true,
+    "C4 completed within the timeout": false,
+    "C5 no workflow task failures, unanswered decisions or failed child signals": true
+  },
+  "childMismatches": [
+    "sp1-n2-s1-1793475811-child-00: ended=False records=0 recorded= direct=Terminated:",
+    "sp1-n2-s1-1793475811-child-01: ended=False records=0 recorded= direct=Terminated:",
+    "sp1-n2-s1-1793475811-child-02: ended=False records=0 recorded= direct=Terminated:",
+    "sp1-n2-s1-1793475811-child-03: ended=False records=0 recorded= direct=Terminated:",
+    "sp1-n2-s1-1793475811-child-04: ended=False records=0 recorded= direct=Terminated:",
+    "sp1-n2-s1-1793475811-child-05: ended=False records=0 recorded= direct=Terminated:",
+    "sp1-n2-s1-1793475811-child-06: ended=False records=0 recorded= direct=Terminated:",
+    "sp1-n2-s1-1793475811-child-07: ended=False records=0 recorded= direct=Terminated:",
+    "sp1-n2-s1-1793475811-child-08: ended=False records=0 recorded= direct=Terminated:",
+    "sp1-n2-s1-1793475811-child-09: ended=False records=0 recorded= direct=Terminated:",
+    "sp1-n2-s1-1793475811-child-10: ended=False records=0 recorded= direct=Terminated:",
+    "sp1-n2-s1-1793475811-child-11: ended=False records=0 recorded= direct=Terminated:",
+    "sp1-n2-s1-1793475811-child-12: ended=False records=0 recorded= direct=Terminated:",
+    "sp1-n2-s1-1793475811-child-13: ended=False records=0 recorded= direct=Terminated:",
+    "sp1-n2-s1-1793475811-child-14: ended=False records=0 recorded= direct=Terminated:",
+    "sp1-n2-s1-1793475811-child-15: ended=False records=0 recorded= direct=Terminated:",
+    "sp1-n2-s1-1793475811-child-16: ended=False records=0 recorded= direct=Terminated:",
+    "sp1-n2-s1-1793475811-child-17: ended=False records=0 recorded= direct=Terminated:",
+    "sp1-n2-s1-1793475811-child-18: ended=False records=0 recorded= direct=Terminated:",
+    "sp1-n2-s1-1793475811-child-19: ended=False records=0 recorded= direct=Terminated:"
+  ],
+  "answerMismatches": [],
+  "leftInFlight": [],
+  "distinctAnswerErrors": {
+    "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new": 82
+  },
+  "answers": [
+    {
+      "DecisionId": "d_00",
+      "Accepted": true,
+      "SawDraining": true,
+      "Attempts": [
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "ok:recorded"
+      ],
+      "ExtraKind": "duplicate",
+      "ExtraResult": "ok:duplicate"
+    },
+    {
+      "DecisionId": "d_01",
+      "Accepted": true,
+      "SawDraining": false,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": "duplicate",
+      "ExtraResult": "ok:duplicate"
+    },
+    {
+      "DecisionId": "d_02",
+      "Accepted": true,
+      "SawDraining": true,
+      "Attempts": [
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "ok:recorded"
+      ],
+      "ExtraKind": "duplicate",
+      "ExtraResult": "ok:duplicate"
+    },
+    {
+      "DecisionId": "d_03",
+      "Accepted": true,
+      "SawDraining": false,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": "duplicate",
+      "ExtraResult": "ok:duplicate"
+    },
+    {
+      "DecisionId": "d_04",
+      "Accepted": true,
+      "SawDraining": true,
+      "Attempts": [
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "ok:recorded"
+      ],
+      "ExtraKind": "duplicate",
+      "ExtraResult": "ok:duplicate"
+    },
+    {
+      "DecisionId": "d_05",
+      "Accepted": true,
+      "SawDraining": false,
+      "Attempts": [
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "ok:recorded"
+      ],
+      "ExtraKind": "conflict",
+      "ExtraResult": "rejected:conflict"
+    },
+    {
+      "DecisionId": "d_06",
+      "Accepted": true,
+      "SawDraining": true,
+      "Attempts": [
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "ok:recorded"
+      ],
+      "ExtraKind": "conflict",
+      "ExtraResult": "rejected:conflict"
+    },
+    {
+      "DecisionId": "d_07",
+      "Accepted": true,
+      "SawDraining": false,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    },
+    {
+      "DecisionId": "d_08",
+      "Accepted": true,
+      "SawDraining": true,
+      "Attempts": [
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    },
+    {
+      "DecisionId": "d_09",
+      "Accepted": true,
+      "SawDraining": false,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    },
+    {
+      "DecisionId": "d_10",
+      "Accepted": true,
+      "SawDraining": true,
+      "Attempts": [
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    },
+    {
+      "DecisionId": "d_11",
+      "Accepted": true,
+      "SawDraining": false,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    },
+    {
+      "DecisionId": "d_12",
+      "Accepted": true,
+      "SawDraining": true,
+      "Attempts": [
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    },
+    {
+      "DecisionId": "d_13",
+      "Accepted": true,
+      "SawDraining": false,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    },
+    {
+      "DecisionId": "d_14",
+      "Accepted": true,
+      "SawDraining": true,
+      "Attempts": [
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    },
+    {
+      "DecisionId": "d_15",
+      "Accepted": true,
+      "SawDraining": false,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    },
+    {
+      "DecisionId": "d_16",
+      "Accepted": true,
+      "SawDraining": true,
+      "Attempts": [
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    },
+    {
+      "DecisionId": "d_17",
+      "Accepted": true,
+      "SawDraining": false,
+      "Attempts": [
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    },
+    {
+      "DecisionId": "d_18",
+      "Accepted": true,
+      "SawDraining": true,
+      "Attempts": [
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "WorkflowUpdateFailedException: Workflow update failed / stale: workflow is continuing-as-new",
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    },
+    {
+      "DecisionId": "d_19",
+      "Accepted": true,
+      "SawDraining": false,
+      "Attempts": [
+        "ok:recorded"
+      ],
+      "ExtraKind": null,
+      "ExtraResult": null
+    }
+  ],
+  "handOverLog": [
+    {
+      "Run": 0,
+      "HistoryEvents": 167,
+      "InFlight": 0,
+      "RunningChildren": 10,
+      "OpenDecisions": 20,
+      "PendingConfirms": 0
+    },
+    {
+      "Run": 1,
+      "HistoryEvents": 175,
+      "InFlight": 0,
+      "RunningChildren": 10,
+      "OpenDecisions": 19,
+      "PendingConfirms": 0
+    },
+    {
+      "Run": 2,
+      "HistoryEvents": 167,
+      "InFlight": 0,
+      "RunningChildren": 10,
+      "OpenDecisions": 15,
+      "PendingConfirms": 0
+    },
+    {
+      "Run": 3,
+      "HistoryEvents": 168,
+      "InFlight": 0,
+      "RunningChildren": 10,
+      "OpenDecisions": 11,
+      "PendingConfirms": 0
+    },
+    {
+      "Run": 4,
+      "HistoryEvents": 168,
+      "InFlight": 0,
+      "RunningChildren": 10,
+      "OpenDecisions": 8,
+      "PendingConfirms": 0
+    },
+    {
+      "Run": 5,
+      "HistoryEvents": 172,
+      "InFlight": 0,
+      "RunningChildren": 10,
+      "OpenDecisions": 6,
+      "PendingConfirms": 0
+    },
+    {
+      "Run": 6,
+      "HistoryEvents": 170,
+      "InFlight": 0,
+      "RunningChildren": 20,
+      "OpenDecisions": 4,
+      "PendingConfirms": 0
+    },
+    {
+      "Run": 7,
+      "HistoryEvents": 166,
+      "InFlight": 0,
+      "RunningChildren": 20,
+      "OpenDecisions": 0,
+      "PendingConfirms": 0
+    },
+    {
+      "Run": 8,
+      "HistoryEvents": 165,
+      "InFlight": 0,
+      "RunningChildren": 20,
+      "OpenDecisions": 0,
+      "PendingConfirms": 0
+    },
+    {
+      "Run": 9,
+      "HistoryEvents": 165,
+      "InFlight": 0,
+      "RunningChildren": 20,
+      "OpenDecisions": 0,
+      "PendingConfirms": 0
+    },
+    {
+      "Run": 10,
+      "HistoryEvents": 162,
+      "InFlight": 0,
+      "RunningChildren": 20,
+      "OpenDecisions": 0,
+      "PendingConfirms": 0
+    },
+    {
+      "Run": 11,
+      "HistoryEvents": 165,
+      "InFlight": 0,
+      "RunningChildren": 20,
+      "OpenDecisions": 0,
+      "PendingConfirms": 0
+    }
+  ],
+  "runs": [
+    {
+      "RunId": "ef3df1bd-8d43-419a-a866-b8c6cad323e1",
+      "Events": 22,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 3,
+      "ActivitiesCompleted": 3,
+      "LastEvent": "WorkflowTaskCompleted"
+    },
+    {
+      "RunId": "30a51df8-fda0-4354-88d1-c375a79cca25",
+      "Events": 167,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 27,
+      "ActivitiesCompleted": 27,
+      "LastEvent": "WorkflowExecutionContinuedAsNew"
+    },
+    {
+      "RunId": "2d5de8b9-12df-4a35-ae90-038bac671cc7",
+      "Events": 164,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 28,
+      "ActivitiesCompleted": 28,
+      "LastEvent": "WorkflowExecutionContinuedAsNew"
+    },
+    {
+      "RunId": "e06dfb9e-cb9d-4f8d-bc36-e51c0a16c616",
+      "Events": 167,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 28,
+      "ActivitiesCompleted": 28,
+      "LastEvent": "WorkflowExecutionContinuedAsNew"
+    },
+    {
+      "RunId": "8f5f7062-ea7d-4e1a-98d8-8b701cb17abf",
+      "Events": 167,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 27,
+      "ActivitiesCompleted": 27,
+      "LastEvent": "WorkflowExecutionContinuedAsNew"
+    },
+    {
+      "RunId": "8b086326-32f0-4cf2-9d16-50134d9e3d54",
+      "Events": 168,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 23,
+      "ActivitiesCompleted": 23,
+      "LastEvent": "WorkflowExecutionContinuedAsNew"
+    },
+    {
+      "RunId": "e5c843c9-231b-49e9-8403-11102971f02b",
+      "Events": 172,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 19,
+      "ActivitiesCompleted": 19,
+      "LastEvent": "WorkflowExecutionContinuedAsNew"
+    },
+    {
+      "RunId": "4255050d-475f-462a-be1a-29fa59f651fc",
+      "Events": 174,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 27,
+      "ActivitiesCompleted": 27,
+      "LastEvent": "WorkflowExecutionContinuedAsNew"
+    },
+    {
+      "RunId": "b9b43e91-c2fc-4992-83b4-c7f89ac95a72",
+      "Events": 170,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 25,
+      "ActivitiesCompleted": 25,
+      "LastEvent": "WorkflowExecutionContinuedAsNew"
+    },
+    {
+      "RunId": "4407cef4-2a76-48f3-98d6-36ecddaee38a",
+      "Events": 170,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 23,
+      "ActivitiesCompleted": 23,
+      "LastEvent": "WorkflowExecutionContinuedAsNew"
+    },
+    {
+      "RunId": "165e8ca3-5c17-4bf1-8bfb-17fac06e198d",
+      "Events": 169,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 24,
+      "ActivitiesCompleted": 24,
+      "LastEvent": "WorkflowExecutionContinuedAsNew"
+    },
+    {
+      "RunId": "36d27239-d134-408e-ada2-7f2dc74a9d37",
+      "Events": 177,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 27,
+      "ActivitiesCompleted": 27,
+      "LastEvent": "WorkflowExecutionContinuedAsNew"
+    },
+    {
+      "RunId": "01a1937d-18b7-7d2b-bfc4-2a6ad1ada590",
+      "Events": 169,
+      "WorkflowTaskFailed": 0,
+      "ActivitiesScheduled": 19,
+      "ActivitiesCompleted": 19,
+      "LastEvent": "WorkflowExecutionContinuedAsNew"
+    }
+  ]
+}
