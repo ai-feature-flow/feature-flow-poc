@@ -96,7 +96,7 @@ Paths in all design documents are relative to the repository root.
 | Archive the first design | Done 2026-10-31 |
 | `00-principles.md` and `OUTLINE.md` | Reviewed and accepted 2026-10-31 (RW10 to RW18) |
 | Write 01 to 10 | First drafts done 2026-10-31, overnight, without the product owner. Judgement calls are in `LOG.md` |
-| Consistency pass over 00 to 10 | In progress |
+| Consistency pass over 00 to 10 | Done 2026-10-31: an independent review found 39 issues, all fixed (`LOG.md` entries 49 to 56) |
 | Product owner review of the drafts and `LOG.md` | Next |
 | Update `CONTRIBUTING.md` paths to the new structure | Done 2026-10-31 |
 | Spikes SP1 to SP3 (`docs/10` section 4) | Not started |

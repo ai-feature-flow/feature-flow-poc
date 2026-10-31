@@ -7,6 +7,11 @@ decision register (`docs/10`) once reviewed.
 
 Started 2026-10-31, overnight session. Local commits only; nothing pushed.
 
+**Start with the entries marked "Yes":** 3 (no re-plan outcome or resume
+directive), 9 (the last step's success ends the run by default), 17 (the agent
+reporting contract), 26 (F1 is organisation-only), 31 (the new continue-as-new
+rule, which needs a spike), 50 (the hard attempt ceiling is absolute).
+
 | # | Document | Decision | Why | Needs a look? |
 |---|---|---|---|---|
 | 1 | 01 s2.1 | Three step forms: agent step, decision, engine action. `parallel` and fragments are plan constructs, not steps. Starting a child run is an engine action | Matches FF's agent / human / engine split; keeps composition out of the step list | Low |
