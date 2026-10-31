@@ -63,7 +63,7 @@ array.
       "required": ["name", "scope", "revision"],
       "properties": {
         "name": { "type": "string" },
-        "scope": { "enum": ["ticket", "epic", "project", "delivery", "any"] },
+        "scope": { "$ref": "#/$defs/Scope" },
         "revision": { "type": "integer", "minimum": 1 },
         "description": { "type": "string" },
         "source": { "$ref": "#/$defs/LibraryRef" }
@@ -108,7 +108,7 @@ array.
           "description": "snake_case. Must not look like a step kind (review 09 B2)"
         },
         "kind": { "$ref": "#/$defs/StepKind" },
-        "scope": { "enum": ["ticket", "epic", "project", "delivery", "any"] },
+        "scope": { "$ref": "#/$defs/Scope" },
         "protected": { "type": "boolean" },
         "inputs": { "type": "object" },
         "requires": {
@@ -234,6 +234,11 @@ array.
       "maxLength": 1000,
       "description": "CEL. Namespaces: params, steps, run, findings. steps.<id>.previous holds a re-run step's previous results; steps.<id>.executions its execution count"
     },
+    "Scope": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "A level name the workflow defines (ticket, epic and project are typical), or delivery, or any. Not a fixed list: the number and names of levels are workflow choices"
+    },
     "StringOrExpr": {
       "oneOf": [
         { "type": "string" },
@@ -252,7 +257,8 @@ array.
       "properties": {
         "decision_type": {
           "type": "string",
-          "pattern": "^(ticket|epic|project|delivery)\\.[a-z_]+$"
+          "pattern": "^[a-z][a-z0-9_]*\\.[a-z_]+$",
+          "description": "Namespaced by scope, for example ticket.merge_approval"
         }
       },
       "additionalProperties": false
@@ -292,10 +298,19 @@ array.
   (review 09, answer 5). Section 4 gives the mechanism. The per-kind input
   schemas are generated from `docs/06` and are not written out here, so they
   cannot drift from it.
+- **Versioning.** `apiVersion: feature-flow/v1` is the plan schema version;
+  there is no separate `schemaVersion`. A library package's
+  `requires.plan_schema_version` is expressed as an `apiVersion`.
+- **Publishing.** The patch schema refers to the plan schema with a
+  cross-document `$ref` in source; the published form is one bundled file.
 - **`LibraryRef` has one format**, `package[@version]:type/name` (review 09 D8;
   `docs/11` section 3).
-- **Scopes.** `ticket`, `epic`, `project`, `delivery` and `any`. A project run
-  starts epic runs with `run.child`, the way an epic run starts ticket runs.
+- **Scopes are workflow-defined.** `Scope` is any snake_case name, not a fixed
+  list: the engine provides the mechanism and the workflow decides how many
+  levels there are and what they are called. `ticket`, `epic` and `project` are
+  typical; `delivery` and `any` keep their meanings. A run at one level starts
+  the runs of the level below with `run.child`, and each level's work is
+  reviewed against, and merged back into, the branch it was taken from.
 - **Run statuses are not all directives.** `end` takes `completed`, `failed`,
   `partial` or `rejected`. A run that stops without reaching an `end:` route has
   the status `incomplete` (DR6), which no route can choose; a parent's
@@ -438,7 +453,7 @@ The mechanism is one schema per kind, selected by `kind`. Three kinds are shown:
               "push": {
                 "type": "boolean",
                 "default": true,
-                "description": "Whether the engine pushes the agent's commits to the branch at the end of the step and at work-in-progress points. False for scratch steps. Pushing follows write_access: with none, nothing is pushed"
+                "description": "Whether the engine pushes the agent's commits. While the step runs the engine detects new commits through the VCS provider and pushes them to a hidden work-in-progress reference, not the branch; when the step succeeds it moves the branch to the final commit once. False for scratch steps. Pushing follows write_access: with none, nothing is pushed"
               },
               "bindings": { "type": "object" },
               "resume_strategy": { "type": "string" }
@@ -456,7 +471,7 @@ The mechanism is one schema per kind, selected by `kind`. Three kinds are shown:
             "type": "object",
             "required": ["scope", "prior_findings"],
             "properties": {
-              "scope": { "enum": ["ticket", "epic", "project", "delivery"] },
+              "scope": { "$ref": "#/$defs/Scope" },
               "branch": { "$ref": "#/$defs/StringOrExpr", "description": "The branch to review, on a read-only checkout" },
               "base": { "$ref": "#/$defs/StringOrExpr", "description": "The branch it is compared with" },
               "diff_ref": { "$ref": "#/$defs/StringOrExpr", "description": "Only for a review of a specification document rather than code: the document to review" },
@@ -489,7 +504,7 @@ The mechanism is one schema per kind, selected by `kind`. Three kinds are shown:
               "pr_ref": { "$ref": "#/$defs/StringOrExpr" },
               "engine_can_merge": {
                 "type": "boolean",
-                "description": "True: the engine builds the merge commit from what was tested and pushes it. False: the engine raises a human decision request, a human merges on the code host, and the engine detects the merge. Checked against the default-branch merge setting (floor F1) at validation and at merge time"
+                "description": "True: the engine builds the merge commit from what was tested and pushes it. False: the engine raises a human decision request, a human merges on the code host, and the engine detects the merge. Workflow policy, capped by the default-branch merge setting (floor F1), which is checked at validation and at merge time. If the engine may merge but the code host refuses, the engine raises an intervention (a request for a human to act)"
               },
               "squash": { "type": "boolean", "description": "True for a squash merge, false for a plain merge" }
             },
@@ -502,7 +517,9 @@ The mechanism is one schema per kind, selected by `kind`. Three kinds are shown:
 }
 ```
 
-The full set is one `if`/`then` per kind, generated from `docs/06`. It is not
+The full set is one `if`/`then` per kind, generated from the step catalogue. In
+implementation the catalogue becomes one machine-readable YAML file from which
+both `docs/06` and these schemas are generated. It is not
 written out here, for the reason in section 2.1. **The generator, not this
 document, is the deliverable.**
 
@@ -628,25 +645,12 @@ handled by the interpreter (review 11 A1).
 
 ## 7. Open questions
 
-### Answered
+Answered questions are not repeated here; their answers are in the sections
+above, and the history is in `docs/reviews/`.
 
-| Question | Answer |
-|---|---|
-| Per-kind input schemas: generated or hand-written | **Generated.** In implementation the catalogue becomes one machine-readable YAML file that `docs/06` and the schemas are both generated from. An implementation task |
-| `$ref` across documents | Cross-document `$ref` in source; publish a bundled single file |
-| `schemaVersion` versus `apiVersion` | `apiVersion: feature-flow/v1` **is** the plan schema version. `schemaVersion` is dropped, and a package's `requires.plan_schema_version` is expressed as an `apiVersion` |
-| Richer input types | Inputs are typed per step kind, from the catalogue (section 4) |
-| Reference format | One format, `package[@constraint]:type/name` (`docs/11` section 3) |
-| The `outputs` cap (16 entries, 256 bytes per value) | Kept as a starting value. Spike 2 measured at most 5 entries and 71 bytes (`docs/16` section 2) |
+### 7.1 Still open
 
-### 7.1 Answered in round 2
-
-Found while checking the schema against the worked examples in `docs/13`, and
-decided by the product owner on 2026-10-31.
-
-| # | Question | Answer, applied in this document |
+| # | Question | Effect today |
 |---|---|---|
-| 1 | `Step` required `routes`, but parallel branches and `add_chain` steps carry none | `routes` is optional in the schema; the validator requires it on every other step (section 2.1) |
-| 2 | `Limits` had no `correction_turns` | Added |
-| 3 | A patch's `change_route` typed directives as strings | `to` uses the plan's forms: a step id, `{ end: ... }` or `{ resume: true }` |
-| 4 | `review.run` inputs under the review design | `branch`, `base`, `spec_refs`, `machine_results`; `diff_ref` only for reviewing a document; plus `require_coverage` (section 4) |
+| 1 | Where are a workflow's level names declared, and what checks a plan's `scope` against them? `Scope` accepts any snake_case name | A misspelt scope passes the schema. A load-time check against declared levels would close this |
+| 2 | What is the `agent.run` input that makes a step fail, instead of the default engine commit, when the agent leaves uncommitted changes? The behaviour is decided; the name is not | Not in section 4 |

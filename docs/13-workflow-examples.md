@@ -24,13 +24,19 @@ perform it and whether to squash; a project level above epics), the review
 design (`docs/19`: the reviewer is an agent on a read-only checkout), and design
 requirement DR12 (routing to a step that already ran runs it again).
 
-Merges at each level:
+**The engine provides mechanisms and guardrails; the workflow decides.** The
+number and names of levels, which branch each review compares against, and
+where delivery to `main` happens are all workflow choices. These examples show
+one typical pattern. At every level, work is reviewed against the branch it was
+taken from (its parent branch) and merged back into it, up to `main`.
+
+Merges at each level, in a typical three-level workflow:
 
 | Merge | `squash` | `engine_can_merge` | Example |
 |---|---|---|---|
 | Ticket branch into epic branch | true | true | Section 1 |
 | Epic branch into project branch | false: each ticket's commit stays visible | true | Section 2.5 |
-| Project branch into `main` | false | false by default: a human merges on the code host | Section 8 |
+| Project branch into `main` | false | false: a human merges on the code host. The default-branch setting (floor F1) forbids the engine by default | Section 8 |
 
 ---
 
@@ -325,9 +331,9 @@ steps:
 | No installation-specific names (review 09 C3) | `repositories` is a run parameter |
 | No switch to skip regression tests (review 09 C4) | `verify_fix` has no such input; the regression-test rule is a step invariant (`docs/06` section 10.1, `fix.verify`) |
 | Review feeds the findings ledger (review 09 C5) | `review.run`, `findings.triage` and `findings.evaluate_readiness` read and write the ledger, the record of every finding and its status |
-| No policy in a template (review 09 C7) | Every gate names only a `decision_type`. The organisation's policy decides who may approve |
+| Who may approve is organisation governance (review 09 C7) | Every gate names only a `decision_type`; the organisation's policy decides who may approve. Everything else in the template, such as `squash` and `engine_can_merge`, is workflow policy: the step's parameters are the default, overridable down the levels |
 | Privilege comes from the role (review 10 A1) | A step's `write_access` may only tighten its role's value. No step sets `tools` or `capabilities` |
-| Agents never hold a credential that can push (DR13) | `implement`, `fix_findings` and `resolve_conflict` have `write_access: branch`: the agent commits in its own sandbox, and the engine fetches those commits and pushes them with its own credential at the end of the step and at work-in-progress points. A failed step's commits go to a hidden work-in-progress ref, not the ticket branch, so a retry can pick them up. An agent step's `push` input (default true) can switch this off for a scratch step; with `write_access: none` nothing is pushed. Agents' own code host credentials are read-only |
+| Agents never hold a credential that can push (DR13) | `implement`, `fix_findings` and `resolve_conflict` have `write_access: branch`: the agent commits locally in its own sandbox. While the step runs, the engine detects new commits through the VCS provider (about every 30 seconds) and pushes them with its own credential to a hidden work-in-progress reference, not the ticket branch, so they trigger no CI and no sibling sees them. When the step succeeds, the engine moves the ticket branch to the final commit once; a failed step's commits stay on the hidden reference for a retry. Changes the agent left uncommitted are committed by the engine with a clear message, unless the workflow sets the step to fail instead. An agent step's `push` input (default true) can switch pushing off for a scratch step; with `write_access: none` nothing is pushed. Agents' own code host credentials are read-only |
 | Correction turns for a malformed artifact (review 10 B5) | `plan_spec` sets `correction_turns: 2`: the chances it gets to fix a plan artifact that fails its schema |
 | Bindings pass file paths (review 10 B6) | `plan_path: { from_artifact: ... }` gives the agent a path, not a content hash |
 | Directives are mappings (review 10 B9) | `{ end: completed }` needs no YAML quoting |
@@ -366,7 +372,7 @@ Review design, `docs/19`.
 | Review against a specification | `spec_refs` carries the ticket plan (its acceptance criteria) and the epic's contract (`params.epic_contract`, passed by the parent epic) |
 | Prior findings | `prior_findings` is the findings ledger. A finding fixed and verified stays fixed while the code it points at is unchanged (findings ledger position L2, `docs/17` section 6.5) |
 | Which model reviews | Workflow policy, not an engine rule: a different, stronger model is recommended but may not be available. The engine records which model authored and which reviewed |
-| Coverage | The engine records which files the reviewer opened, from hooks or the runtime's streamed tool calls, and publishes a coverage output: changed files, files read, files not read, and whether the record is verified. It never fails a step for coverage on its own. `require_coverage: all`, as the library's standard code-review template sets, states that every changed file must be read |
+| Coverage | The engine records which files the reviewer opened, from hooks or the runtime's streamed tool calls, and publishes a coverage output: changed files, files read, files not read, and whether the record is verified. `require_coverage: all`, as the library's standard code-review template sets, states that every changed file must be read. If it is not met, the step retries up to its attempt allowance and then returns `attempts_exhausted`, which `review` routes to `gate_escalate` |
 
 ---
 
@@ -384,10 +390,10 @@ metadata:
 parameters:
   epic_id: { type: string, required: true }
   repositories: { type: array, required: true }
-  project_branch:
+  parent_branch:
     type: string
-    required: false
-    description: "The project branch this epic merges into, when the epic is part of a project (section 2.5)"
+    required: true
+    description: "The branch this epic was taken from and merges back into: a project branch (section 2.5) or main"
 
 artifact_types:
   - name: ticket-list
@@ -444,6 +450,7 @@ steps:
     inputs:
       scope: epic
       branch: { expr: "run.integration_branch" }
+      base: { expr: "params.parent_branch" }
       spec_refs: { expr: "[steps.plan_tickets.artifacts.tickets]" }
       checks: [feature-flow-default:checks/epic-review]
       prior_findings: { expr: "findings.all" }
@@ -704,7 +711,7 @@ epic review exists for (review 08, answer 4).
 | A ticket branch is a child run (review 10 A5) | Each branch is a `run.child` with `plan_ref` and a bound `ticket_id` |
 | Branch completion returns to the join (review 10 A2) | No routes on branches; the join aggregates |
 | Join semantics | `join: all`, `max_concurrency: 2`; `any_failed` goes to a gate |
-| The epic review sees the whole epic (review design, `docs/19`) | `epic_review` names the integration branch and the ticket list as its specification; the reviewer looks for problems that exist only once every ticket is combined |
+| Each level is reviewed against its parent branch (review design, `docs/19`) | `epic_review` compares the epic's integration branch with `params.parent_branch` (the branch the epic was taken from), with the ticket list as its specification. It looks for problems that exist only once every ticket is combined |
 | Epic prior findings include the tickets' findings (DR11) | `findings.all` at epic scope includes each child ticket's findings ledger. Engine behaviour; the plan does not list them |
 | The epic fix path (review 10 A10) | `epic_triage` to `epic_fix` to `epic_review` |
 | Ordered delivery (review 10 A11) | One `delivery.deploy` per repository, chained by `add_chain` |
@@ -714,10 +721,12 @@ epic review exists for (review 08, answer 4).
 
 ### 2.5 An epic within a project: merging into the project branch
 
-When an epic is part of a project (section 8), its integration branch merges
-into the project branch once the epic review is ready. These steps would replace
-the epic's tail, from `epic_readiness`'s `ready` route on (section 7, question
-10). One repository is shown.
+Where delivery happens is the workflow's choice. Section 2 delivers from the
+epic itself. In the typical pattern, the epic instead merges into its project
+branch once the epic review is ready, and delivery to `main` happens once, at
+project level (section 8). For that pattern these steps replace the epic's tail,
+from `epic_readiness`'s `ready` route on, and `params.parent_branch` is the
+project branch. One repository is shown.
 
 ```yaml
   - id: open_epic_pr
@@ -725,7 +734,7 @@ the epic's tail, from `epic_readiness`'s `ready` route on (section 7, question
     inputs:
       repository: { expr: "run.repositories[0]" }
       branch: { expr: "run.integration_branch" }
-      base: { expr: "params.project_branch" }
+      base: { expr: "params.parent_branch" }
       body_ref: feature-flow-default:prompts/pr-body
     routes:
       completed: epic_catch_up
@@ -736,7 +745,7 @@ the epic's tail, from `epic_readiness`'s `ready` route on (section 7, question
     kind: scm.merge_base_forward
     inputs:
       repository: { expr: "run.repositories[0]" }
-      branch: { expr: "params.project_branch" }     # merged from
+      branch: { expr: "params.parent_branch" }     # merged from
       into: { expr: "run.integration_branch" }      # merged into
     routes:
       completed: wait_epic_checks
@@ -828,6 +837,7 @@ changes:
       inputs:
         scope: epic
         branch: { expr: "run.integration_branch" }
+        base: { expr: "params.parent_branch" }
         spec_refs: { expr: "[steps.plan_tickets.artifacts.tickets]" }
         checks: [feature-flow-default:checks/cross-repo-contract]
         prior_findings: { expr: "findings.all" }
@@ -983,7 +993,7 @@ Schema, including its typed inputs for `agent.run`, `review.run` and `scm.merge`
 | 3 Duplicate step id | Pass |
 | 4 Step id looks like a step kind | Pass |
 | 5 Undeclared reference | Pass. Every `params.*` used is declared |
-| 6 Unbound required parameter | Pass. Every `run.child` branch passes its template's required parameters; `epic_contract` and `project_branch` are optional |
+| 6 Unbound required parameter | Pass for the ticket expansions: every ticket branch passes `ticket_id` and `repositories`; `epic_contract` is optional. Section 8's epic expansion does not bind the epic's required `parent_branch` (section 7, question 2) |
 | 7-9 Expression parses, type checks, within bounds | Pass by inspection. All expressions use declared namespaces |
 | 10 Every outcome the kind can return is routed | Pass, by script, for every plan, fragment and patch step; branch and `add_chain` steps are exempt |
 | 11 Route target exists | Pass, by script |
@@ -1003,34 +1013,15 @@ Schema, including its typed inputs for `agent.run`, `review.run` and `scm.merge`
 
 ## 7. Open questions
 
-### Answered earlier
-
-| Question | Answer |
-|---|---|
-| `run.wait` is reserved and unused | Out of the version 1 language. It returns only if a worked example needs it |
-| Fix ticket or integration-branch fix (section 5) | Both are shown. The engine prefers neither; the choice is workflow content |
-| `delivery.deploy` as a `parallel` branch | No: delivery is a **chain**, one `delivery.deploy` per repository, linked by routes (section 2.2) |
-| The `outputs` size cap (16 entries, 256 bytes per value) | Measured by Spike 2 and kept: the largest value was 71 bytes and the most entries 5 (`docs/16` section 2) |
-| `insert_after` with rewiring, or `add_step` plus `change_route` | Measured by Spike 2: a planner model authored all 20 patches in both forms; the forms did not differ reliably (`docs/16` section 3) |
-| The outcome for "merge refused: the target branch moved" | `base_moved`, routed back to catch-up. `blocked` keeps meaning checks or protection |
-| How the merge retry cap is counted | The merge step's attempt allowance, default 3, counting every entry. Configured like every limit: engine default, then workflow, child workflow and step |
-| `review.run` inputs | `branch`, `base`, `spec_refs`, `machine_results`; a review of a specification document keeps `diff_ref` |
-| Must a different model review? | Workflow policy, not an engine rule. The engine records both models |
-| Schema gaps: route-less branches, `correction_turns`, directive form in patches | Fixed in `docs/10` |
-
-### Still open
-
-The examples make a choice so that they are concrete; the owning document
-decides.
+Only questions still open are listed. The examples make a choice so that they
+are concrete; the owning document decides.
 
 | # | Question | What the examples assume |
 |---|---|---|
-| 4 | How does a review name the default branch, and how do epic and project steps name the project branch? The `run` namespace has neither | The epic review omits `base`; section 2.5 uses an optional `project_branch` parameter; section 8 uses a `default_branch` parameter for the pull request's base. The engine still reads the real default branch from the code host when it enforces floor F1 |
-| 5 | How do the epic contract and the project branch reach a child run? An expansion's `bind` reads only list items | Optional parameters, not bound by the expansion patches |
-| 8 | `findings.all` and `findings.open` are used throughout, but `docs/09` section 8.3 lists only `findings.blocking_count` and `findings.open_count` | Kept as written |
-| 9 | Machine checks other than tests (linters, analysers, coverage of changed lines) are not shown as steps | `machine_results` carries test results only |
-| 10 | Does an epic within a project still run its own delivery steps, or does delivery happen at project level? | Section 2.5 shows only the merge into the project branch |
-| 11 | What does a review step do when `require_coverage` is not met? The engine never fails a step for coverage on its own | The examples set `require_coverage: all` and add no route condition on the coverage output |
+| 1 | The `run` namespace (`docs/09` section 8.3.1) has no field for a run's parent branch: the branch it was taken from, which its review compares against and its merge targets | Ticket runs use `run.integration_branch` (their epic's branch). Epic and project runs take a `parent_branch` parameter. The engine still reads the real default branch from the code host when it enforces floor F1 |
+| 2 | How do values from a parent run reach a child: the epic contract for a ticket, the parent branch for an epic? An expansion's `bind` reads only list items | Ticket expansions do not bind `epic_contract` (optional). Section 8's epic expansion does not bind `parent_branch`, so it would fail check 6 at binding |
+| 3 | `findings.all` and `findings.open` are used throughout, but `docs/09` section 8.3 lists only `findings.blocking_count` and `findings.open_count` | Kept as written |
+| 4 | Machine checks other than tests (linters, analysers, coverage of changed lines) are not shown as steps | `machine_results` carries test results only |
 
 ---
 
@@ -1038,7 +1029,9 @@ decides.
 
 A project run starts epic runs with `run.child`, the way an epic run starts
 ticket runs. Its branch (`run.integration_branch`) is the one its epics merge
-into. Short form: no project review, delivery or re-plan detail.
+into, and its parent branch is `main`. Short form: the project review escalates
+its findings instead of showing a fix loop, and there is no delivery or re-plan
+detail.
 
 ```yaml
 apiVersion: feature-flow/v1
@@ -1052,7 +1045,10 @@ metadata:
 parameters:
   project_id: { type: string, required: true }
   repositories: { type: array, required: true }
-  default_branch: { type: string, required: true }
+  parent_branch:
+    type: string
+    required: true
+    description: "The branch the project was taken from and merges back into: here, main"
 
 artifact_types:
   - name: epic-list
@@ -1100,15 +1096,31 @@ steps:
       join: all
       max_concurrency: 2
     routes:
-      completed: open_project_pr
+      completed: project_review
       any_failed: gate_project_escalate
+
+  - id: project_review
+    kind: review.run
+    inputs:
+      scope: project
+      branch: { expr: "run.integration_branch" }
+      base: { expr: "params.parent_branch" }
+      spec_refs: { expr: "[steps.plan_epics.artifacts.epics]" }
+      checks: [feature-flow-default:checks/epic-review]
+      prior_findings: { expr: "findings.all" }
+      require_coverage: all
+    routes:
+      completed: open_project_pr
+      findings_open: gate_project_escalate
+      failed: gate_project_escalate
+      attempts_exhausted: gate_project_escalate
 
   - id: open_project_pr
     kind: scm.open_pr
     inputs:
       repository: { expr: "run.repositories[0]" }
       branch: { expr: "run.integration_branch" }
-      base: { expr: "params.default_branch" }
+      base: { expr: "params.parent_branch" }
       body_ref: feature-flow-default:prompts/pr-body
     routes:
       completed: catch_up_main
@@ -1119,7 +1131,7 @@ steps:
     kind: scm.merge_base_forward
     inputs:
       repository: { expr: "run.repositories[0]" }
-      branch: { expr: "params.default_branch" }     # merged from
+      branch: { expr: "params.parent_branch" }     # merged from
       into: { expr: "run.integration_branch" }      # merged into
     routes:
       completed: wait_project_checks
@@ -1163,5 +1175,6 @@ steps:
 | Step | What happens |
 |---|---|
 | `expand_epics` | The same deterministic expansion as `expand_tickets` (section 2.1), producing one `run.child` per epic |
-| `merge_main` | `engine_can_merge: false`, `squash: false`. The engine raises a human decision request and waits; a human merges on the code host, and the engine detects the merge and continues. Floor F1 is now a configurable setting whose default forbids the engine merging into the default branch. It is set by the organisation, then the repository's configuration on its default branch, then the workflow, never by anything an agent can edit, and the engine checks it at validation and at merge time. Branch protection on `main` stays as the final fallback |
+| `project_review` | The project's branch reviewed against its parent, `main`, looking for problems that exist only once every epic is combined |
+| `merge_main` | `engine_can_merge: false`, `squash: false`. The engine raises an intervention (a request for a human to act) and waits; a human merges on the code host, and the engine detects the merge and continues. `engine_can_merge` is workflow policy, capped by floor F1: a setting whose default forbids the engine merging into the default branch. F1 is set by the organisation, then the repository's configuration on its default branch, then the workflow; the organisation can lock it, nothing an agent can edit may change it, and the engine checks it at validation and at merge time. A workflow allowed to set `true` gets an engine merge; if the code host then refuses (for example its protection requires an independent review), that is an ordinary intervention. Branch protection on `main` stays as the final fallback |
 | `base_moved` | If `main` moved before the human merged, the project catches up again |
