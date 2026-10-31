@@ -1,6 +1,6 @@
 # Design rewrite plan
 
-Status: in progress. Started 2026-10-31. This file is the resume point: a new
+Status: design drafted and approved 2026-11-01; spikes next. Started 2026-10-31. This file is the resume point: a new
 session reads it first, then the status table in section 6.
 
 ## 1. Goal
@@ -97,14 +97,21 @@ Paths in all design documents are relative to the repository root.
 | `00-principles.md` and `OUTLINE.md` | Reviewed and accepted 2026-10-31 (RW10 to RW18) |
 | Write 01 to 10 | First drafts done 2026-10-31, overnight, without the product owner. Judgement calls are in `LOG.md` |
 | Consistency pass over 00 to 10 | Done 2026-10-31: an independent review found 39 issues, all fixed (`LOG.md` entries 49 to 56) |
-| Product owner review of the drafts and `LOG.md` | Next |
+| Product owner review of the drafts and `LOG.md` | Done 2026-11-01: approved as it stands; LOG 50 reversed (an administrator may grant beyond the hard ceiling) |
 | Update `CONTRIBUTING.md` paths to the new structure | Done 2026-10-31 |
-| Spikes SP1 to SP3 (`docs/10` section 4) | Not started |
+| Spikes SP1 to SP3 (`docs/10` section 4) | **Next.** SP1: continue-as-new with running children, an open decision and an answer during the hand-over. SP2: `ask_human` across an agent worker restart. SP3: the agent reporting contract over MCP on Claude Code and Copilot CLI |
+| Spikes SP4 to SP6 | Not started |
+| The standard library as files (`docs/08` section 6) | Not started |
 
 ## 7. How to resume
 
 1. Read this file, then `docs/00-principles.md`.
-2. Read `docs/LOG.md`: judgement calls not yet reviewed.
-3. Read the latest file in `docs/reviews/`, if any, and apply it.
-4. Continue from the first step in section 6 that is not done. Update section 6
+2. Read the latest file in `docs/reviews/`, if any, and apply it.
+3. Continue from the first step in section 6 that is not done. Update section 6
    when a step finishes.
+4. For spikes, follow `CONTRIBUTING.md` ("Spikes", "Verify, do not assert",
+   local setup). The earlier spikes' code is in `spikes/01` to `spikes/03`;
+   reuse it where it fits. Write each spike's plan and pre-registered checks
+   before running it, and its results as a new document, for example
+   `docs/spikes/sp1-results.md`. A result that changes the design updates the
+   owning document and adds a LOG entry, marked unreviewed.

@@ -1,16 +1,15 @@
-# Decision log for the product owner
+# Decision log
 
 Judgement calls made while writing the design without the product owner
-present. Each entry says what was decided, why, and where. Review them; any
-you disagree with is changed in the owning document. Entries move to the
-decision register (`docs/10`) once reviewed.
+present, 2026-10-31. Each entry says what was decided, why, and where.
 
-Started 2026-10-31, overnight session. Local commits only; nothing pushed.
+**Status: reviewed and approved by the product owner on 2026-11-01, as it
+stands**, including the reversal of entry 50. These entries are now decisions,
+cited as LOG 1 to LOG 57 (`docs/10` section 1.4). The "Needs a look?" column is
+kept as a record of how each was flagged.
 
-**Start with the entries marked "Yes":** 3 (no re-plan outcome or resume
-directive), 9 (the last step's success ends the run by default), 17 (the agent
-reporting contract), 26 (F1 is organisation-only), 31 (the new continue-as-new
-rule, which needs a spike). Entry 50 was reverted on review.
+New judgement calls go in a new table at the end, marked unreviewed, until the
+product owner reviews them.
 
 | # | Document | Decision | Why | Needs a look? |
 |---|---|---|---|---|

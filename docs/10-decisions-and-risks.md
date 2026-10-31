@@ -92,9 +92,10 @@ with a change, and by what), or **superseded** (replaced).
 
 ### 1.4 Rewrite decisions
 
-RW1 to RW18 are listed in `docs/PLAN.md` section 3 and applied throughout. The
-judgement calls made while writing (LOG 1 onwards) are in `docs/LOG.md`; once the
-product owner has reviewed them, they move into this section.
+RW1 to RW18 are listed in `docs/PLAN.md` section 3 and applied throughout.
+LOG 1 to LOG 57, the judgement calls made while writing the drafts, were
+approved by the product owner on 2026-11-01 and are decisions. They stay in
+`docs/LOG.md`, which owns them; this register does not copy them (P12).
 
 ---
 
