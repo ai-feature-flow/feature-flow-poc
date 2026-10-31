@@ -320,7 +320,7 @@ Other steps keep running while it is open.
 
 | Kind | Raised by | Answered with |
 |---|---|---|
-| **Gate** | A decision step in the plan | One of the step's declared outcomes |
+| **Gate** | A decision step in the plan. It may open an **interactive session**: a workspace where the person works in their own agent tool, runs the later steps' checks on demand, and submits files that become artifacts (RW18) | One of the step's declared outcomes |
 | **Intervention** | The engine, when a route escalates or something unexpected stops a step | A recovery action (section 7.2) |
 | **Question** | An agent, through the `ask_human` tool, during its step (RW14) | Free text, or one of the options the agent offered. The agent waits with its session intact |
 | **Patch approval** | An agent's patch that touches protected content, or uses a role outside the organisation's allowed list | Apply or reject |
