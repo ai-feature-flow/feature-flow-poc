@@ -74,6 +74,14 @@ it.
 | N1 | The sandbox client does not reconnect: the first connection error is returned to the agent as an error | C1 or C3 in an S1 run. Shows the kill really breaks the wait |
 | N2 | The hook client fails closed: an unreachable replica is a denial | C6 in an S4 run. Shows the outage really reaches the hook |
 
+**Amendment, made after the S3 run and before re-running it.** S3's late
+answer was rejected because the step workflow had already ended, not by the
+timeout rule in the update validator, so C5 passed without testing that rule.
+Added S3b: as S3, but the late answer is sent as soon as the workflow shows the
+question timed out, while the step is still running. C5 for S3b additionally
+requires the rejection to come from the validator's timeout rule. S3 is kept as
+run.
+
 ## 4. Out of scope
 
 - A worker re-attaching to a running sandbox, and session resume (`docs/02`
