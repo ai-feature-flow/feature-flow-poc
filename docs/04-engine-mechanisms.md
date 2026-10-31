@@ -167,7 +167,21 @@ given to later agent steps with `context: full` (from FF's `context.md`). A
 child run's context starts with its parent's. A reviewer with `context: none`
 sees only its task and consumed artifacts.
 
-### 3.6 Write access and pushing
+### 3.6 Outputs the engine publishes for every agent step
+
+Besides the outputs the agent reports, the engine publishes these, so a route
+can act on them (the engine itself never fails a step on them):
+
+| Output | Meaning |
+|---|---|
+| `coverage_known` | Whether the record of files the agent opened is verified (from hooks or streamed tool calls) |
+| `changed_files_unread` | How many files changed on the work branch since its parent the agent did not open |
+| `commits` | How many commits the step added |
+
+The standard review fragment routes a reviewer with `changed_files_unread > 0`
+back for another attempt (`docs/08`); a specialised review need not.
+
+### 3.7 Write access and pushing
 
 | Rule | Detail |
 |---|---|
@@ -460,9 +474,9 @@ workflow's (`docs/01` section 6, RW4).
 
 | Element | Detail |
 |---|---|
-| Inputs | `source`: an artifact of type findings report (from a reviewer agent step), or a findings source provider by name (an external AI review on the pull request, SonarCloud, a SARIF file) |
-| Outcomes | `recorded`, with outputs: new, re-raised, re-raised with unchanged code; `unavailable` (the external source could not review, for example Copilot review not enabled) |
-| Behaviour | Fingerprints each finding, matches it against the ledger (including children's), and records it as new or as a re-raise, with whether the code at the fingerprint changed since the finding last changed state |
+| Inputs | `source`: an artifact of type findings report (from a reviewer agent step), or a findings source provider by name (an external AI review on the pull request, SonarCloud, a SARIF file). `reopen_on`: when a re-raise of a `fixed` or `declined` finding reopens it: `code_change` (default), `always` or `never` |
+| Outcomes | `recorded`, with outputs `new`, `reraised`, `reopened`, `repeat_fixes` (findings reopened after being fixed at least twice); `unavailable` (the external source could not review, for example Copilot review not enabled) |
+| Behaviour | Fingerprints each finding, matches it against the ledger (including children's), and records it as new or as a re-raise, with whether the code at the fingerprint changed since the finding last changed state. Applies `reopen_on` |
 
 ### 11.2 `findings.triage`
 
