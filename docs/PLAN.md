@@ -43,7 +43,7 @@ Product owner, 2026-10-31. Recorded here until the decision register
 | RW5 | The standard reviewer is an `agent.run` with a reviewer role, plus an engine action that records findings into the ledger. A library fragment ("standard review") hides the detail from template authors. External reviewers plug in behind a "collect findings" action |
 | RW6 | `replan_parent` is a signal a child sends while it continues or waits. The parent's join counts the branch only when the child ends |
 | RW7 | Requirement traceability in version 1: engine-only evidence artifacts and a validator plug point are engine mechanisms; trace rules (requirement and acceptance criteria schemas, `supports`, `owner`) are library content |
-| RW8 | An authorised human's steering may bypass protected steps, audited. It may never relax safety floors F1 to F4 |
+| RW8 | An authorised human's steering may bypass protected steps, audited. It may never relax a safety floor (`docs/05` section 1) |
 | RW9 | The rest of the review's recommendations are accepted as direction: route defaults and an `escalate` directive; parent-to-child data passing; per-repository fan-out; one human-decision primitive; a reduced step catalogue; a directory library as a first-class source |
 | RW10 | No "mandatory" step marking (a protected step whose bypass needs a second approver) in version 1 |
 | RW11 | Repository facts are always read fresh at each step; a workflow cannot pin them |
