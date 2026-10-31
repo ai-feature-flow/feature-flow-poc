@@ -272,7 +272,12 @@ From `archive/review-vs-feature-factory.md`.
 
 ## 4. Open questions raised by the outline
 
-| # | Question | Recommendation |
+None open. All seven were answered as recommended by the product owner on
+2026-10-31; they are decisions RW12 to RW18 in `PLAN.md`.
+
+### Answered
+
+| # | Question | Answer |
 |---|---|---|
 | 1 | One naming convention for plans and configuration? The first design used snake_case for plans and camelCase for configuration | snake_case everywhere. Configuration is now written fresh, so the reason for camelCase (already written) is gone |
 | 2 | Step order: is the list order of steps meaningful (default next step, as in FF), or is the plan purely a graph? | List order gives the default next step for a `success` outcome. Explicit routes override it |

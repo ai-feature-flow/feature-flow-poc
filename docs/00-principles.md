@@ -232,7 +232,13 @@ defaults. Organisation caps and engine floors bound every one of them.
 
 ## 5. Open questions
 
-| # | Question | Recommendation |
+None open.
+
+### Answered
+
+Product owner, 2026-10-31.
+
+| # | Question | Answer |
 |---|---|---|
-| 1 | P3 lets an authorised human bypass a protected step. Should some steps be marked so that even a human bypass needs a second approver (the old "mandatory" idea from FF)? | No for version 1. Organisation roles already limit who may bypass, and the audit shows it |
-| 2 | P7 reads repository facts fresh at each step. Should a workflow be able to pin them for a run instead? | No. Pinning brings back the staleness FF suffered |
+| 1 | P3 lets an authorised human bypass a protected step. Should some steps be marked so that even a human bypass needs a second approver (the old "mandatory" idea from FF)? | No, for version 1. Organisation roles already limit who may bypass, and the audit shows it (decision RW10) |
+| 2 | P7 reads repository facts fresh at each step. Should a workflow be able to pin them for a run instead? | No. Pinning brings back the staleness FF suffered (decision RW11) |

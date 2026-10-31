@@ -45,6 +45,15 @@ Product owner, 2026-10-31. Recorded here until the decision register
 | RW7 | Requirement traceability in version 1: engine-only evidence artifacts and a validator plug point are engine mechanisms; trace rules (requirement and acceptance criteria schemas, `supports`, `owner`) are library content |
 | RW8 | An authorised human's steering may bypass protected steps, audited. It may never relax safety floors F1 to F4 |
 | RW9 | The rest of the review's recommendations are accepted as direction: route defaults and an `escalate` directive; parent-to-child data passing; per-repository fan-out; one human-decision primitive; a reduced step catalogue; a directory library as a first-class source |
+| RW10 | No "mandatory" step marking (a protected step whose bypass needs a second approver) in version 1 |
+| RW11 | Repository facts are always read fresh at each step; a workflow cannot pin them |
+| RW12 | snake_case for every key, in plans, library content and configuration |
+| RW13 | The list order of steps gives the default next step for an outcome of class `success`. Explicit routes override it |
+| RW14 | `ask_human` (an agent asks a person a question during its step and waits) is in version 1 |
+| RW15 | Delivery in version 1: merging delivery pull requests in a declared order and reporting which repositories merged. No deploy triggering |
+| RW16 | `clean_up` stays as a route option: a route back to redo work can reset the working state to the parent branch |
+| RW17 | The agent hook endpoint is served by the agent worker, not the API and not inside the sandbox. Detail in `02` |
+| RW18 | Interactive human sessions (a person working in their own agent tool, with pre-submit checks) are in version 1 |
 
 ## 4. Document structure
 
