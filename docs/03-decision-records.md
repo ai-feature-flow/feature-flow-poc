@@ -277,7 +277,9 @@ section 1.3):
   `docs/20`). The "contents write" agent token above is superseded: an agent's
   code host token is read-only and per step, scoped to the run's repository plus
   any repositories the workflow declares it may read. The agent commits in its
-  sandbox; the engine pushes the commits as part of the agent step. GitHub cannot
+  sandbox; the engine detects new commits through the VCS provider, pushes them
+  to a hidden work-in-progress reference while the step runs, and moves the
+  ticket branch once when the step succeeds. GitHub cannot
   limit a token to particular branches, so withholding the credential is the only
   reliable control.
 - **Merges into the default branch** now follow the merge model (product owner,
@@ -288,8 +290,11 @@ section 1.3):
   default branch. It is set by organisation, repository and workflow, can be
   locked by the organisation, and cannot be changed by anything an agent can
   edit (the repository value is read from the default branch; a re-plan cannot
-  change it). Code host branch protection on `main` stays as the final fallback,
-  and the engine never holds a bypass.
+  change it). Within that cap, whether the engine merges into `main` is the
+  workflow's choice. If the engine is allowed but the code host refuses (for
+  example its protection requires an independent review), that is an ordinary
+  intervention: a request for a human to act. Code host branch protection on
+  `main` stays as the final fallback, and the engine never holds a bypass.
 - **Model credentials never enter the agent's environment** (DR1): a proxy that
   adds the key, or per-run keys with a limit and expiry.
 - **The engine enforces the default-branch setting** at plan validation and

@@ -19,27 +19,41 @@ Decision records for the nine questions in the brief are in
 later decision changed one, a **Now:** note says what changed and where the
 current design is. The main later changes are:
 
-- **Merge design** (`docs/20`, 2026-10-31): no merge lock. A ticket catches up with
-  the integration branch, re-tests if that changed anything, then the engine
-  merges; a merge onto a moved branch is refused and the ticket catches up again.
+- **Principle** (product owner, 2026-10-31): the engine provides mechanisms and
+  guardrails; the workflow decides. Where earlier text fixed a workflow choice in
+  the engine (levels, review bases, delivery points), it is now a workflow choice
+  the engine supports.
+- **Merge design** (`docs/20`, 2026-10-31): no merge lock. Work catches up with
+  its parent branch, re-tests if that changed anything, then merges; where the
+  engine merges, a merge onto a moved branch is refused and the work catches up
+  again.
 - **Review design** (`docs/19`, 2026-10-31): the reviewer is an agent on a
   read-only checkout of the branch. It reads the diff and any file itself; no diff
   is pre-loaded into its prompt.
 - **Design requirement DR13** (`docs/08` section 1.3): agents never hold a
   credential that can push; their code host credentials are read-only and per
-  step. The engine pushes ticket branches as part of the agent step.
+  step. The agent commits locally; the engine detects new commits through the
+  VCS provider, pushes them to a hidden work-in-progress reference while the step
+  runs, and moves the ticket branch once when the step succeeds.
 - **Merge model** (product owner, 2026-10-31): the merge step takes
   `engine_can_merge` (the engine merges, or a human merges on the code host and
-  the engine detects it) and `squash`. Usual settings: ticket into epic branch,
-  squash, engine merges; epic into project branch, plain merge, engine merges;
-  project branch into `main`, plain merge, human merges by default.
+  the engine detects it) and `squash`. A typical three-level workflow: ticket
+  into epic branch, squash, engine merges; epic into project branch, plain
+  merge, engine merges; project branch into `main`, plain merge, human merges by
+  default. Where delivery to `main` happens (once at the end, or several times)
+  is the workflow's choice.
 - **Default-branch merge setting**: floor F1 (a human must approve any merge into
   the default branch) is now a configurable setting with the same safe default:
   the engine may not merge into the default branch. It is set by organisation,
   repository and workflow, can be locked by the organisation, and nothing an agent
-  can edit can change it.
-- **Project level**: a project run starts epic runs the way an epic run starts
-  ticket runs (`run.child`), adding a `project` scope above `epic` and `ticket`.
+  can edit can change it. If the engine is allowed to merge but the code host
+  refuses (for example its protection requires an independent review), that is
+  an ordinary intervention: a request for a human to act.
+- **Levels are defined by the workflow**: at every level, work is reviewed
+  against the branch it was taken from (its parent) and merged back into it, up
+  to and including `main`. Ticket, epic and project are typical; a workflow may
+  use fewer or more. A run at one level starts the runs of the level below
+  (`run.child`).
 
 ---
 
@@ -47,7 +61,7 @@ current design is. The main later changes are:
 
 | # | Assumption | If wrong |
 |---|---|---|
-| A1 | A run maps to exactly one Temporal workflow execution; a ticket inside an epic is a child workflow. **Now:** a project level sits above epics; a project run starts epic runs as child workflows the same way | Changes the composition model and the epic-level review design |
+| A1 | A run maps to exactly one Temporal workflow execution; a ticket inside an epic is a child workflow. **Now:** the levels are defined by the workflow (ticket, epic and project are typical); a run at any level starts the runs of the level below as child workflows | Changes the composition model and the epic-level review design |
 | A2 | The engine never stores code, diffs or transcripts in workflow state; references only | Changes the artifact store design and history budget |
 | A3 | Human waits are unbounded. A run may sit at a gate for days | Changes timeout and reminder design |
 | A4 | The engine is the only writer to the branches and PRs it creates. **Now:** strengthened by DR13: agents commit in their sandbox and the engine pushes for them | Changes conflict handling and merge design |
@@ -167,7 +181,8 @@ reference, protected steps, attempt ceilings. Keep the list short and explicit.
 The floors are F1 to F4 in `docs/07` section 2. **Now:** F1 is a configurable
 setting with the same safe default (the engine may not merge into the default
 branch), set by organisation, repository and workflow; the organisation can lock
-it, and nothing an agent can edit can change it.
+it, and nothing an agent can edit can change it. Within that cap, whether the
+engine merges into `main` is the workflow's choice.
 
 ### DP7. May a re-plan change a completed step?
 
@@ -203,10 +218,13 @@ seeded cross-ticket defect that both ticket reviews missed (`docs/18` section 3)
 Cost: the aggregate change can be large, so the review is scoped by the
 repositories and paths the epic touched.
 
-**Now:** the reviewer reads the change from a checkout rather than being given
-the diff (review design, `docs/19`). The epic reviewer is an agent on a read-only
-checkout of the integration branch, reviewing it against `main`, and reads the
-diff and any file itself.
+**Now:** generalised to every level, and the reviewer reads the change from a
+checkout rather than being given the diff (review design, `docs/19`). At any
+level the workflow defines, the work is reviewed against the branch it was taken
+from and will merge back into: a ticket against its epic branch, an epic against
+its project branch, a project against `main`. Each level looks for problems that
+only exist once its children are combined. The reviewer is an agent on a
+read-only checkout and reads the diff and any file itself.
 
 ### DP11. Where does the agent loop run? — settled
 
@@ -262,7 +280,7 @@ All decided. Full reasoning is in `docs/reviews/review-01.md`, `review-03.md` an
 | Q7 | Sandbox definition: `devcontainer.json`, the engine's own manifest, or both (brief Q3)? | **Both; the manifest is root `feature-flow.yaml`** and is authoritative. `devcontainer.json` is an optional input. `.feature-flow/` is reserved but unused in version 1 |
 | Q8 | Docker-dependent tests on Kubernetes: privileged pods, sysbox, remote Docker host, or CI delegation (brief Q2)? | **CI delegation by default**, sysbox where the platform supports it, privileged pods in the solo profile only. Per tier, declared in `feature-flow.yaml`. **Now:** CI delegation shown working in Spike 2 (`docs/16` section 2) |
 | Q9 | Can a sandbox provider support Windows hosts (brief Q9)? | **Not in version 1.** Version 1 has the hooks for it: `Os[linux, windows]` capability, `os: windows` in the manifest, `os-windows` queue routing, CI delegation. Spike W0 (agent runtimes and hooks on Windows) comes before a Windows VM sandbox. **Now:** W0 partly answered (`docs/08` section 2.4) |
-| Q11 | Concurrency model for several tickets in one repository | **Per-ticket branches plus `scm.merge_base_forward` plus a serialised merge lock.** One epic integration branch per repository. `max_concurrency` on the `parallel` step confirmed. Optional `MergeQueue` capability. **Now: the merge lock is superseded** by the merge design (`docs/20`): no lock; catch up, re-test if changed, then merge. Where the engine merges, a merge onto a moved branch is refused and returns `base_moved`, and the ticket catches up again, up to the merge step's attempt allowance (default 3). Per-ticket branches, the integration branch, `scm.merge_base_forward`, `max_concurrency` and the optional `MergeQueue` capability stay; GitHub's merge queue is an example of that capability |
+| Q11 | Concurrency model for several tickets in one repository | **Per-ticket branches plus `scm.merge_base_forward` plus a serialised merge lock.** One epic integration branch per repository. `max_concurrency` on the `parallel` step confirmed. Optional `MergeQueue` capability. **Now: the merge lock is superseded** by the merge design (`docs/20`): no lock; catch up, re-test if changed, then merge. Where the engine merges, a merge onto a moved branch is refused and returns `base_moved`, and the work catches up again, up to the merge step's attempt allowance (default 3). The same flow applies at every level the workflow defines (a ticket into its epic branch, an epic into its project branch). Per-ticket branches, the integration branch, `scm.merge_base_forward`, `max_concurrency` and the optional `MergeQueue` capability stay; GitHub's merge queue is an example of that capability |
 | Q12 | How are attempt budgets counted, and can steering exceed the configured ceiling? | **One counting rule:** every entry into a step counts. Infrastructure failures are free. Resumes are free only with progress (a new commit, or session growth); after 3 consecutive resumes with no progress the next counts as a restart. Steering grants extra attempts up to a hard ceiling. **Now:** ceilings are enforced on every execution, including loop re-entry (DR10, `docs/08` section 1.3). Like every limit, they are configured hierarchically: engine default, then workflow, child workflow and step |
 | Q14 | How does a run resume or retry after a partial delivery across several repositories? | **One idempotent child workflow per repository plus a delivery ledger in the record store.** No compensating action; A7 (deploy means trigger an external system) holds. On failure: retry, fix forward, or revert |
 | Q16 | Cost controls: per-run token and compute budgets, and what happens when exceeded? | **Policy-driven, not in version 1.** Version 1 records tokens, model and compute time per step. When budgets arrive, exceeding one stops at a gate, never a hard stop |
