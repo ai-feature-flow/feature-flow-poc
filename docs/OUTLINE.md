@@ -1,6 +1,6 @@
 # Outline of the design
 
-Status: draft for review, 2026-10-31. Companion to `PLAN.md` (the rewrite plan)
+Status: accepted 2026-10-31 and used to write `01` to `10`. The written documents now own their structure; section 3 maps to their actual sections. Companion to `PLAN.md` (the rewrite plan)
 and `00-principles.md` (principles P1 to P12).
 
 For each document: what it owns, its sections, what it takes from the first
@@ -208,67 +208,71 @@ Each document depends only on documents before it.
 
 ## 3. Coverage
 
+Updated after the first drafts: section numbers below are those of the written
+documents, which differ in places from the plan in section 1.
+
 ### 3.1 Feature Factory facilities
 
-| FF facility | Lands in |
+| FF facility | Where it is now |
 |---|---|
-| Free outcome names on agent and human steps | 03 section 3 |
-| `continue`, `escalate`, `on_exhausted` defaults | 03 section 4 |
-| `goto` and `redirect` with `clean_up` (reset the working state when redoing work) | 03 section 4; whether `clean_up` is still needed with hidden references is open question 5 |
-| Interventions with retry, goto, redirect | 04 section 3 |
-| `ask_human` questions | 04 sections 2 and 3 |
-| Breakpoints | 04 section 3; 05 section 5 |
-| Protected and mandatory steps | 03 section 2; 05 section 5 (mandatory dropped, `00-principles.md` open question 1) |
-| Produces per outcome, consumes with `from: parent` | 03 section 7 |
-| Artifact sets, revisions, review verdicts, ratification | 01 section 5; 04 section 12 |
-| Engine-only evidence definitions | 01 section 5; 04 section 9 |
-| Validators and `validateArtifacts` | 04 section 9; 06 |
-| Requirement trace: VRs, ACs, `supports`, `owner`, evidence claims, trace report | 01 section 8; 04 section 9; 08 section 6 |
-| Test and static analysis baselines; carried results across a merge | 04 section 8 |
-| `after_changes` repository commands | 04 section 2 |
-| Run context (`context.md`) and `context: none` | 04 section 2 |
-| Roles orchestrator, worker, validator | 08 section 6 (as standard roles over the write-access mechanism) |
-| Toolsets and external MCP servers | 04 section 2; 06 |
-| Library manifest, inputs, resources, entry points | 08 sections 2 and 6 |
-| Input precedence and child inheritance | 03 sections 6 and 9 |
-| Budget on descendant runs (`max_work_items`) | 05 section 3 |
-| `approvals: auto` as one switch for a run tree | 05 section 4 |
-| Interactive planning sessions and planning repositories | 04 section 3; 06 (session surface) |
-| `awaitCondition` | 04 section 7 |
-| Declarative tracker transitions; Jira tools for planners | 04 sections 2 and 11 |
-| Notifications on domain events | 04 section 11; 06 |
-| `awaitCopilotReview` | 06 (findings source) |
-| Publication report: which repositories really merged | 04 section 6 |
+| Free outcome names on agent and human steps | `docs/03` section 3; `docs/01` section 3.1 |
+| `continue`, `escalate`, `on_exhausted` defaults | `docs/03` section 4.3 |
+| `goto` and `redirect` with `clean_up` | `docs/03` section 4.1 (one counting rule replaces the goto/redirect difference, `docs/01` section 4) |
+| Interventions with retry, goto, redirect | `docs/01` section 7.2; `docs/04` section 4.3 |
+| `ask_human` questions | `docs/04` section 3.4 |
+| Breakpoints | `docs/04` section 4.5; `docs/05` section 5 |
+| Protected and mandatory steps | `docs/01` section 2.3; mandatory dropped (RW10) |
+| Produces per outcome, consumes with `from: parent` | `docs/03` section 7 |
+| Artifact sets, revisions, review verdicts, ratification | `docs/01` section 5; `docs/03` section 7.4; `docs/04` section 12 |
+| Engine-only evidence definitions | `docs/01` section 5.2; `docs/05` floor F7 |
+| Validators and `validateArtifacts` | `docs/04` section 10; `docs/06` section 3.8 |
+| Requirement trace: VRs, ACs, `supports`, `owner`, evidence claims, trace report | `docs/01` section 8; `docs/04` section 10.2; `docs/08` sections 6.2 and 6.3 |
+| Test and static analysis baselines; carried results across a merge | `docs/04` sections 9.1 and 9.3 |
+| `setup` and `after_changes` repository commands | `docs/04` section 3.1; `docs/07` section 4 |
+| Run context (`context.md`) and `context: none` | `docs/04` section 3.5; `docs/03` section 2.2 |
+| Roles orchestrator, worker, validator | `docs/08` section 6.1 (replaced by purpose-named roles) |
+| Toolsets and external MCP servers | `docs/06` section 3.9 |
+| Library manifest, inputs, resources, entry points | `docs/08` sections 1 and 2 |
+| Input precedence and child inheritance | `docs/03` sections 6.2 and 9.2 |
+| Budget on descendant runs (`max_work_items`) | `docs/05` floor F11 and section 3.1 |
+| `approvals: auto` as one switch | `docs/05` section 3.1 (request and cap) |
+| Interactive planning sessions and planning repositories | `docs/04` section 4.4; `docs/06` section 3.11 |
+| `awaitCondition` | `docs/04` section 8.2 |
+| `awaitChecks` and its no-CI logic | `docs/04` section 8.1; `docs/06` section 3.5 |
+| Declarative tracker transitions; Jira tools for planners | `docs/03` section 2.5; `docs/04` section 6.1 |
+| Notifications on domain events, threaded | `docs/06` section 3.10 |
+| `awaitCopilotReview` | `docs/06` section 3.7 (findings source) |
+| `reportPublication` | `docs/04` section 12 (`delivery.report`) |
+| `publishPlanningArtifacts`, `importPlanningPackage` | `docs/04` section 12 (`artifact.publish`, `artifact.import`) |
+| `ff override-library` | `docs/08` section 5.2, now for every run |
 
 ### 3.2 Review findings
 
 From `archive/review-vs-feature-factory.md`.
 
-| Finding | Lands in |
+| Finding | Where it is now |
 |---|---|
-| 3.1 Fixed outcome vocabulary | 03 section 3 |
-| 3.2 Review and findings policy in the engine | 04 section 10; 08 section 6 |
-| 3.3 Approval only in the organisation | 05 section 4 |
-| 3.4 Configuration keyed by level names | 05 section 3; 07 |
+| 3.1 Fixed outcome vocabulary | `docs/03` section 3 |
+| 3.2 Review and findings policy in the engine | `docs/08` section 6.5; `docs/04` section 11 |
+| 3.3 Approval only in the organisation | `docs/05` section 3.1 |
+| 3.4 Configuration keyed by level names | `docs/05` section 3.2; `docs/07` section 3 |
 | 4 Missing FF facilities | Section 3.1 above |
-| 5.1 Verbosity | 03 section 4 |
-| 5.2 Forty step kinds | 04 |
-| 5.3 Review provider as a second agent path | 04 section 10; 06 |
-| 5.4 Library packaging | 08 section 3 |
-| 5.5 Policy settings spread across layers | 05 sections 2 and 8 |
-| 6.1 Continue-as-new safe point | 02 section 4 |
-| 6.2 `replan_parent` join semantics | 03 section 9 |
-| 6.3 Decision type registry | 05 section 7 |
-| 6.4 One repository per ticket | 03 section 8 |
-| 6.5 Parent-to-child data | 03 section 9 |
-| 6.6 Repository facts in routing | 03 section 5 |
-| 6.7 Hook endpoint in the API | 02 section 5 |
-| 6.8 Engine working clones | 02 section 6 |
-| 6.9 Lock-free merge unspiked | 10 section 4 |
-| 7 Inconsistencies | Resolved by writing each fact once |
+| 5.1 Verbosity | `docs/03` sections 4.3 and 12 |
+| 5.2 Forty step kinds | `docs/04` section 2 |
+| 5.3 Review provider as a second agent path | `docs/06` section 3.7; `docs/08` section 6.3 |
+| 5.4 Library packaging | `docs/08` section 3 |
+| 5.5 Policy settings spread across layers | `docs/05` sections 2 and 7 |
+| 6.1 Continue-as-new safe point | `docs/02` section 3 |
+| 6.2 `replan_parent` join semantics | `docs/03` section 9.4 |
+| 6.3 Decision type registry | `docs/05` section 4 |
+| 6.4 One repository per ticket | `docs/03` section 8.2 |
+| 6.5 Parent-to-child data | `docs/03` section 9.2 |
+| 6.6 Repository facts in routing | `docs/03` section 5.4 |
+| 6.7 Hook endpoint in the API | `docs/02` section 4.2 |
+| 6.8 Engine working clones | `docs/02` section 6 |
+| 6.9 Lock-free merge unspiked | `docs/10` section 4 |
+| 7 Inconsistencies | Written once each; checked in the consistency pass |
 | 8 Duplication | P12 |
-
----
 
 ## 4. Open questions raised by the outline
 

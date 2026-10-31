@@ -7,8 +7,10 @@ handover, which it replaces.
 
 | What | Where |
 |---|---|
-| Design documents | `docs/01` to `docs/14`, plus design notes from `docs/19` on |
-| Spike plans and results | `docs/08` section 2 (the spike plan), `docs/15` (Spike 1), `docs/16` (Spike 2 and the Claude Code proof), `docs/17` and `docs/18` (Spike 3) |
+| The rewrite plan and its status | `docs/PLAN.md` (start here) |
+| Design documents | `docs/00` (principles) to `docs/10` (decisions, risks, spike plan) |
+| Judgement calls awaiting review | `docs/LOG.md` |
+| The first design | `archive/docs/`, read-only. Spike results there are the evidence the new design cites: `archive/docs/15` (Spike 1), `16` (Spike 2 and the Claude Code proof), `17` and `18` (Spike 3) |
 | Reviews from the product owner | `docs/reviews/review-NN.md` |
 | Spike code | `spikes/01-interpreter`, `spikes/02-real-run`, `spikes/03-concurrent` |
 | Fixture repository | `ai-feature-flow/feature-flow-example`, a small .NET API the spikes run against |
@@ -17,10 +19,13 @@ handover, which it replaces.
 
 - **Keep documents short**, and write for a reader who has not just read
   everything else.
-- **Explain every reference where it is used.** Not "E3 is met (R10, section
-  1.3)", but "E3, no ticket blocked by another's failure, is met". The reader
-  should never have to jump to another section or document to follow a
+- **Explain every reference where it is used, in a few words.** Not "E3 is met
+  (R10, section 1.3)", but "E3, no ticket blocked by another's failure, is
+  met". The reader should never have to jump to another section to follow a
   sentence.
+- **One fact, one place** (`docs/00`, P12). Explaining a reference means naming
+  the rule and its effect in one sentence, not restating it. The first design
+  restated rules in up to 13 documents, and the copies came to disagree.
 - **End each deliverable with an open questions section.** The product owner
   answers in the next review. When all are answered, say "None open" and keep
   the answers.
@@ -66,7 +71,7 @@ This is the convention that has caught the most mistakes.
 Spikes prove a design concept is feasible. A spike review asks only two
 questions: does the evidence support the feasibility claim, and did the spike
 teach something that changes the design? Production concerns found along the
-way are recorded as design requirements (`docs/08` section 1.3), not fixed in
+way are recorded as design requirements (`docs/10` section 2), not fixed in
 spike code. Keep spike code as cheap as the evidence allows.
 
 ## Working with helper agents
@@ -92,7 +97,7 @@ Each has bitten the project or its prototype at least once.
 
 - **An interruption must become a continuation, never a wrong outcome.** A run
   that ends without reaching an `end:` route must not report `completed`
-  (`docs/08` section 1.3, requirement R6).
+  (floor F9, `docs/05` section 1).
 - **Infrastructure failures never use up a ticket's attempts.** A long outage
   stalls and alerts; it never fails on its own.
 - **Events wake, reads confirm.** An event is a hint that something may have
@@ -106,6 +111,6 @@ Each has bitten the project or its prototype at least once.
   change.
 - **Who made a decision comes from the authenticated identity, never the
   request body.** That is what makes "only a human merges into `main`" (the default
-  setting in `docs/20`) enforceable.
+  floor F1, `docs/05` section 2) enforceable.
 - **Agents never hold a credential that can push,** and model credentials stay
-  out of the agent's environment (`docs/20`, the merge design).
+  out of the agent's environment (floors F5 and F6, `docs/05` section 1).

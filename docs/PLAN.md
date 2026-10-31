@@ -94,15 +94,17 @@ Paths in all design documents are relative to the repository root.
 | Step | State |
 |---|---|
 | Archive the first design | Done 2026-10-31 |
-| `00-principles.md` | Draft written, awaiting review |
-| `OUTLINE.md`: every document's sections and open questions | Draft written, awaiting review |
-| Product owner review of 00 and the outline | Next |
-| Write 01 to 10, in the order in `OUTLINE.md` section 2 | Not started |
-| Update `CONTRIBUTING.md` paths to the new structure | Not started |
+| `00-principles.md` and `OUTLINE.md` | Reviewed and accepted 2026-10-31 (RW10 to RW18) |
+| Write 01 to 10 | First drafts done 2026-10-31, overnight, without the product owner. Judgement calls are in `LOG.md` |
+| Consistency pass over 00 to 10 | In progress |
+| Product owner review of the drafts and `LOG.md` | Next |
+| Update `CONTRIBUTING.md` paths to the new structure | Done 2026-10-31 |
+| Spikes S4.1 to S4.3 (`docs/10` section 4) | Not started |
 
 ## 7. How to resume
 
-1. Read this file, then `docs/00-principles.md` and `docs/OUTLINE.md`.
-2. Read the latest file in `docs/reviews/`, if any, and apply it.
-3. Continue from the first step in section 6 that is not done. Update section 6
+1. Read this file, then `docs/00-principles.md`.
+2. Read `docs/LOG.md`: judgement calls not yet reviewed.
+3. Read the latest file in `docs/reviews/`, if any, and apply it.
+4. Continue from the first step in section 6 that is not done. Update section 6
    when a step finishes.
