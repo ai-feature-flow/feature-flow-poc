@@ -64,7 +64,7 @@ runs).
 | 18 | Package `requires` satisfied | Binding | Yes | Execution |
 | 19 | Repository layer adds only, never overrides | Binding | Yes | Decision D9: a repository may add skills and checks, never override roles, policies or tasks |
 | 20 | Capability negotiation against configured providers | Run start | Yes | Decision S3: a run fails in its first minute, not at step 40 |
-| 21 | `gate.decision_type` is known to `policy.approval` | Run start | Yes | Decision L12: a gate names a decision type and policy decides who may approve |
+| 21 | `gate.decision_type` is known to `policy.approval` | Run start | Yes | Decision L12: a gate names a decision type; who may approve (roles, minimum approvers, chat, auto-approval) is organisation governance tied to identities, the one kind of policy a template may not carry |
 | 22 | `limits.attempts` within `policy.attempts.ceiling` | Run start | Yes | Floor F4: a run sets attempt budgets within the configured ceiling, never above it. The ceiling is also enforced on every execution (section 2.5) |
 | 23 | Patch: `base_revision` is current | Patch | Yes | Decision E3: a patch made against an older plan revision is rejected and re-proposed |
 | 24 | Patch: operation is permitted to the proposer | Patch | Yes | Decision E6: which operations an agent may propose and which a human may apply |
@@ -73,7 +73,7 @@ runs).
 | 27 | Step inputs satisfy the kind's contract | Step start | Yes | Execution |
 | 28 | Consumed artifact exists and validates | Step start | Yes | Execution |
 | 32 | **Plan size within the carried-state budget** | Load **and** Patch | Yes | Carried state must stay under 1 MB, or continue-as-new cannot carry it (section 2.4) |
-| 33 | **`engine_can_merge: true` on a merge into the default branch** while the default-branch setting does not allow the engine to merge there | Run start **and** Patch | Yes | Floor F1, now a configurable setting with a safe default: by default the engine may not merge into the default branch (`docs/06` section 6.5). The default branch is read from the code host (DR2). Enforced again at merge time (section 2.5) |
+| 33 | **`engine_can_merge: true` on a merge into the default branch** while the default-branch setting does not allow the engine to merge there | Run start **and** Patch | Yes | Floor F1, now a configurable setting with a safe default: by default the engine may not merge into the default branch (`docs/06` section 6.5). The template's `engine_can_merge` is workflow policy; the organisation can cap it ("never the engine"). The default branch is read from the code host (DR2). Enforced again at merge time (section 2.5) |
 | 34 | A lower layer (repository or workflow) relaxes the default-branch setting that the organisation has locked | Binding | Yes | Floor F1: the organisation can lock the setting. The repository's value is read from its configuration on its default branch, never the ticket branch |
 | 35 | Patch: changes the default-branch setting | Patch | Yes (rejected) | Floor F1: nothing an agent can edit may change it, and a plan patch during a run cannot |
 | 29 | Unused parameter | Load | **No** | Cosmetic |
@@ -167,9 +167,9 @@ them. The engine enforces them; a template cannot turn them off.
 | Attempt ceilings on every execution (DR10) | Each entry into a step counts against its allowance and the run's ceiling, including when a loop routes back. Exhaustion returns `attempts_exhausted` | Without it, a loop with no agent ran its fix step 213 times in 15 seconds (`docs/18` section 4) |
 | Re-entry runs the step again (DR12) | Routing to a step that already has an outcome runs it again, clearing its current outcome, outputs and artifacts so a route condition never reads a stale value. The previous execution stays readable as `steps.<id>.previous`; `steps.<id>.executions` gives the count | Loops depend on it (`docs/16` section 12) |
 | No `completed` without an `end:` route (DR6) | A run that stops with no step ready and no `end:` route ends with status `incomplete`. A parent's `run.child` sees it as `failed` | Spike 2's silent "completed" after an unrouted merge failure (`docs/16` section 5) |
-| The default-branch setting at merge time (floor F1, DR2) | `scm.merge` re-reads the default branch from the code host and refuses an engine merge there unless the setting allows it, even if validation passed | Validation alone is not enough: the plan could name a branch that becomes the default |
+| The default-branch setting at merge time (floor F1, DR2) | `scm.merge` re-reads the default branch from the code host and refuses an engine merge there unless the setting allows it, even if validation passed. If the setting allows the engine but the code host refuses (for example, protection requires an independent review), the step raises an intervention asking a human to act | Validation alone is not enough: the plan could name a branch that becomes the default |
 | An unmapped success is a work error (DR8) | A provider response that is a success but maps to no outcome fails the step as work, so it is not retried forever | GitHub's empty 204 for a no-op merge was retried as infrastructure until fixed (`docs/18` section 4) |
-| Review coverage is measured, never enforced by the engine (`docs/06` section 8.2) | The engine records what each agent opened, from hooks or streamed tool-call output, or "unknown", and `review.run` publishes it as a `coverage` output. Only the workflow acts on it, through `require_coverage` or a route condition | Spike 3's reviewer missed a bug in code it never saw (`docs/18` section 4) |
+| Review coverage is measured, never enforced by the engine (`docs/06` section 8.2) | The engine records what each agent opened, from hooks or streamed tool-call output, or "unknown", and `review.run` publishes it as a `coverage` output. Only the workflow acts on it, through `require_coverage` or a route condition. An unmet `require_coverage` retries up to the step's attempt limit, then escalates | Spike 3's reviewer missed a bug in code it never saw (`docs/18` section 4) |
 
 ---
 
@@ -195,6 +195,9 @@ Replay is proven to catch what it should:
   crash, outage, continue-as-new, a patch while branches were in flight), and all
   nine replay cleanly. They are the engine's first replay suite (`docs/15`
   section 7).
+- Recorded histories contain references only (the payload codec, `docs/07`),
+  are recorded from runs against fixture repositories, and are stored with the
+  engine tests. A CI check rejects anything the secret scanner matches.
 - An interpreter change must be versioned with Temporal `Workflow.Patched`
   (DR7). With the version guard removed from Spike 3's dispatch change, a Spike 1
   history failed replay (`docs/18` section 4).
@@ -207,11 +210,12 @@ Replay is proven to catch what it should:
 | Replay | Recorded histories replay against a changed interpreter | Engine CI |
 | Re-drive | A recorded provider script re-drives a changed template | Library package |
 | Golden, readable form | The rendered readable form (section 4) is unchanged | Library package |
-| Failure injection | Worker crash, Temporal unavailable, protected-step patch, stale `base_revision`. Spikes 1 and 3 ran these first (`docs/15` section 3; `docs/18` section 2) | Engine CI |
+| Failure injection | Worker crash, lost sandbox, Temporal unavailable, protected-step patch, stale `base_revision`. Spikes 1 and 3 ran these first (`docs/15` section 3; `docs/18` section 2) | Engine CI |
 | Run-time rules | Each rule in section 2.5. For example: a loop with no agent stops at its ceiling; a run with no `end:` route does not report `completed` | Engine CI |
 | Provider response mapping | Every documented success response of each provider call, including empty ones, maps to an outcome (DR8) | Provider package CI |
-| Merge race | Two tickets catch up from the same integration head; the second merge returns `base_moved` and routes back to catch-up; repeated refusals exhaust the allowance and escalate (`docs/06` section 6.5) | Engine CI |
-| Human merge | With `engine_can_merge: false` the step raises an intervention, the merge is made on the code host, and the engine detects it and continues | Engine CI |
+| Merge race | Two tickets catch up from the same parent-branch head; the second merge returns `base_moved` and routes back to catch-up; repeated refusals exhaust the allowance and escalate (`docs/06` section 6.5) | Engine CI |
+| Human merge | With `engine_can_merge: false`, or when the code host refuses an allowed engine merge, the step raises an intervention, the merge is made on the code host, and the engine detects it and continues | Engine CI |
+| Commits and pushes | An agent's local commits are detected through the VCS provider and pushed to the hidden work-in-progress reference; the ticket branch moves once, on success; a failed step leaves it unmoved; uncommitted changes are committed by default, or fail the step when the workflow says so; a lost sandbox restarts from the hidden reference with a fresh session (`docs/06` section 2.1) | Engine CI |
 | Pre-submit parity | The pre-submit check and the gated step get the same brief, tools, model and commit (`docs/06` section 3.2) | Engine CI |
 
 ### 3.3 The test file format
@@ -345,17 +349,6 @@ This is the only golden-tested output (section 3.6).
 ---
 
 ## 5. Open questions
-
-### Answered
-
-- **The status of a run that stops without an `end:` route** is `incomplete`
-  (product owner, 2026-10-31).
-- **Replay history storage.** Recorded histories contain references only (the
-  payload codec, `docs/07`), are recorded from runs against fixture repositories,
-  and are stored with the engine tests. A CI check rejects anything the secret
-  scanner matches.
-
-### Still open
 
 - **Per-branch expected paths.** A `parallel` step's branches interleave, so
   `expected_path` is the **parent's** path and each branch gets its own
