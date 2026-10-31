@@ -53,6 +53,12 @@ In the plan and library family the key is `artifact_types` (not
 `artifactTypes`), and there is no `schemaVersion`: `apiVersion` carries the plan
 schema version.
 
+**Engine versus workflow.** The engine provides mechanisms and guardrails; the
+workflow decides. The engine makes things possible and safe (routing, attempt
+ceilings, protected steps, merge checks); it does not dictate the shape of a
+workflow, such as how many levels it has, what each level reviews against, or
+when it delivers to `main`.
+
 ---
 
 ## 2. Concepts
@@ -111,16 +117,22 @@ Forty kinds, taken from `docs/06`, which owns their contracts.
 - **`run.wait` is not in the version 1 language.** `parallel` with `run.child`
   branches covers every case in the worked examples. It is reserved in `docs/06`
   section 4.2 and comes back only with an example that needs it.
-- **How branches merge** is the merge design in `docs/20`: catch up with the
-  target branch, re-test if that changed anything, then merge; no merge lock.
-  `scm.merge` takes `engine_can_merge` (true: the engine builds the merge or
-  squash commit from exactly what was tested and pushes it; false: the engine
-  raises a human decision request, waits for a human to merge on the code host,
-  detects the merge and continues) and `squash` (true for a squash merge). Usual
-  settings: ticket into epic branch, squash, engine merges; epic into project
-  branch, no squash, engine merges; project branch into `main`, no squash,
-  engine does not merge by default (floor F1, section 14). The source control
-  steps are in `docs/06` section 6.
+- **How branches merge** is the merge design in `docs/20`. Work at any level is
+  taken from a parent branch, reviewed against it and merged back into it; the
+  parent is then reviewed against and merged into its own parent, up to and
+  including `main`. Each merge: catch up with the parent branch, re-test if
+  that changed anything, then merge; no merge lock. `scm.merge` takes
+  `engine_can_merge` (true: the engine builds the merge or squash commit from
+  exactly what was tested and pushes it; false: the engine raises a human
+  decision request, waits for a human to merge on the code host, detects the
+  merge and continues) and `squash` (true for a squash merge). Building and
+  pushing commits are version control (VCS provider) operations; version 1
+  implements Git only. Typical settings for a workflow with ticket, epic and
+  project levels: ticket into epic branch, squash, engine merges; epic into
+  project branch, no squash, engine merges; project branch into `main`, no
+  squash, engine does not merge by default (floor F1, section 14.2). Whether a
+  workflow delivers to `main` once at the end or several times is the
+  workflow's choice. The source control steps are in `docs/06` section 6.
 
 ---
 
@@ -238,13 +250,13 @@ From `docs/01` section 3.3 (plan as data). One field set, snake_case.
 |---|---|---|
 | `id` | Yes | Unique in the plan. **Must not look like a step kind**: `run_tests`, not `test.run_tiers`, so a step id is never confused with a kind or a directive |
 | `kind` | Yes | From section 3 |
-| `scope` | No | `project`, `epic`, `ticket`, `delivery`, `any`. Defaults to the plan's scope |
+| `scope` | No | The level the step belongs to. Levels are workflow-defined and nest recursively (for example `ticket`, `epic`, `project`, or whatever levels a workflow and its tracker use); `delivery` and `any` (the step does not care) are also allowed. Defaults to the plan's scope |
 | `inputs` | No | Per kind, from `docs/06`. Artifact references, never inline content |
 | `requires` | No | Provider capabilities. Checked at run start (capability negotiation, decision S3) and again if `feature-flow.yaml` changes |
 | `limits` | No | `attempts`, `start_to_close`, `heartbeat`, `correction_turns` (section 10.3). Within policy ceilings (floor F4: attempt budgets stay within the ceiling; beyond the hard ceiling needs the admin role). Every limit has an engine default, overridable by the workflow, a child workflow and the step |
 | `routes` | Yes | Outcome to step id or terminal directive. Section 6 |
 | `protected` | No | Cannot be removed or weakened by a re-plan or by steering (floor F3; section 15.2) |
-| `gate` | No | A decision type, not policy content. Section 14 |
+| `gate` | No | A decision type; who may approve it is organisation policy, not template content (L12). Section 14 |
 | `produces` / `consumes` | No | Artifact contracts. Section 10 |
 | `outputs` | No | Small typed values the step publishes to workflow state. Section 8.3.2 |
 
@@ -434,9 +446,10 @@ A branch is a step or a sub-plan. A ticket branch is a `run.child` step carrying
 A re-plan may add branches to a `parallel` step that has not started. It may not
 remove a protected branch (`docs/01` section 3.3.1).
 
-The same shape works one level up: a **project** run (scope `project`) starts
-one `run.child` per epic, with `child_scope: epic`, the way an epic run starts
-its tickets.
+The same shape works at any level: levels are workflow-defined and recursive,
+not fixed by the engine. A workflow with a **project** level, for example, has a
+project run that starts one `run.child` per epic, with `child_scope: epic`, the
+way an epic run starts its tickets.
 
 ---
 
@@ -530,7 +543,7 @@ staleness back. There are no `facts` or `repo` namespaces either.
 | Field | Type | Source |
 |---|---|---|
 | `run.id` | string | The run id, assigned at start |
-| `run.scope` | string | `project`, `epic`, `ticket`, `delivery`. From the run request |
+| `run.scope` | string | The run's level (workflow-defined, for example `ticket`, `epic`, `project`), or `delivery`. From the run request |
 | `run.repositories` | list of string | The run request. Not the manifest |
 | `run.branch` | string | Resolved by the step that needs it, from the branch convention |
 | `run.integration_branch` | string | Same |
@@ -742,7 +755,8 @@ missing`. That string goes back to the agent.
 ## 11. Roles (L4)
 
 A role is library content: what an agent may do. `write_access` is engine
-mechanism: the engine enforces it (`docs/06` section 2.2).
+mechanism: the engine enforces it (`docs/06` section 2.2). The engine provides
+mechanisms and guardrails; the workflow decides (section 1).
 
 ```yaml
 roles:
@@ -768,16 +782,24 @@ agent's code host credential is read-only, per step, scoped to the run's
 repository plus any other repositories the workflow declares the agent may read
 (for example to verify a contract).
 
-The push is part of the agent step. The engine fetches the agent's commits from
-the sandbox's checkout and pushes them to the ticket's own branch with its own
-credential, at the end of the step and at work-in-progress points. This is a
-push, not a merge; merges are `scm.merge` (section 3).
+The push is part of the agent step, and the engine does it with its own
+credential. This is a push to the step's own branch, not a merge; merges are
+`scm.merge` (section 3).
 
 | Rule | Detail |
 |---|---|
+| The agent commits locally | As often as its task or skill says (for example "commit after each meaningful change"). It never pushes |
+| The engine detects new commits | At each check-in on a running step (about every 30 seconds) the engine asks the VCS provider for the working copy's current revision. If it moved, the engine fetches the new commits and pushes them. Runtime hooks may trigger an immediate push, but nothing depends on them, so the agent runtime is irrelevant to pushing |
+| While the step runs | Pushes go to a **hidden reference** (for example `refs/ff/wip/<ticket>`), not a branch: no CI is triggered, and half-finished work is not exposed to pull requests, reviewers or a sibling's catch-up. If the sandbox is lost, the restarted step continues from it |
+| When the step succeeds | The engine moves the branch to the final commit, once |
+| When the step fails | Its commits stay on the hidden reference, so a retry can continue from them |
+| Uncommitted changes at the end | By default the engine commits them with the message "left uncommitted by the agent", so nothing is lost silently. A workflow can set the step to fail instead |
 | Push follows `write_access` | A step with `write_access: none` pushes nothing; commits made anyway fail the step (the existing after-step check) |
 | `push` input on `agent.run` | Default `true`. A workflow sets `false` for scratch steps whose commits should not reach the branch |
-| A failed step's commits | Pushed to a hidden work-in-progress ref, not the ticket branch, so a retry can pick them up |
+| Optional `checkpoint` tool | Through the engine's MCP server, lets an agent commit and have the engine push without knowing which VCS it is in. A convenience; the engine's detection is the backstop |
+
+Fetching, pushing and reading revisions are VCS provider operations. Version 1
+implements Git only; the interface stays VCS-neutral.
 
 ### 11.0 Privilege comes from the role, never from the step
 
@@ -1010,7 +1032,15 @@ applied, pending human decision, or rejected. **Sibling branches keep running.**
 
 ## 14. Policy references (L12)
 
-A template names a **decision type**. It does not contain policy.
+L12 covers one thing: **who may approve a decision** (roles, minimum number of
+approvers, chat, auto-approval). That is organisation governance, tied to
+identities, so a template does not contain it: a template names a **decision
+type**, and the organisation says who may decide it.
+
+Everything else in a template is workflow policy. A step's parameters are the
+default policy, overridable down the levels (workflow, child workflow, step)
+within the organisation's caps. `engine_can_merge` on a merge into `main` is an
+example (section 14.2).
 
 ```yaml
 - id: merge_gate
@@ -1031,10 +1061,11 @@ A template names a **decision type**. It does not contain policy.
 | Who may approve, minimum count, whether an agent counts | `policy.approval` | Organisation layer (`docs/07` section 4) |
 | Whether it may be decided from chat | `policy.chat.allowedDecisions` | Organisation layer |
 | Whether it may be auto-approved | `policy.auto_approve` | Organisation layer |
-| Whether the engine may merge into the default branch | Floor F1, a configurable setting (section 14.2) | Organisation, then repository, then workflow |
+| Whether the engine may merge into the default branch | The merge step's `engine_can_merge` (workflow policy), within the cap set by floor F1 (section 14.2) | Template, capped by organisation and repository |
 
 Approval rules such as `required_role` or `min_approvers` are not gate inputs.
-In a template they would let the template relax an organisation's approval rule.
+In a template they would let the template relax an organisation's rule on who
+may approve.
 
 `decision_type` values are namespaced strings (`ticket.merge_approval`,
 `epic.delivery_approval`, `delivery.partial_approval`). The organisation's
@@ -1077,13 +1108,11 @@ floor. The ID F1 is kept so existing references resolve.
 | Rule | Detail |
 |---|---|
 | Default | The engine may not merge into the default branch, so `scm.merge` there must have `engine_can_merge: false`: the engine raises a human decision request, a human merges on the code host, and the engine detects the merge and continues |
-| Who sets it | Hierarchically: organisation, then repository, then workflow. It may be relaxed, for example for a proof-of-concept repository. The organisation can lock it so lower levels cannot relax it |
-| What can never change it | Anything an agent can edit. The repository setting is read from the repository's configuration **on its default branch**, never from the ticket branch, and no plan patch during a run can change it |
+| Who sets it | Organisation, then repository, cap it; the template sets `engine_can_merge` on its merge step as workflow policy, within that cap. It may be relaxed, for example for a proof-of-concept repository. The organisation can lock it ("never the engine") so lower levels cannot relax it |
+| What can never change it | Anything an agent can edit. The repository setting is read from the repository's configuration **on its default branch**, never from the ticket branch, and no plan patch during a run can change `engine_can_merge` or the cap |
 | Enforcement | At plan validation, and again at merge time, reading the default branch from the code host (DR2) |
-| Final fallback | Code host branch protection on `main` (requiring independent review). The engine never holds a bypass |
-
-A template naming a decision type for the merge gate (section 14) is unchanged:
-when the engine may not merge, the human decision request is that gate.
+| Code host refuses an allowed engine merge | For example, branch protection requires an independent review. That is an ordinary intervention: a request for a human to act. The setting implies no separate approval rule |
+| Final fallback | Code host branch protection on `main`. The engine never holds a bypass |
 
 ---
 
@@ -1358,9 +1387,9 @@ that document:
 
 | Document | Change | Why |
 |---|---|---|
-| `docs/06` section 3.1, `human.gate` | Inputs `required_role` and `min_approvers` removed; `gate.decision_type` added | Approval policy is organisation configuration, not template content (L12, section 14) |
+| `docs/06` section 3.1, `human.gate` | Inputs `required_role` and `min_approvers` removed; `gate.decision_type` added | Who may approve a decision is organisation governance, not template content (L12, section 14) |
 | `docs/06` section 3.2, `human.session` | `session_id` removed (the engine generates it); `checks` replaced by `checks_from` (step ids whose validators to offer) | So the checks offered in a session are the same ones the run will apply later; no check appears for the first time after submission |
-| `docs/06` section 6.5, `scm.merge` | `method` removed; `require_human` removed (now `engine_can_merge` and `squash`, section 3) | The organisation allows merge methods and the repository chooses one; whether the engine may merge into the default branch is floor F1, a setting (section 14.2), not a free input |
+| `docs/06` section 6.5, `scm.merge` | `method` removed; `require_human` removed (now `engine_can_merge` and `squash`, section 3) | The organisation allows merge methods and the repository chooses one; `engine_can_merge` is workflow policy set by the template, capped by floor F1 (section 14.2) |
 | `docs/06` section 7.4, `test.run_tiers` | `tiers` replaced by `tier_tags`; `execution_target` removed | Tiers come from `feature-flow.yaml`, read per step |
 | `docs/06` section 10.1, `fix.verify` | `regression_test_required` removed | A regression test for every fix is a step invariant, not a template switch |
 | `docs/08` | Spike 1 gained a worker slot capacity measurement; the Temporal-unavailable injection states that workers re-attach by handle; the `wait.for_state` poll form is stated | Gaps in the spike plan found while designing the language |
@@ -1383,6 +1412,7 @@ that document:
 | Which outcome does `scm.merge` return when the target branch moved since catch-up? | `base_moved`, routed back to catch-up; the merge step's attempt allowance (default 3) caps the refusals (sections 4.2, 6.3) |
 | What status does a run report when it stops without reaching an `end:` route? | `incomplete`; a parent's `run.child` sees it as `failed` (section 6.2) |
 | When a loop re-runs a step, what happens to its earlier results? | Outcome, outputs and artifacts are cleared; the previous execution stays readable as `steps.<id>.previous`, with `steps.<id>.executions` counting executions (sections 6.3, 8.3) |
+| Can a template set whether the engine merges into `main`, given L12? | Yes. L12 covers only who may approve; `engine_can_merge` is workflow policy within the organisation's cap, and no patch can change it during a run (section 14.2) |
 
 **Open:**
 
