@@ -39,7 +39,7 @@ One format everywhere:
 <library>[@<version constraint>]:<type>/<name>
 ```
 
-For example `std:roles/implementer`, `acme@>=2.0.0:tasks/implement-ticket`.
+For example `std:roles/implementer`, `acme@>=2.0.0:tasks/implement_ticket`.
 `std` is the standard library. A reference names a content item, never a file
 path; the manifest maps names to paths, so a library can reorganise its files
 without breaking a plan.
@@ -51,7 +51,7 @@ without breaking a plan.
 `library.yaml` at the library root, from FF's manifest.
 
 ```yaml
-name: acme-delivery
+name: acme_delivery
 version: 1.4.0
 description: Acme's delivery process
 
@@ -70,8 +70,8 @@ inputs:                       # values for parameters templates declare (docs/03
 resources: [references]
 
 entrypoints:                  # templates a person starts from, listed first in the console
-  - { template: ticket-delivery, when: "One ticket" }
-  - { template: project-delivery, when: "A project spanning several epics" }
+  - { template: ticket_delivery, when: "One ticket" }
+  - { template: project_delivery, when: "A project spanning several epics" }
 
 notifications:
   events: [decision_needed, failed, completed]
@@ -123,7 +123,7 @@ from (from FF).
 | Run: a library override | Replace content for this run's future steps (section 5.2) |
 
 A template refers to content by library name, so an organisation override is
-explicit: `acme:tasks/implement-ticket` replaces `std:tasks/implement-ticket`
+explicit: `acme:tasks/implement_ticket` replaces `std:tasks/implement_ticket`
 only where the organisation's configuration maps one to the other.
 
 ---
@@ -191,24 +191,24 @@ and permission.
 | Fragment | Steps | Exits |
 |---|---|---|
 | `baseline` | `test.run` and `analysis.run` with `baseline: true` | `done` |
-| `plan_and_validate` | Planner agent producing `requirements` and `delivery_plan`; `artifact.validate` with `requirement-support`, `requirement-ownership` or `requirement-inheritance` (by level), `verification-method-support`; on `invalid` back to the planner | `planned` |
+| `plan_and_validate` | Planner agent producing `requirements` and `delivery_plan`; `artifact.validate` with `requirement_support`, `requirement_ownership` or `requirement_inheritance` (by level), `verification_method_support`; on `invalid` back to the planner | `planned` |
 | `standard_review` | `for_each` over `angles` (default: correctness, design, tests, security, specification) of a reviewer agent step, each producing a `findings_report`; `findings.record` for each; a reviewer with `changed_files_unread > 0` re-runs | `reviewed` |
-| `fix_loop` | Triager agent producing `triage`; `findings.triage`; fixer agent; a verifying reviewer checking the fix against the original finding on the full diff; `artifact.validate` with `tests-added`; back to tests | `fixed`, `escalated` |
-| `verify_and_review` | `test.run`; `analysis.run`; `artifact.validate` with `verification-satisfaction`; `standard_review`; then the merge bar: `findings.open_blocking == 0` to `ready`, otherwise `fix_loop`. `repeat_fixes > 0` escalates | `ready`, `escalated` |
+| `fix_loop` | Triager agent producing `triage`; `findings.triage`; fixer agent; a verifying reviewer checking the fix against the original finding on the full diff; `artifact.validate` with `tests_added`; back to tests | `fixed`, `escalated` |
+| `verify_and_review` | `test.run`; `analysis.run`; `artifact.validate` with `verification_satisfaction`; `standard_review`; then the merge bar: `findings.open_blocking == 0` to `ready`, otherwise `fix_loop`. `repeat_fixes > 0` escalates | `ready`, `escalated` |
 | `merge_into_parent` | `scm.pull_request`; optionally `findings.record` from an external source; `ci.checks`; `scm.catch_up`; re-test if `changed`; `scm.merge`; `base_moved` back to catch-up; `conflict` to a conflict-resolver agent, then back through tests and review | `merged`, `declined` |
 | `plan_children` | Planner producing a `work_list` and child-level requirements; validation; an approval decision that ratifies them; `plan.expand` into a `parallel` of `run.child` | `planned` |
-| `trace` | `artifact.validate` with `requirement-trace`, producing a `trace_report` | `traced` |
+| `trace` | `artifact.validate` with `requirement_trace`, producing a `trace_report` | `traced` |
 | `deliver_in_order` | A `for_each` chain of `merge_into_parent` per repository; `delivery.report`; on `partial`, a decision offering retry, fix forward or revert | `delivered`, `partial` |
 
 ### 6.4 Templates
 
 | Template | Level | Shape |
 |---|---|---|
-| `ticket-delivery` | ticket | `baseline`; `plan_and_validate`; spec approval (auto-resolvable); implement; `verify_and_review`; `merge_into_parent`. Works standalone (parent branch is the default branch) or as a child |
-| `epic-delivery` | epic | Design and contract; `plan_children` (tickets); the epic's own `verify_and_review` over the combined branch with the tickets' ledgers as prior findings; `trace`; `merge_into_parent` or `deliver_in_order` |
-| `project-delivery` | project | An interactive session for the project's requirements and architecture; approval that ratifies them; `plan_children` (epics); integration tests where the project owns requirements itself; `trace`; `deliver_in_order` into the default branch, where by default a person merges (F1) |
+| `ticket_delivery` | ticket | `baseline`; `plan_and_validate`; spec approval (auto-resolvable); implement; `verify_and_review`; `merge_into_parent`. Works standalone (parent branch is the default branch) or as a child |
+| `epic_delivery` | epic | Design and contract; `plan_children` (tickets); the epic's own `verify_and_review` over the combined branch with the tickets' ledgers as prior findings; `trace`; `merge_into_parent` or `deliver_in_order` |
+| `project_delivery` | project | An interactive session for the project's requirements and architecture; approval that ratifies them; `plan_children` (epics); integration tests where the project owns requirements itself; `trace`; `deliver_in_order` into the default branch, where by default a person merges (F1) |
 
-Budget: `project-delivery` sets `max_work_items: 20`, within the organisation's
+Budget: `project_delivery` sets `max_work_items: 20`, within the organisation's
 ceiling.
 
 ### 6.5 Default policies moved out of the engine
@@ -220,13 +220,13 @@ by the standard library. The last column says how to change it.
 |---|---|---|
 | The merge bar: no open blocking finding | The guard in `verify_and_review` | Change the guard, for example to also require `open == 0` |
 | A demonstrated bug blocks; a reasoned finding does not | The reviewer task's rule for setting `blocking` | Edit the reviewer task |
-| A fix adds a regression test, unless the triage says why not | The fixer task, and `tests-added` in `fix_loop` | Remove the validator from the fragment |
+| A fix adds a regression test, unless the triage says why not | The fixer task, and `tests_added` in `fix_loop` | Remove the validator from the fragment |
 | A fixed or declined finding reopens only when its code changes | `reopen_on: code_change` in `standard_review` | Set `reopen_on` |
 | A finding fixed twice and raised again escalates | The `repeat_fixes` guard in `verify_and_review` | Change or remove the guard |
 | The reviewer reads every changed file | The `changed_files_unread` guard in `standard_review` | Narrow or remove it for a specialised review |
 | A merge conflict goes to an agent first | `merge_into_parent` | Route `conflict` to a decision instead |
 | Squash tickets into the epic; plain merges above | `with: { squash: ... }` on each template's `merge_into_parent` | Change the parameter |
-| Delivery to `main` once, at project level | `project-delivery` | Use `merge_into_parent` at epic level instead |
+| Delivery to `main` once, at project level | `project_delivery` | Use `merge_into_parent` at epic level instead |
 
 ---
 

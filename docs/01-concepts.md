@@ -209,7 +209,7 @@ report. Artifacts are what later steps rely on.
 
 | Property | Meaning |
 |---|---|
-| Name | A logical name, unique in the run: `ticket-plan`, `implementation-claims` |
+| Name | A logical name, unique in the run: `delivery_plan`, `implementation_claims` |
 | Type | A library-declared artifact type: a schema, and the validators that check it |
 | Revision | Each time a step produces the same name again, a new revision is created. Earlier revisions are kept |
 | Producer | The step and attempt that produced it |

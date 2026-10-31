@@ -8,7 +8,7 @@ contracts, parallel work, child runs, patches and fragments. Terms are defined
 in `docs/01-concepts.md`. Each engine action's inputs and outcomes are owned by
 `docs/04-engine-mechanisms.md`; this document names actions only in examples.
 
-All keys are snake_case (RW12).
+All keys, and the names of steps, artifacts and library content, are snake_case (RW12).
 
 ---
 
@@ -21,7 +21,7 @@ A template and a plan are the same document; a plan has its parameters bound
 api_version: feature-flow/v1
 kind: template                  # template | plan
 metadata:
-  name: ticket-delivery
+  name: ticket_delivery
   level: ticket                 # the workflow's name for this level
   description: One ticket, from plan to merge into its parent branch
 
@@ -29,7 +29,7 @@ parameters:                     # section 6
   ticket_id: { type: string, required: true }
 
 artifact_types:                 # library types this workflow uses (section 7)
-  - std:artifact_types/ticket-plan
+  - std:artifact_types/delivery_plan
 
 defaults:                       # section 4.3 and section 2.3
   routes:
@@ -82,13 +82,13 @@ its form (`docs/01` section 2.1). A list entry may instead be `parallel`,
 - id: implement
   agent:
     role: std:roles/implementer
-    task: std:tasks/implement-ticket
-    skills: [std:skills/dotnet-conventions]
+    task: std:tasks/implement_ticket
+    skills: [std:skills/dotnet_conventions]
     write_access: branch          # optional; may only tighten the role's value
     context: full                 # full | none: whether earlier steps' summaries are shown
     planning:                     # optional: authority to propose patches (section 10)
       targets: [self]             # self | parent
-      templates: [std:templates/ticket-delivery]
+      templates: [std:templates/ticket_delivery]
   with:
     plan_path: { from_artifact: plan }
   outcomes: { done: success, blocked: blocked, needs_replan: blocked }
@@ -115,7 +115,7 @@ its form (`docs/01` section 2.1). A list entry may instead be `parallel`,
 - id: approve_spec
   decision:
     type: ticket.spec_approval          # declared in the library (docs/05)
-    prompt: std:prompts/spec-approval
+    prompt: std:prompts/spec_approval
     auto: approved                      # requested auto-resolution, within organisation policy
   consumes: [{ name: spec }]
   ratifies: { approved: [spec] }
@@ -347,7 +347,7 @@ is stored as an artifact and its hash recorded with the attempt (P7).
 
 ```yaml
 produces:
-  done: [{ name: plan, type: std:artifact_types/ticket-plan }]
+  done: [{ name: plan, type: std:artifact_types/delivery_plan }]
 ```
 
 Per outcome: the artifacts the step must produce when it ends with that
@@ -364,9 +364,9 @@ An agent or decision step may not declare an evidence type (`docs/01` section
 ```yaml
 consumes:
   - { name: plan }                                  # this run
-  - { name: epic-acceptance-criteria, from: parent }
-  - { name: findings-report, from: { child: ticket_a } }
-  - { name: previous-review, optional: true }
+  - { name: epic_acceptance_criteria, from: parent }
+  - { name: findings_report, from: { child: ticket_a } }
+  - { name: previous_review, optional: true }
 ```
 
 | Field | Meaning |
@@ -388,7 +388,7 @@ checked at load.
 ### 7.4 Verdicts and ratification
 
 ```yaml
-verdicts: { accepted: { accept: [implementation-claims] }, rejected: { reject: [implementation-claims] } }
+verdicts: { accepted: { accept: [implementation_claims] }, rejected: { reject: [implementation_claims] } }
 ratifies: { approved: [spec] }
 ```
 
@@ -458,7 +458,7 @@ repository per ticket).
 - id: ticket_a
   action: run.child
   with:
-    template: std:templates/ticket-delivery
+    template: std:templates/ticket_delivery
     level: ticket
     repositories: ["acme/api"]
     parameters: { ticket_id: "EPIC-101", epic_contract: { expr: "steps.design.artifacts.contract" } }
@@ -573,7 +573,7 @@ standard review, the fix loop, or catch-up and merge (RW5).
 
 ```yaml
 - id: review
-  use: std:fragments/standard-review
+  use: std:fragments/standard_review
   with:
     spec_refs: { expr: "[steps.plan_spec.artifacts.plan]" }
     angles: [correctness, tests, security]
@@ -599,13 +599,13 @@ replaces the first design's 270-line example (`archive/docs/13` section 1).
 ```yaml
 api_version: feature-flow/v1
 kind: template
-metadata: { name: ticket-delivery, level: ticket }
+metadata: { name: ticket_delivery, level: ticket }
 
 parameters:
   ticket_id: { type: string, required: true }
   epic_contract: { type: artifact, required: false }
 
-artifact_types: [std:artifact_types/ticket-plan]
+artifact_types: [std:artifact_types/delivery_plan]
 
 defaults:
   routes:
@@ -616,40 +616,40 @@ steps:
     use: std:fragments/baseline            # baseline tests and analysis on the unchanged branch
 
   - id: plan_spec
-    agent: { role: std:roles/planner, task: std:tasks/plan-ticket }
+    agent: { role: std:roles/planner, task: std:tasks/plan_ticket }
     with: { ticket_id: { expr: "params.ticket_id" } }
-    consumes: [{ name: epic-acceptance-criteria, from: parent, optional: true }]
-    produces: [{ name: plan, type: std:artifact_types/ticket-plan }]
+    consumes: [{ name: epic_acceptance_criteria, from: parent, optional: true }]
+    produces: [{ name: plan, type: std:artifact_types/delivery_plan }]
     outputs: { tier_tags: { type: array } }
     outcomes: { planned: success, blocked: blocked }
     tracker: { on_start: in_progress }
 
   - id: approve_spec
-    decision: { type: ticket.spec_approval, prompt: std:prompts/spec-approval, auto: approved }
+    decision: { type: ticket.spec_approval, prompt: std:prompts/spec_approval, auto: approved }
     consumes: [{ name: plan }]
     ratifies: { approved: [plan] }
     outcomes: { approved: success, rejected: failure }
     routes: { rejected: { to: plan_spec, clean_up: true } }
 
   - id: implement
-    agent: { role: std:roles/implementer, task: std:tasks/implement-ticket }
+    agent: { role: std:roles/implementer, task: std:tasks/implement_ticket }
     with: { plan_path: { from_artifact: plan } }
     consumes: [{ name: plan }]
-    produces: [{ name: implementation-claims, type: std:artifact_types/evidence-claims }]
+    produces: [{ name: implementation_claims, type: std:artifact_types/evidence_claims }]
     outcomes: { done: success, blocked: blocked }
     limits: { questions: { max: 3, timeout: 4h } }
 
   - id: verify
-    use: std:fragments/verify-and-review   # tests, analysis, trace, review, fix loop
+    use: std:fragments/verify_and_review   # tests, analysis, trace, review, fix loop
     with:
       tier_tags: { expr: "steps.plan_spec.outputs.tier_tags" }
       spec_refs: { expr: "[steps.plan_spec.artifacts.plan, params.epic_contract]" }
-      fixer_task: std:tasks/fix-findings
+      fixer_task: std:tasks/fix_findings
     protected: true
     routes: { ready: deliver }
 
   - id: deliver
-    use: std:fragments/merge-into-parent   # pull request, checks, catch up, re-test, merge
+    use: std:fragments/merge_into_parent   # pull request, checks, catch up, re-test, merge
     with: { squash: true, engine_can_merge: true }
     routes: { merged: { end: completed } }
     tracker: { on: { merged: done } }

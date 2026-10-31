@@ -446,13 +446,13 @@ The standard set, from FF's validators:
 
 | Validator | Checks |
 |---|---|
-| `requirement-support` | Every item's `supports` links resolve; every item supports something or gives a reason; every requirement above has a supporter |
-| `requirement-ownership` | Every item in a parent-written plan names an owner |
-| `requirement-inheritance` | A child's plan holds every item it owns, unchanged in id and links, and none owned by another |
-| `verification-method-support` | Every acceptance criterion without an owner has a verification method |
-| `verification-satisfaction` | The agent's evidence claims match passing tests in the engine's test results evidence |
-| `requirement-trace` | Every requirement of this run traces through owners and supporting items, across completed children, to passing tests at commits the work contains |
-| `tests-added` | A fix's claims name at least one test that is new or changed since the commit the finding was raised on |
+| `requirement_support` | Every item's `supports` links resolve; every item supports something or gives a reason; every requirement above has a supporter |
+| `requirement_ownership` | Every item in a parent-written plan names an owner |
+| `requirement_inheritance` | A child's plan holds every item it owns, unchanged in id and links, and none owned by another |
+| `verification_method_support` | Every acceptance criterion without an owner has a verification method |
+| `verification_satisfaction` | The agent's evidence claims match passing tests in the engine's test results evidence |
+| `requirement_trace` | Every requirement of this run traces through owners and supporting items, across completed children, to passing tests at commits the work contains |
+| `tests_added` | A fix's claims name at least one test that is new or changed since the commit the finding was raised on |
 
 ### 10.3 `artifact.validate`
 
