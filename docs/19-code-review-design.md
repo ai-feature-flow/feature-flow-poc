@@ -74,13 +74,15 @@ results).
    part of a change on purpose, narrows or omits it. The reviewer can run on
    any runtime.
 
-8. **Two review levels, both with repository access:**
-   - **Ticket review:** the ticket branch against the integration branch,
-     given the ticket and the epic's contract. Spike 3's pilot showed that a
-     ticket review given the epic contract catches a ticket that departs from
-     it (`docs/17` section 6.6, the review pilot).
-   - **Epic review:** the whole integration branch against `main`, looking for
-     problems that only exist once every ticket is combined.
+8. **Reviews follow the branch tree.** At every level (ticket, epic,
+   project, or whatever levels the workflow uses) a review compares the work
+   against the branch it was taken from and will merge back into: a ticket
+   against its epic branch, an epic against its project branch, a project
+   against `main`. Each level looks for problems that only exist once its
+   children are combined. A ticket review is given the ticket and its parent's
+   contract: Spike 3's pilot showed a ticket review given the epic contract
+   catches a ticket that departs from it (`docs/17` section 6.6, the review
+   pilot).
 
 9. **What stays as already decided:**
    - **The findings ledger** is the record of every finding and its status,
@@ -100,6 +102,9 @@ results).
 | Pre-submit check (a developer running the gated review from their own session) | "Identical input" no longer proves parity, because the reviewer explores. Parity becomes: same brief, same tools, same model, same commit |
 | Cost | More tokens per review: reading files, separate angles, a stronger model. Accepted; cheap relative to a defect reaching `main` |
 | Run-to-run variation | Exploration varies between runs. The findings ledger and evidence-backed bug findings are what absorb it |
+
+Unmet coverage: a review step with `require_coverage` that is not met retries
+up to its attempt limit, then escalates.
 
 ## Not decided here
 

@@ -6,7 +6,14 @@ default-branch setting.
 
 ## Branch levels
 
-Work flows up through three levels of branch, then into `main`:
+Work flows up a tree of branches. **At every level, work is reviewed against
+the branch it was taken from (its parent) and merged back into it.** The parent
+is then reviewed against and merged into its own parent, up to and including
+`main`. The levels and their names come from the workflow (and usually the
+tracker): ticket, epic and project are typical, but a workflow may use fewer or
+more. The engine supports the pattern at any depth.
+
+A typical three-level workflow:
 
 | Merge | Squash? | Who merges | Why |
 |---|---|---|---|
@@ -14,7 +21,9 @@ Work flows up through three levels of branch, then into `main`:
 | Epic branch into project branch | No | The engine | A plain merge keeps each ticket's commit visible |
 | Project branch into `main` | No | A human, by default | See "Merging into the default branch" below |
 
-A project run starts epic runs the way an epic run starts ticket runs.
+A run at one level starts the runs of the level below, the way an epic run
+starts ticket runs. Where delivery to `main` happens is also the workflow's
+choice: once at the end, as above, or several times along the way.
 
 ## The merge step's parameters
 
@@ -51,7 +60,10 @@ comment linking the squash commit; the pull request stays as the review record.
 
 **Default: the engine never merges into the default branch** (usually `main`).
 The plan sets `engine_can_merge: false` there, a human merges, and the engine
-waits for it.
+waits for it. Whether a workflow lets the engine merge into `main` is the
+workflow's choice, within the cap below. If the engine is allowed but the code
+host refuses (for example because its protection requires an independent
+review), that is an ordinary intervention: the engine asks a human to act.
 
 This is a setting, not a fixed rule, because some repositories (a proof of
 concept, say) may be happy for the engine to merge into `main`:
@@ -71,25 +83,47 @@ This replaces safety floor F1, which said a human must approve every merge into
 the default branch and no workflow may relax it. The default is the same; it
 can now be relaxed deliberately, by someone who is not an agent.
 
-## Who can push
+## Commits and pushes
 
-- **Agents never hold a credential that can push.** An agent commits in its own
-  sandbox. As part of the agent step, the engine fetches those commits and
-  pushes them to the ticket branch with its own credential, at the end of the
-  step and at work-in-progress points. GitHub cannot limit a token to
-  particular branches, so withholding the credential is the reliable control.
-- A step whose role has no write access pushes nothing, and fails if it made
-  commits anyway. A `push` parameter (default `true`) lets a workflow switch
-  pushing off for scratch steps. A failed step's commits go to a hidden
-  work-in-progress reference, not the ticket branch, so a retry can pick them
-  up.
-- Agents get read-only access: the run's repository, plus any other
+- **Agents never hold a credential that can push.** GitHub cannot limit a
+  token to particular branches, so withholding the credential is the reliable
+  control. Agents get read-only access: the run's repository, plus any other
   repositories the workflow declares, for example to check a contract.
-- The engine performs every engine merge as a workflow step. Workflow steps are
-  durable: after a crash they resume and complete exactly once, which Spike 1
-  proved (`docs/15`).
+- **The agent commits locally,** as often as its prompt or skill says
+  ("commit after each meaningful change").
+- **The engine notices new commits through the VCS provider,** not the agent
+  runtime. Each time the agent worker checks in on a running step (about every
+  30 seconds) it asks the VCS provider for the working copy's current
+  revision. If it moved, the engine fetches the new commits and pushes them.
+  A runtime's hooks may trigger an immediate push, but nothing depends on
+  them, so every agent runtime works the same way.
+- **While the step runs, pushes go to a hidden reference** (for example
+  `refs/ff/wip/<ticket>`), not the ticket branch. It is not a branch, so it
+  does not trigger CI and does not expose half-finished work. If the sandbox is
+  lost, the restarted step continues from it.
+- **When the step succeeds, the engine moves the ticket branch** to the final
+  commit, once. A failed step's commits stay on the hidden reference for a
+  retry to continue from.
+- **Changes left uncommitted at the end of a step** are committed by the
+  engine with a clear message, so nothing is lost silently. A workflow can make
+  the step fail instead.
+- **An optional `checkpoint` tool,** offered through the engine's MCP server,
+  lets an agent commit and have the engine push without knowing the version
+  control system. It is a convenience; the engine's own detection is the
+  backstop.
+- A role with no write access pushes nothing, and its step fails if it made
+  commits anyway. A `push` parameter (default `true`) lets a workflow switch
+  pushing off for scratch steps.
+- **The engine performs every engine merge as a workflow step.** Workflow
+  steps are durable: after a crash they resume and complete exactly once, which
+  Spike 1 proved (`docs/15`).
 - A human's interactive session may get a "merge when ready" tool, but it only
   asks the engine to run the merge step.
+
+**Version control.** These operations (current revision, fetch from a sandbox,
+push to a branch or reference, build a merge or squash commit) belong to a VCS
+provider. Version 1 implements Git only; the interface stays neutral so another
+version control system could be added later.
 
 ## What this replaces
 
