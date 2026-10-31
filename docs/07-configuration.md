@@ -1,0 +1,304 @@
+# Configuration
+
+Status: draft, 2026-10-31.
+
+This document owns the configuration files: their layers, their keys and three
+deployment profiles. It lists settings only. What a policy setting means is
+owned by `docs/05`; what a manifest setting does is owned by the step that reads
+it (`docs/04`). Keys are snake_case (RW12).
+
+---
+
+## 1. Layers
+
+| Layer | Where | Set by | Holds |
+|---|---|---|---|
+| Installation | Deployment configuration | Operator | Temporal, workers, provider instances, API authentication, observability, engine defaults for limits |
+| Organisation | A configuration file or service, with team overrides | Organisation | Policy and caps (`docs/05`), people roles, agent role mapping, libraries, notifications routing, timeouts |
+| Repository | `feature-flow.yaml` at the repository root | Repository maintainers | How to set up, test, analyse and run the repository; library additions |
+| Run | The run request, through the API | Requester | Template, parameters, repositories, limit overrides |
+
+Precedence follows `docs/00` section 3: the most specific wins, within
+organisation caps and engine floors. A key set in a layer that may not set it is
+a validation error, never ignored.
+
+Teams are not a fifth layer: team overrides live in the organisation file and
+may tighten organisation values, never relax them.
+
+---
+
+## 2. Installation
+
+```yaml
+api_version: feature-flow/v1
+kind: installation
+
+temporal:
+  address: temporal.internal:7233
+  namespace: feature-flow-prod
+  auth: { mode: api_key, secret_ref: secrets/temporal_api_key }
+  tls: { enabled: true }
+  payload_codec: { name: aes_gcm, key_ref: secrets/payload_key }   # optional
+  expected_retention: 30d        # checked at startup; a mismatch warns
+
+workers:
+  mode: kubernetes               # local | docker | kubernetes
+  agent_pools:
+    - { queue: feature-flow-agent, capabilities: [os_linux, docker] }
+
+providers:                       # every type: named instances, one default
+  sandbox:        { default: kubernetes_pod, instances: { kubernetes_pod: {} } }
+  agent_runtime:
+    default: claude_code
+    instances:
+      claude_code: { model_access: { mode: proxy, key_ref: secrets/anthropic_key } }
+      copilot_cli: { endpoint: https://llm-router.internal/v1, model_access: { mode: proxy, key_ref: secrets/router_key } }
+  vcs:            { default: git, instances: { git: {} } }
+  code_host:      { default: github, instances: { github: { app_id: 12345, secret_ref: secrets/github_app_key } } }
+  ci:             { default: github_actions, instances: { github_actions: {}, teamcity: { base_url: https://tc.internal, secret_ref: secrets/teamcity } } }
+  tracker:        { default: jira, instances: { jira: { base_url: https://acme.atlassian.net, secret_ref: secrets/jira, status_map: { in_progress: "In Progress", code_review: "Code Review", done: "Done" } } } }
+  findings_source: { instances: { copilot_review: {}, sonarcloud: { secret_ref: secrets/sonar } } }
+  validator:      { instances: { std: {} } }
+  toolset:        { instances: { jira: { url: https://mcp.internal/jira }, confluence: { url: https://mcp.internal/confluence } } }
+  notifications:  { default: slack, instances: { slack: { secret_ref: secrets/slack } } }
+  session_surface: { default: local_handoff, instances: { local_handoff: {} } }
+  artifact_store: { default: azure_blob, instances: { azure_blob: { container: ff-artifacts } } }
+  record_store:   { default: postgres, instances: { postgres: { connection_ref: secrets/ff_db } } }
+  secrets:        { default: azure_key_vault, instances: { azure_key_vault: { vault: acme-kv } } }
+  credential_broker: { default: github_app, instances: { github_app: {} } }
+
+api:
+  base_url: https://feature-flow.internal
+  auth: { mode: oidc, issuer: https://idp.internal, audience: feature-flow, role_claim: groups }
+
+observability:
+  otlp_endpoint: https://otel.internal:4317
+
+defaults:                        # engine defaults for limits; not floors
+  limits:
+    agent: { attempts: 3, timeout: 4h, correction_turns: 2 }
+    decision: {}
+    action: { attempts: 3 }
+    scm.merge: { attempts: 3 }
+```
+
+| Key | Notes |
+|---|---|
+| `providers.<type>.instances` | Several instances of one type may coexist (two CI systems, two agent runtimes). Other settings select one by name |
+| `agent_runtime.*.model_access` | `proxy` (a proxy adds the key to model requests) or `per_run_key` (a key with a spend limit and expiry). Required for every runtime (F6) |
+| `endpoint` | Only on a runtime that declares `CustomEndpoint` |
+| `code_host` identity | Must not be able to change branch protection (F5); checked at startup |
+| `tracker.*.status_map` | Maps the library's abstract statuses to the tracker's (`docs/08` section 1) |
+| `workers.agent_pools[].capabilities` | The sandbox capabilities a pool offers, which route steps to its queue (`docs/02` section 1.1) |
+| `defaults.limits` | Engine defaults per step form and per action. The organisation, workflow and step may override them within ceilings |
+
+Scaling (replica counts) is deployment configuration, not engine configuration.
+
+---
+
+## 3. Organisation
+
+```yaml
+api_version: feature-flow/v1
+kind: organisation
+name: acme
+
+libraries:                                  # docs/08 sections 3 and 4
+  - { name: std, source: package, version: ">=1.0.0 <2.0.0" }
+  - { name: acme_delivery, source: git, repository: acme/ff-library, ref: main }
+library_overrides:                          # organisation content replacing std items
+  std:tasks/implement_ticket: acme_delivery:tasks/implement_ticket
+library_inputs: { planning_repository: acme/plans }
+
+policy:                                     # meanings in docs/05
+  approval:
+    - { match: "*.merge_action", roles: [approver], min_count: 2, from_chat: false, auto: false }
+    - { match: "*", roles: [approver], min_count: 1, from_chat: true, auto: true }
+  merge:
+    default_branch: { engine_may_merge: ["acme/poc-*"] }
+    require_checks: { value: true, locked: true }
+  attempts:
+    ceiling: { per_step: 5, per_run: 40 }
+    hard_ceiling: { per_step: 8, per_run: 60 }
+  budgets:
+    max_work_items: { ceiling: 30 }
+  planning:
+    allowed_roles: [planner, implementer, fixer]
+    require_review: [{ match: "project", value: true }]
+  toolsets:
+    allowed: [jira, confluence]
+  overrides:                                # default roles for run-time overrides (docs/05 section 5)
+    skip_protected: [admin]
+
+roles:                                      # people roles to identity-provider groups
+  viewer:   { idp_groups: [acme-engineering] }
+  approver: { idp_groups: [acme-leads] }
+  steerer:  { idp_groups: [acme-leads] }
+  admin:    { idp_groups: [acme-platform] }
+
+role_mapping:                               # library agent roles to runtime and model
+  planner:     { agent_runtime: claude_code, model: claude-sonnet }
+  implementer: { agent_runtime: claude_code, model: claude-haiku }
+  fixer:       { agent_runtime: claude_code, model: claude-haiku }
+  reviewer:    { agent_runtime: claude_code, model: claude-opus }
+  default:     { agent_runtime: claude_code, model: claude-sonnet }
+
+notifications:
+  routing:
+    decision_needed: { channel: "#ff-decisions" }
+    run_stuck:       { channel: "#ff-ops" }
+    run_finished:    { channel: "#ff-runs" }
+  events: [decision_needed, failed, completed]
+
+timeouts:
+  heartbeat: 30s                            # how long a step may go silent
+  stalled_after: 5m                         # unreachable provider before a run shows stalled
+
+teams:
+  payments:
+    policy:
+      approval: [{ match: "*.merge_action", roles: [approver], min_count: 3 }]
+    roles:
+      approver: { idp_groups: [acme-payments-leads] }
+```
+
+| Key | Notes |
+|---|---|
+| `libraries` | Sources and versions. The first library is the base for references without a library name |
+| `library_overrides` | An organisation item replacing a base item by name, for every run |
+| `policy.*` | Meanings in `docs/05`. A cap may be `{ value, locked }`; a bare value is an unlocked default |
+| `role_mapping.default` | The runtime and model for a role with no entry |
+| `timeouts.heartbeat` | Describes the platform, not the work, so it is set here and not per step. It dominates crash-recovery time (Spike 1: 87.4 s from a kill to progress, `archive/docs/15` section 6.4) |
+| `timeouts.stalled_after` | Time without successful provider contact before the run shows `stalled`. Time-based, not a retry count |
+
+---
+
+## 4. Repository: `feature-flow.yaml`
+
+One file at the repository root, applying to every place the repository runs:
+sandbox, local machine and CI. Read fresh from the branch at every step, and
+recorded by hash (RW11). Other files (Dockerfiles, compose files) are referenced
+by relative path.
+
+```yaml
+api_version: feature-flow/v1
+kind: repository
+
+environment:
+  from: .devcontainer/devcontainer.json    # or inline: image, os, docker
+  os: linux
+
+setup:
+  commands: ["git config core.hooksPath .githooks", "dotnet tool restore"]
+
+after_changes:                             # run by the engine after an agent commits (docs/04 section 3.1)
+  commands: ["dotnet format"]
+
+test_tiers:
+  - name: unit
+    tags: [unit, fast]
+    command: dotnet test tests/Unit --logger "trx;LogFileName=unit.trx"
+    result: { format: trx, path: tests/Unit/TestResults/unit.trx }
+    targets: [sandbox, local, ci]
+  - name: integration
+    tags: [integration]
+    command: dotnet test tests/Integration
+    result: { format: trx, path: tests/Integration/TestResults/*.trx }
+    targets: [ci]
+    ci: { instance: github_actions, job: integration.yml }
+    prerequisites: { env: [APP_BASE_URL] }
+
+static_analysis:
+  analyser: sarif                          # sarif | sonarcloud | none
+  command: dotnet build -warnaserror -p:ErrorLog=analysis.sarif
+  sarif_path: analysis.sarif
+  fail_on: new_issues
+
+integration_environment:                   # for test.integration
+  image: mcr.microsoft.com/dotnet/aspnet:9.0
+  start: dotnet run --project src/Api
+  health: curl -f http://localhost:8080/health
+  port: 8080
+  ready_timeout: 10m
+
+library:                                   # docs/08 section 4; read from the default branch only
+  default_template: std:templates/ticket_delivery
+  adds:
+    skills: [{ name: acme_api_conventions, path: .feature-flow/skills/acme_api_conventions }]
+```
+
+| Key | Notes |
+|---|---|
+| `environment` | Inline, or a referenced `devcontainer.json`. The engine merges the two into the **resolved manifest**, which providers receive |
+| `test_tiers[].tags` | What templates select by (`test.run` `tier_tags`), so a template never lists a repository's tiers |
+| `test_tiers[].targets` | Where the tier may run. A tier that needs Docker or Windows normally lists only `ci` |
+| `test_tiers[].result` | Parsed format and path. Without it the tier is judged by exit code only, and its tests cannot be claimed as evidence |
+| `library` | The only section read from the default branch rather than the working branch |
+| `.feature-flow/` | Holds only the content files `library.adds` references |
+
+Unknown keys are refused, not ignored, so a misspelt section stops the step
+that reads it (from FF).
+
+The first design's `merge.default_branch` and `branches` sections are removed:
+F1 is organisation configuration (`docs/05` section 2), and branch naming is in
+the template (`docs/03` section 1).
+
+---
+
+## 5. Run request
+
+```yaml
+template: std:templates/epic_delivery     # default: the repository's default template
+parameters: { epic_id: ACME-42 }
+repositories: [acme/api, acme/web]
+limits:
+  - { step: implement, attempts: 4 }        # within the organisation's ceiling
+dry_run: false
+```
+
+`dry_run: true` selects recording providers that record instead of act, chosen
+by configuration. Workflow tests use the same mechanism (`docs/09`).
+
+---
+
+## 6. Profiles
+
+The same code runs in every profile; only configuration differs.
+
+| | Solo developer | Small company | Enterprise |
+|---|---|---|---|
+| Temporal | `temporal server start-dev` | Docker Compose, Helm, or Temporal Cloud | Temporal Cloud, one namespace per environment |
+| Workers | Local processes | Kubernetes | Organisation Kubernetes, pools by capability |
+| Sandbox | Local Docker | Kubernetes pod | Kubernetes pod; Docker and Windows tiers delegated to CI |
+| Tiers that need Docker | A privileged container, permitted only in this profile | CI delegation, or a rootless container runtime where supported | CI delegation |
+| Tracker, code host, CI | GitHub Issues, GitHub, GitHub Actions | Jira, GitHub, GitHub Actions | Jira, GitHub, GitHub Actions and TeamCity |
+| Stores | Local filesystem, SQLite | S3 or Blob, Postgres | Organisation object store and database |
+| Secrets | Environment or file | Cloud secret manager | Internal platform, short-lived |
+| Credentials | The developer's token, used only by the engine | GitHub App | GitHub App |
+| Library source | `directory` | `git` | `git` or `package` |
+| API authentication | Local token | OIDC | OIDC |
+| Default-branch merges | A person, unless the solo organisation file lists the repository | A person | A person; two approvers |
+
+The solo organisation file can be four lines: one approver (the developer), one
+library, and default caps. Every profile still keeps agents without push
+credentials (F5) and model keys (F6).
+
+---
+
+## 7. Validation
+
+| When | Checks |
+|---|---|
+| Startup | Schemas; provider packages present; secret references resolve; Temporal reachable; expected retention (warn); every agent runtime has `model_access`; `endpoint` only where supported; the code host identity cannot change protection; library sources reachable |
+| Run start | The template validates (`docs/09`); every capability the plan needs is offered; caps respected; F1 for every merge step into a default branch, reading the default branch from the code host; branch protection exists on default branches; decision types known; library lock written |
+| Each step | The manifest read from the branch and its hash recorded; capabilities checked again if the manifest changed |
+
+A validation failure names the layer, the key and the reason. A run fails in
+its first minute, not at step 40.
+
+---
+
+## 8. Open questions
+
+None that block the next documents. Judgement calls made in this document are
+in `docs/LOG.md`, entries 44 to 46.

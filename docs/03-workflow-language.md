@@ -45,6 +45,7 @@ steps:                          # an ordered list (section 2)
 | `api_version` | Yes | The plan schema version. The interpreter and the library are versioned separately |
 | `kind` | Yes | `template` or `plan` |
 | `metadata.level` | Yes | The level a run of this template is at. Free name |
+| `metadata.branch_pattern` | No | How this run's work branches are named, for example `ff/{{ run.level }}/{{ params.ticket_id }}`. Default `ff/<level>/<run id>` |
 | `parameters` | No | Section 6 |
 | `artifact_types` | No | Library references. A step may use only types listed here or in a fragment it uses |
 | `defaults` | No | Route defaults and limits for every step, overridable per step |
