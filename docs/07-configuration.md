@@ -168,7 +168,7 @@ teams:
 |---|---|
 | `libraries` | Sources and versions. The first library is the base for references without a library name |
 | `library_overrides` | An organisation item replacing a base item by name, for every run |
-| `policy.*` | Meanings in `docs/05`. A cap may be `{ value, locked }`; a bare value is an unlocked default |
+| `policy.*` | Meanings in `docs/05`. A cap may be `{ value, locked }`; a bare value is an unlocked default. Which settings reach running runs is in `docs/05` section 8 |
 | `role_mapping.default` | The runtime and model for a role with no entry |
 | `timeouts.heartbeat` | Describes the platform, not the work, so it is set here and not per step. It dominates crash-recovery time (Spike 1: 87.4 s from a kill to progress, `archive/docs/15` section 6.4) |
 | `timeouts.stalled_after` | Time without successful provider contact before the run shows `stalled`. Time-based, not a retry count |

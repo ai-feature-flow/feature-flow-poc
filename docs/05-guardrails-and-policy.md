@@ -14,15 +14,18 @@ gives their meaning.
 
 A safety floor passes the guardrail test (P2): it is needed for safety or for a
 trustworthy record, whatever the workflow says. **No template, patch, agent or
-run-time override relaxes a floor.** Only organisation configuration may set
-the values a floor allows, and some floors have no setting at all.
+run-time override relaxes a floor**, with two named exceptions for people, both
+audited: F3 (a person with the right role may change a protected step) and F4
+(an administrator may grant attempts beyond the hard ceiling for one run).
+Only organisation configuration may set the values a floor allows, and some
+floors have no setting at all.
 
 | # | Floor | Setting |
 |---|---|---|
 | F1 | **Default-branch merges.** The engine merges into a repository's default branch only where the organisation allows it. Default: never; a person merges on the code host (section 2) | Organisation, per repository pattern |
 | F2 | **Secrets by reference.** No configuration, template or input may hold a secret value, only a reference to the secrets provider | None |
 | F3 | **Protected content.** An agent cannot change, remove or bypass a protected step, or make it unreachable; such a change becomes a decision for a person (section 6) | None |
-| F4 | **Attempt ceilings.** Allowances stay within the organisation's ceiling per step and per run, checked on every execution of a step, including when a loop re-enters it. Grants by a person stay within the hard ceiling. Only a change to organisation configuration raises a ceiling | Organisation |
+| F4 | **Attempt ceilings.** Allowances stay within the organisation's ceiling per step and per run, checked on every execution of a step, including when a loop re-enters it. A steerer's grants stay within the hard ceiling; an administrator may grant beyond it for one run, audited, so a long run is never stranded by its ceilings | Organisation |
 | F5 | **No push credential for agents.** Agents hold a read-only code host credential, per step. Only the engine pushes and merges. The engine's own identity cannot change branch protection | None |
 | F6 | **Model credentials stay out of the sandbox.** A proxy adds the key, or a per-run key with a spend limit and expiry is used (`docs/07` section 2, `model_access`) | Installation chooses the mode |
 | F7 | **Evidence integrity.** Evidence artifact types are produced only by engine actions (`docs/01` section 5.2) | None |
@@ -31,9 +34,10 @@ the values a floor allows, and some floors have no setting at all.
 | F10 | **Privilege from role.** A step may tighten its role's write access, never widen it, and may not change its tools. A setting that governs safety is never read from a file an agent can edit | None |
 | F11 | **Work-item budget.** A run tree creates no more descendant runs than its budget, within the organisation's ceiling | Organisation |
 
-The first design's floors F1 to F4 keep their numbers and meanings, except F3,
-which now binds agents only: a person with the right role may change a
-protected step (RW8, section 5).
+The first design's floors F1 to F4 keep their numbers and meanings. F3 now
+binds agents only: a person with the right role may change a protected step
+(RW8, section 5). F4 binds workflows, agents and steerers; an administrator
+may grant beyond the hard ceiling (section 5).
 
 ---
 
@@ -115,7 +119,7 @@ are the workflow's (review finding 3.4).
 | `viewer` | Read runs, artifacts, findings, decisions |
 | `approver` | Answer decisions where approval rules name the role |
 | `steerer` | The run-time overrides in section 5, except those reserved for `admin` |
-| `admin` | Everything `steerer` may do, plus changes to protected steps, role changes, and library overrides affecting protected steps |
+| `admin` | Everything `steerer` may do, plus changes to protected steps, role changes, library overrides affecting protected steps, and attempt grants beyond the hard ceiling |
 
 Roles map to identity-provider groups and may be scoped by team or repository.
 These are people's roles, distinct from the library's agent roles (planner,
@@ -158,7 +162,7 @@ recorded with the actor, reason and the change.
 | Skip a step | `skip` | Mark it as having ended with a chosen outcome, without running it. The record shows it was skipped | `steerer`; `admin` for a protected step |
 | Amend the plan | `amend` | Apply a patch (`docs/03` section 10). Not bound by F3 | `steerer`; `admin` for protected content |
 | Change a step's role | `change_role` | Only by a person, never by an agent's patch | `admin` |
-| Grant attempts | `grant_attempts` | Up to the hard ceiling (F4), never beyond | `steerer` |
+| Grant attempts | `grant_attempts` | Up to the hard ceiling (F4); beyond it, for one run, with a reason | `steerer`; `admin` beyond the hard ceiling (`grant_attempts_beyond`) |
 | Override library content | `override_library` | For future steps (`docs/08` section 5.2) | `steerer`; `admin` where a protected step resolves the content |
 | Answer for an agent | `answer_question` | Answer an agent's question | Per approval rules |
 | Abort | `abort` | End the run with status `aborted`. Branches and pull requests are left as they are unless the person asks otherwise | `steerer` |
@@ -207,7 +211,21 @@ The view is part of the plan's readable form and of the run start record.
 
 ---
 
-## 8. Open questions
+## 8. When configuration changes take effect
+
+| Kind of setting | Takes effect | Why |
+|---|---|---|
+| Checked by the API at the moment of use: who may answer a decision, who may perform an override, chat permissions | Immediately, for running runs too | The API reads current configuration on every request |
+| Enforced inside the run: attempt ceilings, locked caps, F1, budgets | Fixed for the run when it starts, and recorded in the run start record | Workflow code cannot read configuration (it would break deterministic replay), so these values are carried in the run's state |
+| Library content | Pinned in the run's lock at start (`docs/08` section 5.1) | Reproducibility |
+
+To change an in-run value for a running run, a person uses an override: for
+ceilings, an attempt grant (section 5). There is no mechanism that pushes new
+configuration into running runs.
+
+---
+
+## 9. Open questions
 
 | # | Question | Recommendation |
 |---|---|---|

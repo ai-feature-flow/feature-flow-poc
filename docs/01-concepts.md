@@ -191,7 +191,7 @@ features a workflow used).
 | Infrastructure failures are free | An attempt cut short because a provider or the platform failed is retried and does not count (`docs/06`, error classification) |
 | Resumes are free only with progress | An agent step resumed after an interruption does not count, provided the agent made progress since the last resume: a new commit, or a longer session. After 3 resumes in a row without progress, the next one counts |
 | Correction turns are not attempts | Returning output errors to a running agent so it can fix them (section 5.4) happens inside one attempt |
-| Granting more | A human with the right role may grant extra attempts, up to the organisation's hard ceiling (P3) |
+| Granting more | A person with the right role may grant extra attempts: a steerer up to the organisation's hard ceiling, an administrator beyond it for one run (P3, `docs/05` section 5). A run is never stranded by its ceilings |
 
 Everything an attempt used is recorded by content hash: the rendered task, the
 library content, the repository manifest, the consumed artifacts and the commit

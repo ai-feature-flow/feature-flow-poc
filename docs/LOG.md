@@ -10,7 +10,7 @@ Started 2026-10-31, overnight session. Local commits only; nothing pushed.
 **Start with the entries marked "Yes":** 3 (no re-plan outcome or resume
 directive), 9 (the last step's success ends the run by default), 17 (the agent
 reporting contract), 26 (F1 is organisation-only), 31 (the new continue-as-new
-rule, which needs a spike), 50 (the hard attempt ceiling is absolute).
+rule, which needs a spike). Entry 50 was reverted on review.
 
 | # | Document | Decision | Why | Needs a look? |
 |---|---|---|---|---|
@@ -63,10 +63,11 @@ rule, which needs a spike), 50 (the hard attempt ceiling is absolute).
 | 47 | 09 s2, s4.3 | Check list renumbered 1 to 35 for the new language; the workflow test file gains `outputs` (to drive route guards) and `path_includes` | The first design's numbers no longer fit; guards on `findings.*` need scripted values | Low |
 | 48 | CONTRIBUTING | The writing rule "explain every reference where it is used" now adds: name the rule and its effect in one sentence, do not restate it (P12) | That rule, applied literally, produced the first design's duplication | Low |
 | 49 | 03, 08 | Consistency fix: the standard ticket template takes `engine_can_merge` as a parameter, default `false`, so a standalone ticket passes F1; an epic passes `true` | The template failed its own validation standalone | Low |
-| 50 | 05 s1 | Consistency fix: F4's hard ceiling is absolute; only an organisation configuration change raises it. Admins can no longer grant beyond it | A floor that an override can exceed is not a floor | **Yes**: the first design let `admin` exceed the hard ceiling |
+| 50 | 05 s1 | ~~F4's hard ceiling is absolute~~. **Reverted by the product owner, 2026-11-01:** an administrator may grant beyond the hard ceiling for one run, audited, as in the first design | An absolute per-run ceiling could strand a long run with no way past it | Decided |
 | 51 | 04 s7.3, 01 s9 | Consistency fix: re-testing after catch-up is the workflow's; `scm.merge` gains `require_tested` (default true) and refuses a head without passing test and check evidence | Keeps "nothing untested lands" as an engine check on evidence, not a hidden engine re-test | Medium |
 | 52 | 03 s8.2 | Consistency fix: `for_each.step` may be a fragment or a list of steps | The standard review and ordered delivery need several steps per item | Low |
 | 53 | 04 s9 | Consistency fix: `test.run` returns `baseline_failed` instead of raising an intervention; `analysis.run` takes `fail_on` and `min_level` inputs | Both were engine policy; the standard fragments keep the old behaviour | Low |
 | 54 | 04 s5.1 | Consistency fix: `run_gate: manual` is a breakpoint before the child's first step | One decision mechanism (P4) | Low |
 | 55 | 05 s5 | Consistency fix: every override has a key (`answer`, `recover`, `breakpoint`, `skip`, `amend`, `change_role`, `grant_attempts`, `override_library`, `answer_question`, `abort`); `_protected` variants set the role for protected content; a library override touching a protected step needs `admin` | Keys for configuration; closes a route around F3 | Low |
 | 56 | 10 s4 | Spikes renamed SP1 to SP6 | `S4` collided with decision S4 | Low |
+| 57 | 05 s8 | Settings the API checks at use (who may answer or override) apply to running runs at once; settings enforced inside the run (ceilings, caps, F1, budgets) are fixed at run start; there is no push of new configuration into running runs; an override is the way to change a running run | Answers "can organisation configuration change mid-run?", which the drafts did not say | Medium |
