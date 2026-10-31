@@ -1,0 +1,99 @@
+# Design rewrite plan
+
+Status: in progress. Started 2026-10-31. This file is the resume point: a new
+session reads it first, then the status table in section 6.
+
+## 1. Goal
+
+A clean, comprehensive design for Feature Flow that:
+
+- keeps the engine architecture of the first design (Temporal interpreter,
+  plan as data, providers, sandboxes, stores), which the three spikes evidenced;
+- brings over every facility that worked in Feature Factory (FF), the local
+  TypeScript prototype;
+- fixes the shortcomings found in FF during the hackathon and in the first
+  Feature Flow design;
+- applies the recommendations of the design review
+  (`archive/review-vs-feature-factory.md`).
+
+## 2. Principles the rewrite applies
+
+Stated fully in `docs/00-principles.md`. In short:
+
+| Principle | Meaning |
+|---|---|
+| Guardrails in the engine, policy in the workflow | The engine provides mechanisms and safety floors. Everything else is a workflow choice, with standard defaults in the library |
+| The guardrail test | A rule belongs in the engine only if it is needed for safety or for a trustworthy record, whatever the workflow |
+| Humans may override anything within organisation limits | An authorised human can amend, bypass or override, including protected steps. Safety floors are never relaxed. Every override is audited |
+| Simplicity and repeated patterns | One mechanism per concern, used the same way at every level |
+| Pluggability | Every external system behind a provider interface with capabilities and contract tests |
+| One fact, one place | Each rule has one owning section. Elsewhere: one sentence and a reference |
+
+## 3. Decisions taken for the rewrite
+
+Product owner, 2026-10-31. Recorded here until the decision register
+(`docs/10`) exists, then moved there.
+
+| # | Decision |
+|---|---|
+| RW1 | Rewrite the design. The first design moves to `archive/docs/` (with `git mv`, so history is kept). Spike code stays in `spikes/` |
+| RW2 | Write the principles document and the full outline first, for review, before any other document |
+| RW3 | Agent and human steps declare their own outcome names. Each declared outcome may carry an optional `class` (`success`, `failure`, `blocked`) for reporting and default routing. The engine still produces `attempts_exhausted` itself. Engine actions keep fixed outcome sets |
+| RW4 | Review and findings policy moves from the engine to library defaults: the regression test per fix, escalation after repeated fixes, the merge bar, "demonstrated bugs block". Standard templates mark those steps protected |
+| RW5 | The standard reviewer is an `agent.run` with a reviewer role, plus an engine action that records findings into the ledger. A library fragment ("standard review") hides the detail from template authors. External reviewers plug in behind a "collect findings" action |
+| RW6 | `replan_parent` is a signal a child sends while it continues or waits. The parent's join counts the branch only when the child ends |
+| RW7 | Requirement traceability in version 1: engine-only evidence artifacts and a validator plug point are engine mechanisms; trace rules (requirement and acceptance criteria schemas, `supports`, `owner`) are library content |
+| RW8 | An authorised human's steering may bypass protected steps, audited. It may never relax safety floors F1 to F4 |
+| RW9 | The rest of the review's recommendations are accepted as direction: route defaults and an `escalate` directive; parent-to-child data passing; per-repository fan-out; one human-decision primitive; a reduced step catalogue; a directory library as a first-class source |
+
+## 4. Document structure
+
+Each document owns the facts listed and does not restate another's.
+
+| # | File | Owns |
+|---|---|---|
+| 00 | `00-principles.md` | Principles, the guardrail test, the override rule, glossary |
+| 01 | `01-concepts.md` | The domain model: run, level, plan, step, outcome, route, artifact, evidence, finding, decision, intervention, attempt |
+| 02 | `02-engine-architecture.md` | Components, Temporal interpreter, workers, sandboxes, agent pattern, stores, control plane, observability |
+| 03 | `03-workflow-language.md` | Plan schema, routing and defaults, expressions, parameters, child runs and data passing, patches |
+| 04 | `04-engine-mechanisms.md` | The step catalogue: agent step, human decision, engine actions, findings and evidence actions, validators |
+| 05 | `05-guardrails-and-policy.md` | Safety floors, the policy model, approval, overrides and bypass, steering, who may do what |
+| 06 | `06-providers.md` | Provider interfaces, capabilities, contracts, error classification |
+| 07 | `07-configuration.md` | Layers, schemas, profiles. Settings only; policy semantics stay in 05 |
+| 08 | `08-library.md` | Library format and sources, lock, mid-run override, and the standard library's templates and fragments |
+| 09 | `09-validation-and-testing.md` | Validation phases and checks, workflow testing, interpreter replay tests |
+| 10 | `10-decisions-and-risks.md` | Decision register, risk register, spike plan, evidence index |
+
+Reviews from the product owner go in `docs/reviews/`, as before.
+
+## 5. Sources
+
+Paths in all design documents are relative to the repository root.
+
+| Source | Use |
+|---|---|
+| `archive/docs/01` to `20` | The first design. Engine architecture is carried over; workflow surface is redesigned |
+| `archive/docs/15`, `16`, `18` | Spike results: the evidence. Cited, not restated |
+| `archive/docs/reviews/` | Earlier product owner answers. Folded into the decision register |
+| `archive/review-vs-feature-factory.md` | The review this rewrite applies |
+| `brief.md` | The original brief. Still the requirements input |
+| `../feature-factory/docs/` | FF user guide: `concepts.md`, `step-types.md`, `verification.md`, `artifacts.md`, `validators.md`, `workflow-templates.md`, `running-and-controlling.md`, `planning.md` |
+| `../feature-factory/docs/design/` | FF design notes, especially `engine-flexibility.md` and `engine-flexibility-2.md` |
+
+## 6. Status
+
+| Step | State |
+|---|---|
+| Archive the first design | Done 2026-10-31 |
+| `00-principles.md` | Draft written, awaiting review |
+| `OUTLINE.md`: every document's sections and open questions | Draft written, awaiting review |
+| Product owner review of 00 and the outline | Next |
+| Write 01 to 10, in the order in `OUTLINE.md` section 2 | Not started |
+| Update `CONTRIBUTING.md` paths to the new structure | Not started |
+
+## 7. How to resume
+
+1. Read this file, then `docs/00-principles.md` and `docs/OUTLINE.md`.
+2. Read the latest file in `docs/reviews/`, if any, and apply it.
+3. Continue from the first step in section 6 that is not done. Update section 6
+   when a step finishes.
