@@ -230,6 +230,16 @@ Decided by the product owner (decision D9, `docs/14`):
 | **Repository**: the `library` section of `feature-flow.yaml`, with content files in `.feature-flow/` | **Choose a default template**; **add** skills and checks | Override anything. No roles, no policies, no tasks |
 | **Run**: an API override (section 6) | Override content for this run, future steps only | Change the plan structure (that is a patch, `docs/09` section 15) |
 
+**Templates carry workflow policy.** The engine provides mechanisms and
+guardrails; the workflow decides. A template's step parameters (for example a
+merge step's `squash` and `engine_can_merge`, or a review step's
+`require_coverage`) are the workflow's default policy, overridable down the
+levels (workflow, child workflow, step) within the caps organisation
+configuration sets (`docs/07` section 1.1). The one thing a template never
+carries is **who may approve a decision** (roles, minimum approvers, chat,
+auto-approval): that is organisation governance (`policy.approval`, `docs/07`
+section 4; `docs/09` section 14).
+
 **Role mapping is configuration, not library content.** The organisation's
 `roleMapping` (`docs/07` section 4) maps each role to an agent runtime instance
 and a model; the role itself never names one. Whether the reviewer uses a
