@@ -1,7 +1,11 @@
 # SP2: `ask_human` across an agent worker restart
 
-Status: plan and checks pre-registered 2026-11-01, before any run. Results
-follow in section 5 once run.
+Status: plan and checks pre-registered 2026-11-01 (commit `d36c390`), before
+any run; S3b added by amendment (commit `e1a0784`) before it ran. Run the same
+day. **The claim holds**: in 11 runs the agent received every answer once, with
+no duplicate question, across rolling restarts, a full outage, and a 20-minute
+wait. A hook call during an outage held and was then allowed. Two design
+changes follow (section 5.4).
 
 ## 1. Claim under test
 
@@ -94,8 +98,86 @@ run.
 
 ## 5. Results
 
-Not run yet.
+Raw evidence per run, in `spikes/05-ask-human/runs/<scenario>-<variant>-<n>/`:
+`summary.json` (checks), `transcript.jsonl` (Claude Code's stream), `client.jsonl`
+and `hook.jsonl` (sandbox clients), `harness.jsonl` (kills, starts, answers) and
+each replica's log. Run with `dotnet Sp2.Harness/bin/Debug/net10.0/Sp2.Harness.dll
+--scenario <S> --run <n> [--variant n1|n2]` in `spikes/05-ask-human`, against a
+dev server on port 7733.
+
+### 5.1 Main runs
+
+| Run | Question open to answer received | Connection failures while waiting | Hook failures before a decision | Checks |
+|---|---|---|---|---|
+| S1 1, 2, 3 | 16.7 s, 16.8 s, 16.6 s | 2 each | 0 | All pass |
+| S2 1, 2, 3 | 60.6 s, 60.7 s, 60.6 s | 60 each | 0 | All pass |
+| L1 | 1,207 s | 3 | 0 | All pass |
+| S3 | Timed out at 90 s | 1 | 0 | All pass (C5 weakly; see below) |
+| S3b | Timed out at 90 s | 1 | 0 | All pass |
+| S4 1, 2 | 0.2 s | 0 | 31 each; allowed after 31.2 s | All pass |
+
+- **C1 to C4.** In every S1, S2 and L1 run, `answer.txt` held the nonce. The
+  workflow had one question and the transcript one `ask_human` call. No tool
+  result was an error. The report `done` was recorded and the agent exited 0.
+- **E1, E2, E3 were met in every run.** The opening replica was killed before
+  the answer arrived, and the client logged failures. In S2 the answer was
+  recorded with no replica running. In S4 the hook failed 31 times before it
+  got a decision.
+- **L1:** one MCP tool call stayed open for 20 minutes across three connection
+  failures. Claude Code sent a progress heartbeat every 30 s
+  (`tool_progress` events in the transcript) and did not time the call out,
+  with `MCP_TOOL_TIMEOUT` set to 2 hours. The default timeout was not tested.
+- **S3 and S3b:** the agent was told no answer came, wrote `NO ANSWER` and
+  reported. In S3 the late answer was rejected only because the workflow had
+  ended (`workflow execution already completed`), so C5 passed without testing
+  the timeout rule. In S3b the late answer, sent while the step was still
+  running, was rejected by the validator: `timed out: the agent has carried
+  on`.
+
+### 5.2 Negative controls
+
+| Control | Target | Result |
+|---|---|---|
+| N1 client does not reconnect | C1 or C3 | Fail, both. The agent got `engine unreachable: RemoteDisconnected` as a tool error, **wrote `NO ANSWER`, and reported `done`**, exit 0 |
+| N2 hook fails closed | C6 | Fail. Both attempts at the first `Write` were blocked by the hook; the agent stopped, never asked, and did not report |
+
+### 5.3 What N1 shows beyond the control
+
+When the engine's tool returned an infrastructure error, the agent improvised
+and reported success. An infrastructure failure became an ordinary-looking work
+result. That breaks the principle that an interruption must become a
+continuation, never a wrong outcome (floor F9, `docs/05` section 1). The spike's
+client still returns such an error after 10 minutes of failures in a row
+(section 2), so the main runs did not reach this path, but the design must
+close it.
+
+### 5.4 What changes in the design
+
+| Finding | Change | Where |
+|---|---|---|
+| The question survives the loss of its replica | R22 (an answer lost across a worker restart) mitigated; `docs/04` section 3.4 no longer marked unspiked | `docs/10` section 2 |
+| A hook call during an outage holds and is then allowed | R19 (an unreachable hook endpoint reads as a denial) re-tested on the agent worker, mitigated | `docs/10` section 2 |
+| The durability depends on the sandbox client owning the question id and opening idempotently by it | The client in the sandbox is a local stdio MCP server for the engine tools. It assigns each question's id, and opening is idempotent by that id | `docs/02` section 4.2; LOG 59, unreviewed |
+| An engine-tool error makes the agent improvise a result (N1) | The sandbox client never returns an infrastructure error to the agent. When its retry budget runs out, it ends the session in a resumable state, as the hook client does | `docs/02` section 4.2; LOG 60, unreviewed |
+| Long tool calls need runtime settings | The runtime's MCP tool timeout must exceed `questions.timeout`, and the hook command's timeout must exceed the hook client's hold | `docs/10` section 1.2, DR16 |
+
+### 5.5 Limits of the evidence
+
+- The harness owns the agent process, so a worker re-attaching to a running
+  sandbox was not tested (section 4).
+- Claude Code's default MCP tool timeout was not tested; it was set to 2 hours.
+- The 4-hour default question timeout was not run; the longest wait was 20
+  minutes.
+- Three harness defects, none affecting a reported result. A shell loop passed
+  two arguments as one, so one S1 run matched no scenario and was discarded,
+  and two runs meant as controls ran as main runs; those overwrote the first
+  `S1-main-1` and `S4-main-1`, which had also passed. The first S3b attempt
+  ran a stale binary after a failed build and was terminated.
 
 ## 6. Open questions
 
-None yet.
+1. LOG 59: should the sandbox client be fixed as a local stdio MCP server that
+   owns question ids?
+2. LOG 60: should the sandbox client end the session resumably, rather than
+   return an error, when the engine stays unreachable? The alternative is to
+   return the error and have the engine distrust any report that follows it.

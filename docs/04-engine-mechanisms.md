@@ -158,7 +158,7 @@ and duration limits paused.
 | Limit | `questions.max` per attempt (default 3). Past it, the tool tells the agent to use its judgement |
 | Timeout | `questions.timeout` (default 4 hours). On timeout the agent is told that no answer came, and carries on |
 | Who answers | A human allowed by policy for the step's question decision type. Auto-resolution never answers a question |
-| Durability | The open question lives in workflow state and the record store, not in worker memory. If the worker restarts, the sandbox and the waiting agent survive; the new worker re-attaches and serves the answer when it arrives. **Not yet spiked** (`docs/10`) |
+| Durability | The open question lives in workflow state and the record store, not in worker memory. If the worker restarts, the sandbox and the waiting agent survive; the new worker re-attaches and serves the answer when it arrives. Spiked in SP2 (`docs/spikes/sp2-results.md`), except the re-attach, which the spike's harness did not exercise |
 
 ### 3.5 Run context
 

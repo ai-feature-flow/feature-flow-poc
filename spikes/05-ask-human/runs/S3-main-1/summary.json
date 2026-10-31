@@ -1,0 +1,57 @@
+{
+  "stepId": "sp2-S3-main-1-1793480870",
+  "scenario": "S3",
+  "variant": "main",
+  "run": "1",
+  "nonce": "violet-79464",
+  "answerText": "NO ANSWER",
+  "startText": "started",
+  "agentExit": 0,
+  "askCalls": 1,
+  "toolUses": [
+    "Write",
+    "ToolSearch",
+    "mcp__engine__ask_human",
+    "Write",
+    "mcp__engine__report"
+  ],
+  "toolErrors": [],
+  "questions": [
+    {
+      "Id": "74108a30-7080-4b54-a24d-25fd24b395df",
+      "Text": "What label should I write?",
+      "Status": "timed_out",
+      "Answer": null,
+      "FinalWritten": true
+    }
+  ],
+  "openSignals": 1,
+  "reports": [
+    {
+      "Outcome": "done",
+      "Summary": "start.txt written with \u0022started\u0022; ask_human timed out with no answer, so answer.txt contains NO ANSWER."
+    }
+  ],
+  "openerPid": 17766,
+  "openerKilledBeforeAnswer": true,
+  "failuresWhileWaiting": 1,
+  "secondsFromOpenToAnswer": null,
+  "answeredWhileNoneRunning": false,
+  "hookFailuresBeforeDecision": 0,
+  "lateAnswerResult": "rejected:workflow execution already completed",
+  "clientEvents": {
+    "started": 1,
+    "ask": 1,
+    "opened": 1,
+    "connection_failed": 1,
+    "reconnected": 1,
+    "timed_out_received": 1,
+    "reported": 1
+  },
+  "checks": {
+    "C2 one question in the workflow and one ask_human call": true,
+    "C3 no tool error reached the agent": true,
+    "C4 report \u0027done\u0027 recorded and agent exited 0": true,
+    "C5 agent told no answer came; late answer rejected": true
+  }
+}

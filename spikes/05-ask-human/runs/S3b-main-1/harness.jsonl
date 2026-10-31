@@ -1,0 +1,9 @@
+{"t":1793482237.117,"event":"started","detail":{"stepId":"sp2-S3b-main-1-1793482237","scenario":"S3b","variant":"main"}}
+{"t":1793482237.456,"event":"replica_started","detail":{"url":"http://localhost:7751","pid":19890}}
+{"t":1793482237.778,"event":"replica_started","detail":{"url":"http://localhost:7752","pid":19891}}
+{"t":1793482237.8,"event":"agent_started","detail":{"pid":19892}}
+{"t":1793482243.107,"event":"question_opened","detail":{"url":"http://localhost:7751","pid":19890}}
+{"t":1793482273.198,"event":"replica_killed","detail":{"url":"http://localhost:7751","pid":19890}}
+{"t":1793482276.531,"event":"replica_started","detail":{"url":"http://localhost:7751","pid":20047}}
+{"t":1793482333.014,"event":"timed_out_seen","detail":null}
+{"t":1793482333.045,"event":"late_answer","detail":{"lateAnswerResult":"rejected:timed out: the agent has carried on"}}

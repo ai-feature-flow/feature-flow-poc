@@ -1,0 +1,36 @@
+{"t": 1793481025.749305, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7751", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481026.755809, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7752", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481027.7622778, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7751", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481028.770613, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7752", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481029.776472, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7751", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481030.7818592, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7752", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481031.785318, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7751", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481032.789657, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7752", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481033.801247, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7751", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481034.808502, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7752", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481035.815346, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7751", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481036.81976, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7752", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481037.826613, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7751", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481038.831726, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7752", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481039.835187, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7751", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481040.841682, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7752", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481041.848423, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7751", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481042.8544588, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7752", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481043.862616, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7751", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481044.864964, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7752", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481045.872386, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7751", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481046.879457, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7752", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481047.886234, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7751", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481048.893107, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7752", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481049.899035, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7751", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481050.9063869, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7752", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481051.913316, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7751", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481052.920949, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7752", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481053.924287, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7751", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481054.933147, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7752", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481055.938099, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7751", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481056.963328, "event": "decision", "tool": "Write", "decision": "allow", "pid": 18038, "after_seconds": 31.2}
+{"t": 1793481057.090345, "event": "decision", "tool": "ToolSearch", "decision": "allow", "pid": 18037, "after_seconds": 0.0}
+{"t": 1793481058.4630778, "event": "decision", "tool": "mcp__engine__ask_human", "decision": "allow", "pid": 18037, "after_seconds": 0.0}
+{"t": 1793481060.268336, "event": "decision", "tool": "Write", "decision": "allow", "pid": 18037, "after_seconds": 0.0}
+{"t": 1793481061.686432, "event": "decision", "tool": "mcp__engine__report", "decision": "allow", "pid": 18037, "after_seconds": 0.0}

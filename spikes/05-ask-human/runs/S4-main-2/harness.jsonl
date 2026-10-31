@@ -1,0 +1,7 @@
+{"t":1793481023.603,"event":"started","detail":{"stepId":"sp2-S4-main-2-1793481023","scenario":"S4","variant":"main"}}
+{"t":1793481023.617,"event":"agent_started","detail":{"pid":17986}}
+{"t":1793481025.881,"event":"hook_attempt_failed_seen","detail":null}
+{"t":1793481056.229,"event":"replica_started","detail":{"url":"http://localhost:7751","pid":18037}}
+{"t":1793481056.539,"event":"replica_started","detail":{"url":"http://localhost:7752","pid":18038}}
+{"t":1793481058.552,"event":"question_opened","detail":{"url":"http://localhost:7751","pid":18037}}
+{"t":1793481058.572,"event":"answered","detail":{"questionId":"26aa4c6c-f48d-4a88-98fa-0a66651b19a7","nonce":"violet-12310","reply":"recorded"}}

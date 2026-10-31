@@ -74,8 +74,11 @@ product owner reviews them.
 
 ## From the spikes
 
-Entry 58 approved by the product owner on 2026-11-01.
+Entry 58 approved by the product owner on 2026-11-01. Entries 59 and 60 are
+unreviewed.
 
 | # | Where | Decision | Why | Needs a look? |
 |---|---|---|---|---|
 | 58 | 02 s3 | Answers to decisions are accepted during a continue-as-new drain, not rejected as stale. The validator still rejects unknown and conflicting answers. Replaces the Spike 1 mitigation for R3 | SP1: with the rejection off, nothing was lost, because the handler only records state and the hand-over waits for handlers (`docs/spikes/sp1-results.md` section 5.3). With it on, an answer is refused for as long as the longest in-flight activity, which may be hours | **Yes**: changes an approved rule on one exploratory run. Approved 2026-11-01 |
+| 59 | 02 s4.2 | The client in the sandbox is a local stdio MCP server for the engine tools. It assigns each question's id; the run opens a question idempotently by that id | SP2: the question survived replica loss because the id was fixed before the first attempt, so a retry against another replica resumed the same question (`docs/spikes/sp2-results.md` section 5.4) | **Yes**: fixes a mechanism the design left open |
+| 60 | 02 s4.2 | The client in the sandbox never returns an infrastructure error to the agent. When its retry budget runs out it ends the session in a resumable state, as the hook command does | SP2 control N1: given `engine unreachable`, the agent wrote a made-up answer and reported `done` (`docs/spikes/sp2-results.md` section 5.3) | **Yes**: new rule from one control run |

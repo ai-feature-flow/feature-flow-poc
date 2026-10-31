@@ -1,0 +1,10 @@
+{"t": 1793479933.327138, "event": "started", "mode": "reconnect", "replicas": ["http://localhost:7761", "http://localhost:7762"]}
+{"t": 1793479937.161024, "event": "ask", "question_id": "bba008e4-908f-4a93-909d-98efc92df5ac", "question": "What label should I write?"}
+{"t": 1793479937.184494, "event": "opened", "question_id": "bba008e4-908f-4a93-909d-98efc92df5ac", "replica": "http://localhost:7761", "pid": 16412}
+{"t": 1793479937.3604639, "event": "connection_failed", "replica": "http://localhost:7761", "path": "/questions/sp2-L1-main-1-1793479932/bba008e4-908f-4a93-909d-98efc92df5ac?wait=25", "error": "RemoteDisconnected: Remote end closed connection without response"}
+{"t": 1793479943.7707698, "event": "connection_failed", "replica": "http://localhost:7762", "path": "/questions/sp2-L1-main-1-1793479932/bba008e4-908f-4a93-909d-98efc92df5ac?wait=25", "error": "RemoteDisconnected: Remote end closed connection without response"}
+{"t": 1793479969.802262, "event": "reconnected", "replica": "http://localhost:7761", "pid": 16509, "after_seconds": 32.4}
+{"t": 1793480543.849733, "event": "connection_failed", "replica": "http://localhost:7761", "path": "/questions/sp2-L1-main-1-1793479932/bba008e4-908f-4a93-909d-98efc92df5ac?wait=25", "error": "RemoteDisconnected: Remote end closed connection without response"}
+{"t": 1793480569.878505, "event": "reconnected", "replica": "http://localhost:7762", "pid": 16922, "after_seconds": 26.0}
+{"t": 1793481144.310475, "event": "answer_received", "question_id": "bba008e4-908f-4a93-909d-98efc92df5ac", "answer": "amber-14416", "replica": "http://localhost:7762", "pid": 16922}
+{"t": 1793481149.522188, "event": "reported", "outcome": "done"}

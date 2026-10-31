@@ -167,8 +167,9 @@ Not inside the sandbox, where the agent could reach and alter it.
 |---|---|
 | Any replica serves any step | The per-step token is signed and carries the step's policy (run, step, role, write access, allowed tools). A replica evaluates a hook call from the token alone |
 | State | Events, cost and questions are written to the record store; nothing is kept in replica memory |
-| Questions | `ask_human` signals the run to open a question decision, then waits on the record store for the answer. A worker restart breaks the connection; the sandbox's client reconnects to another replica, which resumes the wait |
-| Unreachable is not denied | The client in the sandbox retries and holds the tool call for a bounded time, then stops the session in a resumable state, classified as infrastructure (risk R19, mitigated in Spike 1) |
+| The client in the sandbox | A local stdio MCP server that serves the engine tools to the runtime and forwards each call to a replica, moving to another replica on any connection error (LOG 59) |
+| Questions | The client assigns each question's id. `ask_human` signals the run to open a question decision, idempotently by that id, then waits on the record store for the answer. A worker restart breaks the connection; the client reconnects to another replica, which resumes the same question. Spiked in SP2 (`docs/spikes/sp2-results.md`): answers survived rolling restarts, a full outage and a 20-minute wait |
+| Unreachable is not denied | The hook command and the client in the sandbox retry and hold the call for a bounded time, then stop the session in a resumable state, classified as infrastructure. Neither returns an infrastructure error to the agent: SP2 showed an agent given one improvises a result and reports success (LOG 60; risk R19, re-tested in SP2) |
 
 ### 4.3 Resume, commits and pushes
 

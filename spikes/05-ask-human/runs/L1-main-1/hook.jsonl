@@ -1,0 +1,7 @@
+{"t": 1793479934.981204, "event": "decision", "tool": "Write", "decision": "allow", "pid": 16412, "after_seconds": 0.0}
+{"t": 1793479936.079566, "event": "decision", "tool": "ToolSearch", "decision": "allow", "pid": 16412, "after_seconds": 0.0}
+{"t": 1793479937.152162, "event": "decision", "tool": "mcp__engine__ask_human", "decision": "allow", "pid": 16412, "after_seconds": 0.0}
+{"t": 1793481146.0728168, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7761", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481147.0841331, "event": "decision", "tool": "Write", "decision": "allow", "pid": 16922, "after_seconds": 1.0}
+{"t": 1793481148.4731479, "event": "attempt_failed", "tool": "mcp__engine__report", "replica": "http://localhost:7761", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481149.481726, "event": "decision", "tool": "mcp__engine__report", "decision": "allow", "pid": 16922, "after_seconds": 1.0}

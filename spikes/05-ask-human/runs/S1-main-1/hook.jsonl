@@ -1,0 +1,5 @@
+{"t": 1793481083.6953568, "event": "decision", "tool": "Write", "decision": "allow", "pid": 18161, "after_seconds": 0.0}
+{"t": 1793481083.883195, "event": "decision", "tool": "ToolSearch", "decision": "allow", "pid": 18161, "after_seconds": 0.0}
+{"t": 1793481085.4744818, "event": "decision", "tool": "mcp__engine__ask_human", "decision": "allow", "pid": 18161, "after_seconds": 0.0}
+{"t": 1793481103.84215, "event": "decision", "tool": "Write", "decision": "allow", "pid": 18205, "after_seconds": 0.0}
+{"t": 1793481105.302565, "event": "decision", "tool": "mcp__engine__report", "decision": "allow", "pid": 18205, "after_seconds": 0.0}

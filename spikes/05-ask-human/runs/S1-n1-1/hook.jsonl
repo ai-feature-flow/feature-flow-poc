@@ -1,0 +1,6 @@
+{"t": 1793481169.598429, "event": "decision", "tool": "Write", "decision": "allow", "pid": 18404, "after_seconds": 0.0}
+{"t": 1793481170.899453, "event": "decision", "tool": "ToolSearch", "decision": "allow", "pid": 18404, "after_seconds": 0.0}
+{"t": 1793481172.173741, "event": "decision", "tool": "mcp__engine__ask_human", "decision": "allow", "pid": 18404, "after_seconds": 0.0}
+{"t": 1793481175.358599, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7751", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481176.3835351, "event": "decision", "tool": "Write", "decision": "allow", "pid": 18405, "after_seconds": 1.0}
+{"t": 1793481176.503797, "event": "decision", "tool": "mcp__engine__report", "decision": "allow", "pid": 18491, "after_seconds": 0.0}

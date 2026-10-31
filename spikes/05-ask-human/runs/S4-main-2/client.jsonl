@@ -1,0 +1,5 @@
+{"t": 1793481023.9076521, "event": "started", "mode": "reconnect", "replicas": ["http://localhost:7751", "http://localhost:7752"]}
+{"t": 1793481058.4711711, "event": "ask", "question_id": "26aa4c6c-f48d-4a88-98fa-0a66651b19a7", "question": "What label should I write?"}
+{"t": 1793481058.495606, "event": "opened", "question_id": "26aa4c6c-f48d-4a88-98fa-0a66651b19a7", "replica": "http://localhost:7751", "pid": 18037}
+{"t": 1793481058.7035499, "event": "answer_received", "question_id": "26aa4c6c-f48d-4a88-98fa-0a66651b19a7", "answer": "violet-12310", "replica": "http://localhost:7751", "pid": 18037}
+{"t": 1793481061.697154, "event": "reported", "outcome": "done"}

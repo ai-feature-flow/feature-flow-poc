@@ -1,0 +1,6 @@
+{"t":1793481188.979,"event":"started","detail":{"stepId":"sp2-S4-n2-1-1793481188","scenario":"S4","variant":"n2"}}
+{"t":1793481188.998,"event":"agent_started","detail":{"pid":18558}}
+{"t":1793481191.262,"event":"hook_attempt_failed_seen","detail":null}
+{"t":1793481221.615,"event":"replica_started","detail":{"url":"http://localhost:7751","pid":18607}}
+{"t":1793481221.927,"event":"replica_started","detail":{"url":"http://localhost:7752","pid":18608}}
+{"t":1793481522.089,"event":"scenario_error","detail":{"error":"TimeoutException: timed out waiting for question opened"}}

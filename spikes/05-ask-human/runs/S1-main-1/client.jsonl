@@ -1,0 +1,8 @@
+{"t": 1793481080.835379, "event": "started", "mode": "reconnect", "replicas": ["http://localhost:7751", "http://localhost:7752"]}
+{"t": 1793481085.482506, "event": "ask", "question_id": "fbce360f-c442-470a-bc22-e54fbe131287", "question": "What label should I write?"}
+{"t": 1793481085.50542, "event": "opened", "question_id": "fbce360f-c442-470a-bc22-e54fbe131287", "replica": "http://localhost:7751", "pid": 18161}
+{"t": 1793481085.615454, "event": "connection_failed", "replica": "http://localhost:7751", "path": "/questions/sp2-S1-main-1-1793481079/fbce360f-c442-470a-bc22-e54fbe131287?wait=25", "error": "RemoteDisconnected: Remote end closed connection without response"}
+{"t": 1793481092.042859, "event": "connection_failed", "replica": "http://localhost:7752", "path": "/questions/sp2-S1-main-1-1793481079/fbce360f-c442-470a-bc22-e54fbe131287?wait=25", "error": "RemoteDisconnected: Remote end closed connection without response"}
+{"t": 1793481102.1553779, "event": "reconnected", "replica": "http://localhost:7751", "pid": 18205, "after_seconds": 16.5}
+{"t": 1793481102.155614, "event": "answer_received", "question_id": "fbce360f-c442-470a-bc22-e54fbe131287", "answer": "violet-28865", "replica": "http://localhost:7751", "pid": 18205}
+{"t": 1793481105.323204, "event": "reported", "outcome": "done"}

@@ -1,0 +1,59 @@
+{
+  "stepId": "sp2-S2-main-2-1793480723",
+  "scenario": "S2",
+  "variant": "main",
+  "run": "2",
+  "nonce": "violet-37642",
+  "answerText": "violet-37642",
+  "startText": "started",
+  "agentExit": 0,
+  "askCalls": 1,
+  "toolUses": [
+    "Write",
+    "ToolSearch",
+    "mcp__engine__ask_human",
+    "Write",
+    "mcp__engine__report"
+  ],
+  "toolErrors": [],
+  "questions": [
+    {
+      "Id": "1d379c85-ad05-442e-aded-d08ed68e6d69",
+      "Text": "What label should I write?",
+      "Status": "answered",
+      "Answer": "violet-37642",
+      "FinalWritten": true
+    }
+  ],
+  "openSignals": 1,
+  "reports": [
+    {
+      "Outcome": "done",
+      "Summary": "Wrote start.txt (\u0022started\u0022), received the answer \u0022violet-37642\u0022 from ask_human, and wrote it to answer.txt."
+    }
+  ],
+  "openerPid": 17538,
+  "openerKilledBeforeAnswer": true,
+  "failuresWhileWaiting": 60,
+  "secondsFromOpenToAnswer": 60.7,
+  "answeredWhileNoneRunning": true,
+  "hookFailuresBeforeDecision": 0,
+  "lateAnswerResult": null,
+  "clientEvents": {
+    "started": 1,
+    "ask": 1,
+    "opened": 1,
+    "connection_failed": 60,
+    "reconnected": 1,
+    "answer_received": 1,
+    "reported": 1
+  },
+  "checks": {
+    "E1 opener killed before the answer was delivered; client saw a connection failure while waiting": true,
+    "C1 answer.txt holds the nonce": true,
+    "E2 answer recorded while no replica was running": true,
+    "C2 one question in the workflow and one ask_human call": true,
+    "C3 no tool error reached the agent": true,
+    "C4 report \u0027done\u0027 recorded and agent exited 0": true
+  }
+}

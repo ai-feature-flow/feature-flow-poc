@@ -1,0 +1,9 @@
+{"t":1793481165.551,"event":"started","detail":{"stepId":"sp2-S1-n1-1-1793481165","scenario":"S1","variant":"n1"}}
+{"t":1793481165.893,"event":"replica_started","detail":{"url":"http://localhost:7751","pid":18404}}
+{"t":1793481166.211,"event":"replica_started","detail":{"url":"http://localhost:7752","pid":18405}}
+{"t":1793481166.231,"event":"agent_started","detail":{"pid":18406}}
+{"t":1793481172.275,"event":"question_opened","detail":{"url":"http://localhost:7751","pid":18404}}
+{"t":1793481172.34,"event":"replica_killed","detail":{"url":"http://localhost:7751","pid":18404}}
+{"t":1793481175.656,"event":"replica_started","detail":{"url":"http://localhost:7751","pid":18491}}
+{"t":1793481178.748,"event":"replica_killed","detail":{"url":"http://localhost:7752","pid":18405}}
+{"t":1793481188.789,"event":"answered","detail":{"questionId":"45abce1d-c0c6-4fb2-a10e-19f04b00deea","nonce":"teal-67446","reply":"recorded"}}

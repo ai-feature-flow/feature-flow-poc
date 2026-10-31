@@ -1,0 +1,39 @@
+{
+  "stepId": "sp2-S4-n2-1-1793481188",
+  "scenario": "S4",
+  "variant": "n2",
+  "run": "1",
+  "nonce": "violet-78150",
+  "answerText": null,
+  "startText": null,
+  "agentExit": 0,
+  "askCalls": 0,
+  "toolUses": [
+    "Write",
+    "Write"
+  ],
+  "toolErrors": [
+    "PreToolUse:Write hook error: [STEP_ID=sp2-S4-n2-1-1793481188 REPLICAS=http://localhost:7751,http://localhost:7752 HOOK_LOG=/Users/stuart.parkinson/hacks/feature-flow-poc/spikes/05-ask-human/runs/S4-n2-1/hook.jsonl HOOK_MODE=failclosed python3 /Users/stuart.parkinson/hacks/feature-flow-poc/spikes/05-ask-human/sandbox/hook_client.py]: engine unreachable\n",
+    "PreToolUse:Write hook error: [STEP_ID=sp2-S4-n2-1-1793481188 REPLICAS=http://localhost:7751,http://localhost:7752 HOOK_LOG=/Users/stuart.parkinson/hacks/feature-flow-poc/spikes/05-ask-human/runs/S4-n2-1/hook.jsonl HOOK_MODE=failclosed python3 /Users/stuart.parkinson/hacks/feature-flow-poc/spikes/05-ask-human/sandbox/hook_client.py]: engine unreachable\n"
+  ],
+  "questions": [],
+  "openSignals": 0,
+  "reports": [],
+  "openerPid": 0,
+  "openerKilledBeforeAnswer": false,
+  "failuresWhileWaiting": 0,
+  "secondsFromOpenToAnswer": null,
+  "answeredWhileNoneRunning": false,
+  "hookFailuresBeforeDecision": 2,
+  "lateAnswerResult": null,
+  "clientEvents": {
+    "started": 1
+  },
+  "checks": {
+    "E3 hook client failed at least once before a decision": true,
+    "C2 one question in the workflow and one ask_human call": false,
+    "C3 no tool error reached the agent": false,
+    "C4 report \u0027done\u0027 recorded and agent exited 0": false,
+    "C6 first tool call ran; no denial": false
+  }
+}

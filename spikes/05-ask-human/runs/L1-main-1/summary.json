@@ -1,0 +1,58 @@
+{
+  "stepId": "sp2-L1-main-1-1793479932",
+  "scenario": "L1",
+  "variant": "main",
+  "run": "1",
+  "nonce": "amber-14416",
+  "answerText": "amber-14416",
+  "startText": "started",
+  "agentExit": 0,
+  "askCalls": 1,
+  "toolUses": [
+    "Write",
+    "ToolSearch",
+    "mcp__engine__ask_human",
+    "Write",
+    "mcp__engine__report"
+  ],
+  "toolErrors": [],
+  "questions": [
+    {
+      "Id": "bba008e4-908f-4a93-909d-98efc92df5ac",
+      "Text": "What label should I write?",
+      "Status": "answered",
+      "Answer": "amber-14416",
+      "FinalWritten": true
+    }
+  ],
+  "openSignals": 1,
+  "reports": [
+    {
+      "Outcome": "done",
+      "Summary": "Wrote start.txt, got the answer \u0022amber-14416\u0022 from ask_human, and saved it to answer.txt."
+    }
+  ],
+  "openerPid": 16412,
+  "openerKilledBeforeAnswer": true,
+  "failuresWhileWaiting": 3,
+  "secondsFromOpenToAnswer": 1207.1,
+  "answeredWhileNoneRunning": false,
+  "hookFailuresBeforeDecision": 0,
+  "lateAnswerResult": null,
+  "clientEvents": {
+    "started": 1,
+    "ask": 1,
+    "opened": 1,
+    "connection_failed": 3,
+    "reconnected": 2,
+    "answer_received": 1,
+    "reported": 1
+  },
+  "checks": {
+    "E1 opener killed before the answer was delivered; client saw a connection failure while waiting": true,
+    "C1 answer.txt holds the nonce": true,
+    "C2 one question in the workflow and one ask_human call": true,
+    "C3 no tool error reached the agent": true,
+    "C4 report \u0027done\u0027 recorded and agent exited 0": true
+  }
+}

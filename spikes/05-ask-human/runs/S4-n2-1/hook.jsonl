@@ -1,0 +1,2 @@
+{"t": 1793481191.05515, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7751", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}
+{"t": 1793481192.902157, "event": "attempt_failed", "tool": "Write", "replica": "http://localhost:7751", "error": "URLError: <urlopen error [Errno 61] Connection refused>"}

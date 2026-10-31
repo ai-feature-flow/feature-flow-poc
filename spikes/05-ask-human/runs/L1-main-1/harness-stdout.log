@@ -1,0 +1,6 @@
+SP2 L1-main-1: answer=amber-14416 nonce=amber-14416 askCalls=1 questions=1 failuresWhileWaiting=3 hookFailures=0 exit=0
+  PASS  E1 opener killed before the answer was delivered; client saw a connection failure while waiting
+  PASS  C1 answer.txt holds the nonce
+  PASS  C2 one question in the workflow and one ask_human call
+  PASS  C3 no tool error reached the agent
+  PASS  C4 report 'done' recorded and agent exited 0

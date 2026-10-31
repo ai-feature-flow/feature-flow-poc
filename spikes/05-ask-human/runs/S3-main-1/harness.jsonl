@@ -1,0 +1,8 @@
+{"t":1793480870.066,"event":"started","detail":{"stepId":"sp2-S3-main-1-1793480870","scenario":"S3","variant":"main"}}
+{"t":1793480870.399,"event":"replica_started","detail":{"url":"http://localhost:7751","pid":17766}}
+{"t":1793480870.71,"event":"replica_started","detail":{"url":"http://localhost:7752","pid":17767}}
+{"t":1793480870.725,"event":"agent_started","detail":{"pid":17768}}
+{"t":1793480874.506,"event":"question_opened","detail":{"url":"http://localhost:7751","pid":17766}}
+{"t":1793480904.6,"event":"replica_killed","detail":{"url":"http://localhost:7751","pid":17766}}
+{"t":1793480907.92,"event":"replica_started","detail":{"url":"http://localhost:7751","pid":17814}}
+{"t":1793480971.709,"event":"late_answer","detail":{"lateAnswerResult":"rejected:workflow execution already completed"}}
