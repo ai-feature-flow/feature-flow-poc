@@ -49,10 +49,17 @@ precedence step (section 4).
 The repository layer is the only one that lives in the repository and travels
 with the code. The others are deployment or organisation configuration.
 
-Workflow content (plans and library templates, `docs/09`) is not a
-configuration layer, but two kinds of setting also take a workflow value: the
-default-branch merge setting (section 2, F1) and limits such as attempt
-allowances (section 6).
+**The engine provides mechanisms and guardrails; the workflow decides.**
+Configuration sets the guardrails (floors, caps, credentials, who may approve);
+workflow content (plans and library templates, `docs/09`) decides how the work
+is shaped. A template's step parameters are the workflow's **default policy**,
+overridable down the levels (workflow, child workflow, step) within any cap
+configuration sets. Only **who may approve a decision** (roles, minimum
+approvers, chat, auto-approval) is never in a template: that is organisation
+governance, tied to identities (`policy.approval`, section 4; `docs/09`
+section 14, policy references). Examples of workflow values bounded by
+configuration: the default-branch merge setting (section 2, F1) and limits such
+as attempt allowances (section 6).
 
 ---
 
@@ -85,10 +92,10 @@ Consequences:
   re-entry, a loop ran its fix step 213 times in 15 seconds (`docs/18` section 4,
   item 5).
 
-The engine enforces floors, not workflow content. This is the one exception to
-the rule that the engine supplies mechanism and workflows supply policy
-(`docs/01` section 1.5): no workflow may relax a floor, so a workflow cannot be
-the thing that enforces it.
+The engine enforces floors, not workflow content. Floors are the guardrails in
+"the engine provides mechanisms and guardrails; the workflow decides" (`docs/01`
+section 1.5): no workflow may relax a floor, so a workflow cannot be the thing
+that enforces it.
 
 ### 2.1 F1: the default-branch merge setting
 
@@ -99,10 +106,11 @@ The ID F1 is kept so references still resolve.
 | Rule | Detail |
 |---|---|
 | Default | The engine may **not** merge into the default branch |
-| Levels | Organisation (`policy.merge.defaultBranch.engineMayMerge`), then repository (`merge.defaultBranch.engineMayMerge` in `feature-flow.yaml`), then workflow. The most specific level wins. It may be relaxed, for example for a proof-of-concept repository |
+| Levels | Organisation (`policy.merge.defaultBranch.engineMayMerge`), then repository (`merge.defaultBranch.engineMayMerge` in `feature-flow.yaml`), then workflow: the template's `engine_can_merge` on the merge step is workflow policy within that cap. The most specific level wins. It may be relaxed, for example for a proof-of-concept repository |
 | Lock | The organisation can set `locked: true`, so repositories and workflows cannot relax it |
 | Nothing an agent can edit changes it | The repository value is read from `feature-flow.yaml` **on the default branch only**, never from a ticket or integration branch. A plan patch (re-plan) during a run cannot change it. A run cannot set it |
 | Enforcement | At plan validation, and again at merge time, reading the merge's base branch and the repository's default branch from the code host, not from the plan (DR2) |
+| Code host refuses | If the engine is allowed to merge but the code host refuses (for example its protection requires an independent review), that is an ordinary intervention: the engine asks a human to act. The setting implies no separate approval rule; `policy.approval` governs only who may approve decisions |
 | Final fallback | Code host branch protection on the default branch, requiring independent review. The engine never holds a bypass (DR3, section 9) |
 
 ---
@@ -150,6 +158,10 @@ providers:
         config:
           endpoint: https://llm-router.acme.internal/v1
           modelAccess: { mode: proxy, keyRef: secrets/router-key }
+  vcs:
+    default: git
+    instances:
+      git: { name: git }        # version 1 implements Git only
   codeHost:
     default: github
     instances:
@@ -164,10 +176,10 @@ providers:
     instances:
       jira: { name: jira, config: { baseUrl: https://acme.atlassian.net, secretRef: secrets/jira-token } }
   review:
-    default: copilot-review
+    default: engine-reviewer
     instances:
-      copilot-review: { name: copilot-review }
       engine-reviewer: { name: engine-reviewer }
+      copilot-review: { name: copilot-review }
   artifactStore:
     default: azure-blob
     instances:
@@ -209,11 +221,23 @@ defaults:
 Notes:
 
 - **Named instances.** Every provider type may have several named instances,
-  one marked `default`. This covers two CI systems, two review providers (an AI
-  review on the pull request and the engine's own reviewer agent) and two agent
-  runtimes. Other configuration selects an instance by name: the repository's
+  one marked `default`. This covers two CI systems, two review providers and two
+  agent runtimes. Other configuration selects an instance by name: the repository's
   `ci.mapping` per test tier (section 5), and the organisation's `roleMapping`
   per agent role (section 4).
+- **`vcs` is the version-control provider.** It owns the version-control
+  operations the engine performs: a working copy's current revision, fetching
+  commits from a sandbox's working copy, pushing to a branch or reference
+  (refused if the target moved), and building merge or squash commits. The
+  `codeHost` provider keeps pull requests, comments, protection and other
+  hosting APIs. **Version 1 implements Git only**; the interface stays neutral
+  so another version-control system can be added later.
+- **`review` is the plug point** for anything that reviews a change and
+  returns structured findings. In version 1 the standard one is
+  `engine-reviewer`, the agent reviewer built from the sandbox and agent runtime
+  providers (`docs/19`). Others, such as an AI review service on the pull
+  request (`copilot-review`), plug in alongside; their findings go into the same
+  findings ledger. A step uses whichever reviewer the workflow names.
 - **Providers are selected by name in configuration, not in code** (`docs/01`
   section 4.5, provider packaging). A host project references the provider
   packages it ships.
@@ -331,12 +355,17 @@ teams:
 
 Notes:
 
+- **`policy.approval` governs who may approve a decision** (roles, minimum
+  count, whether an agent counts) at each scope. It does not decide whether the
+  engine merges; that is F1 and the merge step's `engine_can_merge`. The
+  `defaultBranch` entry applies to any decision the workflow raises about a
+  merge into the default branch.
 - **Roles** (`viewer`, `approver`, `steerer`, `admin`; section 7.2) are mapped
   to identity-provider groups. Scoping a role by team or repository is a
   role-mapping detail (`docs/01` section 5.4, control plane).
 - **`chat.allowedDecisions`** lists the decisions that may be made from chat.
-  Ticket and epic gates may; a default-branch merge may be made only in the
-  console.
+  Ticket and epic gates may; any decision about a merge into the default
+  branch may be made only in the console.
 - **`attempts.ceiling`** is what a run may set budgets within (F4).
   **`hardCeiling`** is what steering may grant up to; beyond it needs the admin
   role. Both are checked on every execution of a step, including loop re-entry
@@ -346,12 +375,20 @@ Notes:
 
 - **What the organisation sets:** whether checks are required at each branch
   level, and the default-branch merge setting with its lock (F1, section 2.1).
-  `integrationBranch` covers the epic and project branches that tickets and
-  epics merge into.
+  `integrationBranch` covers every branch level below the default branch.
+- **Branch levels are the workflow's.** At every level, work is reviewed
+  against the branch it was taken from (its parent) and merged back into it;
+  the parent then goes into its own parent, up to the default branch. The
+  number and names of levels come from the workflow and its tracker; ticket,
+  epic and project are typical. Where delivery to the default branch happens
+  (once at the end, or several times) is also the workflow's choice (`docs/20`,
+  "Branch levels").
 - **What the workflow sets:** each merge step takes `squash` (squash merge or
   plain merge) and `engine_can_merge` (the engine merges, or a human merges on
   the code host while the engine waits) (`docs/06` section 6.5, the merge step).
-  Usual values:
+  Both are workflow policy. The organisation caps `engine_can_merge` only for
+  the default branch (F1); no organisation cap on `squash` is defined.
+  Typical values for a three-level workflow:
 
   | Merge | `squash` | `engine_can_merge` |
   |---|---|---|
@@ -363,8 +400,9 @@ Notes:
   the merge design): the engine catches the ticket branch up with the target
   branch, re-runs tests if that changed anything, then merges. Where the engine
   merges, it builds the merge or squash commit from exactly what was tested and
-  pushes it; if the target branch moved in the meantime, Git refuses the push
-  and the step reports `base_moved`, which routes back to catch-up.
+  pushes it through the VCS provider; if the target branch moved in the
+  meantime, the push is refused and the step reports `base_moved`, which routes
+  back to catch-up.
 - **The cap on refused merges is the merge step's attempt allowance**
   (`scm.merge`, engine default 3, section 3). Every attempt counts, including
   re-entry after a conflict is resolved. Like every limit it may be overridden
@@ -391,8 +429,10 @@ code review design):
   A review step publishes a coverage output (changed files, files read, files
   not read, whether the record is verified). The engine never fails a step for
   coverage; a review step may set `require_coverage` (`none` by default, `all`,
-  or a list of paths), or a route may act on the coverage output. The library's
-  standard code-review template sets `require_coverage: all`.
+  or a list of paths), or a route may act on the coverage output. An unmet
+  `require_coverage` retries the step up to its attempt limit, then escalates
+  to a human. The library's standard code-review template sets
+  `require_coverage: all`.
 
 ### Role mapping
 
@@ -511,10 +551,11 @@ Notes:
   validation error. The merge method is not set here: it is the merge step's
   `squash` parameter (section 4, merge policy). `requireChecks` is policy, and
   only the organisation sets it.
-- **`branches`** names the default branch and the integration (epic) and
-  ticket branch prefixes. Code host rules must allow only the engine's identity to update the
-  default branch and integration branches (section 9). Agents never push any
-  branch; the engine pushes ticket branches for them (section 8).
+- **`branches`** names the default branch and the branch prefixes for the
+  workflow's levels (here epic and ticket). Code host rules protect the default
+  branch and allow only the engine's identity to update the levels below it
+  (section 9). Agents never push any branch; the engine pushes for them
+  (section 8.1).
 - **`library`** names the repository's default template and any skills and
   checks it adds. Repositories may add, never override (`docs/11` section 5).
   It keeps the snake_case keys of library content.
@@ -527,7 +568,7 @@ Notes:
 ## 6. Run schema (API at start)
 
 ```yaml
-scope: epic                       # ticket | epic | project | delivery
+scope: epic                       # the workflow's level (ticket, epic, project, ...) or delivery
 repositories: [ acme/api, acme/web ]
 plan:
   ref: artifact://plans/epic-42.yaml
@@ -547,8 +588,9 @@ Notes:
 - A run's `plan.overrides` set limits for named steps, within the same ceiling.
   A run may not set policy floors, the default-branch merge setting (F1), or
   select providers.
-- `scope: project` is a run that starts epic runs as children, the way an epic
-  run starts ticket runs.
+- **Levels are workflow-defined.** A run at one level starts the runs of the
+  level below as children (`run.child`), the way an epic run starts ticket
+  runs; a `project` run starting epic runs is typical, not required.
 - **`dryRun` selects fake or recording providers.** The same plan runs against
   providers that record instead of act, chosen by configuration. No step
   declares dry-run support or needs a dry-run branch. Workflow testing uses the
@@ -621,16 +663,29 @@ or repository (`docs/01` section 5.4). They are not the library's agent roles
   repository plus any other repositories the workflow declares the agent may
   read (for example to verify a contract).
 - **Agents never hold a credential that can push** (DR13). The broker issues
-  push and merge credentials to the engine only. An agent commits in its own
-  sandbox; as part of the agent step the engine fetches those commits and pushes
-  them with its own credential, at the end of the step and at work-in-progress
-  points. A failed step's commits go to a hidden work-in-progress ref, not the
-  ticket branch. The engine performs every merge it is allowed to (F1). GitHub
-  cannot limit a token to particular branches, so withholding the credential is
-  the only reliable control (`docs/20`, "Who can push").
+  push and merge credentials to the engine only; the engine pushes agents'
+  commits and performs every merge it is allowed to (F1). GitHub cannot limit a
+  token to particular branches, so withholding the credential is the only
+  reliable control. How the engine pushes is in section 8.1.
 - **The engine's code host identity cannot change branch protection** (DR3).
 - Values are scrubbed at the logging layer (`docs/01` section 4.8,
   observability contract).
+
+### 8.1 Commits and pushes
+
+How the engine pushes for an agent that holds no push credential (`docs/20`,
+"Commits and pushes"):
+
+| Point | Behaviour |
+|---|---|
+| Agent | Commits locally, as often as its prompt or skill says. Never pushes |
+| Detection | At each check-in on a running step (about every 30 seconds) the engine asks the VCS provider for the working copy's current revision. If it moved, the engine fetches the new commits and pushes them. Runtime hooks may trigger an immediate push, but nothing depends on them, so every agent runtime works the same way |
+| While the step runs | Pushes go to a hidden reference (for example `refs/ff/wip/<ticket>`), not a branch: no CI, no half-finished work visible. A restarted step continues from it |
+| Step succeeds | The engine moves the ticket branch to the final commit, once |
+| Step fails | Commits stay on the hidden reference for a retry |
+| Uncommitted changes at step end | **Default:** the engine commits them with the message "left uncommitted by the agent", so nothing is lost silently. A workflow can set the step to fail instead |
+| `checkpoint` tool | Optional, through the engine's MCP server: an agent commits and has the engine push without knowing the version-control system. A convenience; the engine's detection is the backstop |
+| `push` step parameter | Default `true`; a workflow may switch pushing off for scratch steps. A role with no write access pushes nothing, and its step fails if it made commits |
 
 ---
 
@@ -647,7 +702,7 @@ Validate at startup and again at run start, with clear errors (decision S10).
 
 **Code host rules** (DR2, DR3, and the merge design `docs/20`): branch
 protection on the default branch requires independent review, and only the
-engine's identity may update integration branches. The engine **checks these
+engine's identity may update the branch levels below it. The engine **checks these
 rules exist; it never creates or changes them, and never holds a bypass.**
 They are configured by an identity the engine does not hold. They are the final
 fallback: the engine already enforces F1 at plan validation and merge time, and
@@ -702,6 +757,9 @@ providers:
       claude-code:
         name: claude-code
         config: { modelAccess: { mode: proxy, keyRef: env/ANTHROPIC_API_KEY } }
+  vcs:
+    default: git
+    instances: { git: { name: git } }
   codeHost:
     default: github
     instances: { github: { name: github, config: { secretRef: env/GITHUB_TOKEN } } }
@@ -712,8 +770,8 @@ providers:
     default: github-issues
     instances: { github-issues: { name: github-issues } }
   review:
-    default: copilot-review
-    instances: { copilot-review: { name: copilot-review } }
+    default: engine-reviewer
+    instances: { engine-reviewer: { name: engine-reviewer } }
   artifactStore:
     default: filesystem
     instances: { filesystem: { name: filesystem, config: { path: ~/.feature-flow/artifacts } } }
@@ -812,6 +870,9 @@ providers:
       claude-code:
         name: claude-code
         config: { modelAccess: { mode: proxy, keyRef: secrets/anthropic-key } }
+  vcs:
+    default: git
+    instances: { git: { name: git } }
   codeHost:
     default: github
     instances: { github: { name: github, config: { appId: 9911, secretRef: secrets/github-app-key } } }
@@ -822,8 +883,8 @@ providers:
     default: jira
     instances: { jira: { name: jira, config: { baseUrl: https://acme.atlassian.net, secretRef: secrets/jira-token } } }
   review:
-    default: copilot-review
-    instances: { copilot-review: { name: copilot-review } }
+    default: engine-reviewer
+    instances: { engine-reviewer: { name: engine-reviewer } }
   artifactStore:
     default: s3
     instances: { s3: { name: s3, config: { bucket: acme-ff-artifacts } } }
@@ -940,6 +1001,9 @@ providers:
         config:
           endpoint: https://llm-router.acme.internal/v1
           modelAccess: { mode: proxy, keyRef: secrets/router-key }
+  vcs:
+    default: git
+    instances: { git: { name: git } }
   codeHost:
     default: github
     instances: { github: { name: github, config: { appId: 12345, secretRef: secrets/github-app-key } } }
@@ -952,10 +1016,10 @@ providers:
     default: jira
     instances: { jira: { name: jira, config: { baseUrl: https://acme.atlassian.net, secretRef: secrets/jira-token } } }
   review:
-    default: copilot-review
+    default: engine-reviewer
     instances:
-      copilot-review:  { name: copilot-review }
       engine-reviewer: { name: engine-reviewer }
+      copilot-review:  { name: copilot-review }
   artifactStore:
     default: azure-blob
     instances: { azure-blob: { name: azure-blob, config: { container: ff-artifacts } } }
@@ -1057,22 +1121,8 @@ Notes:
 
 ## 11. Open questions
 
-The first-pass questions are all decided and applied above:
-
-| # | Question | Decision |
-|---|---|---|
-| 1 | Separate team layer? | No. Team-scoped overrides in the organisation file (section 4) |
-| 2 | May a repository tighten a floor? | Yes. Any layer may tighten; none may relax (section 2) |
-| 3 | Choosing between two CI providers | Every provider type may have several named instances with one default (section 3) |
-| 4 | Where `defaults.attempts` belongs | Installation provides defaults; the organisation may override within its ceilings. Defaults are not floors (section 3) |
-| 5 | Budget configuration shape | Deferred with cost budgets (decision Q16). When added: per run and per step kind at the organisation layer; a run may only lower them; exceeding one always gates |
-| 6 | Per-step dry-run support | Not needed. Dry run uses fake or recording providers (section 6) |
-
-### Still open
-
 | # | Question |
 |---|---|
 | 1 | **Model access (DR1).** Which `modelAccess` mode is the default for each profile, and how is the proxy itself deployed and configured? |
 | 2 | **Pool sizing headroom.** Spike 1 has two repetitions at 20 steps on 10 slots, not the three asked for. Run a third before setting a headroom figure? |
-| 3 | **Copilot CLI hooks.** Re-test before- and after-tool-call hooks with a first-party model. Until then, deny-before-execution is unavailable on `copilot-cli` and coverage comes from its streamed tool calls |
-| 4 | **`policy.approval.defaultBranch` under F1.** With F1 at its default a human merges on the code host, under its branch protection. What does this approval policy govern then: the engine's decision request before that merge, or an engine merge where F1 is relaxed? |
+| 3 | **Copilot CLI hooks.** Re-test before- and after-tool-call hooks with a first-party model. Until then, deny-before-execution is unavailable on `copilot-cli`, and coverage comes from its streamed tool calls |
