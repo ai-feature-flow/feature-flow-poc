@@ -1,8 +1,8 @@
 # M0: skeleton
 
-Status: built 2026-11-02 on branch `claude/m0-skeleton-70c559`. Every local
-check holds. The CI run is not yet seen: the pull request could not be opened
-from this machine (section 5).
+Status: built 2026-11-02 on branch `claude/m0-skeleton-70c559`. Every check
+holds when the CI workflow's commands are run locally from a clean clone.
+GitHub CI has not run yet (section 5).
 
 ## 1. What was built
 
@@ -30,10 +30,10 @@ once the change was reverted (`CONTRIBUTING.md`, "Verify, do not assert").
 | C3 | Every project is classified and in the solution | An unlisted `src/FeatureFlow.Stray` project | Both layout tests fail |
 | C4 | Shared build files add no references | `Temporalio` added to the root `Directory.Build.props` | Fails |
 | C5 | `ff --version` runs | | `ff 0.1.0+4dbeaa3…`, exit 0; no arguments gives usage, exit 2. Also a unit test in `Cli.Tests` |
-| C6 | The integration job needs Temporal and Docker | No dev server running | Both environment tests fail. With a dev server on port 7733 the Temporal test passes. Docker was not running on this Mac, so the Docker test's pass is left to CI |
+| C6 | The integration job needs Temporal and Docker | No dev server running | Both environment tests fail. With a dev server and Docker running, both pass (section 5) |
 | C7 | The default filter excludes `Live` | A failing test tagged `Live` | Not run by the default filter; run and failing without it |
 | C8 | Spikes still build with their own settings | | `spikes/04-continue-as-new` builds with 0 warnings |
-| C9 | CI passes on the pull request | | **Not yet seen** (section 5) |
+| C9 | The CI workflow passes | | Its commands pass when run locally from a clean clone (section 5). Not yet seen on GitHub |
 
 The default category has 21 tests: 17 in `Architecture.Tests` (the real-file
 checks plus allowed and forbidden cases of each rule) and 4 in `Cli.Tests`.
@@ -59,9 +59,34 @@ Code in the projects (M1 onward); `ff validate` and `ff show` (M1); branch
 protection making the CI jobs required on `main`, which is a repository
 setting.
 
-## 5. Open questions
+## 5. CI
+
+GitHub CI has not run on this work. The workflow runs on pull requests and on
+pushes to `main`, and no pull request was opened: `gh` and the GitHub
+connector on this machine are signed in only as `stuart-parkinson_xero`, an
+Enterprise Managed User, and GitHub refuses it
+(`As an Enterprise Managed User, you cannot access this content`). No
+`sparkz-nz` token is available while the product owner is away. The branch
+was pushed over SSH, and the coordinating session merges it to `main` over
+SSH, as design commits have been. That push to `main` is the first GitHub CI
+run.
+
+Instead, the workflow's commands were run from a clean clone of the branch at
+`660763d` on macOS, 2026-11-02:
+
+| Job | Commands | Result |
+|---|---|---|
+| Build and default tests | `dotnet build FeatureFlow.slnx -c Release`; `dotnet test ... --filter "Category!=Integration&Category!=Live"` | 0 warnings, 0 errors; 21 passed, 0 failed |
+| Integration tests | Temporal dev server started and healthy; `docker version`; the same build; `dotnet test ... --filter "Category=Integration"` | 0 warnings, 0 errors; 2 passed, 0 failed |
+
+Differences from the GitHub runner: macOS instead of Ubuntu; the dev server
+on port 7833 instead of 7233, to avoid ports other sessions use; the Temporal
+CLI already installed rather than downloaded. The full output is kept outside
+the repository with the coordinating session's notes.
+
+## 6. Open questions
 
 | # | Question |
 |---|---|
-| 1 | The pull request could not be opened: `gh` and the GitHub connector on this machine are signed in only as `stuart-parkinson_xero`, an Enterprise Managed User, and GitHub refuses it (`As an Enterprise Managed User, you cannot access this content`). The branch was pushed over SSH. Who opens the pull request, or which account should `gh` use? |
+| 1 | Should pull requests resume once `gh` can act as an account with access, so CI runs before a merge as `docs/11` section 4.1 requires? |
 | 2 | Branch protection on `main` should require the two CI jobs, *Build and default tests* and *Integration tests*. That needs repository admin rights |
