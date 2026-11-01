@@ -1,8 +1,8 @@
 # Design rewrite plan
 
 Status: design approved, spikes SP1 to SP5 done (SP6 shelved), standard library
-written, 2026-11-01. The design phase is complete; a version 1 build plan is
-next. Started 2026-10-31. This file is the resume point: a new
+written, 2026-11-01. The design phase is complete; the version 1 build plan
+(`docs/11-build-plan.md`) is written and awaits the product owner's review. Started 2026-10-31. This file is the resume point: a new
 session reads it first, then the status table in section 6.
 
 ## 1. Goal
@@ -74,6 +74,7 @@ Each document owns the facts listed and does not restate another's.
 | 08 | `08-library.md` | Library format and sources, lock, mid-run override, and the standard library's templates and fragments |
 | 09 | `09-validation-and-testing.md` | Validation phases and checks, workflow testing, interpreter replay tests |
 | 10 | `10-decisions-and-risks.md` | Decision register, risk register, spike plan, evidence index |
+| 11 | `11-build-plan.md` | Version 1 build: code location and layout, build order, milestones, carry-over from spikes |
 
 Reviews from the product owner go in `docs/reviews/`, as before.
 
@@ -108,7 +109,9 @@ Paths in all design documents are relative to the repository root.
 | Spike SP5: an agent step behind a model proxy | Done 2026-11-01 for Claude Code: holds. Results in `docs/spikes/sp5-results.md`; DR19 (the sandbox's own home) and DR20 (platform trust store) added; Copilot CLI not tested, for want of an API key |
 | Spike SP6: session resume on Windows | Shelved by the product owner, 2026-11-01: low risk, version 1 has no Windows sandbox, and development moves to a Windows machine soon, where it can be tested in passing |
 | The standard library as files (`docs/08` section 6) | Done 2026-11-01, in `library/std/`: 3 templates, 9 fragments, 11 tasks, 7 roles, 13 artifact types. Not yet loaded by a validator. Formats the design left open are LOG 62 to 65, unreviewed |
-| Version 1 build plan | **Next, in a new session.** The design phase above is complete; the build plan sets the code layout, component order and milestones |
+| Version 1 build plan | Written 2026-11-01 in `docs/11-build-plan.md`: layout, build order, milestones M0 to M8, carry-over from spikes. Judgement calls LOG 66 to 70, unreviewed; 5 open questions, the first being where the code lives |
+| Product owner review of the build plan, LOG 62 to 70 | **Next** |
+| M0 (skeleton) and M1 (plan loader and validator on `library/std/`) | After the review answers open questions 1 and 2 of `docs/11` |
 
 ## 7. How to resume
 
