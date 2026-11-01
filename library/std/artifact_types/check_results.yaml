@@ -1,0 +1,13 @@
+api_version: feature-flow/v1
+kind: artifact_type
+metadata:
+  name: check_results
+  description: >-
+    Every check on a pull request's head commit, with its conclusion. Read by scm.merge (require_checks).
+
+format: json
+evidence: true          # only engine actions may produce it (docs/01 section 5.2, F7)
+produced_by: [ci.checks]
+compatible_with: []
+validators: []
+schema: engine          # the shape is the engine's contract (docs/04), not library content

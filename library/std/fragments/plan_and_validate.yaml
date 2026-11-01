@@ -1,0 +1,61 @@
+api_version: feature-flow/v1
+kind: fragment
+metadata:
+  name: plan_and_validate
+  description: >-
+    A planner writes requirements and a delivery plan; deterministic validators
+    check them; an invalid plan goes back to the planner with the report.
+
+parameters:
+  planner_task: { type: reference, required: true, description: "The planner's library task" }
+  subject_id: { type: string, required: true, description: "The scope id being planned, for example the ticket key" }
+  level_validators:
+    type: array
+    required: true
+    description: >-
+      The artifact.validate entries for this level, for example
+      requirement_support, requirement_inheritance and verification_method_support
+      for a ticket
+
+exits:
+  planned: success
+
+artifact_types:
+  - std:artifact_types/requirements
+  - std:artifact_types/delivery_plan
+  - std:artifact_types/contract
+  - std:artifact_types/test_results
+  - std:artifact_types/validation_report
+
+steps:
+  - id: plan
+    agent:
+      role: std:roles/planner
+      task: { param: planner_task }
+      skills: [std:skills/verification]
+    with: { subject_id: { expr: "params.subject_id" } }
+    consumes:
+      - { name: child_requirements, from: parent, optional: true }
+      - { name: contract, from: parent, optional: true }
+      - { name: requirements, from: parent, optional: true }
+      - { name: baseline_test_results, optional: true }
+      - { name: plan_validation, optional: true }
+    produces:
+      planned:
+        - { name: requirements, type: std:artifact_types/requirements }
+        - { name: delivery_plan, type: std:artifact_types/delivery_plan }
+    outputs: { tier_tags: { type: array } }
+    outcomes: { planned: success, blocked: blocked }
+
+  - id: validate
+    action: artifact.validate
+    with: { validation: { expr: "params.level_validators" } }
+    consumes:
+      - { name: requirements }
+      - { name: delivery_plan }
+      - { name: child_requirements, from: parent, optional: true }
+      - { name: requirements, from: parent, optional: true }
+    produces: [{ name: plan_validation, type: std:artifact_types/validation_report }]
+    routes:
+      valid: { exit: planned }
+      invalid: plan                     # back to the planner; counts against its attempts

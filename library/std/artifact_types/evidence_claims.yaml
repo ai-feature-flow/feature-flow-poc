@@ -1,0 +1,61 @@
+api_version: feature-flow/v1
+kind: artifact_type
+metadata:
+  name: evidence_claims
+  description: >-
+    The implementer's mapping from each verification method to the exact test
+    identities that prove it, and every baseline test it removed. A claim, not
+    evidence: verification_satisfaction checks it against the engine's test
+    results.
+
+format: yaml
+evidence: false
+compatible_with: []
+validators: []
+
+schema:
+  type: object
+  additionalProperties: false
+  required: [schema, claims]
+  properties:
+    schema: { const: 1 }
+    claims:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        required: [criterion, verification, tests]
+        properties:
+          criterion: { type: string }
+          verification: { type: string, description: "A method id within the criterion" }
+          tests:
+            type: array
+            minItems: 1
+            items:
+              type: object
+              additionalProperties: false
+              required: [repository, tier, id, change]
+              properties:
+                repository: { type: string }
+                tier: { type: string }
+                id: { type: string, description: "Exactly as it appears in the parsed test results" }
+                source:
+                  type: object
+                  additionalProperties: false
+                  properties: { file: { type: string }, symbol: { type: string } }
+                change: { enum: [new, reused, modified] }
+    test_impacts:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        required: [test, change, reason, replaced_by]
+        properties:
+          test:
+            type: object
+            additionalProperties: false
+            required: [repository, tier, id]
+            properties: { repository: { type: string }, tier: { type: string }, id: { type: string } }
+          change: { const: removed }
+          reason: { type: string, minLength: 1 }
+          replaced_by: { type: array, minItems: 1, items: { type: string } }

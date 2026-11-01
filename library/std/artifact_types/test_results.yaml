@@ -1,0 +1,13 @@
+api_version: feature-flow/v1
+kind: artifact_type
+metadata:
+  name: test_results
+  description: >-
+    Parsed results per test tier: repository, tier, commit, and each test's identity and status (passed, failed, skipped). Read by verification_satisfaction, requirement_trace and scm.merge (require_tested).
+
+format: json
+evidence: true          # only engine actions may produce it (docs/01 section 5.2, F7)
+produced_by: [test.run, test.integration]
+compatible_with: []
+validators: []
+schema: engine          # the shape is the engine's contract (docs/04), not library content

@@ -1,0 +1,11 @@
+api_version: feature-flow/v1
+kind: role
+metadata:
+  name: designer
+  description: Writes technical designs and contracts grounded in the current code. Changes no code.
+
+write_access: none
+tools: [read, search, shell]
+toolsets:
+  - { name: tracker, tools: [get_issue, search_issues] }
+requires: []

@@ -1,0 +1,107 @@
+api_version: feature-flow/v1
+kind: fragment
+metadata:
+  name: merge_into_parent
+  description: >-
+    Open the pull request, optionally record an external review, wait for CI,
+    catch up with the parent, re-test if that changed the branch, and merge
+    without a lock: if the parent moved, catch up again (docs/04 section 7.3). A
+    conflict goes to an agent first. Anything that needs the change verified again
+    leaves by the reverify exit, which the caller routes back to its verification.
+
+parameters:
+  repository: { type: string, default: { expr: "run.repositories[0]" } }
+  squash: { type: boolean, default: false }
+  engine_can_merge: { type: boolean, default: true }
+  tier_tags: { type: array, default: [] }
+  external_findings: { type: string, default: "", description: "A findings source provider name; empty for none" }
+
+exits:
+  merged: success
+  declined: failure
+  reverify: ~                 # no class: the caller must route it, normally to its verification
+
+artifact_types:
+  - std:artifact_types/check_results
+  - std:artifact_types/test_results
+  - std:artifact_types/merge_record
+
+# Each lost race (base_moved) runs catch-up again, and re-test and checks when the
+# branch changed. Their allowances are raised to 12, above the merge step's race
+# allowance (limits.races, default 10, LOG 61), so races are bounded by the race
+# allowance and not by these steps' ordinary 3 attempts.
+steps:
+  - id: open_pr
+    action: scm.pull_request
+    repository: { expr: "params.repository" }
+    with:
+      title: { expr: "run.level + ': ' + run.id" }
+      body: std:prompts/pull_request_body
+    routes:
+      ready:
+        - when: "params.external_findings != ''"
+          to: external_review
+        - to: checks
+
+  - id: external_review
+    action: findings.record
+    repository: { expr: "params.repository" }
+    with: { source: { expr: "params.external_findings" }, reopen_on: code_change }
+    routes:
+      recorded:
+        - when: "findings.open_blocking > 0"
+          to: { exit: reverify }
+        - to: checks
+      unavailable: checks       # the external reviewer could not review: proceed without it
+
+  - id: checks
+    action: ci.checks
+    repository: { expr: "params.repository" }
+    produces: [{ name: check_results, type: std:artifact_types/check_results }]
+    limits: { attempts: 12 }
+    routes:
+      passed: catch_up
+      failed: { exit: reverify }
+
+  - id: catch_up
+    action: scm.catch_up
+    repository: { expr: "params.repository" }
+    limits: { attempts: 12 }
+    routes:
+      updated:
+        - when: "steps.catch_up.outputs.changed"
+          to: retest
+        - to: merge
+      conflict: resolve_conflict
+
+  - id: retest
+    action: test.run
+    repository: { expr: "params.repository" }
+    with: { tier_tags: { expr: "params.tier_tags" } }
+    produces: [{ name: test_results, type: std:artifact_types/test_results }]
+    limits: { attempts: 12 }
+    routes:
+      passed: checks            # the head changed, so its checks must pass again
+      failed: { exit: reverify }
+      baseline_failed: { escalate: true }
+
+  - id: resolve_conflict
+    agent:
+      role: std:roles/conflict_resolver
+      task: std:tasks/resolve_conflict
+    repository: { expr: "params.repository" }
+    outcomes: { resolved: success, blocked: blocked }
+    routes: { resolved: { exit: reverify } }
+
+  - id: merge
+    action: scm.merge
+    repository: { expr: "params.repository" }
+    with:
+      engine_can_merge: { expr: "params.engine_can_merge" }
+      squash: { expr: "params.squash" }
+    produces: [{ name: merge_record, type: std:artifact_types/merge_record }]
+    routes:
+      merged: { exit: merged }
+      base_moved: catch_up      # lost a race: a sibling merged; counts against limits.races
+      checks_failed: { exit: reverify }
+      declined: { exit: declined }

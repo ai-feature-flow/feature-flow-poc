@@ -1,0 +1,98 @@
+api_version: feature-flow/v1
+kind: fragment
+metadata:
+  name: fix_loop
+  description: >-
+    A triager decides per open finding; the decisions are applied; a fixer fixes
+    what is left open, with regression tests; a verifying reviewer checks each fix
+    against its finding on the full diff; the regression tests are validated as
+    new. The caller re-tests and re-reviews after the fixed exit.
+
+parameters:
+  fixer_task: { type: reference, default: std:tasks/fix_findings }
+  triager_task: { type: reference, default: std:tasks/triage_findings }
+  tier_tags: { type: array, default: [] }
+
+exits:
+  fixed: success
+  escalated: blocked
+
+artifact_types:
+  - std:artifact_types/findings_report
+  - std:artifact_types/triage
+  - std:artifact_types/evidence_claims
+  - std:artifact_types/validation_report
+
+steps:
+  - id: triage
+    agent:
+      role: std:roles/triager
+      task: { param: triager_task }
+      skills: [std:skills/review]
+    consumes: [{ name: findings_ledger }]
+    produces:
+      triaged: [{ name: triage, type: std:artifact_types/triage }]
+    outputs: { to_fix: { type: number }, escalated: { type: number } }
+    outcomes: { triaged: success, blocked: blocked }
+
+  - id: apply_triage
+    action: findings.triage
+    with: { from: triage }
+    consumes: [{ name: triage }]
+    routes:
+      applied:
+        - when: "steps.triage.outputs.escalated > 0"
+          to: { exit: escalated }
+        - when: "steps.triage.outputs.to_fix == 0"
+          to: { exit: fixed }
+        - to: fix
+
+  - id: fix
+    agent:
+      role: std:roles/fixer
+      task: { param: fixer_task }
+      skills: [std:skills/review, std:skills/verification]
+    with: { tier_tags: { expr: "params.tier_tags" } }
+    consumes:
+      - { name: findings_ledger }
+      - { name: triage }
+      - { name: implementation_claims, optional: true }
+      - { name: fix_verification, optional: true }
+    produces:
+      fixed:
+        - { name: fix_claims, type: std:artifact_types/evidence_claims }
+        - { name: implementation_claims, type: std:artifact_types/evidence_claims }
+    outcomes: { fixed: success, blocked: blocked }
+
+  - id: verify_fix
+    agent:
+      role: std:roles/reviewer
+      task: std:tasks/verify_fix
+      skills: [std:skills/review]
+      context: none
+    consumes:
+      - { name: findings_ledger }
+      - { name: triage }
+      - { name: fix_claims }
+    produces:
+      verified: [{ name: fix_verification, type: std:artifact_types/triage }]
+      not_fixed: [{ name: fix_verification, type: std:artifact_types/triage }]
+    verdicts: { verified: { accept: [fix_claims] }, not_fixed: { reject: [fix_claims] } }
+    outcomes: { verified: success, not_fixed: failure }
+    routes: { not_fixed: fix }
+
+  - id: record_fixes
+    action: findings.triage
+    with: { from: fix_verification }
+    consumes: [{ name: fix_verification }]
+
+  - id: tests_added
+    action: artifact.validate
+    with:
+      validation:
+        - { validator: tests_added, subjects: [fix_claims, triage] }
+    consumes: [{ name: fix_claims }, { name: triage }]
+    produces: [{ name: fix_validation, type: std:artifact_types/validation_report }]
+    routes:
+      valid: { exit: fixed }
+      invalid: fix

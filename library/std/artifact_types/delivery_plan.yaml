@@ -1,0 +1,80 @@
+api_version: feature-flow/v1
+kind: artifact_type
+metadata:
+  name: delivery_plan
+  description: >-
+    Acceptance criteria, the requirements each supports, and how each will be
+    verified (FF's delivery plan). At epic scope a parent-written plan names an
+    owning ticket for each criterion, and an owned criterion has no methods: the
+    owner adds them.
+
+format: yaml
+evidence: false
+compatible_with: []
+validators: []
+
+schema:
+  type: object
+  additionalProperties: false
+  required: [schema, scope, acceptance_criteria]
+  properties:
+    schema: { const: 1 }
+    scope:
+      type: object
+      additionalProperties: false
+      required: [kind, id]
+      properties:
+        kind: { enum: [project, epic, ticket] }
+        id: { $ref: "#/$defs/id" }
+    acceptance_criteria:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        required: [id, title, behaviour]
+        properties:
+          id: { $ref: "#/$defs/id" }
+          title: { type: string, minLength: 1 }
+          behaviour: { type: string, minLength: 1 }
+          supports:
+            type: array
+            items:
+              type: object
+              additionalProperties: false
+              required: [artifact, requirement]
+              properties:
+                artifact: { type: string }
+                requirement: { $ref: "#/$defs/id" }
+          supports_reason: { type: string, minLength: 1 }
+          owner:
+            type: object
+            additionalProperties: false
+            required: [kind, id]
+            properties:
+              kind: { enum: [epic, ticket] }
+              id: { $ref: "#/$defs/id" }
+          verification:
+            type: array
+            items: { $ref: "#/$defs/method" }
+  $defs:
+    id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+    method:
+      type: object
+      additionalProperties: false
+      required: [id, kind, repository, tier, semantic_review]
+      properties:
+        id: { $ref: "#/$defs/id" }
+        kind: { enum: [parsed_test] }
+        repository: { type: string, minLength: 1 }
+        tier: { type: string, minLength: 1, description: "A test tier name or tag from the repository manifest" }
+        intent: { type: string }
+        allowed_test_changes:
+          type: array
+          items: { enum: [new, reused, modified] }
+          default: [new, reused, modified]
+        semantic_review: { enum: [required, none] }
+
+rules:
+  - Criterion ids are unique within the document; method ids are unique within their criterion
+  - A criterion with an owner has no verification methods
+  - An owner appears only in an epic-scope document, with kind ticket, or kind epic and the document's own scope id

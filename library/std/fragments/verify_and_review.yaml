@@ -1,0 +1,110 @@
+api_version: feature-flow/v1
+kind: fragment
+metadata:
+  name: verify_and_review
+  description: >-
+    The engine's own tests and analysis; failures go to a repair step and back.
+    Then the standard review and the merge bar: no open blocking finding, else the
+    fix loop and back to the tests. A finding fixed twice and raised again
+    escalates. Last, the claims are checked against the engine's test results.
+
+parameters:
+  tier_tags: { type: array, default: [] }
+  spec_refs: { type: array, required: true }
+  angles: { type: array, default: [correctness, design, tests, security, specification] }
+  reviewer_task: { type: reference, default: std:tasks/review_change }
+  fixer_task: { type: reference, default: std:tasks/fix_findings }
+  triager_task: { type: reference, default: std:tasks/triage_findings }
+  check_satisfaction:
+    type: boolean
+    default: true
+    description: >-
+      Check the run's claims with verification_satisfaction. An epic, whose
+      criteria are owned and proved by its tickets, sets false and relies on trace
+
+exits:
+  ready: success
+  escalated: blocked
+
+artifact_types:
+  - std:artifact_types/test_results
+  - std:artifact_types/analysis_results
+  - std:artifact_types/validation_report
+  - std:artifact_types/evidence_claims
+  - std:artifact_types/delivery_plan
+
+steps:
+  - id: tests
+    action: test.run
+    with: { tier_tags: { expr: "params.tier_tags" } }
+    produces: [{ name: test_results, type: std:artifact_types/test_results }]
+    routes:
+      passed: analysis
+      failed: repair
+      baseline_failed: { escalate: true, prompt: std:prompts/baseline_failed }
+
+  - id: analysis
+    action: analysis.run
+    with: { fail_on: new_issues }
+    produces: [{ name: analysis_results, type: std:artifact_types/analysis_results }]
+    routes:
+      passed: review
+      failed: repair
+
+  - id: review
+    use: std:fragments/standard_review
+    with:
+      spec_refs: { expr: "params.spec_refs" }
+      angles: { expr: "params.angles" }
+      reviewer_task: { param: reviewer_task }
+      reopen_on: code_change
+    routes:
+      reviewed:                                   # the merge bar (docs/08 section 6.5)
+        - when: "findings.repeat_fixes > 0"
+          to: { exit: escalated }
+        - when: "findings.open_blocking == 0 && params.check_satisfaction"
+          to: satisfaction
+        - when: "findings.open_blocking == 0"
+          to: { exit: ready }
+        - to: fix
+
+  - id: fix
+    use: std:fragments/fix_loop
+    with:
+      fixer_task: { param: fixer_task }
+      triager_task: { param: triager_task }
+      tier_tags: { expr: "params.tier_tags" }
+    routes:
+      fixed: tests                                # re-test and re-review after every fix
+      escalated: { exit: escalated }
+
+  - id: satisfaction
+    action: artifact.validate
+    with:
+      validation:
+        - validator: verification_satisfaction
+          subjects: [delivery_plan, implementation_claims, test_results]
+    consumes:                                    # optional: an epic never reaches this step and has no claims
+      - { name: delivery_plan, optional: true }
+      - { name: implementation_claims, optional: true }
+      - { name: test_results }
+    produces: [{ name: verification_report, type: std:artifact_types/validation_report }]
+    routes:
+      valid: { exit: ready }
+      invalid: repair
+
+  - id: repair
+    agent:
+      role: std:roles/fixer
+      task: std:tasks/repair_failures
+      skills: [std:skills/verification]
+    consumes:
+      - { name: test_results, optional: true }
+      - { name: analysis_results, optional: true }
+      - { name: verification_report, optional: true }
+      - { name: implementation_claims, optional: true }
+      - { name: delivery_plan, optional: true }
+    produces:
+      repaired: [{ name: implementation_claims, type: std:artifact_types/evidence_claims }]
+    outcomes: { repaired: success, blocked: blocked }
+    routes: { repaired: tests }

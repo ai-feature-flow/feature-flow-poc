@@ -1,0 +1,13 @@
+api_version: feature-flow/v1
+kind: artifact_type
+metadata:
+  name: analysis_results
+  description: >-
+    Static analysis issues at a commit, compared with the baseline: new, fixed and unchanged issues by severity.
+
+format: json
+evidence: true          # only engine actions may produce it (docs/01 section 5.2, F7)
+produced_by: [analysis.run]
+compatible_with: []
+validators: []
+schema: engine          # the shape is the engine's contract (docs/04), not library content

@@ -1,0 +1,11 @@
+api_version: feature-flow/v1
+kind: role
+metadata:
+  name: planner
+  description: Writes requirements, acceptance criteria and work lists. Changes no code.
+
+write_access: none
+tools: [read, search, shell]
+toolsets:
+  - { name: tracker, tools: [get_issue, search_issues, create_issue, update_issue] }   # only where organisation policy allows
+requires: []

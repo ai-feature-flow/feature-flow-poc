@@ -1,0 +1,10 @@
+api_version: feature-flow/v1
+kind: role
+metadata:
+  name: conflict_resolver
+  description: Resolves a merge conflict between the work branch and its parent, keeping both sides' intent.
+
+write_access: branch
+tools: [read, search, edit, shell]
+toolsets: []
+requires: []

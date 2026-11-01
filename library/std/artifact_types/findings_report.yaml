@@ -1,0 +1,49 @@
+api_version: feature-flow/v1
+kind: artifact_type
+metadata:
+  name: findings_report
+  description: >-
+    Findings from one review pass, with the fields the engine fingerprints and
+    the reviewer's judgement of severity, blocking and basis (docs/01 section 6).
+    The engine stages the run's current ledger view in this shape, with ledger ids
+    and states, for any step that consumes findings_ledger.
+
+format: yaml
+evidence: false
+compatible_with: []
+validators: []
+
+schema:
+  type: object
+  additionalProperties: false
+  required: [schema, findings]
+  properties:
+    schema: { const: 1 }
+    angle: { type: string, description: "The review angle, for example correctness or security" }
+    findings:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        required: [rule, title, description, severity, blocking, basis, location]
+        properties:
+          ledger_id: { type: string, description: "Set by the engine in a ledger view; absent in a reviewer's report" }
+          state: { enum: [open, fixed, declined, escalated], description: "Set by the engine in a ledger view" }
+          rule: { type: string, description: "A stable rule or check id, part of the fingerprint" }
+          title: { type: string, minLength: 1 }
+          description: { type: string, minLength: 1 }
+          required_correction: { type: string }
+          severity: { enum: [critical, high, medium, low] }
+          blocking: { type: boolean }
+          basis: { enum: [demonstrated, reasoned] }
+          proof: { type: string, description: "For basis demonstrated: the failing test or other proof" }
+          location:
+            type: object
+            additionalProperties: false
+            required: [repository, file]
+            properties:
+              repository: { type: string }
+              file: { type: string }
+              symbol: { type: string, description: "The enclosing symbol, part of the fingerprint" }
+              snippet: { type: string, description: "The code the finding is about; hashed after normalising, never line numbers" }
+              criterion: { type: string, description: "The acceptance criterion concerned, if any" }

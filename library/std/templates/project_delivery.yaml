@@ -1,0 +1,117 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: project_delivery
+  level: project
+  description: >-
+    A project across several epics and repositories: requirements and
+    architecture written by a person in an interactive session and ratified;
+    epics planned, approved and run; integration tests where the project owns
+    requirements itself; the trace; delivery to the default branch in order, where
+    by default a person merges (F1).
+  branch_pattern: "ff/project/{{ params.project_name }}"
+
+parameters:
+  project_name: { type: string, required: true, description: "The project's scope id" }
+  planning_repository:
+    type: string
+    default: { expr: "run.repositories[0]" }
+    description: The repository the requirements session works in
+
+budget:
+  max_work_items: 20            # within the organisation's ceiling (F11)
+
+artifact_types:
+  - std:artifact_types/requirements
+  - std:artifact_types/contract
+  - std:artifact_types/work_list
+  - std:artifact_types/test_results
+  - std:artifact_types/validation_report
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: define
+    decision:
+      type: project.requirements_session
+      prompt: std:prompts/project_session
+      session:
+        repository: { expr: "params.planning_repository" }
+        folder: { expr: "'projects/' + params.project_name" }
+        files:
+          - { path: requirements.yaml, name: requirements, type: std:artifact_types/requirements }
+          - { path: architecture.md, name: contract, type: std:artifact_types/contract }
+        checks_from: [check_requirements]
+    produces:
+      submitted:
+        - { name: requirements, type: std:artifact_types/requirements }
+        - { name: contract, type: std:artifact_types/contract }
+    outcomes: { submitted: success, abandoned: failure }
+    routes:
+      abandoned: { end: rejected }
+
+  - id: check_requirements
+    action: artifact.validate
+    with:
+      validation:
+        - validator: requirement_support
+          subjects: [requirements]
+          options: { require_coverage: false }
+    consumes: [{ name: requirements }]
+    produces: [{ name: requirements_validation, type: std:artifact_types/validation_report }]
+    routes:
+      valid: approve
+      invalid: define
+
+  - id: approve
+    decision:
+      type: project.requirements_approval
+      prompt: std:prompts/requirements_approval
+    consumes: [{ name: requirements }, { name: contract }]
+    ratifies: { approved: [requirements, contract] }
+    outcomes: { approved: success, rejected: failure }
+    routes:
+      rejected: define
+
+  - id: epics
+    use: std:fragments/plan_children
+    with:
+      planner_task: std:tasks/plan_project_epics
+      child_template: std:templates/epic_delivery
+      child_level: epic
+      child_requirements_type: std:artifact_types/requirements
+      approval_type: project.epic_plan_approval
+      child_parameters: { epic_name: "$.name", engine_can_merge: true }
+      max_concurrency: 2
+    routes:
+      completed:
+        - when: "steps.epics.plan.outputs.needs_integration"
+          to: integration
+        - to: trace
+
+  - id: integration
+    action: test.integration
+    with: { repositories: { expr: "run.repositories" } }
+    produces: [{ name: integration_results, type: std:artifact_types/test_results }]
+    routes:
+      passed: trace
+
+  - id: trace
+    use: std:fragments/trace
+    with: { requirements: requirements }
+    protected: true
+    routes:
+      traced: deliver
+
+  - id: deliver
+    use: std:fragments/deliver_in_order
+    with:
+      repositories: { expr: "run.repositories" }
+      squash: false
+      engine_can_merge: false     # delivery to the default branch: a person merges by default (F1)
+    protected: true
+    routes:
+      delivered: { end: completed }
+      partial: { end: partial }

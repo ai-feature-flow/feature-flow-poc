@@ -1,0 +1,10 @@
+api_version: feature-flow/v1
+kind: role
+metadata:
+  name: triager
+  description: Decides, per open finding, whether to fix, decline or escalate it. Changes no code.
+
+write_access: none
+tools: [read, search, shell]
+toolsets: []
+requires: []

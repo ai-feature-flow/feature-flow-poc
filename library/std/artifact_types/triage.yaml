@@ -1,0 +1,38 @@
+api_version: feature-flow/v1
+kind: artifact_type
+metadata:
+  name: triage
+  description: >-
+    Per finding in the ledger: the new state and the reason. Applied by
+    findings.triage. Written by a triager before a fix, and by a verifying
+    reviewer after it. An entry naming an unknown ledger id fails validation and
+    goes back to its producer (docs/04 section 11.2).
+
+format: yaml
+evidence: false
+compatible_with: []
+validators: []
+
+schema:
+  type: object
+  additionalProperties: false
+  required: [schema, entries]
+  properties:
+    schema: { const: 1 }
+    entries:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        required: [finding, state, reason]
+        properties:
+          finding: { type: string, description: "A ledger id" }
+          state: { enum: [open, fixed, declined, escalated] }
+          reason: { type: string, minLength: 1 }
+          regression_test:
+            type: object
+            additionalProperties: false
+            required: [applicable]
+            properties:
+              applicable: { type: boolean }
+              reason: { type: string, description: "Required when applicable is false" }

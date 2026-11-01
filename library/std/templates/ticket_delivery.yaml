@@ -1,0 +1,98 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: ticket_delivery
+  level: ticket
+  description: >-
+    One ticket, from plan to merge into its parent branch. Works standalone,
+    where the parent branch is the default branch, or as a child of an epic.
+  branch_pattern: "ff/ticket/{{ params.ticket_id }}"
+
+parameters:
+  ticket_id: { type: string, required: true, description: "The tracker key, or the ticket's name in its epic's work list" }
+  engine_can_merge:
+    type: boolean
+    default: false              # a standalone ticket then passes F1 in a default organisation; an epic passes true
+    description: Whether the engine may merge the ticket into its parent branch
+
+artifact_types:
+  - std:artifact_types/requirements
+  - std:artifact_types/delivery_plan
+  - std:artifact_types/evidence_claims
+  - std:artifact_types/contract
+  - std:artifact_types/test_results
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: baseline
+    use: std:fragments/baseline
+
+  - id: plan
+    use: std:fragments/plan_and_validate
+    with:
+      planner_task: std:tasks/plan_ticket
+      subject_id: { expr: "params.ticket_id" }
+      level_validators:
+        - validator: requirement_support
+          subjects: [requirements, delivery_plan, { name: requirements, from: parent, optional: true }]
+          options: { require_coverage: true }
+        - validator: requirement_inheritance        # passes when there is no parent plan (a standalone ticket)
+          subjects: [{ name: child_requirements, from: parent, optional: true }, delivery_plan]
+          options: { allow_rewording: true }
+        - validator: verification_method_support
+          subjects: [delivery_plan]
+    tracker: { on_start: in_progress }
+
+  - id: approve_spec
+    decision:
+      type: ticket.spec_approval
+      prompt: std:prompts/spec_approval
+      auto: approved              # applied only where organisation policy allows it
+    consumes: [{ name: requirements }, { name: delivery_plan }]
+    ratifies: { approved: [requirements, delivery_plan] }
+    outcomes: { approved: success, rejected: failure }
+    routes:
+      rejected: { to: plan, clean_up: true }
+
+  - id: implement
+    agent:
+      role: std:roles/implementer
+      task: std:tasks/implement_ticket
+      skills: [std:skills/solution_design, std:skills/verification]
+    with: { ticket_id: { expr: "params.ticket_id" } }
+    consumes:
+      - { name: requirements }
+      - { name: delivery_plan }
+      - { name: contract, from: parent, optional: true }
+      - { name: baseline_test_results }
+      - { name: implementation_claims, optional: true }
+      - { name: test_results, optional: true }
+    produces:
+      implemented: [{ name: implementation_claims, type: std:artifact_types/evidence_claims }]
+    outcomes: { implemented: success, blocked: blocked }
+    limits: { questions: { max: 3, timeout: 4h } }
+
+  - id: verify
+    use: std:fragments/verify_and_review
+    with:
+      tier_tags: { expr: "steps.plan.plan.outputs.tier_tags" }
+      spec_refs: { expr: "[steps.plan.plan.artifacts.requirements, steps.plan.plan.artifacts.delivery_plan]" }
+    protected: true
+    routes:
+      ready: deliver
+
+  - id: deliver
+    use: std:fragments/merge_into_parent
+    with:
+      squash: true                # tickets squash into their parent; plain merges above (docs/08 section 6.5)
+      engine_can_merge: { expr: "params.engine_can_merge" }
+      tier_tags: { expr: "steps.plan.plan.outputs.tier_tags" }
+    protected: true
+    tracker: { on_start: code_review, on: { merged: done } }
+    routes:
+      merged: { end: completed }
+      declined: { end: rejected }
+      reverify: verify

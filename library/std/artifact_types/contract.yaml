@@ -1,0 +1,24 @@
+api_version: feature-flow/v1
+kind: artifact_type
+metadata:
+  name: contract
+  description: >-
+    A parent's technical design and interface contract for its children: the
+    project architecture, or an epic's design. Children consume it with
+    from: parent; a ratified contract is their authority (docs/01 section 5.3).
+
+format: markdown
+evidence: false
+compatible_with: []
+validators: []
+
+markdown:
+  required_headings:
+    - Scope
+    - Components and responsibilities
+    - Contracts
+    - Data and control flow
+    - Failure handling
+    - Decisions
+  front_matter:
+    required: [scope_kind, scope_id]

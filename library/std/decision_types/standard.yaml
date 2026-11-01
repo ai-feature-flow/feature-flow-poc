@@ -1,0 +1,42 @@
+# Decision types std templates use, with default approval rules. Organisation
+# approval rules override by pattern (docs/05 section 4).
+api_version: feature-flow/v1
+kind: decision_types
+
+decision_types:
+  # Gates in std templates
+  - name: ticket.spec_approval
+    description: Approve a ticket's requirements and acceptance criteria before implementation
+    default_approval: { roles: [approver], min_count: 1, auto: true }
+  - name: epic.ticket_plan_approval
+    description: Approve an epic's ticket list and the acceptance criteria each ticket owns
+    default_approval: { roles: [approver], min_count: 1, auto: false }
+  - name: project.requirements_session
+    description: Write the project's requirements and architecture in an interactive session
+    default_approval: { roles: [approver], min_count: 1, auto: false }
+  - name: project.requirements_approval
+    description: Ratify the project's requirements and architecture
+    default_approval: { roles: [approver], min_count: 1, auto: false }
+  - name: project.epic_plan_approval
+    description: Approve the project's epic list and the requirements each epic owns
+    default_approval: { roles: [approver], min_count: 1, auto: false }
+  - name: delivery.partial_recovery
+    description: Choose how to recover when ordered delivery merged some repositories and not others
+    default_approval: { roles: [approver], min_count: 1, auto: false }
+
+  # Types the engine raises (docs/05 section 4), declared by pattern
+  - name: "*.escalation"
+    description: An intervention, whatever raised it
+    default_approval: { roles: [steerer], min_count: 1, auto: false }
+  - name: "*.question"
+    description: A question an agent asked with ask_human. Never auto-resolved
+    default_approval: { roles: [approver], min_count: 1, auto: false }
+  - name: "*.patch_approval"
+    description: An agent's patch that touches protected content or uses a role outside the allowed list
+    default_approval: { roles: [steerer], min_count: 1, auto: false }
+  - name: "*.breakpoint"
+    description: A person paused the run before a step
+    default_approval: { roles: [steerer], min_count: 1, auto: false }
+  - name: "*.merge_action"
+    description: A person must merge on the code host
+    default_approval: { roles: [approver], min_count: 1, auto: false }

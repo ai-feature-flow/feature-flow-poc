@@ -339,7 +339,9 @@ run start, so a placeholder never reaches an agent as literal text.
 A task or prompt is Markdown. `{{ <cel> }}` marks an expression; the binding
 context is the step's `with` plus `params`, `run` and `steps`. A `with` value
 written as `{ from_artifact: <name> }` copies that consumed artifact into the
-sandbox and renders as its **path**, so the agent can open it. The rendered text
+sandbox and renders as its **path**, so the agent can open it. A value that is
+an artifact reference, or a list of them, is staged the same way and renders as
+the path or paths (LOG 63). The rendered text
 is stored as an artifact and its hash recorded with the attempt (P7).
 
 ---
@@ -596,6 +598,16 @@ standard review, the fix loop, or catch-up and merge (RW5).
 | Exits | A fragment's steps may route to `{ exit: <name> }`. The `use` entry routes each exit like an outcome. Exits carry a class for default routing |
 | Protection | `protected: true` on `use` protects every step of the fragment |
 | Nesting | A fragment may use other fragments, to a depth of 3 |
+
+The fragment document (LOG 62):
+
+| Rule | Detail |
+|---|---|
+| Shape | Like a template, with `kind: fragment` and `exits`: a map from exit name to class, or `~` for an exit the caller must route explicitly |
+| Scope | Inside a fragment, `params` is the fragment's parameters and `steps.<id>` its own steps (rewritten with the prefix at expansion) |
+| Substitution | `{ param: <name> }` puts a fragment parameter's value into any field at expansion, including fields that take no expression, such as an agent's `task` or a decision's `type`. The binding must then be a literal. Parameter type `reference` holds a library reference |
+| Entering | A route to a `use` entry's id enters the fragment's first step; a route may also name an expanded inner id, such as `plan.plan` |
+| Artifact names | Names produced inside a `for_each` branch are scoped to that branch; names produced by a fragment's steps are not prefixed, so the caller consumes them by name |
 
 ---
 

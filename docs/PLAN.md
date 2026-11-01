@@ -1,6 +1,8 @@
 # Design rewrite plan
 
-Status: design drafted and approved 2026-11-01; spikes next. Started 2026-10-31. This file is the resume point: a new
+Status: design approved, spikes SP1 to SP5 done (SP6 shelved), standard library
+written, 2026-11-01. The design phase is complete; a version 1 build plan is
+next. Started 2026-10-31. This file is the resume point: a new
 session reads it first, then the status table in section 6.
 
 ## 1. Goal
@@ -105,7 +107,8 @@ Paths in all design documents are relative to the repository root.
 | Spike SP4: lock-free merging under forced races | Done 2026-11-01: safe. Results in `docs/spikes/sp4-results.md`; one design change, approved: LOG 61 (a separate race allowance for `base_moved` loops); DR18 added |
 | Spike SP5: an agent step behind a model proxy | Done 2026-11-01 for Claude Code: holds. Results in `docs/spikes/sp5-results.md`; DR19 (the sandbox's own home) and DR20 (platform trust store) added; Copilot CLI not tested, for want of an API key |
 | Spike SP6: session resume on Windows | Shelved by the product owner, 2026-11-01: low risk, version 1 has no Windows sandbox, and development moves to a Windows machine soon, where it can be tested in passing |
-| The standard library as files (`docs/08` section 6) | Not started |
+| The standard library as files (`docs/08` section 6) | Done 2026-11-01, in `library/std/`: 3 templates, 9 fragments, 11 tasks, 7 roles, 13 artifact types. Not yet loaded by a validator. Formats the design left open are LOG 62 to 65, unreviewed |
+| Version 1 build plan | **Next, in a new session.** The design phase above is complete; the build plan sets the code layout, component order and milestones |
 
 ## 7. How to resume
 

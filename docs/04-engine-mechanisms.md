@@ -96,7 +96,11 @@ reports.
 1. **Prepare.** Create or re-attach the sandbox from the repository manifest;
    check out the work branch (read-only if the role has no write access); run
    the manifest's `setup` commands; stage consumed artifacts, skills and
-   library resources read-only, with a manifest listing them.
+   library resources read-only, with a manifest listing them. The manifest also
+   gives the run's baseline commit and parent branch for the repository, and the
+   agent's output folder. A step that consumes the reserved name
+   `findings_ledger` is given the ledger's current view, every finding with its
+   ledger id and state, in the shape of a findings report (LOG 63).
 2. **Start.** Render the task, prepend the library's reporting preamble, and
    start the agent runtime in the sandbox with the role's tools and toolsets.
 3. **Supervise.** Heartbeat. About every 30 seconds, ask the VCS provider
@@ -468,7 +472,7 @@ The standard set, from FF's validators:
 | Inputs | `validation`: a list of validators, each with `subjects` (consumed artifacts or sets) and `options` |
 | Outcomes | `valid`; `invalid` |
 | Evidence | A validation report, and any report a validator offers (a trace report) |
-| Behaviour | Freezes every repository the run has prepared at its work branch head, so a validator can compare evidence against those commits. A missing validator or unreadable subject raises an intervention |
+| Behaviour | Freezes every repository the run has prepared at its work branch head, so a validator can compare evidence against those commits. A missing validator or unreadable subject raises an intervention. A subject marked `optional` that does not exist is passed to the validator as absent, so `requirement_inheritance` passes for a ticket with no parent plan (LOG 63) |
 
 ---
 

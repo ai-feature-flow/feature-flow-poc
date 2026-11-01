@@ -1,0 +1,32 @@
+api_version: feature-flow/v1
+kind: fragment
+metadata:
+  name: trace
+  description: >-
+    Trace every requirement of this run through its owners and supporting items,
+    across completed children, to passing tests at commits the work contains
+    (docs/01 section 8). A gap stops the run before anything merges.
+
+parameters:
+  requirements: { type: string, default: requirements, description: "The name of the requirements artifact to trace" }
+
+exits:
+  traced: success
+
+artifact_types:
+  - std:artifact_types/trace_report
+  - std:artifact_types/validation_report
+
+steps:
+  - id: trace
+    action: artifact.validate
+    with:
+      validation:
+        - { validator: requirement_trace, subjects: [{ param: requirements }] }
+    consumes: [{ name: { param: requirements } }]
+    produces:
+      - { name: trace_report, type: std:artifact_types/trace_report }
+      - { name: trace_validation, type: std:artifact_types/validation_report }
+    routes:
+      valid: { exit: traced }
+      invalid: { escalate: true }

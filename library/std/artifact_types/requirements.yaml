@@ -1,0 +1,66 @@
+api_version: feature-flow/v1
+kind: artifact_type
+metadata:
+  name: requirements
+  description: >-
+    Observable required behaviour, with ids and upward links (FF's verification
+    plan). A requirement states behaviour; it names no test, test level or design.
+    At project scope a parent-written plan names an owner for each item
+    (docs/01 section 8).
+
+format: yaml
+evidence: false
+compatible_with: []
+validators: []          # cross-artifact rules are chosen by each workflow's artifact.validate step
+
+schema:
+  type: object
+  additionalProperties: false
+  required: [schema, scope, requirements]
+  properties:
+    schema: { const: 1 }
+    scope: { $ref: "#/$defs/scope" }
+    requirements:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        required: [id, title, behaviour]
+        properties:
+          id: { $ref: "#/$defs/id" }
+          title: { type: string, minLength: 1 }
+          behaviour: { type: string, minLength: 1 }
+          supports:
+            type: array
+            items: { $ref: "#/$defs/link" }
+          supports_reason: { type: string, minLength: 1 }
+          end_to_end: { type: boolean }
+          owner: { $ref: "#/$defs/owner" }
+        not: { required: [supports, supports_reason], properties: { supports: { minItems: 1 } } }
+  $defs:
+    id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+    scope:
+      type: object
+      additionalProperties: false
+      required: [kind, id]
+      properties:
+        kind: { enum: [project, epic, ticket] }
+        id: { $ref: "#/$defs/id" }
+    link:
+      type: object
+      additionalProperties: false
+      required: [artifact, requirement]
+      properties:
+        artifact: { type: string, description: "Logical name of a consumed requirements artifact" }
+        requirement: { $ref: "#/$defs/id" }
+    owner:
+      type: object
+      additionalProperties: false
+      required: [kind, id]
+      properties:
+        kind: { enum: [project, epic, ticket] }
+        id: { $ref: "#/$defs/id" }
+
+rules:                  # structural rules the schema cannot express; checked on production
+  - Requirement ids are unique within the document
+  - An owner appears only in a project-scope document, with kind epic, or kind project and the document's own scope id

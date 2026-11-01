@@ -1,0 +1,96 @@
+api_version: feature-flow/v1
+kind: fragment
+metadata:
+  name: plan_children
+  description: >-
+    A planner divides the work into child units and assigns each the
+    requirements it owns; validators check the ownership; a person approves and
+    so ratifies the plan; plan.expand turns the work list into child runs, which
+    run in parallel.
+
+parameters:
+  planner_task: { type: reference, required: true }
+  child_template: { type: reference, required: true }
+  child_level: { type: string, required: true }
+  child_requirements_type: { type: reference, required: true, description: "requirements (project to epic) or delivery_plan (epic to ticket)" }
+  approval_type: { type: string, required: true, description: "The approval decision's type" }
+  child_parameters:
+    type: object
+    default: {}
+    description: >-
+      The child run's parameters. Each value is a literal or a $. path into the
+      work list item, for example { ticket_id: "$.name", engine_can_merge: true }
+  max_concurrency: { type: number, default: 2 }
+
+exits:
+  completed: success
+  any_failed: failure
+
+artifact_types:
+  - std:artifact_types/work_list
+  - std:artifact_types/requirements
+  - std:artifact_types/delivery_plan
+  - std:artifact_types/contract
+  - std:artifact_types/validation_report
+
+steps:
+  - id: plan
+    agent:
+      role: std:roles/planner
+      task: { param: planner_task }
+      skills: [std:skills/verification, std:skills/solution_design]
+    consumes:
+      - { name: requirements }
+      - { name: contract, optional: true }
+      - { name: children_validation, optional: true }
+    produces:
+      planned:
+        - { name: work_list, type: std:artifact_types/work_list }
+        - { name: child_requirements, type: { param: child_requirements_type } }
+    outputs: { needs_integration: { type: boolean } }
+    outcomes: { planned: success, blocked: blocked }
+
+  - id: validate
+    action: artifact.validate
+    with:
+      validation:
+        - { validator: requirement_ownership, subjects: [child_requirements] }
+        - { validator: requirement_support, subjects: [requirements, child_requirements] }
+    consumes: [{ name: requirements }, { name: child_requirements }, { name: work_list }]
+    produces: [{ name: children_validation, type: std:artifact_types/validation_report }]
+    routes:
+      valid: approve
+      invalid: plan
+
+  - id: approve
+    decision:
+      type: { param: approval_type }
+      prompt: std:prompts/children_approval
+    consumes: [{ name: work_list }, { name: child_requirements }]
+    ratifies: { approved: [work_list, child_requirements] }
+    outcomes: { approved: success, rejected: failure }
+    routes: { rejected: plan }
+
+  - id: expand
+    action: plan.expand
+    with:
+      from: work_list
+      shape: parallel
+      target: children
+      step:
+        action: run.child
+        with:
+          template: { param: child_template }
+          level: { param: child_level }
+          repositories: "$.repositories"
+          parameters: { param: child_parameters }
+    consumes: [{ name: work_list }]
+
+  - id: children
+    parallel:
+      branches: []                # filled by expand
+      join: all
+      max_concurrency: { param: max_concurrency }
+    routes:
+      completed: { exit: completed }
+      any_failed: { exit: any_failed }

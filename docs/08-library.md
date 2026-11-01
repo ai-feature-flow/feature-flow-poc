@@ -156,7 +156,8 @@ resolve, for example a corrected task prompt. It does not change the plan.
 
 `std` ships with the engine. Its templates reproduce the process FF proved,
 with the first design's review and merge improvements. Everything here is
-policy and may be replaced.
+policy and may be replaced. The files are in `library/std/`; formats the design
+left open are LOG 62 to 65.
 
 ### 6.1 Roles
 
@@ -194,9 +195,9 @@ and permission.
 | `plan_and_validate` | Planner agent producing `requirements` and `delivery_plan`; `artifact.validate` with `requirement_support`, `requirement_ownership` or `requirement_inheritance` (by level), `verification_method_support`; on `invalid` back to the planner | `planner_task`, `level_validators` | `planned` |
 | `standard_review` | `for_each` over `angles` (default: correctness, design, tests, security, specification) of a reviewer agent step, each producing a `findings_report`; `findings.record` for each; a reviewer with `changed_files_unread > 0` re-runs | `spec_refs`, `angles`, `reviewer_task`, `reopen_on` (set to `code_change`) | `reviewed` |
 | `fix_loop` | Triager agent producing `triage`; `findings.triage`; fixer agent; a verifying reviewer checking the fix against the original finding on the full diff; `artifact.validate` with `tests_added`; back to tests | `fixer_task`, `triager_task`, `tier_tags` | `fixed`, `escalated` |
-| `verify_and_review` | `test.run`; `analysis.run`; `artifact.validate` with `verification_satisfaction`; `standard_review`; then the merge bar: `findings.open_blocking == 0` to `ready`, otherwise `fix_loop`. `findings.repeat_fixes > 0` escalates | `tier_tags`, `spec_refs`, `fixer_task`, `angles` | `ready`, `escalated` |
-| `merge_into_parent` | `scm.pull_request`; optionally `findings.record` from an external source; `ci.checks`; `scm.catch_up`; re-test if `changed`; `scm.merge`; `base_moved` back to catch-up; `conflict` to a conflict-resolver agent, then back through tests and review | `squash`, `engine_can_merge`, `external_findings` (a findings source name, optional) | `merged`, `declined` |
-| `plan_children` | Planner producing a `work_list` and child-level requirements; validation; an approval decision that ratifies them; `plan.expand` into a `parallel` of `run.child` | `planner_task`, `child_template`, `max_concurrency` | `planned` |
+| `verify_and_review` | `test.run`; `analysis.run`; failures to a repair agent and back; `standard_review`; then the merge bar: `findings.repeat_fixes > 0` escalates, `findings.open_blocking > 0` goes to `fix_loop` and back to the tests; then `artifact.validate` with `verification_satisfaction`, after the review because satisfaction needs the reviewer's verdict on the claims (LOG 64) | `tier_tags`, `spec_refs`, `angles`, `fixer_task`, `check_satisfaction` (an epic sets `false`) | `ready`, `escalated` |
+| `merge_into_parent` | `scm.pull_request`; optionally `findings.record` from an external source; `ci.checks`; `scm.catch_up`; re-test and re-check if `changed`; `scm.merge`; `base_moved` back to catch-up, with catch-up, re-test and checks allowed 12 attempts so races are bounded by `limits.races` (LOG 61); `conflict` to a conflict-resolver agent. Anything needing verification again leaves by `reverify` | `repository`, `squash`, `engine_can_merge`, `tier_tags`, `external_findings` (optional) | `merged`, `declined`, `reverify` (no class: the caller routes it to its verification) |
+| `plan_children` | Planner producing a `work_list` and child-level requirements; validation; an approval decision that ratifies them; `plan.expand` into a `parallel` of `run.child`, which runs the children | `planner_task`, `child_template`, `child_level`, `child_requirements_type`, `approval_type`, `child_parameters`, `max_concurrency` | `completed`, `any_failed` |
 | `trace` | `artifact.validate` with `requirement_trace`, producing a `trace_report` | `requirements` (the artifact to trace) | `traced` |
 | `deliver_in_order` | A `for_each` chain of `merge_into_parent` per repository; `delivery.report`; on `partial`, a decision offering retry, fix forward or revert | `repositories`, `squash`, `engine_can_merge` | `delivered`, `partial` |
 
@@ -205,7 +206,7 @@ and permission.
 | Template | Level | Shape |
 |---|---|---|
 | `ticket_delivery` | ticket | `baseline`; `plan_and_validate`; spec approval (auto-resolvable); implement; `verify_and_review`; `merge_into_parent`. Works standalone (parent branch is the default branch) or as a child. Parameter `engine_can_merge`, default `false`, so a standalone ticket passes F1 in a default organisation; `epic_delivery` passes `true` to its tickets |
-| `epic_delivery` | epic | Design and contract; `plan_children` (tickets); the epic's own `verify_and_review` over the combined branch with the tickets' ledgers as prior findings; `trace`; `merge_into_parent` or `deliver_in_order` |
+| `epic_delivery` | epic | Design and contract; `plan_children` (tickets); the epic's own `verify_and_review` over the combined branch with the tickets' ledgers as prior findings; `trace`; `merge_into_parent` (an epic in several repositories would use `deliver_in_order` instead) |
 | `project_delivery` | project | An interactive session for the project's requirements and architecture; approval that ratifies them; `plan_children` (epics); integration tests where the project owns requirements itself; `trace`; `deliver_in_order` into the default branch, where by default a person merges (F1) |
 
 Budget: `project_delivery` sets `budget.max_work_items: 20`, within the organisation's

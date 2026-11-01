@@ -1,0 +1,26 @@
+# The standard library's manifest (docs/08 section 2).
+name: std
+version: 0.1.0
+description: >-
+  The delivery process Feature Factory proved, with the first design's review
+  and merge improvements. Everything here is policy and may be replaced
+  (docs/08 section 6).
+
+requires:
+  engine: ">=1.0.0"
+  plan_schema: 1
+  capabilities: [code_host.pull_request]
+
+dependencies: []
+
+inputs: {}
+
+resources: []
+
+entrypoints:
+  - { template: ticket_delivery, when: "One ticket, from plan to merge into its parent branch" }
+  - { template: epic_delivery, when: "One epic: design, tickets, epic review, merge" }
+  - { template: project_delivery, when: "A project spanning several epics and repositories" }
+
+notifications:
+  events: [decision_needed, failed, completed]

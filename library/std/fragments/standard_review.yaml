@@ -1,0 +1,56 @@
+api_version: feature-flow/v1
+kind: fragment
+metadata:
+  name: standard_review
+  description: >-
+    One independent reviewer per angle, in parallel, each producing a findings
+    report that is recorded in the ledger. A reviewer that left changed files
+    unread reviews again (RW5, docs/08 section 6.5).
+
+parameters:
+  spec_refs: { type: array, required: true, description: "Artifacts the change is reviewed against" }
+  angles: { type: array, default: [correctness, design, tests, security, specification] }
+  reviewer_task: { type: reference, default: std:tasks/review_change }
+  reopen_on: { type: string, default: code_change }
+
+exits:
+  reviewed: success
+
+artifact_types:
+  - std:artifact_types/findings_report
+  - std:artifact_types/evidence_claims
+
+steps:
+  - id: review
+    for_each:
+      items: { expr: "params.angles" }
+      mode: parallel
+      step:
+        - id: assess
+          agent:
+            role: std:roles/reviewer
+            task: { param: reviewer_task }
+            skills: [std:skills/review, std:skills/verification]
+            context: none                       # judges independently (from FF)
+          with:
+            angle: { expr: "item" }
+            spec_refs: { expr: "params.spec_refs" }
+          consumes:
+            - { name: implementation_claims, optional: true }
+          produces:
+            reviewed: [{ name: findings_report, type: std:artifact_types/findings_report }]
+          verdicts: { reviewed: { accept: [implementation_claims] } }
+          outcomes: { reviewed: success, blocked: blocked }
+          routes:
+            reviewed:
+              - when: "steps.assess.outputs.changed_files_unread > 0"
+                to: assess                      # the reviewer reads every changed file
+              - to: record
+
+        - id: record
+          action: findings.record
+          with: { source: findings_report, reopen_on: { expr: "params.reopen_on" } }
+          consumes: [{ name: findings_report }]
+    routes:
+      completed: { exit: reviewed }
+      any_failed: { escalate: true }

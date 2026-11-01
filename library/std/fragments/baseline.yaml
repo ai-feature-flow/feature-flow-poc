@@ -1,0 +1,36 @@
+api_version: feature-flow/v1
+kind: fragment
+metadata:
+  name: baseline
+  description: >-
+    Record baseline test and analysis results on the unchanged work branch, so
+    later failures can be attributed to the run's own work. A baseline that is
+    not clean escalates (from FF).
+
+parameters:
+  tier_tags: { type: array, default: [], description: "Tiers to run; empty runs every declared tier" }
+
+exits:
+  done: success
+
+artifact_types:
+  - std:artifact_types/test_results
+  - std:artifact_types/analysis_results
+
+steps:
+  - id: tests
+    action: test.run
+    with: { tier_tags: { expr: "params.tier_tags" }, baseline: true }
+    produces: [{ name: baseline_test_results, type: std:artifact_types/test_results }]
+    routes:
+      passed: analysis
+      failed: { escalate: true, prompt: std:prompts/baseline_failed }
+      baseline_failed: { escalate: true, prompt: std:prompts/baseline_failed }
+
+  - id: analysis
+    action: analysis.run
+    with: { baseline: true }
+    produces: [{ name: baseline_analysis_results, type: std:artifact_types/analysis_results }]
+    routes:
+      passed: { exit: done }
+      failed: { escalate: true, prompt: std:prompts/baseline_failed }

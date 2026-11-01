@@ -1,0 +1,15 @@
+api_version: feature-flow/v1
+kind: role
+metadata:
+  name: reviewer
+  description: >-
+    Judges a change, a plan or a fix and reports findings. Changes nothing.
+    Standard steps run it with context none, so it judges independently. The
+    example organisation configuration maps it to a different, ideally stronger,
+    model than the implementer (docs/08 section 6.1).
+
+write_access: none
+tools: [read, search, shell]
+toolsets:
+  - { name: tracker, tools: [get_issue] }
+requires: []

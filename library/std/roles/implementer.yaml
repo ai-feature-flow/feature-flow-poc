@@ -1,0 +1,11 @@
+api_version: feature-flow/v1
+kind: role
+metadata:
+  name: implementer
+  description: Changes code and tests on the run's work branch. The engine pushes.
+
+write_access: branch
+tools: [read, search, edit, shell]
+toolsets:
+  - { name: tracker, tools: [get_issue] }
+requires: []

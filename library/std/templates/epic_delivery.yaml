@@ -1,0 +1,111 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: epic_delivery
+  level: epic
+  description: >-
+    One epic: a technical design and the epic's own requirements; tickets
+    planned, approved and run in parallel; the epic's own review of the combined
+    branch, with the tickets' findings as prior findings; the trace; merge into
+    the parent branch.
+  branch_pattern: "ff/epic/{{ params.epic_name }}"
+
+parameters:
+  epic_name: { type: string, required: true, description: "The epic's scope id; in a project, its name in the project's work list" }
+  engine_can_merge:
+    type: boolean
+    default: false              # a standalone epic merges into the default branch, where a person merges by default (F1)
+    description: Whether the engine may merge the epic into its parent branch
+
+artifact_types:
+  - std:artifact_types/requirements
+  - std:artifact_types/delivery_plan
+  - std:artifact_types/contract
+  - std:artifact_types/work_list
+  - std:artifact_types/validation_report
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: baseline
+    use: std:fragments/baseline
+
+  - id: design
+    agent:
+      role: std:roles/designer
+      task: std:tasks/design_epic
+      skills: [std:skills/solution_design, std:skills/verification]
+    with: { epic_name: { expr: "params.epic_name" } }
+    consumes:
+      - { name: child_requirements, from: parent, optional: true }
+      - { name: contract, from: parent, optional: true }
+      - { name: requirements, from: parent, optional: true }
+      - { name: design_validation, optional: true }
+    produces:
+      designed:
+        - { name: requirements, type: std:artifact_types/requirements }
+        - { name: contract, type: std:artifact_types/contract }
+    outcomes: { designed: success, blocked: blocked }
+    tracker: { on_start: in_progress }
+
+  - id: validate_design
+    action: artifact.validate
+    with:
+      validation:
+        - validator: requirement_inheritance        # the epic holds every requirement it owns, unchanged
+          subjects: [{ name: child_requirements, from: parent, optional: true }, requirements]
+          options: { allow_rewording: false }
+        - validator: requirement_support
+          subjects: [requirements, { name: requirements, from: parent, optional: true }]
+          options: { require_coverage: false }
+    consumes:
+      - { name: requirements }
+      - { name: child_requirements, from: parent, optional: true }
+      - { name: requirements, from: parent, optional: true }
+    produces: [{ name: design_validation, type: std:artifact_types/validation_report }]
+    routes:
+      valid: tickets
+      invalid: design
+
+  - id: tickets
+    use: std:fragments/plan_children
+    with:
+      planner_task: std:tasks/plan_epic_tickets
+      child_template: std:templates/ticket_delivery
+      child_level: ticket
+      child_requirements_type: std:artifact_types/delivery_plan
+      approval_type: epic.ticket_plan_approval
+      child_parameters: { ticket_id: "$.name", engine_can_merge: true }
+      max_concurrency: 2
+    routes:
+      completed: verify
+
+  - id: verify
+    use: std:fragments/verify_and_review
+    with:
+      spec_refs: { expr: "[steps.design.artifacts.contract, steps.design.artifacts.requirements]" }
+      check_satisfaction: false   # the tickets prove their criteria; trace checks the whole chain
+    protected: true
+    routes:
+      ready: trace
+
+  - id: trace
+    use: std:fragments/trace
+    with: { requirements: requirements }
+    protected: true
+    routes:
+      traced: deliver
+
+  - id: deliver
+    use: std:fragments/merge_into_parent
+    with:
+      squash: false
+      engine_can_merge: { expr: "params.engine_can_merge" }
+    protected: true
+    tracker: { on: { merged: done } }
+    routes:
+      merged: { end: completed }
+      declined: { end: rejected }
+      reverify: verify

@@ -1,0 +1,41 @@
+api_version: feature-flow/v1
+kind: artifact_type
+metadata:
+  name: work_list
+  description: >-
+    Child units of work (tickets or epics) with their repositories and
+    parameters, for plan.expand. Each item becomes one child run, so the list is
+    data the engine maps without an agent (docs/03 section 10.4).
+
+format: yaml
+evidence: false
+compatible_with: []
+validators: []
+
+schema:
+  type: object
+  additionalProperties: false
+  required: [schema, level, items]
+  properties:
+    schema: { const: 1 }
+    level: { enum: [epic, ticket], description: "The level of the child runs" }
+    items:
+      type: array
+      maxItems: 500
+      items:
+        type: object
+        additionalProperties: false
+        required: [name, title, repositories, boundary, owns]
+        properties:
+          name: { type: string, pattern: "^[a-z][a-z0-9_]*$", description: "Stable; the child's scope id and run name" }
+          title: { type: string, minLength: 1 }
+          repositories: { type: array, minItems: 1, items: { type: string } }
+          boundary: { type: string, minLength: 1, description: "What this unit changes and what it must not" }
+          owns: { type: array, minItems: 1, items: { type: string }, description: "Ids of the requirements or criteria this unit owns" }
+          depends_on: { type: array, items: { type: string }, description: "Names of items that must merge first" }
+          tracker_issue: { type: string }
+          parameters: { type: object, description: "Passed to the child run's parameters" }
+
+rules:
+  - Item names are unique
+  - depends_on names an item in the list, and the dependencies form no cycle

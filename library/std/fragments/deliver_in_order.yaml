@@ -1,0 +1,65 @@
+api_version: feature-flow/v1
+kind: fragment
+metadata:
+  name: deliver_in_order
+  description: >-
+    Merge each repository in the order given, one after another; report which
+    merged; if only some did, a person chooses to retry, fix forward or revert
+    (RW15). No deploy triggering.
+
+parameters:
+  repositories: { type: array, default: { expr: "run.repositories" }, description: "In delivery order" }
+  squash: { type: boolean, default: false }
+  engine_can_merge: { type: boolean, default: false }
+  tier_tags: { type: array, default: [] }
+
+exits:
+  delivered: success
+  partial: failure
+
+artifact_types:
+  - std:artifact_types/merge_record
+
+steps:
+  - id: deliver
+    for_each:
+      items: { expr: "params.repositories" }
+      mode: chain
+      step:
+        use: std:fragments/merge_into_parent
+        with:
+          repository: { expr: "item" }
+          squash: { expr: "params.squash" }
+          engine_can_merge: { expr: "params.engine_can_merge" }
+          tier_tags: { expr: "params.tier_tags" }
+    routes:
+      completed: report
+      any_failed: report
+
+  - id: report
+    action: delivery.report
+    with: { repositories: { expr: "params.repositories" } }
+    routes:
+      complete: { exit: delivered }
+      partial: recover
+
+  - id: recover
+    decision:
+      type: delivery.partial_recovery
+      prompt: std:prompts/partial_delivery
+    outcomes: { retry: ~, fix_forward: ~, revert: ~ }
+    routes:
+      retry: deliver
+      fix_forward: { exit: partial }
+      revert: revert_merges
+
+  - id: revert_merges
+    for_each:
+      items: { expr: "params.repositories" }
+      mode: parallel
+      step:
+        action: scm.revert
+        repository: { expr: "item" }
+    routes:
+      completed: { exit: partial }
+      any_failed: { escalate: true }

@@ -1,0 +1,10 @@
+api_version: feature-flow/v1
+kind: role
+metadata:
+  name: fixer
+  description: Fixes findings and failing checks on the run's work branch. The engine pushes.
+
+write_access: branch
+tools: [read, search, edit, shell]
+toolsets: []
+requires: []

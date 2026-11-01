@@ -1,0 +1,9 @@
+# Abstract tracker statuses std templates use. Tracker provider configuration
+# maps each to a real status (docs/07 section 2, tracker.*.status_map).
+statuses:
+  - name: in_progress
+    meaning: Work on the item has started
+  - name: code_review
+    meaning: The change is open for review
+  - name: done
+    meaning: The change has merged into its parent branch
