@@ -91,12 +91,13 @@ from writing the standard library, approved the same day, in answer to
 
 ## From the build plan
 
-Entries 66 to 70, from writing `docs/11-build-plan.md`, are unreviewed.
+Entries 66 to 70, from writing `docs/11-build-plan.md`, approved by the product
+owner on 2026-11-01.
 
 | # | Where | Decision | Why | Needs a look? |
 |---|---|---|---|---|
-| 66 | 11 s2.3 | The interpreter's pure core (ready, route, apply, patches, attempt counting) is a project with no Temporal reference; the Temporal workflow is a thin loop around it. Re-drive tests run the core without Temporal | `docs/02` s2.1 already draws the determinism boundary; a project boundary enforces it by the compiler, and library CI needs no Temporal server | Medium |
-| 67 | 11 s2.3, M4 | The sandbox client (stdio MCP server) and the hook command are one .NET executable, published self-contained per operating system and copied into each sandbox. The spikes' Python clients are rewritten | A repository's image cannot be assumed to hold Python or a .NET runtime; one language for engine code | Low |
-| 68 | 11 M4 | The model proxy (floor F6, `proxy` mode) is served by the agent worker beside the hook endpoint and engine MCP server, and authenticates requests by the per-step token | `docs/02` names no component for the proxy; the agent worker already validates per-step tokens and is reachable from sandboxes | **Yes**: places a component the design left open |
-| 69 | 11 s1, s3 | The solo profile is built end to end first (Docker sandbox, SQLite, filesystem store, directory library, GitHub, Claude Code); team and enterprise providers come last | The first real run needs no new infrastructure, as in the spikes; provider interfaces make the later providers additions | Medium |
-| 70 | 11 M1 | Negative tests for the load checks are mutations of std's templates, each expected to trigger one check number | A check shown to fire only on a contrived input may pass by construction (`CONTRIBUTING.md`, "Verify, do not assert") | Low |
+| 66 | 11 s2.3 | The interpreter's pure core (ready, route, apply, patches, attempt counting) is a project with no Temporal reference; the Temporal workflow is a thin loop around it. Re-drive tests run the core without Temporal | `docs/02` s2.1 already draws the determinism boundary; a project boundary enforces it by the compiler, and library CI needs no Temporal server | Medium. Approved 2026-11-01 |
+| 67 | 11 s2.3, M4 | The sandbox client (stdio MCP server) and the hook command are one .NET executable, published self-contained per operating system and copied into each sandbox. The spikes' Python clients are rewritten | A repository's image cannot be assumed to hold Python or a .NET runtime; one language for engine code | Low. Approved 2026-11-01 |
+| 68 | 11 M4 | The model proxy (floor F6, `proxy` mode) is served by the agent worker beside the hook endpoint and engine MCP server, and authenticates requests by the per-step token | `docs/02` names no component for the proxy; the agent worker already validates per-step tokens and is reachable from sandboxes | **Yes**: places a component the design left open. Approved 2026-11-01 |
+| 69 | 11 s1, s3 | The solo profile is built end to end first (Docker sandbox, SQLite, filesystem store, directory library, GitHub, Claude Code); team and enterprise providers come last | The first real run needs no new infrastructure, as in the spikes; provider interfaces make the later providers additions | Medium. Approved 2026-11-01 |
+| 70 | 11 M1 | Negative tests for the load checks are mutations of std's templates, each expected to trigger one check number | A check shown to fire only on a contrived input may pass by construction (`CONTRIBUTING.md`, "Verify, do not assert") | Low. Approved 2026-11-01 |

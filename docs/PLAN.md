@@ -109,8 +109,8 @@ Paths in all design documents are relative to the repository root.
 | Spike SP5: an agent step behind a model proxy | Done 2026-11-01 for Claude Code: holds. Results in `docs/spikes/sp5-results.md`; DR19 (the sandbox's own home) and DR20 (platform trust store) added; Copilot CLI not tested, for want of an API key |
 | Spike SP6: session resume on Windows | Shelved by the product owner, 2026-11-01: low risk, version 1 has no Windows sandbox, and development moves to a Windows machine soon, where it can be tested in passing |
 | The standard library as files (`docs/08` section 6) | Done 2026-11-01, in `library/std/`: 3 templates, 9 fragments, 11 tasks, 7 roles, 13 artifact types. Not yet loaded by a validator. Formats the design left open are LOG 62 to 65, approved 2026-11-01 |
-| Version 1 build plan | Written 2026-11-01 in `docs/11-build-plan.md`: layout, build order, milestones M0 to M8, carry-over from spikes. Judgement calls LOG 66 to 70, unreviewed; Open questions 1, 2, 3 and 5 answered 2026-11-01 (code in this repository; pull requests with required CI; LOG 62 to 65 approved; a minimal console in M7); question 4, the team deployment's object store and container platform, deferred |
-| Product owner review of LOG 66 to 70 | Open |
+| Version 1 build plan | Written 2026-11-01 in `docs/11-build-plan.md`: layout, build order, milestones M0 to M8, carry-over from spikes. Judgement calls LOG 66 to 70, approved 2026-11-01. Open questions 1, 2, 3 and 5 answered 2026-11-01 (code in this repository; pull requests with required CI; LOG 62 to 65 approved; a minimal console in M7); question 4, the team deployment's object store and container platform, deferred |
+| Product owner review of LOG 66 to 70 | Done 2026-11-01: approved |
 | M0 (skeleton) and M1 (plan loader and validator on `library/std/`) | **Next.** Code work goes through pull requests with required CI |
 
 ## 7. How to resume

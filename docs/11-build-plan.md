@@ -7,7 +7,7 @@ lives, the solution layout, the order in which components are built, the
 milestones and how each is verified, and what is taken from spike code. What
 the engine does is owned by `docs/01` to `docs/10`; this document cites them
 and does not restate them. Judgement calls made here are LOG 66 to 70,
-unreviewed.
+approved 2026-11-01.
 
 ---
 
@@ -280,7 +280,7 @@ tests before it is relied on. The spikes stay unchanged as evidence.
 
 ## 7. Judgement calls
 
-Recorded in `docs/LOG.md`, unreviewed.
+Recorded in `docs/LOG.md`; approved by the product owner, 2026-11-01.
 
 | LOG | Call |
 |---|---|
