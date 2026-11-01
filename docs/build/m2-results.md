@@ -163,7 +163,23 @@ None changes the design beyond the LOG entries above.
 
 ## 6. CI
 
-To be recorded after the clean-clone run.
+GitHub CI has not run on this work, for the reason in
+`docs/build/m0-results.md` section 5. The branch is based on `main` at
+`ce0bd19` (LOG 71 to 74 approved). The workflow's commands were run from a
+clean clone of `m2-core` at `a9e021b` (the revision after review) on macOS,
+2026-11-02. The clone was made inside the working tree as `.ci-clone/` and
+deleted afterwards:
+
+| Job | Commands | Result |
+|---|---|---|
+| Build and default tests | `dotnet build FeatureFlow.slnx -c Release`; `dotnet test ... --filter "Category!=Integration&Category!=Live"` | 0 warnings, 0 errors; 226 passed, 0 failed |
+| Integration tests | `temporal server start-dev --headless --port 7833`, with `FF_TEMPORAL_ADDRESS=localhost:7833`; `docker version` (29.9.2); the same build; `dotnet test ... --filter "Category=Integration"` | Server healthy; 0 warnings, 0 errors; 2 passed, 0 failed. Server stopped afterwards |
+
+The controls of section 2.4 were run in the working tree on the same code
+before the commit, with no clone present. A control run made earlier, while a
+clone sat inside the working tree, failed two layout tests in
+`Architecture.Tests` both while broken and after the revert, because they
+found the clone's project and build files.
 
 ## 7. Open questions
 
