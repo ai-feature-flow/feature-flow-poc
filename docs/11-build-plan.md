@@ -31,15 +31,14 @@ provider interfaces (`docs/06`) make them additions, not changes.
 
 ### 2.1 Repository
 
-**Recommended, pending the product owner (open question 1):** this repository,
-`ai-feature-flow/feature-flow-poc`, with the code under `src/`, `hosts/` and
-`tests/` beside `docs/` and `library/`.
+This repository, `ai-feature-flow/feature-flow-poc`, with the code under
+`src/`, `hosts/` and `tests/` beside `docs/` and `library/` (product owner,
+2026-11-01).
 
 Reasons: the standard library ships with the engine (`docs/08` section 6) and
 is the first input to the code; the design documents are cited by the code's
 tests; and a design change and the code change it causes can land in one
-commit. The repository can be renamed later without losing history. The
-alternative is a new repository, with `library/std/` and `docs/` moved into it.
+commit. The repository can be renamed later without losing history.
 
 `spikes/` stays where it is, unchanged, as evidence (section 6).
 
@@ -297,8 +296,15 @@ Recorded in `docs/LOG.md`, unreviewed.
 
 | # | Question | Recommendation |
 |---|---|---|
-| 1 | Where does the version 1 code live: this repository under `src/`, or a new repository with `docs/` and `library/std/` moved into it? | This repository (section 2.1) |
 | 2 | How is code work reviewed and where does CI run? Design work commits straight to `main`. May CI hold a model credential and the GitHub App key for the live tests? | Pull requests with required CI on GitHub Actions from M0; live tests locally until a secret store is agreed |
 | 3 | LOG 62 to 65, the formats chosen while writing std (the fragment document, inputs staged for agents, std's shape, item formats), are unreviewed. M1 implements them | Review them before M1 finishes |
 | 4 | Which object store and which container platform does the first team deployment use? `docs/07` allows S3 or Azure Blob, and Kubernetes | Build only the one the first adopter needs, in M8 |
 | 5 | Is a web console in version 1? `docs/05` section 7's example has a merge request answerable in the console only, but no document designs the console | Yes: a minimal console in M7 (runs, a run's readable form and timeline, decisions to answer). Anything more later |
+
+### Answered
+
+Product owner, 2026-11-01.
+
+| # | Question | Answer |
+|---|---|---|
+| 1 | Where does the version 1 code live: this repository under `src/`, or a new repository with `docs/` and `library/std/` moved into it? | This repository (section 2.1) |
