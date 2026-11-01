@@ -101,6 +101,7 @@ Reference rules, checked by a test that reads the project files:
 | `Providers.*` | `Providers.Abstractions` and `Model` only |
 | `Engine`, `Engine.Agent`, `Api` | The core, `Providers.Abstractions`, Temporal |
 | `hosts/*` | `Hosting` and the provider projects they ship |
+| `Testing.Workflows` | The core only. No Temporal: re-drive runs without it (LOG 66). Added in M2, LOG 80, unreviewed |
 
 The `hosts/` projects are the images the project ships. An organisation's
 distribution repository (`docs/06` section 4) writes its own host projects

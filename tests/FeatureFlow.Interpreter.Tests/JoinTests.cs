@@ -48,7 +48,38 @@ public class JoinTests
         """;
 
     static readonly Probe Lib = new("joins",
-        ("fan_all", Fan("all", 2)), ("fan_any", Fan("any", 2)), ("fan_2", Fan("2")), ("chain", Chain), ("mixed", Mixed));
+        ("fan_all", Fan("all", 2)), ("fan_any", Fan("any", 2)), ("fan_2", Fan("2")), ("chain", Chain), ("mixed", Mixed),
+        ("mixed_any", MixedAny));
+
+    const string MixedAny = """
+        api_version: feature-flow/v1
+        kind: template
+        metadata: { name: mixed_any, level: ticket }
+        steps:
+          - id: both
+            parallel:
+              join: any
+              branches:
+                - id: ask
+                  decision: { type: delivery.partial_recovery, prompt: std:prompts/partial_delivery }
+                  outcomes: { retry: success, revert: failure }
+                - { id: work, action: test.run }
+            routes: { completed: { end: completed }, any_failed: { end: failed } }
+        """;
+
+    [Fact]
+    public void A_join_that_decides_closes_the_decisions_still_open_in_its_branches()
+    {
+        var core = Lib.Start("mixed_any");
+        core.Advance();
+
+        core.Apply(new StepCompleted("work", "passed"));
+        var commands = core.Advance();
+
+        Assert.Equal(RunStatus.Completed, core.State.Status);
+        Assert.Contains(commands, c => c is CloseWait { StepId: "ask" });
+        Assert.Empty(core.State.Waits);
+    }
 
     [Fact]
     public void A_waiting_branch_starts_as_soon_as_a_running_one_ends()

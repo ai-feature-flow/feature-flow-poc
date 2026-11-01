@@ -11,9 +11,10 @@ namespace FeatureFlow.Interpreter;
 /// </summary>
 public sealed partial class RunCore
 {
-    ApplyResult ProposeOutside(PatchDocument patch)
+    ApplyResult ProposeOutside(PatchProposed input)
     {
-        var proposer = patch.ProposedBy.StepId is { } id ? StepById(id) : null;
+        var patch = input.Patch with { ProposedBy = input.By };
+        var proposer = input.By.StepId is { } id ? StepById(id) : null;
         var result = Propose(patch, proposer);
         if (result.Status == PatchStatus.Applied)
             Resume(patch, proposer?.Id ?? "");
@@ -37,6 +38,8 @@ public sealed partial class RunCore
         var result = Propose(patch, StepById(wait.StepId), approved: true);
         if (result.Status == PatchStatus.Applied)
             Resume(patch, wait.StepId);
+        else if (StepById(wait.StepId) is { } proposer)
+            Route(proposer, State.Steps[proposer.Id].Current?.Outcome ?? "");
         return new ApplyResult(true, [], result);
     }
 
@@ -66,7 +69,7 @@ public sealed partial class RunCore
         if (patch.BaseRevision != State.Revision)
             d.Add(Checks.PatchBaseRevision, $"base_revision {patch.BaseRevision} is not the current revision {State.Revision}; re-propose against it", patch.Location);
         CheckProposer(patch, proposer, d);
-        CheckRunning(patch, d);
+        CheckRunning(patch, proposer, d);
         if (d.HasErrors)
             return Reject(patch, d);
 
@@ -156,18 +159,29 @@ public sealed partial class RunCore
     static string? RoleOf(YMap? step) => (step?["agent"] as YMap)?["role"].ScalarText();
 
     /// <summary>Run-time rules on a patch: branches change only on a parallel that has not started; a running step stays.</summary>
-    void CheckRunning(PatchDocument patch, DiagnosticBag d)
+    void CheckRunning(PatchDocument patch, Step? proposer, DiagnosticBag d)
     {
         foreach (var op in patch.Changes)
         {
             if (op.Op is "add_branch" or "remove_branch" && State.Containers.TryGetValue(op.Target, out var container) && container.Active)
                 d.Add(Checks.PatchLoadChecks, $"{op.Op}: {op.Target} has started; branches change only before it starts (docs/03 section 10.2)", op.Location, op.Target);
-            if (op.Op is "remove" or "replace" && (State.InFlight.Contains(op.Target) || State.Waits.Any(w => w.StepId == op.Target)))
-                d.Add(Checks.PatchLoadChecks, $"{op.Op}: {op.Target} is running", op.Location, op.Target);
+            // The proposing step is ending as its patch is applied, so it does not count as running.
+            if (op.Op is "remove" or "replace" && Busy(op.Target, proposer?.Id) is { } busy)
+                d.Add(Checks.PatchLoadChecks, $"{op.Op}: {busy} is running or waiting{(busy == op.Target ? "" : $" inside {op.Target}")}", op.Location, op.Target);
         }
     }
 
-    /// <summary>Check 30, F4: no allowance above the organisation's per-step ceiling, for steps the patch adds or changes.</summary>
+    /// <summary>A step at or inside the target that is running or waiting for a person, or an entered container.</summary>
+    string? Busy(string target, string? except)
+    {
+        bool At(string id) => id != except && (id == target || InContainer(id, target));
+        return State.InFlight.FirstOrDefault(At)
+               ?? State.Waits.Select(w => w.StepId).FirstOrDefault(At)
+               ?? State.Pending.Select(e => e.StepId).FirstOrDefault(At)
+               ?? (State.Containers.TryGetValue(target, out var c) && c.Active ? target : null);
+    }
+
+    /// <summary>Check 22: no allowance above the organisation's per-step cap, for steps the patch adds or changes (LOG 78).</summary>
     void CheckCeilings(Plan next, DiagnosticBag d)
     {
         if (Options.StepCeiling is not { } ceiling)
@@ -175,12 +189,12 @@ public sealed partial class RunCore
         foreach (var step in next.AllSteps.Where(s => s.ConsumesAttempts))
         {
             var before = StepById(step.Id);
-            var attempts = step.Limits?.Attempts ?? step.Scope.DocumentScope.Document.Defaults.Limits?.Attempts ?? Options.DefaultAttempts;
-            var races = step.Limits?.Races ?? Options.DefaultRaces;
+            var attempts = Allowance(step);
+            var races = RaceAllowance(step);
             if (attempts > ceiling && (before is null || Allowance(before) != attempts))
-                d.Add(Checks.PatchFloor, $"sets {step.Id}'s attempts to {attempts}, above the ceiling of {ceiling} (F4)", step.Location, step.Id);
+                d.Add(Checks.LockedCap, $"sets {step.Id}'s attempts to {attempts}, above the cap of {ceiling} (F4)", step.Location, step.Id);
             if (step.Action == "scm.merge" && races > ceiling && (before is null || RaceAllowance(before) != races))
-                d.Add(Checks.PatchFloor, $"sets {step.Id}'s races to {races}, above the ceiling of {ceiling} (F4)", step.Location, step.Id);
+                d.Add(Checks.LockedCap, $"sets {step.Id}'s races to {races}, above the cap of {ceiling} (F4)", step.Location, step.Id);
         }
     }
 

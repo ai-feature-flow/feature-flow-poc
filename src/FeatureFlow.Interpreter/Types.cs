@@ -82,6 +82,9 @@ public sealed record RequestPatchApproval(string WaitId, PatchDocument Patch) : 
 
 public sealed record CancelStep(string StepId) : Command;
 
+/// <summary>A decision, intervention or patch approval that is no longer wanted: its join decided, or the run ended.</summary>
+public sealed record CloseWait(string WaitId, string StepId) : Command;
+
 public sealed record CleanUp(string StepId) : Command;
 
 public sealed record EndRun(RunStatus Status) : Command;
@@ -113,7 +116,11 @@ public sealed record StepFailed(string StepId, ErrorClass Class, string Reason) 
 
 public sealed record DecisionAnswered(string StepId, string Outcome) : RunInput;
 
-public sealed record PatchProposed(PatchDocument Patch) : RunInput;
+/// <summary>
+/// A patch from outside a step: a person through the API, or the engine. <see cref="By"/> is set by the shell
+/// from the authenticated caller (F8); the document's own <c>proposed_by</c> is ignored.
+/// </summary>
+public sealed record PatchProposed(PatchDocument Patch, Proposer By) : RunInput;
 
 public sealed record PatchAnswered(string WaitId, bool Approve) : RunInput;
 

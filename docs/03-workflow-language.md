@@ -292,9 +292,10 @@ outputs:
 
 | Rule | Value |
 |---|---|
-| Types | `string`, `number`, `boolean`, and lists of those |
+| Types | `string`, `number`, `boolean`, and lists of those. A `number` is a whole number; a fractional value is refused (LOG 76) |
 | Size | 16 entries, 256 bytes each. Spike 2 measured at most 5 entries and 71 bytes (`archive/docs/16` section 2) |
 | Written by | The step's activity: an action's contract, or an agent through its reporting contract (`docs/04`). Never by workflow code |
+| Required | A declared output not reported with a `success` outcome is an output contract error, corrected in correction turns (LOG 79) |
 
 **Repository facts reach routing through outputs.** The `repo.inspect` action
 reads the repository manifest and publishes facts such as which test tiers

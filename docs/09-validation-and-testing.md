@@ -167,11 +167,12 @@ expect:
 | `expect.status` | The final run status, or `running` |
 | `expect.validation_errors` | Check numbers expected to block |
 | `expand` | Pending review (LOG 75): the items each `plan.expand` step reads |
-| `expect.executions`, `expect.escalated` | Pending review (LOG 75): how many times a step ran; the steps with an open intervention when the run settles |
+| `expect.executions`, `expect.escalated`, `expect.clean_up` | Pending review (LOG 75): how many times a step ran; the steps with an open intervention when the run settles; the steps a `clean_up` route reset the branch for |
 
 Pending review (LOG 75): a list's last entry applies to every later visit; a
 `findings.<name>` list gives one value per route evaluation that reads the
-name; an output the file does not give takes its type's zero value; steps
+name; an output the file does not give takes its type's zero value, and one
+given as `~` is not reported; a work error fails `times` executions; steps
 finish one at a time, in the order they started. `ff test` runs the files.
 
 Tests live with the library they test. An organisation's distribution

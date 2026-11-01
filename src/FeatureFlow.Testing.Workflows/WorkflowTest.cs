@@ -37,6 +37,9 @@ public sealed class WorkflowTest
     public List<int> ExpectValidationErrors { get; } = [];
     public Dictionary<string, long> ExpectExecutions { get; } = new(StringComparer.Ordinal);
     public List<string>? ExpectEscalated { get; init; }
+
+    /// <summary>The steps a <c>clean_up</c> route reset the branch for, in order.</summary>
+    public List<string>? ExpectCleanUp { get; init; }
 }
 
 public static class WorkflowTestReader
@@ -76,6 +79,7 @@ public static class WorkflowTestReader
             ExpectPathIncludes = expect?.Has("path_includes") == true ? expect.StringList("path_includes").ToList() : null,
             ExpectStatus = expect?.Enum("status", ["running", "completed", "failed", "rejected", "partial", "aborted", "incomplete"]),
             ExpectEscalated = expect?.Has("escalated") == true ? expect.StringList("escalated").ToList() : null,
+            ExpectCleanUp = expect?.Has("clean_up") == true ? expect.StringList("clean_up").ToList() : null,
         };
 
         if (MapReader.Of(r.Node("parameters"), d, "parameters") is { } ps)
@@ -91,7 +95,12 @@ public static class WorkflowTestReader
             foreach (var (key, value) in script.Map.Entries)
             {
                 script.Node(key.Text);
-                var visits = (value is YSeq seq ? seq.Items : [value]).Select(v => ReadVisit(v, d)).OfType<Visit>().ToList();
+                // A work error fails `times` executions, each a visit of its own, then `then` (LOG 75).
+                var visits = (value is YSeq seq ? seq.Items : [value]).Select(v => ReadVisit(v, d)).OfType<Visit>()
+                    .SelectMany(v => v.Error == "work"
+                        ? Enumerable.Repeat(new Visit(null, "work"), v.Times).Concat(v.Outcome is null ? [] : [new Visit(v.Outcome)])
+                        : [v])
+                    .ToList();
                 if (visits.Count > 0)
                     test.Script[key.Text] = visits;
             }

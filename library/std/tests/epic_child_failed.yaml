@@ -1,0 +1,26 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: epic_child_failed
+description: >-
+  One of two tickets fails. The children's join (all) reports any_failed, which
+  plan_children leaves by its any_failed exit and the epic escalates. The epic's
+  own verification does not start.
+template: std:templates/epic_delivery
+parameters: { epic_name: billing, engine_can_merge: true }
+repositories: [acme/api]
+
+expand:
+  tickets.expand:
+    - { name: invoice_totals, repositories: [acme/api] }
+    - { name: invoice_export, repositories: [acme/api] }
+script:
+  tickets.children_1: failed
+
+expect:
+  status: running
+  escalated: [tickets.children]
+  executions:
+    tickets.children_0: 1
+    tickets.children_1: 1
+    verify.tests: 0
+    deliver.merge: 0

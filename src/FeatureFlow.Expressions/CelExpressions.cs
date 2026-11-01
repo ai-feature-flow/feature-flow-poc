@@ -56,7 +56,7 @@ public static class CelExpressions
     /// <summary>
     /// No macros. CEL's <c>all</c> and <c>exists</c> are comprehension macros, and Cel.NET estimates a
     /// comprehension over a list of unknown size at an unbounded cost, so the cost cap would refuse them
-    /// anyway; docs/03 section 5.2 also says "no comprehensions" (LOG 71, awaiting a decision).
+    /// anyway; docs/03 section 5.2 also says "no comprehensions" (LOG 71, approved 2026-11-02).
     /// </summary>
     public static readonly IReadOnlyList<string> AllowedMacros = [];
 

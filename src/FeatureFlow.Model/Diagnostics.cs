@@ -48,7 +48,9 @@ public static class Checks
     public const int ParallelRoutes = 15;
     public const int DecisionType = 16;
     public const int PlanSize = 17;
+    public const int RequiredParameters = 18;
     public const int ReferenceResolves = 19;
+    public const int LockedCap = 22;
     public const int PatchBaseRevision = 25;
     public const int PatchResumeAt = 26;
     public const int PatchProposer = 27;
@@ -77,7 +79,9 @@ public static class Checks
         [15] = "parallel branch routes",
         [16] = "decision type declared",
         [17] = "plan size",
+        [18] = "required parameters bound",
         [19] = "library reference resolves",
+        [22] = "organisation cap",
         [25] = "patch base revision current",
         [26] = "patch resume_at exists",
         [27] = "patch proposer may use the operation",

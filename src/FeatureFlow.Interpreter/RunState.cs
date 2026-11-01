@@ -46,8 +46,8 @@ public sealed class ContainerRecord
 public sealed record Entry(string StepId, bool CleanUp);
 
 /// <summary>
-/// The run's carried state (docs/02 section 2.1). Every collection is ordered, so the core's behaviour depends
-/// only on the plan and this state.
+/// The run's carried state (docs/02 section 2.1). Every collection the core iterates is a list or an ordinal
+/// sorted set, so the core's behaviour depends only on the plan and this state; dictionaries are only looked up.
 /// </summary>
 public sealed class RunState
 {
@@ -59,7 +59,7 @@ public sealed class RunState
     public List<Model.Plans.PatchDocument> Patches { get; } = [];
 
     /// <summary>Every step id that has been in any revision, for check 3.</summary>
-    public HashSet<string> IdHistory { get; } = new(StringComparer.Ordinal);
+    public SortedSet<string> IdHistory { get; } = new(StringComparer.Ordinal);
 
     public Dictionary<string, StepRecord> Steps { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, ContainerRecord> Containers { get; } = new(StringComparer.Ordinal);

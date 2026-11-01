@@ -1,0 +1,22 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: ticket_stale_output
+description: >-
+  Re-entry clears a step's outputs (DR12). The first catch-up reports
+  changed: true, so the ticket is re-tested. The second catch-up does not report
+  changed. Its guard must not read the first execution's true and re-test again:
+  it has no value, so the core raises an intervention at the catch-up.
+template: std:templates/ticket_delivery
+parameters: { ticket_id: FF-1042, engine_can_merge: true }
+repositories: [acme/api]
+
+outputs:
+  deliver.catch_up: [{ changed: true }, { changed: ~ }]   # ~: not reported
+
+expect:
+  status: running
+  escalated: [deliver.catch_up]
+  executions:
+    deliver.catch_up: 2
+    deliver.retest: 1
+    deliver.merge: 0

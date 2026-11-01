@@ -1,3 +1,4 @@
+using System.Globalization;
 using FeatureFlow.Expressions;
 using FeatureFlow.Model;
 using FeatureFlow.Model.Plans;
@@ -15,7 +16,10 @@ public sealed class EvaluationException(string message) : Exception(message);
 /// </summary>
 public static class Values
 {
-    /// <summary>Converts a reported value to its declared type, or returns an error.</summary>
+    /// <summary>
+    /// Converts a reported value to its declared type, or returns an error. Every number, whatever its declared
+    /// type, in a list or a map too, is a whole number (LOG 76): a fractional one is refused.
+    /// </summary>
     public static (object? Value, string? Error) Convert(object? value, string? type)
     {
         switch (type)
@@ -26,7 +30,7 @@ public static class Values
                     long l => (l, null),
                     int i => ((long)i, null),
                     double d when Math.Abs(d) < 9.2e18 && d == Math.Floor(d) => ((long)d, null),
-                    double d => (null, $"{d} is not a whole number; a number output holds a whole number (LOG 76)"),
+                    double d => (null, Fraction(d)),
                     decimal m when m == decimal.Floor(m) => ((long)m, null),
                     _ => (null, $"{Describe(value)} is not a number"),
                 };
@@ -51,19 +55,48 @@ public static class Values
 
                 return (null, $"{Describe(value)} is not a list");
             default:
-                return value switch
+                switch (value)
                 {
-                    int i => ((long)i, null),
-                    double d when Math.Abs(d) < 9.2e18 && d == Math.Floor(d) => ((long)d, null),
-                    _ => (value, null),
-                };
+                    case int i:
+                        return ((long)i, null);
+                    case double d when Math.Abs(d) < 9.2e18 && d == Math.Floor(d):
+                        return ((long)d, null);
+                    case double d:
+                        return (null, Fraction(d));
+                    case IReadOnlyDictionary<string, object?> map:
+                        return ConvertMap(map);
+                    case IDictionary<string, object?> map:
+                        return ConvertMap(map.ToDictionary(kv => kv.Key, kv => kv.Value));
+                    case System.Collections.IEnumerable items and not string:
+                        return Convert(items, "array");
+                    default:
+                        return (value, null);
+                }
         }
     }
+
+    static (object? Value, string? Error) ConvertMap(IReadOnlyDictionary<string, object?> map)
+    {
+        var result = new Dictionary<string, object?>(StringComparer.Ordinal);
+        foreach (var (key, item) in map)
+        {
+            var (converted, error) = Convert(item, null);
+            if (error is not null)
+                return (null, error);
+            result[key] = converted;
+        }
+
+        return (result, null);
+    }
+
+    static string Fraction(double d) =>
+        $"{d.ToString(CultureInfo.InvariantCulture)} is not a whole number; a number holds a whole number (LOG 76)";
 
     static string Describe(object? value) => value switch
     {
         null => "null",
         string s => $"'{s}'",
+        IFormattable f => f.ToString(null, CultureInfo.InvariantCulture),
         _ => value.ToString() ?? "?",
     };
 
@@ -74,6 +107,8 @@ public static class Values
         if (type is "string" && node is YScalar s && !s.IsNull)
             return s.Text;
         var (value, error) = Convert(plain, type is "number" or "boolean" or "array" ? type : null);
+        if (error is null && type is "number" && plain is not (long or double))
+            error = $"{Describe(plain)} is not a number";
         if (error is not null)
             throw new EvaluationException(error);
         return value;

@@ -1,6 +1,7 @@
 using FeatureFlow.Library;
 using FeatureFlow.Model;
 using FeatureFlow.Model.Plans;
+using FeatureFlow.Model.Yaml;
 using FeatureFlow.Validation;
 
 namespace FeatureFlow.Interpreter;
@@ -50,6 +51,8 @@ public sealed partial class RunCore
     {
         var diagnostics = new DiagnosticBag();
         var plan = Load(libraries, template, run, [], diagnostics);
+        if (plan is not null)
+            CheckParameters(plan, run, diagnostics);
         if (plan is null || diagnostics.HasErrors)
             return (null, diagnostics);
         var core = new RunCore(plan, run, options ?? new RunOptions(), libraries, template, findings);
@@ -63,6 +66,35 @@ public sealed partial class RunCore
         var core = new RunCore(plan, run, options ?? new RunOptions(), null, null, findings);
         core.Begin();
         return core;
+    }
+
+    /// <summary>
+    /// Check 18 at run start: every required parameter is bound, and every literal value has its declared type,
+    /// a <c>number</c> being a whole number (LOG 76). A value given by an expression is checked when it is read.
+    /// </summary>
+    static void CheckParameters(Plan plan, RunInfo run, DiagnosticBag d)
+    {
+        foreach (var decl in plan.Document.Parameters)
+        {
+            var node = run.Parameters.GetValueOrDefault(decl.Name) ?? decl.Default;
+            if (node is null)
+            {
+                if (decl.Required)
+                    d.Add(Checks.RequiredParameters, $"required parameter '{decl.Name}' is not bound", decl.Location);
+                continue;
+            }
+
+            if (node.IsSingleKeyMap("expr", out _))
+                continue;
+            try
+            {
+                Values.FromNode(node, decl.Type);
+            }
+            catch (EvaluationException e)
+            {
+                d.Add(Checks.RequiredParameters, $"parameter '{decl.Name}' ({decl.Type}): {e.Message}", node.Location);
+            }
+        }
     }
 
     internal static Plan? Load(LibrarySet libraries, LibraryReference template, RunInfo run, IReadOnlyList<PatchDocument> patches, DiagnosticBag diagnostics)
@@ -97,6 +129,7 @@ public sealed partial class RunCore
     /// </summary>
     public IReadOnlyList<Command> Advance()
     {
+        enteredWithoutProgress.Clear();
         while (State.Status == RunStatus.Running)
         {
             var index = State.Pending.FindIndex(e => !State.InFlight.Contains(e.StepId) && !WaitingOn(e.StepId));
@@ -114,6 +147,15 @@ public sealed partial class RunCore
         outbox.Clear();
         return commands;
     }
+
+    /// <summary>
+    /// Steps entered since the core last started a step or opened a wait. Entering one twice means routing has
+    /// gone round a cycle without running anything, for example an exhausted step routed back into itself: the
+    /// core escalates instead, so one <see cref="Advance"/> always returns.
+    /// </summary>
+    readonly HashSet<string> enteredWithoutProgress = new(StringComparer.Ordinal);
+
+    void Progressed() => enteredWithoutProgress.Clear();
 
     bool WaitingOn(string stepId) => State.Waits.Any(w => w.StepId == stepId && w.Kind == WaitKind.Decision);
 
@@ -136,14 +178,15 @@ public sealed partial class RunCore
             return;
         }
 
-        if (entry.CleanUp)
+        if (!enteredWithoutProgress.Add(step.Id))
         {
-            Trace("clean_up", step.Id);
-            outbox.Add(new CleanUp(step.Id));
+            Intervene(step.Id, null, $"routing returned to {step.Id} without running any step, for example an exhausted step routed back into a cycle");
+            return;
         }
 
         if (step.Container is not null)
         {
+            CleanUpFor(entry, step);
             EnterContainer(step);
             return;
         }
@@ -163,6 +206,7 @@ public sealed partial class RunCore
             }
 
             // Re-entry clears the current outcome, outputs and artifacts; the earlier execution stays readable (DR12).
+            CleanUpFor(entry, step);
             record.Previous = record.Current;
             record.Executions++;
             record.Current = new Execution { Number = record.Executions };
@@ -172,10 +216,12 @@ public sealed partial class RunCore
             State.InFlight.Add(step.Id);
             Trace("started", step.Id, $"execution {record.Executions}");
             outbox.Add(new StartStep(step.Id, record.Executions));
+            Progressed();
             return;
         }
 
         // A decision: no attempts (docs/01 section 3.2). Re-entry clears it like any step.
+        CleanUpFor(entry, step);
         record.Previous = record.Current;
         record.Executions++;
         record.Current = new Execution { Number = record.Executions };
@@ -189,6 +235,16 @@ public sealed partial class RunCore
 
         State.Waits.Add(new OpenWait(NewWaitId("decision"), WaitKind.Decision, step.Id, null, "decision"));
         outbox.Add(new OpenDecision(step.Id, record.Executions));
+        Progressed();
+    }
+
+    /// <summary>A <c>clean_up</c> route resets the branch only when the step will run, after the allowance check.</summary>
+    void CleanUpFor(Entry entry, Step step)
+    {
+        if (!entry.CleanUp)
+            return;
+        Trace("clean_up", step.Id);
+        outbox.Add(new CleanUp(step.Id));
     }
 
     static bool IsMerge(Step step) => step.Form == StepForm.Action && step.Action == "scm.merge";
@@ -270,7 +326,7 @@ public sealed partial class RunCore
             StepCompleted c => Completed(c),
             StepFailed f => Failed(f),
             DecisionAnswered a => Answered(a),
-            PatchProposed p => ProposeOutside(p.Patch),
+            PatchProposed p => ProposeOutside(p),
             PatchAnswered p => PatchDecision(p),
             FindingsChanged f => SetFindings(f),
             _ => ApplyResult.Refused($"unknown input {input.GetType().Name}"),
@@ -295,6 +351,21 @@ public sealed partial class RunCore
         if (errors.Count > 0)
             return new ApplyResult(false, errors);
 
+        // The proposer is the reporting step's form, never the document's claim (B2 of the M2 review).
+        var patch = c.Patch is null ? null : c.Patch with { ProposedBy = new Proposer(ProposerOf(step), step.Id) };
+        PatchResult? result = null;
+        if (patch is not null)
+        {
+            result = Propose(patch, step);
+            if (result.Status == PatchStatus.Rejected && patch.ProposedBy.Type == "agent")
+            {
+                // An invalid patch is an output contract error: the agent corrects it in correction turns
+                // (docs/03 section 10.3; M4). Nothing is recorded and no attempt is used.
+                return new ApplyResult(false,
+                    result.Diagnostics.Where(d => d.Blocks).Select(d => $"{step.Id}: patch check {d.Check}: {d.Message}").ToList(), result);
+            }
+        }
+
         var record = Record(step.Id);
         State.InFlight.Remove(step.Id);
         foreach (var (name, value) in outputs)
@@ -310,7 +381,7 @@ public sealed partial class RunCore
                 record.AttemptsUsed++;
         }
 
-        if (c.Patch is null)
+        if (patch is null)
         {
             Finish(step, record, c.Outcome);
             return ApplyResult.Ok;
@@ -318,18 +389,12 @@ public sealed partial class RunCore
 
         record.Current!.Outcome = c.Outcome;
         Trace("completed", step.Id, c.Outcome);
-        var result = Propose(c.Patch, step);
-        switch (result.Status)
+        switch (result!.Status)
         {
             case PatchStatus.Applied:
-                Resume(c.Patch, step.Id);
+                Resume(patch, step.Id);
                 break;
             case PatchStatus.Pending:
-                break;
-            case PatchStatus.Rejected when c.Patch.ProposedBy.Type == "agent":
-                // An invalid patch fails the attempt; the step is retried within its allowance (docs/01 section 3.2).
-                Trace("attempt_failed", step.Id, "its patch was rejected");
-                State.Pending.Add(new Entry(step.Id, false));
                 break;
             case PatchStatus.Rejected:
                 Intervene(step.Id, c.Outcome, "its patch was rejected: " + string.Join("; ", result.Diagnostics.Where(d => d.Blocks).Select(d => d.Message)));
@@ -338,6 +403,14 @@ public sealed partial class RunCore
 
         return new ApplyResult(true, [], result);
     }
+
+    /// <summary>Who proposes a patch a step reports: an agent step is an agent, an action the engine, a decision a person.</summary>
+    static string ProposerOf(Step step) => step.Form switch
+    {
+        StepForm.Agent => "agent",
+        StepForm.Decision => "human",
+        _ => "engine",
+    };
 
     /// <summary>Checks an outcome, outputs and artifacts against the step's contract (docs/09 section 3, output contracts).</summary>
     Dictionary<string, object?> CheckOutputs(Step step, StepCompleted c, List<string> errors)
@@ -362,6 +435,10 @@ public sealed partial class RunCore
             else
                 outputs[name] = converted;
         }
+
+        if (outcome is { Class: OutcomeClass.Success })
+            foreach (var declared in step.Outputs.Where(o => !outputs.ContainsKey(o.Name) && c.Outputs?.ContainsKey(o.Name) != true))
+                errors.Add($"{step.Id}: declared output '{declared.Name}' was not reported (LOG 79)");
 
         if (outcome is not null)
         {
@@ -586,7 +663,15 @@ public sealed partial class RunCore
         }
 
         State.Pending.RemoveAll(e => InContainer(e.StepId, containerId));
-        State.Waits.RemoveAll(w => InContainer(w.StepId, containerId));
+        foreach (var wait in State.Waits.Where(w => InContainer(w.StepId, containerId)).ToList())
+            CloseWaitFor(wait);
+    }
+
+    void CloseWaitFor(OpenWait wait)
+    {
+        State.Waits.Remove(wait);
+        Trace("wait_closed", wait.StepId, wait.Id);
+        outbox.Add(new CloseWait(wait.Id, wait.StepId));
     }
 
     void Intervene(string stepId, string? outcome, string reason)
@@ -595,6 +680,7 @@ public sealed partial class RunCore
         State.Waits.Add(wait);
         Trace("escalated", stepId, reason);
         outbox.Add(new RaiseIntervention(wait.Id, stepId, outcome, reason));
+        Progressed();
     }
 
     string NewWaitId(string kind) => $"{kind}-{State.NextWaitNumber++}";
@@ -610,7 +696,8 @@ public sealed partial class RunCore
 
         State.InFlight.Clear();
         State.Pending.Clear();
-        State.Waits.Clear();
+        foreach (var wait in State.Waits.ToList())
+            CloseWaitFor(wait);
         Trace("ended", stepId, $"{status.Name()} ({detail})");
         outbox.Add(new EndRun(status));
     }

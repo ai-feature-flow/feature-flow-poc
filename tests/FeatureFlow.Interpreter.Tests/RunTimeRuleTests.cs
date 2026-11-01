@@ -61,7 +61,148 @@ public class RunTimeRuleTests
             routes: { merged: { end: completed }, base_moved: merge }
         """;
 
-    static readonly Probe Lib = new("rules", ("loop", Loop), ("countdown", Countdown), ("unrouted", Unrouted));
+    /// <summary>A step whose exhaustion routes back into itself (review item B1).</summary>
+    const string SelfLoop = """
+        api_version: feature-flow/v1
+        kind: template
+        metadata: { name: selfloop, level: ticket }
+        defaults:
+          routes:
+            by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+        steps:
+          - id: work
+            action: test.run
+            routes: { passed: { end: completed }, failed: work, attempts_exhausted: work }
+        """;
+
+    /// <summary>The loop with a clean_up route back, and an allowance of 1.</summary>
+    const string CleanLoop = """
+        api_version: feature-flow/v1
+        kind: template
+        metadata: { name: cleanloop, level: ticket }
+        defaults:
+          routes:
+            by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+          limits: { attempts: 1 }
+        steps:
+          - id: work
+            action: test.run
+            routes: { failed: check }
+          - id: check
+            action: artifact.validate
+            routes: { invalid: { to: work, clean_up: true }, valid: { end: completed } }
+        """;
+
+    /// <summary>A guard on an action's published output.</summary>
+    const string CatchUp = """
+        api_version: feature-flow/v1
+        kind: template
+        metadata: { name: catchup, level: ticket }
+        defaults:
+          routes:
+            by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+        parameters:
+          threshold: { type: number, default: 2 }
+        steps:
+          - id: catch_up
+            action: scm.catch_up
+            routes:
+              updated:
+                - when: "steps.catch_up.outputs.changed && params.threshold > 1"
+                  to: { end: failed }
+                - to: { end: completed }
+        """;
+
+    static readonly Probe Lib = new("rules", ("loop", Loop), ("countdown", Countdown), ("unrouted", Unrouted),
+        ("selfloop", SelfLoop), ("cleanloop", CleanLoop), ("catchup", CatchUp));
+
+    /// <summary>Runs the driver on another thread and fails if it has not returned in 5 seconds.</summary>
+    static async Task RunWithin5Seconds(Driver driver)
+    {
+        var run = Task.Run(() => driver.Run(), TestContext.Current.CancellationToken);
+        var first = await Task.WhenAny(run, Task.Delay(5000, TestContext.Current.CancellationToken));
+        Assert.True(first == run, "the core did not return within 5 seconds");
+        await run;
+    }
+
+    [Fact]
+    public async Task An_exhausted_step_routed_back_into_itself_escalates_instead_of_looping()
+    {
+        var core = Lib.Start("selfloop");
+
+        await RunWithin5Seconds(new Driver(core) { Respond = (id, _) => new StepCompleted(id, "failed") });
+
+        Assert.Equal(RunStatus.Running, core.State.Status);
+        Assert.Equal(3, Driver.Path(core).Count);
+        Assert.Contains(core.State.Waits, w => w.StepId == "work" && w.Reason.Contains("without running any step"));
+    }
+
+    [Fact]
+    public async Task Reaching_the_run_ceiling_in_a_self_loop_escalates_instead_of_looping()
+    {
+        var core = Lib.Start("selfloop", new RunOptions { RunCeiling = 2, DefaultAttempts = 10 });
+
+        await RunWithin5Seconds(new Driver(core) { Respond = (id, _) => new StepCompleted(id, "failed") });
+
+        Assert.Equal(2, Driver.Path(core).Count);
+        Assert.Single(core.State.Waits);
+    }
+
+    [Fact]
+    public void Clean_up_is_emitted_only_when_the_step_will_run()
+    {
+        var core = Lib.Start("cleanloop", new RunOptions { DefaultAttempts = 2 });
+        var driver = new Driver(core) { Respond = (id, _) => new StepCompleted(id, id == "work" ? "failed" : "invalid") };
+        driver.Run();
+
+        // The template allows 1 attempt; the first clean_up route finds work exhausted, so no reset is asked for.
+        Assert.Empty(driver.Commands.OfType<CleanUp>());
+        Assert.Contains(core.State.Trace, t => t is { Kind: "exhausted", StepId: "work" });
+    }
+
+    [Fact]
+    public void A_fractional_number_parameter_is_refused_at_run_start()
+    {
+        var run = Probe.Run() with { Parameters = new Dictionary<string, FeatureFlow.Model.Yaml.YNode> { ["threshold"] = new FeatureFlow.Model.Yaml.YScalar("1.5", true, new SourceLocation("request", 1, 1)) } };
+
+        var (core, diagnostics) = RunCore.Start(Lib.Libraries, Probe.Ref("catchup"), run);
+
+        Assert.Null(core);
+        var d = Assert.Single(diagnostics, x => x.Blocks);
+        Assert.Equal(Checks.RequiredParameters, d.Check);
+        Assert.Contains("1.5 is not a whole number", d.Message);
+    }
+
+    [Fact]
+    public void A_fraction_in_a_list_or_in_an_unlisted_action_output_is_refused()
+    {
+        var catchUp = Lib.Start("catchup");
+        catchUp.Advance();
+        var loop = Lib.Start("loop");
+        loop.Advance();
+
+        var inList = catchUp.Apply(new StepCompleted("catch_up", "updated", new Dictionary<string, object?> { ["changed"] = true, ["changed_files"] = new List<object?> { 1L, 2.5 } }));
+        var unlisted = loop.Apply(new StepCompleted("work", "passed", new Dictionary<string, object?> { ["coverage"] = 0.85 }));
+
+        Assert.Contains(inList.Errors, e => e.Contains("not declared"));
+        Assert.False(unlisted.Accepted);
+        Assert.Contains("0.85 is not a whole number", unlisted.Errors.Single());
+    }
+
+    [Fact]
+    public void A_declared_output_must_be_reported_on_a_success_outcome()
+    {
+        var core = Lib.Start("countdown");
+        core.Advance();
+        var claims = new Dictionary<string, string> { ["fix_claims"] = "artifact:fix" };
+
+        var missing = core.Apply(new StepCompleted("fix", "fixed", null, claims));
+        var blocked = core.Apply(new StepCompleted("fix", "blocked"));
+
+        Assert.False(missing.Accepted);
+        Assert.Contains("declared output 'left' was not reported", missing.Errors.Single());
+        Assert.True(blocked.Accepted);
+    }
 
     static StepCompleted Fixed(long left) => new("fix", "fixed", new Dictionary<string, object?> { ["left"] = left },
         new Dictionary<string, string> { ["fix_claims"] = "artifact:fix" });
@@ -228,15 +369,15 @@ public class RunTimeRuleTests
     [Fact]
     public void A_guard_that_cannot_be_evaluated_raises_an_intervention()
     {
-        var core = Lib.Start("countdown");
-        new Driver(core).Advance();
+        var core = Lib.Start("catchup");
+        core.Advance();
 
-        // The step reports no 'left', so the guard has nothing to read.
-        core.Apply(new StepCompleted("fix", "fixed", null, new Dictionary<string, string> { ["fix_claims"] = "artifact:fix" }));
+        // scm.catch_up publishes 'changed', but this execution did not report it, so the guard has nothing to read.
+        Assert.True(core.Apply(new StepCompleted("catch_up", "updated")).Accepted);
         var commands = core.Advance();
 
         var intervention = Assert.Single(commands.OfType<RaiseIntervention>());
-        Assert.Contains("has not reported output 'left'", intervention.Reason);
+        Assert.Contains("has not reported output 'changed'", intervention.Reason);
         Assert.Equal(RunStatus.Running, core.State.Status);
     }
 }

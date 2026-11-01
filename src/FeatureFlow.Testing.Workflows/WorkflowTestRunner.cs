@@ -90,11 +90,13 @@ public static class WorkflowTestRunner
         var patchPending = test.Patch is not null;
         if (test.Patch is { ProposedBy.StepId: null })
         {
-            Record(core.Apply(new PatchProposed(test.Patch)), observedChecks, patchDiagnostics, failures);
+            // The test file stands in for the API, which names the authenticated proposer (F8).
+            Record(core.Apply(new PatchProposed(test.Patch, test.Patch.ProposedBy)), observedChecks, patchDiagnostics, failures);
             patchPending = false;
         }
 
         var queue = new List<(string StepId, int Execution, bool Decision)>();
+        var cleanUps = new List<string>();
         var tries = new Dictionary<(string, int), int>();
         var inputs = 0;
         while (true)
@@ -111,6 +113,9 @@ public static class WorkflowTestRunner
                         break;
                     case CancelStep c:
                         queue.RemoveAll(q => q.StepId == c.StepId);
+                        break;
+                    case CleanUp c:
+                        cleanUps.Add(c.StepId);
                         break;
                 }
             }
@@ -174,6 +179,13 @@ public static class WorkflowTestRunner
             }
 
             var result = core.Apply(input);
+            if (!result.Accepted && result.Patch is { Status: PatchStatus.Rejected } && input is StepCompleted withPatch)
+            {
+                // An agent's invalid patch is a contract error; in a correction turn the agent withdraws it.
+                Record(new ApplyResult(true, [], result.Patch), observedChecks, patchDiagnostics, failures);
+                result = core.Apply(withPatch with { Patch = null });
+            }
+
             if (!result.Accepted)
             {
                 failures.Add("the script was refused: " + string.Join("; ", result.Errors));
@@ -191,8 +203,10 @@ public static class WorkflowTestRunner
 
         var path = core.State.Trace.Where(t => t.Kind == "started").Select(t => t.StepId).ToList();
         var status = core.State.Status.Name();
-        foreach (var t in core.State.Trace.Where(t => t.Kind == "evaluation_failed"))
+        foreach (var t in core.State.Trace.Where(t => t.Kind == "evaluation_failed" && test.ExpectEscalated?.Contains(t.StepId) != true))
             failures.Add($"{t.StepId}: {t.Detail}");
+        if (test.ExpectCleanUp is { } expectCleanUp && !expectCleanUp.SequenceEqual(cleanUps))
+            failures.Add($"clean_up commands were [{string.Join(", ", cleanUps)}], expected [{string.Join(", ", expectCleanUp)}]");
 
         CompareChecks(test, observedChecks, failures, patchDiagnostics);
         if (test.ExpectStatus is { } expected && expected != status)
@@ -266,9 +280,13 @@ public static class WorkflowTestRunner
         foreach (var name in names.Distinct())
             outputs[name] = Zero(RunCore.OutputType(step, name), name);
 
+        // `~` means the step does not report the output (LOG 75).
         if (scripted is { Count: > 0 })
             foreach (var (key, value) in scripted[Math.Min(execution - 1, scripted.Count - 1)].Entries)
-                outputs[key.Text] = value.ToPlain();
+                if (value is YScalar { IsNull: true })
+                    outputs.Remove(key.Text);
+                else
+                    outputs[key.Text] = value.ToPlain();
         return outputs;
     }
 

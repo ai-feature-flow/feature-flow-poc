@@ -37,6 +37,7 @@ public class WorkflowTestRunnerTests
             "ticket_main_path", "ticket_fix_loop", "ticket_fix_exhausted", "ticket_base_moved",
             "epic_main_path", "epic_fix_loop", "epic_fix_exhausted", "epic_base_moved",
             "project_main_path", "project_fix_loop", "project_plan_exhausted", "project_base_moved", "project_partial_delivery",
+            "epic_child_failed", "ticket_spec_rejected", "ticket_stale_output", "ticket_work_failures",
         ];
 
         Assert.Empty(required.Except(Directory.GetFiles(StdTests, "*.yaml").Select(Path.GetFileNameWithoutExtension)));

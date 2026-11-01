@@ -1,0 +1,17 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: ticket_work_failures
+description: >-
+  The implementer's first two attempts fail as work (output still invalid after
+  correction turns). Each uses an attempt; the third succeeds within the
+  allowance of 3, and the ticket merges.
+template: std:templates/ticket_delivery
+parameters: { ticket_id: FF-1042 }
+repositories: [acme/api]
+
+script:
+  implement: { error: work, times: 2, then: implemented }
+
+expect:
+  status: completed
+  executions: { implement: 3, verify.tests: 1 }

@@ -62,7 +62,26 @@ public class PatchTests
             routes: { complete: { end: completed }, partial: { end: partial } }
         """;
 
-    static readonly Probe Lib = new("patches", ("planned", Planned), ("expanding", Expanding));
+    /// <summary>Two branches that run at once, then a notice.</summary>
+    const string Lanes = """
+        api_version: feature-flow/v1
+        kind: template
+        metadata: { name: lanes, level: ticket }
+        defaults:
+          routes:
+            by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+        steps:
+          - id: lanes
+            parallel:
+              branches:
+                - { id: a, action: test.run }
+                - { id: b, action: test.run }
+            routes: { completed: done, any_failed: { escalate: true } }
+          - id: done
+            action: notify.send
+        """;
+
+    static readonly Probe Lib = new("patches", ("planned", Planned), ("expanding", Expanding), ("lanes", Lanes));
 
     static PatchDocument Patch(string yaml)
     {
@@ -94,6 +113,9 @@ public class PatchTests
         return (core, result);
     }
 
+    /// <summary>A patch from a person through the API, which names the proposer (F8).</summary>
+    static PatchProposed Human(PatchDocument patch) => new(patch, new Proposer("human", null));
+
     const string InsertLint = "  - { op: insert, after: build, step: { id: lint, action: analysis.run } }";
 
     [Fact]
@@ -109,14 +131,58 @@ public class PatchTests
     }
 
     [Fact]
-    public void Check_25_a_stale_base_revision_is_rejected_and_the_agents_attempt_fails()
+    public void Check_25_a_stale_base_revision_is_rejected_as_a_contract_error_without_using_an_attempt()
     {
         var (core, result) = Propose(ByPlanner, InsertLint, revision: 2);
 
+        Assert.False(result.Accepted);
         Assert.Equal(PatchStatus.Rejected, result.Patch!.Status);
         Assert.Equal([25], result.Patch.BlockingChecks);
         Assert.Equal(1, core.State.Revision);
-        Assert.Equal([new StartStep("plan", 2)], core.Advance().OfType<StartStep>());
+        Assert.Contains("plan", core.State.InFlight);
+        Assert.Equal((1, 1), (core.State.Steps["plan"].Executions, core.State.Steps["plan"].AttemptsUsed));
+        Assert.Empty(core.Advance().OfType<StartStep>());
+    }
+
+    [Fact]
+    public void A_planner_claiming_to_be_a_person_is_still_an_agent()
+    {
+        var (core, result) = Propose("{ proposed_by: { type: human, step_id: plan } }", "  - { op: remove, target: review }");
+
+        Assert.Equal(PatchStatus.Pending, result.Patch!.Status);
+        Assert.Equal([29], result.Patch.BlockingChecks);
+        Assert.NotNull(core.StepById("review"));
+    }
+
+    [Fact]
+    public void Removing_a_parallel_whose_branches_are_running_is_rejected()
+    {
+        var core = Lib.Start("lanes");
+        Assert.Equal(["a", "b"], core.Advance().OfType<StartStep>().Select(s => s.StepId));
+
+        var result = core.Apply(Human(Patch(Doc(ByHuman, "  - { op: remove, target: lanes }", resumeAt: "done"))));
+
+        Assert.Equal([28], result.Patch!.BlockingChecks);
+        Assert.Contains("a is running or waiting inside lanes", result.Patch.Diagnostics.Single().Message);
+        new Driver(core) { Respond = (id, _) => new StepCompleted(id, core.StepById(id)!.Outcomes()[0].Name) }.Run();
+        core.Apply(new StepCompleted("a", "passed"));
+        core.Apply(new StepCompleted("b", "passed"));
+        new Driver(core) { Respond = (id, _) => new StepCompleted(id, "sent") }.Run();
+        Assert.Equal(RunStatus.Completed, core.State.Status);
+    }
+
+    [Fact]
+    public void An_approved_patch_that_has_gone_stale_lets_the_proposer_route_on()
+    {
+        var (core, result) = Propose(ByPlanner, "  - { op: set, target: review, field: limits, value: { attempts: 1 } }");
+        var request = Assert.Single(core.Advance().OfType<RequestPatchApproval>());
+        core.Apply(Human(Patch(Doc(ByHuman, "  - { op: set, target: ship, field: limits, value: { attempts: 2 } }", resumeAt: "ship"))));
+        core.Advance();
+
+        var answer = core.Apply(new PatchAnswered(request.WaitId, Approve: true));
+
+        Assert.Equal([25], answer.Patch!.BlockingChecks);
+        Assert.Contains(new StartStep("build", 1), core.Advance());
     }
 
     [Fact]
@@ -132,7 +198,7 @@ public class PatchTests
     {
         var core = Lib.Start("planned");
         core.Advance();
-        var byBuild = core.Apply(new PatchProposed(Patch(Doc("{ proposed_by: { type: agent, step_id: build } }", InsertLint))));
+        var byBuild = core.Apply(new PatchProposed(Patch(Doc(ByPlanner, InsertLint)), new Proposer("agent", "build")));
         var (_, roleChange) = Propose(ByPlanner,
             "  - { op: replace, target: plan, step: { id: plan_again, agent: { role: std:roles/implementer, task: std:tasks/repair_failures }, outcomes: { done: success } } }",
             resumeAt: "build");
@@ -172,7 +238,7 @@ public class PatchTests
     {
         var core = Lib.Start("planned");
         core.Advance();
-        var result = core.Apply(new PatchProposed(Patch(Doc(ByHuman, "  - { op: remove, target: review }", resumeAt: "plan"))));
+        var result = core.Apply(Human(Patch(Doc(ByHuman, "  - { op: remove, target: review }", resumeAt: "plan"))));
 
         Assert.Equal(PatchStatus.Applied, result.Patch!.Status);
         Assert.Null(core.StepById("review"));
@@ -190,7 +256,7 @@ public class PatchTests
     }
 
     [Fact]
-    public void Check_30_a_patch_that_relaxes_a_floor_is_rejected()
+    public void Check_30_a_patch_that_relaxes_a_floor_is_rejected_and_check_22_one_above_a_cap()
     {
         var (_, widened) = Propose(ByPlanner,
             "  - { op: insert, after: build, step: { id: audit, agent: { role: std:roles/reviewer, task: std:tasks/repair_failures, write_access: repository }, outcomes: { done: success } } }");
@@ -199,8 +265,8 @@ public class PatchTests
 
         Assert.Equal([30], widened.Patch!.BlockingChecks);
         Assert.Contains("check 13", widened.Patch.Diagnostics.Single().Message);
-        Assert.Equal([30], ceiling.Patch!.BlockingChecks);
-        Assert.Contains("above the ceiling of 5", ceiling.Patch.Diagnostics.Single().Message);
+        Assert.Equal([22], ceiling.Patch!.BlockingChecks);
+        Assert.Contains("above the cap of 5", ceiling.Patch.Diagnostics.Single().Message);
     }
 
     [Fact]
@@ -209,8 +275,8 @@ public class PatchTests
         var (_, duplicate) = Propose(ByPlanner, "  - { op: insert, after: build, step: { id: ship, action: analysis.run } }");
         var core = Lib.Start("planned");
         core.Advance();
-        var removed = core.Apply(new PatchProposed(Patch(Doc(ByHuman, "  - { op: remove, target: ship }", resumeAt: "plan"))));
-        var reused = core.Apply(new PatchProposed(Patch(Doc(ByHuman, "  - { op: insert, after: review, step: { id: ship, action: analysis.run } }", revision: 2, resumeAt: "plan"))));
+        var removed = core.Apply(Human(Patch(Doc(ByHuman, "  - { op: remove, target: ship }", resumeAt: "plan"))));
+        var reused = core.Apply(Human(Patch(Doc(ByHuman, "  - { op: insert, after: review, step: { id: ship, action: analysis.run } }", revision: 2, resumeAt: "plan"))));
 
         Assert.Equal([3], duplicate.Patch!.BlockingChecks);
         Assert.Equal(PatchStatus.Applied, removed.Patch!.Status);
@@ -232,7 +298,7 @@ public class PatchTests
     {
         var core = Lib.Start("planned");
         core.Advance();
-        var result = core.Apply(new PatchProposed(Patch(Doc(ByHuman, """
+        var result = core.Apply(Human(Patch(Doc(ByHuman, """
               - { op: insert, before: review, step: { id: gate, action: analysis.run } }
               - { op: chain, target: ship, on_other: plan, step: { id: announce, action: notify.send } }
               - { op: set, target: build, field: routes.failed, value: build }
@@ -257,13 +323,13 @@ public class PatchTests
         driver.Run();
         var add = Patch(Doc(ByHuman, "  - { op: add_branch, target: lanes, step: { id: lane_a, action: test.run } }", resumeAt: "ship"));
 
-        Assert.Equal(PatchStatus.Applied, core.Apply(new PatchProposed(add)).Patch!.Status);
+        Assert.Equal(PatchStatus.Applied, core.Apply(Human(add)).Patch!.Status);
         core.Apply(new StepCompleted("ship", "sent"));
         core.Advance();
         var late = Patch(Doc(ByHuman, "  - { op: add_branch, target: lanes, step: { id: lane_b, action: test.run } }", revision: 2, resumeAt: "ship"));
 
         Assert.Contains("lane_a", core.State.InFlight);
-        Assert.Equal([28], core.Apply(new PatchProposed(late)).Patch!.BlockingChecks);
+        Assert.Equal([28], core.Apply(Human(late)).Patch!.BlockingChecks);
     }
 
     [Fact]

@@ -2,15 +2,16 @@ api_version: feature-flow/v1
 kind: workflow_test
 name: project_partial_delivery
 description: >-
-  The first repository merges; the person asked to merge the second declines.
-  The ordered delivery stops, the report says delivery was partial, and the
-  person chooses to fix forward. The run ends partial, not completed.
+  The person asked to merge the first repository declines. The ordered
+  delivery stops there: the second repository's merge never starts. The report
+  says delivery was partial, and the person chooses to fix forward. The run ends
+  partial, not completed.
 template: std:templates/project_delivery
 parameters: { project_name: invoicing }
 repositories: [acme/api, acme/web]
 
 script:
-  deliver.deliver_1.merge: declined
+  deliver.deliver_0.merge: declined
   deliver.report: partial
   deliver.recover: fix_forward
 expand:
@@ -20,10 +21,10 @@ expect:
   status: partial
   path_includes:
     - deliver.deliver_0.merge
-    - deliver.deliver_1.merge
     - deliver.report
     - deliver.recover
   executions:
     deliver.deliver_0.merge: 1
-    deliver.deliver_1.merge: 1
+    deliver.deliver_1.open_pr: 0
+    deliver.deliver_1.merge: 0
     deliver.revert_merges_0: 0

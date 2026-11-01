@@ -151,6 +151,12 @@ A runtime that cannot call MCP tools reports by writing the same `report` data
 to a file in its output folder. An agent that ends without reporting has failed
 its attempt.
 
+A `report` with a `success` outcome must give every output the step declares,
+each of its declared type (a `number` is whole). A missing or mistyped output
+is an output contract error: the errors go back to the agent for correction
+turns, like an invalid patch (LOG 76, 79). The interpreter's core refuses such
+a report from M2; correction turns arrive with the agent step in M4.
+
 ### 3.4 Questions (`ask_human`)
 
 From FF (RW14). The agent asks; the run opens a **question** decision
