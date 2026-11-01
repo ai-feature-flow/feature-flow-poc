@@ -1,0 +1,24 @@
+{
+  "variant": "n2",
+  "trial": "3",
+  "exit": 1,
+  "elapsed_seconds": 4.0,
+  "proxy_requests": 1,
+  "model_requests": 1,
+  "upstream_statuses": [
+    401
+  ],
+  "assistant_messages": 1,
+  "tokens": {
+    "input": 0,
+    "output": 0
+  },
+  "models": [
+    "claude-haiku-5-5"
+  ],
+  "env_txt_lines": 0,
+  "surfaced_in": [],
+  "checks": {
+    "C1 step completed": false
+  }
+}

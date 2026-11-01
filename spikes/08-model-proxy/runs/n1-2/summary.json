@@ -1,0 +1,20 @@
+{
+  "variant": "n1",
+  "trial": "2",
+  "exit": 1,
+  "elapsed_seconds": 182.7,
+  "proxy_requests": 0,
+  "model_requests": 0,
+  "upstream_statuses": [],
+  "assistant_messages": 1,
+  "tokens": {
+    "input": 0,
+    "output": 0
+  },
+  "models": [],
+  "env_txt_lines": 0,
+  "surfaced_in": [],
+  "checks": {
+    "C1 step completed": false
+  }
+}

@@ -77,6 +77,8 @@ with a change, and by what), or **superseded** (replaced).
 | DR16 | The agent runtime's MCP tool timeout exceeds `questions.timeout`, and the hook command's timeout exceeds the hook client's hold (SP2) | New | `docs/spikes/sp2-results.md` section 5.4 |
 | DR17 | The engine creates the step's output folder before the agent starts; a runtime's file tool may not create folders (SP3) | New | `docs/spikes/sp3-results.md` section 5.4 |
 | DR18 | Engine-side VCS operations reuse connections to the code host and retry connection failures as infrastructure; a merge push refused after such a retry checks whether its commit already landed (SP4) | New | `docs/02` section 6 |
+| DR19 | The sandbox gives the agent runtime a home directory and shell startup files controlled by the engine; a clean process environment is not enough, because the runtime's shell reads startup files (SP5) | New | `docs/spikes/sp5-results.md` section 5.2 |
+| DR20 | Engine components that call model or code-host APIs use the platform's trust store, so networks with TLS inspection work (SP5) | New | `docs/spikes/sp5-results.md` section 5.4 |
 
 ### 1.3 Workflow language
 
@@ -117,7 +119,7 @@ loops), were approved the same day. They stay in
 | R3 | A decision lost during continue-as-new | Answers recorded by the handler; the hand-over waits for running handlers (LOG 58) | Mitigated (SP1) |
 | R4 | Unstable review verdicts | Ledger; evidence-backed findings; separate review angles | Handled by design; the new reviewer not yet run |
 | R5 | Sandbox does not match CI | Tiers declared per repository; CI delegation | Mitigated (Spike 2) |
-| R6 | Credential exposure | Floors F2, F5, F6; per-step tokens | Partly mitigated; F5 and F6 not yet built |
+| R6 | Credential exposure | Floors F2, F5, F6; per-step tokens; the sandbox's own home (DR19) | Partly mitigated: F6 `proxy` mode evidenced for Claude Code (SP5); F5, Copilot CLI and `per_run_key` not yet |
 | R7 | An agent weakens protected steps | F3 in the patch path | Mitigated (Spike 1) |
 | R8 | Runs stall on people | Unbounded durable waits with reminders; stuck-run notifications | Mitigated in mechanism |
 | R9 | An organisation's distribution drifts from upstream | Configuration, providers and library overrides; contract and library tests | Residual |
@@ -167,6 +169,7 @@ Where the claims this design relies on were evidenced.
 | Copilot CLI fires `PreToolUse` on every tool call with a first-party model | SP3, `docs/spikes/sp3-results.md` section 5.3 |
 | Lock-free merging loses no merge and lands nothing untested with 3 to 5 tickets racing on GitHub; without the expected-revision push, merges are lost | SP4, `docs/spikes/sp4-results.md` sections 5.1 and 5.2 |
 | With an allowance of 3, 2 of 5 racing tickets escalate though their work is sound | SP4, `docs/spikes/sp4-results.md` section 5.3 |
+| Claude Code completes a step through a model proxy with no credential in its environment, and cannot fall back to another | SP5, `docs/spikes/sp5-results.md` section 5 |
 | The delivery model (library, free outcomes, traceability, engine evidence) works on a real feature | FF: 2 epics, 16 tickets, 3 repositories (`brief.md` section 3) |
 
 ---
@@ -181,7 +184,7 @@ What must be evidenced before the parts that depend on it are built.
 | SP2 | `ask_human` with Claude Code: a question open across a worker restart, answered afterwards | Question durability on the agent worker. **Done 2026-11-01: holds** (`docs/spikes/sp2-results.md`) | R22, R19 |
 | SP3 | The agent reporting contract over MCP on Claude Code and Copilot CLI, including correction turns | Runtimes use the engine tools reliably. **Done 2026-11-01: holds** (`docs/spikes/sp3-results.md`) | R23 |
 | SP4 | Lock-free merging with three or more concurrent tickets and forced races | `base_moved` loops and the allowance behave. **Done 2026-11-01: safe; allowance changed by LOG 61** (`docs/spikes/sp4-results.md`) | R10 |
-| SP5 | Model proxy: an agent completes a step with no model key in its environment | Floor F6 can be met with both runtimes | R6 |
+| SP5 | Model proxy: an agent completes a step with no model key in its environment | Floor F6 can be met with both runtimes. **Done 2026-11-01 for Claude Code only: holds** (`docs/spikes/sp5-results.md`); Copilot CLI not tested | R6 |
 | SP6 | Session resume on Windows (W0 from the first design) | Pattern C on Windows | R14 |
 
 SP1 to SP3 change how the engine is built and should run first.

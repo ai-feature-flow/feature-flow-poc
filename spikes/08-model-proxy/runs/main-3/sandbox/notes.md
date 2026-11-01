@@ -1,0 +1,3 @@
+- add(a, b) takes two numeric inputs, a and b.
+- add(a, b) returns the sum of a and b.
+- add(a, b) has no side effects and returns the same result for the same inputs.

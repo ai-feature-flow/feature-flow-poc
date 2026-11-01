@@ -1,0 +1,3 @@
+{"t": 1793509647.041, "method": "POST", "path": "/v1/messages?beta=true", "model": "claude-haiku-5-5", "status": 200, "step_token_ok": true, "input_tokens": 2, "output_tokens": 290, "error": null}
+{"t": 1793509651.961, "method": "POST", "path": "/v1/messages?beta=true", "model": "claude-haiku-5-5", "status": 200, "step_token_ok": true, "input_tokens": 2, "output_tokens": 1406, "error": null}
+{"t": 1793509653.544, "method": "POST", "path": "/v1/messages?beta=true", "model": "claude-haiku-5-5", "status": 200, "step_token_ok": true, "input_tokens": 2, "output_tokens": 180, "error": null}

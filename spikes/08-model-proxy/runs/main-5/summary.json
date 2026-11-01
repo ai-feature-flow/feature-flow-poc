@@ -1,0 +1,28 @@
+{
+  "variant": "main",
+  "trial": "5",
+  "exit": 0,
+  "elapsed_seconds": 12.7,
+  "proxy_requests": 3,
+  "model_requests": 3,
+  "upstream_statuses": [
+    200
+  ],
+  "assistant_messages": 3,
+  "tokens": {
+    "input": 6,
+    "output": 2040
+  },
+  "models": [
+    "claude-haiku-5-5"
+  ],
+  "env_txt_lines": 27,
+  "surfaced_in": [],
+  "checks": {
+    "E proxy forwarded at least one model request, all with the step token": true,
+    "C1 step completed": true,
+    "C2 no credential in the agent's environment": true,
+    "C3 all model traffic through the proxy": true,
+    "C4 credential never surfaced": true
+  }
+}

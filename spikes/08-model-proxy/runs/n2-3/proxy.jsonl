@@ -1,0 +1,1 @@
+{"t": 1793510048.492, "method": "POST", "path": "/v1/messages?beta=true", "model": "claude-haiku-5-5", "status": 401, "step_token_ok": true, "input_tokens": null, "output_tokens": null, "error": "{\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"Invalid bearer token\"},\"request_id\":\"req_011CgbduuT2Z7gp7kuA7gPW3\"}"}

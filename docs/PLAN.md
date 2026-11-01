@@ -103,7 +103,8 @@ Paths in all design documents are relative to the repository root.
 | Spike SP2: `ask_human` across an agent worker restart | Done 2026-11-01: holds. Results in `docs/spikes/sp2-results.md`; two design changes, approved: LOG 59 (the sandbox client owns question ids) and LOG 60 (it never returns an infrastructure error to the agent) |
 | Spike SP3: the agent reporting contract over MCP on Claude Code and Copilot CLI | Done 2026-11-01: holds on both. Results in `docs/spikes/sp3-results.md`; no LOG entries; DR17 added (the engine prepares the output folder) |
 | Spike SP4: lock-free merging under forced races | Done 2026-11-01: safe. Results in `docs/spikes/sp4-results.md`; one design change, approved: LOG 61 (a separate race allowance for `base_moved` loops); DR18 added |
-| Spikes SP5 and SP6 | **Next.** SP5: an agent completes a step with no model key in its environment (model proxy). SP6: session resume on Windows |
+| Spike SP5: an agent step behind a model proxy | Done 2026-11-01 for Claude Code: holds. Results in `docs/spikes/sp5-results.md`; DR19 (the sandbox's own home) and DR20 (platform trust store) added; Copilot CLI not tested, for want of an API key |
+| Spike SP6 | **Next.** Session resume on Windows (W0 from the first design) |
 | The standard library as files (`docs/08` section 6) | Not started |
 
 ## 7. How to resume
