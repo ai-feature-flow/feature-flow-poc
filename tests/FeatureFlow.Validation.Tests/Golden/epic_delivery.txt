@@ -1,0 +1,47 @@
+Template epic_delivery (level epic)
+  policy: deliver.merge engine_can_merge = params.engine_can_merge (default false)
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  #  id                             form      role / action              access  status   routes (non-default)
+  1  baseline.tests                 action    test.run                   -       pending  failed->escalate(std:prompts/baseline_failed)  baseline_failed->escalate(std:prompts/baseline_failed)
+  2  baseline.analysis              action    analysis.run               -       pending  failed->escalate(std:prompts/baseline_failed)
+  3  design                         agent     designer                   none    pending
+  4  validate_design                action    artifact.validate          -       pending  invalid->design
+  5  tickets.plan                   agent     planner                    none    pending
+  6  tickets.validate               action    artifact.validate          -       pending  invalid->tickets.plan
+  7  tickets.approve                decision  epic.ticket_plan_approval  -       pending  rejected->tickets.plan
+  8  tickets.expand                 action    plan.expand                -       pending
+  9  tickets.children               parallel  join all, max 2            -       pending
+ 10  verify.tests                   action    test.run                   -       pending  failed->verify.repair  baseline_failed->escalate(std:prompts/baseline_failed)  [protected]
+ 11  verify.analysis                action    analysis.run               -       pending  failed->verify.repair  [protected]
+ 12  verify.review.review           for_each  join all                   -       pending  completed->[if findings.repeat_fixes > 0: escalate; if findings.open_blocking == 0 && params.check_satisfaction: verify.satisfaction; if findings.open_blocking == 0: trace.trace; else verify.fix.triage]  [protected]
+ 13  verify.review.review_0.assess  agent     reviewer                   none    pending  reviewed->[if steps.assess.outputs.changed_files_unread > 0: verify.review.review_0.assess; else verify.review.review_0.record]  [protected]
+ 14  verify.review.review_0.record  action    findings.record            -       pending  [protected]
+ 15  verify.review.review_1.assess  agent     reviewer                   none    pending  reviewed->[if steps.assess.outputs.changed_files_unread > 0: verify.review.review_1.assess; else verify.review.review_1.record]  [protected]
+ 16  verify.review.review_1.record  action    findings.record            -       pending  [protected]
+ 17  verify.review.review_2.assess  agent     reviewer                   none    pending  reviewed->[if steps.assess.outputs.changed_files_unread > 0: verify.review.review_2.assess; else verify.review.review_2.record]  [protected]
+ 18  verify.review.review_2.record  action    findings.record            -       pending  [protected]
+ 19  verify.review.review_3.assess  agent     reviewer                   none    pending  reviewed->[if steps.assess.outputs.changed_files_unread > 0: verify.review.review_3.assess; else verify.review.review_3.record]  [protected]
+ 20  verify.review.review_3.record  action    findings.record            -       pending  [protected]
+ 21  verify.review.review_4.assess  agent     reviewer                   none    pending  reviewed->[if steps.assess.outputs.changed_files_unread > 0: verify.review.review_4.assess; else verify.review.review_4.record]  [protected]
+ 22  verify.review.review_4.record  action    findings.record            -       pending  [protected]
+ 23  verify.fix.triage              agent     triager                    none    pending  [protected]
+ 24  verify.fix.apply_triage        action    findings.triage            -       pending  applied->[if steps.triage.outputs.escalated > 0: escalate; if steps.triage.outputs.to_fix == 0: verify.tests; else verify.fix.fix]  [protected]
+ 25  verify.fix.fix                 agent     fixer                      branch  pending  [protected]
+ 26  verify.fix.verify_fix          agent     reviewer                   none    pending  not_fixed->verify.fix.fix  [protected]
+ 27  verify.fix.record_fixes        action    findings.triage            -       pending  [protected]
+ 28  verify.fix.tests_added         action    artifact.validate          -       pending  valid->verify.tests  invalid->verify.fix.fix  [protected]
+ 29  verify.satisfaction            action    artifact.validate          -       pending  valid->trace.trace  invalid->verify.repair  [protected]
+ 30  verify.repair                  agent     fixer                      branch  pending  repaired->verify.tests  [protected]
+ 31  trace.trace                    action    artifact.validate          -       pending  [protected]
+ 32  deliver.open_pr                action    scm.pull_request           -       pending  ready->[if params.external_findings != '': deliver.external_review; else deliver.checks]  [protected]
+ 33  deliver.external_review        action    findings.record            -       pending  recorded->[if findings.open_blocking > 0: verify.tests; else deliver.checks]  unavailable->deliver.checks  [protected]
+ 34  deliver.checks                 action    ci.checks                  -       pending  failed->verify.tests  [protected]
+ 35  deliver.catch_up               action    scm.catch_up               -       pending  updated->[if steps.catch_up.outputs.changed: deliver.retest; else deliver.merge]  conflict->deliver.resolve_conflict  [protected]
+ 36  deliver.retest                 action    test.run                   -       pending  passed->deliver.checks  failed->verify.tests  [protected]
+ 37  deliver.resolve_conflict       agent     conflict_resolver          branch  pending  resolved->verify.tests  [protected]
+ 38  deliver.merge                  action    scm.merge                  -       pending  base_moved->deliver.catch_up  checks_failed->verify.tests  declined->end(rejected)  [protected]
+
+Protected: verify.*, trace.*, deliver.*
+Defaults: blocked, failure -> escalate; success -> next; attempts_exhausted -> escalate
+Fragments: baseline = std:fragments/baseline; tickets = std:fragments/plan_children; verify = std:fragments/verify_and_review; verify.review = std:fragments/standard_review; verify.fix = std:fragments/fix_loop; trace = std:fragments/trace; deliver = std:fragments/merge_into_parent
+for_each verify.review.review: 5 item(s) from params.angles, parallel

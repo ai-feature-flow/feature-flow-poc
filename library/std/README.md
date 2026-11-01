@@ -4,10 +4,11 @@ The workflow content that ships with Feature Flow: the delivery process Feature
 Factory proved, with the first design's review and merge improvements. It is
 policy, not engine: any of it may be replaced (`docs/08` section 6).
 
-Status: written 2026-11-01 against the design, before any engine exists.
-Nothing here has been loaded by a validator; a scratch structural check found
-no unresolved references, unknown route targets, unrouted outcomes or unbound
-task variables. The formats the design left open are LOG 62 to 65, approved 2026-11-01.
+Status: written 2026-11-01 against the design. Since build milestone M1
+(2026-11-02), `ff validate library/std` loads every template and fragment with
+no diagnostic, and the readable forms of the three templates are golden files
+in `tests/FeatureFlow.Validation.Tests/Golden/`. The formats the design left
+open are LOG 62 to 65, approved 2026-11-01.
 
 | Folder | Holds |
 |---|---|
@@ -22,5 +23,5 @@ task variables. The formats the design left open are LOG 62 to 65, approved 2026
 | `status_map.yaml` | The abstract tracker statuses templates use |
 
 Not yet written: workflow test files (`docs/09` section 4.3), which need the
-validator, and tracker or pull request skills, which depend on the toolsets an
-organisation configures.
+interpreter's core (M2), and tracker or pull request skills, which depend on the
+toolsets an organisation configures.

@@ -101,3 +101,15 @@ owner on 2026-11-01.
 | 68 | 11 M4 | The model proxy (floor F6, `proxy` mode) is served by the agent worker beside the hook endpoint and engine MCP server, and authenticates requests by the per-step token | `docs/02` names no component for the proxy; the agent worker already validates per-step tokens and is reachable from sandboxes | **Yes**: places a component the design left open. Approved 2026-11-01 |
 | 69 | 11 s1, s3 | The solo profile is built end to end first (Docker sandbox, SQLite, filesystem store, directory library, GitHub, Claude Code); team and enterprise providers come last | The first real run needs no new infrastructure, as in the spikes; provider interfaces make the later providers additions | Medium. Approved 2026-11-01 |
 | 70 | 11 M1 | Negative tests for the load checks are mutations of std's templates, each expected to trigger one check number | A check shown to fire only on a contrived input may pass by construction (`CONTRIBUTING.md`, "Verify, do not assert") | Low. Approved 2026-11-01 |
+
+## From M1
+
+Entries 71 to 74, from building the plan loader and validator (`docs/11`, M1).
+**Unreviewed.**
+
+| # | Where | Decision | Why | Needs a look? |
+|---|---|---|---|---|
+| 71 | 03 s5.2 | CEL macros are off: `all`, `any` and `exists` are not available. The cost cap is Cost.Max 100, Spike 1's figure | CEL implements `all` and `exists` as comprehension macros, and Cel.NET estimates a comprehension over a list of unknown length at an unbounded cost (Cost.Max 9223372036854775807), so the cost cap refuses them anyway. Section 5.2 also says "no comprehensions". `any` is not a CEL name. Std uses none of them. Keeping them would need the cost estimate to assume a list bound, such as the 16 entries an output may hold | **Yes**: removes three functions section 5.2 lists |
+| 72 | 03 s4.3, s11 | A fragment's steps take route defaults from the fragment's own `defaults`, then from its caller's, up to the template | The language does not say. Std's fragments set no defaults and rely on the template's: without this, `fix_loop`'s triager and fixer have no route for `blocked` | Medium |
+| 73 | 08 s1; 09 check 35 | A YAML library item is deprecated by `metadata.deprecated: { replacement: <reference>, reason }`. Check 35 warns where a plan references a deprecated role, artifact type or fragment | Check 35 needs a format and no document gives one. Markdown items (tasks, prompts, skills) cannot be marked yet | Low |
+| 74 | 09 check 10 | A cycle's "route out" is a route, on some declared outcome of a step in the cycle, to a step outside it or to an end. Escalations and the engine's `attempts_exhausted` default do not count | Every step that uses attempts has the `attempts_exhausted` escalation, so counting it would make the check pass on every cycle. A cycle whose only way out is a person is the loop Spike 3 ran 213 times | Medium |

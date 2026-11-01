@@ -6,4 +6,8 @@
     <RootNamespace>FeatureFlow.Cli</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\FeatureFlow.Validation\FeatureFlow.Validation.csproj" />
+  </ItemGroup>
+
 </Project>

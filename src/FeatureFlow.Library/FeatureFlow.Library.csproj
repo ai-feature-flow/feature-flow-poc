@@ -1,2 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\FeatureFlow.Model\FeatureFlow.Model.csproj" />
+    <ProjectReference Include="..\FeatureFlow.Expressions\FeatureFlow.Expressions.csproj" />
+  </ItemGroup>
+
 </Project>
