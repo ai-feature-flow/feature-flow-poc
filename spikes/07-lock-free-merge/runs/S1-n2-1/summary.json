@@ -1,0 +1,43 @@
+{
+  "scenario": "S1",
+  "variant": "n2",
+  "run": "1",
+  "prefix": "sp4/S1-n2-1-1793505944",
+  "evidence_tag": "sp4/S1-n2-1-1793505944/final",
+  "elapsed_seconds": 19.6,
+  "timed_out": false,
+  "merge_executions": {
+    "0": 3,
+    "1": 1,
+    "2": 2
+  },
+  "final_parent": "c8e7b62009b6c3b6134fe7b59372c728fb7dd2ed",
+  "first_parent_chain": [
+    "c8e7b62009b6c3b6134fe7b59372c728fb7dd2ed",
+    "3b1a3ad06d429cd736eb5b9b939b2666a86d5882",
+    "e134309b6c535c17a1284e377b4798b697a07cc1"
+  ],
+  "outcomes": {
+    "0": "merged",
+    "1": "merged",
+    "2": "merged"
+  },
+  "refusals": 3,
+  "lost": [],
+  "untested": [
+    0,
+    2
+  ],
+  "malformed": [
+    "0: changed catch_up not followed by test (['catch_up', 'merge', 'catch_up'])",
+    "0: changed catch_up not followed by test (['catch_up', 'merge'])",
+    "2: changed catch_up not followed by test (['catch_up', 'merge'])"
+  ],
+  "checks": {
+    "E1 base_moved refusals == 3": true,
+    "C1 no lost merge": true,
+    "C2 nothing untested lands": false,
+    "C3 loops well formed; allowance respected": false,
+    "C4 termination as expected": true
+  }
+}

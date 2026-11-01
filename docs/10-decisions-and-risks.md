@@ -76,6 +76,7 @@ with a change, and by what), or **superseded** (replaced).
 | DR15 | A hand-over waits for running signal and update handlers to finish before it continues-as-new (SP1) | New | `docs/02` section 3 |
 | DR16 | The agent runtime's MCP tool timeout exceeds `questions.timeout`, and the hook command's timeout exceeds the hook client's hold (SP2) | New | `docs/spikes/sp2-results.md` section 5.4 |
 | DR17 | The engine creates the step's output folder before the agent starts; a runtime's file tool may not create folders (SP3) | New | `docs/spikes/sp3-results.md` section 5.4 |
+| DR18 | Engine-side VCS operations reuse connections to the code host and retry connection failures as infrastructure; a merge push refused after such a retry checks whether its commit already landed (SP4) | New | `docs/02` section 6 |
 
 ### 1.3 Workflow language
 
@@ -119,7 +120,7 @@ to the agent), were approved the same day. They stay in
 | R7 | An agent weakens protected steps | F3 in the patch path | Mitigated (Spike 1) |
 | R8 | Runs stall on people | Unbounded durable waits with reminders; stuck-run notifications | Mitigated in mechanism |
 | R9 | An organisation's distribution drifts from upstream | Configuration, providers and library overrides; contract and library tests | Residual |
-| R10 | Concurrent work in one repository conflicts | Catch up, re-test if changed, merge refused if the parent moved; merge allowance | Lock-free form not spiked |
+| R10 | Concurrent work in one repository conflicts | Catch up, re-test if changed, merge refused if the parent moved; race allowance (LOG 61) | Mitigated for the lock-free form (SP4) |
 | R11 | A long agent step restarts from scratch | Sandbox outlives the worker; durable resume state; hidden reference | Mitigated, with the Spike 3 gap fixed in design |
 | R13 | Run cost unknown | Cost recorded per step | Mitigated (Spike 2) |
 | R14 | Pattern C on Windows | Claude Code hooks fired on Windows | Partly answered |
@@ -163,6 +164,8 @@ Where the claims this design relies on were evidenced.
 | An agent given an infrastructure error by an engine tool improvises a result | SP2, `docs/spikes/sp2-results.md` section 5.3 |
 | Claude Code and Copilot CLI report, correct, fall back to a file, wait on a question and stop when told, through MCP | SP3, `docs/spikes/sp3-results.md` section 5.1 |
 | Copilot CLI fires `PreToolUse` on every tool call with a first-party model | SP3, `docs/spikes/sp3-results.md` section 5.3 |
+| Lock-free merging loses no merge and lands nothing untested with 3 to 5 tickets racing on GitHub; without the expected-revision push, merges are lost | SP4, `docs/spikes/sp4-results.md` sections 5.1 and 5.2 |
+| With an allowance of 3, 2 of 5 racing tickets escalate though their work is sound | SP4, `docs/spikes/sp4-results.md` section 5.3 |
 | The delivery model (library, free outcomes, traceability, engine evidence) works on a real feature | FF: 2 epics, 16 tickets, 3 repositories (`brief.md` section 3) |
 
 ---
@@ -176,7 +179,7 @@ What must be evidenced before the parts that depend on it are built.
 | SP1 | Continue-as-new in a parent with running children, an open decision and a gate answered during the hand-over | The new safe-point rule loses nothing. **Done 2026-11-01: holds** (`docs/spikes/sp1-results.md`) | R21, R3 |
 | SP2 | `ask_human` with Claude Code: a question open across a worker restart, answered afterwards | Question durability on the agent worker. **Done 2026-11-01: holds** (`docs/spikes/sp2-results.md`) | R22, R19 |
 | SP3 | The agent reporting contract over MCP on Claude Code and Copilot CLI, including correction turns | Runtimes use the engine tools reliably. **Done 2026-11-01: holds** (`docs/spikes/sp3-results.md`) | R23 |
-| SP4 | Lock-free merging with three or more concurrent tickets and forced races | `base_moved` loops and the allowance behave | R10 |
+| SP4 | Lock-free merging with three or more concurrent tickets and forced races | `base_moved` loops and the allowance behave. **Done 2026-11-01: safe; allowance changed by LOG 61** (`docs/spikes/sp4-results.md`) | R10 |
 | SP5 | Model proxy: an agent completes a step with no model key in its environment | Floor F6 can be met with both runtimes | R6 |
 | SP6 | Session resume on Windows (W0 from the first design) | Pattern C on Windows | R14 |
 

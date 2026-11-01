@@ -335,7 +335,7 @@ Merges the work branch into its parent branch.
 | Inputs | `engine_can_merge` (default `true`), `squash` (default `false`), `require_checks` (default `true`: a passing `ci.checks` result for the exact head being merged must exist), `require_tested` (default `true`: a passing `test.run` result for the exact head being merged must exist). The organisation may lock either (`docs/05` section 3.1) |
 | Outcomes | `merged`; `base_moved` (the parent moved since catch-up); `checks_failed`; `declined` (a person asked to merge declined) |
 | Idempotency | If the parent already contains the merge, or a person's merge is on the code host, the merge happened: `merged` |
-| Limits | Attempts 3 by default. Every `base_moved` loop through catch-up re-enters this step, so the allowance bounds a work branch that keeps losing races, then escalates |
+| Limits | Attempts 3 by default, used by executions that end other than `base_moved`. A `base_moved` loop through catch-up re-enters this step and counts against `limits.races` instead (default 10), checked on every execution like any allowance (F4), so a work branch that keeps losing races is still bounded, then escalates. A refusal means a sibling merged, so the loop cannot spin without progress (SP4; LOG 61, unreviewed) |
 
 When the engine merges: it builds the merge commit (or squash commit) from
 exactly the head the evidence was recorded for, and pushes it to the parent,

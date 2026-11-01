@@ -1,0 +1,40 @@
+{
+  "scenario": "S2",
+  "variant": "main",
+  "run": "2",
+  "prefix": "sp4/S2-main-2-1793505690",
+  "evidence_tag": "sp4/S2-main-2-1793505690/final",
+  "elapsed_seconds": 44.1,
+  "timed_out": false,
+  "merge_executions": {
+    "0": 1,
+    "1": 3,
+    "2": 3,
+    "3": 2,
+    "4": 3
+  },
+  "final_parent": "fc38408f2c4a24788c817bfb92c314ba2f073b05",
+  "first_parent_chain": [
+    "fc38408f2c4a24788c817bfb92c314ba2f073b05",
+    "f317768a709902886595a71025305130848d52b1",
+    "612d69a5eb3a101fe5833a0e11f4c7bb4eeb2038"
+  ],
+  "outcomes": {
+    "0": "merged",
+    "1": "attempts_exhausted",
+    "2": "attempts_exhausted",
+    "3": "merged",
+    "4": "merged"
+  },
+  "refusals": 9,
+  "lost": [],
+  "untested": [],
+  "malformed": [],
+  "checks": {
+    "E1 base_moved refusals >= 1 (across S2 runs)": true,
+    "C1 no lost merge": true,
+    "C2 nothing untested lands": true,
+    "C3 loops well formed; allowance respected": true,
+    "C4 termination as expected": true
+  }
+}

@@ -1,0 +1,19 @@
+{"t": 1793505917.402, "ticket": null, "event": "setup", "prefix": "sp4/S1-n1-1-1793505908", "setup_parent": "5dd0108fc9e9a3e4af18995fc68eed6f0a9231ac", "tickets": 3, "allowance": 3, "forced": true}
+{"t": 1793505918.747, "ticket": 0, "event": "catch_up", "changed": false, "recorded_parent": "5dd0108fc9e9a3e4af18995fc68eed6f0a9231ac", "head": "1103632df92a2da4cc2f4ad05fe9a9f4119d75e6"}
+{"t": 1793505918.748, "ticket": 2, "event": "catch_up", "changed": false, "recorded_parent": "5dd0108fc9e9a3e4af18995fc68eed6f0a9231ac", "head": "8e6c65d9cd485b27faf7a9c6c9006712f2295c26"}
+{"t": 1793505918.749, "ticket": 1, "event": "catch_up", "changed": false, "recorded_parent": "5dd0108fc9e9a3e4af18995fc68eed6f0a9231ac", "head": "43b237842b558531bba0f4904a36b3ab52ccb7d1"}
+{"t": 1793505918.759, "ticket": 0, "event": "test", "tested_head": "1103632df92a2da4cc2f4ad05fe9a9f4119d75e6", "seconds": 1.0}
+{"t": 1793505918.759, "ticket": 1, "event": "test", "tested_head": "43b237842b558531bba0f4904a36b3ab52ccb7d1", "seconds": 1.0}
+{"t": 1793505918.76, "ticket": 2, "event": "test", "tested_head": "8e6c65d9cd485b27faf7a9c6c9006712f2295c26", "seconds": 1.0}
+{"t": 1793505921.835, "ticket": 1, "event": "merge", "result": "merged", "execution": 1, "commit": "788c1e308f1b3b3bccf78efc92b1e0ec30355cbc", "recorded_parent": "5dd0108fc9e9a3e4af18995fc68eed6f0a9231ac", "head": "43b237842b558531bba0f4904a36b3ab52ccb7d1", "tested": "43b237842b558531bba0f4904a36b3ab52ccb7d1"}
+{"t": 1793505924.253, "ticket": 0, "event": "merge", "result": "base_moved", "execution": 1, "recorded_parent": "5dd0108fc9e9a3e4af18995fc68eed6f0a9231ac", "detail": ["Done", "error: failed to push some refs to 'github.com-sparkkz-nz:ai-feature-flow/feature-flow-example.git'"]}
+{"t": 1793505924.589, "ticket": 2, "event": "merge", "result": "base_moved", "execution": 1, "recorded_parent": "5dd0108fc9e9a3e4af18995fc68eed6f0a9231ac", "detail": ["Done", "error: failed to push some refs to 'github.com-sparkkz-nz:ai-feature-flow/feature-flow-example.git'"]}
+{"t": 1793505927.416, "ticket": 0, "event": "catch_up", "changed": true, "recorded_parent": "788c1e308f1b3b3bccf78efc92b1e0ec30355cbc", "head": "8a8c4e55b17f4a2791fdf9450130b714192e01cf"}
+{"t": 1793505927.44, "ticket": 0, "event": "test", "tested_head": "8a8c4e55b17f4a2791fdf9450130b714192e01cf", "seconds": 1.0}
+{"t": 1793505928.091, "ticket": 2, "event": "catch_up", "changed": true, "recorded_parent": "788c1e308f1b3b3bccf78efc92b1e0ec30355cbc", "head": "58244d9260dac4bfa806722fae3ddb5a2762c704"}
+{"t": 1793505928.116, "ticket": 2, "event": "test", "tested_head": "58244d9260dac4bfa806722fae3ddb5a2762c704", "seconds": 1.0}
+{"t": 1793505931.028, "ticket": 0, "event": "merge", "result": "merged", "execution": 2, "commit": "7c93c348ac72e0d6a67842cb03ce0e8178870ea9", "recorded_parent": "788c1e308f1b3b3bccf78efc92b1e0ec30355cbc", "head": "8a8c4e55b17f4a2791fdf9450130b714192e01cf", "tested": "8a8c4e55b17f4a2791fdf9450130b714192e01cf"}
+{"t": 1793505933.593, "ticket": 2, "event": "merge", "result": "base_moved", "execution": 2, "recorded_parent": "788c1e308f1b3b3bccf78efc92b1e0ec30355cbc", "detail": ["Done", "error: failed to push some refs to 'github.com-sparkkz-nz:ai-feature-flow/feature-flow-example.git'"]}
+{"t": 1793505936.659, "ticket": 2, "event": "catch_up", "changed": true, "recorded_parent": "7c93c348ac72e0d6a67842cb03ce0e8178870ea9", "head": "c579ac62fc5e234c82c0d7470cf54bd24a48f99b"}
+{"t": 1793505936.683, "ticket": 2, "event": "test", "tested_head": "c579ac62fc5e234c82c0d7470cf54bd24a48f99b", "seconds": 1.0}
+{"t": 1793505939.507, "ticket": 2, "event": "merge", "result": "merged", "execution": 3, "commit": "0218bdef41400006dcb74a2be447f48a72e4e04d", "recorded_parent": "7c93c348ac72e0d6a67842cb03ce0e8178870ea9", "head": "c579ac62fc5e234c82c0d7470cf54bd24a48f99b", "tested": "c579ac62fc5e234c82c0d7470cf54bd24a48f99b"}
