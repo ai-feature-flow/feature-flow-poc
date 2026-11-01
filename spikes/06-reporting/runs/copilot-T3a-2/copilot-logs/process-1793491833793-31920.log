@@ -1,0 +1,52 @@
+2026-11-01T00:10:33.796Z [INFO] Shell completions: no writable completion directory found for zsh, skipping
+2026-11-01T00:10:33.796Z [INFO] [rust:copilot_runtime::storage::managed_settings] [managedSettings] device MDM: no policy present on this device
+2026-11-01T00:10:33.796Z [INFO] [rust:copilot_runtime::storage::managed_settings] [managedSettings] server policy fetch skipped: no authenticated GitHub host available
+2026-11-01T00:10:33.796Z [INFO] [rust:copilot_runtime::storage::managed_settings] [managedSettings] effective policy resolved: source=none, bypassDisabled=false, serverFetchFailed=false, policyHelperConfigured=false, policyHelperAuthority=none, policyHelperFailed=false, policyHelperFailClosed=false, policyHelperContributedSandbox=false
+2026-11-01T00:10:33.864Z [INFO] CAFE metrics are paused because no supported endpoint is available
+2026-11-01T00:10:33.864Z [INFO] CAFE metrics endpoint became available
+2026-11-01T00:10:34.011Z [WARNING] [rust:rt_network::tls_certs] Ignoring distrusted emSign ECC Root CA - G3 trust anchor
+2026-11-01T00:10:34.011Z [WARNING] [rust:rt_network::tls_certs] Ignoring distrusted emSign ECC Root CA - G3 trust anchor
+2026-11-01T00:10:34.011Z [WARNING] [rust:rt_network::tls_certs] Ignoring distrusted emSign ECC Root CA - G3 trust anchor
+2026-11-01T00:10:34.013Z [INFO] [rust:copilot_runtime::storage::managed_settings] [managedSettings] device MDM: no policy present on this device
+2026-11-01T00:10:34.013Z [INFO] [rust:copilot_runtime::storage::managed_settings] [managedSettings] confirmed no policy served from fresh cache (age 628864ms) from https://github.com
+2026-11-01T00:10:34.013Z [INFO] [rust:copilot_runtime::storage::managed_settings] [managedSettings] effective policy resolved: source=none, bypassDisabled=false, serverFetchFailed=false, policyHelperConfigured=false, policyHelperAuthority=none, policyHelperFailed=false, policyHelperFailClosed=false, policyHelperContributedSandbox=false
+2026-11-01T00:10:34.014Z [INFO] Session indexing debug: SESSION_INDEXING=true, repository=undefined
+2026-11-01T00:10:34.037Z [INFO] [rust:copilot_runtime::storage::managed_settings] [managedSettings] device MDM: no policy present on this device
+2026-11-01T00:10:34.037Z [INFO] [rust:copilot_runtime::storage::managed_settings] [managedSettings] effective policy resolved: source=none, bypassDisabled=false, serverFetchFailed=false, policyHelperConfigured=false, policyHelperAuthority=none, policyHelperFailed=false, policyHelperFailClosed=false, policyHelperContributedSandbox=false
+2026-11-01T00:10:34.039Z [INFO] [rust:copilot_runtime::shared_api::permissions] [managedSettings] applied: no bypass restriction in force (managed policy absent)
+2026-11-01T00:10:34.040Z [INFO] [rust:copilot_runtime::shared_api::permissions] [managedSettings] applied: no bypass restriction in force (managed policy absent)
+2026-11-01T00:10:34.040Z [INFO] [rust:copilot_runtime::managed_settings::api_session] [managedSettings] self-fetch starting for account (device)
+2026-11-01T00:10:34.040Z [WARNING] [rust:copilot_runtime::session::api_session_options_update] Failed to reload managed hooks after enabling managed settings {"error":"no hook session for session id 40c87a46-66d5-466f-90f6-dc2e9aedb732"}
+2026-11-01T00:10:34.040Z [INFO] [rust:copilot_runtime::storage::managed_settings] [managedSettings] device MDM: no policy present on this device
+2026-11-01T00:10:34.040Z [INFO] [rust:copilot_runtime::storage::managed_settings] [managedSettings] server policy fetch skipped: no authenticated GitHub host available
+2026-11-01T00:10:34.040Z [INFO] [rust:copilot_runtime::storage::managed_settings] [managedSettings] effective policy resolved: source=none, bypassDisabled=false, serverFetchFailed=false, policyHelperConfigured=false, policyHelperAuthority=none, policyHelperFailed=false, policyHelperFailClosed=false, policyHelperContributedSandbox=false
+2026-11-01T00:10:34.040Z [INFO] [rust:copilot_runtime::shared_api::permissions] [managedSettings] applied: no bypass restriction in force (managed policy absent)
+2026-11-01T00:10:34.040Z [INFO] [rust:copilot_runtime::managed_settings::api_session] [managedSettings] self-fetch complete for (device): bypassDisabled=false, serverFetchFailed=false, serverResolution=Live, serverRetryableFailure=false, deviceLoadFailed=false
+2026-11-01T00:10:34.040Z [WARNING] [rust:events_engine::host_delivery] event was not delivered to its registered session host {"error":"GenericFailure, no session host is registered for session 40c87a46-66d5-466f-90f6-dc2e9aedb732"}
+2026-11-01T00:10:34.044Z [INFO] Workspace initialized: 40c87a46-66d5-466f-90f6-dc2e9aedb732 (checkpoints: 0)
+2026-11-01T00:10:34.107Z [INFO] [rust:copilot_runtime::shared_api::permissions] [managedSettings] applied: no bypass restriction in force (managed policy absent)
+2026-11-01T00:10:34.107Z [INFO] [rust:copilot_runtime::managed_settings::api_session] [managedSettings] self-fetch starting for account https://github.com/stuart-parkinson_xero
+2026-11-01T00:10:34.107Z [INFO] [rust:copilot_runtime::storage::managed_settings] [managedSettings] device MDM: no policy present on this device
+2026-11-01T00:10:34.107Z [INFO] [rust:copilot_runtime::storage::managed_settings] [managedSettings] confirmed no policy served from fresh cache (age 628959ms) from https://github.com
+2026-11-01T00:10:34.107Z [INFO] [rust:copilot_runtime::storage::managed_settings] [managedSettings] effective policy resolved: source=none, bypassDisabled=false, serverFetchFailed=false, policyHelperConfigured=false, policyHelperAuthority=none, policyHelperFailed=false, policyHelperFailClosed=false, policyHelperContributedSandbox=false
+2026-11-01T00:10:34.107Z [INFO] [rust:copilot_runtime::shared_api::permissions] [managedSettings] applied: no bypass restriction in force (managed policy absent)
+2026-11-01T00:10:34.107Z [INFO] [rust:copilot_runtime::managed_settings::api_session] [managedSettings] self-fetch complete for https://github.com/stuart-parkinson_xero: bypassDisabled=false, serverFetchFailed=false, serverResolution=FreshCache, serverRetryableFailure=false, deviceLoadFailed=false
+2026-11-01T00:10:34.107Z [INFO] [rust:otel] OTel session policy applied
+2026-11-01T00:10:34.114Z [INFO] Starting Copilot CLI: 1.0.105
+2026-11-01T00:10:34.114Z [INFO] Node.js version: v24.22.1
+2026-11-01T00:10:34.115Z [INFO] CAFE metrics are paused because no supported endpoint is available
+2026-11-01T00:10:34.115Z [INFO] CAFE metrics endpoint became available
+2026-11-01T00:10:34.117Z [WARNING] Loading repo hooks in prompt mode (folder is trusted or opt-in set)
+2026-11-01T00:10:34.120Z [WARNING] Loading workspace MCP sources in prompt mode (folder is trusted or opt-in set)
+2026-11-01T00:10:34.122Z [WARNING] [rust:rt_network::tls_certs] Ignoring distrusted emSign ECC Root CA - G3 trust anchor
+2026-11-01T00:10:34.811Z [WARNING] [rust:rt_network::tls_certs] Ignoring distrusted emSign ECC Root CA - G3 trust anchor
+2026-11-01T00:10:34.812Z [WARNING] [rust:rt_network::tls_certs] Ignoring distrusted emSign ECC Root CA - G3 trust anchor
+2026-11-01T00:10:36.474Z [INFO] [rust:model_bindings::api_resolver] Using default model: claude-sonnet-5.5
+2026-11-01T00:10:36.489Z [INFO] [rust:tool_handlers::api::memory] Memory enablement check: enabled (persistent cache)
+2026-11-01T00:10:36.491Z [WARNING] [rust:rt_network::tls_certs] Ignoring distrusted emSign ECC Root CA - G3 trust anchor
+2026-11-01T00:10:41.364Z [INFO] [rust:copilot_runtime::tools::login_shell_env] login_shell_env_outcome {"outcome":"captured","shell":"/bin/bash","elapsed_ms":28,"names_added":0,"names_changed":0,"path_entries_before":18,"path_entries_after":18,"path_entries_added":0,"path_front_changed":false,"path_front_before":"/Users/stuart.parkinson/Library/pnpm/bin","path_front_after":"/Users/stuart.parkinson/Library/pnpm/bin"}
+2026-11-01T00:10:45.832Z [INFO] [rust:copilot_runtime::session::registry] Closed interrupted sub-agent records on resume {"closed":0,"dangling":0}
+2026-11-01T00:10:45.834Z [INFO] [rust:rt_tgrep] tgrep status changed {"status":"server-not-running"}
+2026-11-01T00:10:45.848Z [ERROR] SessionClient background task refresh failed (continuing) [phase=pre-dispatch cursor=73779113-710f-4d4f-b0fb-802b8a052b74|472 qualifyingEvents=1 attempts=2]: Error: Cannot invoke native session after disposal has started
+2026-11-01T00:10:45.848Z [ERROR] SessionClient poll loop error (will retry): Error: Cannot invoke native session after disposal has started
+2026-11-01T00:10:46.850Z [ERROR] SessionClient poll loop error (will retry): Error: Cannot invoke native session after disposal has started

@@ -1,0 +1,5 @@
+amber-78639
+
+- Accepts two numeric arguments, a and b.
+- Returns their sum (a + b).
+- Has no side effects and does not modify its inputs.

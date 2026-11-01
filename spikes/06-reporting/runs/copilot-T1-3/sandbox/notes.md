@@ -1,0 +1,3 @@
+- Takes two numeric arguments, `a` and `b`.
+- Returns their sum (`a + b`) without modifying the inputs.
+- Behaves consistently for integers, negatives, and floats (e.g. add(2, -3) returns -1).

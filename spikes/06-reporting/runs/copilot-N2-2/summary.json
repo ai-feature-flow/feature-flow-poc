@@ -1,0 +1,22 @@
+{
+  "runtime": "copilot",
+  "task": "N2",
+  "trial": "2",
+  "exit": 0,
+  "elapsed_seconds": 17.7,
+  "nonce": null,
+  "report_verdicts": [
+    "rejected",
+    "rejected"
+  ],
+  "asks": 0,
+  "stopped_after_failure": true,
+  "notes_exists": true,
+  "fallback_file": false,
+  "hook_calls": 3,
+  "model": "claude-sonnet-5.5",
+  "checks": {
+    "E injected rejection on the first call": true,
+    "C2 corrected within the turns; nothing after acceptance": false
+  }
+}

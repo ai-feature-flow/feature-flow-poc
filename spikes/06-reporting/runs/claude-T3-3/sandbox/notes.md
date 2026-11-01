@@ -1,0 +1,3 @@
+- add(a, b) returns the sum of its two arguments.
+- The result is numeric: add(2, 3) returns 5.
+- Argument order does not matter: add(a, b) equals add(b, a).

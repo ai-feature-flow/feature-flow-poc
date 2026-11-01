@@ -75,6 +75,7 @@ with a change, and by what), or **superseded** (replaced).
 | DR14 | The interpreter sets its carried state in the workflow initialiser, because Temporal can deliver signals and updates before the run method starts (SP1) | New | `docs/spikes/sp1-results.md` section 5.4 |
 | DR15 | A hand-over waits for running signal and update handlers to finish before it continues-as-new (SP1) | New | `docs/02` section 3 |
 | DR16 | The agent runtime's MCP tool timeout exceeds `questions.timeout`, and the hook command's timeout exceeds the hook client's hold (SP2) | New | `docs/spikes/sp2-results.md` section 5.4 |
+| DR17 | The engine creates the step's output folder before the agent starts; a runtime's file tool may not create folders (SP3) | New | `docs/spikes/sp3-results.md` section 5.4 |
 
 ### 1.3 Workflow language
 
@@ -130,7 +131,7 @@ to the agent), were approved the same day. They stay in
 | R20 | Polling inflates history | Poll inside one activity | Mitigated (Spike 1) |
 | R21 | The continue-as-new rule with detached children and carried decisions loses a child's end or an answer | Children signal the parent's workflow id; the parent confirms by reading; answers carried as state | Mitigated (SP1) |
 | R22 | `ask_human` across a worker restart: the agent waits, the worker goes, the answer is lost | Question state in the workflow and record store; stateless replicas; the sandbox client owns the question id and reconnects (LOG 59) | Mitigated (SP2) |
-| R23 | **New.** Agent runtimes do not call the engine's MCP tools reliably (reporting, questions, patches) | File fallback for reporting; contract tests per runtime | Not measured |
+| R23 | Agent runtimes do not call the engine's MCP tools reliably (reporting, questions, patches) | File fallback for reporting; contract tests per runtime | Mitigated for reporting and questions on Claude Code and Copilot CLI (SP3); patches not measured |
 | R24 | **New.** Policy now lives in the standard library, so a weak `std` gives weak delivery | `std` is versioned and tested like engine code; its tests run in engine CI | Residual |
 | R25 | **New.** Fragments and defaults make the resolved plan harder to see than what the author wrote | The readable form shows the resolved plan; validation runs on it | Design |
 
@@ -160,6 +161,8 @@ Where the claims this design relies on were evidenced.
 | Continue-as-new with running children and open decisions loses nothing | SP1, `docs/spikes/sp1-results.md` section 5 |
 | An open question survives the loss of the agent worker replica serving it; a hook call during an outage holds rather than denies | SP2, `docs/spikes/sp2-results.md` section 5 |
 | An agent given an infrastructure error by an engine tool improvises a result | SP2, `docs/spikes/sp2-results.md` section 5.3 |
+| Claude Code and Copilot CLI report, correct, fall back to a file, wait on a question and stop when told, through MCP | SP3, `docs/spikes/sp3-results.md` section 5.1 |
+| Copilot CLI fires `PreToolUse` on every tool call with a first-party model | SP3, `docs/spikes/sp3-results.md` section 5.3 |
 | The delivery model (library, free outcomes, traceability, engine evidence) works on a real feature | FF: 2 epics, 16 tickets, 3 repositories (`brief.md` section 3) |
 
 ---
@@ -172,7 +175,7 @@ What must be evidenced before the parts that depend on it are built.
 |---|---|---|---|
 | SP1 | Continue-as-new in a parent with running children, an open decision and a gate answered during the hand-over | The new safe-point rule loses nothing. **Done 2026-11-01: holds** (`docs/spikes/sp1-results.md`) | R21, R3 |
 | SP2 | `ask_human` with Claude Code: a question open across a worker restart, answered afterwards | Question durability on the agent worker. **Done 2026-11-01: holds** (`docs/spikes/sp2-results.md`) | R22, R19 |
-| SP3 | The agent reporting contract over MCP on Claude Code and Copilot CLI, including correction turns | Runtimes use the engine tools reliably | R23 |
+| SP3 | The agent reporting contract over MCP on Claude Code and Copilot CLI, including correction turns | Runtimes use the engine tools reliably. **Done 2026-11-01: holds** (`docs/spikes/sp3-results.md`) | R23 |
 | SP4 | Lock-free merging with three or more concurrent tickets and forced races | `base_moved` loops and the allowance behave | R10 |
 | SP5 | Model proxy: an agent completes a step with no model key in its environment | Floor F6 can be met with both runtimes | R6 |
 | SP6 | Session resume on Windows (W0 from the first design) | Pattern C on Windows | R14 |

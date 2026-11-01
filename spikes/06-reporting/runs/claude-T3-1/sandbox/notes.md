@@ -1,0 +1,3 @@
+- add(a, b) returns the sum of its two arguments.
+- add(a, b) is commutative: add(a, b) equals add(b, a).
+- add(a, b) does not modify its inputs and has no side effects.

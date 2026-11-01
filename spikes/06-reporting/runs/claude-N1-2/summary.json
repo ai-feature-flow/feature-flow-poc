@@ -1,0 +1,18 @@
+{
+  "runtime": "claude",
+  "task": "N1",
+  "trial": "2",
+  "exit": 0,
+  "elapsed_seconds": 15.0,
+  "nonce": null,
+  "report_verdicts": [],
+  "asks": 0,
+  "stopped_after_failure": null,
+  "notes_exists": true,
+  "fallback_file": false,
+  "hook_calls": null,
+  "model": "claude-haiku-5-5",
+  "checks": {
+    "C1 reported; last report valid": false
+  }
+}

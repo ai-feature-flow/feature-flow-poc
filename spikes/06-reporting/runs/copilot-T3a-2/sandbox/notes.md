@@ -1,0 +1,3 @@
+- Accepts two numeric arguments, `a` and `b`.
+- Returns their sum (`a + b`) without modifying the inputs.
+- Behaves commutatively, so `add(a, b)` equals `add(b, a)`, and `add(a, 0)` returns `a`.

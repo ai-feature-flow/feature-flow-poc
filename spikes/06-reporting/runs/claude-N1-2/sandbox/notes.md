@@ -1,0 +1,3 @@
+- add(a, b) returns the sum of its two inputs, so add(2, 3) returns 5.
+- Addition is commutative: add(a, b) equals add(b, a).
+- Addition is applied to numeric inputs; the function does not modify a or b.

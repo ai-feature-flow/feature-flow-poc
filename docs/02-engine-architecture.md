@@ -155,7 +155,9 @@ Nothing essential depends on hooks. A runtime without them gets sandbox-enforced
 write access, a post-step check of what changed, and cost from its own usage
 output; the run records the coarser control. Spike 2 measured: Claude Code fired
 all hooks on Windows and macOS; Copilot CLI's tool-call hooks did not fire with
-a third-party model (`archive/docs/16` sections 4 and 12).
+a third-party model (`archive/docs/16` sections 4 and 12). SP3 measured Copilot
+CLI with a first-party model: `PreToolUse` fired on every tool call, including
+MCP tools (`docs/spikes/sp3-results.md` section 5.3).
 
 ### 4.2 Where the hook endpoint and MCP server run (RW17)
 

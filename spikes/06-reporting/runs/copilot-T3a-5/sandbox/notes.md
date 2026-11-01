@@ -1,0 +1,3 @@
+- Accepts two numeric arguments, `a` and `b`.
+- Returns their sum (`a + b`).
+- Has no side effects; the same inputs always produce the same output.

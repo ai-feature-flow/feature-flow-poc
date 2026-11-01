@@ -1,0 +1,3 @@
+- `add(a, b)` returns the sum of its two arguments, `a + b`.
+- Both arguments are numbers; the result is their arithmetic sum, with no side effects.
+- Addition is commutative, so `add(a, b)` and `add(b, a)` return the same value.

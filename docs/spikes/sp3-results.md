@@ -1,7 +1,11 @@
 # SP3: the agent reporting contract over MCP on two runtimes
 
-Status: plan and checks pre-registered 2026-11-01, before any run. Results
-follow in section 5 once run.
+Status: plan and checks pre-registered 2026-11-01 (commit `d65a7e4`), before
+any run; T3a added by amendment (commit `64efbf1`) before it ran. Run the same
+day. **The claim holds on both runtimes**: every check passed 5 of 5, once the
+harness prepared the output folder for the file fallback. Copilot CLI also
+fired `PreToolUse` hooks on every tool call with a first-party model, which
+Spike 2 had not seen.
 
 ## 1. Claim under test
 
@@ -91,8 +95,81 @@ quality of the work.
 
 ## 5. Results
 
-Not run yet.
+Raw evidence per trial in `spikes/06-reporting/runs/<runtime>-<task>-<trial>/`:
+`summary.json` (checks), `tools.jsonl` (every engine tool call and verdict),
+`stdout.jsonl` (the runtime's own stream), `hook.jsonl` (Copilot only) and the
+sandbox. Run with `python3 run.py <claude|copilot> <task> <trial> --work <dir>`
+in `spikes/06-reporting`. Evidence scanned for credentials and identities:
+none.
+
+| Runtime | Model | Tool approvals |
+|---|---|---|
+| Claude Code 2.1.316 | `claude-haiku-5-5` | `Write` and the engine's tools |
+| Copilot CLI 1.0.105 | `claude-sonnet-5.5`, the CLI's default on the product owner's subscription | File writes and the engine's tools; shell denied. Its own `ask_user` tool disabled. A separate `COPILOT_HOME`, so no user hooks, agents or plugins loaded |
+
+The runtimes ran different models, so a difference between them may come from
+the model, not the runtime.
+
+### 5.1 Claim checks
+
+| Check | Claude Code | Copilot CLI |
+|---|---|---|
+| C1 reports (T1) | 5 of 5 | 5 of 5 |
+| C2 corrects (T2): rejected once, accepted on the second call with `FF-142: `, nothing after | 5 of 5 | 5 of 5 |
+| C3 falls back (T3, folder absent) | 5 of 5 | **0 of 5**: see below |
+| C3 falls back (T3a, folder prepared) | 5 of 5 | 5 of 5 |
+| C4 waits 30 s and uses the answer (T4) | 5 of 5 | 5 of 5 |
+| C5 exits 0 within 5 minutes (T1 to T4) | 25 of 25 | 25 of 25 |
+
+The exercise checks held: the first T2 report was rejected in all 10 trials,
+and every T4 question stayed open for at least 30 s.
+
+**T3, first runs.** In all five Copilot trials the agent tried the fallback.
+Its file tool refused `out/report.json` ("Parent directory does not exist"),
+the shell it then tried (`mkdir -p out`) was denied, and it ended by saying it
+could not report, exit 0. This tested the harness, not the claim: the engine
+prepares the output folder. The amendment in section 3 added T3a, which passed.
+It also shows the runtimes' file tools differ (Claude Code's creates folders;
+Copilot's does not), so the engine must not rely on either.
+
+### 5.2 Negative controls
+
+| Control | Target | Claude Code | Copilot CLI |
+|---|---|---|---|
+| N1 no tool, no fallback instruction | C1 | Fail, 2 of 2: no report reached the engine | Fail, 2 of 2 |
+| N2 every report rejected | C2 | Fail, 2 of 2. Stopped after 2 rejections, saying it could not get the report accepted | Fail, 2 of 2. One trial made the third call, got "attempt failed: stop" and stopped; one stopped after 2 rejections |
+
+No agent called `report` after "attempt failed", and none made more than 3
+calls. An agent that gives up early ends without a valid report, which the
+engine already treats as a failed attempt (`docs/04` section 3.3).
+
+### 5.3 X1: hooks on Copilot CLI
+
+`PreToolUse` fired on every Copilot tool call in all 29 Copilot trials: the
+hook's call count equals the number of tool starts in Copilot's own output in
+every trial. It fired for file writes, for the denied shell call, and for the
+engine's MCP tool (`engine-report`). In Spike 2, with a third-party model through OpenRouter,
+only `SessionStart` and `Stop` fired (`archive/docs/16` section 4). With a
+first-party model, Copilot CLI supports per-call hook policy.
+
+### 5.4 What changes in the design
+
+| Finding | Change | Where |
+|---|---|---|
+| Both runtimes report, correct, fall back, wait and stop reliably | R23 (runtimes do not call the engine's tools reliably) mitigated | `docs/10` section 2 |
+| Copilot's file tool cannot create the output folder | The engine creates the step's output folder before the agent starts | `docs/10` section 1.2, DR17 |
+| Copilot CLI fires `PreToolUse` with a first-party model | The capability statement for Copilot CLI is corrected | `docs/02` section 4.1 |
+
+### 5.5 Limits of the evidence
+
+- Five trials per check bounds the failure rate only loosely; a 5 of 5 result
+  is consistent with an underlying failure rate of up to about 45% at 95%
+  confidence. The contract tests per runtime (R23's mitigation) remain needed.
+- One small task. Long sessions, where the agent may forget the reporting
+  preamble, were not tested.
+- Different models on the two runtimes (section 5).
+- Copilot CLI with a third-party model was not re-tested.
 
 ## 6. Open questions
 
-None yet.
+None.

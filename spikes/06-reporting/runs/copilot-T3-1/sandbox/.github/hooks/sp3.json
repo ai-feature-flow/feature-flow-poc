@@ -1,0 +1,1 @@
+{"hooks": {"PreToolUse": [{"type": "command", "timeoutSec": 10, "command": "HOOK_LOG=/private/tmp/claude-502/-Users-stuart-parkinson-hacks-feature-flow-poc/be229dad-94ff-4755-9209-2b61fb4caeb7/scratchpad/sp3/copilot-T3-1/hook.jsonl python3 /Users/stuart.parkinson/hacks/feature-flow-poc/spikes/06-reporting/hook_log.py"}]}}

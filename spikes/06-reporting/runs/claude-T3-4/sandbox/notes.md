@@ -1,0 +1,3 @@
+- add(a, b) returns the sum of its two arguments, a + b.
+- Both arguments are numbers, and the result is their arithmetic sum.
+- The function has no side effects: it does not modify its inputs or any external state.

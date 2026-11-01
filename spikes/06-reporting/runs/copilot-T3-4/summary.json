@@ -1,0 +1,19 @@
+{
+  "runtime": "copilot",
+  "task": "T3",
+  "trial": "4",
+  "exit": 0,
+  "elapsed_seconds": 14.1,
+  "nonce": null,
+  "report_verdicts": [],
+  "asks": 0,
+  "stopped_after_failure": null,
+  "notes_exists": true,
+  "fallback_file": false,
+  "hook_calls": 3,
+  "model": "claude-sonnet-5.5",
+  "checks": {
+    "C3 out/report.json valid against the contract": false,
+    "C5 exited 0 within 5 minutes": true
+  }
+}

@@ -1,0 +1,3 @@
+- add(a, b) returns the sum of its two arguments, a + b.
+- Addition is commutative: add(a, b) and add(b, a) return the same result.
+- The function is pure: it has no side effects and returns the same output for the same inputs.

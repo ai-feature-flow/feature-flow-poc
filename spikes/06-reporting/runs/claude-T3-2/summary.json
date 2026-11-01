@@ -1,0 +1,19 @@
+{
+  "runtime": "claude",
+  "task": "T3",
+  "trial": "2",
+  "exit": 0,
+  "elapsed_seconds": 11.7,
+  "nonce": null,
+  "report_verdicts": [],
+  "asks": 0,
+  "stopped_after_failure": null,
+  "notes_exists": true,
+  "fallback_file": true,
+  "hook_calls": null,
+  "model": "claude-haiku-5-5",
+  "checks": {
+    "C3 out/report.json valid against the contract": true,
+    "C5 exited 0 within 5 minutes": true
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "runtime": "claude",
+  "task": "N2",
+  "trial": "1",
+  "exit": 0,
+  "elapsed_seconds": 15.4,
+  "nonce": null,
+  "report_verdicts": [
+    "rejected",
+    "rejected"
+  ],
+  "asks": 0,
+  "stopped_after_failure": true,
+  "notes_exists": true,
+  "fallback_file": false,
+  "hook_calls": null,
+  "model": "claude-haiku-5-5",
+  "checks": {
+    "E injected rejection on the first call": true,
+    "C2 corrected within the turns; nothing after acceptance": false
+  }
+}
