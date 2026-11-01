@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\FeatureFlow.Providers.Abstractions\FeatureFlow.Providers.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

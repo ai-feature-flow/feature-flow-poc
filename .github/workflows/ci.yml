@@ -1,0 +1,54 @@
+# Required on every pull request (docs/11 section 4.1). The live category, which needs a real
+# agent runtime and the GitHub App, is excluded here.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  default:
+    name: Build and default tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet build FeatureFlow.slnx -c Release
+      - run: dotnet test FeatureFlow.slnx -c Release --no-build --filter "Category!=Integration&Category!=Live"
+
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    env:
+      FF_TEMPORAL_ADDRESS: localhost:7233
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Install the Temporal CLI
+        run: |
+          curl -sSf https://temporal.download/cli.sh | sh
+          echo "$HOME/.temporalio/bin" >> "$GITHUB_PATH"
+      - name: Start the Temporal dev server
+        run: |
+          nohup temporal server start-dev --headless --port 7233 > "$RUNNER_TEMP/temporal.log" 2>&1 &
+          for i in $(seq 60); do
+            temporal operator cluster health --address "$FF_TEMPORAL_ADDRESS" 2>/dev/null | grep -q SERVING && exit 0
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/temporal.log"
+          exit 1
+      - run: docker version
+      - run: dotnet build FeatureFlow.slnx -c Release
+      - run: dotnet test FeatureFlow.slnx -c Release --no-build --filter "Category=Integration"

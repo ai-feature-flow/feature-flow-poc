@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Providers\FeatureFlow.Providers.Jira\FeatureFlow.Providers.Jira.csproj" />
+  </ItemGroup>
+
+</Project>

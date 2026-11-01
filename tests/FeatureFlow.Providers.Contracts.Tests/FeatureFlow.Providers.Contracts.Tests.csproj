@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\FeatureFlow.Providers.Contracts\FeatureFlow.Providers.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

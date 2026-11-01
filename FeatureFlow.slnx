@@ -1,0 +1,69 @@
+<Solution>
+  <Folder Name="/hosts/">
+    <Project Path="hosts/FeatureFlow.Host.AgentWorker/FeatureFlow.Host.AgentWorker.csproj" />
+    <Project Path="hosts/FeatureFlow.Host.Api/FeatureFlow.Host.Api.csproj" />
+    <Project Path="hosts/FeatureFlow.Host.OrchestrationWorker/FeatureFlow.Host.OrchestrationWorker.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/FeatureFlow.Api/FeatureFlow.Api.csproj" />
+    <Project Path="src/FeatureFlow.Cli/FeatureFlow.Cli.csproj" />
+    <Project Path="src/FeatureFlow.Engine.Agent/FeatureFlow.Engine.Agent.csproj" />
+    <Project Path="src/FeatureFlow.Engine/FeatureFlow.Engine.csproj" />
+    <Project Path="src/FeatureFlow.Expressions/FeatureFlow.Expressions.csproj" />
+    <Project Path="src/FeatureFlow.Hosting/FeatureFlow.Hosting.csproj" />
+    <Project Path="src/FeatureFlow.Interpreter/FeatureFlow.Interpreter.csproj" />
+    <Project Path="src/FeatureFlow.Library/FeatureFlow.Library.csproj" />
+    <Project Path="src/FeatureFlow.Model/FeatureFlow.Model.csproj" />
+    <Project Path="src/FeatureFlow.Providers.Abstractions/FeatureFlow.Providers.Abstractions.csproj" />
+    <Project Path="src/FeatureFlow.Providers.Contracts/FeatureFlow.Providers.Contracts.csproj" />
+    <Project Path="src/FeatureFlow.SandboxClient/FeatureFlow.SandboxClient.csproj" />
+    <Project Path="src/FeatureFlow.Testing.Workflows/FeatureFlow.Testing.Workflows.csproj" />
+    <Project Path="src/FeatureFlow.Validation/FeatureFlow.Validation.csproj" />
+  </Folder>
+  <Folder Name="/src/Providers/">
+    <Project Path="src/Providers/FeatureFlow.Providers.ClaudeCode/FeatureFlow.Providers.ClaudeCode.csproj" />
+    <Project Path="src/Providers/FeatureFlow.Providers.CopilotCli/FeatureFlow.Providers.CopilotCli.csproj" />
+    <Project Path="src/Providers/FeatureFlow.Providers.Docker/FeatureFlow.Providers.Docker.csproj" />
+    <Project Path="src/Providers/FeatureFlow.Providers.Git/FeatureFlow.Providers.Git.csproj" />
+    <Project Path="src/Providers/FeatureFlow.Providers.GitHub/FeatureFlow.Providers.GitHub.csproj" />
+    <Project Path="src/Providers/FeatureFlow.Providers.Jira/FeatureFlow.Providers.Jira.csproj" />
+    <Project Path="src/Providers/FeatureFlow.Providers.Kubernetes/FeatureFlow.Providers.Kubernetes.csproj" />
+    <Project Path="src/Providers/FeatureFlow.Providers.Local/FeatureFlow.Providers.Local.csproj" />
+    <Project Path="src/Providers/FeatureFlow.Providers.Postgres/FeatureFlow.Providers.Postgres.csproj" />
+    <Project Path="src/Providers/FeatureFlow.Providers.Slack/FeatureFlow.Providers.Slack.csproj" />
+    <Project Path="src/Providers/FeatureFlow.Providers.StdValidators/FeatureFlow.Providers.StdValidators.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FeatureFlow.Api.Tests/FeatureFlow.Api.Tests.csproj" />
+    <Project Path="tests/FeatureFlow.Architecture.Tests/FeatureFlow.Architecture.Tests.csproj" />
+    <Project Path="tests/FeatureFlow.Cli.Tests/FeatureFlow.Cli.Tests.csproj" />
+    <Project Path="tests/FeatureFlow.Engine.Agent.Tests/FeatureFlow.Engine.Agent.Tests.csproj" />
+    <Project Path="tests/FeatureFlow.Engine.Tests/FeatureFlow.Engine.Tests.csproj" />
+    <Project Path="tests/FeatureFlow.Expressions.Tests/FeatureFlow.Expressions.Tests.csproj" />
+    <Project Path="tests/FeatureFlow.Hosting.Tests/FeatureFlow.Hosting.Tests.csproj" />
+    <Project Path="tests/FeatureFlow.Integration.Tests/FeatureFlow.Integration.Tests.csproj" />
+    <Project Path="tests/FeatureFlow.Interpreter.Tests/FeatureFlow.Interpreter.Tests.csproj" />
+    <Project Path="tests/FeatureFlow.Library.Tests/FeatureFlow.Library.Tests.csproj" />
+    <Project Path="tests/FeatureFlow.Live.Tests/FeatureFlow.Live.Tests.csproj" />
+    <Project Path="tests/FeatureFlow.Model.Tests/FeatureFlow.Model.Tests.csproj" />
+    <Project Path="tests/FeatureFlow.Providers.Abstractions.Tests/FeatureFlow.Providers.Abstractions.Tests.csproj" />
+    <Project Path="tests/FeatureFlow.Providers.Contracts.Tests/FeatureFlow.Providers.Contracts.Tests.csproj" />
+    <Project Path="tests/FeatureFlow.Replay.Tests/FeatureFlow.Replay.Tests.csproj" />
+    <Project Path="tests/FeatureFlow.SandboxClient.Tests/FeatureFlow.SandboxClient.Tests.csproj" />
+    <Project Path="tests/FeatureFlow.Testing.Workflows.Tests/FeatureFlow.Testing.Workflows.Tests.csproj" />
+    <Project Path="tests/FeatureFlow.Validation.Tests/FeatureFlow.Validation.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Providers/">
+    <Project Path="tests/Providers/FeatureFlow.Providers.ClaudeCode.Tests/FeatureFlow.Providers.ClaudeCode.Tests.csproj" />
+    <Project Path="tests/Providers/FeatureFlow.Providers.CopilotCli.Tests/FeatureFlow.Providers.CopilotCli.Tests.csproj" />
+    <Project Path="tests/Providers/FeatureFlow.Providers.Docker.Tests/FeatureFlow.Providers.Docker.Tests.csproj" />
+    <Project Path="tests/Providers/FeatureFlow.Providers.Git.Tests/FeatureFlow.Providers.Git.Tests.csproj" />
+    <Project Path="tests/Providers/FeatureFlow.Providers.GitHub.Tests/FeatureFlow.Providers.GitHub.Tests.csproj" />
+    <Project Path="tests/Providers/FeatureFlow.Providers.Jira.Tests/FeatureFlow.Providers.Jira.Tests.csproj" />
+    <Project Path="tests/Providers/FeatureFlow.Providers.Kubernetes.Tests/FeatureFlow.Providers.Kubernetes.Tests.csproj" />
+    <Project Path="tests/Providers/FeatureFlow.Providers.Local.Tests/FeatureFlow.Providers.Local.Tests.csproj" />
+    <Project Path="tests/Providers/FeatureFlow.Providers.Postgres.Tests/FeatureFlow.Providers.Postgres.Tests.csproj" />
+    <Project Path="tests/Providers/FeatureFlow.Providers.Slack.Tests/FeatureFlow.Providers.Slack.Tests.csproj" />
+    <Project Path="tests/Providers/FeatureFlow.Providers.StdValidators.Tests/FeatureFlow.Providers.StdValidators.Tests.csproj" />
+  </Folder>
+</Solution>

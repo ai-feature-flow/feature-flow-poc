@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>ff</AssemblyName>
+    <RootNamespace>FeatureFlow.Cli</RootNamespace>
+  </PropertyGroup>
+
+</Project>

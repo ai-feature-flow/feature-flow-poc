@@ -1,0 +1,3 @@
+<Project>
+  <!-- Spike code keeps its own settings and package versions; this stops the root Directory.Packages.props applying here. -->
+</Project>
