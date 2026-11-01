@@ -100,9 +100,10 @@ with a change, and by what), or **superseded** (replaced).
 RW1 to RW18 are listed in `docs/PLAN.md` section 3 and applied throughout.
 LOG 1 to LOG 57, the judgement calls made while writing the drafts, were
 approved by the product owner on 2026-11-01 and are decisions. LOG 58, from
-SP1 (answers accepted during a continue-as-new drain), and LOG 59 and 60, from SP2
+SP1 (answers accepted during a continue-as-new drain), LOG 59 and 60, from SP2
 (the sandbox client owns question ids and never returns an infrastructure error
-to the agent), were approved the same day. They stay in
+to the agent), and LOG 61, from SP4 (a separate race allowance for `base_moved`
+loops), were approved the same day. They stay in
 `docs/LOG.md`, which owns them; this register does not copy them (P12).
 
 ---

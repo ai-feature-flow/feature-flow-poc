@@ -73,7 +73,7 @@ its form (`docs/01` section 2.1). A list entry may instead be `parallel`,
 | `produces`, `consumes` | All | Section 7. A decision produces artifacts only through an interactive session |
 | `verdicts`, `ratifies` | Agent, decision | Section 7.4 |
 | `outputs` | All | Small typed values the step publishes for routing (section 5.4) |
-| `limits` | All | `attempts`, `timeout`, `correction_turns`, for agents `questions` (section 2.2), and for `scm.merge` `races` (`docs/04` section 7.3; LOG 61, unreviewed). Each has an engine default, overridable by `defaults.limits` and the step, within organisation ceilings |
+| `limits` | All | `attempts`, `timeout`, `correction_turns`, for agents `questions` (section 2.2), and for `scm.merge` `races` (`docs/04` section 7.3; LOG 61). Each has an engine default, overridable by `defaults.limits` and the step, within organisation ceilings |
 | `repository` | All | The repository the step works on, when the run has several. An expression or a name from the run's repositories. Default: the run's first repository |
 | `protected` | All | `docs/01` section 2.3 |
 | `tracker` | All | Declarative tracker updates when the step starts or ends with an outcome (section 2.5) |

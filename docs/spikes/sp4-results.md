@@ -148,7 +148,7 @@ epics. S1 and S3 show the arithmetic: with forced collisions, the k-th ticket
 to merge needs k executions, so any epic with more concurrent tickets than the
 allowance can escalate a ticket for no reason.
 
-**Recommendation (LOG 61, unreviewed):** a `base_moved` re-entry does not use
+**Recommendation (LOG 61, approved 2026-11-01):** a `base_moved` re-entry does not use
 the merge step's attempt allowance. It counts against a separate race allowance,
 `limits.races` (default 10), checked on every execution like any allowance, so
 floor F4 still bounds the loop. A `base_moved` refusal shows that the run as a
@@ -162,7 +162,7 @@ the merge default to 10, which would also allow ten real merge failures.
 |---|---|---|
 | No lost merge, nothing untested, loops terminate | R10 (concurrent work conflicts) mitigated for the lock-free form | `docs/10` section 2 |
 | The expected-revision push is what protects a stale catch-up (N1, N1b) | Recorded as evidence for `docs/06` section 3.3 | `docs/10` section 3 |
-| The merge allowance escalates tickets that only lost races | Proposed `limits.races` | `docs/04` section 7.3; LOG 61, unreviewed |
+| The merge allowance escalates tickets that only lost races | Proposed `limits.races` | `docs/04` section 7.3; LOG 61, approved |
 | GitHub resets SSH connections under bursts of new ones | Engine-side VCS operations reuse connections and retry connection failures as infrastructure | `docs/10` section 1.2, DR18 |
 
 ### 5.5 Limits of the evidence
@@ -180,6 +180,8 @@ the merge default to 10, which would also allow ten real merge failures.
 
 ## 6. Open questions
 
+None open.
+
 1. LOG 61: should `base_moved` re-entries count against a separate race
    allowance (`limits.races`, default 10) instead of the merge step's attempt
-   allowance?
+   allowance? **Yes**: approved by the product owner, 2026-11-01.

@@ -102,7 +102,7 @@ Paths in all design documents are relative to the repository root.
 | Spike SP1 (`docs/10` section 4): continue-as-new with running children, open decisions and answers during the hand-over | Done 2026-11-01: the rule holds. Results in `docs/spikes/sp1-results.md`; one design change, LOG 58 (accept answers during the drain), approved |
 | Spike SP2: `ask_human` across an agent worker restart | Done 2026-11-01: holds. Results in `docs/spikes/sp2-results.md`; two design changes, approved: LOG 59 (the sandbox client owns question ids) and LOG 60 (it never returns an infrastructure error to the agent) |
 | Spike SP3: the agent reporting contract over MCP on Claude Code and Copilot CLI | Done 2026-11-01: holds on both. Results in `docs/spikes/sp3-results.md`; no LOG entries; DR17 added (the engine prepares the output folder) |
-| Spike SP4: lock-free merging under forced races | Done 2026-11-01: safe. Results in `docs/spikes/sp4-results.md`; one unreviewed design change, LOG 61 (a separate race allowance for `base_moved` loops); DR18 added |
+| Spike SP4: lock-free merging under forced races | Done 2026-11-01: safe. Results in `docs/spikes/sp4-results.md`; one design change, approved: LOG 61 (a separate race allowance for `base_moved` loops); DR18 added |
 | Spikes SP5 and SP6 | **Next.** SP5: an agent completes a step with no model key in its environment (model proxy). SP6: session resume on Windows |
 | The standard library as files (`docs/08` section 6) | Not started |
 
