@@ -126,7 +126,7 @@ loops), were approved the same day. They stay in
 | R10 | Concurrent work in one repository conflicts | Catch up, re-test if changed, merge refused if the parent moved; race allowance (LOG 61) | Mitigated for the lock-free form (SP4) |
 | R11 | A long agent step restarts from scratch | Sandbox outlives the worker; durable resume state; hidden reference | Mitigated, with the Spike 3 gap fixed in design |
 | R13 | Run cost unknown | Cost recorded per step | Mitigated (Spike 2) |
-| R14 | Pattern C on Windows | Claude Code hooks fired on Windows | Partly answered |
+| R14 | Pattern C on Windows | Claude Code hooks fired on Windows | Partly answered; session resume untested (SP6 shelved) |
 | R15 | A resumed agent makes no progress | Progress rule | Mitigated (Spike 1) |
 | R16 | Repository settings go stale | Manifest read per step | Mitigated (Spike 2) |
 | R17 | A check appears first after submission | Pre-submit checks with parity | Partly evidenced (Spike 3) |
@@ -185,7 +185,7 @@ What must be evidenced before the parts that depend on it are built.
 | SP3 | The agent reporting contract over MCP on Claude Code and Copilot CLI, including correction turns | Runtimes use the engine tools reliably. **Done 2026-11-01: holds** (`docs/spikes/sp3-results.md`) | R23 |
 | SP4 | Lock-free merging with three or more concurrent tickets and forced races | `base_moved` loops and the allowance behave. **Done 2026-11-01: safe; allowance changed by LOG 61** (`docs/spikes/sp4-results.md`) | R10 |
 | SP5 | Model proxy: an agent completes a step with no model key in its environment | Floor F6 can be met with both runtimes. **Done 2026-11-01 for Claude Code only: holds** (`docs/spikes/sp5-results.md`); Copilot CLI not tested | R6 |
-| SP6 | Session resume on Windows (W0 from the first design) | Pattern C on Windows | R14 |
+| SP6 | Session resume on Windows (W0 from the first design) | Pattern C on Windows. **Shelved 2026-11-01** by the product owner: low risk, and not needed for version 1 | R14 |
 
 SP1 to SP3 change how the engine is built and should run first.
 
