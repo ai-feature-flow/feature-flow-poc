@@ -153,13 +153,13 @@ None changes the design, so none has a LOG entry.
 
 GitHub CI has not run on this work, for the reason in
 `docs/build/m0-results.md` section 5. The workflow's commands were run from a
-clean clone of `m1-loader` at `8e52c4a` on macOS, 2026-11-02. The clone was
-made inside the working tree, where the session could run git, and deleted
-afterwards:
+clean clone of `m1-loader` at `1027bb8` (the revision after review) on macOS,
+2026-11-02. The clone was made inside the working tree, where the session
+could run git, and deleted afterwards:
 
 | Job | Commands | Result |
 |---|---|---|
-| Build and default tests | `dotnet build FeatureFlow.slnx -c Release`; `dotnet test ... --filter "Category!=Integration&Category!=Live"` | 0 warnings, 0 errors; 140 passed, 0 failed |
+| Build and default tests | `dotnet build FeatureFlow.slnx -c Release`; `dotnet test ... --filter "Category!=Integration&Category!=Live"` | 0 warnings, 0 errors; 150 passed, 0 failed |
 | Integration tests | `temporal server start-dev --headless --port 7833`, with `FF_TEMPORAL_ADDRESS=localhost:7833`; `docker version` (29.9.2); the same build; `dotnet test ... --filter "Category=Integration"` | Server healthy; 0 warnings, 0 errors; 2 passed, 0 failed. Server stopped afterwards |
 
 ## 7. Open questions
