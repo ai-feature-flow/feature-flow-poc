@@ -1,12 +1,13 @@
 using System.Reflection;
 using FeatureFlow.Model;
+using FeatureFlow.Testing.Workflows;
 using FeatureFlow.Validation;
 
 namespace FeatureFlow.Cli;
 
 /// <summary>
 /// The <c>ff</c> command line. M1: <c>ff validate &lt;library or template&gt;</c> and
-/// <c>ff show &lt;template&gt;</c>.
+/// <c>ff show &lt;template&gt;</c>. M2: <c>ff test &lt;test file or folder&gt;</c>.
 /// </summary>
 public static class CliApp
 {
@@ -14,6 +15,7 @@ public static class CliApp
         usage: ff --version
                ff validate <library folder | template or fragment file> [--library <folder>]...
                ff show <template file> [--library <folder>]...
+               ff test <workflow test file | folder of them> [--library <folder>]... [--trace]
         """;
 
     public static string Version { get; } =
@@ -28,8 +30,16 @@ public static class CliApp
             return 0;
         }
 
-        if (args.Length >= 2 && args[0] is "validate" or "show" && ParseLibraries(args[2..]) is { } others)
-            return args[0] == "validate" ? Validate(args[1], others, output, error) : Show(args[1], others, output, error);
+        var trace = args.Length >= 2 && args[0] == "test" && args.Contains("--trace");
+        if (trace)
+            args = args.Where(a => a != "--trace").ToArray();
+        if (args.Length >= 2 && args[0] is "validate" or "show" or "test" && ParseLibraries(args[2..]) is { } others)
+            return args[0] switch
+            {
+                "validate" => Validate(args[1], others, output, error),
+                "show" => Show(args[1], others, output, error),
+                _ => Test(args[1], others, trace, output, error),
+            };
 
         error.WriteLine(Usage);
         return 2;
@@ -64,6 +74,37 @@ public static class CliApp
         var warnings = result.Diagnostics.Count - errors;
         output.WriteLine($"{errors} error(s), {warnings} warning(s)");
         return errors == 0 ? 0 : 1;
+    }
+
+    /// <summary>Runs workflow test files (docs/09 section 4.3) against the library they sit in and any others.</summary>
+    static int Test(string path, List<string> others, bool trace, TextWriter output, TextWriter error)
+    {
+        if (!File.Exists(path) && !Directory.Exists(path))
+        {
+            error.WriteLine($"no such file or folder: {path}");
+            return 2;
+        }
+
+        var results = WorkflowTestRunner.RunPath(path, others);
+        if (results.Count == 0)
+        {
+            error.WriteLine($"no workflow tests in {path}");
+            return 2;
+        }
+
+        foreach (var result in results)
+        {
+            output.WriteLine($"{(result.Passed ? "pass" : "FAIL")} {result.Name} ({result.Status})");
+            foreach (var failure in result.Failures)
+                output.WriteLine($"  {failure}");
+            if (trace)
+                foreach (var entry in result.Trace)
+                    output.WriteLine($"    {entry}");
+        }
+
+        var failed = results.Count(r => !r.Passed);
+        output.WriteLine($"{results.Count - failed} passed, {failed} failed");
+        return failed == 0 ? 0 : 1;
     }
 
     static int Show(string path, List<string> others, TextWriter output, TextWriter error)

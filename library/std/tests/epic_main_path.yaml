@@ -1,0 +1,37 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: epic_main_path
+description: >-
+  An epic designs, plans two tickets, has the plan approved, and plan.expand
+  turns the work list into two child runs in parallel. Both complete; the epic's
+  own review finds nothing blocking; the trace holds; the epic merges.
+template: std:templates/epic_delivery
+parameters: { epic_name: billing, engine_can_merge: true }
+repositories: [acme/api]
+
+expand:
+  tickets.expand:
+    - { name: invoice_totals, repositories: [acme/api] }
+    - { name: invoice_export, repositories: [acme/api] }
+
+expect:
+  status: completed
+  path_includes:
+    - baseline.tests
+    - design
+    - validate_design
+    - tickets.plan
+    - tickets.validate
+    - tickets.approve
+    - tickets.expand
+    - tickets.children_0
+    - tickets.children_1
+    - verify.tests
+    - verify.review.review_0.assess
+    - trace.trace
+    - deliver.merge
+  executions:
+    tickets.children_0: 1
+    tickets.children_1: 1
+    verify.satisfaction: 0       # check_satisfaction is false at epic level
+    deliver.merge: 1

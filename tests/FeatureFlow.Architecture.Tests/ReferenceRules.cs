@@ -48,16 +48,24 @@ public static class ReferenceRules
         "FeatureFlow.Host.AgentWorker",
     ];
 
+    /// <summary>
+    /// The re-drive runner. Re-drive runs the core without Temporal (LOG 66), so it may reference only the core.
+    /// Section 2.3 gives it no rule; this one is an implementation choice of M2 (docs/build/m2-results.md).
+    /// </summary>
+    public static readonly IReadOnlyList<string> ReDrive =
+    [
+        "FeatureFlow.Testing.Workflows",
+    ];
+
     /// <summary>Projects section 2.3 lists without a reference rule.</summary>
     public static readonly IReadOnlyList<string> Unconstrained =
     [
-        "FeatureFlow.Testing.Workflows",
         "FeatureFlow.SandboxClient",
         "FeatureFlow.Hosting",
         "FeatureFlow.Cli",
     ];
 
-    public static IEnumerable<string> AllProjects => Core.Concat(Providers).Concat(Engine).Concat(Hosts).Concat(Unconstrained);
+    public static IEnumerable<string> AllProjects => Core.Concat(Providers).Concat(Engine).Concat(Hosts).Concat(ReDrive).Concat(Unconstrained);
 
     const string Abstractions = "FeatureFlow.Providers.Abstractions";
 
@@ -85,6 +93,13 @@ public static class ReferenceRules
             var allowed = Core.Append(Abstractions).ToHashSet();
             foreach (var reference in projects.Where(r => !allowed.Contains(r)))
                 yield return $"{project} references {reference}: it may reference only the core, Providers.Abstractions and Temporal";
+        }
+        else if (ReDrive.Contains(project))
+        {
+            foreach (var reference in projects.Where(r => !Core.Contains(r)))
+                yield return $"{project} references {reference}: re-drive may reference only the core";
+            foreach (var package in packages.Where(IsTemporal))
+                yield return $"{project} references package {package}: re-drive runs without Temporal (LOG 66)";
         }
         else if (Hosts.Contains(project))
         {

@@ -1,0 +1,27 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: epic_fix_exhausted
+description: >-
+  The regression tests a fix adds are never new (tests_added is invalid), so the
+  fix loop returns to the fixer until its 3 attempts are used. The fourth entry
+  is refused before it runs (F4) and escalates; nothing merges.
+template: std:templates/epic_delivery
+parameters: { epic_name: billing, engine_can_merge: true }
+repositories: [acme/api]
+
+expand:
+  tickets.expand: [{ name: invoice_totals, repositories: [acme/api] }]
+script:
+  verify.fix.tests_added: invalid
+outputs:
+  verify.fix.triage: { to_fix: 1, escalated: 0 }
+  "findings.open_blocking": [1]
+
+expect:
+  status: running
+  escalated: [verify.fix.fix]
+  executions:
+    verify.fix.fix: 3
+    verify.fix.tests_added: 3
+    trace.trace: 0
+    deliver.merge: 0

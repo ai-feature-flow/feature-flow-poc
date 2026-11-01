@@ -1,0 +1,20 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: ticket_races_exhausted
+description: >-
+  The merge loses every race. A lost race counts against limits.races (10), not
+  against the merge step's 3 attempts (LOG 61), so the merge is tried 10 times;
+  the eleventh entry is refused before it runs (F4) and escalates.
+template: std:templates/ticket_delivery
+parameters: { ticket_id: FF-1042, engine_can_merge: true }
+repositories: [acme/api]
+
+script:
+  deliver.merge: base_moved
+
+expect:
+  status: running
+  escalated: [deliver.merge]
+  executions:
+    deliver.merge: 10
+    deliver.catch_up: 11

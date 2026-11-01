@@ -1,0 +1,21 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: project_plan_exhausted
+description: >-
+  The epic plan never passes its ownership check. Each return to the planner
+  counts against its 3 attempts; the fourth entry is refused before it runs (F4)
+  and escalates. No epic starts.
+template: std:templates/project_delivery
+parameters: { project_name: invoicing }
+repositories: [acme/api]
+
+script:
+  epics.validate: invalid
+
+expect:
+  status: running
+  escalated: [epics.plan]
+  executions:
+    epics.plan: 3
+    epics.validate: 3
+    epics.expand: 0

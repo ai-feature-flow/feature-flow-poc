@@ -108,6 +108,49 @@ public class CliAppTests
         Assert.Contains("takes a template", error);
     }
 
+    [Fact]
+    public void Test_runs_stds_workflow_tests_and_succeeds()
+    {
+        var count = Directory.GetFiles(Path.Combine(StdRoot, "tests"), "*.yaml").Length;
+
+        var (code, output, error) = Run("test", Path.Combine(StdRoot, "tests"));
+
+        Assert.Equal(0, code);
+        Assert.Empty(error);
+        Assert.Contains("pass ticket_main_path (completed)", output);
+        Assert.EndsWith($"{count} passed, 0 failed", output.Trim());
+    }
+
+    [Fact]
+    public void Test_reports_a_failing_test_and_fails()
+    {
+        var file = Path.Combine(Path.GetTempPath(), $"ff-cli-{Guid.NewGuid():N}.yaml");
+        File.WriteAllText(file, File.ReadAllText(Path.Combine(StdRoot, "tests", "ticket_main_path.yaml")).Replace("status: completed", "status: failed"));
+        try
+        {
+            var (code, output, _) = Run("test", file, "--library", StdRoot, "--trace");
+
+            Assert.Equal(1, code);
+            Assert.Contains("FAIL ticket_main_path (completed)", output);
+            Assert.Contains("status is completed, expected failed", output);
+            Assert.Contains("    started deliver.merge: execution 1", output);
+            Assert.EndsWith("0 passed, 1 failed", output.Trim());
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    [Fact]
+    public void Test_of_a_missing_path_fails_with_usage_code()
+    {
+        var (code, _, error) = Run("test", Path.Combine(StdRoot, "no_such_tests"));
+
+        Assert.Equal(2, code);
+        Assert.Contains("no such file or folder", error);
+    }
+
     static void CopyDirectory(string from, string to)
     {
         Directory.CreateDirectory(to);

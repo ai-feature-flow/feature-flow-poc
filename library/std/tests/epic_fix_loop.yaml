@@ -1,0 +1,35 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: epic_fix_loop
+description: >-
+  The epic's own review of the combined branch leaves a blocking finding open.
+  The fix loop fixes it, the change is tested and reviewed again, and with no
+  blocking finding the epic goes on to the trace without the satisfaction check
+  (check_satisfaction is false at epic level) and merges.
+template: std:templates/epic_delivery
+parameters: { epic_name: billing, engine_can_merge: true }
+repositories: [acme/api]
+
+expand:
+  tickets.expand: [{ name: invoice_totals, repositories: [acme/api] }]
+outputs:
+  verify.fix.triage: { to_fix: 2, escalated: 0 }
+  "findings.open_blocking": [2, 0]
+
+expect:
+  status: completed
+  path_includes:
+    - tickets.children_0
+    - verify.review.review_0.assess
+    - verify.fix.triage
+    - verify.fix.fix
+    - verify.fix.verify_fix
+    - verify.fix.tests_added
+    - verify.tests
+    - verify.review.review_0.assess
+    - trace.trace
+    - deliver.merge
+  executions:
+    verify.tests: 2
+    verify.fix.fix: 1
+    verify.satisfaction: 0

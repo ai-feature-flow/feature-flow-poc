@@ -165,10 +165,18 @@ public static class CelExpressions
         return new ExpressionCheck(text, errors, Describe(type), IsBoolOrDyn(type), paths, nodes, cost) { IndexedPaths = indexed };
     }
 
-    /// <summary>Evaluates a checked expression. Variables are plain values: strings, longs, doubles, booleans, lists and maps.</summary>
-    public static object? Evaluate(string text, IReadOnlyDictionary<string, object?> variables, bool withItem = false)
+    /// <summary>
+    /// Evaluates a checked expression. Variables are plain values: strings, longs, doubles, booleans, lists and
+    /// maps. A variable may be a qualified path such as <c>steps.triage.outputs.to_fix</c>; with
+    /// <paramref name="typedPaths"/> it is declared with the same type the load check gave it, so a guard
+    /// evaluates under the types it was checked with.
+    /// </summary>
+    public static object? Evaluate(string text, IReadOnlyDictionary<string, object?> variables, bool withItem = false,
+        IReadOnlyDictionary<string, string>? typedPaths = null)
     {
-        var env = EnvFor(variables.Keys.Where(k => !Namespaces.Contains(k) && k != "item").Order(StringComparer.Ordinal).ToList(), withItem);
+        var env = EnvFor(variables.Keys
+            .Where(k => !Namespaces.Contains(k) && k != "item" && typedPaths?.ContainsKey(k) != true)
+            .Order(StringComparer.Ordinal).ToList(), withItem, typedPaths);
         var parsed = env.Parse(text);
         if (parsed.HasIssues())
             throw new InvalidOperationException(parsed.Issues.ToString());

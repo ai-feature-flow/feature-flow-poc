@@ -1,0 +1,41 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: ticket_fix_loop
+description: >-
+  The first review leaves a blocking finding open, so the merge bar sends the
+  change through the fix loop. The verifying reviewer rejects the first fix and
+  accepts the second. The change is then tested and reviewed again, the finding
+  is closed, and the ticket merges.
+template: std:templates/ticket_delivery
+parameters: { ticket_id: FF-1042 }
+repositories: [acme/api]
+
+script:
+  verify.fix.verify_fix: [not_fixed, verified]
+outputs:
+  verify.fix.triage: { to_fix: 1, escalated: 0 }
+  "findings.open_blocking": [1, 0]      # one value per evaluation of the merge bar
+
+expect:
+  status: completed
+  path_includes:
+    - verify.review.review_0.assess
+    - verify.fix.triage
+    - verify.fix.apply_triage
+    - verify.fix.fix
+    - verify.fix.verify_fix
+    - verify.fix.fix
+    - verify.fix.verify_fix
+    - verify.fix.record_fixes
+    - verify.fix.tests_added
+    - verify.tests
+    - verify.analysis
+    - verify.review.review_0.assess
+    - verify.satisfaction
+    - deliver.merge
+  executions:
+    verify.tests: 2
+    verify.fix.triage: 1
+    verify.fix.fix: 2
+    verify.fix.verify_fix: 2
+    verify.satisfaction: 1

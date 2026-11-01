@@ -1,0 +1,28 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: project_base_moved
+description: >-
+  Delivery to the first repository loses a race (base_moved): the default
+  branch moved after the catch-up. The catch-up runs again, the merge lands, and
+  delivery goes on to the second repository.
+template: std:templates/project_delivery
+parameters: { project_name: invoicing }
+repositories: [acme/api, acme/web]
+
+script:
+  deliver.deliver_0.merge: [base_moved, merged]
+expand:
+  epics.expand: [{ name: billing, repositories: [acme/api, acme/web] }]
+
+expect:
+  status: completed
+  path_includes:
+    - deliver.deliver_0.catch_up
+    - deliver.deliver_0.merge
+    - deliver.deliver_0.catch_up
+    - deliver.deliver_0.merge
+    - deliver.deliver_1.merge
+    - deliver.report
+  executions:
+    deliver.deliver_0.merge: 2
+    deliver.deliver_1.merge: 1

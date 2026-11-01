@@ -1,0 +1,29 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: ticket_main_path
+description: >-
+  A ticket with a clean baseline, a valid plan, no blocking findings and an
+  unchanged parent branch goes from plan to merge in one pass.
+template: std:templates/ticket_delivery
+parameters: { ticket_id: FF-1042 }
+repositories: [acme/api]
+
+expect:
+  status: completed
+  path_includes:
+    - baseline.tests
+    - baseline.analysis
+    - plan.plan
+    - plan.validate
+    - approve_spec
+    - implement
+    - verify.tests
+    - verify.analysis
+    - verify.review.review_0.assess
+    - verify.review.review_0.record
+    - verify.satisfaction
+    - deliver.open_pr
+    - deliver.checks
+    - deliver.catch_up
+    - deliver.merge
+  executions: { implement: 1, deliver.merge: 1, verify.fix.fix: 0 }

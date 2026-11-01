@@ -57,8 +57,12 @@ public sealed record ResolvedEnd(string Status) : Resolved;
 
 public sealed record ResolvedEscalate(string? DecisionType, ItemRef? Prompt) : Resolved;
 
-/// <summary>The end of a branch: the outcome's class is reported to the join (docs/03 section 8.1).</summary>
-public sealed record ResolvedBranchEnd(string ContainerId) : Resolved;
+/// <summary>
+/// The end of a branch: the outcome's class is reported to the join (docs/03 section 8.1). <see cref="Class"/>
+/// is set when the branch ends by a fragment's exit, whose class is the one reported; otherwise the outcome's
+/// own class is.
+/// </summary>
+public sealed record ResolvedBranchEnd(string ContainerId, OutcomeClass? Class = null) : Resolved;
 
 /// <summary>Leaving a fragment validated on its own, where no caller routes the exit.</summary>
 public sealed record ResolvedExit(string Exit) : Resolved;
@@ -205,6 +209,9 @@ public sealed class Step
 
     /// <summary>Agent steps and actions use attempts; decisions and joins do not (docs/01 section 3.2).</summary>
     public bool ConsumesAttempts => Form is StepForm.Agent or StepForm.Action;
+
+    /// <summary>The step's map as written, after fragment substitution, so a patch can change one field (docs/03 section 10.2).</summary>
+    public YMap? Source { get; set; }
 
     public override string ToString() => Id;
 }

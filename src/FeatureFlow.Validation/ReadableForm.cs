@@ -142,7 +142,9 @@ public static partial class ReadableForm
         else if (route.Outcome == Actions.AttemptsExhausted)
             expected = new ResolvedEscalate(null, null);
 
-        return expected is not null && expected.Equals(route.Target);
+        // A fragment exit that ends a branch carries the exit's class; the foot's default does not name one.
+        var target = route.Target is ResolvedBranchEnd b ? b with { Class = null } : route.Target;
+        return expected is not null && expected.Equals(target);
     }
 
     static string Show(Resolved target) => target switch

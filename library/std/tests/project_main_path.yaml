@@ -1,0 +1,40 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: project_main_path
+description: >-
+  A person submits the requirements and architecture; they pass the check and
+  are approved. The planner writes two epics and says the project needs
+  integration tests; plan.expand starts both epics, which complete. Integration
+  tests pass, the trace holds, and both repositories are delivered in order.
+template: std:templates/project_delivery
+parameters: { project_name: invoicing }
+repositories: [acme/api, acme/web]
+
+outputs:
+  epics.plan: { needs_integration: true }
+expand:
+  epics.expand:
+    - { name: billing, repositories: [acme/api] }
+    - { name: portal, repositories: [acme/web] }
+
+expect:
+  status: completed
+  path_includes:
+    - define
+    - check_requirements
+    - approve
+    - epics.plan
+    - epics.validate
+    - epics.approve
+    - epics.expand
+    - epics.children_0
+    - epics.children_1
+    - integration
+    - trace.trace
+    - deliver.deliver_0.open_pr
+    - deliver.deliver_0.merge
+    - deliver.deliver_1.open_pr
+    - deliver.deliver_1.merge
+    - deliver.report
+  executions:
+    deliver.recover: 0

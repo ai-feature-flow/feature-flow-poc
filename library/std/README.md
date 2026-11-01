@@ -21,7 +21,12 @@ open are LOG 62 to 65, approved 2026-11-01.
 | `artifact_types/` | Seven document types and six engine-only evidence types |
 | `decision_types/` | The gates std uses, and the engine-raised types by pattern |
 | `status_map.yaml` | The abstract tracker statuses templates use |
+| `tests/` | Workflow test files (`docs/09` section 4.3), one scenario each |
 
-Not yet written: workflow test files (`docs/09` section 4.3), which need the
-interpreter's core (M2), and tracker or pull request skills, which depend on the
-toolsets an organisation configures.
+Since M2 (2026-11-02), `tests/` holds std's workflow test files (`docs/09`
+section 4.3): for each template its main path, its correction loop, escalation
+when attempts run out, and a lost merge race, and for `project_delivery`
+partial delivery. `ff test library/std/tests` runs them without Temporal.
+
+Not yet written: tracker or pull request skills, which depend on the toolsets
+an organisation configures.

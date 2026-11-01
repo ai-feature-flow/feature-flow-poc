@@ -1,0 +1,34 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: ticket_base_moved
+description: >-
+  The merge loses two races to siblings (base_moved). Each loss catches up
+  again; the second catch-up changes the branch, so the ticket is re-tested and
+  its checks run again before the merge is tried again. The third try merges.
+template: std:templates/ticket_delivery
+parameters: { ticket_id: FF-1042, engine_can_merge: true }
+repositories: [acme/api]
+
+script:
+  deliver.merge: [base_moved, base_moved, merged]
+outputs:
+  deliver.catch_up: [{ changed: false }, { changed: true }, { changed: false }]
+
+expect:
+  status: completed
+  path_includes:
+    - deliver.checks
+    - deliver.catch_up
+    - deliver.merge
+    - deliver.catch_up
+    - deliver.retest
+    - deliver.checks
+    - deliver.catch_up
+    - deliver.merge
+    - deliver.catch_up
+    - deliver.merge
+  executions:
+    deliver.merge: 3
+    deliver.catch_up: 4
+    deliver.retest: 1
+    deliver.checks: 2

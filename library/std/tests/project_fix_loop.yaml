@@ -1,0 +1,39 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: project_fix_loop
+description: >-
+  project_delivery has no findings fix loop: its correction loops send invalid
+  work back to whoever wrote it. The submitted requirements fail their check, so
+  the session opens again and the second submission passes. The epic plan fails
+  its ownership check once, so the planner plans again. With no integration
+  needed, the run goes straight to the trace and delivers.
+template: std:templates/project_delivery
+parameters: { project_name: invoicing }
+repositories: [acme/api]
+
+script:
+  check_requirements: [invalid, valid]
+  epics.validate: [invalid, valid]
+expand:
+  epics.expand: [{ name: billing, repositories: [acme/api] }]
+
+expect:
+  status: completed
+  path_includes:
+    - define
+    - check_requirements
+    - define
+    - check_requirements
+    - approve
+    - epics.plan
+    - epics.validate
+    - epics.plan
+    - epics.validate
+    - epics.approve
+    - epics.children_0
+    - trace.trace
+    - deliver.deliver_0.merge
+  executions:
+    define: 2
+    epics.plan: 2
+    integration: 0

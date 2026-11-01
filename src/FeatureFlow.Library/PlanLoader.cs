@@ -5,8 +5,15 @@ using FeatureFlow.Model.Yaml;
 
 namespace FeatureFlow.Library;
 
-/// <summary>Values known when a template is loaded: bound parameters and the run's repositories.</summary>
-public sealed record LoadOptions(IReadOnlyDictionary<string, YNode>? Parameters = null);
+/// <summary>
+/// Values known when a template is loaded or bound: parameters, the run's repositories (so a <c>for_each</c>
+/// over <c>run.repositories</c> expands in full, docs/03 section 8.2), and the patches applied so far, in order.
+/// Plan revision n is the template loaded with the first n - 1 patches (docs/01 section 2).
+/// </summary>
+public sealed record LoadOptions(
+    IReadOnlyDictionary<string, YNode>? Parameters = null,
+    IReadOnlyList<string>? Repositories = null,
+    IReadOnlyList<PatchDocument>? Patches = null);
 
 /// <summary>
 /// Loads a template into an expanded <see cref="Plan"/>: fragments replaced by their steps with ids
@@ -104,11 +111,13 @@ public sealed partial class PlanLoader
         if (plan.Steps.Count == 0)
             d.Add(Checks.Schema, "the document has no steps", read.Steps?.Location ?? new SourceLocation(file, 1, 1));
 
+        ApplyPatches();
         foreach (var instance in plan.Instances)
             if (instanceSpans.TryGetValue(instance.Id, out var span) && span.Last >= span.First)
                 instance.FirstStepId = lanes[span.Lane][span.First].Id;
 
         ResolveRoutes();
+        RewritePatchedRoutes();
         plan.SubstitutedParameters.UnionWith(substituted);
         return plan;
     }
@@ -186,6 +195,7 @@ public sealed partial class PlanLoader
                 };
                 var step = StepReader.Read(r, fullId, id, form, scope, d);
                 r.Finish();
+                step.Source = map;
                 Add(step, lane, laneId);
                 break;
         }
@@ -574,6 +584,12 @@ public sealed partial class PlanLoader
     /// </summary>
     YNode? StaticValue(string text, Scope scope)
     {
+        if (text.Trim() == "run.repositories" && options.Repositories is { } repositories)
+        {
+            var at = new SourceLocation("(run)", 1, 1);
+            return new YSeq(repositories.Select(r => (YNode)new YScalar(r, false, at)).ToList(), at);
+        }
+
         var match = ParamPath().Match(text.Trim());
         if (!match.Success)
             return null;
@@ -748,6 +764,8 @@ public sealed partial class PlanLoader
         var full = scope.Prefix + id;
         if (stepsById.ContainsKey(full))
             return full;
+        if (aliases.TryGetValue(full, out var replacement))
+            return replacement;
         if (instanceSpans.TryGetValue(full, out var span) && span.Last >= span.First)
             return lanes[span.Lane][span.First].Id;
         return null;
@@ -776,7 +794,7 @@ public sealed partial class PlanLoader
         if (fragment.Standalone)
             return new ResolvedExit(exit.Exit);
         if (fragment.BranchRoot)
-            return new ResolvedBranchEnd(fragment.Parent!.ContainerId!);
+            return new ResolvedBranchEnd(fragment.Parent!.ContainerId!, declared.Class);
 
         var route = fragment.ExitRoutes.FirstOrDefault(r => r.Outcome == exit.Exit);
         if (route is not null)

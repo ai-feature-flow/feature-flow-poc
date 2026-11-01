@@ -49,6 +49,12 @@ public static class Checks
     public const int DecisionType = 16;
     public const int PlanSize = 17;
     public const int ReferenceResolves = 19;
+    public const int PatchBaseRevision = 25;
+    public const int PatchResumeAt = 26;
+    public const int PatchProposer = 27;
+    public const int PatchLoadChecks = 28;
+    public const int PatchProtected = 29;
+    public const int PatchFloor = 30;
     public const int UnusedParameter = 34;
     public const int DeprecatedReference = 35;
 
@@ -72,6 +78,12 @@ public static class Checks
         [16] = "decision type declared",
         [17] = "plan size",
         [19] = "library reference resolves",
+        [25] = "patch base revision current",
+        [26] = "patch resume_at exists",
+        [27] = "patch proposer may use the operation",
+        [28] = "patch result passes the load checks",
+        [29] = "patch touches protected content or an unlisted role",
+        [30] = "patch relaxes a safety floor",
         [34] = "unused parameter",
         [35] = "deprecated library reference",
     };

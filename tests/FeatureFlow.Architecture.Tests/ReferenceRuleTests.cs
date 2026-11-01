@@ -60,6 +60,7 @@ public class ReferenceRuleTests
     [InlineData("FeatureFlow.Providers.Git", "FeatureFlow.Providers.Abstractions", "LibGit2Sharp")]
     [InlineData("FeatureFlow.Host.AgentWorker", "FeatureFlow.Providers.Docker", null)]
     [InlineData("FeatureFlow.Cli", "FeatureFlow.Engine", null)]
+    [InlineData("FeatureFlow.Testing.Workflows", "FeatureFlow.Interpreter", null)]
     public void Allowed_references_pass(string project, string reference, string? package)
     {
         Assert.Empty(ReferenceRules.Violations(project, [reference], package is null ? [] : [package]));
@@ -74,6 +75,8 @@ public class ReferenceRuleTests
     [InlineData("FeatureFlow.Engine", "FeatureFlow.Hosting", null)]
     [InlineData("FeatureFlow.Host.Api", "FeatureFlow.Engine", null)]
     [InlineData("FeatureFlow.Unlisted", null, null)]
+    [InlineData("FeatureFlow.Testing.Workflows", null, "Temporalio")]
+    [InlineData("FeatureFlow.Testing.Workflows", "FeatureFlow.Engine", null)]
     public void Forbidden_references_fail(string project, string? reference, string? package)
     {
         Assert.NotEmpty(ReferenceRules.Violations(project, reference is null ? [] : [reference], package is null ? [] : [package]));

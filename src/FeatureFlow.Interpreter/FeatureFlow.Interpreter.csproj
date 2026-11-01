@@ -1,2 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\FeatureFlow.Validation\FeatureFlow.Validation.csproj" />
+  </ItemGroup>
+
 </Project>

@@ -1,0 +1,25 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: ticket_fix_exhausted
+description: >-
+  The verifying reviewer never accepts the fix. Every return to the fixer counts
+  against its allowance of 3 attempts, so the fourth entry is refused before it
+  runs (F4) and escalates. The run waits for a person; it does not loop and does
+  not report success.
+template: std:templates/ticket_delivery
+parameters: { ticket_id: FF-1042 }
+repositories: [acme/api]
+
+script:
+  verify.fix.verify_fix: not_fixed
+outputs:
+  verify.fix.triage: { to_fix: 1, escalated: 0 }
+  "findings.open_blocking": [1]
+
+expect:
+  status: running
+  escalated: [verify.fix.fix]
+  executions:
+    verify.fix.fix: 3
+    verify.fix.verify_fix: 3
+    deliver.merge: 0
