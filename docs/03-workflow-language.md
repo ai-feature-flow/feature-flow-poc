@@ -252,10 +252,10 @@ Anywhere else a string is a literal.
 
 ### 5.2 Allowed functions and bounds
 
-Predicates, selection and arithmetic only: `size`, `contains`, `all`, `any`,
-`exists`, `startsWith`, `endsWith`, `lower`, `upper` (registered by the engine,
-culture-invariant), comparison and boolean operators. No comprehensions, no
-regular expressions.
+Predicates, selection and arithmetic only: `size`, `contains`,
+`startsWith`, `endsWith`, `lower`, `upper` (registered by the engine,
+culture-invariant), comparison and boolean operators. No comprehensions, so
+none of CEL's macros (`all`, `exists`), and no regular expressions (LOG 71).
 
 | Bound | Value |
 |---|---|
@@ -598,7 +598,7 @@ standard review, the fix loop, or catch-up and merge (RW5).
 | Exits | A fragment's steps may route to `{ exit: <name> }`. The `use` entry routes each exit like an outcome. Exits carry a class for default routing |
 | Protection | `protected: true` on `use` protects every step of the fragment |
 | Nesting | A fragment may use other fragments, to a depth of 3 |
-| Defaults | Pending review (LOG 72): a fragment's steps take route defaults only from the fragment's own `defaults` and the engine's built-in defaults (section 4.3, rules 4 and 5), never from the caller's. A fragment routes its own failures, normally to its exits |
+| Defaults | A fragment's steps take route defaults only from the fragment's own `defaults` and the engine's built-in defaults (section 4.3, rules 4 and 5), never from the caller's. A fragment routes its own failures, normally to its exits (LOG 72) |
 
 The fragment document (LOG 62):
 
