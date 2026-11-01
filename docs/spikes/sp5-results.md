@@ -53,6 +53,17 @@ and every forwarded request carried the step's token.
 | N1 | `ANTHROPIC_BASE_URL` points at a closed port | Claude Code does not fall back to the subscription login in the macOS keychain or anywhere else |
 | N2 | The proxy forwards the step's token instead of adding the real one | The credential that works is the proxy's, not one the agent found |
 
+**Amendment, made after trial 1 and before the remaining trials.** Trial 1
+failed C2. The harness built the agent's environment from scratch, but kept
+`HOME` as the user's home. Claude Code's Bash tool runs commands in a shell that
+reads `~/.zshenv`, which exports 15 credential variables, including
+`CLAUDE_CODE_OAUTH_TOKEN`, loading their values from the keychain. In that
+shell every value came out empty, so nothing leaked, but the names were there,
+and nothing stopped the values from loading. A sandbox gives the agent its own
+home, so trials from 2 onwards (T-home) set `HOME` to a fresh, empty directory.
+C2 is unchanged. Trial 1 is kept as run; trial 1 is re-run as trial 6 so there
+are five T-home trials.
+
 ## 4. Out of scope
 
 - Copilot CLI (section 1).
