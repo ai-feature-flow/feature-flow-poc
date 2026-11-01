@@ -7,7 +7,7 @@ policy, not engine: any of it may be replaced (`docs/08` section 6).
 Status: written 2026-11-01 against the design, before any engine exists.
 Nothing here has been loaded by a validator; a scratch structural check found
 no unresolved references, unknown route targets, unrouted outcomes or unbound
-task variables. The formats the design left open are LOG 62 to 65 (unreviewed).
+task variables. The formats the design left open are LOG 62 to 65, approved 2026-11-01.
 
 | Folder | Holds |
 |---|---|

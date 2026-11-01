@@ -37,9 +37,12 @@ handover, which it replaces.
 
 ## The review cycle
 
-Work is pushed to `main`. The product owner replies with a review file in
-`docs/reviews/`. Apply it, then push. Keep design work on `main`; do not drift
-onto a branch.
+Design work is pushed to `main`. The product owner replies with a review file
+in `docs/reviews/`. Apply it, then push. Keep design work on `main`; do not
+drift onto a branch.
+
+Code work (`src/`, `hosts/`, `tests/`, from build milestone M0) goes through
+pull requests, which merge only when CI passes (`docs/11` section 4.1).
 
 ## Commits
 

@@ -144,8 +144,8 @@ seen to fail when the thing it guards is broken.
 
 | | |
 |---|---|
-| Builds | The solution and projects of section 2.3, empty; build settings; the reference-rule test; CI that builds and runs the default test category |
-| Done when | CI passes on `main`; `ff --version` runs |
+| Builds | The solution and projects of section 2.3, empty; build settings; the reference-rule test; CI on GitHub Actions that builds and runs the default and integration test categories on every pull request; the live category excluded |
+| Done when | The M0 pull request merges with CI passing; `ff --version` runs |
 | Verified by | The CI run. The reference-rule test fails when a forbidden reference (`Interpreter` to `Temporalio`) is added |
 
 ### M1. Plan loader and validator
@@ -159,8 +159,8 @@ The first slice. Input: `library/std/`.
 | Verified by | The negative tests are mutations of std's own templates (remove a route, add an unreachable step, give a reviewer step write access, and so on), so each check is shown to fire on realistic input (LOG 70). A check with no failing mutation is not done |
 
 Errors M1 finds in std are fixed in std, each listed in the results note. A
-format that turns out unworkable is a design change with a LOG entry. LOG 62 to
-65 should be reviewed before M1 finishes (open question 3).
+format that turns out unworkable is a design change with a LOG entry. M1
+implements the formats of LOG 62 to 65, approved 2026-11-01.
 
 ### M2. Interpreter core and re-drive
 
@@ -207,7 +207,7 @@ format that turns out unworkable is a design change with a LOG entry. LOG 62 to
 
 | | |
 |---|---|
-| Builds | Organisation configuration and its validation (`docs/07` sections 3 and 7). Approval rules, people roles, auto-resolution within caps. Every run-time override key (LOG 55), with the actor from authentication (F8). Agent patches touching protected content becoming decisions (F3). Mid-run library override. Breakpoints. Interactive sessions with local hand-off and pre-submit parity. Inbound webhooks. Notifications through Slack, with chat answers through the inbound gateway. The effective policy view. OIDC authentication. The console (open question 5) |
+| Builds | Organisation configuration and its validation (`docs/07` sections 3 and 7). Approval rules, people roles, auto-resolution within caps. Every run-time override key (LOG 55), with the actor from authentication (F8). Agent patches touching protected content becoming decisions (F3). Mid-run library override. Breakpoints. Interactive sessions with local hand-off and pre-submit parity. Inbound webhooks. Notifications through Slack, with chat answers through the inbound gateway. The effective policy view. OIDC authentication. A minimal web console: runs, a run's readable form and timeline, and decisions to answer (open question 5). Anything more is later |
 | Done when | Every override has a test showing who may and may not use it. A person runs a project's requirements session on their machine and submits |
 | Verified by | A request asserting a different actor in its body is recorded with the authenticated actor. A pre-submit check and the later step receive the same task, tools, model and commit (`docs/09` section 4.2) |
 
@@ -225,9 +225,9 @@ Version 1 is complete when M8 is done.
 
 | Category | Needs | Runs |
 |---|---|---|
-| Default | Nothing | Every push |
-| Integration | Temporal CLI dev server, Docker | Every push, in CI |
-| Live | A model credential and the GitHub App's key | Locally, and on a schedule if CI may hold those secrets (open question 2) |
+| Default | Nothing | Every pull request, required |
+| Integration | Temporal CLI dev server, Docker | Every pull request, required |
+| Live | A model credential and the GitHub App's key | Locally at first. When CI may hold those secrets, in a separate CI workflow that is optional or scheduled, so a missing secret never fails a pull request (open question 2) |
 
 Development moves to a Windows machine soon. The Docker sandbox there uses
 Linux containers. Running the M4 agent-step tests with Claude Code on that
@@ -296,10 +296,7 @@ Recorded in `docs/LOG.md`, unreviewed.
 
 | # | Question | Recommendation |
 |---|---|---|
-| 2 | How is code work reviewed and where does CI run? Design work commits straight to `main`. May CI hold a model credential and the GitHub App key for the live tests? | Pull requests with required CI on GitHub Actions from M0; live tests locally until a secret store is agreed |
-| 3 | LOG 62 to 65, the formats chosen while writing std (the fragment document, inputs staged for agents, std's shape, item formats), are unreviewed. M1 implements them | Review them before M1 finishes |
-| 4 | Which object store and which container platform does the first team deployment use? `docs/07` allows S3 or Azure Blob, and Kubernetes | Build only the one the first adopter needs, in M8 |
-| 5 | Is a web console in version 1? `docs/05` section 7's example has a merge request answerable in the console only, but no document designs the console | Yes: a minimal console in M7 (runs, a run's readable form and timeline, decisions to answer). Anything more later |
+| 4 | Which object store and which container platform does the first team deployment use? `docs/07` allows S3 or Azure Blob, and Kubernetes | Build only the one the first adopter needs, in M8. Deferred by the product owner, 2026-11-01, to be revisited |
 
 ### Answered
 
@@ -308,3 +305,6 @@ Product owner, 2026-11-01.
 | # | Question | Answer |
 |---|---|---|
 | 1 | Where does the version 1 code live: this repository under `src/`, or a new repository with `docs/` and `library/std/` moved into it? | This repository (section 2.1) |
+| 2 | How is code work reviewed and where does CI run? May CI hold a model credential and the GitHub App key for the live tests? | Pull requests with required CI on GitHub Actions from M0. Live tests are a separate category, run locally at first, and enabled in CI when the secrets are available, possibly as an optional or separate workflow (section 4.1) |
+| 3 | LOG 62 to 65, the formats chosen while writing std, are unreviewed and M1 implements them. Review before M1 finishes? | Accepted: LOG 62 to 65 approved |
+| 5 | Is a web console in version 1? No document designs one | Yes: a minimal console in M7 |

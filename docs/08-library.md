@@ -157,7 +157,7 @@ resolve, for example a corrected task prompt. It does not change the plan.
 `std` ships with the engine. Its templates reproduce the process FF proved,
 with the first design's review and merge improvements. Everything here is
 policy and may be replaced. The files are in `library/std/`; formats the design
-left open are LOG 62 to 65.
+left open are LOG 62 to 65, approved 2026-11-01.
 
 ### 6.1 Roles
 

@@ -108,10 +108,10 @@ Paths in all design documents are relative to the repository root.
 | Spike SP4: lock-free merging under forced races | Done 2026-11-01: safe. Results in `docs/spikes/sp4-results.md`; one design change, approved: LOG 61 (a separate race allowance for `base_moved` loops); DR18 added |
 | Spike SP5: an agent step behind a model proxy | Done 2026-11-01 for Claude Code: holds. Results in `docs/spikes/sp5-results.md`; DR19 (the sandbox's own home) and DR20 (platform trust store) added; Copilot CLI not tested, for want of an API key |
 | Spike SP6: session resume on Windows | Shelved by the product owner, 2026-11-01: low risk, version 1 has no Windows sandbox, and development moves to a Windows machine soon, where it can be tested in passing |
-| The standard library as files (`docs/08` section 6) | Done 2026-11-01, in `library/std/`: 3 templates, 9 fragments, 11 tasks, 7 roles, 13 artifact types. Not yet loaded by a validator. Formats the design left open are LOG 62 to 65, unreviewed |
-| Version 1 build plan | Written 2026-11-01 in `docs/11-build-plan.md`: layout, build order, milestones M0 to M8, carry-over from spikes. Judgement calls LOG 66 to 70, unreviewed; 5 open questions. Question 1 answered 2026-11-01: the code lives in this repository |
-| Product owner review of the build plan, LOG 62 to 70 | **Next** |
-| M0 (skeleton) and M1 (plan loader and validator on `library/std/`) | After the review answers open question 2 of `docs/11` (pull requests and CI) |
+| The standard library as files (`docs/08` section 6) | Done 2026-11-01, in `library/std/`: 3 templates, 9 fragments, 11 tasks, 7 roles, 13 artifact types. Not yet loaded by a validator. Formats the design left open are LOG 62 to 65, approved 2026-11-01 |
+| Version 1 build plan | Written 2026-11-01 in `docs/11-build-plan.md`: layout, build order, milestones M0 to M8, carry-over from spikes. Judgement calls LOG 66 to 70, unreviewed; Open questions 1, 2, 3 and 5 answered 2026-11-01 (code in this repository; pull requests with required CI; LOG 62 to 65 approved; a minimal console in M7); question 4, the team deployment's object store and container platform, deferred |
+| Product owner review of LOG 66 to 70 | Open |
+| M0 (skeleton) and M1 (plan loader and validator on `library/std/`) | **Next.** Code work goes through pull requests with required CI |
 
 ## 7. How to resume
 
