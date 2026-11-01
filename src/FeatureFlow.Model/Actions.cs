@@ -72,6 +72,24 @@ public static class Actions
     /// <summary>The outputs the engine publishes for every agent step (docs/04 section 3.6).</summary>
     public static readonly IReadOnlyList<string> AgentEngineOutputs = ["coverage_known", "changed_files_unread", "commits"];
 
+    /// <summary>
+    /// The types of the outputs the engine publishes: for agent steps (docs/04 section 3.6) and for the
+    /// actions whose outputs docs/04 lists. Types are those of docs/03 section 5.4.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> EngineOutputTypes = new Dictionary<string, string>
+    {
+        ["coverage_known"] = "boolean",
+        ["changed_files_unread"] = "number",
+        ["commits"] = "number",
+        ["changed"] = "boolean",
+        ["skipped"] = "number",
+        ["pull_request"] = "string",
+        ["new"] = "number",
+        ["reraised"] = "number",
+        ["reopened"] = "number",
+        ["repeat_fixes"] = "number",
+    };
+
     /// <summary>Added to every step that consumes attempts; routed to escalate by default (docs/03 section 4.3).</summary>
     public const string AttemptsExhausted = "attempts_exhausted";
 

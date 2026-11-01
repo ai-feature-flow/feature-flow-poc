@@ -252,10 +252,10 @@ public sealed class PlanValidator
 
     void CheckGuards()
     {
-        var routes = plan.AllSteps.SelectMany(s => s.Routes.Select(r => (r, s.Id)))
-            .Concat(plan.Instances.SelectMany(i => i.Scope.ExitRoutes.Select(r => (r, i.Id))))
+        var routes = plan.AllSteps.SelectMany(s => s.Routes.Select(r => (r, (string?)s.Id)))
+            .Concat(plan.Instances.SelectMany(i => i.Scope.ExitRoutes.Select(r => (r, (string?)i.Id))))
             .Concat(plan.Instances.Select(i => i.Scope).Append(plan.Root)
-                .SelectMany(s => s.Document.Defaults.ByClass.Values.Concat(s.Document.Defaults.ByOutcome.Values)).Select(r => (r, (string)null!)));
+                .SelectMany(s => s.Document.Defaults.ByClass.Values.Concat(s.Document.Defaults.ByOutcome.Values)).Select(r => (r, (string?)null)));
         foreach (var (route, stepId) in routes)
             CheckGuard(route.Target, route.Outcome, stepId);
     }
@@ -315,6 +315,9 @@ public sealed class PlanValidator
     void CheckExpression(Expression e)
     {
         var result = CelExpressions.Check(e.Text, e.ExtraVariables, e.Scope.HasItem);
+        var typed = TypedPaths(result.Paths, e.Scope);
+        if (typed.Count > 0 && result.Ok)
+            result = CelExpressions.Check(e.Text, e.ExtraVariables, e.Scope.HasItem, typed);
         foreach (var error in result.Errors)
             d.Add(Checks.Expression, $"{e.Where}: '{Short(e.Text)}' {error}", e.Location, e.StepId);
         if (result.Ok && e.Use == ExpressionUse.Guard && !result.ResultIsBoolOrDyn)
@@ -322,6 +325,71 @@ public sealed class PlanValidator
 
         foreach (var path in result.Paths)
             CheckPath(path, e);
+        foreach (var operand in result.IndexedPaths)
+            CheckIndex(operand, e);
+    }
+
+    /// <summary>
+    /// Index access may not stand in for a name the checks would otherwise see: <c>params['x']</c>,
+    /// <c>steps['id']</c> or <c>steps.id.outputs['name']</c> are refused, so that checks 4 and 5 cover every
+    /// parameter, step and output an expression reads. Indexing a value, such as
+    /// <c>run.branch['acme/api']</c> or a list output, is allowed.
+    /// </summary>
+    void CheckIndex(IReadOnlyList<string> operand, Expression e)
+    {
+        var text = string.Join(".", operand);
+        if (operand.Count == 1 && operand[0] is "params" or "steps" or "run" or "findings")
+        {
+            d.Add(Checks.Expression, $"{e.Where}: index access on {text} is not allowed; name the value ({text}.<name>)", e.Location, e.StepId);
+            return;
+        }
+
+        if (operand[0] == "steps" && ResolveStepPath(operand, e.Scope) is { } resolved && operand.Count <= resolved.FieldIndex + 1
+            && (operand.Count <= resolved.FieldIndex || operand[resolved.FieldIndex] is "outputs" or "artifacts"))
+            d.Add(Checks.Expression, $"{e.Where}: index access on {text} is not allowed; name the value", e.Location, e.StepId);
+    }
+
+    /// <summary>The step a <c>steps.</c> path names, and the position of the field after the step id.</summary>
+    (Step Step, int FieldIndex)? ResolveStepPath(IReadOnlyList<string> path, Scope scope)
+    {
+        for (var k = path.Count - 1; k >= 1; k--)
+            if (FindStep(string.Join(".", path.Skip(1).Take(k)), scope) is { } target)
+                return (target, k + 1);
+        return null;
+    }
+
+    /// <summary>
+    /// The declared types of the step values an expression reads, keyed by the path as written, so that the
+    /// type checker sees an output's declared type instead of the namespace's dyn.
+    /// </summary>
+    Dictionary<string, string> TypedPaths(IReadOnlyList<IReadOnlyList<string>> paths, Scope scope)
+    {
+        var typed = new Dictionary<string, string>();
+        foreach (var path in paths.Where(p => p[0] == "steps"))
+        {
+            if (ResolveStepPath(path, scope) is not { } resolved || resolved.FieldIndex >= path.Count)
+                continue;
+            var (step, at) = resolved;
+            var prefix = string.Join(".", path.Take(at + 1));
+            switch (path[at])
+            {
+                case "outcome":
+                    typed[prefix] = "string";
+                    break;
+                case "executions":
+                    typed[prefix] = "number";
+                    break;
+                case "outputs" when at + 1 < path.Count:
+                    var name = path[at + 1];
+                    var type = step.Outputs.FirstOrDefault(o => o.Name == name)?.Type
+                               ?? (Outputs(step)?.Contains(name) == true ? Actions.EngineOutputTypes.GetValueOrDefault(name) : null);
+                    if (type is not null)
+                        typed[$"{prefix}.{name}"] = type;
+                    break;
+            }
+        }
+
+        return typed;
     }
 
     void CheckPath(IReadOnlyList<string> path, Expression e)
@@ -475,8 +543,6 @@ public sealed class PlanValidator
     {
         ResolvedStep s when g.Index.TryGetValue(s.StepId, out var i) => [i],
         ResolvedBranchEnd b when g.Index.TryGetValue(Join(b.ContainerId), out var j) => [j],
-        // In a fragment validated alone, a route left to the caller's defaults is not known to leave a cycle.
-        ResolvedExit { Exit: PlanLoader.CallerDefault } => [],
         ResolvedEnd or ResolvedExit => [Graph.Terminal],
         ResolvedGuarded guarded => guarded.Entries.SelectMany(e => Targets(e.Target, g)),
         _ => [],
@@ -797,9 +863,7 @@ public sealed class PlanValidator
 
     void CheckUnusedParameters()
     {
-        foreach (var e in plan.AllExpressions)
-            foreach (var p in CelExpressions.Check(e.Text, e.ExtraVariables, e.Scope.HasItem).Paths.Where(p => p.Count > 1 && p[0] == "params"))
-                usedParameters.Add($"{e.Scope.DocumentScope.Id}|{p[1]}");
+        // CheckExpressions has recorded every params.<name> an expression or task text reads.
         foreach (var p in plan.SubstitutedParameters)
             usedParameters.Add(p);
         foreach (var p in plan.Document.Parameters)

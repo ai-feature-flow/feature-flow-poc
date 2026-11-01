@@ -91,7 +91,7 @@ steps:
       task: std:tasks/resolve_conflict
     repository: { expr: "params.repository" }
     outcomes: { resolved: success, blocked: blocked }
-    routes: { resolved: { exit: reverify } }
+    routes: { resolved: { exit: reverify }, blocked: { escalate: true } }
 
   - id: merge
     action: scm.merge

@@ -46,6 +46,7 @@ steps:
         - { name: delivery_plan, type: std:artifact_types/delivery_plan }
     outputs: { tier_tags: { type: array } }
     outcomes: { planned: success, blocked: blocked }
+    routes: { blocked: { escalate: true } }
 
   - id: validate
     action: artifact.validate

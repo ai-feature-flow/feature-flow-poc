@@ -49,6 +49,7 @@ steps:
         - { name: child_requirements, type: { param: child_requirements_type } }
     outputs: { needs_integration: { type: boolean } }
     outcomes: { planned: success, blocked: blocked }
+    routes: { blocked: { escalate: true } }
 
   - id: validate
     action: artifact.validate

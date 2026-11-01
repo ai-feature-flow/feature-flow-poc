@@ -112,11 +112,18 @@ public static partial class ReadableForm
             : "?",
     };
 
-    /// <summary>Whether the route is the one the foot's defaults describe: the template's class default, the next step for success, escalation when attempts run out.</summary>
+    /// <summary>
+    /// Whether the route is the one the foot's defaults describe: in a branch, the join for any outcome but
+    /// <c>attempts_exhausted</c>; elsewhere the template's class default, the next step for success, and
+    /// escalation when attempts run out.
+    /// </summary>
     static bool IsDefault(ResolvedRoute route, Step step, Dictionary<string, List<Step>> lanes, Defaults defaults)
     {
         Resolved? expected = null;
-        if (route.Class != OutcomeClass.None && defaults.ByClass.TryGetValue(route.Class, out var spec))
+        var inBranch = step.Scope.Kind == ScopeKind.Branch;
+        if (inBranch && route.Outcome != Actions.AttemptsExhausted && route.Target is ResolvedBranchEnd)
+            return true;
+        if (!inBranch && route.Class != OutcomeClass.None && defaults.ByClass.TryGetValue(route.Class, out var spec))
             expected = spec.Target switch
             {
                 Escalate e => new ResolvedEscalate(e.DecisionType, e.Prompt),
@@ -165,7 +172,7 @@ public static partial class ReadableForm
             .ToList();
         if (!defaults.ByClass.ContainsKey(OutcomeClass.Success))
             parts.Add("success -> next");
-        parts.Add("attempts_exhausted -> escalate");
+        parts.Add("attempts_exhausted -> escalate; in a branch, other outcomes -> join");
         return string.Join("; ", parts);
     }
 

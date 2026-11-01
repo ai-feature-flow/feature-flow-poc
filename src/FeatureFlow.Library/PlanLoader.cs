@@ -18,9 +18,6 @@ public sealed partial class PlanLoader
     /// <summary>Fragments may nest to a depth of 3 (docs/03 section 11).</summary>
     public const int MaxFragmentDepth = 3;
 
-    /// <summary>The target of a classed outcome in a fragment validated alone, which the caller's defaults would route.</summary>
-    public const string CallerDefault = "(caller default)";
-
     readonly LibrarySet libraries;
     readonly DiagnosticBag d;
     readonly LoadOptions options;
@@ -661,17 +658,8 @@ public sealed partial class PlanLoader
         if (own is not null)
             return Target(own.Target, own.Scope, step) is { } t ? new ResolvedRoute(outcome.Name, outcome.Class, t, RouteSource.Step) : null;
 
-        if (FromDefaults(step.Scope, outcome) is { } fromDefaults)
-            return fromDefaults;
-
-        if (outcome.Class == OutcomeClass.Success)
-            return new ResolvedRoute(outcome.Name, outcome.Class, Next(step.Lane, step.LaneIndex + 1, step.Scope), RouteSource.Next);
-        if (outcome.Name == Actions.AttemptsExhausted)
-            return new ResolvedRoute(outcome.Name, outcome.Class, new ResolvedEscalate(null, null), RouteSource.EngineDefault);
-
-        // In a fragment validated on its own, the caller's defaults are unknown: a classed outcome may be routed there.
-        if (plan.Root.Standalone && outcome.Class != OutcomeClass.None)
-            return new ResolvedRoute(outcome.Name, outcome.Class, new ResolvedExit(CallerDefault), RouteSource.ByClass);
+        if (Fallback(step.Scope, outcome, step.Lane, step.LaneIndex + 1) is { } fallback)
+            return fallback;
 
         d.Add(Checks.OutcomeRouted,
             $"outcome '{outcome.Name}' (class {outcome.Class.Name()}) has no route after defaults are applied",
@@ -680,31 +668,52 @@ public sealed partial class PlanLoader
     }
 
     /// <summary>
-    /// Route defaults from the step's document, then from each caller up to the template (LOG 71: a
-    /// fragment's steps take the caller's defaults where the fragment sets none).
+    /// The route of an outcome with no route of its own, written in <paramref name="scope"/> at a position
+    /// whose next step in the lane is <paramref name="nextIndex"/> (docs/03 section 4.3). In a branch the
+    /// outcome is reported to the join and no document defaults apply (section 8.1). Otherwise the
+    /// document's own <c>defaults</c> apply, by outcome name then by class; a fragment's steps do not fall
+    /// through to their caller's defaults (LOG 72), so a fragment routes its own failures, normally to its
+    /// exits. Then: for class success, the next step in list order within the same document; for
+    /// <c>attempts_exhausted</c>, the engine's escalation. Returns null when none applies.
     /// </summary>
-    ResolvedRoute? FromDefaults(Scope scope, Outcome outcome)
+    ResolvedRoute? Fallback(Scope scope, Outcome outcome, string laneId, int nextIndex)
     {
-        for (var s = scope.DocumentScope; s is not null; s = s.Parent?.DocumentScope)
+        var inBranch = scope.Kind == ScopeKind.Branch;
+        if (!inBranch)
         {
-            var defaults = s.Document.Defaults;
+            var defaults = scope.DocumentScope.Document.Defaults;
             if (defaults.ByOutcome.TryGetValue(outcome.Name, out var byOutcome))
-                return Target(byOutcome.Target, s, null) is { } t ? new ResolvedRoute(outcome.Name, outcome.Class, t, RouteSource.ByOutcome) : null;
+                return Target(byOutcome.Target, scope.DocumentScope, null) is { } t ? new ResolvedRoute(outcome.Name, outcome.Class, t, RouteSource.ByOutcome) : null;
             if (outcome.Class != OutcomeClass.None && defaults.ByClass.TryGetValue(outcome.Class, out var byClass))
-                return Target(byClass.Target, s, null) is { } t ? new ResolvedRoute(outcome.Name, outcome.Class, t, RouteSource.ByClass) : null;
+                return Target(byClass.Target, scope.DocumentScope, null) is { } t ? new ResolvedRoute(outcome.Name, outcome.Class, t, RouteSource.ByClass) : null;
         }
 
+        if (outcome.Class == OutcomeClass.Success && Next(scope, laneId, nextIndex) is { } next)
+            return new ResolvedRoute(outcome.Name, outcome.Class, next, RouteSource.Next);
+        if (outcome.Name == Actions.AttemptsExhausted)
+            return new ResolvedRoute(outcome.Name, outcome.Class, new ResolvedEscalate(null, null), RouteSource.EngineDefault);
+        if (inBranch)
+            return new ResolvedRoute(outcome.Name, outcome.Class, new ResolvedBranchEnd(laneId[..laneId.LastIndexOf('#')]), RouteSource.Next);
         return null;
     }
 
-    Resolved Next(string laneId, int index, Scope scope)
+    /// <summary>
+    /// The next step in list order, without leaving the document the position belongs to. Past a branch's
+    /// last step is its join; past a template's last step the run ends; past a fragment's last step there is
+    /// nothing, because a fragment is left only by an exit.
+    /// </summary>
+    Resolved? Next(Scope scope, string laneId, int index)
     {
         var lane = lanes[laneId];
-        if (index < lane.Count)
+        var doc = scope.DocumentScope;
+        var limit = scope.Kind != ScopeKind.Branch && doc.Kind == ScopeKind.Fragment && !doc.Standalone
+            ? instanceSpans[doc.UseId!].Last + 1
+            : lane.Count;
+        if (index < limit)
             return new ResolvedStep(lane[index].Id, false);
-        if (laneId.Length > 0)
+        if (scope.Kind == ScopeKind.Branch)
             return new ResolvedBranchEnd(laneId[..laneId.LastIndexOf('#')]);
-        return scope.DocumentScope.Standalone ? new ResolvedExit("(next)") : new ResolvedEnd("completed");
+        return doc.Kind == ScopeKind.Template ? new ResolvedEnd("completed") : null;
     }
 
     Resolved? Target(RouteTarget target, Scope scope, Step? from)
@@ -745,8 +754,8 @@ public sealed partial class PlanLoader
     }
 
     /// <summary>
-    /// An exit routes like an outcome of the <c>use</c> entry: the entry's route, the caller's defaults, or
-    /// for class success the step after the fragment (docs/03 section 11).
+    /// An exit routes like an outcome of the <c>use</c> entry, in the caller: the entry's route, then
+    /// <see cref="Fallback"/> at the position after the fragment (docs/03 section 11).
     /// </summary>
     Resolved? Exit(ExitFragment exit, Scope scope, Step? from)
     {
@@ -772,14 +781,9 @@ public sealed partial class PlanLoader
         var route = fragment.ExitRoutes.FirstOrDefault(r => r.Outcome == exit.Exit);
         if (route is not null)
             return Target(route.Target, fragment.Parent!, null);
-        var caller = fragment.Parent!;
-        if (FromDefaults(caller, declared) is { } fromDefaults)
-            return fromDefaults.Target;
-        if (declared.Class == OutcomeClass.Success)
-        {
-            var span = instanceSpans[fragment.UseId!];
-            return Next(span.Lane, span.Last + 1, caller);
-        }
+        var span = instanceSpans[fragment.UseId!];
+        if (Fallback(fragment.Parent!, declared, span.Lane, span.Last + 1) is { } fallback)
+            return fallback.Target;
 
         d.Add(Checks.Fragment, $"exit '{exit.Exit}' (class {declared.Class.Name()}) of fragment use '{fragment.UseId}' is not routed", fragment.UseLocation, fragment.UseId);
         return null;

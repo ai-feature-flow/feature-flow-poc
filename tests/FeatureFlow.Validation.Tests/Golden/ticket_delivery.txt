@@ -38,6 +38,6 @@ Template ticket_delivery (level ticket)
  34  deliver.merge                  action    scm.merge             -       pending  base_moved->deliver.catch_up  checks_failed->verify.tests  declined->end(rejected)  [protected]
 
 Protected: verify.*, deliver.*
-Defaults: blocked, failure -> escalate; success -> next; attempts_exhausted -> escalate
+Defaults: blocked, failure -> escalate; success -> next; attempts_exhausted -> escalate; in a branch, other outcomes -> join
 Fragments: baseline = std:fragments/baseline; plan = std:fragments/plan_and_validate; verify = std:fragments/verify_and_review; verify.review = std:fragments/standard_review; verify.fix = std:fragments/fix_loop; deliver = std:fragments/merge_into_parent
 for_each verify.review.review: 5 item(s) from params.angles, parallel

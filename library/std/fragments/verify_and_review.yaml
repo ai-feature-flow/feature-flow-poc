@@ -26,6 +26,10 @@ exits:
   ready: success
   escalated: blocked
 
+defaults:
+  routes:
+    by_class: { blocked: { exit: escalated } }   # a blocked repair agent leaves by the escalated exit
+
 artifact_types:
   - std:artifact_types/test_results
   - std:artifact_types/analysis_results

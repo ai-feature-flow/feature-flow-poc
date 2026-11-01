@@ -26,7 +26,7 @@ Template project_delivery (level project)
  22  deliver.revert_merges_0             action    scm.revert                     -       pending  [protected]
 
 Protected: trace.*, deliver.*
-Defaults: blocked, failure -> escalate; success -> next; attempts_exhausted -> escalate
+Defaults: blocked, failure -> escalate; success -> next; attempts_exhausted -> escalate; in a branch, other outcomes -> join
 Fragments: epics = std:fragments/plan_children; trace = std:fragments/trace; deliver = std:fragments/deliver_in_order; deliver.deliver_0 = std:fragments/merge_into_parent
 for_each deliver.deliver: items from params.repositories are known at binding; shown with one branch, chain
 for_each deliver.revert_merges: items from params.repositories are known at binding; shown with one branch, parallel

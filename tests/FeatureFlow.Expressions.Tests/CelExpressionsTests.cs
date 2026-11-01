@@ -85,6 +85,45 @@ public class CelExpressionsTests
     }
 
     [Fact]
+    public void Typed_paths_take_their_declared_type()
+    {
+        var typed = new Dictionary<string, string>
+        {
+            ["steps.triage.outputs.to_fix"] = "number",
+            ["steps.catch_up.outputs.changed"] = "boolean",
+            ["steps.plan.plan.outputs.tier_tags"] = "array",
+        };
+
+        var number = CelExpressions.Check("steps.triage.outputs.to_fix", typedPaths: typed);
+        Assert.True(number.Ok, string.Join("; ", number.Errors));
+        Assert.Equal("int64", number.ResultType);
+        Assert.False(number.ResultIsBoolOrDyn);
+
+        Assert.True(CelExpressions.Check("steps.triage.outputs.to_fix > 0", typedPaths: typed).Ok);
+        Assert.True(CelExpressions.Check("steps.catch_up.outputs.changed", typedPaths: typed).ResultIsBoolOrDyn);
+        Assert.Equal("list", CelExpressions.Check("steps.plan.plan.outputs.tier_tags", typedPaths: typed).ResultType);
+        Assert.False(CelExpressions.Check("steps.catch_up.outputs.changed == 'yes'", typedPaths: typed).Ok);
+    }
+
+    [Fact]
+    public void Int_and_double_compare_at_run_time()
+    {
+        var empty = new Dictionary<string, object?>();
+
+        Assert.Equal(true, CelExpressions.Evaluate("1.5 > 1", empty));
+        Assert.Equal(false, CelExpressions.Evaluate("0.0 > 0", empty));
+    }
+
+    [Fact]
+    public void Index_operands_are_collected()
+    {
+        var result = CelExpressions.Check("params['x'] == 1 && steps['triage'].outputs.bogus > 0 && run.branch['acme/api'] != ''");
+
+        var operands = result.IndexedPaths.Select(p => string.Join(".", p)).ToList();
+        Assert.Equal(["params", "steps", "run.branch"], operands);
+    }
+
+    [Fact]
     public void Paths_are_collected()
     {
         var result = CelExpressions.Check("steps.plan.plan.outputs.tier_tags.size() > params.n && findings.open == 0");

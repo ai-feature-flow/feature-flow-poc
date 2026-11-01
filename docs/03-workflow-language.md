@@ -255,9 +255,7 @@ Anywhere else a string is a literal.
 Predicates, selection and arithmetic only: `size`, `contains`, `all`, `any`,
 `exists`, `startsWith`, `endsWith`, `lower`, `upper` (registered by the engine,
 culture-invariant), comparison and boolean operators. No comprehensions, no
-regular expressions. M1 found `all`, `any` and `exists` unusable: CEL
-implements them as comprehensions whose static cost is unbounded, so they are
-off (LOG 71, unreviewed).
+regular expressions.
 
 | Bound | Value |
 |---|---|
@@ -600,7 +598,7 @@ standard review, the fix loop, or catch-up and merge (RW5).
 | Exits | A fragment's steps may route to `{ exit: <name> }`. The `use` entry routes each exit like an outcome. Exits carry a class for default routing |
 | Protection | `protected: true` on `use` protects every step of the fragment |
 | Nesting | A fragment may use other fragments, to a depth of 3 |
-| Defaults | A fragment's steps take route defaults from the fragment's `defaults`, then from its caller's, up to the template (LOG 72, unreviewed) |
+| Defaults | Pending review (LOG 72): a fragment's steps take route defaults only from the fragment's own `defaults` and the engine's built-in defaults (section 4.3, rules 4 and 5), never from the caller's. A fragment routes its own failures, normally to its exits |
 
 The fragment document (LOG 62):
 

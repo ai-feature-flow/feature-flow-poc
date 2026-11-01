@@ -19,6 +19,9 @@ public sealed record ExpressionCheck(
     int Nodes,
     long? CostMax)
 {
+    /// <summary>Paths used as the operand of an index, such as <c>params</c> in <c>params['x']</c>.</summary>
+    public IReadOnlyList<IReadOnlyList<string>> IndexedPaths { get; init; } = [];
+
     public bool Ok => Errors.Count == 0;
 }
 
@@ -53,15 +56,26 @@ public static class CelExpressions
     /// <summary>
     /// No macros. CEL's <c>all</c> and <c>exists</c> are comprehension macros, and Cel.NET estimates a
     /// comprehension over a list of unknown size at an unbounded cost, so the cost cap would refuse them
-    /// anyway; docs/03 section 5.2 also says "no comprehensions" (LOG 71).
+    /// anyway; docs/03 section 5.2 also says "no comprehensions" (LOG 71, awaiting a decision).
     /// </summary>
     public static readonly IReadOnlyList<string> AllowedMacros = [];
 
     static readonly ConcurrentDictionary<string, Env> Environments = new();
 
-    static Env EnvFor(IReadOnlyList<string> extra, bool withItem)
+    /// <summary>The CEL type of a declared value type: output types (docs/03 section 5.4), and "dyn".</summary>
+    static CelType TypeOf(string type) => type switch
     {
-        var key = string.Join(",", extra) + (withItem ? "|item" : "");
+        "string" => Decls.String,
+        "number" => Decls.Int,
+        "boolean" => Decls.Bool,
+        "array" => Decls.NewListType(Decls.Dyn),
+        _ => Decls.Dyn,
+    };
+
+    static Env EnvFor(IReadOnlyList<string> extra, bool withItem, IReadOnlyDictionary<string, string>? typed = null)
+    {
+        var typedKey = typed is null ? "" : string.Join(",", typed.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key}:{kv.Value}"));
+        var key = string.Join(",", extra) + (withItem ? "|item" : "") + "|" + typedKey;
         return Environments.GetOrAdd(key, _ =>
         {
             var dyn = Decls.NewMapType(Decls.String, Decls.Dyn);
@@ -75,7 +89,15 @@ public static class CelExpressions
             if (withItem)
                 decls.Add(Decls.NewVar("item", Decls.Dyn));
             decls.AddRange(extra.Where(v => !Namespaces.Contains(v) && v != "item").Distinct().Select(v => Decls.NewVar(v, Decls.Dyn)));
+
+            // A qualified name such as steps.triage.outputs.to_fix is resolved before the select chain, so
+            // declaring it gives the path its declared type instead of the namespace's dyn.
+            decls.AddRange((typed ?? new Dictionary<string, string>()).Select(kv => Decls.NewVar(kv.Key, TypeOf(kv.Value))));
             decls.AddRange(Cel.Checker.Checker.StandardDeclarations.Where(d => AllowedStandardNames.Contains(d.Name)));
+
+            // Comparisons between int and double (for example a number output with 0.5); CEL equality across
+            // the two types cannot be declared, so an output of type number is checked as an int.
+            decls.AddRange(Cel.Checker.Checker.CrossTypeNumericComparisonDeclarations);
             decls.Add(Decls.NewFunction("lower",
                 Decls.NewInstanceOverload("string_lower", [Decls.String], Decls.String)));
             decls.Add(Decls.NewFunction("upper",
@@ -97,13 +119,15 @@ public static class CelExpressions
     /// <summary>Parses and type-checks an expression, and applies the bounds of docs/03 section 5.2.</summary>
     /// <param name="extraVariables">Further names in scope, such as a task's <c>with</c> keys.</param>
     /// <param name="withItem">Whether <c>item</c> is in scope.</param>
-    public static ExpressionCheck Check(string text, IEnumerable<string>? extraVariables = null, bool withItem = false)
+    /// <param name="typedPaths">Qualified paths with a known type, such as <c>steps.triage.outputs.to_fix</c> to "number".</param>
+    public static ExpressionCheck Check(string text, IEnumerable<string>? extraVariables = null, bool withItem = false,
+        IReadOnlyDictionary<string, string>? typedPaths = null)
     {
         var errors = new List<string>();
         if (text.Length > MaxLength)
             errors.Add($"is {text.Length} characters; the limit is {MaxLength}");
 
-        var env = EnvFor((extraVariables ?? []).Order(StringComparer.Ordinal).ToList(), withItem);
+        var env = EnvFor((extraVariables ?? []).Order(StringComparer.Ordinal).ToList(), withItem, typedPaths);
         var parsed = env.Parse(text);
         if (parsed.HasIssues())
         {
@@ -112,7 +136,8 @@ public static class CelExpressions
         }
 
         var paths = new List<IReadOnlyList<string>>();
-        var nodes = Walk(parsed.Ast!.Expr, paths, false);
+        var indexed = new List<IReadOnlyList<string>>();
+        var nodes = Walk(parsed.Ast!.Expr, paths, false, indexed);
         if (nodes > MaxNodes)
             errors.Add($"has {nodes} syntax tree nodes; the limit is {MaxNodes}");
 
@@ -120,7 +145,7 @@ public static class CelExpressions
         if (checkedAst.HasIssues())
         {
             errors.Add("does not type-check: " + Flatten(checkedAst.Issues!.ToString()));
-            return new ExpressionCheck(text, errors, "?", false, paths, nodes, null);
+            return new ExpressionCheck(text, errors, "?", false, paths, nodes, null) { IndexedPaths = indexed };
         }
 
         long? cost = null;
@@ -137,7 +162,7 @@ public static class CelExpressions
         }
 
         var type = checkedAst.Ast!.ResultType;
-        return new ExpressionCheck(text, errors, Describe(type), IsBoolOrDyn(type), paths, nodes, cost);
+        return new ExpressionCheck(text, errors, Describe(type), IsBoolOrDyn(type), paths, nodes, cost) { IndexedPaths = indexed };
     }
 
     /// <summary>Evaluates a checked expression. Variables are plain values: strings, longs, doubles, booleans, lists and maps.</summary>
@@ -178,7 +203,7 @@ public static class CelExpressions
     };
 
     /// <summary>Counts AST nodes and collects select paths rooted at an identifier, such as <c>[steps, plan, outputs, x]</c>.</summary>
-    static int Walk(Expr e, List<IReadOnlyList<string>> paths, bool insideSelect)
+    static int Walk(Expr e, List<IReadOnlyList<string>> paths, bool insideSelect, List<IReadOnlyList<string>> indexed)
     {
         switch (e.ExprKindCase)
         {
@@ -189,27 +214,32 @@ public static class CelExpressions
             case Expr.ExprKindOneofCase.SelectExpr:
                 if (!insideSelect && SelectPath(e) is { } path)
                     paths.Add(path);
-                return 1 + Walk(e.SelectExpr.Operand, paths, true);
+                return 1 + Walk(e.SelectExpr.Operand, paths, true, indexed);
             case Expr.ExprKindOneofCase.CallExpr:
+                if (e.CallExpr.Function == "_[_]" && e.CallExpr.Args.Count == 2 && Root(e.CallExpr.Args[0]) is { } operand)
+                    indexed.Add(operand);
                 var n = 1;
                 if (e.CallExpr.Target is not null)
-                    n += Walk(e.CallExpr.Target, paths, false);
+                    n += Walk(e.CallExpr.Target, paths, false, indexed);
                 foreach (var arg in e.CallExpr.Args)
-                    n += Walk(arg, paths, false);
+                    n += Walk(arg, paths, false, indexed);
                 return n;
             case Expr.ExprKindOneofCase.ListExpr:
-                return 1 + e.ListExpr.Elements.Sum(x => Walk(x, paths, false));
+                return 1 + e.ListExpr.Elements.Sum(x => Walk(x, paths, false, indexed));
             case Expr.ExprKindOneofCase.StructExpr:
                 return 1 + e.StructExpr.Entries.Sum(x =>
-                    (x.MapKey is null ? 0 : Walk(x.MapKey, paths, false)) + Walk(x.Value, paths, false));
+                    (x.MapKey is null ? 0 : Walk(x.MapKey, paths, false, indexed)) + Walk(x.Value, paths, false, indexed));
             case Expr.ExprKindOneofCase.ComprehensionExpr:
                 var c = e.ComprehensionExpr;
-                return 1 + Walk(c.IterRange, paths, false) + Walk(c.AccuInit, paths, false) + Walk(c.LoopCondition, paths, false)
-                       + Walk(c.LoopStep, paths, false) + Walk(c.Result, paths, false);
+                return 1 + Walk(c.IterRange, paths, false, indexed) + Walk(c.AccuInit, paths, false, indexed) + Walk(c.LoopCondition, paths, false, indexed)
+                       + Walk(c.LoopStep, paths, false, indexed) + Walk(c.Result, paths, false, indexed);
             default:
                 return 1;
         }
     }
+
+    /// <summary>The path of an identifier or a select chain rooted at one, or null.</summary>
+    static List<string>? Root(Expr e) => e.ExprKindCase == Expr.ExprKindOneofCase.IdentExpr ? [e.IdentExpr.Name] : SelectPath(e);
 
     static List<string>? SelectPath(Expr e)
     {

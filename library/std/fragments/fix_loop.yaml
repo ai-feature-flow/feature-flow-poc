@@ -17,6 +17,10 @@ exits:
   fixed: success
   escalated: blocked
 
+defaults:
+  routes:
+    by_class: { blocked: { exit: escalated } }   # a blocked triager or fixer leaves by the escalated exit
+
 artifact_types:
   - std:artifact_types/findings_report
   - std:artifact_types/triage
