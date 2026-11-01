@@ -75,6 +75,14 @@ in at least one trial:
 |---|---|
 | X1 | Does Copilot CLI fire a `PreToolUse` hook with a first-party model? Spike 2 saw it not fire with a third-party model (`archive/docs/16` section 4). A hook that logs each call is configured in every Copilot trial |
 
+**Amendment, made after the first T3 runs and before re-running them.** In all
+five Copilot T3 trials, Copilot's file tool refused to write `out/report.json`
+because `out/` did not exist, and the shell it would have used to create the
+folder is denied in these trials. Claude Code's file tool creates folders, so
+it was unaffected. The engine prepares a step's output folder, so the harness
+now creates `out/` before the agent starts (T3a). T3a is run five times on each
+runtime under the same C3; the first T3 results are kept as run.
+
 ## 4. Out of scope
 
 `propose_patch`, `inspect_plan`, `checkpoint` and `run_check`; worker restarts
