@@ -70,6 +70,15 @@ depend on the identity.
 | N1 | S1 with a plain forced push (`--force`) instead of the expected-revision push | C1: concurrent pushes overwrite each other's merges |
 | N2 | S1 with the re-test after a changing catch-up skipped | C2: a merge lands a head that was never tested |
 
+**Amendment, made after N1 ran and before N1b ran.** N1 did not fail C1. With
+the barrier, every forced push starts at the same moment and carries the same
+old value, which the client read from GitHub when the push started; GitHub
+refuses all but one (`cannot lock ref ... is at <new> but expected <old>`,
+reproduced by hand on a throwaway branch). Git's push protocol already refuses
+simultaneous overwrites. An overwrite needs a push that starts after the parent
+has moved past the revision recorded at catch-up. Added N1b: S2 (natural
+timing, 5 tickets) with `--force`; it must fail C1. N1 is kept as run.
+
 ## 4. Out of scope
 
 Conflicts (Spike 3), real tests and CI, branch protection and merge queues,
