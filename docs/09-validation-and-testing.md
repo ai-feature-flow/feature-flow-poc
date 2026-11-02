@@ -117,8 +117,8 @@ Replay works: Spike 1's nine recorded histories replay cleanly, and removing a
 version guard from Spike 3's interpreter change made a Spike 1 history fail
 replay (`archive/docs/15` section 7; `archive/docs/18` section 4). Every
 behaviour change to the interpreter is versioned with a Temporal patch marker.
-Recorded histories hold references only and pass a secret scan before they are
-committed.
+Recorded histories hold references and the run's library text, which is not
+secret (LOG 83). They pass a secret scan before they are committed.
 
 ### 4.2 Test types
 

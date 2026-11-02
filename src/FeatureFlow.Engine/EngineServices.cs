@@ -46,6 +46,8 @@ public sealed class EngineServices(ProviderSet providers, InstallationConfig ins
             policy.AttemptsPerRun ?? 200,
             policy.AttemptsPerStep,
             policy.AllowedRoles,
-            policy.Approval.Select(r => new AutoRule(r.Match, r.Auto.Value)).ToList());
+            policy.Approval.Select(r => new AutoRule(r.Match, r.Auto.Value)).ToList(),
+            policy.HardPerStep,
+            policy.HardPerRun);
     }
 }

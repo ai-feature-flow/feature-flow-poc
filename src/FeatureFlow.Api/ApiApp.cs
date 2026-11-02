@@ -8,6 +8,7 @@ using FeatureFlow.Model;
 using FeatureFlow.Providers.Abstractions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Http;
 using Temporalio.Client;
@@ -35,8 +36,10 @@ public static class ApiApp
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseUrls(urls.Length == 0 ? ["http://127.0.0.1:8480"] : urls);
         builder.Logging.ClearProviders();
+        builder.Logging.AddSimpleConsole();
+        builder.Logging.SetMinimumLevel(LogLevel.Warning);
         var app = builder.Build();
-        var api = new Handlers(services);
+        var api = new Handlers(services, app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("FeatureFlow.Api"));
 
         app.MapPost("/runs", (Delegate)((HttpContext c) => api.Guard(c, caller => api.StartAsync(c, caller))));
         app.MapGet("/runs", (Delegate)((HttpContext c) => api.Guard(c, _ => api.ListAsync(c))));
@@ -46,7 +49,25 @@ public static class ApiApp
         return app;
     }
 
-    sealed class Handlers(ApiServices services)
+    /// <summary>
+    /// Who may answer a wait (docs/05 sections 3.2 to 5): the roles of the first organisation approval rule matching
+    /// its decision type; else the <c>default_approval</c> roles of the library that declares the type, an exact
+    /// name before a pattern (docs/05 section 4); else <c>approver</c> for a decision and <c>steerer</c> for an
+    /// intervention or patch approval. Where a steerer may, an administrator may too (docs/05 section 3.3).
+    /// </summary>
+    public static IReadOnlyList<string> RolesToAnswer(PolicyConfig policy, IReadOnlyList<DecisionTypeItem> types, WaitRecord wait)
+    {
+        IReadOnlyList<string> roles;
+        if (policy.RuleFor(wait.DecisionType) is { Roles.Count: > 0 } rule)
+            roles = rule.Roles;
+        else if ((types.FirstOrDefault(t => t.Name == wait.DecisionType) ?? types.FirstOrDefault(t => t.Matches(wait.DecisionType))) is { DefaultRoles.Count: > 0 } declared)
+            roles = declared.DefaultRoles;
+        else
+            roles = wait.Kind == "decision" ? ["approver"] : ["steerer"];
+        return roles.Contains("steerer") && !roles.Contains("admin") ? [.. roles, "admin"] : roles;
+    }
+
+    sealed class Handlers(ApiServices services, ILogger logger)
     {
         IRecordStoreProvider Records => services.Providers.Required<IRecordStoreProvider>("record_store");
 
@@ -68,7 +89,9 @@ public static class ApiApp
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
-                return Error(500, $"{e.GetType().Name}: {e.Message}");
+                // The detail goes to the log, never to the caller.
+                logger.LogError(e, "{Method} {Path} failed", context.Request.Method, context.Request.Path);
+                return Error(500, "internal error; the API's log has the detail");
             }
         }
 
@@ -81,7 +104,16 @@ public static class ApiApp
             var repositories = body!["repositories"]?.AsArray().Select(n => n!.GetValue<string>()).ToList() ?? [];
             var parameters = (body["parameters"] as JsonObject ?? []).ToDictionary(kv => kv.Key, kv => kv.Value?.ToJsonString() ?? "null");
             var dryRun = body["dry_run"]?.GetValue<bool>() ?? false;
-            var handOver = body["continue_as_new_events"]?.GetValue<long>() ?? services.Installation.ContinueAsNewEvents;
+            var handOver = services.Installation.ContinueAsNewEvents;
+            if (body["continue_as_new_events"]?.GetValue<long>() is { } requested)
+            {
+                // A run's own hand-over threshold is an administrator's override (LOG 87), and never below the floor.
+                if (!caller.Roles.Contains("admin"))
+                    return Error(403, $"{caller.Actor} may not set continue_as_new_events: it needs the admin role");
+                if (requested < ConfigurationReader.MinimumHandOverEvents)
+                    return Error(400, $"continue_as_new_events must be at least {ConfigurationReader.MinimumHandOverEvents}");
+                handOver = requested;
+            }
 
             var lockRef = await WriteLockAsync(context.RequestAborted);
             var runId = "run-" + Guid.NewGuid().ToString("N")[..12];
@@ -155,7 +187,8 @@ public static class ApiApp
             if (wait.Kind == "patchapproval" && action is null && outcome is "approve" or "reject")
                 (action, outcome) = (outcome, null);
             var args = new AnswerArgs(waitId, caller.Actor, outcome, action, body["step_id"]?.GetValue<string>(),
-                body["clean_up"]?.GetValue<bool>() ?? false, body["attempts"]?.GetValue<long>() ?? 0, body["status"]?.GetValue<string>());
+                body["clean_up"]?.GetValue<bool>() ?? false, body["attempts"]?.GetValue<long>() ?? 0, body["status"]?.GetValue<string>(),
+                BeyondHardCeiling: caller.Roles.Contains("admin"));
             var answerText = JsonSerializer.Serialize(args, Json);
             await Records.AppendAsync(new RecordBatch(Answers: [new AnswerRecord(id, waitId, caller.Actor, answerText, "sent", DateTimeOffset.UtcNow)]), context.RequestAborted);
             try
@@ -172,15 +205,20 @@ public static class ApiApp
             }
         }
 
-        /// <summary>
-        /// Who may answer (docs/05 sections 3.2 and 5): a decision by the first approval rule matching its type;
-        /// an intervention and a patch approval, a steerer, unless a rule matches their type.
-        /// </summary>
-        IReadOnlyList<string> RequiredRoles(WaitRecord wait)
+        IReadOnlyList<string> RequiredRoles(WaitRecord wait) => RolesToAnswer(services.Organisation.Policy, DecisionTypes(), wait);
+
+        /// <summary>The organisation's libraries' decision types, read now: approval is checked at the moment of use (docs/05 section 8).</summary>
+        List<DecisionTypeItem> DecisionTypes()
         {
-            if (services.Organisation.Policy.RuleFor(wait.DecisionType) is { Roles.Count: > 0 } rule)
-                return rule.Roles;
-            return wait.Kind == "decision" ? ["approver"] : ["steerer"];
+            var types = new List<DecisionTypeItem>();
+            foreach (var source in services.Organisation.Libraries)
+            {
+                var path = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(services.Organisation.Location))!, source.Path));
+                if (Library.Library.Open(path, new DiagnosticBag()) is { } library)
+                    types.AddRange(library.DecisionTypes);
+            }
+
+            return types;
         }
 
         public async Task<IResult> AbortAsync(HttpContext context, Caller caller, string id)

@@ -121,6 +121,35 @@ public class ShellInputTests
         Assert.Equal(RunStatus.Completed, core.State.Status);
     }
 
+    [Theory]
+    [InlineData(1, false, true)]
+    [InlineData(2, false, false)]
+    [InlineData(2, true, true)]
+    public void A_grant_above_the_hard_ceiling_needs_an_administrator(long attempts, bool administrator, bool accepted)
+    {
+        // The step allows 2 attempts; the hard ceiling is 3 (F4; docs/05 section 5, grant_attempts_beyond).
+        var (core, d) = RunCore.Start(Lib.Libraries, Probe.Ref("retrying"), TicketRun(), new RunOptions { HardStepCeiling = 3 });
+        Assert.True(core is not null, string.Join("\n", d));
+        var driver = new Driver(core!) { Respond = (id, _) => id == "work" ? new StepFailed(id, ErrorClass.Work, "x") : new StepCompleted(id, "sent") };
+        driver.Run();
+        var answer = new InterventionAnswered(core!.State.Waits.Single().Id, new Recovery(RecoveryKind.GrantAttempts, Attempts: attempts, BeyondHardCeiling: administrator));
+        var result = core.Apply(answer);
+        Assert.Equal(accepted, result.Accepted);
+        if (!accepted)
+            Assert.Contains("above the hard ceiling of 3", result.Errors.Single());
+    }
+
+    [Fact]
+    public void A_grant_that_raises_the_run_ceiling_above_its_hard_ceiling_needs_an_administrator()
+    {
+        var (core, _) = RunCore.Start(Lib.Libraries, Probe.Ref("retrying"), TicketRun(), new RunOptions { RunCeiling = 3, HardRunCeiling = 4 });
+        var driver = new Driver(core!) { Respond = (id, _) => id == "work" ? new StepFailed(id, ErrorClass.Work, "x") : new StepCompleted(id, "sent") };
+        driver.Run();
+        var wait = core!.State.Waits.Single().Id;
+        Assert.Contains("run ceiling", core.Check(new InterventionAnswered(wait, new Recovery(RecoveryKind.GrantAttempts, Attempts: 2))));
+        Assert.Null(core.Check(new InterventionAnswered(wait, new Recovery(RecoveryKind.GrantAttempts, Attempts: 2, BeyondHardCeiling: true))));
+    }
+
     [Fact]
     public void Go_to_with_clean_up_and_re_plan_enter_the_named_step()
     {

@@ -42,7 +42,7 @@ public class ContinueAsNewTests
             "--param", "children=[" + string.Join(", ", children.Select(c => $"{{ wait_ms: {c.WaitMs}, outcome: {c.Outcome} }}")) + "]",
             "--param", "questions=[" + string.Join(", ", Enumerable.Range(0, Questions)) + "]",
             "--param", "work=[" + string.Join(", ", work) + "]",
-            "--repo", "acme/api", "--continue-as-new-events", "80");
+            "--repo", "acme/api", "--continue-as-new-events", "100");
         var handle = h.Client.GetWorkflowHandle(id);
 
         // The decisions open at the start; find each question's wait id from the record store, through the API.
@@ -143,5 +143,6 @@ public class ContinueAsNewTests
         TestContext.Current.TestOutputHelper?.WriteLine(
             $"hand-overs {final.HandOvers.Count}, with children and decisions {withBoth}, child ends while draining {final.ChildEndsWhileDraining}, answers while draining {final.AnswersWhileDraining}");
         await h.RecordHistoryAsync(id, "sp1_parent");
+        Assert.True(await h.RecordResumedHistoryAsync(id, "sp1_parent_resumed"), "no run resumed carrying unconfirmed child ends");
     }
 }

@@ -40,7 +40,9 @@ public sealed record RunPolicy(
     long RunCeiling,
     long? StepCeiling,
     IReadOnlyList<string>? AllowedRoles,
-    IReadOnlyList<AutoRule> AutoRules)
+    IReadOnlyList<AutoRule> AutoRules,
+    long? HardStepCeiling = null,
+    long? HardRunCeiling = null)
 {
     public RunOptions ToOptions() => new()
     {
@@ -50,6 +52,8 @@ public sealed record RunPolicy(
         StepCeiling = StepCeiling,
         AllowedRoles = AllowedRoles,
         AutoResolve = type => AutoRules.FirstOrDefault(r => Matches(r.Match, type))?.Auto ?? false,
+        HardStepCeiling = HardStepCeiling,
+        HardRunCeiling = HardRunCeiling,
     };
 
     static bool Matches(string pattern, string type) =>
@@ -112,7 +116,8 @@ public sealed record AnswerArgs(
     string? StepId = null,
     bool CleanUp = false,
     long Attempts = 0,
-    string? Status = null);
+    string? Status = null,
+    bool BeyondHardCeiling = false);
 
 public sealed record AbortArgs(string Actor, string Reason);
 

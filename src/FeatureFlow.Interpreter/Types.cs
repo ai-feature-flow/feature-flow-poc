@@ -67,6 +67,14 @@ public sealed record RunOptions
 
     /// <summary>Whether organisation policy allows auto-resolution for a decision type (docs/04 section 4.2). Default: never.</summary>
     public Func<string, bool> AutoResolve { get; init; } = _ => false;
+
+    /// <summary>
+    /// The organisation's hard ceilings (F4; docs/05 section 5): an attempt grant that takes a step's allowance or
+    /// the run ceiling above them needs an administrator (<c>grant_attempts_beyond</c>). Null: none.
+    /// </summary>
+    public long? HardStepCeiling { get; init; }
+
+    public long? HardRunCeiling { get; init; }
 }
 
 /// <summary>Something the core asks the shell to do. The Temporal workflow (M3) or the re-drive runner carries it out.</summary>
@@ -148,7 +156,8 @@ public enum RecoveryKind
 }
 
 /// <summary>A recovery action with its arguments: the step for go to and re-plan, the attempts to grant, the status to end with.</summary>
-public sealed record Recovery(RecoveryKind Kind, string? StepId = null, bool CleanUp = false, long Attempts = 0, RunStatus? Status = null);
+/// <remarks><see cref="BeyondHardCeiling"/> is set by the shell when the authenticated actor may grant beyond the hard ceiling (an administrator).</remarks>
+public sealed record Recovery(RecoveryKind Kind, string? StepId = null, bool CleanUp = false, long Attempts = 0, RunStatus? Status = null, bool BeyondHardCeiling = false);
 
 /// <summary>A person answered an intervention with a recovery action. The shell names the actor; the core does not need it.</summary>
 public sealed record InterventionAnswered(string WaitId, Recovery Action) : RunInput;

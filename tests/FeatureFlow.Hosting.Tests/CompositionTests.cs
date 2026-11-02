@@ -23,7 +23,7 @@ public class CompositionTests
     static InstallationConfig Read(string providers)
     {
         var d = new DiagnosticBag();
-        var config = ConfigurationReader.ReadInstallation($"api_version: feature-flow/v1\nkind: installation\nproviders:\n{providers}", "/tmp/installation.yaml", d);
+        var config = ConfigurationReader.ReadInstallation($"api_version: feature-flow/v1\nkind: installation\ndevelopment: true\nproviders:\n{providers}", "/tmp/installation.yaml", d);
         Assert.False(d.HasErrors, string.Join("\n", d));
         return config!;
     }

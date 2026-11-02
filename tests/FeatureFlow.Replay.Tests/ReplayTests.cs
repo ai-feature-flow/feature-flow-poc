@@ -23,7 +23,7 @@ public class ReplayTests
     public void The_recorded_histories_are_there()
     {
         // Without this, a missing folder would leave the theory with no cases and nothing replayed.
-        Assert.Equal(["epic_delivery", "epic_delivery_child", "sp1_parent", "ticket_delivery"],
+        Assert.Equal(["epic_delivery", "epic_delivery_child", "sp1_parent", "sp1_parent_resumed", "ticket_delivery"],
             Names());
     }
 

@@ -21,6 +21,8 @@ WORKFLOW = "src/FeatureFlow.Engine/RunWorkflow.cs"
 CARRY = "src/FeatureFlow.Interpreter/Carry.cs"
 CHECKS = "src/FeatureFlow.Validation/RunStartChecks.cs"
 API_PROJECT = "src/FeatureFlow.Api/FeatureFlow.Api.csproj"
+API_APP = "src/FeatureFlow.Api/ApiApp.cs"
+RECOVERY = "src/FeatureFlow.Interpreter/Recovery.cs"
 
 INTEGRATION = "tests/FeatureFlow.Integration.Tests"
 SP1 = (INTEGRATION, "FullyQualifiedName~ContinueAsNewTests")
@@ -63,6 +65,31 @@ CONTROLS = [
                    'A_recorded_history_replays_against_the_current_workflow(name: "sp1_parent")'],
     },
     {
+        "name": "version guard removed from the hand-over threshold's floor and byte limit",
+        "edits": [(WORKFLOW, "var limits = Workflow.Patched(HandOverLimitsPatch);", "var limits = true;")],
+        "tests": [("tests/FeatureFlow.Replay.Tests", None)],
+        "expect": ['A_recorded_history_replays_against_the_current_workflow(name: "epic_delivery")'],
+    },
+    {
+        "name": "a non-retryable step activity failure is not caught",
+        "edits": [(WORKFLOW, "catch (ActivityFailureException e)", "catch (ActivityFailureException e) when (e.Message.Length < 0)")],
+        "tests": [(INTEGRATION, "FullyQualifiedName~StepFailureTests")],
+        "expect": ["A_non_retryable_activity_failure_fails_the_attempt_and_escalates"],
+    },
+    {
+        "name": "attempt grants not held to the hard ceiling",
+        "edits": [(RECOVERY, "if (!action.BeyondHardCeiling)", "if (action.Attempts < 0)")],
+        "tests": [("tests/FeatureFlow.Interpreter.Tests", None)],
+        "expect": ["A_grant_above_the_hard_ceiling_needs_an_administrator(attempts: 2, administrator: False, accepted: False)",
+                   "A_grant_that_raises_the_run_ceiling_above_its_hard_ceiling_needs_an_administrator"],
+    },
+    {
+        "name": "the library's default_approval ignored",
+        "edits": [(API_APP, "is { DefaultRoles.Count: > 0 } declared)", "is { DefaultRoles.Count: > 999 } declared)")],
+        "tests": [("tests/FeatureFlow.Api.Tests", None)],
+        "expect": ["Who_may_answer_is_the_organisation_rule_then_the_library_default_then_the_fallback"],
+    },
+    {
         "name": "a repeated answer is not recognised as a duplicate",
         "edits": [(WORKFLOW, "        if (Previous(answer) is { } previous)\n        {", "        if (false && Previous(answer) is { } previous)\n        {"),
                   (WORKFLOW, "        if (Previous(answer) is { } previous)\n            return", "        if (false && Previous(answer) is { } previous)\n            return")],
@@ -97,7 +124,7 @@ def run_tests(tests):
         if test_filter:
             command += ["--filter", test_filter]
         run = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
-        failing.update(re.findall(r"^\s+Failed [\w.]+\.(\w+(?:\(name: \"\w+\"\))?) \[", run.stdout, re.M))
+        failing.update(re.findall(r"^\s+Failed [\w.]+\.(\w+(?:\([^)]*\))?) \[", run.stdout, re.M))
         if run.returncode != 0 and not failing:
             failing.add("(build or run failed)")
             print(run.stdout[-3000:], flush=True)

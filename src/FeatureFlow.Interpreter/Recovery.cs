@@ -52,7 +52,19 @@ public sealed partial class RunCore
             case RecoveryKind.GrantAttempts:
                 if (action.Attempts <= 0)
                     return "grant attempts needs a positive number of attempts";
-                return StepById(wait.StepId) is null ? $"{wait.StepId} is not a step of plan revision {State.Revision}" : null;
+                if (StepById(wait.StepId) is not { } stopped)
+                    return $"{wait.StepId} is not a step of plan revision {State.Revision}";
+                if (!action.BeyondHardCeiling)
+                {
+                    var allowance = Allowance(stopped) + (State.Steps.GetValueOrDefault(stopped.Id)?.AttemptsGranted ?? 0) + action.Attempts;
+                    if (Options.HardStepCeiling is { } hardStep && allowance > hardStep)
+                        return $"granting {action.Attempts} would give {stopped.Id} {allowance} attempts, above the hard ceiling of {hardStep}; an administrator may grant beyond it (grant_attempts_beyond)";
+                    var ceiling = Options.RunCeiling + State.RunCeilingGranted + action.Attempts;
+                    if (Options.HardRunCeiling is { } hardRun && ceiling > hardRun)
+                        return $"granting {action.Attempts} would raise the run ceiling to {ceiling}, above the hard ceiling of {hardRun}; an administrator may grant beyond it (grant_attempts_beyond)";
+                }
+
+                return null;
             case RecoveryKind.GoTo:
                 return action.StepId is null || FindIn(action.StepId) is null ? $"go to: '{action.StepId}' is not a step of plan revision {State.Revision}" : null;
             case RecoveryKind.Replan:

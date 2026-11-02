@@ -94,11 +94,16 @@ public class RunWorkflow
             core = RunCore.Resume(RunActivities.Build(libraries, new DiagnosticBag()), Template, input.Carried.Core, policy.ToOptions());
         }
 
+        // The floor on the event threshold and the byte threshold came after histories were recorded; older
+        // histories replay without them (docs/09 section 4.1).
+        var limits = Workflow.Patched(HandOverLimitsPatch);
+        var events = limits ? Math.Max(input.HandOverEvents, ConfigurationReader.MinimumHandOverEvents) : input.HandOverEvents;
         while (true)
         {
             dirty = false;
             ProcessSignals();
-            if (!draining && core.State.Status == RunStatus.Running && Workflow.CurrentHistoryLength >= input.HandOverEvents)
+            if (!draining && core.State.Status == RunStatus.Running
+                && (Workflow.CurrentHistoryLength >= events || (limits && Workflow.CurrentHistorySize >= HandOverBytes)))
                 draining = true;
 
             await ExecuteAsync(draining ? core.Flush() : core.Advance());
@@ -245,7 +250,7 @@ public class RunWorkflow
                     _ => throw new ApplicationFailureException($"{a.WaitId} is an intervention: answer retry, go_to, replan, grant_attempts or end"),
                 };
                 RunStatus? status = a.Status is null ? null : RunStatuses.Parse(a.Status);
-                return new InterventionAnswered(a.WaitId, new Recovery(kind, a.StepId, a.CleanUp, a.Attempts, status));
+                return new InterventionAnswered(a.WaitId, new Recovery(kind, a.StepId, a.CleanUp, a.Attempts, status, a.BeyondHardCeiling));
         }
     }
 
@@ -406,6 +411,12 @@ public class RunWorkflow
         {
             return;
         }
+        catch (ActivityFailureException e)
+        {
+            // A non-retryable activity failure (an artifact that does not exist, a list artifact with no items)
+            // is the step's failure: it reaches the core as a work error, never leaves the step in flight.
+            outcome = new StepOutcome(StepOutcome.WorkFailed, null, "the step's activity failed: " + (e.InnerException?.Message ?? e.Message));
+        }
         finally
         {
             EndActivity();
@@ -415,16 +426,26 @@ public class RunWorkflow
 
         if (!Current(step.Id, execution))
             return;
-        if (expandItems is not null)
+        try
         {
-            var (patch, error) = PlanExpansion.Build(core!, step.Id, ((YSeq)YamlWriter.Read(expandItems, "items")).Items);
-            core!.Apply(error is null
-                ? new StepCompleted(step.Id, "expanded", Patch: patch)
-                : new StepCannotAnswer(step.Id, error));
-            return;
-        }
+            if (expandItems is not null)
+            {
+                var items = YamlWriter.Read(expandItems, "items") as YSeq ?? throw new FormatException("plan.expand's list is not a list");
+                var (patch, error) = PlanExpansion.Build(core!, step.Id, items.Items);
+                core!.Apply(error is null
+                    ? new StepCompleted(step.Id, "expanded", Patch: patch)
+                    : new StepCannotAnswer(step.Id, error));
+                return;
+            }
 
-        Apply(step, outcome!);
+            Apply(step, outcome!);
+        }
+        catch (Exception e) when (e is not TemporalException)
+        {
+            // Whatever goes wrong with a step's result is the step's failure, not the run's (docs/04 section 1).
+            if (Current(step.Id, execution))
+                core!.Apply(new StepFailed(step.Id, ErrorClass.Work, $"the step's result could not be applied: {e.Message}"));
+        }
     }
 
     /// <summary>Whether a step's result still belongs to the run: the step is running, at the execution that started it.</summary>
@@ -519,6 +540,12 @@ public class RunWorkflow
         catch (WorkflowAlreadyStartedException)
         {
             // Adopt the existing child (docs/04 section 5.1: idempotent by run id and step key).
+        }
+        catch (Exception e) when (e is ChildWorkflowFailureException or ApplicationFailureException)
+        {
+            core!.Apply(new StepFailed(step.Id, ErrorClass.Work, "the child run could not be started: " + e.Message));
+            dirty = true;
+            return;
         }
 
         children.Add(new ChildRun(step.Id, execution, childId));
@@ -624,6 +651,15 @@ public class RunWorkflow
         if (input.ParentWorkflowId is { } parent)
             await SignalQuietlyAsync(parent, RunWorkflowNames.ChildEnded, [Workflow.Info.WorkflowId]);
     }
+
+    /// <summary>The patch marker of the hand-over threshold's floor and byte limit.</summary>
+    public const string HandOverLimitsPatch = "m3-hand-over-limits";
+
+    /// <summary>
+    /// History bytes at which a run hands over whatever its event count (docs/02 section 3: the event threshold or
+    /// the payload byte limit, whichever comes first). Temporal warns at 10 MB of history; this stays under it.
+    /// </summary>
+    public const int HandOverBytes = 8 * 1024 * 1024;
 
     /// <summary>The patch marker of the hand-over record (docs/09 section 4.1): histories recorded before it take the old path.</summary>
     public const string RecordHandOverPatch = "m3-record-hand-over";

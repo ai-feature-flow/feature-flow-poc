@@ -59,6 +59,7 @@ public sealed class Harness : IAsyncDisposable
         await File.WriteAllTextAsync(IOPath.Combine(folder, "installation.yaml"), $$"""
             api_version: feature-flow/v1
             kind: installation
+            development: true
             temporal: { address: "{{TemporalAddress}}", namespace: default, task_queue: {{queue}} }
             providers:
               artifact_store: { default: filesystem, instances: { filesystem: { root: artifacts } } }
@@ -68,7 +69,7 @@ public sealed class Harness : IAsyncDisposable
               action_stand_in: { default: scripted, dry_run: recording, instances: { scripted: { script: script.yaml }, recording: { folder: recorded } } }
             {{fakes}}
             api:
-              auth: { mode: local_token, token_ref: secrets/api_token, actor: tester, roles: [viewer, approver, steerer] }
+              auth: { mode: local_token, token_ref: secrets/api_token, actor: tester, roles: [viewer, approver, steerer, admin] }
             """);
         var sources = string.Join("\n", (libraries ?? []).Prepend(IOPath.Combine(RepositoryRoot, "library", "std"))
             .Select(p => $"  - {{ name: {IOPath.GetFileName(p)}, source: directory, path: \"{p}\" }}"));
@@ -168,6 +169,33 @@ public sealed class Harness : IAsyncDisposable
         Assert.DoesNotContain(await File.ReadAllTextAsync(TokenFile), json);
         Directory.CreateDirectory(folder);
         await File.WriteAllTextAsync(IOPath.Combine(folder, name + ".json"), json);
+    }
+
+    /// <summary>
+    /// Writes, when <c>FF_RECORD_HISTORIES</c> is set, the history of the first run of a workflow that resumed from
+    /// a hand-over carrying child ends not yet confirmed: the resumed path the replay tests must cover. Returns
+    /// whether the workflow had such a run.
+    /// </summary>
+    public async Task<bool> RecordResumedHistoryAsync(string workflowId, string name)
+    {
+        foreach (var run in await RunsOfAsync(workflowId))
+        {
+            var history = await Client.GetWorkflowHandle(workflowId, run.RunId).FetchHistoryAsync();
+            var input = history.Events.First().WorkflowExecutionStartedEventAttributes.Input.Payloads_[0].Data.ToStringUtf8();
+            var start = JsonSerializer.Deserialize<FeatureFlow.Interpreter.Wire.RunStart>(input)!;
+            if (start.Carried is not { PendingChildEnds.Count: > 0, Children.Count: > 0 })
+                continue;
+            if (Environment.GetEnvironmentVariable("FF_RECORD_HISTORIES") is { Length: > 0 } folder)
+            {
+                var json = history.ToJson();
+                Assert.DoesNotContain(await File.ReadAllTextAsync(TokenFile), json);
+                await File.WriteAllTextAsync(IOPath.Combine(folder, name + ".json"), json);
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     public async ValueTask DisposeAsync()

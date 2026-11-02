@@ -24,7 +24,8 @@ public sealed record InstallationConfig(
     ApiAuthConfig ApiAuth,
     long DefaultAttempts,
     long DefaultRaces,
-    string Location);
+    string Location,
+    bool Development = false);
 
 /// <summary>A library source of the organisation layer (docs/08 section 3). M3 reads the <c>directory</c> source.</summary>
 public sealed record LibrarySourceConfig(string Name, string Source, string Path);
@@ -44,7 +45,9 @@ public sealed record PolicyConfig(
     long? AttemptsPerStep,
     long? AttemptsPerRun,
     IReadOnlyList<string>? AllowedRoles,
-    Cap<bool>? RequireChecks)
+    Cap<bool>? RequireChecks,
+    long HardPerStep = ConfigurationReader.DefaultHardPerStep,
+    long HardPerRun = ConfigurationReader.DefaultHardPerRun)
 {
     /// <summary>The first approval rule whose pattern matches the decision type, or null.</summary>
     public ApprovalRule? RuleFor(string type) => Approval.FirstOrDefault(r => r.Matches(type));
@@ -70,6 +73,20 @@ public static class ConfigurationReader
 
     const long DefaultHandOverEvents = 5120;
 
+    /// <summary>
+    /// The lowest hand-over threshold a run may have. One resume writes some 20 events before its first step
+    /// (start, loading the lock, the first record), so a threshold near that would hand over without end.
+    /// </summary>
+    public const long MinimumHandOverEvents = 100;
+
+    /// <summary>
+    /// The hard attempt ceilings when the organisation sets none (F4; docs/05 section 5): a steerer may grant
+    /// attempts up to them, an administrator beyond.
+    /// </summary>
+    public const long DefaultHardPerStep = 8;
+
+    public const long DefaultHardPerRun = 400;
+
     public static InstallationConfig? ReadInstallation(string text, string file, DiagnosticBag d)
     {
         if (MapReader.Of(YamlText.Parse(text, file, d), d, "the installation") is not { } r)
@@ -83,6 +100,8 @@ public static class ConfigurationReader
             ns = t.String("namespace") ?? ns;
             queue = t.String("task_queue") ?? queue;
             events = t.Int("continue_as_new_events") ?? events;
+            if (events < MinimumHandOverEvents)
+                t.Error($"temporal.continue_as_new_events must be at least {MinimumHandOverEvents}, not {events}", t.Map.Location);
             t.Finish();
         }
 
@@ -158,8 +177,14 @@ public static class ConfigurationReader
                 r.Error($"{later} is not read before M8; remove it", r.Map[later]!.Location);
             }
 
+        // A development installation may configure the fake providers and the action stand-in (LOG 81).
+        var development = r.Bool("development") ?? false;
+        if (!development)
+            foreach (var (type, config) in providers)
+                foreach (var instance in config.Instances.Values.Where(i => i.Kind == "fake" || type == "action_stand_in"))
+                    r.Error($"providers.{type}.instances.{instance.Name}: the {(type == "action_stand_in" ? "action stand-in" : "fake provider")} is for development only; set development: true", r.Map.Location);
         r.Finish();
-        return new InstallationConfig(address, ns, queue, events, providers, auth, attempts, races, file);
+        return new InstallationConfig(address, ns, queue, events, providers, auth, attempts, races, file, development);
     }
 
     public static OrganisationConfig? ReadOrganisation(string text, string file, DiagnosticBag d)
@@ -193,6 +218,7 @@ public static class ConfigurationReader
                 }
 
             long? perStep = null, perRun = null;
+            long hardStep = DefaultHardPerStep, hardRun = DefaultHardPerRun;
             if (MapReader.Of(p.Node("attempts"), d, "policy.attempts") is { } at)
             {
                 if (MapReader.Of(at.Node("ceiling"), d, "policy.attempts.ceiling") is { } c)
@@ -202,11 +228,15 @@ public static class ConfigurationReader
                     c.Finish();
                 }
 
-                if (at.Has("hard_ceiling"))
+                if (MapReader.Of(at.Node("hard_ceiling"), d, "policy.attempts.hard_ceiling") is { } h)
                 {
-                    at.Node("hard_ceiling");
-                    at.Error("policy.attempts.hard_ceiling bounds attempt grants, which M7 authorises; remove it", at.Map["hard_ceiling"]!.Location);
+                    hardStep = h.Int("per_step") ?? hardStep;
+                    hardRun = h.Int("per_run") ?? hardRun;
+                    h.Finish();
                 }
+
+                if (perStep > hardStep || perRun > hardRun)
+                    at.Error("policy.attempts.ceiling may not exceed policy.attempts.hard_ceiling", at.Map.Location);
 
                 at.Finish();
             }
@@ -233,7 +263,7 @@ public static class ConfigurationReader
                 }
 
             p.Finish();
-            policy = new PolicyConfig(rules, perStep, perRun, allowed, requireChecks);
+            policy = new PolicyConfig(rules, perStep, perRun, allowed, requireChecks, hardStep, hardRun);
         }
 
         foreach (var later in new[] { "library_overrides", "library_inputs", "roles", "role_mapping", "notifications", "timeouts", "teams" })
