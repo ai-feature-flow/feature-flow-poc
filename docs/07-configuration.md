@@ -91,6 +91,7 @@ defaults:                        # engine defaults for limits; not floors
 | `tracker.*.status_map` | Maps the library's abstract statuses to the tracker's (`docs/08` section 1) |
 | `workers.agent_pools[].capabilities` | The sandbox capabilities a pool offers, which route steps to its queue (`docs/02` section 1.1) |
 | `defaults.limits` | Engine defaults per step form and per action. The organisation, workflow and step may override them within ceilings |
+| `temporal.continue_as_new_events` | Pending review (LOG 87): the history length at which a run hands over (`docs/02` section 3); default 5,120 |
 
 Scaling (replica counts) is deployment configuration, not engine configuration.
 
@@ -260,6 +261,9 @@ dry_run: false
 
 `dry_run: true` selects recording providers that record instead of act, chosen
 by configuration. Workflow tests use the same mechanism (`docs/09`).
+
+Pending review (LOG 87): `continue_as_new_events` sets the hand-over threshold
+for the run tree, so tests can hand over often.
 
 ---
 

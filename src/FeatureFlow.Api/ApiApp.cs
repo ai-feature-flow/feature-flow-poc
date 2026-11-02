@@ -164,9 +164,9 @@ public static class ApiApp
                 await Records.AppendAsync(new RecordBatch(Answers: [new AnswerRecord(id, waitId, caller.Actor, answerText, reply.Result, DateTimeOffset.UtcNow)]), context.RequestAborted);
                 return Results.Json(new { result = reply.Result }, Json);
             }
-            catch (WorkflowUpdateFailedException e)
+            catch (Exception e) when (e is WorkflowUpdateFailedException or RpcException)
             {
-                var message = e.InnerException?.Message ?? e.Message;
+                var message = e is RpcException ? $"run {id} has ended or cannot take updates: {e.Message}" : e.InnerException?.Message ?? e.Message;
                 await Records.AppendAsync(new RecordBatch(Answers: [new AnswerRecord(id, waitId, caller.Actor, answerText, "refused: " + message, DateTimeOffset.UtcNow)]), context.RequestAborted);
                 return Error(409, message);
             }
@@ -195,9 +195,9 @@ public static class ApiApp
                 var reply = await services.Client.GetWorkflowHandle(id).ExecuteUpdateAsync<AnswerReply>(RunWorkflowNames.Abort, [args]);
                 return Results.Json(new { result = reply.Result }, Json);
             }
-            catch (WorkflowUpdateFailedException e)
+            catch (Exception e) when (e is WorkflowUpdateFailedException or RpcException)
             {
-                return Error(409, e.InnerException?.Message ?? e.Message);
+                return Error(409, e is RpcException ? $"run {id} has ended or cannot take updates: {e.Message}" : e.InnerException?.Message ?? e.Message);
             }
         }
 

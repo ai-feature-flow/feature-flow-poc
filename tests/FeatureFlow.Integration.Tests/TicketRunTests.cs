@@ -13,7 +13,8 @@ public class TicketRunTests
     [Fact]
     public async Task A_std_ticket_runs_to_completion_driven_through_the_cli()
     {
-        await using var h = await Harness.StartAsync("ticket");
+        // The implementer takes 3 seconds, so the repeated and conflicting answers reach a running run.
+        await using var h = await Harness.StartAsync("ticket", script: """{ "ticket_delivery:implement": { delay: 3s } }""");
         var id = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=FF-1042", "--repo", "acme/api");
 
         // The spec approval is a decision; the organisation allows no auto-resolution, so a person answers.
