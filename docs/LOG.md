@@ -130,7 +130,7 @@ Approved by the product owner, 2026-11-02.
 
 ## From M3
 
-Entries 81 to 90, from building the runnable engine with fake providers (`docs/11`, M3). LOG 83 approved by the product owner, 2026-11-02. **LOG 81, 82 and 84 to 90 are unreviewed.**
+Entries 81 to 90, from building the runnable engine with fake providers (`docs/11`, M3). Approved by the product owner, 2026-11-02.
 
 | # | Where | Decision | Why | Needs a look? |
 |---|---|---|---|---|

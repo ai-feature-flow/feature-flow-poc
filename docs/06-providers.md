@@ -91,7 +91,7 @@ section 1).
 
 Temporal and the worker platform are configuration only (`docs/07`).
 
-Pending review (LOG 81): while later milestones build the engine actions, a
+LOG 81: while later milestones build the engine actions, a
 temporary type `action_stand_in` runs them, scripted or recording, and a
 `fake` provider of any type only describes itself. Neither is configured in a
 production installation: an installation that configures one must set
