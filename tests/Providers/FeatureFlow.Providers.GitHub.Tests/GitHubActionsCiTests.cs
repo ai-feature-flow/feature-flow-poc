@@ -185,6 +185,16 @@ public sealed class GitHubActionsCiTests : IDisposable
     }
 
     [Fact]
+    public async Task Only_a_full_commit_SHA_and_a_numeric_run_id_reach_a_URL()
+    {
+        Assert.Equal("validation_failed", (await ci.TriggerAsync(Repo, Unit, "main", "key-1", Ct)).Error?.Reason);
+        Assert.Equal("validation_failed", (await ci.GetExpectedRunsAsync(Repo, "../x", null, Ct)).Error?.Reason);
+        Assert.Equal("not_found", (await ci.GetRunStatusAsync(new CiRunRef(Repo, "1/../2", Sha), Ct)).Error?.Reason);
+        Assert.Equal("not_found", (await ci.ReadLogsAsync(new CiRunRef(Repo, "x", Sha), Ct)).Error?.Reason);
+        Assert.Empty(github.Calls);
+    }
+
+    [Fact]
     public async Task An_unknown_run_is_not_found()
     {
         github.On(Get, "~/actions/runs/9", 404, """{"message":"Not Found"}""");

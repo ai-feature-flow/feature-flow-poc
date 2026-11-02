@@ -74,7 +74,10 @@ public sealed class GitHubApi(Func<ICredentialBroker?> broker, HttpMessageHandle
         var token = await TokenAsync(repo, permissions, cancellationToken);
         if (!token.Ok)
             return new ProviderResult<GitHubResponse>(null, token.Error);
-        using var request = new HttpRequestMessage(method, path.StartsWith("https://", StringComparison.Ordinal) ? path : ApiBase + path);
+        // The token is only ever sent to the API (review finding 9): an absolute URL elsewhere is a programming error.
+        if (!path.StartsWith('/') && !path.StartsWith(ApiBase + "/", StringComparison.Ordinal))
+            throw new ArgumentException($"{path} is not under {ApiBase}", nameof(path));
+        using var request = new HttpRequestMessage(method, path.StartsWith(ApiBase + "/", StringComparison.Ordinal) ? path : ApiBase + path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Value);
         request.Headers.Accept.ParseAdd(accept);
         request.Headers.UserAgent.Add(new ProductInfoHeaderValue("feature-flow", "0.1.0"));
@@ -262,6 +265,18 @@ public sealed class GitHubApi(Func<ICredentialBroker?> broker, HttpMessageHandle
         ["checks"] = "read",
         ["actions"] = "read",
     };
+
+    /// <summary>The permissions the code host provider's reads ask for (review finding 8): nothing it reads needs write.</summary>
+    public static readonly IReadOnlyDictionary<string, string> CodeHostReadPermissions = new Dictionary<string, string>
+    {
+        ["contents"] = "read",
+        ["pull_requests"] = "read",
+        ["checks"] = "read",
+        ["actions"] = "read",
+    };
+
+    /// <summary>A full commit SHA: what the providers accept as a revision before putting it into a URL (review finding 9).</summary>
+    public static bool IsRevision(string value) => value.Length == 40 && value.All(Uri.IsHexDigit);
 
     /// <summary>The permissions the Actions provider asks for: dispatching needs <c>actions: write</c>; the trigger tag needs <c>contents: write</c>.</summary>
     public static readonly IReadOnlyDictionary<string, string> CiPermissions = new Dictionary<string, string>

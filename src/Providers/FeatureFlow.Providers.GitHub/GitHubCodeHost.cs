@@ -14,6 +14,7 @@ namespace FeatureFlow.Providers.GitHub;
 public sealed class GitHubCodeHost(GitHubApi api) : ICodeHostProvider
 {
     static readonly IReadOnlyDictionary<string, string> Permissions = GitHubApi.CodeHostPermissions;
+    static readonly IReadOnlyDictionary<string, string> ReadPermissions = GitHubApi.CodeHostReadPermissions;
 
     public ProviderDescription Describe() => new("code_host", "github", "0.1.0", new CodeHostCapabilities(true, false, true, true, false, false));
 
@@ -36,7 +37,7 @@ public sealed class GitHubCodeHost(GitHubApi api) : ICodeHostProvider
 
     Task<ProviderResult<GitHubResponse>> Send(RepoRef repo, HttpMethod method, string path, object? body, CancellationToken cancellationToken,
         string accept = "application/vnd.github+json") =>
-        api.SendAsync(repo, Permissions, method, $"/repos/{repo.FullName}{path}", body, cancellationToken, accept);
+        api.SendAsync(repo, method == HttpMethod.Get ? ReadPermissions : Permissions, method, $"/repos/{repo.FullName}{path}", body, cancellationToken, accept);
 
     public async Task<ProviderResult<string>> GetDefaultBranchAsync(RepoRef repo, CancellationToken cancellationToken)
     {
@@ -103,7 +104,7 @@ public sealed class GitHubCodeHost(GitHubApi api) : ICodeHostProvider
         var revision = await ResolveAsync(repo, reference, cancellationToken);
         if (!revision.Ok)
             return new ProviderResult<RepoFile?>(null, revision.Error);
-        var content = await ReadAtAsync(api, repo, Permissions, path, revision.Value!, cancellationToken);
+        var content = await ReadAtAsync(api, repo, ReadPermissions, path, revision.Value!, cancellationToken);
         if (!content.Ok)
             return new ProviderResult<RepoFile?>(null, content.Error);
         return ProviderResult<RepoFile?>.Success(content.Value is { } bytes
@@ -132,7 +133,7 @@ public sealed class GitHubCodeHost(GitHubApi api) : ICodeHostProvider
     internal static async Task<ProviderResult<byte[]?>> ReadAtAsync(GitHubApi api, RepoRef repo, IReadOnlyDictionary<string, string> permissions, string path,
         string revision, CancellationToken cancellationToken)
     {
-        var at = $"/repos/{repo.FullName}/contents/{GitHubApi.EscapePath(path)}?ref={revision}";
+        var at = $"/repos/{repo.FullName}/contents/{GitHubApi.EscapePath(path)}?ref={GitHubApi.Escape(revision)}";
         var response = await api.SendAsync(repo, permissions, HttpMethod.Get, at, null, cancellationToken);
         if (!response.Ok)
             return response.Error!.Reason == "not_found" ? ProviderResult<byte[]?>.Success(null) : new ProviderResult<byte[]?>(null, response.Error);
@@ -158,7 +159,7 @@ public sealed class GitHubCodeHost(GitHubApi api) : ICodeHostProvider
     public async Task<ProviderResult<PullRequestRef>> OpenPullRequestAsync(RepoRef repo, PullRequestSpec spec, string key, CancellationToken cancellationToken)
     {
         var owner = repo.FullName.Split('/')[0];
-        var open = await api.ListAsync(repo, Permissions, $"/repos/{repo.FullName}/pulls?state=open&head={GitHubApi.Escape(owner + ":" + spec.Head)}",
+        var open = await api.ListAsync(repo, ReadPermissions, $"/repos/{repo.FullName}/pulls?state=open&head={GitHubApi.Escape(owner + ":" + spec.Head)}",
             j => j as JsonArray, cancellationToken);
         if (!open.Ok)
             return new ProviderResult<PullRequestRef>(null, open.Error);
@@ -225,7 +226,7 @@ public sealed class GitHubCodeHost(GitHubApi api) : ICodeHostProvider
         var raw = await GetRawAsync(pullRequest, cancellationToken);
         if (!raw.Ok)
             return new ProviderResult<PullRequestState>(null, raw.Error);
-        var reviews = await api.ListAsync(pullRequest.Repo, Permissions, $"/repos/{pullRequest.Repo.FullName}/pulls/{pullRequest.Number}/reviews",
+        var reviews = await api.ListAsync(pullRequest.Repo, ReadPermissions, $"/repos/{pullRequest.Repo.FullName}/pulls/{pullRequest.Number}/reviews",
             j => j as JsonArray, cancellationToken);
         if (!reviews.Ok)
             return new ProviderResult<PullRequestState>(null, reviews.Error);
@@ -331,7 +332,9 @@ public sealed class GitHubCodeHost(GitHubApi api) : ICodeHostProvider
     /// </summary>
     public async Task<ProviderResult<CheckStatus>> GetCheckStatusAsync(RepoRef repo, string revision, CancellationToken cancellationToken)
     {
-        var runs = await api.ListAsync(repo, Permissions, $"/repos/{repo.FullName}/commits/{revision}/check-runs", j => j["check_runs"] as JsonArray, cancellationToken);
+        if (!GitHubApi.IsRevision(revision))
+            return ProviderResult<CheckStatus>.Failure("not_found", $"{revision} is not a commit SHA");
+        var runs = await api.ListAsync(repo, ReadPermissions, $"/repos/{repo.FullName}/commits/{revision}/check-runs", j => j["check_runs"] as JsonArray, cancellationToken);
         if (!runs.Ok)
             return NotFoundIfInvalid<CheckStatus>(runs.Error!, revision, repo);
         var statuses = await Send(repo, HttpMethod.Get, $"/commits/{revision}/status?per_page=100", null, cancellationToken);
@@ -343,7 +346,7 @@ public sealed class GitHubCodeHost(GitHubApi api) : ICodeHostProvider
         var suites = new Dictionary<long, string>();
         if (runs.Value!.Any(r => r["app"]?["slug"]?.GetValue<string>() == "github-actions"))
         {
-            var workflows = await api.ListAsync(repo, Permissions, $"/repos/{repo.FullName}/actions/runs?head_sha={revision}", j => j["workflow_runs"] as JsonArray,
+            var workflows = await api.ListAsync(repo, ReadPermissions, $"/repos/{repo.FullName}/actions/runs?head_sha={revision}", j => j["workflow_runs"] as JsonArray,
                 cancellationToken);
             if (!workflows.Ok)
                 return new ProviderResult<CheckStatus>(null, workflows.Error);

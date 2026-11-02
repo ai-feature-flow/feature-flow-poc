@@ -43,11 +43,43 @@ public sealed class GitHubCodeHostTests
         Assert.Equal("trunk", (await host.GetDefaultBranchAsync(Repo, Ct)).Unwrap());
         Assert.Equal("trunk", (await host.GetDefaultBranchAsync(Repo, Ct)).Unwrap());
 
-        // One token for both calls: tokens are cached until they near their end.
+        // One token for both calls: tokens are cached until they near their end. A read needs no write (review finding 8).
         var scope = Assert.Single(broker.Issued);
         Assert.Equal(["o/r"], scope.Repositories);
-        Assert.Equal("write", scope.Permissions["pull_requests"]);
+        Assert.All(scope.Permissions.Values, access => Assert.Equal("read", access));
         Assert.False(scope.Permissions.ContainsKey("administration"));
+    }
+
+    [Fact]
+    public async Task Only_writes_get_a_write_token()
+    {
+        var (host, github, broker) = Host();
+        github.On(Get, "~/pulls?state=open", 200, "[]").On(Post, "~/pulls", 201, """{"number":7}""");
+
+        (await host.OpenPullRequestAsync(Repo, new PullRequestSpec("T", "B", "ff/work", "main"), "k", Ct)).Unwrap();
+
+        Assert.Equal(["read", "write"], broker.Issued.Select(s => s.Permissions["pull_requests"]));
+    }
+
+    /// <summary>Review finding 9: the token goes only to the API, and a revision goes into a URL only as a full SHA.</summary>
+    [Fact]
+    public async Task The_token_is_never_sent_outside_the_API()
+    {
+        var github = new FakeGitHub();
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            github.Api().SendAsync(Repo, GitHubApi.CodeHostReadPermissions, Get, "https://elsewhere.example/x", null, Ct));
+        Assert.Empty(github.Calls);
+    }
+
+    [Theory]
+    [InlineData("main")]
+    [InlineData("../../user")]
+    [InlineData("aaaa")]
+    public async Task Checks_are_read_only_for_a_full_commit_SHA(string revision)
+    {
+        var (host, github, _) = Host();
+        Assert.Equal("not_found", (await host.GetCheckStatusAsync(Repo, revision, Ct)).Error?.Reason);
+        Assert.Empty(github.Calls);
     }
 
     [Theory]
@@ -336,7 +368,8 @@ public sealed class GitHubCodeHostTests
     public async Task Checks_of_an_unknown_commit_are_not_found()
     {
         var (host, github, _) = Host();
-        github.On(Get, "~/commits/nope/check-runs", 422, """{"message":"No commit found for SHA: nope"}""");
-        Assert.Equal("not_found", (await host.GetCheckStatusAsync(Repo, "nope", Ct)).Error?.Reason);
+        var unknown = new string('e', 40);
+        github.On(Get, $"~/commits/{unknown}/check-runs", 422, """{"message":"No commit found for SHA"}""");
+        Assert.Equal("not_found", (await host.GetCheckStatusAsync(Repo, unknown, Ct)).Error?.Reason);
     }
 }

@@ -47,7 +47,7 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
 
     Task<ProviderResult<GitHubResponse>> Send(RepoRef repo, HttpMethod method, string path, object? body, CancellationToken cancellationToken,
         IReadOnlyDictionary<string, string>? permissions = null) =>
-        api.SendAsync(repo, permissions ?? Permissions, method, $"/repos/{repo.FullName}{path}", body, cancellationToken);
+        api.SendAsync(repo, permissions ?? (method == HttpMethod.Get ? ReadPermissions : Permissions), method, $"/repos/{repo.FullName}{path}", body, cancellationToken);
 
     /// <summary>
     /// The workflow must declare a <c>commit_sha</c> input: it runs from the default branch and must check out the
@@ -55,6 +55,8 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
     /// </summary>
     public async Task<ProviderResult<CiRunRef>> TriggerAsync(RepoRef repo, CiJobRef job, string revision, string key, CancellationToken cancellationToken)
     {
+        if (!GitHubApi.IsRevision(revision))
+            return ProviderResult<CiRunRef>.Failure("validation_failed", $"{revision} is not a commit SHA");
         var claim = ClaimFor(key);
         var created = await Send(repo, HttpMethod.Post, "/git/refs", new { @ref = "refs/" + ClaimPrefix + claim, sha = revision }, cancellationToken);
         if (!created.Ok && created.Error!.Reason != "validation_failed")
@@ -132,7 +134,7 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
 
     async Task<ProviderResult<IReadOnlySet<string>>> DeclaredInputsAsync(RepoRef repo, string workflow, string reference, CancellationToken cancellationToken)
     {
-        var text = await GitHubCodeHost.ReadAtAsync(api, repo, Permissions, ".github/workflows/" + workflow, reference, cancellationToken);
+        var text = await GitHubCodeHost.ReadAtAsync(api, repo, ReadPermissions, ".github/workflows/" + workflow, reference, cancellationToken);
         if (!text.Ok)
             return new ProviderResult<IReadOnlySet<string>>(null, text.Error);
         if (text.Value is null)
@@ -140,8 +142,12 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
         return ProviderResult<IReadOnlySet<string>>.Success(Workflow.Parse(Encoding.UTF8.GetString(text.Value))?.DispatchInputs ?? new HashSet<string>());
     }
 
+    static bool IsRunId(string id) => id.Length > 0 && id.All(char.IsAsciiDigit);
+
     async Task<ProviderResult<JsonNode>> RunAsync(CiRunRef run, CancellationToken cancellationToken)
     {
+        if (!IsRunId(run.Id))
+            return ProviderResult<JsonNode>.Failure("not_found", $"{run.Id} is not a run id");
         var response = await Send(run.Repo, HttpMethod.Get, $"/actions/runs/{GitHubApi.Escape(run.Id)}", null, cancellationToken, ReadPermissions);
         if (!response.Ok)
             return new ProviderResult<JsonNode>(null, response.Error);
@@ -267,6 +273,8 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
     /// <summary>The run's logs: GitHub answers 302 to a short-lived download of a zip, which is copied into the artifact store as it is.</summary>
     public async Task<ProviderResult<ArtifactRef>> ReadLogsAsync(CiRunRef run, CancellationToken cancellationToken)
     {
+        if (!IsRunId(run.Id))
+            return ProviderResult<ArtifactRef>.Failure("not_found", $"{run.Id} is not a run id");
         var zip = await DownloadAsync(run.Repo, $"/actions/runs/{GitHubApi.Escape(run.Id)}/logs", MaxLogBytes, cancellationToken);
         if (!zip.Ok)
             return new ProviderResult<ArtifactRef>(null, zip.Error);
@@ -293,7 +301,9 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
     /// </summary>
     public async Task<ProviderResult<ExpectedRuns>> GetExpectedRunsAsync(RepoRef repo, string revision, PullRequestRef? pullRequest, CancellationToken cancellationToken)
     {
-        var listing = await Send(repo, HttpMethod.Get, $"/contents/.github/workflows?ref={revision}", null, cancellationToken, ReadPermissions);
+        if (!GitHubApi.IsRevision(revision))
+            return ProviderResult<ExpectedRuns>.Failure("validation_failed", $"{revision} is not a commit SHA");
+        var listing = await Send(repo, HttpMethod.Get, $"/contents/.github/workflows?ref={GitHubApi.Escape(revision)}", null, cancellationToken, ReadPermissions);
         if (!listing.Ok)
             return listing.Error!.Reason == "not_found" ? ProviderResult<ExpectedRuns>.Success(ExpectedRuns.None) : new ProviderResult<ExpectedRuns>(null, listing.Error);
         if (listing.Value!.Code != 200)
