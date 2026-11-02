@@ -146,6 +146,32 @@ public sealed class GitVcsTests : IDisposable
         Assert.Equal(reason, GitVcs.Classify(stderr, "validation_failed"));
     }
 
+    /// <summary>
+    /// The merge's expected-revision push (review finding 4): a sibling's merge lands on the target after the provider
+    /// read it and before it pushes. The push is refused with base_moved, and the sibling's merge stays.
+    /// </summary>
+    [Fact]
+    public async Task A_merge_whose_target_moves_before_its_push_is_refused_and_loses_nothing()
+    {
+        var target = remote.Resolve("refs/heads/main")!;
+        var tested = remote.Commit("refs/heads/ff/work", new Dictionary<string, string?> { ["a.txt"] = "tested" }, from: "refs/heads/main");
+        string? sibling = null;
+        var vcs = new GitVcs(BareRepository.Template(Path.Combine(root, "remotes")), Path.Combine(root, "cache"),
+            () => throw new InvalidOperationException(), () => throw new InvalidOperationException(), () => null)
+        {
+            BeforePushForTests = reference =>
+            {
+                sibling ??= remote.Commit(reference, new Dictionary<string, string?> { ["sibling.txt"] = "a sibling merged" });
+                return Task.CompletedTask;
+            },
+        };
+
+        var result = await vcs.MergeAsync(repo, tested, "refs/heads/main", target, MergeMethods.Merge, "merge", "key-lease", Ct);
+
+        Assert.Equal("base_moved", result.Error?.Reason);
+        Assert.Equal(sibling, remote.Resolve("refs/heads/main"));
+    }
+
     [Fact]
     public async Task A_catch_up_of_a_missing_branch_is_not_found()
     {
