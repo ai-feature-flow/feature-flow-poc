@@ -103,6 +103,8 @@ as built in M4 add methods to the abbreviated signatures below; LOG 103 lists th
 Pending review (LOG 107): the VCS, code host and CI interfaces as built in M5 differ from
 the signatures below: catch-up and merge take an expected revision and a key, the code host reads a
 file and has no merge method, and CI results are returned as unparsed files. LOG 107 lists them.
+How the Git, GitHub and GitHub Actions providers meet them, and the engine's new `actions: write`, are LOG 108
+to 115.
 
 ### 3.1 Sandbox
 
