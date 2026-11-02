@@ -5,4 +5,9 @@
     <ProjectReference Include="..\..\FeatureFlow.Model\FeatureFlow.Model.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- SP4's control N1b (GitVcs.ControlPlainForcePush) is reachable only from the race test. -->
+    <InternalsVisibleTo Include="FeatureFlow.Integration.Tests" />
+  </ItemGroup>
+
 </Project>

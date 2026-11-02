@@ -265,18 +265,19 @@ public sealed class GitVcs(
 
             if (await LandedAsync(dir, testedRevision, target, key, env, cancellationToken))
                 return ProviderResult<MergeResult>.Success(new MergeResult(target, null, method, AlreadyMerged: true));
-            if (target != expectedTargetRevision)
+            if (target != expectedTargetRevision && !ControlPlainForcePush)
                 return ProviderResult<MergeResult>.Failure("base_moved", $"{targetReference} is not at {expectedTargetRevision}");
-            if (!await IsAncestorAsync(dir, target, testedRevision, env, cancellationToken))
-                return ProviderResult<MergeResult>.Failure("base_moved", $"{testedRevision} does not contain {targetReference}'s {target}; catch up first");
+            // From here the target is the expected revision (except under the control, which builds on the expected one as SP4's harness did).
+            if (!await IsAncestorAsync(dir, expectedTargetRevision, testedRevision, env, cancellationToken))
+                return ProviderResult<MergeResult>.Failure("base_moved", $"{testedRevision} does not contain {targetReference}'s {expectedTargetRevision}; catch up first");
 
-            string[] parents = method == MergeMethods.Squash ? [target] : [target, testedRevision];
+            string[] parents = method == MergeMethods.Squash ? [expectedTargetRevision] : [expectedTargetRevision, testedRevision];
             var commit = await CommitTreeAsync(dir, testedRevision + "^{tree}", parents, $"{message.TrimEnd()}\n\n{MergeTrailer}{key}", env, cancellationToken);
             if (!commit.Ok)
                 return new ProviderResult<MergeResult>(null, commit.Error);
-            var pushed = await LeasePushAsync(dir, repo, targetReference, commit.Value!, target, env, cancellationToken);
+            var pushed = await LeasePushAsync(dir, repo, targetReference, commit.Value!, ControlPlainForcePush ? null : expectedTargetRevision, env, cancellationToken);
             if (pushed is null)
-                return ProviderResult<MergeResult>.Success(new MergeResult(commit.Value!, target, method, AlreadyMerged: false));
+                return ProviderResult<MergeResult>.Success(new MergeResult(commit.Value!, expectedTargetRevision, method, AlreadyMerged: false));
 
             // The push was refused or its answer lost: read the target again before calling it a failure.
             if (await FetchAsync(dir, repo, env, cancellationToken, (targetReference, "refs/ff-cache/merge/target")) is not null)
@@ -290,6 +291,12 @@ public sealed class GitVcs(
         }, write: true, cancellationToken);
 
     public const string MergeTrailer = "Feature-Flow-Merge: ";
+
+    /// <summary>
+    /// SP4's control N1b only: the merge pushes with a plain <c>--force</c> and skips the expected-revision check, so
+    /// the race test can show that without them merges are lost. Never set outside that test.
+    /// </summary>
+    internal bool ControlPlainForcePush { get; init; }
 
     /// <summary>The author and committer of the commits the engine makes (catch-up and merge commits).</summary>
     public static readonly IReadOnlyDictionary<string, string> EngineIdentity = new Dictionary<string, string>
@@ -323,10 +330,12 @@ public sealed class GitVcs(
         return Failed(run, "fetch");
     }
 
-    async Task<ProviderError?> LeasePushAsync(string dir, RepoRef repo, string reference, string revision, string expected, IReadOnlyDictionary<string, string> env,
+    /// <summary>Pushes expecting <paramref name="expected"/>; null (control N1b only) is a plain forced push.</summary>
+    async Task<ProviderError?> LeasePushAsync(string dir, RepoRef repo, string reference, string revision, string? expected, IReadOnlyDictionary<string, string> env,
         CancellationToken cancellationToken)
     {
-        var push = await GitAsync(dir, ["push", "--porcelain", $"--force-with-lease={reference}:{expected}", UrlOf(repo), $"{revision}:{reference}"], env, cancellationToken);
+        var push = await GitAsync(dir, ["push", "--porcelain", expected is null ? "--force" : $"--force-with-lease={reference}:{expected}", UrlOf(repo), $"{revision}:{reference}"],
+            env, cancellationToken);
         if (!push.Ok)
             return push.Error;
         if (push.Value!.Exit == 0)
