@@ -100,6 +100,10 @@ production installation: an installation that configures one must set
 Pending review (LOG 103): the sandbox, agent runtime, VCS and credential broker interfaces
 as built in M4 add methods to the abbreviated signatures below; LOG 103 lists them.
 
+Pending review (LOG 107): the VCS, code host and CI interfaces as built in M5 differ from
+the signatures below: catch-up and merge take an expected revision and a key, the code host reads a
+file and has no merge method, and CI results are returned as unparsed files. LOG 107 lists them.
+
 ### 3.1 Sandbox
 
 ```csharp

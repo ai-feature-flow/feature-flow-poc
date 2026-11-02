@@ -199,6 +199,13 @@ public sealed class GitVcs(
             return ProviderResult<PushResult>.Success(new PushResult(reference, expectedOldRevision, revision));
         }, write: true, cancellationToken);
 
+    // M5 stubs: the providers builder implements these against the clone cache (DR18). VcsContract states the behaviour.
+    public Task<ProviderResult<CatchUpResult>> CatchUpAsync(RepoRef repo, string parentReference, string workReference, string expectedWorkRevision,
+        string message, CancellationToken cancellationToken) => throw new NotImplementedException("GitVcs.CatchUpAsync: M5");
+
+    public Task<ProviderResult<MergeResult>> MergeAsync(RepoRef repo, string testedRevision, string targetReference, string expectedTargetRevision,
+        string method, string message, string key, CancellationToken cancellationToken) => throw new NotImplementedException("GitVcs.MergeAsync: M5");
+
     /// <summary>Runs <paramref name="work"/> on the repository's cached bare clone, one operation at a time per repository.</summary>
     async Task<ProviderResult<T>> WithCacheAsync<T>(RepoRef repo, Func<string, IReadOnlyDictionary<string, string>, Task<ProviderResult<T>>> work, bool write,
         CancellationToken cancellationToken)

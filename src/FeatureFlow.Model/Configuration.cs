@@ -212,11 +212,11 @@ public static class ConfigurationReader
                 r.Error($"{later} is not read before M8; remove it", r.Map[later]!.Location);
             }
 
-        // A development installation may configure the fake providers and the action stand-in (LOG 81).
+        // A development installation may configure the fake and in-memory providers and the action stand-in (LOG 81, LOG 107).
         var development = r.Bool("development") ?? false;
         if (!development)
             foreach (var (type, config) in providers)
-                foreach (var instance in config.Instances.Values.Where(i => i.Kind == "fake" || type == "action_stand_in"))
+                foreach (var instance in config.Instances.Values.Where(i => i.Kind is "fake" or "memory" || type == "action_stand_in"))
                     r.Error($"providers.{type}.instances.{instance.Name}: the {(type == "action_stand_in" ? "action stand-in" : "fake provider")} is for development only; set development: true", r.Map.Location);
         // A runtime without the engine's tools reports only through a file: a test setting (SP3 T3), not for production.
         if (!development && providers.TryGetValue("agent_runtime", out var runtimes))
