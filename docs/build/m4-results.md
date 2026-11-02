@@ -224,8 +224,9 @@ The workflow's commands were run from a clean clone of `m4-agent-steps` at
 | Integration tests | The dev server on port 8033 (`FF_TEMPORAL_ADDRESS=localhost:8033`); `docker build` of the sandbox image, as the workflow now does; the same build; `dotnet test ... --filter "Category=Integration"` | 22 passed, 0 failed, in 81 seconds |
 
 The integration job gains one step, building the sandbox image. GitHub CI on
-the pull request is the first run on Linux, where the tests publish the
-sandbox client for `linux-x64`.
+pull request 2 passed both jobs at `b920afb` (default 1 min 48 s, integration
+3 min 27 s): the first run on Linux, where the tests publish the sandbox
+client for `linux-x64`.
 
 ## 7. Open questions
 
