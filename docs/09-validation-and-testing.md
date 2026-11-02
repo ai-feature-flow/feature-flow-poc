@@ -65,6 +65,9 @@ other documents cite them.
 | 34 | Unused parameter | Load | No |
 | 35 | Deprecated library reference with a replacement | Load | No |
 
+Pending review (LOG 125 to 127, 133, 134): checks 20, 23 and 24 at run start and 31 to 33 at step start as built
+in M5. Check 23 at patch time is not built yet; `scm.merge` re-checks F1 at merge time.
+
 ### 2.1 Plan size
 
 Spike 1 measured carried state at about 500 bytes per plan step
