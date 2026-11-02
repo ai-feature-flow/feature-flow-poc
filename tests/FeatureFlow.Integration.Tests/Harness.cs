@@ -142,14 +142,19 @@ public sealed class Harness : IAsyncDisposable
         return list.OrderBy(e => e.StartTime).ToList();
     }
 
-    /// <summary>The number of WorkflowTaskFailed events across every run of a workflow id (SP1's C5).</summary>
-    public async Task<int> WorkflowTaskFailuresAsync(string workflowId)
+    /// <summary>
+    /// Every WorkflowTaskFailed event across every run of a workflow id (SP1's C5), each with its run, event id,
+    /// cause and failure message, so a failure on CI says why the task failed.
+    /// </summary>
+    public async Task<List<string>> WorkflowTaskFailuresAsync(string workflowId)
     {
-        var failed = 0;
-        foreach (var run in await RunsOfAsync(workflowId))
+        var failed = new List<string>();
+        var runs = await RunsOfAsync(workflowId);
+        for (var i = 0; i < runs.Count; i++)
         {
-            var history = await Client.GetWorkflowHandle(workflowId, run.RunId).FetchHistoryAsync();
-            failed += history.Events.Count(e => e.EventType == EventType.WorkflowTaskFailed);
+            var history = await Client.GetWorkflowHandle(workflowId, runs[i].RunId).FetchHistoryAsync();
+            failed.AddRange(history.Events.Where(e => e.EventType == EventType.WorkflowTaskFailed).Select(e =>
+                $"run {i} of {runs.Count}, event {e.EventId} of {history.Events.Count}: {e.WorkflowTaskFailedEventAttributes.Cause}: {e.WorkflowTaskFailedEventAttributes.Failure?.Message}"));
         }
 
         return failed;
