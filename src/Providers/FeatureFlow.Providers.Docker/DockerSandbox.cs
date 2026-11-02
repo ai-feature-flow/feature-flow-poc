@@ -93,16 +93,19 @@ public sealed class DockerSandbox(string image, string user, Func<IArtifactStore
             script.Append($"export {name}={Quote(value)}\n");
         if (command.WorkingDirectory is { } wd)
             script.Append($"cd {Quote(wd)}\n");
-        script.Append("exec ").Append(string.Join(" ", command.Arguments.Select(Quote))).Append('\n');
+        // The command's records (its output, process id and exit code) are root's: the start script runs as root and
+        // only the command itself drops to the agent's user, so the agent can neither forge its transcript or exit code
+        // nor end the script that records them (LOG 105).
+        script.Append("exec ").Append(command.AsRoot ? "" : $"setpriv --reuid={user} --regid={user} --init-groups -- ")
+            .Append(string.Join(" ", command.Arguments.Select(Quote))).Append('\n');
         var start = $"cd {dir}\nsetsid sh {dir}/run.sh > {dir}/out 2>&1 < /dev/null &\nchild=$!\necho $child > {dir}/pid\nset +e\nwait $child\necho $? > {dir}/exit\n";
-        var owner = command.AsRoot ? "root" : user;
         foreach (var (file, content) in new[] { ("run.sh", script.ToString()), ("start.sh", start) })
             if (await Check(cli.RunAsync(["exec", "-i", "-u", "root", sandbox.Id, "sh", "-c", $"mkdir -p {dir} && cat > {dir}/{file}"], cancellationToken,
                     new MemoryStream(Encoding.UTF8.GetBytes(content))), "write a command") is { } failed)
                 return failed.Convert<CommandHandle>();
-        if (await Root(sandbox, $"touch {dir}/out && chown -R {owner} {dir} && chmod 700 {dir}", cancellationToken) is { } notOwned)
+        if (await Root(sandbox, $"touch {dir}/out && chown -R root {dir} && chmod 700 {dir}", cancellationToken) is { } notOwned)
             return notOwned.Convert<CommandHandle>();
-        if (await Check(cli.RunAsync(["exec", "-d", "-u", owner, sandbox.Id, "sh", $"{dir}/start.sh"], cancellationToken), "start a command") is { } notStarted)
+        if (await Check(cli.RunAsync(["exec", "-d", "-u", "root", sandbox.Id, "sh", $"{dir}/start.sh"], cancellationToken), "start a command") is { } notStarted)
             return notStarted.Convert<CommandHandle>();
         // The process id is written by the detached start script; wait for it so a status read never sees a half-started command.
         for (var i = 0; i < 50; i++)

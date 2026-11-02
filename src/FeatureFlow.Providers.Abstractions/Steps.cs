@@ -151,7 +151,14 @@ public sealed record AgentResult(
     long OutputTokens = 0,
     IReadOnlyList<string>? FilesOpened = null,
     string? Transcript = null,
-    string? ReportFile = null);
+    string? ReportFile = null)
+{
+    /// <summary>
+    /// The shortest time the runtime's clients keep failing against the engine before they stop the session: a real
+    /// "engine unreachable" stop follows at least this long with no call reaching the engine (LOG 98).
+    /// </summary>
+    public TimeSpan? QuietWindow { get; init; }
+}
 
 /// <summary>
 /// The agent runtime (docs/06 section 3.2). From M4 it runs in a sandbox, with hooks and the engine MCP server

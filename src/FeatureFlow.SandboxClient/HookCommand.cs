@@ -39,7 +39,9 @@ public static class HookCommand
         }
 
         log.Write("decision", ("hook", hook), ("tool", tool), ("decision", reply["decision"]?.ToString()));
-        if (reply["decision"]?.ToString() == "allow")
+        // Only the pre-tool-use hook gates anything. Another hook that gets no decision (a revoked or expired token)
+        // must not block: exit 2 on Stop would keep the runtime from stopping.
+        if (reply["decision"]?.ToString() == "allow" || hook != "pre_tool_use" && reply["decision"]?.ToString() != "deny")
             return 0;
         // Fail closed: a denial, or an answer with no decision (an expired or revoked token, a refused call), blocks it.
         await error.WriteLineAsync(reply["reason"]?.ToString() ?? "the engine did not allow this call: " + (reply["error"]?.ToString() ?? "no decision"));

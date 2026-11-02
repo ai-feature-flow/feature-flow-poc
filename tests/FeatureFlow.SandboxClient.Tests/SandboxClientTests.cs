@@ -138,6 +138,18 @@ public sealed class SandboxClientTests : IDisposable
         Assert.Contains("revoked", error.ToString());
     }
 
+    /// <summary>Re-check N3: a hook that gates nothing (Stop) does not block when it gets no decision, or the runtime could not stop.</summary>
+    [Theory]
+    [InlineData("stop")]
+    [InlineData("post_tool_use")]
+    [InlineData("session_start")]
+    public async Task A_hook_that_gates_nothing_does_not_block_on_an_answer_with_no_decision(string hook)
+    {
+        var replicas = new Replicas((_, _) => new JsonObject { ["error"] = "unknown or revoked step token" });
+        var exit = await HookCommand.RunAsync(hook, Client(replicas), new StringReader("{}"), new StringWriter(), new StringWriter(), new ClientLog(null), Ct);
+        Assert.Equal(0, exit);
+    }
+
     /// <summary>R19 (SP2 S4 and N2): a hook that cannot reach the engine holds, then stops the session; it never denies.</summary>
     [Fact]
     public async Task The_hook_command_holds_while_no_replica_answers_and_then_stops_the_session_rather_than_deny()

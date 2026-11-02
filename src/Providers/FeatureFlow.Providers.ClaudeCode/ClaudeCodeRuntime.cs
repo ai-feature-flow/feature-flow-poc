@@ -123,8 +123,7 @@ public sealed class ClaudeCodeRuntime(ClaudeCodeOptions options, Func<ISandboxPr
             ["FF_STATE"] = StateFolder,
             ["FF_CLIENT_LOG"] = StateFolder + "/client.jsonl",
             ["FF_QUESTIONS"] = task.Questions ? "true" : "false",
-            // The checkpoint tool is not offered: the sandbox client runs as the engine's state user, which cannot commit in the agent's checkout.
-            ["FF_WRITE"] = "false",
+            ["FF_WRITE"] = task.WriteAccess == "none" ? "false" : "true",
             ["FF_HOOK_HOLD_SECONDS"] = ((int)options.Hold.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["FF_RETRY_SECONDS"] = ((int)options.Retry.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture),
         };
@@ -143,6 +142,8 @@ public sealed class ClaudeCodeRuntime(ClaudeCodeOptions options, Func<ISandboxPr
         var allowed = tools.Append("mcp__engine__report");
         if (task.Questions)
             allowed = allowed.Append("mcp__engine__ask_human");
+        if (task.WriteAccess != "none")
+            allowed = allowed.Append("mcp__engine__checkpoint");
         var paths = task.Paths!;
         var parts = new List<string>
         {
@@ -264,7 +265,10 @@ public sealed class ClaudeCodeRuntime(ClaudeCodeOptions options, Func<ISandboxPr
             _ => parsed.Result,
         };
         return ProviderResult<AgentResult>.Success(new AgentResult(null, end, detail, parsed.InputTokens, parsed.OutputTokens, parsed.Files,
-            put.Ok ? put.Value!.Id : null, report.Ok && report.Value.Output.Trim().Length > 0 ? report.Value.Output.Trim() : null));
+            put.Ok ? put.Value!.Id : null, report.Ok && report.Value.Output.Trim().Length > 0 ? report.Value.Output.Trim() : null)
+        {
+            QuietWindow = options.Hold < options.Retry ? options.Hold : options.Retry,
+        });
     }
 
     public async Task<ProviderResult<Unit>> StopAsync(AgentSession session, CancellationToken cancellationToken)

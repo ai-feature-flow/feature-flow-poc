@@ -267,6 +267,10 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
 
         static string HiddenReference(StepIdentity step) => $"refs/feature-flow/wip/{Safe(step.RunId)}/{Safe(step.StepId)}";
 
+        /// <summary>Where a hidden reference's commits are kept when a later attempt does not build on them.</summary>
+        public static string SupersededReference(StepIdentity step, string revision) =>
+            $"refs/feature-flow/superseded/{Safe(step.RunId)}/{Safe(step.StepId)}/{revision[..Math.Min(12, revision.Length)]}";
+
         static string Safe(string text) => string.Concat(text.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' or '.' ? c : '_'));
 
         /// <summary>Creates or re-attaches to the sandbox. Returns whether an earlier attempt's commits were checked out.</summary>
@@ -291,7 +295,15 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
             var useHidden = hiddenRevision is not null && hiddenRevision != startRevision
                             && Must(await vcs.DescendsFromAsync(repo, hiddenRevision, startRevision, ct), "compare the hidden reference with the work branch");
             if (hiddenRevision is not null && hiddenRevision != startRevision && !useHidden)
-                events.Add($"hidden reference at {Short(hiddenRevision)} does not build on {workBranch} at {Short(startRevision)}: not used");
+            {
+                // The earlier attempt's commits are kept for a person (docs/04 section 3.7) under a reference of their own
+                // before this attempt's pushes replace the hidden reference (LOG 96).
+                var kept = SupersededReference(call.Step, hiddenRevision);
+                if (Must(await vcs.ResolveAsync(repo, kept, ct), "read the superseded reference") is null)
+                    Must(await vcs.PushAsync(repo, kept, hiddenRevision, null, null, ct), "keep the superseded commits");
+                events.Add($"hidden reference at {Short(hiddenRevision)} does not build on {workBranch} at {Short(startRevision)}: not used; kept as {kept}");
+                await EventAsync("superseded", $"{hiddenRevision} as {kept}");
+            }
             lastPushed = useHidden ? hiddenRevision! : startRevision;
             copy = new WorkingCopyRef(SandboxHandle.None, paths.Checkout);
 
@@ -317,14 +329,12 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
             if (attached.Error!.Reason != "not_found")
                 Must(attached, "attach to the sandbox");
             sandbox = Must(await sandboxes.CreateAsync(new SandboxSpec(key, paths.Home, new Dictionary<string, string>(),
-                [paths.Checkout, paths.Output, "/ff/inputs", "/ff/tmp"]), ct), "create the sandbox");
+                [paths.Checkout, paths.Output, "/ff/inputs", "/ff/state", "/ff/tmp"]), ct), "create the sandbox");
             hasSandbox = true;
             copy = copy with { Sandbox = sandbox };
+            // Root-owned and read-only. It runs as the agent's user, so its marker and log in /ff/state are hints the
+            // agent could write: the engine decides "engine unreachable" from its own records (LOG 98).
             Must(await sandboxes.CopyInAsync(sandbox, await owner.ClientAsync(ct), paths.Client, readOnly: true, ct), "copy in the sandbox client");
-            // The engine's state in the sandbox (the client's log, the "engine unreachable" marker) is written by the
-            // sandbox client running as its own user, set-user-id, so the agent cannot forge it (LOG 98).
-            await RootShellAsync($"id {StateUser} >/dev/null 2>&1 || useradd -r -M -s /usr/sbin/nologin {StateUser}; mkdir -p /ff/state && chown {StateUser} /ff/state "
-                                 + $"&& chmod 755 /ff/state && chown {StateUser} {paths.Client} && chmod 4755 {paths.Client}", "set up the engine's state");
             await AgentShellAsync("git config --global user.name 'Feature Flow agent' && git config --global user.email agent@feature-flow.invalid"
                                   + " && git config --global safe.directory '*' && git config --global init.defaultBranch main", "configure git");
 
@@ -512,6 +522,15 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
 
                 await SuperviseAsync(running);
                 var result = Must(await runtime.GetResultAsync(running, ct), "read the session's result");
+                if (result.End == SessionEnd.EngineUnreachable && await LastContactAsync() is { } contact
+                    && DateTimeOffset.UtcNow - contact < (result.QuietWindow ?? TimeSpan.FromSeconds(60)))
+                    // The marker is the agent's to write: the engine believes an outage only when its own records show
+                    // no call from the step for as long as the client holds before it gives up (LOG 98).
+                    result = result with
+                    {
+                        End = SessionEnd.Failed,
+                        Detail = $"the session claimed the engine was unreachable, but the engine took a call from it at {contact:O}",
+                    };
                 await EventAsync("session", $"{number} ended {result.End}");
                 if (result.Transcript is { } transcript)
                     events.Add($"transcript of session {number}: {transcript}");
@@ -558,7 +577,15 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
             }
         }
 
-        const string Interrupted = "Your previous session was interrupted. Carry on with the task from where you were.";
+        /// <summary>The last time the agent worker took a call for this step: a hook, a model request or a report.</summary>
+        async Task<DateTimeOffset?> LastContactAsync()
+        {
+            var calls = (await EventsAsync()).Where(e => e.Kind.StartsWith("hook_", StringComparison.Ordinal) || e.Kind == "model").Select(e => e.At)
+                .Concat((await ReportsAsync()).Select(r => r.At)).ToList();
+            return calls.Count == 0 ? null : calls.Max();
+        }
+
+        const string Interrupted ="Your previous session was interrupted. Carry on with the task from where you were.";
 
         /// <summary>At most this many resumes in a row without progress, and this many in all (LOG 98).</summary>
         public const int ResumesWithoutProgress = 5;
@@ -769,15 +796,6 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
                 await sandboxes.DisposeAsync(sandbox, CancellationToken.None);
                 await EventAsync("cancelled", "the step was cancelled; its sandbox was removed");
             }
-        }
-
-        const string StateUser = "ffstate";
-
-        async Task RootShellAsync(string script, string what)
-        {
-            var run = Must(await sandboxes.RunAsync(sandbox, new SandboxCommand(["sh", "-c", script], AsRoot: true), $"{key}/{Guid.NewGuid():N}", ct), what);
-            if (run.Exit != 0)
-                throw new ApplicationFailureException($"could not {what} in the sandbox: {run.Output.Trim()}", errorType: "infrastructure");
         }
 
         async Task AgentShellAsync(string script, string what)

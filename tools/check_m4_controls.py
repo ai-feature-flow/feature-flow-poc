@@ -30,6 +30,7 @@ WORKFLOW = "src/FeatureFlow.Engine/RunWorkflow.cs"
 RUNTIME = "src/Providers/FeatureFlow.Providers.ClaudeCode/ClaudeCodeRuntime.cs"
 BROKER = "src/Providers/FeatureFlow.Providers.GitHub/AppCredentialBroker.cs"
 CONFIG = "src/FeatureFlow.Model/Configuration.cs"
+DOCKER = "src/Providers/FeatureFlow.Providers.Docker/DockerSandbox.cs"
 
 INTEGRATION = "tests/FeatureFlow.Integration.Tests"
 AGENT = "tests/FeatureFlow.Engine.Agent.Tests"
@@ -100,7 +101,7 @@ CONTROLS = [
     },
     {
         "name": "DR17: the output folder is not created before the agent starts",
-        "edits": [(ACTIVITY, "[paths.Checkout, paths.Output, \"/ff/inputs\", \"/ff/tmp\"]", "[paths.Checkout, \"/ff/inputs\", \"/ff/tmp\"]")],
+        "edits": [(ACTIVITY, "[paths.Checkout, paths.Output, \"/ff/inputs\", \"/ff/state\", \"/ff/tmp\"]", "[paths.Checkout, \"/ff/inputs\", \"/ff/state\", \"/ff/tmp\"]")],
         "tests": [it("Without_the_report_tool_the_agent_reports_through_a_file")],
         "expect": ["Without_the_report_tool_the_agent_reports_through_a_file_in_its_output_folder"],
     },
@@ -211,12 +212,6 @@ CONTROLS = [
         "expect": ["Resumes_without_progress_stop_for_a_person_after_the_cap"],
     },
     {
-        "name": "review 5b: the engine's state in the sandbox is the agent's to write",
-        "edits": [(ACTIVITY, "chown {StateUser} /ff/state \"", "chown node /ff/state \"")],
-        "tests": [it("The_agent_cannot_forge_engine_state")],
-        "expect": ["The_agent_cannot_forge_engine_state_change_its_hooks_or_redirect_the_proxy"],
-    },
-    {
         "name": "review 5c: a permanent model error is read as resumable",
         "edits": [(RUNTIME, "401 or 403 => SessionEnd.ModelRefused,", "401 or 403 => SessionEnd.ModelUnreachable,"),
                   (RUNTIME, "        _ => SessionEnd.Failed,\n    };", "        _ => SessionEnd.ModelUnreachable,\n    };")],
@@ -225,7 +220,7 @@ CONTROLS = [
     },
     {
         "name": "review 6: the hook command allows a call the engine gave no decision for",
-        "edits": [(HOOK, "if (reply[\"decision\"]?.ToString() == \"allow\")", "if (reply[\"decision\"]?.ToString() != \"deny\")")],
+        "edits": [(HOOK, "if (reply[\"decision\"]?.ToString() == \"allow\" ||", "if (reply[\"decision\"]?.ToString() != \"deny\" ||")],
         "tests": [(CLIENT_TESTS, None)],
         "expect": ["The_hook_command_fails_closed_on_an_answer_with_no_decision"],
     },
@@ -264,6 +259,33 @@ CONTROLS = [
         "edits": [(POLICY, "(\\S*/)?git(", "git(")],
         "tests": [(AGENT, None)],
         "expect": [("A_git_push_is_denied", 2)],
+    },
+    # Added after the re-check of the review (docs/build/m4-results.md section 10).
+    {
+        "name": "re-check N1a: an engine-unreachable stop is believed without the engine's own evidence",
+        "edits": [(ACTIVITY, "if (result.End == SessionEnd.EngineUnreachable && await LastContactAsync() is { } contact",
+                   "if (result.End == \"control\" && await LastContactAsync() is { } contact")],
+        "tests": [it("A_forged_engine_unreachable_stop_gets_no_resume")],
+        "expect": ["A_forged_engine_unreachable_stop_gets_no_resume"],
+    },
+    {
+        "name": "re-check N1b: a command's transcript and exit code are the agent's to write",
+        "edits": [(DOCKER, "chown -R root {dir} && chmod 700 {dir}", "chown -R {user} {dir} && chmod 755 {dir}")],
+        "tests": [it("The_agent_cannot_forge_engine_state")],
+        "expect": ["The_agent_cannot_forge_engine_state_change_its_hooks_or_redirect_the_proxy"],
+    },
+    {
+        "name": "re-check N2: a superseded hidden reference is overwritten, not kept",
+        "edits": [(ACTIVITY, "                    Must(await vcs.PushAsync(repo, kept, hiddenRevision, null, null, ct), \"keep the superseded commits\");",
+                   "                    _ = kept;")],
+        "tests": [it("A_later_execution_starts_from_the_branch")],
+        "expect": ["A_later_execution_starts_from_the_branch_when_the_hidden_reference_is_behind_it"],
+    },
+    {
+        "name": "re-check N3: a hook that gates nothing blocks when it gets no decision",
+        "edits": [(HOOK, " || hook != \"pre_tool_use\" && reply[\"decision\"]?.ToString() != \"deny\"", "")],
+        "tests": [(CLIENT_TESTS, None)],
+        "expect": [("A_hook_that_gates_nothing_does_not_block_on_an_answer_with_no_decision", 3)],
     },
 ]
 
