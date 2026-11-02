@@ -274,6 +274,18 @@ CONTROLS = [
         "tests": [(ENGINE, None)],
         "expect": ["A_clean_up_resets_to_where_the_latest_execution_of_the_step_started"],
     },
+    {
+        "name": "review 10: tier commands and result paths come from the agent-written head",
+        "edits": [(TESTING, "var evidence = await run.ManifestAsync(repo, at)", "var evidence = await run.ManifestAsync(repo, head)")],
+        "tests": [(ENGINE, None)],
+        "expect": ["Tier_commands_and_result_paths_come_from_the_parent_branchs_manifest_not_the_heads"],
+    },
+    {
+        "name": "review 10: a result file already in the checkout is read as this run's",
+        "edits": [(TESTING, "if ((await ReadFilesAsync(path)).Count > 0)", "if (false)")],
+        "tests": [(ENGINE, None)],
+        "expect": ["A_result_file_already_in_the_checkout_that_cannot_be_removed_raises_an_intervention"],
+    },
 ]
 
 

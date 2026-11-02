@@ -5,8 +5,11 @@ namespace FeatureFlow.Engine.ActionSteps;
 // The JSON shapes of the engine's evidence artifacts (docs/04 section 10.1; std's evidence types have `schema: engine`).
 // Test and analysis results per tier are the Providers.Abstractions records, so a validator provider reads the same.
 
-/// <summary><c>test_results</c>: one repository's tiers at one revision. <see cref="Passed"/> when every tier is clean.</summary>
-public sealed record TestEvidence(string Repository, string Revision, bool Baseline, bool Passed, IReadOnlyList<TestResults> Tiers);
+/// <summary>
+/// <c>test_results</c>: one repository's tiers at one revision. <see cref="Passed"/> when every tier is clean.
+/// <see cref="Manifest"/> is the hash of the manifest the tiers came from (the parent branch's, LOG 138).
+/// </summary>
+public sealed record TestEvidence(string Repository, string Revision, bool Baseline, bool Passed, IReadOnlyList<TestResults> Tiers, string? Manifest = null);
 
 /// <summary><c>check_results</c>: every check on a head when <c>ci.checks</c> decided, with the pull request it waited on.</summary>
 public sealed record CheckEvidence(string Repository, string Revision, string? PullRequest, bool Passed, int Skipped, IReadOnlyList<CheckRun> Checks);

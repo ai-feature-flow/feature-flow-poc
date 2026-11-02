@@ -6,8 +6,11 @@ using FeatureFlow.Validation;
 namespace FeatureFlow.Engine.ActionSteps;
 
 /// <summary>
-/// The testing and analysis actions (docs/04 section 9) and <c>repo.inspect</c> (section 12). The repository's
-/// manifest is read at the head being tested, never copied into the plan (RW11). Tiers run where the manifest says: in
+/// The testing and analysis actions (docs/04 section 9) and <c>repo.inspect</c> (section 12). The manifest is read at
+/// each step, never copied into the plan (RW11). What makes evidence (test tiers and the analyser: their commands and
+/// result paths) comes from the manifest on the parent branch, the merge target, because the agent can edit the work
+/// branch's; a tier a ticket adds counts once merged (LOG 138). Setup commands, not evidence, come from the head. Tiers
+/// run where the manifest says: in
 /// a sandbox, or delegated to CI inside the same step. Results are parsed by <see cref="ResultFiles"/> in either case.
 /// </summary>
 static class Testing
@@ -47,8 +50,7 @@ static class Testing
     static async Task<(TestEvidence Evidence, string? Adopted)> RunTiersAsync(ActionRun run, RepoRef repo, IReadOnlyList<string> tags, bool baseline, bool adopt = true)
     {
         var head = await run.WorkHeadAsync(repo);
-        var manifest = await run.ManifestAsync(repo, head)
-                       ?? throw ActionStop.CannotAnswer($"{repo.FullName} has no {RepositoryManifest.FileName} at {EngineActions.Short(head)}: the engine cannot tell how to test it");
+        var (manifest, setup) = await ManifestsAsync(run, repo, head, "test");
         var d = new DiagnosticBag();
         StepStartChecks.TierTags(repo.FullName, manifest, tags, d);
         if (d.HasErrors)
@@ -60,7 +62,7 @@ static class Testing
         // The carried result (section 9.1): this head was already tested with the same tiers; adopt it.
         if (adopt && !baseline)
             foreach (var (entry, earlier) in (await run.EvidenceAsync<TestEvidence>("test_results", "test.run")).AsEnumerable().Reverse())
-                if (earlier.Repository == repo.FullName && earlier.Revision == head && !earlier.Baseline
+                if (earlier.Repository == repo.FullName && earlier.Revision == head && !earlier.Baseline && earlier.Manifest == manifest.Hash
                     && earlier.Tiers.Select(x => x.Tier).Order().SequenceEqual(tiers.Select(x => x.Name).Order()))
                 {
                     run.Events.Add($"{EngineActions.Short(head)} was already tested by {entry.StepId}; its result is adopted and nothing runs");
@@ -84,7 +86,7 @@ static class Testing
         var results = new List<TestResults>();
         if (inSandbox.Count > 0)
         {
-            await using var session = await SandboxSession.OpenAsync(run, repo, head, manifest, "test");
+            await using var session = await SandboxSession.OpenAsync(run, repo, head, setup, "test");
             foreach (var tier in inSandbox)
                 results.Add(await SandboxTierAsync(run, session, tier, head));
         }
@@ -95,11 +97,28 @@ static class Testing
         foreach (var r in results)
             run.Events.Add($"tier {r.Tier} at {EngineActions.Short(head)}: {r.Passed} passed, {r.Failed} failed, {r.Skipped} skipped" +
                            (r.Failures.Count == 0 ? "" : $" ({string.Join("; ", r.Failures.Take(5).Select(f => f.Name))})"));
-        return (new TestEvidence(repo.FullName, head, baseline, results.All(r => r.Clean), results), null);
+        return (new TestEvidence(repo.FullName, head, baseline, results.All(r => r.Clean), results, manifest.Hash), null);
+    }
+
+    /// <summary>
+    /// The manifest whose tiers and analyser make evidence, from the parent branch, and the setup commands, from the head
+    /// under test. With no manifest on the parent branch the engine cannot tell how to test: an intervention.
+    /// </summary>
+    static async Task<(RepositoryManifest Evidence, IReadOnlyList<string> Setup)> ManifestsAsync(ActionRun run, RepoRef repo, string head, string what)
+    {
+        var parent = await run.ParentBranchAsync(repo);
+        var at = ActionRun.Must(await run.Vcs.ResolveAsync(repo, "refs/heads/" + parent, run.Ct), "read the parent branch")
+                 ?? throw ActionStop.CannotAnswer($"{repo.FullName} has no parent branch {parent}");
+        var evidence = await run.ManifestAsync(repo, at)
+                       ?? throw ActionStop.CannotAnswer($"{repo.FullName} has no {RepositoryManifest.FileName} on {parent} at {EngineActions.Short(at)}: the engine cannot tell how to {what} it");
+        var setup = at == head ? evidence.Setup : (await run.ManifestAsync(repo, head))?.Setup ?? [];
+        return (evidence, setup);
     }
 
     static async Task<TestResults> SandboxTierAsync(ActionRun run, SandboxSession session, TestTier tier, string head)
     {
+        if (tier.Result is not null)
+            await session.ClearAsync(tier.Result.Path, $"tier {tier.Name}'s results");
         var (exit, output) = await session.RunAsync(tier.Command, run.Options.CommandTimeout, $"tier {tier.Name}");
         if (tier.Result is null)
             // Without a result file the tier is judged by its exit code, and its tests cannot be claimed as evidence (docs/07 section 4).
@@ -174,8 +193,7 @@ static class Testing
         var repo = run.Repository();
         var baseline = run.Bool("baseline", false);
         var head = await run.WorkHeadAsync(repo);
-        var manifest = await run.ManifestAsync(repo, head)
-                       ?? throw ActionStop.CannotAnswer($"{repo.FullName} has no {RepositoryManifest.FileName} at {EngineActions.Short(head)}: the engine cannot tell how to analyse it");
+        var (manifest, setup) = await ManifestsAsync(run, repo, head, "analyse");
         var analysis = manifest.Analysis;
         if (analysis is null || analysis.Analyser == "none")
         {
@@ -189,8 +207,9 @@ static class Testing
         string? sarif;
         int exit;
         string output;
-        await using (var session = await SandboxSession.OpenAsync(run, repo, head, manifest, "analysis"))
+        await using (var session = await SandboxSession.OpenAsync(run, repo, head, setup, "analysis"))
         {
+            await session.ClearAsync(analysis.SarifPath!, "the analyser's SARIF");
             (exit, output) = await session.RunAsync(analysis.Command!, run.Options.CommandTimeout, "the analyser");
             sarif = (await session.ReadFilesAsync(analysis.SarifPath!)).FirstOrDefault();
         }
@@ -277,7 +296,7 @@ sealed class SandboxSession : IAsyncDisposable
 
     SandboxSession(ActionRun run, ISandboxProvider sandboxes, SandboxHandle handle) => (this.run, this.sandboxes, this.handle) = (run, sandboxes, handle);
 
-    public static async Task<SandboxSession> OpenAsync(ActionRun run, RepoRef repo, string head, RepositoryManifest manifest, string purpose)
+    public static async Task<SandboxSession> OpenAsync(ActionRun run, RepoRef repo, string head, IReadOnlyList<string> setup, string purpose)
     {
         var sandboxes = run.Provider<ISandboxProvider>("sandbox");
         var key = $"{run.Key}/{purpose}";
@@ -291,15 +310,15 @@ sealed class SandboxSession : IAsyncDisposable
         {
             ActionRun.Must(await run.Vcs.CheckOutAsync(repo, run.WorkReference, head, run.Scope.WorkBranch, new WorkingCopyRef(handle, Checkout), run.Ct),
                 "check out the work branch");
-            foreach (var command in manifest.Setup)
+            foreach (var command in setup)
             {
                 var (exit, output) = await session.RunAsync(command, run.Options.CommandTimeout, "setup");
                 if (exit != 0)
                     throw ActionStop.Failed($"the manifest's setup command '{command}' exited {exit}: {Testing.Tail(output)}");
             }
 
-            if (manifest.Setup.Count > 0)
-                run.Events.Add($"ran {manifest.Setup.Count} setup command(s)");
+            if (setup.Count > 0)
+                run.Events.Add($"ran {setup.Count} setup command(s)");
             return session;
         }
         catch
@@ -335,6 +354,17 @@ sealed class SandboxSession : IAsyncDisposable
 
             await Task.Delay(TimeSpan.FromMilliseconds(250), run.Ct);
         }
+    }
+
+    /// <summary>
+    /// Removes what a result path names before the command that writes it runs, and checks it is gone, so a result file
+    /// committed to the branch is never read as this run's (review 10).
+    /// </summary>
+    public async Task ClearAsync(string path, string what)
+    {
+        await RunAsync($"rm -f -- {path}", TimeSpan.FromMinutes(1), $"clear {what}");
+        if ((await ReadFilesAsync(path)).Count > 0)
+            throw ActionStop.CannotAnswer($"{what} at {path} exist before the command runs and cannot be removed, so they cannot be trusted");
     }
 
     /// <summary>The text of each file a path names, relative to the checkout; a <c>*</c> is expanded by the sandbox's shell.</summary>

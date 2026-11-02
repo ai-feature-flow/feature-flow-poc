@@ -30,10 +30,48 @@ public sealed class TestingActionTests
         Assert.Equal("passed", Outcome(result));
         var evidence = await EvidenceAsync(w, result);
         Assert.Equal((w.Work, true, 3, 0, 1), (evidence.Revision, evidence.Baseline, evidence.Tiers.Single().Passed, evidence.Tiers.Single().Failed, evidence.Tiers.Single().Skipped));
-        Assert.Equal(["sh -c dotnet tool restore", "sh -c dotnet test tests/Unit --logger \"trx;LogFileName=unit.trx\""], w.Sandbox.Commands.Select(c => c.Command));
+        Assert.Equal(["sh -c dotnet tool restore", $"sh -c rm -f -- {ActionWorld.UnitTrx}", "sh -c dotnet test tests/Unit --logger \"trx;LogFileName=unit.trx\""],
+            w.Sandbox.Commands.Select(c => c.Command));
         Assert.All(w.Sandbox.Commands, c => Assert.Equal("/ff/work", c.Directory));
         Assert.Equal(0, w.Sandbox.Counts.Live);       // the sandbox is removed
         Assert.NotNull(w.Work);                      // the first step to touch the repository created the work branch
+    }
+
+    [Fact]
+    public async Task Tier_commands_and_result_paths_come_from_the_parent_branchs_manifest_not_the_heads()
+    {
+        await using var w = WithManifest();
+        w.Sandbox.On(new SandboxRule("dotnet test tests/Unit", Files: new Dictionary<string, string> { [ActionWorld.UnitTrx] = ActionWorld.Trx(3) }));
+        w.Sandbox.On(new SandboxRule("echo forged", Files: new Dictionary<string, string> { ["forged.trx"] = ActionWorld.Trx(50) }));
+        // The agent rewrites the manifest on the work branch: a command that runs nothing, and a result it wrote itself.
+        w.CommitWork("feature-flow.yaml", ActionWorld.Manifest()
+            .Replace("dotnet test tests/Unit --logger \"trx;LogFileName=unit.trx\"", "echo forged", StringComparison.Ordinal)
+            .Replace(ActionWorld.UnitTrx, "forged.trx", StringComparison.Ordinal)
+            .Replace("dotnet tool restore", "dotnet tool restore --head", StringComparison.Ordinal));
+
+        var result = await w.RunAsync("test.run", "{ tier_tags: [unit] }");
+
+        Assert.Equal("passed", Outcome(result));
+        var evidence = await EvidenceAsync(w, result);
+        Assert.Equal(3, evidence.Tiers.Single().Passed);
+        var parentManifest = (await new InMemoryCodeHost(w.Forge).ReadFileAsync(w.Repo, "feature-flow.yaml", "main", TestContext.Current.CancellationToken)).Unwrap()!;
+        Assert.Equal(parentManifest.Hash, evidence.Manifest);
+        Assert.DoesNotContain(w.Sandbox.Commands, c => c.Command.Contains("echo forged", StringComparison.Ordinal));
+        // Setup is not evidence: it comes from the head.
+        Assert.Contains(w.Sandbox.Commands, c => c.Command == "sh -c dotnet tool restore --head");
+    }
+
+    [Fact]
+    public async Task A_result_file_already_in_the_checkout_that_cannot_be_removed_raises_an_intervention()
+    {
+        await using var w = WithManifest();
+        // A results file that arrives with the checkout (here written by setup), and a tier command that writes none.
+        w.Sandbox.On(new SandboxRule("tool restore", Files: new Dictionary<string, string> { [ActionWorld.UnitTrx] = ActionWorld.Trx(3) }));
+
+        var result = await w.RunAsync("test.run", "{ tier_tags: [unit] }");
+
+        Assert.Equal(StepOutcome.CannotAnswer, result.Kind);
+        Assert.Contains("exist before the command runs", result.Reason, StringComparison.Ordinal);
     }
 
     [Fact]
