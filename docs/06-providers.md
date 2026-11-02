@@ -403,6 +403,9 @@ requests (`archive/docs/16` section 2).
 Pending review (LOG 95): in M4 an agent step gets no code host credential at all; its
 checkout arrives as a bundle with no remote.
 
+Pending review (LOG 104): the model proxy forwards only the Messages API's two requests to its
+upstream, and refuses anything else before reading the credential.
+
 ---
 
 ## 4. Packaging

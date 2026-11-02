@@ -131,6 +131,9 @@ A resume is free if the agent made progress since the last one (`docs/01`
 section 4). Commands in the sandbox are started and polled, never awaited, so a
 long test run survives a worker restart.
 
+Pending review (LOG 98, 106): M4 bounds resumes (free only after progress, at most 5 in a row
+without it) and enforces `limits.timeout` from the step's first attempt.
+
 ### 3.3 The agent reporting contract
 
 The engine serves a small set of tools to the agent through its MCP server
