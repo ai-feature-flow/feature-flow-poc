@@ -115,7 +115,7 @@ public class RunStartCheckTests
     public void Check_22_an_allowance_above_the_per_step_ceiling_is_refused()
     {
         var (_, plan) = Load(new Std.Edit("templates/ticket_delivery.yaml",
-            "    limits: { questions: { max: 3, timeout: 4h } }\n", "    limits: { attempts: 13, questions: { max: 3, timeout: 4h } }\n"));
+            "    limits: { questions: { max: 3, timeout: 24h } }\n", "    limits: { attempts: 13, questions: { max: 3, timeout: 24h } }\n"));
         var d = new DiagnosticBag();
         RunStartChecks.Caps(plan, Policy(perStep: 12), Allowance, d);
         Assert.Equal([Checks.LockedCap], Blocking(d));

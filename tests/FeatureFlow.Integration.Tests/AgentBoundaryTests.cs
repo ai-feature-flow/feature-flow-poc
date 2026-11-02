@@ -230,6 +230,37 @@ public sealed class AgentBoundaryTests
         Assert.DoesNotContain(FeatureFlow.Providers.Docker.DockerSandbox.NameOf(Key(runId)), await AgentHarness.SandboxesAsync());
     }
 
+    /// <summary>
+    /// LOG 106 as approved: a slow human never fails a step. The question stays open past the step's one-minute limit;
+    /// that time does not count, so once answered the agent reports and the run completes.
+    /// </summary>
+    [Fact]
+    public async Task Time_a_question_stays_open_does_not_count_toward_the_step_s_timeout()
+    {
+        await using var model = new ScriptedModel("model-key-" + Guid.NewGuid().ToString("N"));
+        model.ThenTool("mcp__engine__ask_human", new JsonObject { ["question"] = "Which colour?" })
+            .Then(c => ScriptedModel.ToolUse("Write", AgentScripts.Write("/ff/out/notes.md", c.LastToolResult + "\n")))
+            .Then(c => ScriptedModel.ToolUse("mcp__engine__report", AgentScripts.Report(answer: AgentScripts.Answer(c))))
+            .ThenText("Done.");
+        await model.StartAsync();
+        await using var h = await AgentHarness.StartAsync("slow-human", model);
+        var runId = h.Start("T-29", "Ask which colour, then report the answer.", "m4:templates/timed_step");
+        var wait = await h.WaitForWaitAsync(runId, "question", RunTimeout);
+        await Task.Delay(TimeSpan.FromSeconds(80), TestContext.Current.CancellationToken);
+        var (exit, _, error) = h.Cli("answer", runId, wait, "teal");
+        Assert.True(exit == 0, error);
+        var status = await h.WaitForEndAsync(runId, RunTimeout);
+        var timeline = await h.TimelineAsync(runId);
+
+        Assert.True(status == "completed", $"the run ended {status}:\n{timeline}");
+        Assert.DoesNotContain("ran out of time", timeline);
+        var question = Assert.Single(await h.RecordsAsync<QuestionRecord>(Queries.Questions, Key(runId)));
+        Assert.Equal(QuestionRecord.Answered, question.Status);
+        var opened = Assert.Single(await h.RecordsAsync<AgentEventRecord>(Queries.AgentEvents, Key(runId)), e => e.Kind == "question_opened");
+        Assert.True(question.At - opened.At > TimeSpan.FromMinutes(1), $"the question was open for {question.At - opened.At}, not past the step's limit");
+        Assert.Equal("\"teal\"", (await h.RecordsAsync<ReportRecord>(Queries.Reports, Key(runId))).Last(r => r.Accepted).Report!.Outputs["answer"]);
+    }
+
     /// <summary>Review finding 5 (LOG 98): a session that keeps stopping without progress is not resumed for ever.</summary>
     [Fact]
     public async Task Resumes_without_progress_stop_for_a_person_after_the_cap()

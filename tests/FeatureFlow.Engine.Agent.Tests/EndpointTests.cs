@@ -92,6 +92,9 @@ public sealed class EndpointTests : IDisposable
         Assert.Equal(QuestionRecord.Open, (await AgentEndpoint.OpenQuestionAsync(services, Claims, body, Ct)).Status);
         Assert.Single(signals.Sent);
         Assert.Single((await store.QueryAsync<QuestionRecord>(Queries.Questions, new Dictionary<string, string> { ["step_key"] = Claims.StepKey }, Ct)).Unwrap());
+        // When it opened is kept apart from the question's record, which the run replaces on closing (LOG 106).
+        var events = (await store.QueryAsync<AgentEventRecord>(Queries.AgentEvents, new Dictionary<string, string> { ["step_key"] = Claims.StepKey }, Ct)).Unwrap();
+        Assert.Equal("q-1", Assert.Single(events, e => e.Kind == AgentEndpoint.QuestionOpenedEvent).Detail);
     }
 
     [Fact]

@@ -13,7 +13,7 @@ namespace FeatureFlow.Live.Tests;
 public sealed class LiveAgentTests
 {
     static readonly TimeSpan RunTimeout = TimeSpan.FromMinutes(8);
-    static readonly AgentHarnessOptions Live = new() { Live = true, CommitInterval = "10s" };
+    static readonly AgentHarnessOptions Live = new() { Live = true, CommitInterval = TimeSpan.FromSeconds(10) };
 
     static string Ticket(string name) => $"LIVE-{name}-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}";
 

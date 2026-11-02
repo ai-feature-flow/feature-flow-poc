@@ -150,6 +150,9 @@ public static class AgentEndpoint
 
     public sealed record QuestionReply(string Status, string? Answer, string? Message);
 
+    /// <summary>The agent event recording when a question opened; its detail is the question's id.</summary>
+    public const string QuestionOpenedEvent = "question_opened";
+
     /// <summary>
     /// <c>ask_human</c> (docs/04 section 3.4): records the question by the id the sandbox client gave it and signals
     /// the run, both idempotently, so a retry against another replica resumes the same question (LOG 59).
@@ -176,7 +179,11 @@ public static class AgentEndpoint
         var options = input.TryGetProperty("options", out var o) && o.ValueKind == JsonValueKind.Array
             ? o.EnumerateArray().Select(x => x.GetString() ?? "").Take(4).ToList()
             : [];
-        await AppendAsync(s, new RecordBatch(Questions: [new QuestionRecord(claims.StepKey, claims.RunId, id, text, options, QuestionRecord.Open, null, DateTimeOffset.UtcNow)]));
+        // The opening time is kept apart from the question, whose record the run replaces when it closes: the step's
+        // deadline is extended by the time its questions were open (LOG 106).
+        var now = DateTimeOffset.UtcNow;
+        await AppendAsync(s, new RecordBatch(Questions: [new QuestionRecord(claims.StepKey, claims.RunId, id, text, options, QuestionRecord.Open, null, now)],
+            AgentEvents: [new AgentEventRecord(claims.StepKey, QuestionOpenedEvent, id, now)]));
         await s.Signals.QuestionOpenedAsync(claims.WorkflowId, new QuestionSignal(id, claims.StepId, claims.StepKey, text, options, step.QuestionsTimeoutSeconds), cancellationToken);
         return new QuestionReply(QuestionRecord.Open, null, null);
     }
