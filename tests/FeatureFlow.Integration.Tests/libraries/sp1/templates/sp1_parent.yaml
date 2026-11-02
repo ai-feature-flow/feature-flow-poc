@@ -4,8 +4,8 @@ metadata:
   name: sp1_parent
   level: epic
   description: >-
-    SP1's parent: child runs, decisions opened at start and a chain of short
-    actions, all in one parallel, so the run continues-as-new with children
+    SP1's parent: child runs, decisions opened at start and short actions
+    four at a time, all in one parallel, so the run continues-as-new with children
     running and decisions open.
 
 parameters:
@@ -41,10 +41,14 @@ steps:
             step:
               decision: { type: sp1.question, prompt: sp1:prompts/question }
               outcomes: { "yes": success, "no": success }
+        # Four at a time, as SP1's work ran: when the history reaches the hand-over threshold, work is still in
+        # flight, so the drain stays open for seconds and children end during it (check E2). One at a time, the
+        # threshold was mostly reached as an item completed, with nothing in flight, and the drain took no time.
         - id: work
           for_each:
             items: { expr: "params.work" }
-            mode: chain
+            mode: parallel
+            max_concurrency: 4
             step:
               action: notify.send
               with: { audience: [team], message: work, wait_ms: { expr: "item" } }
