@@ -73,7 +73,7 @@ steps:
     produces:
       implemented: [{ name: implementation_claims, type: std:artifact_types/evidence_claims }]
     outcomes: { implemented: success, blocked: blocked }
-    limits: { questions: { max: 3, timeout: 4h } }
+    limits: { questions: { max: 3, timeout: 24h } }
 
   - id: verify
     use: std:fragments/verify_and_review

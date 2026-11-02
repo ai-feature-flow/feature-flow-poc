@@ -461,6 +461,9 @@ public class RunWorkflow
     /// <summary>The patch marker of waiting for a cancelled step's activity to finish (M3 follow-up 9).</summary>
     public const string WaitCancellationPatch = "m4-wait-cancellation";
 
+    /// <summary>The patch marker of an agent step's activity timeout allowing for its open questions (LOG 106).</summary>
+    public const string QuestionWaitPatch = "log-106-question-wait";
+
     /// <summary>
     /// An agent step's settings from the plan (docs/04 section 3): the role's write access and tool classes, the
     /// rendered task, limits, branches, and the latest artifact of each name it consumes. Workflow code holds the
@@ -486,7 +489,7 @@ public class RunWorkflow
             agent.Skills.Select(s => s.Reference?.ToString()).OfType<string>().ToList(),
             (int)(limits?.CorrectionTurns ?? 2),
             (int)questionsMax,
-            Duration(limits?.QuestionsTimeout) ?? TimeSpan.FromHours(4),
+            Duration(limits?.QuestionsTimeout) ?? AgentLimits.DefaultQuestionsTimeout,
             agent.Push,
             agent.OnUncommitted,
             core.Plan.Document.Level ?? "run",
@@ -495,6 +498,16 @@ public class RunWorkflow
             consumed,
             Workflow.Info.WorkflowId,
             input.LockRef);
+    }
+
+    /// <summary>
+    /// The agent step activity's own timeout: the step's limit and an hour's margin, plus, behind
+    /// <see cref="QuestionWaitPatch"/>, the longest its questions may stay open, which do not count toward the limit (LOG 106).
+    /// </summary>
+    static TimeSpan AgentStepTimeout(StepCall call)
+    {
+        var timeout = (call.Timeout ?? AgentLimits.DefaultTimeout) + TimeSpan.FromHours(1);
+        return call.Agent is { QuestionsMax: > 0 } spec && Workflow.Patched(QuestionWaitPatch) ? timeout + spec.QuestionsTimeout * spec.QuestionsMax : timeout;
     }
 
     /// <summary>A duration such as <c>30m</c> or <c>4h</c> (docs/03 section 2.1).</summary>
@@ -530,7 +543,7 @@ public class RunWorkflow
                 outcome = await Workflow.ExecuteActivityAsync<StepOutcome>(AgentStepActivity, [call], new ActivityOptions
                 {
                     TaskQueue = AgentQueue,
-                    StartToCloseTimeout = (call.Timeout ?? TimeSpan.FromHours(4)) + TimeSpan.FromHours(1),
+                    StartToCloseTimeout = AgentStepTimeout(call),
                     HeartbeatTimeout = TimeSpan.FromSeconds(30),
                     RetryPolicy = Forever,
                     CancellationToken = token.Token,

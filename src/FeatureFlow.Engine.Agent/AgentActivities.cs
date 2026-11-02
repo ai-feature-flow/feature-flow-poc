@@ -197,7 +197,7 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
                     (long)spec.QuestionsTimeout.TotalSeconds, DateTimeOffset.UtcNow),
             ]));
             var token = owner.tokens.Issue(new StepClaims(key, call.Step.RunId, spec.WorkflowId, call.Step.StepId, spec.WriteAccess, spec.Tools,
-                DateTimeOffset.UtcNow.Add((call.Timeout ?? TimeSpan.FromHours(4)) + TimeSpan.FromHours(2)).ToUnixTimeSeconds()));
+                DateTimeOffset.UtcNow.Add((call.Timeout ?? AgentLimits.DefaultTimeout) + spec.QuestionsTimeout * spec.QuestionsMax + TimeSpan.FromHours(2)).ToUnixTimeSeconds()));
             limits = new AgentLimits(call.Timeout, spec.CorrectionTurns, spec.QuestionsTimeout);
             task = new AgentTask(call.Step, call.What, null, call.Inputs, call.Contract)
             {
@@ -246,15 +246,49 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
 
         /// <summary>
         /// The step's deadline, <c>limits.timeout</c> from its first attempt (default 4 hours), kept in the record store so
-        /// a retry after the activity's own timeout does not start the clock again.
+        /// a retry after the activity's own timeout does not start the clock again. Time spent on open questions is
+        /// added to it (<see cref="PastDeadlineAsync"/>).
         /// </summary>
         async Task<DateTimeOffset> DeadlineAsync()
         {
             if ((await EventsAsync()).FirstOrDefault(e => e.Kind == "deadline") is { } recorded)
                 return DateTimeOffset.Parse(recorded.Detail, System.Globalization.CultureInfo.InvariantCulture);
-            var at = DateTimeOffset.UtcNow + (call.Timeout ?? TimeSpan.FromHours(4));
+            var at = DateTimeOffset.UtcNow + (call.Timeout ?? AgentLimits.DefaultTimeout);
             await EventAsync("deadline", at.ToString("O"));
             return at;
+        }
+
+        /// <summary>
+        /// Whether the step is out of time: past its deadline extended by the time any of its questions was open, so a
+        /// slow human never fails a step (LOG 106). The questions are read only once the deadline itself has passed.
+        /// </summary>
+        async Task<bool> PastDeadlineAsync()
+        {
+            var now = DateTimeOffset.UtcNow;
+            return now >= deadline && now >= deadline + await QuestionWaitAsync(now);
+        }
+
+        /// <summary>How long one or more of the step's questions has been open, counting overlapping questions once.</summary>
+        async Task<TimeSpan> QuestionWaitAsync(DateTimeOffset now)
+        {
+            var opened = (await EventsAsync()).Where(e => e.Kind == AgentEndpoint.QuestionOpenedEvent)
+                .GroupBy(e => e.Detail).ToDictionary(g => g.Key, g => g.Min(e => e.At));
+            var questions = Must(await owner.Records.QueryAsync<QuestionRecord>(Queries.Questions, new Dictionary<string, string> { ["step_key"] = key }, ct));
+            var spans = questions.Where(q => opened.ContainsKey(q.QuestionId))
+                .Select(q => (From: opened[q.QuestionId], To: q.Status == QuestionRecord.Open ? now : q.At))
+                .OrderBy(x => x.From);
+            var total = TimeSpan.Zero;
+            var reached = DateTimeOffset.MinValue;
+            foreach (var (from, to) in spans)
+            {
+                var start = from > reached ? from : reached;
+                if (to > start)
+                    total += to - start;
+                if (to > reached)
+                    reached = to;
+            }
+
+            return total;
         }
 
         /// <summary>docs/04 section 1: an agent that ran out of time is a work result. Its commits are kept on the hidden reference.</summary>
@@ -262,7 +296,7 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
         {
             if (session is not null)
                 await runtime.StopAsync(session, CancellationToken.None);
-            throw new StepWorkException($"the step ran out of time: its limit of {(call.Timeout ?? TimeSpan.FromHours(4)).TotalMinutes:F0} minutes passed at {deadline:O}");
+            throw new StepWorkException($"the step ran out of time: its limit of {(call.Timeout ?? AgentLimits.DefaultTimeout).TotalMinutes:F0} minutes from {deadline - (call.Timeout ?? AgentLimits.DefaultTimeout):O}, not counting time its questions were open, has passed");
         }
 
         static string HiddenReference(StepIdentity step) => $"refs/feature-flow/wip/{Safe(step.RunId)}/{Safe(step.StepId)}";
@@ -477,7 +511,7 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
         {
             var (session, number, message) = await LatestSessionAsync();
             AgentSession? running = null;
-            if (DateTimeOffset.UtcNow >= deadline)
+            if (await PastDeadlineAsync())
                 await OutOfTimeAsync(null);
             if (session is not null && message is null && reattached)
             {
@@ -646,7 +680,7 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
                 var progress = Must(await runtime.GetProgressAsync(session, ct), "read the session's progress");
                 if (progress.Finished)
                     return;
-                if (DateTimeOffset.UtcNow >= deadline)
+                if (await PastDeadlineAsync())
                 {
                     await PushCommitsAsync();
                     await OutOfTimeAsync(session);

@@ -8,7 +8,11 @@ using FeatureFlow.Providers.Abstractions;
 
 namespace FeatureFlow.Providers.ClaudeCode;
 
-/// <summary>Settings of a Claude Code runtime instance (docs/07 section 2).</summary>
+/// <summary>
+/// Settings of a Claude Code runtime instance (docs/07 section 2): <see cref="Model"/>, <see cref="Executable"/> and
+/// <see cref="EngineTools"/>. <see cref="MaxRetries"/>, <see cref="HookHold"/> and <see cref="ClientRetry"/> are fixed
+/// defaults, not settings (LOG 91); only tests change them.
+/// </summary>
 public sealed record ClaudeCodeOptions(string Model, string Executable = "claude", int? MaxRetries = null, TimeSpan? HookHold = null, TimeSpan? ClientRetry = null,
     bool EngineTools = true)
 {
@@ -66,7 +70,7 @@ public sealed class ClaudeCodeRuntime(ClaudeCodeOptions options, Func<ISandboxPr
     }
 
     /// <summary>DR16: the runtime's MCP tool timeout exceeds the longest a question may wait.</summary>
-    public static TimeSpan McpToolTimeout(AgentLimits limits) => (limits.QuestionsTimeout ?? TimeSpan.FromHours(4)) + TimeSpan.FromMinutes(15);
+    public static TimeSpan McpToolTimeout(AgentLimits limits) => (limits.QuestionsTimeout ?? AgentLimits.DefaultQuestionsTimeout) + TimeSpan.FromMinutes(15);
 
     /// <summary>DR16: the hook command's timeout exceeds the client's hold.</summary>
     public TimeSpan HookTimeout => options.Hold + TimeSpan.FromSeconds(60);
@@ -341,20 +345,18 @@ public sealed class ClaudeCodeRuntime(ClaudeCodeOptions options, Func<ISandboxPr
 /// <summary>The factories of this package, by type and kind, for a host to register (docs/06 section 4).</summary>
 public static class ClaudeCodeProviders
 {
-    public static IReadOnlyList<ProviderFactory> Factories { get; } =
-    [
-        new("agent_runtime", "claude_code", ["model", "executable", "model_access", "max_retries", "hook_hold", "client_retry", "engine_tools"], c =>
+    public static IReadOnlyList<ProviderFactory> Factories { get; } = [Runtime()];
+
+    /// <summary>The runtime's factory. <paramref name="tune"/> lets a test change the fixed defaults (LOG 91).</summary>
+    public static ProviderFactory Runtime(Func<ClaudeCodeOptions, ClaudeCodeOptions>? tune = null) =>
+        new("agent_runtime", "claude_code", ["model", "executable", "model_access", "engine_tools"], c =>
         {
             if (c.Instance.Settings["model_access"] is not YMap access || access["mode"].ScalarText() != "proxy")
                 throw new InvalidOperationException($"providers.agent_runtime.instances.{c.Instance.Name} needs model_access with mode proxy (F6)");
+            var options = new ClaudeCodeOptions(c.Setting("model") ?? "haiku", c.Setting("executable") ?? "claude", EngineTools: c.Setting("engine_tools") != "false");
             return new ClaudeCodeRuntime(
-                new ClaudeCodeOptions(c.Setting("model") ?? "haiku", c.Setting("executable") ?? "claude",
-                    c.Setting("max_retries") is { } r ? int.Parse(r, System.Globalization.CultureInfo.InvariantCulture) : null,
-                    c.Setting("hook_hold") is { } h ? TimeSpan.FromSeconds(double.Parse(h, System.Globalization.CultureInfo.InvariantCulture)) : null,
-                    c.Setting("client_retry") is { } cr ? TimeSpan.FromSeconds(double.Parse(cr, System.Globalization.CultureInfo.InvariantCulture)) : null,
-                    c.Setting("engine_tools") != "false"),
+                tune?.Invoke(options) ?? options,
                 () => c.Provider("sandbox") as ISandboxProvider ?? throw new InvalidOperationException("Claude Code runs in a sandbox: configure a sandbox provider"),
                 () => c.Provider("artifact_store") as IArtifactStoreProvider ?? throw new InvalidOperationException("Claude Code needs an artifact store"));
-        }),
-    ];
+        });
 }
