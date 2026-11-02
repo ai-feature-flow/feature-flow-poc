@@ -428,7 +428,9 @@ public class RunWorkflow
 
         var identity = new StepIdentity(input.RunId, Template.Name, step.Id, s.Execution, $"{input.RunId}/{step.Id}/{s.Execution}");
         ActionScope? scope = null;
-        if (step.Form == StepForm.Action && EngineActions.Built.Contains(step.Action!))
+        // Behind the marker: a history recorded before M5 neither computes a scope nor renders a prompt, so a render
+        // that fails cannot replace the activity it scheduled.
+        if (step.Form == StepForm.Action && EngineActions.Built.Contains(step.Action!) && Workflow.Patched(StepStartPatch))
         {
             try
             {
@@ -535,7 +537,7 @@ public class RunWorkflow
     /// <summary>The patch marker of the <c>clean_up</c> branch reset (M5): histories recorded before it reset nothing.</summary>
     public const string CleanUpPatch = "m5-clean-up";
 
-    /// <summary>The patch marker of step-start check 32 (M5).</summary>
+    /// <summary>The patch marker of M5's step start: check 32, and an engine action's scope and rendered prompts.</summary>
     public const string StepStartPatch = "m5-step-start";
 
     /// <summary>What a step must report, for its provider.</summary>
