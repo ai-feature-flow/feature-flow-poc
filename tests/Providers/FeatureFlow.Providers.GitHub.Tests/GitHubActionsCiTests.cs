@@ -229,6 +229,58 @@ public sealed class GitHubActionsCiTests : IDisposable
         Assert.DoesNotContain(github.Calls, c => c.Path.StartsWith("https://blob.example", StringComparison.Ordinal) && c.Body.Contains("ghs_", StringComparison.Ordinal));
     }
 
+    GitHubActionsCi Capped() => new(github.Api(), () => store) { MaxArtifactBytes = 4000, MaxResultFileBytes = 1000 };
+
+    FakeGitHub CompletedRun(string artifacts) =>
+        github.On(Get, "~/actions/runs/42/jobs", 200, """{"jobs":[]}""")
+            .On(Get, "~/actions/runs/42/artifacts", 200, artifacts)
+            .On(Get, "~/actions/runs/42", 200, """{"status":"completed","conclusion":"success"}""")
+            .On(Get, "~/git/ref/feature-flow/ci/run-42", 404, """{"message":"Not Found"}""");
+
+    /// <summary>Review finding 6: artifacts are size-capped, and only result-file entries are read, each capped.</summary>
+    [Fact]
+    public async Task An_artifact_over_the_size_limit_is_skipped_unread()
+    {
+        CompletedRun("""{"artifacts":[{"id":5,"name":"big-build","expired":false,"size_in_bytes":999999}]}""");
+
+        var result = (await Capped().ReadResultsAsync(new CiRunRef(Repo, "42", Sha), Ct)).Unwrap();
+
+        Assert.Empty(result.Files);
+        Assert.Empty(github.Called(Get, "~/actions/artifacts/5"));
+    }
+
+    [Fact]
+    public async Task A_download_larger_than_it_said_is_refused()
+    {
+        CompletedRun("""{"artifacts":[{"id":5,"name":"lies","expired":false,"size_in_bytes":10}]}""")
+            .On(Get, "~/actions/artifacts/5/zip", 302, "", new Dictionary<string, string> { ["Location"] = "https://blob.example/5.zip" })
+            .Bytes("https://blob.example/5.zip", new byte[5000]);
+
+        Assert.Equal("validation_failed", (await Capped().ReadResultsAsync(new CiRunRef(Repo, "42", Sha), Ct)).Error?.Reason);
+    }
+
+    [Fact]
+    public async Task A_result_file_over_the_limit_refuses_the_read_and_other_large_files_are_not_read()
+    {
+        CompletedRun("""{"artifacts":[{"id":5,"name":"results","expired":false,"size_in_bytes":3000}]}""")
+            .On(Get, "~/actions/artifacts/5/zip", 302, "", new Dictionary<string, string> { ["Location"] = "https://blob.example/5.zip" })
+            .Bytes("https://blob.example/5.zip", Zip(("app.dll", new string('x', 50_000)), ("unit.trx", new string('y', 2000))));
+
+        var result = await Capped().ReadResultsAsync(new CiRunRef(Repo, "42", Sha), Ct);
+
+        Assert.Equal("validation_failed", result.Error?.Reason);
+        Assert.Contains("unit.trx", result.Error!.Message);
+    }
+
+    [Fact]
+    public async Task A_capped_copy_stops_at_the_limit_whatever_the_source_claims()
+    {
+        var target = new MemoryStream();
+        Assert.False(await GitHubApi.CopyCappedAsync(new MemoryStream(new byte[1001]), target, 1000, Ct));
+        Assert.True(target.Length <= 1000);
+        Assert.True(await GitHubApi.CopyCappedAsync(new MemoryStream(new byte[1000]), new MemoryStream(), 1000, Ct));
+    }
+
     [Fact]
     public async Task Results_of_a_running_run_are_refused()
     {

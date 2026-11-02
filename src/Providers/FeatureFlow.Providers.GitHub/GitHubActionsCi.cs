@@ -28,6 +28,14 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
 
     public const string ClaimPrefix = "feature-flow/ci/";
 
+    /// <summary>Artifacts larger than this are skipped: result files are small, and the workflow is the repository's to change.</summary>
+    public long MaxArtifactBytes { get; init; } = 100L * 1024 * 1024;
+
+    /// <summary>A result file larger than this, uncompressed, refuses the read (a zip bomb, or not a result file).</summary>
+    public long MaxResultFileBytes { get; init; } = 50L * 1024 * 1024;
+
+    public long MaxLogBytes { get; init; } = 200L * 1024 * 1024;
+
     const string RunMessage = "ff-ci run ";
 
     public ProviderDescription Describe() => new("ci", "github_actions", "0.1.0", new CiCapabilities(true, true, true, false, false));
@@ -208,20 +216,24 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
             return new ProviderResult<CiRunResult>(null, artifacts.Error);
 
         var files = new List<CiResultFile>();
-        foreach (var artifact in artifacts.Value!.Where(a => a["expired"]?.GetValue<bool>() != true))
+        foreach (var artifact in artifacts.Value!.Where(a => a["expired"]?.GetValue<bool>() != true && (a["size_in_bytes"]?.GetValue<long>() ?? 0) <= MaxArtifactBytes))
         {
-            var zip = await DownloadAsync(run.Repo, $"/actions/artifacts/{artifact["id"]!.GetValue<long>()}/zip", cancellationToken);
+            var zip = await DownloadAsync(run.Repo, $"/actions/artifacts/{artifact["id"]!.GetValue<long>()}/zip", MaxArtifactBytes, cancellationToken);
             if (!zip.Ok)
                 return new ProviderResult<CiRunResult>(null, zip.Error);
-            using var archive = new ZipArchive(new MemoryStream(zip.Value!), ZipArchiveMode.Read);
-            foreach (var entry in archive.Entries.Where(e => e.Length > 0))
+            await using var zipStream = zip.Value!;
+            using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read);
+            // Only entries named like result files are read, each capped as it is decompressed (its stated size can lie).
+            foreach (var entry in archive.Entries.Where(e => e.Length > 0 && MayBeResult(e.FullName)))
             {
                 using var reader = new MemoryStream();
                 await using (var source = entry.Open())
-                    await source.CopyToAsync(reader, cancellationToken);
+                    if (entry.Length > MaxResultFileBytes || !await GitHubApi.CopyCappedAsync(source, reader, MaxResultFileBytes, cancellationToken))
+                        return ProviderResult<CiRunResult>.Failure("validation_failed", $"{entry.FullName} in artifact {artifact["name"]} is larger than {MaxResultFileBytes} bytes");
                 if (FormatOf(entry.FullName, reader.ToArray()) is not { } format)
                     continue;
-                var put = await store().PutAsync(new MemoryStream(reader.ToArray()), cancellationToken);
+                reader.Position = 0;
+                var put = await store().PutAsync(reader, cancellationToken);
                 if (!put.Ok)
                     return new ProviderResult<CiRunResult>(null, put.Error);
                 files.Add(new CiResultFile($"{artifact["name"]?.GetValue<string>()}/{entry.FullName}", format, put.Value!));
@@ -234,6 +246,10 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
         return ProviderResult<CiRunResult>.Success(new CiRunResult(status.Conclusion!,
             jobs.Value!.Select(j => new CiJobResult(j["name"]!.GetValue<string>(), GitHubCodeHost.Conclusion(j["conclusion"]?.GetValue<string>()))).ToList(), files));
     }
+
+    static bool MayBeResult(string name) =>
+        name.EndsWith(".trx", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".sarif", StringComparison.OrdinalIgnoreCase)
+        || name.EndsWith(".sarif.json", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>A result file's format, from its name and, for XML, its root element; null for anything else.</summary>
     public static string? FormatOf(string name, byte[] content)
@@ -251,18 +267,21 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
     /// <summary>The run's logs: GitHub answers 302 to a short-lived download of a zip, which is copied into the artifact store as it is.</summary>
     public async Task<ProviderResult<ArtifactRef>> ReadLogsAsync(CiRunRef run, CancellationToken cancellationToken)
     {
-        var zip = await DownloadAsync(run.Repo, $"/actions/runs/{GitHubApi.Escape(run.Id)}/logs", cancellationToken);
-        return zip.Ok ? await store().PutAsync(new MemoryStream(zip.Value!), cancellationToken) : new ProviderResult<ArtifactRef>(null, zip.Error);
+        var zip = await DownloadAsync(run.Repo, $"/actions/runs/{GitHubApi.Escape(run.Id)}/logs", MaxLogBytes, cancellationToken);
+        if (!zip.Ok)
+            return new ProviderResult<ArtifactRef>(null, zip.Error);
+        await using var logs = zip.Value!;
+        return await store().PutAsync(logs, cancellationToken);
     }
 
-    async Task<ProviderResult<byte[]>> DownloadAsync(RepoRef repo, string path, CancellationToken cancellationToken)
+    async Task<ProviderResult<Stream>> DownloadAsync(RepoRef repo, string path, long maxBytes, CancellationToken cancellationToken)
     {
         var response = await Send(repo, HttpMethod.Get, path, null, cancellationToken, ReadPermissions);
         if (!response.Ok)
-            return new ProviderResult<byte[]>(null, response.Error);
+            return new ProviderResult<Stream>(null, response.Error);
         return response.Value!.Code == 302 && response.Value.Location is { } location
-            ? await api.DownloadAsync(location, cancellationToken)
-            : GitHubApi.Unexpected<byte[]>(response.Value, $"GET {path}");
+            ? await api.DownloadAsync(location, maxBytes, cancellationToken)
+            : GitHubApi.Unexpected<Stream>(response.Value, $"GET {path}");
     }
 
     /// <summary>

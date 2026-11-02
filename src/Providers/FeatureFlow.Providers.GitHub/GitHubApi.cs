@@ -28,6 +28,9 @@ public sealed class GitHubApi(Func<ICredentialBroker?> broker, HttpMessageHandle
     static readonly HttpMessageHandler Shared = new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(10), AllowAutoRedirect = false };
 
     readonly HttpClient http = new(handler ?? Shared, disposeHandler: false) { Timeout = TimeSpan.FromSeconds(30) };
+
+    // docs/06 section 1.2: an artifact get may take 5 minutes.
+    readonly HttpClient downloads = new(handler ?? Shared, disposeHandler: false) { Timeout = TimeSpan.FromMinutes(5) };
     readonly Dictionary<string, Credential> tokens = [];
     readonly SemaphoreSlim gate = new(1, 1);
 
@@ -96,24 +99,60 @@ public sealed class GitHubApi(Func<ICredentialBroker?> broker, HttpMessageHandle
         }
     }
 
-    /// <summary>Downloads what a redirect points to (logs and artifacts live in blob storage), without GitHub's token.</summary>
-    public async Task<ProviderResult<byte[]>> DownloadAsync(Uri location, CancellationToken cancellationToken)
+    /// <summary>
+    /// Downloads what a redirect points to (logs and artifacts live in blob storage), without GitHub's token, streamed
+    /// into a temporary file that is deleted when the stream is disposed. More than <paramref name="maxBytes"/> is
+    /// refused with <c>validation_failed</c> (review finding 6).
+    /// </summary>
+    public async Task<ProviderResult<Stream>> DownloadAsync(Uri location, long maxBytes, CancellationToken cancellationToken)
     {
+        var path = Path.Combine(Path.GetTempPath(), $"ff-download-{Guid.NewGuid():N}");
+        var file = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 81920, FileOptions.DeleteOnClose | FileOptions.Asynchronous);
         try
         {
-            using var response = await http.GetAsync(location, cancellationToken);
+            using var response = await downloads.GetAsync(location, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             if (!response.IsSuccessStatusCode)
-                return ProviderResult<byte[]>.Failure((int)response.StatusCode >= 500 ? "server_error" : "not_found", $"the download answered {(int)response.StatusCode}");
-            return ProviderResult<byte[]>.Success(await response.Content.ReadAsByteArrayAsync(cancellationToken));
+            {
+                await file.DisposeAsync();
+                return ProviderResult<Stream>.Failure((int)response.StatusCode >= 500 ? "server_error" : "not_found", $"the download answered {(int)response.StatusCode}");
+            }
+
+            if (response.Content.Headers.ContentLength > maxBytes || !await CopyCappedAsync(await response.Content.ReadAsStreamAsync(cancellationToken), file, maxBytes, cancellationToken))
+            {
+                await file.DisposeAsync();
+                return ProviderResult<Stream>.Failure("validation_failed", $"the download is larger than {maxBytes} bytes");
+            }
+
+            file.Position = 0;
+            return ProviderResult<Stream>.Success(file);
         }
         catch (HttpRequestException e)
         {
-            return ProviderResult<byte[]>.Failure("unreachable", $"the download cannot be reached: {e.Message}");
+            await file.DisposeAsync();
+            return ProviderResult<Stream>.Failure("unreachable", $"the download cannot be reached: {e.Message}");
         }
         catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return ProviderResult<byte[]>.Failure("timeout", "the download did not answer in time");
+            await file.DisposeAsync();
+            return ProviderResult<Stream>.Failure("timeout", "the download did not answer in time");
         }
+    }
+
+    /// <summary>Copies at most <paramref name="maxBytes"/>; false when the source holds more.</summary>
+    public static async Task<bool> CopyCappedAsync(Stream source, Stream target, long maxBytes, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[81920];
+        long total = 0;
+        int read;
+        while ((read = await source.ReadAsync(buffer, cancellationToken)) > 0)
+        {
+            total += read;
+            if (total > maxBytes)
+                return false;
+            await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+        }
+
+        return true;
     }
 
     /// <summary>Every page of a list, following <c>Link: rel="next"</c>, up to <paramref name="maxPages"/>. <paramref name="items"/> picks the list out of a page.</summary>
