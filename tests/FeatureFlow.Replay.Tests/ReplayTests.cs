@@ -8,7 +8,7 @@ namespace FeatureFlow.Replay.Tests;
 /// Recorded Temporal histories replay against the current workflow code (docs/09 section 4.1). A change to
 /// workflow behaviour that an old history did not take must be wrapped in a patch marker
 /// (<c>Workflow.Patched</c>), or these fail with a nondeterminism error. The histories are the first runs of the
-/// M3 integration tests, recorded with <c>FF_RECORD_HISTORIES</c> and kept in <c>tests/histories/</c>. No
+/// M3 integration tests and of M4's question test (an agent step that asks, a question signal, an answer), recorded with <c>FF_RECORD_HISTORIES</c> and kept in <c>tests/histories/</c>. No
 /// Temporal server is needed.
 /// </summary>
 public class ReplayTests
@@ -23,7 +23,7 @@ public class ReplayTests
     public void The_recorded_histories_are_there()
     {
         // Without this, a missing folder would leave the theory with no cases and nothing replayed.
-        Assert.Equal(["epic_delivery", "epic_delivery_child", "sp1_parent", "sp1_parent_resumed", "ticket_delivery"],
+        Assert.Equal(["agent_question", "epic_delivery", "epic_delivery_child", "sp1_parent", "sp1_parent_resumed", "ticket_delivery"],
             Names());
     }
 

@@ -86,7 +86,7 @@ public sealed class LocalProviderTests : IDisposable
         var session = (await runtime.StartAsync(SandboxHandle.None, new AgentTask(step, "implementer", null, new Dictionary<string, string>(), Contract), new AgentLimits(null, 2), Ct)).Unwrap();
         while (!(await runtime.GetProgressAsync(session, Ct)).Unwrap().Finished)
             await Task.Delay(20, Ct);
-        return (await runtime.GetResultAsync(session, Ct)).Unwrap();
+        return (await runtime.GetResultAsync(session, Ct)).Unwrap().Report!;
     }
 
     [Fact]

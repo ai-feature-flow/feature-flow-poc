@@ -1,0 +1,36 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: agent_step
+  level: ticket
+  description: >-
+    One implementer step, with std's implementer role and reporting preamble, on the run's repository. It may
+    ask questions. It ends the run completed when the agent reports implemented.
+  branch_pattern: "ff/ticket/{{ params.ticket_id }}"
+
+artifact_types:
+  - m4:artifact_types/notes
+
+parameters:
+  ticket_id: { type: string, required: true }
+  instruction: { type: string, required: true, description: "What the agent is to do" }
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: implement
+    agent:
+      role: std:roles/implementer
+      task: m4:tasks/agent_task
+    with:
+      ticket_id: { expr: "params.ticket_id" }
+      instruction: { expr: "params.instruction" }
+    produces:
+      implemented: [{ name: notes, type: m4:artifact_types/notes }]
+    outputs: { answer: { type: string } }
+    outcomes: { implemented: success, blocked: blocked }
+    limits: { attempts: 1, questions: { max: 2, timeout: 1h } }
+    routes:
+      implemented: { end: completed }

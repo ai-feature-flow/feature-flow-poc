@@ -1,0 +1,8 @@
+# Templates for the M4 agent step tests: one implementer step on one repository, run in a Docker sandbox.
+name: m4
+version: 0.1.0
+description: Templates for the M4 agent step tests (docs/11, M4)
+requires:
+  plan_schema: 1
+dependencies:
+  - { name: std, version: ">=0.1.0" }

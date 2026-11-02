@@ -1,2 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FeatureFlow.Interpreter\FeatureFlow.Interpreter.csproj" />
+    <ProjectReference Include="..\FeatureFlow.Providers.Abstractions\FeatureFlow.Providers.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Temporalio" />
+  </ItemGroup>
+
 </Project>

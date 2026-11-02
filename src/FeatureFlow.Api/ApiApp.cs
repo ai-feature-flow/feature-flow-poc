@@ -52,8 +52,8 @@ public static class ApiApp
     /// <summary>
     /// Who may answer a wait (docs/05 sections 3.2 to 5): the roles of the first organisation approval rule matching
     /// its decision type; else the <c>default_approval</c> roles of the library that declares the type, an exact
-    /// name before a pattern (docs/05 section 4); else <c>approver</c> for a decision and <c>steerer</c> for an
-    /// intervention or patch approval. Where a steerer may, an administrator may too (docs/05 section 3.3).
+    /// name before a pattern (docs/05 section 4); else <c>approver</c> for a decision or an agent's question and
+    /// <c>steerer</c> for an intervention or patch approval. Where a steerer may, an administrator may too (docs/05 section 3.3).
     /// </summary>
     public static IReadOnlyList<string> RolesToAnswer(PolicyConfig policy, IReadOnlyList<DecisionTypeItem> types, WaitRecord wait)
     {
@@ -63,7 +63,7 @@ public static class ApiApp
         else if ((types.FirstOrDefault(t => t.Name == wait.DecisionType) ?? types.FirstOrDefault(t => t.Matches(wait.DecisionType))) is { DefaultRoles.Count: > 0 } declared)
             roles = declared.DefaultRoles;
         else
-            roles = wait.Kind == "decision" ? ["approver"] : ["steerer"];
+            roles = wait.Kind is "decision" or "question" ? ["approver"] : ["steerer"];
         return roles.Contains("steerer") && !roles.Contains("admin") ? [.. roles, "admin"] : roles;
     }
 

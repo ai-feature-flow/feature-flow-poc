@@ -52,12 +52,60 @@ public sealed record AnswerRecord(string RunId, string WaitId, string Actor, str
 /// <summary>A run's library lock, by artifact reference (docs/08 section 5.1).</summary>
 public sealed record LockRecord(string RunId, string LockRef, DateTimeOffset At);
 
+// Records of agent steps (docs/02 section 4.2). The hook endpoint and engine MCP server keep nothing in a
+// replica's memory: any replica serves any step from its token and these records.
+
+/// <summary>
+/// An agent step attempt, written by the agent step activity before the agent starts, keyed by the step's
+/// idempotency key: its contract and limits, which the <c>report</c> and <c>ask_human</c> tools enforce.
+/// </summary>
+public sealed record AgentStepRecord(
+    string StepKey,
+    string RunId,
+    string WorkflowId,
+    string StepId,
+    string Level,
+    StepContract Contract,
+    int CorrectionTurns,
+    int QuestionsMax,
+    long QuestionsTimeoutSeconds,
+    DateTimeOffset At);
+
+/// <summary>A call of the <c>report</c> tool: accepted, or rejected with its errors. Appended, numbered per step.</summary>
+public sealed record ReportRecord(string StepKey, int Sequence, bool Accepted, StepReport? Report, IReadOnlyList<string> Errors, DateTimeOffset At);
+
+/// <summary>
+/// A question an agent asked (docs/04 section 3.4), by the id the sandbox client gave it (LOG 59). Written
+/// <c>open</c> by the endpoint and <c>answered</c> or <c>timed_out</c> by the run; the last write wins.
+/// </summary>
+public sealed record QuestionRecord(
+    string StepKey,
+    string RunId,
+    string QuestionId,
+    string Text,
+    IReadOnlyList<string> Options,
+    string Status,
+    string? Answer,
+    DateTimeOffset At)
+{
+    public const string Open = "open";
+    public const string Answered = "answered";
+    public const string TimedOut = "timed_out";
+}
+
+/// <summary>Something that happened during an agent step: a hook call and its decision, a push, model usage. Appended.</summary>
+public sealed record AgentEventRecord(string StepKey, string Kind, string Detail, DateTimeOffset At);
+
 public sealed record RecordBatch(
     IReadOnlyList<RunRecord>? Runs = null,
     IReadOnlyList<WaitRecord>? Waits = null,
     IReadOnlyList<TimelineRecord>? Timeline = null,
     IReadOnlyList<AnswerRecord>? Answers = null,
-    IReadOnlyList<LockRecord>? Locks = null);
+    IReadOnlyList<LockRecord>? Locks = null,
+    IReadOnlyList<AgentStepRecord>? AgentSteps = null,
+    IReadOnlyList<ReportRecord>? Reports = null,
+    IReadOnlyList<QuestionRecord>? Questions = null,
+    IReadOnlyList<AgentEventRecord>? AgentEvents = null);
 
 /// <summary>
 /// The record store (docs/06 section 3.12). Queries are named, not SQL; the catalogue is <see cref="Queries"/>.
@@ -89,4 +137,19 @@ public static class Queries
 
     /// <summary><see cref="LockRecord"/>: a run's lock.</summary>
     public const string Lock = "lock";
+
+    /// <summary><see cref="AgentStepRecord"/>: the agent step attempt named by <c>step_key</c>.</summary>
+    public const string AgentStep = "agent_step";
+
+    /// <summary><see cref="ReportRecord"/>: a step's report calls in order, by <c>step_key</c>.</summary>
+    public const string Reports = "reports";
+
+    /// <summary><see cref="QuestionRecord"/>: the question named by <c>question_id</c>.</summary>
+    public const string Question = "question";
+
+    /// <summary><see cref="QuestionRecord"/>: a step's questions, by <c>step_key</c>.</summary>
+    public const string Questions = "questions";
+
+    /// <summary><see cref="AgentEventRecord"/>: a step's events in order, by <c>step_key</c>.</summary>
+    public const string AgentEvents = "agent_events";
 }
