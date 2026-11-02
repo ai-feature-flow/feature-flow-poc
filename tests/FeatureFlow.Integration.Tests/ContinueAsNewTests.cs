@@ -14,7 +14,12 @@ namespace FeatureFlow.Integration.Tests;
 /// children end and answers arrive during hand-overs, and none is lost. The checks are SP1's, with its
 /// thresholds scaled to one run. Its negative controls (a child signalling the parent's run id; the default
 /// parent-close policy) make this test fail; tools/check_m3_controls.py runs them.
+/// <para>
+/// It times children, answers and hand-overs against each other, so it runs alone, with no other test in parallel:
+/// on a CI runner loaded with the Docker agent tests its checks C5 and E2 each failed once (docs/build/m4-results.md).
+/// </para>
 /// </summary>
+[Collection(Sp1Collection.Name)]
 [Trait("Category", "Integration")]
 public class ContinueAsNewTests
 {
