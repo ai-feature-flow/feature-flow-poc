@@ -18,7 +18,8 @@ namespace FeatureFlow.Engine;
 public sealed record LibrarySnapshot(string Name, IReadOnlyDictionary<string, string> Files);
 
 /// <summary>What run start gives the workflow: the locked libraries, the run's policy, and any blocking diagnostics.</summary>
-public sealed record Prepared(IReadOnlyList<LibrarySnapshot> Libraries, RunPolicy Policy, IReadOnlyList<string> Errors, IReadOnlyList<string> Warnings);
+public sealed record Prepared(IReadOnlyList<LibrarySnapshot> Libraries, RunPolicy Policy, IReadOnlyList<string> Errors, IReadOnlyList<string> Warnings,
+    IReadOnlyDictionary<string, string>? DefaultBranches = null);
 
 public sealed record ChildRead(string Status, string? Result);
 
@@ -44,6 +45,7 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
         var snapshots = await LoadLibrariesAsync(start.LockRef);
         var policy = start.Policy ?? services.Policy();
         var d = new DiagnosticBag();
+        IReadOnlyDictionary<string, string>? defaultBranches = null;
         var libraries = Build(snapshots, d);
         var template = LibraryReference.TryParse(start.Template);
         if (template is null)
@@ -59,7 +61,7 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
                 RunStartChecks.Capabilities(core.Plan, libraries, services.Providers.Offered(start.DryRun), d);
                 RunStartChecks.Caps(core.Plan, services.Organisation.Policy, core.Allowance, d);
                 if (services.Providers.ForRun("code_host", start.DryRun) is ICodeHostProvider host)
-                    await RepositoryChecksAsync(host, core, start, libraries, policy, d, ct);
+                    defaultBranches = await RepositoryChecksAsync(host, core, start, libraries, policy, d, ct);
             }
         }
 
@@ -69,7 +71,7 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
 
         return new Prepared(snapshots, policy,
             d.Where(x => x.Blocks).Select(x => x.ToString()).ToList(),
-            d.Where(x => !x.Blocks).Select(x => x.ToString()).ToList());
+            d.Where(x => !x.Blocks).Select(x => x.ToString()).ToList(), defaultBranches);
     }
 
     /// <summary>
@@ -78,7 +80,7 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
     /// F1, for a run whose parent branch is the default branch: a merge step asking for an engine merge
     /// needs the organisation's leave for that repository. The default branch is read from the code host, never the plan.
     /// </summary>
-    public static async Task RepositoryChecksAsync(ICodeHostProvider host, RunCore core, RunStart start, LibrarySet libraries, RunPolicy policy, DiagnosticBag d,
+    public static async Task<IReadOnlyDictionary<string, string>> RepositoryChecksAsync(ICodeHostProvider host, RunCore core, RunStart start, LibrarySet libraries, RunPolicy policy, DiagnosticBag d,
         CancellationToken ct)
     {
         var defaults = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -135,6 +137,8 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
             foreach (var name in targets.Where(n => defaults.TryGetValue(n, out var branch) && (start.ParentBranch ?? branch) == branch))
                 RunStartChecks.EngineMerge(step.Id, name, defaults[name], engineCanMerge, policy.EngineMayMerge ?? [], step.Location, d);
         }
+
+        return defaults;
     }
 
     /// <summary>A code host read's value; an infrastructure error is retried, any other is a blocking diagnostic of the check that needed it.</summary>

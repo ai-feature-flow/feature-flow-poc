@@ -55,7 +55,8 @@ public sealed record RunPolicy(
     IReadOnlyList<AutoRule> AutoRules,
     long? HardStepCeiling = null,
     long? HardRunCeiling = null,
-    IReadOnlyList<string>? EngineMayMerge = null)
+    IReadOnlyList<string>? EngineMayMerge = null,
+    bool? BuiltActions = null)
 {
     public RunOptions ToOptions() => new()
     {

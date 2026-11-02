@@ -92,7 +92,8 @@ public class RunWorkflow
                 return await RefuseAsync(prepared.Errors);
             policy = prepared.Policy;
             libraries = RunActivities.Build(prepared.Libraries, new DiagnosticBag());
-            var (started, diagnostics) = RunCore.Start(libraries, Template, RunActivities.RunInfoOf(input), policy.ToOptions() with { BranchFromPattern = Workflow.Patched(BranchPatternPatch) });
+            var (started, diagnostics) = RunCore.Start(libraries, Template, RunActivities.RunInfoOf(input) with { DefaultBranches = prepared.DefaultBranches },
+                policy.ToOptions() with { BranchFromPattern = Workflow.Patched(BranchPatternPatch) });
             core = started ?? throw new ApplicationFailureException("the plan passed run start but does not load: " + string.Join("; ", diagnostics.Take(3)));
         }
         else
@@ -439,8 +440,10 @@ public class RunWorkflow
         var identity = new StepIdentity(input.RunId, Template.Name, step.Id, s.Execution, $"{input.RunId}/{step.Id}/{s.Execution}");
         ActionScope? scope = null;
         // Behind the marker: a history recorded before M5 neither computes a scope nor renders a prompt, so a render
-        // that fails cannot replace the activity it scheduled.
-        if (step.Form == StepForm.Action && EngineActions.Built.Contains(step.Action!) && Workflow.Patched(StepStartPatch))
+        // that fails cannot replace the activity it scheduled. Only a run whose actions run against providers (fixed at
+        // its start) gets a scope; otherwise, and in a dry run, the stand-in serves the action.
+        if (step.Form == StepForm.Action && EngineActions.Built.Contains(step.Action!) && Workflow.Patched(StepStartPatch)
+            && policy?.BuiltActions == true && !input.DryRun)
         {
             try
             {

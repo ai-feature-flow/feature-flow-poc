@@ -15,17 +15,19 @@ public sealed record CarriedRunInfo(
     IReadOnlyDictionary<string, string> Parameters,
     string? ParentId,
     string? TrackerIssue,
-    string? ParentBranch = null)
+    string? ParentBranch = null,
+    IReadOnlyDictionary<string, string>? DefaultBranches = null)
 {
     public static CarriedRunInfo From(RunInfo run) =>
         new(run.Id, run.Repositories.ToList(),
             new SortedDictionary<string, string>(run.Parameters.ToDictionary(kv => kv.Key, kv => YamlWriter.Write(kv.Value)), StringComparer.Ordinal),
-            run.ParentId, run.TrackerIssue, run.ParentBranch);
+            run.ParentId, run.TrackerIssue, run.ParentBranch,
+            run.DefaultBranches is null ? null : new SortedDictionary<string, string>(run.DefaultBranches.ToDictionary(), StringComparer.Ordinal));
 
     public RunInfo ToRunInfo() =>
         new(Id, Repositories.ToList(),
             Parameters.ToDictionary(kv => kv.Key, kv => YamlWriter.Read(kv.Value, $"params.{kv.Key}")),
-            ParentId, TrackerIssue, ParentBranch);
+            ParentId, TrackerIssue, ParentBranch, DefaultBranches);
 }
 
 public sealed record CarriedExecution(int Number, string? Outcome, IReadOnlyDictionary<string, string> Outputs, IReadOnlyDictionary<string, string> Artifacts);
