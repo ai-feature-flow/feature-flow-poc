@@ -132,7 +132,7 @@ public sealed class GitHubActionsCiContract : CiContract, IAsyncLifetime
         public async Task<ProviderResult<CiRunRef>> TriggerAsync(RepoRef repo, CiJobRef job, string revision, string key, CancellationToken cancellationToken)
         {
             var scoped = $"{fixture.Prefix}/{key}";
-            fixture.ForgetTag(GitHubActionsCi.TagFor(scoped));
+            fixture.ForgetClaim(GitHubActionsCi.ClaimFor(scoped));
             var run = await inner.TriggerAsync(repo, job, revision, scoped, cancellationToken);
             LiveFixture.Log($"ci trigger {key}: {(run.Ok ? $"run {run.Value!.Id} {run.Value.Url}" : run.Error!.Reason + " " + run.Error.Message)}");
             return run;

@@ -17,7 +17,7 @@ public sealed class LiveFixture
 
     static readonly IReadOnlyDictionary<string, string> Permissions = new Dictionary<string, string> { ["contents"] = "write", ["pull_requests"] = "write", ["actions"] = "write" };
 
-    readonly List<string> tags = [];
+    readonly List<string> claims = [];
 
     public LiveFixture()
     {
@@ -108,11 +108,11 @@ public sealed class LiveFixture
         return JsonNode.Parse(await response.Content.ReadAsStringAsync(Ct))!["slug"]!.GetValue<string>() + "[bot]";
     }
 
-    public void ForgetTag(string tag) => tags.Add(tag);
+    public void ForgetClaim(string claim) => claims.Add(claim);
 
     /// <summary>
     /// Closes every open pull request into or out of the prefix (reverts GitHub branched itself included), deletes their
-    /// branches and every branch under the prefix, the trigger tags, and cancels runs still going on them.
+    /// branches and every branch under the prefix, and the CI provider's claims, cancelling runs they record that are still going.
     /// </summary>
     public async Task CleanUpAsync()
     {
@@ -139,13 +139,19 @@ public sealed class LiveFixture
         foreach (var branch in branches.Where(b => b.StartsWith(Prefix, StringComparison.Ordinal) || b.StartsWith("revert-", StringComparison.Ordinal)))
             await Try(HttpMethod.Delete, $"/git/refs/heads/{GitHubApi.EscapePath(branch)}");
 
-        foreach (var tag in tags)
+        foreach (var claim in claims)
         {
-            if (await Try(HttpMethod.Get, $"/actions/runs?branch={GitHubApi.Escape(tag)}&per_page=20") is { } runs)
-                foreach (var run in runs.Json?["workflow_runs"] as JsonArray ?? [])
-                    if (run!["status"]?.GetValue<string>() != "completed")
-                        await Try(HttpMethod.Post, $"/actions/runs/{run["id"]}/cancel");
-            await Try(HttpMethod.Delete, $"/git/refs/tags/{GitHubApi.EscapePath(tag)}");
+            if (await Try(HttpMethod.Get, $"/git/ref/{GitHubActionsCi.ClaimPrefix}{claim}") is { } reference
+                && reference.Json?["object"]?["type"]?.GetValue<string>() == "tag"
+                && await Try(HttpMethod.Get, $"/git/tags/{reference.Json["object"]!["sha"]}") is { } tag
+                && tag.Json?["message"]?.GetValue<string>()?.Split(' ') is [_, _, var id, ..])
+            {
+                if (await Try(HttpMethod.Get, $"/actions/runs/{id.Trim()}") is { } run && run.Json?["status"]?.GetValue<string>() != "completed")
+                    await Try(HttpMethod.Post, $"/actions/runs/{id.Trim()}/cancel");
+                await Try(HttpMethod.Delete, $"/git/refs/{GitHubActionsCi.ClaimPrefix}run-{id.Trim()}");
+            }
+
+            await Try(HttpMethod.Delete, $"/git/refs/{GitHubActionsCi.ClaimPrefix}{claim}");
         }
     }
 

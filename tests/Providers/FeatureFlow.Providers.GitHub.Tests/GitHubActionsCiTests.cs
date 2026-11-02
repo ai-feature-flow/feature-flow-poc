@@ -12,7 +12,7 @@ public sealed class GitHubActionsCiTests : IDisposable
 {
     static readonly RepoRef Repo = new("o/r");
     static readonly string Sha = new('a', 40);
-    static readonly HttpMethod Get = HttpMethod.Get, Post = HttpMethod.Post, Delete = HttpMethod.Delete;
+    static readonly HttpMethod Get = HttpMethod.Get, Post = HttpMethod.Post, Patch = HttpMethod.Patch, Delete = HttpMethod.Delete;
     static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     readonly string folder = Path.Combine(Path.GetTempPath(), "ff-gha-tests-" + Guid.NewGuid().ToString("N"));
@@ -23,7 +23,7 @@ public sealed class GitHubActionsCiTests : IDisposable
     public GitHubActionsCiTests()
     {
         store = new FileSystemArtifactStore(folder);
-        ci = new GitHubActionsCi(github.Api(), () => store) { DiscoveryWindow = TimeSpan.FromMilliseconds(50), DiscoveryInterval = TimeSpan.FromMilliseconds(10) };
+        ci = new GitHubActionsCi(github.Api(), () => store);
     }
 
     public void Dispose()
@@ -53,73 +53,95 @@ public sealed class GitHubActionsCiTests : IDisposable
         new JsonObject { ["workflow_runs"] = new JsonArray(runs.Select(r => (JsonNode)new JsonObject { ["id"] = r.Id, ["head_sha"] = r.Sha, ["html_url"] = $"https://x/{r.Id}" }).ToArray()) }
             .ToJsonString();
 
+    static readonly string Claim = GitHubActionsCi.ClaimFor("key-1");
+    const string TagObject = "7777777777777777777777777777777777777777";
+
+    FakeGitHub Dispatchable(string workflow = UnitWorkflow, int dispatchStatus = 200) =>
+        github.On(Get, "~/contents/.github/workflows/unit.yml?ref=main", 200, File64(workflow))
+            .On(Post, "~/actions/workflows/unit.yml/dispatches", dispatchStatus, dispatchStatus == 200 ? """{"workflow_run_id":42,"html_url":"https://x/42"}""" : "")
+            .On(Post, "~/git/tags", 201, $$$"""{"sha":"{{{TagObject}}}"}""")
+            .On(Patch, $"~/git/refs/feature-flow/ci/{Claim}", 200, "{}")
+            .On(Get, "~", 200, """{"default_branch":"main"}""");
+
     [Fact]
-    public async Task A_trigger_tags_the_revision_and_dispatches_on_the_tag_filling_the_declared_inputs()
+    public async Task A_trigger_claims_the_key_and_dispatches_on_the_default_branch_with_the_revision_as_input()
     {
-        var tag = GitHubActionsCi.TagFor("key-1");
-        github.On(Post, "~/git/refs", 201, "{}")
-            .On(Get, "~/actions/workflows/unit.yml/runs", 200, Runs())
-            .On(Get, $"~/contents/.github/workflows/unit.yml?ref={Sha}", 200, File64(UnitWorkflow))
-            .On(Post, "~/actions/workflows/unit.yml/dispatches", 200, """{"workflow_run_id":42,"html_url":"https://x/42"}""");
+        github.On(Post, "~/git/refs", 201, "{}");
+        Dispatchable();
 
         var run = (await ci.TriggerAsync(Repo, Unit, Sha, "key-1", Ct)).Unwrap();
 
         Assert.Equal(new CiRunRef(Repo, "42", Sha, "https://x/42"), run);
-        var tagged = JsonNode.Parse(Assert.Single(github.Called(Post, "~/git/refs")).Body)!;
-        Assert.Equal(("refs/tags/" + tag, Sha), (tagged["ref"]!.GetValue<string>(), tagged["sha"]!.GetValue<string>()));
+        var refs = github.Called(Post, "~/git/refs").Select(c => JsonNode.Parse(c.Body)!).ToList();
+        Assert.Equal(("refs/feature-flow/ci/" + Claim, Sha), (refs[0]["ref"]!.GetValue<string>(), refs[0]["sha"]!.GetValue<string>()));
         var dispatch = JsonNode.Parse(Assert.Single(github.Called(Post, "~/actions/workflows/unit.yml/dispatches")).Body)!;
-        Assert.Equal(tag, dispatch["ref"]!.GetValue<string>());
+        // The workflow runs from the reviewed default branch, never from the revision the agent made.
+        Assert.Equal("main", dispatch["ref"]!.GetValue<string>());
         Assert.True(dispatch["return_run_details"]!.GetValue<bool>());
         Assert.Equal(("unit", Sha, "key-1"),
             (dispatch["inputs"]!["tier"]!.GetValue<string>(), dispatch["inputs"]!["commit_sha"]!.GetValue<string>(), dispatch["inputs"]!["idempotency_key"]!.GetValue<string>()));
+        // The run is recorded on the claim, and indexed by its id for clean-up.
+        var tag = JsonNode.Parse(Assert.Single(github.Called(Post, "~/git/tags")).Body)!;
+        Assert.Equal((Claim, "ff-ci run 42 https://x/42", Sha), (tag["tag"]!.GetValue<string>(), tag["message"]!.GetValue<string>(), tag["object"]!.GetValue<string>()));
+        Assert.Equal(TagObject, JsonNode.Parse(Assert.Single(github.Called(Patch, $"~/git/refs/feature-flow/ci/{Claim}")).Body)!["sha"]!.GetValue<string>());
+        Assert.Equal(("refs/feature-flow/ci/run-42", TagObject), (refs[1]["ref"]!.GetValue<string>(), refs[1]["sha"]!.GetValue<string>()));
     }
 
     [Fact]
-    public async Task A_retried_trigger_finds_the_tag_and_adopts_its_run_without_dispatching()
+    public async Task A_retried_trigger_adopts_the_run_its_claim_records_without_dispatching()
     {
-        var tag = GitHubActionsCi.TagFor("key-1");
         github.On(Post, "~/git/refs", 422, """{"message":"Reference already exists"}""")
-            .On(Get, $"~/git/ref/tags/{tag}", 200, $$$"""{"object":{"sha":"{{{Sha}}}"}}""")
-            .On(Get, $"~/actions/workflows/unit.yml/runs?branch={Uri.EscapeDataString(tag)}&event=workflow_dispatch", 200, Runs((41, new string('b', 40)), (42, Sha)));
+            .On(Get, $"~/git/ref/feature-flow/ci/{Claim}", 200, $$$"""{"object":{"type":"tag","sha":"{{{TagObject}}}"}}""")
+            .On(Get, $"~/git/tags/{TagObject}", 200, $$$"""{"tag":"{{{Claim}}}","message":"ff-ci run 42 https://x/42\n","object":{"sha":"{{{Sha}}}"}}""");
 
-        var run = (await ci.TriggerAsync(Repo, Unit, Sha, "key-1", Ct)).Unwrap();
-
-        Assert.Equal("42", run.Id);
+        Assert.Equal(new CiRunRef(Repo, "42", Sha, "https://x/42"), (await ci.TriggerAsync(Repo, Unit, Sha, "key-1", Ct)).Unwrap());
         Assert.Empty(github.Called(Post, "~/actions/workflows/unit.yml/dispatches"));
     }
 
     [Fact]
-    public async Task A_trigger_after_its_tag_was_cleaned_up_adopts_the_earlier_run()
+    public async Task A_claim_with_no_run_recorded_dispatches_again()
     {
-        github.On(Post, "~/git/refs", 201, "{}").On(Get, "~/actions/workflows/unit.yml/runs", 200, Runs((42, Sha)));
+        // The dispatch's answer was lost before the run was recorded: the narrow case that can start a second run.
+        github.On(Get, $"~/git/ref/feature-flow/ci/{Claim}", 200, $$$"""{"object":{"type":"commit","sha":"{{{Sha}}}"}}""");
+        var posts = 0;
+        github.On(Post, "~/git/refs", _ => new HttpResponseMessage(posts++ == 0 ? System.Net.HttpStatusCode.UnprocessableEntity : System.Net.HttpStatusCode.Created)
+            { Content = new StringContent("""{"message":"Reference already exists"}""") });
+        Dispatchable();
 
         Assert.Equal("42", (await ci.TriggerAsync(Repo, Unit, Sha, "key-1", Ct)).Unwrap().Id);
+        Assert.Single(github.Called(Post, "~/actions/workflows/unit.yml/dispatches"));
+    }
+
+    [Theory]
+    [InlineData("commit")]
+    [InlineData("tag")]
+    public async Task A_key_reused_at_another_revision_is_refused(string type)
+    {
+        var other = new string('b', 40);
+        github.On(Post, "~/git/refs", 422, """{"message":"Reference already exists"}""")
+            .On(Get, $"~/git/ref/feature-flow/ci/{Claim}", 200, $$$"""{"object":{"type":"{{{type}}}","sha":"{{{(type == "tag" ? TagObject : other)}}}"}}""")
+            .On(Get, $"~/git/tags/{TagObject}", 200, $$$"""{"tag":"{{{Claim}}}","message":"ff-ci run 42","object":{"sha":"{{{other}}}"}}""");
+
+        Assert.Equal("validation_failed", (await ci.TriggerAsync(Repo, Unit, Sha, "key-1", Ct)).Error?.Reason);
+    }
+
+    [Fact]
+    public async Task A_workflow_without_a_commit_sha_input_is_refused_because_it_would_build_the_default_branch()
+    {
+        github.On(Post, "~/git/refs", 201, "{}");
+        Dispatchable("on: workflow_dispatch\njobs: {}\n");
+
+        Assert.Equal("validation_failed", (await ci.TriggerAsync(Repo, Unit, Sha, "key-1", Ct)).Error?.Reason);
         Assert.Empty(github.Called(Post, "~/actions/workflows/unit.yml/dispatches"));
     }
 
     [Fact]
-    public async Task A_dispatch_answered_204_finds_its_run_by_the_tag()
+    public async Task A_dispatch_answered_without_the_run_is_unexpected()
     {
-        var listed = 0;
-        github.On(Post, "~/git/refs", 201, "{}")
-            .On(Get, "~/actions/workflows/unit.yml/runs", _ => new HttpResponseMessage(System.Net.HttpStatusCode.OK)
-                { Content = new StringContent(listed++ < 2 ? Runs() : Runs((43, Sha))) })
-            .On(Get, "~/contents/.github/workflows/unit.yml", 200, File64("on: workflow_dispatch\njobs: {}\n"))
-            .On(Post, "~/actions/workflows/unit.yml/dispatches", 204);
+        github.On(Post, "~/git/refs", 201, "{}");
+        Dispatchable(dispatchStatus: 204);
 
-        Assert.Equal("43", (await ci.TriggerAsync(Repo, Unit, Sha, "key-1", Ct)).Unwrap().Id);
-        var dispatch = JsonNode.Parse(Assert.Single(github.Called(Post, "~/actions/workflows/unit.yml/dispatches")).Body)!;
-        Assert.Null(dispatch["inputs"]!["commit_sha"]);
-    }
-
-    [Fact]
-    public async Task A_key_reused_at_another_revision_is_refused()
-    {
-        var tag = GitHubActionsCi.TagFor("key-1");
-        github.On(Post, "~/git/refs", 422, """{"message":"Reference already exists"}""")
-            .On(Get, $"~/git/ref/tags/{tag}", 200, $$$"""{"object":{"sha":"{{{new string('b', 40)}}}"}}""");
-
-        Assert.Equal("validation_failed", (await ci.TriggerAsync(Repo, Unit, Sha, "key-1", Ct)).Error?.Reason);
+        Assert.Equal("unexpected_response", (await ci.TriggerAsync(Repo, Unit, Sha, "key-1", Ct)).Error?.Reason);
     }
 
     [Theory]
@@ -138,26 +160,28 @@ public sealed class GitHubActionsCiTests : IDisposable
     [InlineData("completed", "action_required", CheckStates.Completed, Conclusions.ActionRequired)]
     public async Task Run_states_and_conclusions_map(string status, string? conclusion, string state, string? expected)
     {
-        github.On(Get, "~/actions/runs/42", 200, new JsonObject { ["status"] = status, ["conclusion"] = conclusion }.ToJsonString());
+        github.On(Get, "~/actions/runs/42", 200, new JsonObject { ["status"] = status, ["conclusion"] = conclusion }.ToJsonString())
+            .On(Get, "~/git/ref/feature-flow/ci/run-42", 404, """{"message":"Not Found"}""");
         Assert.Equal(new CiRunStatus(state, expected), (await ci.GetRunStatusAsync(new CiRunRef(Repo, "42", Sha), Ct)).Unwrap());
     }
 
     [Fact]
-    public async Task A_status_poll_that_sees_the_run_completed_removes_its_trigger_tag_and_one_that_does_not_leaves_it()
+    public async Task A_status_poll_that_sees_the_run_completed_removes_its_claim_and_one_that_does_not_leaves_it()
     {
-        var tag = GitHubActionsCi.TagFor("key-1");
-        github.On(Get, "~/actions/runs/42", 200, $$$"""{"status":"completed","conclusion":"success","head_branch":"{{{tag}}}"}""")
-            .On(Get, "~/actions/runs/43", 200, $$$"""{"status":"in_progress","conclusion":null,"head_branch":"{{{tag}}}"}""")
-            .On(Get, "~/actions/runs/44", 200, """{"status":"completed","conclusion":"success","head_branch":"main"}""")
-            .On(Delete, $"~/git/refs/tags/{tag}", 422, """{"message":"Reference does not exist"}""");
+        github.On(Get, "~/actions/runs/42", 200, """{"status":"completed","conclusion":"success"}""")
+            .On(Get, "~/actions/runs/43", 200, """{"status":"in_progress","conclusion":null}""")
+            .On(Get, "~/actions/runs/44", 200, """{"status":"completed","conclusion":"success"}""")
+            .On(Get, "~/git/ref/feature-flow/ci/run-42", 200, $$$"""{"object":{"type":"tag","sha":"{{{TagObject}}}"}}""")
+            .On(Get, "~/git/ref/feature-flow/ci/run-44", 404, """{"message":"Not Found"}""")
+            .On(Get, $"~/git/tags/{TagObject}", 200, $$$"""{"tag":"{{{Claim}}}","message":"ff-ci run 42"}""")
+            .On(Delete, "~/git/refs/feature-flow/ci/", 204);
 
         (await ci.GetRunStatusAsync(new CiRunRef(Repo, "43", Sha), Ct)).Unwrap();
-        Assert.Empty(github.Called(Delete, "~/git/refs"));
         (await ci.GetRunStatusAsync(new CiRunRef(Repo, "44", Sha), Ct)).Unwrap();
         Assert.Empty(github.Called(Delete, "~/git/refs"));
-        // Already gone (a second poll, or the results were read) is fine.
         Assert.Equal(CheckStates.Completed, (await ci.GetRunStatusAsync(new CiRunRef(Repo, "42", Sha), Ct)).Unwrap().State);
-        Assert.Single(github.Called(Delete, $"~/git/refs/tags/{tag}"));
+        Assert.Equal([$"/repos/o/r/git/refs/feature-flow/ci/{Claim}", "/repos/o/r/git/refs/feature-flow/ci/run-42"],
+            github.Called(Delete, "~/git/refs").Select(c => c.Path));
     }
 
     [Fact]
@@ -181,16 +205,16 @@ public sealed class GitHubActionsCiTests : IDisposable
     }
 
     [Fact]
-    public async Task Results_are_the_jobs_and_the_result_files_from_the_artifacts_and_the_trigger_tag_is_removed()
+    public async Task Results_are_the_jobs_and_the_result_files_from_the_artifacts()
     {
-        var tag = GitHubActionsCi.TagFor("key-1");
         github.On(Get, "~/actions/runs/42/jobs", 200, """{"jobs":[{"name":"unit","conclusion":"success"}]}""")
             .On(Get, "~/actions/runs/42/artifacts", 200, """{"artifacts":[{"id":5,"name":"unit-results","expired":false},{"id":6,"name":"old","expired":true}]}""")
-            .On(Get, "~/actions/runs/42", 200, $$"""{"status":"completed","conclusion":"success","head_branch":"{{tag}}"}""")
+            .On(Get, "~/actions/runs/42", 200, """{"status":"completed","conclusion":"success","head_branch":"main"}""")
+            .On(Get, "~/git/ref/feature-flow/ci/run-42", 404, """{"message":"Not Found"}""")
             .On(Get, "~/actions/artifacts/5/zip", 302, "", new Dictionary<string, string> { ["Location"] = "https://blob.example/5.zip" })
             .Bytes("https://blob.example/5.zip", Zip(("unit.trx", "<TestRun />"), ("junit/results.xml", "<?xml version=\"1.0\"?><testsuites/>"),
                 ("analysis.sarif", "{}"), ("notes.txt", "x"), ("other.xml", "<project/>")))
-            .On(Delete, $"~/git/refs/tags/{tag}", 204);
+;
 
         var result = (await ci.ReadResultsAsync(new CiRunRef(Repo, "42", Sha), Ct)).Unwrap();
 
@@ -200,7 +224,6 @@ public sealed class GitHubActionsCiTests : IDisposable
             result.Files.Select(f => (f.Name, f.Format)));
         await using var trx = (await store.GetAsync(result.Files[0].Content, Ct)).Unwrap();
         Assert.Equal("<TestRun />", await new StreamReader(trx).ReadToEndAsync(Ct));
-        Assert.Single(github.Called(Delete, $"~/git/refs/tags/{tag}"));
         Assert.Empty(github.Called(Get, "~/actions/artifacts/6"));
         // The download carries no GitHub token.
         Assert.DoesNotContain(github.Calls, c => c.Path.StartsWith("https://blob.example", StringComparison.Ordinal) && c.Body.Contains("ghs_", StringComparison.Ordinal));

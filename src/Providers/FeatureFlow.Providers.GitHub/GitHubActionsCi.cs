@@ -10,118 +10,125 @@ using FeatureFlow.Providers.Abstractions;
 namespace FeatureFlow.Providers.GitHub;
 
 /// <summary>
-/// The GitHub Actions CI provider (docs/06 section 3.5). A run is dispatched on a tag <c>ff-ci/&lt;hash of the key&gt;</c>
-/// at the revision, because a dispatch needs a reference, not a SHA: the run then builds that revision with the
-/// workflow file as it is there, and its <c>head_branch</c> is the tag, so a retried trigger finds it. Creating the
-/// tag is the claim: a retry that finds the tag looks for the run before dispatching. The tag is deleted once the
-/// run is seen completed, by a status poll or a read of its results. Runs are polled, never awaited. (Without a tag
-/// a retry could not find its run reliably: a run does not expose its inputs, and the run list lags a dispatch by
-/// seconds; LOG 112.)
+/// The GitHub Actions CI provider (docs/06 section 3.5). A run is dispatched on the repository's default branch with
+/// the revision as the workflow's <c>commit_sha</c> input, so the workflow definition, and what it does with the
+/// repository's secrets, always comes from the reviewed default branch, never from a file the agent could edit.
+/// <para>
+/// Idempotency is a hidden claim reference, <c>refs/feature-flow/ci/key-&lt;hash of the key&gt;</c>, created at the
+/// revision before the dispatch: creating a reference is atomic, and hidden references set off no workflow. After the
+/// dispatch the claim points to an annotated tag object recording the run, and <c>refs/feature-flow/ci/run-&lt;id&gt;</c>
+/// points to the same object, so a retry reads its run from the claim and clean-up finds the claim from the run.
+/// Both are deleted once the run is seen completed. Runs are polled, never awaited.
+/// </para>
 /// </summary>
 public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> store) : ICiProvider
 {
     static readonly IReadOnlyDictionary<string, string> Permissions = GitHubApi.CiPermissions;
     static readonly IReadOnlyDictionary<string, string> ReadPermissions = new Dictionary<string, string> { ["contents"] = "read", ["actions"] = "read" };
 
-    /// <summary>How long a trigger looks for a run GitHub has not indexed yet.</summary>
-    public TimeSpan DiscoveryWindow { get; init; } = TimeSpan.FromSeconds(20);
+    public const string ClaimPrefix = "feature-flow/ci/";
 
-    public TimeSpan DiscoveryInterval { get; init; } = TimeSpan.FromSeconds(2);
-
-    public const string TagPrefix = "ff-ci/";
+    const string RunMessage = "ff-ci run ";
 
     public ProviderDescription Describe() => new("ci", "github_actions", "0.1.0", new CiCapabilities(true, true, true, false, false));
 
     public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => api.CheckAsync(cancellationToken);
 
-    public static string TagFor(string key) => TagPrefix + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..24];
+    /// <summary>The claim's name under <c>refs/feature-flow/ci/</c> for a key.</summary>
+    public static string ClaimFor(string key) => "key-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..24];
 
     Task<ProviderResult<GitHubResponse>> Send(RepoRef repo, HttpMethod method, string path, object? body, CancellationToken cancellationToken,
         IReadOnlyDictionary<string, string>? permissions = null) =>
         api.SendAsync(repo, permissions ?? Permissions, method, $"/repos/{repo.FullName}{path}", body, cancellationToken);
 
     /// <summary>
-    /// Inputs the workflow declares as <c>commit_sha</c> and <c>idempotency_key</c> (the fixture's convention, from
-    /// Spike 2) are filled with the revision and the key when the job does not set them.
+    /// The workflow must declare a <c>commit_sha</c> input: it runs from the default branch and must check out the
+    /// revision. <c>commit_sha</c> and, when declared, <c>idempotency_key</c> are set by the provider.
     /// </summary>
     public async Task<ProviderResult<CiRunRef>> TriggerAsync(RepoRef repo, CiJobRef job, string revision, string key, CancellationToken cancellationToken)
     {
-        var tag = TagFor(key);
-        var workflow = GitHubApi.Escape(job.Workflow);
-        var created = await Send(repo, HttpMethod.Post, "/git/refs", new { @ref = "refs/tags/" + tag, sha = revision }, cancellationToken);
+        var claim = ClaimFor(key);
+        var created = await Send(repo, HttpMethod.Post, "/git/refs", new { @ref = "refs/" + ClaimPrefix + claim, sha = revision }, cancellationToken);
         if (!created.Ok && created.Error!.Reason != "validation_failed")
             return new ProviderResult<CiRunRef>(null, created.Error);
-        if (!created.Ok)
-        {
-            // 422: the tag exists (a retry), or GitHub does not know the revision.
-            var existing = await Send(repo, HttpMethod.Get, $"/git/ref/tags/{GitHubApi.EscapePath(tag)}", null, cancellationToken);
-            if (!existing.Ok)
-                return existing.Error!.Reason == "not_found"
-                    ? ProviderResult<CiRunRef>.Failure("validation_failed", $"GitHub refused a reference at {revision}: {created.Error!.Message}")
-                    : new ProviderResult<CiRunRef>(null, existing.Error);
-            if (existing.Value!.Json?["object"]?["sha"]?.GetValue<string>() != revision)
-                return ProviderResult<CiRunRef>.Failure("validation_failed", $"key {key} already triggered a run at another revision");
-            if (await DiscoverAsync(repo, workflow, tag, revision, DiscoveryWindow, cancellationToken) is { } found)
-                return found;
-        }
-        else if (created.Value!.Code != 201)
-            return GitHubApi.Unexpected<CiRunRef>(created.Value, "POST the trigger tag");
-        else if (await DiscoverAsync(repo, workflow, tag, revision, TimeSpan.Zero, cancellationToken) is { } earlier)
-            // The tag was deleted after an earlier run's results were read: that run is this key's.
-            return earlier;
+        if (created.Ok && created.Value!.Code != 201)
+            return GitHubApi.Unexpected<CiRunRef>(created.Value, "POST the claim");
+        if (!created.Ok && await AdoptAsync(repo, claim, revision, key, created.Error!, cancellationToken) is { } adopted)
+            return adopted;
 
-        var inputs = new Dictionary<string, string>(job.Inputs);
-        var declared = await DeclaredInputsAsync(repo, job.Workflow, revision, cancellationToken);
+        var repository = await Send(repo, HttpMethod.Get, "", null, cancellationToken, ReadPermissions);
+        if (!repository.Ok)
+            return new ProviderResult<CiRunRef>(null, repository.Error);
+        if (repository.Value!.Code != 200 || repository.Value.Json?["default_branch"]?.GetValue<string>() is not { } defaultBranch)
+            return GitHubApi.Unexpected<CiRunRef>(repository.Value, "GET the repository");
+        var declared = await DeclaredInputsAsync(repo, job.Workflow, defaultBranch, cancellationToken);
         if (!declared.Ok)
             return new ProviderResult<CiRunRef>(null, declared.Error);
-        if (declared.Value!.Contains("commit_sha"))
-            inputs.TryAdd("commit_sha", revision);
-        if (declared.Value.Contains("idempotency_key"))
-            inputs.TryAdd("idempotency_key", key);
+        if (!declared.Value!.Contains("commit_sha"))
+            return ProviderResult<CiRunRef>.Failure("validation_failed",
+                $"{job.Workflow} on {defaultBranch} declares no commit_sha input, so it cannot build {revision}: workflows run from the default branch");
+        var inputs = new Dictionary<string, string>(job.Inputs) { ["commit_sha"] = revision };
+        if (declared.Value!.Contains("idempotency_key"))
+            inputs["idempotency_key"] = key;
 
-        var dispatched = await Send(repo, HttpMethod.Post, $"/actions/workflows/{workflow}/dispatches",
-            new Dictionary<string, object> { ["ref"] = tag, ["inputs"] = inputs, ["return_run_details"] = true }, cancellationToken);
+        var dispatched = await Send(repo, HttpMethod.Post, $"/actions/workflows/{GitHubApi.Escape(job.Workflow)}/dispatches",
+            new Dictionary<string, object> { ["ref"] = defaultBranch, ["inputs"] = inputs, ["return_run_details"] = true }, cancellationToken);
         if (!dispatched.Ok)
             return new ProviderResult<CiRunRef>(null, dispatched.Error);
-        // 200 with the run's id (return_run_details, February 2026); 204 without it from an older API, found by the tag.
-        if (dispatched.Value!.Code == 200 && dispatched.Value.Json?["workflow_run_id"]?.GetValue<long>() is { } id)
-            return ProviderResult<CiRunRef>.Success(new CiRunRef(repo, id.ToString(System.Globalization.CultureInfo.InvariantCulture), revision,
-                dispatched.Value.Json["html_url"]?.GetValue<string>()));
-        if (dispatched.Value.Code is not (200 or 204))
+        // 200 with the run (return_run_details); the only documented success.
+        if (dispatched.Value!.Code != 200 || dispatched.Value.Json?["workflow_run_id"]?.GetValue<long>() is not { } id)
             return GitHubApi.Unexpected<CiRunRef>(dispatched.Value, "POST the dispatch");
-        return await DiscoverAsync(repo, workflow, tag, revision, DiscoveryWindow, cancellationToken)
-               ?? ProviderResult<CiRunRef>.Failure("timeout", $"the run dispatched on {tag} did not appear in {DiscoveryWindow.TotalSeconds:F0} s");
+        var run = new CiRunRef(repo, id.ToString(System.Globalization.CultureInfo.InvariantCulture), revision, dispatched.Value.Json["html_url"]?.GetValue<string>());
+        // Recording is best effort: the run exists, and this call succeeds either way; unrecorded, a retry would dispatch again.
+        await RecordAsync(repo, claim, run, cancellationToken);
+        return ProviderResult<CiRunRef>.Success(run);
     }
 
-    async Task<ProviderResult<CiRunRef>?> DiscoverAsync(RepoRef repo, string workflow, string tag, string revision, TimeSpan window, CancellationToken cancellationToken)
+    /// <summary>
+    /// A claim that exists: its recorded run is adopted. A claim at another revision is refused. A claim at the revision
+    /// with no run recorded (the dispatch's answer was lost) returns null, and the trigger dispatches again.
+    /// </summary>
+    async Task<ProviderResult<CiRunRef>?> AdoptAsync(RepoRef repo, string claim, string revision, string key, ProviderError refused, CancellationToken cancellationToken)
     {
-        var deadline = DateTimeOffset.UtcNow + window;
-        while (true)
-        {
-            var runs = await Send(repo, HttpMethod.Get, $"/actions/workflows/{workflow}/runs?branch={GitHubApi.Escape(tag)}&event=workflow_dispatch&per_page=10", null,
-                cancellationToken);
-            if (!runs.Ok)
-                return new ProviderResult<CiRunRef>(null, runs.Error);
-            if (runs.Value!.Code != 200)
-                return GitHubApi.Unexpected<CiRunRef>(runs.Value, "GET the workflow's runs");
-            var run = (runs.Value.Json?["workflow_runs"] as JsonArray ?? []).Where(r => r?["head_sha"]?.GetValue<string>() == revision)
-                .OrderBy(r => r!["id"]!.GetValue<long>()).FirstOrDefault();
-            if (run is not null)
-                return ProviderResult<CiRunRef>.Success(new CiRunRef(repo, run["id"]!.GetValue<long>().ToString(System.Globalization.CultureInfo.InvariantCulture), revision,
-                    run["html_url"]?.GetValue<string>()));
-            if (DateTimeOffset.UtcNow >= deadline)
-                return null;
-            await Task.Delay(DiscoveryInterval, cancellationToken);
-        }
+        var existing = await Send(repo, HttpMethod.Get, $"/git/ref/{ClaimPrefix}{claim}", null, cancellationToken);
+        if (!existing.Ok)
+            return existing.Error!.Reason == "not_found"
+                ? ProviderResult<CiRunRef>.Failure("validation_failed", $"GitHub refused a reference at {revision}: {refused.Message}")
+                : new ProviderResult<CiRunRef>(null, existing.Error);
+        var target = existing.Value!.Json?["object"];
+        if (target?["type"]?.GetValue<string>() != "tag")
+            return target?["sha"]?.GetValue<string>() == revision
+                ? null
+                : ProviderResult<CiRunRef>.Failure("validation_failed", $"key {key} already triggered a run at another revision");
+        var tag = await Send(repo, HttpMethod.Get, $"/git/tags/{target["sha"]!.GetValue<string>()}", null, cancellationToken);
+        if (!tag.Ok)
+            return new ProviderResult<CiRunRef>(null, tag.Error);
+        if (tag.Value!.Json?["object"]?["sha"]?.GetValue<string>() != revision)
+            return ProviderResult<CiRunRef>.Failure("validation_failed", $"key {key} already triggered a run at another revision");
+        var recorded = (tag.Value.Json?["message"]?.GetValue<string>() ?? "").Trim();
+        if (!recorded.StartsWith(RunMessage, StringComparison.Ordinal))
+            return ProviderResult<CiRunRef>.Failure("unexpected_response", $"the claim for key {key} records no run");
+        var parts = recorded[RunMessage.Length..].Split(' ', 2);
+        return ProviderResult<CiRunRef>.Success(new CiRunRef(repo, parts[0], revision, parts.Length > 1 ? parts[1] : null));
     }
 
-    async Task<ProviderResult<IReadOnlySet<string>>> DeclaredInputsAsync(RepoRef repo, string workflow, string revision, CancellationToken cancellationToken)
+    async Task RecordAsync(RepoRef repo, string claim, CiRunRef run, CancellationToken cancellationToken)
     {
-        var text = await GitHubCodeHost.ReadAtAsync(api, repo, Permissions, ".github/workflows/" + workflow, revision, cancellationToken);
+        var tag = await Send(repo, HttpMethod.Post, "/git/tags",
+            new { tag = claim, message = $"{RunMessage}{run.Id} {run.Url}".TrimEnd(), @object = run.Revision, type = "commit" }, cancellationToken);
+        if (!tag.Ok || tag.Value!.Code != 201 || tag.Value.Json?["sha"]?.GetValue<string>() is not { } sha)
+            return;
+        await Send(repo, HttpMethod.Patch, $"/git/refs/{ClaimPrefix}{claim}", new { sha, force = true }, cancellationToken);
+        await Send(repo, HttpMethod.Post, "/git/refs", new { @ref = $"refs/{ClaimPrefix}run-{run.Id}", sha }, cancellationToken);
+    }
+
+    async Task<ProviderResult<IReadOnlySet<string>>> DeclaredInputsAsync(RepoRef repo, string workflow, string reference, CancellationToken cancellationToken)
+    {
+        var text = await GitHubCodeHost.ReadAtAsync(api, repo, Permissions, ".github/workflows/" + workflow, reference, cancellationToken);
         if (!text.Ok)
             return new ProviderResult<IReadOnlySet<string>>(null, text.Error);
         if (text.Value is null)
-            return ProviderResult<IReadOnlySet<string>>.Failure("validation_failed", $"{workflow} does not exist at {revision}");
+            return ProviderResult<IReadOnlySet<string>>.Failure("validation_failed", $"{workflow} does not exist on {reference}");
         return ProviderResult<IReadOnlySet<string>>.Success(Workflow.Parse(Encoding.UTF8.GetString(text.Value))?.DispatchInputs ?? new HashSet<string>());
     }
 
@@ -140,18 +147,35 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
         if (!raw.Ok)
             return new ProviderResult<CiRunStatus>(null, raw.Error);
         var status = Status(raw.Value!);
-        if (status.State == CheckStates.Completed && await RemoveTagAsync(run, raw.Value!, cancellationToken) is { } failed)
+        if (status.State == CheckStates.Completed && await RemoveClaimAsync(run, cancellationToken) is { } failed)
             return new ProviderResult<CiRunStatus>(null, failed);
         return ProviderResult<CiRunStatus>.Success(status);
     }
 
-    /// <summary>Deletes the trigger tag of a completed run (204); a tag already gone (404, or 422 from GitHub) is fine.</summary>
-    async Task<ProviderError?> RemoveTagAsync(CiRunRef run, JsonNode raw, CancellationToken cancellationToken)
+    /// <summary>
+    /// Deletes a completed run's claim and run references, found from the run (204 each). A run the provider did not
+    /// start, or one already cleaned up, has none (404).
+    /// </summary>
+    async Task<ProviderError?> RemoveClaimAsync(CiRunRef run, CancellationToken cancellationToken)
     {
-        if (raw["head_branch"]?.GetValue<string>() is not { } branch || !branch.StartsWith(TagPrefix, StringComparison.Ordinal))
+        var index = await Send(run.Repo, HttpMethod.Get, $"/git/ref/{ClaimPrefix}run-{GitHubApi.Escape(run.Id)}", null, cancellationToken);
+        if (!index.Ok)
+            return index.Error!.Reason == "not_found" ? null : index.Error;
+        if (index.Value!.Json?["object"]?["sha"]?.GetValue<string>() is not { } sha)
             return null;
-        var deleted = await Send(run.Repo, HttpMethod.Delete, $"/git/refs/tags/{GitHubApi.EscapePath(branch)}", null, cancellationToken);
-        return !deleted.Ok && deleted.Error!.Reason is not ("not_found" or "validation_failed") ? deleted.Error : null;
+        var tag = await Send(run.Repo, HttpMethod.Get, $"/git/tags/{sha}", null, cancellationToken);
+        if (!tag.Ok)
+            return tag.Error!.Reason == "not_found" ? null : tag.Error;
+        foreach (var reference in new[] { tag.Value!.Json?["tag"]?.GetValue<string>(), $"run-{run.Id}" })
+        {
+            if (reference is null)
+                continue;
+            var deleted = await Send(run.Repo, HttpMethod.Delete, $"/git/refs/{ClaimPrefix}{reference}", null, cancellationToken);
+            if (!deleted.Ok && deleted.Error!.Reason is not ("not_found" or "validation_failed"))
+                return deleted.Error;
+        }
+
+        return null;
     }
 
     static CiRunStatus Status(JsonNode run) => run["status"]?.GetValue<string>() switch
@@ -163,8 +187,8 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
 
     /// <summary>
     /// The run's jobs, and its artifacts unpacked: each <c>.trx</c>, <c>.sarif</c> and JUnit XML file is copied into the
-    /// artifact store unparsed. Expired artifacts are skipped. Reading the results of a run that a tag started deletes
-    /// the tag (204; already gone is fine).
+    /// artifact store unparsed. Expired artifacts are skipped. Reading the results of a run this provider started deletes
+    /// its claim, as a status poll that sees it completed does.
     /// </summary>
     public async Task<ProviderResult<CiRunResult>> ReadResultsAsync(CiRunRef run, CancellationToken cancellationToken)
     {
@@ -204,7 +228,7 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
             }
         }
 
-        if (await RemoveTagAsync(run, raw.Value!, cancellationToken) is { } failed)
+        if (await RemoveClaimAsync(run, cancellationToken) is { } failed)
             return new ProviderResult<CiRunResult>(null, failed);
 
         return ProviderResult<CiRunResult>.Success(new CiRunResult(status.Conclusion!,
