@@ -192,8 +192,18 @@ None changes the design beyond the LOG entries above.
 ## 6. CI
 
 GitHub CI has not run on this work, for the reason in
-`docs/build/m0-results.md` section 5. The clean-clone run of the workflow's
-commands is recorded here after the branch is pushed.
+`docs/build/m0-results.md` section 5. The branch is based on `main` at
+`11e6aff`. The workflow's commands were run from a clean clone of `m3-engine`
+at `c1712c0` on macOS, 2026-11-02. The clone was made inside the working tree
+as `.ci-clone/` and deleted afterwards:
+
+| Job | Commands | Result |
+|---|---|---|
+| Build and default tests | `dotnet build FeatureFlow.slnx -c Release`; `dotnet test ... --filter "Category!=Integration&Category!=Live"` | 0 warnings, 0 errors; 277 passed, 0 failed |
+| Integration tests | `temporal server start-dev --headless --port 7833`, with `FF_TEMPORAL_ADDRESS=localhost:7833`; `docker version` (29.9.2); the same build; `dotnet test ... --filter "Category=Integration"` | Server healthy; 0 warnings, 0 errors; 9 passed, 0 failed, in 78 seconds. Server stopped afterwards |
+
+The controls of section 2.4 were run in the working tree before the clone
+existed, against a separate dev server on port 7933.
 
 ## 7. Open questions
 
