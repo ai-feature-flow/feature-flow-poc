@@ -66,6 +66,11 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
         {
             return new ActionResult(stop.Kind, null, stop.Message, TimeSpan.Zero, run.Events);
         }
+        catch (Exception e) when (e is not (ActionInfrastructureException or OperationCanceledException))
+        {
+            // A fault the action did not expect is not retried for ever: a person looks (docs/04 section 1, "cannot answer").
+            return ActionResult.CannotAnswer($"{call.What} failed unexpectedly: {e.GetType().Name}: {e.Message}", run.Events);
+        }
     }
 
     /// <summary>

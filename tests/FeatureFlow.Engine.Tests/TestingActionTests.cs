@@ -210,6 +210,28 @@ public sealed class TestingActionTests
     }
 
     [Fact]
+    public async Task A_malformed_SARIF_raises_an_intervention_rather_than_a_retry()
+    {
+        await using var w = AnalysisWorld("""{ "runs": [1] }""");
+
+        var result = await w.RunAsync("analysis.run", null, "analysis");
+
+        Assert.Equal(StepOutcome.CannotAnswer, result.Kind);
+        Assert.Contains("does not parse", result.Reason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_unexpected_exception_in_an_action_raises_an_intervention_rather_than_a_retry()
+    {
+        await using var w = new ActionWorld(throwingCodeHost: true);
+
+        var result = await w.RunAsync("scm.catch_up");
+
+        Assert.Equal(StepOutcome.CannotAnswer, result.Kind);
+        Assert.Contains("failed unexpectedly: InvalidOperationException", result.Reason, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Analysis_honours_min_level_and_fail_on()
     {
         await using var w = AnalysisWorld(ActionWorld.Sarif(("IDE0001", "note", "src/A.cs", "fp-1")));

@@ -227,6 +227,20 @@ CONTROLS = [
         "tests": [(ENGINE, None)],
         "expect": [("A_tier_that_ran_no_tests_is_not_a_pass", 2)],
     },
+    {
+        "name": "review 3: a SARIF entry of the wrong kind escapes as a non-format error",
+        "edits": [(RESULTS, "catch (Exception e) when (e is InvalidOperationException or KeyNotFoundException or IndexOutOfRangeException)",
+                   "catch (Exception e) when (e is KeyNotFoundException)")],
+        "tests": [(ENGINE, None)],
+        "expect": [("A_SARIF_file_without_runs_does_not_parse", 4)],
+    },
+    {
+        "name": "review 3: an unexpected exception in an action escapes, so Temporal retries it for ever",
+        "edits": [(ACTIONS, "catch (Exception e) when (e is not (ActionInfrastructureException or OperationCanceledException))",
+                   "catch (Exception e) when (e is ArithmeticException)")],
+        "tests": [(ENGINE, None)],
+        "expect": ["An_unexpected_exception_in_an_action_raises_an_intervention_rather_than_a_retry"],
+    },
 ]
 
 

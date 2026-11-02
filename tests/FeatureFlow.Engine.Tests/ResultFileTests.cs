@@ -110,6 +110,10 @@ public sealed class ResultFileTests
     [InlineData("{ not json")]
     [InlineData("{ \"version\": \"2.1.0\" }")]
     [InlineData("[]")]
+    [InlineData("{ \"runs\": [1] }")]
+    [InlineData("{ \"runs\": [{ \"results\": [1] }] }")]
+    [InlineData("{ \"runs\": [{ \"tool\": 1, \"results\": [] }] }")]
+    [InlineData("{ \"runs\": [{ \"results\": [{ \"ruleId\": \"R\", \"locations\": [1] }] }] }")]
     public void A_SARIF_file_without_runs_does_not_parse(string text) =>
         Assert.Throws<FormatException>(() => ResultFiles.Sarif(text, "rev", "sarif"));
 }

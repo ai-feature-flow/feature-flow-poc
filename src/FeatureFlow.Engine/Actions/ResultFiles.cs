@@ -142,51 +142,64 @@ public static class ResultFiles
 
         using (document)
         {
-            if (document.RootElement.ValueKind != JsonValueKind.Object || !document.RootElement.TryGetProperty("runs", out var runs)
-                || runs.ValueKind != JsonValueKind.Array)
-                throw new FormatException("a SARIF log has a runs list");
-            var issues = new List<AnalysisIssue>();
-            foreach (var run in runs.EnumerateArray())
+            try
             {
-                var defaults = new Dictionary<string, string>(StringComparer.Ordinal);
-                if (run.TryGetProperty("tool", out var tool) && tool.TryGetProperty("driver", out var driver) && driver.TryGetProperty("rules", out var rules)
-                    && rules.ValueKind == JsonValueKind.Array)
-                    foreach (var rule in rules.EnumerateArray())
-                        if (Text(rule, "id") is { } id && rule.TryGetProperty("defaultConfiguration", out var config) && Text(config, "level") is { } level)
-                            defaults[id] = level;
-                if (!run.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
-                    continue;
-                foreach (var result in results.EnumerateArray())
-                {
-                    var ruleId = Text(result, "ruleId") ?? "(no rule)";
-                    var level = (Text(result, "level") ?? defaults.GetValueOrDefault(ruleId) ?? IssueLevels.Warning) switch
-                    {
-                        "error" => IssueLevels.Error,
-                        "warning" => IssueLevels.Warning,
-                        _ => IssueLevels.Note,
-                    };
-                    var message = result.TryGetProperty("message", out var m) ? Text(m, "text") ?? "" : "";
-                    string? path = null;
-                    int? line = null;
-                    if (result.TryGetProperty("locations", out var locations) && locations.ValueKind == JsonValueKind.Array && locations.GetArrayLength() > 0
-                        && locations[0].TryGetProperty("physicalLocation", out var physical))
-                    {
-                        if (physical.TryGetProperty("artifactLocation", out var artifact))
-                            path = Text(artifact, "uri");
-                        if (physical.TryGetProperty("region", out var region) && region.TryGetProperty("startLine", out var start) && start.TryGetInt32(out var n))
-                            line = n;
-                    }
-
-                    var fingerprint = result.TryGetProperty("partialFingerprints", out var prints) && prints.ValueKind == JsonValueKind.Object
-                                      && prints.EnumerateObject().FirstOrDefault() is { Value.ValueKind: JsonValueKind.String } first
-                        ? $"{first.Name}:{first.Value.GetString()}"
-                        : "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes($"{ruleId}\n{path}\n{message}")));
-                    issues.Add(new AnalysisIssue(ruleId, level, path, line, FirstLine(message), fingerprint));
-                }
+                return SarifIssues(document, revision, analyser);
             }
-
-            return new AnalysisResults(revision, analyser, issues);
+            catch (Exception e) when (e is InvalidOperationException or KeyNotFoundException or IndexOutOfRangeException)
+            {
+                // An entry of the wrong kind (a number where an object belongs): the file is not SARIF.
+                throw new FormatException($"the SARIF file is not well formed: {e.Message}");
+            }
         }
+    }
+
+    static AnalysisResults SarifIssues(JsonDocument document, string revision, string analyser)
+    {
+        if (document.RootElement.ValueKind != JsonValueKind.Object || !document.RootElement.TryGetProperty("runs", out var runs)
+            || runs.ValueKind != JsonValueKind.Array)
+            throw new FormatException("a SARIF log has a runs list");
+        var issues = new List<AnalysisIssue>();
+        foreach (var run in runs.EnumerateArray())
+        {
+            var defaults = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (run.TryGetProperty("tool", out var tool) && tool.TryGetProperty("driver", out var driver) && driver.TryGetProperty("rules", out var rules)
+                && rules.ValueKind == JsonValueKind.Array)
+                foreach (var rule in rules.EnumerateArray())
+                    if (Text(rule, "id") is { } id && rule.TryGetProperty("defaultConfiguration", out var config) && Text(config, "level") is { } level)
+                        defaults[id] = level;
+            if (!run.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
+                continue;
+            foreach (var result in results.EnumerateArray())
+            {
+                var ruleId = Text(result, "ruleId") ?? "(no rule)";
+                var level = (Text(result, "level") ?? defaults.GetValueOrDefault(ruleId) ?? IssueLevels.Warning) switch
+                {
+                    "error" => IssueLevels.Error,
+                    "warning" => IssueLevels.Warning,
+                    _ => IssueLevels.Note,
+                };
+                var message = result.TryGetProperty("message", out var m) ? Text(m, "text") ?? "" : "";
+                string? path = null;
+                int? line = null;
+                if (result.TryGetProperty("locations", out var locations) && locations.ValueKind == JsonValueKind.Array && locations.GetArrayLength() > 0
+                    && locations[0].TryGetProperty("physicalLocation", out var physical))
+                {
+                    if (physical.TryGetProperty("artifactLocation", out var artifact))
+                        path = Text(artifact, "uri");
+                    if (physical.TryGetProperty("region", out var region) && region.TryGetProperty("startLine", out var start) && start.TryGetInt32(out var n))
+                        line = n;
+                }
+
+                var fingerprint = result.TryGetProperty("partialFingerprints", out var prints) && prints.ValueKind == JsonValueKind.Object
+                                  && prints.EnumerateObject().FirstOrDefault() is { Value.ValueKind: JsonValueKind.String } first
+                    ? $"{first.Name}:{first.Value.GetString()}"
+                    : "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes($"{ruleId}\n{path}\n{message}")));
+                issues.Add(new AnalysisIssue(ruleId, level, path, line, FirstLine(message), fingerprint));
+            }
+        }
+
+        return new AnalysisResults(revision, analyser, issues);
     }
 
     /// <summary>Whether <paramref name="level"/> is at least <paramref name="minimum"/>, in the order note, warning, error.</summary>
