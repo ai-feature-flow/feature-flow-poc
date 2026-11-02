@@ -228,6 +228,26 @@ public sealed partial class RunCore
         }
     }
 
+    /// <summary>The repository a step names in its <c>repository</c> field, evaluated; null when it names none.</summary>
+    public string? ResolveRepository(string stepId)
+    {
+        var step = StepById(stepId) ?? throw new EvaluationException($"{stepId} is not a step of plan revision {State.Revision}");
+        return step.Repository is { } node ? Resolve(node, step, "repository", name => Findings?.Read(name) ?? State.Findings.GetValueOrDefault(name)) as string : null;
+    }
+
+    /// <summary>
+    /// A prompt that an action input names by reference, such as <c>scm.pull_request</c>'s <c>body</c>, rendered like a
+    /// task (docs/03 section 6.3). Null when <paramref name="value"/> is not a prompt reference the run's libraries hold.
+    /// </summary>
+    public string? RenderPrompt(string stepId, string value)
+    {
+        var step = StepById(stepId) ?? throw new EvaluationException($"{stepId} is not a step of plan revision {State.Revision}");
+        if (LibraryReference.TryParse(value) is not { Type: "prompts" } reference || libraries?.Resolve(reference) is not { } library
+            || library.Text("prompts", reference.Name) is not { } text)
+            return null;
+        return Render(text, step.Scope, step.Id, null, $"{reference} text", ResolveInputs(stepId));
+    }
+
     /// <summary>
     /// An agent step's task, rendered (docs/03 section 6.3): each <c>{{ expr }}</c> evaluated with the step's
     /// <c>with</c> values and <c>params</c>, <c>run</c> and <c>steps</c>. Null when the step names no task. A string

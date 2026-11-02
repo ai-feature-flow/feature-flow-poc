@@ -68,6 +68,12 @@ public sealed record PolicyConfig(
     long HardPerStep = ConfigurationReader.DefaultHardPerStep,
     long HardPerRun = ConfigurationReader.DefaultHardPerRun)
 {
+    /// <summary>
+    /// F1 (docs/05 section 2): <c>merge.default_branch.engine_may_merge</c>, the repository patterns whose default branch
+    /// the engine may merge into. Empty, the default: a person merges into every default branch.
+    /// </summary>
+    public IReadOnlyList<string> EngineMayMerge { get; init; } = [];
+
     /// <summary>The first approval rule whose pattern matches the decision type, or null.</summary>
     public ApprovalRule? RuleFor(string type) => Approval.FirstOrDefault(r => r.Matches(type));
 }
@@ -285,9 +291,16 @@ public static class ConfigurationReader
             }
 
             Cap<bool>? requireChecks = null;
+            IReadOnlyList<string> engineMayMerge = [];
             if (MapReader.Of(p.Node("merge"), d, "policy.merge") is { } m)
             {
                 requireChecks = BoolCap(m, "require_checks", d);
+                if (MapReader.Of(m.Node("default_branch"), d, "policy.merge.default_branch") is { } db)
+                {
+                    engineMayMerge = db.StringList("engine_may_merge");
+                    db.Finish();
+                }
+
                 m.Finish();
             }
 
@@ -299,7 +312,7 @@ public static class ConfigurationReader
                 }
 
             p.Finish();
-            policy = new PolicyConfig(rules, perStep, perRun, allowed, requireChecks, hardStep, hardRun);
+            policy = new PolicyConfig(rules, perStep, perRun, allowed, requireChecks, hardStep, hardRun) { EngineMayMerge = engineMayMerge };
         }
 
         foreach (var later in new[] { "library_overrides", "library_inputs", "roles", "role_mapping", "notifications", "timeouts", "teams" })

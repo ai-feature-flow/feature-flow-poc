@@ -48,6 +48,7 @@ public sealed class EngineServices(ProviderSet providers, InstallationConfig ins
             policy.AllowedRoles,
             policy.Approval.Select(r => new AutoRule(r.Match, r.Auto.Value)).ToList(),
             policy.HardPerStep,
-            policy.HardPerRun);
+            policy.HardPerRun,
+            policy.EngineMayMerge);
     }
 }

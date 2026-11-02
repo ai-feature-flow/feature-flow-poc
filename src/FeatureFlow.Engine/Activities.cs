@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using FeatureFlow.Engine.ActionSteps;
 using FeatureFlow.Interpreter;
 using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Library;
@@ -21,6 +22,10 @@ public sealed record Prepared(IReadOnlyList<LibrarySnapshot> Libraries, RunPolic
 
 public sealed record ChildRead(string Status, string? Result);
 
+/// <summary>A <c>clean_up</c> reset: the step it resets for and how often it has run, the run's repositories and work branch, and every step that has run (their hidden references).</summary>
+public sealed record CleanUpCall(string RunId, string StepId, int Executions, IReadOnlyList<string> Repositories, string WorkBranch, IReadOnlyList<string> StepIds,
+    bool DryRun);
+
 /// <summary>
 /// The engine's activities (docs/02 section 2.2). Provider errors are classified here (docs/06 section 1.1):
 /// an infrastructure error is thrown, so Temporal retries it and no attempt is used; a work error is returned
@@ -29,6 +34,7 @@ public sealed record ChildRead(string Status, string? Result);
 public sealed class RunActivities(EngineServices services, ITemporalClient? client)
 {
     static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    readonly EngineActions actions = new(services.Providers);
 
     /// <summary>Run start (docs/07 section 7): load the locked libraries, then checks 18, 19, 21 and 22 against this worker's configuration.</summary>
     [Activity]
@@ -51,6 +57,8 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
             {
                 RunStartChecks.Capabilities(core.Plan, libraries, services.Providers.Offered(start.DryRun), d);
                 RunStartChecks.Caps(core.Plan, services.Organisation.Policy, core.Allowance, d);
+                if (services.Providers.ForRun("code_host", start.DryRun) is ICodeHostProvider host)
+                    await RepositoryChecksAsync(host, core, start, libraries, policy, d, ct);
             }
         }
 
@@ -61,6 +69,77 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
         return new Prepared(snapshots, policy,
             d.Where(x => x.Blocks).Select(x => x.ToString()).ToList(),
             d.Where(x => !x.Blocks).Select(x => x.ToString()).ToList());
+    }
+
+    /// <summary>
+    /// The run-start checks that read the code host (docs/09 section 2), for each repository of the run: 24, its default
+    /// branch is protected; 20, the library section of <c>feature-flow.yaml</c> on the default branch adds only; and 23,
+    /// F1, for a run whose parent branch is the default branch (not a child's): a merge step asking for an engine merge
+    /// needs the organisation's leave for that repository. The default branch is read from the code host, never the plan.
+    /// </summary>
+    public static async Task RepositoryChecksAsync(ICodeHostProvider host, RunCore core, RunStart start, LibrarySet libraries, RunPolicy policy, DiagnosticBag d,
+        CancellationToken ct)
+    {
+        var defaults = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var name in start.Repositories)
+        {
+            var repo = new RepoRef(name);
+            var branch = await host.GetDefaultBranchAsync(repo, ct);
+            if (Readable(branch, $"{name}: the default branch", Checks.BranchProtection, d) is not { } defaultBranch)
+                continue;
+            defaults[name] = defaultBranch;
+            if (Readable(await host.GetBranchProtectionAsync(repo, defaultBranch, ct), $"{name}: the protection of {defaultBranch}", Checks.BranchProtection, d) is { } protection)
+                RunStartChecks.BranchProtection(name, defaultBranch, protection.Protected, d);
+            if (Readable(await host.ReadFileAsync(repo, RepositoryManifest.FileName, defaultBranch, ct), $"{name}: {RepositoryManifest.FileName}",
+                    Checks.RepositoryLibraryAddsOnly, d) is { } file)
+            {
+                var parsed = new DiagnosticBag();
+                var node = YamlText.Parse(file.Content, $"{name}:{RepositoryManifest.FileName}", parsed);
+                if (parsed.HasErrors)
+                    d.Add(Checks.RepositoryLibraryAddsOnly, $"{name}: {RepositoryManifest.FileName} on {defaultBranch} does not read, so its library section cannot be checked: {string.Join("; ", parsed.Select(x => x.Message))}");
+                else
+                    RunStartChecks.RepositoryLibrary(name, (node as YMap)?["library"], libraries, d);
+            }
+        }
+
+        if (start.ParentBranch is not null)
+            return;
+        foreach (var step in core.Plan.AllSteps.Where(s => s is { Form: Model.Plans.StepForm.Action, Action: "scm.merge" }))
+        {
+            IReadOnlyList<string> targets;
+            bool? engineCanMerge;
+            try
+            {
+                targets = core.ResolveRepository(step.Id) is { } one ? [one] : start.Repositories;
+            }
+            catch (EvaluationException)
+            {
+                targets = start.Repositories;
+            }
+
+            try
+            {
+                engineCanMerge = core.ResolveInputs(step.Id).GetValueOrDefault("engine_can_merge", true) as bool?;
+            }
+            catch (EvaluationException)
+            {
+                engineCanMerge = null;
+            }
+
+            foreach (var name in targets.Where(defaults.ContainsKey))
+                RunStartChecks.EngineMerge(step.Id, name, defaults[name], engineCanMerge, policy.EngineMayMerge ?? [], step.Location, d);
+        }
+    }
+
+    /// <summary>A code host read's value; an infrastructure error is retried, any other is a blocking diagnostic of the check that needed it.</summary>
+    static T? Readable<T>(ProviderResult<T> result, string what, int check, DiagnosticBag d)
+    {
+        if (result.Ok)
+            return result.Value;
+        if (result.Error!.Class == ProviderErrorClass.Infrastructure)
+            throw new ApplicationFailureException($"{what}: {result.Error.Reason}: {result.Error.Message}", errorType: "infrastructure");
+        d.Add(check, $"{what} cannot be read: {result.Error.Reason}: {result.Error.Message}");
+        return default;
     }
 
     /// <summary>The lock's libraries, each file resolved by its content hash from the artifact store (docs/08 section 3).</summary>
@@ -102,14 +181,54 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
 
     // The agent step's activity, RunAgentStep, is the agent worker's: Engine.Agent's AgentActivities (M4).
 
-    /// <summary>An engine action through the stand-in (LOG 81).</summary>
+    /// <summary>
+    /// An engine action. One M5 builds (<see cref="EngineActions.Built"/>) runs against the providers when the
+    /// installation configures real source control (<see cref="EngineActions.HasSourceControl"/>); with only fake
+    /// providers, or in a dry run, it goes to the stand-in like every action not yet built (LOG 81, LOG 121). An action
+    /// still waiting fails retryably with its poll interval as the next delay, so it holds no worker slot between reads.
+    /// </summary>
     [Activity]
-    public async Task<StepOutcome> RunActionAsync(StepCall call)
+    public async Task<StepOutcome> RunActionAsync(StepCall call, ActionScope? scope = null)
     {
-        var ct = ActivityExecutionContext.Current.CancellationToken;
+        var context = ActivityExecutionContext.Current;
+        var ct = context.CancellationToken;
+        if (EngineActions.Built.Contains(call.What) && !call.DryRun && scope is not null && actions.HasSourceControl)
+        {
+            ActionResult result;
+            try
+            {
+                result = await actions.RunAsync(call, scope, () => context.Heartbeat(), ct);
+            }
+            catch (ActionInfrastructureException e)
+            {
+                throw new ApplicationFailureException(e.Message, errorType: "infrastructure");
+            }
+
+            if (result.Kind == ActionResult.Wait)
+                throw new ApplicationFailureException($"waiting: {result.Reason}", errorType: "waiting", nextRetryDelay: result.Delay);
+            return result.ToOutcome();
+        }
+
         var standIn = services.Providers.Required<IActionStandIn>("action_stand_in", call.DryRun);
-        var result = await standIn.RunAsync(new ActionRequest(call.Step, call.What, call.Inputs, call.Contract), ct);
-        return Classify(result.Error) ?? new StepOutcome(StepOutcome.Reported, result.Value, null);
+        var stood = await standIn.RunAsync(new ActionRequest(call.Step, call.What, call.Inputs, call.Contract), ct);
+        return Classify(stood.Error) ?? new StepOutcome(StepOutcome.Reported, stood.Value, null);
+    }
+
+    /// <summary>A <c>clean_up</c> route's branch reset before its target step runs again (docs/03 section 4.1; M3 follow-up 5).</summary>
+    [Activity]
+    public async Task<IReadOnlyList<string>> CleanUpAsync(CleanUpCall call)
+    {
+        if (call.DryRun)
+            return [$"clean_up: {call.StepId} (dry run: nothing is reset)"];
+        try
+        {
+            return await actions.CleanUpAsync(call.RunId, call.StepId, call.Executions, call.Repositories, call.WorkBranch, call.StepIds,
+                ActivityExecutionContext.Current.CancellationToken);
+        }
+        catch (Exception e) when (e is ActionInfrastructureException or ActionStop)
+        {
+            throw new ApplicationFailureException(e.Message, errorType: "infrastructure");
+        }
     }
 
     /// <summary>
