@@ -35,7 +35,12 @@ public static class ResultFiles
         return new TestResults(revision, tier, passed, failed, skipped, failures);
     }
 
-    /// <summary>A Visual Studio TRX file: each <c>UnitTestResult</c> by its <c>outcome</c>.</summary>
+    /// <summary>
+    /// A Visual Studio TRX file: each <c>UnitTestResult</c> by its <c>outcome</c>. <c>Passed</c> passes and <c>NotExecuted</c>
+    /// is skipped; every other outcome (<c>Failed</c>, <c>Error</c>, <c>Timeout</c>, <c>Aborted</c>, <c>PassedButRunAborted</c>,
+    /// <c>NotRunnable</c>, <c>Inconclusive</c> and the rest) fails. A run whose <c>ResultSummary</c> outcome is not a
+    /// completed one fails too, even when no test result says so (a test host that crashed after its passes).
+    /// </summary>
     public static TestResults Trx(string text, string revision, string tier)
     {
         var root = Xml(text, "TRX").Root!;
@@ -50,21 +55,32 @@ public static class ResultFiles
                 case "Passed":
                     passed++;
                     break;
-                case "Failed" or "Error" or "Timeout" or "Aborted":
-                    failed++;
-                    var message = result.Descendants().FirstOrDefault(e => e.Name.LocalName == "Message")?.Value;
-                    failures.Add(new TestFailure(name, FirstLine(message)));
-                    break;
-                default:
+                case "NotExecuted":
                     skipped++;
                     break;
+                case var outcome:
+                    failed++;
+                    var message = result.Descendants().FirstOrDefault(e => e.Name.LocalName == "Message")?.Value;
+                    failures.Add(new TestFailure(name, outcome == "Failed" && message is not null ? FirstLine(message) : $"outcome {outcome ?? "(none)"}: {FirstLine(message)}".TrimEnd(' ', ':')));
+                    break;
             }
+        }
+
+        var run = (string?)root.Elements().FirstOrDefault(e => e.Name.LocalName == "ResultSummary")?.Attribute("outcome");
+        if (run is not null and not ("Completed" or "Passed" or "Warning") && !(run == "Failed" && failed > 0))
+        {
+            failed++;
+            failures.Add(new TestFailure("(test run)", $"the test run's outcome was {run}"));
         }
 
         return new TestResults(revision, tier, passed, failed, skipped, failures);
     }
 
-    /// <summary>A JUnit XML file: each <c>testcase</c>, failed with a <c>failure</c> or <c>error</c>, skipped with <c>skipped</c>.</summary>
+    /// <summary>
+    /// A JUnit XML file: each <c>testcase</c>, failed with a <c>failure</c> or <c>error</c>, skipped with <c>skipped</c>. A
+    /// <c>testsuite</c>'s own <c>error</c> or <c>failure</c> (a fixture that failed), or <c>errors</c> and <c>failures</c>
+    /// attributes counting more than its test cases show, fail too.
+    /// </summary>
     public static TestResults JUnit(string text, string revision, string tier)
     {
         var root = Xml(text, "JUnit").Root!;
@@ -84,6 +100,24 @@ public static class ResultFiles
                 skipped++;
             else
                 passed++;
+        }
+
+        foreach (var suite in root.DescendantsAndSelf().Where(e => e.Name.LocalName == "testsuite"))
+        {
+            var name = (string?)suite.Attribute("name") ?? "(suite)";
+            foreach (var own in suite.Elements().Where(e => e.Name.LocalName is "failure" or "error"))
+            {
+                failed++;
+                failures.Add(new TestFailure(name, FirstLine((string?)own.Attribute("message") ?? own.Value)));
+            }
+
+            var counted = suite.Elements().Count(c => c.Name.LocalName == "testcase" && c.Elements().Any(e => e.Name.LocalName is "failure" or "error"));
+            var reported = Count(suite, "errors") + Count(suite, "failures");
+            if (reported > counted)
+            {
+                failed += reported - counted;
+                failures.Add(new TestFailure(name, $"the suite reports {reported} errors and failures, {counted} of them on test cases"));
+            }
         }
 
         return new TestResults(revision, tier, passed, failed, skipped, failures);
@@ -175,6 +209,9 @@ public static class ResultFiles
 
     static string? Text(JsonElement element, string property) =>
         element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+
+    static int Count(XElement element, string attribute) =>
+        int.TryParse((string?)element.Attribute(attribute), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : 0;
 
     static string FirstLine(string? text) => (text ?? "").Trim().Split('\n')[0].Trim();
 }

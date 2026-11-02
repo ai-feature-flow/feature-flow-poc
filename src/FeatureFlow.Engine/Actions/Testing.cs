@@ -109,7 +109,7 @@ static class Testing
             return exit != 0
                 ? ByExit(head, tier.Name, exit, output)
                 : throw ActionStop.CannotAnswer($"tier {tier.Name} exited 0 and wrote no {tier.Result.Format} results at {tier.Result.Path}");
-        return WithExit(Parse(tier.Result.Format, files, head, tier.Name), exit, output);
+        return RanTests(WithExit(Parse(tier.Result.Format, files, head, tier.Name), exit, output));
     }
 
     static async Task<TestResults> CiTierAsync(ActionRun run, ICiProvider ci, RepoRef repo, TestTier tier, string head)
@@ -134,7 +134,7 @@ static class Testing
         var texts = new List<string>();
         foreach (var file in files)
             texts.Add(await run.ReadTextAsync(file.Content.Id));
-        return WithExit(Parse(files[0].Format, texts, head, tier.Name), exit, $"the CI run concluded {result.Conclusion}");
+        return RanTests(WithExit(Parse(files[0].Format, texts, head, tier.Name), exit, $"the CI run concluded {result.Conclusion}"));
     }
 
     static TestResults Parse(string format, IReadOnlyList<string> texts, string head, string tier)
@@ -148,6 +148,12 @@ static class Testing
             throw ActionStop.CannotAnswer($"tier {tier}'s {format} results do not parse: {e.Message}");
         }
     }
+
+    /// <summary>Results that name no passing test and no failure (an empty file, everything skipped) are not a pass: the tier ran no tests.</summary>
+    static TestResults RanTests(TestResults results) =>
+        results.Passed == 0 && results.Failed == 0
+            ? results with { Failed = 1, Failures = [new TestFailure(results.Tier, $"the tier ran no tests ({results.Skipped} skipped)")] }
+            : results;
 
     static TestResults ByExit(string head, string tier, int exit, string output) =>
         exit == 0 ? new TestResults(head, tier, 1, 0, 0, []) : new TestResults(head, tier, 0, 1, 0, [new TestFailure(tier, $"exited {exit}: {Tail(output)}")]);

@@ -202,6 +202,31 @@ CONTROLS = [
         "tests": [(ENGINE, None)],
         "expect": ["Evidence_for_another_repository_at_the_same_revision_is_not_merged"],
     },
+    {
+        "name": "review 2: TRX outcomes other than Passed count as skipped",
+        "edits": [(RESULTS, 'case "NotExecuted":', 'case "NotExecuted" or "PassedButRunAborted" or "NotRunnable" or "Inconclusive" or "Timeout":')],
+        "tests": [(ENGINE, None)],
+        "expect": [("A_TRX_outcome_other_than_passed_or_not_executed_fails", 4)],
+    },
+    {
+        "name": "review 2: a TRX run's own outcome is ignored",
+        "edits": [(RESULTS, "if (run is not null and not", "if (false && run is not null and not")],
+        "tests": [(ENGINE, None)],
+        "expect": ["A_TRX_run_that_aborted_fails_even_when_every_result_passed"],
+    },
+    {
+        "name": "review 2: JUnit suite-level errors and counts are ignored",
+        "edits": [(RESULTS, 'foreach (var suite in root.DescendantsAndSelf().Where(e => e.Name.LocalName == "testsuite"))',
+                   'foreach (var suite in root.DescendantsAndSelf().Where(e => e.Name.LocalName == "never"))')],
+        "tests": [(ENGINE, None)],
+        "expect": ["A_JUnit_suite_level_error_or_unattributed_failure_count_fails"],
+    },
+    {
+        "name": "review 2: a tier that ran no tests passes",
+        "edits": [(TESTING, "results.Passed == 0 && results.Failed == 0\n", "false\n")],
+        "tests": [(ENGINE, None)],
+        "expect": [("A_tier_that_ran_no_tests_is_not_a_pass", 2)],
+    },
 ]
 
 

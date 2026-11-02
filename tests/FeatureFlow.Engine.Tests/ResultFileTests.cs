@@ -69,6 +69,43 @@ public sealed class ResultFileTests
         Assert.Equal(issues[0].Fingerprint, moved[0].Fingerprint);
     }
 
+    const string Ns = "http://microsoft.com/schemas/VisualStudio/TeamTest/2010";
+
+    [Theory]
+    [InlineData("PassedButRunAborted")]
+    [InlineData("NotRunnable")]
+    [InlineData("Inconclusive")]
+    [InlineData("Timeout")]
+    public void A_TRX_outcome_other_than_passed_or_not_executed_fails(string outcome)
+    {
+        var text = $"""<TestRun xmlns="{Ns}"><Results><UnitTestResult testName="T" outcome="{outcome}" /></Results></TestRun>""";
+
+        var results = ResultFiles.Trx(text, "rev", "unit");
+
+        Assert.Equal((0, 1), (results.Passed, results.Failed));
+        Assert.Contains(outcome, results.Failures.Single().Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_TRX_run_that_aborted_fails_even_when_every_result_passed()
+    {
+        var text = $"""<TestRun xmlns="{Ns}"><ResultSummary outcome="Aborted" /><Results><UnitTestResult testName="T" outcome="Passed" /></Results></TestRun>""";
+        var completed = text.Replace("Aborted", "Completed", StringComparison.Ordinal);
+
+        Assert.Equal(1, ResultFiles.Trx(text, "rev", "unit").Failed);
+        Assert.Equal(0, ResultFiles.Trx(completed, "rev", "unit").Failed);
+    }
+
+    [Fact]
+    public void A_JUnit_suite_level_error_or_unattributed_failure_count_fails()
+    {
+        const string ownError = """<testsuite name="S"><error message="fixture setup failed"/><testcase classname="C" name="ok"/></testsuite>""";
+        const string counts = """<testsuites><testsuite name="S" failures="2" errors="0"><testcase classname="C" name="ok"/><testcase classname="C" name="bad"><failure message="x"/></testcase></testsuite></testsuites>""";
+
+        Assert.Equal("fixture setup failed", ResultFiles.JUnit(ownError, "rev", "it").Failures.Single().Message);
+        Assert.Equal(2, ResultFiles.JUnit(counts, "rev", "it").Failed);
+    }
+
     [Theory]
     [InlineData("{ not json")]
     [InlineData("{ \"version\": \"2.1.0\" }")]

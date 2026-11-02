@@ -74,6 +74,20 @@ public sealed class TestingActionTests
         Assert.Contains("do not parse", garbled.Reason, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("<TestRun xmlns=\"http://microsoft.com/schemas/VisualStudio/TeamTest/2010\"><Results/></TestRun>", "ran no tests (0 skipped)")]
+    [InlineData("<TestRun xmlns=\"http://microsoft.com/schemas/VisualStudio/TeamTest/2010\"><Results><UnitTestResult testName=\"A\" outcome=\"NotExecuted\"/></Results></TestRun>", "ran no tests (1 skipped)")]
+    public async Task A_tier_that_ran_no_tests_is_not_a_pass(string trx, string message)
+    {
+        await using var w = WithManifest();
+        w.Sandbox.On(new SandboxRule("dotnet test tests/Unit", Files: new Dictionary<string, string> { [ActionWorld.UnitTrx] = trx }));
+
+        var result = await w.RunAsync("test.run", "{ tier_tags: [unit] }");
+
+        Assert.Equal("failed", Outcome(result));
+        Assert.Contains(message, (await EvidenceAsync(w, result)).Tiers.Single().Failures.Single().Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task A_CI_tier_is_delegated_and_its_JUnit_results_parsed()
     {
