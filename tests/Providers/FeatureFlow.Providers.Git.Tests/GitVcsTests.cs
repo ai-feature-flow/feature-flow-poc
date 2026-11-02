@@ -49,6 +49,32 @@ public sealed class GitVcsTests : IDisposable
         Assert.Equal([results[0].Value!.Revision], remote.FirstParents(target, "refs/heads/main"));
     }
 
+    /// <summary>
+    /// The catch-up's expected-revision push: someone pushes to the work branch after the provider fetched it and
+    /// before it pushes the merge. The push is refused, and their commit stays.
+    /// </summary>
+    [Fact]
+    public async Task A_catch_up_whose_work_branch_moves_before_its_push_is_refused_and_loses_nothing()
+    {
+        var work = remote.Commit("refs/heads/ff/work", new Dictionary<string, string?> { ["a.txt"] = "ours" }, from: "refs/heads/main");
+        remote.Commit("refs/heads/main", new Dictionary<string, string?> { ["b.txt"] = "theirs" });
+        string? theirs = null;
+        var vcs = new GitVcs(BareRepository.Template(Path.Combine(root, "remotes")), Path.Combine(root, "cache"),
+            () => throw new InvalidOperationException(), () => throw new InvalidOperationException(), () => null)
+        {
+            BeforePushForTests = reference =>
+            {
+                theirs ??= remote.Commit(reference, new Dictionary<string, string?> { ["c.txt"] = "pushed meanwhile" });
+                return Task.CompletedTask;
+            },
+        };
+
+        var result = await vcs.CatchUpAsync(repo, "refs/heads/main", "refs/heads/ff/work", work, "catch up", Ct);
+
+        Assert.Equal("base_moved", result.Error?.Reason);
+        Assert.Equal(theirs, remote.Resolve("refs/heads/ff/work"));
+    }
+
     [Fact]
     public async Task A_catch_up_of_a_missing_branch_is_not_found()
     {

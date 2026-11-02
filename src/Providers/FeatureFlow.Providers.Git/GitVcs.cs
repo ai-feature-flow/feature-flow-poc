@@ -298,6 +298,9 @@ public sealed class GitVcs(
     /// </summary>
     internal bool ControlPlainForcePush { get; init; }
 
+    /// <summary>Tests only: runs just before a catch-up or merge pushes, with the reference, so a test can move it in between.</summary>
+    internal Func<string, Task>? BeforePushForTests { get; init; }
+
     /// <summary>The author and committer of the commits the engine makes (catch-up and merge commits).</summary>
     public static readonly IReadOnlyDictionary<string, string> EngineIdentity = new Dictionary<string, string>
     {
@@ -334,6 +337,8 @@ public sealed class GitVcs(
     async Task<ProviderError?> LeasePushAsync(string dir, RepoRef repo, string reference, string revision, string? expected, IReadOnlyDictionary<string, string> env,
         CancellationToken cancellationToken)
     {
+        if (BeforePushForTests is { } before)
+            await before(reference);
         var push = await GitAsync(dir, ["push", "--porcelain", expected is null ? "--force" : $"--force-with-lease={reference}:{expected}", UrlOf(repo), $"{revision}:{reference}"],
             env, cancellationToken);
         if (!push.Ok)
