@@ -215,7 +215,17 @@ and 3.13, and `docs/07` section 2.
 
 ## 6. CI
 
-CI_SECTION
+The workflow's commands were run from a clean clone of `m4-agent-steps` at
+`7ee3a3c` on macOS, 2026-11-02, made in the scratchpad and deleted afterwards:
+
+| Job | Commands | Result |
+|---|---|---|
+| Build and default tests | `dotnet build FeatureFlow.slnx -c Release`; `dotnet test ... --filter "Category!=Integration&Category!=Live"` | 0 warnings, 0 errors; 353 passed, 0 failed |
+| Integration tests | The dev server on port 8033 (`FF_TEMPORAL_ADDRESS=localhost:8033`); `docker build` of the sandbox image, as the workflow now does; the same build; `dotnet test ... --filter "Category=Integration"` | 22 passed, 0 failed, in 81 seconds |
+
+The integration job gains one step, building the sandbox image. GitHub CI on
+the pull request is the first run on Linux, where the tests publish the
+sandbox client for `linux-x64`.
 
 ## 7. Open questions
 
