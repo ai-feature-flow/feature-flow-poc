@@ -1,9 +1,10 @@
 # Design rewrite plan
 
-Status: design approved, spikes SP1 to SP5 done (SP6 shelved), standard library
-written, 2026-11-01. The design phase is complete; the version 1 build plan
-(`docs/11-build-plan.md`) is written and awaits the product owner's review. Started 2026-10-31. This file is the resume point: a new
-session reads it first, then the status table in section 6.
+Status: design complete 2026-11-01. Build milestones M0 to M4 of
+`docs/11-build-plan.md` merged by 2026-11-03; the latest handover is
+`docs/build/handover-2026-11-03.md`. Started 2026-10-31. This file is the
+resume point: a new session reads it first, then the status table in section 6
+and the latest handover.
 
 ## 1. Goal
 
@@ -111,7 +112,8 @@ Paths in all design documents are relative to the repository root.
 | The standard library as files (`docs/08` section 6) | Done 2026-11-01, in `library/std/`: 3 templates, 9 fragments, 11 tasks, 7 roles, 13 artifact types. Not yet loaded by a validator. Formats the design left open are LOG 62 to 65, approved 2026-11-01 |
 | Version 1 build plan | Written 2026-11-01 in `docs/11-build-plan.md`: layout, build order, milestones M0 to M8, carry-over from spikes. Judgement calls LOG 66 to 70, approved 2026-11-01. Open questions 1, 2, 3 and 5 answered 2026-11-01 (code in this repository; pull requests with required CI; LOG 62 to 65 approved; a minimal console in M7); question 4, the team deployment's object store and container platform, deferred |
 | Product owner review of LOG 66 to 70 | Done 2026-11-01: approved |
-| M0 (skeleton) and M1 (plan loader and validator on `library/std/`) | **Next.** Code work goes through pull requests with required CI |
+| M0 to M4 (skeleton; plan loader and validator; interpreter core and re-drive; runnable engine with fake providers; agent steps in a sandbox) | Done 2026-11-02 to 2026-11-03, merged at `9279026`. Results in `docs/build/m0-results.md` to `m4-results.md`; LOG 71 to 90 approved, LOG 91 to 106 await review. State, access and next steps in `docs/build/handover-2026-11-03.md` |
+| SP1 scenario flake on CI, then M5 (source control, testing and the first real ticket) | **Next** |
 
 ## 7. How to resume
 
