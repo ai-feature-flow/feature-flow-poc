@@ -199,7 +199,7 @@ planned approach (`archive/docs/01` section 4.7).
 
 | Store | Holds | Technology by profile |
 |---|---|---|
-| Temporal state | References and small summaries only: plan revision, positions, step outcomes and outputs, a capped findings summary, attempts | Temporal |
+| Temporal state | References and small summaries only: plan revision, positions, step outcomes and outputs, a capped findings summary, attempts. The run's library snapshot is read into history once per history, at run start and after each continue-as-new (LOG 83) | Temporal |
 | Artifact store | Every artifact, every plan revision, rendered tasks, transcripts, logs, library content | Local filesystem; S3 or Azure Blob |
 | Record store | Runs, step runs, decisions, overrides, the findings ledger, evidence index, the timeline, cost | SQLite; Postgres |
 

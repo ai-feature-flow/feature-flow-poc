@@ -117,8 +117,8 @@ Replay works: Spike 1's nine recorded histories replay cleanly, and removing a
 version guard from Spike 3's interpreter change made a Spike 1 history fail
 replay (`archive/docs/15` section 7; `archive/docs/18` section 4). Every
 behaviour change to the interpreter is versioned with a Temporal patch marker.
-Recorded histories hold references only and pass a secret scan before they are
-committed.
+Recorded histories hold references and the run's library text, which is not
+secret (LOG 83). They pass a secret scan before they are committed.
 
 ### 4.2 Test types
 
@@ -166,10 +166,10 @@ expect:
 | `expect.path` or `expect.path_includes` | The steps executed, exactly or as a subsequence. For a `parallel`, branch paths are given separately, without asserting interleaving |
 | `expect.status` | The final run status, or `running` |
 | `expect.validation_errors` | Check numbers expected to block |
-| `expand` | Pending review (LOG 75): the items each `plan.expand` step reads |
-| `expect.executions`, `expect.escalated`, `expect.clean_up` | Pending review (LOG 75): how many times a step ran; the steps with an open intervention when the run settles; the steps a `clean_up` route reset the branch for |
+| `expand` | LOG 75: the items each `plan.expand` step reads |
+| `expect.executions`, `expect.escalated`, `expect.clean_up` | LOG 75: how many times a step ran; the steps with an open intervention when the run settles; the steps a `clean_up` route reset the branch for |
 
-Pending review (LOG 75): a list's last entry applies to every later visit; a
+LOG 75: a list's last entry applies to every later visit; a
 `findings.<name>` list gives one value per route evaluation that reads the
 name; an output the file does not give takes its type's zero value, and one
 given as `~` is not reported; a work error fails `times` executions; steps

@@ -1,0 +1,9 @@
+# SP1's scenario as a library (docs/spikes/sp1-results.md): a parent with child runs, open decisions and
+# a stream of short actions, for the continue-as-new integration test.
+name: sp1
+version: 0.1.0
+description: Templates for the M3 continue-as-new test, rewritten from spikes/04-continue-as-new
+requires:
+  plan_schema: 1
+dependencies:
+  - { name: std, version: ">=0.1.0" }

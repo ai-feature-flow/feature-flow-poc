@@ -258,12 +258,15 @@ public sealed partial class RunCore
 
     string? Exhausted(Step step, StepRecord record)
     {
-        if (record.AttemptsUsed >= Allowance(step))
-            return $"{record.AttemptsUsed} of {Allowance(step)} attempts used";
-        if (IsMerge(step) && record.RacesUsed >= RaceAllowance(step))
-            return $"{record.RacesUsed} of {RaceAllowance(step)} races lost (limits.races)";
-        if (State.RunAttempts >= Options.RunCeiling)
-            return $"the run ceiling of {Options.RunCeiling} attempts is reached";
+        var allowance = Allowance(step) + record.AttemptsGranted;
+        if (record.AttemptsUsed >= allowance)
+            return $"{record.AttemptsUsed} of {allowance} attempts used";
+        var races = RaceAllowance(step) + record.AttemptsGranted;
+        if (IsMerge(step) && record.RacesUsed >= races)
+            return $"{record.RacesUsed} of {races} races lost (limits.races)";
+        var ceiling = Options.RunCeiling + State.RunCeilingGranted;
+        if (State.RunAttempts >= ceiling)
+            return $"the run ceiling of {ceiling} attempts is reached";
         return null;
     }
 
@@ -329,8 +332,23 @@ public sealed partial class RunCore
             PatchProposed p => ProposeOutside(p),
             PatchAnswered p => PatchDecision(p),
             FindingsChanged f => SetFindings(f),
+            InterventionAnswered i => Recover(i),
+            RunAborted a => Abort(a),
+            StepCannotAnswer s => CannotAnswer(s),
+            ChildPatchProposed p => ProposeFromChild(p),
             _ => ApplyResult.Refused($"unknown input {input.GetType().Name}"),
         };
+    }
+
+    /// <summary>
+    /// The commands produced since the last call, without entering any ready step. A shell that is draining for
+    /// continue-as-new calls this instead of <see cref="Advance"/>, so it starts nothing new (docs/02 section 3).
+    /// </summary>
+    public IReadOnlyList<Command> Flush()
+    {
+        var commands = outbox.ToList();
+        outbox.Clear();
+        return commands;
     }
 
     ApplyResult SetFindings(FindingsChanged f)
@@ -350,6 +368,29 @@ public sealed partial class RunCore
         var outputs = CheckOutputs(step, c, errors);
         if (errors.Count > 0)
             return new ApplyResult(false, errors);
+
+        if (c.PatchToParent)
+        {
+            // docs/03 section 9.4: the patch goes to the parent, and this step ends as reported.
+            if (c.Patch is null)
+                return ApplyResult.Refused($"{step.Id}: a patch to the parent needs a patch");
+            if (step.Agent?.Planning?.Targets.Contains("parent") != true)
+                return ApplyResult.Refused($"{step.Id}: the step has no planning authority over its parent's plan (planning.targets)");
+            if (Run.ParentId is null)
+                return ApplyResult.Refused($"{step.Id}: this run has no parent to send a patch to");
+            var toParent = c.Patch with { ProposedBy = new Proposer("agent", step.Id) };
+            c = c with { Patch = null, PatchToParent = false };
+            var recordParent = Record(step.Id);
+            State.InFlight.Remove(step.Id);
+            foreach (var (name, value) in outputs)
+                recordParent.Current!.Outputs[name] = value;
+            foreach (var (name, reference) in c.Artifacts ?? new Dictionary<string, string>())
+                recordParent.Current!.Artifacts[name] = reference;
+            Trace("patch_to_parent", step.Id, toParent.Reason);
+            outbox.Add(new SendPatchToParent(step.Id, toParent));
+            Finish(step, recordParent, c.Outcome);
+            return ApplyResult.Ok;
+        }
 
         // The proposer is the reporting step's form, never the document's claim (B2 of the M2 review).
         var patch = c.Patch is null ? null : c.Patch with { ProposedBy = new Proposer(ProposerOf(step), step.Id) };

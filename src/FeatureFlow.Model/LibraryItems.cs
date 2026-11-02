@@ -28,6 +28,12 @@ public sealed record ArtifactTypeItem(string Name, string Format, bool Evidence,
 
 public sealed record DecisionTypeItem(string Name, string? Description, SourceLocation Location)
 {
+    /// <summary>
+    /// <c>default_approval.roles</c>: who may answer when no organisation approval rule matches the type
+    /// (docs/05 section 4). The default's <c>auto</c>, <c>min_count</c> and <c>from_chat</c> are not applied yet.
+    /// </summary>
+    public IReadOnlyList<string> DefaultRoles { get; init; } = [];
+
     /// <summary>A declared name may be a pattern with <c>*</c> standing for one or more characters (docs/05 section 4).</summary>
     public bool Matches(string type)
     {
@@ -224,9 +230,10 @@ public static class LibraryItemReader
             {
                 var name = dt.String("name", required: true);
                 var description = dt.String("description");
+                IReadOnlyList<string> roles = [];
                 if (MapReader.Of(dt.Node("default_approval"), d, "default_approval") is { } a)
                 {
-                    a.StringList("roles");
+                    roles = a.StringList("roles");
                     a.Int("min_count");
                     a.Bool("auto");
                     a.Bool("from_chat");
@@ -235,7 +242,7 @@ public static class LibraryItemReader
 
                 dt.Finish();
                 if (name is not null)
-                    list.Add(new DecisionTypeItem(name, description, item.Location));
+                    list.Add(new DecisionTypeItem(name, description, item.Location) { DefaultRoles = roles });
             }
 
         r.Finish();

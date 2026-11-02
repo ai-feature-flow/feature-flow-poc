@@ -67,6 +67,14 @@ public sealed record RunOptions
 
     /// <summary>Whether organisation policy allows auto-resolution for a decision type (docs/04 section 4.2). Default: never.</summary>
     public Func<string, bool> AutoResolve { get; init; } = _ => false;
+
+    /// <summary>
+    /// The organisation's hard ceilings (F4; docs/05 section 5): an attempt grant that takes a step's allowance or
+    /// the run ceiling above them needs an administrator (<c>grant_attempts_beyond</c>). Null: none.
+    /// </summary>
+    public long? HardStepCeiling { get; init; }
+
+    public long? HardRunCeiling { get; init; }
 }
 
 /// <summary>Something the core asks the shell to do. The Temporal workflow (M3) or the re-drive runner carries it out.</summary>
@@ -89,6 +97,9 @@ public sealed record CleanUp(string StepId) : Command;
 
 public sealed record EndRun(RunStatus Status) : Command;
 
+/// <summary>A child run's agent step proposed a patch to the parent's plan (docs/03 section 9.4): the shell signals the parent.</summary>
+public sealed record SendPatchToParent(string StepId, PatchDocument Patch) : Command;
+
 /// <summary>Something that happened, given to the core to apply.</summary>
 public abstract record RunInput;
 
@@ -101,7 +112,8 @@ public sealed record StepCompleted(
     string Outcome,
     IReadOnlyDictionary<string, object?>? Outputs = null,
     IReadOnlyDictionary<string, string>? Artifacts = null,
-    PatchDocument? Patch = null) : RunInput;
+    PatchDocument? Patch = null,
+    bool PatchToParent = false) : RunInput;
 
 public enum ErrorClass
 {
@@ -123,6 +135,47 @@ public sealed record DecisionAnswered(string StepId, string Outcome) : RunInput;
 public sealed record PatchProposed(PatchDocument Patch, Proposer By) : RunInput;
 
 public sealed record PatchAnswered(string WaitId, bool Approve) : RunInput;
+
+/// <summary>The recovery actions that answer an intervention (docs/01 section 7.2).</summary>
+public enum RecoveryKind
+{
+    /// <summary>Run the stopped step again.</summary>
+    Retry,
+
+    /// <summary>Run a named step next, optionally with <c>clean_up</c>.</summary>
+    GoTo,
+
+    /// <summary>Run a named planning step next.</summary>
+    Replan,
+
+    /// <summary>Add attempts to the stopped step's allowance, then retry.</summary>
+    GrantAttempts,
+
+    /// <summary>End the run with a chosen status.</summary>
+    End,
+}
+
+/// <summary>A recovery action with its arguments: the step for go to and re-plan, the attempts to grant, the status to end with.</summary>
+/// <remarks><see cref="BeyondHardCeiling"/> is set by the shell when the authenticated actor may grant beyond the hard ceiling (an administrator).</remarks>
+public sealed record Recovery(RecoveryKind Kind, string? StepId = null, bool CleanUp = false, long Attempts = 0, RunStatus? Status = null, bool BeyondHardCeiling = false);
+
+/// <summary>A person answered an intervention with a recovery action. The shell names the actor; the core does not need it.</summary>
+public sealed record InterventionAnswered(string WaitId, Recovery Action) : RunInput;
+
+/// <summary>A person stopped the run (docs/05 section 5, <c>abort</c>): it ends <c>aborted</c>.</summary>
+public sealed record RunAborted(string Reason) : RunInput;
+
+/// <summary>
+/// A running step cannot produce a trustworthy outcome, for example its inputs cannot be evaluated: it stops and
+/// an intervention is raised instead of a guessed outcome (docs/04 section 1, "cannot answer").
+/// </summary>
+public sealed record StepCannotAnswer(string StepId, string Reason) : RunInput;
+
+/// <summary>
+/// A child run proposed a patch to this run's plan (docs/03 section 9.4). <see cref="ChildStepId"/> is the
+/// <c>run.child</c> step that started the child; <see cref="ProposerStepId"/> is the agent step in the child.
+/// </summary>
+public sealed record ChildPatchProposed(string ChildStepId, PatchDocument Patch, string ProposerStepId) : RunInput;
 
 /// <summary>The counts of the <c>findings</c> namespace, from the ledger (docs/03 section 5.3).</summary>
 public sealed record FindingsChanged(IReadOnlyDictionary<string, long> Counts) : RunInput;
@@ -162,7 +215,7 @@ public enum WaitKind
 }
 
 /// <summary>A durable wait for a person: an open decision, an intervention or a patch approval.</summary>
-public sealed record OpenWait(string Id, WaitKind Kind, string StepId, string? Outcome, string Reason, PatchDocument? Patch = null);
+public sealed record OpenWait(string Id, WaitKind Kind, string StepId, string? Outcome, string Reason, PatchDocument? Patch = null, bool FromChild = false);
 
 /// <summary>Reads the <c>findings</c> namespace when a route is evaluated; each route evaluation reads each name once.</summary>
 public interface IFindingsSource

@@ -1,2 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\FeatureFlow.Providers.Abstractions\FeatureFlow.Providers.Abstractions.csproj" />
+    <ProjectReference Include="..\..\FeatureFlow.Model\FeatureFlow.Model.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+
 </Project>

@@ -122,6 +122,62 @@ public static class PatchReader
         return op is null || target is null ? null : new PatchOp(op, target, c.Map.Location, position, step, field, value, onOther, branch);
     }
 
+    /// <summary>
+    /// Writes a patch as a document <see cref="Read"/> reads back to the same patch, apart from source positions.
+    /// Used to carry patches in a run's state and in signals.
+    /// </summary>
+    public static string Write(PatchDocument patch)
+    {
+        static string Q(string? s) => s is null ? "null" : System.Text.Json.JsonSerializer.Serialize(s);
+        var changes = patch.Changes.Select(op =>
+        {
+            var fields = new List<string> { $"\"op\": {Q(op.Op)}" };
+            if (op.Op == "insert")
+                fields.Add($"{Q(op.Position ?? "after")}: {Q(op.Target)}");
+            else
+                fields.Add($"\"target\": {Q(op.Target)}");
+            if (op.Step is not null)
+                fields.Add($"\"step\": {YamlWriter.Write(op.Step)}");
+            if (op.Field is not null)
+                fields.Add($"\"field\": {Q(op.Field)}");
+            if (op.Value is not null)
+                fields.Add($"\"value\": {YamlWriter.Write(op.Value)}");
+            if (op.OnOther is not null)
+                fields.Add($"\"on_other\": {Q(op.OnOther)}");
+            if (op.Branch is not null)
+                fields.Add($"\"branch\": {Q(op.Branch)}");
+            return "{" + string.Join(", ", fields) + "}";
+        });
+        var proposer = $"{{\"type\": {Q(patch.ProposedBy.Type)}" + (patch.ProposedBy.StepId is { } id ? $", \"step_id\": {Q(id)}" : "") + "}";
+        var metadata = new List<string> { $"\"proposed_by\": {proposer}" };
+        if (patch.RunId is not null)
+            metadata.Add($"\"run_id\": {Q(patch.RunId)}");
+        if (patch.Reason is not null)
+            metadata.Add($"\"reason\": {Q(patch.Reason)}");
+        var fieldsOut = new List<string>
+        {
+            "\"api_version\": \"feature-flow/v1\"",
+            "\"kind\": \"patch\"",
+            "\"metadata\": {" + string.Join(", ", metadata) + "}",
+            $"\"base_revision\": {patch.BaseRevision.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+        };
+        if (patch.ResumeAt is not null)
+            fieldsOut.Add($"\"resume_at\": {Q(patch.ResumeAt)}");
+        fieldsOut.Add("\"changes\": [" + string.Join(", ", changes) + "]");
+        return "{" + string.Join(", ", fieldsOut) + "}";
+    }
+
+    /// <summary>Reads a patch <see cref="Write"/> wrote; throws on text that does not read, which only a programming error can produce.</summary>
+    public static PatchDocument ReadWritten(string text)
+    {
+        var d = new DiagnosticBag();
+        var node = YamlText.Parse(text, "patch", d);
+        var patch = node is null ? null : Read(node, d);
+        if (patch is null || d.HasErrors)
+            throw new FormatException("a carried patch does not read: " + string.Join("; ", d));
+        return patch;
+    }
+
     static YMap? StepMap(MapReader c, DiagnosticBag d)
     {
         var node = c.Required("step");
