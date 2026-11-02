@@ -78,12 +78,26 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
     /// started from, recorded when it last touched the repository, by an expected-revision push (M3 follow-up 5). What
     /// the reset removes is kept under <c>refs/feature-flow/superseded/...</c>, and the hidden references of the run's
     /// agent steps that build beyond that revision are moved back to it, so a re-run step does not pick up discarded
-    /// commits (LOG 96). A step that never touched a repository resets nothing.
+    /// commits (LOG 96). A step that never touched a repository resets nothing. A work error (a refused push) is
+    /// returned, so the run asks a person; only infrastructure errors are thrown, to be retried.
     /// </summary>
-    public async Task<IReadOnlyList<string>> CleanUpAsync(string runId, string stepId, int executions, IReadOnlyList<string> repositories, string workBranch,
+    public async Task<CleanUpResult> CleanUpAsync(string runId, string stepId, int executions, IReadOnlyList<string> repositories, string workBranch,
         IReadOnlyList<string> stepIds, CancellationToken ct)
     {
         var events = new List<string>();
+        try
+        {
+            return new CleanUpResult(await ResetAsync(runId, stepId, executions, repositories, workBranch, stepIds, events, ct), null);
+        }
+        catch (ActionStop stop)
+        {
+            return new CleanUpResult(events, stop.Message);
+        }
+    }
+
+    async Task<IReadOnlyList<string>> ResetAsync(string runId, string stepId, int executions, IReadOnlyList<string> repositories, string workBranch,
+        IReadOnlyList<string> stepIds, List<string> events, CancellationToken ct)
+    {
         if (providers.ForRun("vcs", false) is not IVcsProvider vcs)
             return ["clean_up: no VCS provider is configured; nothing to reset"];
         var starts = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -148,6 +162,9 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
 
     public static string Short(string revision) => revision.Length > 10 ? revision[..10] : revision;
 }
+
+/// <summary>What a <c>clean_up</c> reset did, and the work error that stopped it, if one did.</summary>
+public sealed record CleanUpResult(IReadOnlyList<string> Events, string? Error);
 
 /// <summary>How often actions poll, and their default limits. Tests shorten them.</summary>
 public sealed record ActionOptions(TimeSpan PollInterval, TimeSpan CiPollInterval, TimeSpan CommandTimeout)

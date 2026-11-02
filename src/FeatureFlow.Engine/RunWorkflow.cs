@@ -398,9 +398,19 @@ public class RunWorkflow
         }
     }
 
+    /// <summary>Steps whose <c>clean_up</c> reset failed with a work error, set just before their start in the same batch.</summary>
+    readonly Dictionary<string, string> cleanUpFailures = new(StringComparer.Ordinal);
+
     async Task StartStepAsync(StartStep s)
     {
         var step = core!.StepById(s.StepId)!;
+        if (cleanUpFailures.Remove(step.Id, out var cleanUpError))
+        {
+            core.Apply(new StepCannotAnswer(step.Id, $"its clean_up could not reset the work branch: {cleanUpError}"));
+            dirty = true;
+            return;
+        }
+
         Dictionary<string, object?> inputs;
         try
         {
@@ -524,9 +534,12 @@ public class RunWorkflow
         BeginActivity();
         try
         {
-            var events = await Workflow.ExecuteActivityAsync((RunActivities a) => a.CleanUpAsync(call), Light);
-            foreach (var e in events)
+            var result = await Workflow.ExecuteActivityAsync((RunActivities a) => a.CleanUpAsync(call), Light);
+            foreach (var e in result.Events)
                 core.State.Trace.Add(new TraceEntry("clean_up", stepId, e));
+            if (result.Error is { } error)
+                // The target step does not run on a branch that was not reset: it raises an intervention when it starts.
+                cleanUpFailures[stepId] = error;
         }
         finally
         {

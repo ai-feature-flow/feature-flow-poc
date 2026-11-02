@@ -261,6 +261,19 @@ CONTROLS = [
         "tests": [(ENGINE, None)],
         "expect": [("Check_31_refuses_a_poll_interval_under_five_seconds", 3)],
     },
+    {
+        "name": "review 9: a clean_up work error is thrown, to be retried for ever",
+        "edits": [(ACTIONS, "        catch (ActionStop stop)\n        {\n            return new CleanUpResult(events, stop.Message);",
+                   "        catch (ActionStop stop) when (stop.Kind == \"never\")\n        {\n            return new CleanUpResult(events, stop.Message);")],
+        "tests": [(ENGINE, None)],
+        "expect": ["A_clean_up_whose_push_is_refused_returns_the_error_and_moves_nothing"],
+    },
+    {
+        "name": "review 8 B3: clean_up resets to where the first execution started, not the latest",
+        "edits": [(ACTIONS, "for (var n = executions; n >= 1 && starts.Count == 0; n--)", "for (var n = 1; n <= executions && starts.Count == 0; n++)")],
+        "tests": [(ENGINE, None)],
+        "expect": ["A_clean_up_resets_to_where_the_latest_execution_of_the_step_started"],
+    },
 ]
 
 

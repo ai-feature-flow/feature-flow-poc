@@ -216,17 +216,18 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
 
     /// <summary>A <c>clean_up</c> route's branch reset before its target step runs again (docs/03 section 4.1; M3 follow-up 5).</summary>
     [Activity]
-    public async Task<IReadOnlyList<string>> CleanUpAsync(CleanUpCall call)
+    public async Task<CleanUpResult> CleanUpAsync(CleanUpCall call)
     {
         if (call.DryRun)
-            return [$"clean_up: {call.StepId} (dry run: nothing is reset)"];
+            return new CleanUpResult([$"clean_up: {call.StepId} (dry run: nothing is reset)"], null);
         try
         {
             return await actions.CleanUpAsync(call.RunId, call.StepId, call.Executions, call.Repositories, call.WorkBranch, call.StepIds,
                 ActivityExecutionContext.Current.CancellationToken);
         }
-        catch (Exception e) when (e is ActionInfrastructureException or ActionStop)
+        catch (ActionInfrastructureException e)
         {
+            // Only infrastructure is retried; a work error comes back in the result and the run asks a person.
             throw new ApplicationFailureException(e.Message, errorType: "infrastructure");
         }
     }

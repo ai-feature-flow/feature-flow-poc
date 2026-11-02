@@ -329,7 +329,7 @@ public sealed class SourceControlActionTests
         var hidden = $"refs/feature-flow/wip/{EngineActions.Safe(w.RunId)}/implement";
         w.Forge.SetReference(w.Repo, hidden, discarded);
 
-        var events = await w.Actions.CleanUpAsync(w.RunId, "plan", 1, [w.Repo.FullName], ActionWorld.WorkBranch, ["plan", "implement"], TestContext.Current.CancellationToken);
+        var events = (await w.Actions.CleanUpAsync(w.RunId, "plan", 1, [w.Repo.FullName], ActionWorld.WorkBranch, ["plan", "implement"], TestContext.Current.CancellationToken)).Events;
 
         Assert.Equal(start, w.Work);
         Assert.Equal(start, w.Forge.Resolve(w.Repo, hidden));
@@ -338,12 +338,57 @@ public sealed class SourceControlActionTests
     }
 
     [Fact]
+    public async Task A_clean_up_resets_to_where_the_latest_execution_of_the_step_started()
+    {
+        await using var w = new ActionWorld();
+        w.CommitWork("a.txt", "one");
+        await w.RunAsync("scm.catch_up", null, "plan");                 // execution 1 starts here
+        w.CommitWork("b.txt", "kept: before execution 2");
+        await w.RunAsync("scm.catch_up", null, "plan");                 // execution 2 starts here
+        var second = w.Work!;
+        w.CommitWork("c.txt", "discarded");
+
+        var result = await w.Actions.CleanUpAsync(w.RunId, "plan", 2, [w.Repo.FullName], ActionWorld.WorkBranch, ["plan"], TestContext.Current.CancellationToken);
+
+        Assert.Null(result.Error);
+        Assert.Equal(second, w.Work);
+    }
+
+    [Fact]
+    public async Task A_clean_up_whose_push_is_refused_returns_the_error_and_moves_nothing()
+    {
+        await using var w = new ActionWorld();
+        w.CommitWork("a.txt", "plan");
+        await w.RunAsync("scm.catch_up", null, "plan");
+        var discarded = w.CommitWork("b.txt", "work to discard");
+        w.Forge.Fail("vcs.Push", new ProviderError("validation_failed", "the remote refuses the push"), times: 5);
+
+        var result = await w.Actions.CleanUpAsync(w.RunId, "plan", 1, [w.Repo.FullName], ActionWorld.WorkBranch, ["plan"], TestContext.Current.CancellationToken);
+
+        Assert.Contains("the remote refuses the push", result.Error, StringComparison.Ordinal);
+        Assert.Equal(discarded, w.Work);
+    }
+
+    [Fact]
+    public async Task A_clean_up_whose_remote_is_unreachable_is_retried()
+    {
+        await using var w = new ActionWorld();
+        w.CommitWork("a.txt", "plan");
+        await w.RunAsync("scm.catch_up", null, "plan");
+        w.CommitWork("b.txt", "work to discard");
+        w.Forge.Fail("vcs.Resolve", new ProviderError("unreachable", "down"));
+
+        await Assert.ThrowsAsync<ActionInfrastructureException>(() =>
+            w.Actions.CleanUpAsync(w.RunId, "plan", 1, [w.Repo.FullName], ActionWorld.WorkBranch, ["plan"], TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public async Task A_clean_up_for_a_step_that_never_touched_the_repository_resets_nothing()
     {
         await using var w = new ActionWorld();
         var head = w.CommitWork("a.txt", "work");
 
-        var events = await w.Actions.CleanUpAsync(w.RunId, "approve_spec", 1, [w.Repo.FullName], ActionWorld.WorkBranch, [], TestContext.Current.CancellationToken);
+        var events = (await w.Actions.CleanUpAsync(w.RunId, "approve_spec", 1, [w.Repo.FullName], ActionWorld.WorkBranch, [], TestContext.Current.CancellationToken)).Events;
 
         Assert.Equal(head, w.Work);
         Assert.Contains("recorded no start revision", events.Single(), StringComparison.Ordinal);
