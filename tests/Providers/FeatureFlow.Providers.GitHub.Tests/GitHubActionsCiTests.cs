@@ -143,6 +143,24 @@ public sealed class GitHubActionsCiTests : IDisposable
     }
 
     [Fact]
+    public async Task A_status_poll_that_sees_the_run_completed_removes_its_trigger_tag_and_one_that_does_not_leaves_it()
+    {
+        var tag = GitHubActionsCi.TagFor("key-1");
+        github.On(Get, "~/actions/runs/42", 200, $$$"""{"status":"completed","conclusion":"success","head_branch":"{{{tag}}}"}""")
+            .On(Get, "~/actions/runs/43", 200, $$$"""{"status":"in_progress","conclusion":null,"head_branch":"{{{tag}}}"}""")
+            .On(Get, "~/actions/runs/44", 200, """{"status":"completed","conclusion":"success","head_branch":"main"}""")
+            .On(Delete, $"~/git/refs/tags/{tag}", 422, """{"message":"Reference does not exist"}""");
+
+        (await ci.GetRunStatusAsync(new CiRunRef(Repo, "43", Sha), Ct)).Unwrap();
+        Assert.Empty(github.Called(Delete, "~/git/refs"));
+        (await ci.GetRunStatusAsync(new CiRunRef(Repo, "44", Sha), Ct)).Unwrap();
+        Assert.Empty(github.Called(Delete, "~/git/refs"));
+        // Already gone (a second poll, or the results were read) is fine.
+        Assert.Equal(CheckStates.Completed, (await ci.GetRunStatusAsync(new CiRunRef(Repo, "42", Sha), Ct)).Unwrap().State);
+        Assert.Single(github.Called(Delete, $"~/git/refs/tags/{tag}"));
+    }
+
+    [Fact]
     public async Task An_unknown_run_is_not_found()
     {
         github.On(Get, "~/actions/runs/9", 404, """{"message":"Not Found"}""");

@@ -14,7 +14,9 @@ namespace FeatureFlow.Providers.GitHub;
 /// at the revision, because a dispatch needs a reference, not a SHA: the run then builds that revision with the
 /// workflow file as it is there, and its <c>head_branch</c> is the tag, so a retried trigger finds it. Creating the
 /// tag is the claim: a retry that finds the tag looks for the run before dispatching. The tag is deleted once the
-/// run's results are read. Runs are polled, never awaited.
+/// run is seen completed, by a status poll or a read of its results. Runs are polled, never awaited. (Without a tag
+/// a retry could not find its run reliably: a run does not expose its inputs, and the run list lags a dispatch by
+/// seconds; LOG 112.)
 /// </summary>
 public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> store) : ICiProvider
 {
@@ -137,7 +139,19 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
         var raw = await RunAsync(run, cancellationToken);
         if (!raw.Ok)
             return new ProviderResult<CiRunStatus>(null, raw.Error);
-        return ProviderResult<CiRunStatus>.Success(Status(raw.Value!));
+        var status = Status(raw.Value!);
+        if (status.State == CheckStates.Completed && await RemoveTagAsync(run, raw.Value!, cancellationToken) is { } failed)
+            return new ProviderResult<CiRunStatus>(null, failed);
+        return ProviderResult<CiRunStatus>.Success(status);
+    }
+
+    /// <summary>Deletes the trigger tag of a completed run (204); a tag already gone (404, or 422 from GitHub) is fine.</summary>
+    async Task<ProviderError?> RemoveTagAsync(CiRunRef run, JsonNode raw, CancellationToken cancellationToken)
+    {
+        if (raw["head_branch"]?.GetValue<string>() is not { } branch || !branch.StartsWith(TagPrefix, StringComparison.Ordinal))
+            return null;
+        var deleted = await Send(run.Repo, HttpMethod.Delete, $"/git/refs/tags/{GitHubApi.EscapePath(branch)}", null, cancellationToken);
+        return !deleted.Ok && deleted.Error!.Reason is not ("not_found" or "validation_failed") ? deleted.Error : null;
     }
 
     static CiRunStatus Status(JsonNode run) => run["status"]?.GetValue<string>() switch
@@ -190,12 +204,8 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
             }
         }
 
-        if (raw.Value!["head_branch"]?.GetValue<string>() is { } branch && branch.StartsWith(TagPrefix, StringComparison.Ordinal))
-        {
-            var deleted = await Send(run.Repo, HttpMethod.Delete, $"/git/refs/tags/{GitHubApi.EscapePath(branch)}", null, cancellationToken);
-            if (!deleted.Ok && deleted.Error!.Reason is not ("not_found" or "validation_failed"))
-                return new ProviderResult<CiRunResult>(null, deleted.Error);
-        }
+        if (await RemoveTagAsync(run, raw.Value!, cancellationToken) is { } failed)
+            return new ProviderResult<CiRunResult>(null, failed);
 
         return ProviderResult<CiRunResult>.Success(new CiRunResult(status.Conclusion!,
             jobs.Value!.Select(j => new CiJobResult(j["name"]!.GetValue<string>(), GitHubCodeHost.Conclusion(j["conclusion"]?.GetValue<string>()))).ToList(), files));
