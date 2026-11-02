@@ -9,7 +9,14 @@ public static class GitHubProviders
     public static IReadOnlyList<ProviderFactory> Factories { get; } =
     [
         new("credential_broker", "github_app", ["app_id", "installation_id", "key_ref", "key_path", "repositories", "api_base"], Broker),
+        new("code_host", "github", ["api_base"], c => new GitHubCodeHost(Api(c))),
+        new("ci", "github_actions", ["api_base"], c => new GitHubActionsCi(Api(c),
+            () => c.Provider("artifact_store") as IArtifactStoreProvider ?? throw new InvalidOperationException("the GitHub Actions provider needs an artifact store"))),
     ];
+
+    /// <summary>The code host and CI providers take their tokens from the default credential broker, never from configuration.</summary>
+    static GitHubApi Api(ProviderContext c) =>
+        new(() => c.Provider("credential_broker") as ICredentialBroker, apiBase: c.Setting("api_base") ?? "https://api.github.com");
 
     /// <summary>
     /// The App's key is a secret reference (<c>key_ref</c>, resolved by the secrets provider) or a key file outside

@@ -2,6 +2,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\Providers\FeatureFlow.Providers.GitHub\FeatureFlow.Providers.GitHub.csproj" />
+    <ProjectReference Include="..\..\..\src\Providers\FeatureFlow.Providers.Local\FeatureFlow.Providers.Local.csproj" />
+    <ProjectReference Include="..\..\..\src\FeatureFlow.Providers.Contracts\FeatureFlow.Providers.Contracts.csproj" />
   </ItemGroup>
 
 </Project>
