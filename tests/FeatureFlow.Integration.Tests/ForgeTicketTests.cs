@@ -94,7 +94,7 @@ public class ForgeTicketTests
         Assert.Contains(trace, d => d.Contains("tier unit at", StringComparison.Ordinal) && d.Contains("2 passed, 0 failed", StringComparison.Ordinal));
         Assert.Contains(trace, d => d.Contains("pull request acme/api#1 from ff/ticket/T-1 into main", StringComparison.Ordinal));
         Assert.Contains(trace, d => d.StartsWith("merged ", StringComparison.Ordinal) && d.Contains("into main", StringComparison.Ordinal));
-        Assert.Equal(0, await h.WorkflowTaskFailuresAsync(id));
+        Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
     }
 
     [Fact]

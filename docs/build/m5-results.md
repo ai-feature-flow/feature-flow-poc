@@ -44,7 +44,7 @@ Branch `m5-actions`, from `m5@1189a6b` (the interfaces and in-memory fakes, LOG 
 | Manifest reader, patterns, `engine_may_merge` | `Model.Tests/ManifestTests` (17 cases) | Pass |
 | Unchanged behaviour | `TicketRunTests` (5), `EpicRunTests`, `StepFailureTests`, `ContinueAsNewTests`; replay tests | Pass |
 
-Counts: default suite **516 passed, 0 failed** (431 at `1189a6b`). Integration tests were run locally on a dev
+Counts: default suite **518 passed, 0 failed**, rebased on `m5@5af8fe8` (431 at `1189a6b`). Integration tests were run locally on a dev
 server, not the Docker agent tests: the agent step's change with no code host keeps M4's behaviour, and CI runs them.
 
 The engine tests found one bug of their own: `ci.checks` read the clock before awaiting the wait's start time,
