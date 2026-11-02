@@ -1,0 +1,34 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: consumes_notes
+  level: ticket
+  description: >-
+    A step that may skip producing its notes, then one that consumes them without
+    marking them optional: check 32 stops the second when the first skipped.
+
+artifact_types:
+  - m5:artifact_types/notes
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: write
+    agent:
+      role: std:roles/implementer
+      task: m5:tasks/note
+    produces:
+      written: [{ name: notes, type: m5:artifact_types/notes }]
+    outcomes: { written: success, skipped: success }
+    routes: { written: read, skipped: read }
+
+  - id: read
+    agent:
+      role: std:roles/reviewer
+      task: m5:tasks/note
+    consumes: [{ name: notes }]
+    outcomes: { done: success }
+    routes:
+      done: { end: completed }

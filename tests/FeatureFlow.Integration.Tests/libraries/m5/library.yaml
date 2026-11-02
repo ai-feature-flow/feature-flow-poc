@@ -1,0 +1,8 @@
+# Templates for the M5 engine tests that need a plan std does not have: check 32 (consumed artifacts exist).
+name: m5
+version: 0.1.0
+description: Templates for the M5 step-start check tests (docs/11, M5)
+requires:
+  plan_schema: 1
+dependencies:
+  - { name: std, version: ">=0.1.0" }

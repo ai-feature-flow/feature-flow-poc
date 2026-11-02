@@ -439,7 +439,7 @@ public class RunWorkflow
             }
             catch (EvaluationException e)
             {
-                core.Apply(new StepCannotAnswer(step.Id, "its repository or a prompt cannot be evaluated: " + e.Message));
+                core.Apply(new StepCannotAnswer(step.Id, "a prompt it names cannot be rendered: " + e.Message));
                 dirty = true;
                 return;
             }
@@ -492,8 +492,18 @@ public class RunWorkflow
                 pullRequests.Add(pr);
         }
 
-        return new ActionScope(input.Repositories, core.ResolveRepository(step.Id), core.WorkBranch(), input.ParentBranch, artifacts, pullRequests,
-            policy?.EngineMayMerge ?? []);
+        string? repository;
+        try
+        {
+            repository = core.ResolveRepository(step.Id);
+        }
+        catch (EvaluationException)
+        {
+            // A run with no repositories (the stand-in serves its actions): the action says so if it needs one.
+            repository = null;
+        }
+
+        return new ActionScope(input.Repositories, repository, core.WorkBranch(), input.ParentBranch, artifacts, pullRequests, policy?.EngineMayMerge ?? []);
     }
 
     /// <summary>
