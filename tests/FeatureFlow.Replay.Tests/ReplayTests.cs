@@ -32,7 +32,9 @@ public class ReplayTests
     public async Task A_recorded_history_replays_against_the_current_workflow(string name)
     {
         var json = await File.ReadAllTextAsync(Path.Combine(HistoryFolder, name + ".json"), TestContext.Current.CancellationToken);
-        var replayer = new WorkflowReplayer(new WorkflowReplayerOptions().AddWorkflow<RunWorkflow>());
+        // Replay checks determinism, not timing: debug mode turns off the 2 s deadlock detector, which fired on a
+        // loaded CI runner (docs/build/m4-results.md follow-up 14).
+        var replayer = new WorkflowReplayer(new WorkflowReplayerOptions { DebugMode = true }.AddWorkflow<RunWorkflow>());
 
         var result = await replayer.ReplayWorkflowAsync(WorkflowHistory.FromJson(WorkflowIdOf(json), json), throwOnReplayFailure: false, TestContext.Current.CancellationToken);
 

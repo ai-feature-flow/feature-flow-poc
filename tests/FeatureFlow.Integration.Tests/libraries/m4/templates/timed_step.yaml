@@ -4,7 +4,8 @@ metadata:
   name: timed_step
   level: ticket
   description: >-
-    The agent step of agent_step with a one-minute timeout, for the out-of-time test.
+    The agent step of agent_step with a one-minute timeout and one question at the default question timeout,
+    for the out-of-time tests.
   branch_pattern: "ff/ticket/{{ params.ticket_id }}"
 
 artifact_types:
@@ -30,6 +31,6 @@ steps:
       implemented: [{ name: notes, type: m4:artifact_types/notes }]
     outputs: { answer: { type: string } }
     outcomes: { implemented: success, blocked: blocked }
-    limits: { attempts: 1, timeout: 1m }
+    limits: { attempts: 1, timeout: 1m, questions: { max: 1 } }
     routes:
       implemented: { end: completed }

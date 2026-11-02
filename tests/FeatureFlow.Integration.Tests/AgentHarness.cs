@@ -68,7 +68,8 @@ public sealed record AgentHarnessOptions
     /// <summary>Whether the agent worker runs in a host of its own, so a test can restart it alone (SP2).</summary>
     public bool SeparateAgentWorker { get; init; }
 
-    public string CommitInterval { get; init; } = "2s";
+    /// <summary>How often the agent's commits are pushed; a fixed default in production (LOG 91).</summary>
+    public TimeSpan CommitInterval { get; init; } = TimeSpan.FromSeconds(2);
 
     /// <summary>How long the hook command holds a call while no replica answers (R19).</summary>
     public int HookHoldSeconds { get; init; } = 60;
@@ -96,8 +97,17 @@ public sealed record AgentHarnessOptions
 /// </summary>
 public sealed class AgentHarness : IAsyncDisposable
 {
-    public static IEnumerable<ProviderFactory> Factories => LocalProviders.Factories.Concat(DockerProviders.Factories).Concat(ClaudeCodeProviders.Factories)
+    /// <summary>The providers, with Claude Code's fixed defaults (LOG 91) shortened for the tests.</summary>
+    static IEnumerable<ProviderFactory> FactoriesFor(AgentHarnessOptions options) => LocalProviders.Factories.Concat(DockerProviders.Factories)
+        .Append(ClaudeCodeProviders.Runtime(o => o with
+        {
+            MaxRetries = options.Live ? 2 : 0,
+            HookHold = TimeSpan.FromSeconds(options.HookHoldSeconds),
+            ClientRetry = TimeSpan.FromSeconds(options.ClientRetrySeconds),
+        }))
         .Concat(GitProviders.Factories).Concat(GitHubProviders.Factories);
+
+    IEnumerable<ProviderFactory> Factories { get; init; } = [];
 
     public const string FixtureRepository = "ai-feature-flow/feature-flow-example";
 
@@ -128,7 +138,7 @@ public sealed class AgentHarness : IAsyncDisposable
         var client = await AgentWorld.SandboxClientAsync();
         var folder = IOPath.Combine(IOPath.GetTempPath(), $"ff-m4-{name}-{Guid.NewGuid():N}"[..40]);
         Directory.CreateDirectory(folder);
-        var h = new AgentHarness(folder) { Live = options.Live };
+        var h = new AgentHarness(folder) { Live = options.Live, Factories = FactoriesFor(options) };
         string vcs, broker = "", modelAccess, secretsFromEnvironment = "";
         if (options.Live)
         {
@@ -170,7 +180,6 @@ public sealed class AgentHarness : IAsyncDisposable
               listen: "http://0.0.0.0:{{h.AgentPort}}"
               urls: ["http://host.docker.internal:{{h.AgentPort}}"]
               token_key_ref: secrets/step_token_key
-              commit_interval: {{options.CommitInterval}}
               sandbox_client: "{{client}}"
             providers:
               artifact_store: { default: filesystem, instances: { filesystem: { root: artifacts } } }
@@ -182,9 +191,6 @@ public sealed class AgentHarness : IAsyncDisposable
                 instances:
                   claude_code:
                     model: haiku
-                    max_retries: {{(options.Live ? 2 : 0)}}
-                    hook_hold: {{options.HookHoldSeconds}}
-                    client_retry: {{options.ClientRetrySeconds}}
                     engine_tools: {{(options.EngineTools ? "true" : "false")}}
                     model_access: {{modelAccess}}
               vcs: {{vcs}}
@@ -205,10 +211,14 @@ public sealed class AgentHarness : IAsyncDisposable
               approval:
                 - { match: "*", roles: [approver], auto: false }
             """);
-        h.Configuration = FeatureFlowConfiguration.Load(IOPath.Combine(folder, "installation.yaml"), IOPath.Combine(folder, "organisation.yaml"));
-        h.Host = await FeatureFlowHost.StartAsync(h.Configuration, Factories, true, !options.SeparateAgentWorker, "http://127.0.0.1:0");
+        var loaded = FeatureFlowConfiguration.Load(IOPath.Combine(folder, "installation.yaml"), IOPath.Combine(folder, "organisation.yaml"));
+        h.Configuration = loaded with
+        {
+            Installation = loaded.Installation with { AgentWorker = loaded.Installation.AgentWorker! with { CommitInterval = options.CommitInterval } },
+        };
+        h.Host = await FeatureFlowHost.StartAsync(h.Configuration, h.Factories, true, !options.SeparateAgentWorker, "http://127.0.0.1:0");
         if (options.SeparateAgentWorker)
-            h.AgentHost = await FeatureFlowHost.StartAsync(h.Configuration, Factories, false, true, null);
+            h.AgentHost = await FeatureFlowHost.StartAsync(h.Configuration, h.Factories, false, true, null);
         if (options.Live)
             h.MainRevision = (await h.RemoteRevisionAsync("refs/heads/main"))!;
         return h;

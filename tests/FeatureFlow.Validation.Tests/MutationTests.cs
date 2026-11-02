@@ -23,8 +23,8 @@ public class MutationTests
     {
         ["unknown_key"] = new(1, "unknown key 'retries'", "an unknown key on the implement step", [
             new(Ticket,
-                "    limits: { questions: { max: 3, timeout: 4h } }\n",
-                "    limits: { questions: { max: 3, timeout: 4h } }\n    retries: 2\n")]),
+                "    limits: { questions: { max: 3, timeout: 24h } }\n",
+                "    limits: { questions: { max: 3, timeout: 24h } }\n    retries: 2\n")]),
 
         ["unknown_action"] = new(2, "unknown action 'analysis.execute'", "verify_and_review's analysis step names an action that does not exist", [
             new(VerifyAndReview, "    action: analysis.run\n    with: { fail_on: new_issues }", "    action: analysis.execute\n    with: { fail_on: new_issues }")]),

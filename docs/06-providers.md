@@ -97,9 +97,6 @@ temporary type `action_stand_in` runs them, scripted or recording, and a
 production installation: an installation that configures one must set
 `development: true`.
 
-Pending review (LOG 103): the sandbox, agent runtime, VCS and credential broker interfaces
-as built in M4 add methods to the abbreviated signatures below; LOG 103 lists them.
-
 Pending review (LOG 107): the VCS, code host and CI interfaces as built in M5 differ from
 the signatures below: catch-up and merge take an expected revision and a key, the code host reads a
 file and has no merge method, and CI results are returned as unparsed files. LOG 107 lists them.
@@ -110,26 +107,37 @@ file and has no merge method, and CI results are returned as unparsed files. LOG
 record SandboxCapabilities(IReadOnlyList<string> Os, bool Docker, bool NetworkPolicy,
                            bool PersistentAcrossSteps, bool StreamingOutput);
 
+record SandboxSpec(string Key, string Home, IReadOnlyDictionary<string, string> Environment,
+                   IReadOnlyList<string> Folders);
+
 interface ISandboxProvider : IProvider {
-    Task<..SandboxHandle> CreateAsync(ResolvedManifest manifest, CheckoutSpec checkout,
-                                      IReadOnlyList<MountSpec> mounts, string key);
+    Task<..SandboxHandle> CreateAsync(SandboxSpec spec);
     Task<..SandboxHandle> AttachAsync(string key);
-    Task<..CommandHandle> StartCommandAsync(SandboxHandle s, Command command, string key);
+    Task<..CommandHandle> StartCommandAsync(SandboxHandle s, SandboxCommand command, string key);
     Task<..CommandHandle> AttachCommandAsync(SandboxHandle s, string key);
-    Task<..CommandStatus> GetCommandStatusAsync(CommandHandle c, string? outputCursor);
+    Task<..CommandStatus> GetCommandStatusAsync(CommandHandle c, long cursor);
     Task<..Unit>          CancelCommandAsync(CommandHandle c);
-    Task<..Unit>          CopyInAsync(SandboxHandle s, ArtifactRef source, string path);
+    Task<..Unit>          CopyInAsync(SandboxHandle s, ArtifactRef source, string path, bool readOnly);
     Task<..ArtifactRef>   CopyOutAsync(SandboxHandle s, string path);
+    Task<..Unit>          MakeReadOnlyAsync(SandboxHandle s, string path);
     Task<..Unit>          DisposeAsync(SandboxHandle s);
 }
 ```
 
-- Receives the **resolved manifest** (the repository's `feature-flow.yaml` merged
-  with any referenced `devcontainer.json` and defaults). It never parses either
-  file itself.
+Signatures here and in sections 3.2, 3.3 and 3.13 are those built in M4 (LOG 103),
+abbreviated: every method also takes a cancellation token, and `..X` stands for
+`ProviderResult<X>`.
+
+- `SandboxSpec` gives the step's key, the engine-controlled home (DR19),
+  environment and folders. The checkout is the VCS provider's (`CheckOutAsync`,
+  section 3.3), not the sandbox's.
+- Will receive the **resolved manifest** (the repository's `feature-flow.yaml`
+  merged with any referenced `devcontainer.json` and defaults), not yet built. It
+  never parses either file itself.
 - `PersistentAcrossSteps`: the sandbox outlives a worker restart. Without it, a
   worker loss is treated as a lost sandbox.
-- Read-only checkouts are enforced by the sandbox, not the agent.
+- Read-only checkouts are enforced by the sandbox (`MakeReadOnlyAsync`), not the
+  agent.
 - Commands are started and polled; `AttachCommandAsync` re-attaches to a running
   command after a worker restart (Spike 1, `archive/docs/15` section 3.4).
 - Every sandbox has the engine's hook client and MCP endpoint configured, with
@@ -146,17 +154,23 @@ record AgentRuntimeCapabilities(bool Hooks, bool Mcp, bool SessionResume, bool S
 
 interface IAgentRuntimeProvider : IProvider {
     Task<..AgentSession>  StartAsync(SandboxHandle s, AgentTask task, AgentLimits limits);
+    Task<..AgentSession>  AttachAsync(SandboxHandle s, AgentTask task);   // a running session, by the step's key
     Task<..AgentSession>  ResumeAsync(SandboxHandle s, string sessionRef);
-    Task<..AgentProgress> GetProgressAsync(AgentSession session);   // session size, turns
-    Task<..AgentResult>   GetResultAsync(AgentSession session);     // outcome report, usage, files opened
+    Task<..AgentSession>  ContinueAsync(SandboxHandle s, AgentTask task, AgentLimits limits, string message);
+    Task<..AgentProgress> GetProgressAsync(AgentSession session);   // finished, turns
+    Task<..AgentResult>   GetResultAsync(AgentSession session);     // how it ended, usage, file report
     Task<..Unit>          StopAsync(AgentSession session);
 }
 ```
 
 - `AgentTask` carries the rendered task, the reporting preamble, tool allow-list,
   skills and resources paths, the MCP endpoint, model and limits.
-- `GetResultAsync` is the source of truth for the agent's report (`docs/04`
-  section 3.3). A session-end hook only wakes the engine.
+- The `report` tool's record is the source of truth for the agent's report
+  (`docs/04` section 3.3); `GetResultAsync` gives how the session ended, its
+  usage, and the file report of a runtime without engine tools. A session-end
+  hook only wakes the engine.
+- `ContinueAsync` continues an ended session with a message: a rejected
+  report's errors, or word that the attempt was interrupted.
 - `ResumeAsync` reloads the conversation from the recorded reference and must
   work in a fresh worker process.
 - Files opened are recorded from hooks, or from streamed tool calls, or reported
@@ -174,12 +188,20 @@ record VcsCapabilities(string System, bool HiddenReferences, bool Squash, bool P
 
 interface IVcsProvider : IProvider {
     // A working copy in a sandbox, reached through the sandbox provider
+    Task<..Unit>         CheckOutAsync(RepoRef repo, string sourceReference, string revision,
+                                       string branch, WorkingCopyRef target);   // a bundle, no remote
     Task<..string>       GetRevisionAsync(WorkingCopyRef copy);
+    Task<..bool>         IsDirtyAsync(WorkingCopyRef copy);
     Task<..string?>      CommitAllAsync(WorkingCopyRef copy, string message);
-    Task<..CommitBundle> FetchCommitsAsync(WorkingCopyRef copy, string? sinceRevision);
+    Task<..CommitBundle> FetchCommitsAsync(WorkingCopyRef copy, string sinceRevision);
+    Task<..int>          CountCommitsAsync(WorkingCopyRef copy, string fromRevision, string toRevision);
+    Task<..IReadOnlyList<string>> ChangedFilesAsync(WorkingCopyRef copy, string fromRevision, string toRevision);
     // The remote, through the engine's own clones (docs/02 section 6)
+    Task<..string?>      ResolveAsync(RepoRef repo, string reference);   // null when absent
+    Task<..bool>         DescendsFromAsync(RepoRef repo, string revision, string ancestor);
     Task<..PushResult>   PushAsync(RepoRef repo, string reference, string revision,
                                    CommitBundle? commits, string? expectedOldRevision);
+    // M5
     Task<..CatchUpResult> CatchUpAsync(RepoRef repo, string parent, string work);
     Task<..MergeResult>  MergeAsync(RepoRef repo, string testedRevision, string target,
                                     string expectedTargetRevision, bool squash, string message);
@@ -388,6 +410,8 @@ interface ISecretsProvider : IProvider {
 ### 3.13 Credential broker
 
 ```csharp
+record CredentialScope(IReadOnlyList<string> Repositories, IReadOnlyDictionary<string, string> Permissions);
+
 interface ICredentialBroker : IProvider {
     Task<..Credential> IssueAsync(Actor actor, string targetSystem, CredentialScope scope, TimeSpan ttl);
     Task<..Credential> RefreshAsync(Credential credential);
@@ -397,18 +421,12 @@ interface ICredentialBroker : IProvider {
 | Actor | Gets |
 |---|---|
 | The engine | Push and merge on the code host; tracker writes; CI triggers. Never permission to change branch protection |
-| An agent step | A read-only code host credential, scoped to the run's repositories and any the role may read, for the step's lifetime (F5). No tracker identity |
-| A model proxy | The model key. Never the agent (F6) |
+| An agent step | No code host credential (LOG 95): its checkout arrives as a Git bundle with no remote. An agent that must read another repository will need a read-only credential, scoped to it and the run's repositories, for the step's lifetime (F5), in a later milestone. No tracker identity |
+| A model proxy | The model key. Never the agent (F6). It forwards only `POST v1/messages` and `v1/messages/count_tokens` to its upstream's own scheme, host and port, and refuses anything else before reading the key (LOG 104) |
 
 The broker refuses a request wider than it may grant; it never silently narrows
 one. Spike 2 issued a 60-minute, one-repository token and refused wider
 requests (`archive/docs/16` section 2).
-
-Pending review (LOG 95): in M4 an agent step gets no code host credential at all; its
-checkout arrives as a bundle with no remote.
-
-Pending review (LOG 104): the model proxy forwards only the Messages API's two requests to its
-upstream, and refuses anything else before reading the credential.
 
 ---
 

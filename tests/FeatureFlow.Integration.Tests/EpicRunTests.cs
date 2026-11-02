@@ -58,7 +58,8 @@ public class EpicRunTests
             "no hand-over happened while children ran: " + string.Join("; ", final.HandOvers));
         Assert.All(final.HandOvers, o => Assert.Equal(0, o.InFlightActivities));
         Assert.Equal(0, final.ActivitiesStartedWhileDraining);
-        Assert.Equal(0, await h.WorkflowTaskFailuresAsync(id));
+        var taskFailures = await h.WorkflowTaskFailuresAsync(id);
+        Assert.True(taskFailures.Count == 0, "C5: workflow task failures: " + string.Join("; ", taskFailures));
 
         await h.RecordHistoryAsync(id, "epic_delivery");
         await h.RecordHistoryAsync(children[0]!["runId"]!.ToString(), "epic_delivery_child");

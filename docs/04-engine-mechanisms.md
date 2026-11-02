@@ -88,7 +88,7 @@ reports.
 | Requires | Sandbox, agent runtime and VCS providers. Hooks and session resume where the role requires them |
 | Outcomes | Declared |
 | Idempotency | Re-attach to the sandbox by key; resume the agent session by its recorded reference |
-| Limits | Engine defaults: attempts 3, timeout 4 hours, correction turns 2 |
+| Limits | Engine defaults: attempts 3, timeout 4 hours, correction turns 2. `limits.timeout` runs from the step's first attempt, kept in the record store, and time the step spends on an open question does not count toward it (the deadline moves out by that time; LOG 106). At the deadline the session is stopped, its commits kept on the hidden reference, and the attempt fails as a work error, "ran out of time"; a retry after the activity's own timeout finds the deadline passed and fails the same way |
 | Artifacts | In: the rendered task, skills, resources, consumed artifacts, the run context. Out: declared artifacts, the transcript, the record of files opened, the session reference |
 
 ### 3.1 Lifecycle of an attempt
@@ -128,11 +128,12 @@ reports.
 | Nothing | A new sandbox, checked out at the hidden reference's last commit. A fresh session, told that the previous attempt was interrupted |
 
 A resume is free if the agent made progress since the last one (`docs/01`
-section 4). Commands in the sandbox are started and polled, never awaited, so a
-long test run survives a worker restart.
-
-Pending review (LOG 98, 106): M4 bounds resumes (free only after progress, at most 5 in a row
-without it) and enforces `limits.timeout` from the step's first attempt.
+section 4): a tool call or a pushed commit. After 5 stops in a row without
+progress, or 20 in all, the step stops for a person (LOG 98). Only a transient
+model error, a lost process or an unreachable engine stops a session resumably;
+a 401 or 403 from the model stops the step for a person. Commands in the
+sandbox are started and polled, never awaited, so a long test run survives a
+worker restart.
 
 ### 3.3 The agent reporting contract
 
@@ -160,9 +161,10 @@ is an output contract error: the errors go back to the agent for correction
 turns, like an invalid patch (LOG 76, 79). The interpreter's core refuses such
 a report from M2; correction turns arrive with the agent step in M4.
 
-Pending review (LOG 94): from M4 the agent worker checks a report when the `report` tool is
-called, so correction turns happen inside the session; after `correction_turns` rejections
-the next fails the attempt and the agent is told to stop.
+The agent worker checks a report when the `report` tool is called, so
+correction turns happen inside the session: up to `correction_turns` rejections
+each return the errors; the next fails the attempt and the agent is told to
+stop (LOG 94).
 
 ### 3.4 Questions (`ask_human`)
 
@@ -173,12 +175,13 @@ and duration limits paused.
 | Rule | Detail |
 |---|---|
 | Limit | `questions.max` per attempt (default 3). Past it, the tool tells the agent to use its judgement |
-| Timeout | `questions.timeout` (default 4 hours). On timeout the agent is told that no answer came, and carries on |
+| Timeout | `questions.timeout` (default 24 hours, so a question left overnight can still be answered). On timeout the agent is told that no answer came, and carries on. The wait does not count toward `limits.timeout` (section 3), so a slow human never fails a step |
 | Who answers | A human allowed by policy for the step's question decision type. Auto-resolution never answers a question |
 | Durability | The open question lives in workflow state and the record store, not in worker memory. If the worker restarts, the sandbox and the waiting agent survive; the new worker re-attaches and serves the answer when it arrives. Spiked in SP2 (`docs/spikes/sp2-results.md`), except the re-attach, which the spike's harness did not exercise |
 
-Pending review (LOG 93): in M4 the run's workflow shell, not the interpreter's core, holds an
-open question, as a wait of kind `question` answered through the API.
+The run's workflow shell, not the interpreter's core, holds an open question,
+as a wait of kind `question` answered through the API with free text; an answer
+after the timeout is refused (LOG 93).
 
 ### 3.5 Run context
 
@@ -201,15 +204,16 @@ can act on them (the engine itself never fails a step on them):
 The standard review fragment routes a reviewer with `changed_files_unread > 0`
 back for another attempt (`docs/08`); a specialised review need not.
 
-Pending review (LOG 99): M4 counts `commits` from the work branch at the step's start, and
-`changed_files_unread` from the parent branch against the files the hooks saw opened.
+`commits` counts from the work branch's revision at the step's start;
+`changed_files_unread` counts files changed since the parent branch that no
+`Read`, `Edit` or `Write` call seen by the hooks opened (LOG 99).
 
 ### 3.7 Write access and pushing
 
 | Rule | Detail |
 |---|---|
 | Enforced twice | By the sandbox (a read-only checkout for `none`) and, where the runtime has hooks, by the engine on each tool call. Without hooks, the post-step check of what changed is the control |
-| No push credential | The agent's code host credential is read-only, per step, scoped to the run's repositories and any the role may read. The engine pushes |
+| No push credential | The agent holds no code host credential; its checkout arrives as a Git bundle (`docs/06` section 3.13, LOG 95). The engine pushes |
 | Hidden reference | While the step runs, pushes go to a reference that is not a branch, so no CI runs and no one sees half-finished work. A failed step's commits stay there for a retry |
 | `push: false` | Nothing is pushed: scratch work |
 

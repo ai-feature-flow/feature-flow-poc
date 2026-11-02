@@ -42,21 +42,21 @@ public class ConfigurationTests
               listen: "http://0.0.0.0:8490"
               urls: ["http://host.docker.internal:8490", "http://host.docker.internal:8491"]
               token_key_ref: secrets/step_token_key
-              commit_interval: 10s
               sandbox_client: bin/ff-sandbox
             defaults:
             """, StringComparison.Ordinal), "/etc/ff/installation.yaml", d)!;
         Assert.Empty(d);
         var worker = config.AgentWorker!;
         Assert.Equal(2, worker.Urls.Count);
-        Assert.Equal(("secrets/step_token_key", TimeSpan.FromSeconds(10)), (worker.TokenKeyRef, worker.CommitInterval));
+        // LOG 91: the commit interval is a fixed default, not a setting.
+        Assert.Equal(("secrets/step_token_key", TimeSpan.FromSeconds(30)), (worker.TokenKeyRef, worker.CommitInterval));
         Assert.Equal(Path.GetFullPath("/etc/ff/bin/ff-sandbox"), worker.SandboxClient);
     }
 
     [Theory]
     [InlineData("defaults:", "agent_worker: { listen: \"http://0.0.0.0:8490\", token_key_ref: secrets/k }\ndefaults:", "agent_worker.urls must list")]
     [InlineData("defaults:", "agent_worker: { listen: \"http://0.0.0.0:8490\", urls: [\"http://h:1\"] }\ndefaults:", "agent_worker.token_key_ref must name")]
-    [InlineData("defaults:", "agent_worker: { commit_interval: often }\ndefaults:", "commit_interval must be a duration")]
+    [InlineData("defaults:", "agent_worker: { commit_interval: 10s }\ndefaults:", "unknown key 'commit_interval'")]
     [InlineData("recording: { folder: rec } } }", "recording: { folder: rec }, claude: { provider: claude_code, engine_tools: false } } }", "engine_tools: false is for development only")]
     [InlineData("  record_store: { default: sqlite, instances: { sqlite: { path: records.db } } }", "  record_stor: { instances: { sqlite: {} } }", "unknown provider type 'record_stor'")]
     [InlineData("  record_store: { default: sqlite,", "  record_store: { default: postgres,", "names instance 'postgres'")]
