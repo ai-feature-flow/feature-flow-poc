@@ -1,0 +1,6 @@
+api_version: feature-flow/v1
+kind: decision_types
+
+decision_types:
+  - name: sp1.question
+    description: A yes or no question the test harness answers

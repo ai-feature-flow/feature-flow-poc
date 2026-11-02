@@ -1,0 +1,25 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: sp1_child
+  level: ticket
+  description: Waits a given time in one agent step, then ends completed or failed, as SP1's child did.
+
+parameters:
+  wait_ms: { type: number, required: true }
+  outcome: { type: string, required: true, description: "done (the run completes) or gave_up (it fails)" }
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: wait
+    agent:
+      role: std:roles/implementer
+      task: std:tasks/repair_failures
+    with: { wait_ms: { expr: "params.wait_ms" }, outcome: { expr: "params.outcome" } }
+    outcomes: { done: success, gave_up: failure }
+    routes:
+      done: { end: completed }
+      gave_up: { end: failed }

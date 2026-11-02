@@ -16,7 +16,7 @@ public static class CliApp
                ff validate <library folder | template or fragment file> [--library <folder>]...
                ff show <template file> [--library <folder>]...
                ff test <workflow test file | folder of them> [--library <folder>]... [--trace]
-        """;
+        """ + "\n" + RunCommands.Usage;
 
     public static string Version { get; } =
         typeof(CliApp).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
@@ -29,6 +29,9 @@ public static class CliApp
             output.WriteLine($"ff {Version}");
             return 0;
         }
+
+        if (args is ["run", ..])
+            return RunCommands.RunAsync(args[1..], output, error).GetAwaiter().GetResult();
 
         var trace = args.Length >= 2 && args[0] == "test" && args.Contains("--trace");
         if (trace)

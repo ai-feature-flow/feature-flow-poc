@@ -1,2 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FeatureFlow.Engine\FeatureFlow.Engine.csproj" />
+    <ProjectReference Include="..\FeatureFlow.Api\FeatureFlow.Api.csproj" />
+  </ItemGroup>
+
 </Project>

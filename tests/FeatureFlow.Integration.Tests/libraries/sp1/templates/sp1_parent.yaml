@@ -1,0 +1,53 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: sp1_parent
+  level: epic
+  description: >-
+    SP1's parent: child runs, decisions opened at start and a chain of short
+    actions, all in one parallel, so the run continues-as-new with children
+    running and decisions open.
+
+parameters:
+  children: { type: array, required: true, description: "One child per item: { wait_ms, outcome }" }
+  questions: { type: array, required: true, description: "One decision per item" }
+  work: { type: array, required: true, description: "One action per item, which takes item milliseconds" }
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: all
+    parallel:
+      join: all
+      branches:
+        - id: children
+          for_each:
+            items: { expr: "params.children" }
+            mode: parallel
+            max_concurrency: 10
+            step:
+              action: run.child
+              with:
+                template: sp1:templates/sp1_child
+                level: ticket
+                repositories: [acme/api]
+                parameters: { wait_ms: { expr: "item.wait_ms" }, outcome: { expr: "item.outcome" } }
+        - id: questions
+          for_each:
+            items: { expr: "params.questions" }
+            mode: parallel
+            step:
+              decision: { type: sp1.question, prompt: sp1:prompts/question }
+              outcomes: { "yes": success, "no": success }
+        - id: work
+          for_each:
+            items: { expr: "params.work" }
+            mode: chain
+            step:
+              action: notify.send
+              with: { audience: [team], message: work, wait_ms: { expr: "item" } }
+    routes:
+      completed: { end: completed }
+      any_failed: { end: partial }
