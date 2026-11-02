@@ -43,7 +43,8 @@ public class TicketRunTests
         var path = Harness.StartedSteps(await h.ShowAsync(id));
         string[] expected = ["baseline.tests", "plan.plan", "approve_spec", "implement", "verify.tests", "verify.review.review_0.assess", "deliver.open_pr", "deliver.catch_up", "deliver.merge"];
         Assert.Equal(expected, path.Where(expected.Contains).Distinct().ToArray());
-        Assert.Equal(0, await h.WorkflowTaskFailuresAsync(id));
+        var taskFailures = await h.WorkflowTaskFailuresAsync(id);
+        Assert.True(taskFailures.Count == 0, "C5: workflow task failures: " + string.Join("; ", taskFailures));
         await h.RecordHistoryAsync(id, "ticket_delivery");
     }
 
