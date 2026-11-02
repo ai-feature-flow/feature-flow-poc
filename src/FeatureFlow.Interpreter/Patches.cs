@@ -30,16 +30,39 @@ public sealed partial class RunCore
         if (!answer.Approve)
         {
             Trace("patch_rejected", wait.StepId, "a person rejected it");
-            if (StepById(wait.StepId) is { } step)
+            // A child's patch leaves its run.child step running; a step's own patch lets the step route on.
+            if (!wait.FromChild && StepById(wait.StepId) is { } step)
                 Route(step, State.Steps[step.Id].Current?.Outcome ?? "");
             return new ApplyResult(true, [], new PatchResult(PatchStatus.Rejected, []));
         }
 
-        var result = Propose(patch, StepById(wait.StepId), approved: true);
-        if (result.Status == PatchStatus.Applied)
+        var result = Propose(patch, wait.FromChild ? null : StepById(wait.StepId), approved: true, fromChild: wait.FromChild);
+        if (wait.FromChild)
+        {
+            if (result.Status == PatchStatus.Applied && patch.ResumeAt is { } at && FindIn(at) is { } resume)
+                State.Pending.Add(new Entry(resume, false));
+        }
+        else if (result.Status == PatchStatus.Applied)
             Resume(patch, wait.StepId);
         else if (StepById(wait.StepId) is { } proposer)
             Route(proposer, State.Steps[proposer.Id].Current?.Outcome ?? "");
+        return new ApplyResult(true, [], result);
+    }
+
+    /// <summary>
+    /// A patch a child run sent (docs/03 section 9.4). The child checked its step's authority over the parent's
+    /// plan (<c>planning.targets</c>); here it takes the path of any agent patch, may omit <c>resume_at</c> (the
+    /// parent continues where it was, check 26), and a rejection is recorded. The run.child step keeps running:
+    /// the child's branch counts towards a join only when the child ends.
+    /// </summary>
+    ApplyResult ProposeFromChild(ChildPatchProposed input)
+    {
+        if (StepById(input.ChildStepId) is not { Action: "run.child" })
+            return ApplyResult.Refused($"{input.ChildStepId} is not a run.child step of plan revision {State.Revision}");
+        var patch = input.Patch with { ProposedBy = new Proposer("agent", input.ProposerStepId) };
+        var result = Propose(patch, null, fromChild: true, childStepId: input.ChildStepId);
+        if (result.Status == PatchStatus.Applied && patch.ResumeAt is { } at && FindIn(at) is { } resume)
+            State.Pending.Add(new Entry(resume, false));
         return new ApplyResult(true, [], result);
     }
 
@@ -57,7 +80,7 @@ public sealed partial class RunCore
     static string? FindIn(Plan plan, IReadOnlyDictionary<string, Step> steps, string id) =>
         steps.ContainsKey(id) ? id : plan.Instances.FirstOrDefault(i => i.Id == id)?.FirstStepId;
 
-    PatchResult Propose(PatchDocument patch, Step? proposer, bool approved = false)
+    PatchResult Propose(PatchDocument patch, Step? proposer, bool approved = false, bool fromChild = false, string? childStepId = null)
     {
         var d = new DiagnosticBag();
         if (libraries is null || template is null)
@@ -68,7 +91,10 @@ public sealed partial class RunCore
 
         if (patch.BaseRevision != State.Revision)
             d.Add(Checks.PatchBaseRevision, $"base_revision {patch.BaseRevision} is not the current revision {State.Revision}; re-propose against it", patch.Location);
-        CheckProposer(patch, proposer, d);
+        if (!fromChild)
+            CheckProposer(patch, proposer, d);
+        else
+            CheckRoleUnchanged(patch, d);
         CheckRunning(patch, proposer, d);
         if (d.HasErrors)
             return Reject(patch, d);
@@ -99,7 +125,10 @@ public sealed partial class RunCore
 
             var nextById = next.AllSteps.GroupBy(s => s.Id).ToDictionary(g => g.Key, g => g.First());
             if (patch.ResumeAt is null)
-                d.Add(Checks.PatchResumeAt, "resume_at is required", patch.Location);
+            {
+                if (!fromChild)
+                    d.Add(Checks.PatchResumeAt, "resume_at is required", patch.Location);
+            }
             else if (FindIn(next, nextById, patch.ResumeAt) is null)
                 d.Add(Checks.PatchResumeAt, $"resume_at '{patch.ResumeAt}' is not a step after the patch", patch.Location);
             CheckCeilings(next, d);
@@ -112,9 +141,10 @@ public sealed partial class RunCore
         {
             foreach (var reason in reasons)
                 d.Add(Checks.PatchProtected, reason, patch.Location, proposer?.Id);
-            var wait = new OpenWait(NewWaitId("patch_approval"), WaitKind.PatchApproval, proposer?.Id ?? "", null, string.Join("; ", reasons), patch);
+            var waitStep = fromChild ? childStepId ?? "" : proposer?.Id ?? "";
+            var wait = new OpenWait(NewWaitId("patch_approval"), WaitKind.PatchApproval, waitStep, null, string.Join("; ", reasons), patch, fromChild);
             State.Waits.Add(wait);
-            Trace("patch_pending", proposer?.Id ?? "", string.Join("; ", reasons));
+            Trace("patch_pending", waitStep, string.Join("; ", reasons));
             outbox.Add(new RequestPatchApproval(wait.Id, patch));
             return new PatchResult(PatchStatus.Pending, d);
         }
@@ -154,6 +184,14 @@ public sealed partial class RunCore
                     d.Add(Checks.PatchProposer, $"the engine only expands lists (add_branch, chain, insert), not {op.Op}", op.Location);
                 break;
         }
+    }
+
+    /// <summary>Check 27 for a patch whose authority was checked elsewhere (a child's): an agent never changes a role.</summary>
+    void CheckRoleUnchanged(PatchDocument patch, DiagnosticBag d)
+    {
+        foreach (var op in patch.Changes.Where(o => o.Op == "replace"))
+            if (StepById(op.Target)?.Agent?.Role?.Text is { } role && RoleOf(op.Step) != role)
+                d.Add(Checks.PatchProposer, $"replace of {op.Target} changes its role from {role} to {RoleOf(op.Step) ?? "none"}; an agent never changes a role (P8)", op.Location);
     }
 
     static string? RoleOf(YMap? step) => (step?["agent"] as YMap)?["role"].ScalarText();

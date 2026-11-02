@@ -21,6 +21,9 @@ public sealed class StepRecord
     /// <summary>For <c>scm.merge</c>: executions that ended <c>base_moved</c>, against <c>limits.races</c> (LOG 61).</summary>
     public int RacesUsed { get; set; }
 
+    /// <summary>Attempts a person granted at an intervention, added to the step's allowance and race allowance.</summary>
+    public long AttemptsGranted { get; set; }
+
     public Execution? Current { get; set; }
     public Execution? Previous { get; set; }
 }
@@ -69,6 +72,9 @@ public sealed class RunState
 
     /// <summary>Attempts used by every step of the run, against the run ceiling (F4).</summary>
     public long RunAttempts { get; set; }
+
+    /// <summary>Attempts granted at interventions, added to the run ceiling as well as to the step's allowance.</summary>
+    public long RunCeilingGranted { get; set; }
 
     public Dictionary<string, long> Findings { get; } = new(StringComparer.Ordinal);
     public List<TraceEntry> Trace { get; } = [];

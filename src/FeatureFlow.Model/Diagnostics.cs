@@ -50,6 +50,8 @@ public static class Checks
     public const int PlanSize = 17;
     public const int RequiredParameters = 18;
     public const int ReferenceResolves = 19;
+    public const int RepositoryLibraryAddsOnly = 20;
+    public const int Capabilities = 21;
     public const int LockedCap = 22;
     public const int PatchBaseRevision = 25;
     public const int PatchResumeAt = 26;
@@ -81,6 +83,8 @@ public static class Checks
         [17] = "plan size",
         [18] = "required parameters bound",
         [19] = "library reference resolves",
+        [20] = "repository library section adds only",
+        [21] = "capability negotiation",
         [22] = "organisation cap",
         [25] = "patch base revision current",
         [26] = "patch resume_at exists",
