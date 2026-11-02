@@ -11,7 +11,7 @@ public sealed class GitHubCodeHostTests
 {
     static readonly RepoRef Repo = new("o/r");
     static CancellationToken Ct => TestContext.Current.CancellationToken;
-    static readonly HttpMethod Get = HttpMethod.Get, Post = HttpMethod.Post, Patch = HttpMethod.Patch;
+    static readonly HttpMethod Get = HttpMethod.Get, Post = HttpMethod.Post, Patch = HttpMethod.Patch, Delete = HttpMethod.Delete;
 
     static (GitHubCodeHost Host, FakeGitHub GitHub, FakeGitHub.Broker Broker) Host()
     {
@@ -32,6 +32,7 @@ public sealed class GitHubCodeHostTests
             ["merge_commit_sha"] = new string('m', 40),
             ["html_url"] = $"https://github.com/o/r/pull/{number}",
             ["created_at"] = "2026-11-03T00:00:00Z",
+            ["closed_at"] = state == "closed" ? "2026-11-03T01:00:00Z" : null,
         }.ToJsonString();
 
     [Fact]
@@ -334,6 +335,77 @@ public sealed class GitHubCodeHostTests
 
         Assert.Equal("validation_failed", (await host.CreateRevertPullRequestAsync(new PullRequestRef(Repo, 7), "k", Ct)).Error?.Reason);
         Assert.Equal("conflict", (await host.CreateRevertPullRequestAsync(new PullRequestRef(Repo, 8), "k", Ct)).Error?.Reason);
+    }
+
+    static readonly string Head = new('a', 40), Squash = new('5', 40), Parent = new('6', 40), Decoy = new('d', 40), Undo = new('b', 40), BaseHead = new('c', 40);
+
+    static string Commit(string sha, string tree, string message, params string[] parents) =>
+        new JsonObject
+        {
+            ["sha"] = sha,
+            ["commit"] = new JsonObject { ["tree"] = new JsonObject { ["sha"] = tree }, ["message"] = message },
+            ["parents"] = new JsonArray(parents.Select(x => (JsonNode)new JsonObject { ["sha"] = x }).ToArray()),
+        }.ToJsonString();
+
+    /// <summary>A pull request the engine squash-merged: closed, not merged, its squash on the base (review finding 7).</summary>
+    FakeGitHub SquashMerged(FakeGitHub github, bool withSquash = true, int mergeStatus = 201) =>
+        github.On(Get, "~/pulls/7", 200, Pr(7, state: "closed"))
+            .On(Get, $"~/git/commits/{Head}", 200, """{"tree":{"sha":"tree-head"}}""")
+            .On(Get, $"~/git/commits/{Parent}", 200, """{"tree":{"sha":"tree-parent"}}""")
+            .On(Get, "~/commits?sha=main", 200, "[" + string.Join(",",
+                new[]
+                {
+                    Commit(Decoy, "tree-head", "Same tree, no trailer", Parent),
+                    Commit(new string('e', 40), "tree-other", "A merge\n\nFeature-Flow-Merge: run-x/scm.merge/1", Parent),
+                }.Concat(withSquash ? [Commit(Squash, "tree-head", "Squash ticket\n\nFeature-Flow-Merge: run-1/scm.merge/1", Parent)] : [])) + "]")
+            .On(Get, "~/pulls?state=all", 200, "[]")
+            .On(Post, "~/git/commits", 201, $$$"""{"sha":"{{{Undo}}}"}""")
+            .On(Get, "~/git/ref/heads/main", 200, $$$"""{"object":{"sha":"{{{BaseHead}}}"}}""")
+            .On(Post, "~/git/refs", 201, "{}")
+            .On(Post, "~/merges", mergeStatus, mergeStatus == 201 ? "{}" : """{"message":"Merge conflict"}""")
+            .On(Delete, "~/git/refs/heads/", 204)
+            .On(Post, "~/pulls", 201, """{"number":9}""");
+
+    [Fact]
+    public async Task An_engine_squash_is_reverted_from_its_squash_commit()
+    {
+        var (host, github, _) = Host();
+        SquashMerged(github);
+
+        var revert = (await host.CreateRevertPullRequestAsync(new PullRequestRef(Repo, 7), "key-revert", Ct)).Unwrap();
+
+        Assert.Equal(9, revert.Number);
+        Assert.Empty(github.Called(Post, "/graphql"));
+        var undo = JsonNode.Parse(Assert.Single(github.Called(Post, "~/git/commits")).Body)!;
+        Assert.Equal(("tree-parent", Squash), (undo["tree"]!.GetValue<string>(), undo["parents"]![0]!.GetValue<string>()));
+        var branch = JsonNode.Parse(Assert.Single(github.Called(Post, "~/git/refs")).Body)!;
+        Assert.Equal(("refs/heads/revert-7-ff/work", BaseHead), (branch["ref"]!.GetValue<string>(), branch["sha"]!.GetValue<string>()));
+        var merge = JsonNode.Parse(Assert.Single(github.Called(Post, "~/merges")).Body)!;
+        Assert.Equal(("revert-7-ff/work", Undo), (merge["base"]!.GetValue<string>(), merge["head"]!.GetValue<string>()));
+        var pull = JsonNode.Parse(Assert.Single(github.Called(Post, "~/pulls")).Body)!;
+        Assert.Equal(("revert-7-ff/work", "main"), (pull["head"]!.GetValue<string>(), pull["base"]!.GetValue<string>()));
+        Assert.Contains("feature-flow:key-revert", pull["body"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task A_closed_pull_request_with_no_engine_squash_is_not_merged()
+    {
+        var (host, github, _) = Host();
+        SquashMerged(github, withSquash: false);
+
+        Assert.Equal("validation_failed", (await host.CreateRevertPullRequestAsync(new PullRequestRef(Repo, 7), "k", Ct)).Error?.Reason);
+        Assert.Empty(github.Called(Post, "~/"));
+    }
+
+    [Fact]
+    public async Task A_squash_revert_that_conflicts_is_a_conflict_and_leaves_no_branch()
+    {
+        var (host, github, _) = Host();
+        SquashMerged(github, mergeStatus: 409);
+
+        Assert.Equal("conflict", (await host.CreateRevertPullRequestAsync(new PullRequestRef(Repo, 7), "k", Ct)).Error?.Reason);
+        Assert.Single(github.Called(Delete, "~/git/refs/heads/revert-7-ff/work"));
+        Assert.Empty(github.Called(Post, "~/pulls"));
     }
 
     [Fact]

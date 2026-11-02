@@ -280,9 +280,11 @@ public sealed class GitHubCodeHost(GitHubApi api) : ICodeHostProvider
     }
 
     /// <summary>
-    /// GitHub's own revert (GraphQL <c>revertPullRequest</c>, as the "Revert" button), which makes the branch and the
-    /// pull request. A revert opened earlier with the key is adopted: pull requests into the base created since the
-    /// merge are searched for the marker, newest first.
+    /// A merged pull request is reverted by GitHub itself (GraphQL <c>revertPullRequest</c>, as the "Revert" button). An
+    /// engine squash leaves its pull request closed and not merged (docs/04 section 7.3); its revert is built from the
+    /// squash commit (<see cref="RevertSquashAsync"/>). A closed pull request with no engine squash, or an open one, is
+    /// refused with <c>validation_failed</c>. A revert opened earlier with the key is adopted: pull requests into the base
+    /// created since the merge are searched for the marker, newest first.
     /// </summary>
     public async Task<ProviderResult<PullRequestRef>> CreateRevertPullRequestAsync(PullRequestRef pullRequest, string key, CancellationToken cancellationToken)
     {
@@ -290,10 +292,21 @@ public sealed class GitHubCodeHost(GitHubApi api) : ICodeHostProvider
         if (!raw.Ok)
             return new ProviderResult<PullRequestRef>(null, raw.Error);
         var p = raw.Value!;
-        if (p["merged_at"] is not JsonValue mergedAt)
+        var merged = p["merged_at"] is JsonValue;
+        if (!merged && p["state"]?.GetValue<string>() != "closed")
             return ProviderResult<PullRequestRef>.Failure("validation_failed", $"pull request {pullRequest.Number} is not merged");
+        (string Sha, string Parent)? squash = null;
+        if (!merged)
+        {
+            var found = await FindSquashAsync(pullRequest.Repo, p, cancellationToken);
+            if (!found.Ok)
+                return new ProviderResult<PullRequestRef>(null, found.Error);
+            if (found.Value is null)
+                return ProviderResult<PullRequestRef>.Failure("validation_failed", $"pull request {pullRequest.Number} is not merged");
+            squash = found.Value;
+        }
 
-        var since = DateTimeOffset.Parse(mergedAt.GetValue<string>(), CultureInfo.InvariantCulture);
+        var since = DateTimeOffset.Parse((merged ? p["merged_at"] : p["closed_at"])!.GetValue<string>(), CultureInfo.InvariantCulture);
         var baseBranch = p["base"]!["ref"]!.GetValue<string>();
         for (var page = 1; page <= 10; page++)
         {
@@ -304,25 +317,108 @@ public sealed class GitHubCodeHost(GitHubApi api) : ICodeHostProvider
             if (list.Value!.Code != 200)
                 return GitHubApi.Unexpected<PullRequestRef>(list.Value, "GET the pull requests");
             var items = list.Value.Json as JsonArray ?? [];
-            if (items.FirstOrDefault(i => KeyOf(i?["body"]?.GetValue<string>()) == key) is { } found)
-                return ProviderResult<PullRequestRef>.Success(new PullRequestRef(pullRequest.Repo, found["number"]!.GetValue<int>()));
+            if (items.FirstOrDefault(i => KeyOf(i?["body"]?.GetValue<string>()) == key) is { } existing)
+                return ProviderResult<PullRequestRef>.Success(new PullRequestRef(pullRequest.Repo, existing["number"]!.GetValue<int>()));
             if (items.Count < 100 || items.Any(i => DateTimeOffset.Parse(i!["created_at"]!.GetValue<string>(), CultureInfo.InvariantCulture) < since))
                 break;
         }
+
+        var title = $"Revert \"{p["title"]?.GetValue<string>()}\"";
+        var body = WithMarker($"Reverts #{pullRequest.Number}", key);
+        if (squash is { } s)
+            return await RevertSquashAsync(pullRequest, p, s.Sha, s.Parent, title, body, cancellationToken);
 
         const string mutation = """
             mutation($id: ID!, $title: String!, $body: String!) {
               revertPullRequest(input: { pullRequestId: $id, title: $title, body: $body }) { revertPullRequest { number } }
             }
             """;
-        var title = $"Revert \"{p["title"]?.GetValue<string>()}\"";
-        var reverted = await api.GraphQlAsync(pullRequest.Repo, Permissions, mutation,
-            new { id = p["node_id"]!.GetValue<string>(), title, body = WithMarker($"Reverts #{pullRequest.Number}", key) }, cancellationToken);
+        var reverted = await api.GraphQlAsync(pullRequest.Repo, Permissions, mutation, new { id = p["node_id"]!.GetValue<string>(), title, body }, cancellationToken);
         if (!reverted.Ok)
             return new ProviderResult<PullRequestRef>(null, reverted.Error);
         return reverted.Value!["revertPullRequest"]?["revertPullRequest"]?["number"]?.GetValue<int>() is { } number
             ? ProviderResult<PullRequestRef>.Success(new PullRequestRef(pullRequest.Repo, number))
             : ProviderResult<PullRequestRef>.Failure("unexpected_response", "GitHub's revert answered without a pull request");
+    }
+
+    /// <summary>
+    /// The engine's squash of a closed pull request: a commit on the base, since the pull request closed, with one parent,
+    /// the <c>Feature-Flow-Merge</c> trailer, and exactly the tree of the pull request's head. The tree is the evidence,
+    /// as in the VCS's landed check: nothing else can have it.
+    /// </summary>
+    async Task<ProviderResult<(string Sha, string Parent)?>> FindSquashAsync(RepoRef repo, JsonNode p, CancellationToken cancellationToken)
+    {
+        var head = await Send(repo, HttpMethod.Get, $"/git/commits/{GitHubApi.Escape(p["head"]!["sha"]!.GetValue<string>())}", null, cancellationToken);
+        if (!head.Ok)
+            return new ProviderResult<(string, string)?>(null, head.Error);
+        var tree = head.Value!.Json?["tree"]?["sha"]?.GetValue<string>();
+        var since = DateTimeOffset.Parse(p["closed_at"]!.GetValue<string>(), CultureInfo.InvariantCulture).AddHours(-1).ToString("O", CultureInfo.InvariantCulture);
+        var commits = await api.ListAsync(repo, ReadPermissions,
+            $"/repos/{repo.FullName}/commits?sha={GitHubApi.Escape(p["base"]!["ref"]!.GetValue<string>())}&since={GitHubApi.Escape(since)}", j => j as JsonArray, cancellationToken, maxPages: 3);
+        if (!commits.Ok)
+            return new ProviderResult<(string, string)?>(null, commits.Error);
+        var squash = commits.Value!.FirstOrDefault(c => c["commit"]?["tree"]?["sha"]?.GetValue<string>() == tree
+                                                        && (c["parents"] as JsonArray)?.Count == 1
+                                                        && (c["commit"]?["message"]?.GetValue<string>() ?? "").Contains("\nFeature-Flow-Merge: ", StringComparison.Ordinal));
+        return ProviderResult<(string, string)?>.Success(squash is null
+            ? null
+            : (squash["sha"]!.GetValue<string>(), squash["parents"]![0]!["sha"]!.GetValue<string>()));
+    }
+
+    /// <summary>
+    /// A squash's revert with the REST API alone: a commit with the squash's parent's tree on top of the squash (201),
+    /// merged by GitHub (<c>POST /merges</c>, 201) into a branch <c>revert-&lt;n&gt;-&lt;head&gt;</c> made at the base's
+    /// current head. Git's three-way merge, whose base is the squash, gives "the base without the squash". 204 (nothing
+    /// to merge) cannot happen for a new revert commit; 409 is a conflict, and the branch is removed. Then the pull
+    /// request (201).
+    /// </summary>
+    async Task<ProviderResult<PullRequestRef>> RevertSquashAsync(PullRequestRef pullRequest, JsonNode p, string squash, string parent, string title, string body,
+        CancellationToken cancellationToken)
+    {
+        var repo = pullRequest.Repo;
+        var baseBranch = p["base"]!["ref"]!.GetValue<string>();
+        var parentCommit = await Send(repo, HttpMethod.Get, $"/git/commits/{GitHubApi.Escape(parent)}", null, cancellationToken);
+        if (!parentCommit.Ok)
+            return new ProviderResult<PullRequestRef>(null, parentCommit.Error);
+        var undo = await Send(repo, HttpMethod.Post, "/git/commits", new
+        {
+            message = $"{title}\n\nThis reverts commit {squash}.",
+            tree = parentCommit.Value!.Json!["tree"]!["sha"]!.GetValue<string>(),
+            parents = new[] { squash },
+        }, cancellationToken);
+        if (!undo.Ok)
+            return new ProviderResult<PullRequestRef>(null, undo.Error);
+        if (undo.Value!.Code != 201)
+            return GitHubApi.Unexpected<PullRequestRef>(undo.Value, "POST the revert commit");
+        var baseHead = await Send(repo, HttpMethod.Get, $"/git/ref/heads/{GitHubApi.EscapePath(baseBranch)}", null, cancellationToken);
+        if (!baseHead.Ok)
+            return new ProviderResult<PullRequestRef>(null, baseHead.Error);
+
+        var branch = $"revert-{pullRequest.Number}-{p["head"]!["ref"]!.GetValue<string>()}";
+        var created = await Send(repo, HttpMethod.Post, "/git/refs",
+            new { @ref = "refs/heads/" + branch, sha = baseHead.Value!.Json!["object"]!["sha"]!.GetValue<string>() }, cancellationToken);
+        if (!created.Ok && created.Error!.Reason == "validation_failed")
+            // Left by an attempt that failed before its pull request: ours to reset.
+            created = await Send(repo, HttpMethod.Patch, $"/git/refs/heads/{GitHubApi.EscapePath(branch)}",
+                new { sha = baseHead.Value.Json["object"]!["sha"]!.GetValue<string>(), force = true }, cancellationToken);
+        if (!created.Ok)
+            return new ProviderResult<PullRequestRef>(null, created.Error);
+
+        var mergeBody = new { @base = branch, head = undo.Value.Json!["sha"]!.GetValue<string>(), commit_message = $"{title} (reverts {squash})" };
+        var merged = await Send(repo, HttpMethod.Post, "/merges", mergeBody, cancellationToken);
+        if (!merged.Ok || merged.Value!.Code != 201)
+        {
+            await Send(repo, HttpMethod.Delete, $"/git/refs/heads/{GitHubApi.EscapePath(branch)}", null, cancellationToken);
+            return !merged.Ok ? new ProviderResult<PullRequestRef>(null, merged.Error) : GitHubApi.Unexpected<PullRequestRef>(merged.Value!, "POST the revert merge");
+        }
+
+        var opened = await Send(repo, HttpMethod.Post, "/pulls",
+            new Dictionary<string, object> { ["title"] = title, ["body"] = body, ["head"] = branch, ["base"] = baseBranch }, cancellationToken);
+        if (!opened.Ok)
+            return new ProviderResult<PullRequestRef>(null, opened.Error);
+        return opened.Value!.Code == 201 && opened.Value.Json?["number"]?.GetValue<int>() is { } number
+            ? ProviderResult<PullRequestRef>.Success(new PullRequestRef(repo, number))
+            : GitHubApi.Unexpected<PullRequestRef>(opened.Value, "POST the revert pull request");
     }
 
     /// <summary>

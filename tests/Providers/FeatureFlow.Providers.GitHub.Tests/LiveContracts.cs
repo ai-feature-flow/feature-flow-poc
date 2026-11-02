@@ -153,3 +153,45 @@ public sealed class GitHubActionsCiContract : CiContract, IAsyncLifetime
             inner.GetExpectedRunsAsync(repo, revision, pullRequest, cancellationToken);
     }
 }
+
+/// <summary>
+/// Review finding 7 on GitHub itself: an engine squash leaves its pull request closed and not merged, and its revert is
+/// built from the squash commit. The test squash-merges as the engine does (a commit with the head's tree and the
+/// merge trailer, pushed to the base; the pull request closed), then asks for the revert.
+/// </summary>
+[Trait("Category", "Live")]
+public sealed class GitHubSquashRevertLive : IAsyncLifetime
+{
+    readonly LiveFixture fixture = new();
+
+    public async ValueTask InitializeAsync() => await fixture.CreateBaseAsync();
+
+    public async ValueTask DisposeAsync() => await fixture.CleanUpAsync();
+
+    static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    [Fact]
+    public async Task An_engine_squash_is_reverted_into_the_same_base()
+    {
+        var host = new GitHubCodeHost(fixture.Api);
+        var (main, work) = (fixture.Branch("main"), fixture.Branch("ff/squash"));
+        var start = (await fixture.ResolveAsync(main))!;
+        var head = await fixture.CommitAsync(start, new Dictionary<string, string?> { ["work.txt"] = "squashed work\n" }, "The work");
+        await fixture.SetBranchAsync(work, head);
+        var pr = (await host.OpenPullRequestAsync(LiveFixture.Repo, new PullRequestSpec("Squash me", "Body", work, main), $"{fixture.Prefix}/key-squash", Ct)).Unwrap();
+        var squash = await fixture.CommitAsync(start, new Dictionary<string, string?> { ["work.txt"] = "squashed work\n" },
+            $"Squash me\n\nFeature-Flow-Merge: {fixture.Prefix}/run/scm.merge/1");
+        await fixture.SetBranchAsync(main, squash);
+        (await host.ClosePullRequestAsync(pr, null, Ct)).Unwrap();
+
+        var revert = (await host.CreateRevertPullRequestAsync(pr, $"{fixture.Prefix}/key-squash-revert", Ct)).Unwrap();
+        var again = (await host.CreateRevertPullRequestAsync(pr, $"{fixture.Prefix}/key-squash-revert", Ct)).Unwrap();
+        var state = (await host.GetPullRequestAsync(revert, Ct)).Unwrap();
+
+        Assert.Equal(revert, again);
+        Assert.Equal((PullRequestStates.Open, main), (state.State, state.Base));
+        Assert.Null((await host.ReadFileAsync(LiveFixture.Repo, "work.txt", state.HeadRevision, Ct)).Unwrap());
+        Assert.NotNull((await host.ReadFileAsync(LiveFixture.Repo, "README.md", state.HeadRevision, Ct)).Unwrap());
+        LiveFixture.Log($"squash revert: pull request {revert.Number} reverts squash {squash[..10]} of #{pr.Number}");
+    }
+}
