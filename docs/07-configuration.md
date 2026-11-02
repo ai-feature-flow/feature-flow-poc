@@ -93,6 +93,10 @@ defaults:                        # engine defaults for limits; not floors
 | `defaults.limits` | Engine defaults per step form and per action. The organisation, workflow and step may override them within ceilings |
 | `temporal.continue_as_new_events` | LOG 87: the history length at which a run hands over (`docs/02` section 3); default 5,120, at least 100 |
 
+Pending review (LOG 91): M4 adds an `agent_worker` section (the agent worker's endpoint, its
+step-token key, the commit interval and the sandbox client), `upstream` and `auth` inside
+`model_access`, and `from_environment` for the `file` secrets provider.
+
 Scaling (replica counts) is deployment configuration, not engine configuration.
 
 ---

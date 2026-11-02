@@ -1,3 +1,4 @@
+using FeatureFlow.Model;
 using FeatureFlow.Model.Plans;
 using FeatureFlow.Model.Yaml;
 
@@ -198,5 +199,70 @@ public sealed partial class RunCore
             YUnbound u => throw new EvaluationException($"{where}: parameter '{u.Parameter}' is unbound"),
             _ => node.ToPlain(),
         };
+    }
+
+    bool renderingBranch;
+
+    /// <summary>
+    /// The run's work branch (docs/03 section 1, LOG 44): the template's <c>metadata.branch_pattern</c> rendered with
+    /// <c>params</c> and <c>run</c>, else <c>ff/&lt;level&gt;/&lt;run id&gt;</c>. The same in every repository of the run.
+    /// </summary>
+    public string WorkBranch()
+    {
+        var level = Plan.Document.Level ?? "run";
+        var fallback = $"ff/{level}/{Run.Id}";
+        if (!Options.BranchFromPattern || Plan.Document.BranchPattern is not { } pattern || renderingBranch)
+            return fallback;
+        renderingBranch = true;
+        try
+        {
+            return Render(pattern, Plan.Root, null, Plan.Document.BranchPatternLocation, "metadata.branch_pattern", null);
+        }
+        catch (EvaluationException)
+        {
+            return fallback;
+        }
+        finally
+        {
+            renderingBranch = false;
+        }
+    }
+
+    /// <summary>
+    /// An agent step's task, rendered (docs/03 section 6.3): each <c>{{ expr }}</c> evaluated with the step's
+    /// <c>with</c> values and <c>params</c>, <c>run</c> and <c>steps</c>. Null when the step names no task. A string
+    /// renders as itself; other values as JSON.
+    /// </summary>
+    public (string? Text, string? Library) RenderTask(string stepId)
+    {
+        var step = StepById(stepId) ?? throw new EvaluationException($"{stepId} is not a step of plan revision {State.Revision}");
+        if (step.Agent?.Task is not { Reference: { } reference, Unbound: false } || libraries?.Resolve(reference) is not { } library
+            || library.Text("tasks", reference.Name) is not { } text)
+            return (null, null);
+        var inputs = ResolveInputs(stepId);
+        return (Render(text, step.Scope, step.Id, null, $"{reference} text", inputs), library.Name);
+    }
+
+    string Render(string text, Scope scope, string? stepId, SourceLocation? location, string where, IReadOnlyDictionary<string, object?>? with)
+    {
+        var output = new System.Text.StringBuilder();
+        var at = 0;
+        while (true)
+        {
+            var start = text.IndexOf("{{", at, StringComparison.Ordinal);
+            var end = start < 0 ? -1 : text.IndexOf("}}", start + 2, StringComparison.Ordinal);
+            if (start < 0 || end < 0)
+            {
+                output.Append(text, at, text.Length - at);
+                return output.ToString();
+            }
+
+            output.Append(text, at, start - at);
+            var expression = new Expression(text[(start + 2)..end].Trim(), ExpressionUse.Text, scope, location ?? new SourceLocation(where, 0, 0), where, stepId,
+                with?.Keys.ToList());
+            var value = evaluator.Evaluate(expression, name => Findings?.Read(name) ?? State.Findings.GetValueOrDefault(name), with);
+            output.Append(value as string ?? (value is null ? "" : YamlWriter.WritePlain(value)));
+            at = end + 2;
+        }
     }
 }

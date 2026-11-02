@@ -126,7 +126,7 @@ internal sealed class Evaluator(RunCore core)
         return value as bool? ?? throw new EvaluationException($"guard '{e.Text}' gave {value ?? "null"}, not a boolean");
     }
 
-    public object? Evaluate(Expression e, Func<string, long> findings)
+    public object? Evaluate(Expression e, Func<string, long> findings, IReadOnlyDictionary<string, object?>? extra = null)
     {
         var key = $"{e.Text}|{e.Scope.HasItem}|{string.Join(",", e.ExtraVariables ?? [])}";
         if (!checks.TryGetValue(key, out var check))
@@ -162,6 +162,8 @@ internal sealed class Evaluator(RunCore core)
 
         variables["params"] = paramValues;
         variables["findings"] = findingValues;
+        foreach (var (name, value) in extra ?? new Dictionary<string, object?>())
+            variables[name] = value;
         try
         {
             return CelExpressions.Evaluate(e.Text, variables, e.Scope.HasItem, typed.Count == 0 ? null : typed);
@@ -181,7 +183,7 @@ internal sealed class Evaluator(RunCore core)
             ["id"] = run.Id,
             ["level"] = level,
             ["repositories"] = run.Repositories.Cast<object?>().ToList(),
-            ["branch"] = run.Repositories.ToDictionary(r => r, r => (object?)$"ff/{level}/{run.Id}"),
+            ["branch"] = run.Repositories.ToDictionary(r => r, r => (object?)core.WorkBranch()),
             ["parent_branch"] = run.Repositories.ToDictionary(r => r, _ => (object?)"main"),
             ["tracker_issue"] = run.TrackerIssue ?? "",
             ["parent_id"] = run.ParentId ?? "",

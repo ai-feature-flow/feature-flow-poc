@@ -19,17 +19,6 @@ public sealed record LibrarySnapshot(string Name, IReadOnlyDictionary<string, st
 /// <summary>What run start gives the workflow: the locked libraries, the run's policy, and any blocking diagnostics.</summary>
 public sealed record Prepared(IReadOnlyList<LibrarySnapshot> Libraries, RunPolicy Policy, IReadOnlyList<string> Errors, IReadOnlyList<string> Warnings);
 
-/// <summary>One step for an activity to carry out.</summary>
-public sealed record StepCall(StepIdentity Step, string Form, string What, IReadOnlyDictionary<string, string> Inputs, StepContract Contract, bool DryRun, TimeSpan? Timeout);
-
-/// <summary>How a step's activity ended: with a report, a work failure, or unable to answer (docs/04 section 1).</summary>
-public sealed record StepOutcome(string Kind, StepReport? Report, string? Reason)
-{
-    public const string Reported = "reported";
-    public const string WorkFailed = "work_failed";
-    public const string CannotAnswer = "cannot_answer";
-}
-
 public sealed record ChildRead(string Status, string? Result);
 
 /// <summary>
@@ -111,40 +100,7 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
             start.Parameters.ToDictionary(kv => kv.Key, kv => YamlWriter.Read(kv.Value, $"params.{kv.Key}")),
             start.ParentWorkflowId);
 
-    /// <summary>An agent step (docs/04 section 3), on an agent worker: start the runtime, supervise with heartbeats, read the result.</summary>
-    [Activity]
-    public async Task<StepOutcome> RunAgentStepAsync(StepCall call)
-    {
-        var context = ActivityExecutionContext.Current;
-        var ct = context.CancellationToken;
-        var runtime = services.Providers.Required<IAgentRuntimeProvider>("agent_runtime", call.DryRun);
-        var task = new AgentTask(call.Step, call.What, null, call.Inputs, call.Contract);
-        var started = await runtime.StartAsync(SandboxHandle.None, task, new AgentLimits(call.Timeout, 2), ct);
-        if (Classify(started.Error) is { } early)
-            return early;
-        var session = started.Value!;
-        try
-        {
-            while (true)
-            {
-                context.Heartbeat();
-                var progress = await runtime.GetProgressAsync(session, ct);
-                if (Classify(progress.Error) is { } failed)
-                    return failed;
-                if (progress.Value!.Finished)
-                    break;
-                await Task.Delay(TimeSpan.FromMilliseconds(250), ct);
-            }
-
-            var result = await runtime.GetResultAsync(session, ct);
-            return Classify(result.Error) ?? new StepOutcome(StepOutcome.Reported, result.Value, null);
-        }
-        catch (OperationCanceledException)
-        {
-            await runtime.StopAsync(session, CancellationToken.None);
-            throw;
-        }
-    }
+    // The agent step's activity, RunAgentStep, is the agent worker's: Engine.Agent's AgentActivities (M4).
 
     /// <summary>An engine action through the stand-in (LOG 81).</summary>
     [Activity]

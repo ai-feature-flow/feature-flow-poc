@@ -208,13 +208,16 @@ public sealed class ScriptedAgentRuntime(FakeScript script, Func<IArtifactStoreP
             ? ProviderResult<AgentProgress>.Success(new AgentProgress(DateTimeOffset.UtcNow - s.Started >= s.Delay, 1))
             : ProviderResult<AgentProgress>.Failure("not_found", $"no session {session.Id}"));
 
-    public async Task<ProviderResult<StepReport>> GetResultAsync(AgentSession session, CancellationToken cancellationToken)
+    public async Task<ProviderResult<AgentResult>> GetResultAsync(AgentSession session, CancellationToken cancellationToken)
     {
         if (!sessions.TryGetValue(session.Id, out var s))
-            return ProviderResult<StepReport>.Failure("not_found", $"no session {session.Id}");
+            return ProviderResult<AgentResult>.Failure("not_found", $"no session {session.Id}");
         if (reporter.ScriptedError(s.Task.Step, s.Visit) is { Reason: "validation_failed" } work)
-            return new ProviderResult<StepReport>(null, work);
-        return await reporter.ReportAsync(s.Task.Step, s.Task.Contract, s.Task.Inputs, s.Visit, cancellationToken);
+            return new ProviderResult<AgentResult>(null, work);
+        var report = await reporter.ReportAsync(s.Task.Step, s.Task.Contract, s.Task.Inputs, s.Visit, cancellationToken);
+        return report.Ok
+            ? ProviderResult<AgentResult>.Success(new AgentResult(report.Value, SessionEnd.Completed))
+            : new ProviderResult<AgentResult>(null, report.Error);
     }
 
     public Task<ProviderResult<Unit>> StopAsync(AgentSession session, CancellationToken cancellationToken)
@@ -295,10 +298,10 @@ public sealed class RecordingAgentRuntime(Recorder recorder) : IAgentRuntimeProv
     public Task<ProviderResult<AgentProgress>> GetProgressAsync(AgentSession session, CancellationToken cancellationToken) =>
         Task.FromResult(ProviderResult<AgentProgress>.Success(new AgentProgress(true, 0)));
 
-    public Task<ProviderResult<StepReport>> GetResultAsync(AgentSession session, CancellationToken cancellationToken) =>
+    public Task<ProviderResult<AgentResult>> GetResultAsync(AgentSession session, CancellationToken cancellationToken) =>
         Task.FromResult(results.TryGetValue(session.Id, out var report)
-            ? ProviderResult<StepReport>.Success(report)
-            : ProviderResult<StepReport>.Failure("not_found", $"no session {session.Id}"));
+            ? ProviderResult<AgentResult>.Success(new AgentResult(report, SessionEnd.Completed))
+            : ProviderResult<AgentResult>.Failure("not_found", $"no session {session.Id}"));
 
     public Task<ProviderResult<Unit>> StopAsync(AgentSession session, CancellationToken cancellationToken) => Task.FromResult(ProviderResult<Unit>.Success(default));
 }
@@ -339,7 +342,8 @@ public static class LocalProviders
         {
             new("artifact_store", "filesystem", ["root"], c => new FileSystemArtifactStore(c.PathSetting("root") ?? c.RequiredSetting("root"))),
             new("record_store", "sqlite", ["path"], c => new SqliteRecordStore(c.PathSetting("path") ?? c.RequiredSetting("path"))),
-            new("secrets", "file", ["path"], c => new FileSecrets(c.PathSetting("path") ?? c.RequiredSetting("path"))),
+            new("secrets", "file", ["path", "from_environment"], c => new FileSecrets(c.PathSetting("path") ?? c.RequiredSetting("path"),
+                c.Instance.Settings["from_environment"] is YSeq names ? names.Items.Select(n => n.ScalarText() ?? "").ToList() : null)),
             new("agent_runtime", "scripted", ["script"], c => new ScriptedAgentRuntime(Script(c), () => Store(c))),
             new("action_stand_in", "scripted", ["script"], c => new ScriptedActionStandIn(Script(c), () => Store(c))),
             new("agent_runtime", "recording", ["folder"], c => new RecordingAgentRuntime(new Recorder(c.PathSetting("folder") ?? c.RequiredSetting("folder"), () => Store(c)))),

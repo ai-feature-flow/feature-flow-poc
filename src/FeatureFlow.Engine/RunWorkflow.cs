@@ -40,10 +40,14 @@ public class RunWorkflow
     int activitiesStartedWhileDraining;
     int childEndsWhileDraining;
     int answersWhileDraining;
+    readonly List<OpenQuestion> questions;
+    readonly List<string> closedQuestions;
 
     // This run only.
     RunCore? core;
+    LibrarySet? libraries;
     RunPolicy? policy;
+    readonly List<QuestionRecord> questionRecords = [];
     string lastRecordedStatus = "";
     bool draining;
     bool dirty;
@@ -67,6 +71,8 @@ public class RunWorkflow
         activitiesStartedWhileDraining = c?.ActivitiesStartedWhileDraining ?? 0;
         childEndsWhileDraining = c?.ChildEndsWhileDraining ?? 0;
         answersWhileDraining = c?.AnswersWhileDraining ?? 0;
+        questions = c?.Questions?.ToList() ?? [];
+        closedQuestions = c?.ClosedQuestions?.ToList() ?? [];
         if (c is not null)
             lastRecordedStatus = "running";
     }
@@ -84,14 +90,19 @@ public class RunWorkflow
             if (prepared.Errors.Count > 0)
                 return await RefuseAsync(prepared.Errors);
             policy = prepared.Policy;
-            var (started, diagnostics) = RunCore.Start(RunActivities.Build(prepared.Libraries, new DiagnosticBag()), Template, RunActivities.RunInfoOf(input), policy.ToOptions());
+            libraries = RunActivities.Build(prepared.Libraries, new DiagnosticBag());
+            var (started, diagnostics) = RunCore.Start(libraries, Template, RunActivities.RunInfoOf(input), policy.ToOptions() with { BranchFromPattern = Workflow.Patched(BranchPatternPatch) });
             core = started ?? throw new ApplicationFailureException("the plan passed run start but does not load: " + string.Join("; ", diagnostics.Take(3)));
         }
         else
         {
-            var libraries = await Workflow.ExecuteActivityAsync((RunActivities a) => a.LoadLibrariesAsync(input.LockRef), Light);
+            var snapshot = await Workflow.ExecuteActivityAsync((RunActivities a) => a.LoadLibrariesAsync(input.LockRef), Light);
             policy = input.Policy!;
-            core = RunCore.Resume(RunActivities.Build(libraries, new DiagnosticBag()), Template, input.Carried.Core, policy.ToOptions());
+            libraries = RunActivities.Build(snapshot, new DiagnosticBag());
+            core = RunCore.Resume(libraries, Template, input.Carried.Core, policy.ToOptions() with { BranchFromPattern = Workflow.Patched(BranchPatternPatch) });
+            // Questions carried over a hand-over get their timers again (docs/02 section 3: timers are re-created from state).
+            foreach (var open in questions.ToList())
+                _ = TimeOutQuestionAsync(open);
         }
 
         // The floor on the event threshold and the byte threshold came after histories were recorded; older
@@ -140,6 +151,39 @@ public class RunWorkflow
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// An agent asked a question (docs/04 section 3.4). The shell, not the core, holds it: it is a wait on a running
+    /// step, which the step's activity serves, not a step of the plan. Idempotent by the question's id (LOG 59).
+    /// </summary>
+    [WorkflowSignal(RunWorkflowNames.QuestionOpened)]
+    public Task QuestionOpenedAsync(QuestionSignal question)
+    {
+        if (questions.Any(q => q.Question.QuestionId == question.QuestionId) || closedQuestions.Contains(question.QuestionId))
+            return Task.CompletedTask;
+        var open = new OpenQuestion(question, Workflow.UtcNow + TimeSpan.FromSeconds(question.TimeoutSeconds));
+        questions.Add(open);
+        _ = TimeOutQuestionAsync(open);
+        dirty = true;
+        return Task.CompletedTask;
+    }
+
+    /// <summary>On timeout the agent is told no answer came, and carries on (docs/04 section 3.4; LOG 18).</summary>
+    async Task TimeOutQuestionAsync(OpenQuestion open)
+    {
+        var wait = open.Deadline - Workflow.UtcNow;
+        if (wait > TimeSpan.Zero)
+            await Workflow.DelayAsync(wait);
+        if (!questions.Remove(open))
+            return;
+        closedQuestions.Add(open.Question.QuestionId);
+        questionRecords.Add(QuestionRecordOf(open.Question, QuestionRecord.TimedOut, null));
+        core?.State.Trace.Add(new TraceEntry("question_timed_out", open.Question.StepId, open.Question.QuestionId));
+        dirty = true;
+    }
+
+    QuestionRecord QuestionRecordOf(QuestionSignal q, string status, string? answer) =>
+        new(q.StepKey, input.RunId, q.QuestionId, q.Text, q.Options, status, answer, Workflow.UtcNow);
+
     [WorkflowSignal(RunWorkflowNames.ParentCancelled)]
     public Task ParentCancelledAsync()
     {
@@ -162,6 +206,15 @@ public class RunWorkflow
             return;
         }
 
+        if (closedQuestions.Contains(answer.WaitId))
+            throw new ApplicationFailureException($"timed out: the agent has carried on without an answer to {answer.WaitId}");
+        if (questions.Any(q => q.Question.QuestionId == answer.WaitId))
+        {
+            if (string.IsNullOrWhiteSpace(answer.Outcome))
+                throw new ApplicationFailureException($"{answer.WaitId} is a question: answer with text");
+            return;
+        }
+
         if (core is not null && core.Check(ToInput(answer)) is { } error)
             throw new ApplicationFailureException(error);
     }
@@ -176,6 +229,19 @@ public class RunWorkflow
             return previous.Key == Key(answer)
                 ? new AnswerReply("duplicate")
                 : throw new ApplicationFailureException($"conflict: {answer.WaitId} was already answered ({previous.Key})");
+        if (questions.FirstOrDefault(q => q.Question.QuestionId == answer.WaitId) is { } question)
+        {
+            questions.Remove(question);
+            closedQuestions.Add(answer.WaitId);
+            questionRecords.Add(QuestionRecordOf(question.Question, QuestionRecord.Answered, answer.Outcome));
+            answered.Add(new AppliedAnswer(answer.WaitId, Key(answer)));
+            core!.State.Trace.Add(new TraceEntry("question_answered", question.Question.StepId, $"{answer.WaitId} by {answer.Actor}"));
+            dirty = true;
+            return new AnswerReply("recorded");
+        }
+
+        if (closedQuestions.Contains(answer.WaitId))
+            throw new ApplicationFailureException($"timed out: the agent has carried on without an answer to {answer.WaitId}");
         var result = core!.Apply(ToInput(answer));
         if (!result.Accepted)
             throw new ApplicationFailureException(string.Join("; ", result.Errors));
@@ -350,10 +416,25 @@ public class RunWorkflow
         }
 
         var identity = new StepIdentity(input.RunId, Template.Name, step.Id, s.Execution, $"{input.RunId}/{step.Id}/{s.Execution}");
+        AgentStepSpec? agent = null;
+        if (step.Form == StepForm.Agent && Workflow.Patched(AgentStepPatch))
+        {
+            try
+            {
+                agent = AgentSpecOf(step);
+            }
+            catch (EvaluationException e)
+            {
+                core.Apply(new StepCannotAnswer(step.Id, "its task cannot be rendered: " + e.Message));
+                dirty = true;
+                return;
+            }
+        }
+
         var call = new StepCall(identity, step.Form == StepForm.Agent ? "agent" : "action",
             step.Form == StepForm.Agent ? step.Agent!.Role?.Text ?? "" : step.Action!,
             inputs.ToDictionary(kv => kv.Key, kv => YamlWriter.WritePlain(kv.Value)),
-            Contract(step), input.DryRun, null);
+            Contract(step), input.DryRun, Duration(step.Limits?.Timeout), agent);
         _ = RunStepAsync(step, s.Execution, call);
     }
 
@@ -365,8 +446,62 @@ public class RunWorkflow
             step.Outcomes().Where(o => o.Name != Actions.AttemptsExhausted).Select(o => new OutcomeSpec(o.Name, o.Class.Name())).ToList(),
             zero.Keys.ToDictionary(n => n, n => RunCore.OutputType(step, n) ?? "dyn"),
             step.Produces.Select(p => new ArtifactSpec(p.Outcome, p.Name)).ToList(),
-            zero.ToDictionary(kv => kv.Key, kv => YamlWriter.WritePlain(kv.Value)));
+            zero.ToDictionary(kv => kv.Key, kv => YamlWriter.WritePlain(kv.Value)))
+        {
+            Reported = step.Outputs.Select(o => o.Name).ToList(),
+        };
     }
+
+    /// <summary>The patch marker of the agent step's settings (M4): histories recorded before it call the agent step without them.</summary>
+    public const string AgentStepPatch = "m4-agent-step";
+
+    /// <summary>The patch marker of the work branch following <c>metadata.branch_pattern</c> (LOG 97).</summary>
+    public const string BranchPatternPatch = "m4-branch-pattern";
+
+    /// <summary>The patch marker of waiting for a cancelled step's activity to finish (M3 follow-up 9).</summary>
+    public const string WaitCancellationPatch = "m4-wait-cancellation";
+
+    /// <summary>
+    /// An agent step's settings from the plan (docs/04 section 3): the role's write access and tool classes, the
+    /// rendered task, limits, branches, and the latest artifact of each name it consumes. Workflow code holds the
+    /// library (LOG 83), so the task is rendered here, deterministically.
+    /// </summary>
+    AgentStepSpec AgentSpecOf(Step step)
+    {
+        var agent = step.Agent!;
+        var role = agent.Role?.Reference is { } roleRef ? libraries?.Resolve(roleRef)?.Role(roleRef.Name) : null;
+        var (taskText, taskLibrary) = core!.RenderTask(step.Id);
+        var limits = step.Limits;
+        var questionsMax = limits?.QuestionsMax ?? (limits?.QuestionsTimeout is not null ? 3 : 0);
+        var branch = core.WorkBranch();
+        var consumed = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var name in step.Consumes.Select(c => c.Name).Distinct())
+            if (LatestArtifact(step, name) is { } reference)
+                consumed[name] = reference;
+        return new AgentStepSpec(
+            agent.WriteAccess ?? role?.WriteAccess ?? "none",
+            role?.Tools ?? ["read", "search"],
+            taskText,
+            taskLibrary,
+            agent.Skills.Select(s => s.Reference?.ToString()).OfType<string>().ToList(),
+            (int)(limits?.CorrectionTurns ?? 2),
+            (int)questionsMax,
+            Duration(limits?.QuestionsTimeout) ?? TimeSpan.FromHours(4),
+            agent.Push,
+            agent.OnUncommitted,
+            core.Plan.Document.Level ?? "run",
+            input.Repositories.ToDictionary(r => r, _ => branch),
+            input.Repositories.ToDictionary(r => r, _ => "main"),
+            consumed,
+            Workflow.Info.WorkflowId,
+            input.LockRef);
+    }
+
+    /// <summary>A duration such as <c>30m</c> or <c>4h</c> (docs/03 section 2.1).</summary>
+    static TimeSpan? Duration(string? text) =>
+        text is { Length: > 1 } t && long.TryParse(t[..^1], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n)
+            ? t[^1] switch { 's' => TimeSpan.FromSeconds(n), 'm' => TimeSpan.FromMinutes(n), 'h' => TimeSpan.FromHours(n), 'd' => TimeSpan.FromDays(n), _ => null }
+            : null;
 
     async Task RunStepAsync(Step step, int execution, StepCall call)
     {
@@ -391,13 +526,15 @@ public class RunWorkflow
                     });
             }
             else if (step.Form == StepForm.Agent)
-                outcome = await Workflow.ExecuteActivityAsync((RunActivities a) => a.RunAgentStepAsync(call), new ActivityOptions
+                // By name: the activity is the agent worker's (Engine.Agent), which Engine may not reference (docs/11 section 2.3).
+                outcome = await Workflow.ExecuteActivityAsync<StepOutcome>(AgentStepActivity, [call], new ActivityOptions
                 {
                     TaskQueue = AgentQueue,
-                    StartToCloseTimeout = TimeSpan.FromHours(4),
+                    StartToCloseTimeout = (call.Timeout ?? TimeSpan.FromHours(4)) + TimeSpan.FromHours(1),
                     HeartbeatTimeout = TimeSpan.FromSeconds(30),
                     RetryPolicy = Forever,
                     CancellationToken = token.Token,
+                    CancellationType = StepCancellation(),
                 });
             else
                 outcome = await Workflow.ExecuteActivityAsync((RunActivities a) => a.RunActionAsync(call), new ActivityOptions
@@ -405,6 +542,7 @@ public class RunWorkflow
                     StartToCloseTimeout = TimeSpan.FromHours(1),
                     RetryPolicy = Forever,
                     CancellationToken = token.Token,
+                    CancellationType = StepCancellation(),
                 });
         }
         catch (Exception e) when (TemporalException.IsCanceledException(e))
@@ -422,6 +560,7 @@ public class RunWorkflow
             EndActivity();
             if (stepTokens.GetValueOrDefault(step.Id) == token)
                 stepTokens.Remove(step.Id);
+            CloseQuestionsOf(call.Step.IdempotencyKey);
         }
 
         if (!Current(step.Id, execution))
@@ -448,6 +587,27 @@ public class RunWorkflow
         }
     }
 
+    /// <summary>The activity name of the agent step, registered by the agent worker.</summary>
+    public const string AgentStepActivity = "RunAgentStep";
+
+    /// <summary>
+    /// A cancelled step's activity is waited for (M3 follow-up 9), so a cancelled agent step has stopped its agent
+    /// and removed its sandbox before the run moves on. Histories recorded before this change keep the old type.
+    /// </summary>
+    static ActivityCancellationType StepCancellation() =>
+        Workflow.Patched(WaitCancellationPatch) ? ActivityCancellationType.WaitCancellationCompleted : ActivityCancellationType.TryCancel;
+
+    /// <summary>A step that ended no longer waits on its questions: their waits close unanswered.</summary>
+    void CloseQuestionsOf(string stepKey)
+    {
+        foreach (var open in questions.Where(q => q.Question.StepKey == stepKey).ToList())
+        {
+            questions.Remove(open);
+            closedQuestions.Add(open.Question.QuestionId);
+            dirty = true;
+        }
+    }
+
     /// <summary>Whether a step's result still belongs to the run: the step is running, at the execution that started it.</summary>
     bool Current(string stepId, int execution) =>
         core!.State.Status == RunStatus.Running && core.State.InFlight.Contains(stepId) && core.State.Steps.GetValueOrDefault(stepId)?.Executions == execution;
@@ -464,6 +624,8 @@ public class RunWorkflow
                 return;
         }
 
+        foreach (var e in outcome.Events ?? [])
+            core!.State.Trace.Add(new TraceEntry("agent", step.Id, e));
         var report = outcome.Report!;
         PatchDocument? patch = null;
         if (report.Patch is { } text)
@@ -489,11 +651,11 @@ public class RunWorkflow
     }
 
     /// <summary>The artifact a plan.expand step reads: the latest one of its <c>from</c> name, nearest its own scope.</summary>
-    string? ListArtifact(Step step)
+    string? ListArtifact(Step step) => step.With?["from"].ScalarText() is { } name ? LatestArtifact(step, name) : null;
+
+    /// <summary>The latest artifact of a name, nearest the step's own scope. M4 resolves <c>consumes</c> only this way (M3 follow-up 3).</summary>
+    string? LatestArtifact(Step step, string name)
     {
-        var name = step.With?["from"].ScalarText();
-        if (name is null)
-            return null;
         var prefix = step.Scope.Prefix;
         return core!.State.Steps
             .Where(kv => kv.Value.Current?.Artifacts.ContainsKey(name) == true)
@@ -594,17 +756,36 @@ public class RunWorkflow
         var open = core.State.Waits.Select(w => w.Id).ToList();
         foreach (var wait in core.State.Waits.Where(w => !recordedOpenWaits.Contains(w.Id)))
             waits.Add(WaitRecordOf(wait, true, now));
-        foreach (var closed in recordedOpenWaits.Where(id => !open.Contains(id)).ToList())
+        // Questions are the shell's, not the core's: recorded and closed below.
+        bool Question(string id) => questions.Any(q => q.Question.QuestionId == id) || closedQuestions.Contains(id);
+        foreach (var closed in recordedOpenWaits.Where(id => !open.Contains(id) && !Question(id)).ToList())
             waits.Add(new WaitRecord(input.RunId, closed, "", "", "", "", [], false, now));
+        var keep = recordedOpenWaits.Where(Question).ToList();
         recordedOpenWaits.Clear();
         recordedOpenWaits.AddRange(open);
+        recordedOpenWaits.AddRange(keep);
+        var level = core.Plan.Document.Level ?? "run";
+        foreach (var q in questions.Where(q => !recordedOpenWaits.Contains(q.Question.QuestionId)))
+        {
+            waits.Add(new WaitRecord(input.RunId, q.Question.QuestionId, "question", q.Question.StepId, $"{level}.question", q.Question.Text, q.Question.Options, true, now));
+            recordedOpenWaits.Add(q.Question.QuestionId);
+        }
+
+        foreach (var closed in recordedOpenWaits.Where(closedQuestions.Contains).ToList())
+        {
+            waits.Add(new WaitRecord(input.RunId, closed, "", "", "", "", [], false, now));
+            recordedOpenWaits.Remove(closed);
+        }
+
+        var answers = questionRecords.ToList();
+        questionRecords.Clear();
 
         var status = core.State.Status.Name();
         var runs = status == lastRecordedStatus ? [] : new List<RunRecord> { RunRecordOf(status, null, now) };
         lastRecordedStatus = status;
-        if (timeline.Count == 0 && waits.Count == 0 && runs.Count == 0)
+        if (timeline.Count == 0 && waits.Count == 0 && runs.Count == 0 && answers.Count == 0)
             return false;
-        var batch = new RecordBatch(runs, waits, timeline);
+        var batch = new RecordBatch(runs, waits, timeline, Questions: answers.Count == 0 ? null : answers);
         await Workflow.ExecuteActivityAsync((RunActivities a) => a.RecordAsync(batch), Light);
         return true;
     }
@@ -642,6 +823,10 @@ public class RunWorkflow
         await RecordAsync();
         foreach (var token in stepTokens.Values)
             token.Cancel();
+        // A cancelled step's activity is waited for (M3 follow-up 9): an agent step stops its agent and removes its
+        // sandbox before the run ends. Histories recorded before this change ended without waiting.
+        if (inFlightActivities > 0 && Workflow.Patched(WaitCancellationPatch))
+            await Workflow.WaitConditionAsync(() => inFlightActivities == 0);
         await TellParentAsync();
         return core!.State.Status.Name();
     }
@@ -700,7 +885,7 @@ public class RunWorkflow
         handOvers.Add(new HandOver(handOvers.Count, Workflow.CurrentHistoryLength, inFlightActivities, children.Count, core!.State.Waits.Count, pendingChildEnds.Count));
         var carried = new ShellState(core.Snapshot(), children.ToList(), pendingChildEnds.ToList(), pendingParentPatches.ToList(), answered.ToList(),
             recordedOpenWaits.ToList(), timelineSequence, handOvers.ToList(), cancelledByParent,
-            activitiesStartedWhileDraining, childEndsWhileDraining, answersWhileDraining);
+            activitiesStartedWhileDraining, childEndsWhileDraining, answersWhileDraining, questions.ToList(), closedQuestions.ToList());
         var next = input with { Policy = policy, Carried = carried };
         return Workflow.CreateContinueAsNewException((RunWorkflow w) => w.RunAsync(next));
     }

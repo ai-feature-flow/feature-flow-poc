@@ -1,7 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!-- The sandbox client and hook command, one executable (LOG 67). Published self-contained per operating
+       system and copied into each sandbox, so a repository's image needs neither Python nor .NET. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <AssemblyName>ff-sandbox</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
   </PropertyGroup>
 
 </Project>

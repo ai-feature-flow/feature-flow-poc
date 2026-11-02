@@ -1,5 +1,12 @@
-// The AgentWorker host: composes the local providers through FeatureFlow.Hosting (docs/11 section 2.3).
+// The AgentWorker host: composes the solo profile's providers through FeatureFlow.Hosting (docs/11 section 2.3). Every
+// host registers the same factories, because each composes every provider the installation configures.
 using FeatureFlow.Hosting;
+using FeatureFlow.Providers.ClaudeCode;
+using FeatureFlow.Providers.Docker;
+using FeatureFlow.Providers.Git;
+using FeatureFlow.Providers.GitHub;
 using FeatureFlow.Providers.Local;
 
-return await HostArguments.RunAsync(args, LocalProviders.Factories, orchestration: false, agent: true, apiHost: false);
+var factories = LocalProviders.Factories.Concat(DockerProviders.Factories).Concat(ClaudeCodeProviders.Factories)
+    .Concat(GitProviders.Factories).Concat(GitHubProviders.Factories);
+return await HostArguments.RunAsync(args, factories, orchestration: false, agent: true, apiHost: false);

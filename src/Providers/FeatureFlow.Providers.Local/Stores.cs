@@ -71,9 +71,11 @@ public sealed class FileSystemArtifactStore(string root) : IArtifactStoreProvide
 
 /// <summary>
 /// Secrets from a JSON file of names and values, outside the repository (the solo profile). A reference is
-/// <c>secrets/&lt;name&gt;</c> or the bare name. Values are never logged.
+/// <c>secrets/&lt;name&gt;</c> or the bare name. Values are never logged. <paramref name="fromEnvironment"/> names
+/// secrets read from the process environment instead, such as a subscription token an operator exports; only
+/// the names listed are read.
 /// </summary>
-public sealed class FileSecrets(string path) : ISecretsProvider
+public sealed class FileSecrets(string path, IReadOnlyList<string>? fromEnvironment = null) : ISecretsProvider
 {
     public ProviderDescription Describe() => new("secrets", "file", "0.1.0", new NoCapabilities());
 
@@ -84,9 +86,13 @@ public sealed class FileSecrets(string path) : ISecretsProvider
 
     public async Task<ProviderResult<string>> ResolveAsync(string reference, CancellationToken cancellationToken)
     {
+        var name = reference.StartsWith("secrets/", StringComparison.Ordinal) ? reference["secrets/".Length..] : reference;
+        if (fromEnvironment?.Contains(name) == true)
+            return Environment.GetEnvironmentVariable(name) is { Length: > 0 } fromEnv
+                ? ProviderResult<string>.Success(fromEnv)
+                : ProviderResult<string>.Failure("not_found", $"the environment variable {name} is not set");
         if (!File.Exists(path))
             return ProviderResult<string>.Failure("not_found", $"the secrets file {path} does not exist");
-        var name = reference.StartsWith("secrets/", StringComparison.Ordinal) ? reference["secrets/".Length..] : reference;
         await using var file = File.OpenRead(path);
         var values = await JsonSerializer.DeserializeAsync<Dictionary<string, string>>(file, cancellationToken: cancellationToken);
         return values?.TryGetValue(name, out var value) == true
@@ -117,6 +123,8 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
             CREATE TABLE IF NOT EXISTS timeline (org_id TEXT NOT NULL, run_id TEXT NOT NULL, sequence INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY (org_id, run_id, sequence));
             CREATE TABLE IF NOT EXISTS answers (org_id TEXT NOT NULL, run_id TEXT NOT NULL, id INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS locks (org_id TEXT NOT NULL, run_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (org_id, run_id));
+            CREATE TABLE IF NOT EXISTS agent_keyed (org_id TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL, step_key TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (org_id, kind, key));
+            CREATE TABLE IF NOT EXISTS agent_log (org_id TEXT NOT NULL, kind TEXT NOT NULL, step_key TEXT NOT NULL, id INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT NOT NULL);
             """);
     }
 
@@ -176,9 +184,31 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
         foreach (var lockRecord in records.Locks ?? [])
             Execute(connection, "INSERT OR REPLACE INTO locks VALUES ($o, $r, $b)",
                 ("$o", Org), ("$r", lockRecord.RunId), ("$b", JsonSerializer.Serialize(lockRecord, Json)));
+        foreach (var step in records.AgentSteps ?? [])
+            Keyed(connection, "step", step.StepKey, step.StepKey, step);
+        foreach (var question in records.Questions ?? [])
+        {
+            // An answer or a timeout is final: a late "open" from a retried endpoint call does not reopen it.
+            if (question.Status == QuestionRecord.Open)
+                Execute(connection, "INSERT OR IGNORE INTO agent_keyed VALUES ($o, 'question', $k, $s, $b)",
+                    ("$o", Org), ("$k", question.QuestionId), ("$s", question.StepKey), ("$b", JsonSerializer.Serialize(question, Json)));
+            else
+                Keyed(connection, "question", question.QuestionId, question.StepKey, question);
+        }
+
+        foreach (var report in records.Reports ?? [])
+            Execute(connection, "INSERT INTO agent_log (org_id, kind, step_key, body) VALUES ($o, 'report', $s, $b)",
+                ("$o", Org), ("$s", report.StepKey), ("$b", JsonSerializer.Serialize(report, Json)));
+        foreach (var e in records.AgentEvents ?? [])
+            Execute(connection, "INSERT INTO agent_log (org_id, kind, step_key, body) VALUES ($o, 'event', $s, $b)",
+                ("$o", Org), ("$s", e.StepKey), ("$b", JsonSerializer.Serialize(e, Json)));
         transaction.Commit();
         return Task.FromResult(ProviderResult<Unit>.Success(default));
     }
+
+    static void Keyed<T>(SqliteConnection connection, string kind, string key, string stepKey, T record) =>
+        Execute(connection, "INSERT OR REPLACE INTO agent_keyed VALUES ($o, $k, $key, $s, $b)",
+            ("$o", Org), ("$k", kind), ("$key", key), ("$s", stepKey), ("$b", JsonSerializer.Serialize(record, Json)));
 
     public Task<ProviderResult<IReadOnlyList<T>>> QueryAsync<T>(string queryName, IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken)
     {
@@ -196,6 +226,11 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
                 [("$r", P("run_id")), ("$a", long.Parse(parameters.GetValueOrDefault("after", "0"), System.Globalization.CultureInfo.InvariantCulture))]),
             Queries.Answers => ("SELECT body FROM answers WHERE org_id = $o AND run_id = $r ORDER BY id", typeof(AnswerRecord), [("$r", P("run_id"))]),
             Queries.Lock => ("SELECT body FROM locks WHERE org_id = $o AND run_id = $r", typeof(LockRecord), [("$r", P("run_id"))]),
+            Queries.AgentStep => ("SELECT body FROM agent_keyed WHERE org_id = $o AND kind = 'step' AND key = $k", typeof(AgentStepRecord), [("$k", P("step_key"))]),
+            Queries.Question => ("SELECT body FROM agent_keyed WHERE org_id = $o AND kind = 'question' AND key = $k", typeof(QuestionRecord), [("$k", P("question_id"))]),
+            Queries.Questions => ("SELECT body FROM agent_keyed WHERE org_id = $o AND kind = 'question' AND step_key = $s ORDER BY key", typeof(QuestionRecord), [("$s", P("step_key"))]),
+            Queries.Reports => ("SELECT body FROM agent_log WHERE org_id = $o AND kind = 'report' AND step_key = $s ORDER BY id", typeof(ReportRecord), [("$s", P("step_key"))]),
+            Queries.AgentEvents => ("SELECT body FROM agent_log WHERE org_id = $o AND kind = 'event' AND step_key = $s ORDER BY id", typeof(AgentEventRecord), [("$s", P("step_key"))]),
             _ => throw new ArgumentException($"unknown query {queryName}"),
         };
         if (query.Type != typeof(T))

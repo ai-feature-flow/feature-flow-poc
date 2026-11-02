@@ -1,5 +1,7 @@
+using System.Security.Cryptography;
 using FeatureFlow.Api;
 using FeatureFlow.Engine;
+using FeatureFlow.Engine.Agent;
 using FeatureFlow.Model;
 using FeatureFlow.Model.Yaml;
 using FeatureFlow.Providers.Abstractions;
@@ -74,6 +76,7 @@ public sealed class FeatureFlowHost : IAsyncDisposable
     readonly CancellationTokenSource stop = new();
     readonly List<Task> workers = [];
     WebApplication? api;
+    WebApplication? agentEndpoint;
 
     FeatureFlowHost(FeatureFlowConfiguration configuration, ProviderSet providers, ITemporalClient client)
     {
@@ -107,7 +110,7 @@ public sealed class FeatureFlowHost : IAsyncDisposable
         if (orchestrationWorker)
             host.Run(new TemporalWorker(client, new TemporalWorkerOptions(queue).AddWorkflow<RunWorkflow>().AddAllActivities(activities)));
         if (agentWorker)
-            host.Run(new TemporalWorker(client, new TemporalWorkerOptions(TaskQueues.Agent(queue)).AddAllActivities(activities)));
+            await host.StartAgentWorkerAsync(configuration, providers, client, queue);
         if (apiUrl is not null)
         {
             host.api = ApiApp.Build(new ApiServices(providers, configuration.Installation, configuration.Organisation, client), apiUrl);
@@ -117,6 +120,49 @@ public sealed class FeatureFlowHost : IAsyncDisposable
 
         return host;
     }
+
+    /// <summary>
+    /// The agent worker (docs/02 section 1): the agent step's activity on the agent queue and, when the installation
+    /// sets <c>agent_worker.listen</c>, the endpoint sandboxes call: hooks, engine tools and the model proxy (LOG 68).
+    /// </summary>
+    async Task StartAgentWorkerAsync(FeatureFlowConfiguration configuration, ProviderSet providers, ITemporalClient client, string queue)
+    {
+        var settings = configuration.Installation.AgentWorker ?? AgentWorkerConfig.None;
+        var secrets = providers.ForRun("secrets", false) as ISecretsProvider;
+        var key = settings.TokenKeyRef is { } reference
+            ? (await (secrets ?? throw new InvalidOperationException("agent_worker.token_key_ref needs a secrets provider")).ResolveAsync(reference, CancellationToken.None)).Unwrap()
+            : Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+        var tokens = StepTokens.FromSecret(key);
+        var options = new AgentWorkerOptions(settings.Urls, settings.ModelBaseUrl ?? (settings.Urls.FirstOrDefault()?.TrimEnd('/') + "/model"), settings.CommitInterval,
+            settings.SandboxClient);
+        Run(new TemporalWorker(client, new TemporalWorkerOptions(TaskQueues.Agent(queue)).AddAllActivities(new AgentActivities(providers, tokens, options))));
+        if (settings.Listen is not { } listen)
+            return;
+        var services = new AgentEndpointServices(tokens, providers.Required<IRecordStoreProvider>("record_store"), new TemporalRunSignals(client),
+            ModelProxyOf(configuration.Installation, secrets));
+        agentEndpoint = AgentEndpoint.Build(services, listen);
+        await agentEndpoint.StartAsync();
+        AgentEndpointAddress = agentEndpoint.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
+    }
+
+    /// <summary>
+    /// The model proxy from the default agent runtime's <c>model_access</c> (docs/07 section 2): <c>key_ref</c> names the
+    /// credential, <c>upstream</c> the model's API (default the Anthropic API), <c>auth</c> how it is sent: <c>api_key</c>
+    /// (the default) or <c>oauth</c> for a subscription token.
+    /// </summary>
+    static ModelProxy? ModelProxyOf(InstallationConfig installation, ISecretsProvider? secrets)
+    {
+        if (!installation.Providers.TryGetValue("agent_runtime", out var runtimes) || runtimes.Default is null
+            || runtimes.Instances[runtimes.Default].Settings["model_access"] is not YMap access || access["mode"].ScalarText() != "proxy")
+            return null;
+        var keyRef = access["key_ref"].ScalarText();
+        var upstream = new Uri((access["upstream"].ScalarText() ?? "https://api.anthropic.com").TrimEnd('/') + "/");
+        return new ModelProxy(new ModelProxyOptions(upstream, access["auth"].ScalarText() ?? "api_key", async ct =>
+            keyRef is null || secrets is null ? null : (await secrets.ResolveAsync(keyRef, ct)) is { Ok: true } found ? found.Value : null));
+    }
+
+    /// <summary>The agent endpoint's address once started, when the installation configures one.</summary>
+    public string? AgentEndpointAddress { get; private set; }
 
     void Run(TemporalWorker worker) => workers.Add(Task.Run(async () =>
     {
@@ -141,6 +187,8 @@ public sealed class FeatureFlowHost : IAsyncDisposable
         stop.Cancel();
         if (api is not null)
             await api.DisposeAsync();
+        if (agentEndpoint is not null)
+            await agentEndpoint.DisposeAsync();
         try
         {
             await Task.WhenAll(workers);

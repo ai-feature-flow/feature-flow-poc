@@ -25,7 +25,19 @@ public static class RunWorkflowNames
 
     /// <summary>Query: the run's state as this workflow holds it, for tests. The API reads the record store.</summary>
     public const string View = "view";
+
+    /// <summary>
+    /// Signal, from the agent worker's engine tools: an agent asked a question (<c>ask_human</c>, docs/04 section
+    /// 3.4). Idempotent by the question id, which the sandbox client assigned (LOG 59).
+    /// </summary>
+    public const string QuestionOpened = "question_opened";
 }
+
+/// <summary>A question an agent asked: the run opens a question decision for it, answered with the <c>answer</c> update.</summary>
+public sealed record QuestionSignal(string QuestionId, string StepId, string StepKey, string Text, IReadOnlyList<string> Options, long TimeoutSeconds);
+
+/// <summary>A question the run holds open, carried across continue-as-new; <see cref="Deadline"/> is when it times out.</summary>
+public sealed record OpenQuestion(QuestionSignal Question, DateTimeOffset Deadline);
 
 /// <summary>An approval rule's decision type pattern and whether it allows auto-resolution (docs/05 section 3.2).</summary>
 public sealed record AutoRule(string Match, bool Auto);
@@ -85,7 +97,9 @@ public sealed record ShellState(
     bool CancelledByParent,
     int ActivitiesStartedWhileDraining,
     int ChildEndsWhileDraining,
-    int AnswersWhileDraining);
+    int AnswersWhileDraining,
+    IReadOnlyList<OpenQuestion>? Questions = null,
+    IReadOnlyList<string>? ClosedQuestions = null);
 
 /// <summary>The run workflow's input: on the first run, what the API or the parent gives; after a hand-over, the same with <see cref="Carried"/> set.</summary>
 public sealed record RunStart(

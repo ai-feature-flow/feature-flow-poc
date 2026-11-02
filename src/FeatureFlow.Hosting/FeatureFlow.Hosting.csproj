@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\FeatureFlow.Engine\FeatureFlow.Engine.csproj" />
+    <ProjectReference Include="..\FeatureFlow.Engine.Agent\FeatureFlow.Engine.Agent.csproj" />
     <ProjectReference Include="..\FeatureFlow.Api\FeatureFlow.Api.csproj" />
   </ItemGroup>
 

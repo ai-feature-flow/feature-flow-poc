@@ -1,2 +1,30 @@
 <Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The Live category (docs/11 section 4.1): a real model and the fixture repository on GitHub. It shares the
+       integration tests' harness, compiled in here rather than referenced, so their tests are not run twice. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\FeatureFlow.Integration.Tests\Harness.cs" Link="Shared\Harness.cs" />
+    <Compile Include="..\FeatureFlow.Integration.Tests\AgentHarness.cs" Link="Shared\AgentHarness.cs" />
+    <Compile Include="..\FeatureFlow.Integration.Tests\AgentScripts.cs" Link="Shared\AgentScripts.cs" />
+    <Compile Include="..\FeatureFlow.Integration.Tests\ScriptedModel.cs" Link="Shared\ScriptedModel.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\FeatureFlow.Hosting\FeatureFlow.Hosting.csproj" />
+    <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Local\FeatureFlow.Providers.Local.csproj" />
+    <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Docker\FeatureFlow.Providers.Docker.csproj" />
+    <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.ClaudeCode\FeatureFlow.Providers.ClaudeCode.csproj" />
+    <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Git\FeatureFlow.Providers.Git.csproj" />
+    <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.GitHub\FeatureFlow.Providers.GitHub.csproj" />
+    <ProjectReference Include="..\..\src\FeatureFlow.Cli\FeatureFlow.Cli.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Temporalio" />
+  </ItemGroup>
+
 </Project>
