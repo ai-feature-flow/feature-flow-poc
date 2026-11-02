@@ -260,6 +260,7 @@ Not done in M4:
 | 11 | The Docker sandbox applies no network policy or resource limits (its capabilities say so) |
 | 12 | **Must fix before any shared deployment** (review finding 13): the sandbox's network is unrestricted, and `host-gateway` reaches every service on the worker's host, the Temporal frontend included |
 | 13 | DR20, the platform trust store, has no test (section 2.5) |
+| 14 | GitHub CI's first run on `4196ee1` failed once: SP1's scenario (`Children_ending_and_answers_arriving_during_hand_overs_are_not_lost`) counted one `WorkflowTaskFailed`, its check C5. The rerun of the same commit passed, and so did the test locally in Release. The cause was not found; a likely one is Temporal's deadlock detector on a runner shared with the now nineteen Docker agent tests. If it recurs, run the agent tests in one collection, apart from SP1 |
 
 ## 9. M3 follow-ups
 
