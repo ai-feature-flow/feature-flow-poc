@@ -75,6 +75,24 @@ public sealed class GitHubCodeHostTests
             Assert.NotNull(result.Error.RetryAfter);
     }
 
+    /// <summary>
+    /// GitHub's answer when the App's installation lacks a permission (for example reading protection without
+    /// Administration) is a configuration fault: a work error naming it, so run start stops for a person instead of
+    /// retrying it as infrastructure.
+    /// </summary>
+    [Fact]
+    public async Task A_missing_App_permission_is_a_configuration_fault_not_retried()
+    {
+        var (host, github, _) = Host();
+        github.On(Get, "~/branches/main", 403, """{"message":"Resource not accessible by integration"}""");
+
+        var result = await host.GetBranchProtectionAsync(Repo, "main", Ct);
+
+        Assert.Equal("rejected", result.Error?.Reason);
+        Assert.Equal(ProviderErrorClass.Work, result.Error!.Class);
+        Assert.Contains("configuration fault", result.Error.Message);
+    }
+
     [Fact]
     public async Task An_undocumented_success_is_an_unexpected_response_never_retried()
     {

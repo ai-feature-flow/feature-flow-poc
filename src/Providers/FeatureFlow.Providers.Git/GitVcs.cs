@@ -196,7 +196,7 @@ public sealed class GitVcs(
             {
                 if (Moved(text))
                     return ProviderResult<PushResult>.Failure("base_moved", $"{reference} is not at {expectedOldRevision ?? "nothing"}");
-                return ProviderResult<PushResult>.Failure(Unreachable(text) ? "unreachable" : "rejected", $"the push to {reference} failed: {FirstLine(text)}");
+                return ProviderResult<PushResult>.Failure(Classify(text, "rejected"), $"the push to {reference} failed: {FirstLine(text)}");
             }
 
             // Git skips the lease when the reference is already at the revision ("=", up to date): the reference
@@ -365,7 +365,7 @@ public sealed class GitVcs(
         var text = push.Value.Output + push.Value.Error;
         return Moved(text)
             ? new ProviderError("base_moved", $"{reference} is not at {expected}")
-            : new ProviderError(Unreachable(text) ? "unreachable" : "rejected", $"the push to {reference} failed: {FirstLine(text)}");
+            : new ProviderError(Classify(text, "rejected"), $"the push to {reference} failed: {FirstLine(text)}");
     }
 
     static async Task<ProviderResult<string>> CommitTreeAsync(string dir, string tree, IReadOnlyList<string> parents, string message,
@@ -548,7 +548,22 @@ public sealed class GitVcs(
         if (run.Value!.Exit == 0)
             return null;
         var text = run.Value.Error + run.Value.Output;
-        return new ProviderError(Unreachable(text) ? "unreachable" : "validation_failed", $"git could not {what}: {FirstLine(text)}");
+        return new ProviderError(Classify(text, "validation_failed"), $"git could not {what}: {FirstLine(text)}");
+    }
+
+    /// <summary>
+    /// docs/06 section 1.1 for git's own messages. Credentials and HTTP refusals are checked first, because git reports
+    /// them as "unable to access", which alone means the remote could not be reached.
+    /// </summary>
+    internal static string Classify(string text, string otherwise)
+    {
+        if (text.Contains("Authentication failed", StringComparison.Ordinal) || text.Contains("error: 401", StringComparison.Ordinal))
+            return "unauthenticated";
+        if (text.Contains("error: 403", StringComparison.Ordinal))
+            return "forbidden";
+        if (text.Contains("error: 429", StringComparison.Ordinal))
+            return "rate_limited";
+        return Unreachable(text) ? "unreachable" : otherwise;
     }
 
     static bool Unreachable(string text) =>

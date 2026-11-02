@@ -189,6 +189,9 @@ public sealed class GitHubApi(Func<ICredentialBroker?> broker, HttpMessageHandle
         {
             401 => new ProviderError("unauthenticated", what),
             403 or 429 when rateLimited || (int)response.StatusCode == 429 => new ProviderError("rate_limited", what, retryAfter ?? ResetDelay(response)),
+            // The App's installation lacks a permission: a configuration fault for a person, never retried (review finding 3).
+            403 when message.Contains("Resource not accessible by", StringComparison.Ordinal) =>
+                new ProviderError("rejected", $"configuration fault: the GitHub App has no permission for this. {what}"),
             403 => new ProviderError("forbidden", what),
             404 or 410 => new ProviderError("not_found", what),
             409 => new ProviderError("conflict", what),

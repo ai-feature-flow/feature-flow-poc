@@ -132,6 +132,20 @@ public sealed class GitVcsTests : IDisposable
         Assert.False((await merge).Unwrap().AlreadyMerged);
     }
 
+    /// <summary>git's messages, as GitHub's HTTPS answers produce them, classed as docs/06 section 1.1 says (review finding 3).</summary>
+    [Theory]
+    [InlineData("remote: Invalid username or token.\nfatal: Authentication failed for 'https://github.com/o/r.git/'", "unauthenticated")]
+    [InlineData("fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 401", "unauthenticated")]
+    [InlineData("fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 403", "forbidden")]
+    [InlineData("fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 429", "rate_limited")]
+    [InlineData("fatal: unable to access 'https://github.com/o/r.git/': Could not resolve host: github.com", "unreachable")]
+    [InlineData("error: RPC failed; curl 56 Recv failure: Connection reset by peer", "unreachable")]
+    [InlineData("fatal: couldn't find remote ref refs/heads/x", "validation_failed")]
+    public void Git_failures_are_classified(string stderr, string reason)
+    {
+        Assert.Equal(reason, GitVcs.Classify(stderr, "validation_failed"));
+    }
+
     [Fact]
     public async Task A_catch_up_of_a_missing_branch_is_not_found()
     {
