@@ -60,7 +60,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
         public Task<ProviderResult<Unit>> StopAsync(AgentSession session, CancellationToken cancellationToken) => inner.StopAsync(session, cancellationToken);
     }
 
-    async Task<StepOutcome> RunAsync(IReadOnlyDictionary<string, string> edits, bool codeHost = true, string step = "implement")
+    async Task<StepOutcome> RunAsync(IReadOnlyDictionary<string, string> edits, bool codeHost = true, string step = "implement", string branch = Branch)
     {
         var client = Path.Combine(folder, "ff-sandbox");
         await File.WriteAllTextAsync(client, "a stand-in for the sandbox client", TestContext.Current.CancellationToken);
@@ -82,7 +82,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
         var contract = new StepContract([new OutcomeSpec("implemented", "success")], new Dictionary<string, string> { ["commits"] = "number" }, [],
             new Dictionary<string, string> { ["commits"] = "0" });
         var spec = new AgentStepSpec("write", ["read", "edit"], null, null, [], 2, 0, TimeSpan.FromHours(1), true, "commit", "ticket",
-            new Dictionary<string, string> { [repo.FullName] = Branch }, new Dictionary<string, string>(), new Dictionary<string, string>(), "wf", "lock");
+            new Dictionary<string, string> { [repo.FullName] = branch }, new Dictionary<string, string>(), new Dictionary<string, string>(), "wf", "lock");
         var call = new StepCall(new StepIdentity("run-1", "ticket_delivery", step, 1, $"run-1/{step}/1"), "agent", "std:roles/implementer",
             new Dictionary<string, string>(), contract, false, TimeSpan.FromMinutes(5), spec);
         return await new ActivityEnvironment().RunAsync(() => activities.RunAgentStepAsync(call));
@@ -129,6 +129,18 @@ public sealed class AgentManifestTests : IAsyncDisposable
         Assert.Equal(StepOutcome.WorkFailed, outcome.Kind);
         Assert.Contains("setup command 'dotnet tool restore' exited 1", outcome.Reason, StringComparison.Ordinal);
         Assert.Null(forge.ReadFile(repo, Work!, "src/B.cs"));
+    }
+
+    [Fact]
+    public async Task An_agent_step_whose_work_branch_is_the_default_branch_does_not_start()
+    {
+        var main = forge.Resolve(repo, "main");
+
+        var outcome = await RunAsync(new Dictionary<string, string> { ["src/B.cs"] = "class B{}" }, branch: "main");
+
+        Assert.Equal(StepOutcome.CannotAnswer, outcome.Kind);
+        Assert.Equal(main, forge.Resolve(repo, "main"));
+        Assert.Equal(0, sandbox.Counts.Created);
     }
 
     [Fact]

@@ -382,6 +382,44 @@ public sealed class SourceControlActionTests
             w.Actions.CleanUpAsync(w.RunId, "plan", 1, [w.Repo.FullName], ActionWorld.WorkBranch, ["plan"], TestContext.Current.CancellationToken));
     }
 
+    [Theory]
+    [InlineData("scm.catch_up", "main", null)]
+    [InlineData("scm.pull_request", "main", null)]
+    [InlineData("scm.merge", "main", null)]
+    [InlineData("test.run", "main", null)]
+    [InlineData("scm.catch_up", "ff/epic/E-1", "ff/epic/E-1")]
+    [InlineData("scm.merge", "main", "ff/epic/E-1")]
+    public async Task No_action_writes_when_the_work_branch_is_the_parent_or_default_branch(string action, string branch, string? parent)
+    {
+        await using var w = new ActionWorld();
+        if (parent is not null)
+            w.Forge.Commit(w.Repo, "refs/heads/" + parent, new Dictionary<string, string?> { ["epic.txt"] = "epic" });
+        w.CommitMain("x.txt", "main moved");
+        var before = (w.Main, parent is null ? null : w.Forge.Resolve(w.Repo, parent));
+        (w.Branch, w.ParentBranch) = (branch, parent);
+
+        var result = await w.RunAsync(action, null, "step");
+
+        Assert.Equal(StepOutcome.CannotAnswer, result.Kind);
+        Assert.Contains("engine writes only to a branch of its own", result.Reason, StringComparison.Ordinal);
+        Assert.Equal(before, (w.Main, parent is null ? null : w.Forge.Resolve(w.Repo, parent)));
+    }
+
+    [Fact]
+    public async Task A_clean_up_never_resets_the_default_branch()
+    {
+        await using var w = new ActionWorld();
+        var main = w.Main;
+        await w.Records.AppendAsync(new RecordBatch(AgentEvents: [new AgentEventRecord($"{w.RunId}/plan/1", "start", $"{w.Repo.FullName} {main}", DateTimeOffset.UtcNow)]),
+            TestContext.Current.CancellationToken);
+        var moved = w.CommitMain("x.txt", "a person's commit");
+
+        var result = await w.Actions.CleanUpAsync(w.RunId, "plan", 1, [w.Repo.FullName], "main", ["plan"], TestContext.Current.CancellationToken);
+
+        Assert.Contains("never resets it", result.Error, StringComparison.Ordinal);
+        Assert.Equal(moved, w.Main);
+    }
+
     [Fact]
     public async Task A_clean_up_for_a_step_that_never_touched_the_repository_resets_nothing()
     {

@@ -35,14 +35,17 @@ public sealed class RunStartCheckTests
         }
     }
 
-    static async Task<DiagnosticBag> CheckAsync(Setup s, bool? engineCanMerge, IReadOnlyList<string>? engineMayMerge = null, string? parentBranch = null)
+    static async Task<DiagnosticBag> CheckAsync(Setup s, bool? engineCanMerge, IReadOnlyList<string>? engineMayMerge = null, string? parentBranch = null,
+        string template = "std:templates/ticket_delivery")
     {
         var d = new DiagnosticBag();
-        var libraries = new LibrarySet(Library.Library.Open(StdRoot, d)!);
+        var libraries = new LibrarySet(Library.Library.Open(StdRoot, d)!,
+            Library.Library.Open(Path.Combine(FindRoot(), "tests", "FeatureFlow.Integration.Tests", "libraries", "m5"), d)!);
         var parameters = new Dictionary<string, YNode> { ["ticket_id"] = YamlWriter.Read("T-1") };
         if (engineCanMerge is { } ecm)
             parameters["engine_can_merge"] = YamlWriter.Read(ecm ? "true" : "false");
-        var (core, loaded) = RunCore.Start(libraries, LibraryReference.TryParse("std:templates/ticket_delivery")!, new RunInfo("run-1", [s.Repo.FullName], parameters));
+        var (core, loaded) = RunCore.Start(libraries, LibraryReference.TryParse(template)!, new RunInfo("run-1", [s.Repo.FullName], parameters),
+            new RunOptions { BranchFromPattern = true });
         Assert.DoesNotContain(loaded, x => x.Blocks);
         var start = new RunStart("run-1", "std:templates/ticket_delivery", [s.Repo.FullName], new Dictionary<string, string>(), "lock", false, "tester",
             ParentBranch: parentBranch);
@@ -91,6 +94,17 @@ public sealed class RunStartCheckTests
         var refused = await CheckAsync(s, engineCanMerge: true);
 
         Assert.Contains("default branch trunk", Assert.Single(refused).Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_work_branch_that_is_the_default_or_parent_branch_is_refused_at_run_start()
+    {
+        var main = await CheckAsync(Setup.Protected(), engineCanMerge: null, template: "m5:templates/branch_main");
+        var parent = await CheckAsync(Setup.Protected(), engineCanMerge: false, parentBranch: "ff/ticket/T-1");
+
+        Assert.Contains("work branch 'main' is its default branch", Assert.Single(main).Message, StringComparison.Ordinal);
+        Assert.Contains("work branch 'ff/ticket/T-1' is its parent branch", Assert.Single(parent).Message, StringComparison.Ordinal);
+        Assert.Empty(await CheckAsync(Setup.Protected(), engineCanMerge: false));          // control: ff/ticket/T-1 from main
     }
 
     [Fact]

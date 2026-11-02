@@ -32,6 +32,9 @@ public sealed class ActionWorld : IAsyncDisposable
     public List<string> EngineMayMerge { get; } = [];
     public string? ParentBranch { get; set; }
 
+    /// <summary>The run's work branch as the scope gives it; tests of the work-branch guard set it to a protected branch.</summary>
+    public string Branch { get; set; } = WorkBranch;
+
     /// <summary>Executions per step id, so a step run again is a new execution with its own records.</summary>
     readonly Dictionary<string, int> executions = new(StringComparer.Ordinal);
 
@@ -70,7 +73,7 @@ public sealed class ActionWorld : IAsyncDisposable
     public string CommitMain(string path, string content) =>
         Forge.Commit(Repo, "main", new Dictionary<string, string?> { [path] = content }, $"someone changes {path}");
 
-    public ActionScope Scope => new([Repo.FullName], Repo.FullName, WorkBranch, ParentBranch, Artifacts.ToList(), PullRequests.ToList(), EngineMayMerge.ToList());
+    public ActionScope Scope => new([Repo.FullName], Repo.FullName, Branch, ParentBranch, Artifacts.ToList(), PullRequests.ToList(), EngineMayMerge.ToList());
 
     /// <summary>
     /// Runs one action step to its end: a wait is retried as Temporal would, up to <paramref name="waits"/> reads. The

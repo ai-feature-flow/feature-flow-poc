@@ -50,7 +50,8 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
             d.Add(Checks.ReferenceResolves, $"'{start.Template}' is not a template reference");
         else
         {
-            var (core, loaded) = RunCore.Start(libraries, template, RunInfoOf(start), policy.ToOptions());
+            // The branch pattern is rendered as a new run's workflow renders it (patch m4-branch-pattern), for the work-branch check.
+            var (core, loaded) = RunCore.Start(libraries, template, RunInfoOf(start), policy.ToOptions() with { BranchFromPattern = true });
             d.AddRange(loaded);
             RunStartChecks.LibraryRequirements(libraries, EngineInfo.Version, d);
             if (core is not null)
@@ -88,6 +89,11 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
             if (Readable(branch, $"{name}: the default branch", Checks.BranchProtection, d) is not { } defaultBranch)
                 continue;
             defaults[name] = defaultBranch;
+            // The engine writes to its work branch freely; one that is the default or parent branch would put those
+            // writes, and a clean_up's reset, straight onto it (F1; review 11).
+            var work = core.WorkBranch();
+            if (work == defaultBranch || work == start.ParentBranch)
+                d.Add(Checks.EngineMerge, $"{name}: the run's work branch '{work}' is its {(work == defaultBranch ? "default" : "parent")} branch; the engine writes only to a branch of its own (metadata.branch_pattern)");
             if (Readable(await host.GetBranchProtectionAsync(repo, defaultBranch, ct), $"{name}: the protection of {defaultBranch}", Checks.BranchProtection, d) is { } protection)
                 RunStartChecks.BranchProtection(name, defaultBranch, protection.Protected, d);
             if (Readable(await host.ReadFileAsync(repo, RepositoryManifest.FileName, defaultBranch, ct), $"{name}: {RepositoryManifest.FileName}",
