@@ -75,6 +75,63 @@ public sealed class GitVcsTests : IDisposable
         Assert.Equal(theirs, remote.Resolve("refs/heads/ff/work"));
     }
 
+    /// <summary>
+    /// The review's finding 2: the default cache is shared by every instance and worker on a host. Two instances on one
+    /// cache run catch-ups of different branches at once, ten rounds: each must report its own branch, and no scratch
+    /// reference may be left.
+    /// </summary>
+    [Fact]
+    public async Task Two_instances_sharing_a_cache_run_concurrent_operations_without_reading_each_others_references()
+    {
+        var shared = Path.Combine(root, "shared-cache");
+        GitVcs Instance() => new(BareRepository.Template(Path.Combine(root, "remotes")), shared,
+            () => throw new InvalidOperationException(), () => throw new InvalidOperationException(), () => null);
+        var (a, b) = (Instance(), Instance());
+        var heads = new Dictionary<string, string>();
+        foreach (var branch in new[] { "ff/b0", "ff/b1" })
+            heads[branch] = remote.Commit("refs/heads/" + branch, new Dictionary<string, string?> { [branch.Replace('/', '-') + ".txt"] = branch }, from: "refs/heads/main");
+
+        for (var round = 0; round < 10; round++)
+        {
+            remote.Commit("refs/heads/main", new Dictionary<string, string?> { [$"main-{round}.txt"] = $"{round}" });
+            var results = await Task.WhenAll(
+                a.CatchUpAsync(repo, "refs/heads/main", "refs/heads/ff/b0", heads["ff/b0"], "catch up", Ct),
+                b.CatchUpAsync(repo, "refs/heads/main", "refs/heads/ff/b1", heads["ff/b1"], "catch up", Ct));
+            foreach (var (branch, result) in new[] { "ff/b0", "ff/b1" }.Zip(results))
+            {
+                Assert.True(result.Ok, $"round {round}, {branch}: {result.Error?.Reason} {result.Error?.Message}");
+                Assert.Equal(remote.Resolve("refs/heads/" + branch), result.Value!.WorkRevision);
+                Assert.Equal(branch, remote.Read(result.Value.WorkRevision, branch.Replace('/', '-') + ".txt"));
+                heads[branch] = result.Value.WorkRevision;
+            }
+        }
+
+        Assert.Equal("", remote.GitIn(shared + "/ai-feature-flow_race.git", "for-each-ref", "refs/ff-cache/op/").Trim());
+    }
+
+    /// <summary>Another process holding the cache's lock file (the test stands in for it) makes an operation wait until it lets go.</summary>
+    [Fact]
+    public async Task An_operation_waits_for_another_process_holding_the_caches_lock()
+    {
+        var shared = Path.Combine(root, "locked-cache");
+        Directory.CreateDirectory(shared);
+        var vcs = new GitVcs(BareRepository.Template(Path.Combine(root, "remotes")), shared,
+            () => throw new InvalidOperationException(), () => throw new InvalidOperationException(), () => null);
+        var target = remote.Resolve("refs/heads/main")!;
+        var tested = remote.Commit("refs/heads/ff/work", new Dictionary<string, string?> { ["a.txt"] = "1" }, from: "refs/heads/main");
+
+        Task<FeatureFlow.Providers.Abstractions.ProviderResult<MergeResult>> merge;
+        await using (new FileStream(Path.Combine(shared, "ai-feature-flow_race.git.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
+        {
+            merge = vcs.MergeAsync(repo, tested, "refs/heads/main", target, MergeMethods.Merge, "merge", "key-lock", Ct);
+            await Task.Delay(TimeSpan.FromSeconds(1), Ct);
+            Assert.False(merge.IsCompleted, "the merge ran while another process held the cache");
+            Assert.Equal(target, remote.Resolve("refs/heads/main"));
+        }
+
+        Assert.False((await merge).Unwrap().AlreadyMerged);
+    }
+
     [Fact]
     public async Task A_catch_up_of_a_missing_branch_is_not_found()
     {

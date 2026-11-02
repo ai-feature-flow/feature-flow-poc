@@ -20,7 +20,7 @@ public sealed class GitVcs(
     Func<ICredentialBroker?> broker) : IVcsProvider
 {
     readonly ConcurrentDictionary<string, Credential> credentials = new();
-    readonly ConcurrentDictionary<string, SemaphoreSlim> locks = new();
+    static readonly ConcurrentDictionary<string, SemaphoreSlim> Gates = new(StringComparer.Ordinal);
 
     public ProviderDescription Describe() => new("vcs", "git", "0.1.0", new VcsCapabilities("git", true, true, false));
 
@@ -51,16 +51,18 @@ public sealed class GitVcs(
     public async Task<ProviderResult<Unit>> CheckOutAsync(RepoRef repo, string sourceReference, string revision, string branch, WorkingCopyRef target,
         CancellationToken cancellationToken)
     {
-        var bundle = await WithCacheAsync(repo, async (dir, env) =>
+        var bundled = "";
+        var bundle = await WithCacheAsync(repo, async (dir, env, op) =>
         {
-            if (Failed(await GitAsync(dir, ["fetch", "--no-tags", UrlOf(repo), $"+{sourceReference}:refs/ff-cache/checkout"], env, cancellationToken), "fetch") is { } fetch)
+            bundled = $"{op}/bundle";
+            if (Failed(await GitAsync(dir, ["fetch", "--no-tags", UrlOf(repo), $"+{sourceReference}:{op}/checkout"], env, cancellationToken), "fetch") is { } fetch)
                 return new ProviderResult<ArtifactRef>(null, fetch);
             var file = Path.Combine(dir, $"checkout-{Guid.NewGuid():N}.bundle");
             try
             {
-                if (Failed(await GitAsync(dir, ["update-ref", "refs/ff-cache/bundle", revision], env, cancellationToken), "mark the revision") is { } mark)
+                if (Failed(await GitAsync(dir, ["update-ref", $"{op}/bundle", revision], env, cancellationToken), "mark the revision") is { } mark)
                     return new ProviderResult<ArtifactRef>(null, mark);
-                if (Failed(await GitAsync(dir, ["bundle", "create", file, "refs/ff-cache/bundle"], env, cancellationToken), "bundle the checkout") is { } create)
+                if (Failed(await GitAsync(dir, ["bundle", "create", file, $"{op}/bundle"], env, cancellationToken), "bundle the checkout") is { } create)
                     return new ProviderResult<ArtifactRef>(null, create);
                 await using var stream = File.OpenRead(file);
                 return await store().PutAsync(stream, cancellationToken);
@@ -80,7 +82,7 @@ public sealed class GitVcs(
             return copied;
         var path = target.Path;
         // A repository with no remote: the agent has nothing to push to (F5).
-        var script = $"set -e; git init -q {Q(path)}; cd {Q(path)}; git fetch -q {Q(inSandbox)} refs/ff-cache/bundle; " +
+        var script = $"set -e; git init -q {Q(path)}; cd {Q(path)}; git fetch -q {Q(inSandbox)} {Q(bundled)}; " +
                      $"git checkout -q -B {Q(branch)} {Q(revision)}; rm -f {Q(inSandbox)}";
         return await ShAsync(target.Sandbox, script, $"checkout/{Guid.NewGuid():N}", cancellationToken) is { } failed
             ? new ProviderResult<Unit>(default, failed)
@@ -124,7 +126,7 @@ public sealed class GitVcs(
     }
 
     public Task<ProviderResult<bool>> DescendsFromAsync(RepoRef repo, string revision, string ancestor, CancellationToken cancellationToken) =>
-        WithCacheAsync(repo, async (dir, env) =>
+        WithCacheAsync(repo, async (dir, env, op) =>
         {
             async Task<bool> Present(string r) => Failed(await GitAsync(dir, ["cat-file", "-e", r + "^{commit}"], env, cancellationToken), "") is null;
             if (!await Present(revision) || !await Present(ancestor))
@@ -158,7 +160,7 @@ public sealed class GitVcs(
 
     public Task<ProviderResult<PushResult>> PushAsync(RepoRef repo, string reference, string revision, CommitBundle? commits, string? expectedOldRevision,
         CancellationToken cancellationToken) =>
-        WithCacheAsync(repo, async (dir, env) =>
+        WithCacheAsync(repo, async (dir, env, op) =>
         {
             async Task<bool> Present() => Failed(await GitAsync(dir, ["cat-file", "-e", revision + "^{commit}"], env, cancellationToken), "") is null;
             if (!await Present())
@@ -176,7 +178,7 @@ public sealed class GitVcs(
                     await using (var source = got.Value!)
                     await using (var target = File.Create(file))
                         await source.CopyToAsync(target, cancellationToken);
-                    if (Failed(await GitAsync(dir, ["fetch", "--no-tags", file, "+HEAD:refs/ff-cache/pushed"], env, cancellationToken), "unbundle the commits") is { } unbundle)
+                    if (Failed(await GitAsync(dir, ["fetch", "--no-tags", file, $"+HEAD:{op}/pushed"], env, cancellationToken), "unbundle the commits") is { } unbundle)
                         return new ProviderResult<PushResult>(null, unbundle);
                 }
                 finally
@@ -210,13 +212,13 @@ public sealed class GitVcs(
     /// </summary>
     public Task<ProviderResult<CatchUpResult>> CatchUpAsync(RepoRef repo, string parentReference, string workReference, string expectedWorkRevision,
         string message, CancellationToken cancellationToken) =>
-        WithCacheAsync(repo, async (dir, env) =>
+        WithCacheAsync(repo, async (dir, env, op) =>
         {
-            var fetched = await FetchAsync(dir, repo, env, cancellationToken, (parentReference, "refs/ff-cache/catch-up/parent"), (workReference, "refs/ff-cache/catch-up/work"));
+            var fetched = await FetchAsync(dir, repo, env, cancellationToken, (parentReference, $"{op}/parent"), (workReference, $"{op}/work"));
             if (fetched is not null)
                 return new ProviderResult<CatchUpResult>(null, fetched);
-            var parent = await RevParseAsync(dir, "refs/ff-cache/catch-up/parent", env, cancellationToken);
-            var work = await RevParseAsync(dir, "refs/ff-cache/catch-up/work", env, cancellationToken);
+            var parent = await RevParseAsync(dir, $"{op}/parent", env, cancellationToken);
+            var work = await RevParseAsync(dir, $"{op}/work", env, cancellationToken);
             if (parent is null || work is null)
                 return ProviderResult<CatchUpResult>.Failure("internal_error", "the fetched references do not resolve in the cache");
 
@@ -249,17 +251,17 @@ public sealed class GitVcs(
     /// </summary>
     public Task<ProviderResult<MergeResult>> MergeAsync(RepoRef repo, string testedRevision, string targetReference, string expectedTargetRevision,
         string method, string message, string key, CancellationToken cancellationToken) =>
-        WithCacheAsync(repo, async (dir, env) =>
+        WithCacheAsync(repo, async (dir, env, op) =>
         {
             if (method is not (MergeMethods.Merge or MergeMethods.Squash))
                 return ProviderResult<MergeResult>.Failure("validation_failed", $"unknown merge method '{method}'");
-            if (await FetchAsync(dir, repo, env, cancellationToken, (targetReference, "refs/ff-cache/merge/target")) is { } fetchTarget)
+            if (await FetchAsync(dir, repo, env, cancellationToken, (targetReference, $"{op}/target")) is { } fetchTarget)
                 return new ProviderResult<MergeResult>(null, fetchTarget);
             if (!await PresentAsync(dir, testedRevision, env, cancellationToken))
                 await GitAsync(dir, ["fetch", "--no-tags", UrlOf(repo), "+refs/heads/*:refs/ff-cache/heads/*", "+refs/feature-flow/*:refs/ff-cache/ff/*"], env, cancellationToken);
             if (!await PresentAsync(dir, testedRevision, env, cancellationToken))
                 return ProviderResult<MergeResult>.Failure("not_found", $"{testedRevision} is not on the remote");
-            var target = await RevParseAsync(dir, "refs/ff-cache/merge/target", env, cancellationToken);
+            var target = await RevParseAsync(dir, $"{op}/target", env, cancellationToken);
             if (target is null)
                 return ProviderResult<MergeResult>.Failure("internal_error", "the fetched target does not resolve in the cache");
 
@@ -280,9 +282,9 @@ public sealed class GitVcs(
                 return ProviderResult<MergeResult>.Success(new MergeResult(commit.Value!, expectedTargetRevision, method, AlreadyMerged: false));
 
             // The push was refused or its answer lost: read the target again before calling it a failure.
-            if (await FetchAsync(dir, repo, env, cancellationToken, (targetReference, "refs/ff-cache/merge/target")) is not null)
+            if (await FetchAsync(dir, repo, env, cancellationToken, (targetReference, $"{op}/target")) is not null)
                 return new ProviderResult<MergeResult>(null, pushed);
-            var now = await RevParseAsync(dir, "refs/ff-cache/merge/target", env, cancellationToken);
+            var now = await RevParseAsync(dir, $"{op}/target", env, cancellationToken);
             if (now == commit.Value)
                 return ProviderResult<MergeResult>.Success(new MergeResult(commit.Value!, target, method, AlreadyMerged: false));
             if (now is not null && await LandedAsync(dir, testedRevision, now, key, env, cancellationToken))
@@ -399,32 +401,65 @@ public sealed class GitVcs(
         text.Contains("stale info", StringComparison.Ordinal) || text.Contains("[rejected]", StringComparison.Ordinal)
         || text.Contains("fetch first", StringComparison.Ordinal) || text.Contains("cannot lock ref", StringComparison.Ordinal);
 
-    /// <summary>Runs <paramref name="work"/> on the repository's cached bare clone, one operation at a time per repository.</summary>
-    async Task<ProviderResult<T>> WithCacheAsync<T>(RepoRef repo, Func<string, IReadOnlyDictionary<string, string>, Task<ProviderResult<T>>> work, bool write,
+    /// <summary>
+    /// Runs <paramref name="work"/> on the repository's cached bare clone, one operation at a time per cache, across
+    /// instances (a static gate per path) and processes (an exclusive lock file beside the cache), because the default
+    /// cache is shared by every worker on a host. Each operation gets its own scratch references under
+    /// <c>refs/ff-cache/op/&lt;guid&gt;</c>, deleted afterwards.
+    /// </summary>
+    async Task<ProviderResult<T>> WithCacheAsync<T>(RepoRef repo, Func<string, IReadOnlyDictionary<string, string>, string, Task<ProviderResult<T>>> work, bool write,
         CancellationToken cancellationToken)
     {
         var env = await EnvironmentAsync(repo, write, cancellationToken);
         if (!env.Ok)
             return new ProviderResult<T>(default, env.Error);
-        var dir = CacheOf(repo);
-        var gate = locks.GetOrAdd(dir, _ => new SemaphoreSlim(1, 1));
+        var dir = Path.GetFullPath(CacheOf(repo));
+        var gate = Gates.GetOrAdd(dir, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(cancellationToken);
         try
         {
+            Directory.CreateDirectory(cache);
+            await using var held = await LockFileAsync(dir + ".lock", cancellationToken);
             // GIT_DIR names the bare clone explicitly, so git works where safe.bareRepository is "explicit".
             var withDir = new Dictionary<string, string>(env.Value!) { ["GIT_DIR"] = dir };
-            if (!Directory.Exists(dir))
+            if (!Directory.Exists(Path.Combine(dir, "objects")))
             {
                 Directory.CreateDirectory(dir);
                 if (Failed(await GitAsync(dir, ["init", "-q", "--bare"], withDir, cancellationToken), "create the cache") is { } init)
                     return new ProviderResult<T>(default, init);
             }
 
-            return await work(dir, withDir);
+            var op = $"refs/ff-cache/op/{Guid.NewGuid():N}";
+            try
+            {
+                return await work(dir, withDir, op);
+            }
+            finally
+            {
+                var scratch = await GitAsync(dir, ["for-each-ref", "--format=delete %(refname)", op + "/"], withDir, CancellationToken.None);
+                if (scratch.Ok && scratch.Value!.Exit == 0 && scratch.Value.Output.Length > 0)
+                    await GitAsync(dir, ["update-ref", "--stdin"], withDir, CancellationToken.None, scratch.Value.Output);
+            }
         }
         finally
         {
             gate.Release();
+        }
+    }
+
+    /// <summary>An exclusive lock on <paramref name="path"/>, held until disposed; another process holding it is waited for.</summary>
+    static async Task<FileStream> LockFileAsync(string path, CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            try
+            {
+                return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            }
+            catch (IOException)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken);
+            }
         }
     }
 
@@ -475,9 +510,12 @@ public sealed class GitVcs(
     public sealed record GitRun(int Exit, string Output, string Error);
 
     static async Task<ProviderResult<GitRun>> GitAsync(string directory, IReadOnlyList<string> arguments, IReadOnlyDictionary<string, string>? env,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, string? input = null)
     {
-        var start = new ProcessStartInfo("git") { WorkingDirectory = directory, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        var start = new ProcessStartInfo("git")
+        {
+            WorkingDirectory = directory, RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = input is not null, UseShellExecute = false,
+        };
         foreach (var a in arguments)
             start.ArgumentList.Add(a);
         foreach (var (k, v) in env ?? new Dictionary<string, string>())
@@ -485,6 +523,12 @@ public sealed class GitVcs(
         try
         {
             using var process = Process.Start(start)!;
+            if (input is not null)
+            {
+                await process.StandardInput.WriteAsync(input);
+                process.StandardInput.Close();
+            }
+
             var output = process.StandardOutput.ReadToEndAsync(cancellationToken);
             var error = process.StandardError.ReadToEndAsync(cancellationToken);
             await process.WaitForExitAsync(cancellationToken);

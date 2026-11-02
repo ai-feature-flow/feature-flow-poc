@@ -78,6 +78,9 @@ public sealed class BareRepository
 
     public string Git(params string[] arguments) => Git(null, arguments);
 
+    /// <summary>Runs git in another repository (a provider's cache).</summary>
+    public string GitIn(string gitDir, params string[] arguments) => Git(new Dictionary<string, string> { ["GIT_DIR"] = gitDir }, arguments);
+
     string Git(IReadOnlyDictionary<string, string>? env, params string[] arguments)
     {
         var (exit, output) = Run(arguments, env, null);
