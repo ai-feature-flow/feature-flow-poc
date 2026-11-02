@@ -487,7 +487,11 @@ public class RunWorkflow
             if (core.State.Steps.GetValueOrDefault(other.Id)?.Current is not { } current)
                 continue;
             foreach (var (name, reference) in current.Artifacts.OrderBy(kv => kv.Key, StringComparer.Ordinal))
-                artifacts.Add(new ArtifactEntry(other.Id, name, other.Produces.FirstOrDefault(p => p.Name == name)?.Type?.Text, reference));
+            {
+                var type = other.Produces.FirstOrDefault(p => p.Name == name)?.Type;
+                var evidence = type?.Reference is { } typeRef && libraries?.Resolve(typeRef)?.ArtifactType(typeRef.Name)?.Evidence == true;
+                artifacts.Add(new ArtifactEntry(other.Id, name, type?.Text, reference, other.Form == StepForm.Action ? other.Action : null, evidence));
+            }
             if (other.Action == "scm.pull_request" && current.Outputs.GetValueOrDefault("pull_request") is string pr && pr.Length > 0)
                 pullRequests.Add(pr);
         }

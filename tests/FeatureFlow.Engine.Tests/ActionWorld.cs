@@ -95,7 +95,7 @@ public sealed class ActionWorld : IAsyncDisposable
         if (result.Report is { } report)
         {
             foreach (var (name, reference) in report.Artifacts)
-                Artifacts.Add(new ArtifactEntry(stepId, name, EvidenceType(action), reference));
+                Artifacts.Add(new ArtifactEntry(stepId, name, EvidenceType(action), reference, action, EvidenceType(action) is not null));
             if (report.Outputs.TryGetValue("pull_request", out var pr) && YamlWriter.ReadPlain(pr) is string text && text.Length > 0)
                 PullRequests.Add(text);
         }

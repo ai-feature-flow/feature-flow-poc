@@ -181,6 +181,27 @@ CONTROLS = [
         "tests": [(ENGINE, None)],
         "expect": ["F1_still_applies_when_a_start_names_the_default_branch_as_the_parent_branch"],
     },
+    # Added for the review of PR 6 (docs/build/m5-results.md).
+    {
+        "name": "review 1: merge evidence is found by its type's name alone",
+        "edits": [(ACTIONS, "scope.Artifacts.Where(a => a.Evidence && a.Action is { } action && producers.Contains(action) && TypeName(a.Type) == type)",
+                   "scope.Artifacts.Where(a => TypeName(a.Type) == type)")],
+        "tests": [(ENGINE, None)],
+        "expect": [("Evidence_that_no_testing_action_produced_is_not_merged", 3), "Test_integration_results_do_not_satisfy_require_tested"],
+    },
+    {
+        "name": "review 1: the workflow marks no artifact as evidence, so nothing can merge",
+        "edits": [(WORKFLOW, "var evidence = type?.Reference is { } typeRef && libraries?.Resolve(typeRef)?.ArtifactType(typeRef.Name)?.Evidence == true;",
+                   "var evidence = false;")],
+        "tests": [it("A_std_ticket_runs_on_the_memory_providers")],
+        "expect": ["A_std_ticket_runs_on_the_memory_providers_to_an_engine_merge_into_its_parent_branch"],
+    },
+    {
+        "name": "review 8 B1: merge evidence for another repository counts",
+        "edits": [(SCM, "t.Value.Repository == repo.FullName && t.Value.Revision == head && t.Value.Passed", "t.Value.Revision == head && t.Value.Passed")],
+        "tests": [(ENGINE, None)],
+        "expect": ["Evidence_for_another_repository_at_the_same_revision_is_not_merged"],
+    },
 ]
 
 

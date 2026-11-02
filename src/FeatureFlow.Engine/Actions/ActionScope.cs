@@ -2,8 +2,12 @@ using FeatureFlow.Providers.Abstractions;
 
 namespace FeatureFlow.Engine.ActionSteps;
 
-/// <summary>An artifact the run holds now: the step and name it was produced under, its declared type, and its reference.</summary>
-public sealed record ArtifactEntry(string StepId, string Name, string? Type, string Ref);
+/// <summary>
+/// An artifact the run holds now: the step and name it was produced under, its declared type, its reference, the
+/// engine action that produced it (null for an agent step or decision), and whether its type is marked
+/// <c>evidence: true</c> (F7: only engine actions may produce such types, check 12).
+/// </summary>
+public sealed record ArtifactEntry(string StepId, string Name, string? Type, string Ref, string? Action = null, bool Evidence = false);
 
 /// <summary>
 /// What an engine action knows of its run beyond its inputs, as the workflow computed it when the step started: the

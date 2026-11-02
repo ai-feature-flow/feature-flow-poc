@@ -320,11 +320,16 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
         return await reader.ReadToEndAsync(ct);
     }
 
-    /// <summary>The run's artifacts of a type (by its name, such as <c>test_results</c>), read as <typeparamref name="T"/>; unreadable ones are skipped.</summary>
-    public async Task<List<(ArtifactEntry Entry, T Value)>> EvidenceAsync<T>(string type)
+    /// <summary>
+    /// The run's evidence of a type (by its name, such as <c>test_results</c>), read as <typeparamref name="T"/>: only
+    /// artifacts of a type marked <c>evidence: true</c> that one of <paramref name="producers"/> made. An agent's
+    /// artifact, or one of an ordinary type with the same name, is never evidence (docs/04 section 10.1, F7). Unreadable
+    /// ones are skipped.
+    /// </summary>
+    public async Task<List<(ArtifactEntry Entry, T Value)>> EvidenceAsync<T>(string type, params string[] producers)
     {
         var list = new List<(ArtifactEntry, T)>();
-        foreach (var entry in scope.Artifacts.Where(a => TypeName(a.Type) == type))
+        foreach (var entry in scope.Artifacts.Where(a => a.Evidence && a.Action is { } action && producers.Contains(action) && TypeName(a.Type) == type))
         {
             try
             {

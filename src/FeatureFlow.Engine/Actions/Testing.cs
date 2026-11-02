@@ -59,7 +59,7 @@ static class Testing
 
         // The carried result (section 9.1): this head was already tested with the same tiers; adopt it.
         if (adopt && !baseline)
-            foreach (var (entry, earlier) in (await run.EvidenceAsync<TestEvidence>("test_results")).AsEnumerable().Reverse())
+            foreach (var (entry, earlier) in (await run.EvidenceAsync<TestEvidence>("test_results", "test.run")).AsEnumerable().Reverse())
                 if (earlier.Repository == repo.FullName && earlier.Revision == head && !earlier.Baseline
                     && earlier.Tiers.Select(x => x.Tier).Order().SequenceEqual(tiers.Select(x => x.Name).Order()))
                 {
@@ -211,7 +211,7 @@ static class Testing
 
         var minimum = run.String("min_level") ?? IssueLevels.Warning;
         var counted = results.Issues.Where(i => ResultFiles.AtLeast(i.Level, minimum)).ToList();
-        var earlier = (await run.EvidenceAsync<AnalysisEvidence>("analysis_results")).LastOrDefault(e => e.Value.Baseline && e.Value.Repository == repo.FullName);
+        var earlier = (await run.EvidenceAsync<AnalysisEvidence>("analysis_results", "analysis.run")).LastOrDefault(e => e.Value.Baseline && e.Value.Repository == repo.FullName);
         if (earlier.Value is null)
             run.Events.Add("no baseline analysis was recorded; every issue counts as new");
         var known = earlier.Value?.Issues.Select(i => i.Fingerprint).ToHashSet(StringComparer.Ordinal) ?? [];

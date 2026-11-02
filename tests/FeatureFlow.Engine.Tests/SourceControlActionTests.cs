@@ -98,7 +98,7 @@ public sealed class SourceControlActionTests
     {
         await w.RunAsync("scm.pull_request", "{ title: T-1 }", "open_pr");
         w.Artifacts.Add(new ArtifactEntry("tests", "test_results", "std:artifact_types/test_results",
-            await Put(w, new TestEvidence(w.Repo.FullName, w.Work!, false, true, [new TestResults(w.Work!, "unit", 3, 0, 0, [])]))));
+            await Put(w, new TestEvidence(w.Repo.FullName, w.Work!, false, true, [new TestResults(w.Work!, "unit", 3, 0, 0, [])])), "test.run", true));
         Assert.Equal("passed", Outcome(await w.RunAsync("ci.checks", null, "checks")));
     }
 
@@ -168,12 +168,67 @@ public sealed class SourceControlActionTests
         var head = w.CommitWork("a.txt", "work");
         await w.RunAsync("scm.pull_request", "{ title: T-1 }", "open_pr");
         w.Artifacts.Add(new ArtifactEntry("tests", "test_results", "std:artifact_types/test_results",
-            await Put(w, new TestEvidence(w.Repo.FullName, head, false, true, []))));
+            await Put(w, new TestEvidence(w.Repo.FullName, head, false, true, [])), "test.run", true));
         w.Forge.ReportCheck(w.Repo, head, new CheckRun("lint", CheckStates.Completed, Conclusions.Failure, null));
         Assert.Equal("failed", Outcome(await w.RunAsync("ci.checks", null, "checks")));
 
         Assert.Equal("checks_failed", Outcome(await w.RunAsync("scm.merge", null, "merge")));
         Assert.Equal("merged", Outcome(await w.RunAsync("scm.merge", "{ require_checks: false }", "merge")));
+    }
+
+    /// <summary>Evidence for the head as an agent could write it: the right shape, the right revision, "passed".</summary>
+    static async Task<(string Tests, string Checks)> ForgedAsync(ActionWorld w) =>
+        (await Put(w, new TestEvidence(w.Repo.FullName, w.Work!, false, true, [new TestResults(w.Work!, "unit", 9, 0, 0, [])])),
+         await Put(w, new CheckEvidence(w.Repo.FullName, w.Work!, null, true, 0, [])));
+
+    [Theory]
+    [InlineData(null, true, "an agent step's artifacts of the evidence types")]
+    [InlineData("test.run", false, "artifacts of a library's own types named test_results and check_results")]
+    [InlineData("artifact.compose", true, "evidence types made by an action that does not test")]
+    public async Task Evidence_that_no_testing_action_produced_is_not_merged(string? producer, bool evidenceType, string what)
+    {
+        await using var w = new ActionWorld();
+        w.EngineMayMerge.Add("acme/api");
+        w.CommitWork("a.txt", "work");
+        await w.RunAsync("scm.pull_request", "{ title: T-1 }", "open_pr");
+        var (tests, checks) = await ForgedAsync(w);
+        var library = evidenceType ? "std" : "acme_repo";
+        w.Artifacts.Add(new ArtifactEntry("write", "test_results", $"{library}:artifact_types/test_results", tests, producer, evidenceType));
+        w.Artifacts.Add(new ArtifactEntry("write", "check_results", $"{library}:artifact_types/check_results", checks, producer == "test.run" ? "ci.checks" : producer, evidenceType));
+        var before = w.Main;
+
+        var result = await w.RunAsync("scm.merge", null, "merge");
+
+        Assert.True(Outcome(result) == "checks_failed", what);
+        Assert.Equal(before, w.Main);
+    }
+
+    [Fact]
+    public async Task Test_integration_results_do_not_satisfy_require_tested()
+    {
+        await using var w = new ActionWorld();
+        w.EngineMayMerge.Add("acme/api");
+        w.CommitWork("a.txt", "work");
+        await TestedAndCheckedAsync(w);
+        var integration = w.Artifacts.Single(a => a.Name == "test_results") with { Action = "test.integration" };
+        w.Artifacts.RemoveAll(a => a.Name == "test_results");
+        w.Artifacts.Add(integration);
+
+        Assert.Equal("checks_failed", Outcome(await w.RunAsync("scm.merge", null, "merge")));
+    }
+
+    [Fact]
+    public async Task Evidence_for_another_repository_at_the_same_revision_is_not_merged()
+    {
+        await using var w = new ActionWorld();
+        w.EngineMayMerge.Add("acme/api");
+        w.CommitWork("a.txt", "work");
+        await TestedAndCheckedAsync(w);
+        var other = await Put(w, new TestEvidence("acme/web", w.Work!, false, true, [new TestResults(w.Work!, "unit", 3, 0, 0, [])]));
+        w.Artifacts.RemoveAll(a => a.Name == "test_results");
+        w.Artifacts.Add(new ArtifactEntry("tests", "test_results", "std:artifact_types/test_results", other, "test.run", true));
+
+        Assert.Equal("checks_failed", Outcome(await w.RunAsync("scm.merge", null, "merge")));
     }
 
     [Fact]

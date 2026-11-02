@@ -131,7 +131,8 @@ static class SourceControl
     {
         if (run.Bool("require_tested", true))
         {
-            var tests = await run.EvidenceAsync<TestEvidence>("test_results");
+            // docs/04 section 7.3: a passing test.run result; test.integration's does not count.
+            var tests = await run.EvidenceAsync<TestEvidence>("test_results", "test.run");
             if (!tests.Any(t => t.Value.Repository == repo.FullName && t.Value.Revision == head && t.Value.Passed))
                 return $"require_tested: no passing test.run result for {repo.FullName} at {EngineActions.Short(head)}, the head being merged" +
                        (tests.Count == 0 ? "" : $" (results exist for {string.Join(", ", tests.Select(t => $"{t.Entry.StepId} at {EngineActions.Short(t.Value.Revision)}{(t.Value.Passed ? "" : " failed")}"))})");
@@ -139,7 +140,7 @@ static class SourceControl
 
         if (run.Bool("require_checks", true))
         {
-            var checks = await run.EvidenceAsync<CheckEvidence>("check_results");
+            var checks = await run.EvidenceAsync<CheckEvidence>("check_results", "ci.checks");
             if (!checks.Any(c => c.Value.Repository == repo.FullName && c.Value.Revision == head && c.Value.Passed))
                 return $"require_checks: no passing ci.checks result for {repo.FullName} at {EngineActions.Short(head)}, the head being merged";
         }
