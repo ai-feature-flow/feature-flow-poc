@@ -206,7 +206,7 @@ and 3.13, and `docs/07` section 2.
 | 102 | Cancellation is waited for; a worker shutting down leaves the sandbox |
 | 103 | The provider interfaces add methods to `docs/06`'s abbreviated signatures. **Changes approved interface text** |
 | 104 | The model proxy forwards only the Messages API, to its upstream. **An F6 breach found in review** |
-| 105 | The sandbox client runs set-user-id as an engine state user; no `checkpoint` tool; tokens revoked at the step's end; questions shown only to their step |
+| 105 | Commands' records in the sandbox are root's; the sandbox client is not set-user-id; `checkpoint` is offered; tokens revoked at the step's end; questions shown only to their step |
 | 106 | `limits.timeout` is enforced from the step's first attempt |
 
 ## 5. Implementation choices
@@ -251,7 +251,7 @@ Not done in M4:
 | 2 | An agent step works on one repository, the run's first |
 | 3 | The parent branch is `main`, as in M3's run values, until M5 reads the default branch from the code host |
 | 4 | The agent gets no read-only code host credential (LOG 95) |
-| 5 | `inspect_plan`, `propose_patch`, `run_check` and `checkpoint` are not offered (LOG 105) |
+| 5 | `inspect_plan`, `propose_patch` and `run_check` are not offered |
 | 6 | The step's summary is not appended to the run context (`docs/04` section 3.5); toolsets are not proxied (`docs/06` section 3.9) |
 | 7 | Question waits do not pause the step's timeout (LOG 106); the question's timer is not cancelled when it is answered (it fires and does nothing) |
 | 8 | A `with` value that is an artifact is not staged and rendered as a path (`docs/03` section 6.3); consumed artifacts are the latest of their name, as `plan.expand` reads them (M3 follow-up 3) |
@@ -281,7 +281,7 @@ controls were run again on the revised code and held.
 | 2 | A later execution checked out a stale hidden reference and a forced push could rewind the branch | The hidden reference is used only when it descends from the branch; the branch moves only to a commit that descends from its revision at the step's start (LOG 96) | `A_later_execution_starts_from_the_branch_when_the_hidden_reference_is_behind_it`; `A_final_commit_that_does_not_build_on_the_branch_is_not_pushed_to_it` |
 | 3 | A new sandbox ran `claude --resume` on a session it did not hold | A fresh session, told the attempt was interrupted (`docs/04` section 3.2) | `A_lost_sandbox_is_replaced_and_a_fresh_session_is_told_it_was_interrupted` |
 | 4 | `limits.timeout` was not enforced | A deadline from the first attempt, kept in the record store; the session is stopped and the attempt fails as out of time (LOG 106) | `A_step_past_its_timeout_is_stopped_and_fails_as_out_of_time` |
-| 5 | Resumes were unbounded and free, and the agent could trigger one | Engine state written by a set-user-id client; permanent model errors not resumable (401 and 403 stop for a person); a resume free only after progress; 5 in a row without progress or 20 in all stop for a person (LOG 98, 105) | `Resumes_without_progress_stop_for_a_person_after_the_cap`; `Only_transient_api_errors_are_resumable`; the boundary test's attempt to write `/ff/state` |
+| 5 | Resumes were unbounded and free, and the agent could trigger one | Engine state written by a set-user-id client (replaced after the re-check, below); permanent model errors not resumable (401 and 403 stop for a person); a resume free only after progress; 5 in a row without progress or 20 in all stop for a person (LOG 98, 105) | `Resumes_without_progress_stop_for_a_person_after_the_cap`; `Only_transient_api_errors_are_resumable`; the boundary test's attempt to write `/ff/state` |
 | 6 | A hook answered with no decision allowed the call | The hook fails closed: anything but `allow` blocks | `The_hook_command_fails_closed_on_an_answer_with_no_decision` |
 | 7 | The agent could add hooks through its writable user settings | Hooks in root-owned managed settings with `allowManagedHooksOnly` (LOG 100) | The boundary test: the agent cannot change the managed settings, and a hook it writes into its user settings does not run in the next session |
 | 8 | Missing proof | Tests added | `A_work_branch_moved_by_someone_else_during_the_step_fails_the_attempt`; `.git` and tool-class theories in `ReportAndHookTests` |
@@ -297,3 +297,22 @@ controls were run again on the revised code and held.
 
 Recorded, not fixed: finding 13 (follow-up 12) and DR20's missing test
 (follow-up 13).
+
+### 10.1 Re-check changes
+
+The coordinator's re-check confirmed findings 1, 2, 3, 4, 6 and 7 fixed, and
+found three more. Fixed at `62c4e4d`:
+
+| # | Finding | Change | Test and control |
+|---|---|---|---|
+| N1 | The set-user-id client trusted its caller's environment: the agent could run it with forged `FF_ENGINE_URLS` and `FF_STATE` to write the marker as the state user and get free resumes | Set-user-id removed; the client is root-owned, read-only, and runs as the agent. The engine believes "engine unreachable" only when its own records show no call from the step for the client's hold window. Commands' transcripts and exit codes are root-owned (`setpriv` drops only the command to the agent's user), so the agent cannot forge a model error or a lost process. `checkpoint` is offered again (LOG 98, 105) | `A_forged_engine_unreachable_stop_gets_no_resume`: the agent forges the marker and ends its runtime; the session is recorded failed and there is no resume. The boundary test now shows the agent cannot append to its command's output. `The_checkpoint_tool_commits_the_checkout`. Controls "re-check N1a" and "N1b" |
+| N2 | A hidden reference not used was overwritten by the next push | Its commits are kept under `refs/feature-flow/superseded/<run>/<step>/<revision>` first (LOG 96) | The stale-reference test checks the kept reference. Control "re-check N2" |
+| N3 | A revoked or expired token blocked the Stop hook | Only `pre_tool_use` fails closed; other hooks exit 0 on an answer with no decision | Three cases in `SandboxClientTests`. Control "re-check N3" |
+
+After the re-check: all thirty-seven controls held (the set-user-id state
+control was removed with the client's set-user-id; four were added). The
+default category has 392 tests and the integration category 31. Because the
+agent now runs under `setpriv` and the client is no longer set-user-id, the
+done-when and SP5 were run live again on `62c4e4d`: both passed (the done-when's
+commit `1e69ca9c86` was on the hidden reference while the branch was at `main`,
+then on the branch), and no reference was left on the fixture.
