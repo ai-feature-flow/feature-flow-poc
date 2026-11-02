@@ -241,6 +241,18 @@ CONTROLS = [
         "tests": [(ENGINE, None)],
         "expect": ["An_unexpected_exception_in_an_action_raises_an_intervention_rather_than_a_retry"],
     },
+    {
+        "name": "review 4: only a failure conclusion fails (the old deny-list, narrowed)",
+        "edits": [(WAITING, "return list.Where(c => !Passing.Contains(c.Conclusion!))", "return list.Where(c => c.Conclusion == Conclusions.Failure)")],
+        "tests": [(ENGINE, None)],
+        "expect": [("Only_success_neutral_and_skipped_pass", 5)],
+    },
+    {
+        "name": "review 4: an unknown conclusion is judged instead of raising an intervention",
+        "edits": [(WAITING, "if (list.FirstOrDefault(c => !Passing.Contains", "if (false && list.FirstOrDefault(c => !Passing.Contains")],
+        "tests": [(ENGINE, None)],
+        "expect": ["A_conclusion_the_engine_does_not_know_raises_an_intervention"],
+    },
 ]
 
 

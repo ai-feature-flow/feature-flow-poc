@@ -9,7 +9,20 @@ namespace FeatureFlow.Engine.ActionSteps;
 /// </summary>
 static class Waiting
 {
-    static readonly HashSet<string> Failing = [Conclusions.Failure, Conclusions.Cancelled, Conclusions.TimedOut, Conclusions.ActionRequired];
+    /// <summary>The conclusions that pass. Anything else fails; a conclusion not known at all raises an intervention.</summary>
+    static readonly HashSet<string> Passing = [Conclusions.Success, Conclusions.Neutral, Conclusions.Skipped];
+
+    static readonly HashSet<string> KnownFailing =
+        [Conclusions.Failure, Conclusions.Cancelled, Conclusions.TimedOut, Conclusions.ActionRequired, "startup_failure", "stale"];
+
+    /// <summary>The completed checks that did not pass, by name; an unknown conclusion stops the step for a person.</summary>
+    static List<string> NotPassing(IEnumerable<CheckRun> checks)
+    {
+        var list = checks.ToList();
+        if (list.FirstOrDefault(c => !Passing.Contains(c.Conclusion ?? "") && !KnownFailing.Contains(c.Conclusion ?? "")) is { } odd)
+            throw ActionStop.CannotAnswer($"check {odd.Name} concluded '{odd.Conclusion ?? "(nothing)"}', which the engine does not know how to judge");
+        return list.Where(c => !Passing.Contains(c.Conclusion!)).Select(c => $"{c.Name} {c.Conclusion}").ToList();
+    }
 
     /// <summary>
     /// <c>ci.checks</c> (section 8.1): waits for every check on the head, including late ones, and for every CI run the CI
@@ -39,7 +52,7 @@ static class Waiting
             return ActionResult.Waiting(string.Join("; ", pending), run.Duration("poll_every", run.Options.PollInterval), run.Events);
         }
 
-        var failed = status.Checks.Where(c => Failing.Contains(c.Conclusion ?? "")).ToList();
+        var failed = NotPassing(status.Checks);
         var skipped = status.Checks.Count(c => c.Conclusion == Conclusions.Skipped);
         run.Events.Add(status.Checks.Count == 0
             ? $"{repo.FullName} has no CI and no checks on {EngineActions.Short(head)}"
@@ -100,7 +113,7 @@ static class Waiting
         else
         {
             var (pending, status) = await ReadChecksAsync(run, repo, pr, state.HeadRevision, [], TimeSpan.Zero, elapsed);
-            var failed = status.Checks.Where(c => Failing.Contains(c.Conclusion ?? "")).Select(c => c.Name).ToList();
+            var failed = NotPassing(status.Checks);
             (outcome, waiting) = pending.Count > 0 ? (null, string.Join("; ", pending))
                 : failed.Count > 0 ? ("unmet", $"checks failed on {name}: {string.Join(", ", failed)}")
                 : ("met", $"the checks on {name} passed");

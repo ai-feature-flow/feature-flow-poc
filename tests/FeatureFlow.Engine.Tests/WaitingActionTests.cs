@@ -61,6 +61,36 @@ public sealed class WaitingActionTests
         Assert.Equal(1L, YamlWriter.ReadPlain(failed.Report!.Outputs["skipped"]));
     }
 
+    [Theory]
+    [InlineData("cancelled", "failed")]
+    [InlineData("timed_out", "failed")]
+    [InlineData("action_required", "failed")]
+    [InlineData("startup_failure", "failed")]
+    [InlineData("stale", "failed")]
+    [InlineData("neutral", "passed")]
+    [InlineData("skipped", "passed")]
+    [InlineData("success", "passed")]
+    public async Task Only_success_neutral_and_skipped_pass(string conclusion, string outcome)
+    {
+        await using var w = await WithPullRequestAsync();
+        w.Forge.ReportCheck(w.Repo, w.Work!, new CheckRun("ci", CheckStates.Completed, conclusion, null));
+
+        Assert.Equal(outcome, Outcome(await w.RunAsync("ci.checks", null, "checks", waits: 1)));
+        Assert.Equal(outcome == "passed" ? "met" : "unmet", Outcome(await w.RunAsync("wait.condition", "{ checks: passed }", "condition", waits: 1)));
+    }
+
+    [Fact]
+    public async Task A_conclusion_the_engine_does_not_know_raises_an_intervention()
+    {
+        await using var w = await WithPullRequestAsync();
+        w.Forge.ReportCheck(w.Repo, w.Work!, new CheckRun("ci", CheckStates.Completed, "exploded", null));
+
+        var result = await w.RunAsync("ci.checks", null, "checks", waits: 1);
+
+        Assert.Equal(StepOutcome.CannotAnswer, result.Kind);
+        Assert.Contains("'exploded'", result.Reason, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task An_expected_check_name_is_waited_for_and_a_may_run_workflow_only_for_the_grace()
     {
