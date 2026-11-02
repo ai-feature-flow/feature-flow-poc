@@ -30,7 +30,8 @@ public static partial class HookPolicy
 
     static readonly HashSet<string> Writing = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
 
-    [GeneratedRegex(@"(^|[\s;&|(`])git(\s+-\S+(\s+\S+)?)*\s+push\b")]
+    // The command by name, wherever it lives (/usr/bin/git), with any options before the subcommand.
+    [GeneratedRegex(@"(^|[\s;&|(`])(\S*/)?git(\s+-\S+(\s+\S+)?)*\s+push\b")]
     private static partial Regex GitPush();
 
     [GeneratedRegex(@"(^|/)\.git(/|$)")]

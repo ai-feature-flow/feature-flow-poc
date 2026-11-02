@@ -3,7 +3,7 @@
 Each control breaks one rule in the source, runs the tests that guard it, records which fail, restores the
 source, and runs the same tests again. A control holds when its named tests fail while the rule is broken and
 every test passes after the revert. A name matches a failing test when the failing test's name starts with it, so
-a theory is named once for all its cases.
+a theory is named once for all its cases; (name, n) asks for at least n of its cases.
 
 The integration controls need a Temporal dev server (FF_TEMPORAL_ADDRESS, default localhost:7233) and Docker; they
 build the sandbox image and publish the sandbox client on first use. No control calls a real model or GitHub.
@@ -29,6 +29,7 @@ ACTIVITY = "src/FeatureFlow.Engine.Agent/AgentActivities.cs"
 WORKFLOW = "src/FeatureFlow.Engine/RunWorkflow.cs"
 RUNTIME = "src/Providers/FeatureFlow.Providers.ClaudeCode/ClaudeCodeRuntime.cs"
 BROKER = "src/Providers/FeatureFlow.Providers.GitHub/AppCredentialBroker.cs"
+CONFIG = "src/FeatureFlow.Model/Configuration.cs"
 
 INTEGRATION = "tests/FeatureFlow.Integration.Tests"
 AGENT = "tests/FeatureFlow.Engine.Agent.Tests"
@@ -65,7 +66,7 @@ CONTROLS = [
     },
     {
         "name": "LOG 59: a question is not opened idempotently by its id",
-        "edits": [(ENDPOINT, "        if (existing is not null)\n            return new QuestionReply(existing.Status, existing.Answer, null);\n", "")],
+        "edits": [(ENDPOINT, "        if (existing is not null)\n            return existing.StepKey", "        if (existing is not null && existing.Status == \"control\")\n            return existing.StepKey")],
         "tests": [(AGENT, None)],
         "expect": ["A_question_opened_twice_with_one_id_is_one_question_signalled_once"],
     },
@@ -99,7 +100,7 @@ CONTROLS = [
     },
     {
         "name": "DR17: the output folder is not created before the agent starts",
-        "edits": [(ACTIVITY, "[paths.Checkout, paths.Output, \"/ff/inputs\", \"/ff/state\", \"/ff/tmp\"]", "[paths.Checkout, \"/ff/inputs\", \"/ff/state\", \"/ff/tmp\"]")],
+        "edits": [(ACTIVITY, "[paths.Checkout, paths.Output, \"/ff/inputs\", \"/ff/tmp\"]", "[paths.Checkout, \"/ff/inputs\", \"/ff/tmp\"]")],
         "tests": [it("Without_the_report_tool_the_agent_reports_through_a_file")],
         "expect": ["Without_the_report_tool_the_agent_reports_through_a_file_in_its_output_folder"],
     },
@@ -132,7 +133,7 @@ CONTROLS = [
     },
     {
         "name": "the model unreachable is read as a failed session, a work failure (SP5 N1)",
-        "edits": [(RUNTIME, ": parsed.ApiError is not null ? SessionEnd.ModelUnreachable", ": parsed.ApiError is \"control\" ? SessionEnd.ModelUnreachable")],
+        "edits": [(RUNTIME, ": parsed.ApiError is not null ? ApiEnd(parsed.ApiStatus)", ": parsed.ApiError is \"control\" ? ApiEnd(parsed.ApiStatus)")],
         "tests": [it("With_the_model_unreachable")],
         "expect": ["With_the_model_unreachable_the_step_stops_resumably_rather_than_succeeding"],
     },
@@ -168,7 +169,101 @@ CONTROLS = [
         "edits": [(BROKER, "if (Refusal(actor, targetSystem, scope, ttl) is { } refusal)",
                    "if (Refusal(actor, targetSystem, scope, ttl) is { } refusal && refusal.Length < 0)")],
         "tests": [(BROKER_TESTS, None)],
-        "expect": ["A_request_wider_than_the_broker_may_grant_is_refused_before_any_call"],
+        "expect": [("A_request_wider_than_the_broker_may_grant_is_refused_before_any_call", 5)],
+    },
+    # Added after the review of M4 (docs/build/m4-results.md section 10).
+    {
+        "name": "review 1: the model proxy forwards any path, to any host",
+        "edits": [(PROXY, "        if (method != \"POST\" || !AllowedPaths.Contains(path))\n            return null;\n", ""),
+                  (PROXY, "target.Port == upstream.Port ? target : null;", "target.Port == upstream.Port || true ? target : null;")],
+        "tests": [(AGENT, None), it("The_agent_cannot_forge_engine_state")],
+        "expect": [("The_model_proxy_refuses_any_request_but_the_messages_api_and_never_sends_the_credential", 6),
+                   "The_proxy_s_target_keeps_the_upstream_s_scheme_host_and_port", "The_agent_cannot_forge_engine_state_change_its_hooks_or_redirect_the_proxy"],
+    },
+    {
+        "name": "review 2a: a later execution checks out a hidden reference the branch has moved past",
+        "edits": [(ACTIVITY, "\n                            && Must(await vcs.DescendsFromAsync(repo, hiddenRevision, startRevision, ct), \"compare the hidden reference with the work branch\");", ";")],
+        "tests": [it("A_later_execution_starts_from_the_branch")],
+        "expect": ["A_later_execution_starts_from_the_branch_when_the_hidden_reference_is_behind_it"],
+    },
+    {
+        "name": "review 2b: the work branch is moved to a commit that does not build on it",
+        "edits": [(ACTIVITY, "if (!Must(await vcs.DescendsFromAsync(repo, head, startRevision, ct)", "if (head.Length < 0 && !Must(await vcs.DescendsFromAsync(repo, head, startRevision, ct)")],
+        "tests": [it("A_final_commit_that_does_not_build_on_the_branch")],
+        "expect": ["A_final_commit_that_does_not_build_on_the_branch_is_not_pushed_to_it"],
+    },
+    {
+        "name": "review 3: a new sandbox resumes a session it does not hold instead of starting afresh",
+        "edits": [(ACTIVITY, "var fresh = !reattached;", "var fresh = false;")],
+        "tests": [it("A_lost_sandbox_is_replaced")],
+        "expect": ["A_lost_sandbox_is_replaced_and_a_fresh_session_is_told_it_was_interrupted"],
+    },
+    {
+        "name": "review 4: the step's timeout is not enforced during supervision",
+        "edits": [(ACTIVITY, "                if (DateTimeOffset.UtcNow >= deadline)\n                {", "                if (DateTimeOffset.UtcNow < DateTimeOffset.MinValue.AddYears(1))\n                {")],
+        "tests": [it("A_step_past_its_timeout")],
+        "expect": ["A_step_past_its_timeout_is_stopped_and_fails_as_out_of_time"],
+    },
+    {
+        "name": "review 5a: resumes without progress are not capped",
+        "edits": [(ACTIVITY, "public const int ResumesWithoutProgress = 5;", "public const int ResumesWithoutProgress = 500;")],
+        "tests": [it("Resumes_without_progress")],
+        "expect": ["Resumes_without_progress_stop_for_a_person_after_the_cap"],
+    },
+    {
+        "name": "review 5b: the engine's state in the sandbox is the agent's to write",
+        "edits": [(ACTIVITY, "chown {StateUser} /ff/state \"", "chown node /ff/state \"")],
+        "tests": [it("The_agent_cannot_forge_engine_state")],
+        "expect": ["The_agent_cannot_forge_engine_state_change_its_hooks_or_redirect_the_proxy"],
+    },
+    {
+        "name": "review 5c: a permanent model error is read as resumable",
+        "edits": [(RUNTIME, "401 or 403 => SessionEnd.ModelRefused,", "401 or 403 => SessionEnd.ModelUnreachable,"),
+                  (RUNTIME, "        _ => SessionEnd.Failed,\n    };", "        _ => SessionEnd.ModelUnreachable,\n    };")],
+        "tests": [(RUNTIME_TESTS, None)],
+        "expect": [("Only_transient_api_errors_are_resumable", 4)],
+    },
+    {
+        "name": "review 6: the hook command allows a call the engine gave no decision for",
+        "edits": [(HOOK, "if (reply[\"decision\"]?.ToString() == \"allow\")", "if (reply[\"decision\"]?.ToString() != \"deny\")")],
+        "tests": [(CLIENT_TESTS, None)],
+        "expect": ["The_hook_command_fails_closed_on_an_answer_with_no_decision"],
+    },
+    {
+        "name": "review 7: hooks from the agent's own settings are allowed",
+        "edits": [(RUNTIME, "[\"allowManagedHooksOnly\"] = true,", "[\"allowManagedHooksOnly\"] = false,")],
+        "tests": [(RUNTIME_TESTS, None), it("The_agent_cannot_forge_engine_state")],
+        "expect": ["Hooks_are_managed_settings_that_allow_no_other_hooks", "The_agent_cannot_forge_engine_state_change_its_hooks_or_redirect_the_proxy"],
+    },
+    {
+        "name": "review 10: a sandbox is left behind when the step cannot answer",
+        "edits": [(ACTIVITY, "catch (Exception e) when (e is StepWorkException or StepCannotAnswerException)", "catch (Exception e) when (e is StepWorkException)")],
+        "tests": [it("Resumes_without_progress")],
+        "expect": ["Resumes_without_progress_stop_for_a_person_after_the_cap"],
+    },
+    {
+        "name": "review 11: a revoked step token still works",
+        "edits": [(ENDPOINT, ".Unwrap().FirstOrDefault() is { Revoked: false };", ".Unwrap().FirstOrDefault() is not null;")],
+        "tests": [(AGENT, None)],
+        "expect": ["A_revoked_step_s_token_is_refused"],
+    },
+    {
+        "name": "review 12: a step may open another step's question",
+        "edits": [(ENDPOINT, "            return existing.StepKey == claims.StepKey\n", "            return existing.StepKey != \"\"\n")],
+        "tests": [(AGENT, None)],
+        "expect": ["A_question_of_another_step_is_not_shown"],
+    },
+    {
+        "name": "review 14: engine_tools: false accepted outside development",
+        "edits": [(CONFIG, "i.Settings[\"engine_tools\"].ScalarText() == \"false\"", "i.Settings[\"engine_tools\"].ScalarText() == \"never\"")],
+        "tests": [("tests/FeatureFlow.Model.Tests", None)],
+        "expect": ["An_installation_refuses_what_it_does_not_read"],
+    },
+    {
+        "name": "review 17: git push is matched by a literal prefix, so /usr/bin/git push passes",
+        "edits": [(POLICY, "(\\S*/)?git(", "git(")],
+        "tests": [(AGENT, None)],
+        "expect": [("A_git_push_is_denied", 2)],
     },
 ]
 
@@ -188,7 +283,9 @@ def run_tests(tests):
 
 
 def matches(expected, failing):
-    return any(f == expected or f.startswith(expected + "(") for f in failing)
+    """A name, or (name, n): at least n failing cases of that theory."""
+    name, count = expected if isinstance(expected, tuple) else (expected, 1)
+    return sum(1 for f in failing if f == name or f.startswith(name + "(")) >= count
 
 
 def main():

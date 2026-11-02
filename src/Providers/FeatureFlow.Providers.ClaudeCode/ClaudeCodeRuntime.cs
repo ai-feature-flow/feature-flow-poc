@@ -33,6 +33,12 @@ public sealed record ClaudeCodeOptions(string Model, string Executable = "claude
 public sealed class ClaudeCodeRuntime(ClaudeCodeOptions options, Func<ISandboxProvider> sandboxes, Func<IArtifactStoreProvider> store) : IAgentRuntimeProvider
 {
     public const string AgentFolder = "/ff/agent";
+
+    /// <summary>
+    /// Claude Code's managed settings: root-owned and read-only in the sandbox, loaded before any other source, with
+    /// <c>allowManagedHooksOnly</c> so no hook the agent writes into its own settings runs (LOG 100).
+    /// </summary>
+    public const string ManagedSettings = "/etc/claude-code/managed-settings.json";
     public const string StateFolder = "/ff/state";
     readonly ConcurrentDictionary<string, (SandboxHandle Sandbox, long Cursor, int Turns)> progress = new();
 
@@ -82,6 +88,7 @@ public sealed class ClaudeCodeRuntime(ClaudeCodeOptions options, Func<ISandboxPr
         });
         return new JsonObject
         {
+            ["allowManagedHooksOnly"] = true,
             ["hooks"] = new JsonObject
             {
                 ["PreToolUse"] = Hook("pre_tool_use"),
@@ -116,7 +123,8 @@ public sealed class ClaudeCodeRuntime(ClaudeCodeOptions options, Func<ISandboxPr
             ["FF_STATE"] = StateFolder,
             ["FF_CLIENT_LOG"] = StateFolder + "/client.jsonl",
             ["FF_QUESTIONS"] = task.Questions ? "true" : "false",
-            ["FF_WRITE"] = task.WriteAccess == "none" ? "false" : "true",
+            // The checkpoint tool is not offered: the sandbox client runs as the engine's state user, which cannot commit in the agent's checkout.
+            ["FF_WRITE"] = "false",
             ["FF_HOOK_HOLD_SECONDS"] = ((int)options.Hold.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["FF_RETRY_SECONDS"] = ((int)options.Retry.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture),
         };
@@ -135,14 +143,12 @@ public sealed class ClaudeCodeRuntime(ClaudeCodeOptions options, Func<ISandboxPr
         var allowed = tools.Append("mcp__engine__report");
         if (task.Questions)
             allowed = allowed.Append("mcp__engine__ask_human");
-        if (task.WriteAccess != "none")
-            allowed = allowed.Append("mcp__engine__checkpoint");
         var paths = task.Paths!;
         var parts = new List<string>
         {
             options.Executable, "-p", "--output-format", "stream-json", "--verbose", "--model", options.Model,
             resume ? "--resume" : "--session-id", SessionId(task.Step.IdempotencyKey),
-            "--settings", $"{AgentFolder}/settings.json", "--setting-sources", "user",
+            "--setting-sources", "user",
             "--tools", string.Join(",", tools.DefaultIfEmpty("Read")),
             "--allowedTools", string.Join(",", allowed),
             "--add-dir", paths.Output, Path.GetDirectoryName(paths.InputsManifest)!.Replace('\\', '/'),
@@ -185,7 +191,7 @@ public sealed class ClaudeCodeRuntime(ClaudeCodeOptions options, Func<ISandboxPr
         if (!(task.EngineTools && options.EngineTools))
             // The runtime knows the tool is absent; the preamble's fallback rule applies, and the agent is told so.
             prompt += $"\n\nThe engine's report tool is not available in this session. Report by writing the JSON report to report.json in {task.Paths!.Output}.";
-        foreach (var (path, content) in new[] { ($"{AgentFolder}/settings.json", Settings().ToJsonString()), ($"{AgentFolder}/mcp.json", mcp.ToJsonString()), (promptFile, prompt) })
+        foreach (var (path, content) in new[] { (ManagedSettings, Settings().ToJsonString()), ($"{AgentFolder}/mcp.json", mcp.ToJsonString()), (promptFile, prompt) })
         {
             var put = await store().PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(content)), cancellationToken);
             if (!put.Ok)
@@ -244,15 +250,17 @@ public sealed class ClaudeCodeRuntime(ClaudeCodeOptions options, Func<ISandboxPr
             new Dictionary<string, string> { ["FF_OUTPUT"] = "/ff/out" }, AsRoot: true), $"{session.Id}/report/{Guid.NewGuid():N}", cancellationToken);
         var parsed = Parse(transcript);
         var end = marker.Ok && marker.Value.Output.Trim().Length > 0 ? SessionEnd.EngineUnreachable
-            : parsed.ApiError is not null ? SessionEnd.ModelUnreachable
-            : status.Value.Lost ? SessionEnd.EngineUnreachable
+            : parsed.ApiError is not null ? ApiEnd(parsed.ApiStatus)
+            : status.Value.Lost ? SessionEnd.Lost
             : status.Value.ExitCode == 0 ? SessionEnd.Completed
             : SessionEnd.Failed;
         var detail = end switch
         {
-            SessionEnd.EngineUnreachable => "the sandbox client could not reach the engine" + (status.Value.Lost ? " (the session's process was lost)" : ""),
+            SessionEnd.EngineUnreachable => "the sandbox client could not reach the engine",
+            SessionEnd.Lost => "the session's process was lost",
+            SessionEnd.ModelRefused => $"the model answered {parsed.ApiStatus}: {parsed.ApiError}",
             SessionEnd.ModelUnreachable => "the model could not be reached: " + parsed.ApiError,
-            SessionEnd.Failed => $"claude exited {status.Value.ExitCode}: {parsed.Result}",
+            SessionEnd.Failed => parsed.ApiError is not null ? $"the model answered {parsed.ApiStatus}: {parsed.ApiError}" : $"claude exited {status.Value.ExitCode}: {parsed.Result}",
             _ => parsed.Result,
         };
         return ProviderResult<AgentResult>.Success(new AgentResult(null, end, detail, parsed.InputTokens, parsed.OutputTokens, parsed.Files,
@@ -266,12 +274,25 @@ public sealed class ClaudeCodeRuntime(ClaudeCodeOptions options, Func<ISandboxPr
         return await sandboxes().CancelCommandAsync(new CommandHandle(state.Sandbox, session.Id), cancellationToken);
     }
 
-    public sealed record Transcript(string? Result, string? ApiError, long InputTokens, long OutputTokens, IReadOnlyList<string> Files);
+    public sealed record Transcript(string? Result, string? ApiError, long InputTokens, long OutputTokens, IReadOnlyList<string> Files, int? ApiStatus = null);
+
+    /// <summary>
+    /// How a model API error ends the session (LOG 98): no status (the connection failed), 429 and 5xx are transient,
+    /// so resumable; 401 and 403 are a configuration fault; any other 4xx (a request too large, a prompt too long) is
+    /// permanent, a failed session.
+    /// </summary>
+    public static string ApiEnd(int? status) => status switch
+    {
+        null or 429 or >= 500 => SessionEnd.ModelUnreachable,
+        401 or 403 => SessionEnd.ModelRefused,
+        _ => SessionEnd.Failed,
+    };
 
     /// <summary>Reads Claude Code's stream-json output: the result record, usage, and the files its tools opened.</summary>
     public static Transcript Parse(string output)
     {
         string? result = null, apiError = null;
+        int? apiStatus = null;
         long input = 0, outputTokens = 0;
         var files = new List<string>();
         foreach (var line in output.Split('\n'))
@@ -300,13 +321,14 @@ public sealed class ClaudeCodeRuntime(ClaudeCodeOptions options, Func<ISandboxPr
                     result = record["result"]?.ToString();
                     var terminal = record["terminal_reason"]?.ToString();
                     apiError = terminal == "api_error" ? record["api_error"]?.ToString() ?? result ?? "api_error" : null;
+                    apiStatus = terminal == "api_error" && record["api_error_status"] is JsonValue code && code.TryGetValue<int>(out var n) ? n : null;
                     input += record["usage"]?["input_tokens"]?.GetValue<long>() ?? 0;
                     outputTokens += record["usage"]?["output_tokens"]?.GetValue<long>() ?? 0;
                     break;
             }
         }
 
-        return new Transcript(result, apiError, input, outputTokens, files.Distinct().ToList());
+        return new Transcript(result, apiError, input, outputTokens, files.Distinct().ToList(), apiStatus);
     }
 
     static string Quote(string value) => "'" + value.Replace("'", "'\"'\"'") + "'";

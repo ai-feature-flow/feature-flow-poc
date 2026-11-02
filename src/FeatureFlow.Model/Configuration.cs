@@ -218,6 +218,10 @@ public static class ConfigurationReader
             foreach (var (type, config) in providers)
                 foreach (var instance in config.Instances.Values.Where(i => i.Kind == "fake" || type == "action_stand_in"))
                     r.Error($"providers.{type}.instances.{instance.Name}: the {(type == "action_stand_in" ? "action stand-in" : "fake provider")} is for development only; set development: true", r.Map.Location);
+        // A runtime without the engine's tools reports only through a file: a test setting (SP3 T3), not for production.
+        if (!development && providers.TryGetValue("agent_runtime", out var runtimes))
+            foreach (var instance in runtimes.Instances.Values.Where(i => i.Settings["engine_tools"].ScalarText() == "false"))
+                r.Error($"providers.agent_runtime.instances.{instance.Name}: engine_tools: false is for development only; set development: true", r.Map.Location);
         r.Finish();
         return new InstallationConfig(address, ns, queue, events, providers, auth, attempts, races, file, development, agentWorker);
     }

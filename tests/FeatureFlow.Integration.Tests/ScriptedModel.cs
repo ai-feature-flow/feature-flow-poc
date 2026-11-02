@@ -182,6 +182,14 @@ public sealed class ScriptedModel : IAsyncDisposable
 
         public int AssistantTurns => Body["messages"]!.AsArray().Count(m => m?["role"]?.ToString() == "assistant");
 
+        /// <summary>The text of the conversation's first user message: the prompt the session started with.</summary>
+        public string Prompt => Body["messages"]!.AsArray().FirstOrDefault()?["content"] switch
+        {
+            JsonValue v => v.ToString(),
+            JsonArray a => string.Join("\n", a.Select(x => x?["text"]?.ToString() ?? "")),
+            _ => "",
+        };
+
         /// <summary>The text of the last tool result the runtime sent back, or "".</summary>
         public string LastToolResult => ToolResults.LastOrDefault() ?? "";
 

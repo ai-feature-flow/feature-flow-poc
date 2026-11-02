@@ -186,6 +186,67 @@ public sealed class EndpointTests : IDisposable
         Assert.Contains("message_delta", await new StreamReader(context.Response.Body).ReadToEndAsync(Ct));
     }
 
+    /// <summary>
+    /// Review finding 1: the agent controls the path after <c>/model/</c>. Only the Messages API's relative paths, by
+    /// POST, reach the upstream; anything else is refused before the credential is even read, so it is never sent.
+    /// </summary>
+    [Theory]
+    [InlineData("POST", "https://evil.example/steal")]
+    [InlineData("POST", "//evil.example/steal")]
+    [InlineData("POST", "http://evil.example/v1/messages")]
+    [InlineData("POST", "v1/models")]
+    [InlineData("POST", "v1/messages/../../steal")]
+    [InlineData("GET", "v1/messages")]
+    public async Task The_model_proxy_refuses_any_request_but_the_messages_api_and_never_sends_the_credential(string method, string path)
+    {
+        var read = false;
+        var upstream = new Upstream(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        var proxy = new ModelProxy(new ModelProxyOptions(new Uri("https://model.example/"), "api_key", _ =>
+        {
+            read = true;
+            return Task.FromResult<string?>("real-credential");
+        }), upstream);
+        var context = Request("Bearer step-token");
+        context.Request.Method = method;
+        var (status, _, _) = await proxy.ForwardAsync(context, path, Ct);
+
+        Assert.Equal(404, status);
+        Assert.Empty(upstream.Seen);
+        Assert.False(read);
+    }
+
+    [Fact]
+    public void The_proxy_s_target_keeps_the_upstream_s_scheme_host_and_port()
+    {
+        var upstream = new Uri("https://model.example:8443/");
+        Assert.Equal("https://model.example:8443/v1/messages?beta=true", ModelProxy.Target(upstream, "POST", "v1/messages", "?beta=true")!.ToString());
+        Assert.Null(ModelProxy.Target(upstream, "POST", "https://evil.example/v1/messages", ""));
+    }
+
+    /// <summary>Review finding 11: when the step's attempt ends, its token stops working.</summary>
+    [Fact]
+    public async Task A_revoked_step_s_token_is_refused()
+    {
+        await StepAsync();
+        Assert.True(await AgentEndpoint.ActiveAsync(services, Claims));
+        (await store.AppendAsync(new RecordBatch(AgentSteps:
+        [
+            new AgentStepRecord(Claims.StepKey, "run-1", "run-1", "implement", "ticket", ReportAndHookTests.Contract, 2, 2, 3600, DateTimeOffset.UtcNow, Revoked: true),
+        ]), Ct)).Unwrap();
+        Assert.False(await AgentEndpoint.ActiveAsync(services, Claims));
+        Assert.False(await AgentEndpoint.ActiveAsync(services, Claims with { StepKey = "run-1/other/1" }));
+    }
+
+    /// <summary>Review finding 12: a step cannot read another step's question by opening it again.</summary>
+    [Fact]
+    public async Task A_question_of_another_step_is_not_shown()
+    {
+        await StepAsync();
+        (await store.AppendAsync(new RecordBatch(Questions: [new QuestionRecord("run-1/other/1", "run-1", "q-9", "Secret?", [], QuestionRecord.Answered, "hidden", DateTimeOffset.UtcNow)]), Ct)).Unwrap();
+        var reply = await AgentEndpoint.OpenQuestionAsync(services, Claims, Json("""{"questionId":"q-9","question":"x"}"""), Ct);
+        Assert.Equal(("unknown", null), (reply.Status, reply.Answer));
+    }
+
     [Fact]
     public async Task With_the_model_unreachable_the_proxy_answers_502_and_never_the_credential()
     {

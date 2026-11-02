@@ -129,6 +129,12 @@ public static class SessionEnd
 
     /// <summary>The runtime exited with an error of its own.</summary>
     public const string Failed = "failed";
+
+    /// <summary>The session's process was lost, as when its sandbox restarted: resumable.</summary>
+    public const string Lost = "lost";
+
+    /// <summary>The model refused the requests permanently (authentication, permission): a configuration fault, not resumable.</summary>
+    public const string ModelRefused = "model_refused";
 }
 
 /// <summary>

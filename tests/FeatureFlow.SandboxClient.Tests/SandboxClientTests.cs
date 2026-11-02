@@ -126,6 +126,18 @@ public sealed class SandboxClientTests : IDisposable
         Assert.Contains("never push", error.ToString());
     }
 
+    /// <summary>Review finding 6: an answer with no decision (an expired or revoked token's 401) blocks the call; it never allows it.</summary>
+    [Fact]
+    public async Task The_hook_command_fails_closed_on_an_answer_with_no_decision()
+    {
+        var replicas = new Replicas((_, _) => new JsonObject { ["error"] = "unknown or revoked step token" });
+        var error = new StringWriter();
+        var exit = await HookCommand.RunAsync("pre_tool_use", Client(replicas), new StringReader("""{"tool_name":"Bash"}"""), new StringWriter(), error,
+            new ClientLog(null), Ct);
+        Assert.Equal(2, exit);
+        Assert.Contains("revoked", error.ToString());
+    }
+
     /// <summary>R19 (SP2 S4 and N2): a hook that cannot reach the engine holds, then stops the session; it never denies.</summary>
     [Fact]
     public async Task The_hook_command_holds_while_no_replica_answers_and_then_stops_the_session_rather_than_deny()

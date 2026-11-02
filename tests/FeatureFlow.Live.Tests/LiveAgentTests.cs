@@ -80,6 +80,7 @@ public sealed class LiveAgentTests
         finally
         {
             await LogRunAsync(h, "done-when", runId);
+            await h.StopRunAsync(runId);
             await h.DeleteRemoteReferencesAsync(branch, hidden);
         }
     }
@@ -115,6 +116,7 @@ public sealed class LiveAgentTests
         finally
         {
             await LogRunAsync(h, "SP2 restart", runId);
+            await h.StopRunAsync(runId);
             await h.DeleteRemoteReferencesAsync($"refs/heads/ff/ticket/{ticket}", AgentHarness.HiddenReference(runId, "implement"));
         }
     }
@@ -140,6 +142,7 @@ public sealed class LiveAgentTests
         finally
         {
             await LogRunAsync(h, "SP3 correct", runId);
+            await h.StopRunAsync(runId);
             await h.DeleteRemoteReferencesAsync($"refs/heads/ff/ticket/{ticket}", AgentHarness.HiddenReference(runId, "implement"));
         }
     }
@@ -161,6 +164,7 @@ public sealed class LiveAgentTests
         finally
         {
             await LogRunAsync(h, "SP3 fallback", runId);
+            await h.StopRunAsync(runId);
             await h.DeleteRemoteReferencesAsync($"refs/heads/ff/ticket/{ticket}", AgentHarness.HiddenReference(runId, "implement"));
         }
     }
@@ -187,6 +191,7 @@ public sealed class LiveAgentTests
         finally
         {
             await LogRunAsync(h, "SP3 stop", runId);
+            await h.StopRunAsync(runId);
             await h.DeleteRemoteReferencesAsync($"refs/heads/ff/ticket/{ticket}", AgentHarness.HiddenReference(runId, "implement"));
         }
     }
@@ -222,6 +227,7 @@ public sealed class LiveAgentTests
         finally
         {
             await LogRunAsync(h, "SP5 environment", runId);
+            await h.StopRunAsync(runId);
             await h.DeleteRemoteReferencesAsync($"refs/heads/ff/ticket/{ticket}", AgentHarness.HiddenReference(runId, "implement"));
         }
     }

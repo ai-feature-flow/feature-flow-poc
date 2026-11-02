@@ -69,7 +69,8 @@ public sealed record AgentStepRecord(
     int CorrectionTurns,
     int QuestionsMax,
     long QuestionsTimeoutSeconds,
-    DateTimeOffset At);
+    DateTimeOffset At,
+    bool Revoked = false);
 
 /// <summary>A call of the <c>report</c> tool: accepted, or rejected with its errors. Appended, numbered per step.</summary>
 public sealed record ReportRecord(string StepKey, int Sequence, bool Accepted, StepReport? Report, IReadOnlyList<string> Errors, DateTimeOffset At);

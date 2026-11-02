@@ -64,6 +64,8 @@ public sealed class ReportAndHookTests
     [InlineData("cd /ff/work && git push origin HEAD")]
     [InlineData("git -C /ff/work push --force")]
     [InlineData("echo x; git push")]
+    [InlineData("/usr/bin/git push")]
+    [InlineData("cd /ff/work && /usr/local/bin/git -c x=y push")]
     public void A_git_push_is_denied(string command) =>
         Assert.Equal("deny", HookPolicy.PreToolUse(Implementer, "Bash", Json($$"""{"command":{{JsonSerializer.Serialize(command)}}}""")).Decision);
 
@@ -78,12 +80,33 @@ public sealed class ReportAndHookTests
     public void A_role_with_no_write_access_may_not_write() =>
         Assert.Equal("deny", HookPolicy.PreToolUse(Reviewer, "Write", Json("""{"file_path":"/ff/work/x"}""")).Decision);
 
+    [Theory]
+    [InlineData("Edit", """{"file_path":"/ff/work/.git/config"}""")]
+    [InlineData("Write", """{"file_path":"/ff/work/.git/hooks/pre-commit"}""")]
+    [InlineData("MultiEdit", """{"file_path":".git/config"}""")]
+    [InlineData("Bash", """{"command":"echo x >> .git/config"}""")]
+    [InlineData("Bash", """{"command":"cp evil .git/hooks/post-commit"}""")]
+    public void Nobody_edits_the_repository_s_git_folder(string tool, string input) =>
+        Assert.Equal("deny", HookPolicy.PreToolUse(Implementer, tool, Json(input)).Decision);
+
     [Fact]
-    public void Nobody_edits_the_repository_s_git_folder()
-    {
-        Assert.Equal("deny", HookPolicy.PreToolUse(Implementer, "Edit", Json("""{"file_path":"/ff/work/.git/config"}""")).Decision);
-        Assert.Equal("deny", HookPolicy.PreToolUse(Implementer, "Bash", Json("""{"command":"echo x >> .git/config"}""")).Decision);
-    }
+    public void A_file_whose_name_only_contains_git_may_be_edited() =>
+        Assert.Equal("allow", HookPolicy.PreToolUse(Implementer, "Edit", Json("""{"file_path":"/ff/work/.gitignore"}""")).Decision);
+
+    /// <summary>Each tool is allowed exactly when its class is one of the role's (LOG 65, LOG 101).</summary>
+    [Theory]
+    [InlineData("read", "Read", true)]
+    [InlineData("read", "Grep", false)]
+    [InlineData("search", "Grep", true)]
+    [InlineData("search", "Glob", true)]
+    [InlineData("search", "Bash", false)]
+    [InlineData("edit", "Write", true)]
+    [InlineData("edit", "Read", false)]
+    [InlineData("shell", "Bash", true)]
+    [InlineData("shell", "Edit", false)]
+    public void A_tool_is_allowed_only_in_its_class(string toolClass, string tool, bool allowed) =>
+        Assert.Equal(allowed ? "allow" : "deny",
+            HookPolicy.PreToolUse(Implementer with { Tools = [toolClass] }, tool, Json("""{"file_path":"/ff/work/a.txt","command":"ls","pattern":"x"}""")).Decision);
 
     [Fact]
     public void A_tool_outside_the_role_s_classes_is_denied_and_the_engine_s_tools_are_allowed()

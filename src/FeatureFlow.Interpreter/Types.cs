@@ -56,6 +56,12 @@ public sealed record RunOptions
     /// <summary><c>limits.races</c> for <c>scm.merge</c> when unset (docs/04 section 7.3; LOG 61).</summary>
     public long DefaultRaces { get; init; } = 10;
 
+    /// <summary>
+    /// Whether the work branch follows <c>metadata.branch_pattern</c> (LOG 97). The shell sets it from a patch marker,
+    /// so runs recorded before M4 keep <c>ff/&lt;level&gt;/&lt;run id&gt;</c>.
+    /// </summary>
+    public bool BranchFromPattern { get; init; }
+
     /// <summary>The run ceiling: attempts across every step of the run (F4).</summary>
     public long RunCeiling { get; init; } = 200;
 

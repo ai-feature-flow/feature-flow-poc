@@ -176,6 +176,8 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
         string lastPushed = "";
         SandboxHandle sandbox = null!;
         bool hasSandbox;
+        bool reattached;
+        DateTimeOffset deadline = DateTimeOffset.MaxValue;
         WorkingCopyRef copy = null!;
         AgentTask task = null!;
         AgentLimits limits = null!;
@@ -206,11 +208,14 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
                 Questions = spec.QuestionsMax > 0,
             };
 
-            var interrupted = await PrepareAsync();
             try
             {
+                var interrupted = await PrepareAsync();
+                deadline = await DeadlineAsync();
                 var report = await SuperviseAndCollectAsync(interrupted);
-                return await FinishAsync(report);
+                var outcome = await FinishAsync(report);
+                await RevokeAsync();
+                return outcome;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested && hasSandbox && context.CancelReason is ActivityCancelReason.CancelRequested or ActivityCancelReason.GoneFromServer)
             {
@@ -219,13 +224,45 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
                 // A worker shutting down is not a cancellation of the step: the sandbox is left for the next worker.
                 // A run that has gone (it ended without waiting) will not resume the step either.
                 await StopEverythingAsync();
+                await RevokeAsync();
                 throw;
             }
-            catch (StepWorkException) when (hasSandbox)
+            catch (Exception e) when (e is StepWorkException or StepCannotAnswerException)
             {
-                await KeepCommitsAndDisposeAsync();
+                // The attempt has ended: its commits stay on the hidden reference, its sandbox goes, its token is revoked.
+                if (hasSandbox)
+                    await KeepCommitsAndDisposeAsync();
+                await RevokeAsync();
                 throw;
             }
+        }
+
+        /// <summary>A step's token stops working when its attempt ends (the endpoint refuses a revoked step).</summary>
+        Task RevokeAsync() => RecordAsync(new RecordBatch(AgentSteps:
+        [
+            new AgentStepRecord(key, call.Step.RunId, spec.WorkflowId, call.Step.StepId, spec.Level, call.Contract, spec.CorrectionTurns, spec.QuestionsMax,
+                (long)spec.QuestionsTimeout.TotalSeconds, DateTimeOffset.UtcNow, Revoked: true),
+        ]));
+
+        /// <summary>
+        /// The step's deadline, <c>limits.timeout</c> from its first attempt (default 4 hours), kept in the record store so
+        /// a retry after the activity's own timeout does not start the clock again.
+        /// </summary>
+        async Task<DateTimeOffset> DeadlineAsync()
+        {
+            if ((await EventsAsync()).FirstOrDefault(e => e.Kind == "deadline") is { } recorded)
+                return DateTimeOffset.Parse(recorded.Detail, System.Globalization.CultureInfo.InvariantCulture);
+            var at = DateTimeOffset.UtcNow + (call.Timeout ?? TimeSpan.FromHours(4));
+            await EventAsync("deadline", at.ToString("O"));
+            return at;
+        }
+
+        /// <summary>docs/04 section 1: an agent that ran out of time is a work result. Its commits are kept on the hidden reference.</summary>
+        async Task OutOfTimeAsync(AgentSession? session)
+        {
+            if (session is not null)
+                await runtime.StopAsync(session, CancellationToken.None);
+            throw new StepWorkException($"the step ran out of time: its limit of {(call.Timeout ?? TimeSpan.FromHours(4)).TotalMinutes:F0} minutes passed at {deadline:O}");
         }
 
         static string HiddenReference(StepIdentity step) => $"refs/feature-flow/wip/{Safe(step.RunId)}/{Safe(step.StepId)}";
@@ -249,7 +286,13 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
 
             startRevision = branchRevision;
             hiddenRevision = Must(await vcs.ResolveAsync(repo, hiddenRef, ct), "read the hidden reference");
-            lastPushed = hiddenRevision ?? startRevision;
+            // An earlier attempt's commits are used only when they build on the branch as it is now. A hidden
+            // reference behind the branch (the branch moved on, say by a catch-up) would rewind it (LOG 96).
+            var useHidden = hiddenRevision is not null && hiddenRevision != startRevision
+                            && Must(await vcs.DescendsFromAsync(repo, hiddenRevision, startRevision, ct), "compare the hidden reference with the work branch");
+            if (hiddenRevision is not null && hiddenRevision != startRevision && !useHidden)
+                events.Add($"hidden reference at {Short(hiddenRevision)} does not build on {workBranch} at {Short(startRevision)}: not used");
+            lastPushed = useHidden ? hiddenRevision! : startRevision;
             copy = new WorkingCopyRef(SandboxHandle.None, paths.Checkout);
 
             var attached = await sandboxes.AttachAsync(key, ct);
@@ -264,6 +307,7 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
             {
                 sandbox = attached.Value!;
                 hasSandbox = true;
+                reattached = true;
                 copy = copy with { Sandbox = sandbox };
                 events.Add("re-attached to the sandbox");
                 await EventAsync("sandbox", "re-attached " + sandbox.Id);
@@ -273,21 +317,25 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
             if (attached.Error!.Reason != "not_found")
                 Must(attached, "attach to the sandbox");
             sandbox = Must(await sandboxes.CreateAsync(new SandboxSpec(key, paths.Home, new Dictionary<string, string>(),
-                [paths.Checkout, paths.Output, "/ff/inputs", "/ff/state", "/ff/tmp"]), ct), "create the sandbox");
+                [paths.Checkout, paths.Output, "/ff/inputs", "/ff/tmp"]), ct), "create the sandbox");
             hasSandbox = true;
             copy = copy with { Sandbox = sandbox };
             Must(await sandboxes.CopyInAsync(sandbox, await owner.ClientAsync(ct), paths.Client, readOnly: true, ct), "copy in the sandbox client");
+            // The engine's state in the sandbox (the client's log, the "engine unreachable" marker) is written by the
+            // sandbox client running as its own user, set-user-id, so the agent cannot forge it (LOG 98).
+            await RootShellAsync($"id {StateUser} >/dev/null 2>&1 || useradd -r -M -s /usr/sbin/nologin {StateUser}; mkdir -p /ff/state && chown {StateUser} /ff/state "
+                                 + $"&& chmod 755 /ff/state && chown {StateUser} {paths.Client} && chmod 4755 {paths.Client}", "set up the engine's state");
             await AgentShellAsync("git config --global user.name 'Feature Flow agent' && git config --global user.email agent@feature-flow.invalid"
                                   + " && git config --global safe.directory '*' && git config --global init.defaultBranch main", "configure git");
 
-            var source = hiddenRevision ?? startRevision;
-            Must(await vcs.CheckOutAsync(repo, hiddenRevision is null ? $"refs/heads/{workBranch}" : hiddenRef, source, workBranch, copy, ct), "check out the work branch");
+            var source = useHidden ? hiddenRevision! : startRevision;
+            Must(await vcs.CheckOutAsync(repo, useHidden ? hiddenRef : $"refs/heads/{workBranch}", source, workBranch, copy, ct), "check out the work branch");
             await StageInputsAsync();
             if (spec.WriteAccess == "none")
                 Must(await sandboxes.MakeReadOnlyAsync(sandbox, paths.Checkout, ct), "make the checkout read-only");
-            events.Add($"sandbox created; checkout of {workBranch} at {Short(source)}" + (hiddenRevision is null ? "" : " from the hidden reference"));
+            events.Add($"sandbox created; checkout of {workBranch} at {Short(source)}" + (useHidden ? " from the hidden reference" : ""));
             await EventAsync("sandbox", "created " + sandbox.Id);
-            return hiddenRevision is not null && hiddenRevision != startRevision;
+            return useHidden;
         }
 
         /// <summary>The inputs manifest (docs/04 section 3.1): inputs, consumed artifacts and skills staged read-only, the baseline, branches and output folder.</summary>
@@ -419,29 +467,38 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
         {
             var (session, number, message) = await LatestSessionAsync();
             AgentSession? running = null;
-            if (session is not null && message is null)
+            if (DateTimeOffset.UtcNow >= deadline)
+                await OutOfTimeAsync(null);
+            if (session is not null && message is null && reattached)
             {
                 var attached = await runtime.AttachAsync(sandbox, task with { Session = number }, ct);
                 if (attached.Ok)
                     running = attached.Value;
                 else
-                    message = "Your previous session was interrupted. Carry on with the task from where you were.";
+                    message = Interrupted;
             }
+            else if (session is not null && !reattached)
+                // A new sandbox holds no session to resume: a fresh session, told the attempt was interrupted (docs/04 section 3.2).
+                message = Interrupted;
 
+            if (message == Interrupted)
+                await CheckResumesAsync();
             var continuations = 0;
+            var fresh = !reattached;
             while (true)
             {
                 if (running is null)
                 {
-                    if (number == 0)
+                    if (number == 0 || fresh)
                     {
-                        number = 1;
+                        number++;
                         // docs/03 section 6.3 (P7): the rendered task is stored as an artifact and its hash recorded with the attempt.
-                        var prompt = await PromptAsync(interrupted);
+                        var prompt = await PromptAsync(interrupted || number > 1);
                         var stored = Must(await owner.Store.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(prompt)), ct), "store the prompt");
-                        events.Add($"prompt of session 1: {stored.Id}");
+                        events.Add($"prompt of session {number}: {stored.Id}");
                         await EventAsync("prompt", stored.Id);
-                        running = Must(await runtime.StartAsync(sandbox, task with { Session = 1, TaskText = prompt }, limits, ct), "start the agent");
+                        running = Must(await runtime.StartAsync(sandbox, task with { Session = number, TaskText = prompt }, limits, ct), "start the agent");
+                        fresh = false;
                     }
                     else
                     {
@@ -459,8 +516,10 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
                 if (result.Transcript is { } transcript)
                     events.Add($"transcript of session {number}: {transcript}");
                 await PushCommitsAsync();
-                if (result.End is SessionEnd.ModelUnreachable or SessionEnd.EngineUnreachable)
+                if (result.End is SessionEnd.ModelUnreachable or SessionEnd.EngineUnreachable or SessionEnd.Lost)
                     throw new ApplicationFailureException($"the session stopped resumably: {result.Detail}", errorType: "infrastructure");
+                if (result.End == SessionEnd.ModelRefused)
+                    throw new StepCannotAnswerException($"the model refused the step's requests, a configuration fault: {result.Detail}");
 
                 var reports = await ReportsAsync();
                 if (reports.LastOrDefault(r => r.Accepted)?.Report is { } accepted)
@@ -499,6 +558,39 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
             }
         }
 
+        const string Interrupted = "Your previous session was interrupted. Carry on with the task from where you were.";
+
+        /// <summary>At most this many resumes in a row without progress, and this many in all (LOG 98).</summary>
+        public const int ResumesWithoutProgress = 5;
+
+        public const int Resumes = 20;
+
+        /// <summary>
+        /// A resume is free only when the stopped session made progress: a tool call or a pushed commit (docs/04 section
+        /// 3.2). Past the caps the step stops for a person, rather than resuming for ever.
+        /// </summary>
+        async Task CheckResumesAsync()
+        {
+            var all = await EventsAsync();
+            var stops = new List<bool>();
+            for (var i = 0; i < all.Count; i++)
+            {
+                if (all[i].Kind != "session" || !all[i].Detail.EndsWith(SessionEnd.ModelUnreachable, StringComparison.Ordinal)
+                    && !all[i].Detail.EndsWith(SessionEnd.EngineUnreachable, StringComparison.Ordinal) && !all[i].Detail.EndsWith(SessionEnd.Lost, StringComparison.Ordinal))
+                    continue;
+                var number = all[i].Detail.Split(' ')[0];
+                var started = all.Take(i).LastOrDefault(e => e is { Kind: "session" } && e.Detail == $"{number} started");
+                var startIndex = started is null ? 0 : all.ToList().IndexOf(started);
+                stops.Add(all.Skip(startIndex).Take(i - startIndex).Any(e => e.Kind is "hook_pre_tool_use" or "pushed"));
+            }
+
+            var trailing = stops.AsEnumerable().Reverse().TakeWhile(p => !p).Count();
+            if (trailing >= ResumesWithoutProgress)
+                throw new StepCannotAnswerException($"the agent's session stopped {trailing} times in a row without progress; a person must look");
+            if (stops.Count >= Resumes)
+                throw new StepCannotAnswerException($"the agent's session stopped {stops.Count} times; a person must look");
+        }
+
         static string Trim(string text) => text.Length > 300 ? text[..300] + "..." : text;
 
         /// <summary>The current session from the record store: its number, and the message to continue it with when it ended resumably.</summary>
@@ -512,8 +604,8 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
             if (last[1] == "started")
                 return ($"{number}", number, null);
             // A session that stopped resumably is continued in a new one; one that ended otherwise is collected again.
-            return last.ElementAtOrDefault(2) is SessionEnd.ModelUnreachable or SessionEnd.EngineUnreachable
-                ? ($"{number}", number, "Your previous session was interrupted. Carry on with the task from where you were.")
+            return last.ElementAtOrDefault(2) is SessionEnd.ModelUnreachable or SessionEnd.EngineUnreachable or SessionEnd.Lost
+                ? ($"{number}", number, Interrupted)
                 : ($"{number}", number, null);
         }
 
@@ -527,6 +619,11 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
                 var progress = Must(await runtime.GetProgressAsync(session, ct), "read the session's progress");
                 if (progress.Finished)
                     return;
+                if (DateTimeOffset.UtcNow >= deadline)
+                {
+                    await PushCommitsAsync();
+                    await OutOfTimeAsync(session);
+                }
                 if (DateTimeOffset.UtcNow >= nextPush)
                 {
                     await PushCommitsAsync();
@@ -621,7 +718,10 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
 
             if (Writes && head != startRevision)
             {
-                // The work branch moves once, to the final commit (docs/04 section 3.1, step 7).
+                // The work branch moves once, to the final commit (docs/04 section 3.1, step 7), and only forward: the
+                // final commit must build on the branch as the step found it (LOG 96).
+                if (!Must(await vcs.DescendsFromAsync(repo, head, startRevision, ct), "compare the final commit with the work branch"))
+                    throw new StepWorkException($"the final commit {Short(head)} does not build on {workBranch} at {Short(startRevision)}; the branch is not moved");
                 Must(await vcs.PushAsync(repo, $"refs/heads/{workBranch}", head, null, startRevision, ct), "move the work branch");
                 events.Add($"moved {workBranch} to {Short(head)}");
                 await EventAsync("moved", $"{workBranch} to {head}");
@@ -669,6 +769,15 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
                 await sandboxes.DisposeAsync(sandbox, CancellationToken.None);
                 await EventAsync("cancelled", "the step was cancelled; its sandbox was removed");
             }
+        }
+
+        const string StateUser = "ffstate";
+
+        async Task RootShellAsync(string script, string what)
+        {
+            var run = Must(await sandboxes.RunAsync(sandbox, new SandboxCommand(["sh", "-c", script], AsRoot: true), $"{key}/{Guid.NewGuid():N}", ct), what);
+            if (run.Exit != 0)
+                throw new ApplicationFailureException($"could not {what} in the sandbox: {run.Output.Trim()}", errorType: "infrastructure");
         }
 
         async Task AgentShellAsync(string script, string what)

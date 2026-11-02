@@ -50,7 +50,7 @@ pull requests, which merge only when CI passes (`docs/11` section 4.1).
   before.
 - Say in the message what was verified and how.
 - End every message with:
-  `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>`
+  `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`
 
 ## Verify, do not assert
 

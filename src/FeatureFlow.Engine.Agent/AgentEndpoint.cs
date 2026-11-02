@@ -75,7 +75,7 @@ public static class AgentEndpoint
         app.Map("/model/{**path}", async (HttpContext http, string? path) =>
         {
             var token = Bearer(http) ?? http.Request.Headers["x-api-key"].FirstOrDefault();
-            if (s.Proxy is null || s.Tokens.Check(token) is not { } claims)
+            if (s.Proxy is null || s.Tokens.Check(token) is not { } claims || !await ActiveAsync(s, claims))
             {
                 http.Response.StatusCode = 401;
                 await http.Response.WriteAsync("""{"type":"error","error":{"type":"authentication_error","message":"unknown step token"}}""");
@@ -91,7 +91,14 @@ public static class AgentEndpoint
         http.Request.Headers.Authorization.FirstOrDefault() is { } value && value.StartsWith("Bearer ", StringComparison.Ordinal) ? value["Bearer ".Length..].Trim() : null;
 
     static async Task<IResult> Authorised(HttpContext http, AgentEndpointServices s, Func<StepClaims, Task<IResult>> handle) =>
-        s.Tokens.Check(Bearer(http)) is { } claims ? await handle(claims) : Results.Json(new { error = "unknown step token" }, Json, statusCode: 401);
+        s.Tokens.Check(Bearer(http)) is { } claims && await ActiveAsync(s, claims)
+            ? await handle(claims)
+            : Results.Json(new { error = "unknown or revoked step token" }, Json, statusCode: 401);
+
+    /// <summary>A token works only while its step attempt is recorded and not ended: the activity revokes it at the end.</summary>
+    public static async Task<bool> ActiveAsync(AgentEndpointServices s, StepClaims claims) =>
+        (await s.Records.QueryAsync<AgentStepRecord>(Queries.AgentStep, new Dictionary<string, string> { ["step_key"] = claims.StepKey }, CancellationToken.None))
+        .Unwrap().FirstOrDefault() is { Revoked: false };
 
     static async Task AppendAsync(AgentEndpointServices s, RecordBatch batch) => (await s.Records.AppendAsync(batch, CancellationToken.None)).Unwrap();
 
@@ -152,7 +159,9 @@ public static class AgentEndpoint
         var id = input.GetProperty("questionId").GetString()!;
         var existing = await QuestionAsync(s, id, cancellationToken);
         if (existing is not null)
-            return new QuestionReply(existing.Status, existing.Answer, null);
+            return existing.StepKey == claims.StepKey
+                ? new QuestionReply(existing.Status, existing.Answer, null)
+                : new QuestionReply("unknown", null, "no such question for this step");
         var step = (await s.Records.QueryAsync<AgentStepRecord>(Queries.AgentStep, new Dictionary<string, string> { ["step_key"] = claims.StepKey }, cancellationToken))
             .Unwrap().FirstOrDefault() ?? throw new InvalidOperationException($"no agent step {claims.StepKey} is recorded");
         if (step.QuestionsMax <= 0)

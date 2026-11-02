@@ -39,8 +39,30 @@ public sealed partial class ModelProxy(ModelProxyOptions options, HttpMessageHan
     private static partial Regex OutputTokens();
 
     /// <summary>Forwards one request whose step token the endpoint has checked. Returns the usage seen, for the step's record.</summary>
+    /// <summary>
+    /// The only requests forwarded (LOG 104): the Messages API and its token count, by POST, as relative paths. Anything
+    /// else is refused before the credential is read, so an agent cannot point the proxy at another host.
+    /// </summary>
+    public static readonly IReadOnlySet<string> AllowedPaths = new HashSet<string>(StringComparer.Ordinal) { "v1/messages", "v1/messages/count_tokens" };
+
+    /// <summary>The upstream URL for a request path, or null when the path is not allowed or would leave the upstream.</summary>
+    public static Uri? Target(Uri upstream, string method, string path, string query)
+    {
+        if (method != "POST" || !AllowedPaths.Contains(path))
+            return null;
+        var target = new Uri(upstream, path + (query.StartsWith('?') && !query.Contains('#') ? query : ""));
+        return target.Scheme == upstream.Scheme && target.Host == upstream.Host && target.Port == upstream.Port ? target : null;
+    }
+
     public async Task<(int Status, long InputTokens, long OutputTokens)> ForwardAsync(HttpContext context, string path, CancellationToken cancellationToken)
     {
+        if (Target(options.Upstream, context.Request.Method, path, context.Request.QueryString.Value ?? "") is not { } target)
+        {
+            context.Response.StatusCode = 404;
+            await context.Response.WriteAsync("""{"type":"error","error":{"type":"not_found_error","message":"the model proxy does not forward this request"}}""", cancellationToken);
+            return (404, 0, 0);
+        }
+
         var credential = await options.Credential(cancellationToken);
         if (string.IsNullOrEmpty(credential))
         {
@@ -49,7 +71,6 @@ public sealed partial class ModelProxy(ModelProxyOptions options, HttpMessageHan
             return (503, 0, 0);
         }
 
-        var target = new Uri(options.Upstream, path.TrimStart('/') + context.Request.QueryString);
         using var request = new HttpRequestMessage(new HttpMethod(context.Request.Method), target);
         var body = new MemoryStream();
         await context.Request.Body.CopyToAsync(body, cancellationToken);

@@ -211,7 +211,7 @@ public sealed partial class RunCore
     {
         var level = Plan.Document.Level ?? "run";
         var fallback = $"ff/{level}/{Run.Id}";
-        if (Plan.Document.BranchPattern is not { } pattern || renderingBranch)
+        if (!Options.BranchFromPattern || Plan.Document.BranchPattern is not { } pattern || renderingBranch)
             return fallback;
         renderingBranch = true;
         try

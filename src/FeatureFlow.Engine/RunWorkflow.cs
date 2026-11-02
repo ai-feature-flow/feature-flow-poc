@@ -91,7 +91,7 @@ public class RunWorkflow
                 return await RefuseAsync(prepared.Errors);
             policy = prepared.Policy;
             libraries = RunActivities.Build(prepared.Libraries, new DiagnosticBag());
-            var (started, diagnostics) = RunCore.Start(libraries, Template, RunActivities.RunInfoOf(input), policy.ToOptions());
+            var (started, diagnostics) = RunCore.Start(libraries, Template, RunActivities.RunInfoOf(input), policy.ToOptions() with { BranchFromPattern = Workflow.Patched(BranchPatternPatch) });
             core = started ?? throw new ApplicationFailureException("the plan passed run start but does not load: " + string.Join("; ", diagnostics.Take(3)));
         }
         else
@@ -99,7 +99,7 @@ public class RunWorkflow
             var snapshot = await Workflow.ExecuteActivityAsync((RunActivities a) => a.LoadLibrariesAsync(input.LockRef), Light);
             policy = input.Policy!;
             libraries = RunActivities.Build(snapshot, new DiagnosticBag());
-            core = RunCore.Resume(libraries, Template, input.Carried.Core, policy.ToOptions());
+            core = RunCore.Resume(libraries, Template, input.Carried.Core, policy.ToOptions() with { BranchFromPattern = Workflow.Patched(BranchPatternPatch) });
             // Questions carried over a hand-over get their timers again (docs/02 section 3: timers are re-created from state).
             foreach (var open in questions.ToList())
                 _ = TimeOutQuestionAsync(open);
@@ -454,6 +454,9 @@ public class RunWorkflow
 
     /// <summary>The patch marker of the agent step's settings (M4): histories recorded before it call the agent step without them.</summary>
     public const string AgentStepPatch = "m4-agent-step";
+
+    /// <summary>The patch marker of the work branch following <c>metadata.branch_pattern</c> (LOG 97).</summary>
+    public const string BranchPatternPatch = "m4-branch-pattern";
 
     /// <summary>The patch marker of waiting for a cancelled step's activity to finish (M3 follow-up 9).</summary>
     public const string WaitCancellationPatch = "m4-wait-cancellation";

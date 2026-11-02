@@ -41,6 +41,9 @@ public interface IVcsProvider : IProvider
     /// <summary>The commits after <paramref name="sinceRevision"/> up to the working copy's head, as a bundle.</summary>
     Task<ProviderResult<CommitBundle>> FetchCommitsAsync(WorkingCopyRef copy, string sinceRevision, CancellationToken cancellationToken);
 
+    /// <summary>Whether <paramref name="revision"/> descends from <paramref name="ancestor"/> (or is it), on the remote's history.</summary>
+    Task<ProviderResult<bool>> DescendsFromAsync(RepoRef repo, string revision, string ancestor, CancellationToken cancellationToken);
+
     /// <summary>How many commits are in <paramref name="toRevision"/> and not in <paramref name="fromRevision"/>.</summary>
     Task<ProviderResult<int>> CountCommitsAsync(WorkingCopyRef copy, string fromRevision, string toRevision, CancellationToken cancellationToken);
 

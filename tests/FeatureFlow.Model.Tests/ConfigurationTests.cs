@@ -57,6 +57,7 @@ public class ConfigurationTests
     [InlineData("defaults:", "agent_worker: { listen: \"http://0.0.0.0:8490\", token_key_ref: secrets/k }\ndefaults:", "agent_worker.urls must list")]
     [InlineData("defaults:", "agent_worker: { listen: \"http://0.0.0.0:8490\", urls: [\"http://h:1\"] }\ndefaults:", "agent_worker.token_key_ref must name")]
     [InlineData("defaults:", "agent_worker: { commit_interval: often }\ndefaults:", "commit_interval must be a duration")]
+    [InlineData("recording: { folder: rec } } }", "recording: { folder: rec }, claude: { provider: claude_code, engine_tools: false } } }", "engine_tools: false is for development only")]
     [InlineData("  record_store: { default: sqlite, instances: { sqlite: { path: records.db } } }", "  record_stor: { instances: { sqlite: {} } }", "unknown provider type 'record_stor'")]
     [InlineData("  record_store: { default: sqlite,", "  record_store: { default: postgres,", "names instance 'postgres'")]
     [InlineData("defaults:", "workers: { mode: local }\ndefaults:", "workers is not read before M8")]

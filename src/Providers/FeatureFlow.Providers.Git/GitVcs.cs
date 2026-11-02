@@ -122,6 +122,23 @@ public sealed class GitVcs(
         return ProviderResult<CommitBundle>.Success(new CommitBundle(bundle.Value!, lines[0].Trim(), int.Parse(lines[1].Trim(), System.Globalization.CultureInfo.InvariantCulture)));
     }
 
+    public Task<ProviderResult<bool>> DescendsFromAsync(RepoRef repo, string revision, string ancestor, CancellationToken cancellationToken) =>
+        WithCacheAsync(repo, async (dir, env) =>
+        {
+            async Task<bool> Present(string r) => Failed(await GitAsync(dir, ["cat-file", "-e", r + "^{commit}"], env, cancellationToken), "") is null;
+            if (!await Present(revision) || !await Present(ancestor))
+                await GitAsync(dir, ["fetch", "--no-tags", UrlOf(repo), "+refs/heads/*:refs/ff-cache/heads/*", "+refs/feature-flow/*:refs/ff-cache/ff/*"], env, cancellationToken);
+            var run = await GitAsync(dir, ["merge-base", "--is-ancestor", ancestor, revision], env, cancellationToken);
+            if (!run.Ok)
+                return new ProviderResult<bool>(default, run.Error);
+            return run.Value!.Exit switch
+            {
+                0 => ProviderResult<bool>.Success(true),
+                1 => ProviderResult<bool>.Success(false),
+                _ => ProviderResult<bool>.Failure("not_found", $"{revision} or {ancestor} is not on the remote: {FirstLine(run.Value.Error)}"),
+            };
+        }, write: false, cancellationToken);
+
     public async Task<ProviderResult<int>> CountCommitsAsync(WorkingCopyRef copy, string fromRevision, string toRevision, CancellationToken cancellationToken)
     {
         var run = await InCopyAsync(copy, $"git rev-list --count {Q(fromRevision)}..{Q(toRevision)}", cancellationToken);

@@ -40,7 +40,7 @@ public static class AgentWorld
         var rid = arch.Trim() is "aarch64" or "arm64" ? "linux-arm64" : "linux-x64";
         var folder = IOPath.Combine(IOPath.GetTempPath(), $"ff-sandbox-client-{rid}-{Guid.NewGuid():N}"[..48]);
         var (published, log) = await RunAsync("dotnet", ["publish", IOPath.Combine(root, "src", "FeatureFlow.SandboxClient"), "-c", "Release", "-r", rid,
-            "--self-contained", "-p:PublishSingleFile=true", "-p:EnableCompressionInSingleFile=true", "-o", folder]);
+            "--self-contained", "-p:PublishSingleFile=true", "-o", folder]);
         if (published != 0)
             throw new InvalidOperationException("the sandbox client did not publish:\n" + log);
         return IOPath.Combine(folder, "ff-sandbox");
@@ -267,8 +267,43 @@ public sealed class AgentHarness : IAsyncDisposable
             return;
         var (exit, output) = await AgentWorld.RunAsync("git", ["push", "-q", $"https://github.com/{Repository}.git", .. present.Select(r => ":" + r)], scratch,
             new Dictionary<string, string> { ["GIT_CONFIG_COUNT"] = "1", ["GIT_CONFIG_KEY_0"] = "http.extraHeader", ["GIT_CONFIG_VALUE_0"] = header, ["GIT_TERMINAL_PROMPT"] = "0" });
-        Assert.True(exit == 0, "removing the test's references failed: " + output.Split('\n').FirstOrDefault());
+        // No assertion here: it runs in a test's finally, where it must not hide the test's own failure.
+        if (exit != 0)
+            Console.Error.WriteLine("removing the test's references failed: " + output.Split('\n').FirstOrDefault());
     }
+
+    /// <summary>
+    /// Ends a run that is still going, and waits for its workflow to end, so its agent step has stopped pushing before a
+    /// Live test removes the references it pushed. Never throws.
+    /// </summary>
+    public async Task StopRunAsync(string runId)
+    {
+        try
+        {
+            Cli("abort", runId, "--reason", "test clean-up");
+            using var wait = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+            await Host.Client.GetWorkflowHandle(runId).GetResultAsync<string>(rpcOptions: new Temporalio.Client.RpcOptions { CancellationToken = wait.Token });
+        }
+        catch (Exception e) when (e is not OutOfMemoryException)
+        {
+        }
+    }
+
+    /// <summary>Someone else's commit on a branch of the stand-in code host, as a catch-up or a person would push. Returns its revision.</summary>
+    public async Task<string> PushToRemoteBranchAsync(string branch, string message)
+    {
+        var work = IOPath.Combine(Folder, "other-" + Guid.NewGuid().ToString("N")[..8]);
+        await GitAsync(Folder, "clone", "-q", "--branch", branch, Remote, work);
+        await File.WriteAllTextAsync(IOPath.Combine(work, message.Replace(' ', '_') + ".txt"), message + "\n");
+        await GitAsync(work, "add", "-A");
+        await GitAsync(work, "-c", "user.name=other", "-c", "user.email=other@example.invalid", "commit", "-q", "-m", message);
+        await GitAsync(work, "push", "-q", "origin", branch);
+        return (await GitAsync(work, "rev-parse", "HEAD")).Trim();
+    }
+
+    /// <summary>The branch's commit messages, newest first.</summary>
+    public async Task<List<string>> RemoteLogAsync(string reference, int count) =>
+        (await GitAsync(Remote, "log", $"-{count}", "--format=%s", reference)).Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList();
 
     public async Task<string> RemoteMessageAsync(string revision) => (await GitAsync(Remote, "log", "-1", "--format=%s", revision)).Trim();
 

@@ -39,12 +39,10 @@ public static class HookCommand
         }
 
         log.Write("decision", ("hook", hook), ("tool", tool), ("decision", reply["decision"]?.ToString()));
-        if (reply["decision"]?.ToString() == "deny")
-        {
-            await error.WriteLineAsync(reply["reason"]?.ToString() ?? "denied by the engine");
-            return 2;
-        }
-
-        return 0;
+        if (reply["decision"]?.ToString() == "allow")
+            return 0;
+        // Fail closed: a denial, or an answer with no decision (an expired or revoked token, a refused call), blocks it.
+        await error.WriteLineAsync(reply["reason"]?.ToString() ?? "the engine did not allow this call: " + (reply["error"]?.ToString() ?? "no decision"));
+        return 2;
     }
 }

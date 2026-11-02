@@ -69,6 +69,32 @@ public sealed class ClaudeCodeRuntimeTests
         Assert.DoesNotContain("mcp__engine__checkpoint", Runtime.CommandLine(Task("none"), "p", false));
     }
 
+    /// <summary>Review finding 7: hooks come from the root-owned managed settings, and no other source's hooks run.</summary>
+    [Fact]
+    public void Hooks_are_managed_settings_that_allow_no_other_hooks()
+    {
+        Assert.True(Runtime.Settings()["allowManagedHooksOnly"]!.GetValue<bool>());
+        Assert.StartsWith("/etc/claude-code/", ClaudeCodeRuntime.ManagedSettings, StringComparison.Ordinal);
+        Assert.DoesNotContain("--settings", Runtime.CommandLine(Task(), "p", false));
+    }
+
+    /// <summary>Review finding 5: only transient API errors are resumable.</summary>
+    [Theory]
+    [InlineData(null, SessionEnd.ModelUnreachable)]
+    [InlineData(429, SessionEnd.ModelUnreachable)]
+    [InlineData(500, SessionEnd.ModelUnreachable)]
+    [InlineData(529, SessionEnd.ModelUnreachable)]
+    [InlineData(401, SessionEnd.ModelRefused)]
+    [InlineData(403, SessionEnd.ModelRefused)]
+    [InlineData(400, SessionEnd.Failed)]
+    [InlineData(413, SessionEnd.Failed)]
+    public void Only_transient_api_errors_are_resumable(int? status, string end)
+    {
+        Assert.Equal(end, ClaudeCodeRuntime.ApiEnd(status));
+        var parsed = ClaudeCodeRuntime.Parse($$"""{"type":"result","terminal_reason":"api_error","api_error":"x","api_error_status":{{(status?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "null")}}}""");
+        Assert.Equal(status, parsed.ApiStatus);
+    }
+
     [Fact]
     public void The_session_id_is_fixed_by_the_step_s_key() =>
         Assert.Equal(ClaudeCodeRuntime.SessionId("a/b/1"), ClaudeCodeRuntime.SessionId("a/b/1"));
