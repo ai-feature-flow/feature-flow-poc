@@ -469,9 +469,9 @@ public sealed class GitVcs(
     /// </summary>
     async Task<ProviderResult<IReadOnlyDictionary<string, string>>> EnvironmentAsync(RepoRef repo, bool write, CancellationToken cancellationToken)
     {
-        var env = new Dictionary<string, string> { ["GIT_TERMINAL_PROMPT"] = "0" };
+        var config = new List<(string Key, string Value)>(Isolation);
         if (!UrlOf(repo).StartsWith("https://", StringComparison.Ordinal) || broker() is not { } credentialBroker)
-            return ProviderResult<IReadOnlyDictionary<string, string>>.Success(env);
+            return ProviderResult<IReadOnlyDictionary<string, string>>.Success(IsolatedEnvironment(config));
         var cacheKey = $"{repo.FullName}|{write}";
         if (!credentials.TryGetValue(cacheKey, out var credential) || credential.ExpiresAt < DateTimeOffset.UtcNow.AddMinutes(5))
         {
@@ -483,10 +483,34 @@ public sealed class GitVcs(
         }
 
         var basic = Convert.ToBase64String(Encoding.UTF8.GetBytes("x-access-token:" + credential.Secret));
-        env["GIT_CONFIG_COUNT"] = "1";
-        env["GIT_CONFIG_KEY_0"] = "http.extraHeader";
-        env["GIT_CONFIG_VALUE_0"] = "AUTHORIZATION: basic " + basic;
-        return ProviderResult<IReadOnlyDictionary<string, string>>.Success(env);
+        config.Add(("http.extraHeader", "AUTHORIZATION: basic " + basic));
+        return ProviderResult<IReadOnlyDictionary<string, string>>.Success(IsolatedEnvironment(config));
+    }
+
+    /// <summary>
+    /// Review finding 10: the engine's git reads no system or global configuration and no configuration passed down by
+    /// the worker's own environment, so no credential helper (which could offer a person's credential after a 401), URL
+    /// rewrite or hooks path of the worker's user reaches it.
+    /// </summary>
+    static readonly (string Key, string Value)[] Isolation = [("credential.helper", ""), ("core.hooksPath", OperatingSystem.IsWindows() ? "NUL" : "/dev/null")];
+
+    static Dictionary<string, string> IsolatedEnvironment(IReadOnlyList<(string Key, string Value)> config)
+    {
+        var env = new Dictionary<string, string>
+        {
+            ["GIT_TERMINAL_PROMPT"] = "0",
+            ["GIT_CONFIG_NOSYSTEM"] = "1",
+            ["GIT_CONFIG_GLOBAL"] = OperatingSystem.IsWindows() ? "NUL" : "/dev/null",
+            ["GIT_CONFIG_PARAMETERS"] = "",
+            ["GIT_CONFIG_COUNT"] = config.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        };
+        for (var i = 0; i < config.Count; i++)
+        {
+            env[$"GIT_CONFIG_KEY_{i}"] = config[i].Key;
+            env[$"GIT_CONFIG_VALUE_{i}"] = config[i].Value;
+        }
+
+        return env;
     }
 
     async Task<ProviderResult<string>> InCopyAsync(WorkingCopyRef copy, string script, CancellationToken cancellationToken)
