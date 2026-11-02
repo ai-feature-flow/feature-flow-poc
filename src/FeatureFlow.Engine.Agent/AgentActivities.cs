@@ -436,7 +436,12 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
                     if (number == 0)
                     {
                         number = 1;
-                        running = Must(await runtime.StartAsync(sandbox, task with { Session = 1, TaskText = await PromptAsync(interrupted) }, limits, ct), "start the agent");
+                        // docs/03 section 6.3 (P7): the rendered task is stored as an artifact and its hash recorded with the attempt.
+                        var prompt = await PromptAsync(interrupted);
+                        var stored = Must(await owner.Store.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(prompt)), ct), "store the prompt");
+                        events.Add($"prompt of session 1: {stored.Id}");
+                        await EventAsync("prompt", stored.Id);
+                        running = Must(await runtime.StartAsync(sandbox, task with { Session = 1, TaskText = prompt }, limits, ct), "start the agent");
                     }
                     else
                     {

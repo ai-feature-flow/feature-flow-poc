@@ -23,7 +23,10 @@ public sealed class AgentCredentialTests
     {
         var credential = "model-key-" + Guid.NewGuid().ToString("N");
         await using var model = new ScriptedModel(credential);
-        model.ThenBash("{ env | sort; echo '--- home'; ls -A \"$HOME\"; echo '--- startup bytes'; " +
+        // Claude Code removes its own credential variables from its tools' shells, so env alone would not show one
+        // given to the runtime: every process environment the agent's user can read is listed too.
+        model.ThenBash("{ env | sort; echo '--- processes'; cat /proc/[0-9]*/environ 2>/dev/null | tr '\\0' '\\n' | sort -u; " +
+                       "echo '--- home'; ls -A \"$HOME\"; echo '--- startup bytes'; " +
                        "cat \"$HOME/.profile\" \"$HOME/.bashrc\" \"$HOME/.bash_profile\" \"$HOME/.zshenv\" \"$HOME/.zshrc\" | wc -c; } > /ff/out/notes.md")
             .ThenTool("mcp__engine__report", AgentScripts.Report())
             .ThenText("Done.");

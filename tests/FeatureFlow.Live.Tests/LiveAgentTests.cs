@@ -191,7 +191,10 @@ public sealed class LiveAgentTests
         }
     }
 
-    /// <summary>SP5 live: the real agent records its environment; no credential is in it, its home or its transcript.</summary>
+    /// <summary>
+    /// SP5 live: the real agent records its environment; no credential is in it, its home or its transcript. The
+    /// listing of every process environment is the Integration test's: asked for it, the real agent reported blocked.
+    /// </summary>
     [Fact]
     public async Task The_real_agent_s_sandbox_holds_no_model_credential()
     {

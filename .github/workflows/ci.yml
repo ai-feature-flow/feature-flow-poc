@@ -50,5 +50,8 @@ jobs:
           cat "$RUNNER_TEMP/temporal.log"
           exit 1
       - run: docker version
+      # M4's agent step tests run Claude Code in this image against a scripted model; no model credential is used.
+      - name: Build the sandbox image
+        run: docker build -q -t feature-flow-sandbox:m4 -f src/Providers/FeatureFlow.Providers.Docker/sandbox.Dockerfile src/Providers/FeatureFlow.Providers.Docker
       - run: dotnet build FeatureFlow.slnx -c Release
       - run: dotnet test FeatureFlow.slnx -c Release --no-build --filter "Category=Integration"

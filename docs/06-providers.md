@@ -97,6 +97,9 @@ temporary type `action_stand_in` runs them, scripted or recording, and a
 production installation: an installation that configures one must set
 `development: true`.
 
+Pending review (LOG 103): the sandbox, agent runtime, VCS and credential broker interfaces
+as built in M4 add methods to the abbreviated signatures below; LOG 103 lists them.
+
 ### 3.1 Sandbox
 
 ```csharp
@@ -396,6 +399,9 @@ interface ICredentialBroker : IProvider {
 The broker refuses a request wider than it may grant; it never silently narrows
 one. Spike 2 issued a 60-minute, one-repository token and refused wider
 requests (`archive/docs/16` section 2).
+
+Pending review (LOG 95): in M4 an agent step gets no code host credential at all; its
+checkout arrives as a bundle with no remote.
 
 ---
 

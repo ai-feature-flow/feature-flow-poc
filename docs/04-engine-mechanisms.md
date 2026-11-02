@@ -157,6 +157,10 @@ is an output contract error: the errors go back to the agent for correction
 turns, like an invalid patch (LOG 76, 79). The interpreter's core refuses such
 a report from M2; correction turns arrive with the agent step in M4.
 
+Pending review (LOG 94): from M4 the agent worker checks a report when the `report` tool is
+called, so correction turns happen inside the session; after `correction_turns` rejections
+the next fails the attempt and the agent is told to stop.
+
 ### 3.4 Questions (`ask_human`)
 
 From FF (RW14). The agent asks; the run opens a **question** decision
@@ -169,6 +173,9 @@ and duration limits paused.
 | Timeout | `questions.timeout` (default 4 hours). On timeout the agent is told that no answer came, and carries on |
 | Who answers | A human allowed by policy for the step's question decision type. Auto-resolution never answers a question |
 | Durability | The open question lives in workflow state and the record store, not in worker memory. If the worker restarts, the sandbox and the waiting agent survive; the new worker re-attaches and serves the answer when it arrives. Spiked in SP2 (`docs/spikes/sp2-results.md`), except the re-attach, which the spike's harness did not exercise |
+
+Pending review (LOG 93): in M4 the run's workflow shell, not the interpreter's core, holds an
+open question, as a wait of kind `question` answered through the API.
 
 ### 3.5 Run context
 
@@ -190,6 +197,9 @@ can act on them (the engine itself never fails a step on them):
 
 The standard review fragment routes a reviewer with `changed_files_unread > 0`
 back for another attempt (`docs/08`); a specialised review need not.
+
+Pending review (LOG 99): M4 counts `commits` from the work branch at the step's start, and
+`changed_files_unread` from the parent branch against the files the hooks saw opened.
 
 ### 3.7 Write access and pushing
 

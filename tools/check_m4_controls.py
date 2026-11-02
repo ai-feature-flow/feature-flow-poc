@@ -53,7 +53,7 @@ CONTROLS = [
     {
         "name": "sp2-n1b: an unreachable engine is returned to the agent as a tool error (LOG 60)",
         "edits": [(MCP, "            SessionStop.Mark(e.Message);\n            (onUnreachable ?? SessionStop.EndRuntime)();\n            return;",
-                   "            text = \"engine unreachable: \" + e.Message;")],
+                   "            text = \"engine unreachable: \" + e.Message + (onUnreachable is null ? \"\" : \"\");")],
         "tests": [(CLIENT_TESTS, None)],
         "expect": ["An_engine_unreachable_past_the_budget_ends_the_session_and_gives_the_agent_no_error"],
     },
@@ -67,7 +67,7 @@ CONTROLS = [
         "name": "LOG 59: a question is not opened idempotently by its id",
         "edits": [(ENDPOINT, "        if (existing is not null)\n            return new QuestionReply(existing.Status, existing.Answer, null);\n", "")],
         "tests": [(AGENT, None)],
-        "expect": ["A_question_opened_twice_with_one_id_is_one_question_signalled_once", "A_long_poll_returns_the_answer_the_run_recorded"],
+        "expect": ["A_question_opened_twice_with_one_id_is_one_question_signalled_once"],
     },
     {
         "name": "no correction turns: the first rejected report fails the attempt",

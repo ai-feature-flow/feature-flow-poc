@@ -19,7 +19,7 @@ public sealed class EndpointTests : IDisposable
     readonly SqliteRecordStore store;
     readonly Signals signals = new();
     readonly AgentEndpointServices services;
-    static readonly StepClaims Claims = new("run-1/implement/1", "run-1", "run-1", "implement", "branch", ["read"], 0);
+    static readonly StepClaims Claims = new("run-1/implement/1", "run-1", "run-1", "implement", "branch", ["read", "shell"], 0);
     static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     sealed class Signals : IRunSignals

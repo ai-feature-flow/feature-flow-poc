@@ -94,6 +94,8 @@ a run.
 | Agent runtime | `claude` on `PATH`, signed in to the Anthropic subscription. The spikes use model `haiku` |
 | Secrets | `~/keys/feature-flow-secrets.json`, outside the repository, passed as `FF_SECRETS_FILE`. It holds the GitHub App id (5507595) and installation id (176108462), and the path to the App's private key. Never commit a credential, and never print one |
 | Pushing | `origin` uses an SSH host alias that can push to both the design and the fixture repository |
+| Sandbox image (M4) | `feature-flow-sandbox:m4`, from `src/Providers/FeatureFlow.Providers.Docker/sandbox.Dockerfile`. The integration tests build it if it is absent, and publish the sandbox client for the Docker host's architecture |
+| Live tests (M4) | `dotnet test tests/FeatureFlow.Live.Tests` with `FF_TEMPORAL_ADDRESS`, `FF_SECRETS_FILE` and `CLAUDE_CODE_OAUTH_TOKEN` set. They spend model tokens and push a branch and a hidden reference to the fixture repository, which each test removes |
 
 ## Design principles worth not losing
 
