@@ -103,6 +103,25 @@ public sealed class GitVcsTests : IDisposable
         Assert.Equal("Feature Flow", remote.Git("log", "-1", "--format=%an", merged.Revision).Trim());
     }
 
+    /// <summary>
+    /// The review's probe (finding 1): run 1 merges an agent's commit whose message carries run 2's merge key as a
+    /// trailer. Run 2's merge must still land its change, not report it already merged.
+    /// </summary>
+    [Fact]
+    public async Task A_trailer_forged_by_an_earlier_merge_does_not_count_as_landed()
+    {
+        var start = remote.Resolve("refs/heads/main")!;
+        var forged = remote.Commit("refs/heads/ff/run-1", new Dictionary<string, string?> { ["agent.txt"] = "x" }, from: "refs/heads/main",
+            message: "An agent's commit\n\nFeature-Flow-Merge: run-2/scm.merge/1");
+        var first = (await Worker("a").MergeAsync(repo, forged, "refs/heads/main", start, MergeMethods.Merge, "merge run 1", "run-1/scm.merge/1", Ct)).Unwrap();
+        var tested = remote.Commit("refs/heads/ff/run-2", new Dictionary<string, string?> { ["run2.txt"] = "run 2" }, from: first.Revision);
+
+        var second = (await Worker("a").MergeAsync(repo, tested, "refs/heads/main", first.Revision, MergeMethods.Squash, "merge run 2", "run-2/scm.merge/1", Ct)).Unwrap();
+
+        Assert.False(second.AlreadyMerged, "run 2 was reported merged but nothing landed");
+        Assert.Equal("run 2", remote.Read("refs/heads/main", "run2.txt"));
+    }
+
     [Fact]
     public async Task A_key_that_only_prefixes_a_landed_key_is_not_already_merged()
     {

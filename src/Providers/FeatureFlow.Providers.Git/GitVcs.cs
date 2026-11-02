@@ -310,16 +310,31 @@ public sealed class GitVcs(
         ["GIT_COMMITTER_EMAIL"] = "feature-flow@users.noreply.github.com",
     };
 
-    /// <summary>Whether the change landed on <paramref name="target"/>: it contains the tested revision, or a commit carrying the key's trailer.</summary>
+    /// <summary>
+    /// Whether the change landed on <paramref name="target"/>: it contains the tested revision, or a commit carrying the
+    /// key's trailer whose tree is exactly the tested revision's. The tree is what makes the trailer evidence: anyone can
+    /// write a trailer (an agent's commit merged earlier), but no one can make a commit with the tested tree before the
+    /// tested revision exists.
+    /// </summary>
     static async Task<bool> LandedAsync(string dir, string tested, string target, string key, IReadOnlyDictionary<string, string> env, CancellationToken cancellationToken)
     {
         if (await IsAncestorAsync(dir, tested, target, env, cancellationToken))
             return true;
+        var tree = await RevParseTreeAsync(dir, tested, env, cancellationToken);
+        if (tree is null)
+            return false;
         // --grep narrows the walk cheaply; the trailer is then compared exactly, so key "a-1" never matches "a-10".
-        var log = await GitAsync(dir, ["log", "-F", "--grep=" + MergeTrailer + key, "--format=%(trailers:key=Feature-Flow-Merge,valueonly,separator=%x00)%x01", target],
-            env, cancellationToken);
+        var log = await GitAsync(dir, ["log", "-F", "--grep=" + MergeTrailer + key,
+            "--format=%T%x02%(trailers:key=Feature-Flow-Merge,valueonly,separator=%x00)%x01", target], env, cancellationToken);
         return log.Ok && log.Value!.Exit == 0
-            && log.Value.Output.Split('\u0001').Any(entry => entry.Split('\0', '\n').Any(v => v.Trim() == key));
+            && log.Value.Output.Split('\u0001').Select(entry => entry.Trim().Split('\u0002'))
+                .Any(parts => parts.Length == 2 && parts[0] == tree && parts[1].Split('\0', '\n').Any(v => v.Trim() == key));
+    }
+
+    static async Task<string?> RevParseTreeAsync(string dir, string revision, IReadOnlyDictionary<string, string> env, CancellationToken cancellationToken)
+    {
+        var run = await GitAsync(dir, ["rev-parse", "--verify", "-q", revision + "^{tree}"], env, cancellationToken);
+        return run.Ok && run.Value!.Exit == 0 ? run.Value.Output.Trim() : null;
     }
 
     async Task<ProviderError?> FetchAsync(string dir, RepoRef repo, IReadOnlyDictionary<string, string> env, CancellationToken cancellationToken,
