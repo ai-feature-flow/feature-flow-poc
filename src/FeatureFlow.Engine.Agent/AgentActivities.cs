@@ -878,10 +878,16 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
                 return null;
             if (Must(await host.ReadFileAsync(repo, RepositoryManifest.FileName, startRevision, ct), "read the repository manifest") is not { } file)
                 return null;
-            var d = new DiagnosticBag();
-            var read = RepositoryManifest.Read(file.Content, file.Hash, $"{repo.FullName}:{RepositoryManifest.FileName}", d);
-            if (read is null || d.HasErrors)
-                throw new StepCannotAnswerException($"{RepositoryManifest.FileName} at {Short(startRevision)} does not read: {string.Join("; ", d.Where(x => x.Blocks).Select(x => x.Message))}");
+            RepositoryManifest read;
+            try
+            {
+                read = RepositoryManifest.Parse(file.Content, file.Hash, $"{repo.FullName}:{RepositoryManifest.FileName} at {Short(startRevision)}");
+            }
+            catch (FormatException e)
+            {
+                throw new StepCannotAnswerException(e.Message);
+            }
+
             await EventAsync("manifest", $"{repo.FullName} {file.Hash} at {startRevision}");
             return read;
         }

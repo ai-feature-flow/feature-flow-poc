@@ -53,6 +53,19 @@ public sealed record RepositoryManifest(
         tags.Where(tag => !Tiers.Any(t => t.Tags.Contains(tag))).Distinct().ToList();
 
     /// <summary>
+    /// The one reader every step uses (engine actions and the agent step): the manifest from a file's content and hash,
+    /// or <see cref="FormatException"/> naming what is wrong, which the caller turns into an intervention.
+    /// </summary>
+    public static RepositoryManifest Parse(string content, string hash, string where)
+    {
+        var d = new DiagnosticBag();
+        var manifest = Read(content, hash, where, d);
+        if (manifest is null || d.HasErrors)
+            throw new FormatException($"{where} does not read: {string.Join("; ", d.Where(x => x.Blocks).Select(x => x.Message))}");
+        return manifest;
+    }
+
+    /// <summary>
     /// Reads a manifest, refusing unknown keys (docs/07 section 4: a misspelt section stops the step that reads it).
     /// Errors are check 1 diagnostics; null when the text is not a map.
     /// </summary>

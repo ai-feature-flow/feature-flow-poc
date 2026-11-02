@@ -302,10 +302,16 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
         var file = Must(await CodeHost.ReadFileAsync(repo, RepositoryManifest.FileName, revision, ct), "read the repository manifest");
         if (file is null)
             return null;
-        var d = new DiagnosticBag();
-        var manifest = RepositoryManifest.Read(file.Content, file.Hash, $"{repo.FullName}:{RepositoryManifest.FileName}", d);
-        if (manifest is null || d.HasErrors)
-            throw ActionStop.CannotAnswer($"{repo.FullName}'s {RepositoryManifest.FileName} at {EngineActions.Short(revision)} does not read: {string.Join("; ", d.Where(x => x.Blocks).Select(x => x.Message))}");
+        RepositoryManifest manifest;
+        try
+        {
+            manifest = RepositoryManifest.Parse(file.Content, file.Hash, $"{repo.FullName}:{RepositoryManifest.FileName} at {EngineActions.Short(revision)}");
+        }
+        catch (FormatException e)
+        {
+            throw ActionStop.CannotAnswer(e.Message);
+        }
+
         await EventAsync("manifest", $"{repo.FullName} {file.Hash} at {revision}");
         Events.Add($"manifest of {repo.FullName} at {EngineActions.Short(revision)}: {file.Hash}");
         return manifest;

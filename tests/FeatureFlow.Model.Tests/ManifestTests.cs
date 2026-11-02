@@ -72,6 +72,16 @@ public class ManifestTests
         Assert.Contains(d, x => x.Blocks && x.Message.Contains(message, StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void Parse_returns_the_manifest_or_throws_a_format_error_naming_the_problem()
+    {
+        Assert.Equal(2, RepositoryManifest.Parse(Full, "sha256:x", "f").Tiers.Count);
+
+        var e = Assert.Throws<FormatException>(() => RepositoryManifest.Parse("api_version: feature-flow/v1\nkind: repository\ntestTiers: []\n", "h", "acme/api:feature-flow.yaml"));
+
+        Assert.Contains("acme/api:feature-flow.yaml does not read: unknown key 'testTiers'", e.Message, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("acme/poc-*", "acme/poc-api", true)]
     [InlineData("acme/poc-*", "acme/api", false)]
