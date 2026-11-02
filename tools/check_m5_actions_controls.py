@@ -25,6 +25,7 @@ RESULTS = "src/FeatureFlow.Engine/Actions/ResultFiles.cs"
 ACTIVITIES = "src/FeatureFlow.Engine/Activities.cs"
 WORKFLOW = "src/FeatureFlow.Engine/RunWorkflow.cs"
 RUN_START = "src/FeatureFlow.Validation/RunStartChecks.cs"
+STEP_START = "src/FeatureFlow.Validation/StepStartChecks.cs"
 API = "src/FeatureFlow.Api/ApiApp.cs"
 AGENT_ACTIVITY = "src/FeatureFlow.Engine.Agent/AgentActivities.cs"
 
@@ -252,6 +253,13 @@ CONTROLS = [
         "edits": [(WAITING, "if (list.FirstOrDefault(c => !Passing.Contains", "if (false && list.FirstOrDefault(c => !Passing.Contains")],
         "tests": [(ENGINE, None)],
         "expect": ["A_conclusion_the_engine_does_not_know_raises_an_intervention"],
+    },
+    {
+        "name": "review 5: a poll interval of any length passes check 31",
+        "edits": [(STEP_START, "else if (input.Minimum is { } minimum && value is string d && Duration(d) < minimum)",
+                   "else if (input.Minimum is { } minimum && value is string d && Duration(d) < TimeSpan.Zero)")],
+        "tests": [(ENGINE, None)],
+        "expect": [("Check_31_refuses_a_poll_interval_under_five_seconds", 3)],
     },
 ]
 

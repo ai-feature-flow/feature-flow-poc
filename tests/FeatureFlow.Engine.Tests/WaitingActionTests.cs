@@ -168,6 +168,31 @@ public sealed class WaitingActionTests
         Assert.Contains("check 31", two.Reason, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("ci.checks", "{ poll_every: 0s }")]
+    [InlineData("ci.checks", "{ poll_every: 4900ms }")]
+    [InlineData("wait.condition", "{ pull_request: approved, poll_every: 1ms }")]
+    public async Task Check_31_refuses_a_poll_interval_under_five_seconds(string action, string inputs)
+    {
+        await using var w = await WithPullRequestAsync();
+
+        var result = await w.RunAsync(action, inputs, "wait");
+
+        Assert.Equal(StepOutcome.CannotAnswer, result.Kind);
+        Assert.Contains("'poll_every' must be at least 5s", result.Reason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_poll_interval_of_five_seconds_is_the_next_reads_delay()
+    {
+        await using var w = await WithPullRequestAsync();
+        w.Forge.ReportCheck(w.Repo, w.Work!, new CheckRun("unit", CheckStates.InProgress, null, null));
+
+        var result = await w.RunAsync("ci.checks", "{ poll_every: 5s }", "checks", waits: 1);
+
+        Assert.Equal((ActionResult.Wait, TimeSpan.FromSeconds(5)), (result.Kind, result.Delay));
+    }
+
     [Fact]
     public async Task Check_31_refuses_an_unknown_input_and_a_wrong_type_before_the_action_runs()
     {

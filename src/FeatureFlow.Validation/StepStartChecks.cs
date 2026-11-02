@@ -3,8 +3,11 @@ using FeatureFlow.Model;
 
 namespace FeatureFlow.Validation;
 
-/// <summary>One input of an engine action: its kind (<c>string</c>, <c>boolean</c>, <c>array</c>, <c>duration</c>, <c>map</c>) and, for a string, the values allowed.</summary>
-public sealed record ActionInput(string Name, string Kind, IReadOnlyList<string>? Allowed = null);
+/// <summary>
+/// One input of an engine action: its kind (<c>string</c>, <c>boolean</c>, <c>array</c>, <c>duration</c>, <c>map</c>), for a
+/// string the values allowed, and for a duration the least it may be.
+/// </summary>
+public sealed record ActionInput(string Name, string Kind, IReadOnlyList<string>? Allowed = null, TimeSpan? Minimum = null);
 
 /// <summary>
 /// The step-start checks of docs/09 section 2 that need no provider: 31 (an engine action's inputs satisfy its
@@ -16,7 +19,10 @@ public static class StepStartChecks
     static ActionInput S(string name, params string[] allowed) => new(name, "string", allowed.Length == 0 ? null : allowed);
     static ActionInput B(string name) => new(name, "boolean");
     static ActionInput A(string name) => new(name, "array");
-    static ActionInput D(string name) => new(name, "duration");
+    static ActionInput D(string name, TimeSpan? minimum = null) => new(name, "duration", Minimum: minimum);
+
+    /// <summary>The shortest poll interval a plan may ask for, so a wait cannot hammer a provider (it must not spin).</summary>
+    public static readonly TimeSpan MinimumPoll = TimeSpan.FromSeconds(5);
     static ActionInput M(string name) => new(name, "map");
 
     /// <summary>The inputs of the actions M5 builds (docs/04 sections 7 to 9 and 12). Actions not listed here are not checked yet.</summary>
@@ -26,8 +32,8 @@ public static class StepStartChecks
         ["scm.pull_request"] = [S("title"), S("body"), B("draft")],
         ["scm.merge"] = [B("engine_can_merge"), B("squash"), B("require_checks"), B("require_tested")],
         ["scm.revert"] = [S("pull_request")],
-        ["ci.checks"] = [A("expected"), D("grace"), D("timeout"), D("poll_every")],
-        ["wait.condition"] = [S("pull_request", "approved", "merged", "mergeable"), S("checks", "passed"), M("tracker"), D("poll_every"), D("timeout")],
+        ["ci.checks"] = [A("expected"), D("grace"), D("timeout"), D("poll_every", MinimumPoll)],
+        ["wait.condition"] = [S("pull_request", "approved", "merged", "mergeable"), S("checks", "passed"), M("tracker"), D("poll_every", MinimumPoll), D("timeout")],
         ["test.run"] = [A("tier_tags"), B("baseline")],
         ["test.integration"] = [A("repositories"), A("tier_tags")],
         ["analysis.run"] = [B("baseline"), S("fail_on", "new_issues", "any_issues", "never"), S("min_level", "note", "warning", "error")],
@@ -63,6 +69,8 @@ public static class StepStartChecks
                 errors.Add($"{action} input '{name}' must be {input.Kind switch { "duration" => "a duration such as 30s, 5m or 2h", "boolean" => "true or false", "array" => "a list", _ => "a " + input.Kind }}, not {Describe(value)}");
             else if (input.Allowed is { } allowed && value is string text && !allowed.Contains(text))
                 errors.Add($"{action} input '{name}' must be one of {string.Join(", ", allowed)}, not '{text}'");
+            else if (input.Minimum is { } minimum && value is string d && Duration(d) < minimum)
+                errors.Add($"{action} input '{name}' must be at least {minimum.TotalSeconds.ToString(CultureInfo.InvariantCulture)}s, not {d}");
         }
 
         if (action == "wait.condition")
