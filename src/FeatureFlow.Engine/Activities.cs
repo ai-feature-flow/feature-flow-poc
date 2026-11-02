@@ -74,7 +74,7 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
     /// <summary>
     /// The run-start checks that read the code host (docs/09 section 2), for each repository of the run: 24, its default
     /// branch is protected; 20, the library section of <c>feature-flow.yaml</c> on the default branch adds only; and 23,
-    /// F1, for a run whose parent branch is the default branch (not a child's): a merge step asking for an engine merge
+    /// F1, for a run whose parent branch is the default branch: a merge step asking for an engine merge
     /// needs the organisation's leave for that repository. The default branch is read from the code host, never the plan.
     /// </summary>
     public static async Task RepositoryChecksAsync(ICodeHostProvider host, RunCore core, RunStart start, LibrarySet libraries, RunPolicy policy, DiagnosticBag d,
@@ -102,8 +102,6 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
             }
         }
 
-        if (start.ParentBranch is not null)
-            return;
         foreach (var step in core.Plan.AllSteps.Where(s => s is { Form: Model.Plans.StepForm.Action, Action: "scm.merge" }))
         {
             IReadOnlyList<string> targets;
@@ -126,7 +124,9 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
                 engineCanMerge = null;
             }
 
-            foreach (var name in targets.Where(defaults.ContainsKey))
+            // F1 governs merges into the default branch only: a run whose parent branch is another (a child's, or one its
+            // start names, LOG 137) merges there.
+            foreach (var name in targets.Where(n => defaults.TryGetValue(n, out var branch) && (start.ParentBranch ?? branch) == branch))
                 RunStartChecks.EngineMerge(step.Id, name, defaults[name], engineCanMerge, policy.EngineMayMerge ?? [], step.Location, d);
         }
     }
@@ -177,7 +177,7 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
     public static RunInfo RunInfoOf(RunStart start) =>
         new(start.RunId, start.Repositories,
             start.Parameters.ToDictionary(kv => kv.Key, kv => YamlWriter.Read(kv.Value, $"params.{kv.Key}")),
-            start.ParentWorkflowId);
+            start.ParentWorkflowId, ParentBranch: start.ParentBranch);
 
     // The agent step's activity, RunAgentStep, is the agent worker's: Engine.Agent's AgentActivities (M4).
 

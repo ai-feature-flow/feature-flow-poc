@@ -25,6 +25,7 @@ RESULTS = "src/FeatureFlow.Engine/Actions/ResultFiles.cs"
 ACTIVITIES = "src/FeatureFlow.Engine/Activities.cs"
 WORKFLOW = "src/FeatureFlow.Engine/RunWorkflow.cs"
 RUN_START = "src/FeatureFlow.Validation/RunStartChecks.cs"
+API = "src/FeatureFlow.Api/ApiApp.cs"
 AGENT_ACTIVITY = "src/FeatureFlow.Engine.Agent/AgentActivities.cs"
 
 ENGINE = "tests/FeatureFlow.Engine.Tests"
@@ -167,6 +168,18 @@ CONTROLS = [
                    "if (false && Writes && head != startRevision && manifest is { AfterChanges.Count: > 0 })")],
         "tests": [(AGENT, None)],
         "expect": ["Setup_runs_before_the_agent_and_after_changes_runs_after_it_committed_and_is_committed_with_the_step"],
+    },
+    {
+        "name": "LOG 137: a start's parent branch is dropped, so the run works on and merges into the default branch",
+        "edits": [(API, "HandOverEvents: handOver, ParentBranch: parentBranch);", "HandOverEvents: handOver);")],
+        "tests": [it("A_ticket_started_with_a_parent_branch")],
+        "expect": ["A_ticket_started_with_a_parent_branch_lands_there_by_an_engine_merge_and_main_is_untouched"],
+    },
+    {
+        "name": "LOG 137: any named parent branch skips F1, even the default branch",
+        "edits": [(ACTIVITIES, "(start.ParentBranch ?? branch) == branch", "start.ParentBranch is null")],
+        "tests": [(ENGINE, None)],
+        "expect": ["F1_still_applies_when_a_start_names_the_default_branch_as_the_parent_branch"],
     },
 ]
 

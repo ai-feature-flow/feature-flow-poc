@@ -98,6 +98,31 @@ public class ForgeTicketTests
     }
 
     [Fact]
+    public async Task A_ticket_started_with_a_parent_branch_lands_there_by_an_engine_merge_and_main_is_untouched()
+    {
+        // How a ticket inside an epic lands: into the epic's branch, which F1 does not govern (LOG 137).
+        var (h, forge, repo) = await StartAsync("forge-parent");
+        await using var _ = h;
+        var main = forge.Resolve(repo, "main")!;
+        var epic = forge.Commit(repo, "refs/heads/ff/epic/E-1", new Dictionary<string, string?> { ["epic.txt"] = "the epic's work\n" });
+
+        var id = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=T-4", "--param", "engine_can_merge=true", "--repo", Repo,
+            "--parent-branch", "ff/epic/E-1");
+        var (exit, end, error) = h.Cli("wait", id, "--timeout", "240");
+
+        var view = await h.ShowAsync(id);
+        Assert.True(exit == 0, end + error + view.ToJsonString());
+        Assert.Equal($"run {id} completed", end.Trim());
+        var landed = forge.Resolve(repo, "ff/epic/E-1")!;
+        Assert.Equal([epic], forge.GetCommit(repo, landed).Parents);
+        Assert.StartsWith("implement execution 1", forge.ReadFile(repo, landed, "work/implement.txt"), StringComparison.Ordinal);
+        Assert.Equal("the epic's work\n", forge.ReadFile(repo, landed, "epic.txt"));
+        Assert.Equal(main, forge.Resolve(repo, "main"));
+        var state = (await new InMemoryCodeHost(forge).GetPullRequestAsync(new PullRequestRef(repo, 1), TestContext.Current.CancellationToken)).Unwrap();
+        Assert.Equal(("ff/epic/E-1", "ff/ticket/T-4"), (state.Base, state.Head));
+    }
+
+    [Fact]
     public async Task F1_through_the_engine_a_standalone_ticket_asking_for_an_engine_merge_into_the_default_branch_does_not_start()
     {
         var (h, forge, repo) = await StartAsync("forge-f1");

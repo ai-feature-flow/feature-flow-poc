@@ -73,6 +73,14 @@ public sealed class RunStartCheckTests
     }
 
     [Fact]
+    public async Task F1_still_applies_when_a_start_names_the_default_branch_as_the_parent_branch()
+    {
+        var refused = await CheckAsync(Setup.Protected(), engineCanMerge: true, parentBranch: "main");
+
+        Assert.Equal(Checks.EngineMerge, Assert.Single(refused).Check);
+    }
+
+    [Fact]
     public async Task F1_reads_the_default_branch_from_the_code_host_not_main()
     {
         var s = Setup.Protected();

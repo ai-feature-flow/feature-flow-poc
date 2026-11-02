@@ -42,7 +42,8 @@ public sealed record RunInfo(
     IReadOnlyList<string> Repositories,
     IReadOnlyDictionary<string, YNode> Parameters,
     string? ParentId = null,
-    string? TrackerIssue = null);
+    string? TrackerIssue = null,
+    string? ParentBranch = null);
 
 /// <summary>
 /// Limits and policy the core enforces, carried in the run's state because workflow code cannot read

@@ -37,12 +37,14 @@ Branch `m5-actions`, from `m5@1189a6b` (the interfaces and in-memory fakes, LOG 
 | Checks 20, 23, 24 on std's `ticket_delivery` | `Engine.Tests/RunStartCheckTests` (5) | Pass |
 | **F1**: a standalone ticket with `engine_can_merge: true` into the default branch is refused at run start | `RunStartCheckTests.F1_a_standalone_ticket_...` and, through the engine and CLI, `ForgeTicketTests.F1_through_the_engine_...` (run fails, detail cites check 23; with std's default `false` the same ticket starts) | Pass |
 | std `ticket_delivery` to a merge into its parent branch, on the `memory` providers with the scripted runtime | `Integration.Tests/ForgeTicketTests.A_std_ticket_runs_...`: every step through `deliver.merge`; one squash commit on `main` holding exactly the tested head's tree, with the `Feature-Flow-Merge` trailer; the pull request closed with a link to the commit | Pass |
+| **Done-when on memory**: a ticket started with `--parent-branch ff/epic/E-1` and `engine_can_merge: true`, with no F1 leave, lands there by an engine squash merge; `main` is untouched | `ForgeTicketTests.A_ticket_started_with_a_parent_branch_...` | Pass |
+| `parent_branch` refused unless a branch name; F1 still applies when it names the default branch | `ApiTests.A_parent_branch_that_is_not_a_branch_name_is_refused` (5 cases), `RunStartCheckTests.F1_still_applies_...` | Pass |
 | Check 32 | `Integration.Tests/StepStartCheckTests` (2, with a control), test library `libraries/m5` | Pass |
 | Agent step: parent branch, `setup`, `after_changes` | `Engine.Agent.Tests/AgentManifestTests` (5) | Pass |
 | Manifest reader, patterns, `engine_may_merge` | `Model.Tests/ManifestTests` (17 cases) | Pass |
 | Unchanged behaviour | `TicketRunTests` (5), `EpicRunTests`, `StepFailureTests`, `ContinueAsNewTests`; replay tests | Pass |
 
-Counts: default suite **510 passed, 0 failed** (431 at `1189a6b`). Integration tests were run locally on a dev
+Counts: default suite **516 passed, 0 failed** (431 at `1189a6b`). Integration tests were run locally on a dev
 server, not the Docker agent tests: the agent step's change with no code host keeps M4's behaviour, and CI runs them.
 
 The engine tests found one bug of their own: `ci.checks` read the clock before awaiting the wait's start time,
@@ -52,7 +54,7 @@ with no failure.
 ### Controls
 
 `tools/check_m5_actions_controls.py` (needs `FF_TEMPORAL_ADDRESS`; no Docker). Each breakage was run, its tests
-failed, and all passed again after the revert. **All 20 hold.**
+failed, and all passed again after the revert. **All 22 hold.**
 
 | Breakage | Tests that failed |
 |---|---|
@@ -76,52 +78,58 @@ failed, and all passed again after the revert. **All 20 hold.**
 | Agent's parent branch hard-coded `main` | `The_parent_branch_is_the_default_branch_the_code_host_names` |
 | Agent `setup` not run | `Setup_runs_before_the_agent_...`, `A_failing_setup_command_...`, `After_changes_does_not_run_...` |
 | Agent `after_changes` not run | `Setup_runs_before_the_agent_and_after_changes_runs_after_it_committed_...` |
+| A start's `parent_branch` dropped by the API | `ForgeTicketTests.A_ticket_started_with_a_parent_branch_lands_there_...` |
+| Any named parent branch skips F1, even the default | `F1_still_applies_when_a_start_names_the_default_branch_as_the_parent_branch` |
 
-### The live run (M5's done-when), for the coordinator
+### The live run (M5's done-when): how to
 
-Not run here: it needs the providers builder's Git, GitHub and GitHub Actions providers. What it needs:
+The done-when's merge is the engine's, into a parent branch that is not the default: how a ticket inside an epic
+lands. A run names that branch with `parent_branch` (LOG 137); a standalone ticket into `main` stays a person's merge.
 
-1. **The fixture's manifest.** `ai-feature-flow/feature-flow-example`'s `feature-flow.yaml` is in the first
-   design's format (`apiVersion`, `testTiers`, `staticAnalysis`, `branches`, `merge`). Every step that reads it
-   would stop for a person: unknown keys are refused (`docs/07` section 4). A replacement in the current format:
+**State of the fixture** (`ai-feature-flow/feature-flow-example`)
+- `feature-flow.yaml` in the current format: fixture pull request 50. Both tiers run in CI (`unit.yml`,
+  `integration.yml`), because the M4 sandbox image has no .NET SDK; no setup commands; no analyser. Its CI passed.
+  **It needs one approving review before it can merge** (see below); until then the old manifest is on `main` and
+  every step that reads it stops for a person.
+- `main` is protected by the ruleset `protect-main`: pull request with one approval, last-push approval, no
+  force-push, **no bypass actors**. It existed before M5 (2026-10-29). GitHub's classic branch-protection API reports
+  `main` as unprotected (404); the GitHub code host must read rulesets (`GET /repos/{owner}/{repo}/rules/branches/{branch}`)
+  for check 24 to pass.
 
-   ```yaml
-   api_version: feature-flow/v1
-   kind: repository
-   setup: { commands: ["dotnet restore"] }
-   test_tiers:
-     - name: unit
-       tags: [unit]
-       command: dotnet test tests/FeatureFlow.Example.Api.UnitTests --filter Category=unit --logger "trx;LogFileName=unit.trx" --results-directory TestResults
-       result: { format: trx, path: TestResults/unit.trx }
-       targets: [sandbox, ci]
-       ci: { job: unit.yml }
-     - name: integration
-       tags: [integration]
-       command: docker compose -f compose.integration.yaml up --abort-on-container-exit --exit-code-from integration-tests
-       targets: [ci]
-       ci: { job: integration.yml }
-   static_analysis: { analyser: none }
-   ```
+**Configuration**
+- Installation as M4's live tests, plus M5's providers: `vcs` git, `code_host` github, `ci` github_actions,
+  `sandbox` docker, `agent_runtime` claude_code; `FF_SECRETS_FILE` and `CLAUDE_CODE_OAUTH_TOKEN` as in
+  `CONTRIBUTING.md`.
+- Organisation: std as its library. No `engine_may_merge` is needed: the merge target is not a default branch.
+  Optionally `approval: [{ match: "ticket.spec_approval", roles: [approver], auto: true }]`, else answer the spec
+  approval with `ff run answer`.
 
-   The unit tier runs in the sandbox when one is configured, so the sandbox image needs the .NET SDK the fixture
-   targets (`net9.0`, run with `DOTNET_ROLL_FORWARD=Major` on SDK 10); otherwise drop `sandbox` from its targets.
-2. **Branch protection on `main`** (check 24). It is not protected now, so every run would be refused at start.
-3. **Who merges.** Recommended: std's default, `engine_can_merge: false`. The run opens the pull request, waits
-   for checks, catches up, and the merge step waits for a person (polled every 30 seconds); merge the pull request
-   on GitHub (for example `GH_TOKEN="$SPARKKZ_NZ_GITHUB_TOKEN" gh pr merge <n> --squash`) and the run completes
-   `merged`. For an engine merge instead: `policy.merge.default_branch.engine_may_merge:
-   [ai-feature-flow/feature-flow-example]`, `--param engine_can_merge=true`, and protection that lets the App push
-   to `main`; protection requiring a pull request refuses the engine's push, which turns the step into the same
-   action request.
-4. Installation: `vcs` git, `code_host` github, `ci` github_actions, `sandbox` docker, `agent_runtime`
-   claude_code, as in M4's live tests. Start with
-   `ff run start std:templates/ticket_delivery --param ticket_id=<id> --repo ai-feature-flow/feature-flow-example`.
+**Commands**
+```bash
+# The parent branch, from main (the engine does not create a named parent branch).
+GH_TOKEN="$SPARKKZ_NZ_GITHUB_TOKEN" gh api repos/ai-feature-flow/feature-flow-example/git/refs \
+  -f ref=refs/heads/ff/epic/m5-live -f sha="$(GH_TOKEN="$SPARKKZ_NZ_GITHUB_TOKEN" gh api repos/ai-feature-flow/feature-flow-example/git/ref/heads/main --jq .object.sha)"
+ff run start std:templates/ticket_delivery --param ticket_id=M5-LIVE-1 --param engine_can_merge=true \
+  --repo ai-feature-flow/feature-flow-example --parent-branch ff/epic/m5-live
+ff run wait <run id> --timeout 3600
+```
+
+**Expected end state**
+- The run is `completed`; its timeline passes `baseline.tests`, `implement`, `verify.tests`, `deliver.open_pr`,
+  `deliver.checks`, `deliver.catch_up`, `deliver.merge`, with CI tier results (`tier unit ...: n passed`).
+- `ff/epic/m5-live` has one new squash commit whose tree is the tested head's, with the trailer
+  `Feature-Flow-Merge: <run id>/deliver.merge`; `main` is unchanged.
+- The pull request `ff/ticket/M5-LIVE-1` into `ff/epic/m5-live` is closed with a comment linking the squash commit.
+- Clean up afterwards (live runs leave no references): delete `ff/ticket/M5-LIVE-1`, `ff/epic/m5-live`, and any
+  `refs/feature-flow/wip/*` and `refs/feature-flow/superseded/*` the run made.
+
+A control for F1 on the live repository: the same start without `--parent-branch` is refused at run start, check 23.
 
 ### Deviations and judgement calls
 
-LOG 120 to 136, unreviewed. Three narrow the design and need a look: **120** (`test.integration` starts no
-services), **123** (the action request is watched on the code host; no decision record yet). LOG 121 keeps the
+LOG 120 to 137, unreviewed. These need a look: **120** (`test.integration` starts no services), **123** (the
+action request is watched on the code host; no decision record yet), **137** (a run request may name its
+`parent_branch`). LOG 121 keeps the
 stand-in for runs with only fake providers.
 
 ### Follow-ups
@@ -133,7 +141,8 @@ stand-in for runs with only fake providers.
 | 3 | `test.integration` starting services from `integration_environment` |
 | 4 | `analysis.run` with `sonarcloud`; `wait.condition` on a tracker issue |
 | 5 | The carried test result by tree identity, not only by revision |
-| 6 | `run.parent_branch` as an expression value is still `main` |
+| 6 | `run.parent_branch` as an expression value is `main` for a run whose parent is the default branch (workflow code cannot read the code host) |
 | 7 | A person ending a wait by hand with `met` or `unmet` (`docs/04` section 8.2) |
 | 8 | Inbound events to wake waits early; waits poll every 30 seconds |
-| 9 | The GitHub code host must read branch protection with the App's permissions (Administration: read); a 403 there is an infrastructure error and run start retries |
+| 9 | The GitHub code host must read rulesets as well as classic protection (the fixture's `main` is protected only by a ruleset), with the App's permissions; a 403 there is an infrastructure error and run start retries |
+| 10 | A run start does not check that a named `parent_branch` exists; the first step that touches the repository stops for a person |

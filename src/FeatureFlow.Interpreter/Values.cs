@@ -184,7 +184,9 @@ internal sealed class Evaluator(RunCore core)
             ["level"] = level,
             ["repositories"] = run.Repositories.Cast<object?>().ToList(),
             ["branch"] = run.Repositories.ToDictionary(r => r, r => (object?)core.WorkBranch()),
-            ["parent_branch"] = run.Repositories.ToDictionary(r => r, _ => (object?)"main"),
+            // A named parent branch (a child's, or a start's, LOG 137); otherwise the default branch, which workflow code
+            // cannot read, so it shows as main. Actions read the real default branch from the code host.
+            ["parent_branch"] = run.Repositories.ToDictionary(r => r, _ => (object?)(run.ParentBranch ?? "main")),
             ["tracker_issue"] = run.TrackerIssue ?? "",
             ["parent_id"] = run.ParentId ?? "",
         };
