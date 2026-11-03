@@ -18,7 +18,16 @@ public class WaitHandOverTests
     const string Script = """{ "wait_beside_work:*": { delay_from: wait_ms } }""";
 
     [Fact]
-    public async Task A_run_hands_over_while_a_wait_is_open_and_the_wait_ends_in_the_next_run_with_its_start_kept()
+    public Task A_run_hands_over_while_a_wait_is_open_and_the_wait_ends_in_the_next_run_with_its_start_kept() => HandOverAsync(midAttempt: false);
+
+    /// <summary>
+    /// Review F1: the cancel lands while one of the wait's reads is running, so the attempt ends in a failure Temporal does
+    /// not retry rather than a cancellation. It is still an interruption: no attempt used, the same execution resumed.
+    /// </summary>
+    [Fact]
+    public Task A_wait_interrupted_while_a_read_is_running_resumes_as_the_same_execution() => HandOverAsync(midAttempt: true);
+
+    async Task HandOverAsync(bool midAttempt)
     {
         var world = $"it-waits-{Guid.NewGuid():N}";
         var forge = InMemoryForge.Named(world);
@@ -26,6 +35,8 @@ public class WaitHandOverTests
         forge.Protect(repo, new BranchProtection("main", true, true, 1, [], false));
         var head = forge.Commit(repo, "refs/heads/ff/waits", new Dictionary<string, string?> { ["src/App.cs"] = "class App { }\n" });
         forge.ReportCheck(repo, head, new CheckRun("build", CheckStates.InProgress, null, "ci"));
+        if (midAttempt)
+            forge.HoldCheckReads();
 
         await using var h = await Harness.StartAsync("waits", Script, omitTypes: ["vcs", "code_host", "ci"],
             libraries: [Path.Combine(Harness.TestLibraries, "m6")],
@@ -33,6 +44,8 @@ public class WaitHandOverTests
         var work = "[" + string.Join(", ", Enumerable.Repeat(1_000, 60)) + "]";
         var id = h.Start("m6:templates/wait_beside_work", "--param", $"work={work}", "--repo", Repo, "--continue-as-new-events", "100");
         var handle = h.Client.GetWorkflowHandle(id);
+        if (midAttempt)
+            await CancelMidReadAsync(forge, handle);
 
         // The run must hand over with the wait open. Drained instead, the wait would hold the hand-over until the check
         // completes, which it does not until the run has handed over.
@@ -55,6 +68,7 @@ public class WaitHandOverTests
         Assert.True(exit == 0 && end.Trim() == $"run {id} completed", end + error + record.ToJsonString());
 
         // One execution of the wait: started once, interrupted and resumed at each hand-over, never counted again.
+        Assert.DoesNotContain(record["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "attempt_failed" && e["stepId"]!.ToString() == "checks");
         var timeline = record["timeline"]!.AsArray().Select(e => (Kind: e!["kind"]!.ToString(), Step: e["stepId"]!.ToString(), Detail: e["detail"]?.ToString())).ToList();
         Assert.Single(timeline, e => e is { Kind: "started", Step: "checks" });
         Assert.Contains(timeline, e => e is { Kind: "interrupted", Step: "checks" });
@@ -78,7 +92,28 @@ public class WaitHandOverTests
         Assert.All(final.HandOvers, o => Assert.Equal(0, o.InFlightActivities));
         Assert.Equal(0, final.ActivitiesStartedWhileDraining);
         Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
-        await h.RecordHistoryAsync(id, "wait_hand_over");
-        await h.RecordRunHistoryAsync(id, 1, "wait_hand_over_resumed");
+        if (!midAttempt)
+        {
+            await h.RecordHistoryAsync(id, "wait_hand_over");
+            await h.RecordRunHistoryAsync(id, 1, "wait_hand_over_resumed");
+        }
+    }
+
+    /// <summary>Holds the wait's check reads, and lets the one in progress finish only once the drain has asked to cancel it.</summary>
+    static async Task CancelMidReadAsync(InMemoryForge forge, Temporalio.Client.WorkflowHandle handle)
+    {
+        var until = DateTime.UtcNow.AddSeconds(90);
+        while (forge.HeldCheckReads == 0 && DateTime.UtcNow < until)
+            await Task.Delay(100, TestContext.Current.CancellationToken);
+        Assert.True(forge.HeldCheckReads > 0, "no check read was held");
+        var requested = false;
+        while (!requested && DateTime.UtcNow < until)
+        {
+            await Task.Delay(300, TestContext.Current.CancellationToken);
+            requested = (await handle.FetchHistoryAsync()).Events.Any(e => e.EventType == Temporalio.Api.Enums.V1.EventType.ActivityTaskCancelRequested);
+        }
+
+        Assert.True(requested, "the drain did not ask to cancel the wait while its read was held");
+        forge.ReleaseCheckReads();
     }
 }

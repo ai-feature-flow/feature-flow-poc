@@ -732,6 +732,14 @@ public class RunWorkflow
                 core!.Apply(new StepInterrupted(step.Id, "interrupted to hand over to the next run; it resumes there (LOG 139)"));
             return;
         }
+        catch (ActivityFailureException e) when (interrupted.Contains(step.Id) && e.RetryState == Temporalio.Api.Enums.V1.RetryState.CancelRequested)
+        {
+            // The cancel landed while an attempt ran: the attempt's failure (a wait's "not yet", or an infrastructure error)
+            // is not retried once a cancel is requested, and acknowledges the cancel as surely as a cancellation does.
+            if (interrupted.Remove(step.Id) && Current(step.Id, execution))
+                core!.Apply(new StepInterrupted(step.Id, "interrupted to hand over to the next run; it resumes there (LOG 139)"));
+            return;
+        }
         catch (ActivityFailureException e)
         {
             // A non-retryable activity failure (an artifact that does not exist, a list artifact with no items)

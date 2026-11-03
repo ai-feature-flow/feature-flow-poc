@@ -250,6 +250,47 @@ public sealed class InMemoryForge
         }
     }
 
+    TaskCompletionSource? checkGate;
+    int heldCheckReads;
+
+    /// <summary>
+    /// Holds every check read (<c>code_host.GetCheckStatus</c>) until <see cref="ReleaseCheckReads"/>: a read in progress,
+    /// for a test where something must happen while it runs. <see cref="HeldCheckReads"/> counts the reads waiting.
+    /// </summary>
+    public void HoldCheckReads()
+    {
+        lock (Gate)
+            checkGate ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    public void ReleaseCheckReads()
+    {
+        TaskCompletionSource? gate;
+        lock (Gate)
+            (gate, checkGate) = (checkGate, null);
+        gate?.TrySetResult();
+    }
+
+    public int HeldCheckReads => Volatile.Read(ref heldCheckReads);
+
+    internal async Task CheckGateAsync()
+    {
+        TaskCompletionSource? gate;
+        lock (Gate)
+            gate = checkGate;
+        if (gate is null)
+            return;
+        Interlocked.Increment(ref heldCheckReads);
+        try
+        {
+            await gate.Task;
+        }
+        finally
+        {
+            Interlocked.Decrement(ref heldCheckReads);
+        }
+    }
+
     /// <summary>A working copy's files, to change as an agent would. Null when nothing is checked out there.</summary>
     public IDictionary<string, string>? WorkingFiles(WorkingCopyRef copy)
     {
@@ -634,8 +675,11 @@ public sealed class InMemoryCodeHost(InMemoryForge forge) : ICodeHostProvider
             return ProviderResult<PullRequestRef>.Success(new PullRequestRef(pullRequest.Repo, revert.Number));
         });
 
-    public Task<ProviderResult<CheckStatus>> GetCheckStatusAsync(RepoRef repo, string revision, CancellationToken cancellationToken) =>
-        Run("GetCheckStatus", repo, r => ProviderResult<CheckStatus>.Success(new CheckStatus(revision, InMemoryForge.Checks(r, revision).ToList())));
+    public async Task<ProviderResult<CheckStatus>> GetCheckStatusAsync(RepoRef repo, string revision, CancellationToken cancellationToken)
+    {
+        await forge.CheckGateAsync();
+        return await Run("GetCheckStatus", repo, r => ProviderResult<CheckStatus>.Success(new CheckStatus(revision, InMemoryForge.Checks(r, revision).ToList())));
+    }
 
     public Task<ProviderResult<CommentRef>> AddCommentAsync(PullRequestRef pullRequest, string body, string key, CancellationToken cancellationToken) =>
         WithPr("AddComment", pullRequest, (_, pr) =>
