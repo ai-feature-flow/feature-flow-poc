@@ -98,4 +98,44 @@ public class FindingsLoopTests
         Assert.Equal(main, forge.Resolve(repo, "main"));
         Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
     }
+
+    /// <summary>
+    /// Re-check R1 and R2: nor can the verifier alone. A fixer that commits nothing, then a verifier writing fixed (R1), or
+    /// a verifier declining after a real fix (R2): findings.triage refuses both as invalid, so verify_fix runs again until
+    /// its attempts run out and a person decides. The finding stays open, and nothing merges.
+    /// </summary>
+    [Theory]
+    [InlineData("fixed", true)]
+    [InlineData("declined", false)]
+    public async Task The_verifier_alone_cannot_clear_a_demonstrated_blocking_finding(string state, bool noFix)
+    {
+        var demonstrated = Blocking.Replace("basis: reasoned", "basis: demonstrated, proof: AppTests.Null fails", StringComparison.Ordinal);
+        var script = "{ " + string.Join(", ",
+        [
+            $"verify.review.review_0.assess: {Report(demonstrated)}",
+            .. Enumerable.Range(1, 4).Select(i => $"verify.review.review_{i}.assess: {Report("")}"),
+            "verify.fix.triage: { artifacts: { triage: { triage_each_open: open } } }",
+            $"verify.fix.verify_fix: {{ outcome: verified, artifacts: {{ fix_verification: {{ triage_each_open: {state} }} }} }}",
+        ]) + " }";
+        var (h, forge, repo) = await ForgeTicketTests.StartAsync($"verifier-{state}", policy: "  merge: { default_branch: { engine_may_merge: [acme/api] } }", script: script,
+            noEdits: noFix ? ["verify.fix.fix"] : null);
+        await using var _h = h;
+        var main = forge.Resolve(repo, "main");
+
+        var id = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=T-1", "--param", "engine_can_merge=true", "--repo", "acme/api");
+        Assert.NotNull(await h.WaitForWaitAsync(id, TimeSpan.FromSeconds(240)));
+
+        var view = await h.ShowAsync(id);
+        var wait = view["waits"]!.AsArray().Single()!;
+        Assert.Equal(("intervention", "verify.fix.verify_fix"), (wait["kind"]!.ToString(), wait["stepId"]!.ToString()));
+        var path = Harness.StartedSteps(view);
+        Assert.DoesNotContain(path, s => s.StartsWith("deliver.", StringComparison.Ordinal));
+        Assert.Equal(3, path.Count(s => s == "verify.fix.record_fixes"));
+        Assert.Equal(main, forge.Resolve(repo, "main"));
+        var records = new SqliteRecordStore(Path.Combine(h.Folder, "records.db"));
+        var finding = Assert.Single((await records.QueryAsync<FindingRecord>(Queries.Findings, new Dictionary<string, string> { ["run_id"] = id },
+            TestContext.Current.CancellationToken)).Unwrap());
+        Assert.Equal(FindingStates.Open, finding.State);
+        Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
+    }
 }

@@ -1,0 +1,26 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: ticket_verifier_to_person
+description: >-
+  The verifying reviewer's verdict declines a blocking finding (possible only
+  where record_fixes' states allow it). findings.triage counts it, and the fix
+  loop leaves by its escalated exit: a person decides before any merge.
+template: std:templates/ticket_delivery
+parameters: { ticket_id: FF-1042 }
+repositories: [acme/api]
+
+outputs:
+  verify.fix.record_fixes: { escalated: 0, declined_blocking: 1 }
+  "findings.open_blocking": [1]
+  "findings.open": 1
+
+expect:
+  status: running
+  path_includes:
+    - verify.fix.fix
+    - verify.fix.verify_fix
+    - verify.fix.record_fixes
+  escalated: [verify.fix.record_fixes]
+  executions:
+    verify.fix.tests_added: 0
+    deliver.merge: 0

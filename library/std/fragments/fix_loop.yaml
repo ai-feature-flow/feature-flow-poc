@@ -90,7 +90,12 @@ steps:
     action: findings.triage
     with: { from: fix_verification, states: [fixed, open] }
     consumes: [{ name: fix_verification }]
-    routes: { invalid: verify_fix }
+    routes:
+      applied:                                    # as apply_triage: should states be widened, a person still decides
+        - when: "steps.record_fixes.outputs.escalated > 0 || steps.record_fixes.outputs.declined_blocking > 0"
+          to: { exit: escalated }
+        - to: tests_added
+      invalid: verify_fix
 
   - id: tests_added
     action: artifact.validate

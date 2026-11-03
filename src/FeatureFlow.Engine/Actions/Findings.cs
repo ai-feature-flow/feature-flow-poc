@@ -241,8 +241,19 @@ static class FindingsActions
         var ledger = await LedgerAsync(run);
         var byId = ledger.GroupBy(x => x.FindingId).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
 
-        var allowed = run.Strings("states") is { Count: > 0 } states ? states : FindingStates.All;
+        // No states input allows all four; a list given, even an empty one, allows exactly its states (re-check R3).
+        var allowed = run.Inputs.ContainsKey("states") ? run.Strings("states") : FindingStates.All;
         var (triage, problems) = ReadTriage(await run.ReadTextAsync(entry.Ref), $"{entry.StepId}'s {from} {entry.Ref}", byId, allowed);
+        var code = new CodeAt(run);
+        if (problems.Count == 0)
+            foreach (var t in triage!.Entries.Where(t => t.State == FindingStates.Fixed && byId[t.Finding].State != FindingStates.Fixed))
+            {
+                // A fix needs a commit: nothing on the work branch since the finding was raised or reopened is no fix (re-check R1).
+                var raised = byId[t.Finding];
+                if (raised.RaisedRevision is { } at && await code.HeadAsync(raised.Finding.Location.Repository) == at)
+                    problems.Add($"{t.Finding}: nothing has been committed to {raised.Finding.Location.Repository} since it was raised at {EngineActions.Short(at)}, so it cannot be fixed");
+            }
+
         if (problems.Count > 0)
         {
             // Nothing is applied: the triage goes back to its producer (std routes invalid there, LOG 161).
@@ -252,7 +263,6 @@ static class FindingsActions
         }
 
         var history = new History(run);
-        var code = new CodeAt(run);
         var findings = new List<FindingRecord>();
         var events = new List<FindingEventRecord>();
         var now = DateTimeOffset.UtcNow;

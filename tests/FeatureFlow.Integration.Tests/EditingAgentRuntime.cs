@@ -13,9 +13,12 @@ namespace FeatureFlow.Integration.Tests;
 /// Kind <c>editing</c>, settings <c>script</c> and <c>world</c>.
 /// </summary>
 public sealed class EditingAgentRuntime(ScriptedAgentRuntime inner, InMemoryForge forge, MemorySandbox sandboxes, Func<IArtifactStoreProvider> store,
-    Func<IRecordStoreProvider> records) : IAgentRuntimeProvider
+    Func<IRecordStoreProvider> records, string world = "default") : IAgentRuntimeProvider
 {
     readonly Dictionary<string, (SandboxHandle Sandbox, AgentTask Task)> sessions = [];
+
+    /// <summary><c>world:step id</c> of steps that change nothing although they may write, such as a fixer that commits no fix.</summary>
+    public static readonly System.Collections.Concurrent.ConcurrentBag<string> NoEdits = [];
 
     public static ProviderFactory Factory { get; } = new("agent_runtime", "editing", ["script", "world"], c =>
     {
@@ -23,7 +26,7 @@ public sealed class EditingAgentRuntime(ScriptedAgentRuntime inner, InMemoryForg
         var world = c.Setting("world") ?? "default";
         var script = c.PathSetting("script") is { } path ? FakeScript.Read(path) : FakeScript.Empty;
         return new EditingAgentRuntime(new ScriptedAgentRuntime(script, store), InMemoryForge.Named(world), MemorySandbox.Named(world, store), store,
-            () => (IRecordStoreProvider)c.Provider("record_store")!);
+            () => (IRecordStoreProvider)c.Provider("record_store")!, world);
     });
 
     public ProviderDescription Describe() => inner.Describe();
@@ -37,7 +40,7 @@ public sealed class EditingAgentRuntime(ScriptedAgentRuntime inner, InMemoryForg
             List<string> read;
             lock (files)
             {
-                if (task.WriteAccess != "none")
+                if (task.WriteAccess != "none" && !NoEdits.Contains($"{world}:{task.Step.StepId}"))
                     files[$"work/{task.Step.StepId}.txt"] = $"{task.Step.StepId} execution {task.Step.Execution}, session {task.Session}\n";
                 read = files.Keys.ToList();
             }

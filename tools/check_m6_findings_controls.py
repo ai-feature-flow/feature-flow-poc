@@ -38,6 +38,7 @@ REPLAY = ("tests/FeatureFlow.Replay.Tests", None)
 COPILOT_TESTS = ("tests/Providers/FeatureFlow.Providers.GitHub.Tests", "FullyQualifiedName~Copilot&Category!=Live")
 LOOP = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~FindingsLoopTests.A_blocking")
 TRIAGER = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~FindingsLoopTests.The_triager")
+VERIFIER = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~FindingsLoopTests.The_verifier")
 
 
 CONTROLS = [
@@ -356,6 +357,35 @@ CONTROLS = [
         "edits": [(LOADER, "?.Escalates?.Contains(outcome.Name) == true)", " is not null)")],
         "tests": [VALIDATION],
         "expect": ["Only_an_outcome_added_later_escalates_by_default_and_another_unrouted_outcome_is_still_check_7"],
+    },
+    # ---- Re-check of PR 11 ----
+    {
+        "name": "R1: a finding is fixed with nothing committed since it was raised",
+        "edits": [(FINDINGS, "if (raised.RaisedRevision is { } at && await code.HeadAsync(raised.Finding.Location.Repository) == at)",
+                   "if (raised.RaisedRevision is { } at && await code.HeadAsync(raised.Finding.Location.Repository) == at && at.Length < 0)")],
+        "tests": [ENGINE, VERIFIER],
+        "expect": ["A_finding_cannot_be_fixed_with_nothing_committed_since_it_was_raised",
+                   "A_reopened_finding_needs_a_commit_after_its_reopening_to_be_fixed_again",
+                   'The_verifier_alone_cannot_clear_a_demonstrated_blocking_finding(state: "fixed"'],
+    },
+    {
+        "name": "R2: std lets the verifier decline",
+        "edits": [(FIX_LOOP, "with: { from: fix_verification, states: [fixed, open] }", "with: { from: fix_verification }")],
+        "tests": [VERIFIER],
+        "expect": ['The_verifier_alone_cannot_clear_a_demonstrated_blocking_finding(state: "declined"'],
+    },
+    {
+        "name": "R2: std's record_fixes does not send a declined blocking finding to a person",
+        "edits": [(FIX_LOOP, "when: \"steps.record_fixes.outputs.escalated > 0 || steps.record_fixes.outputs.declined_blocking > 0\"",
+                   "when: \"steps.record_fixes.outputs.escalated > 0\"")],
+        "tests": [WORKFLOWS],
+        "expect": ['Std_workflow_test_passes(name: "ticket_verifier_to_person"'],
+    },
+    {
+        "name": "R3: check 31 accepts any list as states",
+        "edits": [("src/FeatureFlow.Validation/StepStartChecks.cs", "&& (states.Count == 0 || states.Any(", "&& (states.Count < 0 && states.Any(")],
+        "tests": [ENGINE],
+        "expect": [("Check_31_refuses_states_that_are_empty_or_not_finding_states", 2)],
     },
 ]
 

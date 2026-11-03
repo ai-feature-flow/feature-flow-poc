@@ -41,7 +41,7 @@ public class StdLibraryTests
     {
         var result = Std.Mutate(
             new Std.Edit("fragments/fix_loop.yaml", "      invalid: triage                             # names a finding the ledger does not hold: back to its producer\n", ""),
-            new Std.Edit("fragments/fix_loop.yaml", "    routes: { invalid: verify_fix }\n", ""));
+            new Std.Edit("fragments/fix_loop.yaml", "      invalid: verify_fix\n", ""));
 
         Assert.True(result.Diagnostics.Count == 0, Std.Describe(result));
         var plan = result.Plans["std:templates/ticket_delivery"];

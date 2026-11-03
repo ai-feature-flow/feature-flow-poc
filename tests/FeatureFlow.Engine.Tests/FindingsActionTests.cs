@@ -64,9 +64,13 @@ public sealed class FindingsActionTests : IAsyncDisposable
     static void Outcome(ActionResult result, string outcome) =>
         Assert.True(result.Report?.Outcome == outcome, $"expected {outcome}, got {result.Kind} {result.Report?.Outcome} {result.Reason} {string.Join(" | ", result.Events)}");
 
-    /// <summary>Fixes the finding by a triage, as the fix loop's verifier would.</summary>
+    /// <summary>A fixer's commit, in a file of its own, so the finding's file is unchanged by it.</summary>
+    string Fixer() => world.CommitWork($"fixes/{Guid.NewGuid():N}.md", "a fix");
+
+    /// <summary>Fixes the finding by a fixer's commit and a triage, as the fix loop's fixer and verifier would.</summary>
     async Task Fix(FindingRecord f, string stepId)
     {
+        Fixer();
         await Triaged(stepId, new TriageEntry(f.FindingId, FindingStates.Fixed, "fixed"));
         Outcome(await Triage(stepId: stepId + ".apply"), "applied");
     }
@@ -339,6 +343,7 @@ public sealed class FindingsActionTests : IAsyncDisposable
         await Record();
         var ledger = await Ledger();
         string Id(string rule) => ledger.Single(f => f.Finding.Rule == rule).FindingId;
+        Fixer();
         await Triaged("fix.triage",
             new TriageEntry(Id("a"), FindingStates.Fixed, "done"),
             new TriageEntry(Id("b"), FindingStates.Declined, "by design"),
@@ -395,6 +400,7 @@ public sealed class FindingsActionTests : IAsyncDisposable
         await Reviewed("review.assess", Finding());
         await Record();
         var finding = Assert.Single(await Ledger());
+        Fixer();
         await Triaged("verify_fix", new TriageEntry(finding.FindingId, FindingStates.Fixed, "verified"));
         var call = world.Call("findings.triage", "record_fixes", 1, "{ from: triage }");
         await world.Actions.RunAsync(call, world.Scope, () => { }, Ct);
@@ -466,6 +472,7 @@ public sealed class FindingsActionTests : IAsyncDisposable
     {
         await Reviewed("review.assess", Finding());
         await Record();
+        Fixer();
         await Triaged("fix.triage", new TriageEntry(Assert.Single(await Ledger()).FindingId, state, "because"));
 
         var result = await Triage(stepId: "fix.apply_triage", states: states);
@@ -608,6 +615,7 @@ public sealed class FindingsActionTests : IAsyncDisposable
         await Reviewed("review.assess", Finding());
         await Record();
         var id = Assert.Single(await Ledger()).FindingId;
+        Fixer();
         await Triaged("verify_fix", new TriageEntry(id, FindingStates.Fixed, "verified"));
         Outcome(await Triage(stepId: "fix.record_fixes"), "applied");
         var once = Assert.Single(await Ledger());
@@ -617,5 +625,54 @@ public sealed class FindingsActionTests : IAsyncDisposable
 
         var twice = Assert.Single(await Ledger());
         Assert.Equal((1, once.StateRevision), (twice.Fixes, twice.StateRevision));
+    }
+
+    // ---- Re-check of PR 11 ----
+
+    [Fact]
+    public async Task A_finding_cannot_be_fixed_with_nothing_committed_since_it_was_raised()
+    {
+        await Reviewed("review.assess", Finding());
+        await Record();
+        var id = Assert.Single(await Ledger()).FindingId;
+        await Triaged("verify_fix", new TriageEntry(id, FindingStates.Fixed, "verified"));
+
+        var noFix = await Triage(stepId: "fix.record_fixes", states: "[fixed, open]");
+        Fixer();
+        var afterAFix = await Triage(stepId: "fix.record_fixes", states: "[fixed, open]");
+
+        Outcome(noFix, "invalid");
+        Assert.Contains(noFix.Events, e => e.Contains("nothing has been committed", StringComparison.Ordinal));
+        Outcome(afterAFix, "applied");
+        Assert.Equal(FindingStates.Fixed, Assert.Single(await Ledger()).State);
+    }
+
+    [Fact]
+    public async Task A_reopened_finding_needs_a_commit_after_its_reopening_to_be_fixed_again()
+    {
+        await Reviewed("review.assess", Finding());
+        await Record();
+        await Fix(Assert.Single(await Ledger()), "verify");
+        world.CommitWork(File, "class Orders { void Add() { if (x) { } } } // changed\n");
+        await Reviewed("review.assess", Finding());
+        Assert.Equal(1L, Output(await Record(), "reopened"));
+        await Triaged("verify_fix", new TriageEntry(Assert.Single(await Ledger()).FindingId, FindingStates.Fixed, "verified"));
+
+        Outcome(await Triage(stepId: "fix.record_fixes"), "invalid");
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("[open, resolved]")]
+    public async Task Check_31_refuses_states_that_are_empty_or_not_finding_states(string states)
+    {
+        await Reviewed("review.assess", Finding());
+        await Record();
+        await Triaged("fix.triage", new TriageEntry(Assert.Single(await Ledger()).FindingId, FindingStates.Open, "to fix"));
+
+        var result = await Triage(stepId: "fix.apply_triage", states: states);
+
+        Assert.Equal(StepOutcome.CannotAnswer, result.Kind);
+        Assert.Contains("'states' must name one or more of", result.Reason, StringComparison.Ordinal);
     }
 }

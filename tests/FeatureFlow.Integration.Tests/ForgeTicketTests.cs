@@ -42,9 +42,12 @@ public class ForgeTicketTests
              + (extra.Length > 0 ? ", " + extra : "") + " }";
 
     /// <summary>A fresh world with the fixture repository, protected, and an engine whose memory providers use it.</summary>
-    internal static async Task<(Harness H, InMemoryForge Forge, RepoRef Repo)> StartAsync(string name, string policy = "", bool autoApprove = true, string? script = null)
+    internal static async Task<(Harness H, InMemoryForge Forge, RepoRef Repo)> StartAsync(string name, string policy = "", bool autoApprove = true, string? script = null,
+        string[]? noEdits = null)
     {
         var world = $"it-{name}-{Guid.NewGuid():N}";
+        foreach (var step in noEdits ?? [])
+            EditingAgentRuntime.NoEdits.Add($"{world}:{step}");
         var forge = InMemoryForge.Named(world);
         var repo = forge.CreateRepository(Repo, new Dictionary<string, string> { ["feature-flow.yaml"] = Manifest, ["src/App.cs"] = "class App {}\n" });
         forge.Protect(repo, new BranchProtection("main", true, true, 1, [], false));
