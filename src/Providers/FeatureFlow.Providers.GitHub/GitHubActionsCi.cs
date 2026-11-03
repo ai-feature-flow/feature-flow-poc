@@ -20,8 +20,9 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
     static readonly IReadOnlyDictionary<string, string> ReadPermissions = new Dictionary<string, string> { ["contents"] = "read", ["actions"] = "read" };
 
     /// <summary>
-    /// The one cap on downloads: an artifact that says it is larger is skipped, and an artifact or log download that runs
-    /// past it is refused. Result files are small, and the workflow is the repository's to change.
+    /// The one cap on downloads: an artifact that says it is larger is skipped, and an artifact or log download, or a
+    /// result file decompressed from an artifact, that runs past it is refused. Result files are small, and the workflow
+    /// is the repository's to change.
     /// </summary>
     public long MaxDownloadBytes { get; init; } = 100L * 1024 * 1024;
 
@@ -142,12 +143,13 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
             }
 
             using var _ = archive;
-            // Only entries named like result files are read.
+            // Only entries named like result files are read, each under the same cap as it decompresses (its stated size can lie).
             foreach (var entry in archive.Entries.Where(e => e.Length > 0 && MayBeResult(e.FullName)))
             {
                 using var reader = new MemoryStream();
                 await using (var source = entry.Open())
-                    await source.CopyToAsync(reader, cancellationToken);
+                    if (!await GitHubApi.CopyCappedAsync(source, reader, MaxDownloadBytes, cancellationToken))
+                        return ProviderResult<CiRunResult>.Failure("validation_failed", $"{entry.FullName} in artifact {artifact["name"]} is larger than {MaxDownloadBytes} bytes");
                 if (FormatOf(entry.FullName, reader.ToArray()) is not { } format)
                     continue;
                 reader.Position = 0;

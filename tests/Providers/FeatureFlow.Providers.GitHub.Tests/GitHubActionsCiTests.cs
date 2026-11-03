@@ -207,6 +207,20 @@ public sealed class GitHubActionsCiTests : IDisposable
         Assert.Contains("larger than 4000 bytes", result.Error!.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>Review F4: a result file that decompresses past the cap is refused, though its artifact was under it.</summary>
+    [Fact]
+    public async Task A_result_file_that_decompresses_past_the_cap_refuses_the_read()
+    {
+        CompletedRun("""{"artifacts":[{"id":5,"name":"results","expired":false,"size_in_bytes":100}]}""")
+            .On(Get, "~/actions/artifacts/5/zip", 302, "", new Dictionary<string, string> { ["Location"] = "https://blob.example/5.zip" })
+            .Bytes("https://blob.example/5.zip", Zip(("unit.trx", new string('y', 50_000))));
+
+        var result = await Capped().ReadResultsAsync(new CiRunRef(Repo, "42", Sha), Ct);
+
+        Assert.Equal("validation_failed", result.Error?.Reason);
+        Assert.Contains("unit.trx", result.Error!.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task A_capped_copy_stops_at_the_limit_whatever_the_source_claims()
     {

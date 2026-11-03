@@ -32,6 +32,7 @@ CORE = "src/FeatureFlow.Interpreter/RunCore.cs"
 RECOVERY = "src/FeatureFlow.Interpreter/Recovery.cs"
 VALIDATOR = "src/FeatureFlow.Validation/PlanValidator.cs"
 GITHUB_API = "src/Providers/FeatureFlow.Providers.GitHub/GitHubApi.cs"
+GITHUB_CI = "src/Providers/FeatureFlow.Providers.GitHub/GitHubActionsCi.cs"
 
 ENGINE = "tests/FeatureFlow.Engine.Tests"
 AGENT = "tests/FeatureFlow.Engine.Agent.Tests"
@@ -430,6 +431,12 @@ CONTROLS = [
         "edits": [(GITHUB_API, "if (!fresh && tokens.TryGetValue(cacheKey, out var cached)", "if (tokens.TryGetValue(cacheKey, out var cached)")],
         "tests": [GITHUB_TESTS],
         "expect": [("A_refused_credential_is_retried_once_with_a_fresh_token", 4)],
+    },
+    {
+        "name": "CI downloads: a result file decompresses without the cap (review F4)",
+        "edits": [(GITHUB_CI, "CopyCappedAsync(source, reader, MaxDownloadBytes, cancellationToken)", "CopyCappedAsync(source, reader, long.MaxValue, cancellationToken)")],
+        "tests": [GITHUB_TESTS],
+        "expect": ["A_result_file_that_decompresses_past_the_cap_refuses_the_read"],
     },
 ]
 
