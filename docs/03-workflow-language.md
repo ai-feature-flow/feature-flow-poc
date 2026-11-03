@@ -226,7 +226,10 @@ For each outcome of each step, the route is the first of:
 3. `defaults.routes.by_class` for the outcome's class.
 4. For class `success`: the next step in the list, or `{ end: completed }` after
    the last step.
-5. For `attempts_exhausted`: `{ escalate: true }` (the engine default).
+5. For `attempts_exhausted`, and an engine action outcome added after
+   libraries were written (`docs/04` section 2 marks it): `{ escalate: true }`
+   (the engine default). A library written before the outcome existed still
+   loads (LOG 161).
 
 An outcome left with no route is a blocking validation error. Validation and
 the readable form show the resolved routes, so every route is visible even

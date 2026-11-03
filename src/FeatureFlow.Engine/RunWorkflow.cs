@@ -503,7 +503,8 @@ public class RunWorkflow
     string? MissingConsumed(Step step)
     {
         var crossRun = Workflow.Patched(ChildInputsPatch);
-        var missing = step.Consumes.Where(c => !c.Optional && (crossRun ? ConsumedArtifact(step, c) is null : c.From == "current" && LatestArtifact(step, c.Name) is null))
+        var missing = step.Consumes.Where(c => !c.Optional && !IsLedgerView(c)
+                                               && (crossRun ? ConsumedArtifact(step, c) is null : c.From == "current" && LatestArtifact(step, c.Name) is null))
             .Select(ConsumedKey).Distinct().ToList();
         return missing.Count == 0 ? null : $"check 32 ({Checks.Title(Checks.ConsumedArtifacts)}): {step.Id} consumes {string.Join(", ", missing)}, which no step has produced";
     }
@@ -531,6 +532,9 @@ public class RunWorkflow
     /// The name a consumed artifact goes by in the step's inputs and its sandbox: its own from this run, else with its
     /// source in front (<c>parent/contract</c>, <c>child/ticket_a/summary</c>), so a step can consume one name from two runs.
     /// </summary>
+    /// <summary>The run's reserved <c>findings_ledger</c>: the ledger's view, staged by the agent worker, never a produced artifact (LOG 63, 167).</summary>
+    static bool IsLedgerView(ArtifactIn consumed) => consumed.From == "current" && consumed.Name == FindingsLedger.ViewName;
+
     static string ConsumedKey(ArtifactIn consumed) =>
         consumed.From == "current" ? consumed.Name : $"{consumed.From.Replace(':', '/')}/{consumed.Name}";
 
@@ -645,7 +649,10 @@ public class RunWorkflow
         var consumed = new Dictionary<string, string>(StringComparer.Ordinal);
         var crossRun = Workflow.Patched(ChildInputsPatch);
         foreach (var c in step.Consumes)
-            if ((crossRun ? ConsumedArtifact(step, c) : LatestArtifact(step, c.Name)) is { } reference)
+            if (IsLedgerView(c))
+                // The ledger changes outside the run's artifacts: the agent worker stages its view when the step starts (LOG 63).
+                consumed[c.Name] = FindingsLedger.ViewName;
+            else if ((crossRun ? ConsumedArtifact(step, c) : LatestArtifact(step, c.Name)) is { } reference)
                 consumed.TryAdd(crossRun ? ConsumedKey(c) : c.Name, reference);
         return new AgentStepSpec(
             agent.WriteAccess ?? role?.WriteAccess ?? "none",
@@ -818,6 +825,8 @@ public class RunWorkflow
 
     void Apply(Step step, StepOutcome outcome)
     {
+        if (outcome.Findings is { } counts)
+            core!.Apply(new FindingsChanged(counts, outcome.FindingsVersion));
         switch (outcome.Kind)
         {
             case StepOutcome.CannotAnswer:

@@ -61,7 +61,11 @@ public sealed record CarriedCore(
     long RunCeilingGranted,
     IReadOnlyDictionary<string, long> Findings,
     IReadOnlyList<CarriedTrace> Trace,
-    int NextWaitNumber);
+    int NextWaitNumber)
+{
+    /// <summary>The ledger version the <see cref="Findings"/> counts were read at (review F3).</summary>
+    public long FindingsVersion { get; init; }
+}
 
 public sealed partial class RunCore
 {
@@ -95,7 +99,7 @@ public sealed partial class RunCore
             s.RunCeilingGranted,
             new SortedDictionary<string, long>(s.Findings, StringComparer.Ordinal),
             s.Trace.Select(t => new CarriedTrace(t.Kind, t.StepId, t.Detail)).ToList(),
-            s.NextWaitNumber);
+            s.NextWaitNumber) { FindingsVersion = s.FindingsVersion };
     }
 
     /// <summary>
@@ -143,6 +147,7 @@ public sealed partial class RunCore
         s.RunCeilingGranted = carried.RunCeilingGranted;
         foreach (var (name, count) in carried.Findings)
             s.Findings[name] = count;
+        s.FindingsVersion = carried.FindingsVersion;
         s.Trace.AddRange(carried.Trace.Select(t => new TraceEntry(t.Kind, t.StepId, t.Detail)));
         s.NextWaitNumber = carried.NextWaitNumber;
         return core;

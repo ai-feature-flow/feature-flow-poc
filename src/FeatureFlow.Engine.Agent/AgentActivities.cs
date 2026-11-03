@@ -426,10 +426,11 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
         async Task StageInputsAsync()
         {
             var staged = new List<object>();
-            foreach (var (name, reference) in spec.Consumed)
+            foreach (var (name, consumed) in spec.Consumed)
             {
                 var path = $"/ff/inputs/artifacts/{name}";
-                Must(await sandboxes.CopyInAsync(sandbox, new ArtifactRef(reference), path, readOnly: true, ct), $"stage artifact {name}");
+                var reference = name == FindingsLedger.ViewName ? await LedgerViewAsync() : new ArtifactRef(consumed);
+                Must(await sandboxes.CopyInAsync(sandbox, reference, path, readOnly: true, ct), $"stage artifact {name}");
                 staged.Add(new { name, path });
             }
 
@@ -539,6 +540,19 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
 
         async Task<IReadOnlyList<ReportRecord>> ReportsAsync() =>
             Must(await owner.Records.QueryAsync<ReportRecord>(Queries.Reports, new Dictionary<string, string> { ["step_key"] = key }, ct));
+
+        /// <summary>
+        /// The run's ledger view as the step starts (LOG 63): every finding of this run and its children, with its ledger id
+        /// and state, in the <c>findings_report</c> shape. Recorded as an event, so the timeline says what the agent was shown.
+        /// </summary>
+        async Task<ArtifactRef> LedgerViewAsync()
+        {
+            var ledger = Must(await owner.Records.QueryAsync<FindingRecord>(Queries.Findings, new Dictionary<string, string> { ["run_id"] = call.Step.RunId }, ct));
+            var view = Must(await owner.Store.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(ArtifactShapes.WriteLibrary(FindingsLedger.View(ledger)))), ct),
+                "store the ledger view");
+            await EventAsync("findings_ledger", $"{ledger.Count} findings, {ledger.Count(f => f.State == FindingStates.Open)} open: {view.Id}");
+            return view;
+        }
 
         async Task RecordAsync(RecordBatch batch) => Must(await owner.Records.AppendAsync(batch, CancellationToken.None));
 
