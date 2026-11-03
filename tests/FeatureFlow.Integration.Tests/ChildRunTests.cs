@@ -46,12 +46,21 @@ public class ChildRunTests
         Assert.Equal(start.ParentArtifacts, start.RootArtifacts);
         Assert.Contains(view["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "completed" && e["stepId"]!.ToString() == "read");
 
-        // The artifact index: each run's artifacts by step and execution, a parent's view including its child's.
+        // The artifact index: each run's artifacts by step and execution, a parent's view including its children's.
         var index = (await h.Host.Providers.Required<Providers.Abstractions.IRecordStoreProvider>("record_store").QueryAsync<Providers.Abstractions.ArtifactRecord>(
             Providers.Abstractions.Queries.Artifacts, new Dictionary<string, string> { ["run_id"] = id }, TestContext.Current.CancellationToken)).Value!;
-        Assert.Equal([(id, "write", 1, "notes", notes.Value), (childId, "use", 1, "summary", index.Single(a => a.Name == "summary").Ref)],
-            index.Select(a => (a.RunId, a.StepId, a.Execution, a.Name, a.Ref)));
-        Assert.All(index, a => Assert.Equal(("m6:artifact_types/notes", null, false), (a.Type, a.Action, a.Evidence)));
+        var againId = $"{id}.again.1";
+        Assert.Equal([(id, "write", "notes"), (childId, "use", "notes"), (childId, "use", "summary"), (againId, "use", "notes"), (againId, "use", "summary")],
+            index.Select(a => (a.RunId, a.StepId, a.Name)));
+        Assert.All(index, a => Assert.Equal(("m6:artifact_types/notes", null, false, 1), (a.Type, a.Action, a.Evidence, a.Execution)));
+
+        // Review F2: the first child's notes are the child's, not this run's. A later child still gets this run's own
+        // notes as its parent's, and nothing else (the run.child step that holds the first child's artifacts is skipped).
+        var own = index.Single(a => a.RunId == id).Ref;
+        Assert.Equal(own, notes.Value);
+        Assert.NotEqual(own, index.First(a => a.RunId == childId && a.Name == "notes").Ref);
+        var again = await StartOfAsync(h, againId);
+        Assert.Equal(new Dictionary<string, string> { ["notes"] = own }, again.ParentArtifacts);
         await h.RecordHistoryAsync(id, "family_parent");
         await h.RecordHistoryAsync(childId, "family_child");
     }

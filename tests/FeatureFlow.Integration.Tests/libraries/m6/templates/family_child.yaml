@@ -26,7 +26,9 @@ steps:
       task: m6:tasks/note
     consumes: [{ name: notes, from: parent }]
     produces:
-      written: [{ name: summary, type: m6:artifact_types/notes }]
+      written:
+        - { name: summary, type: m6:artifact_types/notes }
+        - { name: notes, type: m6:artifact_types/notes }     # the parent's name: it must not shadow the parent's own
     outcomes: { written: success }
     routes:
       written:

@@ -5,7 +5,9 @@ metadata:
   level: epic
   description: >-
     Writes notes, starts a child that inherits its parameters and consumes the notes
-    from its parent, then consumes the child's summary (M3 follow-ups 2 and 3).
+    from its parent, then consumes the child's summary (M3 follow-ups 2 and 3). The child
+    writes notes of its own, which neither this run's steps nor a later child see as this
+    run's (review F2).
 
 parameters:
   ticket_id: { type: string, required: true, description: "Inherited by the child, which declares it" }
@@ -31,6 +33,15 @@ steps:
     routes: { written: child }
 
   - id: child
+    action: run.child
+    with:
+      template: m6:templates/family_child
+      level: ticket
+      repositories: [acme/api]
+      parameters: { size: 3 }
+    routes: { completed: again }
+
+  - id: again
     action: run.child
     with:
       template: m6:templates/family_child

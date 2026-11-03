@@ -886,8 +886,8 @@ public class RunWorkflow
     /// <summary>The latest artifact of every name this run holds, nearest a step (the run's top level when null): what a child sees as its parent's.</summary>
     SortedDictionary<string, string> RunArtifacts(Step? near)
     {
-        var names = core!.State.Steps.Where(kv => core.StepById(kv.Key) is not { Action: "run.child" })
-            .SelectMany(kv => kv.Value.Current?.Artifacts.Keys ?? Enumerable.Empty<string>()).Distinct();
+        // A run.child step's artifacts are its child's: LatestArtifact skips them, so a name only a child produced is left out.
+        var names = core!.State.Steps.SelectMany(kv => kv.Value.Current?.Artifacts.Keys ?? Enumerable.Empty<string>()).Distinct();
         var artifacts = new SortedDictionary<string, string>(StringComparer.Ordinal);
         foreach (var name in names)
             if (LatestArtifact(near, name) is { } reference)
