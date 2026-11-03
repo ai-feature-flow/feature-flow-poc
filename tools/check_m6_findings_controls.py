@@ -36,7 +36,8 @@ VALIDATION = ("tests/FeatureFlow.Validation.Tests", "FullyQualifiedName~StdLibra
 WORKFLOWS = ("tests/FeatureFlow.Testing.Workflows.Tests", None)
 REPLAY = ("tests/FeatureFlow.Replay.Tests", None)
 COPILOT_TESTS = ("tests/Providers/FeatureFlow.Providers.GitHub.Tests", "FullyQualifiedName~Copilot&Category!=Live")
-LOOP = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~FindingsLoopTests")
+LOOP = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~FindingsLoopTests.A_blocking")
+TRIAGER = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~FindingsLoopTests.The_triager")
 
 
 CONTROLS = [
@@ -136,7 +137,7 @@ CONTROLS = [
     },
     {
         "name": "namespace: the activity's outcome drops the counts",
-        "edits": [(SCOPE, "new(Kind, Report, Reason, Events) { Findings = Findings };", "new(Kind, Report, Reason, Events) { Findings = null };")],
+        "edits": [(SCOPE, "{ Findings = Findings, FindingsVersion", "{ Findings = null, FindingsVersion")],
         "tests": [LOOP],
         "expect": ["A_blocking_finding_goes_through_std_s_fix_loop_on_the_real_ledger_and_the_ticket_then_merges"],
     },
@@ -244,6 +245,118 @@ CONTROLS = [
         "tests": [COPILOT_TESTS],
         "expect": ["The_instance_can_make_copilots_findings_blocking"],
     },
+    # ---- Review of PR 11 ----
+    {
+        "name": "F1: std lets the triager set fixed",
+        "edits": [(FIX_LOOP, "with: { from: triage, states: [open, declined, escalated] }", "with: { from: triage }")],
+        "tests": [TRIAGER],
+        "expect": ['The_triager_alone_cannot_clear_a_demonstrated_blocking_finding(state: "fixed"'],
+    },
+    {
+        "name": "F1: findings.triage ignores the states its step allows",
+        "edits": [(FINDINGS, "else if (!allowed.Contains(e.State))", "else if (allowed.Count < 0)")],
+        "tests": [ENGINE, TRIAGER],
+        "expect": [("A_triage_may_set_only_the_states_its_step_allows", 2), 'The_triager_alone_cannot_clear_a_demonstrated_blocking_finding(state: "fixed"'],
+    },
+    {
+        "name": "F1: std does not send a declined blocking finding to a person",
+        "edits": [(FIX_LOOP, " || steps.apply_triage.outputs.declined_blocking > 0", "")],
+        "tests": [TRIAGER, WORKFLOWS],
+        "expect": ['The_triager_alone_cannot_clear_a_demonstrated_blocking_finding(state: "declined"', 'Std_workflow_test_passes(name: "ticket_triage_to_person"'],
+    },
+    {
+        "name": "F1: findings.triage does not count escalations",
+        "edits": [(FINDINGS, '["escalated"] = (long)triage.Entries.Count(t => t.State == FindingStates.Escalated),', '["escalated"] = 0L,')],
+        "tests": [ENGINE, TRIAGER],
+        "expect": ["A_triage_counts_its_escalations_and_its_declines_of_blocking_or_demonstrated_findings_itself",
+                   'The_triager_alone_cannot_clear_a_demonstrated_blocking_finding(state: "escalated"'],
+    },
+    {
+        "name": "F1: a declined demonstrated finding is not counted",
+        "edits": [(FINDINGS, " || byId[t.Finding].Finding.Basis == FindingBases.Demonstrated", "")],
+        "tests": [ENGINE],
+        "expect": ["A_triage_counts_its_escalations_and_its_declines_of_blocking_or_demonstrated_findings_itself"],
+    },
+    {
+        "name": "F2: a re-raise replaces the finding",
+        "edits": [(FINDINGS, "Finding = Merge(existing.Finding, reported),", "Finding = reported,")],
+        "tests": [ENGINE],
+        "expect": ["A_weaker_re_raise_does_not_downgrade_the_finding"],
+    },
+    {
+        "name": "F3: the core applies counts read at an older version",
+        "edits": [("src/FeatureFlow.Interpreter/RunCore.cs", "if (f.Version < State.FindingsVersion)", "if (f.Version < 0)")],
+        "tests": [CORE],
+        "expect": ["Counts_read_at_an_older_ledger_version_do_not_replace_newer_ones_even_after_a_hand_over"],
+    },
+    {
+        "name": "F3: the version is lost at the hand-over",
+        "edits": [(CARRY, "s.FindingsVersion = carried.FindingsVersion;", "_ = carried.FindingsVersion;")],
+        "tests": [CORE],
+        "expect": ["Counts_read_at_an_older_ledger_version_do_not_replace_newer_ones_even_after_a_hand_over"],
+    },
+    {
+        "name": "F3: findings actions return no version",
+        "edits": [(FINDINGS, "version += (await history.OfAsync(finding)).Count;", "version += (await history.OfAsync(finding)).Count * 0;")],
+        "tests": [ENGINE],
+        "expect": ["Each_findings_action_returns_a_higher_ledger_version"],
+    },
+    {
+        "name": "F4: an entry with no symbol or snippet is placed by rule and file only",
+        "edits": [(FINDINGS, "string.IsNullOrWhiteSpace(f.Location.Symbol) && string.IsNullOrWhiteSpace(f.Location.Snippet)",
+                   "string.IsNullOrWhiteSpace(f.Location.Symbol) && string.IsNullOrWhiteSpace(f.Location.Snippet) && f.Title.Length < 0")],
+        "tests": [ENGINE],
+        "expect": ["Two_problems_of_one_rule_in_one_file_with_no_symbol_or_snippet_stay_two_and_a_true_duplicate_is_noted"],
+    },
+    {
+        "name": "A: a duplicate in a report is dropped silently",
+        "edits": [(FINDINGS, "has the fingerprint of an earlier one in the report; recorded once", "is the same")],
+        "tests": [ENGINE],
+        "expect": ["Two_problems_of_one_rule_in_one_file_with_no_symbol_or_snippet_stay_two_and_a_true_duplicate_is_noted"],
+    },
+    {
+        "name": "H: a triage leaves the state revision where it was",
+        "edits": [(FINDINGS, "StateRevision = head ?? before.StateRevision,", "StateRevision = before.StateRevision,")],
+        "tests": [ENGINE],
+        "expect": ["A_fix_moves_the_state_revision_so_only_a_later_change_reopens_it"],
+    },
+    {
+        "name": "C: a triage may name a finding twice",
+        "edits": [(FINDINGS, "else if (!named.Add(id))", "else if (!named.Add(id) && id.Length < 0)")],
+        "tests": [ENGINE],
+        "expect": ["A_triage_naming_a_finding_twice_is_invalid"],
+    },
+    {
+        "name": "D: a triage's schema is not checked",
+        "edits": [(FINDINGS, "if (triage.Schema != 1)", "if (triage.Schema < 0)")],
+        "tests": [ENGINE],
+        "expect": ["A_triage_of_another_schema_is_invalid"],
+    },
+    {
+        "name": "F: matching ignores this run's own finding",
+        "edits": [(FINDINGS, "ledger.FirstOrDefault(f => f.Fingerprint == fingerprint && f.RunId == runId) ?? ledger.FirstOrDefault(f => f.Fingerprint == fingerprint);",
+                   "ledger.LastOrDefault(f => f.Fingerprint == fingerprint && runId.Length > 0);")],
+        "tests": [ENGINE],
+        "expect": ["A_finding_raised_in_both_this_run_and_a_child_is_re_raised_in_this_runs_ledger"],
+    },
+    {
+        "name": "N: a triage re-applies a state the finding already has",
+        "edits": [(FINDINGS, "if (before.State != t.State)", "if (before.State != t.State || t.State.Length > 0)")],
+        "tests": [ENGINE],
+        "expect": ["A_triage_repeating_a_findings_state_changes_nothing"],
+    },
+    {
+        "name": "O: Copilot's oldest review of the revision is read",
+        "edits": [(COPILOT, ".Max();", ".Min();")],
+        "tests": [COPILOT_TESTS],
+        "expect": ["Copilots_newest_review_of_the_revision_is_read"],
+    },
+    {
+        "name": "J: every unrouted action outcome escalates by default",
+        "edits": [(LOADER, "?.Escalates?.Contains(outcome.Name) == true)", " is not null)")],
+        "tests": [VALIDATION],
+        "expect": ["Only_an_outcome_added_later_escalates_by_default_and_another_unrouted_outcome_is_still_check_7"],
+    },
 ]
 
 
@@ -264,7 +377,8 @@ def run_tests(tests):
 def matches(expected, failing):
     """A name, or (name, n): at least n failing cases of that theory."""
     name, count = expected if isinstance(expected, tuple) else (expected, 1)
-    return sum(1 for f in failing if f == name or f.startswith(name + "(")) >= count
+    # A name that already gives a theory's first arguments matches the cases that start with them.
+    return sum(1 for f in failing if f == name or f.startswith(name if "(" in name else name + "(")) >= count
 
 
 def main():

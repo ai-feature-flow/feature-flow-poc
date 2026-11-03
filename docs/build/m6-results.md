@@ -68,6 +68,23 @@ parameter is a warning, so an error).
   `StepStartChecks.cs`, `Model/Actions.cs`, `PlanLoader.cs`, `ActionWorld.cs`, `ForgeTicketTests.cs` (std's
   reviewers now write empty reports; `StartAsync` is internal).
 
+### Review of PR 11 (changes-required, 2026-11-03)
+
+The independent review found 6 issues and 8 mutations its tests did not catch. Coordinator: LOG 161 and 164 accepted
+for the product owner's list; the rest fixed as follows.
+
+| # | Finding | Fix | Test (control) |
+|---|---|---|---|
+| F1 | A triager setting `fixed`, `escalated` or `declined` on a demonstrated blocking bug, with no fix, merged | `findings.triage` `states` (std: triager `[open, declined, escalated]`, verifier `[fixed, open]`); engine-counted outputs `escalated`, `declined_blocking`; `fix_loop` routes on them and `findings.open`, not the triager's outputs; an escalation or a declined blocking or demonstrated finding goes to a person (LOG 168) | `FindingsLoopTests.The_triager_alone_cannot_clear_...` (3 cases stop at an intervention, no deliver step; with std's `states` removed the `fixed` case merges), re-drive `ticket_triage_to_person`, engine `states` and count tests |
+| F2 | A later reviewer could downgrade an open finding | A re-raise merges: blocking OR, demonstrated wins, higher severity, proof kept | `A_weaker_re_raise_does_not_downgrade_the_finding` |
+| F3 | Parallel recorders could apply stale counts | A ledger version (event count, read with the counts) travels with them; the core keeps the newest, across a hand-over. The finding row's lost update is logged, not fixed (LOG 169) | `Counts_read_at_an_older_ledger_version_...`, `Each_findings_action_returns_a_higher_ledger_version` |
+| F4 | Two problems of one rule and file without symbol or snippet merged silently | The title joins the fingerprint then; a duplicate in a report is noted | `Two_problems_of_one_rule_in_one_file_...` |
+| F5 | LOG 161's default could widen unnoticed | Test that only `findings.triage invalid` escalates by default and an unrouted `analysis.run failed` is still check 7 | `Only_an_outcome_added_later_escalates_...` |
+| F6 | Mutations A, C, D, F, H, N, O uncaught | Tests for each, H being the state revision moving at the fix | one test each; controls A to O |
+
+Controls are now 49 (18 added for the review, two existing ones retargeted at changed text). Counts after the fixes:
+default **815 passed**, integration **54 passed**, Release build 0 warnings.
+
 ### Follow-ups
 
 | # | Follow-up |
@@ -77,3 +94,5 @@ parameter is a warning, so an error).
 | 3 | A parent's `findings` counts change only at its own findings actions; a child's change shows at the parent's next one |
 | 4 | Copilot review could not be shown reviewing live: enabling it on the fixture is the product owner's choice |
 | 5 | M5 follow-up 3 (a re-run reviewer is not told which files it left unread) was not picked up |
+| 6 | A fixed rule vocabulary in std's reviewer task: free-text rule ids from context-free reviewers give a new finding per wording, so `repeat_fixes` rarely accrues (review design note) |
+| 7 | A person cannot change a finding's state until M7 wires decisions' sessions to `findings.triage`; an escalation is answered by the intervention's recovery actions meanwhile (LOG 168) |

@@ -517,21 +517,22 @@ workflow's (`docs/01` section 6, RW4).
 |---|---|
 | Inputs | `source`: an artifact of type findings report (from a reviewer agent step), or a findings source provider by name (an external AI review on the pull request, SonarCloud, a SARIF file). `reopen_on`: when a re-raise of a `fixed` or `declined` finding reopens it: `code_change`, `always` or `never`. The engine default, `code_change`, is a fallback; the standard library sets it explicitly |
 | Outcomes | `recorded`, with outputs `new`, `reraised`, `reopened`, `repeat_fixes` (findings reopened after being fixed at least twice); `unavailable` (the external source could not review, for example Copilot review not enabled, or it stayed pending for 30 minutes) |
-| Behaviour | Fingerprints each finding, matches it against the ledger (including children's), and records it as new or as a re-raise, with whether the code at the fingerprint changed since the finding last changed state: whether the finding's file differs between that revision and the work branch head (LOG 162). Applies `reopen_on`. A report that does not read as a findings report raises an intervention |
+| Behaviour | Fingerprints each finding, matches it against the ledger (including children's), and records it as new or as a re-raise, with whether the code at the fingerprint changed since the finding last changed state: whether the finding's file differs between that revision and the work branch head (LOG 162). A re-raise never weakens the finding: blocking, demonstrated and the higher severity are kept (LOG 169). Applies `reopen_on`. A report that does not read as a findings report raises an intervention |
 
 ### 11.2 `findings.triage`
 
 | Element | Detail |
 |---|---|
-| Inputs | `from`: a triage artifact (from a triage agent step or a decision's session) listing, per finding, the new state (`fixed`, `declined`, `escalated`, `open`) and a reason; `post_declines` (default `true`: post each decline reason on the pull request) |
-| Outcomes | `applied`; `invalid` (nothing applied) |
-| Behaviour | Applies each state change with its actor and reason. A triage entry naming an unknown finding, or one that does not read, is `invalid`; the standard library routes it back to the triage's producer. A plan that does not route `invalid` escalates it (LOG 161). A decline is posted only where a pull request is open for the finding's repository (LOG 164) |
+| Inputs | `from`: a triage artifact (from a triage agent step or a decision's session) listing, per finding, the new state (`fixed`, `declined`, `escalated`, `open`) and a reason; `states`: the states this step's producer may set (default all four, LOG 168); `post_declines` (default `true`: post each decline reason on the pull request) |
+| Outcomes | `applied`, with outputs `escalated` and `declined_blocking` (this triage's escalations, and its declines of blocking or demonstrated findings, counted by the engine); `invalid` (nothing applied) |
+| Behaviour | Applies each state change with its actor and reason. A triage entry naming an unknown finding or a state outside `states`, or one that does not read, is `invalid`; the standard library routes it back to the triage's producer. A plan that does not route `invalid` escalates it (LOG 161). A decline is posted only where a pull request is open for the finding's repository (LOG 164) |
 
 The standard library's fragments build review, triage, fix and verification
 from an agent reviewer, these two actions and route guards such as
 `findings.open_blocking == 0` (`docs/08`). Each action returns the `findings`
-namespace (`docs/03` section 5.3) as it left the ledger, and its routes read the
-new counts.
+namespace (`docs/03` section 5.3) as it left the ledger, with the ledger's
+version, and its routes read the new counts; counts of an older version than the
+run holds are ignored (LOG 169).
 
 ---
 
