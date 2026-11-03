@@ -68,17 +68,22 @@ public sealed class GitHubApi(Func<ICredentialBroker?> broker, HttpMessageHandle
     /// <summary>
     /// Sends a request for <paramref name="repo"/> with a token holding <paramref name="permissions"/>. Error statuses
     /// come back as their classified error; every other status, success or redirect, comes back as the response. A
-    /// configuration fault (401, or a 403 that is not a missing permission) is retried once at once with a freshly
-    /// issued token, then returned for the engine to stop for a person (docs/06 section 1.1).
+    /// configuration fault (401, or a 403 that is not a missing permission) is retried once, after
+    /// <see cref="FreshTokenDelay"/>, with a freshly issued token, then returned for the engine to stop for a person
+    /// (docs/06 section 1.1).
     /// </summary>
     public async Task<ProviderResult<GitHubResponse>> SendAsync(RepoRef repo, IReadOnlyDictionary<string, string> permissions, HttpMethod method, string path,
         object? body, CancellationToken cancellationToken, string accept = "application/vnd.github+json")
     {
         var first = await SendOnceAsync(repo, permissions, method, path, body, fresh: false, accept, cancellationToken);
-        return first.Error is { IsConfigurationFault: true } && broker() is not null
-            ? await SendOnceAsync(repo, permissions, method, path, body, fresh: true, accept, cancellationToken)
-            : first;
+        if (first.Error is not { IsConfigurationFault: true } || broker() is null)
+            return first;
+        await Task.Delay(FreshTokenDelay, cancellationToken);
+        return await SendOnceAsync(repo, permissions, method, path, body, fresh: true, accept, cancellationToken);
     }
+
+    /// <summary>The wait before the fresh-token retry. Tests shorten it.</summary>
+    public TimeSpan FreshTokenDelay { get; init; } = ProviderError.FreshCredentialDelay;
 
     async Task<ProviderResult<GitHubResponse>> SendOnceAsync(RepoRef repo, IReadOnlyDictionary<string, string> permissions, HttpMethod method, string path,
         object? body, bool fresh, string accept, CancellationToken cancellationToken)

@@ -33,6 +33,7 @@ RECOVERY = "src/FeatureFlow.Interpreter/Recovery.cs"
 VALIDATOR = "src/FeatureFlow.Validation/PlanValidator.cs"
 GITHUB_API = "src/Providers/FeatureFlow.Providers.GitHub/GitHubApi.cs"
 GITHUB_CI = "src/Providers/FeatureFlow.Providers.GitHub/GitHubActionsCi.cs"
+GIT_VCS = "src/Providers/FeatureFlow.Providers.Git/GitVcs.cs"
 
 ENGINE = "tests/FeatureFlow.Engine.Tests"
 AGENT = "tests/FeatureFlow.Engine.Agent.Tests"
@@ -40,6 +41,7 @@ CORE_TESTS = "tests/FeatureFlow.Interpreter.Tests"
 VALIDATION_TESTS = "tests/FeatureFlow.Validation.Tests"
 INTEGRATION = "tests/FeatureFlow.Integration.Tests"
 GITHUB_TESTS = ("tests/Providers/FeatureFlow.Providers.GitHub.Tests", "Category!=Live")
+GIT_RETRY_TESTS = ("tests/Providers/FeatureFlow.Providers.Git.Tests", "FullyQualifiedName~GitCredentialRetryTests")
 
 
 def it(name):
@@ -422,7 +424,7 @@ CONTROLS = [
     },
     {
         "name": "configuration faults: GitHub requests are not retried with a fresh token (LOG 147)",
-        "edits": [(GITHUB_API, "return first.Error is { IsConfigurationFault: true } && broker() is not null", "return first.Error is { IsConfigurationFault: true } && false")],
+        "edits": [(GITHUB_API, "if (first.Error is not { IsConfigurationFault: true } || broker() is null)", "if (first.Ok || first.Error is not null)")],
         "tests": [GITHUB_TESTS],
         "expect": [("A_refused_credential_is_retried_once_with_a_fresh_token", 4)],
     },
@@ -437,6 +439,24 @@ CONTROLS = [
         "edits": [(GITHUB_CI, "CopyCappedAsync(source, reader, MaxDownloadBytes, cancellationToken)", "CopyCappedAsync(source, reader, long.MaxValue, cancellationToken)")],
         "tests": [GITHUB_TESTS],
         "expect": ["A_result_file_that_decompresses_past_the_cap_refuses_the_read"],
+    },
+    {
+        "name": "configuration faults: the GitHub client retries without waiting (review F5)",
+        "edits": [(GITHUB_API, "        await Task.Delay(FreshTokenDelay, cancellationToken);\n", "")],
+        "tests": [GITHUB_TESTS],
+        "expect": [("A_refused_credential_is_retried_once_with_a_fresh_token", 4)],
+    },
+    {
+        "name": "configuration faults: git operations are not retried with a fresh credential (review F5)",
+        "edits": [(GIT_VCS, "if (first.Error is not { IsConfigurationFault: true } || broker() is null)", "if (first.Ok || first.Error is not null)")],
+        "tests": [GIT_RETRY_TESTS],
+        "expect": [("A_refused_operation_runs_once_more_with_a_fresh_credential", 3)],
+    },
+    {
+        "name": "configuration faults: git's retry reuses the cached credential (review F5)",
+        "edits": [(GIT_VCS, "if (fresh || !credentials.TryGetValue(cacheKey, out var credential)", "if (!credentials.TryGetValue(cacheKey, out var credential)")],
+        "tests": [GIT_RETRY_TESTS],
+        "expect": ["A_fresh_environment_issues_a_new_credential_and_a_normal_one_reuses_the_cache"],
     },
 ]
 

@@ -125,8 +125,10 @@ public sealed class GitHubCodeHostTests
             ? new HttpResponseMessage((System.Net.HttpStatusCode)status) { Content = new StringContent("""{"message":"Bad credentials"}""") }
             : new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent("""{"default_branch":"trunk"}""") });
 
+        var started = System.Diagnostics.Stopwatch.StartNew();
         var result = await host.GetDefaultBranchAsync(Repo, Ct);
 
+        Assert.True(started.Elapsed >= FakeGitHub.FreshTokenDelay, "the retry waited before asking for a fresh token");
         Assert.Equal(branch, result.Value);
         Assert.Equal(branch is null, result.Error?.IsConfigurationFault ?? false);
         Assert.Equal(2, calls);

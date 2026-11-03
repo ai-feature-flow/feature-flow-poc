@@ -60,7 +60,7 @@ public sealed class GitVcs(
     string CacheOf(RepoRef repo) => Path.Combine(CacheFolder, repo.FullName.Replace('/', '_') + ".git");
 
     public Task<ProviderResult<string?>> ResolveAsync(RepoRef repo, string reference, CancellationToken cancellationToken) =>
-        WithFreshCredentialOnFaultAsync(fresh => ResolveOnceAsync(repo, reference, fresh, cancellationToken));
+        WithFreshCredentialOnFaultAsync(fresh => ResolveOnceAsync(repo, reference, fresh, cancellationToken), cancellationToken);
 
     async Task<ProviderResult<string?>> ResolveOnceAsync(RepoRef repo, string reference, bool fresh, CancellationToken cancellationToken)
     {
@@ -437,18 +437,25 @@ public sealed class GitVcs(
     /// </summary>
     Task<ProviderResult<T>> WithCacheAsync<T>(RepoRef repo, Func<string, IReadOnlyDictionary<string, string>, string, Task<ProviderResult<T>>> work, bool write,
         CancellationToken cancellationToken) =>
-        WithFreshCredentialOnFaultAsync(fresh => WithCacheOnceAsync(repo, work, write, fresh, cancellationToken));
+        WithFreshCredentialOnFaultAsync(fresh => WithCacheOnceAsync(repo, work, write, fresh, cancellationToken), cancellationToken);
 
     /// <summary>
     /// docs/06 section 1.1: an operation the remote refused as a configuration fault (<c>unauthenticated</c>,
-    /// <c>forbidden</c>) runs once more at once with a freshly issued credential; a second refusal is returned, for the
-    /// engine to stop for a person. A refused push changed nothing, so running the operation again is safe.
+    /// <c>forbidden</c>) runs once more, after <see cref="FreshCredentialDelay"/>, with a freshly issued credential; a
+    /// second refusal is returned, for the engine to stop for a person. A refused push changed nothing, so running the
+    /// operation again is safe.
     /// </summary>
-    async Task<ProviderResult<T>> WithFreshCredentialOnFaultAsync<T>(Func<bool, Task<ProviderResult<T>>> operation)
+    internal async Task<ProviderResult<T>> WithFreshCredentialOnFaultAsync<T>(Func<bool, Task<ProviderResult<T>>> operation, CancellationToken cancellationToken)
     {
         var first = await operation(false);
-        return first.Error is { IsConfigurationFault: true } && broker() is not null ? await operation(true) : first;
+        if (first.Error is not { IsConfigurationFault: true } || broker() is null)
+            return first;
+        await Task.Delay(FreshCredentialDelay, cancellationToken);
+        return await operation(true);
     }
+
+    /// <summary>The wait before the fresh-credential retry. Tests shorten it.</summary>
+    public TimeSpan FreshCredentialDelay { get; init; } = ProviderError.FreshCredentialDelay;
 
     async Task<ProviderResult<T>> WithCacheOnceAsync<T>(RepoRef repo, Func<string, IReadOnlyDictionary<string, string>, string, Task<ProviderResult<T>>> work, bool write,
         bool fresh, CancellationToken cancellationToken)
@@ -504,7 +511,7 @@ public sealed class GitVcs(
     /// The environment that gives <c>git</c> the engine's credential for an HTTPS remote: an authorisation header in
     /// <c>GIT_CONFIG_*</c> variables, so the token is in no command line, URL or file. A local remote needs none.
     /// </summary>
-    async Task<ProviderResult<IReadOnlyDictionary<string, string>>> EnvironmentAsync(RepoRef repo, bool write, bool fresh, CancellationToken cancellationToken)
+    internal async Task<ProviderResult<IReadOnlyDictionary<string, string>>> EnvironmentAsync(RepoRef repo, bool write, bool fresh, CancellationToken cancellationToken)
     {
         var config = new List<(string Key, string Value)>(Isolation);
         if (!UrlOf(repo).StartsWith("https://", StringComparison.Ordinal) || broker() is not { } credentialBroker)

@@ -19,10 +19,13 @@ public sealed record ProviderError(string Reason, string Message, TimeSpan? Retr
 
     /// <summary>
     /// docs/06 section 1.1: <c>unauthenticated</c> and <c>forbidden</c> are almost always a configuration fault (a revoked
-    /// App, a missing permission, a wrong key), which retrying for ever would hide. A provider retries once at once with
-    /// a freshly issued credential; what still reaches the engine stops for a person (LOG 147).
+    /// App, a missing permission, a wrong key), which retrying for ever would hide. A provider retries once, after
+    /// <see cref="FreshCredentialDelay"/>, with a freshly issued credential; what still reaches the engine stops for a person (LOG 147).
     /// </summary>
     public bool IsConfigurationFault => Reason is "unauthenticated" or "forbidden";
+
+    /// <summary>How long a provider waits before its one fresh-credential retry: a newly minted token can take a moment to be accepted.</summary>
+    public static readonly TimeSpan FreshCredentialDelay = TimeSpan.FromSeconds(2);
 
     /// <summary>What a person is told about a configuration fault.</summary>
     public string DescribeFault() =>
