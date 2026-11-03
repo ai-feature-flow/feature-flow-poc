@@ -327,9 +327,10 @@ them (from FF).
 
 ## 7. Source control
 
-Pending review (LOG 120 to 132): sections 7 to 9 as built in M5. `test.integration` is `test.run` across
-repositories and starts no services yet (120); waits are retried reads (122); an action request is watched on the
-code host, with no decision record yet (123); `clean_up` resets by an expected-revision push (128).
+Pending review (LOG 120 to 132, 138, 139): sections 7 to 9 as built in M5. `test.integration` is `test.run` across
+repositories and starts no services yet (120); waits are retried reads (122), which hold up a hand-over while they
+wait (139, to fix in M6); an action request is watched on the code host, with no decision record yet (123);
+`clean_up` resets by an expected-revision push (128); evidence tiers come from the parent branch's manifest (138).
 
 The engine creates a run's work branch in a repository the first time a step
 touches that repository, from the run's parent branch, and records the

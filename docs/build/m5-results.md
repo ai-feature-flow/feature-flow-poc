@@ -44,7 +44,7 @@ Branch `m5-actions`, from `m5@1189a6b` (the interfaces and in-memory fakes, LOG 
 | Manifest reader, patterns, `engine_may_merge` | `Model.Tests/ManifestTests` (17 cases) | Pass |
 | Unchanged behaviour | `TicketRunTests` (5), `EpicRunTests`, `StepFailureTests`, `ContinueAsNewTests`; replay tests | Pass |
 
-Counts: default suite **518 passed, 0 failed**, rebased on `m5@5af8fe8` (431 at `1189a6b`). Integration tests were run locally on a dev
+Counts after the review's fixes: default suite **569 passed, 0 failed**, on `m5@5af8fe8` (431 at `1189a6b`). Integration on a dev server: `ForgeTicketTests` 6, `StepStartCheckTests` 2, and the existing ticket, epic, step-failure and SP1 tests, 16 in all. Integration tests were run locally on a dev
 server, not the Docker agent tests: the agent step's change with no code host keeps M4's behaviour, and CI runs them.
 
 The engine tests found one bug of their own: `ci.checks` read the clock before awaiting the wait's start time,
@@ -54,7 +54,7 @@ with no failure.
 ### Controls
 
 `tools/check_m5_actions_controls.py` (needs `FF_TEMPORAL_ADDRESS`; no Docker). Each breakage was run, its tests
-failed, and all passed again after the revert. **All 22 hold.**
+failed, and all passed again after the revert. **All 45 hold** (22 before the review, 23 added for it; the review's controls are listed in the script under "Added for the review of PR 6").
 
 | Breakage | Tests that failed |
 |---|---|
@@ -125,9 +125,30 @@ ff run wait <run id> --timeout 3600
 
 A control for F1 on the live repository: the same start without `--parent-branch` is refused at run start, check 23.
 
+### Review of PR 6
+
+An independent review found two blocking defects in the "nothing untested lands" floor, and eleven more. Each fix
+has tests and a control (`tools/check_m5_actions_controls.py`).
+
+| # | Finding | Fix |
+|---|---|---|
+| 1 | **Blocking.** `scm.merge` took evidence by type name, so an agent could write its own "passed" through a repository library's `test_results` type | Evidence counts only from the right engine action (`test.run` for `test_results`, `ci.checks` for `check_results`) and a type marked `evidence: true`. `test.integration`'s does not satisfy `require_tested` (14) |
+| 2 | **Blocking.** A result file with no tests, all skipped, or an aborted run read as passed | A tier that ran no tests fails; every TRX outcome but `Passed` and `NotExecuted` fails; a TRX run outcome other than completed fails; JUnit suite-level errors and counts are read |
+| 3 | A malformed SARIF threw an exception Temporal retried for ever | It fails to parse (intervention); any unexpected exception in an action raises an intervention |
+| 4 | A deny-list of failing check conclusions let `startup_failure` pass | Allow-list: `success`, `neutral`, `skipped` pass; unknown conclusions raise an intervention |
+| 5 | `poll_every: 0s` could make a wait spin | Check 31 sets a 5 s floor |
+| 6 | A wait holds up continue-as-new | **Not fixed**: a known limit, LOG 139, M6 must fix |
+| 7 | The scope and prompt rendering were not behind a patch marker | Behind `m5-step-start` |
+| 8 | Key rules passed by construction; no history held the M5 markers | Tests for evidence of another repository (B1), conclusions (B2), the latest execution's start (B3); std's `ticket_spec_rejected` `clean_up` on the memory providers; history `tests/histories/ticket_clean_up.json` holds both markers |
+| 9 | A `clean_up` work error was retried for ever | It raises an intervention at the step it was for; only infrastructure retries |
+| 10 | The agent wrote both the tier command and the result file | Evidence tiers and the analyser come from the parent branch's manifest (LOG 138); result paths are removed and checked gone first; `test_results` records the manifest hash |
+| 11 | A `branch_pattern` rendering to `main` would put the engine's writes on `main` | Run start and every writer (actions, `clean_up`, the agent step) refuse a work branch equal to the parent or default branch |
+| 12 | The manifest reader was duplicated | One `RepositoryManifest.Parse`. The sandbox polling loop stays: the shared helper is in a frozen file |
+| 13 | A heartbeat timeout on stand-in calls; `run.parent_branch` still `main` | Whether actions run against providers is fixed at run start, and only then is the heartbeat set; run start's default branches reach the core, so `run.parent_branch` is right |
+
 ### Deviations and judgement calls
 
-LOG 120 to 137, unreviewed. These need a look: **120** (`test.integration` starts no services), **123** (the
+LOG 120 to 139, unreviewed. These need a look: **138** (evidence tiers from the parent branch's manifest), **139** (waits hold up a hand-over), **120** (`test.integration` starts no services), **123** (the
 action request is watched on the code host; no decision record yet), **137** (a run request may name its
 `parent_branch`). LOG 121 keeps the
 stand-in for runs with only fake providers.
@@ -141,8 +162,10 @@ stand-in for runs with only fake providers.
 | 3 | `test.integration` starting services from `integration_environment` |
 | 4 | `analysis.run` with `sonarcloud`; `wait.condition` on a tracker issue |
 | 5 | The carried test result by tree identity, not only by revision |
-| 6 | `run.parent_branch` as an expression value is `main` for a run whose parent is the default branch (workflow code cannot read the code host) |
+| 6 | **M6 must fix**: a wait holds up the run's hand-over (LOG 139) |
 | 7 | A person ending a wait by hand with `met` or `unmet` (`docs/04` section 8.2) |
 | 8 | Inbound events to wake waits early; waits poll every 30 seconds |
 | 9 | The GitHub code host must read rulesets as well as classic protection (the fixture's `main` is protected only by a ruleset), with the App's permissions; a 403 there is an infrastructure error and run start retries |
 | 10 | A run start does not check that a named `parent_branch` exists; the first step that touches the repository stops for a person |
+| 11 | `wait.condition: approved` accepts any identity's approval, the author's or the engine's included (M7, people and policy) |
+| 12 | A tier delegated to CI runs the workflow file on the head, which the agent can edit; the engine cannot clear CI's result files first. A green `ci.checks` is the independent backstop |

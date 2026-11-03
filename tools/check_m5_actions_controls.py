@@ -120,7 +120,7 @@ CONTROLS = [
     },
     {
         "name": "TRX: failed tests are counted as passed",
-        "edits": [(RESULTS, 'case "Failed" or "Error" or "Timeout" or "Aborted":', 'case "Error":')],
+        "edits": [(RESULTS, 'case "Passed":', 'case "Passed" or "Failed":')],
         "tests": [(ENGINE, None)],
         "expect": ["TRX_counts_outcomes_and_keeps_each_failures_first_line", "Failed_tests_are_failed_and_a_baseline_that_is_not_clean_is_baseline_failed"],
     },
@@ -224,7 +224,7 @@ CONTROLS = [
     },
     {
         "name": "review 2: a tier that ran no tests passes",
-        "edits": [(TESTING, "results.Passed == 0 && results.Failed == 0\n", "false\n")],
+        "edits": [(TESTING, "results.Passed == 0 && results.Failed == 0\n", "results.Passed < 0 && results.Failed == 0\n")],
         "tests": [(ENGINE, None)],
         "expect": [("A_tier_that_ran_no_tests_is_not_a_pass", 2)],
     },
@@ -294,7 +294,7 @@ CONTROLS = [
     },
     {
         "name": "review 11: run start accepts a work branch that is the default or parent branch",
-        "edits": [(ACTIVITIES, "if (work == defaultBranch || work == start.ParentBranch)", "if (false)")],
+        "edits": [(ACTIVITIES, "if (work == defaultBranch || work == start.ParentBranch)", "if (work == \"never a branch\")")],
         "tests": [(ENGINE, None)],
         "expect": ["A_work_branch_that_is_the_default_or_parent_branch_is_refused_at_run_start"],
     },
@@ -313,7 +313,7 @@ CONTROLS = [
     },
     {
         "name": "review 8: the workflow never runs a clean_up reset",
-        "edits": [(WORKFLOW, "case CleanUp c when Workflow.Patched(CleanUpPatch):", "case CleanUp c when false:")],
+        "edits": [(WORKFLOW, "case CleanUp c when Workflow.Patched(CleanUpPatch):", "case CleanUp c when c.StepId == \"never a step\":")],
         "tests": [it("A_rejected_specification_resets_the_work_branch_to_where_planning_started")],
         "expect": ["A_rejected_specification_resets_the_work_branch_to_where_planning_started"],
     },
@@ -339,7 +339,7 @@ def run_tests(tests):
         if test_filter:
             command += ["--filter", test_filter]
         run = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
-        failing.update(re.findall(r"^\s+Failed [\w.]+\.(\w+(?:\([^)]*\))?) \[", run.stdout, re.M))
+        failing.update(re.findall(r"^\s+Failed [\w.]+\.(\w+(?:\(.*\))?) \[", run.stdout, re.M))
         if run.returncode != 0 and not failing:
             failing.add("(build or run failed)")
             print(run.stdout[-3000:], flush=True)
