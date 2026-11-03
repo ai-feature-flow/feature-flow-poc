@@ -166,7 +166,7 @@ static class Validating
         var key = spec.From == "current" ? spec.Name : $"{spec.From.Replace(':', '/')}/{spec.Name}";
         var reference = run.Scope.Consumed is { } consumed
             ? consumed.GetValueOrDefault(key)
-            : spec.From == "current" ? run.Scope.Artifacts.LastOrDefault(a => a.Name == spec.Name)?.Ref : null;
+            : spec.From == "current" ? Latest(run, spec.Name) : null;
         // Without the workflow's consumed artifacts, a subject from another run of a run that has one cannot be told absent;
         // passing it as absent would let requirement_inheritance pass a child with nothing to compare (LOG 173).
         if (reference is null && run.Scope.Consumed is null && spec.From != "current" && hasParent)
@@ -193,6 +193,21 @@ static class Validating
                   ?? throw ActionStop.CannotAnswer($"subject {key} is not an artifact set");
         return new ValidationSubject(spec.Name, record.Type, new ArtifactRef(reference), spec.From,
             set.Members.Select(m => new ValidationSubject(m.Name, m.Type, new ArtifactRef(m.Ref), spec.From)).ToList());
+    }
+
+    /// <summary>
+    /// The artifact of a name an agent step at this step's place would consume: the workflow's rule (<c>LatestArtifact</c>),
+    /// producers in the step's own scope first (its id up to the last dot: <c>verify.</c> for <c>verify.satisfaction</c>),
+    /// then the first by step id (review F3, LOG 173).
+    /// </summary>
+    static string? Latest(ActionRun run, string name)
+    {
+        var id = run.Call.Step.StepId;
+        var prefix = id.LastIndexOf('.') is var dot and >= 0 ? id[..(dot + 1)] : "";
+        return run.Scope.Artifacts.Where(a => a.Name == name)
+            .OrderByDescending(a => a.StepId.StartsWith(prefix, StringComparison.Ordinal))
+            .ThenBy(a => a.StepId, StringComparer.Ordinal)
+            .FirstOrDefault()?.Ref;
     }
 
     /// <summary>The validator provider instance that offers a validator: the default first, then the others by name.</summary>

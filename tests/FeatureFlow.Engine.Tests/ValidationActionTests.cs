@@ -50,7 +50,7 @@ public sealed class ValidationActionTests : IAsyncDisposable
             ["code_host"] = new Dictionary<string, IProvider> { ["one"] = new InMemoryCodeHost(forge) },
             ["artifact_store"] = new Dictionary<string, IProvider> { ["one"] = store },
             ["record_store"] = new Dictionary<string, IProvider> { ["one"] = records },
-            ["validator"] = new Dictionary<string, IProvider> { ["std"] = std, ["memory"] = memory },
+            ["validator"] = new Dictionary<string, IProvider> { ["std"] = std, ["memory"] = memory, ["flaky"] = new Unreachable() },
         };
         var defaults = instances.Keys.ToDictionary(k => k, k => k == "validator" ? "std" : "one");
         actions = new EngineActions(new ProviderSet(instances, defaults, new Dictionary<string, string>()));
@@ -89,12 +89,14 @@ public sealed class ValidationActionTests : IAsyncDisposable
         forge.Commit(at ?? repo, "refs/heads/" + Branch, new Dictionary<string, string?> { [path] = content }, "work");
 
     /// <summary>Runs <c>artifact.validate</c> with <paramref name="validation"/> (YAML), keeping <paramref name="produces"/> on both outcomes, as std now declares.</summary>
-    Task<ActionResult> ValidateAsync(string validation, params string[] produces)
+    Task<ActionResult> ValidateAsync(string validation, params string[] produces) => ValidateAtAsync("validate", validation, produces);
+
+    Task<ActionResult> ValidateAtAsync(string stepId, string validation, params string[] produces)
     {
         var inputs = (Dictionary<string, object?>)YamlWriter.ReadPlain("validation:\n" + validation)!;
         var contract = new StepContract([new OutcomeSpec("valid", "success"), new OutcomeSpec("invalid", "failure")], new Dictionary<string, string>(),
             produces.SelectMany(p => new[] { new ArtifactSpec("valid", p), new ArtifactSpec("invalid", p) }).ToList(), new Dictionary<string, string>());
-        var call = new StepCall(new StepIdentity(RunId, "ticket_delivery", "validate", 1, $"{RunId}/validate/1"), "action", "artifact.validate",
+        var call = new StepCall(new StepIdentity(RunId, "ticket_delivery", stepId, 1, $"{RunId}/{stepId}/1"), "action", "artifact.validate",
             inputs.ToDictionary(kv => kv.Key, kv => YamlWriter.WritePlain(kv.Value)), contract, false, null);
         var scope = new ActionScope([repo.FullName, other.FullName], repo.FullName, Branch, null, artifacts.ToList(), [], [], consumed);
         return actions.RunAsync(call, scope, () => { }, Ct);
@@ -180,6 +182,10 @@ public sealed class ValidationActionTests : IAsyncDisposable
         var missing = await ValidateAsync("  - { validator: verification_method_support, subjects: [delivery_plan] }\n", "plan_validation");
         Assert.Equal(StepOutcome.CannotAnswer, missing.Kind);
         Assert.Contains("subject delivery_plan does not exist, and is not optional", missing.Reason);
+        // The map form is required unless it says optional.
+        var mapped = await ValidateAsync("  - { validator: verification_method_support, subjects: [{ name: delivery_plan }] }\n", "plan_validation");
+        Assert.Equal(StepOutcome.CannotAnswer, mapped.Kind);
+        Assert.Contains("subject delivery_plan does not exist, and is not optional", mapped.Reason);
 
         artifacts.Add(new ArtifactEntry("plan", "delivery_plan", "std:artifact_types/delivery_plan", "sha256:" + new string('0', 64)));
         var unreadable = await ValidateAsync("  - { validator: verification_method_support, subjects: [delivery_plan] }\n", "plan_validation");
@@ -266,6 +272,61 @@ public sealed class ValidationActionTests : IAsyncDisposable
 
         Assert.Equal(StepOutcome.CannotAnswer, result.Kind);
         Assert.Contains("subject parent/child_requirements is from another run", result.Reason);
+    }
+
+    /// <summary>
+    /// Without the workflow's consumed artifacts, a subject is the one an agent step at the same place would consume
+    /// (review F3): a producer in the step's own scope first, then the first by step id. Here verify.satisfaction sees the
+    /// fixer's claims (verify.fix.fix), as the repair agent beside it does, not implement's or verify.repair's.
+    /// </summary>
+    [Fact]
+    public async Task A_subject_with_several_producers_is_the_one_an_agent_step_beside_it_would_consume()
+    {
+        Work();
+        Produce("implement", "implementation_claims", "evidence_claims", "schema: 1\nclaims: []\n# implement\n");
+        var fixer = Produce("verify.fix.fix", "implementation_claims", "evidence_claims", "schema: 1\nclaims: []\n# fix\n");
+        Produce("verify.repair", "implementation_claims", "evidence_claims", "schema: 1\nclaims: []\n# repair\n");
+
+        var result = await ValidateAtAsync("verify.satisfaction", "  - { validator: spy, subjects: [implementation_claims] }\n", "verification_report");
+
+        Assert.Equal("valid", result.Report?.Outcome);
+        Assert.Equal(fixer, Assert.Single(seen).Subjects.Single().Artifact!.Id);
+    }
+
+    [Fact]
+    public async Task A_set_made_by_artifact_compose_is_passed_with_its_members()
+    {
+        Work();
+        var plan = Produce("plan", "delivery_plan", "delivery_plan", Plan());
+        var requirements = Produce("plan", "requirements", "requirements", Requirements);
+        var set = new ArtifactSet("spec", [new ArtifactSetMember("delivery_plan", "std:artifact_types/delivery_plan", plan),
+            new ArtifactSetMember("requirements", "std:artifact_types/requirements", requirements)]);
+        artifacts.Add(new ArtifactEntry("compose", "spec", null, Put(JsonSerializer.Serialize(set, ArtifactShapes.Engine)), "artifact.compose"));
+
+        var result = await ValidateAsync("  - { validator: spy, subjects: [spec] }\n", "plan_validation");
+
+        Assert.Equal("valid", result.Report?.Outcome);
+        var subject = Assert.Single(Assert.Single(seen).Subjects);
+        Assert.Equal([("delivery_plan", plan), ("requirements", requirements)], subject.Members!.Select(m => (m.Name, m.Artifact!.Id)));
+    }
+
+    [Fact]
+    public async Task A_validators_infrastructure_error_is_retried_not_an_intervention()
+    {
+        Work();
+
+        await Assert.ThrowsAsync<ActionInfrastructureException>(() => ValidateAsync("  - { validator: flaky, subjects: [] }\n", "plan_validation"));
+    }
+
+    /// <summary>A validator provider that is unreachable, as a remote one may be.</summary>
+    sealed class Unreachable : IValidatorProvider
+    {
+        public ProviderDescription Describe() => new("validator", "unreachable", "0", new NoCapabilities());
+        public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => Task.FromResult(ProviderResult<Unit>.Success(default));
+        public IReadOnlyList<ValidatorDescriptor> Validators() => [new("flaky", "Unreachable", [], new Dictionary<string, string>(), [])];
+
+        public Task<ProviderResult<ValidationResult>> ValidateAsync(ValidationRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult(ProviderResult<ValidationResult>.Failure("unreachable", "the validator service did not answer"));
     }
 
     [Fact]
