@@ -551,6 +551,6 @@ from an agent reviewer, these two actions and route guards such as
 
 | # | Question | Recommendation |
 |---|---|---|
-| 1 | Should `ci.checks` keep FF's reading of `.github/workflows` to tell "no CI" from "not started"? It is GitHub-specific | Yes, inside the GitHub CI provider, behind a provider method "which CI runs are expected for this head". Other providers answer it their own way |
+| 1 | Should `ci.checks` keep FF's reading of `.github/workflows` to tell "no CI" from "not started"? It is GitHub-specific | Yes, inside the GitHub CI provider, behind a provider method; since LOG 147 it answers only "is CI configured for this head" (`HasCiAsync`), and the target branch's required checks say what must pass. Other providers answer it their own way |
 
 Judgement calls made in this document are in `docs/LOG.md`, entries 16 to 24.

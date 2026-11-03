@@ -37,7 +37,7 @@ approved 2026-11-03.
 |---|---|
 | Git (`GitVcs`) | `CatchUpAsync` and `MergeAsync`, built in the bare clone cache (`git merge-tree --write-tree`, `git commit-tree`) and pushed expecting the revision read (`--force-with-lease=<ref>:<expected>`). DR18, check whether a refused merge already landed: done before merging and again after a refused or lost push, by the tested revision or the exact `Feature-Flow-Merge: <key>` trailer. Branch reset for `clean_up` is the existing expected-revision push |
 | GitHub code host (`GitHubCodeHost`) | Every method; each maps the success statuses GitHub documents, anything else is `unexpected_response` (a work error, never retried). Protection from the branch and its rulesets, without `administration` (F5, the engine never holds it). Pull requests carry the key as a hidden marker and are adopted by it. Reverts are GitHub's own (GraphQL). Checks name their workflow file as their suite |
-| GitHub Actions (`GitHubActionsCi`) | Dispatch on the default branch, so the workflow definition is the reviewed one, with the revision as `commit_sha`; a hidden claim reference per key records the run, so a retry adopts it; the claim is deleted once the run is seen completed (LOG 112, revised after review). `GetExpectedRunsAsync` from the workflow files' triggers. Results are the artifacts' TRX, JUnit and SARIF files, unparsed |
+| GitHub Actions (`GitHubActionsCi`) | Dispatch on the default branch, so the workflow definition is the reviewed one, with the revision as `commit_sha`; as built in M5, a hidden claim reference per key recorded the run and `GetExpectedRunsAsync` read the workflow files' triggers. Both were removed after M5 (LOG 147, "Simplification after M5" below): the engine records the run id, and `HasCiAsync` only says whether CI is configured. Results are the artifacts' TRX, JUnit and SARIF files, unparsed |
 | Shared client (`GitHubApi`) | One pooled connection handler (DR18's "reuse connections", DR20's trust store); engine tokens from the credential broker, per repository, cached; docs/06 error classes |
 | Registration | `code_host: github`, `ci: github_actions`. The engine's broker ceiling gains `actions: write` (LOG 114) |
 | SP4 (`MergeRaceTests`) | SP4's loop through the provider: catch-up, re-test if it changed the branch, merge expecting the parent revision recorded at the catch-up, back to catch-up on `base_moved`. One worker and clone cache per ticket, one local bare repository |
@@ -195,8 +195,8 @@ and no open pull request.
 ### Follow-ups
 
 - An engine-level SP4 test through the actions builder's steps, at integration.
-- `GetExpectedRunsAsync` does not evaluate job-level `if:` conditions; a workflow whose every job is skipped still
-  counts as expected.
+- ~~`GetExpectedRunsAsync` does not evaluate job-level `if:` conditions~~ Settled: the method was removed after M5
+  (LOG 147).
 
 ---
 

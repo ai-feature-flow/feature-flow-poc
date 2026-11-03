@@ -192,7 +192,7 @@ implements the formats of LOG 62 to 65, approved 2026-11-01.
 
 | | |
 |---|---|
-| Builds | The Git VCS provider with the engine's clone cache and expected-revision pushes, reusing connections and checking whether a refused merge already landed (DR18). The GitHub code host provider (every documented success mapped, including the 204 for an empty merge), the GitHub Actions CI provider with `GetExpectedRunsAsync`. `scm.catch_up`, `scm.pull_request`, `scm.merge` (F1 re-read at merge time, action requests), `scm.revert`, `ci.checks`, `wait.condition`, `test.run` (TRX parsing, tiers, CI delegation), `test.integration`, `analysis.run` (SARIF), `repo.inspect`. Run-start checks 23 and 24, and step-start checks 31 to 33 |
+| Builds | The Git VCS provider with the engine's clone cache and expected-revision pushes, reusing connections and checking whether a refused merge already landed (DR18). The GitHub code host provider (every documented success mapped, including the 204 for an empty merge), the GitHub Actions CI provider with `GetExpectedRunsAsync` (replaced by `HasCiAsync` after M5, LOG 147). `scm.catch_up`, `scm.pull_request`, `scm.merge` (F1 re-read at merge time, action requests), `scm.revert`, `ci.checks`, `wait.condition`, `test.run` (TRX parsing, tiers, CI delegation), `test.integration`, `analysis.run` (SARIF), `repo.inspect`. Run-start checks 23 and 24, and step-start checks 31 to 33 |
 | Done when | `ticket_delivery` runs on the fixture repository from start to a merge into a parent branch, with a real implementer, reviewer and test evidence. The contract suites pass for the Git, GitHub and GitHub Actions providers |
 | Verified by | SP4's race scenario as an integration test of the engine's own merge path: no lost merge, nothing untested lands. SP4's control N1b (a plain forced push instead of the expected-revision push, natural timing) is run once and loses merges, showing the test can fail. A standalone ticket with `engine_can_merge: true` into the default branch is refused at run start (F1) |
 
@@ -267,7 +267,7 @@ tests before it is relied on. The spikes stay unchanged as evidence.
 | `spikes/01-interpreter/tests/histories` | Nothing | They record the spike's workflow, not version 1's. M3 records new ones |
 | `spikes/02-real-run`: GitHub App client and credential broker | Token minting and refusing wider scopes | Ported in M4 |
 | `spikes/02-real-run`: GitHub code host provider | Response mapping, including the 204 | Ported in M5 to the new interface, without `CreateBranchAsync` (`docs/06` section 2) |
-| `spikes/02-real-run`: GitHub Actions CI provider | Triggering and polling | Ported in M5; `GetExpectedRunsAsync` is new |
+| `spikes/02-real-run`: GitHub Actions CI provider | Triggering and polling | Ported in M5; `GetExpectedRunsAsync` was new, replaced after M5 by `HasCiAsync` (LOG 147) |
 | `spikes/02-real-run`: Claude Code and Copilot CLI runtime providers | Command lines, output parsing, usage | Ported in M4 and M8; reporting moves to the MCP tools (SP3) |
 | `spikes/02-real-run`: plan loader, findings; `spikes/03-concurrent`: plan YAML | Nothing | The language and the ledger changed |
 | `spikes/03-concurrent`: pre-submit | The parity method | Reference for M7 |

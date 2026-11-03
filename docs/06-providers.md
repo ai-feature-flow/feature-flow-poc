@@ -65,7 +65,7 @@ section 1).
 | The review provider is replaced by a **findings source** provider: an external reviewer that returns findings (an AI review on a pull request, SonarCloud, a SARIF file). The standard reviewer is an agent step (RW5) | One way to run an agent |
 | New **validator** provider | The plug point for deterministic cross-artifact checks (RW7) |
 | New **toolset** provider | External MCP servers for agents, proxied by the engine (from FF) |
-| CI provider gains `GetExpectedRunsAsync` | `ci.checks` must tell "no CI" from "not started" without GitHub-specific logic in the step (`docs/04` section 13) |
+| CI provider gains `HasCiAsync` | `ci.checks` must tell "no CI" from "not started" without GitHub-specific logic in the step (`docs/04` section 13). It replaced `GetExpectedRunsAsync`, which predicted the runs from workflow triggers (LOG 147) |
 | Code host loses `CreateBranchAsync` | Work branches are created by a VCS push (`docs/04` section 7) |
 | Tracker statuses are mapped from the library's status names in provider configuration | Templates name statuses abstractly (`docs/03` section 2.5) |
 
