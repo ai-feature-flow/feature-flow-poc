@@ -60,7 +60,9 @@ steps:
           subjects: [requirements]
           options: { require_coverage: false }
     consumes: [{ name: requirements }]
-    produces: [{ name: requirements_validation, type: std:artifact_types/validation_report }]
+    produces:                                   # on both outcomes: an invalid result's report goes back with the route
+      valid: [{ name: requirements_validation, type: std:artifact_types/validation_report }]
+      invalid: [{ name: requirements_validation, type: std:artifact_types/validation_report }]
     routes:
       valid: approve
       invalid: define

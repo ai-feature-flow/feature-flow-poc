@@ -11,6 +11,7 @@
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.ClaudeCode\FeatureFlow.Providers.ClaudeCode.csproj" />
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Git\FeatureFlow.Providers.Git.csproj" />
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.GitHub\FeatureFlow.Providers.GitHub.csproj" />
+    <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.StdValidators\FeatureFlow.Providers.StdValidators.csproj" />
     <ProjectReference Include="..\..\src\FeatureFlow.Cli\FeatureFlow.Cli.csproj" />
   </ItemGroup>
 

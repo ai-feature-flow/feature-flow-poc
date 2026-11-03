@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using FeatureFlow.Engine.ActionSteps;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Providers.Local;
+using FeatureFlow.Providers.StdValidators;
 
 namespace FeatureFlow.Integration.Tests;
 
@@ -36,6 +37,23 @@ public class ForgeTicketTests
 
     const string Sarif = """{ "version": "2.1.0", "runs": [ { "tool": { "driver": { "name": "csc" } }, "results": [] } ] }""";
 
+    /// <summary>
+    /// What the planner and implementer write (M6): a plan the standard validators accept, and a claim of a test the TRX
+    /// above reports passing, so <c>plan.validate</c> and <c>verify.satisfaction</c> run for real and pass.
+    /// </summary>
+    const string Script = """
+        {
+          "plan.plan": { artifacts: {
+            requirements: { schema: 1, scope: { kind: ticket, id: T-1 }, requirements: [
+              { id: R-1, title: Widgets are added, behaviour: An added widget is listed., supports_reason: The ticket's own behaviour } ] },
+            delivery_plan: { schema: 1, scope: { kind: ticket, id: T-1 }, acceptance_criteria: [
+              { id: AC-1, title: Added widgets are listed, behaviour: Adding a widget then listing shows it., supports: [{ artifact: requirements, requirement: R-1 }],
+                verification: [{ id: unit, kind: parsed_test, repository: acme/api, tier: unit, semantic_review: required }] } ] } } },
+          implement: { artifacts: {
+            implementation_claims: { schema: 1, claims: [{ criterion: AC-1, verification: unit, tests: [{ repository: acme/api, tier: unit, id: Adds, change: new }] }] } } }
+        }
+        """;
+
     /// <summary>A fresh world with the fixture repository, protected, and an engine whose memory providers use it.</summary>
     static async Task<(Harness H, InMemoryForge Forge, RepoRef Repo)> StartAsync(string name, string policy = "", bool autoApprove = true)
     {
@@ -44,12 +62,13 @@ public class ForgeTicketTests
         var repo = forge.CreateRepository(Repo, new Dictionary<string, string> { ["feature-flow.yaml"] = Manifest, ["src/App.cs"] = "class App {}\n" });
         forge.Protect(repo, new BranchProtection("main", true, true, 1, [], false));
         var client = EditingAgentRuntime.SandboxClient(Directory.CreateTempSubdirectory("ff-client-").FullName);
-        var h = await Harness.StartAsync(name, autoApprove: autoApprove, omitTypes: ["sandbox", "vcs", "code_host", "ci"],
-            providers: string.Join("\n", new[] { "vcs", "code_host", "ci", "sandbox" }.Select(t => $"  {t}: {{ instances: {{ memory: {{ world: {world} }} }} }}")),
+        var h = await Harness.StartAsync(name, script: Script, autoApprove: autoApprove, omitTypes: ["sandbox", "vcs", "code_host", "ci", "validator"],
+            providers: string.Join("\n", new[] { "vcs", "code_host", "ci", "sandbox" }.Select(t => $"  {t}: {{ instances: {{ memory: {{ world: {world} }} }} }}"))
+                       + "\n  validator: { instances: { std: {} } }",
             agentRuntime: $"{{ default: editing, dry_run: recording, instances: {{ editing: {{ provider: editing, script: script.yaml, world: {world} }}, recording: {{ folder: recorded }} }} }}",
             installation: $"agent_worker: {{ sandbox_client: \"{client}\" }}",
             policy: policy,
-            factories: [EditingAgentRuntime.Factory]);
+            factories: [EditingAgentRuntime.Factory, ..StdValidatorProviders.Factories]);
         // The sandbox the engine composed for this world: tests pass with a TRX, analysis is clean.
         var sandbox = MemorySandbox.Named(world, () => throw new InvalidOperationException("created by the host"));
         sandbox.On(new SandboxRule("dotnet test", Files: new Dictionary<string, string> { ["tests/Unit/unit.trx"] = Trx }));
@@ -94,6 +113,9 @@ public class ForgeTicketTests
         Assert.Contains(trace, d => d.Contains("tier unit at", StringComparison.Ordinal) && d.Contains("2 passed, 0 failed", StringComparison.Ordinal));
         Assert.Contains(trace, d => d.Contains("pull request acme/api#1 from ff/ticket/T-1 into main", StringComparison.Ordinal));
         Assert.Contains(trace, d => d.StartsWith("merged ", StringComparison.Ordinal) && d.Contains("into main", StringComparison.Ordinal));
+        // M6: the plan and the claims were checked by the standard validators, not the stand-in.
+        Assert.Contains(trace, d => d.StartsWith("requirement_support (std): valid", StringComparison.Ordinal));
+        Assert.Contains(trace, d => d.StartsWith("verification_satisfaction (std): valid", StringComparison.Ordinal));
         Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
     }
 

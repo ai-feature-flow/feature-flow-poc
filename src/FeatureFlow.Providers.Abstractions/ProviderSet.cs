@@ -12,6 +12,12 @@ public sealed class ProviderSet(IReadOnlyDictionary<string, IReadOnlyDictionary<
     public IProvider? Instance(string type, string name) =>
         instances.TryGetValue(type, out var named) ? named.GetValueOrDefault(name) : null;
 
+    /// <summary>Every instance of a type, by name: the default first, then the rest by name (several validator providers, docs/06 section 3.8).</summary>
+    public IReadOnlyList<(string Name, IProvider Provider)> Instances(string type) =>
+        instances.TryGetValue(type, out var named)
+            ? named.OrderBy(kv => kv.Key == defaults.GetValueOrDefault(type) ? 0 : 1).ThenBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => (kv.Key, kv.Value)).ToList()
+            : [];
+
     /// <summary>The instance a run uses for a type: the dry-run instance for a dry run where one is configured, else the default.</summary>
     public IProvider? ForRun(string type, bool dryRun)
     {

@@ -19,7 +19,9 @@ triage says one does not apply.
 3. Run the test tiers {{ tier_tags }} locally.
 4. Write `fix_claims.yaml` in the claims format: for each fixed finding's
    criterion (or the criterion closest to it), the regression tests, classified
-   `new` or `modified` against the baseline.
+   `new` or `modified` against the baseline, each with its `source` (`file` and
+   `symbol`). The engine checks that each finding's repository has a claimed test
+   whose file is new or changed since the finding was raised.
 5. Produce the implementation claims again, updated if your fixes changed which
    tests prove a criterion, unchanged otherwise.
 6. Commit everything; the checkout must be clean.

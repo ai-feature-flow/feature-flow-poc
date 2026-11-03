@@ -13,8 +13,10 @@ public sealed record ArtifactEntry(string StepId, string Name, string? Type, str
 /// What an engine action knows of its run beyond its inputs, as the workflow computed it when the step started: the
 /// run's repositories and the step's own, the work branch, a child run's parent branch (null: the repository's
 /// default branch, read from the code host), the artifacts the run holds (evidence for <c>scm.merge</c>, the baseline
-/// for <c>analysis.run</c>), the pull requests its <c>scm.pull_request</c> steps opened, and F1's patterns as fixed at
-/// run start (docs/05 section 8).
+/// for <c>analysis.run</c>), the pull requests its <c>scm.pull_request</c> steps opened, F1's patterns as fixed at
+/// run start (docs/05 section 8), and the artifacts the step consumes, by the name the step sees them under
+/// (<c>requirements</c>, <c>parent/requirements</c>, <c>child/ticket_a/summary</c>), resolved as the workflow resolves an agent
+/// step's; null where the workflow does not give them, and then a subject from this run is its latest of the name.
 /// </summary>
 public sealed record ActionScope(
     IReadOnlyList<string> Repositories,
@@ -23,7 +25,8 @@ public sealed record ActionScope(
     string? ParentBranch,
     IReadOnlyList<ArtifactEntry> Artifacts,
     IReadOnlyList<string> PullRequests,
-    IReadOnlyList<string> EngineMayMerge)
+    IReadOnlyList<string> EngineMayMerge,
+    IReadOnlyDictionary<string, string>? Consumed = null)
 {
     public static readonly ActionScope None = new([], null, "", null, [], [], []);
 }

@@ -96,7 +96,9 @@ steps:
       validation:
         - { validator: tests_added, subjects: [fix_claims, triage] }
     consumes: [{ name: fix_claims }, { name: triage }]
-    produces: [{ name: fix_validation, type: std:artifact_types/validation_report }]
+    produces:                                   # on both outcomes: an invalid result's report goes back with the route
+      valid: [{ name: fix_validation, type: std:artifact_types/validation_report }]
+      invalid: [{ name: fix_validation, type: std:artifact_types/validation_report }]
     routes:
       valid: { exit: fixed }
       invalid: fix

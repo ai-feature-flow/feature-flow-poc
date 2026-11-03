@@ -22,6 +22,7 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
     {
         "scm.catch_up", "scm.pull_request", "scm.merge", "scm.revert", "ci.checks", "wait.condition", "test.run", "test.integration", "analysis.run",
         "repo.inspect",
+        "artifact.validate",
     };
 
     internal ProviderSet Providers => providers;
@@ -60,6 +61,7 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
                 "test.integration" => await Testing.IntegrationAsync(run),
                 "analysis.run" => await Testing.AnalysisAsync(run),
                 "repo.inspect" => await Testing.InspectAsync(run),
+                "artifact.validate" => await Validating.ValidateAsync(run, Providers),
                 _ => throw new InvalidOperationException($"{call.What} is not an engine action of this milestone"),
             };
         }
