@@ -36,8 +36,18 @@ Unchanged: the SP1 scenario (`ContinueAsNewTests`), `EpicRunTests` and the seven
 
 ### Tests run
 
-Default suite: 755 passed. Integration suite: 55 passed (second full run; the first failed `WaitHandOverTests`, a test
-bug fixed in `WaitHandOverTests`, and `EpicRunTests`, below). Replay: 15 passed.
+Before review: default 755 passed; integration 55 passed (second full run; the first failed `WaitHandOverTests`, a test
+bug since fixed, and `EpicRunTests`, follow-up 1); replay 15 passed. After the review fixes: default 756 passed,
+integration 57 passed, on a clean rebuild.
+
+### Review of PR 10 (changes required) and fixes
+
+| # | Finding | Fix | Test, and the control that made it fail |
+|---|---|---|---|
+| F1 (high) | A cancel landing while a wait's read ran ended the attempt as a failure Temporal does not retry (retry state `CancelRequested`), which counted as a failed attempt; the next run started a new execution, restarting `since`, `timeout` and `grace` | Such a failure of an interrupted step counts as acknowledging the cancel, as a cancellation does (LOG 152 amended) | `WaitHandOverTests`' second case: the in-memory forge holds the wait's read (`HoldCheckReads`) until the drain has asked to cancel it. The new catch disabled: `attempt_failed` for the wait |
+| F2 (low) | The exclusion of a `run.child` step's artifacts (its child's) from this run's was untested | The family test's child also writes `notes`; a second child must still get the parent's own `notes`, and nothing else. A redundant name filter in `RunArtifacts` removed | All exclusions removed, or `LatestArtifact`'s alone: the second child gets the first child's notes. The engine actions' view (`ScopeOf`) keeps its exclusion as a defence only: evidence is matched by producing action |
+| F3 (low) | A refused child end became an intervention without a patch marker | Behind `m6-child-inputs` | A `run.child` step promising an artifact its child never writes opens an intervention. Without it: no wait opens |
+| F4 (low) | Staged names of artifacts from other runs undocumented; a run's own artifact named `parent` would collide | Documented in `docs/04` section 3.1; check 11 refuses a produced artifact named `parent`, `root` or `child` (`docs/09`) | `MutationTests`' `source_named_artifact`. The check disabled: the case fails |
 
 ### Deviations and judgement calls
 
@@ -51,6 +61,6 @@ bug fixed in `WaitHandOverTests`, and `EpicRunTests`, below). Replay: 15 passed.
 
 | # | Follow-up |
 |---|---|
-| 1 | `EpicRunTests` failed once under the full suite's load: all three hand-overs came right after a burst of child ends, so none had a child running, and its check that one did failed. Not reproduced in a full rerun and two targeted runs. Its children (ticket runs with a 4 s step) end together under load; spreading their durations would make the check robust |
+| 1 | `EpicRunTests` failed once under the full suite's load: all three hand-overs came right after a burst of child ends, so none had a child running, and its check that one did failed. Not reproduced in two more full runs and two targeted runs. Its six children are identical ticket runs, and the fake script cannot give them different durations, so spreading them is more than a small change. A fake script keyed by a child's parameter would allow it |
 | 2 | `FindingsLedgerContract` mixes findings and artifact tests, so SQLite cannot subclass it until W2 adds the ledger tables; `LocalProviderTests` covers the SQLite artifact index meanwhile. W2's SQLite subclass will cover both |
 | 3 | A watch activity holds a worker slot per resumed run with carried children, for as long as they run |
