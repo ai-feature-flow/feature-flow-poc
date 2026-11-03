@@ -35,6 +35,24 @@ handover, which it replaces.
 - **Check cross-references after editing.** A stale section number is worse
   than none.
 
+## Development and decision guidelines
+
+From the product owner, 2026-11-03. Apply them when designing code structure,
+implementing features and making design decisions.
+
+- **Prefer simple designs and repeated patterns.** Solve a new problem the way a
+  similar one is already solved in the code, unless that clearly doesn't fit.
+- **Nothing is set in stone.** If the design calls for something that adds a lot
+  of complexity, and a simpler solution would work as well, challenge the
+  design: propose the simpler shape and record the change as a LOG entry.
+- **Prefer a general solution to special cases.** Avoid complex code for special
+  or edge cases when a more general mechanism covers them.
+- **Keep it pluggable and extensible.** External systems sit behind provider
+  interfaces with contract tests, and new behaviour should arrive as a new
+  provider, action or library content rather than as engine special cases.
+- **Simplicity never relaxes a safety floor** (`docs/05` section 1). Where the
+  two pull apart, keep the floor and find the simplest way to honour it.
+
 ## The review cycle
 
 Design work is pushed to `main`. The product owner replies with a review file
