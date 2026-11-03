@@ -21,8 +21,8 @@ suites pass for Git (local), GitHub and GitHub Actions (Live run 8, 21 passed). 
 merge, nothing untested lands; control N1b (plain forced pushes) loses merges. F1: a standalone ticket asking for an
 engine merge into the default branch is refused at run start, on the memory providers and on the fixture.
 
-**Tests** at the integration's last commit: default suite 739 passed, integration 50 passed (local dev server and
-Docker, with `safe.bareRepository=all` for the run, follow-up 17), Live 21 (providers) plus the live run. Controls: `tools/check_m5_actions_controls.py`, 56,
+**Tests** at the integration's last commit: default suite 741 passed, integration 50 passed (local dev server and
+Docker, with `safe.bareRepository=all` for the run, follow-up 17), Live 21 (providers) plus the live run. Controls: `tools/check_m5_actions_controls.py`, 59,
 all hold.
 
 ## Providers
@@ -390,9 +390,10 @@ Branch `m5`, from `m5@932397d` (PR 5 and PR 6 merged). Judgement calls LOG 143 t
 `scm.merge`, as the workflow's activity calls them, over the real Git provider and one local bare repository. Each
 ticket is its own worker (engine, clone cache, record store) and merges into a run-named parent branch, not the
 default. The re-test records passing `test.run` and `ci.checks` evidence for the exact head, which is what
-`scm.merge` reads. SP4's pre-registered checks are reused: C1 no lost merge, C2 nothing untested lands (each merge's
-parents are the parent it replaced and the last tested head, and its tree is exactly the tested tree), C3 loops well
-formed, C4 termination.
+`scm.merge` reads. SP4's pre-registered checks are reused, with the departures listed below the table: C1 no lost
+merge, C2 nothing untested lands (each merge's parents are the parent revision the harness read after the ticket's
+last catch-up and the last tested head, the engine's merge record agrees, and its tree is exactly the tested tree), C3
+loops well formed, C4 termination.
 
 | Scenario | Result |
 |---|---|
@@ -406,6 +407,21 @@ Each push to the parent first waits a moment (the provider's test hook), standin
 engine's read and its push. Without it the engine's merge reads the parent just before pushing, so N1b's plain
 pushes rarely overlap: the engine narrows the race window but only the lease closes it.
 
+Departures from SP4's pre-registered checks (`docs/spikes/sp4-results.md` section 3):
+
+- (a) **N1b's scenario.** SP4's N1b is S2's shape (5 tickets, natural timing). Here it is S1's (3 tickets forced
+  together), with the push delay staggered 0.4 s per ticket, so each plain push lands after the one before and
+  overwrites it. With natural timing the engine's late read of the parent makes overlaps rare, and the control would
+  not reliably show a loss.
+- (b) **S1's allowance** is 10, LOG 61's race allowance, as in the provider-level `MergeRaceTests`; SP4 used 3. With
+  3 tickets, the most any ticket needs is 3 executions, so the result is the same. S3 keeps SP4's 3.
+- (c) **C2's recorded revision** is the parent as the harness read it right after each catch-up, as SP4 defines it.
+  The engine's catch-up does not report the revision, so the harness reads it. If the parent moves in between, the
+  head lacks the new revision and the engine must refuse the merge. The engine's own merge record is checked to agree.
+- (d) **C3 holds by construction**: the harness, not the workflow, routes `base_moved` back to catch-up and orders
+  catch-up, re-test and merge, so its violation check can only fire under N2, where it is turned off. The workflow's
+  routing is covered by std's workflow tests (`ticket_base_moved`, `ticket_races_exhausted`), not here.
+
 | Source control (script) | Tests that failed |
 |---|---|
 | `scm.merge` reads no evidence | N2: an untested head lands |
@@ -414,15 +430,19 @@ pushes rarely overlap: the engine narrows the race window but only the lease clo
 ### A budget for `unauthenticated` and `forbidden` (LOG 144)
 
 The engine retried both for ever as infrastructure. `ConfigurationFaults` now gives them 5 tries (waits 1, 2, 4,
-8 s) inside one activity attempt; an engine action or a `clean_up` reset runs again whole, and each run-start read of
-the code host is retried on its own. When the budget is spent an action raises an intervention naming the
+8 s) inside one activity attempt; an engine action or a `clean_up` reset runs again whole, and run start's reads of the
+code host share one budget (review of PR 7: per-read budgets over many repositories could outlast the activity's
+timeout). A `clean_up` keeps the resets of earlier tries in its result. An action re-run whole repeats its earlier
+work, at worst 5 times; LOG 144 bounds it. When the budget is spent an action raises an intervention naming the
 configuration fault, a `clean_up` returns it as its error (an intervention at its target step), and run start
 refuses the start. Other infrastructure errors still go to Temporal without limit. Temporal's attempt count cannot be
 the budget, because a wait's polls are failed attempts too (LOG 122). **The agent step is not covered** (follow-up).
 
 | Test (`Engine.Tests`) | Control (script) that fails it |
 |---|---|
-| Each fault stops the step after exactly 5 calls, naming the fault; recovery on the 5th call passes; `unreachable`, `rate_limited`, `server_error` are thrown after 1 call; a `clean_up` stops; run start refuses only once the budget is spent, and throws `unreachable` | No budget (7 cases fail); no retry before stopping (4 fail) |
+| Each fault stops the step after exactly 5 calls, naming the fault; recovery on the 5th call passes; `unreachable`, `rate_limited`, `server_error` are thrown after 1 call; a `clean_up` stops; run start refuses only once the budget is spent, and throws `unreachable` | No budget (9 cases fail); no retry before stopping (4 fail); run start with no retry (4 fail) |
+| 8 refused repositories at run start make 12 calls in all (5, then 1 each), and 8 blocking diagnostics | A budget per read |
+| A `clean_up` refused in its second repository still reports the first repository's reset | Events dropped when the budget is spent |
 
 ### The live run (M5's done-when)
 
@@ -465,8 +485,9 @@ request #99 was closed with "Squashed into ff/epic/m5-live as 4444a113... by Fea
 **Clean-up.** Deleted `ff/ticket/M5-LIVE-1`, `ff/epic/m5-live` and `refs/feature-flow/wip/run-2bcdfbd1e2e5/implement`
 (and, after the first attempt, its branch and `refs/feature-flow/wip/run-3cf52e115886/implement`). No
 `refs/feature-flow/superseded/*` or `refs/feature-flow/ci/*` existed (the CI claims are removed when a run completes).
-Afterwards the fixture had only `main` (`1610c66`) and `ff/manifest-v1`, a branch from before this work; no open pull
-request and no workflow run in progress. Pull request #99 stays closed. No sandbox container was left.
+Afterwards the fixture had only `main` (`1610c66`) and `ff/manifest-v1`, a branch from before this work, since deleted
+by the coordinator (it had been merged), so only `main` (`1610c66`) remains; no open pull request and no workflow run
+in progress. Pull request #99 stays closed. No sandbox container was left.
 
 ### Deviations
 
@@ -481,7 +502,7 @@ request and no workflow run in progress. Pull request #99 stays closed. No sandb
 | # | Follow-up | From |
 |---|---|---|
 | 1 | **M6 must fix**: a wait (`ci.checks`, `wait.condition`, an action request) holds up the run's hand-over (continue-as-new) until it ends (LOG 139; a row of `docs/11`'s M6) | Actions review 6 |
-| 2 | The agent step has no configuration-fault budget: its `unauthenticated` and `forbidden` still retry for ever (LOG 144) | Integration |
+| 2 | The agent step has no configuration-fault budget: its `unauthenticated` and `forbidden` still retry for ever. For actions, a budget per provider call rather than re-running the whole action (LOG 144) | Integration |
 | 3 | A re-run reviewer is not told which files it left unread; a correction turn naming them would save attempts (LOG 145) | Integration |
 | 4 | Re-run the done-when with M6's real validators, findings ledger and tracker in place of the stand-ins and the ticket file (LOG 146) | Integration |
 | 5 | Check 23 at patch time; the merge-time re-check covers it meanwhile | Actions 1 |

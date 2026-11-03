@@ -17,11 +17,14 @@ public sealed class ConfigurationFaultTests
         public int Failures { get; set; } = failures;
         public int Calls { get; private set; }
 
+        /// <summary>The repositories refused; null refuses every one.</summary>
+        public string? Only { get; set; }
+
         public ProviderDescription Describe() => inner.Describe();
         public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => inner.CheckAsync(cancellationToken);
 
         public Task<ProviderResult<string>> GetDefaultBranchAsync(RepoRef repo, CancellationToken cancellationToken) =>
-            ++Calls <= Failures
+            (Only is null || Only == repo.FullName) && ++Calls <= Failures
                 ? Task.FromResult(ProviderResult<string>.Failure(Fault, "GitHub refused the request"))
                 : inner.GetDefaultBranchAsync(repo, cancellationToken);
 
@@ -101,5 +104,29 @@ public sealed class ConfigurationFaultTests
 
         Assert.Contains("configuration fault", result.Error, StringComparison.Ordinal);
         Assert.Equal(ConfigurationFaults.Tries, host().Calls - 1);
+    }
+
+    [Fact]
+    public async Task A_clean_up_refused_in_a_later_repository_still_reports_the_resets_it_made_before()
+    {
+        var (w, host) = World("forbidden", 0);
+        await using var _ = w;
+        var ct = TestContext.Current.CancellationToken;
+        w.CommitWork("a.txt", "work");
+        Assert.Equal("updated", (await w.RunAsync("scm.catch_up", null, "catch_up")).Report?.Outcome);
+        var start = w.Work!;
+        w.CommitWork("b.txt", "more work");
+        // A second repository the step touched, which the code host refuses.
+        var web = w.Forge.CreateRepository("acme/web");
+        var webStart = w.Forge.Commit(web, "refs/heads/" + ActionWorld.WorkBranch, new Dictionary<string, string?> { ["w.txt"] = "web" });
+        (await w.Records.AppendAsync(new RecordBatch(AgentEvents: [new AgentEventRecord($"{w.RunId}/catch_up/1", "start", $"acme/web {webStart}", DateTimeOffset.UtcNow)]), ct)).Unwrap();
+        host().Only = "acme/web";
+        host().Failures = int.MaxValue;
+
+        var result = await w.Actions.CleanUpAsync(w.RunId, "catch_up", 1, [w.Repo.FullName, "acme/web"], ActionWorld.WorkBranch, ["catch_up"], ct);
+
+        Assert.Contains("configuration fault", result.Error, StringComparison.Ordinal);
+        Assert.Equal(start, w.Work);
+        Assert.Contains(result.Events, e => e.StartsWith($"clean_up: reset acme/api {ActionWorld.WorkBranch}", StringComparison.Ordinal));
     }
 }

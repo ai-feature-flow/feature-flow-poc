@@ -51,6 +51,10 @@ public sealed class EngineMergeRaceTests(ITestOutputHelper output) : IDisposable
         public string Branch => $"ff/ticket/sp4-{Index}";
         public string WorkHead { get; set; } = "";
         public string? Tested { get; set; }
+
+        /// <summary>The parent's revision as the harness read it right after the ticket's latest catch-up (SP4's "recorded" revision).</summary>
+        public string? Recorded { get; set; }
+
         public HashSet<string> TestedHeads { get; } = [];
         public List<ArtifactEntry> Artifacts { get; } = [];
         public Dictionary<string, int> Executions { get; } = [];
@@ -165,6 +169,9 @@ public sealed class EngineMergeRaceTests(ITestOutputHelper output) : IDisposable
         Assert.True(caught.Report?.Outcome == "updated", $"ticket {t.Index}'s catch-up: {caught.Kind} {caught.Reason}");
         var changed = YamlWriter.ReadPlain(caught.Report!.Outputs["changed"]) is true;
         t.WorkHead = remote.Resolve("refs/heads/" + t.Branch)!;
+        // Read after the catch-up: if the parent moved in between, the head lacks it and the engine's merge must be refused,
+        // so a merge that lands always has this revision as its first parent.
+        t.Recorded = remote.Resolve(ParentReference)!;
         if (t.Tested is null || (changed && !skipRetest))
         {
             // The re-test: passing evidence naming the exact head tested, as test.run and ci.checks record it.
@@ -223,8 +230,9 @@ public sealed class EngineMergeRaceTests(ITestOutputHelper output) : IDisposable
     }
 
     /// <summary>
-    /// C2: each merge lands a head the ticket tested last, with passing evidence: its parents are the parent revision it
-    /// replaced and that head, and its tree is exactly the tested head's.
+    /// C2: each merge lands a head the ticket tested last, with passing evidence: its parents are the parent revision the
+    /// harness read after the ticket's last catch-up and that head (SP4's definition), the engine's record agrees, and its
+    /// tree is exactly the tested head's.
     /// </summary>
     static List<string> Untested(Run run) =>
         run.Merged.SelectMany(t =>
@@ -233,8 +241,10 @@ public sealed class EngineMergeRaceTests(ITestOutputHelper output) : IDisposable
             var problems = new List<string>();
             if (!t.TestedHeads.Contains(r.Head) || r.Head != t.Tested)
                 problems.Add($"ticket {t.Index} merged {r.Head}, which it never tested (last tested {t.Tested})");
-            if (!run.Remote.Parents(r.Revision).SequenceEqual([r.TargetBefore!, r.Head]))
-                problems.Add($"ticket {t.Index}'s merge {r.Revision} has parents {string.Join(", ", run.Remote.Parents(r.Revision))}");
+            if (!run.Remote.Parents(r.Revision).SequenceEqual([t.Recorded!, r.Head]))
+                problems.Add($"ticket {t.Index}'s merge {r.Revision} has parents {string.Join(", ", run.Remote.Parents(r.Revision))}, not {t.Recorded} and {r.Head}");
+            if (r.TargetBefore != t.Recorded)
+                problems.Add($"ticket {t.Index}'s merge record names {r.TargetBefore} as the parent it replaced, not {t.Recorded}");
             if (run.Remote.Tree(r.Revision) != run.Remote.Tree(r.Head))
                 problems.Add($"ticket {t.Index}'s merge {r.Revision} does not hold exactly the tested tree");
             return problems;

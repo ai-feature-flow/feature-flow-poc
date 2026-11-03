@@ -37,18 +37,19 @@ public sealed class RunStartCheckTests
     }
 
     static async Task<DiagnosticBag> CheckAsync(Setup s, bool? engineCanMerge, IReadOnlyList<string>? engineMayMerge = null, string? parentBranch = null,
-        string template = "std:templates/ticket_delivery", Func<ICodeHostProvider, ICodeHostProvider>? codeHost = null)
+        string template = "std:templates/ticket_delivery", Func<ICodeHostProvider, ICodeHostProvider>? codeHost = null, IReadOnlyList<string>? repositories = null)
     {
+        repositories ??= [s.Repo.FullName];
         var d = new DiagnosticBag();
         var libraries = new LibrarySet(Library.Library.Open(StdRoot, d)!,
             Library.Library.Open(Path.Combine(FindRoot(), "tests", "FeatureFlow.Integration.Tests", "libraries", "m5"), d)!);
         var parameters = new Dictionary<string, YNode> { ["ticket_id"] = YamlWriter.Read("T-1") };
         if (engineCanMerge is { } ecm)
             parameters["engine_can_merge"] = YamlWriter.Read(ecm ? "true" : "false");
-        var (core, loaded) = RunCore.Start(libraries, LibraryReference.TryParse(template)!, new RunInfo("run-1", [s.Repo.FullName], parameters),
+        var (core, loaded) = RunCore.Start(libraries, LibraryReference.TryParse(template)!, new RunInfo("run-1", repositories, parameters),
             new RunOptions { BranchFromPattern = true });
         Assert.DoesNotContain(loaded, x => x.Blocks);
-        var start = new RunStart("run-1", "std:templates/ticket_delivery", [s.Repo.FullName], new Dictionary<string, string>(), "lock", false, "tester",
+        var start = new RunStart("run-1", "std:templates/ticket_delivery", repositories, new Dictionary<string, string>(), "lock", false, "tester",
             ParentBranch: parentBranch);
         var policy = new RunPolicy(3, 10, 200, null, null, [], EngineMayMerge: engineMayMerge ?? []);
         var checks = new DiagnosticBag();
@@ -70,6 +71,20 @@ public sealed class RunStartCheckTests
         Assert.Equal(refused, checks.Any(x => x.Blocks && x.Message.Contains("configuration fault", StringComparison.Ordinal) && x.Message.Contains(fault, StringComparison.Ordinal)));
         Assert.Equal(refused, checks.Any(x => x.Blocks));
         Assert.Equal(ConfigurationFaults.Tries, host!.Calls);
+    }
+
+    [Fact]
+    public async Task Refused_reads_across_many_repositories_share_one_budget_so_the_start_is_refused_within_it()
+    {
+        // Per-read budgets would wait about 15 s per repository and could outlast the activity's timeout (review of PR 7, finding 1).
+        string[] repositories = ["acme/api", "acme/web", "acme/worker", "acme/admin", "acme/jobs", "acme/docs", "acme/cli", "acme/sdk"];
+        ConfigurationFaultTests.RefusingCodeHost? host = null;
+        var checks = await CheckAsync(Setup.Protected(), engineCanMerge: false, repositories: repositories,
+            codeHost: inner => host = new ConfigurationFaultTests.RefusingCodeHost(inner, "forbidden", int.MaxValue));
+
+        // The first read spends the budget; each later repository's refusal is a diagnostic at once.
+        Assert.Equal(ConfigurationFaults.Tries + repositories.Length - 1, host!.Calls);
+        Assert.Equal(repositories.Length, checks.Count(x => x.Blocks && x.Message.Contains("configuration fault", StringComparison.Ordinal)));
     }
 
     [Fact]

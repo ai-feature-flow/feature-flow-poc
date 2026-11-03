@@ -45,15 +45,30 @@ public static class ConfigurationFaults
         }
     }
 
-    /// <summary>A provider read with the same budget: the last result, a configuration fault still, once it is spent.</summary>
-    public static async Task<ProviderResult<T>> ReadAsync<T>(Func<Task<ProviderResult<T>>> read, TimeSpan firstDelay, Action heartbeat, CancellationToken ct)
+    /// <summary>
+    /// The refusals counted against one budget. Reads that share it (run start's, which all use the same credential) share
+    /// its tries: once one read has spent it, a later read's refusal is returned at once, so the total wait stays within
+    /// one budget however many repositories the run has.
+    /// </summary>
+    public sealed class Budget
     {
-        for (var tries = 1; ; tries++)
+        public int Refusals { get; internal set; }
+    }
+
+    /// <summary>
+    /// A provider read with the budget: the last result, a configuration fault still, once <paramref name="budget"/> is
+    /// spent. Without a shared budget the read has its own.
+    /// </summary>
+    public static async Task<ProviderResult<T>> ReadAsync<T>(Func<Task<ProviderResult<T>>> read, TimeSpan firstDelay, Action heartbeat, CancellationToken ct,
+        Budget? budget = null)
+    {
+        budget ??= new Budget();
+        while (true)
         {
             var result = await read();
-            if (!Is(result.Error) || tries >= Tries)
+            if (!Is(result.Error) || ++budget.Refusals >= Tries)
                 return result;
-            await WaitAsync(firstDelay * (1 << (tries - 1)), heartbeat, ct);
+            await WaitAsync(firstDelay * (1 << (budget.Refusals - 1)), heartbeat, ct);
         }
     }
 

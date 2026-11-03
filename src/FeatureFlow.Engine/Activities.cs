@@ -83,10 +83,13 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
     public static async Task<IReadOnlyDictionary<string, string>> RepositoryChecksAsync(ICodeHostProvider host, RunCore core, RunStart start, LibrarySet libraries, RunPolicy policy, DiagnosticBag d,
         CancellationToken ct, TimeSpan? authRetry = null)
     {
-        // A refused credential gets a short budget, then fails the run's start naming the fault (docs/06 section 1.1).
+        // A refused credential gets a short budget, then fails the run's start naming the fault (docs/06 section 1.1). One
+        // budget for the whole check: every read uses the same credential, and per-read budgets over many repositories
+        // could outlast the activity's timeout, so the start would be retried for ever.
+        var budget = new ConfigurationFaults.Budget();
         Task<ProviderResult<T>> Read<T>(Func<Task<ProviderResult<T>>> read) =>
             ConfigurationFaults.ReadAsync(read, authRetry ?? ConfigurationFaults.FirstDelay,
-                () => { if (ActivityExecutionContext.HasCurrent) ActivityExecutionContext.Current.Heartbeat(); }, ct);
+                () => { if (ActivityExecutionContext.HasCurrent) ActivityExecutionContext.Current.Heartbeat(); }, ct, budget);
 
         var defaults = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var name in start.Repositories)

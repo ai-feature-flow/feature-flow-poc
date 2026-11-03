@@ -408,6 +408,26 @@ CONTROLS = [
         "tests": [(ENGINE, None)],
         "expect": ["A_refused_credential_that_recovers_within_the_budget_does_not_stop_the_step"],
     },
+    # Added for the review of PR 7.
+    {
+        "name": "configuration faults: run start refuses at the first refusal, with no retry",
+        "edits": [(FAULTS, "if (!Is(result.Error) || ++budget.Refusals >= Tries)", "if (!Is(result.Error) || ++budget.Refusals >= 1)")],
+        "tests": [(ENGINE, None)],
+        "expect": [("A_refused_credential_at_run_start_fails_the_start_naming_the_configuration_fault_once_its_budget_is_spent", 3),
+                   "Refused_reads_across_many_repositories_share_one_budget_so_the_start_is_refused_within_it"],
+    },
+    {
+        "name": "configuration faults: each run-start read has its own budget",
+        "edits": [(ACTIVITIES, "Current.Heartbeat(); }, ct, budget);", "Current.Heartbeat(); }, ct);")],
+        "tests": [(ENGINE, None)],
+        "expect": ["Refused_reads_across_many_repositories_share_one_budget_so_the_start_is_refused_within_it"],
+    },
+    {
+        "name": "configuration faults: a spent clean_up budget drops the resets already made",
+        "edits": [(ACTIONS, "message => new CleanUpResult(events.ToList(), ", "message => new CleanUpResult([], ")],
+        "tests": [(ENGINE, None)],
+        "expect": ["A_clean_up_refused_in_a_later_repository_still_reports_the_resets_it_made_before"],
+    },
 ]
 
 

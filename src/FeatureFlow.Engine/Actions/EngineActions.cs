@@ -94,14 +94,18 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
     /// returned, so the run asks a person; only infrastructure errors are thrown, to be retried.
     /// </summary>
     public Task<CleanUpResult> CleanUpAsync(string runId, string stepId, int executions, IReadOnlyList<string> repositories, string workBranch,
-        IReadOnlyList<string> stepIds, CancellationToken ct) =>
-        ConfigurationFaults.WithBudgetAsync(() => CleanUpOnceAsync(runId, stepId, executions, repositories, workBranch, stepIds, ct), options.AuthRetry, () => { },
-            message => new CleanUpResult([], $"clean_up: {message}"), ct);
-
-    async Task<CleanUpResult> CleanUpOnceAsync(string runId, string stepId, int executions, IReadOnlyList<string> repositories, string workBranch,
         IReadOnlyList<string> stepIds, CancellationToken ct)
     {
+        // One list across the budget's tries: a reset made before a later repository's refusal is not made again, so
+        // only the first try records it, and the result must still report it.
         var events = new List<string>();
+        return ConfigurationFaults.WithBudgetAsync(() => CleanUpOnceAsync(runId, stepId, executions, repositories, workBranch, stepIds, events, ct),
+            options.AuthRetry, () => { }, message => new CleanUpResult(events.ToList(), $"clean_up: {message}"), ct);
+    }
+
+    async Task<CleanUpResult> CleanUpOnceAsync(string runId, string stepId, int executions, IReadOnlyList<string> repositories, string workBranch,
+        IReadOnlyList<string> stepIds, List<string> events, CancellationToken ct)
+    {
         try
         {
             return new CleanUpResult(await ResetAsync(runId, stepId, executions, repositories, workBranch, stepIds, events, ct), null);
