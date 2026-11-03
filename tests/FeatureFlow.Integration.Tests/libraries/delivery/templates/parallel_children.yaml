@@ -1,0 +1,25 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: parallel_children
+  level: epic
+  description: >-
+    Two children started together under a budget of one: the second is refused
+    even though the first has not yet recorded itself (F11).
+
+budget:
+  max_work_items: 1
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: both
+    parallel:
+      branches:
+        - { id: one, action: run.child, with: { template: delivery:templates/leaf, level: ticket } }
+        - { id: two, action: run.child, with: { template: delivery:templates/leaf, level: ticket } }
+      join: all
+    routes:
+      completed: { end: completed }

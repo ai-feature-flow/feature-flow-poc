@@ -36,6 +36,20 @@ public class DeliveryRunTests
         var children = (await h.ShowAsync(middle))["children"]!.AsArray();
         Assert.Single(children);
         Assert.Contains((await h.ShowAsync(middle))["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "completed" && e["stepId"]!.ToString() == "first");
+        await h.RecordHistoryAsync(middle, "budget_middle");
+    }
+
+    [Fact]
+    public async Task Children_started_together_are_counted_as_each_is_allowed()
+    {
+        await using var h = await Harness.StartAsync("budget-parallel", libraries: Delivery);
+        var id = h.Start("delivery:templates/parallel_children");
+
+        // The first child is recorded when the budget allows it, before it can record itself, so the second is refused.
+        var reason = await WaitReasonAsync(h, id);
+
+        Assert.Contains("F11", reason, StringComparison.Ordinal);
+        Assert.Single((await h.ShowAsync(id))["children"]!.AsArray());
     }
 
     [Fact]
@@ -98,6 +112,7 @@ public class DeliveryRunTests
         Assert.EndsWith($"moved {issue.Key} to in_progress", moves[0], StringComparison.Ordinal);
         Assert.EndsWith($"moved {issue.Key} to code_review", moves[1], StringComparison.Ordinal);
         Assert.EndsWith($"moved {issue.Key} to done", moves[2], StringComparison.Ordinal);
+        await h.RecordHistoryAsync(id, "delivery_tracked");
     }
 
     [Fact]

@@ -901,25 +901,34 @@ public class RunWorkflow
         }
     }
 
+    /// <summary>How many of the timeline's unrecorded entries have been examined for tracker updates, and the updates found but not yet made.</summary>
+    int trackedThrough;
+    readonly Queue<TrackerUpdate> trackerUpdates = new();
+
     /// <summary>
-    /// Declarative <c>tracker</c> updates (docs/03 section 2.5) for what the run did since its last record, made in order
-    /// before it is recorded. A run with no tracker issue makes none. An update that fails is noted on the timeline; it
-    /// never fails the step. The timeline is walked by position, because a step may end while an update is awaited: what
-    /// it adds meanwhile is examined in the same walk, before anything is recorded.
+    /// The next declarative <c>tracker</c> update (docs/03 section 2.5) for what the run did since its last record, in
+    /// order, or null. A run with no tracker issue makes none. Synchronous, so the caller's last check and its record
+    /// see the same timeline: a step that ends while an update is awaited is examined before anything is recorded.
     /// </summary>
-    async Task TrackAsync()
+    TrackerUpdate? NextTrackerUpdate()
     {
-        if (input.TrackerIssue is not { } issue || !TrackerUpdates.Declared(core!.Plan))
-            return;
+        if (input.TrackerIssue is null || !TrackerUpdates.Declared(core!.Plan))
+            return null;
         var trace = core.State.Trace;
-        for (var i = 0; i < trace.Count; i++)
-            foreach (var update in TrackerUpdates.Due(core.Plan, [trace[i]]))
-            {
-                if (!Workflow.Patched(TrackerUpdatesPatch))
-                    return;
-                var note = await Workflow.ExecuteActivityAsync((RunActivities a) => a.UpdateTrackerAsync(new TrackerCall(issue, update.Status, update.StepId, input.DryRun)), Light);
-                trace.Add(new TraceEntry("tracker", update.StepId, $"{update.Why}: {note}"));
-            }
+        while (trackerUpdates.Count == 0 && trackedThrough < trace.Count)
+            foreach (var update in TrackerUpdates.Due(core.Plan, [trace[trackedThrough++]]))
+                trackerUpdates.Enqueue(update);
+        return trackerUpdates.TryDequeue(out var next) ? next : null;
+    }
+
+    /// <summary>Makes one tracker update and notes it on the timeline. An update that fails never fails the step.</summary>
+    async Task TrackAsync(TrackerUpdate update)
+    {
+        if (!Workflow.Patched(TrackerUpdatesPatch))
+            return;
+        var call = new TrackerCall(input.TrackerIssue!, update.Status, update.StepId, input.DryRun);
+        var note = await Workflow.ExecuteActivityAsync((RunActivities a) => a.UpdateTrackerAsync(call), Light);
+        core!.State.Trace.Add(new TraceEntry("tracker", update.StepId, $"{update.Why}: {note}"));
     }
 
     async Task ConfirmChildAsync(string childWorkflowId)
@@ -956,10 +965,13 @@ public class RunWorkflow
     /// <summary>Writes what changed since the last record: new timeline entries, opened and closed waits, the run's status. Returns whether there was anything.</summary>
     async Task<bool> RecordAsync()
     {
-        await TrackAsync();
+        // Checked again after each update, with no await between the last check and the timeline taken below.
+        while (NextTrackerUpdate() is { } update)
+            await TrackAsync(update);
         var now = Workflow.UtcNow;
         var timeline = core!.State.Trace.Select(t => new TimelineRecord(input.RunId, ++timelineSequence, t.Kind, t.StepId, t.Detail, now)).ToList();
         core.State.Trace.Clear();
+        trackedThrough = 0;
 
         var waits = new List<WaitRecord>();
         var open = core.State.Waits.Select(w => w.Id).ToList();
