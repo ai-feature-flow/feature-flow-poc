@@ -418,6 +418,33 @@ public sealed class GitHubActionsCiTests : IDisposable
         Assert.Equal([1, 2, 3], read.ToArray());
     }
 
+    [Theory]
+    [InlineData("http")]
+    [InlineData("io")]
+    [InlineData("socket")]
+    public async Task A_download_that_breaks_is_unreachable_not_an_exception(string kind)
+    {
+        github.On(Get, "~/actions/runs/42/logs", 302, "", new Dictionary<string, string> { ["Location"] = "https://blob.example/logs.zip" })
+            .On(Get, "https://blob.example/logs.zip", _ => throw GitHubCodeHostTests.Transport(kind));
+
+        var logs = await ci.ReadLogsAsync(new CiRunRef(Repo, "42", Sha), Ct);
+
+        Assert.Equal("unreachable", logs.Error?.Reason);
+    }
+
+    [Fact]
+    public async Task An_artifact_that_is_not_a_zip_is_refused_not_an_exception()
+    {
+        github.On(Get, "~/actions/runs/42/jobs", 200, """{"jobs":[]}""")
+            .On(Get, "~/actions/runs/42/artifacts", 200, """{"artifacts":[{"id":5,"name":"broken","expired":false,"size_in_bytes":10}]}""")
+            .On(Get, "~/actions/runs/42", 200, """{"status":"completed","conclusion":"success"}""")
+            .On(Get, "~/git/ref/feature-flow/ci/run-42", 404, """{"message":"Not Found"}""")
+            .On(Get, "~/actions/artifacts/5/zip", 302, "", new Dictionary<string, string> { ["Location"] = "https://blob.example/5.zip" })
+            .Bytes("https://blob.example/5.zip", [1, 2, 3, 4, 5]);
+
+        Assert.Equal("validation_failed", (await ci.ReadResultsAsync(new CiRunRef(Repo, "42", Sha), Ct)).Error?.Reason);
+    }
+
     [Fact]
     public async Task A_logs_answer_that_is_not_a_redirect_is_unexpected()
     {

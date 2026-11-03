@@ -136,7 +136,7 @@ public sealed class AppCredentialBroker(
                 return ProviderResult<string>.Success(text);
             return new ProviderResult<string>(null, Map(response.StatusCode, response.Headers.RetryAfter?.Delta));
         }
-        catch (HttpRequestException e)
+        catch (Exception e) when (e is HttpRequestException or IOException or System.Net.Sockets.SocketException)
         {
             return ProviderResult<string>.Failure("unreachable", e.Message);
         }

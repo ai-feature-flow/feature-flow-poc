@@ -197,6 +197,44 @@ public sealed class GitVcsTests : IDisposable
         Assert.True((await vcs.DescendsFromAsync(repo, tested, target, Ct)).Unwrap());
     }
 
+    /// <summary>The PR 6 re-check: an IO or socket failure inside an operation comes back as infrastructure, never as an exception.</summary>
+    [Theory]
+    [InlineData("io")]
+    [InlineData("access")]
+    [InlineData("socket")]
+    public async Task An_io_failure_inside_an_operation_is_infrastructure_not_an_exception(string kind)
+    {
+        var target = remote.Resolve("refs/heads/main")!;
+        var tested = remote.Commit("refs/heads/ff/work", new Dictionary<string, string?> { ["a.txt"] = "tested" }, from: "refs/heads/main");
+        Exception failure = kind switch
+        {
+            "io" => new IOException("disk full"),
+            "access" => new UnauthorizedAccessException("read-only cache"),
+            _ => new System.Net.Sockets.SocketException(),
+        };
+        var vcs = new GitVcs(BareRepository.Template(Path.Combine(root, "remotes")), Path.Combine(root, "cache"),
+            () => throw new InvalidOperationException(), () => throw new InvalidOperationException(), () => null)
+        {
+            BeforePushForTests = _ => throw failure,
+        };
+
+        var result = await vcs.MergeAsync(repo, tested, "refs/heads/main", target, MergeMethods.Merge, "merge", "key-io", Ct);
+
+        Assert.Equal(ProviderErrorClass.Infrastructure, result.Error?.Class);
+    }
+
+    [Fact]
+    public async Task A_cache_that_cannot_be_created_is_infrastructure_not_an_exception()
+    {
+        var blocked = Path.Combine(root, "a-file");
+        File.WriteAllText(blocked, "not a folder");
+        var vcs = new GitVcs(BareRepository.Template(Path.Combine(root, "remotes")), Path.Combine(blocked, "cache"),
+            () => throw new InvalidOperationException(), () => throw new InvalidOperationException(), () => null);
+
+        Assert.Equal(ProviderErrorClass.Infrastructure, (await vcs.ResolveAsync(repo, "refs/heads/main", Ct)).Error?.Class);
+        Assert.Equal(ProviderErrorClass.Infrastructure, (await vcs.CheckAsync(Ct)).Error?.Class);
+    }
+
     [Fact]
     public async Task A_catch_up_of_a_missing_branch_is_not_found()
     {

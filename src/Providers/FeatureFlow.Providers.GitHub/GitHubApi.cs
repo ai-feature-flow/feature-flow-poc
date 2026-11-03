@@ -92,8 +92,9 @@ public sealed class GitHubApi(Func<ICredentialBroker?> broker, HttpMessageHandle
                 return new ProviderResult<GitHubResponse>(null, Classify(response, text, method, path));
             return ProviderResult<GitHubResponse>.Success(new GitHubResponse(response.StatusCode, text, response.Headers.Location));
         }
-        catch (HttpRequestException e)
+        catch (Exception e) when (e is HttpRequestException or IOException or System.Net.Sockets.SocketException)
         {
+            // A connection that fails, or breaks while the answer is read, is infrastructure, never an exception.
             return ProviderResult<GitHubResponse>.Failure("unreachable", $"GitHub cannot be reached: {e.Message}");
         }
         catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -110,7 +111,16 @@ public sealed class GitHubApi(Func<ICredentialBroker?> broker, HttpMessageHandle
     public async Task<ProviderResult<Stream>> DownloadAsync(Uri location, long maxBytes, CancellationToken cancellationToken)
     {
         var path = Path.Combine(Path.GetTempPath(), $"ff-download-{Guid.NewGuid():N}");
-        var file = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 81920, FileOptions.DeleteOnClose | FileOptions.Asynchronous);
+        FileStream file;
+        try
+        {
+            file = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 81920, FileOptions.DeleteOnClose | FileOptions.Asynchronous);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return ProviderResult<Stream>.Failure("internal_error", $"the worker cannot write a temporary file: {e.Message}");
+        }
+
         try
         {
             using var response = await downloads.GetAsync(location, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
@@ -129,7 +139,7 @@ public sealed class GitHubApi(Func<ICredentialBroker?> broker, HttpMessageHandle
             file.Position = 0;
             return ProviderResult<Stream>.Success(file);
         }
-        catch (HttpRequestException e)
+        catch (Exception e) when (e is HttpRequestException or IOException or System.Net.Sockets.SocketException)
         {
             await file.DisposeAsync();
             return ProviderResult<Stream>.Failure("unreachable", $"the download cannot be reached: {e.Message}");

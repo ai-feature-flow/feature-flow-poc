@@ -26,9 +26,24 @@ public sealed class GitVcs(
 
     public async Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken)
     {
-        Directory.CreateDirectory(cache);
+        if (EnsureCache() is { } broken)
+            return new ProviderResult<Unit>(default, broken);
         var version = await GitAsync(cache, ["--version"], null, cancellationToken);
         return version.Ok && version.Value!.Exit == 0 ? ProviderResult<Unit>.Success(default) : ProviderResult<Unit>.Failure("unreachable", "git cannot be run on the worker");
+    }
+
+    /// <summary>Creates the cache folder; a disk the worker cannot write is infrastructure, not an exception.</summary>
+    ProviderError? EnsureCache()
+    {
+        try
+        {
+            Directory.CreateDirectory(cache);
+            return null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return new ProviderError("internal_error", $"the clone cache {cache} cannot be created: {e.Message}");
+        }
     }
 
     string UrlOf(RepoRef repo) => remoteTemplate.Replace("{repo}", repo.FullName, StringComparison.Ordinal);
@@ -41,7 +56,8 @@ public sealed class GitVcs(
         var env = await EnvironmentAsync(repo, write: false, cancellationToken);
         if (!env.Ok)
             return new ProviderResult<string?>(null, env.Error);
-        Directory.CreateDirectory(cache);
+        if (EnsureCache() is { } broken)
+            return new ProviderResult<string?>(null, broken);
         var run = await GitAsync(cache, ["ls-remote", UrlOf(repo), reference], env.Value, cancellationToken);
         if (Failed(run, "read the remote") is { } failed)
             return new ProviderResult<string?>(null, failed);
@@ -420,7 +436,8 @@ public sealed class GitVcs(
         await gate.WaitAsync(cancellationToken);
         try
         {
-            Directory.CreateDirectory(cache);
+            if (EnsureCache() is { } broken)
+                return new ProviderResult<T>(default, broken);
             await using var held = await LockFileAsync(dir + ".lock", cancellationToken);
             // GIT_DIR names the bare clone explicitly, so git works where safe.bareRepository is "explicit".
             var withDir = new Dictionary<string, string>(env.Value!) { ["GIT_DIR"] = dir };
@@ -436,12 +453,21 @@ public sealed class GitVcs(
             {
                 return await work(dir, withDir, op);
             }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Net.Sockets.SocketException)
+            {
+                // The worker's disk or a pipe to git failed: infrastructure, never an exception out of the provider.
+                return ProviderResult<T>.Failure("internal_error", $"the clone cache failed: {e.Message}");
+            }
             finally
             {
                 var scratch = await GitAsync(dir, ["for-each-ref", "--format=delete %(refname)", op + "/"], withDir, CancellationToken.None);
                 if (scratch.Ok && scratch.Value!.Exit == 0 && scratch.Value.Output.Length > 0)
                     await GitAsync(dir, ["update-ref", "--stdin"], withDir, CancellationToken.None, scratch.Value.Output);
             }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return ProviderResult<T>.Failure("internal_error", $"the clone cache's lock failed: {e.Message}");
         }
         finally
         {
@@ -458,7 +484,8 @@ public sealed class GitVcs(
             {
                 return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
             }
-            catch (IOException)
+            // Held by another process; a missing folder or bad path is not worth waiting for.
+            catch (IOException e) when (e is not (DirectoryNotFoundException or PathTooLongException or FileNotFoundException))
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken);
             }
@@ -578,6 +605,11 @@ public sealed class GitVcs(
         catch (System.ComponentModel.Win32Exception e)
         {
             return ProviderResult<GitRun>.Failure("unreachable", "git cannot be run: " + e.Message);
+        }
+        catch (IOException e)
+        {
+            Kill(process);
+            return ProviderResult<GitRun>.Failure("internal_error", "the pipe to git failed: " + e.Message);
         }
         finally
         {

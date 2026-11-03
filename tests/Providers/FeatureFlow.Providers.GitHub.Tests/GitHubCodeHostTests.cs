@@ -126,6 +126,46 @@ public sealed class GitHubCodeHostTests
         Assert.Contains("configuration fault", result.Error.Message);
     }
 
+    public static Exception Transport(string kind) => kind switch
+    {
+        "http" => new HttpRequestException("connection refused"),
+        "io" => new IOException("connection reset while reading"),
+        _ => new System.Net.Sockets.SocketException(),
+    };
+
+    /// <summary>The PR 6 re-check: a transport failure comes back as an infrastructure result, never as an exception.</summary>
+    [Theory]
+    [InlineData("http")]
+    [InlineData("io")]
+    [InlineData("socket")]
+    public async Task A_transport_failure_is_unreachable_not_an_exception(string kind)
+    {
+        var (host, github, _) = Host();
+        github.On(Get, "~", _ => throw Transport(kind));
+
+        var result = await host.GetDefaultBranchAsync(Repo, Ct);
+
+        Assert.Equal("unreachable", result.Error?.Reason);
+        Assert.Equal(ProviderErrorClass.Infrastructure, result.Error!.Class);
+    }
+
+    [Theory]
+    [InlineData("http")]
+    [InlineData("io")]
+    [InlineData("socket")]
+    public async Task A_transport_failure_reaching_the_App_is_unreachable_not_an_exception(string kind)
+    {
+        var github = new FakeGitHub();
+        github.On(Post, "/app/installations/", _ => throw Transport(kind));
+        using var key = System.Security.Cryptography.RSA.Create(2048);
+        var broker = new AppCredentialBroker("5507595", "176108462", _ => Task.FromResult(ProviderResult<string>.Success(key.ExportRSAPrivateKeyPem())), ["o/r"], github,
+            "https://api.example");
+
+        var issued = await broker.IssueAsync(Actor.Engine, "github", CredentialScope.Read("o/r"), TimeSpan.FromMinutes(30), Ct);
+
+        Assert.Equal("unreachable", issued.Error?.Reason);
+    }
+
     [Fact]
     public async Task An_undocumented_success_is_an_unexpected_response_never_retried()
     {

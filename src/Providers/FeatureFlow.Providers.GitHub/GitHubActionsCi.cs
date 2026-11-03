@@ -368,7 +368,17 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
             if (!zip.Ok)
                 return new ProviderResult<CiRunResult>(null, zip.Error);
             await using var zipStream = zip.Value!;
-            using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read);
+            ZipArchive archive;
+            try
+            {
+                archive = new ZipArchive(zipStream, ZipArchiveMode.Read);
+            }
+            catch (InvalidDataException)
+            {
+                return ProviderResult<CiRunResult>.Failure("validation_failed", $"artifact {artifact["name"]} is not a zip");
+            }
+
+            using var _ = archive;
             // Only entries named like result files are read, each capped as it is decompressed (its stated size can lie).
             foreach (var entry in archive.Entries.Where(e => e.Length > 0 && MayBeResult(e.FullName)))
             {
