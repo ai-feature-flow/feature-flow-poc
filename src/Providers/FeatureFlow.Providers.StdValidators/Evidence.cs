@@ -45,6 +45,8 @@ static class Evidence
     /// <summary>Why a test did not pass in <paramref name="tiers"/>, or null when it passed. A skipped test does not pass.</summary>
     static string? NotPassed(string id, IReadOnlyList<Observed> tiers)
     {
+        if (tiers.Count == 0)
+            return "there are no test results of this run at that revision";
         if (tiers.Any(t => t.Results.Failures.Any(f => f.Name == id)))
             return "it failed";
         if (tiers.Any(t => t.Results.Passing?.Contains(id) == true))
@@ -52,6 +54,17 @@ static class Evidence
         return tiers.All(t => t.Results.Passing is null)
             ? "its tier was judged by exit code, so no test of it can be claimed"
             : "it is not among the tests the engine saw pass";
+    }
+
+    /// <summary>A repository path as the code host reads it: forward slashes, no leading <c>./</c> or <c>/</c>.</summary>
+    static string? Path(string? path)
+    {
+        if (path is null)
+            return null;
+        path = path.Replace('\\', '/');
+        while (path.StartsWith("./", StringComparison.Ordinal) || path.StartsWith('/'))
+            path = path.StartsWith('/') ? path[1..] : path[2..];
+        return path;
     }
 
     static string Name(ClaimedTest test) => test.Id ?? "(a test with no id)";
@@ -387,13 +400,20 @@ static class Evidence
                     continue;
                 }
 
-                if (test.Source?.File is not { Length: > 0 } file)
+                // A test the engine already saw pass when the finding was raised is not new (review N3).
+                if (test.Change == "new" && NotPassed(test.Id!, observed.Where(o => Check.SameRepository(o.Repository, repository) && o.Revision == raised).ToList()) is null)
+                {
+                    why.Add($"{Name(test)} is claimed as new, but it already passed at {Short(raised)}, where the finding was raised");
+                    continue;
+                }
+
+                if (Path(test.Source?.File) is not { Length: > 0 } file)
                 {
                     why.Add($"{Name(test)} names no source file");
                     continue;
                 }
 
-                if (file == finding.Finding.Location.File)
+                if (file == Path(finding.Finding.Location.File))
                 {
                     why.Add($"{file} is the file the finding is about, not a test");
                     continue;

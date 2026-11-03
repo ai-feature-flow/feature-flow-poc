@@ -31,6 +31,8 @@ STD_TESTS = ("tests/Providers/FeatureFlow.Providers.StdValidators.Tests", None)
 ENGINE = ("tests/FeatureFlow.Engine.Tests", "FullyQualifiedName~ValidationActionTests|FullyQualifiedName~ResultFileTests")
 EXPRESSIONS = ("tests/FeatureFlow.Expressions.Tests", None)
 VALIDATION_TESTS = ("tests/FeatureFlow.Validation.Tests", "FullyQualifiedName~MutationTests")
+STD_WORKFLOWS = ("tests/FeatureFlow.Testing.Workflows.Tests", "FullyQualifiedName~Std_workflow_test_passes")
+FIX_LOOP = "library/std/fragments/fix_loop.yaml"
 
 FIXTURES = "Every_fixture_gets_its_verdict_and_the_verdict_agrees_with_the_issues"
 INTEGRATION = "tests/FeatureFlow.Integration.Tests"
@@ -159,7 +161,7 @@ CONTROLS = [
     # ---- Added for the review of PR 13 ----
     {
         "name": "review F1: any owner excuses a criterion (the run itself, or a child that never planned it)",
-        "edits": [(PROVIDER, "item.Owner is { Kind: { } kind, Id: { Length: > 0 } id } && scope is not null && kind == ChildKind(scope.Kind) && id != scope.Id;",
+        "edits": [(PROVIDER, "item.Owner is { Kind: { } kind, Id.Length: > 0 } && scope is not null && kind == ChildKind(scope.Kind);",
                    "item.Owner is not null;"),
                   warn(REQUIREMENTS, "owner_in_child"),
                   (EVIDENCE, "                if (Check.Delegated(criterion, plan.Value.Scope))\n",
@@ -188,7 +190,7 @@ CONTROLS = [
     },
     {
         "name": "review F2: tests_added accepts the production file the finding is about",
-        "edits": [(EVIDENCE, "if (file == finding.Finding.Location.File)", "if (file == finding.Finding.Location.File + \"x\")")],
+        "edits": [(EVIDENCE, "if (file == Path(finding.Finding.Location.File))", "if (file == Path(finding.Finding.Location.File) + \"x\")")],
         "tests": [STD_TESTS],
         "expect": [FIXTURES],
     },
@@ -291,6 +293,56 @@ CONTROLS = [
         "edits": [(VALIDATE, 's.GetValueOrDefault("optional") as bool? ?? false', 's.GetValueOrDefault("optional") as bool? ?? true')],
         "tests": [ENGINE],
         "expect": ["A_required_subject_that_does_not_exist_or_cannot_be_read_stops_the_step_for_a_person"],
+    },
+    # ---- Added for the re-check of PR 13 ----
+    {
+        "name": "re-check N1: record_fixes goes straight to tests_added, leaving retest unreachable",
+        "edits": [(FIX_LOOP, "        - to: retest\n", "        - to: tests_added\n")],
+        "tests": [STD_WORKFLOWS],
+        "expect": [("Std_workflow_test_passes", 2)],
+    },
+    {
+        "name": "re-check N3: a test claimed as new that already passed where the finding was raised counts",
+        "edits": [(EVIDENCE, 'if (test.Change == "new" && NotPassed(', 'if (test.Change == "never" && NotPassed(')],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
+        "name": "re-check N3: the finding's file is compared without normalising its path",
+        "edits": [(EVIDENCE, "if (file == Path(finding.Finding.Location.File))", "if (test.Source!.File == finding.Finding.Location.File)")],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
+        "name": "re-check N4: any owner kind is delegated",
+        "edits": [(PROVIDER, "&& scope is not null && kind == ChildKind(scope.Kind);", "&& scope is not null && kind.Length >= 0;")],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
+        "name": "re-check N4: the owner's plan may be in this run",
+        "edits": [(EVIDENCE, "tree.Plans.Any(p => !own.Contains(p.RunId) && Owns(", "tree.Plans.Any(p => Owns(")],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
+        "name": "re-check N4: the owner's plan need not hold the criterion",
+        "edits": [(EVIDENCE, "&& Owns(criterion.Owner!, p.Document.Scope) && p.Document.Items.Any(i => i.Id == criterion.Id)))", "&& Owns(criterion.Owner!, p.Document.Scope)))")],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
+        "name": "re-check N4: tests_added counts a test that passed at any revision of this run",
+        "edits": [(EVIDENCE, "observed.Where(o => Check.SameRepository(o.Repository, repository) && o.Revision == head).ToList()) is { } failed)",
+                   "observed.Where(o => Check.SameRepository(o.Repository, repository)).ToList()) is { } failed)")],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
+        "name": "re-check N4: subjects from several runs are accepted",
+        "edits": [(EVIDENCE, "        if (own.Count != 1)\n", "        if (own.Count == 0)\n")],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
     },
     # ---- Evidence the validators read ----
     {

@@ -56,11 +56,15 @@ public sealed class StdValidatorsContract : ValidatorContract, IDisposable
             Request(Names.RequirementTrace, [new ValidationSubject("requirements", artifacts[0].Type, new ArtifactRef(artifacts[0].Ref))], head, artifacts);
 
         // tests_added: this run's fix claims (indexed), the triage, the engine's results at the fixed head, the ledger.
-        ValidationRequest TestsAdded(string claims, string revision, IReadOnlyList<string> passing, string? raised = "")
+        ValidationRequest TestsAdded(string claims, string revision, IReadOnlyList<string> passing, string? raised = "", string? testedAt = null,
+            IReadOnlyList<string>? passingWhenRaised = null)
         {
             var (claimsSubject, claimsRecord) = w.Indexed("fix_claims", "evidence_claims", claims);
+            ArtifactRecord[] evidence = passingWhenRaised is null
+                ? [w.TestEvidence(testedAt ?? revision, passing)]
+                : [w.TestEvidence(testedAt ?? revision, passing), w.TestEvidence(w.Main, passingWhenRaised)];
             return Request(Names.TestsAdded, [claimsSubject, w.Subject("triage", "triage", TriageText)], Frozen(revision),
-                [claimsRecord, w.TestEvidence(revision, passing)], [Finding("F-1", raised == "" ? w.Main : raised)]);
+                [claimsRecord, .. evidence], [Finding("F-1", raised == "" ? w.Main : raised)]);
         }
 
         var ownedPlan = TicketPlan(Criterion + "\n    owner: { kind: ticket, id: T-1 }");
@@ -156,6 +160,17 @@ public sealed class StdValidatorsContract : ValidatorContract, IDisposable
                 Satisfaction(null, plan: ownedPlan, claims: NoClaims), false, "unproved"),
             new("verification_satisfaction: an epic's criterion given to a ticket that never planned it is unproved",
                 Satisfaction(null, plan: EpicPlan, claims: NoClaims, runId: "run-epic"), false, "unproved"),
+            new("verification_satisfaction: an epic's criterion owned by another epic is the epic's own to prove, whatever that epic planned (review N4)",
+                Satisfaction(null, plan: EpicPlan.Replace("{ kind: ticket, id: T-1 }", "{ kind: epic, id: F }"), claims: NoClaims, runId: "run-epic",
+                    more: [Record("delivery_plan", "delivery_plan", w.Put(InheritedPlan().Replace("{ kind: ticket, id: T-1 }", "{ kind: epic, id: F }")), runId: "run-f")]),
+                false, "unproved"),
+            new("verification_satisfaction: the owner's plan is in this run, not a child's (review N4)",
+                Satisfaction(null, plan: EpicPlan, claims: NoClaims, more: [childPlan with { RunId = "run-epic" }], runId: "run-epic"), false, "unproved"),
+            new("verification_satisfaction: the owner's plan does not hold the criterion (review N4)",
+                Satisfaction(null, plan: EpicPlan, claims: NoClaims, runId: "run-epic",
+                    more: [Record("delivery_plan", "delivery_plan", w.Put(InheritedPlan().Replace("AC-1", "AC-2")), runId: TicketRun)]), false, "unproved"),
+            new("verification_satisfaction: the subjects come from two runs (review N4)",
+                Satisfaction(passed, claims: Claims(), runId: "run-other"), false, "own_run_unknown"),
             new("verification_satisfaction: an epic's criterion given to a ticket whose plan holds it is the ticket's to prove",
                 Satisfaction(null, plan: EpicPlan, claims: NoClaims, more: [childPlan], runId: "run-epic"), true),
 
@@ -175,6 +190,12 @@ public sealed class StdValidatorsContract : ValidatorContract, IDisposable
                     ["WidgetTests.Ghost"]), false, "no_test_added"),
             new("tests_added: the claimed test is in another repository than the finding",
                 TestsAdded(Claims().Replace("repository: acme/api", "repository: acme/web"), fixes, [Id]), false, "no_test_added"),
+            new("tests_added: the claimed test passed at an earlier revision of this run, not at the fixed head (review N4)",
+                TestsAdded(Claims(), fixes, [Id], testedAt: w.Main), false, "no_test_added"),
+            new("tests_added: a test claimed as new already passed where the finding was raised (review N3)",
+                TestsAdded(Claims(), fixes, [Id], passingWhenRaised: [Id]), false, "no_test_added"),
+            new("tests_added: the claim names the finding's own file as ./src/Widgets.cs (review N3)",
+                TestsAdded(Claims(file: "./src/Widgets.cs"), codeOnly, [Id]), false, "no_test_added"),
             new("tests_added: the finding has no revision it was raised on", TestsAdded(Claims(), fixes, [Id], raised: null), false, "no_raised_revision"),
         ];
     }

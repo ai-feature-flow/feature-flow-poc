@@ -211,11 +211,11 @@ public sealed class Check(ValidationRequest request, IArtifactStoreProvider stor
 
     /// <summary>
     /// Whether an item is given to a child to prove: its owner is a child kind its plan's scope may name (an epic of a project,
-    /// a ticket of an epic), not the plan's own scope. Any other owner, the run itself included, leaves the item the run's own
+    /// a ticket of an epic), which is never the plan's own kind. Any other owner, the run itself included, leaves the item the run's own
     /// to prove (review F1): a planner cannot excuse a criterion from its tests by naming an owner.
     /// </summary>
     public static bool Delegated(PlanItem item, PlanScope? scope) =>
-        item.Owner is { Kind: { } kind, Id: { Length: > 0 } id } && scope is not null && kind == ChildKind(scope.Kind) && id != scope.Id;
+        item.Owner is { Kind: { } kind, Id.Length: > 0 } && scope is not null && kind == ChildKind(scope.Kind);
 
     /// <summary>The frozen revision of a repository, by its full name or (as a planner may write it) its name alone.</summary>
     public (string Repository, string Revision)? Frozen(string? repository)
