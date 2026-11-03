@@ -202,7 +202,8 @@ routes:
 
 `clean_up: true` on a `to` route resets the work branch to the commit the target
 step started from, before the target runs. Default `false`. A human answering an
-intervention may choose it either way.
+intervention may choose it either way. Aimed at a `parallel` or chain, it resets to where the first step it starts
+began; aimed at a decision, which touches no repository, it is refused (check 8, LOG 140).
 
 ### 4.2 Re-entry
 

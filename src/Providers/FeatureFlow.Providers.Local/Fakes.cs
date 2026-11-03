@@ -352,6 +352,7 @@ public static class LocalProviders
             new("vcs", "memory", ["world"], c => new InMemoryVcs(InMemoryForge.Named(c.Setting("world") ?? "default"))),
             new("code_host", "memory", ["world"], c => new InMemoryCodeHost(InMemoryForge.Named(c.Setting("world") ?? "default"))),
             new("ci", "memory", ["world"], c => new InMemoryCi(InMemoryForge.Named(c.Setting("world") ?? "default"), () => Store(c))),
+            new("sandbox", "memory", ["world"], c => MemorySandbox.Named(c.Setting("world") ?? "default", () => Store(c))),
         };
         foreach (var type in ConfigurationReader.ProviderTypes.Where(t => t is not ("artifact_store" or "record_store" or "secrets" or "action_stand_in")))
             list.Add(new ProviderFactory(type, "fake", [], _ => new DescribedOnlyProvider(type)));

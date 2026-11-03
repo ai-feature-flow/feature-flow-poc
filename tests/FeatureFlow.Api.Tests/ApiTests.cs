@@ -112,6 +112,22 @@ public sealed class ApiTests : IAsyncDisposable
         Assert.Contains("at least 100", text);
     }
 
+    [Theory]
+    [InlineData("refs/heads/main")]
+    [InlineData("has space")]
+    [InlineData("a..b")]
+    [InlineData("ff/")]
+    [InlineData("")]
+    public async Task A_parent_branch_that_is_not_a_branch_name_is_refused(string branch)
+    {
+        var body = $$"""{ "template": "std:templates/ticket_delivery", "parent_branch": "{{branch}}" }""";
+
+        var (status, text) = await PostAsync(Start("steerer"), "runs", body);
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Contains("parent_branch must be a branch name", text);
+    }
+
     [Fact]
     public async Task An_internal_error_returns_a_generic_body()
     {

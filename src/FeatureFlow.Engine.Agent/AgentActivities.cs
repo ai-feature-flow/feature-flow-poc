@@ -53,6 +53,8 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
     readonly SemaphoreSlim clientGate = new(1, 1);
     ArtifactRef? clientArtifact;
 
+    ProviderSet Providers => providers;
+
     IRecordStoreProvider Records => providers.Required<IRecordStoreProvider>("record_store");
 
     IArtifactStoreProvider Store => providers.Required<IArtifactStoreProvider>("artifact_store");
@@ -181,6 +183,8 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
         WorkingCopyRef copy = null!;
         AgentTask task = null!;
         AgentLimits limits = null!;
+        string parentBranch = "";
+        RepositoryManifest? manifest;
 
         bool Writes => spec.WriteAccess != "none" && spec.Push;
 
@@ -310,7 +314,11 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
         /// <summary>Creates or re-attaches to the sandbox. Returns whether an earlier attempt's commits were checked out.</summary>
         async Task<bool> PrepareAsync()
         {
-            var parent = spec.ParentBranches.GetValueOrDefault(repo.FullName, "main");
+            var parent = parentBranch = spec.ParentBranches.GetValueOrDefault(repo.FullName) ?? await DefaultBranchAsync();
+            if (workBranch == parent || (owner.Providers.ForRun("code_host", false) is ICodeHostProvider host
+                                         && workBranch == Must(await host.GetDefaultBranchAsync(repo, ct), "read the default branch")))
+                // The agent's commits move the work branch; it must never be the parent or default branch (review 11).
+                throw new StepCannotAnswerException($"check 36 ({Checks.Title(Checks.WorkBranch)}): the run's work branch '{workBranch}' is {repo.FullName}'s parent or default branch; the engine writes only to a branch of its own");
             baseline = Must(await vcs.ResolveAsync(repo, $"refs/heads/{parent}", ct), "read the parent branch")
                        ?? throw new StepCannotAnswerException($"{repo.FullName} has no branch {parent}");
             var branchRevision = Must(await vcs.ResolveAsync(repo, $"refs/heads/{workBranch}", ct), "read the work branch");
@@ -323,6 +331,9 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
             }
 
             startRevision = branchRevision;
+            // Where the step started, for a later clean_up route's reset (docs/03 section 4.1).
+            await EventAsync("start", $"{repo.FullName} {startRevision}");
+            manifest = await ManifestAsync();
             hiddenRevision = Must(await vcs.ResolveAsync(repo, hiddenRef, ct), "read the hidden reference");
             // An earlier attempt's commits are used only when they build on the branch as it is now. A hidden
             // reference behind the branch (the branch moved on, say by a catch-up) would rewind it (LOG 96).
@@ -374,6 +385,7 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
 
             var source = useHidden ? hiddenRevision! : startRevision;
             Must(await vcs.CheckOutAsync(repo, useHidden ? hiddenRef : $"refs/heads/{workBranch}", source, workBranch, copy, ct), "check out the work branch");
+            await ManifestCommandsAsync(manifest?.Setup ?? [], "setup");
             await StageInputsAsync();
             if (spec.WriteAccess == "none")
                 Must(await sandboxes.MakeReadOnlyAsync(sandbox, paths.Checkout, ct), "make the checkout read-only");
@@ -410,7 +422,7 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
                 repository = repo.FullName,
                 checkout = paths.Checkout,
                 work_branch = workBranch,
-                parent_branch = spec.ParentBranches.GetValueOrDefault(repo.FullName, "main"),
+                parent_branch = parentBranch,
                 baseline_commit = baseline,
                 output_folder = paths.Output,
                 inputs = call.Inputs.ToDictionary(kv => kv.Key, kv => JsonDocument.Parse(JsonOf(kv.Value)).RootElement),
@@ -751,6 +763,18 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
             }
 
             var head = Must(await vcs.GetRevisionAsync(copy, ct), "read the checkout's revision");
+            if (Writes && head != startRevision && manifest is { AfterChanges.Count: > 0 })
+            {
+                // docs/04 section 3.1, step 6: the step committed, so the manifest's after_changes commands run, and what
+                // they change is committed as part of the step.
+                await ManifestCommandsAsync(manifest.AfterChanges, "after_changes");
+                if (Must(await vcs.CommitAllAsync(copy, $"Changes by after_changes for {call.Step.StepId}", ct), "commit after_changes") is { } formatted)
+                {
+                    events.Add($"committed after_changes as {Short(formatted)}");
+                    head = formatted;
+                }
+            }
+
             if (spec.WriteAccess == "none" && head != startRevision)
                 throw new StepWorkException("a role with no write access committed: nothing it changed is kept");
             await PushCommitsAsync();
@@ -829,6 +853,55 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
             {
                 await sandboxes.DisposeAsync(sandbox, CancellationToken.None);
                 await EventAsync("cancelled", "the step was cancelled; its sandbox was removed");
+            }
+        }
+
+        /// <summary>
+        /// The parent branch of a run that is not a child: the repository's default branch, read from the code host
+        /// (M4 follow-up 3). An installation with no code host provider keeps M4's <c>main</c>.
+        /// </summary>
+        async Task<string> DefaultBranchAsync()
+        {
+            if (owner.Providers.ForRun("code_host", false) is not ICodeHostProvider host)
+            {
+                events.Add("no code host is configured: the parent branch is taken to be main");
+                return "main";
+            }
+
+            return Must(await host.GetDefaultBranchAsync(repo, ct), "read the default branch");
+        }
+
+        /// <summary>The repository manifest at the work branch as the step found it, read through the code host and recorded by hash (RW11).</summary>
+        async Task<RepositoryManifest?> ManifestAsync()
+        {
+            if (owner.Providers.ForRun("code_host", false) is not ICodeHostProvider host)
+                return null;
+            if (Must(await host.ReadFileAsync(repo, RepositoryManifest.FileName, startRevision, ct), "read the repository manifest") is not { } file)
+                return null;
+            RepositoryManifest read;
+            try
+            {
+                read = RepositoryManifest.Parse(file.Content, file.Hash, $"{repo.FullName}:{RepositoryManifest.FileName} at {Short(startRevision)}");
+            }
+            catch (FormatException e)
+            {
+                throw new StepCannotAnswerException(e.Message);
+            }
+
+            await EventAsync("manifest", $"{repo.FullName} {file.Hash} at {startRevision}");
+            return read;
+        }
+
+        /// <summary>The manifest's <c>setup</c> or <c>after_changes</c> commands, in the checkout as the agent's user. A failing one fails the attempt.</summary>
+        async Task ManifestCommandsAsync(IReadOnlyList<string> commands, string section)
+        {
+            foreach (var command in commands)
+            {
+                var run = Must(await sandboxes.RunAsync(sandbox, new SandboxCommand(["sh", "-c", command], null, paths.Checkout), $"{key}/{section}/{Guid.NewGuid():N}", ct,
+                    TimeSpan.FromMinutes(30)), $"run {section}");
+                if (run.Exit != 0)
+                    throw new StepWorkException($"the manifest's {section} command '{command}' exited {run.Exit}: {Trim(run.Output)}");
+                events.Add($"{section}: {command}");
             }
         }
 

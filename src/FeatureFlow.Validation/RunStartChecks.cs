@@ -25,19 +25,19 @@ public static class RunStartChecks
     {
         ["run.child"] = [],
         ["plan.expand"] = [],
-        ["scm.catch_up"] = ["vcs"],
+        ["scm.catch_up"] = ["vcs", "code_host"],
         ["scm.pull_request"] = ["code_host.pull_request"],
         ["scm.merge"] = ["vcs", "code_host"],
         ["scm.revert"] = ["code_host.pull_request"],
         ["ci.checks"] = ["code_host.check_status", "ci"],
         ["wait.condition"] = ["code_host"],
-        ["test.run"] = ["sandbox"],
-        ["test.integration"] = ["sandbox"],
-        ["analysis.run"] = ["sandbox"],
+        ["test.run"] = ["sandbox", "vcs", "code_host"],
+        ["test.integration"] = ["sandbox", "vcs", "code_host"],
+        ["analysis.run"] = ["sandbox", "vcs", "code_host"],
         ["artifact.validate"] = ["validator"],
         ["findings.record"] = [],
         ["findings.triage"] = [],
-        ["repo.inspect"] = ["vcs"],
+        ["repo.inspect"] = ["vcs", "code_host"],
         ["artifact.compose"] = [],
         ["artifact.import"] = ["vcs"],
         ["artifact.publish"] = ["vcs", "code_host.pull_request"],
@@ -171,6 +171,37 @@ public static class RunStartChecks
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Check 23, F1 (docs/05 section 2): a merge step into a repository's default branch may ask for an engine merge
+    /// only where <paramref name="engineMayMerge"/> matches the repository. <paramref name="engineCanMerge"/> is null
+    /// when it cannot be decided at run start; that is refused too, because a safety floor is not left to chance.
+    /// </summary>
+    public static void EngineMerge(string stepId, string repository, string defaultBranch, bool? engineCanMerge, IReadOnlyList<string> engineMayMerge,
+        SourceLocation? location, DiagnosticBag d)
+    {
+        if (engineCanMerge == false || RepositoryPatterns.Any(engineMayMerge, repository))
+            return;
+        d.Add(Checks.EngineMerge, engineCanMerge is null
+            ? $"{stepId} merges into {repository}'s default branch {defaultBranch}, and whether it asks for an engine merge cannot be decided at run start; set engine_can_merge from parameters"
+            : $"{stepId} asks for an engine merge into {repository}'s default branch {defaultBranch}; the organisation does not allow it (policy.merge.default_branch.engine_may_merge). Set engine_can_merge: false so a person merges",
+            location, stepId);
+    }
+
+    /// <summary>
+    /// Check 24: the default branch of each repository the run targets is protected (docs/05 section 2, the final
+    /// fallback). Protection whose review rules the code host does not show (GitHub's classic protection read without
+    /// administration rights, LOG 110) still passes: protection exists. It is recorded as a warning on the run's
+    /// timeline, so a person knows the review rules were not seen.
+    /// </summary>
+    public static void BranchProtection(string repository, string defaultBranch, bool isProtected, DiagnosticBag d, bool reviewRulesKnown = true)
+    {
+        if (!isProtected)
+            d.Add(Checks.BranchProtection, $"{repository}'s default branch {defaultBranch} has no branch protection; protect it on the code host before running");
+        else if (!reviewRulesKnown)
+            d.AddRange([new Diagnostic(Checks.BranchProtection, Severity.Warning,
+                $"{repository}'s default branch {defaultBranch} is protected, but its review rules are unknown: the code host does not show them to the engine")]);
     }
 
     /// <summary>

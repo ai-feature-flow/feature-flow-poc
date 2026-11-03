@@ -71,6 +71,9 @@ public class MutationTests
         ["missing_target"] = new(8, "route target 'plan_spec' is not a step", "the spec approval's rejection routes to a step that does not exist", [
             new(Ticket, "      rejected: { to: plan, clean_up: true }", "      rejected: { to: plan_spec, clean_up: true }")]),
 
+        ["clean_up_to_a_decision"] = new(8, "resets the work branch for decision approve_spec with clean_up", "a clean_up route aims at a decision, which records no start revision (re-check R3)", [
+            new(Ticket, "      rejected: { to: plan, clean_up: true }", "      rejected: { to: approve_spec, clean_up: true }")]),
+
         ["guard_without_fallback"] = new(8, "does not end with a fallback", "open_pr's guarded route loses its fallback", [
             new(Merge, "          to: external_review\n        - to: checks\n", "          to: external_review\n")]),
 

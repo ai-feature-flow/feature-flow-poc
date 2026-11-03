@@ -23,8 +23,25 @@ public class ReplayTests
     public void The_recorded_histories_are_there()
     {
         // Without this, a missing folder would leave the theory with no cases and nothing replayed.
-        Assert.Equal(["agent_question", "epic_delivery", "epic_delivery_child", "sp1_parent", "sp1_parent_resumed", "ticket_delivery"],
+        Assert.Equal(["agent_question", "epic_delivery", "epic_delivery_child", "sp1_parent", "sp1_parent_resumed", "ticket_clean_up", "ticket_delivery"],
             Names());
+    }
+
+    [Fact]
+    public void A_history_holds_each_M5_patch_marker()
+    {
+        // M5's markers: the clean_up reset and the step start (check 32, an action's scope). Without a history holding
+        // them, a change to either path would replay green (review 8).
+        using var history = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(HistoryFolder, "ticket_clean_up.json")));
+        var patches = history.RootElement.GetProperty("events").EnumerateArray()
+            .Where(e => e.TryGetProperty("markerRecordedEventAttributes", out _))
+            .SelectMany(e => e.GetProperty("markerRecordedEventAttributes").GetProperty("details").EnumerateObject())
+            .SelectMany(d => d.Value.GetProperty("payloads").EnumerateArray())
+            .Select(p => System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(p.GetProperty("data").GetString()!)))
+            .ToList();
+
+        Assert.Contains(patches, p => p.Contains($"\"{RunWorkflow.CleanUpPatch}\"", StringComparison.Ordinal));
+        Assert.Contains(patches, p => p.Contains($"\"{RunWorkflow.StepStartPatch}\"", StringComparison.Ordinal));
     }
 
     [Theory]

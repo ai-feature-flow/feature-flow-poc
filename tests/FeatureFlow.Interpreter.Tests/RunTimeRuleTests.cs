@@ -113,8 +113,50 @@ public class RunTimeRuleTests
                 - to: { end: completed }
         """;
 
+    /// <summary>A clean_up route back to a parallel container.</summary>
+    const string CleanParallel = """
+        api_version: feature-flow/v1
+        kind: template
+        metadata: { name: cleanparallel, level: ticket }
+        defaults:
+          routes:
+            by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+          limits: { attempts: 3 }
+        steps:
+          - id: both
+            parallel:
+              branches:
+                - { id: a, action: test.run }
+                - { id: b, action: test.run }
+            routes: { completed: check, any_failed: { end: failed } }
+          - id: check
+            action: artifact.validate
+            routes: { invalid: { to: both, clean_up: true }, valid: { end: completed } }
+        """;
+
+    /// <summary>A decision, then a step that escalates when it fails.</summary>
+    const string AskThenWork = """
+        api_version: feature-flow/v1
+        kind: template
+        metadata: { name: askthenwork, level: ticket }
+        parameters:
+          ticket_id: { type: string, default: FF-1 }
+        defaults:
+          routes:
+            by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+          limits: { attempts: 1 }
+        steps:
+          - id: ask
+            decision: { type: ticket.spec_approval, prompt: std:prompts/spec_approval }
+            outcomes: { approved: success, rejected: failure }
+            routes: { approved: work }
+          - id: work
+            action: test.run
+            routes: { passed: { end: completed } }
+        """;
+
     static readonly Probe Lib = new("rules", ("loop", Loop), ("countdown", Countdown), ("unrouted", Unrouted),
-        ("selfloop", SelfLoop), ("cleanloop", CleanLoop), ("catchup", CatchUp));
+        ("selfloop", SelfLoop), ("cleanloop", CleanLoop), ("catchup", CatchUp), ("cleanparallel", CleanParallel), ("askthenwork", AskThenWork));
 
     /// <summary>Runs the driver on another thread and fails if it has not returned in 5 seconds.</summary>
     static async Task RunWithin5Seconds(Driver driver)
@@ -158,6 +200,31 @@ public class RunTimeRuleTests
         // The template allows 1 attempt; the first clean_up route finds work exhausted, so no reset is asked for.
         Assert.Empty(driver.Commands.OfType<CleanUp>());
         Assert.Contains(core.State.Trace, t => t is { Kind: "exhausted", StepId: "work" });
+    }
+
+    [Fact]
+    public void A_clean_up_aimed_at_a_container_is_the_clean_up_of_its_first_step()
+    {
+        var core = Lib.Start("cleanparallel");
+        var checks = 0;
+        var driver = new Driver(core) { Respond = (id, _) => new StepCompleted(id, id == "check" ? (++checks == 1 ? "invalid" : "valid") : "passed") };
+        driver.Run();
+
+        Assert.Equal(RunStatus.Completed, core.State.Status);
+        // The reset is asked for the step that starts first and records where it started, never the container itself.
+        Assert.Equal(["a"], driver.Commands.OfType<CleanUp>().Select(c => c.StepId));
+    }
+
+    [Fact]
+    public void A_person_may_not_go_to_a_decision_with_clean_up()
+    {
+        var core = Lib.Start("askthenwork");
+        new Driver(core) { Respond = (id, _) => id == "ask" ? new DecisionAnswered(id, "approved") : new StepCompleted(id, "failed") }.Run();
+        var wait = core.State.Waits.Single();
+
+        Assert.Contains("is a decision", core.Check(new InterventionAnswered(wait.Id, new Recovery(RecoveryKind.GoTo, "ask", CleanUp: true))));
+        Assert.Null(core.Check(new InterventionAnswered(wait.Id, new Recovery(RecoveryKind.GoTo, "ask"))));
+        Assert.Null(core.Check(new InterventionAnswered(wait.Id, new Recovery(RecoveryKind.GoTo, "work", CleanUp: true))));
     }
 
     [Fact]

@@ -174,3 +174,183 @@ and no open pull request.
 - An engine-level SP4 test through the actions builder's steps, at integration.
 - `GetExpectedRunsAsync` does not evaluate job-level `if:` conditions; a workflow whose every job is skipped still
   counts as expected.
+
+---
+
+## Engine actions and checks
+
+Branch `m5-actions`, from `m5@1189a6b` (the interfaces and in-memory fakes, LOG 107).
+
+### What was built
+
+| Part | Where | What |
+|---|---|---|
+| Ten actions | `src/FeatureFlow.Engine/Actions/` | `scm.catch_up`, `scm.pull_request`, `scm.merge`, `scm.revert` (`SourceControl.cs`); `ci.checks`, `wait.condition` (`Waiting.cs`); `test.run`, `test.integration`, `analysis.run`, `repo.inspect` (`Testing.cs`). Dispatched by `RunActionAsync` when a real VCS and code host are configured; other actions stay on the stand-in (LOG 121) |
+| Result parsing | `Actions/ResultFiles.cs` | TRX, JUnit and SARIF into the `Evidence.cs` records, one place for sandbox and CI tiers |
+| Evidence | `Actions/Evidence.cs` | The JSON of `test_results`, `check_results`, `analysis_results`, `merge_record` (LOG 132) |
+| Waiting | `RunActionAsync` | A wait is one read per activity attempt; an open wait fails retryably with the poll interval as the next delay, so it holds no worker (LOG 122) |
+| Run-start checks 20, 23, 24 | `Activities.cs` `RepositoryChecksAsync`, `Validation/RunStartChecks.cs` | Read the default branch, its protection and `feature-flow.yaml` through the code host |
+| Step-start checks 31, 33 | `Validation/StepStartChecks.cs` | 31: each M5 action's inputs; 33: `tier_tags` against the manifest read at the step |
+| Step-start check 32 | `RunWorkflow.cs` | A consumed artifact no step produced stops the step (patch `m5-step-start`, LOG 127) |
+| Repository manifest | `Model/Manifest.cs` | `feature-flow.yaml` as `docs/07` section 4 writes it; unknown keys refused |
+| F1 setting | `Model/Configuration.cs` | `policy.merge.default_branch.engine_may_merge`, carried in the run's policy |
+| `clean_up` reset | `EngineActions.CleanUpAsync`, `RunWorkflow.cs` | Expected-revision push back to where the step started (patch `m5-clean-up`, LOG 128) |
+| Agent step | `Engine.Agent/AgentActivities.cs` | Parent branch from the code host; manifest `setup` and `after_changes` run in the sandbox; start revision recorded (LOG 129, 135) |
+| Memory sandbox | `Providers.Local/MemorySandbox.cs` | Scripted commands for engine tests, no container (LOG 136) |
+
+`test.integration` is `test.run` with the `integration` tag across repositories; std's name works unchanged
+(LOG 120).
+
+### Checks
+
+| What | Test | Result |
+|---|---|---|
+| Each action, with the in-memory world | `FeatureFlow.Engine.Tests`: `SourceControlActionTests` (16), `WaitingActionTests` (10), `TestingActionTests` (15), `ResultFileTests` (11 cases) | Pass |
+| Checks 20, 23, 24 on std's `ticket_delivery` | `Engine.Tests/RunStartCheckTests` (5) | Pass |
+| **F1**: a standalone ticket with `engine_can_merge: true` into the default branch is refused at run start | `RunStartCheckTests.F1_a_standalone_ticket_...` and, through the engine and CLI, `ForgeTicketTests.F1_through_the_engine_...` (run fails, detail cites check 23; with std's default `false` the same ticket starts) | Pass |
+| std `ticket_delivery` to a merge into its parent branch, on the `memory` providers with the scripted runtime | `Integration.Tests/ForgeTicketTests.A_std_ticket_runs_...`: every step through `deliver.merge`; one squash commit on `main` holding exactly the tested head's tree, with the `Feature-Flow-Merge` trailer; the pull request closed with a link to the commit | Pass |
+| **Done-when on memory**: a ticket started with `--parent-branch ff/epic/E-1` and `engine_can_merge: true`, with no F1 leave, lands there by an engine squash merge; `main` is untouched | `ForgeTicketTests.A_ticket_started_with_a_parent_branch_...` | Pass |
+| `parent_branch` refused unless a branch name; F1 still applies when it names the default branch | `ApiTests.A_parent_branch_that_is_not_a_branch_name_is_refused` (5 cases), `RunStartCheckTests.F1_still_applies_...` | Pass |
+| Check 32 | `Integration.Tests/StepStartCheckTests` (2, with a control), test library `libraries/m5` | Pass |
+| Agent step: parent branch, `setup`, `after_changes` | `Engine.Agent.Tests/AgentManifestTests` (5) | Pass |
+| Manifest reader, patterns, `engine_may_merge` | `Model.Tests/ManifestTests` (17 cases) | Pass |
+| Unchanged behaviour | `TicketRunTests` (5), `EpicRunTests`, `StepFailureTests`, `ContinueAsNewTests`; replay tests | Pass |
+
+Counts after the re-check's fixes and the merge of PR 5: default suite **728 passed, 0 failed**, on `m5@5af8fe8` (431 at `1189a6b`). Integration on a dev server: `ForgeTicketTests` 7, `StepStartCheckTests` 2, and the existing ticket, epic, step-failure and SP1 tests, 17 in all. Integration tests were run locally on a dev
+server, not the Docker agent tests: the agent step's change with no code host keeps M4's behaviour, and CI runs them.
+
+The engine tests found one bug of their own: `ci.checks` read the clock before awaiting the wait's start time,
+so its first read saw a negative elapsed time and waited out a zero grace. Fixed; the tests then ran ten times
+with no failure.
+
+### Controls
+
+`tools/check_m5_actions_controls.py` (needs `FF_TEMPORAL_ADDRESS`; no Docker). Each breakage was run, its tests
+failed, and all passed again after the revert. **All 52 hold** (22 before the review, 23 added for it, 7 for the re-check; the review's controls are listed in the script under "Added for the review of PR 6").
+
+| Breakage | Tests that failed |
+|---|---|
+| `require_tested` skipped | `A_head_without_passing_test_evidence_is_not_merged` |
+| `require_checks` skipped | `A_head_with_failed_checks_is_not_merged_...` |
+| F1 not re-checked at merge time | `F1_at_merge_time_turns_..._into_an_action_request` |
+| Check 23 skipped | 3 `RunStartCheckTests` F1 cases and `ForgeTicketTests.F1_through_the_engine_...` |
+| Check 24 skipped | `Check_24_an_unprotected_default_branch_is_refused` |
+| Check 20 not called | `Check_20_..._overrides_is_refused_...` |
+| `ci.checks` ignores expected CI runs | `An_early_third_party_check_does_not_pass_while_an_expected_CI_run_has_not_reported` |
+| `ci.checks` ignores a head change | `A_head_that_changes_while_checks_are_awaited_...` |
+| Check 31 skipped | `Check_31_refuses_...`, `Wait_condition_..._takes_one_condition_only` |
+| Check 33 skipped | `Check_33_a_tag_that_matches_no_tier_...` |
+| Check 32 skipped | `Check_32_a_step_whose_consumed_artifact_was_never_produced_...` |
+| A carried result adopted for another head | `A_head_already_tested_..._adopts_the_result_...` |
+| TRX failures counted as passes | `TRX_counts_outcomes_...`, `Failed_tests_are_failed_...` |
+| Analysis ignores the baseline | `Analysis_fails_on_new_issues_against_the_baseline_...` |
+| `clean_up` does not reset the branch | `A_clean_up_resets_the_work_branch_...` |
+| `clean_up` leaves hidden references | the same test |
+| Actions' parent branch hard-coded `main` | `A_pull_request_is_opened_into_the_default_branch_read_from_the_code_host_...` |
+| Agent's parent branch hard-coded `main` | `The_parent_branch_is_the_default_branch_the_code_host_names` |
+| Agent `setup` not run | `Setup_runs_before_the_agent_...`, `A_failing_setup_command_...`, `After_changes_does_not_run_...` |
+| Agent `after_changes` not run | `Setup_runs_before_the_agent_and_after_changes_runs_after_it_committed_...` |
+| A start's `parent_branch` dropped by the API | `ForgeTicketTests.A_ticket_started_with_a_parent_branch_lands_there_...` |
+| Any named parent branch skips F1, even the default | `F1_still_applies_when_a_start_names_the_default_branch_as_the_parent_branch` |
+
+### The live run (M5's done-when): how to
+
+The done-when's merge is the engine's, into a parent branch that is not the default: how a ticket inside an epic
+lands. A run names that branch with `parent_branch` (LOG 137); a standalone ticket into `main` stays a person's merge.
+
+**State of the fixture** (`ai-feature-flow/feature-flow-example`)
+- `feature-flow.yaml` in the current format: fixture pull request 50. Both tiers run in CI (`unit.yml`,
+  `integration.yml`), because the M4 sandbox image has no .NET SDK; no setup commands; no analyser. Its CI passed.
+  **It needs one approving review before it can merge** (see below); until then the old manifest is on `main` and
+  every step that reads it stops for a person.
+- `main` is protected by the ruleset `protect-main`: pull request with one approval, last-push approval, no
+  force-push, **no bypass actors**. It existed before M5 (2026-10-29). GitHub's classic branch-protection API reports
+  `main` as unprotected (404); the GitHub code host must read rulesets (`GET /repos/{owner}/{repo}/rules/branches/{branch}`)
+  for check 24 to pass.
+
+**Configuration**
+- Installation as M4's live tests, plus M5's providers: `vcs` git, `code_host` github, `ci` github_actions,
+  `sandbox` docker, `agent_runtime` claude_code; `FF_SECRETS_FILE` and `CLAUDE_CODE_OAUTH_TOKEN` as in
+  `CONTRIBUTING.md`.
+- Organisation: std as its library. No `engine_may_merge` is needed: the merge target is not a default branch.
+  Optionally `approval: [{ match: "ticket.spec_approval", roles: [approver], auto: true }]`, else answer the spec
+  approval with `ff run answer`.
+
+**Commands**
+```bash
+# The parent branch, from main (the engine does not create a named parent branch).
+GH_TOKEN="$SPARKKZ_NZ_GITHUB_TOKEN" gh api repos/ai-feature-flow/feature-flow-example/git/refs \
+  -f ref=refs/heads/ff/epic/m5-live -f sha="$(GH_TOKEN="$SPARKKZ_NZ_GITHUB_TOKEN" gh api repos/ai-feature-flow/feature-flow-example/git/ref/heads/main --jq .object.sha)"
+ff run start std:templates/ticket_delivery --param ticket_id=M5-LIVE-1 --param engine_can_merge=true \
+  --repo ai-feature-flow/feature-flow-example --parent-branch ff/epic/m5-live
+ff run wait <run id> --timeout 3600
+```
+
+**Expected end state**
+- The run is `completed`; its timeline passes `baseline.tests`, `implement`, `verify.tests`, `deliver.open_pr`,
+  `deliver.checks`, `deliver.catch_up`, `deliver.merge`, with CI tier results (`tier unit ...: n passed`).
+- `ff/epic/m5-live` has one new squash commit whose tree is the tested head's, with the trailer
+  `Feature-Flow-Merge: <run id>/deliver.merge`; `main` is unchanged.
+- The pull request `ff/ticket/M5-LIVE-1` into `ff/epic/m5-live` is closed with a comment linking the squash commit.
+- Clean up afterwards (live runs leave no references): delete `ff/ticket/M5-LIVE-1`, `ff/epic/m5-live`, and any
+  `refs/feature-flow/wip/*` and `refs/feature-flow/superseded/*` the run made.
+
+A control for F1 on the live repository: the same start without `--parent-branch` is refused at run start, check 23.
+
+### Review of PR 6
+
+An independent review found two blocking defects in the "nothing untested lands" floor, and eleven more. Each fix
+has tests and a control (`tools/check_m5_actions_controls.py`).
+
+| # | Finding | Fix |
+|---|---|---|
+| 1 | **Blocking.** `scm.merge` took evidence by type name, so an agent could write its own "passed" through a repository library's `test_results` type | Evidence counts only from the right engine action (`test.run` for `test_results`, `ci.checks` for `check_results`) and a type marked `evidence: true`. `test.integration`'s does not satisfy `require_tested` (14) |
+| 2 | **Blocking.** A result file with no tests, all skipped, or an aborted run read as passed | A tier that ran no tests fails; every TRX outcome but `Passed` and `NotExecuted` fails; a TRX run outcome other than completed fails; JUnit suite-level errors and counts are read |
+| 3 | A malformed SARIF threw an exception Temporal retried for ever | It fails to parse (intervention); any unexpected exception in an action raises an intervention |
+| 4 | A deny-list of failing check conclusions let `startup_failure` pass | Allow-list: `success`, `neutral`, `skipped` pass; unknown conclusions raise an intervention |
+| 5 | `poll_every: 0s` could make a wait spin | Check 31 sets a 5 s floor |
+| 6 | A wait holds up continue-as-new | **Not fixed**: a known limit, LOG 139, M6 must fix |
+| 7 | The scope and prompt rendering were not behind a patch marker | Behind `m5-step-start` |
+| 8 | Key rules passed by construction; no history held the M5 markers | Tests for evidence of another repository (B1), conclusions (B2), the latest execution's start (B3); std's `ticket_spec_rejected` `clean_up` on the memory providers; history `tests/histories/ticket_clean_up.json` holds both markers |
+| 9 | A `clean_up` work error was retried for ever | It raises an intervention at the step it was for; only infrastructure retries |
+| 10 | The agent wrote both the tier command and the result file | Evidence tiers and the analyser come from the parent branch's manifest (LOG 138); result paths are removed and checked gone first; `test_results` records the manifest hash |
+| 11 | A `branch_pattern` rendering to `main` would put the engine's writes on `main` | Run start and every writer (actions, `clean_up`, the agent step) refuse a work branch equal to the parent or default branch |
+| 12 | The manifest reader was duplicated | One `RepositoryManifest.Parse`. The sandbox polling loop stays: the shared helper is in a frozen file |
+| 13 | A heartbeat timeout on stand-in calls; `run.parent_branch` still `main` | Whether actions run against providers is fixed at run start, and only then is the heartbeat set; run start's default branches reach the core, so `run.parent_branch` is right |
+
+### Re-check of PR 6
+
+Verdict approve-with-fixes; each fix has tests, and a control where testable.
+
+| # | Fix |
+|---|---|
+| R1 | `HttpRequestException`, `IOException`, `SocketException` and `TimeoutException` escaping a provider are infrastructure errors, retried |
+| R2 | LOG 139's must-fix is a row of `docs/11`'s M6 section |
+| R3 | A `clean_up` aimed at a container is its first step's; one aimed at a decision is refused at load (check 8) and at a person's go-to (LOG 140) |
+| R4 | Evidence sandboxes run the parent branch's `setup` too; the agent's sandbox keeps the head's (LOG 138 updated) |
+| R5 | The work-branch refusal is check 36 in `docs/09` (LOG 141) |
+| Check 24's "review rules unknown" warning | After merging `m5` with PR 5: protection whose `ReviewRulesKnown` is false passes check 24 with a warning, and run start's warnings now reach the timeline (they were dropped), behind `m5-start-warnings` (LOG 142) |
+
+### Deviations and judgement calls
+
+LOG 120 to 142, unreviewed. These need a look: **138** (evidence tiers from the parent branch's manifest), **139** (waits hold up a hand-over), **120** (`test.integration` starts no services), **123** (the
+action request is watched on the code host; no decision record yet), **137** (a run request may name its
+`parent_branch`; approved 2026-11-03). LOG 121 keeps the
+stand-in for runs with only fake providers.
+
+### Follow-ups
+
+| # | Follow-up |
+|---|---|
+| 1 | Check 23 at patch time; the merge-time re-check covers it meanwhile |
+| 2 | The action request's decision record and an API answer for it (M7) |
+| 3 | `test.integration` starting services from `integration_environment` |
+| 4 | `analysis.run` with `sonarcloud`; `wait.condition` on a tracker issue |
+| 5 | The carried test result by tree identity, not only by revision |
+| 6 | **M6 must fix**: a wait holds up the run's hand-over (LOG 139) |
+| 7 | A person ending a wait by hand with `met` or `unmet` (`docs/04` section 8.2) |
+| 8 | Inbound events to wake waits early; waits poll every 30 seconds |
+| 9 | The GitHub code host must read rulesets as well as classic protection (the fixture's `main` is protected only by a ruleset), with the App's permissions; a 403 there is an infrastructure error and run start retries |
+| 10 | A run start does not check that a named `parent_branch` exists; the first step that touches the repository stops for a person |
+| 11 | `wait.condition: approved` accepts any identity's approval, the author's or the engine's included (M7, people and policy) |
+| 12 | A tier delegated to CI runs the workflow file on the head, which the agent can edit; the engine cannot clear CI's result files first. A green `ci.checks` is the independent backstop |

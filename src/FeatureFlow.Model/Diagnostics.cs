@@ -53,14 +53,20 @@ public static class Checks
     public const int RepositoryLibraryAddsOnly = 20;
     public const int Capabilities = 21;
     public const int LockedCap = 22;
+    public const int EngineMerge = 23;
+    public const int BranchProtection = 24;
     public const int PatchBaseRevision = 25;
     public const int PatchResumeAt = 26;
     public const int PatchProposer = 27;
     public const int PatchLoadChecks = 28;
     public const int PatchProtected = 29;
     public const int PatchFloor = 30;
+    public const int StepInputs = 31;
+    public const int ConsumedArtifacts = 32;
+    public const int TierTags = 33;
     public const int UnusedParameter = 34;
     public const int DeprecatedReference = 35;
+    public const int WorkBranch = 36;
 
     static readonly Dictionary<int, string> Titles = new()
     {
@@ -86,14 +92,20 @@ public static class Checks
         [20] = "repository library section adds only",
         [21] = "capability negotiation",
         [22] = "organisation cap",
+        [23] = "engine merge into a default branch (F1)",
+        [24] = "default branch protection",
         [25] = "patch base revision current",
         [26] = "patch resume_at exists",
         [27] = "patch proposer may use the operation",
         [28] = "patch result passes the load checks",
         [29] = "patch touches protected content or an unlisted role",
         [30] = "patch relaxes a safety floor",
+        [31] = "step inputs satisfy the action's contract",
+        [32] = "consumed artifacts exist",
+        [33] = "tier tags match the manifest",
         [34] = "unused parameter",
         [35] = "deprecated library reference",
+        [36] = "work branch is the default or parent branch",
     };
 
     public static string Title(int check) => Titles.TryGetValue(check, out var title) ? title : "check";

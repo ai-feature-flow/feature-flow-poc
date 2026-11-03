@@ -44,8 +44,15 @@ public sealed class Harness : IAsyncDisposable
     /// <paramref name="autoApprove"/> sets the organisation's approval rule for every decision type;
     /// <paramref name="omitTypes"/> leaves provider types unconfigured.
     /// </summary>
+    /// <para>
+    /// For M5's real actions: <paramref name="providers"/> are further lines of the installation's <c>providers</c>
+    /// section, whose types should be in <paramref name="omitTypes"/>; <paramref name="policy"/> further lines of the
+    /// organisation's <c>policy</c>; <paramref name="installation"/> further top-level installation lines; and
+    /// <paramref name="factories"/> provider factories beside the local ones.
+    /// </para>
     public static async Task<Harness> StartAsync(string name, string script = "{}", bool autoApprove = false, string[]? omitTypes = null,
-        string[]? libraries = null)
+        string[]? libraries = null, string providers = "", string policy = "", string installation = "", IEnumerable<FeatureFlow.Providers.Abstractions.ProviderFactory>? factories = null,
+        string agentRuntime = "{ default: scripted, dry_run: recording, instances: { scripted: { script: script.yaml }, recording: { folder: recorded } } }")
     {
         var folder = IOPath.Combine(IOPath.GetTempPath(), $"ff-it-{name}-{Guid.NewGuid():N}"[..40]);
         Directory.CreateDirectory(folder);
@@ -65,9 +72,11 @@ public sealed class Harness : IAsyncDisposable
               artifact_store: { default: filesystem, instances: { filesystem: { root: artifacts } } }
               record_store: { default: sqlite, instances: { sqlite: { path: records.db } } }
               secrets: { default: file, instances: { file: { path: secrets.json } } }
-              agent_runtime: { default: scripted, dry_run: recording, instances: { scripted: { script: script.yaml }, recording: { folder: recorded } } }
+              agent_runtime: {{agentRuntime}}
               action_stand_in: { default: scripted, dry_run: recording, instances: { scripted: { script: script.yaml }, recording: { folder: recorded } } }
             {{fakes}}
+            {{providers}}
+            {{installation}}
             api:
               auth: { mode: local_token, token_ref: secrets/api_token, actor: tester, roles: [viewer, approver, steerer, admin] }
             """);
@@ -82,9 +91,10 @@ public sealed class Harness : IAsyncDisposable
             policy:
               approval:
                 - { match: "*", roles: [approver], auto: {{(autoApprove ? "true" : "false")}} }
+            {{policy}}
             """);
         var configuration = FeatureFlowConfiguration.Load(IOPath.Combine(folder, "installation.yaml"), IOPath.Combine(folder, "organisation.yaml"));
-        harness.Host = await FeatureFlowHost.StartAsync(configuration, LocalProviders.Factories, true, true, "http://127.0.0.1:0");
+        harness.Host = await FeatureFlowHost.StartAsync(configuration, LocalProviders.Factories.Concat(factories ?? []), true, true, "http://127.0.0.1:0");
         return harness;
     }
 

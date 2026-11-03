@@ -258,10 +258,14 @@ the template (`docs/03` section 1).
 template: std:templates/epic_delivery     # default: the repository's default template
 parameters: { epic_id: ACME-42 }
 repositories: [acme/api, acme/web]
+parent_branch: ff/epic/acme-42            # optional; default each repository's default branch
 limits:
   - { step: implement, attempts: 4 }        # within the organisation's ceiling
 dry_run: false
 ```
+
+`parent_branch` names the branch the run's work branch starts from and merges into, in every
+repository of the run; it must exist. F1 still governs it when it is the default branch (LOG 137).
 
 `dry_run: true` selects recording providers that record instead of act, chosen
 by configuration. Workflow tests use the same mechanism (`docs/09`).
