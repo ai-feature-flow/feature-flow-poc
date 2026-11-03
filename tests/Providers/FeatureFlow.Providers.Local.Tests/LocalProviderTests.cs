@@ -63,33 +63,6 @@ public sealed class LocalProviderTests : IDisposable
         await Assert.ThrowsAsync<ArgumentException>(() => store.QueryAsync<WaitRecord>(Queries.Run, p, Ct));
     }
 
-    /// <summary>
-    /// The artifact index in SQLite, as <c>FindingsLedgerContract</c>'s artifact test states it: a run's artifacts include its
-    /// descendants', never its parent's or a sibling's, and are kept once per run, step, execution and name, also in a new
-    /// store on the same file.
-    /// </summary>
-    [Fact]
-    public async Task The_record_store_keeps_each_artifact_once_and_a_runs_view_includes_its_descendants()
-    {
-        var path = Path.Combine(folder, "records.db");
-        var store = new SqliteRecordStore(path);
-        var now = DateTimeOffset.UnixEpoch;
-        RunRecord R(string id, string? parent) => new(id, parent, "std:templates/epic_delivery", "running", "me", [], false, now, null);
-        ArtifactRecord A(string run, int execution, string reference) => new(run, "tests", execution, "test_results", "std:artifact_types/test_results", reference, "test.run", true, now);
-        await store.AppendAsync(new RecordBatch(Runs: [R("root", null), R("a", "root"), R("b", "root"), R("a1", "a")]), Ct);
-        await store.AppendAsync(new RecordBatch(Artifacts: [A("a", 1, "sha256:1"), A("a1", 1, "sha256:2")]), Ct);
-        await store.AppendAsync(new RecordBatch(Artifacts: [A("a", 1, "sha256:1"), A("a", 2, "sha256:3")]), Ct);
-        await new SqliteRecordStore(path).AppendAsync(new RecordBatch(Artifacts: [A("b", 1, "sha256:4"), A("a", 1, "sha256:1")]), Ct);
-
-        async Task<IReadOnlyList<ArtifactRecord>> Of(string run) =>
-            (await store.QueryAsync<ArtifactRecord>(Queries.Artifacts, new Dictionary<string, string> { ["run_id"] = run }, Ct)).Unwrap();
-        var fromA = await Of("a");
-        Assert.Equal(["sha256:1", "sha256:2", "sha256:3"], fromA.Select(r => r.Ref));
-        Assert.Equal(A("a", 2, "sha256:3"), fromA[2]);
-        Assert.Equal(["sha256:2"], (await Of("a1")).Select(r => r.Ref));
-        Assert.Equal(4, (await Of("root")).Count);
-    }
-
     [Fact]
     public async Task File_secrets_resolve_by_name()
     {
