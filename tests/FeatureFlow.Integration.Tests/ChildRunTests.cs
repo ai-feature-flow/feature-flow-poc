@@ -52,6 +52,8 @@ public class ChildRunTests
         Assert.Equal([(id, "write", 1, "notes", notes.Value), (childId, "use", 1, "summary", index.Single(a => a.Name == "summary").Ref)],
             index.Select(a => (a.RunId, a.StepId, a.Execution, a.Name, a.Ref)));
         Assert.All(index, a => Assert.Equal(("m6:artifact_types/notes", null, false), (a.Type, a.Action, a.Evidence)));
+        await h.RecordHistoryAsync(id, "family_parent");
+        await h.RecordHistoryAsync(childId, "family_child");
     }
 
     [Fact]
@@ -115,6 +117,7 @@ public class ChildRunTests
         Assert.True(timeline.FindIndex(e => e is { Kind: "child_started", Step: "child" }) < timeline.FindIndex(e => e.Kind == "continued_as_new"),
             "the child was not started before the first hand-over");
         Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
+        await h.RecordRunHistoryAsync(id, 1, "silent_parent_resumed");
     }
 
     /// <summary>The id of the parent's child once the child is running.</summary>

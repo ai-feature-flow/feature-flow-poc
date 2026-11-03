@@ -78,5 +78,7 @@ public class WaitHandOverTests
         Assert.All(final.HandOvers, o => Assert.Equal(0, o.InFlightActivities));
         Assert.Equal(0, final.ActivitiesStartedWhileDraining);
         Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
+        await h.RecordHistoryAsync(id, "wait_hand_over");
+        await h.RecordRunHistoryAsync(id, 1, "wait_hand_over_resumed");
     }
 }
