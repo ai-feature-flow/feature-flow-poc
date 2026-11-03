@@ -4,6 +4,9 @@ using FeatureFlow.Library;
 using FeatureFlow.Model;
 using FeatureFlow.Model.Plans;
 using FeatureFlow.Model.Yaml;
+using FeatureFlow.Providers.Abstractions;
+using FeatureFlow.Providers.Local;
+using Temporalio.Testing;
 
 namespace FeatureFlow.Engine.Tests;
 
@@ -69,6 +72,51 @@ public sealed class TrackerUpdateAndBudgetTests
         var plan = PlanLoader.LoadTemplate(Libraries(d), LibraryReference.TryParse("delivery:templates/items_at_run_time")!, d);
         Assert.DoesNotContain(d, x => x.Blocks);
         Assert.False(plan!.AllSteps.Single(s => s.Id == "each").Container!.ItemsKnown);
+    }
+
+    static RunActivities Activities(IRecordStoreProvider records)
+    {
+        var instances = new Dictionary<string, IReadOnlyDictionary<string, IProvider>> { ["record_store"] = new Dictionary<string, IProvider> { ["one"] = records } };
+        var providers = new ProviderSet(instances, new Dictionary<string, string> { ["record_store"] = "one" }, new Dictionary<string, string>());
+        var installation = new InstallationConfig("localhost:7233", "default", "q", 5120, new Dictionary<string, ProviderTypeConfig>(),
+            new ApiAuthConfig("local_token", null, "tester", []), 3, 10, "installation.yaml");
+        var organisation = new OrganisationConfig("acme", [], new PolicyConfig([], null, null, null, null), "organisation.yaml");
+        return new RunActivities(new EngineServices(providers, installation, organisation), null);
+    }
+
+    static RunRecord Run(string id, string? parent) => new(id, parent, "t", "running", "tester", [], false, DateTimeOffset.UnixEpoch, null);
+
+    [Fact]
+    public async Task A_retried_reservation_does_not_count_its_own_child_twice()
+    {
+        var records = new InMemoryRecordStore();
+        (await records.AppendAsync(new RecordBatch([Run("root", null), Run("root.a.1", "root"), Run("root.a.1.b.1", "root.a.1")]), TestContext.Current.CancellationToken)).Unwrap();
+        var activities = Activities(records);
+        var request = new WorkItemRequest(new WorkItemBudget("root", 3), 1, Run("root.c.1", "root"));
+
+        var first = await new ActivityEnvironment().RunAsync(() => activities.ReserveWorkItemsAsync(request));
+        var retried = await new ActivityEnvironment().RunAsync(() => activities.ReserveWorkItemsAsync(request));
+        var another = await new ActivityEnvironment().RunAsync(() => activities.ReserveWorkItemsAsync(request with { Child = Run("root.d.1", "root") }));
+
+        Assert.Null(first);
+        Assert.Null(retried);
+        Assert.Contains("it has 3", another, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Std_epics_children_get_a_work_list_items_tracker_issue_when_it_names_one()
+    {
+        var core = Start("std:templates/epic_delivery", ("epic_name", "billing")).Core!;
+        YNode Item(string name, string? issue) => YamlWriter.Read(
+            $"{{ name: {name}, title: T, repositories: [acme/api], boundary: b, owns: [R1]{(issue is null ? "" : $", tracker_issue: \"{issue}\"")} }}");
+
+        var (patch, error) = PlanExpansion.Build(core, "tickets.expand", [Item("with_issue", "acme/api#7"), Item("without", null)]);
+
+        Assert.Null(error);
+        var withs = patch!.Changes.Select(c => (YMap)c.Step!["with"]!).ToList();
+        Assert.Equal("acme/api#7", withs[0]["tracker_issue"]?.ScalarText());
+        Assert.Null(withs[1]["tracker_issue"]);
+        Assert.Equal(2, WorkItems.ChildSteps(patch));
     }
 
     [Fact]

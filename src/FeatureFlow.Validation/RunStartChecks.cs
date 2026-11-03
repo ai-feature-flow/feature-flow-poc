@@ -205,10 +205,11 @@ public static class RunStartChecks
     /// auto-resolution where the matching approval rule locks <c>auto</c> off; an <c>scm.merge</c> turning
     /// <c>require_checks</c> off where the organisation locks it on.
     /// </summary>
-    public static void Caps(Plan plan, PolicyConfig policy, Func<Step, long> allowance, DiagnosticBag d)
+    public static void Caps(Plan plan, PolicyConfig policy, Func<Step, long> allowance, DiagnosticBag d, bool root = true)
     {
-        // F11 is a floor: the organisation's ceiling is never exceeded, so it is locked whatever the file says.
-        if (plan.Document.MaxWorkItems is { } asked && policy.MaxWorkItems is { } workItems && asked > workItems)
+        // F11 is a floor: the organisation's ceiling is never exceeded, so it is locked whatever the file says. Only a root's
+        // budget counts (LOG 187): a child's own is not read, so it is not checked.
+        if (root && plan.Document.MaxWorkItems is { } asked && policy.MaxWorkItems is { } workItems && asked > workItems)
             d.Add(Checks.LockedCap, $"budget.max_work_items {asked.ToString(CultureInfo.InvariantCulture)} is above policy.budgets.max_work_items.ceiling {workItems.ToString(CultureInfo.InvariantCulture)} (F11)");
         foreach (var step in plan.AllSteps)
         {

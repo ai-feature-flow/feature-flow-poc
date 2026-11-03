@@ -80,6 +80,7 @@ public sealed class ArtifactActionTests
     [Theory]
     [InlineData("main")]
     [InlineData("abc123")]
+    [InlineData("gggggggggggggggggggggggggggggggggggggggg")]
     public async Task Import_refuses_a_commit_that_is_not_a_full_commit_id(string commit)
     {
         await using var w = new ActionWorld();
@@ -220,6 +221,23 @@ public sealed class ArtifactActionTests
 
         Assert.Equal("conflict", Outcome(second));
         Assert.Equal(moved, w.Forge.Resolve(w.Repo, "refs/heads/" + branch));
+    }
+
+    [Fact]
+    public async Task A_new_publication_branch_already_at_the_earlier_publications_commit_is_a_conflict()
+    {
+        await using var w = new ActionWorld();
+        await ProducedAsync(w, "design", "contract", "# Contract v1\n");
+        var first = await w.RunAsync("artifact.publish", $"{{ files: {Files} }}", "publish", produces: Receipt);
+        var earlier = await ReadAsync<Publication>(w, first, "receipt");
+        // The earlier pull request was closed, so this publication goes on a branch of its own, which must be new.
+        (await new InMemoryCodeHost(w.Forge).ClosePullRequestAsync(Pr(first), null, Ct)).Unwrap();
+        w.Forge.SetReference(w.Repo, $"refs/heads/ff/publish/{w.RunId}/publish_again/1", earlier.Commit);
+        await ProducedAsync(w, "design", "contract", "# Contract v2\n");
+
+        var second = await w.RunAsync("artifact.publish", $"{{ files: {Files}, previous: receipt }}", "publish_again", produces: Receipt);
+
+        Assert.Equal("conflict", Outcome(second));
     }
 
     [Fact]

@@ -131,6 +131,39 @@ public class DeliveryRunTests
         Assert.All(notes, n => Assert.Contains("could not move MEM-404", n, StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task A_childs_own_budget_above_the_ceiling_is_not_checked_only_the_roots_counts()
+    {
+        // budget_middle asks for 50, above the ceiling of 10; as a child its budget is not read, so it starts.
+        await using var h = await Harness.StartAsync("budget-child-cap", libraries: Delivery, policy: "  budgets: { max_work_items: { ceiling: 10 } }");
+        var root = h.Start("delivery:templates/budget_tree");
+
+        var middle = await ChildAsync(h, root);
+        var reason = await WaitReasonAsync(h, middle);
+
+        Assert.Contains("may create 2 descendant run", reason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_tracker_outage_is_given_up_after_a_few_tries_and_the_run_carries_on()
+    {
+        var world = "tracked-" + Guid.NewGuid().ToString("N")[..8];
+        var tracker = InMemoryTracker.Named(world);
+        var issue = (await tracker.CreateAsync(new IssueSpec("The ticket"), "seed", Ct)).Unwrap();
+        // Every try of the first update fails as an outage would; the later updates go through.
+        tracker.Fail("Transition", new ProviderError("unreachable", "the tracker is down"), times: 5);
+        await using var h = await Harness.StartAsync("tracked-outage", autoApprove: true, libraries: Delivery, omitTypes: ["tracker"],
+            providers: $"  tracker: {{ instances: {{ memory: {{ world: {world} }} }} }}");
+
+        var id = h.Start("delivery:templates/tracked", "--tracker-issue", issue.Key);
+        var (_, end, _) = h.Cli("wait", id, "--timeout", "180");
+
+        Assert.Equal($"run {id} completed", end.Trim());
+        var notes = (await h.ShowAsync(id))["timeline"]!.AsArray().Where(e => e!["kind"]!.ToString() == "tracker").Select(e => e!["detail"]!.ToString()).ToList();
+        Assert.Contains("did not answer in 5 tries", notes[0], StringComparison.Ordinal);
+        Assert.Equal("done", (await tracker.GetIssueAsync(issue, Ct)).Unwrap().Status);
+    }
+
     static async Task<string> ChildAsync(Harness h, string runId)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromMinutes(2);

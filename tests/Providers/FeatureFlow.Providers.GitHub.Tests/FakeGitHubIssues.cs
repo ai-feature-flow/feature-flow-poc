@@ -23,6 +23,7 @@ public sealed partial class FakeGitHubIssues : HttpMessageHandler
         public List<string> Labels = [];
         public int? Parent;
         public bool PullRequest;
+        public bool Deleted;
         public readonly List<(long Id, string Body)> Comments = [];
     }
 
@@ -37,7 +38,14 @@ public sealed partial class FakeGitHubIssues : HttpMessageHandler
     /// <summary>How many of the newest items the lists leave out, as GitHub's lists lag a create by seconds; reading one by number does not lag.</summary>
     public int Unlisted { get; set; }
 
-    IEnumerable<Item> Listed => items.OrderByDescending(i => i.Number).Skip(Unlisted);
+    IEnumerable<Item> Listed => items.OrderByDescending(i => i.Number).Skip(Unlisted).Where(i => !i.Deleted);
+
+    /// <summary>Deletes an issue, as an administrator can: GitHub then answers 410 for its number.</summary>
+    public void Delete(int number)
+    {
+        lock (gate)
+            items.Single(i => i.Number == number).Deleted = true;
+    }
 
     /// <summary>The bodies of an issue's comments, as a person sees them on GitHub (the marker is an HTML comment).</summary>
     public IReadOnlyList<string> Comments(int number)
@@ -75,6 +83,8 @@ public sealed partial class FakeGitHubIssues : HttpMessageHandler
             var item = number is { } n ? items.FirstOrDefault(i => i.Number == n) : null;
             if (number is not null && item is null)
                 return Json(404, new JsonObject { ["message"] = "Not Found" });
+            if (item is { Deleted: true })
+                return Json(410, new JsonObject { ["message"] = "This issue was deleted" });
 
             switch (request.Method.Method, number is null, tail)
             {

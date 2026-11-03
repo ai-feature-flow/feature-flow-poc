@@ -59,7 +59,7 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
             if (core is not null)
             {
                 RunStartChecks.Capabilities(core.Plan, libraries, services.Providers.Offered(start.DryRun), d);
-                RunStartChecks.Caps(core.Plan, services.Organisation.Policy, core.Allowance, d);
+                RunStartChecks.Caps(core.Plan, services.Organisation.Policy, core.Allowance, d, root: start.ParentWorkflowId is null);
                 if (services.Providers.ForRun("code_host", start.DryRun) is ICodeHostProvider host)
                     defaultBranches = await RepositoryChecksAsync(host, core, start, libraries, policy, d, ct);
             }

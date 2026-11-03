@@ -141,6 +141,30 @@ public sealed class GitHubIssuesTrackerTests
     }
 
     [Fact]
+    public async Task A_deleted_number_among_the_unlisted_ones_is_passed_over()
+    {
+        var github = new FakeGitHubIssues { Unlisted = 5 };
+        var tracker = new GitHubIssuesTracker(github.Api(), "o/r");
+        github.Delete(int.Parse((await tracker.CreateAsync(new IssueSpec("Gone"), "gone", Ct)).Unwrap().Key.Split('#')[1]));
+
+        var first = (await tracker.CreateAsync(new IssueSpec("T"), "k", Ct)).Unwrap();
+        var retried = (await tracker.CreateAsync(new IssueSpec("T"), "k", Ct)).Unwrap();
+
+        Assert.Equal(first, retried);
+    }
+
+    [Fact]
+    public async Task A_search_in_one_project_leaves_out_another_projects_issues()
+    {
+        var tracker = new GitHubIssuesTracker(new FakeGitHubIssues().Api(), "o/r");
+        var parent = (await tracker.CreateAsync(new IssueSpec("Epic"), "p", Ct)).Unwrap();
+        (await tracker.CreateAsync(new IssueSpec("Ticket", Parent: parent), "c", Ct)).Unwrap();
+
+        Assert.Single((await tracker.SearchAsync(new IssueQuery(Parent: parent, Project: "o/r"), Ct)).Unwrap());
+        Assert.Empty((await tracker.SearchAsync(new IssueQuery(Parent: parent, Project: "o/elsewhere"), Ct)).Unwrap());
+    }
+
+    [Fact]
     public async Task Custom_fields_are_refused_GitHub_Issues_has_none()
     {
         var tracker = new GitHubIssuesTracker(new FakeGitHubIssues().Api(), "o/r");

@@ -30,6 +30,8 @@ RUN_START = "src/FeatureFlow.Validation/RunStartChecks.cs"
 CONFIGURATION = "src/FeatureFlow.Model/Configuration.cs"
 LOADER = "src/FeatureFlow.Library/PlanLoader.cs"
 AGENT = "src/FeatureFlow.Engine.Agent/AgentActivities.cs"
+PREPARE = "src/FeatureFlow.Engine/Activities.cs"
+PATCHES = "src/FeatureFlow.Interpreter/Patches.cs"
 API = "src/FeatureFlow.Api/ApiApp.cs"
 
 ENGINE = ("tests/FeatureFlow.Engine.Tests", None)
@@ -39,14 +41,15 @@ MODEL = ("tests/FeatureFlow.Model.Tests", "FullyQualifiedName~ConfigurationTests
 REPLAY = ("tests/FeatureFlow.Replay.Tests", None)
 GITHUB = ("tests/Providers/FeatureFlow.Providers.GitHub.Tests", "Category!=Live&FullyQualifiedName~Issues")
 DELIVERY_RUNS = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~DeliveryRunTests")
+VALIDATION = ("tests/FeatureFlow.Validation.Tests", "FullyQualifiedName~RunStartCheckTests")
 
 
 CONTROLS = [
     # ---- delivery.report ----
     {
         "name": "delivery.report counts a merge record without confirming the parent branch holds it",
-        "edits": [(DELIVERY, 'if (ActionRun.Must(contained, $"check that {target} contains the merge"))',
-                   'if (contained.Ok || ActionRun.Must(contained, $"check that {target} contains the merge"))')],
+        "edits": [(DELIVERY, 'if (!ActionRun.Must(contained, $"check that {target} contains the merge"))',
+                   'if (!ActionRun.Must(contained, $"check that {target} contains the merge") && record.Revision.Length < 0)')],
         "tests": [ENGINE],
         "expect": ["A_merge_the_parent_branch_no_longer_contains_is_not_delivered"],
     },
@@ -62,6 +65,88 @@ CONTROLS = [
                    "scope.Artifacts.Where(a => TypeName(a.Type) == type)")],
         "tests": [ENGINE],
         "expect": ["An_agents_artifact_named_merge_record_is_not_a_merge"],
+    },
+    # Added for the review of PR 12.
+    {
+        "name": "review F1: delivery.report counts a merge of an older head, with work after it",
+        "edits": [(DELIVERY, "var current = records.Where(r => r.Head == work && r.Revision.Length > 0).ToList();",
+                   "var current = records.Where(r => r.Revision.Length > 0).ToList();")],
+        "tests": [ENGINE],
+        "expect": ["Work_committed_after_the_merge_is_not_delivered"],
+    },
+    {
+        "name": "review F2: delivery.report ignores the run's reverts",
+        "edits": [(DELIVERY, "if (await RevertedAsync(run, record, reverts) is { } reverted)",
+                   "if (record.Revision.Length < 0 && await RevertedAsync(run, record, reverts) is { } reverted)")],
+        "tests": [ENGINE],
+        "expect": ["A_merge_with_an_open_revert_or_a_merged_one_is_not_delivered"],
+    },
+    {
+        "name": "review: delivery.report counts a merge into another branch",
+        "edits": [(DELIVERY, "r.Repository == name && r.Target == target", "r.Repository == name")],
+        "tests": [ENGINE],
+        "expect": ["A_merge_record_into_another_branch_is_not_a_merge_into_the_parent"],
+    },
+    {
+        "name": "review: delivery.report counts a recorded revision the repository does not have",
+        "edits": [(DELIVERY, 'if (contained is { Ok: false, Error.Reason: "not_found" })\n                continue;',
+                   'if (contained is { Ok: false, Error.Reason: "not_found" })\n                return new DeliveredRepository(repo.FullName, true, target, record.Revision, record.MergedBy, null);')],
+        "tests": [ENGINE],
+        "expect": ["A_recorded_revision_the_repository_does_not_have_is_not_a_merge"],
+    },
+    {
+        "name": "review F3: run start checks a child's own budget against the ceiling",
+        "edits": [(PREPARE, "root: start.ParentWorkflowId is null);", "root: true);")],
+        "tests": [DELIVERY_RUNS],
+        "expect": ["A_childs_own_budget_above_the_ceiling_is_not_checked_only_the_roots_counts"],
+    },
+    {
+        "name": "review F3: check 22 reads a child's budget",
+        "edits": [(RUN_START, "if (root && plan.Document.MaxWorkItems", "if (plan.Document.MaxWorkItems")],
+        "tests": [VALIDATION],
+        "expect": ["Check_22_a_roots_budget_above_the_work_item_ceiling_is_refused_and_a_childs_is_not_read"],
+    },
+    {
+        "name": "review F4: a tracker outage is retried for ever, holding up the run",
+        "edits": [(WORKFLOW, "MaximumInterval = TimeSpan.FromSeconds(30), MaximumAttempts = 5 },", "MaximumInterval = TimeSpan.FromSeconds(30), MaximumAttempts = 0 },")],
+        "tests": [("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~A_tracker_outage_is_given_up")],
+        "expect": ["A_tracker_outage_is_given_up_after_a_few_tries_and_the_run_carries_on"],
+    },
+    {
+        "name": "review: a retried reservation counts its own child",
+        "edits": [(ACTIVITIES, "descendants.Remove(reserved.RunId);", "_ = reserved;")],
+        "tests": [ENGINE],
+        "expect": ["A_retried_reservation_does_not_count_its_own_child_twice"],
+    },
+    {
+        "name": "review: artifact.import takes 40 characters that are not hexadecimal as a commit",
+        "edits": [(ARTIFACTS, "text.Length is 40 or 64 && text.All(Uri.IsHexDigit);", "text.Length is 40 or 64;")],
+        "tests": [ENGINE],
+        "expect": ["Import_refuses_a_commit_that_is_not_a_full_commit_id"],
+    },
+    {
+        "name": "review: a new publication branch may stand at the earlier publication's commit",
+        "edits": [(ARTIFACTS, "var expectedHead = supersede ? previous!.Commit : null;", "var expectedHead = previous?.Commit;")],
+        "tests": [ENGINE],
+        "expect": ["A_new_publication_branch_already_at_the_earlier_publications_commit_is_a_conflict"],
+    },
+    {
+        "name": "review: a deleted issue number ends the GitHub tracker's recent reads",
+        "edits": [(ISSUES, 'read.Error.Message.Contains(" 410 ", StringComparison.Ordinal)', 'read.Error.Message.Contains(" 999 ", StringComparison.Ordinal)')],
+        "tests": [GITHUB],
+        "expect": ["A_deleted_number_among_the_unlisted_ones_is_passed_over"],
+    },
+    {
+        "name": "review: a GitHub search ignores its project",
+        "edits": [(ISSUES, "query.Project is { } project && number.Repo.FullName != project)", "query.Project is { } project && number.Repo.FullName != project && project.Length < 0)")],
+        "tests": [GITHUB],
+        "expect": ["A_search_in_one_project_leaves_out_another_projects_issues"],
+    },
+    {
+        "name": "open question 2: an optional plan.expand path the item lacks is an error",
+        "edits": [(PATCHES, "&& Substitute(optional, item).Error is not null)", "&& optional.Text.Length < 0)")],
+        "tests": [ENGINE],
+        "expect": ["Std_epics_children_get_a_work_list_items_tracker_issue_when_it_names_one"],
     },
     # ---- artifact actions ----
     {

@@ -921,13 +921,32 @@ public class RunWorkflow
         return trackerUpdates.TryDequeue(out var next) ? next : null;
     }
 
-    /// <summary>Makes one tracker update and notes it on the timeline. An update that fails never fails the step.</summary>
+    /// <summary>
+    /// A tracker update's tries: an outage is retried for about half a minute, then given up and noted, because a status
+    /// label is not worth stalling the run for (LOG 186).
+    /// </summary>
+    static readonly ActivityOptions TrackerTries = new()
+    {
+        StartToCloseTimeout = TimeSpan.FromMinutes(2),
+        RetryPolicy = new() { InitialInterval = TimeSpan.FromSeconds(2), BackoffCoefficient = 2, MaximumInterval = TimeSpan.FromSeconds(30), MaximumAttempts = 5 },
+    };
+
+    /// <summary>Makes one tracker update and notes it on the timeline. An update that fails never fails the step, nor holds up the run.</summary>
     async Task TrackAsync(TrackerUpdate update)
     {
         if (!Workflow.Patched(TrackerUpdatesPatch))
             return;
         var call = new TrackerCall(input.TrackerIssue!, update.Status, update.StepId, input.DryRun);
-        var note = await Workflow.ExecuteActivityAsync((RunActivities a) => a.UpdateTrackerAsync(call), Light);
+        string note;
+        try
+        {
+            note = await Workflow.ExecuteActivityAsync((RunActivities a) => a.UpdateTrackerAsync(call), TrackerTries);
+        }
+        catch (ActivityFailureException e)
+        {
+            note = $"could not move {call.Issue} to {call.Status}: the tracker did not answer in {TrackerTries.RetryPolicy!.MaximumAttempts} tries ({e.InnerException?.Message ?? e.Message})";
+        }
+
         core!.State.Trace.Add(new TraceEntry("tracker", update.StepId, $"{update.Why}: {note}"));
     }
 
