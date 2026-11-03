@@ -4,7 +4,8 @@ name: ticket_fix_loop
 description: >-
   The first review leaves a blocking finding open, so the merge bar sends the
   change through the fix loop. The verifying reviewer rejects the first fix and
-  accepts the second. The change is then tested and reviewed again, the finding
+  accepts the second. The fix is re-tested and its regression tests validated,
+  then the change is tested and reviewed again, the finding
   is closed, and the ticket merges.
 template: std:templates/ticket_delivery
 parameters: { ticket_id: FF-1042 }
@@ -27,6 +28,7 @@ expect:
     - verify.fix.fix
     - verify.fix.verify_fix
     - verify.fix.record_fixes
+    - verify.fix.retest                  # the fix is tested before its regression tests are validated
     - verify.fix.tests_added
     - verify.tests
     - verify.analysis
@@ -38,4 +40,5 @@ expect:
     verify.fix.triage: 1
     verify.fix.fix: 2
     verify.fix.verify_fix: 2
+    verify.fix.retest: 1
     verify.satisfaction: 1

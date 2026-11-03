@@ -24,9 +24,13 @@ steps:
       validation:
         - { validator: requirement_trace, subjects: [{ param: requirements }] }
     consumes: [{ name: { param: requirements } }]
-    produces:
-      - { name: trace_report, type: std:artifact_types/trace_report }
-      - { name: trace_validation, type: std:artifact_types/validation_report }
+    produces:                                   # on both outcomes: a person deciding on a gap reads the trace
+      valid:
+        - { name: trace_report, type: std:artifact_types/trace_report }
+        - { name: trace_validation, type: std:artifact_types/validation_report }
+      invalid:
+        - { name: trace_report, type: std:artifact_types/trace_report }
+        - { name: trace_validation, type: std:artifact_types/validation_report }
     routes:
       valid: { exit: traced }
       invalid: { escalate: true }

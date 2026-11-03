@@ -64,7 +64,9 @@ steps:
       - { name: requirements }
       - { name: child_requirements, from: parent, optional: true }
       - { name: requirements, from: parent, optional: true }
-    produces: [{ name: design_validation, type: std:artifact_types/validation_report }]
+    produces:                                   # on both outcomes: an invalid result's report goes back with the route
+      valid: [{ name: design_validation, type: std:artifact_types/validation_report }]
+      invalid: [{ name: design_validation, type: std:artifact_types/validation_report }]
     routes:
       valid: tickets
       invalid: design

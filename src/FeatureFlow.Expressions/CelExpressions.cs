@@ -204,9 +204,20 @@ public static class CelExpressions
         _ => value,
     };
 
-    static object? FromCel(IVal value) => value.Value() switch
+    static object? FromCel(IVal value) => Plain(value.Value());
+
+    /// <summary>
+    /// A CEL result as plain values: lists as lists and maps as string-keyed maps, all the way down, as the engine's
+    /// values are (a list of maps from <c>params</c>, std's <c>level_validators</c>); a map stayed CEL's own before (LOG 174).
+    /// </summary>
+    static object? Plain(object? value) => value switch
     {
+        IVal nested => FromCel(nested),
         IList<IVal> list => list.Select(FromCel).ToList(),
+        System.Collections.IDictionary map => map.Keys.Cast<object>().ToDictionary(
+            k => Convert.ToString(Plain(k), System.Globalization.CultureInfo.InvariantCulture) ?? "", k => Plain(map[k]), StringComparer.Ordinal),
+        string => value,
+        System.Collections.IList list => list.Cast<object?>().Select(Plain).ToList(),
         var v => v,
     };
 

@@ -49,8 +49,8 @@ public sealed record ValidationSubject(string Name, string? Type, ArtifactRef? A
 /// <see cref="Repositories"/> are the run's repositories frozen at their work branch heads (repository to revision), so
 /// evidence can be compared with exactly those commits. <see cref="Artifacts"/> are the artifacts of the run and its
 /// descendants (the evidence index, for a trace across completed children); <see cref="Findings"/> the run tree's ledger.
-/// A validator reads artifact content from the artifact store and repository files at frozen or recorded revisions from
-/// the code host, both given it at construction; it calls nothing else.
+/// A validator reads artifact content from the artifact store, repository files at frozen or recorded revisions from
+/// the code host, and ancestry between such revisions from the VCS provider's clones, all given it at construction.
 /// </summary>
 public sealed record ValidationRequest(
     string Validator,

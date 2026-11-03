@@ -38,6 +38,7 @@ public static class StepStartChecks
         ["test.integration"] = [A("repositories"), A("tier_tags")],
         ["analysis.run"] = [B("baseline"), S("fail_on", "new_issues", "any_issues", "never"), S("min_level", "note", "warning", "error")],
         ["repo.inspect"] = [S("repository")],
+        ["artifact.validate"] = [A("validation")],
         ["findings.record"] = [S("source"), S("reopen_on", "code_change", "always", "never")],
         ["findings.triage"] = [S("from"), B("post_declines"), A("states")],
     };

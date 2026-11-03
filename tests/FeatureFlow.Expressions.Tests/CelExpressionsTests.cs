@@ -160,6 +160,21 @@ public class CelExpressionsTests
     }
 
     [Fact]
+    public void Lists_and_maps_come_back_as_plain_values_all_the_way_down()
+    {
+        var entry = new Dictionary<string, object?> { ["validator"] = "requirement_support", ["subjects"] = new List<object?> { "requirements" },
+            ["options"] = new Dictionary<string, object?> { ["require_coverage"] = true } };
+        var variables = new Dictionary<string, object?> { ["params"] = new Dictionary<string, object?> { ["level_validators"] = new List<object?> { entry } } };
+
+        var value = CelExpressions.Evaluate("params.level_validators", variables);
+
+        Assert.Equal("""[{"validator":"requirement_support","subjects":["requirements"],"options":{"require_coverage":true}}]""",
+            System.Text.Json.JsonSerializer.Serialize(value));
+        var literal = Assert.IsType<Dictionary<string, object?>>(CelExpressions.Evaluate("{'a': [1, 2], 'b': {'c': 'd'}}", variables));
+        Assert.Equal("""{"a":[1,2],"b":{"c":"d"}}""", System.Text.Json.JsonSerializer.Serialize(literal));
+    }
+
+    [Fact]
     public void Lower_and_upper_are_culture_invariant()
     {
         var previous = System.Globalization.CultureInfo.CurrentCulture;
