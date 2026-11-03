@@ -106,7 +106,11 @@ public sealed record ShellState(
     IReadOnlyList<OpenQuestion>? Questions = null,
     IReadOnlyList<string>? ClosedQuestions = null);
 
-/// <summary>The run workflow's input: on the first run, what the API or the parent gives; after a hand-over, the same with <see cref="Carried"/> set.</summary>
+/// <summary>
+/// The run workflow's input: on the first run, what the API or the parent gives; after a hand-over, the same with
+/// <see cref="Carried"/> set. A child gets its parent's and its root's artifacts as they were when it started, by name
+/// (docs/03 section 7.2: consumed with <c>from: parent</c> or <c>from: root</c>).
+/// </summary>
 public sealed record RunStart(
     string RunId,
     string Template,
@@ -120,7 +124,9 @@ public sealed record RunStart(
     long HandOverEvents = 5120,
     RunPolicy? Policy = null,
     ShellState? Carried = null,
-    string? ParentBranch = null);
+    string? ParentBranch = null,
+    IReadOnlyDictionary<string, string>? ParentArtifacts = null,
+    IReadOnlyDictionary<string, string>? RootArtifacts = null);
 
 /// <summary>
 /// A person's answer, from the API, which authenticated the actor and recorded the answer first (docs/04

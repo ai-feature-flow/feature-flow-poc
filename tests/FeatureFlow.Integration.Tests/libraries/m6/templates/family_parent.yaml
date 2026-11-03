@@ -1,0 +1,51 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: family_parent
+  level: epic
+  description: >-
+    Writes notes, starts a child that inherits its parameters and consumes the notes
+    from its parent, then consumes the child's summary (M3 follow-ups 2 and 3).
+
+parameters:
+  ticket_id: { type: string, required: true, description: "Inherited by the child, which declares it" }
+  colour: { type: string, default: blue, description: "Inherited over the child's own default" }
+  unrelated: { type: string, default: "x", description: "Not declared by the child, so not passed" }
+
+artifact_types:
+  - m6:artifact_types/notes
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: write
+    agent:
+      role: std:roles/implementer
+      task: m6:tasks/note
+    with: { unrelated: { expr: "params.unrelated" } }
+    produces:
+      written: [{ name: notes, type: m6:artifact_types/notes }]
+    outcomes: { written: success }
+    routes: { written: child }
+
+  - id: child
+    action: run.child
+    with:
+      template: m6:templates/family_child
+      level: ticket
+      repositories: [acme/api]
+      parameters: { size: 3 }
+    routes: { completed: read }
+
+  - id: read
+    agent:
+      role: std:roles/reviewer
+      task: m6:tasks/note
+    consumes:
+      - { name: summary, from: { child: child } }
+      - { name: notes }
+    outcomes: { done: success }
+    routes:
+      done: { end: completed }

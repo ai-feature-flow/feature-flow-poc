@@ -1,0 +1,148 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using FeatureFlow.Interpreter.Wire;
+
+namespace FeatureFlow.Integration.Tests;
+
+/// <summary>
+/// Child runs (docs/03 section 9): a child starts with its parent's resolved parameters for the names it declares (M3
+/// follow-up 2); steps consume artifacts from a parent, as it was when the child started, and from a child, as it
+/// ended (follow-up 3, check 32); and a child that ends without signalling still completes its parent's
+/// <c>run.child</c> step, before or after a hand-over (follow-up 10).
+/// </summary>
+[Trait("Category", "Integration")]
+public class ChildRunTests
+{
+    static readonly string[] Library = [Path.Combine(Harness.TestLibraries, "m6")];
+
+    const string Family = """
+        { "family_parent:write": written, "family_child:use": written, "family_parent:read": done }
+        """;
+
+    const string Silent = """
+        { "silent_child:work": { delay: 600s }, "silent_parent:*": { delay_from: wait_ms } }
+        """;
+
+    [Fact]
+    public async Task A_child_inherits_its_parents_parameters_and_artifacts_and_its_parent_consumes_the_childs()
+    {
+        await using var h = await Harness.StartAsync("family", Family, libraries: Library);
+        var id = h.Start("m6:templates/family_parent", "--param", "ticket_id=T-9", "--repo", "acme/api");
+
+        var (exit, end, error) = h.Cli("wait", id, "--timeout", "120");
+        var view = await h.ShowAsync(id);
+        var childId = $"{id}.child.1";
+        Assert.True((exit, end.Trim()) == (0, $"run {id} completed"), end + error + view.ToJsonString() + (await h.ShowAsync(childId)).ToJsonString());
+
+        // The child completes only with ticket_id and colour from its parent and size from its step (its route guard).
+        Assert.Equal("completed", await h.Client.GetWorkflowHandle(childId).GetResultAsync<string>());
+        var start = await StartOfAsync(h, childId);
+        Assert.Equal(["colour", "size", "ticket_id"], start.Parameters.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal(("T-9", "blue"), (start.Parameters["ticket_id"].Trim('"'), start.Parameters["colour"].Trim('"')));
+
+        // The parent's notes as they were when the child started; the parent's read consumed the child's summary (check 32 passed).
+        var notes = Assert.Single(start.ParentArtifacts!);
+        Assert.Equal("notes", notes.Key);
+        Assert.Equal(start.ParentArtifacts, start.RootArtifacts);
+        Assert.Contains(view["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "completed" && e["stepId"]!.ToString() == "read");
+    }
+
+    [Fact]
+    public async Task Check_32_stops_a_step_whose_artifact_from_its_parent_does_not_exist()
+    {
+        // The child template started on its own: it has no parent, so its parent's notes do not exist.
+        await using var h = await Harness.StartAsync("family-alone", Family, libraries: Library);
+        var id = h.Start("m6:templates/family_child", "--param", "ticket_id=T-9", "--param", "size=3", "--repo", "acme/api");
+
+        var waitId = await h.WaitForWaitAsync(id, TimeSpan.FromMinutes(1));
+
+        Assert.NotNull(waitId);
+        var wait = (await h.ShowAsync(id))["waits"]!.AsArray().Single()!;
+        Assert.Equal("use", wait["stepId"]!.ToString());
+        Assert.Contains("check 32", wait["reason"]!.ToString(), StringComparison.Ordinal);
+        Assert.Contains("parent/notes", wait["reason"]!.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_child_ended_without_signalling_completes_the_parents_step_in_the_run_that_started_it()
+    {
+        await using var h = await Harness.StartAsync("silent", Silent, libraries: Library);
+        var id = h.Start("m6:templates/silent_parent", "--param", "work=[]", "--repo", "acme/api");
+        var childId = await RunningChildAsync(h, id);
+
+        await h.Client.GetWorkflowHandle(childId).TerminateAsync("ended from outside, without signalling its parent");
+
+        var (exit, end, error) = h.Cli("wait", id, "--timeout", "60");
+        var view = await h.ShowAsync(id);
+        Assert.True(end.Trim() == $"run {id} failed", $"the parent did not notice its child's end: {end}{error} {view.ToJsonString()}");
+        Assert.Equal(["failed"], Completions(view, "child"));
+        Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
+    }
+
+    [Fact]
+    public async Task A_child_ended_without_signalling_after_its_parent_handed_over_completes_the_parents_step()
+    {
+        await using var h = await Harness.StartAsync("silent-later", Silent, libraries: Library);
+        var work = "[" + string.Join(", ", Enumerable.Repeat(500, 40)) + "]";
+        var id = h.Start("m6:templates/silent_parent", "--param", $"work={work}", "--repo", "acme/api", "--continue-as-new-events", "100");
+        var childId = await RunningChildAsync(h, id);
+
+        // Only after the run that started the child has handed over: that run could have awaited the child itself.
+        var handle = h.Client.GetWorkflowHandle(id);
+        var until = DateTime.UtcNow.AddSeconds(90);
+        RunView view;
+        do
+        {
+            await Task.Delay(300, TestContext.Current.CancellationToken);
+            view = await handle.QueryAsync<RunView>(RunWorkflowNames.View, []);
+        }
+        while ((view.HandOvers.Count == 0 || view.Draining) && DateTime.UtcNow < until);
+        Assert.True(view.HandOvers.Count >= 1 && !view.Draining, $"no hand-over: {view.HandOvers.Count}, draining {view.Draining}");
+        await h.Client.GetWorkflowHandle(childId).TerminateAsync("ended from outside, without signalling its parent");
+
+        var (exit, end, error) = h.Cli("wait", id, "--timeout", "120");
+        var record = await h.ShowAsync(id);
+        Assert.True(end.Trim() == $"run {id} failed", $"the parent did not notice its child's end: {end}{error} {record.ToJsonString()}");
+        Assert.Equal(["failed"], Completions(record, "child"));
+        var timeline = record["timeline"]!.AsArray().Select(e => (Kind: e!["kind"]!.ToString(), Step: e["stepId"]!.ToString())).ToList();
+        Assert.True(timeline.FindIndex(e => e is { Kind: "child_started", Step: "child" }) < timeline.FindIndex(e => e.Kind == "continued_as_new"),
+            "the child was not started before the first hand-over");
+        Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
+    }
+
+    /// <summary>The id of the parent's child once the child is running.</summary>
+    static async Task<string> RunningChildAsync(Harness h, string parentId)
+    {
+        var childId = $"{parentId}.child.1";
+        var until = DateTime.UtcNow.AddSeconds(60);
+        while (DateTime.UtcNow < until)
+        {
+            try
+            {
+                var description = await h.Client.GetWorkflowHandle(childId).DescribeAsync();
+                if (description.Status == Temporalio.Api.Enums.V1.WorkflowExecutionStatus.Running)
+                    return childId;
+            }
+            catch (Temporalio.Exceptions.RpcException)
+            {
+                // Not started yet.
+            }
+
+            await Task.Delay(200);
+        }
+
+        throw new TimeoutException($"{childId} did not start");
+    }
+
+    static List<string> Completions(JsonNode view, string step) =>
+        view["timeline"]!.AsArray().Where(e => e!["kind"]!.ToString() == "completed" && e["stepId"]!.ToString() == step).Select(e => e!["detail"]!.ToString()).ToList();
+
+    /// <summary>A run's input as it first started.</summary>
+    static async Task<RunStart> StartOfAsync(Harness h, string workflowId)
+    {
+        var first = (await h.RunsOfAsync(workflowId)).First();
+        var history = await h.Client.GetWorkflowHandle(workflowId, first.RunId).FetchHistoryAsync();
+        var input = history.Events.First().WorkflowExecutionStartedEventAttributes.Input.Payloads_[0].Data.ToStringUtf8();
+        return JsonSerializer.Deserialize<RunStart>(input)!;
+    }
+}

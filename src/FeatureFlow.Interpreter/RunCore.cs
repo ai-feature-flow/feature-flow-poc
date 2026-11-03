@@ -507,7 +507,8 @@ public sealed partial class RunCore
         {
             var promised = step.Produces.Where(p => p.Outcome == c.Outcome || (p.Outcome is null && outcome.Class == OutcomeClass.Success)).Select(p => p.Name).ToHashSet();
             var given = (c.Artifacts ?? new Dictionary<string, string>()).Keys.ToHashSet();
-            foreach (var name in given.Except(promised).Order(StringComparer.Ordinal))
+            // A run.child step holds its child's artifacts, which its own contract does not list (docs/03 section 9.3).
+            foreach (var name in given.Except(promised).Where(_ => step.Action != "run.child").Order(StringComparer.Ordinal))
                 errors.Add($"{step.Id}: artifact '{name}' is not declared for outcome '{c.Outcome}'");
             foreach (var name in promised.Except(given).Order(StringComparer.Ordinal))
                 errors.Add($"{step.Id}: outcome '{c.Outcome}' promises artifact '{name}', which was not produced");

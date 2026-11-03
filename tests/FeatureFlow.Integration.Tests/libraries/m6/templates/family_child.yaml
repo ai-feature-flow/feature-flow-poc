@@ -1,0 +1,35 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: family_child
+  level: ticket
+  description: >-
+    Consumes its parent's notes and writes a summary; completes only when it was started
+    with its parent's ticket_id and colour and its step's size.
+
+parameters:
+  ticket_id: { type: string, required: true, description: "From the parent's resolved parameters" }
+  colour: { type: string, default: red, description: "The parent's value takes precedence" }
+  size: { type: number, required: true, description: "From the run.child step's with.parameters" }
+
+artifact_types:
+  - m6:artifact_types/notes
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: use
+    agent:
+      role: std:roles/implementer
+      task: m6:tasks/note
+    consumes: [{ name: notes, from: parent }]
+    produces:
+      written: [{ name: summary, type: m6:artifact_types/notes }]
+    outcomes: { written: success }
+    routes:
+      written:
+        - when: "params.ticket_id == 'T-9' && params.colour == 'blue' && params.size == 3"
+          to: { end: completed }
+        - to: { end: rejected }
