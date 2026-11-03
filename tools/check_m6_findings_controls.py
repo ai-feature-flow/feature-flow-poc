@@ -152,7 +152,7 @@ CONTROLS = [
     # ---- The ledger view ----
     {
         "name": "ledger view: check 32 refuses a step consuming findings_ledger",
-        "edits": [(WORKFLOW, " && c.Name != FindingsLedger.ViewName", "")],
+        "edits": [(WORKFLOW, "!c.Optional && !IsLedgerView(c)", "!c.Optional")],
         "tests": [LOOP],
         "expect": ["A_blocking_finding_goes_through_std_s_fix_loop_on_the_real_ledger_and_the_ticket_then_merges"],
     },

@@ -45,8 +45,11 @@ public sealed class ContainerRecord
     public bool Active { get; set; } = true;
 }
 
-/// <summary>A step a route has entered and the core has not yet started (the run's position, docs/01 section 1.2).</summary>
-public sealed record Entry(string StepId, bool CleanUp);
+/// <summary>
+/// A step a route has entered and the core has not yet started (the run's position, docs/01 section 1.2). An entry that
+/// <see cref="Resumes"/> restarts an interrupted execution (<see cref="StepInterrupted"/>) instead of starting a new one.
+/// </summary>
+public sealed record Entry(string StepId, bool CleanUp, bool Resumes = false);
 
 /// <summary>
 /// The run's carried state (docs/02 section 2.1). Every collection the core iterates is a list or an ordinal

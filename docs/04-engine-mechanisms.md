@@ -96,7 +96,11 @@ reports.
 1. **Prepare.** Create or re-attach the sandbox from the repository manifest;
    check out the work branch (read-only if the role has no write access); run
    the manifest's `setup` commands; stage consumed artifacts, skills and
-   library resources read-only, with a manifest listing them. The manifest also
+   library resources read-only, with a manifest listing them. A consumed
+   artifact is staged under its name; one from another run has its source in
+   front (`parent/<name>`, `root/<name>`, `child/<step id>/<name>`), so a step
+   may consume one name from two runs, and no step may produce an artifact
+   named `parent`, `root` or `child` (check 11; LOG 153). The manifest also
    gives the run's baseline commit and parent branch for the repository, and the
    agent's output folder. A step that consumes the reserved name
    `findings_ledger` is given the ledger's current view, every finding with its

@@ -5,21 +5,14 @@ using FeatureFlow.Providers.Local;
 namespace FeatureFlow.Providers.Local.Tests;
 
 /// <summary>
-/// The findings ledger contract against the SQLite record store. The artifact index is the shell builder's (W1) and not
-/// yet in the SQLite store on this branch, so its records and query go to the in-memory store, which shares the run tree;
-/// when the SQLite store holds the artifact index, <see cref="Store"/> becomes the SQLite store alone.
+/// The findings ledger contract, with the artifact index it shares a suite with, against the SQLite record store (it
+/// replaces the shell builder's interim SQLite artifact test).
 /// </summary>
 public sealed class SqliteFindingsLedgerContract : FindingsLedgerContract, IDisposable
 {
     readonly string folder = Path.Combine(Path.GetTempPath(), "ff-ledger-" + Guid.NewGuid().ToString("N"));
 
-    public SqliteFindingsLedgerContract()
-    {
-        Sqlite = new SqliteRecordStore(Path.Combine(folder, "records.db"));
-        Store = new LedgerOnly(Sqlite, new InMemoryRecordStore());
-    }
-
-    SqliteRecordStore Sqlite { get; }
+    public SqliteFindingsLedgerContract() => Store = new SqliteRecordStore(Path.Combine(folder, "records.db"));
 
     protected override IRecordStoreProvider Store { get; }
 
@@ -28,23 +21,6 @@ public sealed class SqliteFindingsLedgerContract : FindingsLedgerContract, IDisp
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         if (Directory.Exists(folder))
             Directory.Delete(folder, recursive: true);
-    }
-
-    sealed class LedgerOnly(IRecordStoreProvider sqlite, IRecordStoreProvider artifacts) : IRecordStoreProvider
-    {
-        public ProviderDescription Describe() => sqlite.Describe();
-
-        public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => sqlite.CheckAsync(cancellationToken);
-
-        public async Task<ProviderResult<Unit>> AppendAsync(RecordBatch records, CancellationToken cancellationToken)
-        {
-            if (records.Artifacts is { Count: > 0 } || records.Runs is { Count: > 0 })
-                (await artifacts.AppendAsync(new RecordBatch(Runs: records.Runs, Artifacts: records.Artifacts), cancellationToken)).Unwrap();
-            return await sqlite.AppendAsync(records with { Artifacts = null }, cancellationToken);
-        }
-
-        public Task<ProviderResult<IReadOnlyList<T>>> QueryAsync<T>(string queryName, IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken) =>
-            (queryName == Queries.Artifacts ? artifacts : sqlite).QueryAsync<T>(queryName, parameters, cancellationToken);
     }
 }
 

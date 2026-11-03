@@ -676,6 +676,10 @@ public sealed class PlanValidator
 
         foreach (var (step, produced) in producers)
         {
+            // An artifact consumed from another run is staged as parent/<name>, root/<name> or child/<id>/<name> (LOG 153).
+            if (produced.Name is "parent" or "root" or "child")
+                d.Add(Checks.ArtifactProducer, $"may not produce an artifact named '{produced.Name}': a step's inputs use that name for artifacts from other runs ({produced.Name}/...)",
+                    produced.Location, step.Id);
             if (produced.Type is not { Reference: { } typeRef } type)
                 continue;
             if (!allowed.TryGetValue(step.Scope.DocumentScope.Id, out var set) || !set.Contains(Key(typeRef)))

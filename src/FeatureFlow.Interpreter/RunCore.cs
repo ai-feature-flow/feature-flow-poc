@@ -178,6 +178,12 @@ public sealed partial class RunCore
             return;
         }
 
+        if (entry.Resumes)
+        {
+            ResumeExecution(step);
+            return;
+        }
+
         if (!enteredWithoutProgress.Add(step.Id))
         {
             Intervene(step.Id, null, $"routing returned to {step.Id} without running any step, for example an exhausted step routed back into a cycle");
@@ -236,6 +242,19 @@ public sealed partial class RunCore
 
         State.Waits.Add(new OpenWait(NewWaitId("decision"), WaitKind.Decision, step.Id, null, "decision"));
         outbox.Add(new OpenDecision(step.Id, record.Executions));
+        Progressed();
+    }
+
+    /// <summary>
+    /// Starts an interrupted execution again (LOG 139). It is the same execution, not a new one, so the allowance is not
+    /// checked and no attempt is counted (F4 counts executions); the shell gives it the same identity and records.
+    /// </summary>
+    void ResumeExecution(Step step)
+    {
+        var record = Record(step.Id);
+        State.InFlight.Add(step.Id);
+        Trace("resumed", step.Id, $"execution {record.Executions}");
+        outbox.Add(new StartStep(step.Id, record.Executions));
         Progressed();
     }
 
@@ -330,6 +349,7 @@ public sealed partial class RunCore
         {
             StepCompleted c => Completed(c),
             StepFailed f => Failed(f),
+            StepInterrupted i => Interrupted(i),
             DecisionAnswered a => Answered(a),
             PatchProposed p => ProposeOutside(p),
             PatchAnswered p => PatchDecision(p),
@@ -490,7 +510,8 @@ public sealed partial class RunCore
         {
             var promised = step.Produces.Where(p => p.Outcome == c.Outcome || (p.Outcome is null && outcome.Class == OutcomeClass.Success)).Select(p => p.Name).ToHashSet();
             var given = (c.Artifacts ?? new Dictionary<string, string>()).Keys.ToHashSet();
-            foreach (var name in given.Except(promised).Order(StringComparer.Ordinal))
+            // A run.child step holds its child's artifacts, which its own contract does not list (docs/03 section 9.3).
+            foreach (var name in given.Except(promised).Where(_ => step.Action != "run.child").Order(StringComparer.Ordinal))
                 errors.Add($"{step.Id}: artifact '{name}' is not declared for outcome '{c.Outcome}'");
             foreach (var name in promised.Except(given).Order(StringComparer.Ordinal))
                 errors.Add($"{step.Id}: outcome '{c.Outcome}' promises artifact '{name}', which was not produced");
@@ -539,6 +560,16 @@ public sealed partial class RunCore
             record.AttemptsUsed++;
         Trace("attempt_failed", step.Id, f.Reason);
         State.Pending.Add(new Entry(step.Id, false));
+        return ApplyResult.Ok;
+    }
+
+    ApplyResult Interrupted(StepInterrupted i)
+    {
+        if (StepById(i.StepId) is null || !State.InFlight.Contains(i.StepId))
+            return ApplyResult.Refused($"{i.StepId} is not running");
+        State.InFlight.Remove(i.StepId);
+        State.Pending.Insert(0, new Entry(i.StepId, false, Resumes: true));
+        Trace("interrupted", i.StepId, i.Reason);
         return ApplyResult.Ok;
     }
 
