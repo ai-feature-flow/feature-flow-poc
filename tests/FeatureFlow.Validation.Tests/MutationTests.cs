@@ -135,7 +135,7 @@ public class MutationTests
         ["undeclared_decision_type"] = new(16, "'ticket.spec_approvel' is not declared", "the spec approval's decision type is misspelt", [
             new(Ticket, "      type: ticket.spec_approval\n", "      type: ticket.spec_approvel\n")]),
 
-        ["plan_too_large"] = new(17, "the plan has 2024 steps", "a review over 1,000 angles", [
+        ["plan_too_large"] = new(17, "the plan has 2025 steps", "a review over 1,000 angles", [
             new(Ticket, "      spec_refs: { expr: \"[steps.plan.plan.artifacts.requirements, steps.plan.plan.artifacts.delivery_plan]\" }\n",
                 "      spec_refs: { expr: \"[steps.plan.plan.artifacts.requirements, steps.plan.plan.artifacts.delivery_plan]\" }\n      angles: ["
                 + string.Join(", ", Enumerable.Range(0, 1000).Select(i => $"angle_{i}")) + "]\n")]),

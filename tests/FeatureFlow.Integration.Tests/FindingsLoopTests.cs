@@ -28,6 +28,11 @@ public class FindingsLoopTests
             .. Enumerable.Range(1, 4).Select(i => $"verify.review.review_{i}.assess: {Report("")}"),
             "verify.fix.triage: { artifacts: { triage: { triage_each_open: open } } }",
             "verify.fix.verify_fix: { outcome: verified, artifacts: { fix_verification: { triage_each_open: fixed } } }",
+            // M6 validators: the fixer's regression test is in the file it wrote (the editing runtime writes work/<step>.txt)
+            // and passes in the engine's re-test (the TRX names it), so tests_added accepts it.
+            "verify.fix.fix: { artifacts: { fix_claims: { schema: 1, claims: [{ criterion: AC-1, verification: unit, tests: "
+            + "[{ repository: acme/api, tier: unit, id: Regression.fix, change: modified, source: { file: work/verify.fix.fix.txt } }] }] }, "
+            + "implementation_claims: { schema: 1, claims: [{ criterion: AC-1, verification: unit, tests: [{ repository: acme/api, tier: unit, id: Adds, change: new }] }] } } }",
         ]) + " }";
         var (h, _, _) = await ForgeTicketTests.StartAsync("findings-loop", policy: "  merge: { default_branch: { engine_may_merge: [acme/api] } }", script: script);
         await using var _h = h;
@@ -40,7 +45,7 @@ public class FindingsLoopTests
         Assert.Equal($"run {id} completed", end.Trim());
         var path = Harness.StartedSteps(view);
         Assert.Equal(2, path.Count(s => s == "verify.review.review_0.assess"));
-        Assert.Equal(["verify.fix.triage", "verify.fix.apply_triage", "verify.fix.fix", "verify.fix.verify_fix", "verify.fix.record_fixes", "verify.fix.tests_added"],
+        Assert.Equal(["verify.fix.triage", "verify.fix.apply_triage", "verify.fix.fix", "verify.fix.verify_fix", "verify.fix.record_fixes", "verify.fix.retest", "verify.fix.tests_added"],
             path.Where(s => s.StartsWith("verify.fix.", StringComparison.Ordinal)));
         Assert.Contains("deliver.merge", path);
 

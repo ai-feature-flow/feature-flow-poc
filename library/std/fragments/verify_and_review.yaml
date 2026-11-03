@@ -92,7 +92,9 @@ steps:
       - { name: delivery_plan, optional: true }
       - { name: implementation_claims, optional: true }
       - { name: test_results }
-    produces: [{ name: verification_report, type: std:artifact_types/validation_report }]
+    produces:                                   # on both outcomes: an invalid result's report goes back with the route
+      valid: [{ name: verification_report, type: std:artifact_types/validation_report }]
+      invalid: [{ name: verification_report, type: std:artifact_types/validation_report }]
     routes:
       valid: { exit: ready }
       invalid: repair

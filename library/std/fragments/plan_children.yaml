@@ -58,7 +58,9 @@ steps:
         - { validator: requirement_ownership, subjects: [child_requirements] }
         - { validator: requirement_support, subjects: [requirements, child_requirements] }
     consumes: [{ name: requirements }, { name: child_requirements }, { name: work_list }]
-    produces: [{ name: children_validation, type: std:artifact_types/validation_report }]
+    produces:                                   # on both outcomes: an invalid result's report goes back with the route
+      valid: [{ name: children_validation, type: std:artifact_types/validation_report }]
+      invalid: [{ name: children_validation, type: std:artifact_types/validation_report }]
     routes:
       valid: approve
       invalid: plan

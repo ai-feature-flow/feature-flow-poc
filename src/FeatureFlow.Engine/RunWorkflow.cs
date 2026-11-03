@@ -570,7 +570,7 @@ public class RunWorkflow
         }
 
         return new ActionScope(input.Repositories, repository, core.WorkBranch(), input.ParentBranch, artifacts, pullRequests, policy?.EngineMayMerge ?? [],
-            input.TrackerIssue);
+            TrackerIssue: input.TrackerIssue);
     }
 
     /// <summary>
@@ -672,7 +672,7 @@ public class RunWorkflow
             consumed,
             Workflow.Info.WorkflowId,
             input.LockRef,
-            input.TrackerIssue);
+            TrackerIssue: input.TrackerIssue);
     }
 
     /// <summary>

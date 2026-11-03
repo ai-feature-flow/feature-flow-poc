@@ -9,9 +9,11 @@ public sealed record TestFailure(string Name, string Message);
 /// <summary>
 /// Test results evidence: one tier's results at one revision, parsed from TRX or JUnit (<see cref="ResultFormats"/>),
 /// whether the tier ran in a sandbox or in CI. <see cref="Failures"/> lists every failed test, so a later run can be
-/// compared with the baseline by name.
+/// compared with the baseline by name. <see cref="Passing"/> names every passed test, so a claim can be checked against
+/// exactly the tests the engine saw pass (LOG 171); null for a tier judged by its exit code, whose tests cannot be claimed.
 /// </summary>
-public sealed record TestResults(string Revision, string Tier, int Passed, int Failed, int Skipped, IReadOnlyList<TestFailure> Failures)
+public sealed record TestResults(string Revision, string Tier, int Passed, int Failed, int Skipped, IReadOnlyList<TestFailure> Failures,
+    IReadOnlyList<string>? Passing = null)
 {
     public bool Clean => Failed == 0;
 }

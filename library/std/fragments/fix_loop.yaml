@@ -6,8 +6,8 @@ metadata:
     A triager decides per open finding; the decisions are applied, and an
     escalation or a declined blocking or demonstrated finding goes to a person; a fixer fixes
     what is left open, with regression tests; a verifying reviewer checks each fix
-    against its finding on the full diff; the regression tests are validated as
-    new. The caller re-tests and re-reviews after the fixed exit.
+    against its finding on the full diff; the fix is re-tested and its regression
+    tests are validated as new and passing. The caller re-tests and re-reviews after the fixed exit.
 
 parameters:
   fixer_task: { type: reference, default: std:tasks/fix_findings }
@@ -27,6 +27,7 @@ artifact_types:
   - std:artifact_types/triage
   - std:artifact_types/evidence_claims
   - std:artifact_types/validation_report
+  - std:artifact_types/test_results
 
 steps:
   - id: triage
@@ -63,6 +64,7 @@ steps:
       - { name: triage }
       - { name: implementation_claims, optional: true }
       - { name: fix_verification, optional: true }
+      - { name: fix_test_results, optional: true }
     produces:
       fixed:
         - { name: fix_claims, type: std:artifact_types/evidence_claims }
@@ -94,8 +96,16 @@ steps:
       applied:                                    # as apply_triage: should states be widened, a person still decides
         - when: "steps.record_fixes.outputs.escalated > 0 || steps.record_fixes.outputs.declined_blocking > 0"
           to: { exit: escalated }
-        - to: tests_added
+        - to: retest
       invalid: verify_fix
+
+  - id: retest                          # tests_added counts only tests the engine saw pass at the fixed head
+    action: test.run
+    with: { tier_tags: { expr: "params.tier_tags" } }
+    produces: [{ name: fix_test_results, type: std:artifact_types/test_results }]   # not test_results: verify.repair reads that
+    routes:
+      failed: fix
+      baseline_failed: { exit: escalated }
 
   - id: tests_added
     action: artifact.validate
@@ -103,7 +113,9 @@ steps:
       validation:
         - { validator: tests_added, subjects: [fix_claims, triage] }
     consumes: [{ name: fix_claims }, { name: triage }]
-    produces: [{ name: fix_validation, type: std:artifact_types/validation_report }]
+    produces:                                   # on both outcomes: an invalid result's report goes back with the route
+      valid: [{ name: fix_validation, type: std:artifact_types/validation_report }]
+      invalid: [{ name: fix_validation, type: std:artifact_types/validation_report }]
     routes:
       valid: { exit: fixed }
       invalid: fix
