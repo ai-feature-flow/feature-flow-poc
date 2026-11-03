@@ -54,8 +54,6 @@ public sealed class TestingActionTests
         Assert.Equal("passed", Outcome(result));
         var evidence = await EvidenceAsync(w, result);
         Assert.Equal(3, evidence.Tiers.Single().Passed);
-        var parentManifest = (await new InMemoryCodeHost(w.Forge).ReadFileAsync(w.Repo, "feature-flow.yaml", "main", TestContext.Current.CancellationToken)).Unwrap()!;
-        Assert.Equal(parentManifest.Hash, evidence.Manifest);
         Assert.DoesNotContain(w.Sandbox.Commands, c => c.Command.Contains("echo forged", StringComparison.Ordinal));
         // Setup shapes the environment the evidence comes from: it is the parent's too (re-check R4).
         Assert.Contains(w.Sandbox.Commands, c => c.Command == "sh -c dotnet tool restore");

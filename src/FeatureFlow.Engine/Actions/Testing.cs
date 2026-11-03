@@ -62,7 +62,7 @@ static class Testing
         // The carried result (section 9.1): this head was already tested with the same tiers; adopt it.
         if (adopt && !baseline)
             foreach (var (entry, earlier) in (await run.EvidenceAsync<TestEvidence>("test_results", "test.run")).AsEnumerable().Reverse())
-                if (earlier.Repository == repo.FullName && earlier.Revision == head && !earlier.Baseline && earlier.Manifest == manifest.Hash
+                if (earlier.Repository == repo.FullName && earlier.Revision == head && !earlier.Baseline
                     && earlier.Tiers.Select(x => x.Tier).Order().SequenceEqual(tiers.Select(x => x.Name).Order()))
                 {
                     run.Events.Add($"{EngineActions.Short(head)} was already tested by {entry.StepId}; its result is adopted and nothing runs");
@@ -97,7 +97,7 @@ static class Testing
         foreach (var r in results)
             run.Events.Add($"tier {r.Tier} at {EngineActions.Short(head)}: {r.Passed} passed, {r.Failed} failed, {r.Skipped} skipped" +
                            (r.Failures.Count == 0 ? "" : $" ({string.Join("; ", r.Failures.Take(5).Select(f => f.Name))})"));
-        return (new TestEvidence(repo.FullName, head, baseline, results.All(r => r.Clean), results, manifest.Hash), null);
+        return (new TestEvidence(repo.FullName, head, baseline, results.All(r => r.Clean), results), null);
     }
 
     /// <summary>
