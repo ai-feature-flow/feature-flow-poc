@@ -257,7 +257,7 @@ public sealed class InMemoryForge
             return WorkingCopies.GetValueOrDefault(copy)?.Files;
     }
 
-    /// <summary>The comments added to a pull request (on close).</summary>
+    /// <summary>The comments added to a pull request: on close, and by <c>AddCommentAsync</c> with their markers.</summary>
     public IReadOnlyList<string> Comments(PullRequestRef pullRequest)
     {
         lock (Gate)
@@ -636,6 +636,20 @@ public sealed class InMemoryCodeHost(InMemoryForge forge) : ICodeHostProvider
 
     public Task<ProviderResult<CheckStatus>> GetCheckStatusAsync(RepoRef repo, string revision, CancellationToken cancellationToken) =>
         Run("GetCheckStatus", repo, r => ProviderResult<CheckStatus>.Success(new CheckStatus(revision, InMemoryForge.Checks(r, revision).ToList())));
+
+    public Task<ProviderResult<CommentRef>> AddCommentAsync(PullRequestRef pullRequest, string body, string key, CancellationToken cancellationToken) =>
+        WithPr("AddComment", pullRequest, (_, pr) =>
+        {
+            var marker = $"<!-- feature-flow:{key} -->";
+            var at = pr.Comments.FindIndex(c => c.EndsWith(marker, StringComparison.Ordinal));
+            if (at < 0)
+            {
+                pr.Comments.Add($"{body}\n\n{marker}");
+                at = pr.Comments.Count - 1;
+            }
+
+            return ProviderResult<CommentRef>.Success(new CommentRef($"{pr.Number}-{at + 1}"));
+        });
 
     static string Body(InMemoryForge.PullRequest pr) => $"{pr.Spec.Body}\n\n<!-- feature-flow:{pr.Key} -->";
 

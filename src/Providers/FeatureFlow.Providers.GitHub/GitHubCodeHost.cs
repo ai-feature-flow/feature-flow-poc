@@ -422,6 +422,27 @@ public sealed class GitHubCodeHost(GitHubApi api) : ICodeHostProvider
     }
 
     /// <summary>
+    /// A comment on the pull request's conversation (201), with the key's marker. The comments are searched for the marker
+    /// first, so a retry after a lost answer adopts the comment it made.
+    /// </summary>
+    public async Task<ProviderResult<CommentRef>> AddCommentAsync(PullRequestRef pullRequest, string body, string key, CancellationToken cancellationToken)
+    {
+        var comments = await api.ListAsync(pullRequest.Repo, ReadPermissions, $"/repos/{pullRequest.Repo.FullName}/issues/{pullRequest.Number}/comments",
+            j => j as JsonArray, cancellationToken);
+        if (!comments.Ok)
+            return new ProviderResult<CommentRef>(null, comments.Error);
+        if (comments.Value!.FirstOrDefault(c => KeyOf(c["body"]?.GetValue<string>()) == key)?["id"]?.GetValue<long>() is { } existing)
+            return ProviderResult<CommentRef>.Success(new CommentRef(existing.ToString(CultureInfo.InvariantCulture)));
+
+        var posted = await Send(pullRequest.Repo, HttpMethod.Post, $"/issues/{pullRequest.Number}/comments", new { body = WithMarker(body, key) }, cancellationToken);
+        if (!posted.Ok)
+            return new ProviderResult<CommentRef>(null, posted.Error);
+        return posted.Value!.Code == 201 && posted.Value.Json?["id"]?.GetValue<long>() is { } id
+            ? ProviderResult<CommentRef>.Success(new CommentRef(id.ToString(CultureInfo.InvariantCulture)))
+            : GitHubApi.Unexpected<CommentRef>(posted.Value, "POST a comment");
+    }
+
+    /// <summary>
     /// Check runs (200, every page) and commit statuses (200). A check run reported by GitHub Actions is named with
     /// its workflow file, from the run whose check suite it belongs to, so <c>ci.checks</c> can match it to an
     /// expected run; any other app's check has no suite. A commit GitHub does not know is <c>not_found</c>.

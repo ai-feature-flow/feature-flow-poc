@@ -75,6 +75,9 @@ public sealed class GitHubCodeHostContract : CodeHostContract, IAsyncLifetime
 
         public Task<ProviderResult<CheckStatus>> GetCheckStatusAsync(RepoRef repo, string revision, CancellationToken cancellationToken) =>
             inner.GetCheckStatusAsync(repo, revision, cancellationToken);
+
+        public Task<ProviderResult<CommentRef>> AddCommentAsync(PullRequestRef pullRequest, string body, string key, CancellationToken cancellationToken) =>
+            inner.AddCommentAsync(pullRequest, body, $"{fixture.Prefix}/{key}", cancellationToken);
     }
 }
 

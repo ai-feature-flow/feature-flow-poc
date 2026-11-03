@@ -166,4 +166,17 @@ public abstract class CodeHostContract : ContractBase
         Assert.Equal(revision, status.Revision);
         Assert.Empty(status.Checks);
     }
+
+    [Fact]
+    public async Task Commenting_twice_with_one_key_adds_one_comment()
+    {
+        var pr = await OpenAsync("ff/comment", "key-comment");
+
+        var first = Ok(await CodeHost.AddCommentAsync(pr, "Declined: the null check is the caller's.", "key-comment-1", Ct));
+        var again = Ok(await CodeHost.AddCommentAsync(pr, "Declined: the null check is the caller's.", "key-comment-1", Ct));
+        var other = Ok(await CodeHost.AddCommentAsync(pr, "Declined: by design.", "key-comment-2", Ct));
+
+        Assert.Equal(first, again);
+        Assert.NotEqual(first, other);
+    }
 }
