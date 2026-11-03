@@ -523,9 +523,9 @@ workflow's (`docs/01` section 6, RW4).
 
 | Element | Detail |
 |---|---|
-| Inputs | `from`: a triage artifact (from a triage agent step or a decision's session) listing, per finding, the new state (`fixed`, `declined`, `escalated`, `open`) and a reason; `states`: the states this step's producer may set (default all four, LOG 168); `post_declines` (default `true`: post each decline reason on the pull request) |
+| Inputs | `from`: a triage artifact (from a triage agent step or a decision's session) listing, per finding, the new state (`fixed`, `declined`, `escalated`, `open`) and a reason; `states`: the states this step's producer may set (none given: all four; a non-empty list of them, LOG 168); `post_declines` (default `true`: post each decline reason on the pull request) |
 | Outcomes | `applied`, with outputs `escalated` and `declined_blocking` (this triage's escalations, and its declines of blocking or demonstrated findings, counted by the engine); `invalid` (nothing applied) |
-| Behaviour | Applies each state change with its actor and reason. A triage entry naming an unknown finding or a state outside `states`, or one that does not read, is `invalid`; the standard library routes it back to the triage's producer. A plan that does not route `invalid` escalates it (LOG 161). A decline is posted only where a pull request is open for the finding's repository (LOG 164) |
+| Behaviour | Applies each state change with its actor and reason. A triage entry naming an unknown finding or a state outside `states`, a move to `fixed` with nothing committed to the finding's repository since it was raised or reopened, or a triage that does not read, is `invalid`; the standard library routes it back to the triage's producer. A plan that does not route `invalid` escalates it (LOG 161). A decline is posted only where a pull request is open for the finding's repository (LOG 164) |
 
 The standard library's fragments build review, triage, fix and verification
 from an agent reviewer, these two actions and route guards such as

@@ -82,7 +82,14 @@ for the product owner's list; the rest fixed as follows.
 | F5 | LOG 161's default could widen unnoticed | Test that only `findings.triage invalid` escalates by default and an unrouted `analysis.run failed` is still check 7 | `Only_an_outcome_added_later_escalates_...` |
 | F6 | Mutations A, C, D, F, H, N, O uncaught | Tests for each, H being the state revision moving at the fix | one test each; controls A to O |
 
-Controls are now 49 (18 added for the review, two existing ones retargeted at changed text). Counts after the fixes:
+Re-check (approve-with-fixes): R1, a no-op fix with a verifier writing `fixed` merged; now a move to `fixed` is
+`invalid` while nothing is committed to the finding's repository since it was raised or reopened
+(`The_verifier_alone_cannot_clear_...` and two engine tests; removing the rule merges). R2, `record_fixes`'s `states`
+guard is tested (a verifier's decline stops at `verify_fix`) and it routes on the engine's counts (re-drive
+`ticket_verifier_to_person`). R3, `states` fails closed: a given list allows exactly its states; check 31 requires a
+non-empty subset of the four. All in LOG 168 (my range was used up).
+
+Controls are now 53 (18 added for the review and 4 for the re-check; existing ones retargeted at changed text). Counts after the fixes:
 default **815 passed**, integration **54 passed**, Release build 0 warnings.
 
 ### Follow-ups
