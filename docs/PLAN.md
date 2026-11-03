@@ -1,8 +1,8 @@
 # Design rewrite plan
 
-Status: design complete 2026-11-01. Build milestones M0 to M4 of
+Status: design complete 2026-11-01. Build milestones M0 to M5 of
 `docs/11-build-plan.md` merged by 2026-11-03; the latest handover is
-`docs/build/handover-2026-11-03.md`. Started 2026-10-31. This file is the
+`docs/build/handover-2026-11-03-m6.md`. Started 2026-10-31. This file is the
 resume point: a new session reads it first, then the status table in section 6
 and the latest handover.
 
@@ -114,7 +114,7 @@ Paths in all design documents are relative to the repository root.
 | Product owner review of LOG 66 to 70 | Done 2026-11-01: approved |
 | M0 to M4 (skeleton; plan loader and validator; interpreter core and re-drive; runnable engine with fake providers; agent steps in a sandbox) | Done 2026-11-02 to 2026-11-03, merged at `9279026`. Results in `docs/build/m0-results.md` to `m4-results.md`; LOG 71 to 90 approved; LOG 91 to 106 approved 2026-11-03, with 91 simplified (four runtime settings became fixed defaults) and 106 amended (time on open questions does not count toward `limits.timeout`; `questions.timeout` defaults to 24 hours). State, access and next steps in `docs/build/handover-2026-11-03.md` |
 | SP1 scenario flake on CI | Done 2026-11-03 (pull request 3) |
-| M5 (source control, testing and the first real ticket) | Done 2026-11-03 on branch `m5`, milestone pull request into `main` awaiting review: the done-when's live run merged a real ticket into a non-default parent branch on the fixture. Results in `docs/build/m5-results.md`; LOG 107 to 146 approved 2026-11-03. State and next steps in `docs/build/handover-2026-11-03-m5.md` |
+| M5 (source control, testing and the first real ticket) | Done 2026-11-03, merged at `ba1f62f` (pull request 7): the done-when's live run merged a real ticket into a non-default parent branch on the fixture. Results in `docs/build/m5-results.md`; LOG 107 to 146 approved 2026-11-03. Next steps, ways of working and decision principles in `docs/build/handover-2026-11-03-m6.md` |
 | M6 (findings, validators and levels), starting with its must-fix from M5: a wait holds up a run's hand-over (LOG 139) | **Next** |
 
 ## 7. How to resume

@@ -84,6 +84,9 @@ One agent coordinates and integrates; helper sessions each own one piece of
 work. Give each helper its own Temporal port, task queue and directory where it
 touches shared infrastructure: in Spike 1, two agents sharing a worker corrupted
 a run.
+How a milestone is split, briefed, reviewed and merged, and how the coordinator
+decides, is in the latest handover (`docs/build/handover-2026-11-03-m6.md`,
+sections 3 and 4).
 
 ## Local setup (macOS)
 

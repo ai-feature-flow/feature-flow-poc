@@ -491,7 +491,7 @@ in progress. Pull request #99 stays closed. No sandbox container was left.
 
 ### Deviations
 
-- The handover is `docs/build/handover-2026-11-03-m5.md`: `handover-2026-11-03.md` already exists for M4.
+- The handover written after M5 is `docs/build/handover-2026-11-03-m6.md`, as `handover-2026-11-03.md` already exists for M4.
 - The live run's ticket is a file on the parent branch, the spec approval is automatic, and plan validation and the
   findings ledger are M6's stand-ins (LOG 146).
 
