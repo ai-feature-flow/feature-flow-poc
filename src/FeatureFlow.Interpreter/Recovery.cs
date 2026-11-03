@@ -67,7 +67,11 @@ public sealed partial class RunCore
 
                 return null;
             case RecoveryKind.GoTo:
-                return action.StepId is null || FindIn(action.StepId) is null ? $"go to: '{action.StepId}' is not a step of plan revision {State.Revision}" : null;
+                if (action.StepId is null || FindIn(action.StepId) is not { } target)
+                    return $"go to: '{action.StepId}' is not a step of plan revision {State.Revision}";
+                return action.CleanUp && StepById(target)?.Form == StepForm.Decision
+                    ? $"go to: {target} is a decision, which touches no repository; clean_up resets to where a step started, so go to the step after it"
+                    : null;
             case RecoveryKind.Replan:
                 if (action.StepId is null || FindIn(action.StepId) is not { } id)
                     return $"re-plan: '{action.StepId}' is not a step of plan revision {State.Revision}";
@@ -226,6 +230,26 @@ public sealed partial class RunCore
         {
             renderingBranch = false;
         }
+    }
+
+    /// <summary>The repository a step names in its <c>repository</c> field, evaluated; null when it names none.</summary>
+    public string? ResolveRepository(string stepId)
+    {
+        var step = StepById(stepId) ?? throw new EvaluationException($"{stepId} is not a step of plan revision {State.Revision}");
+        return step.Repository is { } node ? Resolve(node, step, "repository", name => Findings?.Read(name) ?? State.Findings.GetValueOrDefault(name)) as string : null;
+    }
+
+    /// <summary>
+    /// A prompt that an action input names by reference, such as <c>scm.pull_request</c>'s <c>body</c>, rendered like a
+    /// task (docs/03 section 6.3). Null when <paramref name="value"/> is not a prompt reference the run's libraries hold.
+    /// </summary>
+    public string? RenderPrompt(string stepId, string value)
+    {
+        var step = StepById(stepId) ?? throw new EvaluationException($"{stepId} is not a step of plan revision {State.Revision}");
+        if (LibraryReference.TryParse(value) is not { Type: "prompts" } reference || libraries?.Resolve(reference) is not { } library
+            || library.Text("prompts", reference.Name) is not { } text)
+            return null;
+        return Render(text, step.Scope, step.Id, null, $"{reference} text", ResolveInputs(stepId));
     }
 
     /// <summary>

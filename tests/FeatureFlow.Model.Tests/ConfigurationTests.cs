@@ -64,6 +64,7 @@ public class ConfigurationTests
     [InlineData("  limits: { attempts: 4 }", "  limits: { attempts: 4, retries: 2 }", "unknown key 'retries'")]
     [InlineData("continue_as_new_events: 400", "continue_as_new_events: 50", "must be at least 100")]
     [InlineData("  record_store: { default: sqlite,", "  code_host: { instances: { fake: {} } }\n  record_store: { default: sqlite,", "for development only")]
+    [InlineData("  record_store: { default: sqlite,", "  vcs: { instances: { memory: { world: w } } }\n  record_store: { default: sqlite,", "for development only")]
     public void An_installation_refuses_what_it_does_not_read(string old, string replacement, string message)
     {
         var d = new DiagnosticBag();

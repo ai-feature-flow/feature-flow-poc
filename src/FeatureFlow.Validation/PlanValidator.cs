@@ -54,6 +54,7 @@ public sealed class PlanValidator
         v.CheckGuards();
         v.CheckExpressions();
         v.CheckReachability();
+        v.CheckCleanUpTargets();
         v.CheckCycles();
         v.CheckArtifacts();
         v.CheckWriteAccess();
@@ -538,6 +539,28 @@ public sealed class PlanValidator
     }
 
     static string Join(string containerId) => containerId + " (join)";
+
+    /// <summary>
+    /// Check 8: a <c>clean_up</c> route resets the work branch to where its target step started; a decision touches no
+    /// repository and records no start, so a <c>clean_up</c> aimed at one is refused (re-check R3). Route to the step
+    /// after the decision instead. A container target resets to where its first step started.
+    /// </summary>
+    void CheckCleanUpTargets()
+    {
+        var byId = plan.AllSteps.GroupBy(s => s.Id).ToDictionary(g => g.Key, g => g.First());
+        IEnumerable<ResolvedStep> CleanUps(Resolved target) => target switch
+        {
+            ResolvedStep { CleanUp: true } s => [s],
+            ResolvedGuarded guarded => guarded.Entries.SelectMany(e => CleanUps(e.Target)),
+            _ => [],
+        };
+        foreach (var step in plan.AllSteps)
+            foreach (var route in step.ResolvedRoutes)
+                foreach (var target in CleanUps(route.Target))
+                    if (byId.GetValueOrDefault(target.StepId) is { Form: StepForm.Decision })
+                        d.Add(Checks.RouteTarget, $"the route for '{route.Outcome}' resets the work branch for decision {target.StepId} with clean_up; a decision touches no repository, so route to the step after it",
+                            step.Location, step.Id);
+    }
 
     static IEnumerable<int> Targets(Resolved target, Graph g) => target switch
     {

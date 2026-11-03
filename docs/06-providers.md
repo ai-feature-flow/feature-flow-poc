@@ -35,8 +35,8 @@ Signatures are C#, abbreviated: every method is async, takes a
 | `unreachable`, `server_error`, `internal_error` | Infrastructure | Yes, with backoff | The remote or the network failed; the work did not happen |
 | `timeout` | Infrastructure | Yes | The work **may** have happened: creates find by marker first |
 | `rate_limited` | Infrastructure | Yes, honouring `retry_after` | — |
-| `unauthenticated`, `forbidden` | Infrastructure | A short budget, then the run stops with an intervention naming the configuration fault | Almost always configuration |
-| `not_found`, `conflict`, `validation_failed`, `rejected` | Work | No | The remote answered; the step maps it to an outcome or an intervention |
+| `unauthenticated`, `forbidden` | Infrastructure | A short budget, then the run stops with an intervention naming the configuration fault. The budget is 5 tries, waiting 1, 2, 4 and 8 s, within one activity attempt; at run start a spent budget refuses the start (LOG 144) | Almost always configuration |
+| `not_found`, `conflict`, `validation_failed`, `rejected` | Work | No | The remote answered; the step maps it to an outcome or an intervention. A permission the provider's identity lacks (GitHub's 403 "Resource not accessible by integration") is `rejected`, named a configuration fault: it does not heal, so it stops for a person at once (LOG 119) |
 | `base_moved` | Work | No | A push was refused because the target moved since it was read |
 | `capability_missing` | Work | No | — |
 | `unexpected_response` | Work | No | An unmapped success |
@@ -96,6 +96,12 @@ temporary type `action_stand_in` runs them, scripted or recording, and a
 `fake` provider of any type only describes itself. Neither is configured in a
 production installation: an installation that configures one must set
 `development: true`.
+
+The VCS, code host and CI interfaces as built in M5 differ from the signatures below: catch-up and merge take an
+expected revision and a key, the code host reads a file and has no merge method, and CI results are returned as
+unparsed files. LOG 107 lists them.
+How the Git, GitHub and GitHub Actions providers meet them, and the engine's new `actions: write`, are LOG 108
+to 115.
 
 ### 3.1 Sandbox
 
@@ -262,6 +268,23 @@ interface ICiProvider : IProvider {
   `none`. The GitHub Actions provider implements it by reading the workflow
   files' triggers, as FF's `awaitChecks` did.
 - `QueueBuilds`: reports results for merge queue builds.
+
+**The CI workflow contract (GitHub Actions; LOG 112, 119).** The provider dispatches a tier's job (its workflow file, from
+the manifest's `ci.job`) on the repository's **default branch**, so the workflow definition and what it does with the
+repository's secrets are reviewed code, never a file the agent edited. A workflow used as a CI job must:
+
+- be triggered by `workflow_dispatch` and declare an input `commit_sha`; the provider sets it to the revision under
+  test and refuses a workflow without it;
+- check that revision out (`actions/checkout` with `ref: ${{ inputs.commit_sha }}`) and build and test only it,
+  because the run's own `head_sha` is the default branch's and its results are filed under `commit_sha`;
+- declare an input `idempotency_key` and show it in `run-name` (for example `run-name: "unit ${{ inputs.idempotency_key }}"`),
+  so a trigger retried after a lost answer finds its run instead of starting another;
+- upload its result files (`.trx`, JUnit `.xml`, `.sarif`) as artifacts, each under 50 MB and the artifact under
+  100 MB;
+- set `permissions: contents: read`, so the code under test cannot write to the repository through `GITHUB_TOKEN`;
+- if it is also triggered by `push` on the branches agents write to (`ff/**`), use no secrets. A push runs the
+  workflow file as the pushed commit has it, which the agent may have edited, so any secret that run can reach is
+  exposed to the agent's code. Keep secrets for jobs that run only from the default branch (LOG 119).
 
 ### 3.6 Tracker
 

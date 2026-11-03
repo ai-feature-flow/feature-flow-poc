@@ -1,2 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The contract suites (docs/06 section 1): abstract xUnit classes a provider's test project subclasses. -->
+  <ItemGroup>
+    <ProjectReference Include="..\FeatureFlow.Providers.Abstractions\FeatureFlow.Providers.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3.extensibility.core" />
+    <PackageReference Include="xunit.v3.assert" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
 </Project>

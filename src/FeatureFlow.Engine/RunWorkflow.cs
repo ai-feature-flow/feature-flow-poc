@@ -1,3 +1,4 @@
+using FeatureFlow.Engine.ActionSteps;
 using FeatureFlow.Interpreter;
 using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Library;
@@ -91,8 +92,13 @@ public class RunWorkflow
                 return await RefuseAsync(prepared.Errors);
             policy = prepared.Policy;
             libraries = RunActivities.Build(prepared.Libraries, new DiagnosticBag());
-            var (started, diagnostics) = RunCore.Start(libraries, Template, RunActivities.RunInfoOf(input), policy.ToOptions() with { BranchFromPattern = Workflow.Patched(BranchPatternPatch) });
+            var (started, diagnostics) = RunCore.Start(libraries, Template, RunActivities.RunInfoOf(input) with { DefaultBranches = prepared.DefaultBranches },
+                policy.ToOptions() with { BranchFromPattern = Workflow.Patched(BranchPatternPatch) });
             core = started ?? throw new ApplicationFailureException("the plan passed run start but does not load: " + string.Join("; ", diagnostics.Take(3)));
+            // docs/09 section 1: a warning changes nothing, and is listed in the run start record (the timeline).
+            if (prepared.Warnings.Count > 0 && Workflow.Patched(StartWarningsPatch))
+                foreach (var warning in prepared.Warnings)
+                    core.State.Trace.Add(new TraceEntry("warning", "", warning));
         }
         else
         {
@@ -373,6 +379,9 @@ public class RunWorkflow
                     }
 
                     break;
+                case CleanUp c when Workflow.Patched(CleanUpPatch):
+                    await CleanUpAsync(c.StepId);
+                    break;
                 case SendPatchToParent p when input.ParentWorkflowId is { } parent:
                     await SignalQuietlyAsync(parent, RunWorkflowNames.ParentPatch,
                         [new ParentPatchSignal(Workflow.Info.WorkflowId, p.StepId, PatchReader.Write(p.Patch))]);
@@ -394,9 +403,19 @@ public class RunWorkflow
         }
     }
 
+    /// <summary>Steps whose <c>clean_up</c> reset failed with a work error, set just before their start in the same batch.</summary>
+    readonly Dictionary<string, string> cleanUpFailures = new(StringComparer.Ordinal);
+
     async Task StartStepAsync(StartStep s)
     {
         var step = core!.StepById(s.StepId)!;
+        if (cleanUpFailures.Remove(step.Id, out var cleanUpError))
+        {
+            core.Apply(new StepCannotAnswer(step.Id, $"its clean_up could not reset the work branch: {cleanUpError}"));
+            dirty = true;
+            return;
+        }
+
         Dictionary<string, object?> inputs;
         try
         {
@@ -415,7 +434,36 @@ public class RunWorkflow
             return;
         }
 
+        if (Workflow.Patched(StepStartPatch) && MissingConsumed(step) is { } missing)
+        {
+            core.Apply(new StepCannotAnswer(step.Id, missing));
+            dirty = true;
+            return;
+        }
+
         var identity = new StepIdentity(input.RunId, Template.Name, step.Id, s.Execution, $"{input.RunId}/{step.Id}/{s.Execution}");
+        ActionScope? scope = null;
+        // Behind the marker: a history recorded before M5 neither computes a scope nor renders a prompt, so a render
+        // that fails cannot replace the activity it scheduled. Only a run whose actions run against providers (fixed at
+        // its start) gets a scope; otherwise, and in a dry run, the stand-in serves the action.
+        if (step.Form == StepForm.Action && EngineActions.Built.Contains(step.Action!) && Workflow.Patched(StepStartPatch)
+            && policy?.BuiltActions == true && !input.DryRun)
+        {
+            try
+            {
+                scope = ScopeOf(step);
+                foreach (var name in Actions.All.GetValueOrDefault(step.Action!)?.ReferenceInputs ?? [])
+                    if (inputs.GetValueOrDefault(name) is string reference && core.RenderPrompt(step.Id, reference) is { } rendered)
+                        inputs[name] = rendered;
+            }
+            catch (EvaluationException e)
+            {
+                core.Apply(new StepCannotAnswer(step.Id, "a prompt it names cannot be rendered: " + e.Message));
+                dirty = true;
+                return;
+            }
+        }
+
         AgentStepSpec? agent = null;
         if (step.Form == StepForm.Agent && Workflow.Patched(AgentStepPatch))
         {
@@ -435,8 +483,85 @@ public class RunWorkflow
             step.Form == StepForm.Agent ? step.Agent!.Role?.Text ?? "" : step.Action!,
             inputs.ToDictionary(kv => kv.Key, kv => YamlWriter.WritePlain(kv.Value)),
             Contract(step), input.DryRun, Duration(step.Limits?.Timeout), agent);
-        _ = RunStepAsync(step, s.Execution, call);
+        _ = RunStepAsync(step, s.Execution, call, scope);
     }
+
+    /// <summary>
+    /// Check 32 at step start (docs/09 section 2): every artifact the step consumes from its own run, and does not mark
+    /// <c>optional</c>, exists. Artifacts from a parent, root or child are not resolved yet (M3 follow-up 3) and not checked.
+    /// </summary>
+    string? MissingConsumed(Step step)
+    {
+        var missing = step.Consumes.Where(c => !c.Optional && c.From == "current" && LatestArtifact(step, c.Name) is null).Select(c => c.Name).Distinct().ToList();
+        return missing.Count == 0 ? null : $"check 32 ({Checks.Title(Checks.ConsumedArtifacts)}): {step.Id} consumes {string.Join(", ", missing)}, which no step has produced";
+    }
+
+    /// <summary>What an engine action knows of the run (<see cref="ActionScope"/>), computed from the plan and state.</summary>
+    ActionScope ScopeOf(Step step)
+    {
+        var artifacts = new List<ArtifactEntry>();
+        var pullRequests = new List<string>();
+        foreach (var other in core!.Plan.AllSteps.OrderBy(x => x.Id, StringComparer.Ordinal))
+        {
+            if (core.State.Steps.GetValueOrDefault(other.Id)?.Current is not { } current)
+                continue;
+            foreach (var (name, reference) in current.Artifacts.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            {
+                var type = other.Produces.FirstOrDefault(p => p.Name == name)?.Type;
+                var evidence = type?.Reference is { } typeRef && libraries?.Resolve(typeRef)?.ArtifactType(typeRef.Name)?.Evidence == true;
+                artifacts.Add(new ArtifactEntry(other.Id, name, type?.Text, reference, other.Form == StepForm.Action ? other.Action : null, evidence));
+            }
+            if (other.Action == "scm.pull_request" && current.Outputs.GetValueOrDefault("pull_request") is string pr && pr.Length > 0)
+                pullRequests.Add(pr);
+        }
+
+        string? repository;
+        try
+        {
+            repository = core.ResolveRepository(step.Id);
+        }
+        catch (EvaluationException)
+        {
+            // A run with no repositories (the stand-in serves its actions): the action says so if it needs one.
+            repository = null;
+        }
+
+        return new ActionScope(input.Repositories, repository, core.WorkBranch(), input.ParentBranch, artifacts, pullRequests, policy?.EngineMayMerge ?? []);
+    }
+
+    /// <summary>
+    /// A <c>clean_up</c> route resets the work branch before its target runs again (docs/03 section 4.1). The activity
+    /// finds where the step started from in the record store; it records what it did on the run's trace.
+    /// </summary>
+    async Task CleanUpAsync(string stepId)
+    {
+        var executions = core!.State.Steps.GetValueOrDefault(stepId)?.Executions ?? 0;
+        var ran = core.State.Steps.Where(kv => kv.Value.Executions > 0).Select(kv => kv.Key).Order(StringComparer.Ordinal).ToList();
+        var call = new CleanUpCall(input.RunId, stepId, executions, input.Repositories, core.WorkBranch(), ran, input.DryRun);
+        BeginActivity();
+        try
+        {
+            var result = await Workflow.ExecuteActivityAsync((RunActivities a) => a.CleanUpAsync(call), Light);
+            foreach (var e in result.Events)
+                core.State.Trace.Add(new TraceEntry("clean_up", stepId, e));
+            if (result.Error is { } error)
+                // The target step does not run on a branch that was not reset: it raises an intervention when it starts.
+                cleanUpFailures[stepId] = error;
+        }
+        finally
+        {
+            EndActivity();
+        }
+    }
+
+    /// <summary>The patch marker of run start's warnings on the timeline (M5): histories recorded before it list none.</summary>
+    public const string StartWarningsPatch = "m5-start-warnings";
+
+    /// <summary>The patch marker of the <c>clean_up</c> branch reset (M5): histories recorded before it reset nothing.</summary>
+    public const string CleanUpPatch = "m5-clean-up";
+
+    /// <summary>The patch marker of M5's step start: check 32, and an engine action's scope and rendered prompts.</summary>
+    public const string StepStartPatch = "m5-step-start";
 
     /// <summary>What a step must report, for its provider.</summary>
     static StepContract Contract(Step step)
@@ -494,7 +619,8 @@ public class RunWorkflow
             agent.OnUncommitted,
             core.Plan.Document.Level ?? "run",
             input.Repositories.ToDictionary(r => r, _ => branch),
-            input.Repositories.ToDictionary(r => r, _ => "main"),
+            // A child's parent branch is its parent run's work branch; otherwise the agent worker reads the default branch from the code host.
+            input.ParentBranch is { } parentBranch ? input.Repositories.ToDictionary(r => r, _ => parentBranch) : new Dictionary<string, string>(),
             consumed,
             Workflow.Info.WorkflowId,
             input.LockRef);
@@ -516,7 +642,7 @@ public class RunWorkflow
             ? t[^1] switch { 's' => TimeSpan.FromSeconds(n), 'm' => TimeSpan.FromMinutes(n), 'h' => TimeSpan.FromHours(n), 'd' => TimeSpan.FromDays(n), _ => null }
             : null;
 
-    async Task RunStepAsync(Step step, int execution, StepCall call)
+    async Task RunStepAsync(Step step, int execution, StepCall call, ActionScope? scope = null)
     {
         var token = new CancellationTokenSource();
         stepTokens[step.Id] = token;
@@ -550,9 +676,11 @@ public class RunWorkflow
                     CancellationType = StepCancellation(),
                 });
             else
-                outcome = await Workflow.ExecuteActivityAsync((RunActivities a) => a.RunActionAsync(call), new ActivityOptions
+                outcome = await Workflow.ExecuteActivityAsync((RunActivities a) => a.RunActionAsync(call, scope), new ActivityOptions
                 {
-                    StartToCloseTimeout = TimeSpan.FromHours(1),
+                    // An action that polls (CI tiers, sandbox commands) heartbeats; a wait between reads is a retry, not a held slot.
+                    StartToCloseTimeout = (call.Timeout ?? TimeSpan.FromHours(2)) + TimeSpan.FromMinutes(10),
+                    HeartbeatTimeout = scope is null ? null : TimeSpan.FromMinutes(2),
                     RetryPolicy = Forever,
                     CancellationToken = token.Token,
                     CancellationType = StepCancellation(),
@@ -701,7 +829,7 @@ public class RunWorkflow
             .ToDictionary(kv => kv.Key, kv => YamlWriter.WritePlain(kv.Value));
         var repositories = (inputs.GetValueOrDefault("repositories") as IEnumerable<object?> ?? input.Repositories).Select(r => r?.ToString() ?? "").ToList();
         var childInput = new RunStart(childId, inputs.GetValueOrDefault("template") as string ?? "", repositories, parameters,
-            input.LockRef, input.DryRun, input.Requester, Workflow.Info.WorkflowId, step.Id, input.HandOverEvents);
+            input.LockRef, input.DryRun, input.Requester, Workflow.Info.WorkflowId, step.Id, input.HandOverEvents, ParentBranch: core!.WorkBranch());
         try
         {
             await Workflow.StartChildWorkflowAsync((RunWorkflow w) => w.RunAsync(childInput), new ChildWorkflowOptions

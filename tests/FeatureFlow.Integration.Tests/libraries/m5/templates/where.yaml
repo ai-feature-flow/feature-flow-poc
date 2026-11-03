@@ -1,0 +1,13 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: where
+  level: ticket
+  description: A pull request whose body is the run's parent branch, for the run.parent_branch value test.
+
+steps:
+  - id: open_pr
+    action: scm.pull_request
+    with: { title: where, body: m5:prompts/where }
+    routes:
+      ready: { end: completed }

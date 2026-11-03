@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\Providers\FeatureFlow.Providers.Git\FeatureFlow.Providers.Git.csproj" />
+    <ProjectReference Include="..\..\..\src\FeatureFlow.Providers.Contracts\FeatureFlow.Providers.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

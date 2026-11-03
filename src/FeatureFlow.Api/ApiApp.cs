@@ -95,6 +95,13 @@ public static class ApiApp
             }
         }
 
+        /// <summary>A plain branch name: not a full reference, no spaces or Git's forbidden characters, no empty or dot-led parts.</summary>
+        static bool ValidBranch(string name) =>
+            name.Length is > 0 and <= 200 && !name.StartsWith("refs/", StringComparison.Ordinal) && !name.EndsWith('/') && !name.EndsWith(".lock", StringComparison.Ordinal)
+            && !name.Contains("..", StringComparison.Ordinal) && !name.Contains("@{", StringComparison.Ordinal)
+            && name.All(c => c > ' ' && c != 127 && c is not ('~' or '^' or ':' or '?' or '*' or '[' or '\\'))
+            && name.Split('/').All(part => part.Length > 0 && !part.StartsWith('.'));
+
         public async Task<IResult> StartAsync(HttpContext context, Caller caller)
         {
             var body = await JsonNode.ParseAsync(context.Request.Body, cancellationToken: context.RequestAborted) as JsonObject;
@@ -104,6 +111,10 @@ public static class ApiApp
             var repositories = body!["repositories"]?.AsArray().Select(n => n!.GetValue<string>()).ToList() ?? [];
             var parameters = (body["parameters"] as JsonObject ?? []).ToDictionary(kv => kv.Key, kv => kv.Value?.ToJsonString() ?? "null");
             var dryRun = body["dry_run"]?.GetValue<bool>() ?? false;
+            // The branch the run's work branch starts from and merges into (LOG 137); default the repository's default branch.
+            var parentBranch = body["parent_branch"]?.GetValue<string>();
+            if (parentBranch is not null && !ValidBranch(parentBranch))
+                return Error(400, $"parent_branch must be a branch name, such as ff/epic/billing, not '{parentBranch}'");
             var handOver = services.Installation.ContinueAsNewEvents;
             if (body["continue_as_new_events"]?.GetValue<long>() is { } requested)
             {
@@ -121,7 +132,7 @@ public static class ApiApp
             await Records.AppendAsync(new RecordBatch(
                 [new RunRecord(runId, null, template, "starting", caller.Actor, repositories, dryRun, now, null)],
                 Locks: [new LockRecord(runId, lockRef, now)]), context.RequestAborted);
-            var start = new RunStart(runId, template, repositories, parameters, lockRef, dryRun, caller.Actor, HandOverEvents: handOver);
+            var start = new RunStart(runId, template, repositories, parameters, lockRef, dryRun, caller.Actor, HandOverEvents: handOver, ParentBranch: parentBranch);
             await services.Client.StartWorkflowAsync(RunWorkflowNames.Workflow, [start],
                 new WorkflowOptions(runId, services.Installation.TaskQueue));
             return Results.Json(new { run_id = runId }, Json, statusCode: 201);

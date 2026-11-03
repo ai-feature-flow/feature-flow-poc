@@ -113,7 +113,9 @@ Paths in all design documents are relative to the repository root.
 | Version 1 build plan | Written 2026-11-01 in `docs/11-build-plan.md`: layout, build order, milestones M0 to M8, carry-over from spikes. Judgement calls LOG 66 to 70, approved 2026-11-01. Open questions 1, 2, 3 and 5 answered 2026-11-01 (code in this repository; pull requests with required CI; LOG 62 to 65 approved; a minimal console in M7); question 4, the team deployment's object store and container platform, deferred |
 | Product owner review of LOG 66 to 70 | Done 2026-11-01: approved |
 | M0 to M4 (skeleton; plan loader and validator; interpreter core and re-drive; runnable engine with fake providers; agent steps in a sandbox) | Done 2026-11-02 to 2026-11-03, merged at `9279026`. Results in `docs/build/m0-results.md` to `m4-results.md`; LOG 71 to 90 approved; LOG 91 to 106 approved 2026-11-03, with 91 simplified (four runtime settings became fixed defaults) and 106 amended (time on open questions does not count toward `limits.timeout`; `questions.timeout` defaults to 24 hours). State, access and next steps in `docs/build/handover-2026-11-03.md` |
-| SP1 scenario flake on CI, then M5 (source control, testing and the first real ticket) | **Next** |
+| SP1 scenario flake on CI | Done 2026-11-03 (pull request 3) |
+| M5 (source control, testing and the first real ticket) | Done 2026-11-03 on branch `m5`, milestone pull request into `main` awaiting review: the done-when's live run merged a real ticket into a non-default parent branch on the fixture. Results in `docs/build/m5-results.md`; LOG 107 to 146 approved 2026-11-03. State and next steps in `docs/build/handover-2026-11-03-m5.md` |
+| M6 (findings, validators and levels), starting with its must-fix from M5: a wait holds up a run's hand-over (LOG 139) | **Next** |
 
 ## 7. How to resume
 

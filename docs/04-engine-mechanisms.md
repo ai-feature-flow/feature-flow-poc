@@ -327,6 +327,12 @@ them (from FF).
 
 ## 7. Source control
 
+Sections 7 to 9 are as built in M5 (LOG 120 to 132, 138, 139). `test.integration` is `test.run` across
+repositories and starts no services yet (LOG 120). Waits are retried reads (LOG 122); while they wait they hold up a
+hand-over, which M6 must fix (LOG 139). An action request is watched on the code host, with no decision record yet
+(LOG 123). `clean_up` resets by an expected-revision push (LOG 128). Evidence tiers come from the parent branch's
+manifest (LOG 138).
+
 The engine creates a run's work branch in a repository the first time a step
 touches that repository, from the run's parent branch, and records the
 baseline commit. A run that integrates into the default branch fetches its

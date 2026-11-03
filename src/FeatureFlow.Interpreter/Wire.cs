@@ -54,7 +54,9 @@ public sealed record RunPolicy(
     IReadOnlyList<string>? AllowedRoles,
     IReadOnlyList<AutoRule> AutoRules,
     long? HardStepCeiling = null,
-    long? HardRunCeiling = null)
+    long? HardRunCeiling = null,
+    IReadOnlyList<string>? EngineMayMerge = null,
+    bool? BuiltActions = null)
 {
     public RunOptions ToOptions() => new()
     {
@@ -114,7 +116,8 @@ public sealed record RunStart(
     string? ParentStepId = null,
     long HandOverEvents = 5120,
     RunPolicy? Policy = null,
-    ShellState? Carried = null);
+    ShellState? Carried = null,
+    string? ParentBranch = null);
 
 /// <summary>
 /// A person's answer, from the API, which authenticated the actor and recorded the answer first (docs/04

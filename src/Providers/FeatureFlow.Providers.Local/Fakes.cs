@@ -348,6 +348,11 @@ public static class LocalProviders
             new("action_stand_in", "scripted", ["script"], c => new ScriptedActionStandIn(Script(c), () => Store(c))),
             new("agent_runtime", "recording", ["folder"], c => new RecordingAgentRuntime(new Recorder(c.PathSetting("folder") ?? c.RequiredSetting("folder"), () => Store(c)))),
             new("action_stand_in", "recording", ["folder"], c => new RecordingActionStandIn(new Recorder(c.PathSetting("folder") ?? c.RequiredSetting("folder"), () => Store(c)))),
+            // M5: in-memory source control for engine tests; providers with the same world share it.
+            new("vcs", "memory", ["world"], c => new InMemoryVcs(InMemoryForge.Named(c.Setting("world") ?? "default"))),
+            new("code_host", "memory", ["world"], c => new InMemoryCodeHost(InMemoryForge.Named(c.Setting("world") ?? "default"))),
+            new("ci", "memory", ["world"], c => new InMemoryCi(InMemoryForge.Named(c.Setting("world") ?? "default"), () => Store(c))),
+            new("sandbox", "memory", ["world"], c => MemorySandbox.Named(c.Setting("world") ?? "default", () => Store(c))),
         };
         foreach (var type in ConfigurationReader.ProviderTypes.Where(t => t is not ("artifact_store" or "record_store" or "secrets" or "action_stand_in")))
             list.Add(new ProviderFactory(type, "fake", [], _ => new DescribedOnlyProvider(type)));

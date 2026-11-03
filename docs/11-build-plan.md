@@ -203,6 +203,7 @@ implements the formats of LOG 62 to 65, approved 2026-11-01.
 | Builds | `findings.record` and `findings.triage`, the ledger and the `findings` namespace; the standard validator provider (seven validators) and `artifact.validate`; engine-only evidence types (F7); `for_each` over repositories; `delivery.report`; `artifact.compose`, `artifact.import`, `artifact.publish`; `tracker.update` and declarative tracker updates with the GitHub Issues tracker; the work-item budget (F11) |
 | Done when | `epic_delivery` with three tickets runs on the fixture repository to a merge into its parent branch. `project_delivery` over two repositories delivers in order, with a person's merge into the default branch detected |
 | Verified by | Each validator has a failing and a passing fixture. An agent step declaring an evidence type is refused at load (check 12). A ticket whose fix adds no test is caught by `tests_added` |
+| Must fix from M5 | LOG 139: a wait (`ci.checks`, `wait.condition`, a merge's action request) is an activity in flight, so it holds up the run's hand-over (continue-as-new) until it ends. The core must return a running wait to pending without a new execution, so its records in the record store (its start, the head it waits on) carry over, and the shell restarts it after the hand-over |
 
 ### M7. People, policy and steering
 

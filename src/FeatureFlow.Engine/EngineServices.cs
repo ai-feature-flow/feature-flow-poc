@@ -48,6 +48,9 @@ public sealed class EngineServices(ProviderSet providers, InstallationConfig ins
             policy.AllowedRoles,
             policy.Approval.Select(r => new AutoRule(r.Match, r.Auto.Value)).ToList(),
             policy.HardPerStep,
-            policy.HardPerRun);
+            policy.HardPerRun,
+            policy.EngineMayMerge,
+            // Whether M5's actions run against providers for this run, fixed at its start like the rest of its policy.
+            Providers.ForRun("vcs", false) is IVcsProvider && Providers.ForRun("code_host", false) is ICodeHostProvider);
     }
 }

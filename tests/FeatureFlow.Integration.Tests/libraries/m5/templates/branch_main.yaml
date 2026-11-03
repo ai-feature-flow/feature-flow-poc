@@ -1,0 +1,13 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: branch_main
+  level: ticket
+  description: A template whose work branch is the default branch, which run start refuses (review 11).
+  branch_pattern: main
+
+steps:
+  - id: inspect
+    action: repo.inspect
+    routes:
+      inspected: { end: completed }
