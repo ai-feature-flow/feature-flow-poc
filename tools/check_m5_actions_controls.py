@@ -311,6 +311,24 @@ CONTROLS = [
         "tests": [(AGENT, None)],
         "expect": ["An_agent_step_whose_work_branch_is_the_default_branch_does_not_start"],
     },
+    {
+        "name": "review 8: the workflow never runs a clean_up reset",
+        "edits": [(WORKFLOW, "case CleanUp c when Workflow.Patched(CleanUpPatch):", "case CleanUp c when false:")],
+        "tests": [it("A_rejected_specification_resets_the_work_branch_to_where_planning_started")],
+        "expect": ["A_rejected_specification_resets_the_work_branch_to_where_planning_started"],
+    },
+    {
+        "name": "review 9: a refused clean_up is ignored and the step runs on the branch that was not reset",
+        "edits": [(WORKFLOW, "if (cleanUpFailures.Remove(step.Id, out var cleanUpError))", "if (false && cleanUpFailures.Remove(step.Id, out var cleanUpError))")],
+        "tests": [it("A_clean_up_the_remote_refuses")],
+        "expect": ["A_clean_up_the_remote_refuses_raises_an_intervention_at_the_step_it_was_for"],
+    },
+    {
+        "name": "review 13: a built action served by the stand-in gets a heartbeat timeout",
+        "edits": [(WORKFLOW, "&& policy?.BuiltActions == true && !input.DryRun)", "&& !input.DryRun)")],
+        "tests": [it("Only_an_action_run_against_providers_has_a_heartbeat_timeout")],
+        "expect": ["Only_an_action_run_against_providers_has_a_heartbeat_timeout"],
+    },
 ]
 
 
