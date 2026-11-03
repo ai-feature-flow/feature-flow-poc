@@ -94,6 +94,12 @@ CONTROLS = [
         "expect": ["Satisfaction_checks_the_frozen_head_not_an_earlier_passing_run"],
     },
     {
+        "name": "verification_satisfaction: a child's test results in the index count as this run's",
+        "edits": [(EVIDENCE, "        evidence = evidence.Where(e => own.Contains(e.RunId)).ToList();\n", "")],
+        "tests": [STD_TESTS],
+        "expect": ["Satisfaction_counts_only_this_runs_test_results_not_a_childs"],
+    },
+    {
         "name": "F7: test results an agent or a non-testing action produced count as evidence",
         "edits": [(PROVIDER, "a.Evidence && a.Action is { } action && actions.Contains(action) && ValidatorDescriptor.TypeName(a.Type) == type",
                    "ValidatorDescriptor.TypeName(a.Type) == type")],

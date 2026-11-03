@@ -73,6 +73,17 @@ static class Evidence
             return;
         }
 
+        // This run's evidence only: a child's test results, in the index too, prove nothing about this run's head.
+        var own = c.OwnRuns();
+        if (own.Count != 1)
+        {
+            c.Error("own_run_unknown", own.Count == 0
+                ? "none of the subjects is in the artifact index, so this run's own test results cannot be told from its children's"
+                : $"the subjects come from several runs ({string.Join(", ", own.Order(StringComparer.Ordinal))})");
+            return;
+        }
+
+        evidence = evidence.Where(e => own.Contains(e.RunId)).ToList();
         var claims = new List<Claim>();
         foreach (var subject in claimSubjects)
             claims.AddRange((await c.ReadAsync<ClaimsDocument>(subject))?.Claims ?? []);

@@ -211,6 +211,17 @@ public sealed class Check(ValidationRequest request, IArtifactStoreProvider stor
     public static bool SameRepository(string a, string b) =>
         a == b || a.EndsWith("/" + b, StringComparison.Ordinal) || b.EndsWith("/" + a, StringComparison.Ordinal);
 
+    /// <summary>
+    /// The run whose step is checking: the run of the index entries of its own (<c>current</c>) subjects. The index also
+    /// holds descendants' artifacts, which are not this run's evidence.
+    /// </summary>
+    public IReadOnlySet<string> OwnRuns()
+    {
+        var own = Present(Types.Requirements, Types.DeliveryPlan, Types.EvidenceClaims, Types.TestResults, Types.Triage)
+            .Where(s => s.From == "current").Select(s => s.Artifact!.Id).ToHashSet(StringComparer.Ordinal);
+        return request.Artifacts.Where(a => own.Contains(a.Ref)).Select(a => a.RunId).ToHashSet(StringComparer.Ordinal);
+    }
+
     /// <summary>Index entries an engine action produced as evidence of a type (F7): never an agent's or a decision's.</summary>
     public IEnumerable<ArtifactRecord> EngineEvidence(string type, IReadOnlySet<string> actions) =>
         request.Artifacts.Where(a => a.Evidence && a.Action is { } action && actions.Contains(action) && ValidatorDescriptor.TypeName(a.Type) == type);

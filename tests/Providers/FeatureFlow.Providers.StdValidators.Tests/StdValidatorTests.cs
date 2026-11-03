@@ -176,7 +176,7 @@ public sealed class StdValidatorTests : IDisposable
         var head = w.Commit("tests/WidgetTests.cs", "RefusesLongNames\n");
         var exitOnly = w.TestEvidence(head, ["WidgetTests.RefusesLongNames"], exitCodeOnly: true);
         var result = await ValidateAsync(World.Request(Names.VerificationSatisfaction,
-            [w.Subject("delivery_plan", "delivery_plan", TicketPlan()), w.Subject("implementation_claims", "evidence_claims", Claims())], Frozen(head), [exitOnly]));
+            [w.Subject("delivery_plan", "delivery_plan", TicketPlan()), w.Subject("implementation_claims", "evidence_claims", Claims()), Results(exitOnly)], Frozen(head), [exitOnly]));
         Invalid(result, "test_not_passed");
         Assert.Contains("judged by exit code", result.Issues.Single().Message);
     }
@@ -186,12 +186,36 @@ public sealed class StdValidatorTests : IDisposable
     {
         var tested = w.Commit("tests/WidgetTests.cs", "RefusesLongNames\n");
         var later = w.Commit("src/Widgets.cs", "class Widgets { }\n// later\n");
+        var earlier = w.TestEvidence(tested, ["WidgetTests.RefusesLongNames"]);
         var result = await ValidateAsync(World.Request(Names.VerificationSatisfaction,
-            [w.Subject("delivery_plan", "delivery_plan", TicketPlan()), w.Subject("implementation_claims", "evidence_claims", Claims())], Frozen(later),
-            [w.TestEvidence(tested, ["WidgetTests.RefusesLongNames"])]));
+            [w.Subject("delivery_plan", "delivery_plan", TicketPlan()), w.Subject("implementation_claims", "evidence_claims", Claims()), Results(earlier)], Frozen(later),
+            [earlier]));
 
         Invalid(result, "not_tested");
     }
+
+    /// <summary>
+    /// The artifact index holds a run's descendants' artifacts too (W1). An epic's own claim is satisfied only by the epic's
+    /// own test results: a child ticket's passing results at the same revision are not the epic's evidence.
+    /// </summary>
+    [Fact]
+    public async Task Satisfaction_counts_only_this_runs_test_results_not_a_childs()
+    {
+        var head = w.Commit("tests/WidgetTests.cs", "RefusesLongNames\n");
+        var own = w.TestEvidence(head, ["WidgetTests.Other"], runId: "run-epic");
+        var childs = w.TestEvidence(head, ["WidgetTests.RefusesLongNames"], runId: TicketRun);
+        ValidationRequest Request(params ArtifactRecord[] artifacts) => World.Request(Names.VerificationSatisfaction,
+            [w.Subject("delivery_plan", "delivery_plan", TicketPlan()), w.Subject("implementation_claims", "evidence_claims", Claims()), Results(own)], Frozen(head), artifacts);
+
+        Invalid(await ValidateAsync(Request(own, childs)), "test_not_passed");
+        // The same passing results as the run's own satisfy the claim: the run, not the content, made the difference.
+        Valid(await ValidateAsync(World.Request(Names.VerificationSatisfaction,
+            [w.Subject("delivery_plan", "delivery_plan", TicketPlan()), w.Subject("implementation_claims", "evidence_claims", Claims()), Results(childs)], Frozen(head), [own, childs])));
+        // A subject not in the index leaves this run unknown: nothing is counted.
+        Invalid(await ValidateAsync(Request(childs)), "own_run_unknown");
+    }
+
+    static ValidationSubject Results(ArtifactRecord r) => new("test_results", r.Type, new ArtifactRef(r.Ref));
 
     [Fact]
     public void The_factory_registers_kind_std_for_the_validator_type()
