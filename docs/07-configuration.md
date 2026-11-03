@@ -239,6 +239,7 @@ library:                                   # docs/08 section 4; read from the de
 | `test_tiers[].targets` | Where the tier may run. A tier that needs Docker or Windows normally lists only `ci` |
 | `test_tiers[].prerequisites` | `env`: environment variable names the tier needs. `test.run` raises an intervention if one is missing where the tier runs, rather than reporting the tests as failed |
 | `test_tiers[].result` | Parsed format and path. Without it the tier is judged by exit code only, and its tests cannot be claimed as evidence |
+| `test_tiers[].ci` | The CI provider instance and the job (for GitHub Actions, a workflow file). The job runs from the default branch and must check out the revision it is given: the workflow contract is in `docs/06` section 3.5 |
 | `library` | The only section read from the default branch rather than the working branch |
 | `.feature-flow/` | Holds only the content files `library.adds` references |
 

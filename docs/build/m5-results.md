@@ -142,6 +142,28 @@ The fixture's `main` is protected only by a ruleset, visible only through `GET /
 protected, pull request required, 1 approval, review rules known. It passed; with the rulesets ignored (control) it
 failed.
 
+### Re-check of PR 5 (approve-with-fixes, 2026-11-03)
+
+| # | Fix | Test | Control |
+|---|---|---|---|
+| R1 claims leaked | The default branch and inputs are checked before claiming; a claim is a tag object dated when made; a dispatch refused as a work error removes it; an unrecorded claim older than 3 h is reclaimed; a replaced run loses its `run-<id>` index | Check order; no claim for a workflow without `commit_sha`; 422 removes, 500 keeps; stale claim reclaimed without searching | Claiming first, keeping the claim, no reclaim: each fails its test |
+| R2 adopted runs unverified | An adopted run must be the job's workflow, `workflow_dispatch`, on the default branch, created after the claim and the tested commit | Five forged-run cases; an old run carrying the key | No verification fails all six |
+| R3 | `ReviewRulesKnown`'s consumer is check 24, the actions builder's | | |
+| R4 | docs/06 s1.1: a missing permission's 403 is `rejected`, a configuration fault | | |
+| R5 | The CI workflow contract in docs/06 s3.5 (dispatch from the default branch; `commit_sha` checked out; key in `run-name`; result artifacts; `permissions: contents: read`), pointed to from docs/07 | | |
+| R6 hung git | Each git command has `CommandTimeout` (default 5 min); the process tree is killed and the operation fails with `timeout`, releasing the cache | A push held 20 s by a hook times out in 2 s and the cache is free | No timeout fails it |
+| PR 6 re-check | `HttpRequestException`, `IOException`, `SocketException` (and disk, access, corrupt-zip failures) come back as results, never exceptions | 3 transport kinds for API, download and broker; corrupt artifact; IO, access, socket inside a merge; an uncreatable cache | Each narrower catch fails its cases |
+
+The fixture changed meanwhile: its ruleset now requires no approvals (the Live test reads the count instead of
+assuming 1), pull request 50 was merged, and so was 33, the dispatch-only `ff-contract.yml` whose `run-name` shows the
+key. A new Live test uses it: a claim with no run recorded, and a run dispatched as if its answer was lost; the provider
+finds it by run-name and adopts it (control, live: without the search a second run starts).
+
+Counts: Git provider tests 40, GitHub default tests 117, default suite 584, SP4 4. **Live run 8 (final): 21 passed** in
+3 min 12 s (CI run 41561226342 succeeded with its TRX read; lost-answer run 41561223496 adopted; retry adopted
+41561328439; pull request 90 reverted a squash of 88). Afterwards the fixture had no claim reference, no run in progress
+and no open pull request.
+
 ### Open questions
 
 1. `BranchProtection` "unknown" review rules: see the proposal in the providers report.
