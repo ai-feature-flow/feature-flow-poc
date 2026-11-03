@@ -143,4 +143,59 @@ public class FindingsLoopTests
         Assert.Equal(FindingStates.Open, finding.State);
         Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
     }
+
+    /// <summary>
+    /// Integration seam (a): fix_loop leaves by <c>fixed</c> once <c>tests_added</c> is valid, without reading
+    /// <c>findings.open</c> again. The caller's merge bar does. A non-blocking finding left open neither loops nor is lost:
+    /// it stays open in the ledger and the ticket merges. A blocking finding the verifier leaves open sends the run round
+    /// the fix loop again from the merge bar, and nothing merges.
+    /// </summary>
+    [Theory]
+    [InlineData("fixed")]
+    [InlineData("open")]
+    public async Task After_the_fix_loop_the_merge_bar_decides_on_what_is_still_open(string verified)
+    {
+        var minor = "{ rule: naming, title: App is a vague name, description: App says little, severity: low, blocking: false, basis: reasoned, "
+                    + "location: { repository: acme/api, file: src/App.cs, symbol: App, snippet: 'class App' } }";
+        var script = "{ " + string.Join(", ",
+        [
+            $"verify.review.review_0.assess: [{Report(Blocking + ", " + minor)}, {Report("")}]",
+            .. Enumerable.Range(1, 4).Select(i => $"verify.review.review_{i}.assess: {Report("")}"),
+            "verify.fix.triage: { artifacts: { triage: { triage_each_open: open } } }",
+            $"verify.fix.verify_fix: {{ outcome: verified, artifacts: {{ fix_verification: {{ triage_each_open: {verified}, non_blocking: open }} }} }}",
+            "verify.fix.fix: { artifacts: { fix_claims: { schema: 1, claims: [{ criterion: AC-1, verification: unit, tests: "
+            + "[{ repository: acme/api, tier: unit, id: Regression.fix, change: modified, source: { file: work/verify.fix.fix.txt } }] }] }, "
+            + "implementation_claims: { schema: 1, claims: [{ criterion: AC-1, verification: unit, tests: [{ repository: acme/api, tier: unit, id: Adds, change: new }] }] } } }",
+        ]) + " }";
+        var (h, forge, repo) = await ForgeTicketTests.StartAsync($"merge-bar-{verified}", policy: "  merge: { default_branch: { engine_may_merge: [acme/api] } }", script: script);
+        await using var _h = h;
+        var main = forge.Resolve(repo, "main");
+
+        var id = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=T-1", "--param", "engine_can_merge=true", "--repo", "acme/api");
+        var records = new SqliteRecordStore(Path.Combine(h.Folder, "records.db"));
+        var ct = TestContext.Current.CancellationToken;
+
+        if (verified == "fixed")
+        {
+            var (exit, end, error) = h.Cli("wait", id, "--timeout", "240");
+            var view = await h.ShowAsync(id);
+            Assert.True(exit == 0 && end.Trim() == $"run {id} completed", end + error + view.ToJsonString());
+            Assert.Single(Harness.StartedSteps(view), s => s == "verify.fix.triage");
+            Assert.NotEqual(main, forge.Resolve(repo, "main"));
+        }
+        else
+        {
+            Assert.NotNull(await h.WaitForWaitAsync(id, TimeSpan.FromSeconds(240)));
+            var view = await h.ShowAsync(id);
+            Assert.Equal("intervention", view["waits"]!.AsArray().Single()!["kind"]!.ToString());
+            var path = Harness.StartedSteps(view);
+            Assert.True(path.Count(s => s == "verify.fix.triage") >= 2, string.Join(", ", path));
+            Assert.DoesNotContain(path, s => s.StartsWith("deliver.", StringComparison.Ordinal));
+            Assert.Equal(main, forge.Resolve(repo, "main"));
+        }
+
+        var ledger = (await records.QueryAsync<FindingRecord>(Queries.Findings, new Dictionary<string, string> { ["run_id"] = id }, ct)).Unwrap();
+        Assert.Equal((verified, FindingStates.Open), (ledger.Single(f => f.Finding.Blocking).State, ledger.Single(f => !f.Finding.Blocking).State));
+        Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
+    }
 }

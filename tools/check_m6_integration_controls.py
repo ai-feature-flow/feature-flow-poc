@@ -1,0 +1,101 @@
+"""Control runs for M6's integration (W5) ("Verify, do not assert", CONTRIBUTING.md).
+
+Each control breaks one rule in the source, runs the tests that guard it, records which fail, restores the source,
+and runs the same tests again. A control holds when its named tests fail while the rule is broken and every test
+passes after the revert. A name matches a failing test when the failing test's name starts with it.
+
+Integration tests need Temporal at FF_TEMPORAL_ADDRESS, and on this machine
+GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=all.
+
+Usage, from anywhere:  python3 tools/check_m6_integration_controls.py [name ...]
+Exit status 1 if any control does not hold.
+"""
+import os
+import re
+import subprocess
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FINDINGS = "src/FeatureFlow.Engine/Actions/Findings.cs"
+FIX_LOOP = "library/std/fragments/fix_loop.yaml"
+VERIFY = "library/std/fragments/verify_and_review.yaml"
+ENGINE_FINDINGS = ("tests/FeatureFlow.Engine.Tests", "FullyQualifiedName~FindingsActionTests")
+LOOP = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~FindingsLoopTests.After_the_fix_loop")
+
+CONTROLS = [
+    {
+        "name": "findings.record keeps a reviewer's short repository name (LOG 190)",
+        "edits": [(FINDINGS, "return matches.Count == 1 ? matches[0] : repository;", "return repository;")],
+        "tests": [ENGINE_FINDINGS],
+        "expect": ["A_finding_naming_the_runs_repository_by_short_name_or_case_is_recorded_in_it_and_raised_at_its_head"],
+    },
+    {
+        "name": "findings.triage lets a finding with no raised revision be fixed (LOG 190)",
+        "edits": [(FINDINGS, "problems.Add($\"{t.Finding}: it was raised in", "_ = ($\"{t.Finding}: it was raised in")],
+        "tests": [ENGINE_FINDINGS],
+        "expect": ["A_finding_in_a_repository_the_run_has_not_prepared_cannot_be_fixed_by_a_triage"],
+    },
+    {
+        "name": "the merge bar ignores open blocking findings after the fix loop (seam a)",
+        "edits": [(VERIFY, 'when: "findings.open_blocking == 0 && params.check_satisfaction"', 'when: "params.check_satisfaction"')],
+        "tests": [LOOP],
+        "expect": ["After_the_fix_loop_the_merge_bar_decides_on_what_is_still_open"],
+    },
+]
+
+def run_tests(tests):
+    failing = set()
+    for project, test_filter in tests:
+        command = ["dotnet", "test", project]
+        if test_filter:
+            command += ["--filter", test_filter]
+        run = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+        failing.update(re.findall(r"^\s+Failed [\w.]+\.(\w+(?:\(.*\))?) \[", run.stdout, re.M))
+        if run.returncode != 0 and not failing:
+            failing.add("(build or run failed)")
+            print(run.stdout[-3000:], flush=True)
+    return failing
+
+
+def matches(expected, failing):
+    """A name, or (name, n): at least n failing cases of that theory."""
+    name, count = expected if isinstance(expected, tuple) else (expected, 1)
+    return sum(1 for f in failing if f == name or f.startswith(name + "(")) >= count
+
+
+def main():
+    wanted = sys.argv[1:]
+    ok = True
+    for control in CONTROLS:
+        if wanted and not any(w in control["name"] for w in wanted):
+            continue
+        originals = {}
+        for path, old, new in control["edits"]:
+            full = os.path.join(ROOT, path)
+            current = open(full).read()
+            originals.setdefault(full, current)
+            if current.count(old) != 1:
+                print(f"{control['name']}: the text to replace occurs {current.count(old)} times in {path}", flush=True)
+                for f, text in originals.items():
+                    open(f, "w").write(text)
+                sys.exit(1)
+            open(full, "w").write(current.replace(old, new))
+        try:
+            broken = run_tests(control["tests"])
+        finally:
+            for full, text in originals.items():
+                open(full, "w").write(text)
+        reverted = run_tests(control["tests"])
+        missing = [t for t in control["expect"] if not matches(t, broken)]
+        holds = not missing and not reverted
+        ok = ok and holds
+        print(f"{'ok' if holds else 'DOES NOT HOLD'}: {control['name']}", flush=True)
+        print(f"  failing while broken: {sorted(broken)}", flush=True)
+        if missing:
+            print(f"  expected to fail but passed: {missing}", flush=True)
+        print(f"  failing after revert: {sorted(reverted) or 'none'}", flush=True)
+    sys.exit(0 if ok else 1)
+
+
+if __name__ == "__main__":
+    main()
