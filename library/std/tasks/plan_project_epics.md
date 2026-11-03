@@ -15,7 +15,9 @@ owns. You change no code. The work list you write becomes the epic runs.
 
 1. Read the `solution_design` and `verification` skills, then the inputs.
 2. Derive epics from the architecture: each a coherent outcome over one or more
-   repositories, with a `boundary` and its dependencies on other epics.
+   repositories. Give each a short stable `name` (snake_case: it becomes the
+   epic's id and branch), a `title`, its `repositories`, a concrete `boundary`,
+   and its dependencies on other epics (`depends_on`, by name).
 3. Write `child_requirements.yaml` (a requirements document) with
    `scope: { kind: project, id: <the project's scope id> }`. For every project
    requirement write one or more epic-level requirements supporting it. Give

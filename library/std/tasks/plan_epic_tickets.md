@@ -16,7 +16,7 @@ agent in between.
 
 1. Read the `solution_design` and `verification` skills, then the inputs.
 2. Derive cohesive tickets from the design, each reviewable on its own. Give each
-   a short stable `name` (snake_case), its repositories, a concrete `boundary`,
+   a short stable `name` (snake_case), a `title`, its repositories, a concrete `boundary`,
    and its dependencies on other tickets. Where the epic needs integration
    capability (an integration environment or an integration tier), plan it as
    tickets ordered before the work that depends on it.

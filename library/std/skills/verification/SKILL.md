@@ -36,7 +36,8 @@ requirements:
 - It `supports` requirements above it, or gives a `supports_reason` (enabling
   work). Not both.
 - Only a project-scope document names an `owner` per item: an epic, or the
-  project itself.
+  project itself, as `owner: { kind: epic, id: <the epic's name in the work list> }`
+  or `owner: { kind: project, id: <the project's id> }`.
 
 ## delivery_plan
 
@@ -63,7 +64,8 @@ acceptance_criteria:
 - `tier` is a tier name or tag from the repository manifest. Check the baseline
   results: a tier that runs but produces no parsed results cannot prove anything.
 - Only an epic-scope document names an `owner` per criterion (a ticket, or the
-  epic). An owned criterion has no methods: its owner adds them.
+  epic), as `owner: { kind: ticket, id: <the ticket's name in the work list> }`.
+  An owned criterion has no methods: its owner adds them.
 
 ## Ownership across levels
 
