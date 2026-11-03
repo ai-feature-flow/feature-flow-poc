@@ -263,8 +263,8 @@ limits:
 dry_run: false
 ```
 
-Pending review (LOG 137): `parent_branch` names the branch the run's work branch starts from and
-merges into. F1 still governs it when it is the default branch.
+`parent_branch` names the branch the run's work branch starts from and merges into, in every
+repository of the run; it must exist. F1 still governs it when it is the default branch (LOG 137).
 
 `dry_run: true` selects recording providers that record instead of act, chosen
 by configuration. Workflow tests use the same mechanism (`docs/09`).

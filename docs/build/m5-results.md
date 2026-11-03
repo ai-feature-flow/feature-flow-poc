@@ -150,7 +150,7 @@ has tests and a control (`tools/check_m5_actions_controls.py`).
 
 LOG 120 to 139, unreviewed. These need a look: **138** (evidence tiers from the parent branch's manifest), **139** (waits hold up a hand-over), **120** (`test.integration` starts no services), **123** (the
 action request is watched on the code host; no decision record yet), **137** (a run request may name its
-`parent_branch`). LOG 121 keeps the
+`parent_branch`; approved 2026-11-03). LOG 121 keeps the
 stand-in for runs with only fake providers.
 
 ### Follow-ups
