@@ -10,7 +10,9 @@ Merge it and resolve the conflict so that both sides keep their intent.
 2. For each conflict, read both sides and the commits that made them. Keep the
    parent's change and this run's change; where they truly contradict, prefer
    the parent's behaviour and adapt this run's work to it.
-3. Build, and run the fastest test tier the manifest declares.
+3. Build, and run the fastest test tier the manifest declares that can run in
+   your sandbox (a tier with `targets: [ci]` runs only in CI; do not install a
+   toolchain).
 4. Commit the merge. The checkout must be clean.
 
 The run re-tests and re-reviews the result after this step.

@@ -325,16 +325,21 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
         async Task<bool> PrepareAsync()
         {
             var parent = parentBranch = spec.ParentBranches.GetValueOrDefault(repo.FullName) ?? await DefaultBranchAsync();
-            baseline = Must(await vcs.ResolveAsync(repo, $"refs/heads/{parent}", ct), "read the parent branch")
-                       ?? throw new StepCannotAnswerException($"{repo.FullName} has no branch {parent}");
+            var parentHead = Must(await vcs.ResolveAsync(repo, $"refs/heads/{parent}", ct), "read the parent branch")
+                             ?? throw new StepCannotAnswerException($"{repo.FullName} has no branch {parent}");
             var branchRevision = Must(await vcs.ResolveAsync(repo, $"refs/heads/{workBranch}", ct), "read the work branch");
             if (branchRevision is null)
             {
                 // The engine creates the run's work branch the first time a step touches the repository (docs/04 section 2).
-                Must(await vcs.PushAsync(repo, $"refs/heads/{workBranch}", baseline, null, null, ct), "create the work branch");
-                events.Add($"created branch {workBranch} at {Short(baseline)}");
-                branchRevision = baseline;
+                Must(await vcs.PushAsync(repo, $"refs/heads/{workBranch}", parentHead, null, null, ct), "create the work branch");
+                events.Add($"created branch {workBranch} at {Short(parentHead)}");
+                branchRevision = parentHead;
             }
+
+            // The run's change is what the work branch adds to its parent: from where they part, which is the parent's head
+            // only until a sibling merges into it (LOG 193). The work branch's history always holds it, so the checkout does.
+            baseline = Must(await vcs.MergeBaseAsync(repo, branchRevision, parentHead, ct), "find where the work branch parts from its parent")
+                       ?? throw new StepCannotAnswerException($"{workBranch} shares no history with {parent} in {repo.FullName}");
 
             startRevision = branchRevision;
             // Where the step started, for a later clean_up route's reset (docs/03 section 4.1).

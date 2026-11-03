@@ -26,9 +26,17 @@ FIXTURES = "Every_fixture_gets_its_verdict_and_the_verdict_agrees_with_the_issue
 ENGINE_FINDINGS = ("tests/FeatureFlow.Engine.Tests", "FullyQualifiedName~FindingsActionTests")
 WORKFLOW = "src/FeatureFlow.Engine/RunWorkflow.cs"
 CHILD_VALIDATE = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~A_childs_artifact_validate")
+AGENT = "src/FeatureFlow.Engine.Agent/AgentActivities.cs"
+SIBLING = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~A_sibling_merging")
 LOOP = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~FindingsLoopTests.After_the_fix_loop")
 
 CONTROLS = [
+    {
+        "name": "the agent step's baseline is the parent branch's head (LOG 193)",
+        "edits": [(AGENT, "await vcs.MergeBaseAsync(repo, branchRevision, parentHead, ct)", "await vcs.MergeBaseAsync(repo, parentHead, parentHead, ct)")],
+        "tests": [SIBLING],
+        "expect": ["A_sibling_merging_into_the_parent_branch_is_not_part_of_the_change_the_reviewers_read"],
+    },
     {
         "name": "the workflow gives an action no consumed artifacts (LOG 191)",
         "edits": [(WORKFLOW, "Consumed: Workflow.Patched(ChildInputsPatch) ? consumed : null,", "Consumed: null,")],
