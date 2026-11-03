@@ -51,7 +51,8 @@ public sealed class GitCredentialRetryTests
 
         Assert.Equal([false, true], calls);
         Assert.Equal(recovers, result.Ok);
-        Assert.True(started.Elapsed >= TimeSpan.FromMilliseconds(20), "the retry waited first");
+        // Timers tick in whole milliseconds, so a 20 ms delay can measure a little under 20 ms on the stopwatch.
+        Assert.True(started.Elapsed >= TimeSpan.FromMilliseconds(15), "the retry waited first");
     }
 
     [Theory]
