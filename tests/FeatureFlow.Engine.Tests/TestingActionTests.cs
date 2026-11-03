@@ -57,8 +57,9 @@ public sealed class TestingActionTests
         var parentManifest = (await new InMemoryCodeHost(w.Forge).ReadFileAsync(w.Repo, "feature-flow.yaml", "main", TestContext.Current.CancellationToken)).Unwrap()!;
         Assert.Equal(parentManifest.Hash, evidence.Manifest);
         Assert.DoesNotContain(w.Sandbox.Commands, c => c.Command.Contains("echo forged", StringComparison.Ordinal));
-        // Setup is not evidence: it comes from the head.
-        Assert.Contains(w.Sandbox.Commands, c => c.Command == "sh -c dotnet tool restore --head");
+        // Setup shapes the environment the evidence comes from: it is the parent's too (re-check R4).
+        Assert.Contains(w.Sandbox.Commands, c => c.Command == "sh -c dotnet tool restore");
+        Assert.DoesNotContain(w.Sandbox.Commands, c => c.Command.Contains("--head", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -360,6 +360,12 @@ CONTROLS = [
         "tests": [(CORE_TESTS, None)],
         "expect": ["A_person_may_not_go_to_a_decision_with_clean_up"],
     },
+    {
+        "name": "re-check R4: an evidence sandbox runs the head's setup commands",
+        "edits": [(TESTING, "        return (evidence, evidence.Setup);", "        return (evidence, at == head ? evidence.Setup : (await run.ManifestAsync(repo, head))?.Setup ?? []);")],
+        "tests": [(ENGINE, None)],
+        "expect": ["Tier_commands_and_result_paths_come_from_the_parent_branchs_manifest_not_the_heads"],
+    },
 ]
 
 

@@ -8,8 +8,8 @@ namespace FeatureFlow.Engine.ActionSteps;
 /// <summary>
 /// The testing and analysis actions (docs/04 section 9) and <c>repo.inspect</c> (section 12). The manifest is read at
 /// each step, never copied into the plan (RW11). What makes evidence (test tiers and the analyser: their commands and
-/// result paths) comes from the manifest on the parent branch, the merge target, because the agent can edit the work
-/// branch's; a tier a ticket adds counts once merged (LOG 138). Setup commands, not evidence, come from the head. Tiers
+/// result paths, and the setup commands of the sandbox they run in) comes from the manifest on the parent branch, the
+/// merge target, because the agent can edit the work branch's; a tier a ticket adds counts once merged (LOG 138). Tiers
 /// run where the manifest says: in
 /// a sandbox, or delegated to CI inside the same step. Results are parsed by <see cref="ResultFiles"/> in either case.
 /// </summary>
@@ -101,8 +101,9 @@ static class Testing
     }
 
     /// <summary>
-    /// The manifest whose tiers and analyser make evidence, from the parent branch, and the setup commands, from the head
-    /// under test. With no manifest on the parent branch the engine cannot tell how to test: an intervention.
+    /// The manifest whose tiers, analyser and setup make evidence: the parent branch's, never the head's (LOG 138; setup
+    /// shapes the environment the evidence is produced in, re-check R4). With no manifest on the parent branch the engine
+    /// cannot tell how to test: an intervention.
     /// </summary>
     static async Task<(RepositoryManifest Evidence, IReadOnlyList<string> Setup)> ManifestsAsync(ActionRun run, RepoRef repo, string head, string what)
     {
@@ -111,8 +112,7 @@ static class Testing
                  ?? throw ActionStop.CannotAnswer($"{repo.FullName} has no parent branch {parent}");
         var evidence = await run.ManifestAsync(repo, at)
                        ?? throw ActionStop.CannotAnswer($"{repo.FullName} has no {RepositoryManifest.FileName} on {parent} at {EngineActions.Short(at)}: the engine cannot tell how to {what} it");
-        var setup = at == head ? evidence.Setup : (await run.ManifestAsync(repo, head))?.Setup ?? [];
-        return (evidence, setup);
+        return (evidence, evidence.Setup);
     }
 
     static async Task<TestResults> SandboxTierAsync(ActionRun run, SandboxSession session, TestTier tier, string head)
