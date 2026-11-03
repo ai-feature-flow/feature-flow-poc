@@ -1,0 +1,37 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: silent_parent
+  level: epic
+  description: >-
+    A child beside a chain of short actions. The tests end the child without letting it
+    signal, before or after a hand-over (M3 follow-up 10).
+
+parameters:
+  work: { type: array, required: true, description: "One action per item, which takes item milliseconds" }
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: both
+    parallel:
+      join: all
+      branches:
+        - id: child
+          action: run.child
+          with:
+            template: m6:templates/silent_child
+            level: ticket
+            repositories: [acme/api]
+        - id: work
+          for_each:
+            items: { expr: "params.work" }
+            mode: chain
+            step:
+              action: notify.send
+              with: { audience: [team], message: work, wait_ms: { expr: "item" } }
+    routes:
+      completed: { end: completed }
+      any_failed: { end: failed }

@@ -1,0 +1,26 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: claims_parent
+  level: epic
+  description: >-
+    A run.child step promising an artifact its child never produces, so the child's end
+    cannot be applied as reported (review F3).
+
+artifact_types:
+  - m6:artifact_types/notes
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: child
+    action: run.child
+    with:
+      template: m6:templates/silent_child
+      level: ticket
+      repositories: [acme/api]
+    produces:
+      completed: [{ name: claimed, type: m6:artifact_types/notes }]
+    routes: { completed: { end: completed } }
