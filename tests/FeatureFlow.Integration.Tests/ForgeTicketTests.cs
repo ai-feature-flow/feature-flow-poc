@@ -121,7 +121,7 @@ public class ForgeTicketTests
         var path = Harness.StartedSteps(view);
         Assert.Equal(expected, path.Where(expected.Contains).Distinct().ToArray());
         var trace = Trace(view);
-        Assert.Contains(trace, d => d.Contains("tier unit at", StringComparison.Ordinal) && d.Contains("2 passed, 0 failed", StringComparison.Ordinal));
+        Assert.Contains(trace, d => d.Contains("tier unit at", StringComparison.Ordinal) && d.Contains("3 passed, 0 failed", StringComparison.Ordinal));
         Assert.Contains(trace, d => d.Contains("pull request acme/api#1 from ff/ticket/T-1 into main", StringComparison.Ordinal));
         Assert.Contains(trace, d => d.StartsWith("merged ", StringComparison.Ordinal) && d.Contains("into main", StringComparison.Ordinal));
         // M6: the plan and the claims were checked by the standard validators, not the stand-in.

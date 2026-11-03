@@ -278,3 +278,7 @@ LOG 179, extended.
 
 `FindingsLoopTests` (W2) now scripts the fixer's regression test (a claim of `Regression.fix` in the file the fixer
 wrote, which the forge's TRX reports passing), since `tests_added` needs real evidence.
+
+After the merge of PR #11 (`5940c1f`) and the re-check fixes: default suite 869 passed, 0 failed; integration 64
+passed, 0 failed, including all `ForgeTicketTests` and `FindingsLoopTests` on SQLite's real index and ledger (no
+stub). Controls run for this round (the review's and re-check's, 22): all hold, the F1 end-to-end control included.

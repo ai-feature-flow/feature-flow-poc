@@ -191,7 +191,7 @@ public sealed class StdValidatorsContract : ValidatorContract, IDisposable
             new("tests_added: the claimed test is in another repository than the finding",
                 TestsAdded(Claims().Replace("repository: acme/api", "repository: acme/web"), fixes, [Id]), false, "no_test_added"),
             new("tests_added: the claimed test passed at an earlier revision of this run, not at the fixed head (review N4)",
-                TestsAdded(Claims(), fixes, [Id], testedAt: w.Main), false, "no_test_added"),
+                TestsAdded(Claims(change: "modified"), fixes, [Id], testedAt: w.Main), false, "no_test_added"),
             new("tests_added: a test claimed as new already passed where the finding was raised (review N3)",
                 TestsAdded(Claims(), fixes, [Id], passingWhenRaised: [Id]), false, "no_test_added"),
             new("tests_added: the claim names the finding's own file as ./src/Widgets.cs (review N3)",
