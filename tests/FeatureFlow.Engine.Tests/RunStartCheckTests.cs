@@ -102,7 +102,8 @@ public sealed class RunStartCheckTests
         var main = await CheckAsync(Setup.Protected(), engineCanMerge: null, template: "m5:templates/branch_main");
         var parent = await CheckAsync(Setup.Protected(), engineCanMerge: false, parentBranch: "ff/ticket/T-1");
 
-        Assert.Contains("work branch 'main' is its default branch", Assert.Single(main).Message, StringComparison.Ordinal);
+        Assert.Equal(Checks.WorkBranch, Assert.Single(main).Check);
+        Assert.Contains("work branch 'main' is its default branch", main[0].Message, StringComparison.Ordinal);
         Assert.Contains("work branch 'ff/ticket/T-1' is its parent branch", Assert.Single(parent).Message, StringComparison.Ordinal);
         Assert.Empty(await CheckAsync(Setup.Protected(), engineCanMerge: false));          // control: ff/ticket/T-1 from main
     }

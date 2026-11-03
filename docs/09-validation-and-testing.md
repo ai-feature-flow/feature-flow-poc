@@ -64,9 +64,10 @@ other documents cite them.
 | 33 | Every `tier_tags` tag matches a tier in the manifest read at this step | Step start | Yes |
 | 34 | Unused parameter | Load | No |
 | 35 | Deprecated library reference with a replacement | Load | No |
+| 36 | The run's work branch is neither a repository's default branch nor the run's parent branch (`metadata.branch_pattern` is free text); every step that writes refuses it again | Run start, Step start | Yes |
 
-Pending review (LOG 125 to 127, 133, 134): checks 20, 23 and 24 at run start and 31 to 33 at step start as built
-in M5. Check 23 at patch time is not built yet; `scm.merge` re-checks F1 at merge time.
+Pending review (LOG 125 to 127, 133, 134, 141): checks 20, 23, 24 and 36 at run start and 31 to 33 and 36 at step
+start as built in M5. Check 23 at patch time is not built yet; `scm.merge` re-checks F1 at merge time.
 
 ### 2.1 Plan size
 

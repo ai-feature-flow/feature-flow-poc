@@ -121,7 +121,7 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
             var repo = new RepoRef(name);
             if (providers.ForRun("code_host", false) is ICodeHostProvider host
                 && Must(await host.GetDefaultBranchAsync(repo, ct), "read the default branch") == workBranch)
-                throw new ActionStop(StepOutcome.CannotAnswer, $"the run's work branch '{workBranch}' is {name}'s default branch; a clean_up never resets it");
+                throw new ActionStop(StepOutcome.CannotAnswer, $"check 36 ({Checks.Title(Checks.WorkBranch)}): the run's work branch '{workBranch}' is {name}'s default branch; a clean_up never resets it");
             var reference = "refs/heads/" + workBranch;
             var current = Must(await vcs.ResolveAsync(repo, reference, ct), "read the work branch");
             if (current is not null && current != start)
@@ -296,7 +296,7 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
         var parent = await ParentBranchAsync(repo);
         var defaultBranch = scope.ParentBranch is null ? parent : Must(await CodeHost.GetDefaultBranchAsync(repo, ct), "read the default branch");
         if (scope.WorkBranch == parent || scope.WorkBranch == defaultBranch)
-            throw ActionStop.CannotAnswer($"the run's work branch '{scope.WorkBranch}' is {repo.FullName}'s {(scope.WorkBranch == defaultBranch ? "default" : "parent")} branch; the engine writes only to a branch of its own");
+            throw ActionStop.CannotAnswer($"check 36 ({Checks.Title(Checks.WorkBranch)}): the run's work branch '{scope.WorkBranch}' is {repo.FullName}'s {(scope.WorkBranch == defaultBranch ? "default" : "parent")} branch; the engine writes only to a branch of its own");
     }
 
     /// <summary>

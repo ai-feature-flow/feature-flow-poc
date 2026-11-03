@@ -66,6 +66,7 @@ public static class Checks
     public const int TierTags = 33;
     public const int UnusedParameter = 34;
     public const int DeprecatedReference = 35;
+    public const int WorkBranch = 36;
 
     static readonly Dictionary<int, string> Titles = new()
     {
@@ -104,6 +105,7 @@ public static class Checks
         [33] = "tier tags match the manifest",
         [34] = "unused parameter",
         [35] = "deprecated library reference",
+        [36] = "work branch is the default or parent branch",
     };
 
     public static string Title(int check) => Titles.TryGetValue(check, out var title) ? title : "check";

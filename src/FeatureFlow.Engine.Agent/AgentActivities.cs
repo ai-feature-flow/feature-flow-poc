@@ -318,7 +318,7 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
             if (workBranch == parent || (owner.Providers.ForRun("code_host", false) is ICodeHostProvider host
                                          && workBranch == Must(await host.GetDefaultBranchAsync(repo, ct), "read the default branch")))
                 // The agent's commits move the work branch; it must never be the parent or default branch (review 11).
-                throw new StepCannotAnswerException($"the run's work branch '{workBranch}' is {repo.FullName}'s parent or default branch; the engine writes only to a branch of its own");
+                throw new StepCannotAnswerException($"check 36 ({Checks.Title(Checks.WorkBranch)}): the run's work branch '{workBranch}' is {repo.FullName}'s parent or default branch; the engine writes only to a branch of its own");
             baseline = Must(await vcs.ResolveAsync(repo, $"refs/heads/{parent}", ct), "read the parent branch")
                        ?? throw new StepCannotAnswerException($"{repo.FullName} has no branch {parent}");
             var branchRevision = Must(await vcs.ResolveAsync(repo, $"refs/heads/{workBranch}", ct), "read the work branch");
