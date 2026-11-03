@@ -495,6 +495,31 @@ in progress. Pull request #99 stays closed. No sandbox container was left.
 - The live run's ticket is a file on the parent branch, the spec approval is automatic, and plan validation and the
   findings ledger are M6's stand-ins (LOG 146).
 
+## Simplification after M5
+
+Approved by the product owner on 2026-11-03 under the development and decision guidelines (`CONTRIBUTING.md`); one
+commit per item, recorded as LOG 147. Net lines are code, tests and controls, from `git diff --stat`.
+
+| # | Removed | What still covers the risk | Net lines |
+|---|---|---|---|
+| 1 | CI dispatch idempotency (LOG 112): the claim reference, its tag record, the stale-claim reclaim, the run-name search, the adopted-run check, the trigger's key | Dispatch on the default branch with `commit_sha` required. The run id is recorded as the step's event, so retries poll it; a lost answer may start a duplicate run | -438 |
+| 2 | Trigger matching (LOG 113): `GetExpectedRunsAsync`, branch, path and type filters | `ci.checks` waits for the target branch's required checks, `expected` names and every check on the head; `HasCiAsync` waits up to `grace` for a first check | -192 |
+| 3 | The configuration-fault budget (LOG 144): 5 tries with backoff, run start's shared budget | The provider retries once with a fresh token; then an intervention, a refused start, or (new) the agent step stops for a person | -39 |
+| 4 | The clone cache's cross-process lock file (LOG 118) | One cache folder per process; the in-process gate per clone and the scratch references | -22 |
+| 5 | `ReviewRulesKnown` and check 24's warning (LOG 110, 142) | Check 24 still refuses an unprotected default branch; start warnings still reach the timeline | -27 |
+| 6 | Check 36 in every writer (LOG 141) | Check 36 at run start; the work branch is fixed for the run | -94 |
+| 7 | The manifest hash in test evidence and the same-hash adoption rule (LOG 138) | Tiers, analyser and setup from the parent branch's manifest; result paths cleared first | -2 |
+| 8 | The per-entry and log download caps (LOG 119) | One 100 MB cap on every download | -12 |
+
+Controls (`tools/check_m5_actions_controls.py`) for removed behaviour went with it; new ones: a CI run not recorded, a
+required check not waited for, no wait for a first check, and configuration faults retried for ever by an action, run
+start or the agent step, or not retried with a fresh token by the GitHub client. Two tests found passing by
+construction were fixed: the oversized-download test (its download was not a zip) and a test of `test.run`'s CI
+recording (adoption would have hidden a second trigger; it uses `test.integration`). The shared-cache concurrency
+test passes with either the gate or the scratch references alone, and fails with neither. The fixture's
+`ff-contract.yml` (fixture pull request 33) is no longer used and stays on the fixture. Follow-ups 2 and 15 below are
+settled by items 3 and 2.
+
 ---
 
 ## Consolidated follow-ups
@@ -502,7 +527,7 @@ in progress. Pull request #99 stays closed. No sandbox container was left.
 | # | Follow-up | From |
 |---|---|---|
 | 1 | **M6 must fix**: a wait (`ci.checks`, `wait.condition`, an action request) holds up the run's hand-over (continue-as-new) until it ends (LOG 139; a row of `docs/11`'s M6) | Actions review 6 |
-| 2 | The agent step has no configuration-fault budget: its `unauthenticated` and `forbidden` still retry for ever. For actions, a budget per provider call rather than re-running the whole action (LOG 144) | Integration |
+| 2 | ~~The agent step has no configuration-fault budget~~ Settled by LOG 147: every caller stops for a person after the provider's one fresh-token retry | Integration |
 | 3 | A re-run reviewer is not told which files it left unread; a correction turn naming them would save attempts (LOG 145) | Integration |
 | 4 | Re-run the done-when with M6's real validators, findings ledger and tracker in place of the stand-ins and the ticket file (LOG 146) | Integration |
 | 5 | Check 23 at patch time; the merge-time re-check covers it meanwhile | Actions 1 |
@@ -515,7 +540,7 @@ in progress. Pull request #99 stays closed. No sandbox container was left.
 | 12 | A run start does not check that a named `parent_branch` exists; the first step that touches the repository stops for a person | Actions 10 |
 | 13 | `wait.condition: approved` accepts any identity's approval, the author's or the engine's included (M7) | Actions 11 |
 | 14 | A tier delegated to CI runs the workflow file on the head, which the agent can edit; `ci.checks` is the independent backstop | Actions 12 |
-| 15 | `GetExpectedRunsAsync` does not evaluate job-level `if:` conditions | Providers |
+| 15 | ~~`GetExpectedRunsAsync` does not evaluate job-level `if:` conditions~~ Settled by LOG 147: it is gone; required checks decide | Providers |
 | 16 | The fixture's integration tier uploads no result file, so it is judged by exit code and its tests cannot be claimed | Integration |
 | 17 | The agent tests' own git helper (`AgentHarness`) opens the local remote as an implicit bare repository, so 6 of them fail where `safe.bareRepository` is `explicit` (this machine); they pass with it set to `all` for the test run, and on CI | Integration |
 | 18 | Still open from earlier milestones: M4 12 (the sandbox network is unrestricted and reaches the Temporal frontend; before any shared deployment), M3 10 (a child that ends without signalling), M3 2 and 3 (a child's parameters and `consumes` across runs; M6 needs both) | Handover 2026-11-03 |

@@ -331,7 +331,8 @@ Sections 7 to 9 are as built in M5 (LOG 120 to 132, 138, 139). `test.integration
 repositories and starts no services yet (LOG 120). Waits are retried reads (LOG 122); while they wait they hold up a
 hand-over, which M6 must fix (LOG 139). An action request is watched on the code host, with no decision record yet
 (LOG 123). `clean_up` resets by an expected-revision push (LOG 128). Evidence tiers come from the parent branch's
-manifest (LOG 138).
+manifest (LOG 138). LOG 147 simplified them after M5: `ci.checks` waits for required checks, a CI run is recorded by
+the step, and a configuration fault stops for a person.
 
 The engine creates a run's work branch in a repository the first time a step
 touches that repository, from the run's parent branch, and records the
