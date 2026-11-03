@@ -428,6 +428,13 @@ CONTROLS = [
         "tests": [(ENGINE, None)],
         "expect": ["A_clean_up_refused_in_a_later_repository_still_reports_the_resets_it_made_before"],
     },
+    # Added for LOG 147 (the simplification after M5).
+    {
+        "name": "LOG 147: a CI tier's run is not recorded, so a retried activity triggers another",
+        "edits": [(TESTING, 'run.RememberAsync($"ci_run {repo.FullName} {tier.Name} {head}"', 'run.RememberAsync($"ci_run {Guid.NewGuid()}"')],
+        "tests": [(ENGINE, None)],
+        "expect": ["A_retried_CI_tier_polls_the_run_it_recorded_and_triggers_no_second"],
+    },
 ]
 
 

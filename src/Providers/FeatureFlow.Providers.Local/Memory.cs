@@ -66,7 +66,6 @@ public sealed class InMemoryForge
     internal sealed class CiRun
     {
         public required CiRunRef Ref;
-        public required string Key;
         public required CiJobRef Job;
         public required CiScript Script;
         public int PollsLeft;
@@ -220,6 +219,13 @@ public sealed class InMemoryForge
     {
         lock (Gate)
             Get(repo).Expected = expected;
+    }
+
+    /// <summary>How many CI runs were triggered in the repository.</summary>
+    public int CiRunCount(RepoRef repo)
+    {
+        lock (Gate)
+            return Get(repo).Runs.Count;
     }
 
     /// <summary>How runs of <paramref name="workflow"/> behave. Default: <see cref="CiScript.Passing"/>.</summary>
@@ -659,11 +665,9 @@ public sealed class InMemoryCi(InMemoryForge forge, Func<IArtifactStoreProvider>
 
     public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => Task.FromResult(ProviderResult<Unit>.Success(default));
 
-    public Task<ProviderResult<CiRunRef>> TriggerAsync(RepoRef repo, CiJobRef job, string revision, string key, CancellationToken cancellationToken) =>
+    public Task<ProviderResult<CiRunRef>> TriggerAsync(RepoRef repo, CiJobRef job, string revision, CancellationToken cancellationToken) =>
         Run("Trigger", repo, r =>
         {
-            if (r.Runs.Values.FirstOrDefault(x => x.Key == key) is { } existing)
-                return ProviderResult<CiRunRef>.Success(existing.Ref);
             if (!r.Commits.ContainsKey(revision))
                 return ProviderResult<CiRunRef>.Failure("validation_failed", $"no commit {revision}");
             var id = forge.NextRun().ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -671,7 +675,6 @@ public sealed class InMemoryCi(InMemoryForge forge, Func<IArtifactStoreProvider>
             var run = new InMemoryForge.CiRun
             {
                 Ref = new CiRunRef(repo, id, revision, $"memory://{repo.FullName}/actions/runs/{id}"),
-                Key = key,
                 Job = job,
                 Script = script,
                 PollsLeft = script.PollsUntilDone,

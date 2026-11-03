@@ -3,7 +3,7 @@ using FeatureFlow.Providers.Abstractions;
 namespace FeatureFlow.Providers.Contracts;
 
 /// <summary>
-/// The CI provider's contract (docs/06 section 3.5): idempotent triggers, polled runs, results and logs read into
+/// The CI provider's contract (docs/06 section 3.5): triggered and polled runs, results and logs read into
 /// the artifact store, and the runs expected for a head. A provider's test project subclasses it.
 /// </summary>
 public abstract class CiContract : ContractBase
@@ -37,23 +37,12 @@ public abstract class CiContract : ContractBase
     }
 
     [Fact]
-    public async Task Triggering_twice_with_one_key_starts_one_run()
-    {
-        var head = await HeadAsync(withCi: true);
-
-        var first = Ok(await Ci.TriggerAsync(Repo, PassingJob, head, "key-trigger", Ct));
-        var second = Ok(await Ci.TriggerAsync(Repo, PassingJob, head, "key-trigger", Ct));
-
-        Assert.Equal(first.Id, second.Id);
-        Assert.Equal(head, first.Revision);
-    }
-
-    [Fact]
     public async Task A_run_is_polled_to_completion_and_its_results_read()
     {
         var head = await HeadAsync(withCi: true);
-        var run = Ok(await Ci.TriggerAsync(Repo, PassingJob, head, "key-results", Ct));
+        var run = Ok(await Ci.TriggerAsync(Repo, PassingJob, head, Ct));
 
+        Assert.Equal(head, run.Revision);
         var status = await CompleteAsync(run);
         var result = Ok(await Ci.ReadResultsAsync(run, Ct));
 

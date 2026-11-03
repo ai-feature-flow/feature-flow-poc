@@ -55,7 +55,7 @@ public sealed class MemoryProviderTests
         forge.ScriptCi("ci.yml", new CiScript(Conclusions.Failure, [], PollsUntilDone: 1));
         try
         {
-            var run = (await ci.TriggerAsync(repo, new CiJobRef("ci.yml", new Dictionary<string, string>()), head, "k", Ct)).Unwrap();
+            var run = (await ci.TriggerAsync(repo, new CiJobRef("ci.yml", new Dictionary<string, string>()), head, Ct)).Unwrap();
             var before = (await host.GetCheckStatusAsync(repo, head, Ct)).Unwrap().Checks.Single();
             Assert.Equal("validation_failed", (await ci.ReadResultsAsync(run, Ct)).Error!.Reason);
             var status = (await ci.GetRunStatusAsync(run, Ct)).Unwrap();

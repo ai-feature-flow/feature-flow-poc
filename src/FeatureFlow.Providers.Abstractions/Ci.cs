@@ -42,12 +42,12 @@ public sealed record ExpectedRuns(IReadOnlyList<string> Runs, IReadOnlyList<stri
 }
 
 /// <summary>
-/// The CI provider (docs/06 section 3.5). Runs are triggered and polled, never awaited. A trigger takes an
-/// idempotency key, so a retry adopts the run it started.
+/// The CI provider (docs/06 section 3.5). Runs are triggered and polled, never awaited. A trigger is not idempotent:
+/// the engine records the run it returns, and a trigger retried after a lost answer may start a second run (LOG 147).
 /// </summary>
 public interface ICiProvider : IProvider
 {
-    Task<ProviderResult<CiRunRef>> TriggerAsync(RepoRef repo, CiJobRef job, string revision, string key, CancellationToken cancellationToken);
+    Task<ProviderResult<CiRunRef>> TriggerAsync(RepoRef repo, CiJobRef job, string revision, CancellationToken cancellationToken);
 
     Task<ProviderResult<CiRunStatus>> GetRunStatusAsync(CiRunRef run, CancellationToken cancellationToken);
 

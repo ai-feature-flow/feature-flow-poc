@@ -252,7 +252,7 @@ interface ICodeHostProvider : IProvider {
 record CiCapabilities(bool Trigger, bool ReadLogs, bool Artifacts, bool InboundEvents, bool QueueBuilds);
 
 interface ICiProvider : IProvider {
-    Task<..CiRunRef>    TriggerAsync(RepoRef repo, CiJobRef job, string commit, string key);
+    Task<..CiRunRef>    TriggerAsync(RepoRef repo, CiJobRef job, string commit);
     Task<..CiRunStatus> GetRunStatusAsync(CiRunRef run);
     Task<..CiRunResult> ReadResultsAsync(CiRunRef run);    // parsed test results where available
     Task<..LogRef>      ReadLogsAsync(CiRunRef run);
@@ -263,6 +263,10 @@ interface ICiProvider : IProvider {
 - Tiers that need Docker or Windows run in CI by default, so this provider is on
   the main path. Spike 2 dispatched such a tier and polled it to green
   (`archive/docs/16` section 2).
+- A trigger is not idempotent. The dispatch returns the run's id, which the
+  engine records as the step's own event, so the activity's retries poll that
+  run. A trigger retried after a lost answer dispatches again; the rare
+  duplicate run is accepted (LOG 147).
 - `GetExpectedRunsAsync` answers "which CI runs should report for this head":
   `runs`, `may_run` (cannot be evaluated, for example path filters) and
   `none`. The GitHub Actions provider implements it by reading the workflow
@@ -277,8 +281,6 @@ repository's secrets are reviewed code, never a file the agent edited. A workflo
   test and refuses a workflow without it;
 - check that revision out (`actions/checkout` with `ref: ${{ inputs.commit_sha }}`) and build and test only it,
   because the run's own `head_sha` is the default branch's and its results are filed under `commit_sha`;
-- declare an input `idempotency_key` and show it in `run-name` (for example `run-name: "unit ${{ inputs.idempotency_key }}"`),
-  so a trigger retried after a lost answer finds its run instead of starting another;
 - upload its result files (`.trx`, JUnit `.xml`, `.sarif`) as artifacts, each under 50 MB and the artifact under
   100 MB;
 - set `permissions: contents: read`, so the code under test cannot write to the repository through `GITHUB_TOKEN`;

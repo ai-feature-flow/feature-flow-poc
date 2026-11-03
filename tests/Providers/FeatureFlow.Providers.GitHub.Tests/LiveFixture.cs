@@ -17,7 +17,7 @@ public sealed class LiveFixture
 
     static readonly IReadOnlyDictionary<string, string> Permissions = new Dictionary<string, string> { ["contents"] = "write", ["pull_requests"] = "write", ["actions"] = "write" };
 
-    readonly List<string> claims = [];
+    readonly List<string> runs = [];
 
     public LiveFixture()
     {
@@ -108,11 +108,11 @@ public sealed class LiveFixture
         return JsonNode.Parse(await response.Content.ReadAsStringAsync(Ct))!["slug"]!.GetValue<string>() + "[bot]";
     }
 
-    public void ForgetClaim(string claim) => claims.Add(claim);
+    public void ForgetRun(string id) => runs.Add(id);
 
     /// <summary>
     /// Closes every open pull request into or out of the prefix (reverts GitHub branched itself included), deletes their
-    /// branches and every branch under the prefix, and the CI provider's claims, cancelling runs they record that are still going.
+    /// branches and every branch under the prefix, and cancels the CI runs the test started that are still going.
     /// </summary>
     public async Task CleanUpAsync()
     {
@@ -139,20 +139,9 @@ public sealed class LiveFixture
         foreach (var branch in branches.Where(b => b.StartsWith(Prefix, StringComparison.Ordinal) || b.StartsWith("revert-", StringComparison.Ordinal)))
             await Try(HttpMethod.Delete, $"/git/refs/heads/{GitHubApi.EscapePath(branch)}");
 
-        foreach (var claim in claims)
-        {
-            if (await Try(HttpMethod.Get, $"/git/ref/{GitHubActionsCi.ClaimPrefix}{claim}") is { } reference
-                && reference.Json?["object"]?["type"]?.GetValue<string>() == "tag"
-                && await Try(HttpMethod.Get, $"/git/tags/{reference.Json["object"]!["sha"]}") is { } tag
-                && tag.Json?["message"]?.GetValue<string>()?.Split(' ') is [_, _, var id, ..])
-            {
-                if (await Try(HttpMethod.Get, $"/actions/runs/{id.Trim()}") is { } run && run.Json?["status"]?.GetValue<string>() != "completed")
-                    await Try(HttpMethod.Post, $"/actions/runs/{id.Trim()}/cancel");
-                await Try(HttpMethod.Delete, $"/git/refs/{GitHubActionsCi.ClaimPrefix}run-{id.Trim()}");
-            }
-
-            await Try(HttpMethod.Delete, $"/git/refs/{GitHubActionsCi.ClaimPrefix}{claim}");
-        }
+        foreach (var id in runs)
+            if (await Try(HttpMethod.Get, $"/actions/runs/{id}") is { } run && run.Json?["status"]?.GetValue<string>() != "completed")
+                await Try(HttpMethod.Post, $"/actions/runs/{id}/cancel");
     }
 
     /// <summary>A line for the results note, appended to the file <c>FF_LIVE_LOG</c> names. Never a credential.</summary>

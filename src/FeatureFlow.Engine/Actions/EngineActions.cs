@@ -363,10 +363,14 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
     /// The first time this execution of the step recorded <paramref name="kind"/>, recording <paramref name="detail"/> now if
     /// it never did: what a polling action keeps across its retries (the time it began waiting, the head it waits on).
     /// </summary>
-    public async Task<string> RememberAsync(string kind, string detail)
+    public Task<string> RememberAsync(string kind, string detail) => RememberAsync(kind, () => Task.FromResult(detail));
+
+    /// <summary>As above, making the detail only when none was recorded: a CI run is triggered once per execution of the step.</summary>
+    public async Task<string> RememberAsync(string kind, Func<Task<string>> make)
     {
         if ((await EventsAsync()).FirstOrDefault(e => e.Kind == kind) is { } recorded)
             return recorded.Detail;
+        var detail = await make();
         await EventAsync(kind, detail);
         return detail;
     }

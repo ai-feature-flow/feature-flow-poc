@@ -142,6 +142,25 @@ public sealed class TestingActionTests
         Assert.Empty(w.Sandbox.Commands);
     }
 
+    /// <summary>LOG 147: the engine records the run it triggered, so a retried activity polls that run instead of starting another.</summary>
+    [Fact]
+    public async Task A_retried_CI_tier_polls_the_run_it_recorded_and_triggers_no_second()
+    {
+        await using var w = WithManifest();
+        w.Forge.ScriptCi("integration.yml", new CiScript(Conclusions.Success, [new CiScriptFile("r.xml", ResultFormats.Junit, ActionWorld.JUnit(2))]));
+
+        // test.integration never adopts an earlier result, so only the recorded run can stop a second trigger.
+        var first = await w.RunAsync("test.integration", stepId: "tests");
+        // The same execution of the step again, as Temporal retries an activity whose answer was lost.
+        var retried = await w.Actions.RunAsync(w.Call("test.integration", "tests", 1, null), w.Scope, () => { }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(("passed", "passed"), (Outcome(first), Outcome(retried)));
+        Assert.Equal(1, w.Forge.CiRunCount(w.Repo));
+        // Control: a new execution of the step triggers a new run.
+        await w.RunAsync("test.integration", stepId: "tests");
+        Assert.Equal(2, w.Forge.CiRunCount(w.Repo));
+    }
+
     [Fact]
     public async Task A_tier_with_both_targets_runs_in_CI_when_no_sandbox_is_configured()
     {
