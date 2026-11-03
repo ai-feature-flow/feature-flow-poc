@@ -52,8 +52,10 @@ public class RunWorkflow
     string lastRecordedStatus = "";
     bool draining;
     bool dirty;
+    int interruptedThisRun;
     int inFlightActivities;
     readonly Dictionary<string, CancellationTokenSource> stepTokens = [];
+    readonly HashSet<string> interrupted = new(StringComparer.Ordinal);
     readonly HashSet<string> confirmsStarted = new(StringComparer.Ordinal);
 
     [WorkflowInit]
@@ -122,6 +124,8 @@ public class RunWorkflow
             if (!draining && core.State.Status == RunStatus.Running
                 && (Workflow.CurrentHistoryLength >= events || (limits && Workflow.CurrentHistorySize >= HandOverBytes)))
                 draining = true;
+            if (draining)
+                InterruptWaits();
 
             await ExecuteAsync(draining ? core.Flush() : core.Advance());
             await RecordAsync();
@@ -688,6 +692,8 @@ public class RunWorkflow
         }
         catch (Exception e) when (TemporalException.IsCanceledException(e))
         {
+            if (interrupted.Remove(step.Id) && Current(step.Id, execution))
+                core!.Apply(new StepInterrupted(step.Id, "interrupted to hand over to the next run; it resumes there (LOG 139)"));
             return;
         }
         catch (ActivityFailureException e)
@@ -700,7 +706,11 @@ public class RunWorkflow
         {
             EndActivity();
             if (stepTokens.GetValueOrDefault(step.Id) == token)
+            {
                 stepTokens.Remove(step.Id);
+                interrupted.Remove(step.Id);
+            }
+
             CloseQuestionsOf(call.Step.IdempotencyKey);
         }
 
@@ -978,6 +988,28 @@ public class RunWorkflow
             await SignalQuietlyAsync(parent, RunWorkflowNames.ChildEnded, [Workflow.Info.WorkflowId]);
     }
 
+    /// <summary>The patch marker of interrupting waits at a hand-over (LOG 139): histories recorded before it drain them.</summary>
+    public const string InterruptWaitsPatch = "m6-interrupt-waits";
+
+    /// <summary>
+    /// LOG 139: a wait (<see cref="EngineActions.Waits"/>) may last days, so a draining run does not wait for it. Its
+    /// activity is cancelled, and once the cancellation completes the core returns the step to pending at the same
+    /// execution (<see cref="StepInterrupted"/>), which the next run starts again with the same identity, so the records
+    /// the execution keeps (when it began waiting, the head it waits on) carry over. Other activities drain.
+    /// </summary>
+    void InterruptWaits()
+    {
+        foreach (var (stepId, token) in stepTokens.OrderBy(kv => kv.Key, StringComparer.Ordinal).ToList())
+        {
+            if (interrupted.Contains(stepId) || core!.StepById(stepId) is not { Form: StepForm.Action, Action: { } action } || !EngineActions.Waits.Contains(action)
+                || !Workflow.Patched(InterruptWaitsPatch))
+                continue;
+            interrupted.Add(stepId);
+            interruptedThisRun++;
+            token.Cancel();
+        }
+    }
+
     /// <summary>The patch marker of the hand-over threshold's floor and byte limit.</summary>
     public const string HandOverLimitsPatch = "m3-hand-over-limits";
 
@@ -1023,7 +1055,8 @@ public class RunWorkflow
 
     ContinueAsNewException ContinueAsNew()
     {
-        handOvers.Add(new HandOver(handOvers.Count, Workflow.CurrentHistoryLength, inFlightActivities, children.Count, core!.State.Waits.Count, pendingChildEnds.Count));
+        handOvers.Add(new HandOver(handOvers.Count, Workflow.CurrentHistoryLength, inFlightActivities, children.Count, core!.State.Waits.Count, pendingChildEnds.Count,
+            interruptedThisRun));
         var carried = new ShellState(core.Snapshot(), children.ToList(), pendingChildEnds.ToList(), pendingParentPatches.ToList(), answered.ToList(),
             recordedOpenWaits.ToList(), timelineSequence, handOvers.ToList(), cancelledByParent,
             activitiesStartedWhileDraining, childEndsWhileDraining, answersWhileDraining, questions.ToList(), closedQuestions.ToList());

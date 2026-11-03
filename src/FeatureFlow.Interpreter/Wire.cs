@@ -80,8 +80,11 @@ public sealed record ChildRun(string StepId, int Execution, string WorkflowId);
 /// <summary>A patch a child sent, held until the parent's core is ready to apply it.</summary>
 public sealed record ParentPatchSignal(string ChildWorkflowId, string ProposerStepId, string Patch);
 
-/// <summary>A hand-over: the run's state when it continued-as-new, after draining (SP1's record).</summary>
-public sealed record HandOver(int Run, long HistoryEvents, int InFlightActivities, int RunningChildren, int OpenWaits, int PendingChildEnds);
+/// <summary>
+/// A hand-over: the run's state when it continued-as-new, after draining (SP1's record), and how many waits it interrupted
+/// to hand over (LOG 139).
+/// </summary>
+public sealed record HandOver(int Run, long HistoryEvents, int InFlightActivities, int RunningChildren, int OpenWaits, int PendingChildEnds, int InterruptedWaits = 0);
 
 /// <summary>An answer already applied, by wait id, so a repeat of the same answer succeeds without a second effect.</summary>
 public sealed record AppliedAnswer(string WaitId, string Key);

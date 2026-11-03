@@ -1,0 +1,8 @@
+# Templates for the M6 shell tests: waits across a hand-over (LOG 139) and child runs (M3 follow-ups 2, 3 and 10).
+name: m6
+version: 0.1.0
+description: Templates for the M6 shell tests (docs/11, M6)
+requires:
+  plan_schema: 1
+dependencies:
+  - { name: std, version: ">=0.1.0" }
