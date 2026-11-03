@@ -81,8 +81,11 @@ public sealed record ChildRun(string StepId, int Execution, string WorkflowId);
 /// <summary>A patch a child sent, held until the parent's core is ready to apply it.</summary>
 public sealed record ParentPatchSignal(string ChildWorkflowId, string ProposerStepId, string Patch);
 
-/// <summary>A hand-over: the run's state when it continued-as-new, after draining (SP1's record).</summary>
-public sealed record HandOver(int Run, long HistoryEvents, int InFlightActivities, int RunningChildren, int OpenWaits, int PendingChildEnds);
+/// <summary>
+/// A hand-over: the run's state when it continued-as-new, after draining (SP1's record), and how many waits it interrupted
+/// to hand over (LOG 139).
+/// </summary>
+public sealed record HandOver(int Run, long HistoryEvents, int InFlightActivities, int RunningChildren, int OpenWaits, int PendingChildEnds, int InterruptedWaits = 0);
 
 /// <summary>An answer already applied, by wait id, so a repeat of the same answer succeeds without a second effect.</summary>
 public sealed record AppliedAnswer(string WaitId, string Key);
@@ -106,9 +109,10 @@ public sealed record ShellState(
 
 /// <summary>
 /// The run workflow's input: on the first run, what the API or the parent gives; after a hand-over, the same with
-/// <see cref="Carried"/> set. <see cref="TrackerIssue"/> is the run's issue (<c>run.tracker_issue</c>); a child's comes from
-/// its <c>run.child</c> step, never from its parent. <see cref="WorkItems"/> is the run tree's budget (F11), set by the root
-/// and passed down unchanged.
+/// <see cref="Carried"/> set. A child gets its parent's and its root's artifacts as they were when it started, by name
+/// (docs/03 section 7.2: consumed with <c>from: parent</c> or <c>from: root</c>). <see cref="TrackerIssue"/> is the run's
+/// issue (<c>run.tracker_issue</c>); a child's comes from its <c>run.child</c> step, never from its parent. <see cref="WorkItems"/>
+/// is the run tree's budget (F11), set by the root and passed down unchanged.
 /// </summary>
 public sealed record RunStart(
     string RunId,
@@ -124,6 +128,8 @@ public sealed record RunStart(
     RunPolicy? Policy = null,
     ShellState? Carried = null,
     string? ParentBranch = null,
+    IReadOnlyDictionary<string, string>? ParentArtifacts = null,
+    IReadOnlyDictionary<string, string>? RootArtifacts = null,
     string? TrackerIssue = null,
     WorkItemBudget? WorkItems = null);
 

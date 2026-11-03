@@ -125,6 +125,8 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
             CREATE TABLE IF NOT EXISTS locks (org_id TEXT NOT NULL, run_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (org_id, run_id));
             CREATE TABLE IF NOT EXISTS agent_keyed (org_id TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL, step_key TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (org_id, kind, key));
             CREATE TABLE IF NOT EXISTS agent_log (org_id TEXT NOT NULL, kind TEXT NOT NULL, step_key TEXT NOT NULL, id INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS artifacts (org_id TEXT NOT NULL, run_id TEXT NOT NULL, step_id TEXT NOT NULL, execution INTEGER NOT NULL, name TEXT NOT NULL,
+                id INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT NOT NULL, UNIQUE (org_id, run_id, step_id, execution, name));
             """);
     }
 
@@ -202,6 +204,10 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
         foreach (var e in records.AgentEvents ?? [])
             Execute(connection, "INSERT INTO agent_log (org_id, kind, step_key, body) VALUES ($o, 'event', $s, $b)",
                 ("$o", Org), ("$s", e.StepKey), ("$b", JsonSerializer.Serialize(e, Json)));
+        // The artifact index: once per run, step, execution and name, so a retried append adds nothing.
+        foreach (var a in records.Artifacts ?? [])
+            Execute(connection, "INSERT OR IGNORE INTO artifacts (org_id, run_id, step_id, execution, name, body) VALUES ($o, $r, $s, $e, $n, $b)",
+                ("$o", Org), ("$r", a.RunId), ("$s", a.StepId), ("$e", a.Execution), ("$n", a.Name), ("$b", JsonSerializer.Serialize(a, Json)));
         transaction.Commit();
         return Task.FromResult(ProviderResult<Unit>.Success(default));
     }
@@ -230,6 +236,10 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
             Queries.Question => ("SELECT body FROM agent_keyed WHERE org_id = $o AND kind = 'question' AND key = $k", typeof(QuestionRecord), [("$k", P("question_id"))]),
             Queries.Questions => ("SELECT body FROM agent_keyed WHERE org_id = $o AND kind = 'question' AND step_key = $s ORDER BY key", typeof(QuestionRecord), [("$s", P("step_key"))]),
             Queries.Reports => ("SELECT body FROM agent_log WHERE org_id = $o AND kind = 'report' AND step_key = $s ORDER BY id", typeof(ReportRecord), [("$s", P("step_key"))]),
+            // A run's artifacts and every descendant run's, by parent links, in the order appended.
+            Queries.Artifacts => ("WITH RECURSIVE tree(run_id) AS (SELECT $r UNION SELECT runs.run_id FROM runs JOIN tree ON runs.parent_run_id = tree.run_id"
+                + " WHERE runs.org_id = $o) SELECT body FROM artifacts WHERE org_id = $o AND run_id IN (SELECT run_id FROM tree) ORDER BY id",
+                typeof(ArtifactRecord), [("$r", P("run_id"))]),
             Queries.AgentEvents => ("SELECT body FROM agent_log WHERE org_id = $o AND kind = 'event' AND step_key = $s ORDER BY id", typeof(AgentEventRecord), [("$s", P("step_key"))]),
             _ => throw new ArgumentException($"unknown query {queryName}"),
         };

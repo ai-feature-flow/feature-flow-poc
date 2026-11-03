@@ -490,7 +490,7 @@ each repository is taken from this run's work branch, which becomes the child's
 | From the parent | How |
 |---|---|
 | Parameters | `with.parameters`, then the parent's resolved parameters for names the child declares (section 6.2) |
-| Artifacts | The child's steps consume with `from: parent` or `from: root`, pinned at the revision current when the child starts |
+| Artifacts | The child's steps consume with `from: parent` or `from: root`, pinned at the revision current when the child starts (a grandchild's `root` artifacts are pinned when its parent started, LOG 153). In an agent step's sandbox they are named with their source in front, for example `parent/contract` |
 | Ratifications | Inherited: a parent's ratification of an artifact is authority in the child (`docs/01` section 5.3) |
 | The parent branch | `run.parent_branch` |
 | Findings | The parent's view of the ledger includes the child's, not the reverse |
