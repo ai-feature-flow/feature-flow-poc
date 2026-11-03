@@ -36,15 +36,10 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
 
     /// <summary>
     /// Runs one action. Step-start check 31 comes first: inputs that do not satisfy the action's contract stop the step
-    /// for a person. <paramref name="heartbeat"/> is called while the action polls. A credential the remote refuses
-    /// (<c>unauthenticated</c>, <c>forbidden</c>) gets a short budget of tries, then the step stops for a person
-    /// (<see cref="ConfigurationFaults"/>); every other infrastructure error is thrown for Temporal to retry.
+    /// for a person. <paramref name="heartbeat"/> is called while the action polls. A configuration fault stops the step
+    /// for a person (<see cref="Must{T}"/>); every other infrastructure error is thrown for Temporal to retry.
     /// </summary>
-    public Task<ActionResult> RunAsync(StepCall call, ActionScope scope, Action heartbeat, CancellationToken cancellationToken) =>
-        ConfigurationFaults.WithBudgetAsync(() => RunOnceAsync(call, scope, heartbeat, cancellationToken), options.AuthRetry, heartbeat,
-            message => ActionResult.CannotAnswer($"{call.What}: {message}", []), cancellationToken);
-
-    async Task<ActionResult> RunOnceAsync(StepCall call, ActionScope scope, Action heartbeat, CancellationToken cancellationToken)
+    public async Task<ActionResult> RunAsync(StepCall call, ActionScope scope, Action heartbeat, CancellationToken cancellationToken)
     {
         var run = new ActionRun(this, call, scope, heartbeat, cancellationToken);
         var inputs = call.Inputs.ToDictionary(kv => kv.Key, kv => YamlWriter.ReadPlain(kv.Value), StringComparer.Ordinal);
@@ -93,25 +88,17 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
     /// commits (LOG 96). A step that never touched a repository resets nothing. A work error (a refused push) is
     /// returned, so the run asks a person; only infrastructure errors are thrown, to be retried.
     /// </summary>
-    public Task<CleanUpResult> CleanUpAsync(string runId, string stepId, int executions, IReadOnlyList<string> repositories, string workBranch,
+    public async Task<CleanUpResult> CleanUpAsync(string runId, string stepId, int executions, IReadOnlyList<string> repositories, string workBranch,
         IReadOnlyList<string> stepIds, CancellationToken ct)
     {
-        // One list across the budget's tries: a reset made before a later repository's refusal is not made again, so
-        // only the first try records it, and the result must still report it.
         var events = new List<string>();
-        return ConfigurationFaults.WithBudgetAsync(() => CleanUpOnceAsync(runId, stepId, executions, repositories, workBranch, stepIds, events, ct),
-            options.AuthRetry, () => { }, message => new CleanUpResult(events.ToList(), $"clean_up: {message}"), ct);
-    }
-
-    async Task<CleanUpResult> CleanUpOnceAsync(string runId, string stepId, int executions, IReadOnlyList<string> repositories, string workBranch,
-        IReadOnlyList<string> stepIds, List<string> events, CancellationToken ct)
-    {
         try
         {
             return new CleanUpResult(await ResetAsync(runId, stepId, executions, repositories, workBranch, stepIds, events, ct), null);
         }
         catch (ActionStop stop)
         {
+            // The resets made before the stop are still reported.
             return new CleanUpResult(events, stop.Message);
         }
     }
@@ -171,14 +158,19 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
         Must(await providers.Required<IRecordStoreProvider>("record_store").QueryAsync<AgentEventRecord>(Queries.AgentEvents,
             new Dictionary<string, string> { ["step_key"] = stepKey }, ct), "read the step's events");
 
-    /// <summary>A provider result's value; an infrastructure error is thrown for a retry, any other error ends the step as a work failure.</summary>
+    /// <summary>
+    /// A provider result's value. A configuration fault stops the step for a person (docs/06 section 1.1); any other
+    /// infrastructure error is thrown for a retry; any other error ends the step as a work failure.
+    /// </summary>
     internal static T Must<T>(ProviderResult<T> result, string what)
     {
         if (result.Ok)
             return result.Value!;
         var error = result.Error!;
+        if (error.IsConfigurationFault)
+            throw new ActionStop(StepOutcome.CannotAnswer, $"{what}: {error.DescribeFault()}");
         if (error.Class == ProviderErrorClass.Infrastructure)
-            throw new ActionInfrastructureException($"{what}: {error.Reason}: {error.Message}", error.Reason);
+            throw new ActionInfrastructureException($"{what}: {error.Reason}: {error.Message}");
         throw new ActionStop(error.Reason == "cannot_answer" ? StepOutcome.CannotAnswer : StepOutcome.WorkFailed, $"{what}: {error.Reason}: {error.Message}");
     }
 
@@ -193,9 +185,6 @@ public sealed record CleanUpResult(IReadOnlyList<string> Events, string? Error);
 /// <summary>How often actions poll, and their default limits. Tests shorten them.</summary>
 public sealed record ActionOptions(TimeSpan PollInterval, TimeSpan CiPollInterval, TimeSpan CommandTimeout)
 {
-    /// <summary>The first wait of the configuration-fault budget; each later one doubles (<see cref="ConfigurationFaults"/>).</summary>
-    public TimeSpan AuthRetry { get; init; } = ConfigurationFaults.FirstDelay;
-
     public static readonly ActionOptions Default = new(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(15), TimeSpan.FromMinutes(30));
 }
 

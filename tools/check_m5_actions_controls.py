@@ -31,13 +31,14 @@ AGENT_ACTIVITY = "src/FeatureFlow.Engine.Agent/AgentActivities.cs"
 CORE = "src/FeatureFlow.Interpreter/RunCore.cs"
 RECOVERY = "src/FeatureFlow.Interpreter/Recovery.cs"
 VALIDATOR = "src/FeatureFlow.Validation/PlanValidator.cs"
-FAULTS = "src/FeatureFlow.Engine/Actions/ConfigurationFaults.cs"
+GITHUB_API = "src/Providers/FeatureFlow.Providers.GitHub/GitHubApi.cs"
 
 ENGINE = "tests/FeatureFlow.Engine.Tests"
 AGENT = "tests/FeatureFlow.Engine.Agent.Tests"
 CORE_TESTS = "tests/FeatureFlow.Interpreter.Tests"
 VALIDATION_TESTS = "tests/FeatureFlow.Validation.Tests"
 INTEGRATION = "tests/FeatureFlow.Integration.Tests"
+GITHUB_TESTS = ("tests/Providers/FeatureFlow.Providers.GitHub.Tests", "Category!=Live")
 
 
 def it(name):
@@ -399,47 +400,48 @@ CONTROLS = [
         "tests": [it("EngineMergeRaceTests")],
         "expect": ["S1_three_tickets_forced_to_collide_all_merge_through_the_engine_and_none_is_lost"],
     },
-    # Added for the budget of forbidden and unauthenticated (docs/06 section 1.1).
-    {
-        "name": "configuration faults: a refused credential has no budget and is retried for ever",
-        "edits": [(FAULTS, 'public static bool Is(string? reason) => reason is "unauthenticated" or "forbidden";', 'public static bool Is(string? reason) => reason is "never a reason";')],
-        "tests": [(ENGINE, None)],
-        "expect": [("A_refused_credential_gets_a_short_budget_then_stops_the_step_for_a_person", 2),
-                   "A_clean_up_whose_credential_is_refused_stops_for_a_person_after_the_budget",
-                   ("A_refused_credential_at_run_start_fails_the_start_naming_the_configuration_fault_once_its_budget_is_spent", 3)],
-    },
-    {
-        "name": "configuration faults: the step stops at the first refusal, with no retry",
-        "edits": [(FAULTS, "                if (tries >= Tries)\n                    return exhausted", "                if (tries >= 1)\n                    return exhausted")],
-        "tests": [(ENGINE, None)],
-        "expect": ["A_refused_credential_that_recovers_within_the_budget_does_not_stop_the_step"],
-    },
-    # Added for the review of PR 7.
-    {
-        "name": "configuration faults: run start refuses at the first refusal, with no retry",
-        "edits": [(FAULTS, "if (!Is(result.Error) || ++budget.Refusals >= Tries)", "if (!Is(result.Error) || ++budget.Refusals >= 1)")],
-        "tests": [(ENGINE, None)],
-        "expect": [("A_refused_credential_at_run_start_fails_the_start_naming_the_configuration_fault_once_its_budget_is_spent", 3),
-                   "Refused_reads_across_many_repositories_share_one_budget_so_the_start_is_refused_within_it"],
-    },
-    {
-        "name": "configuration faults: each run-start read has its own budget",
-        "edits": [(ACTIVITIES, "Current.Heartbeat(); }, ct, budget);", "Current.Heartbeat(); }, ct);")],
-        "tests": [(ENGINE, None)],
-        "expect": ["Refused_reads_across_many_repositories_share_one_budget_so_the_start_is_refused_within_it"],
-    },
-    {
-        "name": "configuration faults: a spent clean_up budget drops the resets already made",
-        "edits": [(ACTIONS, "message => new CleanUpResult(events.ToList(), ", "message => new CleanUpResult([], ")],
-        "tests": [(ENGINE, None)],
-        "expect": ["A_clean_up_refused_in_a_later_repository_still_reports_the_resets_it_made_before"],
-    },
     # Added for LOG 147 (the simplification after M5).
     {
         "name": "LOG 147: a CI tier's run is not recorded, so a retried activity triggers another",
         "edits": [(TESTING, 'run.RememberAsync($"ci_run {repo.FullName} {tier.Name} {head}"', 'run.RememberAsync($"ci_run {Guid.NewGuid()}"')],
         "tests": [(ENGINE, None)],
         "expect": ["A_retried_CI_tier_polls_the_run_it_recorded_and_triggers_no_second"],
+    },
+    {
+        "name": "configuration faults: an action retries a refused credential for ever (LOG 147)",
+        "edits": [(ACTIONS, "        if (error.IsConfigurationFault)\n            throw new ActionStop(", "        if (error.IsConfigurationFault && false)\n            throw new ActionStop(")],
+        "tests": [(ENGINE, None)],
+        "expect": [("A_refused_credential_stops_the_step_for_a_person_at_once", 2), "A_clean_up_whose_credential_is_refused_stops_for_a_person"],
+    },
+    {
+        "name": "configuration faults: run start retries a refused credential for ever (LOG 147)",
+        "edits": [(ACTIVITIES, "        if (result.Error!.IsConfigurationFault)\n", "        if (result.Error!.IsConfigurationFault && false)\n")],
+        "tests": [(ENGINE, None)],
+        "expect": [("A_refused_credential_at_run_start_refuses_the_start_naming_the_configuration_fault", 2)],
+    },
+    {
+        "name": "configuration faults: the agent step retries a refused credential for ever (LOG 147)",
+        "edits": [(AGENT_ACTIVITY, "        if (error.IsConfigurationFault)\n            throw new StepCannotAnswerException(", "        if (error.IsConfigurationFault && false)\n            throw new StepCannotAnswerException(")],
+        "tests": [(AGENT, None)],
+        "expect": [("A_refused_credential_stops_the_agent_step_for_a_person", 2)],
+    },
+    {
+        "name": "configuration faults: a stopped clean_up drops the resets already made",
+        "edits": [(ACTIONS, "return new CleanUpResult(events, stop.Message);", "return new CleanUpResult([], stop.Message);")],
+        "tests": [(ENGINE, None)],
+        "expect": ["A_clean_up_refused_in_a_later_repository_still_reports_the_resets_it_made_before"],
+    },
+    {
+        "name": "configuration faults: GitHub requests are not retried with a fresh token (LOG 147)",
+        "edits": [(GITHUB_API, "return first.Error is { IsConfigurationFault: true } && broker() is not null", "return first.Error is { IsConfigurationFault: true } && false")],
+        "tests": [GITHUB_TESTS],
+        "expect": [("A_refused_credential_is_retried_once_with_a_fresh_token", 4)],
+    },
+    {
+        "name": "configuration faults: the retry reuses the cached token (LOG 147)",
+        "edits": [(GITHUB_API, "if (!fresh && tokens.TryGetValue(cacheKey, out var cached)", "if (tokens.TryGetValue(cacheKey, out var cached)")],
+        "tests": [GITHUB_TESTS],
+        "expect": [("A_refused_credential_is_retried_once_with_a_fresh_token", 4)],
     },
 ]
 

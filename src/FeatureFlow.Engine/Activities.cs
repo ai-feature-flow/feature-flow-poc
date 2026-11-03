@@ -81,21 +81,13 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
     /// needs the organisation's leave for that repository. The default branch is read from the code host, never the plan.
     /// </summary>
     public static async Task<IReadOnlyDictionary<string, string>> RepositoryChecksAsync(ICodeHostProvider host, RunCore core, RunStart start, LibrarySet libraries, RunPolicy policy, DiagnosticBag d,
-        CancellationToken ct, TimeSpan? authRetry = null)
+        CancellationToken ct)
     {
-        // A refused credential gets a short budget, then fails the run's start naming the fault (docs/06 section 1.1). One
-        // budget for the whole check: every read uses the same credential, and per-read budgets over many repositories
-        // could outlast the activity's timeout, so the start would be retried for ever.
-        var budget = new ConfigurationFaults.Budget();
-        Task<ProviderResult<T>> Read<T>(Func<Task<ProviderResult<T>>> read) =>
-            ConfigurationFaults.ReadAsync(read, authRetry ?? ConfigurationFaults.FirstDelay,
-                () => { if (ActivityExecutionContext.HasCurrent) ActivityExecutionContext.Current.Heartbeat(); }, ct, budget);
-
         var defaults = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var name in start.Repositories)
         {
             var repo = new RepoRef(name);
-            var branch = await Read(() => host.GetDefaultBranchAsync(repo, ct));
+            var branch = await host.GetDefaultBranchAsync(repo, ct);
             if (Readable(branch, $"{name}: the default branch", Checks.BranchProtection, d) is not { } defaultBranch)
                 continue;
             defaults[name] = defaultBranch;
@@ -104,9 +96,9 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
             var work = core.WorkBranch();
             if (work == defaultBranch || work == start.ParentBranch)
                 d.Add(Checks.WorkBranch, $"{name}: the run's work branch '{work}' is its {(work == defaultBranch ? "default" : "parent")} branch; the engine writes only to a branch of its own (metadata.branch_pattern)");
-            if (Readable(await Read(() => host.GetBranchProtectionAsync(repo, defaultBranch, ct)), $"{name}: the protection of {defaultBranch}", Checks.BranchProtection, d) is { } protection)
+            if (Readable(await host.GetBranchProtectionAsync(repo, defaultBranch, ct), $"{name}: the protection of {defaultBranch}", Checks.BranchProtection, d) is { } protection)
                 RunStartChecks.BranchProtection(name, defaultBranch, protection.Protected, d, protection.ReviewRulesKnown);
-            if (Readable(await Read(() => host.ReadFileAsync(repo, RepositoryManifest.FileName, defaultBranch, ct)), $"{name}: {RepositoryManifest.FileName}",
+            if (Readable(await host.ReadFileAsync(repo, RepositoryManifest.FileName, defaultBranch, ct), $"{name}: {RepositoryManifest.FileName}",
                     Checks.RepositoryLibraryAddsOnly, d) is { } file)
             {
                 var parsed = new DiagnosticBag();
@@ -150,16 +142,16 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
     }
 
     /// <summary>
-    /// A code host read's value. An infrastructure error is retried, except a configuration fault whose budget is spent;
-    /// that, and any work error, is a blocking diagnostic of the check that needed it.
+    /// A code host read's value. A configuration fault (docs/06 section 1.1), like any work error, is a blocking
+    /// diagnostic of the check that needed it, so the start is refused; any other infrastructure error is retried.
     /// </summary>
     static T? Readable<T>(ProviderResult<T> result, string what, int check, DiagnosticBag d)
     {
         if (result.Ok)
             return result.Value;
-        if (ConfigurationFaults.Is(result.Error))
+        if (result.Error!.IsConfigurationFault)
         {
-            d.Add(check, $"{what} cannot be read: {ConfigurationFaults.Describe($"{result.Error!.Reason}: {result.Error.Message}")}");
+            d.Add(check, $"{what} cannot be read: {result.Error.DescribeFault()}");
             return default;
         }
 
@@ -269,6 +261,8 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
             return null;
         if (error.Reason == "cannot_answer")
             return new StepOutcome(StepOutcome.CannotAnswer, null, error.Message);
+        if (error.IsConfigurationFault)
+            return new StepOutcome(StepOutcome.CannotAnswer, null, error.DescribeFault());
         if (error.Class == ProviderErrorClass.Infrastructure)
             throw new ApplicationFailureException($"{error.Reason}: {error.Message}", errorType: "infrastructure");
         return new StepOutcome(StepOutcome.WorkFailed, null, $"{error.Reason}: {error.Message}");

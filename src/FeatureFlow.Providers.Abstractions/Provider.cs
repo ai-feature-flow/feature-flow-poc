@@ -16,6 +16,17 @@ public sealed record ProviderError(string Reason, string Message, TimeSpan? Retr
         ["unreachable", "server_error", "internal_error", "timeout", "rate_limited", "unauthenticated", "forbidden"];
 
     public ProviderErrorClass Class => InfrastructureReasons.Contains(Reason) ? ProviderErrorClass.Infrastructure : ProviderErrorClass.Work;
+
+    /// <summary>
+    /// docs/06 section 1.1: <c>unauthenticated</c> and <c>forbidden</c> are almost always a configuration fault (a revoked
+    /// App, a missing permission, a wrong key), which retrying for ever would hide. A provider retries once at once with
+    /// a freshly issued credential; what still reaches the engine stops for a person (LOG 147).
+    /// </summary>
+    public bool IsConfigurationFault => Reason is "unauthenticated" or "forbidden";
+
+    /// <summary>What a person is told about a configuration fault.</summary>
+    public string DescribeFault() =>
+        $"a configuration fault ({Reason}: {Message}). Check the installation's credential broker: the GitHub App's key, installation and permissions. Retry once it is fixed";
 }
 
 public readonly record struct Unit;

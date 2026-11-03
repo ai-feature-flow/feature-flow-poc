@@ -50,10 +50,13 @@ public sealed class GitVcs(
 
     string CacheOf(RepoRef repo) => Path.Combine(cache, repo.FullName.Replace('/', '_') + ".git");
 
-    public async Task<ProviderResult<string?>> ResolveAsync(RepoRef repo, string reference, CancellationToken cancellationToken)
+    public Task<ProviderResult<string?>> ResolveAsync(RepoRef repo, string reference, CancellationToken cancellationToken) =>
+        WithFreshCredentialOnFaultAsync(fresh => ResolveOnceAsync(repo, reference, fresh, cancellationToken));
+
+    async Task<ProviderResult<string?>> ResolveOnceAsync(RepoRef repo, string reference, bool fresh, CancellationToken cancellationToken)
     {
         OperationTimeout.Value = CommandTimeout;
-        var env = await EnvironmentAsync(repo, write: false, cancellationToken);
+        var env = await EnvironmentAsync(repo, write: false, fresh, cancellationToken);
         if (!env.Ok)
             return new ProviderResult<string?>(null, env.Error);
         if (EnsureCache() is { } broken)
@@ -424,11 +427,26 @@ public sealed class GitVcs(
     /// cache is shared by every worker on a host. Each operation gets its own scratch references under
     /// <c>refs/ff-cache/op/&lt;guid&gt;</c>, deleted afterwards.
     /// </summary>
-    async Task<ProviderResult<T>> WithCacheAsync<T>(RepoRef repo, Func<string, IReadOnlyDictionary<string, string>, string, Task<ProviderResult<T>>> work, bool write,
-        CancellationToken cancellationToken)
+    Task<ProviderResult<T>> WithCacheAsync<T>(RepoRef repo, Func<string, IReadOnlyDictionary<string, string>, string, Task<ProviderResult<T>>> work, bool write,
+        CancellationToken cancellationToken) =>
+        WithFreshCredentialOnFaultAsync(fresh => WithCacheOnceAsync(repo, work, write, fresh, cancellationToken));
+
+    /// <summary>
+    /// docs/06 section 1.1: an operation the remote refused as a configuration fault (<c>unauthenticated</c>,
+    /// <c>forbidden</c>) runs once more at once with a freshly issued credential; a second refusal is returned, for the
+    /// engine to stop for a person. A refused push changed nothing, so running the operation again is safe.
+    /// </summary>
+    async Task<ProviderResult<T>> WithFreshCredentialOnFaultAsync<T>(Func<bool, Task<ProviderResult<T>>> operation)
+    {
+        var first = await operation(false);
+        return first.Error is { IsConfigurationFault: true } && broker() is not null ? await operation(true) : first;
+    }
+
+    async Task<ProviderResult<T>> WithCacheOnceAsync<T>(RepoRef repo, Func<string, IReadOnlyDictionary<string, string>, string, Task<ProviderResult<T>>> work, bool write,
+        bool fresh, CancellationToken cancellationToken)
     {
         OperationTimeout.Value = CommandTimeout;
-        var env = await EnvironmentAsync(repo, write, cancellationToken);
+        var env = await EnvironmentAsync(repo, write, fresh, cancellationToken);
         if (!env.Ok)
             return new ProviderResult<T>(default, env.Error);
         var dir = Path.GetFullPath(CacheOf(repo));
@@ -496,13 +514,13 @@ public sealed class GitVcs(
     /// The environment that gives <c>git</c> the engine's credential for an HTTPS remote: an authorisation header in
     /// <c>GIT_CONFIG_*</c> variables, so the token is in no command line, URL or file. A local remote needs none.
     /// </summary>
-    async Task<ProviderResult<IReadOnlyDictionary<string, string>>> EnvironmentAsync(RepoRef repo, bool write, CancellationToken cancellationToken)
+    async Task<ProviderResult<IReadOnlyDictionary<string, string>>> EnvironmentAsync(RepoRef repo, bool write, bool fresh, CancellationToken cancellationToken)
     {
         var config = new List<(string Key, string Value)>(Isolation);
         if (!UrlOf(repo).StartsWith("https://", StringComparison.Ordinal) || broker() is not { } credentialBroker)
             return ProviderResult<IReadOnlyDictionary<string, string>>.Success(IsolatedEnvironment(config));
         var cacheKey = $"{repo.FullName}|{write}";
-        if (!credentials.TryGetValue(cacheKey, out var credential) || credential.ExpiresAt < DateTimeOffset.UtcNow.AddMinutes(5))
+        if (fresh || !credentials.TryGetValue(cacheKey, out var credential) || credential.ExpiresAt < DateTimeOffset.UtcNow.AddMinutes(5))
         {
             var issued = await credentialBroker.IssueAsync(Actor.Engine, "github", write ? CredentialScope.Write(repo.FullName) : CredentialScope.Read(repo.FullName),
                 TimeSpan.FromHours(1), cancellationToken);

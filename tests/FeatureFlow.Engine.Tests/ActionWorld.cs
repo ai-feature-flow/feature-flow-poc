@@ -60,10 +60,7 @@ public sealed class ActionWorld : IAsyncDisposable
         if (sandbox)
             instances["sandbox"] = One(Sandbox);
         var providers = new ProviderSet(instances, instances.Keys.ToDictionary(k => k, _ => "one"), new Dictionary<string, string>());
-        Actions = new EngineActions(providers, new ActionOptions(TimeSpan.FromMilliseconds(5), TimeSpan.FromMilliseconds(5), TimeSpan.FromSeconds(30))
-        {
-            AuthRetry = TimeSpan.FromMilliseconds(1),
-        });
+        Actions = new EngineActions(providers, new ActionOptions(TimeSpan.FromMilliseconds(5), TimeSpan.FromMilliseconds(5), TimeSpan.FromSeconds(30)));
     }
 
     static IReadOnlyDictionary<string, IProvider> One(IProvider provider) => new Dictionary<string, IProvider> { ["one"] = provider };

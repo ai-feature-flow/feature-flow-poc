@@ -143,6 +143,21 @@ public sealed class AgentManifestTests : IAsyncDisposable
         Assert.Equal(0, sandbox.Counts.Created);
     }
 
+    /// <summary>docs/06 section 1.1 (LOG 147): a configuration fault stops the agent step for a person, as it does an action.</summary>
+    [Theory]
+    [InlineData("unauthenticated")]
+    [InlineData("forbidden")]
+    public async Task A_refused_credential_stops_the_agent_step_for_a_person(string fault)
+    {
+        forge.Fail("vcs.Push", new ProviderError(fault, "GitHub refused the request"));
+
+        var outcome = await RunAsync(new Dictionary<string, string> { ["src/B.cs"] = "class B{}" });
+
+        Assert.Equal(StepOutcome.CannotAnswer, outcome.Kind);
+        Assert.Contains("configuration fault", outcome.Reason, StringComparison.Ordinal);
+        Assert.Contains(fault, outcome.Reason, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task The_parent_branch_is_the_default_branch_the_code_host_names()
     {

@@ -4,9 +4,9 @@ using FeatureFlow.Providers.Abstractions;
 namespace FeatureFlow.Engine.Tests;
 
 /// <summary>
-/// docs/06 section 1.1: <c>unauthenticated</c> and <c>forbidden</c> are infrastructure, but get a short budget, then
-/// the step (or run start) stops for a person naming the configuration fault. Other infrastructure errors are still
-/// retried without limit.
+/// docs/06 section 1.1 (LOG 147): <c>unauthenticated</c> and <c>forbidden</c> reaching the engine are configuration
+/// faults (the provider has already retried once with a fresh credential), so the step, a <c>clean_up</c> or run start
+/// stops for a person at once, naming the fault. Other infrastructure errors are still retried without limit.
 /// </summary>
 public sealed class ConfigurationFaultTests
 {
@@ -48,7 +48,7 @@ public sealed class ConfigurationFaultTests
     [Theory]
     [InlineData("unauthenticated")]
     [InlineData("forbidden")]
-    public async Task A_refused_credential_gets_a_short_budget_then_stops_the_step_for_a_person(string fault)
+    public async Task A_refused_credential_stops_the_step_for_a_person_at_once(string fault)
     {
         var (w, host) = World(fault, int.MaxValue);
         await using var _ = w;
@@ -59,27 +59,14 @@ public sealed class ConfigurationFaultTests
         Assert.Equal(StepOutcome.CannotAnswer, result.Kind);
         Assert.Contains("configuration fault", result.Reason, StringComparison.Ordinal);
         Assert.Contains(fault, result.Reason, StringComparison.Ordinal);
-        Assert.Equal(ConfigurationFaults.Tries, host().Calls);
-    }
-
-    [Fact]
-    public async Task A_refused_credential_that_recovers_within_the_budget_does_not_stop_the_step()
-    {
-        var (w, host) = World("forbidden", ConfigurationFaults.Tries - 1);
-        await using var _ = w;
-        w.CommitWork("a.txt", "work");
-
-        var result = await w.RunAsync("scm.pull_request", "{ title: T-1 }", "open_pr");
-
-        Assert.Equal("ready", result.Report?.Outcome);
-        Assert.Equal(ConfigurationFaults.Tries, host().Calls);
+        Assert.Equal(1, host().Calls);
     }
 
     [Theory]
     [InlineData("unreachable")]
     [InlineData("rate_limited")]
     [InlineData("server_error")]
-    public async Task Other_infrastructure_errors_have_no_budget_and_are_thrown_for_Temporal_to_retry(string fault)
+    public async Task Other_infrastructure_errors_are_thrown_for_Temporal_to_retry(string fault)
     {
         var (w, host) = World(fault, int.MaxValue);
         await using var _ = w;
@@ -90,7 +77,7 @@ public sealed class ConfigurationFaultTests
     }
 
     [Fact]
-    public async Task A_clean_up_whose_credential_is_refused_stops_for_a_person_after_the_budget()
+    public async Task A_clean_up_whose_credential_is_refused_stops_for_a_person()
     {
         var (w, host) = World("forbidden", 0);
         await using var _ = w;
@@ -103,7 +90,7 @@ public sealed class ConfigurationFaultTests
             TestContext.Current.CancellationToken);
 
         Assert.Contains("configuration fault", result.Error, StringComparison.Ordinal);
-        Assert.Equal(ConfigurationFaults.Tries, host().Calls - 1);
+        Assert.Equal(1, host().Calls - 1);
     }
 
     [Fact]

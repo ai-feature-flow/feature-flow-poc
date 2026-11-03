@@ -109,6 +109,31 @@ public sealed class GitHubCodeHostTests
     }
 
     /// <summary>
+    /// docs/06 section 1.1 (LOG 147): a refused credential is retried once at once with a freshly issued token, so a
+    /// cached token gone stale recovers; a second refusal is the configuration fault, returned for a person.
+    /// </summary>
+    [Theory]
+    [InlineData(401, 1, "trunk")]
+    [InlineData(403, 1, "trunk")]
+    [InlineData(401, 2, null)]
+    [InlineData(403, 2, null)]
+    public async Task A_refused_credential_is_retried_once_with_a_fresh_token(int status, int refusals, string? branch)
+    {
+        var (host, github, broker) = Host();
+        var calls = 0;
+        github.On(Get, "~", _ => ++calls <= refusals
+            ? new HttpResponseMessage((System.Net.HttpStatusCode)status) { Content = new StringContent("""{"message":"Bad credentials"}""") }
+            : new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent("""{"default_branch":"trunk"}""") });
+
+        var result = await host.GetDefaultBranchAsync(Repo, Ct);
+
+        Assert.Equal(branch, result.Value);
+        Assert.Equal(branch is null, result.Error?.IsConfigurationFault ?? false);
+        Assert.Equal(2, calls);
+        Assert.Equal(2, broker.Issued.Count);                  // the retry's token was issued afresh, not taken from the cache
+    }
+
+    /// <summary>
     /// GitHub's answer when the App's installation lacks a permission (for example reading protection without
     /// Administration) is a configuration fault: a work error naming it, so run start stops for a person instead of
     /// retrying it as infrastructure.
