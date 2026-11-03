@@ -17,7 +17,7 @@ public static class ResultFiles
     /// <summary>Test results of one tier from its result files, each in <paramref name="format"/> (<see cref="ResultFormats"/>).</summary>
     public static TestResults Tests(string format, IEnumerable<string> files, string revision, string tier)
     {
-        var (passed, failed, skipped, failures) = (0, 0, 0, new List<TestFailure>());
+        var (passed, failed, skipped, failures, passing) = (0, 0, 0, new List<TestFailure>(), new List<string>());
         foreach (var text in files)
         {
             var one = format switch
@@ -30,9 +30,10 @@ public static class ResultFiles
             failed += one.Failed;
             skipped += one.Skipped;
             failures.AddRange(one.Failures);
+            passing.AddRange(one.Passing ?? []);
         }
 
-        return new TestResults(revision, tier, passed, failed, skipped, failures);
+        return new TestResults(revision, tier, passed, failed, skipped, failures, passing);
     }
 
     /// <summary>
@@ -46,7 +47,7 @@ public static class ResultFiles
         var root = Xml(text, "TRX").Root!;
         if (root.Name.LocalName != "TestRun")
             throw new FormatException($"a TRX file's root is TestRun, not {root.Name.LocalName}");
-        var (passed, failed, skipped, failures) = (0, 0, 0, new List<TestFailure>());
+        var (passed, failed, skipped, failures, passing) = (0, 0, 0, new List<TestFailure>(), new List<string>());
         foreach (var result in root.Descendants().Where(e => e.Name.LocalName == "UnitTestResult"))
         {
             var name = (string?)result.Attribute("testName") ?? "(unnamed)";
@@ -54,6 +55,7 @@ public static class ResultFiles
             {
                 case "Passed":
                     passed++;
+                    passing.Add(name);
                     break;
                 case "NotExecuted":
                     skipped++;
@@ -73,7 +75,7 @@ public static class ResultFiles
             failures.Add(new TestFailure("(test run)", $"the test run's outcome was {run}"));
         }
 
-        return new TestResults(revision, tier, passed, failed, skipped, failures);
+        return new TestResults(revision, tier, passed, failed, skipped, failures, passing);
     }
 
     /// <summary>
@@ -86,7 +88,7 @@ public static class ResultFiles
         var root = Xml(text, "JUnit").Root!;
         if (root.Name.LocalName is not ("testsuites" or "testsuite"))
             throw new FormatException($"a JUnit file's root is testsuites or testsuite, not {root.Name.LocalName}");
-        var (passed, failed, skipped, failures) = (0, 0, 0, new List<TestFailure>());
+        var (passed, failed, skipped, failures, passing) = (0, 0, 0, new List<TestFailure>(), new List<string>());
         foreach (var test in root.DescendantsAndSelf().Where(e => e.Name.LocalName == "testcase"))
         {
             var name = string.Join(".", new[] { (string?)test.Attribute("classname"), (string?)test.Attribute("name") }.Where(x => !string.IsNullOrEmpty(x)));
@@ -99,7 +101,10 @@ public static class ResultFiles
             else if (test.Elements().Any(e => e.Name.LocalName == "skipped"))
                 skipped++;
             else
+            {
                 passed++;
+                passing.Add(name);
+            }
         }
 
         foreach (var suite in root.DescendantsAndSelf().Where(e => e.Name.LocalName == "testsuite"))
@@ -120,7 +125,7 @@ public static class ResultFiles
             }
         }
 
-        return new TestResults(revision, tier, passed, failed, skipped, failures);
+        return new TestResults(revision, tier, passed, failed, skipped, failures, passing);
     }
 
     /// <summary>
