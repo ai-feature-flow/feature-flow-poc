@@ -52,8 +52,8 @@ public sealed class GitHubCodeHost(GitHubApi api) : ICodeHostProvider
     /// <summary>
     /// Read from the branch (classic protection's status checks) and the rules that apply to it (rulesets), both
     /// readable without <c>administration</c>, which the engine never holds (F5). Classic protection's review
-    /// requirements are visible only to an administrator, so a branch protected only classically reports
-    /// <see cref="BranchProtection.Protected"/> with no review requirement.
+    /// requirements are visible only to an administrator, so a branch with classic protection reports
+    /// <see cref="BranchProtection.ReviewRulesKnown"/> false (LOG 110).
     /// </summary>
     public async Task<ProviderResult<BranchProtection>> GetBranchProtectionAsync(RepoRef repo, string branch, CancellationToken cancellationToken)
     {
@@ -92,7 +92,10 @@ public sealed class GitHubCodeHost(GitHubApi api) : ICodeHostProvider
 
         bool Has(string type) => list.Any(r => r?["type"]?.GetValue<string>() == type);
         var protectedBranch = json["protected"]?.GetValue<bool>() == true || list.Count > 0;
-        return ProviderResult<BranchProtection>.Success(new BranchProtection(branch, protectedBranch, Has("pull_request"), approvals, checks.ToList(), Has("merge_queue")));
+        // Classic protection (protection.enabled) holds review rules the engine cannot read without administration.
+        var classicProtection = json["protection"]?["enabled"]?.GetValue<bool>() == true;
+        return ProviderResult<BranchProtection>.Success(new BranchProtection(branch, protectedBranch, Has("pull_request"), approvals, checks.ToList(), Has("merge_queue"),
+            ReviewRulesKnown: !classicProtection));
     }
 
     /// <summary>
