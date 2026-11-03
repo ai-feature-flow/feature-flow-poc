@@ -218,8 +218,8 @@ Entries 107 to 146, from building source control and testing (`docs/11`, M5), in
 ## After M5
 
 Entry 147, the simplification of M5 the product owner approved on 2026-11-03 under the development and decision
-guidelines (`CONTRIBUTING.md`: keep the floors, close the major loopholes, not every unlikely one). **Unreviewed**; the
-direction is approved. It amends the "Why" of the entries it names by reference only; their approved rows stand as
+guidelines (`CONTRIBUTING.md`: keep the floors, close the major loopholes, not every unlikely one). **Approved by the product owner
+on 2026-11-03**, as built, including the coordinator's call that `ci.checks` always waits out its grace. It amends the "Why" of the entries it names by reference only; their approved rows stand as
 they are.
 
 | # | Where | Decision | Why | Needs a look? |
