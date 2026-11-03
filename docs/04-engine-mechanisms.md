@@ -331,7 +331,8 @@ Sections 7 to 9 are as built in M5 (LOG 120 to 132, 138, 139). `test.integration
 repositories and starts no services yet (LOG 120). Waits are retried reads (LOG 122); while they wait they hold up a
 hand-over, which M6 must fix (LOG 139). An action request is watched on the code host, with no decision record yet
 (LOG 123). `clean_up` resets by an expected-revision push (LOG 128). Evidence tiers come from the parent branch's
-manifest (LOG 138).
+manifest (LOG 138). LOG 147 simplified them after M5: `ci.checks` waits for required checks, a CI run is recorded by
+the step, and a configuration fault stops for a person.
 
 The engine creates a run's work branch in a repository the first time a step
 touches that repository, from the run's parent branch, and records the
@@ -409,9 +410,9 @@ register late.
 
 | Element | Detail |
 |---|---|
-| Inputs | `expected` (check names that must appear), `grace` (how long to wait for a first check before deciding the repository has no CI; default 2 minutes), `timeout` |
+| Inputs | `expected` (check names that must appear), `grace` (when CI is configured, how long to wait for checks to appear before judging those seen; default 2 minutes), `timeout` |
 | Outcomes | `passed` (with output `skipped`, the number of skipped checks); `failed` |
-| Behaviour | Does not pass while a CI workflow that runs on this pull request has not reported, so an early third-party check does not read as "all passed"; reads the code host's workflow definitions and runs to tell "no CI" from "CI not started" (from FF's `awaitCheck`). A head commit that changes while waiting, or the timeout, raises an intervention |
+| Behaviour | Does not pass while a check the target branch requires (its protection: the pull request's base, else the parent branch) or an `expected` name has not appeared, so an early third-party check does not read as "all passed". When the CI provider says CI is configured, it does not pass within `grace` of starting to wait, so any check that appears in that window is waited for too; it does not predict which workflows will run (LOG 147). A head commit that changes while waiting, or the timeout, raises an intervention |
 | Evidence | Check results, which `scm.merge` reads |
 
 ### 8.2 `wait.condition`
@@ -420,7 +421,7 @@ Waits for an external state, from FF's `awaitCondition`.
 
 | Element | Detail |
 |---|---|
-| Inputs | One condition: `pull_request` (`approved`, `merged` or `mergeable`), `checks`, or `tracker` (an issue reaching one of some statuses); `poll_every`; `timeout` (default 7 days) |
+| Inputs | One condition: `pull_request` (`approved`, `merged` or `mergeable`), `checks` (judged as `ci.checks` judges them, with its default `grace`), or `tracker` (an issue reaching one of some statuses); `poll_every`; `timeout` (default 7 days) |
 | Outcomes | `met`; `unmet` (closed unmerged, changes requested, an issue in an `unmet` status) |
 | Behaviour | Holds no worker slot. A durable timer polls; an inbound event wakes it early; a read confirms. A person may end the wait by hand with `met` or `unmet`, which is the "skip a step" override with a chosen outcome (`docs/05` section 5). The timeout raises an intervention |
 
@@ -550,6 +551,6 @@ from an agent reviewer, these two actions and route guards such as
 
 | # | Question | Recommendation |
 |---|---|---|
-| 1 | Should `ci.checks` keep FF's reading of `.github/workflows` to tell "no CI" from "not started"? It is GitHub-specific | Yes, inside the GitHub CI provider, behind a provider method "which CI runs are expected for this head". Other providers answer it their own way |
+| 1 | Should `ci.checks` keep FF's reading of `.github/workflows` to tell "no CI" from "not started"? It is GitHub-specific | Yes, inside the GitHub CI provider, behind a provider method; since LOG 147 it answers only "is CI configured for this head" (`HasCiAsync`), and the target branch's required checks say what must pass. Other providers answer it their own way |
 
 Judgement calls made in this document are in `docs/LOG.md`, entries 16 to 24.

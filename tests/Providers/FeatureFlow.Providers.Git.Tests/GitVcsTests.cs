@@ -76,9 +76,9 @@ public sealed class GitVcsTests : IDisposable
     }
 
     /// <summary>
-    /// The review's finding 2: the default cache is shared by every instance and worker on a host. Two instances on one
-    /// cache run catch-ups of different branches at once, ten rounds: each must report its own branch, and no scratch
-    /// reference may be left.
+    /// The review's finding 2, within a process: instances in one process share its cache folder (LOG 147). Two instances
+    /// on one cache root run catch-ups of different branches at once, ten rounds: each must report its own branch, and
+    /// no scratch reference may be left.
     /// </summary>
     [Fact]
     public async Task Two_instances_sharing_a_cache_run_concurrent_operations_without_reading_each_others_references()
@@ -87,6 +87,7 @@ public sealed class GitVcsTests : IDisposable
         GitVcs Instance() => new(BareRepository.Template(Path.Combine(root, "remotes")), shared,
             () => throw new InvalidOperationException(), () => throw new InvalidOperationException(), () => null);
         var (a, b) = (Instance(), Instance());
+        Assert.Equal(a.CacheFolder, b.CacheFolder);
         var heads = new Dictionary<string, string>();
         foreach (var branch in new[] { "ff/b0", "ff/b1" })
             heads[branch] = remote.Commit("refs/heads/" + branch, new Dictionary<string, string?> { [branch.Replace('/', '-') + ".txt"] = branch }, from: "refs/heads/main");
@@ -106,30 +107,17 @@ public sealed class GitVcsTests : IDisposable
             }
         }
 
-        Assert.Equal("", remote.GitIn(shared + "/ai-feature-flow_race.git", "for-each-ref", "refs/ff-cache/op/").Trim());
+        Assert.Equal("", remote.GitIn(a.CacheFolder + "/ai-feature-flow_race.git", "for-each-ref", "refs/ff-cache/op/").Trim());
     }
 
-    /// <summary>Another process holding the cache's lock file (the test stands in for it) makes an operation wait until it lets go.</summary>
+    /// <summary>Each process keeps its clones in a folder of its own under the cache root, so no lock between processes is needed (LOG 147).</summary>
     [Fact]
-    public async Task An_operation_waits_for_another_process_holding_the_caches_lock()
+    public void The_cache_folder_is_this_processs_own_under_the_root()
     {
-        var shared = Path.Combine(root, "locked-cache");
-        Directory.CreateDirectory(shared);
-        var vcs = new GitVcs(BareRepository.Template(Path.Combine(root, "remotes")), shared,
-            () => throw new InvalidOperationException(), () => throw new InvalidOperationException(), () => null);
-        var target = remote.Resolve("refs/heads/main")!;
-        var tested = remote.Commit("refs/heads/ff/work", new Dictionary<string, string?> { ["a.txt"] = "1" }, from: "refs/heads/main");
+        var vcs = Worker("own");
 
-        Task<FeatureFlow.Providers.Abstractions.ProviderResult<MergeResult>> merge;
-        await using (new FileStream(Path.Combine(shared, "ai-feature-flow_race.git.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
-        {
-            merge = vcs.MergeAsync(repo, tested, "refs/heads/main", target, MergeMethods.Merge, "merge", "key-lock", Ct);
-            await Task.Delay(TimeSpan.FromSeconds(1), Ct);
-            Assert.False(merge.IsCompleted, "the merge ran while another process held the cache");
-            Assert.Equal(target, remote.Resolve("refs/heads/main"));
-        }
-
-        Assert.False((await merge).Unwrap().AlreadyMerged);
+        Assert.Equal(Path.Combine(root, "cache-own"), Path.GetDirectoryName(vcs.CacheFolder));
+        Assert.StartsWith($"p{Environment.ProcessId}-", Path.GetFileName(vcs.CacheFolder), StringComparison.Ordinal);
     }
 
     /// <summary>git's messages, as GitHub's HTTPS answers produce them, classed as docs/06 section 1.1 says (review finding 3).</summary>

@@ -68,7 +68,6 @@ static class SourceControl
     {
         var repo = run.Repository();
         var target = await run.ParentBranchAsync(repo);
-        await run.GuardWorkBranchAsync(repo);
         var vcs = run.Vcs;
         var head = ActionRun.Must(await vcs.ResolveAsync(repo, run.WorkReference, run.Ct), "read the work branch")
                    ?? throw ActionStop.CannotAnswer($"{repo.FullName} has no work branch {run.Scope.WorkBranch} to merge");

@@ -52,7 +52,7 @@ other documents cite them.
 | 21 | Capability negotiation: every capability the plan needs is offered by a configured provider | Run start, Patch | Yes |
 | 22 | No request exceeds a locked organisation cap: attempts, auto-resolution, checks, budget, toolsets, agent roles (`docs/05` section 3.1) | Run start, Patch | Yes |
 | 23 | **F1**: no merge step into a default branch has `engine_can_merge: true` unless the organisation allows it for that repository. The default branch is read from the code host | Run start, Patch | Yes |
-| 24 | Branch protection exists on each target repository's default branch. Protection whose review rules the code host does not show passes with a warning (LOG 142) | Run start | Yes |
+| 24 | Branch protection exists on each target repository's default branch; classic protection or rulesets both count (LOG 147) | Run start | Yes |
 | 25 | Patch: `base_revision` is current | Patch | Yes |
 | 26 | Patch: `resume_at` exists after the patch (unless sent to a parent) | Patch | Yes |
 | 27 | Patch: the proposer may use the operation; an agent never changes a role | Patch | Yes |
@@ -64,9 +64,9 @@ other documents cite them.
 | 33 | Every `tier_tags` tag matches a tier in the manifest read at this step | Step start | Yes |
 | 34 | Unused parameter | Load | No |
 | 35 | Deprecated library reference with a replacement | Load | No |
-| 36 | The run's work branch is neither a repository's default branch nor the run's parent branch (`metadata.branch_pattern` is free text); every step that writes refuses it again | Run start, Step start | Yes |
+| 36 | The run's work branch is neither a repository's default branch nor the run's parent branch (`metadata.branch_pattern` is free text). Checked once: the work branch is fixed when the run starts (LOG 147) | Run start | Yes |
 
-Checks 20, 23, 24 and 36 at run start, and 31 to 33 and 36 at step start, are as built in M5 (LOG 125 to 127, 133,
+Checks 20, 23, 24 and 36 at run start, and 31 to 33 at step start, are as built in M5 (check 36 at run start only since LOG 147) (LOG 125 to 127, 133,
 134, 141). Check 23 at patch time is not built yet; `scm.merge` re-checks F1 at merge time.
 
 ### 2.1 Plan size

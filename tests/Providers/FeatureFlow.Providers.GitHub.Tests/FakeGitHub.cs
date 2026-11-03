@@ -72,9 +72,12 @@ public sealed class FakeGitHub : HttpMessageHandler
             IssueAsync(credential.Actor, credential.TargetSystem, credential.Scope, TimeSpan.FromHours(1), cancellationToken);
     }
 
+    /// <summary>The client's wait before its fresh-token retry, short so tests stay fast.</summary>
+    public static readonly TimeSpan FreshTokenDelay = TimeSpan.FromMilliseconds(20);
+
     public GitHubApi Api(Broker? broker = null)
     {
         var b = broker ?? new Broker();
-        return new GitHubApi(() => b, this, "https://api.example");
+        return new GitHubApi(() => b, this, "https://api.example") { FreshTokenDelay = FreshTokenDelay };
     }
 }

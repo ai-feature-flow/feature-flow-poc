@@ -54,41 +54,27 @@ public sealed class RunStartCheckTests
         var policy = new RunPolicy(3, 10, 200, null, null, [], EngineMayMerge: engineMayMerge ?? []);
         var checks = new DiagnosticBag();
         var host = new InMemoryCodeHost(s.Forge);
-        await RunActivities.RepositoryChecksAsync(codeHost?.Invoke(host) ?? host, core!, start, libraries, policy, checks, TestContext.Current.CancellationToken,
-            TimeSpan.FromMilliseconds(1));
+        await RunActivities.RepositoryChecksAsync(codeHost?.Invoke(host) ?? host, core!, start, libraries, policy, checks, TestContext.Current.CancellationToken);
         return checks;
     }
 
     [Theory]
-    [InlineData("unauthenticated", int.MaxValue, true)]
-    [InlineData("forbidden", int.MaxValue, true)]
-    [InlineData("forbidden", ConfigurationFaults.Tries - 1, false)]
-    public async Task A_refused_credential_at_run_start_fails_the_start_naming_the_configuration_fault_once_its_budget_is_spent(string fault, int failures, bool refused)
+    [InlineData("unauthenticated")]
+    [InlineData("forbidden")]
+    public async Task A_refused_credential_at_run_start_refuses_the_start_naming_the_configuration_fault(string fault)
     {
-        ConfigurationFaultTests.RefusingCodeHost? host = null;
-        var checks = await CheckAsync(Setup.Protected(), engineCanMerge: false, codeHost: inner => host = new ConfigurationFaultTests.RefusingCodeHost(inner, fault, failures));
-
-        Assert.Equal(refused, checks.Any(x => x.Blocks && x.Message.Contains("configuration fault", StringComparison.Ordinal) && x.Message.Contains(fault, StringComparison.Ordinal)));
-        Assert.Equal(refused, checks.Any(x => x.Blocks));
-        Assert.Equal(ConfigurationFaults.Tries, host!.Calls);
-    }
-
-    [Fact]
-    public async Task Refused_reads_across_many_repositories_share_one_budget_so_the_start_is_refused_within_it()
-    {
-        // Per-read budgets would wait about 15 s per repository and could outlast the activity's timeout (review of PR 7, finding 1).
-        string[] repositories = ["acme/api", "acme/web", "acme/worker", "acme/admin", "acme/jobs", "acme/docs", "acme/cli", "acme/sdk"];
+        string[] repositories = ["acme/api", "acme/web"];
         ConfigurationFaultTests.RefusingCodeHost? host = null;
         var checks = await CheckAsync(Setup.Protected(), engineCanMerge: false, repositories: repositories,
-            codeHost: inner => host = new ConfigurationFaultTests.RefusingCodeHost(inner, "forbidden", int.MaxValue));
+            codeHost: inner => host = new ConfigurationFaultTests.RefusingCodeHost(inner, fault, int.MaxValue));
 
-        // The first read spends the budget; each later repository's refusal is a diagnostic at once.
-        Assert.Equal(ConfigurationFaults.Tries + repositories.Length - 1, host!.Calls);
-        Assert.Equal(repositories.Length, checks.Count(x => x.Blocks && x.Message.Contains("configuration fault", StringComparison.Ordinal)));
+        // Each repository's refusal is a blocking diagnostic at once: one read each, no retry.
+        Assert.Equal(repositories.Length, checks.Count(x => x.Blocks && x.Message.Contains("configuration fault", StringComparison.Ordinal) && x.Message.Contains(fault, StringComparison.Ordinal)));
+        Assert.Equal(repositories.Length, host!.Calls);
     }
 
     [Fact]
-    public async Task Another_infrastructure_error_at_run_start_is_retried_by_Temporal_without_a_budget()
+    public async Task Another_infrastructure_error_at_run_start_is_retried_by_Temporal()
     {
         ConfigurationFaultTests.RefusingCodeHost? host = null;
         await Assert.ThrowsAsync<Temporalio.Exceptions.ApplicationFailureException>(() =>
@@ -147,20 +133,6 @@ public sealed class RunStartCheckTests
         Assert.Contains("work branch 'main' is its default branch", main[0].Message, StringComparison.Ordinal);
         Assert.Contains("work branch 'ff/ticket/T-1' is its parent branch", Assert.Single(parent).Message, StringComparison.Ordinal);
         Assert.Empty(await CheckAsync(Setup.Protected(), engineCanMerge: false));          // control: ff/ticket/T-1 from main
-    }
-
-    [Fact]
-    public async Task Check_24_protection_whose_review_rules_are_unknown_passes_with_a_warning()
-    {
-        var s = Setup.Protected();
-        s.Forge.Protect(s.Repo, new BranchProtection("main", true, false, 0, [], false, ReviewRulesKnown: false));
-
-        var checks = await CheckAsync(s, engineCanMerge: false);
-
-        var warning = Assert.Single(checks);
-        Assert.Equal((Checks.BranchProtection, false), (warning.Check, warning.Blocks));
-        Assert.Contains("main is protected, but its review rules are unknown", warning.Message, StringComparison.Ordinal);
-        Assert.Empty(await CheckAsync(Setup.Protected(), engineCanMerge: false));          // control: review rules known
     }
 
     [Fact]

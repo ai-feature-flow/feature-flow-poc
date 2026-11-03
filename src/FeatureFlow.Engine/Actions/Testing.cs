@@ -62,7 +62,7 @@ static class Testing
         // The carried result (section 9.1): this head was already tested with the same tiers; adopt it.
         if (adopt && !baseline)
             foreach (var (entry, earlier) in (await run.EvidenceAsync<TestEvidence>("test_results", "test.run")).AsEnumerable().Reverse())
-                if (earlier.Repository == repo.FullName && earlier.Revision == head && !earlier.Baseline && earlier.Manifest == manifest.Hash
+                if (earlier.Repository == repo.FullName && earlier.Revision == head && !earlier.Baseline
                     && earlier.Tiers.Select(x => x.Tier).Order().SequenceEqual(tiers.Select(x => x.Name).Order()))
                 {
                     run.Events.Add($"{EngineActions.Short(head)} was already tested by {entry.StepId}; its result is adopted and nothing runs");
@@ -97,7 +97,7 @@ static class Testing
         foreach (var r in results)
             run.Events.Add($"tier {r.Tier} at {EngineActions.Short(head)}: {r.Passed} passed, {r.Failed} failed, {r.Skipped} skipped" +
                            (r.Failures.Count == 0 ? "" : $" ({string.Join("; ", r.Failures.Take(5).Select(f => f.Name))})"));
-        return (new TestEvidence(repo.FullName, head, baseline, results.All(r => r.Clean), results, manifest.Hash), null);
+        return (new TestEvidence(repo.FullName, head, baseline, results.All(r => r.Clean), results), null);
     }
 
     /// <summary>
@@ -131,10 +131,20 @@ static class Testing
         return RanTests(WithExit(Parse(tier.Result.Format, files, head, tier.Name), exit, output));
     }
 
+    /// <summary>
+    /// A tier delegated to CI. The run is recorded once triggered, so the activity's retries poll the same run rather
+    /// than start another (LOG 147); only a trigger whose answer was lost starts a second.
+    /// </summary>
     static async Task<TestResults> CiTierAsync(ActionRun run, ICiProvider ci, RepoRef repo, TestTier tier, string head)
     {
-        var started = ActionRun.Must(await ci.TriggerAsync(repo, new CiJobRef(tier.Ci!.Job, new Dictionary<string, string>()), head, $"{run.Key}/{tier.Name}", run.Ct),
-            $"start CI for tier {tier.Name}");
+        var recorded = await run.RememberAsync($"ci_run {repo.FullName} {tier.Name} {head}", async () =>
+        {
+            var triggered = ActionRun.Must(await ci.TriggerAsync(repo, new CiJobRef(tier.Ci!.Job, new Dictionary<string, string>()), head, run.Ct),
+                $"start CI for tier {tier.Name}");
+            return $"{triggered.Id} {triggered.Url}".TrimEnd();
+        });
+        var parts = recorded.Split(' ', 2);
+        var started = new CiRunRef(repo, parts[0], head, parts.Length > 1 ? parts[1] : null);
         run.Events.Add($"tier {tier.Name} delegated to CI: {started.Url ?? started.Id}");
         while (true)
         {

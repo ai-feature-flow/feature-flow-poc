@@ -115,13 +115,18 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
         }
     }
 
-    /// <summary>An infrastructure error is thrown, so Temporal retries and no attempt is used; a work error is returned.</summary>
+    /// <summary>
+    /// An infrastructure error is thrown, so Temporal retries and no attempt is used, except a configuration fault, which
+    /// stops the step for a person (docs/06 section 1.1); a work error is returned.
+    /// </summary>
     static StepOutcome? Classify(ProviderError? error)
     {
         if (error is null)
             return null;
         if (error.Reason == "cannot_answer")
             return new StepOutcome(StepOutcome.CannotAnswer, null, error.Message);
+        if (error.IsConfigurationFault)
+            return new StepOutcome(StepOutcome.CannotAnswer, null, error.DescribeFault());
         if (error.Class == ProviderErrorClass.Infrastructure)
             throw new ApplicationFailureException($"{error.Reason}: {error.Message}", errorType: "infrastructure");
         return new StepOutcome(StepOutcome.WorkFailed, null, $"{error.Reason}: {error.Message}");
@@ -147,7 +152,10 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
         }
     }
 
-    /// <summary>A provider result's value, or the error thrown by class: infrastructure for Temporal to retry, otherwise a work failure.</summary>
+    /// <summary>
+    /// A provider result's value, or the error thrown by class: a configuration fault stops the step for a person (docs/06
+    /// section 1.1), other infrastructure is for Temporal to retry, anything else is a work failure.
+    /// </summary>
     static T Must<T>(ProviderResult<T> result, string? what = null)
     {
         if (result.Ok)
@@ -156,6 +164,8 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
         var message = (what is null ? "" : what + ": ") + $"{error.Reason}: {error.Message}";
         if (error.Reason == "cannot_answer")
             throw new StepCannotAnswerException(message);
+        if (error.IsConfigurationFault)
+            throw new StepCannotAnswerException((what is null ? "" : what + ": ") + error.DescribeFault());
         if (error.Class == ProviderErrorClass.Infrastructure)
             throw new ApplicationFailureException(message, errorType: "infrastructure");
         throw new StepWorkException(message);
@@ -315,10 +325,6 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
         async Task<bool> PrepareAsync()
         {
             var parent = parentBranch = spec.ParentBranches.GetValueOrDefault(repo.FullName) ?? await DefaultBranchAsync();
-            if (workBranch == parent || (owner.Providers.ForRun("code_host", false) is ICodeHostProvider host
-                                         && workBranch == Must(await host.GetDefaultBranchAsync(repo, ct), "read the default branch")))
-                // The agent's commits move the work branch; it must never be the parent or default branch (review 11).
-                throw new StepCannotAnswerException($"check 36 ({Checks.Title(Checks.WorkBranch)}): the run's work branch '{workBranch}' is {repo.FullName}'s parent or default branch; the engine writes only to a branch of its own");
             baseline = Must(await vcs.ResolveAsync(repo, $"refs/heads/{parent}", ct), "read the parent branch")
                        ?? throw new StepCannotAnswerException($"{repo.FullName} has no branch {parent}");
             var branchRevision = Must(await vcs.ResolveAsync(repo, $"refs/heads/{workBranch}", ct), "read the work branch");
@@ -827,7 +833,7 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
             {
                 await PushCommitsAsync();
             }
-            catch (Exception e) when (e is ApplicationFailureException or StepWorkException)
+            catch (Exception e) when (e is ApplicationFailureException or StepWorkException or StepCannotAnswerException)
             {
             }
 

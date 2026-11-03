@@ -29,16 +29,18 @@ public sealed class WaitingActionTests
     }
 
     [Fact]
-    public async Task An_early_third_party_check_does_not_pass_while_an_expected_CI_run_has_not_reported()
+    public async Task An_early_third_party_check_does_not_pass_while_a_check_the_base_requires_has_not_appeared()
     {
         await using var w = await WithPullRequestAsync();
         var head = w.Work!;
-        w.Forge.ExpectRuns(w.Repo, new ExpectedRuns(["build.yml"], []));
+        w.Forge.Protect(w.Repo, new BranchProtection("main", true, true, 0, ["build"], false));
         w.Forge.ReportCheck(w.Repo, head, new CheckRun("licence", CheckStates.Completed, Conclusions.Success, null));
 
         var early = await w.RunAsync("ci.checks", null, "checks", waits: 3);
         Assert.Equal(ActionResult.Wait, early.Kind);
-        Assert.Contains("build.yml has not reported", early.Reason, StringComparison.Ordinal);
+        Assert.Contains("check build, which main requires, has not appeared", early.Reason, StringComparison.Ordinal);
+        // wait.condition on the pull request's checks waits for it too.
+        Assert.Equal(ActionResult.Wait, (await w.RunAsync("wait.condition", "{ checks: passed }", "condition", waits: 2)).Kind);
 
         // The CI run reports late, and passes: now the step passes.
         w.Forge.ReportCheck(w.Repo, head, new CheckRun("build", CheckStates.Completed, Conclusions.Success, "build.yml"));
@@ -92,14 +94,33 @@ public sealed class WaitingActionTests
     }
 
     [Fact]
-    public async Task An_expected_check_name_is_waited_for_and_a_may_run_workflow_only_for_the_grace()
+    public async Task An_expected_check_name_is_waited_for_and_with_CI_configured_the_whole_grace_is_waited()
     {
         await using var w = await WithPullRequestAsync();
-        w.Forge.ExpectRuns(w.Repo, new ExpectedRuns([], ["paths.yml"]));
+        w.Forge.ConfigureCi(w.Repo);
 
-        Assert.Equal(ActionResult.Wait, (await w.RunAsync("ci.checks", "{ expected: [sonar] }", "checks", waits: 2)).Kind);
-        Assert.Equal(ActionResult.Wait, (await w.RunAsync("ci.checks", "{ grace: 1h }", "checks2", waits: 2)).Kind);
-        Assert.Equal("passed", Outcome(await w.RunAsync("ci.checks", "{ grace: 0s }", "checks3", waits: 1)));
+        Assert.Equal(ActionResult.Wait, (await w.RunAsync("ci.checks", "{ expected: [sonar], grace: 0s }", "checks", waits: 2)).Kind);
+        var waiting = await w.RunAsync("ci.checks", "{ grace: 1h }", "checks2", waits: 2);
+        Assert.Equal(ActionResult.Wait, waiting.Kind);
+        Assert.Contains("CI is configured, so the step waits", waiting.Reason, StringComparison.Ordinal);
+        // After the grace with no check, it passes and says CI produced none.
+        var none = await w.RunAsync("ci.checks", "{ grace: 0s }", "checks3", waits: 1);
+        Assert.Equal("passed", Outcome(none));
+        Assert.Contains(none.Events!, e => e.Contains("has CI configured, but no check appeared", StringComparison.Ordinal));
+        // An early check that is not CI does not end the grace (review F1): a later CI check may still appear.
+        w.Forge.ReportCheck(w.Repo, w.Work!, new CheckRun("licence", CheckStates.Completed, Conclusions.Success, null));
+        Assert.Equal(ActionResult.Wait, (await w.RunAsync("ci.checks", "{ grace: 1h }", "checks4", waits: 2)).Kind);
+        Assert.Equal("passed", Outcome(await w.RunAsync("ci.checks", "{ grace: 0s }", "checks5", waits: 1)));
+    }
+
+    /// <summary>Review F2: wait.condition on checks waits out the same default grace when CI is configured.</summary>
+    [Fact]
+    public async Task Wait_condition_on_checks_waits_for_CI_to_report_when_it_is_configured()
+    {
+        await using var w = await WithPullRequestAsync();
+        w.Forge.ConfigureCi(w.Repo);
+
+        Assert.Equal(ActionResult.Wait, (await w.RunAsync("wait.condition", "{ checks: passed }", "condition", waits: 2)).Kind);
     }
 
     [Fact]

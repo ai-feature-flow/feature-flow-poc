@@ -25,26 +25,30 @@ static class Waiting
     }
 
     /// <summary>
-    /// <c>ci.checks</c> (section 8.1): waits for every check on the head, including late ones, and for every CI run the CI
-    /// provider says will report (<c>GetExpectedRunsAsync</c>) and every <c>expected</c> name, so an early third-party
-    /// check cannot read as "all passed". Runs that only may report are waited for up to <c>grace</c>. With no CI and no
-    /// checks, it passes at once. A head that changes while waiting, or the timeout, raises an intervention.
+    /// <c>ci.checks</c> (section 8.1): waits for every check on the head, including late ones, for every check the target
+    /// branch requires (its protection: the pull request's base, else the parent branch) and every <c>expected</c> name,
+    /// so an early third-party check cannot read as "all passed". When the CI provider says CI is configured, it does not
+    /// pass within <c>grace</c> (default 2 minutes) of starting to wait, so any check that appears in that window is waited
+    /// for too. With no CI and no checks, it passes at once. A head that changes while waiting, or the timeout, raises an
+    /// intervention.
     /// </summary>
     public static async Task<ActionResult> ChecksAsync(ActionRun run)
     {
         var repo = run.Repository();
         var pr = run.PullRequest(repo);
-        var head = pr is not null
-            ? ActionRun.Must(await run.CodeHost.GetPullRequestAsync(pr, run.Ct), "read the pull request").HeadRevision
-            : ActionRun.Must(await run.Vcs.ResolveAsync(repo, run.WorkReference, run.Ct), "read the work branch")
-              ?? throw ActionStop.CannotAnswer($"{repo.FullName} has no work branch {run.Scope.WorkBranch} to check");
+        var state = pr is null ? null : ActionRun.Must(await run.CodeHost.GetPullRequestAsync(pr, run.Ct), "read the pull request");
+        var head = state?.HeadRevision
+                   ?? ActionRun.Must(await run.Vcs.ResolveAsync(repo, run.WorkReference, run.Ct), "read the work branch")
+                   ?? throw ActionStop.CannotAnswer($"{repo.FullName} has no work branch {run.Scope.WorkBranch} to check");
+        var target = state?.Base ?? await run.ParentBranchAsync(repo);
         var waitedOn = await run.RememberAsync("checks_head", head);
         if (waitedOn != head)
             throw ActionStop.CannotAnswer($"the head of {(pr is null ? run.Scope.WorkBranch : ActionRun.Format(pr))} changed from {EngineActions.Short(waitedOn)} to {EngineActions.Short(head)} while its checks were awaited");
         var since = await run.SinceAsync();
         var elapsed = DateTimeOffset.UtcNow - since;
         var timeout = run.Duration("timeout", TimeSpan.FromHours(2));
-        var (pending, status) = await ReadChecksAsync(run, repo, pr, head, run.Strings("expected"), run.Duration("grace", TimeSpan.FromMinutes(2)), elapsed);
+        var grace = run.Duration("grace", DefaultGrace);
+        var (pending, status, hasCi) = await ReadChecksAsync(run, repo, target, head, run.Strings("expected"), grace, elapsed);
         if (pending.Count > 0)
         {
             if (elapsed > timeout)
@@ -55,33 +59,38 @@ static class Waiting
         var failed = NotPassing(status.Checks);
         var skipped = status.Checks.Count(c => c.Conclusion == Conclusions.Skipped);
         run.Events.Add(status.Checks.Count == 0
-            ? $"{repo.FullName} has no CI and no checks on {EngineActions.Short(head)}"
+            ? hasCi
+                ? $"{repo.FullName} has CI configured, but no check appeared on {EngineActions.Short(head)} within {grace}"
+                : $"{repo.FullName} has no CI and no checks on {EngineActions.Short(head)}"
             : $"checks on {EngineActions.Short(head)}: {string.Join(", ", status.Checks.Select(c => $"{c.Name} {c.Conclusion}"))}");
         var evidence = await run.PutJsonAsync(new CheckEvidence(repo.FullName, head, pr is null ? null : ActionRun.Format(pr), failed.Count == 0, skipped, status.Checks));
         return run.Report(failed.Count == 0 ? "passed" : "failed", new Dictionary<string, object?> { ["skipped"] = (long)skipped }, evidence);
     }
 
-    /// <summary>What is still awaited on a head, and the checks reported so far.</summary>
-    static async Task<(List<string> Pending, CheckStatus Status)> ReadChecksAsync(ActionRun run, RepoRef repo, PullRequestRef? pr, string head,
+    static readonly TimeSpan DefaultGrace = TimeSpan.FromMinutes(2);
+
+    /// <summary>What is still awaited on a head, the checks reported so far, and whether CI is configured for it.</summary>
+    static async Task<(List<string> Pending, CheckStatus Status, bool HasCi)> ReadChecksAsync(ActionRun run, RepoRef repo, string target, string head,
         IReadOnlyList<string> expected, TimeSpan grace, TimeSpan elapsed)
     {
-        var ci = run.Optional<ICiProvider>("ci");
-        var runs = ci is null ? ExpectedRuns.None : ActionRun.Must(await ci.GetExpectedRunsAsync(repo, head, pr, run.Ct), "read the expected CI runs");
         var status = ActionRun.Must(await run.CodeHost.GetCheckStatusAsync(repo, head, run.Ct), "read the checks");
-        bool Reported(string name) => status.Checks.Any(c => c.Suite == name || c.Name == name);
+        var required = ActionRun.Must(await run.CodeHost.GetBranchProtectionAsync(repo, target, run.Ct), $"read the protection of {target}").RequiredChecks;
+        bool Appeared(string name) => status.Checks.Any(c => c.Name == name);
         var pending = new List<string>();
         pending.AddRange(status.Checks.Where(c => c.State != CheckStates.Completed).Select(c => $"{c.Name} is {c.State}"));
-        pending.AddRange(runs.Runs.Where(r => !Reported(r)).Select(r => $"CI run {r} has not reported"));
-        pending.AddRange(expected.Where(e => !status.Checks.Any(c => c.Name == e)).Select(e => $"expected check {e} has not appeared"));
-        if (elapsed < grace)
-            pending.AddRange(runs.MayRun.Where(r => !Reported(r)).Select(r => $"CI run {r} may still report"));
-        return (pending, status);
+        pending.AddRange(required.Where(r => !Appeared(r)).Select(r => $"check {r}, which {target} requires, has not appeared"));
+        pending.AddRange(expected.Where(e => !Appeared(e) && !required.Contains(e)).Select(e => $"expected check {e} has not appeared"));
+        var hasCi = run.Optional<ICiProvider>("ci") is { } ci && ActionRun.Must(await ci.HasCiAsync(repo, head, run.Ct), "read whether CI is configured");
+        if (hasCi && elapsed < grace)
+            pending.Add($"CI is configured, so the step waits {grace} for checks to appear");
+        return (pending, status, hasCi);
     }
 
     /// <summary>
     /// <c>wait.condition</c> (section 8.2): one condition on the run's pull request (<c>approved</c>, <c>merged</c>,
     /// <c>mergeable</c>) or its checks. <c>met</c>; <c>unmet</c> when the pull request is closed unmerged, changes are
-    /// requested, or the checks fail. The timeout (default 7 days) raises an intervention. Tracker conditions wait for
+    /// requested, or the checks fail; the checks are judged as <c>ci.checks</c> judges them, with its default grace. The
+    /// timeout (default 7 days) raises an intervention. Tracker conditions wait for
     /// the tracker provider (M7) and raise an intervention now.
     /// </summary>
     public static async Task<ActionResult> ConditionAsync(ActionRun run)
@@ -112,7 +121,7 @@ static class Waiting
         }
         else
         {
-            var (pending, status) = await ReadChecksAsync(run, repo, pr, state.HeadRevision, [], TimeSpan.Zero, elapsed);
+            var (pending, status, _) = await ReadChecksAsync(run, repo, state.Base, state.HeadRevision, [], DefaultGrace, elapsed);
             var failed = NotPassing(status.Checks);
             (outcome, waiting) = pending.Count > 0 ? (null, string.Join("; ", pending))
                 : failed.Count > 0 ? ("unmet", $"checks failed on {name}: {string.Join(", ", failed)}")

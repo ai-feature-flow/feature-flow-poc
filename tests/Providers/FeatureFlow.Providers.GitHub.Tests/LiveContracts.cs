@@ -81,7 +81,7 @@ public sealed class GitHubCodeHostContract : CodeHostContract, IAsyncLifetime
 /// <summary>
 /// The CI contract against GitHub Actions on the fixture repository, with its <c>unit.yml</c> workflow, which runs the
 /// fixture's unit tests and uploads a TRX file. A head with CI is the fixture's <c>main</c>; one without is an orphan
-/// commit with no workflows. Keys are prefixed per test, so a rerun never adopts an earlier run.
+/// commit with no workflows. Runs still going when a test ends are cancelled.
 /// </summary>
 [Trait("Category", "Live")]
 public sealed class GitHubActionsCiContract : CiContract, IAsyncLifetime
@@ -92,7 +92,7 @@ public sealed class GitHubActionsCiContract : CiContract, IAsyncLifetime
     public GitHubActionsCiContract()
     {
         var store = new FileSystemArtifactStore(folder);
-        Ci = new Keyed(new GitHubActionsCi(fixture.Api, () => store), fixture);
+        Ci = new Recorded(new GitHubActionsCi(fixture.Api, () => store), fixture);
     }
 
     public ValueTask InitializeAsync() => ValueTask.CompletedTask;
@@ -123,18 +123,18 @@ public sealed class GitHubActionsCiContract : CiContract, IAsyncLifetime
         return orphan;
     }
 
-    sealed class Keyed(ICiProvider inner, LiveFixture fixture) : ICiProvider
+    sealed class Recorded(ICiProvider inner, LiveFixture fixture) : ICiProvider
     {
         public ProviderDescription Describe() => inner.Describe();
 
         public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => inner.CheckAsync(cancellationToken);
 
-        public async Task<ProviderResult<CiRunRef>> TriggerAsync(RepoRef repo, CiJobRef job, string revision, string key, CancellationToken cancellationToken)
+        public async Task<ProviderResult<CiRunRef>> TriggerAsync(RepoRef repo, CiJobRef job, string revision, CancellationToken cancellationToken)
         {
-            var scoped = $"{fixture.Prefix}/{key}";
-            fixture.ForgetClaim(GitHubActionsCi.ClaimFor(scoped));
-            var run = await inner.TriggerAsync(repo, job, revision, scoped, cancellationToken);
-            LiveFixture.Log($"ci trigger {key}: {(run.Ok ? $"run {run.Value!.Id} {run.Value.Url}" : run.Error!.Reason + " " + run.Error.Message)}");
+            var run = await inner.TriggerAsync(repo, job, revision, cancellationToken);
+            if (run.Ok)
+                fixture.ForgetRun(run.Value!.Id);
+            LiveFixture.Log($"ci trigger: {(run.Ok ? $"run {run.Value!.Id} {run.Value.Url}" : run.Error!.Reason + " " + run.Error.Message)}");
             return run;
         }
 
@@ -149,8 +149,8 @@ public sealed class GitHubActionsCiContract : CiContract, IAsyncLifetime
 
         public Task<ProviderResult<ArtifactRef>> ReadLogsAsync(CiRunRef run, CancellationToken cancellationToken) => inner.ReadLogsAsync(run, cancellationToken);
 
-        public Task<ProviderResult<ExpectedRuns>> GetExpectedRunsAsync(RepoRef repo, string revision, PullRequestRef? pullRequest, CancellationToken cancellationToken) =>
-            inner.GetExpectedRunsAsync(repo, revision, pullRequest, cancellationToken);
+        public Task<ProviderResult<bool>> HasCiAsync(RepoRef repo, string revision, CancellationToken cancellationToken) =>
+            inner.HasCiAsync(repo, revision, cancellationToken);
     }
 }
 
@@ -198,7 +198,7 @@ public sealed class GitHubSquashRevertLive : IAsyncLifetime
 
 /// <summary>
 /// The fixture's <c>main</c> is protected only by a ruleset (<c>protect-main</c>: a pull request, no force pushes), which only <c>GET /repos/{owner}/{repo}/rules/branches/main</c> shows; the classic protection endpoint
-/// answers "Branch not protected". Check 24 must see it as protected, with its review rules known. Read only.
+/// answers "Branch not protected". Check 24 must see it as protected. Read only.
 /// </summary>
 [Trait("Category", "Live")]
 public sealed class GitHubRulesetProtectionLive
@@ -219,59 +219,6 @@ public sealed class GitHubRulesetProtectionLive
         Assert.True(protection.Protected);
         Assert.True(protection.RequiresPullRequest);
         Assert.Equal(approvals, protection.RequiredApprovals);
-        Assert.True(protection.ReviewRulesKnown);
         LiveFixture.Log($"protection of main: {protection with { RequiredChecks = [] }}; required checks [{string.Join(", ", protection.RequiredChecks)}]");
-    }
-}
-
-/// <summary>
-/// The lost-answer path on GitHub itself (LOG 112): a claim exists with no run recorded, because a trigger's dispatch
-/// answer was lost. The test makes such a claim and dispatches the fixture's <c>ff-contract.yml</c> (whose run-name
-/// shows the key) itself; the provider's next trigger must find that run by its run-name, verify it and adopt it,
-/// starting no second run.
-/// </summary>
-[Trait("Category", "Live")]
-public sealed class GitHubActionsLostAnswerLive : IAsyncLifetime
-{
-    readonly LiveFixture fixture = new();
-    readonly string folder = Path.Combine(Path.GetTempPath(), "ff-gha-lost-" + Guid.NewGuid().ToString("N"));
-
-    public ValueTask InitializeAsync() => ValueTask.CompletedTask;
-
-    public async ValueTask DisposeAsync()
-    {
-        await fixture.CleanUpAsync();
-        if (Directory.Exists(folder))
-            Directory.Delete(folder, recursive: true);
-    }
-
-    static CancellationToken Ct => TestContext.Current.CancellationToken;
-
-    [Fact]
-    public async Task A_run_whose_dispatch_answer_was_lost_is_found_by_its_run_name()
-    {
-        var key = $"{fixture.Prefix}/key-lost";
-        var claim = GitHubActionsCi.ClaimFor(key);
-        fixture.ForgetClaim(claim);
-        var revision = (await fixture.ResolveAsync("main"))!;
-        var permissions = new Dictionary<string, string> { ["contents"] = "write", ["actions"] = "write" };
-        async Task<System.Text.Json.Nodes.JsonNode> Call(HttpMethod method, string path, object body) =>
-            (await fixture.Api.SendAsync(LiveFixture.Repo, permissions, method, $"/repos/{LiveFixture.Repo.FullName}{path}", body, Ct)).Unwrap().Json!;
-        var tag = await Call(HttpMethod.Post, "/git/tags", new
-        {
-            tag = claim, message = "ff-ci claim", @object = revision, type = "commit",
-            tagger = new { name = "Feature Flow", email = "feature-flow@users.noreply.github.com", date = DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ") },
-        });
-        await Call(HttpMethod.Post, "/git/refs", new { @ref = $"refs/{GitHubActionsCi.ClaimPrefix}{claim}", sha = tag["sha"]!.GetValue<string>() });
-        var lost = await Call(HttpMethod.Post, "/actions/workflows/ff-contract.yml/dispatches",
-            new Dictionary<string, object> { ["ref"] = "main", ["inputs"] = new Dictionary<string, string> { ["commit_sha"] = revision, ["idempotency_key"] = key }, ["return_run_details"] = true });
-        var lostId = lost["workflow_run_id"]!.GetValue<long>().ToString(System.Globalization.CultureInfo.InvariantCulture);
-        var store = new FileSystemArtifactStore(folder);
-        var ci = new GitHubActionsCi(fixture.Api, () => store);
-
-        var run = (await ci.TriggerAsync(LiveFixture.Repo, new CiJobRef("ff-contract.yml", new Dictionary<string, string>()), revision, key, Ct)).Unwrap();
-
-        Assert.Equal(lostId, run.Id);
-        LiveFixture.Log($"lost answer: run {lostId} found by its run-name and adopted");
     }
 }

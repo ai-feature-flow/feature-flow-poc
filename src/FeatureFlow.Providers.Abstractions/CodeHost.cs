@@ -39,14 +39,13 @@ public sealed record PullRequestState(
     string? Url);
 
 /// <summary>
-/// Whether a branch is protected, and how (check 24). The engine only reads it; its identity has no permission to
-/// change it (F5). <see cref="ReviewRulesKnown"/> is false when the branch has protection whose review rules the engine
-/// cannot read (on GitHub, classic branch protection, readable only with administration): then
-/// <see cref="RequiresPullRequest"/> and <see cref="RequiredApprovals"/> describe only what could be read, and check 24
-/// reports the rules as unknown rather than passing.
+/// Whether a branch is protected, and how (check 24; <c>ci.checks</c> waits for its required checks). The engine only
+/// reads it; its identity has no permission to change it (F5). <see cref="RequiresPullRequest"/> and
+/// <see cref="RequiredApprovals"/> describe what the code host shows the engine (on GitHub, not classic protection's
+/// review rules, which only an administrator can read).
 /// </summary>
 public sealed record BranchProtection(string Branch, bool Protected, bool RequiresPullRequest, int RequiredApprovals,
-    IReadOnlyList<string> RequiredChecks, bool RequiresMergeQueue, bool ReviewRulesKnown = true);
+    IReadOnlyList<string> RequiredChecks, bool RequiresMergeQueue);
 
 /// <summary>A check's progress: <c>queued</c>, <c>in_progress</c> or <c>completed</c>.</summary>
 public static class CheckStates
@@ -70,8 +69,7 @@ public static class Conclusions
 
 /// <summary>
 /// One check on a commit. <see cref="Conclusion"/> is set once it is completed. <see cref="Suite"/> names what reported
-/// it, in the names <see cref="ICiProvider.GetExpectedRunsAsync"/> uses (a GitHub Actions workflow), or null for a
-/// third-party check, so <c>ci.checks</c> can tell which expected runs have reported (docs/04 section 8.1).
+/// it (a GitHub Actions workflow file), or null for a third-party check.
 /// </summary>
 public sealed record CheckRun(string Name, string State, string? Conclusion, string? Suite, string? Url = null);
 

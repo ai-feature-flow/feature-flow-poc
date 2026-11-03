@@ -35,7 +35,7 @@ Signatures are C#, abbreviated: every method is async, takes a
 | `unreachable`, `server_error`, `internal_error` | Infrastructure | Yes, with backoff | The remote or the network failed; the work did not happen |
 | `timeout` | Infrastructure | Yes | The work **may** have happened: creates find by marker first |
 | `rate_limited` | Infrastructure | Yes, honouring `retry_after` | — |
-| `unauthenticated`, `forbidden` | Infrastructure | A short budget, then the run stops with an intervention naming the configuration fault. The budget is 5 tries, waiting 1, 2, 4 and 8 s, within one activity attempt; at run start a spent budget refuses the start (LOG 144) | Almost always configuration |
+| `unauthenticated`, `forbidden` | Infrastructure | Once, by the provider, after about 2 s, with a freshly issued credential; then the engine stops for a person: an action, a `clean_up` or the agent step raises an intervention naming the configuration fault, and run start refuses the start (LOG 147) | Almost always configuration |
 | `not_found`, `conflict`, `validation_failed`, `rejected` | Work | No | The remote answered; the step maps it to an outcome or an intervention. A permission the provider's identity lacks (GitHub's 403 "Resource not accessible by integration") is `rejected`, named a configuration fault: it does not heal, so it stops for a person at once (LOG 119) |
 | `base_moved` | Work | No | A push was refused because the target moved since it was read |
 | `capability_missing` | Work | No | — |
@@ -65,7 +65,7 @@ section 1).
 | The review provider is replaced by a **findings source** provider: an external reviewer that returns findings (an AI review on a pull request, SonarCloud, a SARIF file). The standard reviewer is an agent step (RW5) | One way to run an agent |
 | New **validator** provider | The plug point for deterministic cross-artifact checks (RW7) |
 | New **toolset** provider | External MCP servers for agents, proxied by the engine (from FF) |
-| CI provider gains `GetExpectedRunsAsync` | `ci.checks` must tell "no CI" from "not started" without GitHub-specific logic in the step (`docs/04` section 13) |
+| CI provider gains `HasCiAsync` | `ci.checks` must tell "no CI" from "not started" without GitHub-specific logic in the step (`docs/04` section 13). It replaced `GetExpectedRunsAsync`, which predicted the runs from workflow triggers (LOG 147) |
 | Code host loses `CreateBranchAsync` | Work branches are created by a VCS push (`docs/04` section 7) |
 | Tracker statuses are mapped from the library's status names in provider configuration | Templates name statuses abstractly (`docs/03` section 2.5) |
 
@@ -252,21 +252,25 @@ interface ICodeHostProvider : IProvider {
 record CiCapabilities(bool Trigger, bool ReadLogs, bool Artifacts, bool InboundEvents, bool QueueBuilds);
 
 interface ICiProvider : IProvider {
-    Task<..CiRunRef>    TriggerAsync(RepoRef repo, CiJobRef job, string commit, string key);
+    Task<..CiRunRef>    TriggerAsync(RepoRef repo, CiJobRef job, string commit);
     Task<..CiRunStatus> GetRunStatusAsync(CiRunRef run);
     Task<..CiRunResult> ReadResultsAsync(CiRunRef run);    // parsed test results where available
     Task<..LogRef>      ReadLogsAsync(CiRunRef run);
-    Task<..ExpectedRuns> GetExpectedRunsAsync(RepoRef repo, string head, PullRequestRef? pr);
+    Task<..bool>        HasCiAsync(RepoRef repo, string head);   // any CI configured at this head
 }
 ```
 
 - Tiers that need Docker or Windows run in CI by default, so this provider is on
   the main path. Spike 2 dispatched such a tier and polled it to green
   (`archive/docs/16` section 2).
-- `GetExpectedRunsAsync` answers "which CI runs should report for this head":
-  `runs`, `may_run` (cannot be evaluated, for example path filters) and
-  `none`. The GitHub Actions provider implements it by reading the workflow
-  files' triggers, as FF's `awaitChecks` did.
+- A trigger is not idempotent. The dispatch returns the run's id, which the
+  engine records as the step's own event, so the activity's retries poll that
+  run. A trigger retried after a lost answer dispatches again; the rare
+  duplicate run is accepted (LOG 147).
+- `HasCiAsync` answers only "is CI configured for this head" (for GitHub
+  Actions, a workflow file exists), so `ci.checks` knows to wait a while for a
+  first check. Which runs must pass comes from the target branch's required
+  checks, not from evaluating workflow triggers (LOG 147).
 - `QueueBuilds`: reports results for merge queue builds.
 
 **The CI workflow contract (GitHub Actions; LOG 112, 119).** The provider dispatches a tier's job (its workflow file, from
@@ -277,10 +281,8 @@ repository's secrets are reviewed code, never a file the agent edited. A workflo
   test and refuses a workflow without it;
 - check that revision out (`actions/checkout` with `ref: ${{ inputs.commit_sha }}`) and build and test only it,
   because the run's own `head_sha` is the default branch's and its results are filed under `commit_sha`;
-- declare an input `idempotency_key` and show it in `run-name` (for example `run-name: "unit ${{ inputs.idempotency_key }}"`),
-  so a trigger retried after a lost answer finds its run instead of starting another;
-- upload its result files (`.trx`, JUnit `.xml`, `.sarif`) as artifacts, each under 50 MB and the artifact under
-  100 MB;
+- upload its result files (`.trx`, JUnit `.xml`, `.sarif`) as artifacts under 100 MB, the provider's one cap on
+  downloads (logs and each decompressed result file included; LOG 147);
 - set `permissions: contents: read`, so the code under test cannot write to the repository through `GITHUB_TOKEN`;
 - if it is also triggered by `push` on the branches agents write to (`ff/**`), use no secrets. A push runs the
   workflow file as the pushed commit has it, which the agent may have edited, so any secret that run can reach is

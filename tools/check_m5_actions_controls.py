@@ -31,13 +31,17 @@ AGENT_ACTIVITY = "src/FeatureFlow.Engine.Agent/AgentActivities.cs"
 CORE = "src/FeatureFlow.Interpreter/RunCore.cs"
 RECOVERY = "src/FeatureFlow.Interpreter/Recovery.cs"
 VALIDATOR = "src/FeatureFlow.Validation/PlanValidator.cs"
-FAULTS = "src/FeatureFlow.Engine/Actions/ConfigurationFaults.cs"
+GITHUB_API = "src/Providers/FeatureFlow.Providers.GitHub/GitHubApi.cs"
+GITHUB_CI = "src/Providers/FeatureFlow.Providers.GitHub/GitHubActionsCi.cs"
+GIT_VCS = "src/Providers/FeatureFlow.Providers.Git/GitVcs.cs"
 
 ENGINE = "tests/FeatureFlow.Engine.Tests"
 AGENT = "tests/FeatureFlow.Engine.Agent.Tests"
 CORE_TESTS = "tests/FeatureFlow.Interpreter.Tests"
 VALIDATION_TESTS = "tests/FeatureFlow.Validation.Tests"
 INTEGRATION = "tests/FeatureFlow.Integration.Tests"
+GITHUB_TESTS = ("tests/Providers/FeatureFlow.Providers.GitHub.Tests", "Category!=Live")
+GIT_RETRY_TESTS = ("tests/Providers/FeatureFlow.Providers.Git.Tests", "FullyQualifiedName~GitCredentialRetryTests")
 
 
 def it(name):
@@ -86,10 +90,29 @@ CONTROLS = [
         "expect": ["Check_20_a_repository_library_section_that_overrides_is_refused_and_one_that_adds_passes"],
     },
     {
-        "name": "ci.checks: an expected CI run that has not reported is not waited for",
-        "edits": [(WAITING, 'pending.AddRange(runs.Runs.Where(r => !Reported(r)).Select(r => $"CI run {r} has not reported"));', "")],
+        "name": "ci.checks: a check the target branch requires that has not appeared is not waited for (LOG 147)",
+        "edits": [(WAITING, 'pending.AddRange(required.Where(r => !Appeared(r)).Select(r => $"check {r}, which {target} requires, has not appeared"));', "")],
         "tests": [(ENGINE, None)],
-        "expect": ["An_early_third_party_check_does_not_pass_while_an_expected_CI_run_has_not_reported"],
+        "expect": ["An_early_third_party_check_does_not_pass_while_a_check_the_base_requires_has_not_appeared"],
+    },
+    {
+        "name": "ci.checks: with CI configured, the grace is not waited out (LOG 147)",
+        "edits": [(WAITING, "if (hasCi && elapsed < grace)", "if (hasCi && elapsed < grace && false)")],
+        "tests": [(ENGINE, None)],
+        "expect": ["An_expected_check_name_is_waited_for_and_with_CI_configured_the_whole_grace_is_waited",
+                   "Wait_condition_on_checks_waits_for_CI_to_report_when_it_is_configured"],
+    },
+    {
+        "name": "ci.checks: the grace ends at the first check of any kind (review F1)",
+        "edits": [(WAITING, "if (hasCi && elapsed < grace)", "if (hasCi && elapsed < grace && status.Checks.Count == 0)")],
+        "tests": [(ENGINE, None)],
+        "expect": ["An_expected_check_name_is_waited_for_and_with_CI_configured_the_whole_grace_is_waited"],
+    },
+    {
+        "name": "wait.condition: checks are judged with no grace (review F2)",
+        "edits": [(WAITING, "state.Base, state.HeadRevision, [], DefaultGrace, elapsed);", "state.Base, state.HeadRevision, [], TimeSpan.Zero, elapsed);")],
+        "tests": [(ENGINE, None)],
+        "expect": ["Wait_condition_on_checks_waits_for_CI_to_report_when_it_is_configured"],
     },
     {
         "name": "ci.checks: a head that changes while waiting is not noticed",
@@ -269,8 +292,8 @@ CONTROLS = [
     },
     {
         "name": "review 9: a clean_up work error is thrown, to be retried for ever",
-        "edits": [(ACTIONS, "        catch (ActionStop stop)\n        {\n            return new CleanUpResult(events, stop.Message);",
-                   "        catch (ActionStop stop) when (stop.Kind == \"never\")\n        {\n            return new CleanUpResult(events, stop.Message);")],
+        "edits": [(ACTIONS, "        catch (ActionStop stop)\n        {\n            // The resets made before the stop are still reported.",
+                   "        catch (ActionStop stop) when (stop.Kind == \"never\")\n        {\n            // The resets made before the stop are still reported.")],
         "tests": [(ENGINE, None)],
         "expect": ["A_clean_up_whose_push_is_refused_returns_the_error_and_moves_nothing"],
     },
@@ -293,29 +316,10 @@ CONTROLS = [
         "expect": ["A_result_file_already_in_the_checkout_that_cannot_be_removed_raises_an_intervention"],
     },
     {
-        "name": "review 11: actions write to a work branch that is the parent or default branch",
-        "edits": [(ACTIONS, "if (scope.WorkBranch == parent || scope.WorkBranch == defaultBranch)", "if (false)")],
-        "tests": [(ENGINE, None)],
-        "expect": [("No_action_writes_when_the_work_branch_is_the_parent_or_default_branch", 6)],
-    },
-    {
         "name": "review 11: run start accepts a work branch that is the default or parent branch",
         "edits": [(ACTIVITIES, "if (work == defaultBranch || work == start.ParentBranch)", "if (work == \"never a branch\")")],
         "tests": [(ENGINE, None)],
         "expect": ["A_work_branch_that_is_the_default_or_parent_branch_is_refused_at_run_start"],
-    },
-    {
-        "name": "review 11: a clean_up resets the default branch",
-        "edits": [(ACTIONS, '&& Must(await host.GetDefaultBranchAsync(repo, ct), "read the default branch") == workBranch)',
-                   '&& Must(await host.GetDefaultBranchAsync(repo, ct), "read the default branch") == workBranch && false)')],
-        "tests": [(ENGINE, None)],
-        "expect": ["A_clean_up_never_resets_the_default_branch"],
-    },
-    {
-        "name": "review 11: an agent step works on the default branch",
-        "edits": [(AGENT_ACTIVITY, "if (workBranch == parent || (owner.Providers", 'if (workBranch == "never" && (owner.Providers')],
-        "tests": [(AGENT, None)],
-        "expect": ["An_agent_step_whose_work_branch_is_the_default_branch_does_not_start"],
     },
     {
         "name": "review 8: the workflow never runs a clean_up reset",
@@ -368,16 +372,10 @@ CONTROLS = [
         "expect": ["Tier_commands_and_result_paths_come_from_the_parent_branchs_manifest_not_the_heads"],
     },
     {
-        "name": "check 24: protection whose review rules are unknown passes silently",
-        "edits": [(RUN_START, "        else if (!reviewRulesKnown)\n", "        else if (!reviewRulesKnown && repository == \"never a repository\")\n")],
-        "tests": [(ENGINE, None)],
-        "expect": ["Check_24_protection_whose_review_rules_are_unknown_passes_with_a_warning"],
-    },
-    {
-        "name": "check 24: run start's warnings never reach the timeline",
+        "name": "run start's warnings never reach the timeline",
         "edits": [(WORKFLOW, "if (prepared.Warnings.Count > 0 && Workflow.Patched(StartWarningsPatch))", "if (prepared.Warnings.Count > 999 && Workflow.Patched(StartWarningsPatch))")],
-        "tests": [it("Protection_with_unknown_review_rules")],
-        "expect": ["Protection_with_unknown_review_rules_starts_the_run_with_a_warning_on_its_timeline"],
+        "tests": [it("Run_start_warnings_reach_the_timeline")],
+        "expect": ["Run_start_warnings_reach_the_timeline"],
     },
     # Added for the engine-level SP4 (LOG 117's follow-up).
     {
@@ -393,40 +391,72 @@ CONTROLS = [
         "tests": [it("EngineMergeRaceTests")],
         "expect": ["S1_three_tickets_forced_to_collide_all_merge_through_the_engine_and_none_is_lost"],
     },
-    # Added for the budget of forbidden and unauthenticated (docs/06 section 1.1).
+    # Added for LOG 147 (the simplification after M5).
     {
-        "name": "configuration faults: a refused credential has no budget and is retried for ever",
-        "edits": [(FAULTS, 'public static bool Is(string? reason) => reason is "unauthenticated" or "forbidden";', 'public static bool Is(string? reason) => reason is "never a reason";')],
+        "name": "LOG 147: a CI tier's run is not recorded, so a retried activity triggers another",
+        "edits": [(TESTING, 'run.RememberAsync($"ci_run {repo.FullName} {tier.Name} {head}"', 'run.RememberAsync($"ci_run {Guid.NewGuid()}"')],
         "tests": [(ENGINE, None)],
-        "expect": [("A_refused_credential_gets_a_short_budget_then_stops_the_step_for_a_person", 2),
-                   "A_clean_up_whose_credential_is_refused_stops_for_a_person_after_the_budget",
-                   ("A_refused_credential_at_run_start_fails_the_start_naming_the_configuration_fault_once_its_budget_is_spent", 3)],
+        "expect": ["A_retried_CI_tier_polls_the_run_it_recorded_and_triggers_no_second"],
     },
     {
-        "name": "configuration faults: the step stops at the first refusal, with no retry",
-        "edits": [(FAULTS, "                if (tries >= Tries)\n                    return exhausted", "                if (tries >= 1)\n                    return exhausted")],
+        "name": "configuration faults: an action retries a refused credential for ever (LOG 147)",
+        "edits": [(ACTIONS, "        if (error.IsConfigurationFault)\n            throw new ActionStop(", "        if (error.IsConfigurationFault && false)\n            throw new ActionStop(")],
         "tests": [(ENGINE, None)],
-        "expect": ["A_refused_credential_that_recovers_within_the_budget_does_not_stop_the_step"],
-    },
-    # Added for the review of PR 7.
-    {
-        "name": "configuration faults: run start refuses at the first refusal, with no retry",
-        "edits": [(FAULTS, "if (!Is(result.Error) || ++budget.Refusals >= Tries)", "if (!Is(result.Error) || ++budget.Refusals >= 1)")],
-        "tests": [(ENGINE, None)],
-        "expect": [("A_refused_credential_at_run_start_fails_the_start_naming_the_configuration_fault_once_its_budget_is_spent", 3),
-                   "Refused_reads_across_many_repositories_share_one_budget_so_the_start_is_refused_within_it"],
+        "expect": [("A_refused_credential_stops_the_step_for_a_person_at_once", 2), "A_clean_up_whose_credential_is_refused_stops_for_a_person"],
     },
     {
-        "name": "configuration faults: each run-start read has its own budget",
-        "edits": [(ACTIVITIES, "Current.Heartbeat(); }, ct, budget);", "Current.Heartbeat(); }, ct);")],
+        "name": "configuration faults: run start retries a refused credential for ever (LOG 147)",
+        "edits": [(ACTIVITIES, "        if (result.Error!.IsConfigurationFault)\n", "        if (result.Error!.IsConfigurationFault && false)\n")],
         "tests": [(ENGINE, None)],
-        "expect": ["Refused_reads_across_many_repositories_share_one_budget_so_the_start_is_refused_within_it"],
+        "expect": [("A_refused_credential_at_run_start_refuses_the_start_naming_the_configuration_fault", 2)],
     },
     {
-        "name": "configuration faults: a spent clean_up budget drops the resets already made",
-        "edits": [(ACTIONS, "message => new CleanUpResult(events.ToList(), ", "message => new CleanUpResult([], ")],
+        "name": "configuration faults: the agent step retries a refused credential for ever (LOG 147)",
+        "edits": [(AGENT_ACTIVITY, "        if (error.IsConfigurationFault)\n            throw new StepCannotAnswerException(", "        if (error.IsConfigurationFault && false)\n            throw new StepCannotAnswerException(")],
+        "tests": [(AGENT, None)],
+        "expect": [("A_refused_credential_stops_the_agent_step_for_a_person", 2)],
+    },
+    {
+        "name": "configuration faults: a stopped clean_up drops the resets already made",
+        "edits": [(ACTIONS, "return new CleanUpResult(events, stop.Message);", "return new CleanUpResult([], stop.Message);")],
         "tests": [(ENGINE, None)],
         "expect": ["A_clean_up_refused_in_a_later_repository_still_reports_the_resets_it_made_before"],
+    },
+    {
+        "name": "configuration faults: GitHub requests are not retried with a fresh token (LOG 147)",
+        "edits": [(GITHUB_API, "if (first.Error is not { IsConfigurationFault: true } || broker() is null)", "if (first.Ok || first.Error is not null)")],
+        "tests": [GITHUB_TESTS],
+        "expect": [("A_refused_credential_is_retried_once_with_a_fresh_token", 4)],
+    },
+    {
+        "name": "configuration faults: the retry reuses the cached token (LOG 147)",
+        "edits": [(GITHUB_API, "if (!fresh && tokens.TryGetValue(cacheKey, out var cached)", "if (tokens.TryGetValue(cacheKey, out var cached)")],
+        "tests": [GITHUB_TESTS],
+        "expect": [("A_refused_credential_is_retried_once_with_a_fresh_token", 4)],
+    },
+    {
+        "name": "CI downloads: a result file decompresses without the cap (review F4)",
+        "edits": [(GITHUB_CI, "CopyCappedAsync(source, reader, MaxDownloadBytes, cancellationToken)", "CopyCappedAsync(source, reader, long.MaxValue, cancellationToken)")],
+        "tests": [GITHUB_TESTS],
+        "expect": ["A_result_file_that_decompresses_past_the_cap_refuses_the_read"],
+    },
+    {
+        "name": "configuration faults: the GitHub client retries without waiting (review F5)",
+        "edits": [(GITHUB_API, "        await Task.Delay(FreshTokenDelay, cancellationToken);\n", "")],
+        "tests": [GITHUB_TESTS],
+        "expect": [("A_refused_credential_is_retried_once_with_a_fresh_token", 4)],
+    },
+    {
+        "name": "configuration faults: git operations are not retried with a fresh credential (review F5)",
+        "edits": [(GIT_VCS, "if (first.Error is not { IsConfigurationFault: true } || broker() is null)", "if (first.Ok || first.Error is not null)")],
+        "tests": [GIT_RETRY_TESTS],
+        "expect": [("A_refused_operation_runs_once_more_with_a_fresh_credential", 3)],
+    },
+    {
+        "name": "configuration faults: git's retry reuses the cached credential (review F5)",
+        "edits": [(GIT_VCS, "if (fresh || !credentials.TryGetValue(cacheKey, out var credential)", "if (!credentials.TryGetValue(cacheKey, out var credential)")],
+        "tests": [GIT_RETRY_TESTS],
+        "expect": ["A_fresh_environment_issues_a_new_credential_and_a_normal_one_reuses_the_cache"],
     },
 ]
 

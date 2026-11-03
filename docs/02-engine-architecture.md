@@ -221,7 +221,7 @@ tree that is not an agent's sandbox.
 
 | Rule | Detail |
 |---|---|
-| Where | Each orchestration worker keeps a cache of clones per repository on local disk. The remote is the truth; a lost cache is re-cloned |
+| Where | Each orchestration worker process keeps its own cache of clones per repository on local disk, in a folder of its own under the configured root, so processes never share a clone and need no lock between them (LOG 147). The remote is the truth; a lost cache is re-cloned |
 | How | Each operation fetches, works in a temporary worktree, and pushes with an expected old revision, so the remote refuses it if anything moved. Operations are idempotent: a retry finds the merge already present |
 | Credentials | The engine's identity, from the credential broker, for the duration of the operation |
 | Large repositories | Partial clones where the VCS provider supports them |

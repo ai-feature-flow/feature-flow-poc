@@ -54,8 +54,6 @@ public sealed class TestingActionTests
         Assert.Equal("passed", Outcome(result));
         var evidence = await EvidenceAsync(w, result);
         Assert.Equal(3, evidence.Tiers.Single().Passed);
-        var parentManifest = (await new InMemoryCodeHost(w.Forge).ReadFileAsync(w.Repo, "feature-flow.yaml", "main", TestContext.Current.CancellationToken)).Unwrap()!;
-        Assert.Equal(parentManifest.Hash, evidence.Manifest);
         Assert.DoesNotContain(w.Sandbox.Commands, c => c.Command.Contains("echo forged", StringComparison.Ordinal));
         // Setup shapes the environment the evidence comes from: it is the parent's too (re-check R4).
         Assert.Contains(w.Sandbox.Commands, c => c.Command == "sh -c dotnet tool restore");
@@ -140,6 +138,25 @@ public sealed class TestingActionTests
         var tier = (await EvidenceAsync(w, result)).Tiers.Single();
         Assert.Equal(("integration", 4, 1, "Api.Orders"), (tier.Tier, tier.Passed, tier.Failed, tier.Failures.Single().Name));
         Assert.Empty(w.Sandbox.Commands);
+    }
+
+    /// <summary>LOG 147: the engine records the run it triggered, so a retried activity polls that run instead of starting another.</summary>
+    [Fact]
+    public async Task A_retried_CI_tier_polls_the_run_it_recorded_and_triggers_no_second()
+    {
+        await using var w = WithManifest();
+        w.Forge.ScriptCi("integration.yml", new CiScript(Conclusions.Success, [new CiScriptFile("r.xml", ResultFormats.Junit, ActionWorld.JUnit(2))]));
+
+        // test.integration never adopts an earlier result, so only the recorded run can stop a second trigger.
+        var first = await w.RunAsync("test.integration", stepId: "tests");
+        // The same execution of the step again, as Temporal retries an activity whose answer was lost.
+        var retried = await w.Actions.RunAsync(w.Call("test.integration", "tests", 1, null), w.Scope, () => { }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(("passed", "passed"), (Outcome(first), Outcome(retried)));
+        Assert.Equal(1, w.Forge.CiRunCount(w.Repo));
+        // Control: a new execution of the step triggers a new run.
+        await w.RunAsync("test.integration", stepId: "tests");
+        Assert.Equal(2, w.Forge.CiRunCount(w.Repo));
     }
 
     [Fact]

@@ -41,7 +41,8 @@ public sealed class GitHubApi(Func<ICredentialBroker?> broker, HttpMessageHandle
     public async Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) =>
         broker() is { } b ? await b.CheckAsync(cancellationToken) : ProviderResult<Unit>.Failure("unauthenticated", "no credential broker is configured for GitHub");
 
-    async Task<ProviderResult<string>> TokenAsync(RepoRef repo, IReadOnlyDictionary<string, string> permissions, CancellationToken cancellationToken)
+    /// <summary>A token for the scope, from the cache unless <paramref name="fresh"/>: a refused token is replaced, not reused.</summary>
+    async Task<ProviderResult<string>> TokenAsync(RepoRef repo, IReadOnlyDictionary<string, string> permissions, bool fresh, CancellationToken cancellationToken)
     {
         if (broker() is not { } b)
             return ProviderResult<string>.Failure("unauthenticated", "no credential broker is configured for GitHub");
@@ -50,7 +51,7 @@ public sealed class GitHubApi(Func<ICredentialBroker?> broker, HttpMessageHandle
         await gate.WaitAsync(cancellationToken);
         try
         {
-            if (tokens.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > DateTimeOffset.UtcNow.AddMinutes(5))
+            if (!fresh && tokens.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > DateTimeOffset.UtcNow.AddMinutes(5))
                 return ProviderResult<string>.Success(cached.Secret);
             var issued = await b.IssueAsync(Actor.Engine, "github", scope, TimeSpan.FromHours(1), cancellationToken);
             if (!issued.Ok)
@@ -66,12 +67,28 @@ public sealed class GitHubApi(Func<ICredentialBroker?> broker, HttpMessageHandle
 
     /// <summary>
     /// Sends a request for <paramref name="repo"/> with a token holding <paramref name="permissions"/>. Error statuses
-    /// come back as their classified error; every other status, success or redirect, comes back as the response.
+    /// come back as their classified error; every other status, success or redirect, comes back as the response. A
+    /// configuration fault (401, or a 403 that is not a missing permission) is retried once, after
+    /// <see cref="FreshTokenDelay"/>, with a freshly issued token, then returned for the engine to stop for a person
+    /// (docs/06 section 1.1).
     /// </summary>
     public async Task<ProviderResult<GitHubResponse>> SendAsync(RepoRef repo, IReadOnlyDictionary<string, string> permissions, HttpMethod method, string path,
         object? body, CancellationToken cancellationToken, string accept = "application/vnd.github+json")
     {
-        var token = await TokenAsync(repo, permissions, cancellationToken);
+        var first = await SendOnceAsync(repo, permissions, method, path, body, fresh: false, accept, cancellationToken);
+        if (first.Error is not { IsConfigurationFault: true } || broker() is null)
+            return first;
+        await Task.Delay(FreshTokenDelay, cancellationToken);
+        return await SendOnceAsync(repo, permissions, method, path, body, fresh: true, accept, cancellationToken);
+    }
+
+    /// <summary>The wait before the fresh-token retry. Tests shorten it.</summary>
+    public TimeSpan FreshTokenDelay { get; init; } = ProviderError.FreshCredentialDelay;
+
+    async Task<ProviderResult<GitHubResponse>> SendOnceAsync(RepoRef repo, IReadOnlyDictionary<string, string> permissions, HttpMethod method, string path,
+        object? body, bool fresh, string accept, CancellationToken cancellationToken)
+    {
+        var token = await TokenAsync(repo, permissions, fresh, cancellationToken);
         if (!token.Ok)
             return new ProviderResult<GitHubResponse>(null, token.Error);
         // The token is only ever sent to the API (review finding 9): an absolute URL elsewhere is a programming error.

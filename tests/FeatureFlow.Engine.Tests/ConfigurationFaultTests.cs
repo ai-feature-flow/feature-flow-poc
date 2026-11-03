@@ -4,9 +4,9 @@ using FeatureFlow.Providers.Abstractions;
 namespace FeatureFlow.Engine.Tests;
 
 /// <summary>
-/// docs/06 section 1.1: <c>unauthenticated</c> and <c>forbidden</c> are infrastructure, but get a short budget, then
-/// the step (or run start) stops for a person naming the configuration fault. Other infrastructure errors are still
-/// retried without limit.
+/// docs/06 section 1.1 (LOG 147): <c>unauthenticated</c> and <c>forbidden</c> reaching the engine are configuration
+/// faults (the provider has already retried once with a fresh credential), so the step, a <c>clean_up</c> or run start
+/// stops for a person at once, naming the fault. Other infrastructure errors are still retried without limit.
 /// </summary>
 public sealed class ConfigurationFaultTests
 {
@@ -48,7 +48,7 @@ public sealed class ConfigurationFaultTests
     [Theory]
     [InlineData("unauthenticated")]
     [InlineData("forbidden")]
-    public async Task A_refused_credential_gets_a_short_budget_then_stops_the_step_for_a_person(string fault)
+    public async Task A_refused_credential_stops_the_step_for_a_person_at_once(string fault)
     {
         var (w, host) = World(fault, int.MaxValue);
         await using var _ = w;
@@ -59,27 +59,14 @@ public sealed class ConfigurationFaultTests
         Assert.Equal(StepOutcome.CannotAnswer, result.Kind);
         Assert.Contains("configuration fault", result.Reason, StringComparison.Ordinal);
         Assert.Contains(fault, result.Reason, StringComparison.Ordinal);
-        Assert.Equal(ConfigurationFaults.Tries, host().Calls);
-    }
-
-    [Fact]
-    public async Task A_refused_credential_that_recovers_within_the_budget_does_not_stop_the_step()
-    {
-        var (w, host) = World("forbidden", ConfigurationFaults.Tries - 1);
-        await using var _ = w;
-        w.CommitWork("a.txt", "work");
-
-        var result = await w.RunAsync("scm.pull_request", "{ title: T-1 }", "open_pr");
-
-        Assert.Equal("ready", result.Report?.Outcome);
-        Assert.Equal(ConfigurationFaults.Tries, host().Calls);
+        Assert.Equal(1, host().Calls);
     }
 
     [Theory]
     [InlineData("unreachable")]
     [InlineData("rate_limited")]
     [InlineData("server_error")]
-    public async Task Other_infrastructure_errors_have_no_budget_and_are_thrown_for_Temporal_to_retry(string fault)
+    public async Task Other_infrastructure_errors_are_thrown_for_Temporal_to_retry(string fault)
     {
         var (w, host) = World(fault, int.MaxValue);
         await using var _ = w;
@@ -90,42 +77,38 @@ public sealed class ConfigurationFaultTests
     }
 
     [Fact]
-    public async Task A_clean_up_whose_credential_is_refused_stops_for_a_person_after_the_budget()
+    public async Task A_clean_up_whose_credential_is_refused_stops_for_a_person()
     {
-        var (w, host) = World("forbidden", 0);
-        await using var _ = w;
+        var (w, _) = World("forbidden", 0);
+        await using var _w = w;
         w.CommitWork("a.txt", "work");
         Assert.Equal("updated", (await w.RunAsync("scm.catch_up", null, "catch_up")).Report?.Outcome);
-        w.CommitWork("b.txt", "more work");
-        host().Failures = int.MaxValue;
+        var moved = w.CommitWork("b.txt", "more work");
+        w.Forge.Fail("vcs.Resolve", new ProviderError("forbidden", "GitHub refused the request"));
 
         var result = await w.Actions.CleanUpAsync(w.RunId, "catch_up", 1, [w.Repo.FullName], ActionWorld.WorkBranch, ["catch_up"],
             TestContext.Current.CancellationToken);
 
         Assert.Contains("configuration fault", result.Error, StringComparison.Ordinal);
-        Assert.Equal(ConfigurationFaults.Tries, host().Calls - 1);
+        Assert.Equal(moved, w.Work);
     }
 
+    /// <summary>A clean_up stopped in a later repository (here one that no longer exists) still reports the resets it made before.</summary>
     [Fact]
     public async Task A_clean_up_refused_in_a_later_repository_still_reports_the_resets_it_made_before()
     {
-        var (w, host) = World("forbidden", 0);
-        await using var _ = w;
+        var (w, _) = World("forbidden", 0);
+        await using var _w = w;
         var ct = TestContext.Current.CancellationToken;
         w.CommitWork("a.txt", "work");
         Assert.Equal("updated", (await w.RunAsync("scm.catch_up", null, "catch_up")).Report?.Outcome);
         var start = w.Work!;
         w.CommitWork("b.txt", "more work");
-        // A second repository the step touched, which the code host refuses.
-        var web = w.Forge.CreateRepository("acme/web");
-        var webStart = w.Forge.Commit(web, "refs/heads/" + ActionWorld.WorkBranch, new Dictionary<string, string?> { ["w.txt"] = "web" });
-        (await w.Records.AppendAsync(new RecordBatch(AgentEvents: [new AgentEventRecord($"{w.RunId}/catch_up/1", "start", $"acme/web {webStart}", DateTimeOffset.UtcNow)]), ct)).Unwrap();
-        host().Only = "acme/web";
-        host().Failures = int.MaxValue;
+        (await w.Records.AppendAsync(new RecordBatch(AgentEvents: [new AgentEventRecord($"{w.RunId}/catch_up/1", "start", $"acme/gone {start}", DateTimeOffset.UtcNow)]), ct)).Unwrap();
 
-        var result = await w.Actions.CleanUpAsync(w.RunId, "catch_up", 1, [w.Repo.FullName, "acme/web"], ActionWorld.WorkBranch, ["catch_up"], ct);
+        var result = await w.Actions.CleanUpAsync(w.RunId, "catch_up", 1, [w.Repo.FullName, "acme/gone"], ActionWorld.WorkBranch, ["catch_up"], ct);
 
-        Assert.Contains("configuration fault", result.Error, StringComparison.Ordinal);
+        Assert.NotNull(result.Error);
         Assert.Equal(start, w.Work);
         Assert.Contains(result.Events, e => e.StartsWith($"clean_up: reset acme/api {ActionWorld.WorkBranch}", StringComparison.Ordinal));
     }
