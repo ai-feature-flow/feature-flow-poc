@@ -154,3 +154,8 @@ Std changes for the fixes: `fix_loop` gains `retest`; the readable-form goldens 
 count follow it. Not changed: a subject's `own_run_unknown` when byte-identical claims are shared with a child (rare,
 fails closed); `SameRepository` suffix matching (low); a test that passes but does not test the finding is the
 reviewer's call.
+
+After the fixes and the merge of PR #10 (`62b6d93`): default suite 795 passed, 0 failed; integration 52 passed,
+6 failed, all `ForgeTicketTests` stopping on SQLite's `findings` query (PR #11). With only that query stubbed (no
+rows, not committed), all 7 `ForgeTicketTests` pass on #10's real artifact index. Controls: 57 of 58 hold; the F1
+end-to-end control needs `findings` too and held when run by hand with the stub.
