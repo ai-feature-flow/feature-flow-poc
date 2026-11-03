@@ -135,6 +135,13 @@ pull request 55. Afterwards the fixture had only `main` (`5dd0108`) and another 
 Live run 6, after these: **19 passed** in 3 min 16 s (CI run 41552464251 succeeded with its TRX read; the retry adopted
 41552570629; pull request 68 reverted a squash of 66). Default suite 562 passed.
 
+### Ruleset protection on the fixture (actions builder's note, 2026-11-03)
+
+The fixture's `main` is protected only by a ruleset, visible only through `GET /repos/{owner}/{repo}/rules/branches/main`.
+`GetBranchProtectionAsync` already reads that endpoint; a new Live test (read-only) asserts the fixture's `main` reads as
+protected, pull request required, 1 approval, review rules known. It passed; with the rulesets ignored (control) it
+failed.
+
 ### Open questions
 
 1. `BranchProtection` "unknown" review rules: see the proposal in the providers report.
