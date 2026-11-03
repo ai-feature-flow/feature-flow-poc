@@ -80,8 +80,8 @@ public sealed record CheckStatus(string Revision, IReadOnlyList<CheckRun> Checks
 public sealed record RepoFile(string Path, string Revision, string Content, string Hash);
 
 /// <summary>
-/// The code host provider (docs/06 section 3.4), as far as M5 needs it: the default branch and its protection, a
-/// file at a reference (the repository manifest), pull requests and their reverts, and the checks on a commit.
+/// The code host provider (docs/06 section 3.4), as far as M5 and M6 need it: the default branch and its protection, a
+/// file at a reference (the repository manifest), pull requests, their reverts and comments, and the checks on a commit.
 /// The default branch is always read from here, never from configuration or the plan (F1, F10). Creates take an
 /// idempotency key and write it as a hidden marker; a create retried with the same key adopts the object it made.
 /// </summary>
@@ -117,4 +117,10 @@ public interface ICodeHostProvider : IProvider
     Task<ProviderResult<PullRequestRef>> CreateRevertPullRequestAsync(PullRequestRef pullRequest, string key, CancellationToken cancellationToken);
 
     Task<ProviderResult<CheckStatus>> GetCheckStatusAsync(RepoRef repo, string revision, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Adds a comment to a pull request (<c>findings.triage</c> posts each decline reason, docs/04 section 11.2), with
+    /// <paramref name="key"/> as a hidden marker. A comment added earlier with the same key is returned instead.
+    /// </summary>
+    Task<ProviderResult<CommentRef>> AddCommentAsync(PullRequestRef pullRequest, string body, string key, CancellationToken cancellationToken);
 }
