@@ -64,3 +64,24 @@ all pass after the revert. **All 29 hold.**
 | 3 | `verification_satisfaction` does not check that a review accepted the claims revision (`semantic_review: required`) |
 | 4 | The trace does not check that a child completed, only that its plan, claims and passing tests exist and landed |
 | 5 | M5's live-run how-to needs `validator: { instances: { std: {} } }` |
+
+### Review of PR 13 and its fixes
+
+The independent review found changes required: two high, two medium and three low. Governing principle (the
+coordinator's): a run's acceptance criteria are met only by engine test evidence at the frozen head, or by a person,
+never by the agent's own classification. LOG 178 and 179.
+
+| Finding | Fix | Test | Control |
+|---|---|---|---|
+| F1 (high): a planner marks its criteria as owned and a ticket merges with no test | An owner counts only when it is a child kind the plan's scope may name and not the run itself; otherwise the item needs a method, and satisfaction reports it `unproved`; satisfaction excuses a delegated criterion only when its owner's plan holds it; inheritance refuses owners in a child's plan with or without a parent | `ForgeTicketTests.A_planner_that_marks_its_criteria_as_owned_to_skip_testing_does_not_get_a_merge` (the reviewer's probe: no merge); fixtures for `owner_in_child`, `no_method`, `unproved` (self-owned, and owner never planned) and a delegated pass | Old owner rule restored: the probe completes and merges (run by hand with the SQLite stub; in the script) |
+| F2 (high): `tests_added` passes a claim naming the changed production file, or any symbol | A claimed test must have passed in this run's results at the frozen head, and its file must not be the finding's, must hold the test's name (the claim's `symbol` ignored) and must have changed; std's `fix_loop` re-tests before `tests_added` | Fixtures: test not passed, production file, free-text symbol, other repository; the real-git test now supplies the engine's results at each head | Each rule removed fails its fixture |
+| F3 (medium): a subject resolved to the last step id's producer | The agent step's rule: own scope first, then the first by step id | `A_subject_with_several_producers_is_the_one_an_agent_step_beside_it_would_consume` | Reversed order fails it |
+| F4 (medium): many error codes and the trace's run restriction unpinned | One failing fixture per code (41 fixtures); trace tests for tests and claims only from the holder's run; ancestry without a VCS provider | `StdValidatorsContract`, `The_trace_takes_tests_and_claims_only_from_the_run_whose_plan_holds_the_item` (2), `Tests_at_an_ancestor_of_the_head_...` | 26 new controls, one per surviving mutation the review listed |
+| F5 (low): sets untested | — | `A_set_made_by_artifact_compose_is_passed_with_its_members` | Sets never expanded fails it |
+| F6 (low): infrastructure errors untested | — | `A_validators_infrastructure_error_is_retried_not_an_intervention` | Made an intervention fails it |
+| F7 (low): an empty plan passes | An empty plan is `malformed` | Fixture | Made a warning fails it |
+
+Std changes for the fixes: `fix_loop` gains `retest`; the readable-form goldens and the plan-size mutation's step
+count follow it. Not changed: a subject's `own_run_unknown` when byte-identical claims are shared with a child (rare,
+fails closed); `SameRepository` suffix matching (low); a test that passes but does not test the finding is the
+reviewer's call.
