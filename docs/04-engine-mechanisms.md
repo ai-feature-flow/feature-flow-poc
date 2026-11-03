@@ -287,10 +287,10 @@ person declines.
 | Element | Detail |
 |---|---|
 | Form | Child workflow |
-| Inputs | `template`, `level`, `repositories`, `parameters`, `run_gate` (`auto` or `manual`, from FF). `manual` starts the child with a breakpoint before its first step, so a person starts it by answering the breakpoint decision |
+| Inputs | `template`, `level`, `repositories`, `parameters`, `tracker_issue` (the child's own; it never inherits its parent's, LOG 185), `run_gate` (`auto` or `manual`, from FF). `manual` starts the child with a breakpoint before its first step, so a person starts it by answering the breakpoint decision |
 | Outcomes | From the child's status (`docs/03` section 9.3) |
 | Idempotency | By run id and step key: a retry adopts the existing child |
-| Checks | The root's work-item budget before creating the child |
+| Checks | The root's work-item budget before creating the child (F11; counted in the record store, LOG 187) |
 | Artifacts | Out: a reference to the child run. The child's artifacts are consumable with `from: { child: <id> }` |
 
 `parallel` and `for_each` are interpreter constructs, not actions (`docs/03`
@@ -539,11 +539,11 @@ from an agent reviewer, these two actions and route guards such as
 |---|---|---|
 | `repo.inspect` | `repository` | Reads the manifest and publishes facts as outputs: tier names and tags, whether CI is configured, the analyser, whether an integration environment is declared, the manifest hash |
 | `artifact.compose` | `name`, `members` | Groups artifacts into a set. Copies and approves nothing |
-| `artifact.import` | `from`: a session submission, or a repository, folder, files and exact commit | Registers files as artifacts at that commit, validated against their types |
-| `artifact.publish` | `repository`, `folder`, `files`, `previous` (an earlier publication to supersede) | Copies artifacts into a repository in one commit and opens a pull request. `conflict` if the destination changed in a way the earlier publication did not expect; nothing is written (from FF) |
-| `tracker.update` | `op` (`create`, `update`, `transition`, `link`, `comment`), its fields | One tracker operation. Field mapping is provider configuration. Agents have no tracker write identity; this action and declarative `tracker` on steps are the only write paths, apart from a planner's toolset where policy allows |
+| `artifact.import` | `from`: a session submission (M7), or a repository, folder, files and exact commit | Registers files as artifacts at that commit, validated against their types (as built: parsed, not yet schema-checked; LOG 181) |
+| `artifact.publish` | `repository`, `folder`, `files`, `previous` (an earlier publication to supersede) | Copies artifacts into a repository in one commit and opens a pull request. `conflict` if the destination changed in a way the earlier publication did not expect; nothing is written (from FF; branch, record and superseding, LOG 182) |
+| `tracker.update` | `op` (`create`, `update`, `transition`, `link`, `comment`), its fields (LOG 183) | One tracker operation. Field mapping is provider configuration. Agents have no tracker write identity; this action and declarative `tracker` on steps are the only write paths, apart from a planner's toolset where policy allows |
 | `notify.send` | `audience`, `message` | A notification that needs no answer. A failure retries and never fails the run |
-| `delivery.report` | `repositories` | Reads the merge records and states, per repository, whether a merge actually happened. `complete` only if every one merged, so a run redirected past a merge cannot report success (from FF) |
+| `delivery.report` | `repositories` | Reads the merge records and states, per repository, whether a merge actually happened: the parent branch must still contain the recorded merge (LOG 180). `complete` only if every one merged, so a run redirected past a merge cannot report success (from FF) |
 
 ---
 

@@ -154,7 +154,10 @@ tracker:
 
 Values are status names from the library's status map, which the organisation
 may override, so a template does not hard-code one tracker's statuses. A failed
-tracker update is an infrastructure failure: retried, never a step failure.
+tracker update never fails a step: an infrastructure failure is retried, and one
+the tracker refuses is noted on the timeline (LOG 186). On a fragment use,
+`on_start` applies when its first step starts and `on` names its exits. The issue
+is the run's tracker issue, from the run request or the `run.child` step (LOG 185).
 More complex tracker work (creating tickets, links, comments) is the
 `tracker.update` action.
 
@@ -459,6 +462,7 @@ repository per ticket).
   This is how ordered delivery across repositories is written.
 - A list that is known only at run time (from an artifact) is expanded by the
   `plan.expand` action (section 10.4), which produces the same shapes as a patch.
+  A `for_each` over such a list does not start (check 5, LOG 188).
 
 ---
 

@@ -91,7 +91,7 @@ defaults:                        # engine defaults for limits; not floors
 | `secrets.file.from_environment` | Secret names the `file` provider reads from the process environment, such as the solo profile's subscription token. LOG 91 |
 | `endpoint` | Only on a runtime that declares `CustomEndpoint` |
 | `code_host` identity | Must not be able to change branch protection (F5); checked at startup |
-| `tracker.*.status_map` | Maps the library's abstract statuses to the tracker's (`docs/08` section 1) |
+| `tracker.*.status_map` | Maps the library's abstract statuses to the tracker's (`docs/08` section 1). For `github_issues` (settings `repository`, `status_map`) a status maps to a label or to `closed` (LOG 184) |
 | `workers.agent_pools[].capabilities` | The sandbox capabilities a pool offers, which route steps to its queue (`docs/02` section 1.1) |
 | `defaults.limits` | Engine defaults per step form and per action. The organisation, workflow and step may override them within ceilings |
 | `temporal.continue_as_new_events` | LOG 87: the history length at which a run hands over (`docs/02` section 3); default 5,120, at least 100 |
@@ -173,6 +173,7 @@ teams:
 | `libraries` | Sources and versions. The first library is the base for references without a library name |
 | `library_overrides` | An organisation item replacing a base item by name, for every run |
 | `policy.*` | Meanings in `docs/05`. A cap may be `{ value, locked }`; a bare value is an unlocked default. Which settings reach running runs is in `docs/05` section 8 |
+| `policy.budgets.max_work_items.ceiling` | F11's ceiling, always locked: a root template asking more does not start; a root that sets no budget gets the ceiling (LOG 187) |
 | `role_mapping.default` | The runtime and model for a role with no entry |
 | `timeouts.heartbeat` | Describes the platform, not the work, so it is set here and not per step. It dominates crash-recovery time (Spike 1: 87.4 s from a kill to progress, `archive/docs/15` section 6.4) |
 | `timeouts.stalled_after` | Time without successful provider contact before the run shows `stalled`. Time-based, not a retry count |
@@ -266,6 +267,9 @@ dry_run: false
 
 `parent_branch` names the branch the run's work branch starts from and merges into, in every
 repository of the run; it must exist. F1 still governs it when it is the default branch (LOG 137).
+
+`tracker_issue` names the run's tracker issue (`run.tracker_issue`): agent steps read it as their ticket, and
+declarative `tracker` updates move it (LOG 185, 186).
 
 `dry_run: true` selects recording providers that record instead of act, chosen
 by configuration. Workflow tests use the same mechanism (`docs/09`).

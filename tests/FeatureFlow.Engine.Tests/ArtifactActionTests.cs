@@ -143,9 +143,12 @@ public sealed class ArtifactActionTests
         var call = w.Call("artifact.publish", "publish", 1, $"{{ files: {Files} }}", Receipt);
 
         var first = await w.Actions.RunAsync(call, w.Scope, () => { }, Ct);
+        var sandboxes = w.Sandbox.Counts.Created;
         var retried = await w.Actions.RunAsync(call, w.Scope, () => { }, Ct);
 
         Assert.Equal(("published", "published"), (Outcome(first), Outcome(retried)));
+        // The retry writes nothing: memory commits are named by their content, so only the sandbox count shows a second write.
+        Assert.Equal(sandboxes, w.Sandbox.Counts.Created);
         Assert.Equal(first.Report!.Outputs["commit"], retried.Report!.Outputs["commit"]);
         Assert.Equal(Pr(first), Pr(retried));
     }
