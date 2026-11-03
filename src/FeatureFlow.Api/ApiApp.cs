@@ -115,6 +115,10 @@ public static class ApiApp
             var parentBranch = body["parent_branch"]?.GetValue<string>();
             if (parentBranch is not null && !ValidBranch(parentBranch))
                 return Error(400, $"parent_branch must be a branch name, such as ff/epic/billing, not '{parentBranch}'");
+            // The run's tracker issue (run.tracker_issue): its input, read from the tracker, and where declarative updates go.
+            var trackerIssue = body["tracker_issue"]?.GetValue<string>();
+            if (trackerIssue is not null && (trackerIssue.Length is 0 or > 200 || trackerIssue.Any(char.IsControl)))
+                return Error(400, "tracker_issue must be a tracker key, such as ACME-12 or owner/repo#12");
             var handOver = services.Installation.ContinueAsNewEvents;
             if (body["continue_as_new_events"]?.GetValue<long>() is { } requested)
             {
@@ -132,7 +136,8 @@ public static class ApiApp
             await Records.AppendAsync(new RecordBatch(
                 [new RunRecord(runId, null, template, "starting", caller.Actor, repositories, dryRun, now, null)],
                 Locks: [new LockRecord(runId, lockRef, now)]), context.RequestAborted);
-            var start = new RunStart(runId, template, repositories, parameters, lockRef, dryRun, caller.Actor, HandOverEvents: handOver, ParentBranch: parentBranch);
+            var start = new RunStart(runId, template, repositories, parameters, lockRef, dryRun, caller.Actor, HandOverEvents: handOver, ParentBranch: parentBranch,
+                TrackerIssue: trackerIssue);
             await services.Client.StartWorkflowAsync(RunWorkflowNames.Workflow, [start],
                 new WorkflowOptions(runId, services.Installation.TaskQueue));
             return Results.Json(new { run_id = runId }, Json, statusCode: 201);

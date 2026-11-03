@@ -73,7 +73,7 @@ limit. Validation reports where a request was capped.
 | Engine merge into the default branch | `engine_can_merge: true` | F1 |
 | Checks before merging | `require_checks` on `scm.merge` | `merge.require_checks`: if set, a workflow cannot turn checks off |
 | Attempts | `limits.attempts` | Ceilings per step form and per run (F4) |
-| Work items | `budget.max_work_items` on the root template | Ceiling (F11) |
+| Work items | `budget.max_work_items` on the root template | Ceiling (F11), always locked (LOG 187) |
 | Review of agent patches | `planning.review` | `planning.require_review`, per template name pattern |
 | Agent roles | The roles a template's steps name | `planning.allowed_roles` for steps an agent adds (section 6) |
 | Toolsets | The role's toolsets | `toolsets.allowed`: which external tool servers exist at all |

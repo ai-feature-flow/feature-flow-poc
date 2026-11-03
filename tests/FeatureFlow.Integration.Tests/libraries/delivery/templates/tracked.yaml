@@ -1,0 +1,24 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: tracked
+  level: ticket
+  description: >-
+    Declarative tracker updates: a step moves the run's issue when it starts, and
+    a fragment use moves it when its first step starts and when it leaves by an exit.
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: begin
+    action: notify.send
+    with: { audience: team, message: starting }
+    tracker: { on_start: in_progress }
+
+  - id: deliver
+    use: delivery:fragments/finish
+    tracker: { on_start: code_review, on: { finished: done } }
+    routes:
+      finished: { end: completed }

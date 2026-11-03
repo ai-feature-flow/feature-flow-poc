@@ -569,7 +569,8 @@ public class RunWorkflow
             repository = null;
         }
 
-        return new ActionScope(input.Repositories, repository, core.WorkBranch(), input.ParentBranch, artifacts, pullRequests, policy?.EngineMayMerge ?? []);
+        return new ActionScope(input.Repositories, repository, core.WorkBranch(), input.ParentBranch, artifacts, pullRequests, policy?.EngineMayMerge ?? [],
+            TrackerIssue: input.TrackerIssue);
     }
 
     /// <summary>
@@ -670,7 +671,8 @@ public class RunWorkflow
             input.ParentBranch is { } parentBranch ? input.Repositories.ToDictionary(r => r, _ => parentBranch) : new Dictionary<string, string>(),
             consumed,
             Workflow.Info.WorkflowId,
-            input.LockRef);
+            input.LockRef,
+            TrackerIssue: input.TrackerIssue);
     }
 
     /// <summary>
@@ -773,6 +775,13 @@ public class RunWorkflow
             {
                 var items = YamlWriter.Read(expandItems, "items") as YSeq ?? throw new FormatException("plan.expand's list is not a list");
                 var (patch, error) = PlanExpansion.Build(core!, step.Id, items.Items);
+                if (error is null && Budget is { } budget && WorkItems.ChildSteps(patch!) is > 0 and var adding && Workflow.Patched(WorkItemsPatch))
+                {
+                    error = await WorkItemsRefusalAsync(new WorkItemRequest(budget, adding));
+                    if (!Current(step.Id, execution))
+                        return;
+                }
+
                 core!.Apply(error is null
                     ? new StepCompleted(step.Id, "expanded", Patch: patch)
                     : new StepCannotAnswer(step.Id, error));
@@ -931,9 +940,20 @@ public class RunWorkflow
             .ToDictionary(kv => kv.Key, kv => YamlWriter.WritePlain(kv.Value));
         var artifacts = crossRun ? RunArtifacts(step) : null;
         var repositories = (inputs.GetValueOrDefault("repositories") as IEnumerable<object?> ?? input.Repositories).Select(r => r?.ToString() ?? "").ToList();
+        var budget = Budget;
+        if (budget is not null && Workflow.Patched(WorkItemsPatch)
+            && await WorkItemsRefusalAsync(new WorkItemRequest(budget, 1,
+                new RunRecord(childId, Workflow.Info.WorkflowId, template, "starting", input.Requester, repositories, input.DryRun, Workflow.UtcNow, null))) is { } refused)
+        {
+            core!.Apply(new StepCannotAnswer(step.Id, refused));
+            dirty = true;
+            return;
+        }
+
         var childInput = new RunStart(childId, template, repositories, parameters,
             input.LockRef, input.DryRun, input.Requester, Workflow.Info.WorkflowId, step.Id, input.HandOverEvents, ParentBranch: core!.WorkBranch(),
-            ParentArtifacts: artifacts, RootArtifacts: crossRun ? input.ParentWorkflowId is null ? artifacts : input.RootArtifacts : null);
+            ParentArtifacts: artifacts, RootArtifacts: crossRun ? input.ParentWorkflowId is null ? artifacts : input.RootArtifacts : null,
+            TrackerIssue: inputs.GetValueOrDefault("tracker_issue") as string, WorkItems: budget);
         ChildWorkflowHandle? handle = null;
         try
         {
@@ -1038,6 +1058,81 @@ public class RunWorkflow
         }
     }
 
+    // ---- Delivery: the work-item budget and declarative tracker updates (M6) ------------------------
+
+    /// <summary>The patch marker of the work-item budget (F11): histories recorded before it start children unchecked.</summary>
+    public const string WorkItemsPatch = "m6-work-items";
+
+    /// <summary>The patch marker of declarative tracker updates: histories recorded before it made none.</summary>
+    public const string TrackerUpdatesPatch = "m6-tracker-updates";
+
+    /// <summary>The run tree's work-item budget: the root's own, passed to every child unchanged; null when it is unlimited.</summary>
+    WorkItemBudget? Budget => input.WorkItems ?? (input.ParentWorkflowId is null ? WorkItems.Root(input.RunId, core!.Plan, policy) : null);
+
+    /// <summary>Asks the record store whether the tree may create more runs; why not, or null.</summary>
+    async Task<string?> WorkItemsRefusalAsync(WorkItemRequest request)
+    {
+        BeginActivity();
+        try
+        {
+            return await Workflow.ExecuteActivityAsync((RunActivities a) => a.ReserveWorkItemsAsync(request), Light);
+        }
+        finally
+        {
+            EndActivity();
+        }
+    }
+
+    /// <summary>How many of the timeline's unrecorded entries have been examined for tracker updates, and the updates found but not yet made.</summary>
+    int trackedThrough;
+    readonly Queue<TrackerUpdate> trackerUpdates = new();
+
+    /// <summary>
+    /// The next declarative <c>tracker</c> update (docs/03 section 2.5) for what the run did since its last record, in
+    /// order, or null. A run with no tracker issue makes none. Synchronous, so the caller's last check and its record
+    /// see the same timeline: a step that ends while an update is awaited is examined before anything is recorded.
+    /// </summary>
+    TrackerUpdate? NextTrackerUpdate()
+    {
+        if (input.TrackerIssue is null || !TrackerUpdates.Declared(core!.Plan))
+            return null;
+        var trace = core.State.Trace;
+        while (trackerUpdates.Count == 0 && trackedThrough < trace.Count)
+            foreach (var update in TrackerUpdates.Due(core.Plan, [trace[trackedThrough++]]))
+                trackerUpdates.Enqueue(update);
+        return trackerUpdates.TryDequeue(out var next) ? next : null;
+    }
+
+    /// <summary>
+    /// A tracker update's tries: five, each at most 30 s, all within two minutes, then given up and noted, because a status
+    /// label is not worth stalling the run for, whether the tracker fails fast or hangs (LOG 186).
+    /// </summary>
+    public static readonly ActivityOptions TrackerTries = new()
+    {
+        StartToCloseTimeout = TimeSpan.FromSeconds(30),
+        ScheduleToCloseTimeout = TimeSpan.FromMinutes(2),
+        RetryPolicy = new() { InitialInterval = TimeSpan.FromSeconds(2), BackoffCoefficient = 2, MaximumInterval = TimeSpan.FromSeconds(30), MaximumAttempts = 5 },
+    };
+
+    /// <summary>Makes one tracker update and notes it on the timeline. An update that fails never fails the step, nor holds up the run.</summary>
+    async Task TrackAsync(TrackerUpdate update)
+    {
+        if (!Workflow.Patched(TrackerUpdatesPatch))
+            return;
+        var call = new TrackerCall(input.TrackerIssue!, update.Status, update.StepId, input.DryRun);
+        string note;
+        try
+        {
+            note = await Workflow.ExecuteActivityAsync((RunActivities a) => a.UpdateTrackerAsync(call), TrackerTries);
+        }
+        catch (ActivityFailureException e)
+        {
+            note = $"could not move {call.Issue} to {call.Status}: the tracker did not answer in {TrackerTries.RetryPolicy!.MaximumAttempts} tries ({e.InnerException?.Message ?? e.Message})";
+        }
+
+        core!.State.Trace.Add(new TraceEntry("tracker", update.StepId, $"{update.Why}: {note}"));
+    }
+
     async Task ConfirmChildAsync(string childWorkflowId)
     {
         BeginActivity();
@@ -1074,9 +1169,13 @@ public class RunWorkflow
     /// <summary>Writes what changed since the last record: new timeline entries, opened and closed waits, the run's status. Returns whether there was anything.</summary>
     async Task<bool> RecordAsync()
     {
+        // Checked again after each update, with no await between the last check and the timeline taken below.
+        while (NextTrackerUpdate() is { } update)
+            await TrackAsync(update);
         var now = Workflow.UtcNow;
         var timeline = core!.State.Trace.Select(t => new TimelineRecord(input.RunId, ++timelineSequence, t.Kind, t.StepId, t.Detail, now)).ToList();
         core.State.Trace.Clear();
+        trackedThrough = 0;
 
         var waits = new List<WaitRecord>();
         var open = core.State.Waits.Select(w => w.Id).ToList();

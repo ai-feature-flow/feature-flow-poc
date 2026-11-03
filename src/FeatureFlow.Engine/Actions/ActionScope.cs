@@ -16,7 +16,8 @@ public sealed record ArtifactEntry(string StepId, string Name, string? Type, str
 /// for <c>analysis.run</c>), the pull requests its <c>scm.pull_request</c> steps opened, F1's patterns as fixed at
 /// run start (docs/05 section 8), and the artifacts the step consumes, by the name the step sees them under
 /// (<c>requirements</c>, <c>parent/requirements</c>, <c>child/ticket_a/summary</c>), resolved as the workflow resolves an agent
-/// step's; null where the workflow does not give them, and then a subject from this run is its latest of the name.
+/// step's; null where the workflow does not give them, and then a subject from this run is its latest of the name; and the run's tracker issue
+/// (<c>run.tracker_issue</c>), if it has one.
 /// </summary>
 public sealed record ActionScope(
     IReadOnlyList<string> Repositories,
@@ -26,7 +27,8 @@ public sealed record ActionScope(
     IReadOnlyList<ArtifactEntry> Artifacts,
     IReadOnlyList<string> PullRequests,
     IReadOnlyList<string> EngineMayMerge,
-    IReadOnlyDictionary<string, string>? Consumed = null)
+    IReadOnlyDictionary<string, string>? Consumed = null,
+    string? TrackerIssue = null)
 {
     public static readonly ActionScope None = new([], null, "", null, [], [], []);
 }

@@ -33,7 +33,7 @@ public sealed record CleanUpCall(string RunId, string StepId, int Executions, IR
 /// an infrastructure error is thrown, so Temporal retries it and no attempt is used; a work error is returned
 /// for the core to count.
 /// </summary>
-public sealed class RunActivities(EngineServices services, ITemporalClient? client)
+public sealed partial class RunActivities(EngineServices services, ITemporalClient? client)
 {
     static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     readonly EngineActions actions = new(services.Providers);
@@ -60,7 +60,7 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
             if (core is not null)
             {
                 RunStartChecks.Capabilities(core.Plan, libraries, services.Providers.Offered(start.DryRun), d);
-                RunStartChecks.Caps(core.Plan, services.Organisation.Policy, core.Allowance, d);
+                RunStartChecks.Caps(core.Plan, services.Organisation.Policy, core.Allowance, d, root: start.ParentWorkflowId is null);
                 if (services.Providers.ForRun("code_host", start.DryRun) is ICodeHostProvider host)
                     defaultBranches = await RepositoryChecksAsync(host, core, start, libraries, policy, d, ct);
             }
@@ -197,7 +197,7 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
     public static RunInfo RunInfoOf(RunStart start) =>
         new(start.RunId, start.Repositories,
             start.Parameters.ToDictionary(kv => kv.Key, kv => YamlWriter.Read(kv.Value, $"params.{kv.Key}")),
-            start.ParentWorkflowId, ParentBranch: start.ParentBranch);
+            start.ParentWorkflowId, start.TrackerIssue, start.ParentBranch);
 
     // The agent step's activity, RunAgentStep, is the agent worker's: Engine.Agent's AgentActivities (M4).
 

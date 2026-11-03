@@ -160,6 +160,23 @@ public sealed class ValidationActionTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_validation_report_the_step_does_not_declare_is_indexed_once_and_a_declared_one_is_left_to_the_workflow()
+    {
+        Work();
+        Produce("plan", "requirements", "requirements", Requirements);
+        Produce("plan", "delivery_plan", "delivery_plan", Plan());
+
+        await ValidateAtAsync("declared", TicketValidators, "plan_validation");
+        var undeclared = await ValidateAtAsync("undeclared", TicketValidators);
+
+        // The engine indexes only evidence no artifact carries; the workflow indexes declared artifacts, so none is indexed twice (LOG 180).
+        var indexed = (await records.QueryAsync<ArtifactRecord>(Queries.Artifacts, new Dictionary<string, string> { ["run_id"] = RunId }, Ct)).Unwrap();
+        var entry = Assert.Single(indexed);
+        Assert.Equal(("undeclared", EngineActions.IndexName("validation_report"), "artifact.validate", true), (entry.StepId, entry.Name, entry.Action, entry.Evidence));
+        Assert.Empty(undeclared.Report!.Artifacts);
+    }
+
+    [Fact]
     public async Task An_invalid_plan_is_invalid_and_its_report_is_kept_for_the_planner()
     {
         Work();

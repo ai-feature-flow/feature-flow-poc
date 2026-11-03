@@ -306,7 +306,12 @@ sealed class SandboxSession : IAsyncDisposable
 
     SandboxSession(ActionRun run, ISandboxProvider sandboxes, SandboxHandle handle) => (this.run, this.sandboxes, this.handle) = (run, sandboxes, handle);
 
-    public static async Task<SandboxSession> OpenAsync(ActionRun run, RepoRef repo, string head, IReadOnlyList<string> setup, string purpose)
+    public static Task<SandboxSession> OpenAsync(ActionRun run, RepoRef repo, string head, IReadOnlyList<string> setup, string purpose) =>
+        OpenAsync(run, repo, run.WorkReference, head, run.Scope.WorkBranch, setup, purpose);
+
+    /// <summary>As above, with <paramref name="head"/> read from <paramref name="sourceReference"/> and checked out as <paramref name="branch"/>.</summary>
+    public static async Task<SandboxSession> OpenAsync(ActionRun run, RepoRef repo, string sourceReference, string head, string branch, IReadOnlyList<string> setup,
+        string purpose)
     {
         var sandboxes = run.Provider<ISandboxProvider>("sandbox");
         var key = $"{run.Key}/{purpose}";
@@ -318,8 +323,8 @@ sealed class SandboxSession : IAsyncDisposable
         var session = new SandboxSession(run, sandboxes, handle);
         try
         {
-            ActionRun.Must(await run.Vcs.CheckOutAsync(repo, run.WorkReference, head, run.Scope.WorkBranch, new WorkingCopyRef(handle, Checkout), run.Ct),
-                "check out the work branch");
+            ActionRun.Must(await run.Vcs.CheckOutAsync(repo, sourceReference, head, branch, new WorkingCopyRef(handle, Checkout), run.Ct),
+                $"check out {branch}");
             foreach (var command in setup)
             {
                 var (exit, output) = await session.RunAsync(command, run.Options.CommandTimeout, "setup");
@@ -399,6 +404,13 @@ sealed class SandboxSession : IAsyncDisposable
 
         return texts;
     }
+
+    /// <summary>The checkout as the VCS reaches it, for commits the engine makes there.</summary>
+    public WorkingCopyRef Copy => new(handle, Checkout);
+
+    /// <summary>Writes an artifact to a path relative to the checkout.</summary>
+    public async Task CopyInAsync(string reference, string path) =>
+        ActionRun.Must(await sandboxes.CopyInAsync(handle, new ArtifactRef(reference), $"{Checkout}/{path}", readOnly: false, run.Ct), $"write {path}");
 
     public async ValueTask DisposeAsync() => await sandboxes.DisposeAsync(handle, CancellationToken.None);
 }

@@ -1,0 +1,13 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: leaf
+  level: ticket
+  description: A child run that only sends a notification and completes.
+
+steps:
+  - id: say
+    action: notify.send
+    with: { audience: team, message: done }
+    routes:
+      sent: { end: completed }

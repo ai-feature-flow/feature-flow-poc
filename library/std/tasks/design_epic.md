@@ -10,7 +10,7 @@ current code, and the epic's own requirements document. You change no code.
 | `child_requirements` from the parent, when present | The project's epic-level requirements. The ones whose owner is `{ kind: epic, id: {{ epic_name }} }` are this epic's |
 | `contract` from the parent, when present | The project architecture: design within it |
 | `requirements` from the parent, when present | The project's top-level requirements, which yours support |
-| The epic's tracker issue, when there is one | The ask, in the requester's words |
+| The epic's tracker issue, `/ff/inputs/ticket.md`, when there is one | The ask, in the requester's words |
 | Earlier design and findings, when present | Why a previous design was sent back |
 
 ## Procedure

@@ -1,0 +1,23 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: two_children
+  level: epic
+  description: >-
+    Two children and no budget of its own: the organisation's ceiling is the
+    tree's budget (F11).
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: first
+    action: run.child
+    with: { template: delivery:templates/leaf, level: ticket }
+
+  - id: second
+    action: run.child
+    with: { template: delivery:templates/leaf, level: ticket }
+    routes:
+      completed: { end: completed }

@@ -128,6 +128,19 @@ public sealed class ApiTests : IAsyncDisposable
         Assert.Contains("parent_branch must be a branch name", text);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("ACME-1\nX")]
+    public async Task A_tracker_issue_that_is_not_a_key_is_refused(string issue)
+    {
+        var body = $$"""{ "template": "std:templates/ticket_delivery", "tracker_issue": {{System.Text.Json.JsonSerializer.Serialize(issue)}} }""";
+
+        var (status, text) = await PostAsync(Start("steerer"), "runs", body);
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Contains("tracker_issue must be a tracker key", text);
+    }
+
     [Fact]
     public async Task An_internal_error_returns_a_generic_body()
     {

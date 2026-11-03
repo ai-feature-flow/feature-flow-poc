@@ -32,6 +32,10 @@ public sealed class ActionWorld : IAsyncDisposable
     public List<string> PullRequests { get; } = [];
     public List<string> EngineMayMerge { get; } = [];
     public string? ParentBranch { get; set; }
+    public InMemoryTracker Tracker { get; } = new();
+
+    /// <summary>The run's tracker issue, as the scope gives it (<c>run.tracker_issue</c>).</summary>
+    public string? TrackerIssue { get; set; }
 
     /// <summary>The run's work branch as the scope gives it; tests of the work-branch guard set it to a protected branch.</summary>
     public string Branch { get; set; } = WorkBranch;
@@ -55,6 +59,7 @@ public sealed class ActionWorld : IAsyncDisposable
                 : codeHost?.Invoke(new InMemoryCodeHost(Forge)) ?? new InMemoryCodeHost(Forge)),
             ["artifact_store"] = One(Store),
             ["record_store"] = One(Records),
+            ["tracker"] = One(Tracker),
         };
         if (ci)
             instances["ci"] = One(new InMemoryCi(Forge, () => Store));
@@ -79,18 +84,19 @@ public sealed class ActionWorld : IAsyncDisposable
     public string CommitMain(string path, string content) =>
         Forge.Commit(Repo, "main", new Dictionary<string, string?> { [path] = content }, $"someone changes {path}");
 
-    public ActionScope Scope => new([Repo.FullName], Repo.FullName, Branch, ParentBranch, Artifacts.ToList(), PullRequests.ToList(), EngineMayMerge.ToList());
+    public ActionScope Scope => new([Repo.FullName], Repo.FullName, Branch, ParentBranch, Artifacts.ToList(), PullRequests.ToList(), EngineMayMerge.ToList(), TrackerIssue: TrackerIssue);
 
     /// <summary>
     /// Runs one action step to its end: a wait is retried as Temporal would, up to <paramref name="waits"/> reads. The
     /// step's evidence becomes an artifact of the evidence type its action produces, and a pull request it opens is
     /// remembered, so later steps see them.
     /// </summary>
-    public async Task<ActionResult> RunAsync(string action, string? inputs = null, string? stepId = null, int waits = 50, Action? beforeEachRead = null)
+    public async Task<ActionResult> RunAsync(string action, string? inputs = null, string? stepId = null, int waits = 50, Action? beforeEachRead = null,
+        IReadOnlyList<ArtifactSpec>? produces = null)
     {
         stepId ??= action.Replace('.', '_');
         var execution = executions[stepId] = executions.GetValueOrDefault(stepId) + 1;
-        var call = Call(action, stepId, execution, inputs);
+        var call = Call(action, stepId, execution, inputs, produces);
         ActionResult result;
         var reads = 0;
         while (true)
@@ -112,14 +118,15 @@ public sealed class ActionWorld : IAsyncDisposable
         return result;
     }
 
-    public StepCall Call(string action, string stepId, int execution, string? inputs)
+    /// <summary>A step's call; <paramref name="produces"/> are the artifacts it declares, else its evidence for every outcome.</summary>
+    public StepCall Call(string action, string stepId, int execution, string? inputs, IReadOnlyList<ArtifactSpec>? produces = null)
     {
         var contract = Model.Actions.All[action];
         var plain = inputs is null ? new Dictionary<string, object?>() : (Dictionary<string, object?>)YamlWriter.ReadPlain(inputs)!;
         var outputs = (contract.Outputs ?? []).ToDictionary(n => n, n => Model.Actions.EngineOutputTypes.GetValueOrDefault(n, "dyn"));
         var zero = outputs.ToDictionary(kv => kv.Key, kv => kv.Value switch { "boolean" => "false", "number" => "0", _ => "\"\"" });
         var stepContract = new StepContract(contract.Outcomes.Select(o => new OutcomeSpec(o.Name, o.Class.Name())).ToList(), outputs,
-            EvidenceType(action) is null ? [] : contract.Outcomes.Select(o => new ArtifactSpec(o.Name, "evidence")).ToList(), zero);
+            produces ?? (EvidenceType(action) is null ? [] : contract.Outcomes.Select(o => new ArtifactSpec(o.Name, "evidence")).ToList()), zero);
         return new StepCall(new StepIdentity(RunId, "ticket_delivery", stepId, execution, $"{RunId}/{stepId}/{execution}"), "action", action,
             plain.ToDictionary(kv => kv.Key, kv => YamlWriter.WritePlain(kv.Value)), stepContract, false, null);
     }
@@ -130,6 +137,7 @@ public sealed class ActionWorld : IAsyncDisposable
         "ci.checks" => "std:artifact_types/check_results",
         "analysis.run" => "std:artifact_types/analysis_results",
         "scm.merge" => "std:artifact_types/merge_record",
+        "scm.revert" => "std:artifact_types/revert_record",
         _ => null,
     };
 

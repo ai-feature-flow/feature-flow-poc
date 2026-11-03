@@ -86,6 +86,7 @@ steps:
           template: { param: child_template }
           level: { param: child_level }
           repositories: "$.repositories"
+          tracker_issue: "$.tracker_issue?"     # the child's own issue, when the planner names one
           parameters: { param: child_parameters }
     consumes: [{ name: work_list }]
 

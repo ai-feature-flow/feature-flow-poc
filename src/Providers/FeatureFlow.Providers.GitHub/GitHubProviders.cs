@@ -15,7 +15,21 @@ public static class GitHubProviders
         new("findings_source", "copilot_review", ["api_base", "blocking"], c => new CopilotReviewSource(Api(c),
             () => c.Provider("artifact_store") as IArtifactStoreProvider ?? throw new InvalidOperationException("the Copilot review source needs an artifact store"),
             c.Setting("blocking") == "true")),
+        new("tracker", "github_issues", ["api_base", "repository", "status_map"], c => new GitHubIssuesTracker(Api(c), c.Setting("repository"), StatusMap(c))),
     ];
+
+    /// <summary>
+    /// <c>status_map</c> (docs/07 section 2): a library status to a label, or to <c>closed</c>. Unset, std's statuses map to
+    /// <see cref="GitHubIssuesTracker.DefaultStatusMap"/>.
+    /// </summary>
+    static IReadOnlyDictionary<string, string>? StatusMap(ProviderContext c)
+    {
+        if (c.Instance.Settings["status_map"] is not { } node)
+            return null;
+        if (node is not YMap map || map.Entries.Any(e => e.Value.ScalarText() is not { Length: > 0 }))
+            throw new InvalidOperationException($"providers.tracker.instances.{c.Instance.Name}.status_map maps each library status to a label or 'closed'");
+        return map.Entries.ToDictionary(e => e.Key.Text, e => e.Value.ScalarText()!, StringComparer.Ordinal);
+    }
 
     /// <summary>The code host and CI providers take their tokens from the default credential broker, never from configuration.</summary>
     static GitHubApi Api(ProviderContext c) =>

@@ -104,7 +104,8 @@ How the Git, GitHub and GitHub Actions providers meet them, and the engine's new
 to 115.
 
 The tracker, findings source and validator interfaces as built in M6, the code host's comments, and the findings
-ledger and artifact index in the record store differ from the signatures below: LOG 148 to 151.
+ledger and artifact index in the record store differ from the signatures below: LOG 148 to 151. How the GitHub
+Issues tracker maps statuses, parents and links is LOG 184.
 
 ### 3.1 Sandbox
 

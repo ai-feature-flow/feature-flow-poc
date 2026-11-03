@@ -1,0 +1,15 @@
+api_version: feature-flow/v1
+kind: fragment
+metadata:
+  name: finish
+  description: One step that leaves by the finished exit.
+
+exits:
+  finished: success
+
+steps:
+  - id: say
+    action: notify.send
+    with: { audience: team, message: finishing }
+    routes:
+      sent: { exit: finished }

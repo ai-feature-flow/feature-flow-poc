@@ -36,7 +36,8 @@ public sealed class AgentManifestTests : IAsyncDisposable
     }
 
     /// <summary>A scripted runtime that edits the checkout as an agent would, when it is given <paramref name="edits"/>.</summary>
-    sealed class EditingRuntime(InMemoryForge forge, IAgentRuntimeProvider inner, IReadOnlyDictionary<string, string> edits) : IAgentRuntimeProvider
+    sealed class EditingRuntime(InMemoryForge forge, IAgentRuntimeProvider inner, IReadOnlyDictionary<string, string> edits, Action<SandboxHandle>? atStart = null)
+        : IAgentRuntimeProvider
     {
         public ProviderDescription Describe() => inner.Describe();
 
@@ -44,6 +45,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
 
         public Task<ProviderResult<AgentSession>> StartAsync(SandboxHandle sandbox, AgentTask task, AgentLimits limits, CancellationToken cancellationToken)
         {
+            atStart?.Invoke(sandbox);
             if (forge.WorkingFiles(new WorkingCopyRef(sandbox, task.Paths!.Checkout)) is { } files)
                 foreach (var (path, content) in edits)
                     files[path] = content;
@@ -60,12 +62,13 @@ public sealed class AgentManifestTests : IAsyncDisposable
         public Task<ProviderResult<Unit>> StopAsync(AgentSession session, CancellationToken cancellationToken) => inner.StopAsync(session, cancellationToken);
     }
 
-    async Task<StepOutcome> RunAsync(IReadOnlyDictionary<string, string> edits, bool codeHost = true, string step = "implement", string branch = Branch)
+    async Task<StepOutcome> RunAsync(IReadOnlyDictionary<string, string> edits, bool codeHost = true, string step = "implement", string branch = Branch,
+        ITrackerProvider? tracker = null, string? trackerIssue = null, Action<SandboxHandle>? atStart = null)
     {
         var client = Path.Combine(folder, "ff-sandbox");
         await File.WriteAllTextAsync(client, "a stand-in for the sandbox client", TestContext.Current.CancellationToken);
         var records = new SqliteRecordStore(Path.Combine(folder, "records.db"));
-        var runtime = new EditingRuntime(forge, new ScriptedAgentRuntime(FakeScript.Empty, () => store), edits);
+        var runtime = new EditingRuntime(forge, new ScriptedAgentRuntime(FakeScript.Empty, () => store), edits, atStart);
         var instances = new Dictionary<string, IReadOnlyDictionary<string, IProvider>>
         {
             ["vcs"] = One(new InMemoryVcs(forge)),
@@ -76,13 +79,15 @@ public sealed class AgentManifestTests : IAsyncDisposable
         };
         if (codeHost)
             instances["code_host"] = One(new InMemoryCodeHost(forge));
+        if (tracker is not null)
+            instances["tracker"] = One(tracker);
         var providers = new ProviderSet(instances, instances.Keys.ToDictionary(k => k, _ => "one"), new Dictionary<string, string>());
         var activities = new AgentActivities(providers, StepTokens.FromSecret("test"),
             new AgentWorkerOptions(["http://127.0.0.1:9"], "http://127.0.0.1:9/model", TimeSpan.FromSeconds(30), client, TimeSpan.FromMilliseconds(20)));
         var contract = new StepContract([new OutcomeSpec("implemented", "success")], new Dictionary<string, string> { ["commits"] = "number" }, [],
             new Dictionary<string, string> { ["commits"] = "0" });
         var spec = new AgentStepSpec("write", ["read", "edit"], null, null, [], 2, 0, TimeSpan.FromHours(1), true, "commit", "ticket",
-            new Dictionary<string, string> { [repo.FullName] = branch }, new Dictionary<string, string>(), new Dictionary<string, string>(), "wf", "lock");
+            new Dictionary<string, string> { [repo.FullName] = branch }, new Dictionary<string, string>(), new Dictionary<string, string>(), "wf", "lock", trackerIssue);
         var call = new StepCall(new StepIdentity("run-1", "ticket_delivery", step, 1, $"run-1/{step}/1"), "agent", "std:roles/implementer",
             new Dictionary<string, string>(), contract, false, TimeSpan.FromMinutes(5), spec);
         return await new ActivityEnvironment().RunAsync(() => activities.RunAgentStepAsync(call));
@@ -108,6 +113,33 @@ public sealed class AgentManifestTests : IAsyncDisposable
         Assert.Equal("class B{}", forge.ReadFile(repo, Work!, "src/B.cs"));
         Assert.Equal(2L, JsonSerializer.Deserialize<long>(outcome.Report!.Outputs["commits"]));
         Assert.Contains(outcome.Events!, e => e.StartsWith("committed after_changes", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task The_runs_ticket_is_read_from_the_tracker_and_staged_for_the_agent()
+    {
+        var tracker = new InMemoryTracker();
+        var issue = (await tracker.CreateAsync(new IssueSpec("Add totals", "Invoices show a total."), "seed", TestContext.Current.CancellationToken)).Unwrap();
+        string? ticket = null, manifest = null;
+
+        var outcome = await RunAsync(new Dictionary<string, string>(), tracker: tracker, trackerIssue: issue.Key, atStart: handle =>
+        {
+            ticket = sandbox.ReadFile(handle, "/ff/inputs/ticket.md");
+            manifest = sandbox.ReadFile(handle, AgentPaths.Default.InputsManifest);
+        });
+
+        Assert.Equal(StepOutcome.Reported, outcome.Kind);
+        Assert.StartsWith("# Add totals\n\nInvoices show a total.", ticket, StringComparison.Ordinal);
+        Assert.Equal(issue.Key, JsonDocument.Parse(manifest!).RootElement.GetProperty("ticket").GetProperty("key").GetString());
+    }
+
+    [Fact]
+    public async Task A_ticket_the_tracker_does_not_have_stops_the_step_for_a_person()
+    {
+        var outcome = await RunAsync(new Dictionary<string, string>(), tracker: new InMemoryTracker(), trackerIssue: "MEM-404");
+
+        Assert.Equal(StepOutcome.CannotAnswer, outcome.Kind);
+        Assert.Contains("MEM-404 does not exist", outcome.Reason, StringComparison.Ordinal);
     }
 
     [Fact]

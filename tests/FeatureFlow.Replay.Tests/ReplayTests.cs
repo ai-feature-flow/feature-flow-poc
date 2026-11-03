@@ -23,8 +23,8 @@ public class ReplayTests
     public void The_recorded_histories_are_there()
     {
         // Without this, a missing folder would leave the theory with no cases and nothing replayed.
-        Assert.Equal(["agent_question", "epic_delivery", "epic_delivery_child", "family_child", "family_parent", "silent_parent_resumed", "sp1_parent",
-                "sp1_parent_resumed", "ticket_clean_up", "ticket_delivery", "wait_hand_over", "wait_hand_over_resumed"],
+        Assert.Equal(["agent_question", "budget_middle", "delivery_tracked", "epic_delivery", "epic_delivery_child", "family_child", "family_parent",
+                "silent_parent_resumed", "sp1_parent", "sp1_parent_resumed", "ticket_clean_up", "ticket_delivery", "wait_hand_over", "wait_hand_over_resumed"],
             Names());
     }
 
@@ -72,6 +72,24 @@ public class ReplayTests
             .SelectMany(d => d.Value.GetProperty("payloads").EnumerateArray())
             .Select(p => System.Text.Json.JsonDocument.Parse(Convert.FromBase64String(p.GetProperty("data").GetString()!)).RootElement.GetProperty("id").GetString()!)
             .ToList();
+    }
+
+    [Theory]
+    [InlineData("delivery_tracked", RunWorkflow.TrackerUpdatesPatch)]
+    [InlineData("budget_middle", RunWorkflow.WorkItemsPatch)]
+    public void A_history_holds_each_M6_delivery_patch_marker(string name, string marker)
+    {
+        // Declarative tracker updates and the work-item budget (M6): without a history holding each marker, a change to
+        // either path would replay green.
+        using var history = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(HistoryFolder, name + ".json")));
+        var patches = history.RootElement.GetProperty("events").EnumerateArray()
+            .Where(e => e.TryGetProperty("markerRecordedEventAttributes", out _))
+            .SelectMany(e => e.GetProperty("markerRecordedEventAttributes").GetProperty("details").EnumerateObject())
+            .SelectMany(d => d.Value.GetProperty("payloads").EnumerateArray())
+            .Select(p => System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(p.GetProperty("data").GetString()!)))
+            .ToList();
+
+        Assert.Contains(patches, p => p.Contains($"\"{marker}\"", StringComparison.Ordinal));
     }
 
     [Theory]

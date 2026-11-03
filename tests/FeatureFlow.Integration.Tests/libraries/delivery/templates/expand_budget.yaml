@@ -1,0 +1,48 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: expand_budget
+  level: epic
+  description: >-
+    A planner's work list of three becomes child runs by plan.expand, under a
+    budget of two: the expansion is refused before any child starts (F11).
+
+budget:
+  max_work_items: 2
+
+artifact_types:
+  - std:artifact_types/work_list
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: plan
+    agent:
+      role: std:roles/planner
+      task: delivery:tasks/plan
+    produces:
+      planned: [{ name: work_list, type: std:artifact_types/work_list }]
+    outcomes: { planned: success }
+
+  - id: expand
+    action: plan.expand
+    with:
+      from: work_list
+      shape: parallel
+      target: children
+      step:
+        action: run.child
+        with:
+          template: delivery:templates/leaf
+          level: ticket
+          repositories: "$.repositories"
+    consumes: [{ name: work_list }]
+
+  - id: children
+    parallel:
+      branches: []
+      join: all
+    routes:
+      completed: { end: completed }

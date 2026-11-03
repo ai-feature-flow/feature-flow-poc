@@ -74,6 +74,12 @@ public sealed record PolicyConfig(
     /// </summary>
     public IReadOnlyList<string> EngineMayMerge { get; init; } = [];
 
+    /// <summary>
+    /// F11 (docs/05 section 1): <c>budgets.max_work_items.ceiling</c>, the most descendant runs any run tree may create. A
+    /// root template's <c>budget.max_work_items</c> must not exceed it (check 22); with none, it is the tree's budget. Null: no ceiling.
+    /// </summary>
+    public long? MaxWorkItems { get; init; }
+
     /// <summary>The first approval rule whose pattern matches the decision type, or null.</summary>
     public ApprovalRule? RuleFor(string type) => Approval.FirstOrDefault(r => r.Matches(type));
 }
@@ -304,7 +310,21 @@ public static class ConfigurationReader
                 m.Finish();
             }
 
-            foreach (var later in new[] { "budgets", "toolsets", "overrides" })
+            long? maxWorkItems = null;
+            if (MapReader.Of(p.Node("budgets"), d, "policy.budgets") is { } budgets)
+            {
+                if (MapReader.Of(budgets.Node("max_work_items"), d, "policy.budgets.max_work_items") is { } items)
+                {
+                    maxWorkItems = items.Int("ceiling");
+                    if (maxWorkItems is null or < 1)
+                        items.Error("policy.budgets.max_work_items needs a ceiling of at least 1", items.Map.Location);
+                    items.Finish();
+                }
+
+                budgets.Finish();
+            }
+
+            foreach (var later in new[] { "toolsets", "overrides" })
                 if (p.Has(later))
                 {
                     p.Node(later);
@@ -312,7 +332,7 @@ public static class ConfigurationReader
                 }
 
             p.Finish();
-            policy = new PolicyConfig(rules, perStep, perRun, allowed, requireChecks, hardStep, hardRun) { EngineMayMerge = engineMayMerge };
+            policy = new PolicyConfig(rules, perStep, perRun, allowed, requireChecks, hardStep, hardRun) { EngineMayMerge = engineMayMerge, MaxWorkItems = maxWorkItems };
         }
 
         foreach (var later in new[] { "library_overrides", "library_inputs", "roles", "role_mapping", "notifications", "timeouts", "teams" })

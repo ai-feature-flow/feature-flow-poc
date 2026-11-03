@@ -36,7 +36,12 @@ public sealed class AppCredentialBroker(
     /// <summary>The highest access each actor kind may hold, by permission. Anything not listed is never granted.</summary>
     public static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> Ceilings = new Dictionary<string, IReadOnlyDictionary<string, string>>
     {
-        ["engine"] = new Dictionary<string, string> { ["contents"] = "write", ["pull_requests"] = "write", ["metadata"] = "read", ["checks"] = "read", ["actions"] = "write" },
+        ["engine"] = new Dictionary<string, string>
+        {
+            ["contents"] = "write", ["pull_requests"] = "write", ["metadata"] = "read", ["checks"] = "read", ["actions"] = "write",
+            // The tracker (LOG 184). Agents get no issues access at all (F5).
+            ["issues"] = "write",
+        },
         ["agent"] = new Dictionary<string, string> { ["contents"] = "read", ["metadata"] = "read" },
     };
 
