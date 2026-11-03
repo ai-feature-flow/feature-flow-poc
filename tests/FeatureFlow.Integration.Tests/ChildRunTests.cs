@@ -129,6 +129,25 @@ public class ChildRunTests
         await h.RecordRunHistoryAsync(id, 1, "silent_parent_resumed");
     }
 
+    /// <summary>
+    /// Review F3: a child's end that the core refuses (its run.child step promised an artifact the child did not produce)
+    /// stops the step for a person instead of leaving it running for ever.
+    /// </summary>
+    [Fact]
+    public async Task A_childs_end_that_cannot_be_applied_raises_an_intervention()
+    {
+        await using var h = await Harness.StartAsync("claims", """{ "silent_child:work": done }""", libraries: Library);
+        var id = h.Start("m6:templates/claims_parent", "--repo", "acme/api");
+
+        var waitId = await h.WaitForWaitAsync(id, TimeSpan.FromMinutes(1));
+
+        Assert.NotNull(waitId);
+        var wait = (await h.ShowAsync(id))["waits"]!.AsArray().Single()!;
+        Assert.Equal("child", wait["stepId"]!.ToString());
+        Assert.Contains("the child's end could not be applied", wait["reason"]!.ToString(), StringComparison.Ordinal);
+        Assert.Contains("claimed", wait["reason"]!.ToString(), StringComparison.Ordinal);
+    }
+
     /// <summary>The id of the parent's child once the child is running.</summary>
     static async Task<string> RunningChildAsync(Harness h, string parentId)
     {

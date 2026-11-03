@@ -1054,7 +1054,9 @@ public class RunWorkflow
             return;
         children.Remove(child);
         var status = read.Status == "Completed" ? RunStatuses.Parse(read.Result ?? "") ?? RunStatus.Failed : RunStatus.Failed;
-        if (Current(child.StepId, child.Execution) && core!.Apply(new StepCompleted(child.StepId, RunCore.ChildOutcome(status), Artifacts: read.Artifacts)) is { Accepted: false } refused)
+        // A refused end stops the step for a person; histories recorded before the marker dropped it.
+        if (Current(child.StepId, child.Execution) && core!.Apply(new StepCompleted(child.StepId, RunCore.ChildOutcome(status), Artifacts: read.Artifacts)) is { Accepted: false } refused
+            && Workflow.Patched(ChildInputsPatch))
             core.Apply(new StepCannotAnswer(child.StepId, "the child's end could not be applied: " + string.Join("; ", refused.Errors)));
     }
 
