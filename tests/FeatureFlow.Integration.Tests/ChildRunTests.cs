@@ -45,6 +45,13 @@ public class ChildRunTests
         Assert.Equal("notes", notes.Key);
         Assert.Equal(start.ParentArtifacts, start.RootArtifacts);
         Assert.Contains(view["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "completed" && e["stepId"]!.ToString() == "read");
+
+        // The artifact index: each run's artifacts by step and execution, a parent's view including its child's.
+        var index = (await h.Host.Providers.Required<Providers.Abstractions.IRecordStoreProvider>("record_store").QueryAsync<Providers.Abstractions.ArtifactRecord>(
+            Providers.Abstractions.Queries.Artifacts, new Dictionary<string, string> { ["run_id"] = id }, TestContext.Current.CancellationToken)).Value!;
+        Assert.Equal([(id, "write", 1, "notes", notes.Value), (childId, "use", 1, "summary", index.Single(a => a.Name == "summary").Ref)],
+            index.Select(a => (a.RunId, a.StepId, a.Execution, a.Name, a.Ref)));
+        Assert.All(index, a => Assert.Equal(("m6:artifact_types/notes", null, false), (a.Type, a.Action, a.Evidence)));
     }
 
     [Fact]

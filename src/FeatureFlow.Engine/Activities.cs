@@ -21,7 +21,7 @@ public sealed record LibrarySnapshot(string Name, IReadOnlyDictionary<string, st
 public sealed record Prepared(IReadOnlyList<LibrarySnapshot> Libraries, RunPolicy Policy, IReadOnlyList<string> Errors, IReadOnlyList<string> Warnings,
     IReadOnlyDictionary<string, string>? DefaultBranches = null);
 
-/// <summary>A child run as its parent reads it: its Temporal status, its result (its run status), and the artifacts it ended with, by name.</summary>
+/// <summary>A child run as its parent reads it: its Temporal status, its result (its run status), and the latest artifact of each name it produced.</summary>
 public sealed record ChildRead(string Status, string? Result, IReadOnlyDictionary<string, string>? Artifacts = null);
 
 /// <summary>A <c>clean_up</c> reset: the step it resets for and how often it has run, the run's repositories and work branch, and every step that has run (their hidden references).</summary>
@@ -305,9 +305,13 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
         }
 
         var description = await handle.DescribeAsync(new() { Rpc = new RpcOptions { CancellationToken = ct } });
-        var artifacts = description.Memo.TryGetValue(RunWorkflow.ArtifactsMemo, out var memo)
-            ? await memo.ToValueAsync<Dictionary<string, string>>()
-            : null;
+        // The child's own artifacts from the artifact index (its run id is its workflow id): the latest of each name.
+        var indexed = await services.RecordStore.QueryAsync<ArtifactRecord>(Queries.Artifacts, new Dictionary<string, string> { ["run_id"] = workflowId }, ct);
+        if (!indexed.Ok)
+            throw new ApplicationFailureException($"the artifact index cannot be read: {indexed.Error!.Message}", errorType: "infrastructure");
+        var artifacts = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        foreach (var record in indexed.Value!.Where(r => r.RunId == workflowId))
+            artifacts[record.Name] = record.Ref;
         return new ChildRead(description.Status.ToString(), result, artifacts);
     }
 

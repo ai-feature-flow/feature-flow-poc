@@ -547,7 +547,7 @@ public class RunWorkflow
             foreach (var (name, reference) in current.Artifacts.Where(_ => other.Action != "run.child").OrderBy(kv => kv.Key, StringComparer.Ordinal))
             {
                 var type = other.Produces.FirstOrDefault(p => p.Name == name)?.Type;
-                var evidence = type?.Reference is { } typeRef && libraries?.Resolve(typeRef)?.ArtifactType(typeRef.Name)?.Evidence == true;
+                var evidence = IsEvidence(type);
                 artifacts.Add(new ArtifactEntry(other.Id, name, type?.Text, reference, other.Form == StepForm.Action ? other.Action : null, evidence));
             }
             if (other.Action == "scm.pull_request" && current.Outputs.GetValueOrDefault("pull_request") is string pr && pr.Length > 0)
@@ -830,6 +830,8 @@ public class RunWorkflow
             report.Outputs.ToDictionary(kv => kv.Key, kv => YamlWriter.ReadPlain(kv.Value)),
             report.Artifacts, patch, report.PatchToParent);
         var result = core!.Apply(completed);
+        if (result.Accepted)
+            IndexArtifacts(step, completed.Artifacts);
         if (!result.Accepted)
         {
             // Correction turns arrive in M4; until then an output contract error fails the attempt (docs/04 section 3.1, step 5).
@@ -839,6 +841,27 @@ public class RunWorkflow
 
     /// <summary>The artifact a plan.expand step reads: the latest one of its <c>from</c> name, nearest its own scope.</summary>
     string? ListArtifact(Step step) => step.With?["from"].ScalarText() is { } name ? LatestArtifact(step, name) : null;
+
+    /// <summary>Whether an artifact type is marked <c>evidence: true</c> (F7).</summary>
+    bool IsEvidence(ItemRef? type) => type?.Reference is { } typeRef && libraries?.Resolve(typeRef)?.ArtifactType(typeRef.Name)?.Evidence == true;
+
+    /// <summary>Artifacts steps produced since the last record, for the record store's artifact index.</summary>
+    readonly List<ArtifactRecord> artifactRecords = [];
+
+    /// <summary>
+    /// The artifact index (docs/02 section 5): each artifact a step produced, by run, step, execution and name, written with
+    /// the step's outcome. A parent reads its children's here (<see cref="RunActivities.ReadChildAsync"/>).
+    /// </summary>
+    void IndexArtifacts(Step step, IReadOnlyDictionary<string, string>? artifacts)
+    {
+        var execution = core!.State.Steps.GetValueOrDefault(step.Id)?.Current?.Number ?? 0;
+        foreach (var (name, reference) in (artifacts ?? new Dictionary<string, string>()).OrderBy(kv => kv.Key, StringComparer.Ordinal))
+        {
+            var type = step.Produces.FirstOrDefault(p => p.Name == name)?.Type;
+            artifactRecords.Add(new ArtifactRecord(input.RunId, step.Id, execution, name, type?.Text, reference,
+                step.Form == StepForm.Action ? step.Action : null, IsEvidence(type), Workflow.UtcNow));
+        }
+    }
 
     /// <summary>The latest artifact of a name in this run, nearest a step's own scope (the run's top level when null).</summary>
     string? LatestArtifact(Step? step, string name)
@@ -927,9 +950,6 @@ public class RunWorkflow
 
     /// <summary>The patch marker of watching children for an end they did not signal (M3 follow-up 10).</summary>
     public const string ChildWatchPatch = "m6-child-watch";
-
-    /// <summary>The memo in which a child run leaves its artifacts, by name, when it ends, for its parent to read.</summary>
-    public const string ArtifactsMemo = "artifacts";
 
     /// <summary>
     /// The run that started a child is told by Temporal when the child closes, however it ended: a child that ends
@@ -1066,13 +1086,15 @@ public class RunWorkflow
 
         var answers = questionRecords.ToList();
         questionRecords.Clear();
+        var artifacts = artifactRecords.ToList();
+        artifactRecords.Clear();
 
         var status = core.State.Status.Name();
         var runs = status == lastRecordedStatus ? [] : new List<RunRecord> { RunRecordOf(status, null, now) };
         lastRecordedStatus = status;
-        if (timeline.Count == 0 && waits.Count == 0 && runs.Count == 0 && answers.Count == 0)
+        if (timeline.Count == 0 && waits.Count == 0 && runs.Count == 0 && answers.Count == 0 && artifacts.Count == 0)
             return false;
-        var batch = new RecordBatch(runs, waits, timeline, Questions: answers.Count == 0 ? null : answers);
+        var batch = new RecordBatch(runs, waits, timeline, Questions: answers.Count == 0 ? null : answers, Artifacts: artifacts.Count == 0 ? null : artifacts);
         await Workflow.ExecuteActivityAsync((RunActivities a) => a.RecordAsync(batch), Light);
         return true;
     }
@@ -1114,9 +1136,6 @@ public class RunWorkflow
         // sandbox before the run ends. Histories recorded before this change ended without waiting.
         if (inFlightActivities > 0 && Workflow.Patched(WaitCancellationPatch))
             await Workflow.WaitConditionAsync(() => inFlightActivities == 0);
-        // The child's artifacts, for its parent to read with its end (docs/03 section 9.3: from { child: <id> }).
-        if (input.ParentWorkflowId is not null && Workflow.Patched(ChildInputsPatch))
-            Workflow.UpsertMemo(MemoUpdate.ValueSet(ArtifactsMemo, RunArtifacts(null)));
         await TellParentAsync();
         return core!.State.Status.Name();
     }
