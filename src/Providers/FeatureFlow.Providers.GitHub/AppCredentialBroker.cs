@@ -16,7 +16,7 @@ namespace FeatureFlow.Providers.GitHub;
 /// It refuses, never narrows: a request for a repository it may not grant, a permission above the actor's
 /// ceiling, or a lifetime over an hour is refused before any call to GitHub, as a work error (<c>rejected</c>),
 /// so it is never retried. The engine may
-/// read and write contents and pull requests; an agent step may only read contents (F5). No actor is ever
+/// read and write contents and pull requests, and dispatch workflows (actions); an agent step may only read contents (F5). No actor is ever
 /// granted <c>administration</c>, so no credential can change branch protection.
 /// </para>
 /// </summary>
@@ -36,7 +36,7 @@ public sealed class AppCredentialBroker(
     /// <summary>The highest access each actor kind may hold, by permission. Anything not listed is never granted.</summary>
     public static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> Ceilings = new Dictionary<string, IReadOnlyDictionary<string, string>>
     {
-        ["engine"] = new Dictionary<string, string> { ["contents"] = "write", ["pull_requests"] = "write", ["metadata"] = "read", ["checks"] = "read", ["actions"] = "read" },
+        ["engine"] = new Dictionary<string, string> { ["contents"] = "write", ["pull_requests"] = "write", ["metadata"] = "read", ["checks"] = "read", ["actions"] = "write" },
         ["agent"] = new Dictionary<string, string> { ["contents"] = "read", ["metadata"] = "read" },
     };
 
@@ -136,7 +136,7 @@ public sealed class AppCredentialBroker(
                 return ProviderResult<string>.Success(text);
             return new ProviderResult<string>(null, Map(response.StatusCode, response.Headers.RetryAfter?.Delta));
         }
-        catch (HttpRequestException e)
+        catch (Exception e) when (e is HttpRequestException or IOException or System.Net.Sockets.SocketException)
         {
             return ProviderResult<string>.Failure("unreachable", e.Message);
         }

@@ -40,10 +40,13 @@ public sealed record PullRequestState(
 
 /// <summary>
 /// Whether a branch is protected, and how (check 24). The engine only reads it; its identity has no permission to
-/// change it (F5).
+/// change it (F5). <see cref="ReviewRulesKnown"/> is false when the branch has protection whose review rules the engine
+/// cannot read (on GitHub, classic branch protection, readable only with administration): then
+/// <see cref="RequiresPullRequest"/> and <see cref="RequiredApprovals"/> describe only what could be read, and check 24
+/// reports the rules as unknown rather than passing.
 /// </summary>
 public sealed record BranchProtection(string Branch, bool Protected, bool RequiresPullRequest, int RequiredApprovals,
-    IReadOnlyList<string> RequiredChecks, bool RequiresMergeQueue);
+    IReadOnlyList<string> RequiredChecks, bool RequiresMergeQueue, bool ReviewRulesKnown = true);
 
 /// <summary>A check's progress: <c>queued</c>, <c>in_progress</c> or <c>completed</c>.</summary>
 public static class CheckStates

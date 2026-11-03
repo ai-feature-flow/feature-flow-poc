@@ -93,6 +93,18 @@ public abstract class VcsContract : ContractBase
     }
 
     [Fact]
+    public async Task A_push_moving_a_reference_back_is_refused_once_it_has_moved_on()
+    {
+        // A reset must not throw away a commit it did not see.
+        var start = await Change(Work, "a.txt", "1", from: Main);
+        var later = await Change(Work, "a.txt", "2");
+        var theirs = await Change(Work, "a.txt", "3");
+
+        Refused(await Vcs.PushAsync(Repo, Work, start, null, later, Ct), "base_moved");
+        Assert.Equal(theirs, await At(Work));
+    }
+
+    [Fact]
     public async Task Descent_follows_history()
     {
         var main = await At(Main);
