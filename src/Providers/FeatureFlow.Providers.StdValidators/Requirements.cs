@@ -50,21 +50,13 @@ static class Requirements
                 c.Error("uncovered", $"no item of {string.Join(" or ", supporters.Select(D))} supports {item.Id} of {D(plans[at])}", top.Name, item.Id);
     }
 
-    /// <summary>The kind of owner each scope's plan may name, besides itself (std's <c>rules</c> for requirements and delivery_plan).</summary>
-    static string? ChildKind(string? scope) => scope switch
-    {
-        "project" => "epic",
-        "epic" => "ticket",
-        _ => null,
-    };
-
     /// <summary><c>requirement_ownership</c>: every item of a parent-written plan names one owner its scope allows.</summary>
     public static async Task OwnershipAsync(Check c)
     {
         foreach (var plan in await c.PlansAsync(Types.Requirements, Types.DeliveryPlan))
         {
             var scope = plan.Value.Scope;
-            if (ChildKind(scope?.Kind) is not { } child)
+            if (Check.ChildKind(scope?.Kind) is not { } child)
             {
                 c.Error("not_a_parent_plan", $"{D(plan)} is a {scope?.Kind ?? "(no scope)"} plan; only a project or an epic plan names owners", plan.Subject.Name);
                 continue;
@@ -93,6 +85,11 @@ static class Requirements
         var plans = await c.PlansAsync(Types.Requirements, Types.DeliveryPlan);
         var parents = plans.Where(p => p.Subject.From != "current").ToList();
         var own = plans.Where(p => p.Subject.From == "current").ToList();
+        // A child's own plan never names owners: checked with or without a parent plan, so a standalone ticket cannot mark
+        // its criteria as someone else's and so need no test (review F1).
+        foreach (var plan in own)
+            foreach (var item in plan.Value.Items.Where(i => !string.IsNullOrEmpty(i.Id) && i.Owner is not null))
+                c.Error("owner_in_child", $"{item.Id} in {D(plan)} names an owner; only the parent's plan does", plan.Subject.Name, item.Id);
         if (parents.Count == 0)
             return;
         if (own.Count == 0)
@@ -122,8 +119,6 @@ static class Requirements
 
             foreach (var item in plan.Value.Items.Where(i => !string.IsNullOrEmpty(i.Id)))
             {
-                if (item.Owner is not null)
-                    c.Error("owner_in_child", $"{item.Id} in {D(plan)} names an owner; only the parent's plan does", plan.Subject.Name, item.Id);
                 if (parents.SelectMany(p => p.Value.Items).FirstOrDefault(i => i.Id == item.Id && i.Owner is not null && !Owns(i.Owner, scope)) is { Owner: { } other })
                     c.Error("owned_by_another", $"{D(plan)} holds {item.Id}, which the parent's plan gives {other.Kind} {other.Id}", plan.Subject.Name, item.Id);
             }
@@ -137,10 +132,14 @@ static class Requirements
             foreach (var item in plan.Value.Items.Where(i => !string.IsNullOrEmpty(i.Id)))
             {
                 var methods = item.Verification ?? [];
-                if (item.Owner is null && methods.Count == 0)
-                    c.Error("no_method", $"{item.Id} in {D(plan)} has no owner and no verification method", plan.Subject.Name, item.Id);
-                if (item.Owner is not null && methods.Count > 0)
-                    c.Error("owned_with_methods", $"{item.Id} in {D(plan)} is owned by {item.Owner.Kind} {item.Owner.Id}, which adds its methods; it has its own", plan.Subject.Name, item.Id);
+                var delegated = Check.Delegated(item, plan.Value.Scope);
+                if (!delegated && methods.Count == 0)
+                    c.Error("no_method", item.Owner is null
+                        ? $"{item.Id} in {D(plan)} has no owner and no verification method"
+                        : $"{item.Id} in {D(plan)} has no verification method, and its owner {item.Owner.Kind} {item.Owner.Id} is not a child this {plan.Value.Scope?.Kind} plan may give it to",
+                        plan.Subject.Name, item.Id);
+                if (delegated && methods.Count > 0)
+                    c.Error("owned_with_methods", $"{item.Id} in {D(plan)} is owned by {item.Owner!.Kind} {item.Owner.Id}, which adds its methods; it has its own", plan.Subject.Name, item.Id);
                 foreach (var method in methods)
                 {
                     if (string.IsNullOrEmpty(method.Id) || string.IsNullOrEmpty(method.Repository) || string.IsNullOrEmpty(method.Tier))

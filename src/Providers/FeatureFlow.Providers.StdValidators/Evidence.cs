@@ -56,6 +56,24 @@ static class Evidence
 
     static string Name(ClaimedTest test) => test.Id ?? "(a test with no id)";
 
+    /// <summary>
+    /// This run's own non-baseline test results: the run its <c>current</c> subjects are indexed under. The index holds its
+    /// descendants' artifacts too, which are not this run's evidence. Null, with an error, when the run cannot be told.
+    /// </summary>
+    static async Task<(IReadOnlySet<string> Own, List<Observed> Observed)?> OwnObservedAsync(Check c)
+    {
+        var own = c.OwnRuns();
+        if (own.Count != 1)
+        {
+            c.Error("own_run_unknown", own.Count == 0
+                ? "none of the subjects is in the artifact index, so this run's own test results cannot be told from its children's"
+                : $"the subjects come from several runs ({string.Join(", ", own.Order(StringComparer.Ordinal))})");
+            return null;
+        }
+
+        return (own, await ObservedAsync(c, c.EngineEvidence(Types.TestResults, Check.TestActions).Where(e => own.Contains(e.RunId))));
+    }
+
     /// <summary><c>verification_satisfaction</c> (std's verification skill, "Satisfaction").</summary>
     public static async Task SatisfactionAsync(Check c)
     {
@@ -73,24 +91,29 @@ static class Evidence
             return;
         }
 
-        // This run's evidence only: a child's test results, in the index too, prove nothing about this run's head.
-        var own = c.OwnRuns();
-        if (own.Count != 1)
-        {
-            c.Error("own_run_unknown", own.Count == 0
-                ? "none of the subjects is in the artifact index, so this run's own test results cannot be told from its children's"
-                : $"the subjects come from several runs ({string.Join(", ", own.Order(StringComparer.Ordinal))})");
+        if (await OwnObservedAsync(c) is not var (own, observed))
             return;
-        }
-
-        evidence = evidence.Where(e => own.Contains(e.RunId)).ToList();
         var claims = new List<Claim>();
         foreach (var subject in claimSubjects)
             claims.AddRange((await c.ReadAsync<ClaimsDocument>(subject))?.Claims ?? []);
-        var observed = await ObservedAsync(c, evidence);
         var methods = new HashSet<(string?, string?)>();
+        Tree? tree = null;
         foreach (var plan in plans)
-            foreach (var criterion in plan.Value.Items.Where(i => i.Owner is null && !string.IsNullOrEmpty(i.Id)))
+            foreach (var criterion in plan.Value.Items.Where(i => !string.IsNullOrEmpty(i.Id)))
+            {
+                // Excused only when given to a child that planned it (review F1); otherwise this run proves it itself.
+                if (Check.Delegated(criterion, plan.Value.Scope))
+                {
+                    tree ??= await TreeAsync(c);
+                    if (tree.Plans.Any(p => !own.Contains(p.RunId) && Owns(criterion.Owner!, p.Document.Scope) && p.Document.Items.Any(i => i.Id == criterion.Id)))
+                        continue;
+                }
+
+                if (criterion.Verification is not { Count: > 0 })
+                    c.Error("unproved", criterion.Owner is null
+                        ? $"{criterion.Id} has no verification method, so nothing proves it"
+                        : $"{criterion.Id} is owned by {criterion.Owner.Kind} {criterion.Owner.Id}, which has planned no copy of it, and has no verification method of its own",
+                        plan.Subject.Name, criterion.Id);
                 foreach (var method in criterion.Verification ?? [])
                 {
                     var where = $"{criterion.Id}/{method.Id}";
@@ -123,9 +146,10 @@ static class Evidence
                             c.Error("test_not_passed", $"{where} claims {Name(test)}, which did not pass at {Short(revision)}: {why}", plan.Subject.Name, criterion.Id);
                     }
                 }
+            }
 
         foreach (var claim in claims.Where(x => !methods.Contains((x.Criterion, x.Verification))))
-            c.Error("unknown_claim", $"a claim names {claim.Criterion}/{claim.Verification}, which is no method of a criterion without an owner", item: claim.Criterion);
+            c.Error("unknown_claim", $"a claim names {claim.Criterion}/{claim.Verification}, which is no method of a criterion this run proves", item: claim.Criterion);
     }
 
     /// <summary>A plan in the run tree: the run that produced it, its name there, and its content.</summary>
@@ -310,9 +334,10 @@ static class Evidence
 
     /// <summary>
     /// <c>tests_added</c> (docs/04 section 10.2). A claimed test counts for a finding when it is in the finding's repository,
-    /// its source file exists at the frozen revision and holds the test (its symbol, else its id's last part), and the file
-    /// is new or different since the revision the finding was raised on. Files are read through the code host at those
-    /// revisions, so the check needs no checkout (LOG 172).
+    /// it passed in this run's own engine test results at the frozen revision, and its source file is not the file the
+    /// finding is about, exists at the frozen revision holding the test (its id's last part), and is new or different since
+    /// the revision the finding was raised on. Files are read through the code host at those revisions, so the check needs
+    /// no checkout (LOG 172, 178). An agent's claim alone never satisfies it: only the engine's observation does.
     /// </summary>
     public static async Task TestsAddedAsync(Check c)
     {
@@ -323,7 +348,10 @@ static class Evidence
         foreach (var subject in c.Present(Types.EvidenceClaims))
             tests.AddRange(((await c.ReadAsync<ClaimsDocument>(subject))?.Claims ?? []).SelectMany(x => x.Tests ?? []));
 
-        foreach (var entry in entries.Where(e => e.State == FindingStates.Open && e.RegressionTest?.Applicable != false))
+        var needed = entries.Where(e => e.State == FindingStates.Open && e.RegressionTest?.Applicable != false).ToList();
+        if (needed.Count == 0 || await OwnObservedAsync(c) is not var (_, observed))
+            return;
+        foreach (var entry in needed)
         {
             if (c.Request.Findings.FirstOrDefault(f => f.FindingId == entry.Finding) is not { } finding)
             {
@@ -347,9 +375,27 @@ static class Evidence
             var added = false;
             foreach (var test in tests.Where(t => t.Repository is not null && Check.SameRepository(t.Repository, repository)))
             {
+                if (test.Symbol is not { } symbol)
+                {
+                    why.Add("a claimed test has no id");
+                    continue;
+                }
+
+                if (NotPassed(test.Id!, observed.Where(o => Check.SameRepository(o.Repository, repository) && o.Revision == head).ToList()) is { } failed)
+                {
+                    why.Add($"{Name(test)} did not pass in this run's test results at {Short(head)}: {failed}");
+                    continue;
+                }
+
                 if (test.Source?.File is not { Length: > 0 } file)
                 {
                     why.Add($"{Name(test)} names no source file");
+                    continue;
+                }
+
+                if (file == finding.Finding.Location.File)
+                {
+                    why.Add($"{file} is the file the finding is about, not a test");
                     continue;
                 }
 
@@ -359,7 +405,7 @@ static class Evidence
                     continue;
                 }
 
-                if (test.Symbol is { } symbol && !after.Content.Contains(symbol, StringComparison.Ordinal))
+                if (!after.Content.Contains(symbol, StringComparison.Ordinal))
                 {
                     why.Add($"{file} does not hold {symbol}");
                     continue;

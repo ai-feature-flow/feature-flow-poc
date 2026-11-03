@@ -5,8 +5,8 @@ metadata:
   description: >-
     A triager decides per open finding; the decisions are applied; a fixer fixes
     what is left open, with regression tests; a verifying reviewer checks each fix
-    against its finding on the full diff; the regression tests are validated as
-    new. The caller re-tests and re-reviews after the fixed exit.
+    against its finding on the full diff; the fix is re-tested and its regression
+    tests are validated as new and passing. The caller re-tests and re-reviews after the fixed exit.
 
 parameters:
   fixer_task: { type: reference, default: std:tasks/fix_findings }
@@ -26,6 +26,7 @@ artifact_types:
   - std:artifact_types/triage
   - std:artifact_types/evidence_claims
   - std:artifact_types/validation_report
+  - std:artifact_types/test_results
 
 steps:
   - id: triage
@@ -89,6 +90,14 @@ steps:
     action: findings.triage
     with: { from: fix_verification }
     consumes: [{ name: fix_verification }]
+
+  - id: retest                          # tests_added counts only tests the engine saw pass at the fixed head
+    action: test.run
+    with: { tier_tags: { expr: "params.tier_tags" } }
+    produces: [{ name: test_results, type: std:artifact_types/test_results }]
+    routes:
+      failed: fix
+      baseline_failed: { exit: escalated }
 
   - id: tests_added
     action: artifact.validate

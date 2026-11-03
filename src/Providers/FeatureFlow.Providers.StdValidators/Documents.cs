@@ -30,8 +30,11 @@ public sealed record ClaimSource(string? File, string? Symbol);
 
 public sealed record ClaimedTest(string? Repository, string? Tier, string? Id, string? Change, ClaimSource? Source = null)
 {
-    /// <summary>What the test's source must contain: its symbol, else the last part of its id.</summary>
-    public string? Symbol => Source?.Symbol ?? Id?.Split('.', '/', ':').LastOrDefault(p => p.Length > 0);
+    /// <summary>
+    /// What the test's source must contain: the last part of its id. Not the claim's own <c>symbol</c>, which is free text an
+    /// agent could set to anything in the file (review F2).
+    /// </summary>
+    public string? Symbol => Id?.Split('.', '/', ':').LastOrDefault(p => p.Length > 0);
 }
 
 public sealed record Claim(string? Criterion, string? Verification, IReadOnlyList<ClaimedTest>? Tests);

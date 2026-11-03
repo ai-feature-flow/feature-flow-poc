@@ -47,19 +47,25 @@ public sealed class StdValidatorTests : IDisposable
         var c = git.Commit(new() { ["tests/WidgetTests.cs"] = "class WidgetTests { void Adds() { } void RefusesLongNames() { } }\n" });
         var validators = new StdValidators(() => w.Store, () => git.Host, () => null);
         var findings = new[] { Finding("F-1", a) };
-        ValidationRequest Request(string claims, string head) => World.Request(Names.TestsAdded,
-            [w.Subject("fix_claims", "evidence_claims", claims), w.Subject("triage", "triage", TriageText)], Frozen(head), [], findings);
+        // The engine's results at each head: what passed there, as test.run (the fix loop's retest) saw it.
+        ValidationRequest Request(string claims, string head, params string[] passing)
+        {
+            var (subject, record) = w.Indexed("fix_claims", "evidence_claims", claims);
+            return World.Request(Names.TestsAdded, [subject, w.Subject("triage", "triage", TriageText)], Frozen(head), [record, w.TestEvidence(head, passing)], findings);
+        }
 
         // B: the agent claims the existing test as its regression test.
-        var atB = await ValidateAsync(validators, Request(Claims("WidgetTests.Adds", "modified"), b));
+        var atB = await ValidateAsync(validators, Request(Claims("WidgetTests.Adds", "modified"), b, "WidgetTests.Adds"));
         Invalid(atB, "no_test_added");
         Assert.Contains("tests/WidgetTests.cs is unchanged since", atB.Issues.Single().Message);
         // B: it claims the new test, which B does not have.
-        Invalid(await ValidateAsync(validators, Request(Claims(), b)), "no_test_added");
+        var missing = await ValidateAsync(validators, Request(Claims(), b, "WidgetTests.Adds"));
+        Invalid(missing, "no_test_added");
+        Assert.Contains("did not pass in this run's test results", missing.Issues.Single().Message);
         // C: the test file changed and holds the claimed test.
-        Valid(await ValidateAsync(validators, Request(Claims(), c)));
-        // C: the file changed, but the claimed test is not in it.
-        var ghost = await ValidateAsync(validators, Request(Claims("WidgetTests.Ghost"), c));
+        Valid(await ValidateAsync(validators, Request(Claims(), c, "WidgetTests.Adds", "WidgetTests.RefusesLongNames")));
+        // C: a test that passed somewhere, but not in the changed file the claim names.
+        var ghost = await ValidateAsync(validators, Request(Claims("WidgetTests.Ghost"), c, "WidgetTests.Ghost"));
         Invalid(ghost, "no_test_added");
         Assert.Contains("does not hold Ghost", ghost.Issues.Single().Message);
     }
@@ -70,15 +76,18 @@ public sealed class StdValidatorTests : IDisposable
         var head = w.Commit("src/Widgets.cs", "class Widgets { const int Max = 100; }\n");
         var notApplicable = TriageText.Replace("{ applicable: true }", "{ applicable: false, reason: configuration }");
         var noSource = Claims().Replace(", source: { file: tests/WidgetTests.cs }", "");
-        ValidationRequest Request(string claims, string triage) => World.Request(Names.TestsAdded,
-            [w.Subject("fix_claims", "evidence_claims", claims), w.Subject("triage", "triage", triage)], Frozen(head), [], [Finding("F-1", w.Main)]);
+        ValidationRequest Request(string claims, string triage, bool ledger = true)
+        {
+            var (subject, record) = w.Indexed("fix_claims", "evidence_claims", claims);
+            return World.Request(Names.TestsAdded, [subject, w.Subject("triage", "triage", triage)], Frozen(head),
+                [record, w.TestEvidence(head, ["WidgetTests.RefusesLongNames"])], ledger ? [Finding("F-1", w.Main)] : []);
+        }
 
         Valid(await ValidateAsync(Request(noSource, notApplicable)));
         var result = await ValidateAsync(Request(noSource, TriageText));
         Invalid(result, "no_test_added");
         Assert.Contains("names no source file", result.Issues.Single().Message);
-        Invalid(await ValidateAsync(World.Request(Names.TestsAdded, [w.Subject("fix_claims", "evidence_claims", Claims()), w.Subject("triage", "triage", TriageText)],
-            Frozen(head), [], [])), "unknown_finding");
+        Invalid(await ValidateAsync(Request(Claims(), TriageText, ledger: false)), "unknown_finding");
     }
 
     // ---- requirement_trace across a child ----
@@ -152,6 +161,40 @@ public sealed class StdValidatorTests : IDisposable
 
         Invalid(result, "trace_gap");
         Assert.Contains("its owner, ticket T-1, has no plan holding it", result.Issues.Single().Message);
+    }
+
+    /// <summary>
+    /// The trace proves an item only with the tests and claims of the run whose plan holds it (review F4): a sibling ticket's
+    /// passing tests or claims, also in the epic's index, prove nothing about T-1's criterion.
+    /// </summary>
+    [Theory]
+    [InlineData("test_results")]
+    [InlineData("implementation_claims")]
+    public async Task The_trace_takes_tests_and_claims_only_from_the_run_whose_plan_holds_the_item(string moved)
+    {
+        var (artifacts, head, _, _) = EpicWithTicket();
+        var at = artifacts.FindIndex(a => a.Name == moved);
+        artifacts[at] = artifacts[at] with { RunId = "run-ticket-2" };
+
+        Invalid(await ValidateAsync(Trace(artifacts, head)), "trace_gap");
+    }
+
+    [Fact]
+    public async Task Tests_at_an_ancestor_of_the_head_are_contained_through_the_VCS_and_not_without_it()
+    {
+        var tested = w.Commit("tests/WidgetTests.cs", "RefusesLongNames\n");
+        var head = w.Commit("docs/notes.md", "later\n");
+        var artifacts = new List<ArtifactRecord>
+        {
+            Record("requirements", "requirements", w.Put(TicketRequirements)),
+            Record("delivery_plan", "delivery_plan", w.Put(TicketPlan())),
+            Record("implementation_claims", "evidence_claims", w.Put(Claims())),
+            w.TestEvidence(tested, ["WidgetTests.RefusesLongNames"]),
+        };
+
+        Valid(await ValidateAsync(Trace(artifacts, head)));
+        var noVcs = new StdValidators(() => w.Store, () => new FeatureFlow.Providers.Local.InMemoryCodeHost(w.Forge), () => null);
+        Invalid(await ValidateAsync(noVcs, Trace(artifacts, head)), "trace_gap");
     }
 
     [Theory]

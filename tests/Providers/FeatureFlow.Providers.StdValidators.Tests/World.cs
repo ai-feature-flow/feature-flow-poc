@@ -51,6 +51,13 @@ public sealed class World : IDisposable
     public ValidationSubject Subject(string name, string type, string text, string from = "current") =>
         new(name, "std:artifact_types/" + type, new ArtifactRef(Put(text)), from);
 
+    /// <summary>A subject of this run and its index entry (an agent's), so a validator can tell which run it belongs to.</summary>
+    public (ValidationSubject Subject, ArtifactRecord Record) Indexed(string name, string type, string text, string runId = TicketRun)
+    {
+        var record = Record(name, type, Put(text), runId: runId, step: name);
+        return (new ValidationSubject(name, record.Type, new ArtifactRef(record.Ref)), record);
+    }
+
     public static ValidationSubject Absent(string name, string from = "parent") => new(name, null, null, from);
 
     /// <summary>An index entry: by default an agent's (no action, not evidence).</summary>
@@ -59,11 +66,12 @@ public sealed class World : IDisposable
 
     /// <summary>Engine test evidence from <c>test.run</c>: one tier at a revision, with the tests that passed and failed.</summary>
     public ArtifactRecord TestEvidence(string revision, IReadOnlyList<string> passing, IReadOnlyList<string>? failing = null, string tier = "unit",
-        string runId = TicketRun, string? action = "test.run", bool evidence = true, bool exitCodeOnly = false)
+        string runId = TicketRun, string? action = "test.run", bool evidence = true, bool exitCodeOnly = false, bool baseline = false,
+        IReadOnlyList<TestResults>? extraTiers = null)
     {
         var failures = (failing ?? []).Select(f => new TestFailure(f, "failed")).ToList();
         var results = new TestResults(revision, tier, passing.Count, failures.Count, 0, failures, exitCodeOnly ? null : passing);
-        var reference = PutEngine(new TestEvidence(Repo, revision, false, failures.Count == 0, [results]));
+        var reference = PutEngine(new TestEvidence(Repo, revision, baseline, failures.Count == 0, [results, .. extraTiers ?? []]));
         return Record("test_results", "test_results", reference, action, evidence, runId, "tests");
     }
 

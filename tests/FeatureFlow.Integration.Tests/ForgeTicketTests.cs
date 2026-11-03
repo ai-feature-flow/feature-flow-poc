@@ -55,14 +55,14 @@ public class ForgeTicketTests
         """;
 
     /// <summary>A fresh world with the fixture repository, protected, and an engine whose memory providers use it.</summary>
-    static async Task<(Harness H, InMemoryForge Forge, RepoRef Repo)> StartAsync(string name, string policy = "", bool autoApprove = true)
+    static async Task<(Harness H, InMemoryForge Forge, RepoRef Repo)> StartAsync(string name, string policy = "", bool autoApprove = true, string script = Script)
     {
         var world = $"it-{name}-{Guid.NewGuid():N}";
         var forge = InMemoryForge.Named(world);
         var repo = forge.CreateRepository(Repo, new Dictionary<string, string> { ["feature-flow.yaml"] = Manifest, ["src/App.cs"] = "class App {}\n" });
         forge.Protect(repo, new BranchProtection("main", true, true, 1, [], false));
         var client = EditingAgentRuntime.SandboxClient(Directory.CreateTempSubdirectory("ff-client-").FullName);
-        var h = await Harness.StartAsync(name, script: Script, autoApprove: autoApprove, omitTypes: ["sandbox", "vcs", "code_host", "ci", "validator"],
+        var h = await Harness.StartAsync(name, script: script, autoApprove: autoApprove, omitTypes: ["sandbox", "vcs", "code_host", "ci", "validator"],
             providers: string.Join("\n", new[] { "vcs", "code_host", "ci", "sandbox" }.Select(t => $"  {t}: {{ instances: {{ memory: {{ world: {world} }} }} }}"))
                        + "\n  validator: { instances: { std: {} } }",
             agentRuntime: $"{{ default: editing, dry_run: recording, instances: {{ editing: {{ provider: editing, script: script.yaml, world: {world} }}, recording: {{ folder: recorded }} }} }}",
@@ -117,6 +117,41 @@ public class ForgeTicketTests
         Assert.Contains(trace, d => d.StartsWith("requirement_support (std): valid", StringComparison.Ordinal));
         Assert.Contains(trace, d => d.StartsWith("verification_satisfaction (std): valid", StringComparison.Ordinal));
         Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
+    }
+
+    /// <summary>
+    /// The review's probe (PR 13, F1): the planner marks its only criterion as owned by the ticket itself, with no
+    /// verification method, and the implementer claims no test. The std validators refuse the plan every time, so the
+    /// ticket never reaches a merge: a run's criteria are met only by engine test evidence or by a person.
+    /// </summary>
+    [Fact]
+    public async Task A_planner_that_marks_its_criteria_as_owned_to_skip_testing_does_not_get_a_merge()
+    {
+        const string SelfOwned = """
+            {
+              "plan.plan": { artifacts: {
+                requirements: { schema: 1, scope: { kind: ticket, id: T-9 }, requirements: [
+                  { id: R-1, title: Widgets are added, behaviour: An added widget is listed., supports_reason: The ticket's own behaviour } ] },
+                delivery_plan: { schema: 1, scope: { kind: ticket, id: T-9 }, acceptance_criteria: [
+                  { id: AC-1, title: Added widgets are listed, behaviour: Adding a widget then listing shows it., supports: [{ artifact: requirements, requirement: R-1 }],
+                    owner: { kind: ticket, id: T-9 } } ] } } },
+              implement: { artifacts: { implementation_claims: { schema: 1, claims: [] } } }
+            }
+            """;
+        var (h, forge, repo) = await StartAsync("forge-self-owned", policy: "  merge: { default_branch: { engine_may_merge: [acme/api] } }", script: SelfOwned);
+        await using var _ = h;
+        var main = forge.Resolve(repo, "main")!;
+
+        var id = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=T-9", "--param", "engine_can_merge=true", "--repo", Repo);
+        var wait = await h.WaitForWaitAsync(id, TimeSpan.FromMinutes(3));
+
+        var view = await h.ShowAsync(id);
+        Assert.True(wait is not null, view.ToJsonString());
+        Assert.Equal(main, forge.Resolve(repo, "main"));
+        Assert.DoesNotContain("deliver.merge", Harness.StartedSteps(view));
+        var trace = Trace(view);
+        Assert.Contains(trace, d => d.StartsWith("verification_method_support (std): invalid", StringComparison.Ordinal) && d.Contains("no_method", StringComparison.Ordinal));
+        h.Cli("abort", id, "--reason", "test done");
     }
 
     [Fact]
