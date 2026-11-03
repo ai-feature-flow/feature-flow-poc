@@ -64,7 +64,7 @@ other documents cite them.
 | 33 | Every `tier_tags` tag matches a tier in the manifest read at this step | Step start | Yes |
 | 34 | Unused parameter | Load | No |
 | 35 | Deprecated library reference with a replacement | Load | No |
-| 36 | The run's work branch is neither a repository's default branch nor the run's parent branch (`metadata.branch_pattern` is free text); every step that writes refuses it again | Run start, Step start | Yes |
+| 36 | The run's work branch is neither a repository's default branch nor the run's parent branch (`metadata.branch_pattern` is free text). Checked once: the work branch is fixed when the run starts (LOG 147) | Run start | Yes |
 
 Checks 20, 23, 24 and 36 at run start, and 31 to 33 and 36 at step start, are as built in M5 (LOG 125 to 127, 133,
 134, 141). Check 23 at patch time is not built yet; `scm.merge` re-checks F1 at merge time.

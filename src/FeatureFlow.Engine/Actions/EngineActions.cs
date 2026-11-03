@@ -121,9 +121,6 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
             if (!starts.TryGetValue(name, out var start))
                 continue;
             var repo = new RepoRef(name);
-            if (providers.ForRun("code_host", false) is ICodeHostProvider host
-                && Must(await host.GetDefaultBranchAsync(repo, ct), "read the default branch") == workBranch)
-                throw new ActionStop(StepOutcome.CannotAnswer, $"check 36 ({Checks.Title(Checks.WorkBranch)}): the run's work branch '{workBranch}' is {name}'s default branch; a clean_up never resets it");
             var reference = "refs/heads/" + workBranch;
             var current = Must(await vcs.ResolveAsync(repo, reference, ct), "read the work branch");
             if (current is not null && current != start)
@@ -271,7 +268,6 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
     /// </summary>
     public async Task<string> WorkHeadAsync(RepoRef repo)
     {
-        await GuardWorkBranchAsync(repo);
         var vcs = Vcs;
         for (var tries = 0; ; tries++)
         {
@@ -292,18 +288,6 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
             await EventAsync(StartEvent, $"{repo.FullName} {head}");
             return head;
         }
-    }
-
-    /// <summary>
-    /// Refuses to write when the run's work branch is its parent or the default branch: those writes, a catch-up or a
-    /// reset, would land straight on the branch the merge rules protect (F1; review 11).
-    /// </summary>
-    public async Task GuardWorkBranchAsync(RepoRef repo)
-    {
-        var parent = await ParentBranchAsync(repo);
-        var defaultBranch = scope.ParentBranch is null ? parent : Must(await CodeHost.GetDefaultBranchAsync(repo, ct), "read the default branch");
-        if (scope.WorkBranch == parent || scope.WorkBranch == defaultBranch)
-            throw ActionStop.CannotAnswer($"check 36 ({Checks.Title(Checks.WorkBranch)}): the run's work branch '{scope.WorkBranch}' is {repo.FullName}'s {(scope.WorkBranch == defaultBranch ? "default" : "parent")} branch; the engine writes only to a branch of its own");
     }
 
     /// <summary>

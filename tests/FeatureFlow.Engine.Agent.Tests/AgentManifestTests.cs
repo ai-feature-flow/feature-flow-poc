@@ -131,18 +131,6 @@ public sealed class AgentManifestTests : IAsyncDisposable
         Assert.Null(forge.ReadFile(repo, Work!, "src/B.cs"));
     }
 
-    [Fact]
-    public async Task An_agent_step_whose_work_branch_is_the_default_branch_does_not_start()
-    {
-        var main = forge.Resolve(repo, "main");
-
-        var outcome = await RunAsync(new Dictionary<string, string> { ["src/B.cs"] = "class B{}" }, branch: "main");
-
-        Assert.Equal(StepOutcome.CannotAnswer, outcome.Kind);
-        Assert.Equal(main, forge.Resolve(repo, "main"));
-        Assert.Equal(0, sandbox.Counts.Created);
-    }
-
     /// <summary>docs/06 section 1.1 (LOG 147): a configuration fault stops the agent step for a person, as it does an action.</summary>
     [Theory]
     [InlineData("unauthenticated")]

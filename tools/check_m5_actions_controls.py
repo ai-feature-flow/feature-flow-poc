@@ -276,8 +276,8 @@ CONTROLS = [
     },
     {
         "name": "review 9: a clean_up work error is thrown, to be retried for ever",
-        "edits": [(ACTIONS, "        catch (ActionStop stop)\n        {\n            return new CleanUpResult(events, stop.Message);",
-                   "        catch (ActionStop stop) when (stop.Kind == \"never\")\n        {\n            return new CleanUpResult(events, stop.Message);")],
+        "edits": [(ACTIONS, "        catch (ActionStop stop)\n        {\n            // The resets made before the stop are still reported.",
+                   "        catch (ActionStop stop) when (stop.Kind == \"never\")\n        {\n            // The resets made before the stop are still reported.")],
         "tests": [(ENGINE, None)],
         "expect": ["A_clean_up_whose_push_is_refused_returns_the_error_and_moves_nothing"],
     },
@@ -300,29 +300,10 @@ CONTROLS = [
         "expect": ["A_result_file_already_in_the_checkout_that_cannot_be_removed_raises_an_intervention"],
     },
     {
-        "name": "review 11: actions write to a work branch that is the parent or default branch",
-        "edits": [(ACTIONS, "if (scope.WorkBranch == parent || scope.WorkBranch == defaultBranch)", "if (false)")],
-        "tests": [(ENGINE, None)],
-        "expect": [("No_action_writes_when_the_work_branch_is_the_parent_or_default_branch", 6)],
-    },
-    {
         "name": "review 11: run start accepts a work branch that is the default or parent branch",
         "edits": [(ACTIVITIES, "if (work == defaultBranch || work == start.ParentBranch)", "if (work == \"never a branch\")")],
         "tests": [(ENGINE, None)],
         "expect": ["A_work_branch_that_is_the_default_or_parent_branch_is_refused_at_run_start"],
-    },
-    {
-        "name": "review 11: a clean_up resets the default branch",
-        "edits": [(ACTIONS, '&& Must(await host.GetDefaultBranchAsync(repo, ct), "read the default branch") == workBranch)',
-                   '&& Must(await host.GetDefaultBranchAsync(repo, ct), "read the default branch") == workBranch && false)')],
-        "tests": [(ENGINE, None)],
-        "expect": ["A_clean_up_never_resets_the_default_branch"],
-    },
-    {
-        "name": "review 11: an agent step works on the default branch",
-        "edits": [(AGENT_ACTIVITY, "if (workBranch == parent || (owner.Providers", 'if (workBranch == "never" && (owner.Providers')],
-        "tests": [(AGENT, None)],
-        "expect": ["An_agent_step_whose_work_branch_is_the_default_branch_does_not_start"],
     },
     {
         "name": "review 8: the workflow never runs a clean_up reset",
