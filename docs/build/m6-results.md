@@ -281,6 +281,19 @@ Product owner decisions (2026-11-04): the App has "Issues: read and write". The 
 2: a `plan.expand` path ending in `?` is optional, and std's `plan_children` passes `$.tracker_issue?` (LOG 185). Open
 question 3 was accepted as recommended.
 
+### Re-check of PR 12 (approve-with-fixes) and fixes
+
+| Finding | Fix | Commit |
+|---|---|---|
+| N1: the revert guard depended on the step declaring `revert_record` | Every engine action's evidence is indexed by the engine as `evidence:<type>`, declared or not; `delivery.report` reads reverts from the index. A revert of a different pull request does not count (LOG 180) | `43eadf2` |
+| N2: a work branch deleted after a person's merge read as undelivered | A missing work branch is no later work: its merges count if the target contains them and they are not reverted (LOG 180) | `43eadf2` |
+| N3: a hanging tracker could hold a run for about ten minutes per update | Each try at most 30 s, all tries within two minutes (LOG 186) | `43eadf2` |
+| Two survivors | A revert of another pull request, and revert evidence indexed by another action, are tested | `43eadf2` |
+
+After merging `m6` with W2's PR 11 (`88e4604`; merge `c78bfbf`): build 0 warnings, default suite 912 passed, integration
+71 passed. Controls: the 11 delivery and re-check controls hold; the full script (50 controls) was stopped after 7, all
+holding, because each control now takes several minutes.
+
 ### Deviations and judgement calls
 
 - LOG 180 to 188, all unreviewed. The ones marked "Needs a look": 181 (no schema check on import), 184 (the App's
