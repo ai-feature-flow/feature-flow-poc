@@ -16,9 +16,10 @@ run's history, only the change, the specification and your inputs.
 
 1. Read the `review` skill.
 2. Review every commit and the complete diff from the baseline commit to `HEAD`:
-   `git log --stat <baseline>..HEAD` and `git diff <baseline> HEAD`. Open every
-   changed file. The engine records which files you opened, and a review that
-   left changed files unread is sent back.
+   `git log --stat <baseline>..HEAD` and `git diff <baseline> HEAD`. Then open
+   every changed file with the `Read` tool. The engine records the files you open
+   with `Read`; a file shown through a shell command (`cat`, `git show`, the diff)
+   does not count, and a review that left changed files unread is sent back.
 3. If the baseline commit cannot be resolved, report `blocked`. Do not
    substitute `HEAD~1` or a guessed merge base.
 4. Judge the change from your angle:
