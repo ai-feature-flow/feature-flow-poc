@@ -375,6 +375,9 @@ public sealed partial class RunCore
 
     ApplyResult SetFindings(FindingsChanged f)
     {
+        if (f.Version < State.FindingsVersion)
+            return ApplyResult.Ok;
+        State.FindingsVersion = f.Version;
         foreach (var (name, count) in f.Counts)
             State.Findings[name] = count;
         return ApplyResult.Ok;

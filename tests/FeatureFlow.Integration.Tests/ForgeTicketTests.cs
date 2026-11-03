@@ -32,6 +32,7 @@ public class ForgeTicketTests
     const string Trx = """
         <TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><Results>
           <UnitTestResult testName="Adds" outcome="Passed" /><UnitTestResult testName="Lists" outcome="Passed" />
+          <UnitTestResult testName="Regression.fix" outcome="Passed" />
         </Results></TestRun>
         """;
 
@@ -39,10 +40,10 @@ public class ForgeTicketTests
 
     /// <summary>
     /// What the planner and implementer write (M6): a plan the standard validators accept, and a claim of a test the TRX
-    /// above reports passing, so <c>plan.validate</c> and <c>verify.satisfaction</c> run for real and pass.
+    /// above reports passing, so <c>plan.validate</c> and <c>verify.satisfaction</c> run for real and pass. Added to every
+    /// script that does not script the planner itself.
     /// </summary>
-    const string Script = """
-        {
+    const string PlanAndClaims = """
           "plan.plan": { artifacts: {
             requirements: { schema: 1, scope: { kind: ticket, id: T-1 }, requirements: [
               { id: R-1, title: Widgets are added, behaviour: An added widget is listed., supports_reason: The ticket's own behaviour } ] },
@@ -51,18 +52,28 @@ public class ForgeTicketTests
                 verification: [{ id: unit, kind: parsed_test, repository: acme/api, tier: unit, semantic_review: required }] } ] } } },
           implement: { artifacts: {
             implementation_claims: { schema: 1, claims: [{ criterion: AC-1, verification: unit, tests: [{ repository: acme/api, tier: unit, id: Adds, change: new }] }] } } }
-        }
         """;
 
+    /// <summary>std's five reviewers each report no findings, so <c>findings.record</c> records an empty review (M6).</summary>
+    internal static string Reviews(string extra = "") =>
+        "{ " + string.Join(", ", Enumerable.Range(0, 5).Select(i => $"verify.review.review_{i}.assess: {{ artifacts: {{ findings_report: {{ schema: 1, findings: [] }} }} }}"))
+             + (extra.Length > 0 ? ", " + extra : "") + " }";
+
     /// <summary>A fresh world with the fixture repository, protected, and an engine whose memory providers use it.</summary>
-    static async Task<(Harness H, InMemoryForge Forge, RepoRef Repo)> StartAsync(string name, string policy = "", bool autoApprove = true, string script = Script)
+    internal static async Task<(Harness H, InMemoryForge Forge, RepoRef Repo)> StartAsync(string name, string policy = "", bool autoApprove = true, string? script = null,
+        string[]? noEdits = null)
     {
         var world = $"it-{name}-{Guid.NewGuid():N}";
+        foreach (var step in noEdits ?? [])
+            EditingAgentRuntime.NoEdits.Add($"{world}:{step}");
         var forge = InMemoryForge.Named(world);
         var repo = forge.CreateRepository(Repo, new Dictionary<string, string> { ["feature-flow.yaml"] = Manifest, ["src/App.cs"] = "class App {}\n" });
         forge.Protect(repo, new BranchProtection("main", true, true, 1, [], false));
         var client = EditingAgentRuntime.SandboxClient(Directory.CreateTempSubdirectory("ff-client-").FullName);
-        var h = await Harness.StartAsync(name, script: script, autoApprove: autoApprove, omitTypes: ["sandbox", "vcs", "code_host", "ci", "validator"],
+        var steps = script ?? Reviews();
+        if (!steps.Contains("\"plan.plan\"", StringComparison.Ordinal))
+            steps = "{ " + PlanAndClaims + ",\n" + steps.TrimStart()[1..];
+        var h = await Harness.StartAsync(name, script: steps, autoApprove: autoApprove, omitTypes: ["sandbox", "vcs", "code_host", "ci", "validator"],
             providers: string.Join("\n", new[] { "vcs", "code_host", "ci", "sandbox" }.Select(t => $"  {t}: {{ instances: {{ memory: {{ world: {world} }} }} }}"))
                        + "\n  validator: { instances: { std: {} } }",
             agentRuntime: $"{{ default: editing, dry_run: recording, instances: {{ editing: {{ provider: editing, script: script.yaml, world: {world} }}, recording: {{ folder: recorded }} }} }}",

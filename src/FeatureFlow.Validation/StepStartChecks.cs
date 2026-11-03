@@ -39,6 +39,8 @@ public static class StepStartChecks
         ["analysis.run"] = [B("baseline"), S("fail_on", "new_issues", "any_issues", "never"), S("min_level", "note", "warning", "error")],
         ["repo.inspect"] = [S("repository")],
         ["artifact.validate"] = [A("validation")],
+        ["findings.record"] = [S("source"), S("reopen_on", "code_change", "always", "never")],
+        ["findings.triage"] = [S("from"), B("post_declines"), A("states")],
     };
 
     /// <summary>Check 31: what is wrong with an action's evaluated inputs, as messages; empty when they satisfy its contract.</summary>
@@ -81,8 +83,15 @@ public static class StepStartChecks
                 errors.Add($"wait.condition takes exactly one condition of pull_request, checks or tracker, not {conditions.ToString(CultureInfo.InvariantCulture)}");
         }
 
+        if (action == "findings.triage" && inputs.GetValueOrDefault("states") is IList<object?> states
+            && (states.Count == 0 || states.Any(x => x is not string state || !FindingStates.Contains(state))))
+            errors.Add($"findings.triage input 'states' must name one or more of {string.Join(", ", FindingStates)}");
+
         return errors;
     }
+
+    /// <summary>A finding's states (docs/01 section 6), which <c>findings.triage</c>'s <c>states</c> chooses from.</summary>
+    static readonly string[] FindingStates = ["open", "fixed", "declined", "escalated"];
 
     /// <summary>Check 33: a diagnostic for each tag that matches no tier in the manifest read at this step.</summary>
     public static void TierTags(string repository, RepositoryManifest manifest, IEnumerable<string> tags, DiagnosticBag d)

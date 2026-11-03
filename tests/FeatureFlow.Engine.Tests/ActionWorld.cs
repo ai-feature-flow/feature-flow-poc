@@ -26,6 +26,7 @@ public sealed class ActionWorld : IAsyncDisposable
     public SqliteRecordStore Records { get; }
     public MemorySandbox Sandbox { get; }
     public EngineActions Actions { get; }
+    public ProviderSet Providers { get; }
     public string RunId { get; } = "run-" + Guid.NewGuid().ToString("N")[..8];
     public List<ArtifactEntry> Artifacts { get; } = [];
     public List<string> PullRequests { get; } = [];
@@ -39,7 +40,7 @@ public sealed class ActionWorld : IAsyncDisposable
     readonly Dictionary<string, int> executions = new(StringComparer.Ordinal);
 
     public ActionWorld(IReadOnlyDictionary<string, string>? files = null, bool sandbox = true, bool ci = true, bool throwingCodeHost = false, Func<Exception>? codeHostThrows = null,
-        Func<ICodeHostProvider, ICodeHostProvider>? codeHost = null)
+        Func<ICodeHostProvider, ICodeHostProvider>? codeHost = null, Func<Func<IArtifactStoreProvider>, IFindingsSourceProvider>? findingsSource = null)
     {
         Directory.CreateDirectory(folder);
         Repo = Forge.CreateRepository("acme/api", files ?? new Dictionary<string, string> { ["README.md"] = "# api\n" });
@@ -59,7 +60,9 @@ public sealed class ActionWorld : IAsyncDisposable
             instances["ci"] = One(new InMemoryCi(Forge, () => Store));
         if (sandbox)
             instances["sandbox"] = One(Sandbox);
-        var providers = new ProviderSet(instances, instances.Keys.ToDictionary(k => k, _ => "one"), new Dictionary<string, string>());
+        if (findingsSource is not null)
+            instances["findings_source"] = One(findingsSource(() => Store));
+        var providers = Providers = new ProviderSet(instances, instances.Keys.ToDictionary(k => k, _ => "one"), new Dictionary<string, string>());
         Actions = new EngineActions(providers, new ActionOptions(TimeSpan.FromMilliseconds(5), TimeSpan.FromMilliseconds(5), TimeSpan.FromSeconds(30)));
     }
 

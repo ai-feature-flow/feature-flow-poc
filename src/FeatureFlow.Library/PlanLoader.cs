@@ -676,6 +676,8 @@ public sealed partial class PlanLoader
 
         if (Fallback(step.Scope, outcome, step.Lane, step.LaneIndex + 1) is { } fallback)
             return fallback;
+        if (step.Action is { } action && Actions.All.GetValueOrDefault(action)?.Escalates?.Contains(outcome.Name) == true)
+            return new ResolvedRoute(outcome.Name, outcome.Class, new ResolvedEscalate(null, null), RouteSource.EngineDefault);
 
         d.Add(Checks.OutcomeRouted,
             $"outcome '{outcome.Name}' (class {outcome.Class.Name()}) has no route after defaults are applied",
