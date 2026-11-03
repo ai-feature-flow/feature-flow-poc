@@ -1,6 +1,29 @@
 # M5: source control, testing and the first real ticket
 
-Results of building M5 (`docs/11`, M5). Each builder writes its own section.
+Results of building M5 (`docs/11`, M5). Each builder writes its own section; the summary and the consolidated
+follow-ups at the end are the integration's.
+
+## Summary
+
+**Built.** The Git VCS provider (catch-up and merge in a bare clone cache, every push expecting the revision it
+read), the GitHub code host and GitHub Actions CI providers; the ten M5 engine actions (`scm.*`, `ci.checks`,
+`wait.condition`, `test.run`, `test.integration`, `analysis.run`, `repo.inspect`) with TRX, JUnit and SARIF
+parsing; run-start checks 20, 23, 24 and 36, step-start checks 31 to 33; the repository manifest; `clean_up`'s
+branch reset; `parent_branch` in the run request (LOG 137); and, in the integration, the engine-level SP4 test and a
+short budget for `unauthenticated` and `forbidden` (docs/06 section 1.1). Judgement calls: LOG 107 to 146.
+
+**Done-when, met.** `ticket_delivery` ran on the fixture `ai-feature-flow/feature-flow-example` from start to an
+engine squash merge into the non-default parent branch `ff/epic/m5-live` (run `run-2bcdfbd1e2e5`, merge `4444a11`),
+with a real `haiku` planner, implementer and five reviewers, and CI test evidence for the merged head. The contract
+suites pass for Git (local), GitHub and GitHub Actions (Live run 8, 21 passed). Details under "Integration".
+
+**Verified by, met.** SP4 through the engine's own `scm.catch_up` and `scm.merge` (`EngineMergeRaceTests`): no lost
+merge, nothing untested lands; control N1b (plain forced pushes) loses merges. F1: a standalone ticket asking for an
+engine merge into the default branch is refused at run start, on the memory providers and on the fixture.
+
+**Tests** at the integration's last commit: default suite 739 passed, integration 50 passed (local dev server and
+Docker, with `safe.bareRepository=all` for the run, follow-up 17), Live 21 (providers) plus the live run. Controls: `tools/check_m5_actions_controls.py`, 56,
+all hold.
 
 ## Providers
 
@@ -354,3 +377,127 @@ stand-in for runs with only fake providers.
 | 10 | A run start does not check that a named `parent_branch` exists; the first step that touches the repository stops for a person |
 | 11 | `wait.condition: approved` accepts any identity's approval, the author's or the engine's included (M7, people and policy) |
 | 12 | A tier delegated to CI runs the workflow file on the head, which the agent can edit; the engine cannot clear CI's result files first. A green `ci.checks` is the independent backstop |
+
+---
+
+## Integration
+
+Branch `m5`, from `m5@932397d` (PR 5 and PR 6 merged). Judgement calls LOG 143 to 146, unreviewed.
+
+### Engine-level SP4 (LOG 117's follow-up, LOG 143)
+
+`Integration.Tests/EngineMergeRaceTests` runs SP4's scenarios through `EngineActions`' own `scm.catch_up` and
+`scm.merge`, as the workflow's activity calls them, over the real Git provider and one local bare repository. Each
+ticket is its own worker (engine, clone cache, record store) and merges into a run-named parent branch, not the
+default. The re-test records passing `test.run` and `ci.checks` evidence for the exact head, which is what
+`scm.merge` reads. SP4's pre-registered checks are reused: C1 no lost merge, C2 nothing untested lands (each merge's
+parents are the parent it replaced and the last tested head, and its tree is exactly the tested tree), C3 loops well
+formed, C4 termination.
+
+| Scenario | Result |
+|---|---|
+| S1, 3 tickets forced to collide | 3 refusals (`base_moved`); all merged with 1, 2 and 3 merge executions; none lost or untested |
+| S2, 5 tickets, natural timing, race allowance 10 | 10 refusals; all 5 merged (executions 3, 5, 2, 4, 1) |
+| S3, 4 forced, allowance 3 | 6 refusals; 3 merged; 1 exhausted after 3, its file absent from the parent |
+| N2, no re-test after a changing catch-up | The engine refuses 2 merges as `checks_failed`; nothing untested lands |
+| **Control N1b**, plain forced push (a test asserting the loss) | All 3 report merged; **2 merges lost** |
+
+Each push to the parent first waits a moment (the provider's test hook), standing for the network between the
+engine's read and its push. Without it the engine's merge reads the parent just before pushing, so N1b's plain
+pushes rarely overlap: the engine narrows the race window but only the lease closes it.
+
+| Source control (script) | Tests that failed |
+|---|---|
+| `scm.merge` reads no evidence | N2: an untested head lands |
+| `scm.merge` reports a refused merge as merged | S1, S2, S3 and N2 (C1) |
+
+### A budget for `unauthenticated` and `forbidden` (LOG 144)
+
+The engine retried both for ever as infrastructure. `ConfigurationFaults` now gives them 5 tries (waits 1, 2, 4,
+8 s) inside one activity attempt; an engine action or a `clean_up` reset runs again whole, and each run-start read of
+the code host is retried on its own. When the budget is spent an action raises an intervention naming the
+configuration fault, a `clean_up` returns it as its error (an intervention at its target step), and run start
+refuses the start. Other infrastructure errors still go to Temporal without limit. Temporal's attempt count cannot be
+the budget, because a wait's polls are failed attempts too (LOG 122). **The agent step is not covered** (follow-up).
+
+| Test (`Engine.Tests`) | Control (script) that fails it |
+|---|---|
+| Each fault stops the step after exactly 5 calls, naming the fault; recovery on the 5th call passes; `unreachable`, `rate_limited`, `server_error` are thrown after 1 call; a `clean_up` stops; run start refuses only once the budget is spent, and throws `unreachable` | No budget (7 cases fail); no retry before stopping (4 fail) |
+
+### The live run (M5's done-when)
+
+Setup as "The live run: how to" above, on a Temporal dev server at port 8833, the three hosts from `hosts/`, model
+`haiku`. The parent branch `ff/epic/m5-live` was made from `main` (`1610c66`) plus one commit with the ticket's text,
+`docs/tickets/M5-LIVE-1.md`, because there is no tracker provider before M6 (LOG 146). The ticket: widget names at
+most 100 characters (`WidgetStore.MaxNameLength`, `Add` throws, `POST /widgets` returns 400), with unit tests.
+
+**F1 control** (`run-f31ca73fc419`): the same start without `--parent-branch` failed at run start, check 23: "deliver.merge
+asks for an engine merge into ai-feature-flow/feature-flow-example's default branch main; the organisation does not
+allow it". It created no branch.
+
+**First attempt** (`run-3cf52e115886`, aborted). Baseline, plan, implement and the tests passed; then four of the five
+reviewers read the change through `Bash` and opened at most one file with `Read`, so `changed_files_unread` stayed
+above 0 and three exhausted their attempts. The engine's count was right (the record store shows the hook events);
+std's review task never said which tool counts. Fixed in the task (LOG 145), the run aborted and its references
+deleted, and the run started again.
+
+**The run** (`run-2bcdfbd1e2e5`, **completed**, 124 timeline entries, 02:36 to 02:44 UTC, 8 minutes):
+
+| Step | What happened |
+|---|---|
+| `baseline.tests` | Work branch `ff/ticket/M5-LIVE-1` created from `ff/epic/m5-live` at `14fb2de`; both tiers delegated to CI (runs 41567141694, 41567216286): unit 3 passed, integration 1 passed (by exit; it uploads no result file) |
+| `baseline.analysis` | No analyser declared; passed |
+| `plan.plan` | Planner (9 model calls) wrote requirements and a delivery plan from the ticket file; `artifact.validate` on the stand-in: valid |
+| `approve_spec` | Auto-approved by the organisation's rule |
+| `implement` | Implementer (26 model calls) committed `04121a2`: 5 files, +86 lines (the limit, the 400, two store tests and two endpoint tests through `WebApplicationFactory`); the commit went to `refs/feature-flow/wip/...`, then the work branch |
+| `verify.tests` | Unit tier in CI (run 41567736364) at `04121a2`: **8 passed, 0 failed** |
+| `verify.review` | Five reviewers, one per angle, each opened all 5 changed files with `Read` (`changed_files_unread=0`) at the first attempt; 13 findings, none blocking. `findings.record` on the stand-in |
+| `verify.satisfaction` | Stand-in: valid |
+| `deliver.open_pr` | Pull request #99 from `ff/ticket/M5-LIVE-1` into `ff/epic/m5-live` |
+| `deliver.checks` | On `04121a2`: integration success, unit success (the push-triggered runs) |
+| `deliver.catch_up` | Already contained the parent at `14fb2de`: unchanged |
+| `deliver.merge` | **Squash `4444a113545c8e29fb0711978ded06acabc228c5`** into `ff/epic/m5-live`, by `feature-flow` |
+
+Checked on GitHub afterwards: `4444a11` has one parent, `14fb2de` (the epic's head), the tested head's exact tree
+(`d8cd4dc`), and the trailer `Feature-Flow-Merge: run-2bcdfbd1e2e5/deliver.merge`; `main` was still `1610c66`; pull
+request #99 was closed with "Squashed into ff/epic/m5-live as 4444a113... by Feature Flow."
+
+**Clean-up.** Deleted `ff/ticket/M5-LIVE-1`, `ff/epic/m5-live` and `refs/feature-flow/wip/run-2bcdfbd1e2e5/implement`
+(and, after the first attempt, its branch and `refs/feature-flow/wip/run-3cf52e115886/implement`). No
+`refs/feature-flow/superseded/*` or `refs/feature-flow/ci/*` existed (the CI claims are removed when a run completes).
+Afterwards the fixture had only `main` (`1610c66`) and `ff/manifest-v1`, a branch from before this work; no open pull
+request and no workflow run in progress. Pull request #99 stays closed. No sandbox container was left.
+
+### Deviations
+
+- The handover is `docs/build/handover-2026-11-03-m5.md`: `handover-2026-11-03.md` already exists for M4.
+- The live run's ticket is a file on the parent branch, the spec approval is automatic, and plan validation and the
+  findings ledger are M6's stand-ins (LOG 146).
+
+---
+
+## Consolidated follow-ups
+
+| # | Follow-up | From |
+|---|---|---|
+| 1 | **M6 must fix**: a wait (`ci.checks`, `wait.condition`, an action request) holds up the run's hand-over (continue-as-new) until it ends (LOG 139; a row of `docs/11`'s M6) | Actions review 6 |
+| 2 | The agent step has no configuration-fault budget: its `unauthenticated` and `forbidden` still retry for ever (LOG 144) | Integration |
+| 3 | A re-run reviewer is not told which files it left unread; a correction turn naming them would save attempts (LOG 145) | Integration |
+| 4 | Re-run the done-when with M6's real validators, findings ledger and tracker in place of the stand-ins and the ticket file (LOG 146) | Integration |
+| 5 | Check 23 at patch time; the merge-time re-check covers it meanwhile | Actions 1 |
+| 6 | The action request's decision record and an API answer for it (M7) | Actions 2 |
+| 7 | `test.integration` starting services from `integration_environment` | Actions 3 |
+| 8 | `analysis.run` with `sonarcloud`; `wait.condition` on a tracker issue | Actions 4 |
+| 9 | The carried test result by tree identity, not only by revision | Actions 5 |
+| 10 | A person ending a wait by hand with `met` or `unmet` (`docs/04` section 8.2) | Actions 7 |
+| 11 | Inbound events to wake waits early; waits poll every 30 seconds | Actions 8 |
+| 12 | A run start does not check that a named `parent_branch` exists; the first step that touches the repository stops for a person | Actions 10 |
+| 13 | `wait.condition: approved` accepts any identity's approval, the author's or the engine's included (M7) | Actions 11 |
+| 14 | A tier delegated to CI runs the workflow file on the head, which the agent can edit; `ci.checks` is the independent backstop | Actions 12 |
+| 15 | `GetExpectedRunsAsync` does not evaluate job-level `if:` conditions | Providers |
+| 16 | The fixture's integration tier uploads no result file, so it is judged by exit code and its tests cannot be claimed | Integration |
+| 17 | The agent tests' own git helper (`AgentHarness`) opens the local remote as an implicit bare repository, so 6 of them fail where `safe.bareRepository` is `explicit` (this machine); they pass with it set to `all` for the test run, and on CI | Integration |
+| 18 | Still open from earlier milestones: M4 12 (the sandbox network is unrestricted and reaches the Temporal frontend; before any shared deployment), M3 10 (a child that ends without signalling), M3 2 and 3 (a child's parameters and `consumes` across runs; M6 needs both) | Handover 2026-11-03 |
+
+Done since they were listed: the engine-level SP4 (providers follow-up; above); rulesets read by the code host
+(actions follow-up 9; the providers already read them, and a Live test asserts it).
