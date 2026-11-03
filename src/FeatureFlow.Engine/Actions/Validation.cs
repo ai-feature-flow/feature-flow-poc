@@ -166,7 +166,7 @@ static class Validating
     {
         var key = spec.From == "current" ? spec.Name : $"{spec.From.Replace(':', '/')}/{spec.Name}";
         var reference = run.Scope.Consumed is { } consumed
-            ? consumed.GetValueOrDefault(key)
+            ? consumed.GetValueOrDefault(key) ?? (spec.From == "current" ? Latest(run, spec.Name) : null)
             : spec.From == "current" ? Latest(run, spec.Name) : null;
         // Without the workflow's consumed artifacts, a subject from another run of a run that has one cannot be told absent;
         // passing it as absent would let requirement_inheritance pass a child with nothing to compare (LOG 173).

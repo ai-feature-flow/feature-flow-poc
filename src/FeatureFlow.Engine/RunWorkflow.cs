@@ -569,8 +569,16 @@ public class RunWorkflow
             repository = null;
         }
 
+        // What the step consumes, keyed and resolved as for an agent step at its place, so artifact.validate reads subjects
+        // from the parent or root as this run was started with them (LOG 173, 191).
+        var consumed = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (Workflow.Patched(ChildInputsPatch))
+            foreach (var c in step.Consumes.Where(c => !IsLedgerView(c)))
+                if (ConsumedArtifact(step, c) is { } reference)
+                    consumed.TryAdd(ConsumedKey(c), reference);
+
         return new ActionScope(input.Repositories, repository, core.WorkBranch(), input.ParentBranch, artifacts, pullRequests, policy?.EngineMayMerge ?? [],
-            TrackerIssue: input.TrackerIssue);
+            Consumed: Workflow.Patched(ChildInputsPatch) ? consumed : null, TrackerIssue: input.TrackerIssue);
     }
 
     /// <summary>

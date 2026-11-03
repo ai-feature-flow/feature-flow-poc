@@ -26,10 +26,10 @@ static class Requirements
                     c.Error("support_and_reason", $"{item.Id} in {D(plan)} both supports items and gives a supports_reason; it does one or the other", plan.Subject.Name, item.Id);
                 foreach (var link in links)
                 {
-                    var targets = plans.Where((t, i) => i != p && t.Subject.Name == link.Artifact).ToList();
+                    var targets = plans.Where((t, i) => i != p && Check.Names(t.Subject, link.Artifact)).ToList();
                     if (targets.Count == 0)
                         c.Error("unresolved_link",
-                            c.Request.Subjects.Any(s => s.Name == link.Artifact && s.Absent)
+                            c.Request.Subjects.Any(s => Check.Names(s, link.Artifact) && s.Absent)
                                 ? $"{item.Id} in {D(plan)} supports {link.Requirement} in {link.Artifact}, which does not exist"
                                 : $"{item.Id} in {D(plan)} supports {link.Requirement} in {link.Artifact}, which is not a subject of this check",
                             plan.Subject.Name, item.Id);
@@ -74,7 +74,17 @@ static class Requirements
 
     static bool Owns(PlanOwner? owner, PlanScope scope) => owner is not null && owner.Kind == scope.Kind && owner.Id == scope.Id;
 
-    static IEnumerable<(string?, string?)> Links(PlanItem item) => (item.Supports ?? []).Select(l => (l.Artifact, l.Requirement)).Distinct().Order();
+    /// <summary>
+    /// An item's links. A child's copy may name the parent's documents by the sandbox's names for them
+    /// (<c>parent/requirements</c>, LOG 191); seen from <paramref name="from"/>'s run, that is <c>requirements</c>.
+    /// </summary>
+    static IEnumerable<(string?, string?)> Links(PlanItem item, FeatureFlow.Providers.Abstractions.ValidationSubject? from = null)
+    {
+        var prefix = from is null || from.From == "current" ? null : from.From.Replace(':', '/') + "/";
+        return (item.Supports ?? [])
+            .Select(l => (prefix is not null && l.Artifact?.StartsWith(prefix, StringComparison.Ordinal) == true ? l.Artifact[prefix.Length..] : l.Artifact, l.Requirement))
+            .Distinct().Order();
+    }
 
     /// <summary>
     /// <c>requirement_inheritance</c>: the parent's plan is every subject from another run, this run's plan every subject
@@ -111,7 +121,7 @@ static class Requirements
                 var copy = plan.Value.Items.FirstOrDefault(i => i.Id == item.Id);
                 if (copy is null)
                     c.Error("missing_inherited", $"{D(plan)} does not hold {item.Id}, which {D(parent)} gives {scope.Kind} {scope.Id}", plan.Subject.Name, item.Id);
-                else if (!Links(copy).SequenceEqual(Links(item)))
+                else if (!Links(copy, parent.Subject).SequenceEqual(Links(item)))
                     c.Error("links_changed", $"{item.Id} in {D(plan)} does not support exactly what it supports in {D(parent)}", plan.Subject.Name, item.Id);
                 else if (!rewording && (copy.Title != item.Title || copy.Behaviour != item.Behaviour))
                     c.Error("reworded", $"{item.Id} in {D(plan)} is not word for word as in {D(parent)}", plan.Subject.Name, item.Id);

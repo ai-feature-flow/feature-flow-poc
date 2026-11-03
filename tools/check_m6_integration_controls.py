@@ -19,10 +19,40 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FINDINGS = "src/FeatureFlow.Engine/Actions/Findings.cs"
 FIX_LOOP = "library/std/fragments/fix_loop.yaml"
 VERIFY = "library/std/fragments/verify_and_review.yaml"
+STD_VALIDATORS = "src/Providers/FeatureFlow.Providers.StdValidators/StdValidators.cs"
+REQUIREMENTS = "src/Providers/FeatureFlow.Providers.StdValidators/Requirements.cs"
+STD_TESTS = ("tests/Providers/FeatureFlow.Providers.StdValidators.Tests", None)
+FIXTURES = "Every_fixture_gets_its_verdict_and_the_verdict_agrees_with_the_issues"
 ENGINE_FINDINGS = ("tests/FeatureFlow.Engine.Tests", "FullyQualifiedName~FindingsActionTests")
 LOOP = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~FindingsLoopTests.After_the_fix_loop")
 
 CONTROLS = [
+    {
+        "name": "a link names a parent's document only by its bare name (LOG 191)",
+        "edits": [(STD_VALIDATORS, '(s.From != "current" && artifact == $"{s.From.Replace(\':\', \'/\')}/{s.Name}")', "false")],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
+        "name": "a parent/ link resolves to any document of the name, this run's included (LOG 191)",
+        "edits": [(STD_VALIDATORS, '(s.From != "current" && artifact == $"{s.From.Replace(\':\', \'/\')}/{s.Name}")',
+                   '(artifact != null && artifact.EndsWith("/" + s.Name))')],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
+        "name": "inheritance compares a copy's parent/ links literally (LOG 191)",
+        "edits": [(REQUIREMENTS, "Links(copy, parent.Subject)", "Links(copy)")],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
+        "name": "inheritance strips any source prefix from a copy's links (LOG 191)",
+        "edits": [(REQUIREMENTS, 'var prefix = from is null || from.From == "current" ? null : from.From.Replace(\':\', \'/\') + "/";',
+                   'var prefix = from is null || from.From == "current" ? null : "root/";')],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
     {
         "name": "findings.record keeps a reviewer's short repository name (LOG 190)",
         "edits": [(FINDINGS, "return matches.Count == 1 ? matches[0] : repository;", "return repository;")],
