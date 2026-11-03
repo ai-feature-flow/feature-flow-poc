@@ -207,6 +207,9 @@ public static class RunStartChecks
     /// </summary>
     public static void Caps(Plan plan, PolicyConfig policy, Func<Step, long> allowance, DiagnosticBag d)
     {
+        // F11 is a floor: the organisation's ceiling is never exceeded, so it is locked whatever the file says.
+        if (plan.Document.MaxWorkItems is { } asked && policy.MaxWorkItems is { } workItems && asked > workItems)
+            d.Add(Checks.LockedCap, $"budget.max_work_items {asked.ToString(CultureInfo.InvariantCulture)} is above policy.budgets.max_work_items.ceiling {workItems.ToString(CultureInfo.InvariantCulture)} (F11)");
         foreach (var step in plan.AllSteps)
         {
             if (policy.AttemptsPerStep is { } ceiling && step.ConsumesAttempts && allowance(step) > ceiling)

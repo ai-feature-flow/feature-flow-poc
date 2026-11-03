@@ -400,6 +400,28 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
             return useHidden;
         }
 
+        /// <summary>
+        /// The run's ticket (<c>run.tracker_issue</c>), read from the tracker now and staged read-only as
+        /// <c>/ff/inputs/ticket.md</c>, so the agent reads its input without a tracker identity of its own (F5). Null when the
+        /// run has no tracker issue. An issue the tracker does not have stops the step for a person: its input cannot be trusted.
+        /// </summary>
+        async Task<object?> StageTicketAsync()
+        {
+            if (spec.TrackerIssue is not { } key)
+                return null;
+            if (owner.Providers.ForRun("tracker", call.DryRun) is not ITrackerProvider tracker)
+                throw new StepCannotAnswerException($"the run's tracker issue {key} cannot be read: no tracker provider is configured");
+            var read = await tracker.GetIssueAsync(new IssueRef(key), ct);
+            if (read is { Ok: false, Error.Reason: "not_found" })
+                throw new StepCannotAnswerException($"the run's tracker issue {key} does not exist: {read.Error.Message}");
+            var issue = Must(read, $"read the run's tracker issue {key}");
+            var text = $"# {issue.Title}\n\n{issue.Body}\n\n---\n\nTracker issue {issue.Ref.Key}, status {issue.Status}" + (issue.Url is null ? "" : $", {issue.Url}") + "\n";
+            const string path = "/ff/inputs/ticket.md";
+            Must(await sandboxes.CopyInAsync(sandbox, Must(await owner.Store.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(text)), ct)), path, readOnly: true, ct),
+                "stage the ticket");
+            return new { key = issue.Ref.Key, path };
+        }
+
         /// <summary>The inputs manifest (docs/04 section 3.1): inputs, consumed artifacts and skills staged read-only, the baseline, branches and output folder.</summary>
         async Task StageInputsAsync()
         {
@@ -422,6 +444,7 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
                         skills.Add(new { name = skill, path });
                 }
 
+            var ticket = await StageTicketAsync();
             var manifest = new
             {
                 step = call.Step.StepId,
@@ -434,6 +457,7 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
                 inputs = call.Inputs.ToDictionary(kv => kv.Key, kv => JsonDocument.Parse(JsonOf(kv.Value)).RootElement),
                 artifacts = staged,
                 skills,
+                ticket,
             };
             var bytes = JsonSerializer.SerializeToUtf8Bytes(manifest, new JsonSerializerOptions { WriteIndented = true });
             Must(await sandboxes.CopyInAsync(sandbox, Must(await owner.Store.PutAsync(new MemoryStream(bytes), ct)), paths.InputsManifest, readOnly: true, ct),

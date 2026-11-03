@@ -363,6 +363,12 @@ public sealed partial class PlanLoader
                 break;
         }
 
+        // docs/03 section 8.2: the list is known when the plan is bound (a parameter, or the run's repositories). One
+        // known only later, such as a step's output, is plan.expand's; bound without it, the run would take one item.
+        if (known is null && items is not null && options.Repositories is not null)
+            d.Add(Checks.Expression, $"for_each.items '{items.Text}' is not known when the run starts: use a parameter or run.repositories, or plan.expand for a list made at run time",
+                items.Location, fullId);
+
         container.Container = new Container
         {
             Mode = mode,

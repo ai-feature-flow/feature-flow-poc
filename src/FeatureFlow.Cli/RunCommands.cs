@@ -15,7 +15,7 @@ namespace FeatureFlow.Cli;
 public static class RunCommands
 {
     public const string Usage = """
-               ff run start <template> [--param <name>=<value>]... [--repo <owner/name>]... [--parent-branch <branch>] [--dry-run] [--continue-as-new-events <n>]
+               ff run start <template> [--param <name>=<value>]... [--repo <owner/name>]... [--parent-branch <branch>] [--tracker-issue <key>] [--dry-run] [--continue-as-new-events <n>]
                ff run show <run id> [--timeline]
                ff run wait <run id> [--for end | wait] [--timeout <seconds>]
                ff run answer <run id> <wait id> <outcome | approve | reject>
@@ -61,7 +61,7 @@ public static class RunCommands
             {
                 case ["start", var template]:
                     return await client.StartAsync(template, options.GetValueOrDefault("--param") ?? [], options.GetValueOrDefault("--repo") ?? [],
-                        flags.Contains("--dry-run"), Option("--continue-as-new-events"), Option("--parent-branch"));
+                        flags.Contains("--dry-run"), Option("--continue-as-new-events"), Option("--parent-branch"), Option("--tracker-issue"));
                 case ["show", var id]:
                     return await client.ShowAsync(id, flags.Contains("--timeline"));
                 case ["wait", var id]:
@@ -92,7 +92,8 @@ public static class RunCommands
 
     sealed class Client(HttpClient http, TextWriter output, TextWriter error)
     {
-        public async Task<int> StartAsync(string template, List<string> parameters, List<string> repositories, bool dryRun, string? handOver, string? parentBranch = null)
+        public async Task<int> StartAsync(string template, List<string> parameters, List<string> repositories, bool dryRun, string? handOver, string? parentBranch = null,
+            string? trackerIssue = null)
         {
             var map = new JsonObject();
             foreach (var p in parameters)
@@ -118,6 +119,8 @@ public static class RunCommands
             };
             if (parentBranch is not null)
                 body["parent_branch"] = parentBranch;
+            if (trackerIssue is not null)
+                body["tracker_issue"] = trackerIssue;
             if (handOver is not null)
                 body["continue_as_new_events"] = long.Parse(handOver, System.Globalization.CultureInfo.InvariantCulture);
             var reply = await PostAsync("runs", body);

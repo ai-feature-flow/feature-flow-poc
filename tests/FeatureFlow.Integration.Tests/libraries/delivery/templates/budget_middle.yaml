@@ -1,0 +1,26 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: budget_middle
+  level: epic
+  description: >-
+    Two children one after the other. Its own budget has no effect in a tree:
+    only the root's counts (F11).
+
+budget:
+  max_work_items: 50
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: first
+    action: run.child
+    with: { template: delivery:templates/leaf, level: ticket }
+
+  - id: second
+    action: run.child
+    with: { template: delivery:templates/leaf, level: ticket }
+    routes:
+      completed: { end: completed }

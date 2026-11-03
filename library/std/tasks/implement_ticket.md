@@ -16,7 +16,8 @@ plan.
 ## Procedure
 
 1. Read the `solution_design` and `verification` skills, then the inputs.
-2. Fetch the ticket and compare any new clarification with the ratified plan. A
+2. Read the ticket (`/ff/inputs/ticket.md`, read from the tracker when this step
+   started, when the run has one) and compare any new clarification with the ratified plan. A
    material conflict is `blocked`, not an unapproved change of scope. If a
    person's answer would settle it, ask with `ask_human`.
 3. Start from the current checkout. On rework, earlier commits are normally

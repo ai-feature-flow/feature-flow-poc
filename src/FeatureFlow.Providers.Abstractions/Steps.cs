@@ -60,7 +60,8 @@ public sealed record AgentStepSpec(
     IReadOnlyDictionary<string, string> ParentBranches,
     IReadOnlyDictionary<string, string> Consumed,
     string WorkflowId,
-    string LockRef);
+    string LockRef,
+    string? TrackerIssue = null);
 
 /// <summary>One step for an activity to carry out. <see cref="Agent"/> is set for an agent step from M4.</summary>
 public sealed record StepCall(StepIdentity Step, string Form, string What, IReadOnlyDictionary<string, string> Inputs, StepContract Contract, bool DryRun,

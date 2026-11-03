@@ -9,7 +9,7 @@ will be verified. You change no code.
 
 | Input | Use |
 |---|---|
-| The ticket, from the tracker | The source of what is asked. Read its comments; do not assume the newest comment overrides an agreed requirement |
+| The ticket, `/ff/inputs/ticket.md` (the inputs manifest's `ticket`), when the run has a tracker issue | The source of what is asked, read from the tracker when this step started. Without one, the parent's plan is the source |
 | `child_requirements` from the parent, when present | The epic's acceptance criteria. The ones whose owner is this ticket are yours to copy |
 | `contract` from the parent, when present | The epic's design: the boundary you plan within |
 | `baseline_test_results` | Which test tiers this repository actually runs and parses |
@@ -17,7 +17,7 @@ will be verified. You change no code.
 
 ## Procedure
 
-1. Read the `verification` skill. Fetch the ticket. Read the inputs above.
+1. Read the `verification` skill. Read the ticket. Read the inputs above.
 2. Inspect the relevant code and the repository manifest's test tiers. Confirm
    that each tier you intend to name produced parsed results in the baseline. A
    tier that ran without parsed results does not count.

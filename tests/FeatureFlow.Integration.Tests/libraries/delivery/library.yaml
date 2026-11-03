@@ -1,0 +1,8 @@
+# Templates for the M6 delivery tests: the work-item budget (F11) and declarative tracker updates.
+name: delivery
+version: 0.1.0
+description: Templates for the M6 delivery integration tests (docs/11, M6)
+requires:
+  plan_schema: 1
+dependencies:
+  - { name: std, version: ">=0.1.0" }
