@@ -148,6 +148,13 @@ CONTROLS = [
         "tests": [ENGINE],
         "expect": ["Std_epics_children_get_a_work_list_items_tracker_issue_when_it_names_one"],
     },
+    {
+        "name": "F5: an agent may read issues",
+        "edits": [("src/Providers/FeatureFlow.Providers.GitHub/AppCredentialBroker.cs", '["agent"] = new Dictionary<string, string> { ["contents"] = "read", ["metadata"] = "read" },',
+                   '["agent"] = new Dictionary<string, string> { ["contents"] = "read", ["metadata"] = "read", ["issues"] = "read" },')],
+        "tests": [("tests/Providers/FeatureFlow.Providers.GitHub.Tests", "FullyQualifiedName~CredentialBrokerTests")],
+        "expect": ["A_request_wider_than_the_broker_may_grant_is_refused_before_any_call"],
+    },
     # ---- artifact actions ----
     {
         "name": "artifact.import takes a branch or short id as its commit",

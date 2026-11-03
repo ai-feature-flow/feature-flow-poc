@@ -44,11 +44,8 @@ the tracker issue and declared produces.
 | Through the engine | `Integration.Tests/DeliveryRunTests` (6): budget across a tree, children started together, `plan.expand` refused whole, the organisation ceiling and check 22, tracker updates through a fragment exit, a failing update noted | Pass |
 | Replay | `delivery_tracked` and `budget_middle` histories, each holding its patch marker | Pass |
 
-**The App cannot write issues.** The GitHub App installation (`ai-feature-flow-agent-access`) has no `issues`
-permission, so a token asking for it is refused (422). The provider asks for exactly `issues: write` and
-`metadata: read`, so with the App it stops for a person as a configuration fault. The Live contract therefore ran with
-`FF_GITHUB_TRACKER_TOKEN` naming the approved personal token. Granting the App "Issues: read and write" is the
-product owner's decision (open question 1 of the report).
+**The App's issues permission.** At first the App installation had no `issues` permission, so the first Live runs used
+the approved personal token (`FF_GITHUB_TRACKER_TOKEN`). The product owner has since granted it; see the review section.
 
 **Bugs the tests found.** The first live run failed twice: GitHub's issue lists lag a create by about five seconds
 (measured), so adoption by marker made a second issue and a label search found nothing. Searches now read the issue
@@ -58,7 +55,7 @@ recorded without being examined (2 failures in 5 runs before the second fix, 0 i
 
 ### Controls
 
-`tools/check_m6_delivery_controls.py` (needs `FF_TEMPORAL_ADDRESS`; no Docker, model or GitHub). Each breakage was run, its tests failed, and all passed again after the revert. **All 31 hold.** One did not at first: a retried `artifact.publish` re-made an identical commit, which the memory forge names by its content, so the test passed; it now also checks that the retry opens no sandbox.
+`tools/check_m6_delivery_controls.py` (needs `FF_TEMPORAL_ADDRESS`; no Docker, model or GitHub). Each breakage was run, its tests failed, and all passed again after the revert. **All 45 hold** (31 first, 14 added for the review of PR 12). One did not at first: a retried `artifact.publish` re-made an identical commit, which the memory forge names by its content, so the test passed; it now also checks that the retry opens no sandbox.
 
 | Breakage | Tests that failed |
 |---|---|
@@ -97,6 +94,23 @@ recorded without being examined (2 failures in 5 runs before the second fix, 0 i
 Not in the script: the race in `RecordAsync` (the previous code failed the integration test 2 times in 5; a
 deterministic mutation would need a scheduling hook).
 
+### Review of PR 12 (changes-required) and fixes
+
+| Finding | Fix | Commit |
+|---|---|---|
+| F1 (high): a stale merge record read as delivered after more work | A merge counts only for the work branch's current head (LOG 180) | `81c1dc5` |
+| F2: a reverted merge read as delivered | `scm.revert` produces `revert_record` evidence (new std engine type); a merge whose revert is merged or open is not delivered | `81c1dc5` |
+| F3: check 22 refused a child whose own budget was above the ceiling | The F11 cap applies to roots only (LOG 187) | `6b6e143` |
+| F4: a tracker outage stalled the run | Five tries over about 30 s, then a timeline note (LOG 186) | `6b6e143` |
+| F5 to F8 (low) | LOG 188 says why no patch marker; a failed child start stays counted (LOG 187); LOG 187 reworded on agents and siblings; comment-list lag noted (LOG 184) | `6b6e143` |
+| 8 surviving mutations | Tests for 7; dropping the empty-revision filter is equivalent on the memory VCS (an empty revision reads as not found, which is skipped) | `81c1dc5`, `6b6e143` |
+
+Product owner decisions (2026-11-04): the App has "Issues: read and write". The broker's engine ceiling now includes
+`issues: write`, and agents still get no issues access (`201f981`). The Live contract ran again with the App's credential:
+9 passed, and every issue was made by `ai-feature-flow-agent-access[bot]`, closed by the test, then deleted. Open question
+2: a `plan.expand` path ending in `?` is optional, and std's `plan_children` passes `$.tracker_issue?` (LOG 185). Open
+question 3 was accepted as recommended.
+
 ### Deviations and judgement calls
 
 - LOG 180 to 188, all unreviewed. The ones marked "Needs a look": 181 (no schema check on import), 184 (the App's
@@ -109,10 +123,9 @@ deterministic mutation would need a scheduling hook).
 
 | # | Follow-up |
 |---|---|
-| 1 | Grant the GitHub App `issues: write`, or run the tracker with another identity (product owner) |
-| 2 | Schema validation of imported artifacts against their types (LOG 181); refusing evidence types on `artifact.import` at load belongs with check 12 for actions |
-| 3 | std's `plan_children` does not pass a work list item's `tracker_issue` to `run.child`: `plan.expand` cannot substitute an optional field yet |
-| 4 | The staged ticket has no comments: `ITrackerProvider` reads none |
-| 5 | Declarative `on.<exit>` through a guarded route; nested fragment exits |
-| 6 | Two parents of one tree creating children at the same instant can each pass the last free work item (LOG 187) |
-| 7 | `wait.condition` on a tracker issue (M5 follow-up 8) can now use the tracker provider |
+| 1 | Schema validation of imported artifacts against their types (LOG 181); refusing evidence types on `artifact.import` at load belongs with check 12 for actions |
+| 2 | The staged ticket has no comments: `ITrackerProvider` reads none |
+| 3 | Declarative `on.<exit>` through a guarded route; nested fragment exits |
+| 4 | Two runs of one tree creating children at the same instant can each pass the last free work item (LOG 187); a child that fails to start stays counted |
+| 5 | `wait.condition` on a tracker issue (M5 follow-up 8) can now use the tracker provider |
+| 6 | No engine default ceiling: with no budget and no organisation ceiling a tree is unlimited (accepted; set a ceiling in shipped profiles) |
