@@ -126,6 +126,7 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
             CREATE TABLE IF NOT EXISTS agent_keyed (org_id TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL, step_key TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (org_id, kind, key));
             CREATE TABLE IF NOT EXISTS agent_log (org_id TEXT NOT NULL, kind TEXT NOT NULL, step_key TEXT NOT NULL, id INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT NOT NULL);
             """);
+        CreateLedger(connection);
     }
 
     /// <summary>One organisation per installation; the key is there from the start (docs/02 section 5).</summary>
@@ -202,6 +203,7 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
         foreach (var e in records.AgentEvents ?? [])
             Execute(connection, "INSERT INTO agent_log (org_id, kind, step_key, body) VALUES ($o, 'event', $s, $b)",
                 ("$o", Org), ("$s", e.StepKey), ("$b", JsonSerializer.Serialize(e, Json)));
+        AppendLedger(connection, records);
         transaction.Commit();
         return Task.FromResult(ProviderResult<Unit>.Success(default));
     }
@@ -231,6 +233,9 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
             Queries.Questions => ("SELECT body FROM agent_keyed WHERE org_id = $o AND kind = 'question' AND step_key = $s ORDER BY key", typeof(QuestionRecord), [("$s", P("step_key"))]),
             Queries.Reports => ("SELECT body FROM agent_log WHERE org_id = $o AND kind = 'report' AND step_key = $s ORDER BY id", typeof(ReportRecord), [("$s", P("step_key"))]),
             Queries.AgentEvents => ("SELECT body FROM agent_log WHERE org_id = $o AND kind = 'event' AND step_key = $s ORDER BY id", typeof(AgentEventRecord), [("$s", P("step_key"))]),
+            Queries.Findings => (RunTree + "SELECT body FROM findings WHERE org_id = $o AND run_id IN tree ORDER BY run_id, finding_id", typeof(FindingRecord), [("$r", P("run_id"))]),
+            Queries.FindingEvents => ("SELECT body FROM finding_events WHERE org_id = $o AND run_id = $r AND finding_id = $f ORDER BY id", typeof(FindingEventRecord),
+                [("$r", P("run_id")), ("$f", P("finding_id"))]),
             _ => throw new ArgumentException($"unknown query {queryName}"),
         };
         if (query.Type != typeof(T))
@@ -247,5 +252,32 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
         while (reader.Read())
             list.Add(JsonSerializer.Deserialize<T>(reader.GetString(0), Json)!);
         return Task.FromResult(ProviderResult<IReadOnlyList<T>>.Success(list));
+    }
+
+    // ---- The findings ledger (docs/01 section 6, LOG 148) ----
+
+    /// <summary>The run named <c>$r</c> and every run below it, by parent links, as the table <c>tree</c>.</summary>
+    const string RunTree = """
+        WITH RECURSIVE tree(id) AS (
+            SELECT $r
+            UNION SELECT runs.run_id FROM runs JOIN tree ON runs.parent_run_id = tree.id WHERE runs.org_id = $o)
+        """ + "\n";
+
+    static void CreateLedger(SqliteConnection connection) =>
+        Execute(connection, """
+            CREATE TABLE IF NOT EXISTS findings (org_id TEXT NOT NULL, run_id TEXT NOT NULL, finding_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (org_id, run_id, finding_id));
+            CREATE TABLE IF NOT EXISTS finding_events (org_id TEXT NOT NULL, run_id TEXT NOT NULL, finding_id TEXT NOT NULL, key TEXT NOT NULL, id INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT NOT NULL,
+                UNIQUE (org_id, run_id, finding_id, key));
+            """);
+
+    /// <summary>A finding record replaces the last; a finding event is appended once per run, finding and key.</summary>
+    static void AppendLedger(SqliteConnection connection, RecordBatch records)
+    {
+        foreach (var finding in records.Findings ?? [])
+            Execute(connection, "INSERT OR REPLACE INTO findings VALUES ($o, $r, $f, $b)",
+                ("$o", Org), ("$r", finding.RunId), ("$f", finding.FindingId), ("$b", JsonSerializer.Serialize(finding, Json)));
+        foreach (var e in records.FindingEvents ?? [])
+            Execute(connection, "INSERT OR IGNORE INTO finding_events (org_id, run_id, finding_id, key, body) VALUES ($o, $r, $f, $k, $b)",
+                ("$o", Org), ("$r", e.RunId), ("$f", e.FindingId), ("$k", e.Key), ("$b", JsonSerializer.Serialize(e, Json)));
     }
 }
