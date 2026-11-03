@@ -12,6 +12,9 @@ public static class GitHubProviders
         new("code_host", "github", ["api_base"], c => new GitHubCodeHost(Api(c))),
         new("ci", "github_actions", ["api_base"], c => new GitHubActionsCi(Api(c),
             () => c.Provider("artifact_store") as IArtifactStoreProvider ?? throw new InvalidOperationException("the GitHub Actions provider needs an artifact store"))),
+        new("findings_source", "copilot_review", ["api_base", "blocking"], c => new CopilotReviewSource(Api(c),
+            () => c.Provider("artifact_store") as IArtifactStoreProvider ?? throw new InvalidOperationException("the Copilot review source needs an artifact store"),
+            c.Setting("blocking") == "true")),
     ];
 
     /// <summary>The code host and CI providers take their tokens from the default credential broker, never from configuration.</summary>
