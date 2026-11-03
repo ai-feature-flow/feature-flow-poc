@@ -61,7 +61,7 @@ public class ForgeTicketTests
 
     /// <summary>A fresh world with the fixture repository, protected, and an engine whose memory providers use it.</summary>
     internal static async Task<(Harness H, InMemoryForge Forge, RepoRef Repo)> StartAsync(string name, string policy = "", bool autoApprove = true, string? script = null,
-        string[]? noEdits = null)
+        string[]? noEdits = null, string[]? libraries = null)
     {
         var world = $"it-{name}-{Guid.NewGuid():N}";
         foreach (var step in noEdits ?? [])
@@ -73,7 +73,7 @@ public class ForgeTicketTests
         var steps = script ?? Reviews();
         if (!steps.Contains("\"plan.plan\"", StringComparison.Ordinal))
             steps = "{ " + PlanAndClaims + ",\n" + steps.TrimStart()[1..];
-        var h = await Harness.StartAsync(name, script: steps, autoApprove: autoApprove, omitTypes: ["sandbox", "vcs", "code_host", "ci", "validator"],
+        var h = await Harness.StartAsync(name, script: steps, autoApprove: autoApprove, omitTypes: ["sandbox", "vcs", "code_host", "ci", "validator"], libraries: libraries,
             providers: string.Join("\n", new[] { "vcs", "code_host", "ci", "sandbox" }.Select(t => $"  {t}: {{ instances: {{ memory: {{ world: {world} }} }} }}"))
                        + "\n  validator: { instances: { std: {} } }",
             agentRuntime: $"{{ default: editing, dry_run: recording, instances: {{ editing: {{ provider: editing, script: script.yaml, world: {world} }}, recording: {{ folder: recorded }} }} }}",

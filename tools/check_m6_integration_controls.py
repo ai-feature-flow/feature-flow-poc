@@ -24,9 +24,23 @@ REQUIREMENTS = "src/Providers/FeatureFlow.Providers.StdValidators/Requirements.c
 STD_TESTS = ("tests/Providers/FeatureFlow.Providers.StdValidators.Tests", None)
 FIXTURES = "Every_fixture_gets_its_verdict_and_the_verdict_agrees_with_the_issues"
 ENGINE_FINDINGS = ("tests/FeatureFlow.Engine.Tests", "FullyQualifiedName~FindingsActionTests")
+WORKFLOW = "src/FeatureFlow.Engine/RunWorkflow.cs"
+CHILD_VALIDATE = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~A_childs_artifact_validate")
 LOOP = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~FindingsLoopTests.After_the_fix_loop")
 
 CONTROLS = [
+    {
+        "name": "the workflow gives an action no consumed artifacts (LOG 191)",
+        "edits": [(WORKFLOW, "Consumed: Workflow.Patched(ChildInputsPatch) ? consumed : null,", "Consumed: null,")],
+        "tests": [CHILD_VALIDATE],
+        "expect": ["A_childs_artifact_validate_reads_its_parents_requirements_and_a_parent_link_resolves"],
+    },
+    {
+        "name": "end to end: a link names a parent's document only by its bare name (LOG 191)",
+        "edits": [(STD_VALIDATORS, '(s.From != "current" && artifact == $"{s.From.Replace(\':\', \'/\')}/{s.Name}")', "false")],
+        "tests": [CHILD_VALIDATE],
+        "expect": ["A_childs_artifact_validate_reads_its_parents_requirements_and_a_parent_link_resolves"],
+    },
     {
         "name": "a link names a parent's document only by its bare name (LOG 191)",
         "edits": [(STD_VALIDATORS, '(s.From != "current" && artifact == $"{s.From.Replace(\':\', \'/\')}/{s.Name}")', "false")],

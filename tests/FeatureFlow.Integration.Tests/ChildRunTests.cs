@@ -183,4 +183,32 @@ public class ChildRunTests
         var input = history.Events.First().WorkflowExecutionStartedEventAttributes.Input.Payloads_[0].Data.ToStringUtf8();
         return JsonSerializer.Deserialize<RunStart>(input)!;
     }
+
+    /// <summary>
+    /// Integration seam (LOG 191), found by the live epic: an engine action in a child reads what its step consumes from
+    /// the parent. The child's artifact.validate checks its requirements against its parent's, which its planner names
+    /// parent/requirements as its sandbox does, on the forge's real validators, and passes.
+    /// </summary>
+    [Fact]
+    public async Task A_childs_artifact_validate_reads_its_parents_requirements_and_a_parent_link_resolves()
+    {
+        const string Script = """
+            {
+              "validated_parent:design": { artifacts: { requirements: { schema: 1, scope: { kind: epic, id: E }, requirements: [
+                { id: E-1, title: Widgets are valid, behaviour: An invalid widget is refused., supports_reason: The epic's goal } ] } } },
+              "validated_child:plan": { artifacts: { requirements: { schema: 1, scope: { kind: ticket, id: T-1 }, requirements: [
+                { id: R-1, title: Names are short, behaviour: A long name is refused., supports: [{ artifact: parent/requirements, requirement: E-1 }] } ] } } }
+            }
+            """;
+        var (h, _, _) = await ForgeTicketTests.StartAsync("validated-child", script: Script, libraries: Library);
+        await using var _h = h;
+
+        var id = h.Start("m6:templates/validated_parent", "--repo", "acme/api");
+        var (exit, end, error) = h.Cli("wait", id, "--timeout", "180");
+
+        var childId = $"{id}.child.1";
+        var child = await h.ShowAsync(childId);
+        Assert.True((exit, end.Trim()) == (0, $"run {id} completed"), end + error + (await h.ShowAsync(id)).ToJsonString() + child.ToJsonString());
+        Assert.Contains(child["timeline"]!.AsArray(), e => e!["stepId"]!.ToString() == "validate" && e["detail"]?.ToString() == "requirement_support (std): valid");
+    }
 }

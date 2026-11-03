@@ -1,0 +1,33 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: validated_parent
+  level: epic
+  description: >-
+    Writes the epic's requirements and starts a child whose artifact.validate checks its own
+    requirements against them (integration seam, LOG 191).
+
+artifact_types:
+  - std:artifact_types/requirements
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: design
+    agent:
+      role: std:roles/designer
+      task: m6:tasks/note
+    produces:
+      written: [{ name: requirements, type: std:artifact_types/requirements }]
+    outcomes: { written: success }
+    routes: { written: child }
+
+  - id: child
+    action: run.child
+    with:
+      template: m6:templates/validated_child
+      level: ticket
+      repositories: [acme/api]
+    routes: { completed: { end: completed } }
