@@ -408,6 +408,14 @@ After merging `m6` with W2's PR 11 (`88e4604`; merge `c78bfbf`): build 0 warning
 71 passed. Controls: the 11 delivery and re-check controls hold; the full script (50 controls) was stopped after 7, all
 holding, because each control now takes several minutes.
 
+### Merge with W3 (PR 13)
+
+Merged `m6` at `b7c72ce` (`525d4c7`). `ActionScope` keeps W3's `Consumed`, then `TrackerIssue`, passed by name. Evidence
+is now indexed once (`a5b2149`): the workflow indexes declared artifacts, and the engine indexes only evidence no declared
+artifact carries, `artifact.validate`'s report included. So W3's validators, which match engine evidence by type in the
+index, see no duplicates. After the merge: build 0 warnings, default suite 954 passed, integration 72 passed
+(`ForgeTicketTests` included). The 18 controls on the merged and changed files hold.
+
 ### Deviations and judgement calls
 
 - LOG 180 to 188, all unreviewed. The ones marked "Needs a look": 181 (no schema check on import), 184 (the App's
