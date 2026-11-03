@@ -65,6 +65,8 @@ public sealed class CredentialBrokerTests
         { "engine", ["ai-feature-flow/feature-flow-example"], "administration", "write", 30 },
         { "engine", ["ai-feature-flow/feature-flow-example"], "contents", "write", 120 },
         { "model_proxy", ["ai-feature-flow/feature-flow-example"], "contents", "read", 30 },
+        // F5: an agent has no tracker identity, not even to read.
+        { "agent", ["ai-feature-flow/feature-flow-example"], "issues", "read", 30 },
     };
 
     /// <summary>F5: no agent can push and nothing can change branch protection; a refusal makes no call to GitHub.</summary>
@@ -81,6 +83,14 @@ public sealed class CredentialBrokerTests
         Assert.Equal("rejected", issued.Error!.Reason);
         Assert.Equal(ProviderErrorClass.Work, issued.Error.Class);
         Assert.Empty(api.Calls);
+    }
+
+    [Fact]
+    public async Task The_engine_may_write_issues_for_the_tracker()
+    {
+        var (broker, _) = Broker();
+        var scope = new CredentialScope(["ai-feature-flow/feature-flow-example"], new Dictionary<string, string> { ["issues"] = "write", ["metadata"] = "read" });
+        Assert.True((await broker.IssueAsync(Actor.Engine, "github", scope, TimeSpan.FromMinutes(30), Ct)).Ok);
     }
 
     [Fact]
