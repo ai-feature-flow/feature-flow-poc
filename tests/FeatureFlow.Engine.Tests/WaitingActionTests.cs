@@ -94,7 +94,7 @@ public sealed class WaitingActionTests
     }
 
     [Fact]
-    public async Task An_expected_check_name_is_waited_for_and_with_CI_configured_a_first_check_only_for_the_grace()
+    public async Task An_expected_check_name_is_waited_for_and_with_CI_configured_the_whole_grace_is_waited()
     {
         await using var w = await WithPullRequestAsync();
         w.Forge.ConfigureCi(w.Repo);
@@ -102,11 +102,25 @@ public sealed class WaitingActionTests
         Assert.Equal(ActionResult.Wait, (await w.RunAsync("ci.checks", "{ expected: [sonar], grace: 0s }", "checks", waits: 2)).Kind);
         var waiting = await w.RunAsync("ci.checks", "{ grace: 1h }", "checks2", waits: 2);
         Assert.Equal(ActionResult.Wait, waiting.Kind);
-        Assert.Contains("no check has appeared yet", waiting.Reason, StringComparison.Ordinal);
-        Assert.Equal("passed", Outcome(await w.RunAsync("ci.checks", "{ grace: 0s }", "checks3", waits: 1)));
-        // Once a check has appeared, the grace is over: the step goes by the checks.
-        w.Forge.ReportCheck(w.Repo, w.Work!, new CheckRun("unit", CheckStates.Completed, Conclusions.Success, "ci.yml"));
-        Assert.Equal("passed", Outcome(await w.RunAsync("ci.checks", "{ grace: 1h }", "checks4", waits: 1)));
+        Assert.Contains("CI is configured, so the step waits", waiting.Reason, StringComparison.Ordinal);
+        // After the grace with no check, it passes and says CI produced none.
+        var none = await w.RunAsync("ci.checks", "{ grace: 0s }", "checks3", waits: 1);
+        Assert.Equal("passed", Outcome(none));
+        Assert.Contains(none.Events!, e => e.Contains("has CI configured, but no check appeared", StringComparison.Ordinal));
+        // An early check that is not CI does not end the grace (review F1): a later CI check may still appear.
+        w.Forge.ReportCheck(w.Repo, w.Work!, new CheckRun("licence", CheckStates.Completed, Conclusions.Success, null));
+        Assert.Equal(ActionResult.Wait, (await w.RunAsync("ci.checks", "{ grace: 1h }", "checks4", waits: 2)).Kind);
+        Assert.Equal("passed", Outcome(await w.RunAsync("ci.checks", "{ grace: 0s }", "checks5", waits: 1)));
+    }
+
+    /// <summary>Review F2: wait.condition on checks waits out the same default grace when CI is configured.</summary>
+    [Fact]
+    public async Task Wait_condition_on_checks_waits_for_CI_to_report_when_it_is_configured()
+    {
+        await using var w = await WithPullRequestAsync();
+        w.Forge.ConfigureCi(w.Repo);
+
+        Assert.Equal(ActionResult.Wait, (await w.RunAsync("wait.condition", "{ checks: passed }", "condition", waits: 2)).Kind);
     }
 
     [Fact]

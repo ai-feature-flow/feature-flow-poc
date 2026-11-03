@@ -503,7 +503,7 @@ commit per item, recorded as LOG 147. Net lines are code, tests and controls, fr
 | # | Removed | What still covers the risk | Net lines |
 |---|---|---|---|
 | 1 | CI dispatch idempotency (LOG 112): the claim reference, its tag record, the stale-claim reclaim, the run-name search, the adopted-run check, the trigger's key | Dispatch on the default branch with `commit_sha` required. The run id is recorded as the step's event, so retries poll it; a lost answer may start a duplicate run | -438 |
-| 2 | Trigger matching (LOG 113): `GetExpectedRunsAsync`, branch, path and type filters | `ci.checks` waits for the target branch's required checks, `expected` names and every check on the head; `HasCiAsync` waits up to `grace` for a first check | -192 |
+| 2 | Trigger matching (LOG 113): `GetExpectedRunsAsync`, branch, path and type filters | `ci.checks` waits for the target branch's required checks, `expected` names and every check on the head; with CI configured (`HasCiAsync`), it waits out `grace` and every check seen in it (review F1) | -192 |
 | 3 | The configuration-fault budget (LOG 144): 5 tries with backoff, run start's shared budget | The provider retries once with a fresh token; then an intervention, a refused start, or (new) the agent step stops for a person | -39 |
 | 4 | The clone cache's cross-process lock file (LOG 118) | One cache folder per process; the in-process gate per clone and the scratch references | -22 |
 | 5 | `ReviewRulesKnown` and check 24's warning (LOG 110, 142) | Check 24 still refuses an unprotected default branch; start warnings still reach the timeline | -27 |

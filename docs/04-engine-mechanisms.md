@@ -410,9 +410,9 @@ register late.
 
 | Element | Detail |
 |---|---|
-| Inputs | `expected` (check names that must appear), `grace` (how long to wait for a first check before deciding the repository has no CI; default 2 minutes), `timeout` |
+| Inputs | `expected` (check names that must appear), `grace` (when CI is configured, how long to wait for checks to appear before judging those seen; default 2 minutes), `timeout` |
 | Outcomes | `passed` (with output `skipped`, the number of skipped checks); `failed` |
-| Behaviour | Does not pass while a check the target branch requires (its protection: the pull request's base, else the parent branch) or an `expected` name has not appeared, so an early third-party check does not read as "all passed". When the CI provider says CI is configured and no check has appeared, it waits up to `grace` for a first one; it does not predict which workflows will run (LOG 147). A head commit that changes while waiting, or the timeout, raises an intervention |
+| Behaviour | Does not pass while a check the target branch requires (its protection: the pull request's base, else the parent branch) or an `expected` name has not appeared, so an early third-party check does not read as "all passed". When the CI provider says CI is configured, it does not pass within `grace` of starting to wait, so any check that appears in that window is waited for too; it does not predict which workflows will run (LOG 147). A head commit that changes while waiting, or the timeout, raises an intervention |
 | Evidence | Check results, which `scm.merge` reads |
 
 ### 8.2 `wait.condition`
@@ -421,7 +421,7 @@ Waits for an external state, from FF's `awaitCondition`.
 
 | Element | Detail |
 |---|---|
-| Inputs | One condition: `pull_request` (`approved`, `merged` or `mergeable`), `checks`, or `tracker` (an issue reaching one of some statuses); `poll_every`; `timeout` (default 7 days) |
+| Inputs | One condition: `pull_request` (`approved`, `merged` or `mergeable`), `checks` (judged as `ci.checks` judges them, with its default `grace`), or `tracker` (an issue reaching one of some statuses); `poll_every`; `timeout` (default 7 days) |
 | Outcomes | `met`; `unmet` (closed unmerged, changes requested, an issue in an `unmet` status) |
 | Behaviour | Holds no worker slot. A durable timer polls; an inbound event wakes it early; a read confirms. A person may end the wait by hand with `met` or `unmet`, which is the "skip a step" override with a chosen outcome (`docs/05` section 5). The timeout raises an intervention |
 

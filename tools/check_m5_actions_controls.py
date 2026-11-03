@@ -93,10 +93,23 @@ CONTROLS = [
         "expect": ["An_early_third_party_check_does_not_pass_while_a_check_the_base_requires_has_not_appeared"],
     },
     {
-        "name": "ci.checks: with CI configured, no first check is waited for (LOG 147)",
-        "edits": [(WAITING, "if (status.Checks.Count == 0 && elapsed < grace &&", "if (status.Checks.Count == 0 && elapsed < grace && false &&")],
+        "name": "ci.checks: with CI configured, the grace is not waited out (LOG 147)",
+        "edits": [(WAITING, "if (hasCi && elapsed < grace)", "if (hasCi && elapsed < grace && false)")],
         "tests": [(ENGINE, None)],
-        "expect": ["An_expected_check_name_is_waited_for_and_with_CI_configured_a_first_check_only_for_the_grace"],
+        "expect": ["An_expected_check_name_is_waited_for_and_with_CI_configured_the_whole_grace_is_waited",
+                   "Wait_condition_on_checks_waits_for_CI_to_report_when_it_is_configured"],
+    },
+    {
+        "name": "ci.checks: the grace ends at the first check of any kind (review F1)",
+        "edits": [(WAITING, "if (hasCi && elapsed < grace)", "if (hasCi && elapsed < grace && status.Checks.Count == 0)")],
+        "tests": [(ENGINE, None)],
+        "expect": ["An_expected_check_name_is_waited_for_and_with_CI_configured_the_whole_grace_is_waited"],
+    },
+    {
+        "name": "wait.condition: checks are judged with no grace (review F2)",
+        "edits": [(WAITING, "state.Base, state.HeadRevision, [], DefaultGrace, elapsed);", "state.Base, state.HeadRevision, [], TimeSpan.Zero, elapsed);")],
+        "tests": [(ENGINE, None)],
+        "expect": ["Wait_condition_on_checks_waits_for_CI_to_report_when_it_is_configured"],
     },
     {
         "name": "ci.checks: a head that changes while waiting is not noticed",
