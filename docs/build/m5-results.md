@@ -10,7 +10,7 @@ read), the GitHub code host and GitHub Actions CI providers; the ten M5 engine a
 `wait.condition`, `test.run`, `test.integration`, `analysis.run`, `repo.inspect`) with TRX, JUnit and SARIF
 parsing; run-start checks 20, 23, 24 and 36, step-start checks 31 to 33; the repository manifest; `clean_up`'s
 branch reset; `parent_branch` in the run request (LOG 137); and, in the integration, the engine-level SP4 test and a
-short budget for `unauthenticated` and `forbidden` (docs/06 section 1.1). Judgement calls: LOG 107 to 146.
+short budget for `unauthenticated` and `forbidden` (docs/06 section 1.1). Judgement calls: LOG 107 to 146, approved by the product owner 2026-11-03.
 
 **Done-when, met.** `ticket_delivery` ran on the fixture `ai-feature-flow/feature-flow-example` from start to an
 engine squash merge into the non-default parent branch `ff/epic/m5-live` (run `run-2bcdfbd1e2e5`, merge `4444a11`),
@@ -29,7 +29,7 @@ all hold.
 
 The Git VCS provider's catch-up and merge, the GitHub code host and GitHub Actions CI providers, and SP4's race
 scenario as a test. Branch `m5-providers`, pull request #5 into `m5`. Judgement calls are LOG 108 to 117,
-unreviewed.
+approved 2026-11-03.
 
 ### What was built
 
@@ -356,7 +356,7 @@ Verdict approve-with-fixes; each fix has tests, and a control where testable.
 
 ### Deviations and judgement calls
 
-LOG 120 to 142, unreviewed. These need a look: **138** (evidence tiers from the parent branch's manifest), **139** (waits hold up a hand-over), **120** (`test.integration` starts no services), **123** (the
+LOG 120 to 142, approved by the product owner 2026-11-03. These were marked for a look: **138** (evidence tiers from the parent branch's manifest), **139** (waits hold up a hand-over), **120** (`test.integration` starts no services), **123** (the
 action request is watched on the code host; no decision record yet), **137** (a run request may name its
 `parent_branch`; approved 2026-11-03). LOG 121 keeps the
 stand-in for runs with only fake providers.
@@ -382,7 +382,7 @@ stand-in for runs with only fake providers.
 
 ## Integration
 
-Branch `m5`, from `m5@932397d` (PR 5 and PR 6 merged). Judgement calls LOG 143 to 146, unreviewed.
+Branch `m5`, from `m5@932397d` (PR 5 and PR 6 merged). Judgement calls LOG 143 to 146, approved 2026-11-03.
 
 ### Engine-level SP4 (LOG 117's follow-up, LOG 143)
 

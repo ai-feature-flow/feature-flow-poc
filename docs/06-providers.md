@@ -97,9 +97,9 @@ temporary type `action_stand_in` runs them, scripted or recording, and a
 production installation: an installation that configures one must set
 `development: true`.
 
-Pending review (LOG 107): the VCS, code host and CI interfaces as built in M5 differ from
-the signatures below: catch-up and merge take an expected revision and a key, the code host reads a
-file and has no merge method, and CI results are returned as unparsed files. LOG 107 lists them.
+The VCS, code host and CI interfaces as built in M5 differ from the signatures below: catch-up and merge take an
+expected revision and a key, the code host reads a file and has no merge method, and CI results are returned as
+unparsed files. LOG 107 lists them.
 How the Git, GitHub and GitHub Actions providers meet them, and the engine's new `actions: write`, are LOG 108
 to 115.
 
@@ -281,7 +281,10 @@ repository's secrets are reviewed code, never a file the agent edited. A workflo
   so a trigger retried after a lost answer finds its run instead of starting another;
 - upload its result files (`.trx`, JUnit `.xml`, `.sarif`) as artifacts, each under 50 MB and the artifact under
   100 MB;
-- set `permissions: contents: read`, so the code under test cannot write to the repository through `GITHUB_TOKEN`.
+- set `permissions: contents: read`, so the code under test cannot write to the repository through `GITHUB_TOKEN`;
+- if it is also triggered by `push` on the branches agents write to (`ff/**`), use no secrets. A push runs the
+  workflow file as the pushed commit has it, which the agent may have edited, so any secret that run can reach is
+  exposed to the agent's code. Keep secrets for jobs that run only from the default branch (LOG 119).
 
 ### 3.6 Tracker
 

@@ -170,7 +170,7 @@ Entries 91 to 106, from building agent steps in a sandbox (`docs/11`, M4), revis
 
 ## From M5
 
-Entries from 107, from building source control and testing (`docs/11`, M5). Unreviewed.
+Entries 107 to 146, from building source control and testing (`docs/11`, M5), including its integration. Approved by the product owner, 2026-11-03, as the coordinator recommended.
 
 | # | Where | Decision | Why | Needs a look? |
 |---|---|---|---|---|
