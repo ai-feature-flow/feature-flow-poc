@@ -36,15 +36,20 @@ public class ForgeTicketTests
 
     const string Sarif = """{ "version": "2.1.0", "runs": [ { "tool": { "driver": { "name": "csc" } }, "results": [] } ] }""";
 
+    /// <summary>std's five reviewers each report no findings, so <c>findings.record</c> records an empty review (M6).</summary>
+    internal static string Reviews(string extra = "") =>
+        "{ " + string.Join(", ", Enumerable.Range(0, 5).Select(i => $"verify.review.review_{i}.assess: {{ artifacts: {{ findings_report: {{ schema: 1, findings: [] }} }} }}"))
+             + (extra.Length > 0 ? ", " + extra : "") + " }";
+
     /// <summary>A fresh world with the fixture repository, protected, and an engine whose memory providers use it.</summary>
-    static async Task<(Harness H, InMemoryForge Forge, RepoRef Repo)> StartAsync(string name, string policy = "", bool autoApprove = true)
+    internal static async Task<(Harness H, InMemoryForge Forge, RepoRef Repo)> StartAsync(string name, string policy = "", bool autoApprove = true, string? script = null)
     {
         var world = $"it-{name}-{Guid.NewGuid():N}";
         var forge = InMemoryForge.Named(world);
         var repo = forge.CreateRepository(Repo, new Dictionary<string, string> { ["feature-flow.yaml"] = Manifest, ["src/App.cs"] = "class App {}\n" });
         forge.Protect(repo, new BranchProtection("main", true, true, 1, [], false));
         var client = EditingAgentRuntime.SandboxClient(Directory.CreateTempSubdirectory("ff-client-").FullName);
-        var h = await Harness.StartAsync(name, autoApprove: autoApprove, omitTypes: ["sandbox", "vcs", "code_host", "ci"],
+        var h = await Harness.StartAsync(name, script: script ?? Reviews(), autoApprove: autoApprove, omitTypes: ["sandbox", "vcs", "code_host", "ci"],
             providers: string.Join("\n", new[] { "vcs", "code_host", "ci", "sandbox" }.Select(t => $"  {t}: {{ instances: {{ memory: {{ world: {world} }} }} }}")),
             agentRuntime: $"{{ default: editing, dry_run: recording, instances: {{ editing: {{ provider: editing, script: script.yaml, world: {world} }}, recording: {{ folder: recorded }} }} }}",
             installation: $"agent_worker: {{ sandbox_client: \"{client}\" }}",

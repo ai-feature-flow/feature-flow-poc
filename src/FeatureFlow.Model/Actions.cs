@@ -34,8 +34,11 @@ public sealed record Outcome(string Name, OutcomeClass Class);
 /// <summary>
 /// One engine action's fixed contract as far as loading needs it: outcomes with classes, the outputs it
 /// publishes (null when docs/04 does not list them), and the inputs that hold library references.
+/// <see cref="Escalates"/> are outcomes added after libraries were written: one a plan routes nowhere escalates, as
+/// <c>attempts_exhausted</c> does, so a library (or a run's locked library) from before the addition still loads (LOG 161).
 /// </summary>
-public sealed record ActionContract(string Name, IReadOnlyList<Outcome> Outcomes, IReadOnlyList<string>? Outputs, IReadOnlyList<string> ReferenceInputs);
+public sealed record ActionContract(string Name, IReadOnlyList<Outcome> Outcomes, IReadOnlyList<string>? Outputs, IReadOnlyList<string> ReferenceInputs,
+    IReadOnlyList<string>? Escalates = null);
 
 /// <summary>The twenty-one engine actions of docs/04 section 2.</summary>
 public static class Actions
@@ -59,7 +62,7 @@ public static class Actions
         new ActionContract("analysis.run", [S("passed"), F("failed")], null, []),
         new ActionContract("artifact.validate", [S("valid"), F("invalid")], null, []),
         new ActionContract("findings.record", [S("recorded"), B("unavailable")], ["new", "reraised", "reopened", "repeat_fixes"], []),
-        new ActionContract("findings.triage", [S("applied")], null, []),
+        new ActionContract("findings.triage", [S("applied"), F("invalid")], null, [], Escalates: ["invalid"]),
         new ActionContract("repo.inspect", [S("inspected")], null, []),
         new ActionContract("artifact.compose", [S("composed")], null, []),
         new ActionContract("artifact.import", [S("imported")], null, []),

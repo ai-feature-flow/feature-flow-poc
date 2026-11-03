@@ -44,7 +44,10 @@ public sealed record ActionResult(string Kind, StepReport? Report, string? Reaso
 
     public static ActionResult Waiting(string reason, TimeSpan delay, IReadOnlyList<string> events) => new(Wait, null, reason, delay, events);
 
-    public StepOutcome ToOutcome() => new(Kind, Report, Reason, Events);
+    /// <summary>The <c>findings</c> namespace after a findings action (<see cref="StepOutcome.Findings"/>).</summary>
+    public IReadOnlyDictionary<string, long>? Findings { get; init; }
+
+    public StepOutcome ToOutcome() => new(Kind, Report, Reason, Events) { Findings = Findings };
 }
 
 /// <summary>An infrastructure failure inside an action: the activity is retried and no attempt is used (docs/01 section 4).</summary>

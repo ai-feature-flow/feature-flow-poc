@@ -492,7 +492,8 @@ public class RunWorkflow
     /// </summary>
     string? MissingConsumed(Step step)
     {
-        var missing = step.Consumes.Where(c => !c.Optional && c.From == "current" && LatestArtifact(step, c.Name) is null).Select(c => c.Name).Distinct().ToList();
+        var missing = step.Consumes.Where(c => !c.Optional && c.From == "current" && c.Name != FindingsLedger.ViewName && LatestArtifact(step, c.Name) is null)
+            .Select(c => c.Name).Distinct().ToList();
         return missing.Count == 0 ? null : $"check 32 ({Checks.Title(Checks.ConsumedArtifacts)}): {step.Id} consumes {string.Join(", ", missing)}, which no step has produced";
     }
 
@@ -604,7 +605,10 @@ public class RunWorkflow
         var branch = core.WorkBranch();
         var consumed = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var name in step.Consumes.Select(c => c.Name).Distinct())
-            if (LatestArtifact(step, name) is { } reference)
+            if (name == FindingsLedger.ViewName)
+                // The ledger changes outside the run's artifacts: the agent worker stages its view when the step starts (LOG 63).
+                consumed[name] = FindingsLedger.ViewName;
+            else if (LatestArtifact(step, name) is { } reference)
                 consumed[name] = reference;
         return new AgentStepSpec(
             agent.WriteAccess ?? role?.WriteAccess ?? "none",
@@ -755,6 +759,8 @@ public class RunWorkflow
 
     void Apply(Step step, StepOutcome outcome)
     {
+        if (outcome.Findings is { } counts)
+            core!.Apply(new FindingsChanged(counts));
         switch (outcome.Kind)
         {
             case StepOutcome.CannotAnswer:

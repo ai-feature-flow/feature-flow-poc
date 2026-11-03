@@ -37,6 +37,22 @@ public class StdLibraryTests
     }
 
     [Fact]
+    public void A_fix_loop_written_before_findings_triage_could_be_invalid_still_loads_and_escalates_it()
+    {
+        var result = Std.Mutate(
+            new Std.Edit("fragments/fix_loop.yaml", "      invalid: triage                             # names a finding the ledger does not hold: back to its producer\n", ""),
+            new Std.Edit("fragments/fix_loop.yaml", "    routes: { invalid: verify_fix }\n", ""));
+
+        Assert.True(result.Diagnostics.Count == 0, Std.Describe(result));
+        var plan = result.Plans["std:templates/ticket_delivery"];
+        foreach (var step in new[] { "verify.fix.apply_triage", "verify.fix.record_fixes" })
+        {
+            var route = plan.AllSteps.Single(s => s.Id == step).ResolvedRoutes.Single(r => r.Outcome == "invalid");
+            Assert.Equal((Model.Plans.RouteSource.EngineDefault, true), (route.Source, route.Target is Model.Plans.ResolvedEscalate));
+        }
+    }
+
+    [Fact]
     public void Every_std_fragment_and_template_is_covered()
     {
         var files = Directory.GetFiles(Path.Combine(Std.Root, "fragments"), "*.yaml")

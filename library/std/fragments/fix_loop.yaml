@@ -50,6 +50,7 @@ steps:
         - when: "steps.triage.outputs.to_fix == 0"
           to: { exit: fixed }
         - to: fix
+      invalid: triage                             # names a finding the ledger does not hold: back to its producer
 
   - id: fix
     agent:
@@ -89,6 +90,7 @@ steps:
     action: findings.triage
     with: { from: fix_verification }
     consumes: [{ name: fix_verification }]
+    routes: { invalid: verify_fix }
 
   - id: tests_added
     action: artifact.validate

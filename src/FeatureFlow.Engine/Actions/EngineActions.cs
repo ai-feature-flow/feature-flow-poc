@@ -22,6 +22,7 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
     {
         "scm.catch_up", "scm.pull_request", "scm.merge", "scm.revert", "ci.checks", "wait.condition", "test.run", "test.integration", "analysis.run",
         "repo.inspect",
+        "findings.record", "findings.triage",
     };
 
     internal ProviderSet Providers => providers;
@@ -60,6 +61,8 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
                 "test.integration" => await Testing.IntegrationAsync(run),
                 "analysis.run" => await Testing.AnalysisAsync(run),
                 "repo.inspect" => await Testing.InspectAsync(run),
+                "findings.record" => await FindingsActions.RecordAsync(run),
+                "findings.triage" => await FindingsActions.TriageAsync(run),
                 _ => throw new InvalidOperationException($"{call.What} is not an engine action of this milestone"),
             };
         }
@@ -183,6 +186,9 @@ public sealed record CleanUpResult(IReadOnlyList<string> Events, string? Error);
 public sealed record ActionOptions(TimeSpan PollInterval, TimeSpan CiPollInterval, TimeSpan CommandTimeout)
 {
     public static readonly ActionOptions Default = new(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(15), TimeSpan.FromMinutes(30));
+
+    /// <summary>How long an external reviewer may stay pending before <c>findings.record</c> reports it <c>unavailable</c> (LOG 163).</summary>
+    public TimeSpan ReviewTimeout { get; init; } = TimeSpan.FromMinutes(30);
 }
 
 /// <summary>Ends an action early: a work failure, or an intervention (cannot answer).</summary>
@@ -230,6 +236,9 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
         owner.Providers.ForRun(type, call.DryRun) as T ?? throw ActionStop.CannotAnswer($"{call.What} needs a {type} provider, and none that can serve it is configured");
 
     public T? Optional<T>(string type) where T : class => owner.Providers.ForRun(type, call.DryRun) as T;
+
+    /// <summary>A provider instance by name, such as the findings source a step names (docs/07 section 2).</summary>
+    public T? Instance<T>(string type, string name) where T : class => owner.Providers.Instance(type, name) as T;
 
     public IVcsProvider Vcs => Provider<IVcsProvider>("vcs");
 
