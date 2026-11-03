@@ -172,6 +172,31 @@ public sealed class GitVcsTests : IDisposable
         Assert.Equal(sibling, remote.Resolve("refs/heads/main"));
     }
 
+    /// <summary>
+    /// Review R6: a hung git command (here a push held by the remote's hook) is killed after the command timeout; the
+    /// operation fails with timeout (infrastructure) and the cache's lock is free for the next one.
+    /// </summary>
+    [Fact]
+    public async Task A_hung_git_command_times_out_and_releases_the_cache()
+    {
+        var target = remote.Resolve("refs/heads/main")!;
+        var tested = remote.Commit("refs/heads/ff/work", new Dictionary<string, string?> { ["a.txt"] = "tested" }, from: "refs/heads/main");
+        var hook = Path.Combine(remote.Path, "hooks", "pre-receive");
+        File.WriteAllText(hook, "#!/bin/sh\ncat > /dev/null\nsleep 20\n");
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(hook, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var vcs = new GitVcs(BareRepository.Template(Path.Combine(root, "remotes")), Path.Combine(root, "cache"),
+            () => throw new InvalidOperationException(), () => throw new InvalidOperationException(), () => null) { CommandTimeout = TimeSpan.FromSeconds(2) };
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        var merge = await vcs.MergeAsync(repo, tested, "refs/heads/main", target, MergeMethods.Merge, "merge", "key-hung", Ct);
+
+        Assert.Equal("timeout", merge.Error?.Reason);
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(15), $"took {clock.Elapsed}");
+        File.Delete(hook);
+        Assert.True((await vcs.DescendsFromAsync(repo, tested, target, Ct)).Unwrap());
+    }
+
     [Fact]
     public async Task A_catch_up_of_a_missing_branch_is_not_found()
     {

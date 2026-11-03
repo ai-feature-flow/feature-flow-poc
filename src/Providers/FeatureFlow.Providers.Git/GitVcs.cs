@@ -37,6 +37,7 @@ public sealed class GitVcs(
 
     public async Task<ProviderResult<string?>> ResolveAsync(RepoRef repo, string reference, CancellationToken cancellationToken)
     {
+        OperationTimeout.Value = CommandTimeout;
         var env = await EnvironmentAsync(repo, write: false, cancellationToken);
         if (!env.Ok)
             return new ProviderResult<string?>(null, env.Error);
@@ -410,6 +411,7 @@ public sealed class GitVcs(
     async Task<ProviderResult<T>> WithCacheAsync<T>(RepoRef repo, Func<string, IReadOnlyDictionary<string, string>, string, Task<ProviderResult<T>>> work, bool write,
         CancellationToken cancellationToken)
     {
+        OperationTimeout.Value = CommandTimeout;
         var env = await EnvironmentAsync(repo, write, cancellationToken);
         if (!env.Ok)
             return new ProviderResult<T>(default, env.Error);
@@ -544,25 +546,67 @@ public sealed class GitVcs(
             start.ArgumentList.Add(a);
         foreach (var (k, v) in env ?? new Dictionary<string, string>())
             start.Environment[k] = v;
+        var limit = OperationTimeout.Value ?? DefaultCommandTimeout;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(limit);
+        Process? process = null;
         try
         {
-            using var process = Process.Start(start)!;
+            process = Process.Start(start)!;
             if (input is not null)
             {
                 await process.StandardInput.WriteAsync(input);
                 process.StandardInput.Close();
             }
 
-            var output = process.StandardOutput.ReadToEndAsync(cancellationToken);
-            var error = process.StandardError.ReadToEndAsync(cancellationToken);
-            await process.WaitForExitAsync(cancellationToken);
+            var output = process.StandardOutput.ReadToEndAsync(timeout.Token);
+            var error = process.StandardError.ReadToEndAsync(timeout.Token);
+            await process.WaitForExitAsync(timeout.Token);
             return ProviderResult<GitRun>.Success(new GitRun(process.ExitCode, await output, await error));
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // Review R6: a hung git must not hold the cache's lock for ever.
+            Kill(process);
+            return ProviderResult<GitRun>.Failure("timeout", $"git {arguments.FirstOrDefault()} did not finish in {limit.TotalSeconds:F0} s");
+        }
+        catch (OperationCanceledException)
+        {
+            Kill(process);
+            throw;
         }
         catch (System.ComponentModel.Win32Exception e)
         {
             return ProviderResult<GitRun>.Failure("unreachable", "git cannot be run: " + e.Message);
         }
+        finally
+        {
+            process?.Dispose();
+        }
     }
+
+    static void Kill(Process? process)
+    {
+        try
+        {
+            if (process is { HasExited: false })
+                process.Kill(entireProcessTree: true);
+        }
+        catch (InvalidOperationException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// How long one git command may run before it is killed and the operation fails with <c>timeout</c>
+    /// (infrastructure), so its cache lock is released. Set it under the activity's timeout.
+    /// </summary>
+    public TimeSpan CommandTimeout { get; init; } = DefaultCommandTimeout;
+
+    static readonly TimeSpan DefaultCommandTimeout = TimeSpan.FromMinutes(5);
+
+    /// <summary>The running operation's <see cref="CommandTimeout"/>, for the static git helpers.</summary>
+    static readonly AsyncLocal<TimeSpan?> OperationTimeout = new();
 
     /// <summary>Null when git ran and exited 0; otherwise the classified error. Git's message is kept to its first line, which never holds the header.</summary>
     static ProviderError? Failed(ProviderResult<GitRun> run, string what)
