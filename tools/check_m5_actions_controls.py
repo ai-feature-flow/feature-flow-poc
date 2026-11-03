@@ -28,9 +28,14 @@ RUN_START = "src/FeatureFlow.Validation/RunStartChecks.cs"
 STEP_START = "src/FeatureFlow.Validation/StepStartChecks.cs"
 API = "src/FeatureFlow.Api/ApiApp.cs"
 AGENT_ACTIVITY = "src/FeatureFlow.Engine.Agent/AgentActivities.cs"
+CORE = "src/FeatureFlow.Interpreter/RunCore.cs"
+RECOVERY = "src/FeatureFlow.Interpreter/Recovery.cs"
+VALIDATOR = "src/FeatureFlow.Validation/PlanValidator.cs"
 
 ENGINE = "tests/FeatureFlow.Engine.Tests"
 AGENT = "tests/FeatureFlow.Engine.Agent.Tests"
+CORE_TESTS = "tests/FeatureFlow.Interpreter.Tests"
+VALIDATION_TESTS = "tests/FeatureFlow.Validation.Tests"
 INTEGRATION = "tests/FeatureFlow.Integration.Tests"
 
 
@@ -336,6 +341,24 @@ CONTROLS = [
                    "catch (Exception e) when (e is ArithmeticException)")],
         "tests": [(ENGINE, None)],
         "expect": [("A_network_fault_a_provider_lets_escape_is_retried_as_infrastructure", 4)],
+    },
+    {
+        "name": "re-check R3: a clean_up aimed at a container is lost",
+        "edits": [(CORE, "State.Pending.Add(new Entry(branch.Steps[0].Id, cleanUpFirst));", "State.Pending.Add(new Entry(branch.Steps[0].Id, false));")],
+        "tests": [(CORE_TESTS, None)],
+        "expect": ["A_clean_up_aimed_at_a_container_is_the_clean_up_of_its_first_step"],
+    },
+    {
+        "name": "re-check R3: a clean_up route aimed at a decision loads",
+        "edits": [(VALIDATOR, "if (byId.GetValueOrDefault(target.StepId) is { Form: StepForm.Decision })", 'if (byId.GetValueOrDefault(target.StepId) is { Id: "never a step" })')],
+        "tests": [(VALIDATION_TESTS, None)],
+        "expect": ["Mutation_triggers_its_check_and_no_other(name: \"clean_up_to_a_decision\")"],
+    },
+    {
+        "name": "re-check R3: a person may go to a decision with clean_up",
+        "edits": [(RECOVERY, "return action.CleanUp && StepById(target)?.Form == StepForm.Decision", 'return action.CleanUp && StepById(target)?.Id == "never a step"')],
+        "tests": [(CORE_TESTS, None)],
+        "expect": ["A_person_may_not_go_to_a_decision_with_clean_up"],
     },
 ]
 

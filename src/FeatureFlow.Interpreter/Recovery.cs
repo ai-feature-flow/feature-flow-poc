@@ -67,7 +67,11 @@ public sealed partial class RunCore
 
                 return null;
             case RecoveryKind.GoTo:
-                return action.StepId is null || FindIn(action.StepId) is null ? $"go to: '{action.StepId}' is not a step of plan revision {State.Revision}" : null;
+                if (action.StepId is null || FindIn(action.StepId) is not { } target)
+                    return $"go to: '{action.StepId}' is not a step of plan revision {State.Revision}";
+                return action.CleanUp && StepById(target)?.Form == StepForm.Decision
+                    ? $"go to: {target} is a decision, which touches no repository; clean_up resets to where a step started, so go to the step after it"
+                    : null;
             case RecoveryKind.Replan:
                 if (action.StepId is null || FindIn(action.StepId) is not { } id)
                     return $"re-plan: '{action.StepId}' is not a step of plan revision {State.Revision}";

@@ -186,8 +186,9 @@ public sealed partial class RunCore
 
         if (step.Container is not null)
         {
-            CleanUpFor(entry, step);
-            EnterContainer(step);
+            // A clean_up aimed at a container is the clean_up of the first step it starts: the step that touches the
+            // repository and records where it started (re-check R3).
+            EnterContainer(step, entry.CleanUp);
             return;
         }
 
@@ -270,7 +271,7 @@ public sealed partial class RunCore
         return null;
     }
 
-    void EnterContainer(Step step)
+    void EnterContainer(Step step, bool cleanUp = false)
     {
         var container = step.Container!;
         var record = Record(step.Id);
@@ -291,10 +292,10 @@ public sealed partial class RunCore
             return;
         }
 
-        StartWaitingBranches(step, state);
+        StartWaitingBranches(step, state, cleanUp);
     }
 
-    void StartWaitingBranches(Step step, ContainerRecord state)
+    void StartWaitingBranches(Step step, ContainerRecord state, bool cleanUpFirst = false)
     {
         var container = step.Container!;
         var limit = step.Form == StepForm.Chain ? 1 : container.MaxConcurrency ?? long.MaxValue;
@@ -314,7 +315,8 @@ public sealed partial class RunCore
                 return;
             }
 
-            State.Pending.Add(new Entry(branch.Steps[0].Id, false));
+            State.Pending.Add(new Entry(branch.Steps[0].Id, cleanUpFirst));
+            cleanUpFirst = false;
         }
     }
 
