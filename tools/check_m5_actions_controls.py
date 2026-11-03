@@ -378,6 +378,21 @@ CONTROLS = [
         "tests": [it("Protection_with_unknown_review_rules")],
         "expect": ["Protection_with_unknown_review_rules_starts_the_run_with_a_warning_on_its_timeline"],
     },
+    # Added for the engine-level SP4 (LOG 117's follow-up).
+    {
+        "name": "engine SP4: scm.merge reads no evidence, so an untested head lands in the race",
+        "edits": [(SCM, "    static async Task<string?> MissingEvidenceAsync(ActionRun run, RepoRef repo, string head)\n    {\n",
+                   "    static async Task<string?> MissingEvidenceAsync(ActionRun run, RepoRef repo, string head)\n    {\n        if (head.Length > 0)\n            return null;\n")],
+        "tests": [it("EngineMergeRaceTests")],
+        "expect": ["N2_a_merge_after_a_changing_catch_up_without_a_re_test_is_refused_by_the_engine"],
+    },
+    {
+        "name": "engine SP4: scm.merge reports a refused merge as merged",
+        "edits": [(SCM, '                return run.Report("base_moved");', '                return await RecordAsync(run, repo, target, method, head, targetRevision, targetRevision, EngineActor, false, pr);')],
+        "tests": [it("EngineMergeRaceTests")],
+        "expect": ["S1_three_tickets_forced_to_collide_all_merge_through_the_engine_and_none_is_lost"],
+    },
+    # Added for the budget of forbidden and unauthenticated (docs/06 section 1.1).
 ]
 
 

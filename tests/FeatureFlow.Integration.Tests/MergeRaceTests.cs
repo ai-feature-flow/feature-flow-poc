@@ -210,8 +210,8 @@ public sealed class MergeRaceTests(ITestOutputHelper output) : IDisposable
         Assert.NotEmpty(LostMerges(run));
     }
 
-    /// <summary>The bare repository the workers race on, read and written with plumbing.</summary>
-    sealed class Remote
+    /// <summary>The bare repository the workers race on, read and written with plumbing. <see cref="EngineMergeRaceTests"/> uses it too.</summary>
+    internal sealed class Remote
     {
         public Remote(string path)
         {
@@ -257,6 +257,8 @@ public sealed class MergeRaceTests(ITestOutputHelper output) : IDisposable
         public IReadOnlyList<string> Parents(string revision) => Git("rev-list", "--parents", "-n", "1", revision).Trim().Split(' ').Skip(1).ToList();
 
         public string? Read(string revision, string path) => Run(["show", $"{revision}:{path}"], null) is (0, var o) ? o : null;
+
+        public string Tree(string revision) => Git("rev-parse", revision + "^{tree}").Trim();
 
         string Git(params string[] arguments) => Git(null, arguments);
 
