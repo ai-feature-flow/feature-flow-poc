@@ -86,10 +86,16 @@ CONTROLS = [
         "expect": ["Check_20_a_repository_library_section_that_overrides_is_refused_and_one_that_adds_passes"],
     },
     {
-        "name": "ci.checks: an expected CI run that has not reported is not waited for",
-        "edits": [(WAITING, 'pending.AddRange(runs.Runs.Where(r => !Reported(r)).Select(r => $"CI run {r} has not reported"));', "")],
+        "name": "ci.checks: a check the target branch requires that has not appeared is not waited for (LOG 147)",
+        "edits": [(WAITING, 'pending.AddRange(required.Where(r => !Appeared(r)).Select(r => $"check {r}, which {target} requires, has not appeared"));', "")],
         "tests": [(ENGINE, None)],
-        "expect": ["An_early_third_party_check_does_not_pass_while_an_expected_CI_run_has_not_reported"],
+        "expect": ["An_early_third_party_check_does_not_pass_while_a_check_the_base_requires_has_not_appeared"],
+    },
+    {
+        "name": "ci.checks: with CI configured, no first check is waited for (LOG 147)",
+        "edits": [(WAITING, "if (status.Checks.Count == 0 && elapsed < grace &&", "if (status.Checks.Count == 0 && elapsed < grace && false &&")],
+        "tests": [(ENGINE, None)],
+        "expect": ["An_expected_check_name_is_waited_for_and_with_CI_configured_a_first_check_only_for_the_grace"],
     },
     {
         "name": "ci.checks: a head that changes while waiting is not noticed",

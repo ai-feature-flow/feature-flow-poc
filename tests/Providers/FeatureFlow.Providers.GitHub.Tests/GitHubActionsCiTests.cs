@@ -3,7 +3,6 @@ using System.Text;
 using System.Text.Json.Nodes;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Providers.Local;
-using Expectation = FeatureFlow.Providers.GitHub.GitHubActionsCi.Expectation;
 
 namespace FeatureFlow.Providers.GitHub.Tests;
 
@@ -125,7 +124,7 @@ public sealed class GitHubActionsCiTests : IDisposable
     public async Task Only_a_full_commit_SHA_and_a_numeric_run_id_reach_a_URL()
     {
         Assert.Equal("validation_failed", (await ci.TriggerAsync(Repo, Unit, "main", Ct)).Error?.Reason);
-        Assert.Equal("validation_failed", (await ci.GetExpectedRunsAsync(Repo, "../x", null, Ct)).Error?.Reason);
+        Assert.Equal("validation_failed", (await ci.HasCiAsync(Repo, "../x", Ct)).Error?.Reason);
         Assert.Equal("not_found", (await ci.GetRunStatusAsync(new CiRunRef(Repo, "1/../2", Sha), Ct)).Error?.Reason);
         Assert.Equal("not_found", (await ci.ReadLogsAsync(new CiRunRef(Repo, "x", Sha), Ct)).Error?.Reason);
         Assert.Empty(github.Calls);
@@ -281,71 +280,29 @@ public sealed class GitHubActionsCiTests : IDisposable
     }
 
     [Fact]
-    public async Task Expected_runs_read_the_workflows_at_the_revision_for_the_branches_it_heads()
+    public async Task A_revision_with_a_workflow_file_has_CI_and_one_without_has_none()
     {
-        github.On(Get, $"~/contents/.github/workflows?ref={Sha}", 200, """
-                [{"name":"unit.yml","type":"file"},{"name":"docs.yaml","type":"file"},{"name":"release.yml","type":"file"},{"name":"README.md","type":"file"}]
-                """)
-            .On(Get, $"~/commits/{Sha}/branches-where-head", 200, """[{"name":"ff/ticket/T-1"}]""")
-            .On(Get, $"~/contents/.github/workflows/unit.yml?ref={Sha}", 200, File64(UnitWorkflow))
-            .On(Get, $"~/contents/.github/workflows/docs.yaml?ref={Sha}", 200, File64("on:\n  push:\n    paths: [docs/**]\njobs: {}\n"))
-            .On(Get, $"~/contents/.github/workflows/release.yml?ref={Sha}", 200, File64("on:\n  push:\n    tags: [v*]\njobs: {}\n"));
+        var other = new string('b', 40);
+        github.On(Get, $"~/contents/.github/workflows?ref={Sha}", 200, """[{"name":"README.md","type":"file"},{"name":"docs.yaml","type":"file"}]""")
+            .On(Get, $"~/contents/.github/workflows?ref={other}", 200, """[{"name":"README.md","type":"file"},{"name":"old","type":"dir"}]""");
 
-        var expected = (await ci.GetExpectedRunsAsync(Repo, Sha, null, Ct)).Unwrap();
-
-        Assert.Equal(["unit.yml"], expected.Runs);
-        Assert.Equal(["docs.yaml"], expected.MayRun);
+        Assert.True((await ci.HasCiAsync(Repo, Sha, Ct)).Unwrap());
+        Assert.False((await ci.HasCiAsync(Repo, other, Ct)).Unwrap());
     }
 
     [Fact]
-    public async Task On_a_pull_request_the_base_and_the_head_branch_decide()
-    {
-        github.On(Get, $"~/contents/.github/workflows?ref={Sha}", 200, """[{"name":"pr.yml","type":"file"}]""")
-            .On(Get, "~/pulls/7", 200, """{"base":{"ref":"main"},"head":{"ref":"feature"}}""")
-            .On(Get, $"~/contents/.github/workflows/pr.yml?ref={Sha}", 200, File64("on:\n  pull_request:\n    branches: [main]\njobs: {}\n"));
-
-        Assert.Equal(["pr.yml"], (await ci.GetExpectedRunsAsync(Repo, Sha, new PullRequestRef(Repo, 7), Ct)).Unwrap().Runs);
-    }
-
-    [Fact]
-    public async Task A_revision_without_workflows_expects_none()
+    public async Task A_revision_without_a_workflow_folder_has_no_CI()
     {
         github.On(Get, $"~/contents/.github/workflows?ref={Sha}", 404, """{"message":"Not Found"}""");
-        Assert.False((await ci.GetExpectedRunsAsync(Repo, Sha, null, Ct)).Unwrap().Any);
+        Assert.False((await ci.HasCiAsync(Repo, Sha, Ct)).Unwrap());
     }
 
     [Theory]
-    [InlineData("on: push", "main", null, Expectation.Runs)]
-    [InlineData("on: [push, pull_request]", "x", null, Expectation.Runs)]
-    [InlineData("on: workflow_dispatch", "main", "main", Expectation.None)]
-    [InlineData("on: { schedule: [ { cron: '0 0 * * *' } ] }", "main", "main", Expectation.None)]
-    [InlineData("on: { push: { branches: [main] } }", "ff/a", null, Expectation.None)]
-    [InlineData("on: { push: { branches: ['ff/**'] } }", "ff/ticket/a", null, Expectation.Runs)]
-    [InlineData("on: { push: { branches: ['ff/*'] } }", "ff/ticket/a", null, Expectation.None)]
-    [InlineData("on: { push: { branches: ['ff/**', '!ff/skip/**'] } }", "ff/skip/a", null, Expectation.None)]
-    [InlineData("on: { push: { branches-ignore: ['ff/**'] } }", "ff/a", null, Expectation.None)]
-    [InlineData("on: { push: { branches-ignore: ['ff/**'] } }", "main", null, Expectation.Runs)]
-    [InlineData("on: { push: { tags: ['v*'] } }", "main", null, Expectation.None)]
-    [InlineData("on: { push: { branches: [main], paths: ['src/**'] } }", "main", null, Expectation.MayRun)]
-    [InlineData("on: { push: { paths-ignore: ['docs/**'] } }", "main", null, Expectation.MayRun)]
-    [InlineData("on: { pull_request: { branches: [main] } }", "x", "main", Expectation.Runs)]
-    [InlineData("on: { pull_request: { branches: [release] } }", "x", "main", Expectation.None)]
-    [InlineData("on: { pull_request: { types: [labeled] } }", "x", "main", Expectation.MayRun)]
-    [InlineData("on: { pull_request: { types: [opened, labeled] } }", "x", "main", Expectation.Runs)]
-    [InlineData("on: { pull_request_target: }", "x", "main", Expectation.Runs)]
-    [InlineData("on: { pull_request: }", "x", null, Expectation.None)]
-    public void Triggers_are_evaluated_as_GitHub_does(string on, string branch, string? pullBase, Expectation expected)
+    [InlineData("on: { workflow_dispatch: { inputs: { commit_sha: { type: string }, tier: {} } } }\njobs: {}\n", "commit_sha,tier")]
+    [InlineData("on: [push, workflow_dispatch]\njobs: {}\n", "")]
+    [InlineData("on: [push\n", "")]
+    public void Dispatch_inputs_are_read_from_the_workflow(string text, string inputs)
     {
-        var workflow = GitHubActionsCi.Workflow.Parse(on + "\njobs: {}\n");
-        Assert.NotNull(workflow);
-        Assert.Equal(expected, workflow.Expect([branch], pullBase));
-    }
-
-    [Theory]
-    [InlineData("jobs: {}\n")]
-    [InlineData("on: [push\n")]
-    public void A_workflow_without_readable_triggers_does_not_parse(string text)
-    {
-        Assert.Null(GitHubActionsCi.Workflow.Parse(text));
+        Assert.Equal(inputs, string.Join(",", GitHubActionsCi.DispatchInputs(text).Order(StringComparer.Ordinal)));
     }
 }

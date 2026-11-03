@@ -30,18 +30,6 @@ public sealed record CiResultFile(string Name, string Format, ArtifactRef Conten
 public sealed record CiRunResult(string Conclusion, IReadOnlyList<CiJobResult> Jobs, IReadOnlyList<CiResultFile> Files);
 
 /// <summary>
-/// Which CI runs should report for a head (docs/06 section 3.5): those that will run, and those that may (their
-/// triggers cannot be evaluated here, such as path filters). Both empty: the repository has no CI for this head.
-/// Names are the <see cref="CheckRun.Suite"/> names the code host reports checks under.
-/// </summary>
-public sealed record ExpectedRuns(IReadOnlyList<string> Runs, IReadOnlyList<string> MayRun)
-{
-    public static readonly ExpectedRuns None = new([], []);
-
-    public bool Any => Runs.Count > 0 || MayRun.Count > 0;
-}
-
-/// <summary>
 /// The CI provider (docs/06 section 3.5). Runs are triggered and polled, never awaited. A trigger is not idempotent:
 /// the engine records the run it returns, and a trigger retried after a lost answer may start a second run (LOG 147).
 /// </summary>
@@ -57,6 +45,10 @@ public interface ICiProvider : IProvider
     /// <summary>The run's logs, copied into the artifact store.</summary>
     Task<ProviderResult<ArtifactRef>> ReadLogsAsync(CiRunRef run, CancellationToken cancellationToken);
 
-    /// <summary>Which runs should report for <paramref name="revision"/>, on a pull request when <paramref name="pullRequest"/> is given.</summary>
-    Task<ProviderResult<ExpectedRuns>> GetExpectedRunsAsync(RepoRef repo, string revision, PullRequestRef? pullRequest, CancellationToken cancellationToken);
+    /// <summary>
+    /// Whether CI is configured for <paramref name="revision"/> at all (for GitHub Actions, any workflow file), so
+    /// <c>ci.checks</c> knows to wait a while for a first check (docs/04 section 8.1). Which runs will report is not
+    /// predicted: the target branch's required checks say what must pass.
+    /// </summary>
+    Task<ProviderResult<bool>> HasCiAsync(RepoRef repo, string revision, CancellationToken cancellationToken);
 }

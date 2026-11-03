@@ -1,7 +1,6 @@
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using FeatureFlow.Model;
 using FeatureFlow.Model.Yaml;
 using FeatureFlow.Providers.Abstractions;
@@ -75,7 +74,7 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
             return new ProviderResult<IReadOnlySet<string>>(null, text.Error);
         if (text.Value is null)
             return ProviderResult<IReadOnlySet<string>>.Failure("validation_failed", $"{workflow} does not exist on {reference}");
-        return ProviderResult<IReadOnlySet<string>>.Success(Workflow.Parse(Encoding.UTF8.GetString(text.Value))?.DispatchInputs ?? new HashSet<string>());
+        return ProviderResult<IReadOnlySet<string>>.Success(DispatchInputs(Encoding.UTF8.GetString(text.Value)));
     }
 
     static bool IsRunId(string id) => id.Length > 0 && id.All(char.IsAsciiDigit);
@@ -205,181 +204,27 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
             : GitHubApi.Unexpected<Stream>(response.Value, $"GET {path}");
     }
 
-    /// <summary>
-    /// Read from the workflow files at the revision, as FF's <c>awaitChecks</c> did. A <c>push</c> trigger is evaluated
-    /// for the branches whose head the revision is, and, given a pull request, for its head branch; <c>pull_request</c>
-    /// and <c>pull_request_target</c> for the pull request's base. A matching trigger with a path filter, a type
-    /// filter without the default types, or a file that does not parse, may run. Triggers not set off by a head
-    /// (<c>workflow_dispatch</c>, <c>schedule</c>, ...) are ignored.
-    /// </summary>
-    public async Task<ProviderResult<ExpectedRuns>> GetExpectedRunsAsync(RepoRef repo, string revision, PullRequestRef? pullRequest, CancellationToken cancellationToken)
+    /// <summary>CI is configured when the revision has a workflow file (<c>.yml</c> or <c>.yaml</c>) in <c>.github/workflows</c>.</summary>
+    public async Task<ProviderResult<bool>> HasCiAsync(RepoRef repo, string revision, CancellationToken cancellationToken)
     {
         if (!GitHubApi.IsRevision(revision))
-            return ProviderResult<ExpectedRuns>.Failure("validation_failed", $"{revision} is not a commit SHA");
+            return ProviderResult<bool>.Failure("validation_failed", $"{revision} is not a commit SHA");
         var listing = await Send(repo, HttpMethod.Get, $"/contents/.github/workflows?ref={GitHubApi.Escape(revision)}", null, cancellationToken, ReadPermissions);
         if (!listing.Ok)
-            return listing.Error!.Reason == "not_found" ? ProviderResult<ExpectedRuns>.Success(ExpectedRuns.None) : new ProviderResult<ExpectedRuns>(null, listing.Error);
+            return listing.Error!.Reason == "not_found" ? ProviderResult<bool>.Success(false) : new ProviderResult<bool>(default, listing.Error);
         if (listing.Value!.Code != 200)
-            return GitHubApi.Unexpected<ExpectedRuns>(listing.Value, "GET the workflow folder");
-        var names = (listing.Value.Json as JsonArray ?? []).Where(f => f?["type"]?.GetValue<string>() == "file")
-            .Select(f => f!["name"]!.GetValue<string>()).Where(n => n.EndsWith(".yml", StringComparison.Ordinal) || n.EndsWith(".yaml", StringComparison.Ordinal))
-            .Order(StringComparer.Ordinal).ToList();
-        if (names.Count == 0)
-            return ProviderResult<ExpectedRuns>.Success(ExpectedRuns.None);
-
-        var pushBranches = new List<string>();
-        string? pullBase = null;
-        if (pullRequest is not null)
-        {
-            var pr = await Send(repo, HttpMethod.Get, $"/pulls/{pullRequest.Number}", null, cancellationToken, ReadPermissions);
-            if (!pr.Ok)
-                return new ProviderResult<ExpectedRuns>(null, pr.Error);
-            if (pr.Value!.Code != 200)
-                return GitHubApi.Unexpected<ExpectedRuns>(pr.Value, "GET the pull request");
-            pullBase = pr.Value.Json!["base"]!["ref"]!.GetValue<string>();
-            pushBranches.Add(pr.Value.Json["head"]!["ref"]!.GetValue<string>());
-        }
-        else
-        {
-            var heads = await Send(repo, HttpMethod.Get, $"/commits/{revision}/branches-where-head", null, cancellationToken, ReadPermissions);
-            if (!heads.Ok)
-                return new ProviderResult<ExpectedRuns>(null, heads.Error);
-            if (heads.Value!.Code != 200)
-                return GitHubApi.Unexpected<ExpectedRuns>(heads.Value, "GET the branches at the revision");
-            pushBranches.AddRange((heads.Value.Json as JsonArray ?? []).Select(b => b!["name"]!.GetValue<string>()));
-        }
-
-        var runs = new List<string>();
-        var mayRun = new List<string>();
-        foreach (var name in names)
-        {
-            var text = await GitHubCodeHost.ReadAtAsync(api, repo, ReadPermissions, ".github/workflows/" + name, revision, cancellationToken);
-            if (!text.Ok)
-                return new ProviderResult<ExpectedRuns>(null, text.Error);
-            var verdict = Workflow.Parse(Encoding.UTF8.GetString(text.Value ?? [])) is { } workflow
-                ? workflow.Expect(pushBranches, pullBase)
-                : Expectation.MayRun;
-            if (verdict == Expectation.Runs)
-                runs.Add(name);
-            else if (verdict == Expectation.MayRun)
-                mayRun.Add(name);
-        }
-
-        return ProviderResult<ExpectedRuns>.Success(new ExpectedRuns(runs, mayRun));
+            return GitHubApi.Unexpected<bool>(listing.Value, "GET the workflow folder");
+        return ProviderResult<bool>.Success((listing.Value.Json as JsonArray ?? []).Any(f => f?["type"]?.GetValue<string>() == "file"
+            && f["name"]?.GetValue<string>() is { } n && (n.EndsWith(".yml", StringComparison.Ordinal) || n.EndsWith(".yaml", StringComparison.Ordinal))));
     }
 
-    public enum Expectation
+    /// <summary>The inputs a workflow's <c>workflow_dispatch</c> trigger declares; empty when it declares none or does not parse.</summary>
+    public static IReadOnlySet<string> DispatchInputs(string text)
     {
-        None,
-        MayRun,
-        Runs,
-    }
-
-    /// <summary>The parts of a workflow file the provider reads: its triggers and their filters, and its dispatch inputs.</summary>
-    public sealed class Workflow(IReadOnlyDictionary<string, YMap?> triggers, IReadOnlySet<string> dispatchInputs)
-    {
-        public IReadOnlySet<string> DispatchInputs { get; } = dispatchInputs;
-
-        /// <summary>The workflow, or null when it does not parse or has no <c>on</c>.</summary>
-        public static Workflow? Parse(string text)
-        {
-            var diagnostics = new DiagnosticBag();
-            if (YamlText.Parse(text, "workflow", diagnostics) is not YMap root || diagnostics.HasErrors || root["on"] is not { } on)
-                return null;
-            var triggers = new Dictionary<string, YMap?>(StringComparer.Ordinal);
-            switch (on)
-            {
-                case YScalar s:
-                    triggers[s.Text] = null;
-                    break;
-                case YSeq seq:
-                    foreach (var item in seq.Items.OfType<YScalar>())
-                        triggers[item.Text] = null;
-                    break;
-                case YMap map:
-                    foreach (var (key, value) in map.Entries)
-                        triggers[key.Text] = value as YMap;
-                    break;
-                default:
-                    return null;
-            }
-
-            var inputs = triggers.GetValueOrDefault("workflow_dispatch")?["inputs"] as YMap;
-            return new Workflow(triggers, inputs?.Keys.ToHashSet(StringComparer.Ordinal) ?? []);
-        }
-
-        public Expectation Expect(IReadOnlyList<string> pushBranches, string? pullBase)
-        {
-            var verdicts = new List<Expectation>();
-            if (triggers.TryGetValue("push", out var push))
-                verdicts.AddRange(pushBranches.Select(b => Evaluate(push, b, pull: false)));
-            if (pullBase is not null)
-                foreach (var e in new[] { "pull_request", "pull_request_target" })
-                    if (triggers.TryGetValue(e, out var pull))
-                        verdicts.Add(Evaluate(pull, pullBase, pull: true));
-            return verdicts.Count == 0 ? Expectation.None : verdicts.Max();
-        }
-
-        static Expectation Evaluate(YMap? filter, string branch, bool pull)
-        {
-            if (filter is null)
-                return Expectation.Runs;
-            var branches = List(filter, "branches");
-            var ignore = List(filter, "branches-ignore");
-            // Only tag filters: a branch never sets it off (GitHub's rule for push).
-            if (!pull && branches is null && ignore is null && (filter.Has("tags") || filter.Has("tags-ignore")))
-                return Expectation.None;
-            if (branches is not null && !Matches(branches, branch))
-                return Expectation.None;
-            if (ignore is not null && ignore.Any(p => Glob(p).IsMatch(branch)))
-                return Expectation.None;
-            if (filter.Has("paths") || filter.Has("paths-ignore"))
-                return Expectation.MayRun;
-            if (pull && List(filter, "types") is { } types && !types.Intersect(["opened", "synchronize", "reopened"]).Any())
-                return Expectation.MayRun;
-            return Expectation.Runs;
-        }
-
-        static List<string>? List(YMap map, string key) => map[key] switch
-        {
-            YSeq seq => seq.Items.Select(i => i.ScalarText() ?? "").ToList(),
-            YScalar { IsNull: false } s => [s.Text],
-            _ => null,
-        };
-
-        /// <summary>GitHub's filter patterns in order: a later <c>!pattern</c> excludes what an earlier one included.</summary>
-        static bool Matches(IReadOnlyList<string> patterns, string branch)
-        {
-            var matched = false;
-            foreach (var p in patterns)
-                if (p.StartsWith('!'))
-                    matched &= !Glob(p[1..]).IsMatch(branch);
-                else if (Glob(p).IsMatch(branch))
-                    matched = true;
-            return matched;
-        }
-
-        /// <summary><c>*</c> is anything but <c>/</c>, <c>**</c> is anything; <c>?</c>, <c>+</c> and <c>[...]</c> are as in a regular expression.</summary>
-        static Regex Glob(string pattern)
-        {
-            var regex = new StringBuilder("^");
-            for (var i = 0; i < pattern.Length; i++)
-            {
-                var c = pattern[i];
-                if (c == '*' && i + 1 < pattern.Length && pattern[i + 1] == '*')
-                {
-                    regex.Append(".*");
-                    i++;
-                }
-                else if (c == '*')
-                    regex.Append("[^/]*");
-                else if (c is '?' or '+' or '[' or ']')
-                    regex.Append(c);
-                else
-                    regex.Append(Regex.Escape(c.ToString()));
-            }
-
-            return new Regex(regex.Append('$').ToString(), RegexOptions.CultureInvariant);
-        }
+        var diagnostics = new DiagnosticBag();
+        if (YamlText.Parse(text, "workflow", diagnostics) is not YMap root || diagnostics.HasErrors)
+            return new HashSet<string>();
+        var inputs = (root["on"] as YMap)?["workflow_dispatch"] is YMap dispatch ? dispatch["inputs"] as YMap : null;
+        return inputs?.Keys.ToHashSet(StringComparer.Ordinal) ?? [];
     }
 }

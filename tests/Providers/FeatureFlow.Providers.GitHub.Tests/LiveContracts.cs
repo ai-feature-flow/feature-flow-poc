@@ -149,8 +149,8 @@ public sealed class GitHubActionsCiContract : CiContract, IAsyncLifetime
 
         public Task<ProviderResult<ArtifactRef>> ReadLogsAsync(CiRunRef run, CancellationToken cancellationToken) => inner.ReadLogsAsync(run, cancellationToken);
 
-        public Task<ProviderResult<ExpectedRuns>> GetExpectedRunsAsync(RepoRef repo, string revision, PullRequestRef? pullRequest, CancellationToken cancellationToken) =>
-            inner.GetExpectedRunsAsync(repo, revision, pullRequest, cancellationToken);
+        public Task<ProviderResult<bool>> HasCiAsync(RepoRef repo, string revision, CancellationToken cancellationToken) =>
+            inner.HasCiAsync(repo, revision, cancellationToken);
     }
 }
 

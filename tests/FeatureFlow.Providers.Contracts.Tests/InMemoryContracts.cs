@@ -89,7 +89,7 @@ public sealed class InMemoryCiContract : CiContract, IDisposable
 
     protected override Task<string> HeadAsync(bool withCi)
     {
-        forge.ExpectRuns(Repo, withCi ? new ExpectedRuns(["ci.yml"], []) : ExpectedRuns.None);
+        forge.ConfigureCi(Repo, withCi);
         return Task.FromResult(forge.Resolve(Repo, "main")!);
     }
 }

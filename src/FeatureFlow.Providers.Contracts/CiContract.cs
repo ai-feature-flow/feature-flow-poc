@@ -4,7 +4,7 @@ namespace FeatureFlow.Providers.Contracts;
 
 /// <summary>
 /// The CI provider's contract (docs/06 section 3.5): triggered and polled runs, results and logs read into
-/// the artifact store, and the runs expected for a head. A provider's test project subclasses it.
+/// the artifact store, and whether a head has CI at all. A provider's test project subclasses it.
 /// </summary>
 public abstract class CiContract : ContractBase
 {
@@ -61,16 +61,16 @@ public abstract class CiContract : ContractBase
     }
 
     [Fact]
-    public async Task A_head_without_CI_expects_no_runs()
+    public async Task A_head_without_CI_has_none()
     {
         var head = await HeadAsync(withCi: false);
-        Assert.False(Ok(await Ci.GetExpectedRunsAsync(Repo, head, null, Ct)).Any);
+        Assert.False(Ok(await Ci.HasCiAsync(Repo, head, Ct)));
     }
 
     [Fact]
-    public async Task A_head_with_CI_expects_runs()
+    public async Task A_head_with_CI_has_it()
     {
         var head = await HeadAsync(withCi: true);
-        Assert.True(Ok(await Ci.GetExpectedRunsAsync(Repo, head, null, Ct)).Any);
+        Assert.True(Ok(await Ci.HasCiAsync(Repo, head, Ct)));
     }
 }

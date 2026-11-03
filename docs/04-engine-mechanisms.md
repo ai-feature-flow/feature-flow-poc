@@ -411,7 +411,7 @@ register late.
 |---|---|
 | Inputs | `expected` (check names that must appear), `grace` (how long to wait for a first check before deciding the repository has no CI; default 2 minutes), `timeout` |
 | Outcomes | `passed` (with output `skipped`, the number of skipped checks); `failed` |
-| Behaviour | Does not pass while a CI workflow that runs on this pull request has not reported, so an early third-party check does not read as "all passed"; reads the code host's workflow definitions and runs to tell "no CI" from "CI not started" (from FF's `awaitCheck`). A head commit that changes while waiting, or the timeout, raises an intervention |
+| Behaviour | Does not pass while a check the target branch requires (its protection: the pull request's base, else the parent branch) or an `expected` name has not appeared, so an early third-party check does not read as "all passed". When the CI provider says CI is configured and no check has appeared, it waits up to `grace` for a first one; it does not predict which workflows will run (LOG 147). A head commit that changes while waiting, or the timeout, raises an intervention |
 | Evidence | Check results, which `scm.merge` reads |
 
 ### 8.2 `wait.condition`

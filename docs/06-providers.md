@@ -256,7 +256,7 @@ interface ICiProvider : IProvider {
     Task<..CiRunStatus> GetRunStatusAsync(CiRunRef run);
     Task<..CiRunResult> ReadResultsAsync(CiRunRef run);    // parsed test results where available
     Task<..LogRef>      ReadLogsAsync(CiRunRef run);
-    Task<..ExpectedRuns> GetExpectedRunsAsync(RepoRef repo, string head, PullRequestRef? pr);
+    Task<..bool>        HasCiAsync(RepoRef repo, string head);   // any CI configured at this head
 }
 ```
 
@@ -267,10 +267,10 @@ interface ICiProvider : IProvider {
   engine records as the step's own event, so the activity's retries poll that
   run. A trigger retried after a lost answer dispatches again; the rare
   duplicate run is accepted (LOG 147).
-- `GetExpectedRunsAsync` answers "which CI runs should report for this head":
-  `runs`, `may_run` (cannot be evaluated, for example path filters) and
-  `none`. The GitHub Actions provider implements it by reading the workflow
-  files' triggers, as FF's `awaitChecks` did.
+- `HasCiAsync` answers only "is CI configured for this head" (for GitHub
+  Actions, a workflow file exists), so `ci.checks` knows to wait a while for a
+  first check. Which runs must pass comes from the target branch's required
+  checks, not from evaluating workflow triggers (LOG 147).
 - `QueueBuilds`: reports results for merge queue builds.
 
 **The CI workflow contract (GitHub Actions; LOG 112, 119).** The provider dispatches a tier's job (its workflow file, from

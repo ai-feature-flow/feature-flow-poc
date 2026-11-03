@@ -70,8 +70,7 @@ public static class Conclusions
 
 /// <summary>
 /// One check on a commit. <see cref="Conclusion"/> is set once it is completed. <see cref="Suite"/> names what reported
-/// it, in the names <see cref="ICiProvider.GetExpectedRunsAsync"/> uses (a GitHub Actions workflow), or null for a
-/// third-party check, so <c>ci.checks</c> can tell which expected runs have reported (docs/04 section 8.1).
+/// it (a GitHub Actions workflow file), or null for a third-party check.
 /// </summary>
 public sealed record CheckRun(string Name, string State, string? Conclusion, string? Suite, string? Url = null);
 

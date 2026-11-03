@@ -46,7 +46,7 @@ public sealed class InMemoryForge
         public readonly Dictionary<string, BranchProtection> Protection = new(StringComparer.Ordinal);
         public readonly List<PullRequest> PullRequests = [];
         public readonly Dictionary<string, List<CheckRun>> Checks = new(StringComparer.Ordinal);
-        public ExpectedRuns Expected = ExpectedRuns.None;
+        public bool HasCi;
         public readonly Dictionary<string, CiRun> Runs = new(StringComparer.Ordinal);
     }
 
@@ -214,11 +214,11 @@ public sealed class InMemoryForge
         }
     }
 
-    /// <summary>The runs the CI provider says should report, for any head of the repository. Default: none.</summary>
-    public void ExpectRuns(RepoRef repo, ExpectedRuns expected)
+    /// <summary>Whether the CI provider says CI is configured, for any head of the repository. Default: not.</summary>
+    public void ConfigureCi(RepoRef repo, bool configured = true)
     {
         lock (Gate)
-            Get(repo).Expected = expected;
+            Get(repo).HasCi = configured;
     }
 
     /// <summary>How many CI runs were triggered in the repository.</summary>
@@ -723,8 +723,8 @@ public sealed class InMemoryCi(InMemoryForge forge, Func<IArtifactStoreProvider>
         return found.Ok ? await store().PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(found.Value!)), cancellationToken) : new ProviderResult<ArtifactRef>(null, found.Error);
     }
 
-    public Task<ProviderResult<ExpectedRuns>> GetExpectedRunsAsync(RepoRef repo, string revision, PullRequestRef? pullRequest, CancellationToken cancellationToken) =>
-        Run("GetExpectedRuns", repo, r => ProviderResult<ExpectedRuns>.Success(r.Expected));
+    public Task<ProviderResult<bool>> HasCiAsync(RepoRef repo, string revision, CancellationToken cancellationToken) =>
+        Run("HasCi", repo, r => ProviderResult<bool>.Success(r.HasCi));
 
     static void Report(InMemoryForge.Repo r, InMemoryForge.CiRun run)
     {
