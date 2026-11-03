@@ -156,6 +156,76 @@ public sealed class DeliveryActionTests
         Assert.Equal("complete", Outcome(await w.RunAsync("delivery.report", null, "report")));
     }
 
+    /// <summary>A person merges the run's pull request; returns it.</summary>
+    static async Task<PullRequestRef> PersonMergedAsync(ActionWorld w)
+    {
+        await ReadyAsync(w);
+        Assert.Equal("wait", (await w.RunAsync("scm.merge", null, "merge", waits: 1)).Kind);
+        var pr = ActionRunAccess.Pr(w.PullRequests[0]);
+        w.Forge.MergePullRequest(pr, "octo-person");
+        Assert.Equal("merged", Outcome(await w.RunAsync("scm.merge", null, "merge")));
+        return pr;
+    }
+
+    static PullRequestRef Opened(ActionResult revert) =>
+        ActionRunAccess.Pr(System.Text.RegularExpressions.Regex.Match(string.Join("\n", revert.Events), @"opened (\S+#\d+)").Groups[1].Value);
+
+    [Fact]
+    public async Task A_revert_whose_step_declares_no_artifact_still_undoes_the_delivery()
+    {
+        await using var w = new ActionWorld();
+        await PersonMergedAsync(w);
+        // A template (or an agent's patch) that does not declare revert_record: the engine still indexes the evidence.
+        var revert = await w.RunAsync("scm.revert", null, "revert", produces: []);
+        Assert.Empty(revert.Report!.Artifacts);
+        w.Forge.MergePullRequest(Opened(revert), "octo-person");
+
+        var result = await w.RunAsync("delivery.report", null, "report");
+
+        Assert.Equal("partial", Outcome(result));
+        Assert.Contains(result.Events, e => e.Contains("was reverted by", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_revert_of_a_different_merge_leaves_this_one_delivered()
+    {
+        await using var w = new ActionWorld();
+        var host = new InMemoryCodeHost(w.Forge);
+        w.Forge.Commit(w.Repo, "refs/heads/other", new Dictionary<string, string?> { ["other.txt"] = "other" });
+        var other = (await host.OpenPullRequestAsync(w.Repo, new PullRequestSpec("Other", "", "other", "main"), "other", TestContext.Current.CancellationToken)).Unwrap();
+        w.Forge.MergePullRequest(other, "someone");
+        await PersonMergedAsync(w);
+        var revert = await w.RunAsync("scm.revert", $"{{ pull_request: {$"{other.Repo.FullName}#{other.Number}"} }}", "revert");
+        w.Forge.MergePullRequest(Opened(revert), "someone");
+
+        Assert.Equal("complete", Outcome(await w.RunAsync("delivery.report", null, "report")));
+    }
+
+    [Fact]
+    public async Task A_work_branch_deleted_after_a_persons_merge_is_no_later_work()
+    {
+        await using var w = new ActionWorld();
+        await PersonMergedAsync(w);
+        // The code host deletes the head branch on merge.
+        w.Forge.SetReference(w.Repo, "refs/heads/" + ActionWorld.WorkBranch, null);
+
+        Assert.Equal("complete", Outcome(await w.RunAsync("delivery.report", null, "report")));
+    }
+
+    [Fact]
+    public async Task Revert_evidence_indexed_by_another_action_is_not_read()
+    {
+        await using var w = new ActionWorld();
+        var pr = await PersonMergedAsync(w);
+        // As if another action had indexed a revert record of this (merged) pull request.
+        var forged = new RevertEvidence("acme/api", $"{pr.Repo.FullName}#{pr.Number}", $"{pr.Repo.FullName}#{pr.Number}");
+        var reference = (await w.Store.PutAsync(new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(forged, Web)), TestContext.Current.CancellationToken)).Unwrap().Id;
+        (await w.Records.AppendAsync(new RecordBatch(Artifacts: [new ArtifactRecord(w.RunId, "import", 1, EngineActions.IndexName("revert_record"), "revert_record",
+            reference, "artifact.import", true, DateTimeOffset.UtcNow)]), TestContext.Current.CancellationToken)).Unwrap();
+
+        Assert.Equal("complete", Outcome(await w.RunAsync("delivery.report", null, "report")));
+    }
+
     /// <summary>A merge record as scm.merge would write it, for the work branch's head.</summary>
     static async Task RecordAsync(ActionWorld w, string target, string revision)
     {

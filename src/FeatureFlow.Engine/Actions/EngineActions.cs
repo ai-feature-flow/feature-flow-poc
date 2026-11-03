@@ -56,7 +56,7 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
         run.Inputs = inputs;
         try
         {
-            return call.What switch
+            var result = call.What switch
             {
                 "scm.catch_up" => await SourceControl.CatchUpAsync(run),
                 "scm.pull_request" => await SourceControl.PullRequestAsync(run),
@@ -77,6 +77,8 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
                 "tracker.update" => await Tracker.UpdateAsync(run),
                 _ => throw new InvalidOperationException($"{call.What} is not an engine action of this milestone"),
             };
+            await run.IndexEvidenceAsync();
+            return result;
         }
         catch (ActionStop stop)
         {
@@ -185,6 +187,9 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
             throw new ActionInfrastructureException($"{what}: {error.Reason}: {error.Message}");
         throw new ActionStop(error.Reason == "cannot_answer" ? StepOutcome.CannotAnswer : StepOutcome.WorkFailed, $"{what}: {error.Reason}: {error.Message}");
     }
+
+    /// <summary>The name an action's own evidence has in the artifact index, apart from any artifact the step declares (LOG 180).</summary>
+    public static string IndexName(string type) => "evidence:" + type;
 
     public static string Safe(string text) => string.Concat(text.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' or '.' ? c : '_'));
 
@@ -413,9 +418,56 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
 
     static string? TypeName(string? type) => type is null ? null : LibraryReference.TryParse(type)?.Name ?? type;
 
+    /// <summary>
+    /// The evidence type each engine action that makes evidence makes. That evidence goes into the artifact index whether or
+    /// not the step declares an artifact for it (LOG 180): a check that reads evidence, such as <c>delivery.report</c> reading
+    /// reverts, must not depend on how the template was written.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> EvidenceTypes = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["scm.merge"] = "merge_record",
+        ["scm.revert"] = "revert_record",
+        ["test.run"] = "test_results",
+        ["test.integration"] = "test_results",
+        ["ci.checks"] = "check_results",
+        ["analysis.run"] = "analysis_results",
+    };
+
+    string? reportedEvidence;
+
+    /// <summary>Writes the evidence the report carried into the artifact index, under <see cref="IndexName"/>; once per execution.</summary>
+    public async Task IndexEvidenceAsync()
+    {
+        if (reportedEvidence is not { } reference || !EvidenceTypes.TryGetValue(call.What, out var type))
+            return;
+        var record = new ArtifactRecord(call.Step.RunId, call.Step.StepId, call.Step.Execution, EngineActions.IndexName(type), type, reference, call.What, true, DateTimeOffset.UtcNow);
+        Must(await Records.AppendAsync(new RecordBatch(Artifacts: [record]), ct), "index the evidence");
+    }
+
+    /// <summary>This run's evidence of a type that <paramref name="action"/> made, from the artifact index, read as <typeparamref name="T"/>.</summary>
+    public async Task<List<T>> IndexedEvidenceAsync<T>(string type, string action)
+    {
+        var records = Must(await Records.QueryAsync<ArtifactRecord>(Queries.Artifacts, new Dictionary<string, string> { ["run_id"] = call.Step.RunId }, ct),
+            "read the artifact index");
+        var list = new List<T>();
+        foreach (var reference in records.Where(r => r.RunId == call.Step.RunId && r.Evidence && r.Action == action && r.Name == EngineActions.IndexName(type)).Select(r => r.Ref).Distinct())
+            try
+            {
+                if (JsonSerializer.Deserialize<T>(await ReadTextAsync(reference), Json) is { } value)
+                    list.Add(value);
+            }
+            catch (JsonException)
+            {
+                Events.Add($"indexed {type} {reference} does not read; ignored");
+            }
+
+        return list;
+    }
+
     /// <summary>A report with an outcome, outputs (plain values), and the evidence as every artifact the outcome promises.</summary>
     public ActionResult Report(string outcome, IReadOnlyDictionary<string, object?>? outputs = null, string? evidence = null)
     {
+        reportedEvidence = evidence;
         var artifacts = new Dictionary<string, string>(StringComparer.Ordinal);
         if (evidence is not null)
             foreach (var name in call.Contract.ArtifactsFor(outcome))

@@ -1104,12 +1104,13 @@ public class RunWorkflow
     }
 
     /// <summary>
-    /// A tracker update's tries: an outage is retried for about half a minute, then given up and noted, because a status
-    /// label is not worth stalling the run for (LOG 186).
+    /// A tracker update's tries: five, each at most 30 s, all within two minutes, then given up and noted, because a status
+    /// label is not worth stalling the run for, whether the tracker fails fast or hangs (LOG 186).
     /// </summary>
-    static readonly ActivityOptions TrackerTries = new()
+    public static readonly ActivityOptions TrackerTries = new()
     {
-        StartToCloseTimeout = TimeSpan.FromMinutes(2),
+        StartToCloseTimeout = TimeSpan.FromSeconds(30),
+        ScheduleToCloseTimeout = TimeSpan.FromMinutes(2),
         RetryPolicy = new() { InitialInterval = TimeSpan.FromSeconds(2), BackoffCoefficient = 2, MaximumInterval = TimeSpan.FromSeconds(30), MaximumAttempts = 5 },
     };
 

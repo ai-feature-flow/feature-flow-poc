@@ -120,6 +120,16 @@ public sealed class TrackerUpdateAndBudgetTests
     }
 
     [Fact]
+    public void A_tracker_update_gives_up_within_two_minutes_even_if_each_try_hangs()
+    {
+        var tries = RunWorkflow.TrackerTries;
+
+        Assert.Equal(5, tries.RetryPolicy!.MaximumAttempts);
+        Assert.True(tries.StartToCloseTimeout <= TimeSpan.FromSeconds(30), $"each try may take {tries.StartToCloseTimeout}");
+        Assert.True(tries.ScheduleToCloseTimeout <= TimeSpan.FromMinutes(2), $"all tries may take {tries.ScheduleToCloseTimeout}");
+    }
+
+    [Fact]
     public void A_roots_budget_is_its_templates_within_the_ceiling_or_the_ceiling_alone()
     {
         var project = Load("std:templates/project_delivery", ("project_name", "p"));

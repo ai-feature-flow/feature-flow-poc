@@ -34,14 +34,15 @@ static class Delivery
         if (names.Count == 0)
             throw ActionStop.CannotAnswer("delivery.report names no repositories and the run has none");
         var records = await run.EvidenceAsync<MergeEvidence>("merge_record", "scm.merge");
-        var reverts = await run.EvidenceAsync<RevertEvidence>("revert_record", "scm.revert");
+        // From the artifact index, where scm.revert's evidence is whether or not its step declared it.
+        var reverts = await run.IndexedEvidenceAsync<RevertEvidence>("revert_record", "scm.revert");
         var delivered = new List<DeliveredRepository>();
         foreach (var name in names.Distinct(StringComparer.Ordinal))
         {
             var repo = new RepoRef(name);
             var target = await run.ParentBranchAsync(repo);
             delivered.Add(await ConfirmAsync(run, repo, target, records.Select(r => r.Value).Where(r => r.Repository == name && r.Target == target).ToList(),
-                reverts.Select(r => r.Value).Where(r => r.Repository == name).ToList()));
+                reverts.Where(r => r.Repository == name).ToList()));
         }
 
         var complete = delivered.All(d => d.Merged);
@@ -65,12 +66,14 @@ static class Delivery
         DeliveredRepository Not(string reason) => new(repo.FullName, false, target, null, null, reason);
         if (records.Count == 0)
             return Not("the run holds no merge record for it");
+        // A work branch that no longer exists (deleted after a person's merge) is no later work: its merges count. One whose
+        // head has moved past every merge holds work that was never merged (LOG 180).
         var work = ActionRun.Must(await run.Vcs.ResolveAsync(repo, run.WorkReference, run.Ct), "read the work branch");
-        if (work is null)
-            return Not($"its work branch {run.Scope.WorkBranch} no longer exists, so what the run delivers cannot be read");
-        var current = records.Where(r => r.Head == work && r.Revision.Length > 0).ToList();
+        var current = records.Where(r => (work is null || r.Head == work) && r.Revision.Length > 0).ToList();
+        if (current.Count == 0 && work is null)
+            return Not("the run holds no merge record with a merged revision for it");
         if (current.Count == 0)
-            return Not($"no merge record is for the work branch's head {EngineActions.Short(work)} (merged: {string.Join(", ", records.Select(r => EngineActions.Short(r.Head)))}): work came after the merge");
+            return Not($"no merge record is for the work branch's head {EngineActions.Short(work!)} (merged: {string.Join(", ", records.Select(r => EngineActions.Short(r.Head)))}): work came after the merge");
         var head = ActionRun.Must(await run.Vcs.ResolveAsync(repo, "refs/heads/" + target, run.Ct), $"read {target}");
         if (head is null)
             return Not($"{target} does not exist");

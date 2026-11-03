@@ -69,7 +69,7 @@ CONTROLS = [
     # Added for the review of PR 12.
     {
         "name": "review F1: delivery.report counts a merge of an older head, with work after it",
-        "edits": [(DELIVERY, "var current = records.Where(r => r.Head == work && r.Revision.Length > 0).ToList();",
+        "edits": [(DELIVERY, "var current = records.Where(r => (work is null || r.Head == work) && r.Revision.Length > 0).ToList();",
                    "var current = records.Where(r => r.Revision.Length > 0).ToList();")],
         "tests": [ENGINE],
         "expect": ["Work_committed_after_the_merge_is_not_delivered"],
@@ -154,6 +154,37 @@ CONTROLS = [
                    '["agent"] = new Dictionary<string, string> { ["contents"] = "read", ["metadata"] = "read", ["issues"] = "read" },')],
         "tests": [("tests/Providers/FeatureFlow.Providers.GitHub.Tests", "FullyQualifiedName~CredentialBrokerTests")],
         "expect": ["A_request_wider_than_the_broker_may_grant_is_refused_before_any_call"],
+    },
+    # Added for the re-check of PR 12.
+    {
+        "name": "re-check N1: an action's evidence is indexed only when its step declares it",
+        "edits": [(ACTIONS, "            await run.IndexEvidenceAsync();\n", "")],
+        "tests": [ENGINE],
+        "expect": ["A_revert_whose_step_declares_no_artifact_still_undoes_the_delivery", "A_merge_with_an_open_revert_or_a_merged_one_is_not_delivered"],
+    },
+    {
+        "name": "re-check N1: a revert of any pull request undoes this merge",
+        "edits": [(DELIVERY, "r.PullRequest == record.PullRequest", "r.PullRequest != null")],
+        "tests": [ENGINE],
+        "expect": ["A_revert_of_a_different_merge_leaves_this_one_delivered"],
+    },
+    {
+        "name": "re-check N2: a deleted work branch reads as later work",
+        "edits": [(DELIVERY, "(work is null || r.Head == work) && r.Revision.Length > 0", "(work is not null && r.Head == work) && r.Revision.Length > 0")],
+        "tests": [ENGINE],
+        "expect": ["A_work_branch_deleted_after_a_persons_merge_is_no_later_work"],
+    },
+    {
+        "name": "re-check N3: a hanging tracker try may last two minutes",
+        "edits": [(WORKFLOW, "StartToCloseTimeout = TimeSpan.FromSeconds(30),\n        ScheduleToCloseTimeout", "StartToCloseTimeout = TimeSpan.FromMinutes(2),\n        ScheduleToCloseTimeout")],
+        "tests": [ENGINE],
+        "expect": ["A_tracker_update_gives_up_within_two_minutes_even_if_each_try_hangs"],
+    },
+    {
+        "name": "re-check: revert evidence is read from any action that indexed it",
+        "edits": [(ACTIONS, "r.Evidence && r.Action == action && r.Name", "r.Evidence && (r.Action == action || r.Action == \"artifact.import\") && r.Name")],
+        "tests": [ENGINE],
+        "expect": ["Revert_evidence_indexed_by_another_action_is_not_read"],
     },
     # ---- artifact actions ----
     {
