@@ -38,6 +38,13 @@ public static class StepStartChecks
         ["test.integration"] = [A("repositories"), A("tier_tags")],
         ["analysis.run"] = [B("baseline"), S("fail_on", "new_issues", "any_issues", "never"), S("min_level", "note", "warning", "error")],
         ["repo.inspect"] = [S("repository")],
+        // M6 delivery, artifacts and tracker (docs/04 sections 5.1 and 12).
+        ["delivery.report"] = [A("repositories")],
+        ["artifact.compose"] = [S("name"), A("members")],
+        ["artifact.import"] = [S("repository"), S("folder"), A("files"), S("commit"), S("record")],
+        ["artifact.publish"] = [S("repository"), S("folder"), A("files"), S("previous"), S("title"), S("body")],
+        ["tracker.update"] = [S("op", "create", "update", "transition", "link", "comment"), S("issue"), S("title"), S("body"), A("labels"), S("parent"),
+            M("fields"), S("project"), S("status"), S("to"), S("link_type")],
     };
 
     /// <summary>Check 31: what is wrong with an action's evaluated inputs, as messages; empty when they satisfy its contract.</summary>
