@@ -15,8 +15,9 @@ namespace FeatureFlow.Integration.Tests;
 /// thresholds scaled to one run. Its negative controls (a child signalling the parent's run id; the default
 /// parent-close policy) make this test fail; tools/check_m3_controls.py runs them.
 /// <para>
-/// It times children, answers and hand-overs against each other, so it runs alone, with no other test in parallel:
-/// on a CI runner loaded with the Docker agent tests its checks C5 and E2 each failed once (docs/build/m4-results.md).
+/// It times children, answers and hand-overs against each other, so it runs alone, with no other test in parallel.
+/// Its work runs four at a time, as SP1's did, so a drain waits on work in flight and children end during it:
+/// one at a time, most drains took no time and check E2 failed on CI (docs/build/m4-results.md follow-up 14).
 /// </para>
 /// </summary>
 [Collection(Sp1Collection.Name)]
@@ -26,7 +27,7 @@ public class ContinueAsNewTests
     const int Seed = 1;
     const int Children = 24;
     const int Questions = 10;
-    const int WorkItems = 12;
+    const int WorkItems = 48;
     static readonly TimeSpan Deadline = TimeSpan.FromMinutes(3);
 
     const string Script = """
@@ -136,7 +137,8 @@ public class ContinueAsNewTests
         Assert.All(final.HandOvers, o => Assert.Equal(0, o.InFlightActivities));
 
         // C5: no workflow task failed in any run.
-        Assert.Equal(0, await h.WorkflowTaskFailuresAsync(id));
+        var taskFailures = await h.WorkflowTaskFailuresAsync(id);
+        Assert.True(taskFailures.Count == 0, "C5: workflow task failures: " + string.Join("; ", taskFailures));
 
         // Exercised: without these the checks above prove nothing (SP1's E1 to E3).
         var withBoth = final.HandOvers.Count(o => o.RunningChildren > 0 && o.OpenWaits > 0);

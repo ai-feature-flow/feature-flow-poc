@@ -109,7 +109,14 @@ public sealed record AgentTask(StepIdentity Step, string Role, string? TaskText,
 /// An agent step's limits: its timeout, correction turns, and the longest a question may wait, which the
 /// runtime's tool timeout must exceed (DR16).
 /// </summary>
-public sealed record AgentLimits(TimeSpan? Timeout, int CorrectionTurns, TimeSpan? QuestionsTimeout = null);
+public sealed record AgentLimits(TimeSpan? Timeout, int CorrectionTurns, TimeSpan? QuestionsTimeout = null)
+{
+    /// <summary><c>limits.timeout</c> when a step sets none (docs/04 section 3).</summary>
+    public static readonly TimeSpan DefaultTimeout = TimeSpan.FromHours(4);
+
+    /// <summary><c>questions.timeout</c> when a step sets none: long enough for a question left overnight (docs/04 section 3.4).</summary>
+    public static readonly TimeSpan DefaultQuestionsTimeout = TimeSpan.FromHours(24);
+}
 
 public sealed record AgentSession(string Id, string Runtime);
 

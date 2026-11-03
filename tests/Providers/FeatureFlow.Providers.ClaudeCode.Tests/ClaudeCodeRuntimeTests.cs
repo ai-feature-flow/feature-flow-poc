@@ -8,7 +8,7 @@ namespace FeatureFlow.Providers.ClaudeCode.Tests;
 /// </summary>
 public sealed class ClaudeCodeRuntimeTests
 {
-    static readonly ClaudeCodeRuntime Runtime = new(new ClaudeCodeOptions("haiku", HookHold: TimeSpan.FromSeconds(120)),
+    static readonly ClaudeCodeRuntime Runtime = new(new ClaudeCodeOptions("haiku"),
         () => throw new InvalidOperationException("no sandbox in this test"), () => throw new InvalidOperationException("no store in this test"));
 
     static AgentTask Task(string writeAccess = "branch", IReadOnlyList<string>? tools = null) =>
@@ -22,17 +22,31 @@ public sealed class ClaudeCodeRuntimeTests
             Questions = true,
         };
 
-    /// <summary>DR16: the MCP tool timeout exceeds the question timeout; the hook command's timeout exceeds the client's hold.</summary>
+    /// <summary>
+    /// DR16: the MCP tool timeout exceeds the question timeout; the hook command's timeout exceeds the client's hold.
+    /// The hold is the fixed default (LOG 91), and a question with no timeout set waits 24 hours (LOG 106).
+    /// </summary>
     [Theory]
     [InlineData(4.0)]
     [InlineData(24.0)]
-    public void The_runtime_s_tool_and_hook_timeouts_exceed_the_waits_they_carry(double questionHours)
+    [InlineData(null)]
+    public void The_runtime_s_tool_and_hook_timeouts_exceed_the_waits_they_carry(double? questionHours)
     {
-        var limits = new AgentLimits(null, 2, TimeSpan.FromHours(questionHours));
+        var limits = new AgentLimits(null, 2, questionHours is { } h ? TimeSpan.FromHours(h) : null);
         var env = Runtime.Environment(Task(), limits);
-        Assert.True(long.Parse(env["MCP_TOOL_TIMEOUT"], System.Globalization.CultureInfo.InvariantCulture) > TimeSpan.FromHours(questionHours).TotalMilliseconds);
+        Assert.True(long.Parse(env["MCP_TOOL_TIMEOUT"], System.Globalization.CultureInfo.InvariantCulture) > TimeSpan.FromHours(questionHours ?? 24).TotalMilliseconds);
         var hookTimeout = Runtime.Settings()["hooks"]!["PreToolUse"]![0]!["hooks"]![0]!["timeout"]!.GetValue<int>();
         Assert.True(hookTimeout > int.Parse(env["FF_HOOK_HOLD_SECONDS"], System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>LOG 91: Claude Code's retries, the hook's hold and the client's retry are fixed defaults, not settings.</summary>
+    [Fact]
+    public void The_runtime_takes_only_its_model_executable_model_access_and_engine_tools_as_settings()
+    {
+        Assert.Equal(["model", "executable", "model_access", "engine_tools"], Assert.Single(ClaudeCodeProviders.Factories).Settings);
+        var defaults = new ClaudeCodeOptions("haiku");
+        Assert.Equal((null, TimeSpan.FromSeconds(120), TimeSpan.FromMinutes(10)), (defaults.MaxRetries, defaults.Hold, defaults.Retry));
+        Assert.DoesNotContain("CLAUDE_CODE_MAX_RETRIES", Runtime.Environment(Task(), new AgentLimits(null, 2)).Keys);
     }
 
     /// <summary>F6 and DR19: the runtime gets the step's token and the proxy's URL, a home the engine controls, and no model credential.</summary>

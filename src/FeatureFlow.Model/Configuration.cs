@@ -17,17 +17,19 @@ public sealed record ApiAuthConfig(string Mode, string? TokenRef, string Actor, 
 /// <summary>
 /// The agent worker's endpoint (docs/02 section 4.2; LOG 68, LOG 91): where it listens, the URLs at which sandboxes
 /// reach its replicas, the model proxy's base URL as sandboxes see it, the secret every replica signs step tokens
-/// with, how often it pushes an agent's commits, and the sandbox client executable it copies into each sandbox.
+/// with, and the sandbox client executable it copies into each sandbox.
 /// </summary>
 public sealed record AgentWorkerConfig(
     string? Listen,
     IReadOnlyList<string> Urls,
     string? ModelBaseUrl,
     string? TokenKeyRef,
-    TimeSpan CommitInterval,
     string? SandboxClient)
 {
-    public static readonly AgentWorkerConfig None = new(null, [], null, null, TimeSpan.FromSeconds(30), null);
+    public static readonly AgentWorkerConfig None = new(null, [], null, null, null);
+
+    /// <summary>How often an agent's commits are pushed to the hidden reference. A fixed default, not a setting (LOG 91); tests shorten it.</summary>
+    public TimeSpan CommitInterval { get; init; } = TimeSpan.FromSeconds(30);
 }
 
 /// <summary>The installation layer (docs/07 section 2), as far as M3 reads it.</summary>
@@ -190,13 +192,8 @@ public static class ConfigurationReader
         var agentWorker = AgentWorkerConfig.None;
         if (MapReader.Of(r.Node("agent_worker"), d, "agent_worker") is { } aw)
         {
-            var interval = aw.String("commit_interval");
-            var seconds = interval is null ? 30 : ParseSeconds(interval);
-            if (seconds is null)
-                aw.Error($"agent_worker.commit_interval must be a duration such as 30s, not '{interval}'", aw.Map.Location);
             var client = aw.String("sandbox_client");
             agentWorker = new AgentWorkerConfig(aw.String("listen"), aw.StringList("urls"), aw.String("model_base_url"), aw.String("token_key_ref"),
-                TimeSpan.FromSeconds(seconds ?? 30),
                 client is null ? null : Path.GetFullPath(Path.Combine(Path.GetDirectoryName(file) ?? ".", client)));
             if (agentWorker.Listen is not null && agentWorker.Urls.Count == 0)
                 aw.Error("agent_worker.urls must list the URLs at which sandboxes reach the agent worker", aw.Map.Location);
@@ -314,15 +311,6 @@ public static class ConfigurationReader
 
         r.Finish();
         return new OrganisationConfig(name, libraries, policy, file);
-    }
-
-    /// <summary>A duration in seconds from <c>500ms</c>, <c>30s</c>, <c>5m</c> or <c>1h</c>, or null.</summary>
-    static double? ParseSeconds(string text)
-    {
-        var unit = text.EndsWith("ms", StringComparison.Ordinal) ? "ms" : text.Length > 0 ? text[^1..] : "";
-        if (!double.TryParse(text[..^unit.Length], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var n) || n < 0)
-            return null;
-        return unit switch { "ms" => n / 1000, "s" => n, "m" => n * 60, "h" => n * 3600, _ => null };
     }
 
     static void Header(MapReader r, string kind)

@@ -97,7 +97,7 @@ its form (`docs/01` section 2.1). A list entry may instead be `parallel`,
   limits:
     attempts: 3
     timeout: 4h
-    questions: { max: 3, timeout: 4h }   # ask_human (RW14); absent: the tool is not offered
+    questions: { max: 3, timeout: 24h }  # ask_human (RW14); absent: the tool is not offered
 ```
 
 | Field | Meaning |
@@ -662,7 +662,7 @@ steps:
     consumes: [{ name: plan }]
     produces: [{ name: implementation_claims, type: std:artifact_types/evidence_claims }]
     outcomes: { done: success, blocked: blocked }
-    limits: { questions: { max: 3, timeout: 4h } }
+    limits: { questions: { max: 3, timeout: 24h } }
 
   - id: verify
     use: std:fragments/verify_and_review   # tests, analysis, trace, review, fix loop
