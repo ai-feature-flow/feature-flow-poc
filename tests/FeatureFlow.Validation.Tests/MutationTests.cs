@@ -92,6 +92,10 @@ public class MutationTests
         ["incompatible_producers"] = new(11, "neither type is compatible with the other", "the fixer produces implementation_claims as a different type from the implementer", [
             new(FixLoop, "        - { name: implementation_claims, type: std:artifact_types/evidence_claims }", "        - { name: implementation_claims, type: std:artifact_types/triage }")]),
 
+        ["source_named_artifact"] = new(11, "may not produce an artifact named 'child'", "implement produces an artifact named like a source of consumed artifacts (LOG 153)", [
+            new(Ticket, "      implemented: [{ name: implementation_claims, type: std:artifact_types/evidence_claims }]",
+                "      implemented: [{ name: implementation_claims, type: std:artifact_types/evidence_claims }, { name: child, type: std:artifact_types/evidence_claims }]")]),
+
         ["agent_produces_evidence"] = new(12, "may not produce 'own_results' of evidence type", "implement produces an evidence type (F7)", [
             new(Ticket,
                 "      implemented: [{ name: implementation_claims, type: std:artifact_types/evidence_claims }]",

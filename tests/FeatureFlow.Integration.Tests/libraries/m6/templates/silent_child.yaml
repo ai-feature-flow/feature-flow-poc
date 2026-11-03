@@ -1,0 +1,19 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: silent_child
+  level: ticket
+  description: One long agent step, so a test can end the run from outside while it works.
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: work
+    agent:
+      role: std:roles/implementer
+      task: m6:tasks/note
+    outcomes: { done: success }
+    routes:
+      done: { end: completed }

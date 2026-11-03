@@ -169,6 +169,37 @@ public sealed partial class RunCore
     };
 
     /// <summary>
+    /// The parameters a child run starts with (docs/03 section 6.2): this run's resolved parameters for the names the
+    /// child's template declares, then <paramref name="given"/>, the <c>run.child</c> step's <c>with.parameters</c>, which
+    /// take precedence. A parameter of this run that has no value is not passed, so the child's own default applies.
+    /// </summary>
+    public Dictionary<string, object?> ChildParameters(string template, IReadOnlyDictionary<string, object?> given)
+    {
+        var result = new Dictionary<string, object?>(StringComparer.Ordinal);
+        var declared = LibraryReference.TryParse(template) is { } reference && libraries?.Resolve(reference)?.Yaml(reference.Type, reference.Name) is YMap document
+                       && document["parameters"] is YMap parameters
+            ? parameters.Keys.ToList()
+            : [];
+        long ReadFindings(string name) => Findings?.Read(name) ?? State.Findings.GetValueOrDefault(name);
+        foreach (var name in declared.Where(n => !given.ContainsKey(n) && Plan.Document.Parameter(n) is not null))
+        {
+            try
+            {
+                if (evaluator.Parameter(Plan.Root, name, ReadFindings) is { } value)
+                    result[name] = value;
+            }
+            catch (EvaluationException)
+            {
+                // Unbound here: the child's own default, or its run start check (18), decides.
+            }
+        }
+
+        foreach (var (name, value) in given)
+            result[name] = value;
+        return result;
+    }
+
+    /// <summary>
     /// A step's <c>with</c> inputs as plain values, each <c>{ expr: }</c> evaluated now. Throws
     /// <see cref="EvaluationException"/> when one cannot be evaluated; the shell then reports
     /// <see cref="StepCannotAnswer"/>.

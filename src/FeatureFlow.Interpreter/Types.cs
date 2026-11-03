@@ -134,6 +134,13 @@ public enum ErrorClass
 
 public sealed record StepFailed(string StepId, ErrorClass Class, string Reason) : RunInput;
 
+/// <summary>
+/// A running step's activity was stopped before it ended, for example a wait at a hand-over (LOG 139). The step returns
+/// to pending at the same execution: no attempt is used, and when the core next advances it starts that execution again,
+/// so whatever the execution recorded (when a wait began, the head it waits on) still applies.
+/// </summary>
+public sealed record StepInterrupted(string StepId, string Reason) : RunInput;
+
 public sealed record DecisionAnswered(string StepId, string Outcome) : RunInput;
 
 /// <summary>

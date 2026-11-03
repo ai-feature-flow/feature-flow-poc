@@ -186,6 +186,18 @@ public sealed class Harness : IAsyncDisposable
         await File.WriteAllTextAsync(IOPath.Combine(folder, name + ".json"), json);
     }
 
+    /// <summary>Writes the history of a workflow's run at <paramref name="index"/> (0 the first) to <c>FF_RECORD_HISTORIES</c>, when set.</summary>
+    public async Task RecordRunHistoryAsync(string workflowId, int index, string name)
+    {
+        if (Environment.GetEnvironmentVariable("FF_RECORD_HISTORIES") is not { Length: > 0 } folder)
+            return;
+        var run = (await RunsOfAsync(workflowId))[index];
+        var json = (await Client.GetWorkflowHandle(workflowId, run.RunId).FetchHistoryAsync()).ToJson();
+        Assert.DoesNotContain(await File.ReadAllTextAsync(TokenFile), json);
+        Directory.CreateDirectory(folder);
+        await File.WriteAllTextAsync(IOPath.Combine(folder, name + ".json"), json);
+    }
+
     /// <summary>
     /// Writes, when <c>FF_RECORD_HISTORIES</c> is set, the history of the first run of a workflow that resumed from
     /// a hand-over carrying child ends not yet confirmed: the resumed path the replay tests must cover. Returns

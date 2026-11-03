@@ -25,6 +25,12 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
         "artifact.validate",
     };
 
+    /// <summary>
+    /// The actions that may wait on the outside world between reads (<see cref="ActionResult.Wait"/>): a person, CI or a
+    /// pull request. Their activity is interrupted at a hand-over and resumed at the same execution (LOG 139).
+    /// </summary>
+    public static readonly IReadOnlySet<string> Waits = new HashSet<string>(StringComparer.Ordinal) { "ci.checks", "wait.condition", "scm.merge" };
+
     internal ProviderSet Providers => providers;
 
     /// <summary>
