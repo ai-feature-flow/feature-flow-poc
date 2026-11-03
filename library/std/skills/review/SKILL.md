@@ -53,8 +53,11 @@ converging.
 
 ## Report formats
 
-The engine reads these files exactly; any other field name stops the step for a
-person. A reviewer writes a findings report (`findings.yaml`):
+The engine reads these files exactly; any other field name, or YAML that does
+not parse, stops the step for a person. Write every sentence as a block scalar
+(`>-` and the text indented on the next lines), never as plain text after the
+colon: a `: ` inside plain text breaks the YAML. A reviewer writes a findings
+report (`findings.yaml`):
 
 ```yaml
 schema: 1
@@ -62,12 +65,15 @@ angle: correctness
 findings:                       # [] when there are none
   - rule: null_dereference      # a stable id for the kind of defect
     title: Find may dereference a null name
-    description: What is wrong and why, for a fixer who has not read your review.
-    required_correction: What must change.
+    description: >-
+      What is wrong and why, for a fixer who has not read your review.
+    required_correction: >-
+      What must change.
     severity: high              # critical, high, medium or low
     blocking: false             # true only with basis: demonstrated
     basis: reasoned             # demonstrated or reasoned
-    proof: For demonstrated only, the failing test or command and its output.
+    proof: >-
+      For demonstrated only: the failing test or command and its output.
     location:
       repository: owner/name    # the repository named in the inputs manifest
       file: src/Example.cs
@@ -83,6 +89,7 @@ schema: 1
 entries:
   - finding: <ledger_id>
     state: open                 # open, fixed, declined or escalated, as your task allows
-    reason: Why.
+    reason: >-
+      Why.
     regression_test: { applicable: true }   # or { applicable: false, reason: ... }
 ```
