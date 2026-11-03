@@ -39,7 +39,7 @@ The build plan's "204 for an empty merge" is covered by the VCS: a catch-up with
 | SP4 S3, 4 tickets forced, allowance 3 | 6 refusals; 3 merged; 1 exhausted after 3 executions, its file absent from the parent |
 | SP4 claim checks, every scenario | C1 no lost merge (each merged ticket's tested head is in the parent; the parent's first-parent history is exactly the merges), C2 nothing untested (each merge's parents are the recorded parent revision and the last tested head), C3 every merge names the caught-up, tested head and stays within the allowance, C4 every ticket ends merged or exhausted |
 | SP4 control N1b, plain forced push, natural timing | All 5 tickets reported merged; **4 merges lost**. Kept as a test asserting the loss |
-| Default suite (`Category!=Integration&Category!=Live`, Release) | 532 passed, 0 failed (431 at `1189a6b`; 528 before the review changes) |
+| Default suite (`Category!=Integration&Category!=Live`, Release) | 558 passed, 0 failed (431 at `1189a6b`; 528 before the review round, 532 after the first review decisions) |
 
 ### Controls
 
@@ -99,6 +99,30 @@ provider) and uploads a TRX file.
 | 112 | Remove the trigger tags if the dispatch API's run id allows; then (steer from the independent review) dispatch on the default branch so the workflow definition is reviewed code | Tags first kept: a run does not expose its inputs and the run list lagged a dispatch by 7.6 s, so adopting by key from the list could start a second run (fixture pull request #33, a workflow showing the key in its `run-name`, needed a person's review and was closed). Then rebuilt as steered: dispatch on the default branch with `commit_sha`, idempotency by a hidden claim reference that records the run id, so a retry adopts at once without the list. No tags |
 | 117 | An engine-level SP4 is deferred to integration | Noted |
 | (lease) | Add a test of the catch-up's lease if cheap | Done: an internal hook before the push moves the branch; control fails it |
+
+### Independent review of PR 5 (2026-11-03)
+
+Verdict was changes-required, with one blocker. Each finding was fixed in its own commit (8 and 9 together), with a
+test, and a control that broke the fix and saw that test fail. LOG 118 and 119 record them.
+
+| # | Finding | Fix | Test | Control |
+|---|---|---|---|---|
+| 1 (blocker) | DR18's trailer check counted any commit with the key, so another run's agent commit could make a merge read as landed | A trailer commit counts only if its tree is the tested revision's | The reviewer's probe: run 1 merges an agent commit carrying run 2's key; run 2's squash still lands | Without the tree match the probe fails |
+| 2 | Fixed scratch references and a per-instance lock on a cache shared by every worker | Scratch references per operation, deleted after; a static gate per cache and a lock file across processes | Two instances, one cache, ten rounds of concurrent catch-ups; an operation waits while another holds the lock file | Fixed names fail the first; no clean-up fails it; no lock file fails the second. Per-operation names alone pass the first, which is why the second exists |
+| 3 | git auth faults and HTTPS 401, 403, 429 misclassed; a missing App permission retried forever as infrastructure | git: 401 `unauthenticated`, 403 `forbidden`, 429 `rate_limited`, before `unreachable`. REST 403 "Resource not accessible by integration": `rejected`, named a configuration fault | 7 cases on git's messages; protection read with the permission missing | Without the rules 4 cases fail; without the REST rule its test fails |
+| 4 | No provider-level test of the leases | Tests that move the branch after the read and before the push (internal hook). A remote `pre-receive` hook cannot: git refuses reference updates in its quarantine (probe) | Catch-up and merge each refused with `base_moved`, the other commit kept | A plain `--force` push fails both |
+| 5 | The trigger ran an agent-editable workflow with the repository's secrets | Done before the review reached it: dispatch on the default branch with `commit_sha`, a hidden claim reference for idempotency. The remaining `on: push` risk is recorded in LOG 119, with `permissions: contents: read` recommended | (as before) | (as before) |
+| 6 | Artifacts downloaded whole, in memory, with a 30 s timeout, uncapped | Streamed downloads, 5 min, byte caps; large artifacts skipped; only result entries read, capped while decompressing | Large artifact skipped; a download larger than stated refused; an oversized result file refuses the read while a large non-result file is not read; the capped copy | Each removed cap fails its test |
+| 7 | `scm.revert` of an engine squash always failed | Revert built from the squash commit with `POST /merges`; no interface change | Squash revert, no squash found, conflict; and Live on the fixture | Without the tree or the trailer match a decoy is taken, 2 fail |
+| 8 | Reads used a write token | Read-scoped tokens for reads | Scope of a read and of a write | Reads with the write token fail |
+| 9 | Token could go to any absolute URL; revisions unescaped | Only URLs under the API base; full SHAs and numeric run ids only | Token not sent elsewhere; malformed revisions and run ids make no call | Each guard removed fails its test |
+| 10 | git inherited the worker's configuration | No system, global or inherited configuration; no credential helper or hooks path | A global configuration rewriting the remote's URL does not reach the provider | Without `GIT_CONFIG_GLOBAL` it fails |
+| 11 | Test-only switch in production | Accepted as is (coordinator) | | |
+
+Counts after the round: Git provider tests 35, GitHub default tests 98, default suite 558, SP4 4. **Live run 5**
+(final): **19 passed** in 3 min 11 s. Actions run 41549262375 ran on `main` with the revision as `commit_sha` and
+succeeded, its TRX read; the retried trigger adopted run 41549367436; pull request 57 reverted an engine-style squash of
+pull request 55. Afterwards the fixture had only `main` (`5dd0108`) and another builder's pull request 50.
 
 ### Open questions
 
