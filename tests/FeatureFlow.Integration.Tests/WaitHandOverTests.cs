@@ -43,7 +43,7 @@ public class WaitHandOverTests
             await Task.Delay(500, TestContext.Current.CancellationToken);
             view = await handle.QueryAsync<RunView>(RunWorkflowNames.View, []);
         }
-        while (view.HandOvers.Count == 0 && view.Status == "running" && DateTime.UtcNow < until);
+        while (view.HandOvers.Count == 0 && view.Status is "starting" or "running" && DateTime.UtcNow < until);
 
         Assert.True(view.HandOvers.Count >= 1,
             $"no hand-over within 90 s while the wait was open (draining {view.Draining}, {view.HistoryEvents} events, running {string.Join(", ", view.InFlight)})");
