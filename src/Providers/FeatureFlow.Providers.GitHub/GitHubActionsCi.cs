@@ -19,13 +19,11 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
     static readonly IReadOnlyDictionary<string, string> Permissions = GitHubApi.CiPermissions;
     static readonly IReadOnlyDictionary<string, string> ReadPermissions = new Dictionary<string, string> { ["contents"] = "read", ["actions"] = "read" };
 
-    /// <summary>Artifacts larger than this are skipped: result files are small, and the workflow is the repository's to change.</summary>
-    public long MaxArtifactBytes { get; init; } = 100L * 1024 * 1024;
-
-    /// <summary>A result file larger than this, uncompressed, refuses the read (a zip bomb, or not a result file).</summary>
-    public long MaxResultFileBytes { get; init; } = 50L * 1024 * 1024;
-
-    public long MaxLogBytes { get; init; } = 200L * 1024 * 1024;
+    /// <summary>
+    /// The one cap on downloads: an artifact that says it is larger is skipped, and an artifact or log download that runs
+    /// past it is refused. Result files are small, and the workflow is the repository's to change.
+    /// </summary>
+    public long MaxDownloadBytes { get; init; } = 100L * 1024 * 1024;
 
     public ProviderDescription Describe() => new("ci", "github_actions", "0.1.0", new CiCapabilities(true, true, true, false, false));
 
@@ -127,9 +125,9 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
             return new ProviderResult<CiRunResult>(null, artifacts.Error);
 
         var files = new List<CiResultFile>();
-        foreach (var artifact in artifacts.Value!.Where(a => a["expired"]?.GetValue<bool>() != true && (a["size_in_bytes"]?.GetValue<long>() ?? 0) <= MaxArtifactBytes))
+        foreach (var artifact in artifacts.Value!.Where(a => a["expired"]?.GetValue<bool>() != true && (a["size_in_bytes"]?.GetValue<long>() ?? 0) <= MaxDownloadBytes))
         {
-            var zip = await DownloadAsync(run.Repo, $"/actions/artifacts/{artifact["id"]!.GetValue<long>()}/zip", MaxArtifactBytes, cancellationToken);
+            var zip = await DownloadAsync(run.Repo, $"/actions/artifacts/{artifact["id"]!.GetValue<long>()}/zip", MaxDownloadBytes, cancellationToken);
             if (!zip.Ok)
                 return new ProviderResult<CiRunResult>(null, zip.Error);
             await using var zipStream = zip.Value!;
@@ -144,13 +142,12 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
             }
 
             using var _ = archive;
-            // Only entries named like result files are read, each capped as it is decompressed (its stated size can lie).
+            // Only entries named like result files are read.
             foreach (var entry in archive.Entries.Where(e => e.Length > 0 && MayBeResult(e.FullName)))
             {
                 using var reader = new MemoryStream();
                 await using (var source = entry.Open())
-                    if (entry.Length > MaxResultFileBytes || !await GitHubApi.CopyCappedAsync(source, reader, MaxResultFileBytes, cancellationToken))
-                        return ProviderResult<CiRunResult>.Failure("validation_failed", $"{entry.FullName} in artifact {artifact["name"]} is larger than {MaxResultFileBytes} bytes");
+                    await source.CopyToAsync(reader, cancellationToken);
                 if (FormatOf(entry.FullName, reader.ToArray()) is not { } format)
                     continue;
                 reader.Position = 0;
@@ -187,7 +184,7 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
     {
         if (!IsRunId(run.Id))
             return ProviderResult<ArtifactRef>.Failure("not_found", $"{run.Id} is not a run id");
-        var zip = await DownloadAsync(run.Repo, $"/actions/runs/{GitHubApi.Escape(run.Id)}/logs", MaxLogBytes, cancellationToken);
+        var zip = await DownloadAsync(run.Repo, $"/actions/runs/{GitHubApi.Escape(run.Id)}/logs", MaxDownloadBytes, cancellationToken);
         if (!zip.Ok)
             return new ProviderResult<ArtifactRef>(null, zip.Error);
         await using var logs = zip.Value!;

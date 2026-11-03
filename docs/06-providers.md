@@ -281,8 +281,8 @@ repository's secrets are reviewed code, never a file the agent edited. A workflo
   test and refuses a workflow without it;
 - check that revision out (`actions/checkout` with `ref: ${{ inputs.commit_sha }}`) and build and test only it,
   because the run's own `head_sha` is the default branch's and its results are filed under `commit_sha`;
-- upload its result files (`.trx`, JUnit `.xml`, `.sarif`) as artifacts, each under 50 MB and the artifact under
-  100 MB;
+- upload its result files (`.trx`, JUnit `.xml`, `.sarif`) as artifacts under 100 MB, the provider's one cap on
+  downloads (logs included; LOG 147);
 - set `permissions: contents: read`, so the code under test cannot write to the repository through `GITHUB_TOKEN`;
 - if it is also triggered by `push` on the branches agents write to (`ff/**`), use no secrets. A push runs the
   workflow file as the pushed commit has it, which the agent may have edited, so any secret that run can reach is
