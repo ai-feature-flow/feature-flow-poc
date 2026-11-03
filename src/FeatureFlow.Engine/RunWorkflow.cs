@@ -95,6 +95,10 @@ public class RunWorkflow
             var (started, diagnostics) = RunCore.Start(libraries, Template, RunActivities.RunInfoOf(input) with { DefaultBranches = prepared.DefaultBranches },
                 policy.ToOptions() with { BranchFromPattern = Workflow.Patched(BranchPatternPatch) });
             core = started ?? throw new ApplicationFailureException("the plan passed run start but does not load: " + string.Join("; ", diagnostics.Take(3)));
+            // docs/09 section 1: a warning changes nothing, and is listed in the run start record (the timeline).
+            if (prepared.Warnings.Count > 0 && Workflow.Patched(StartWarningsPatch))
+                foreach (var warning in prepared.Warnings)
+                    core.State.Trace.Add(new TraceEntry("warning", "", warning));
         }
         else
         {
@@ -549,6 +553,9 @@ public class RunWorkflow
             EndActivity();
         }
     }
+
+    /// <summary>The patch marker of run start's warnings on the timeline (M5): histories recorded before it list none.</summary>
+    public const string StartWarningsPatch = "m5-start-warnings";
 
     /// <summary>The patch marker of the <c>clean_up</c> branch reset (M5): histories recorded before it reset nothing.</summary>
     public const string CleanUpPatch = "m5-clean-up";

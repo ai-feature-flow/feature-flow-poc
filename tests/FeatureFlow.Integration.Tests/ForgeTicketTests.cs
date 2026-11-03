@@ -242,6 +242,30 @@ public class ForgeTicketTests
         throw new TimeoutException($"{id} opened no wait after {previous}");
     }
 
+    [Fact]
+    public async Task Protection_with_unknown_review_rules_starts_the_run_with_a_warning_on_its_timeline()
+    {
+        var (h, forge, repo) = await StartAsync("forge-review-rules");
+        await using var _ = h;
+        forge.Protect(repo, new BranchProtection("main", true, false, 0, [], false, ReviewRulesKnown: false));
+
+        var id = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=T-9", "--repo", Repo);
+        var deadline = DateTime.UtcNow + TimeSpan.FromMinutes(1);
+        JsonNode view;
+        do
+        {
+            await Task.Delay(200, TestContext.Current.CancellationToken);
+            view = await h.ShowAsync(id);
+        }
+        while (!Harness.StartedSteps(view).Contains("baseline.tests") && DateTime.UtcNow < deadline);
+
+        Assert.Contains("baseline.tests", Harness.StartedSteps(view));
+        Assert.Contains(view["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "warning"
+            && e["detail"]!.ToString().Contains("check 24", StringComparison.Ordinal)
+            && e["detail"]!.ToString().Contains("review rules are unknown", StringComparison.Ordinal));
+        h.Cli("abort", id, "--reason", "test done");
+    }
+
     static List<string> Trace(JsonNode view) =>
         view["timeline"]!.AsArray().Select(e => e!["detail"]?.ToString() ?? "").ToList();
 }

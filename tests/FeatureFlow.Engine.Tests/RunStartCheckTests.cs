@@ -109,6 +109,20 @@ public sealed class RunStartCheckTests
     }
 
     [Fact]
+    public async Task Check_24_protection_whose_review_rules_are_unknown_passes_with_a_warning()
+    {
+        var s = Setup.Protected();
+        s.Forge.Protect(s.Repo, new BranchProtection("main", true, false, 0, [], false, ReviewRulesKnown: false));
+
+        var checks = await CheckAsync(s, engineCanMerge: false);
+
+        var warning = Assert.Single(checks);
+        Assert.Equal((Checks.BranchProtection, false), (warning.Check, warning.Blocks));
+        Assert.Contains("main is protected, but its review rules are unknown", warning.Message, StringComparison.Ordinal);
+        Assert.Empty(await CheckAsync(Setup.Protected(), engineCanMerge: false));          // control: review rules known
+    }
+
+    [Fact]
     public async Task Check_24_an_unprotected_default_branch_is_refused()
     {
         var s = Setup.Protected();

@@ -216,7 +216,7 @@ Branch `m5-actions`, from `m5@1189a6b` (the interfaces and in-memory fakes, LOG 
 | Manifest reader, patterns, `engine_may_merge` | `Model.Tests/ManifestTests` (17 cases) | Pass |
 | Unchanged behaviour | `TicketRunTests` (5), `EpicRunTests`, `StepFailureTests`, `ContinueAsNewTests`; replay tests | Pass |
 
-Counts after the re-check's fixes: default suite **576 passed, 0 failed**, on `m5@5af8fe8` (431 at `1189a6b`). Integration on a dev server: `ForgeTicketTests` 6, `StepStartCheckTests` 2, and the existing ticket, epic, step-failure and SP1 tests, 16 in all. Integration tests were run locally on a dev
+Counts after the re-check's fixes and the merge of PR 5: default suite **728 passed, 0 failed**, on `m5@5af8fe8` (431 at `1189a6b`). Integration on a dev server: `ForgeTicketTests` 7, `StepStartCheckTests` 2, and the existing ticket, epic, step-failure and SP1 tests, 17 in all. Integration tests were run locally on a dev
 server, not the Docker agent tests: the agent step's change with no code host keeps M4's behaviour, and CI runs them.
 
 The engine tests found one bug of their own: `ci.checks` read the clock before awaiting the wait's start time,
@@ -226,7 +226,7 @@ with no failure.
 ### Controls
 
 `tools/check_m5_actions_controls.py` (needs `FF_TEMPORAL_ADDRESS`; no Docker). Each breakage was run, its tests
-failed, and all passed again after the revert. **All 50 hold** (22 before the review, 23 added for it, 5 for the re-check; the review's controls are listed in the script under "Added for the review of PR 6").
+failed, and all passed again after the revert. **All 52 hold** (22 before the review, 23 added for it, 7 for the re-check; the review's controls are listed in the script under "Added for the review of PR 6").
 
 | Breakage | Tests that failed |
 |---|---|
@@ -329,11 +329,11 @@ Verdict approve-with-fixes; each fix has tests, and a control where testable.
 | R3 | A `clean_up` aimed at a container is its first step's; one aimed at a decision is refused at load (check 8) and at a person's go-to (LOG 140) |
 | R4 | Evidence sandboxes run the parent branch's `setup` too; the agent's sandbox keeps the head's (LOG 138 updated) |
 | R5 | The work-branch refusal is check 36 in `docs/09` (LOG 141) |
-| Check 24's "review rules unknown" warning | Waits for PR 5 (`BranchProtection.ReviewRulesKnown`) to reach `m5` |
+| Check 24's "review rules unknown" warning | After merging `m5` with PR 5: protection whose `ReviewRulesKnown` is false passes check 24 with a warning, and run start's warnings now reach the timeline (they were dropped), behind `m5-start-warnings` (LOG 142) |
 
 ### Deviations and judgement calls
 
-LOG 120 to 141, unreviewed. These need a look: **138** (evidence tiers from the parent branch's manifest), **139** (waits hold up a hand-over), **120** (`test.integration` starts no services), **123** (the
+LOG 120 to 142, unreviewed. These need a look: **138** (evidence tiers from the parent branch's manifest), **139** (waits hold up a hand-over), **120** (`test.integration` starts no services), **123** (the
 action request is watched on the code host; no decision record yet), **137** (a run request may name its
 `parent_branch`; approved 2026-11-03). LOG 121 keeps the
 stand-in for runs with only fake providers.
