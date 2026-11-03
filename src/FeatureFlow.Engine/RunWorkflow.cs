@@ -958,6 +958,20 @@ public class RunWorkflow
             return;
         }
 
+        if (Workflow.Patched(ParentBranchesPatch))
+        {
+            // The child's parent branch is this run's work branch, in every repository the child is given (LOG 196).
+            var made = await EnsureWorkBranchesAsync(new WorkBranchesCall(repositories, core!.WorkBranch(), input.ParentBranch, input.DryRun));
+            foreach (var e in made.Events)
+                core.State.Trace.Add(new TraceEntry("agent", step.Id, e));
+            if (made.Error is { } error)
+            {
+                core.Apply(new StepCannotAnswer(step.Id, error));
+                dirty = true;
+                return;
+            }
+        }
+
         var childInput = new RunStart(childId, template, repositories, parameters,
             input.LockRef, input.DryRun, input.Requester, Workflow.Info.WorkflowId, step.Id, input.HandOverEvents, ParentBranch: core!.WorkBranch(),
             ParentArtifacts: artifacts, RootArtifacts: crossRun ? input.ParentWorkflowId is null ? artifacts : input.RootArtifacts : null,
@@ -988,6 +1002,22 @@ public class RunWorkflow
         core!.State.Trace.Add(new TraceEntry("child_started", step.Id, childId));
         if (handle is not null && Workflow.Patched(ChildWatchPatch))
             _ = AwaitChildAsync(handle, childId);
+    }
+
+    /// <summary>The patch marker of a parent creating its work branch in a child's repositories before starting it (LOG 196).</summary>
+    public const string ParentBranchesPatch = "m6-parent-branches";
+
+    async Task<WorkBranchesResult> EnsureWorkBranchesAsync(WorkBranchesCall call)
+    {
+        BeginActivity();
+        try
+        {
+            return await Workflow.ExecuteActivityAsync((RunActivities a) => a.EnsureWorkBranchesAsync(call), Light);
+        }
+        finally
+        {
+            EndActivity();
+        }
     }
 
     /// <summary>The patch marker of a child's inherited parameters and artifacts, and of consumes across runs (M3 follow-ups 2 and 3).</summary>

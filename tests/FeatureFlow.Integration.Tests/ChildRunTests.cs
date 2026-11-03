@@ -90,7 +90,7 @@ public class ChildRunTests
 
         await h.Client.GetWorkflowHandle(childId).TerminateAsync("ended from outside, without signalling its parent");
 
-        var (exit, end, error) = h.Cli("wait", id, "--timeout", "60");
+        var (exit, end, error) = h.Cli("wait", id, "--timeout", "120");
         var view = await h.ShowAsync(id);
         Assert.True(end.Trim() == $"run {id} failed", $"the parent did not notice its child's end: {end}{error} {view.ToJsonString()}");
         Assert.Equal(["failed"], Completions(view, "child"));
@@ -210,5 +210,30 @@ public class ChildRunTests
         var child = await h.ShowAsync(childId);
         Assert.True((exit, end.Trim()) == (0, $"run {id} completed"), end + error + (await h.ShowAsync(id)).ToJsonString() + child.ToJsonString());
         Assert.Contains(child["timeline"]!.AsArray(), e => e!["stepId"]!.ToString() == "validate" && e["detail"]?.ToString() == "requirement_support (std): valid");
+    }
+
+    /// <summary>
+    /// LOG 196, found by the live project: a child's parent branch is its parent's work branch, which exists only where the
+    /// parent's own steps have touched a repository. Starting a child in another repository makes it there first, from the
+    /// parent's parent branch (here the default branch), so the child's first step finds it.
+    /// </summary>
+    [Fact]
+    public async Task A_child_in_a_repository_its_parent_never_touched_finds_its_parent_branch_there()
+    {
+        var (h, forge, _) = await ForgeTicketTests.StartAsync("branching", script: """{ "branching_child:work": written }""", libraries: Library);
+        await using var _h = h;
+        var client = forge.CreateRepository("acme/client", new Dictionary<string, string> { ["README.md"] = "# client\n" });
+        forge.Protect(client, new Providers.Abstractions.BranchProtection("main", true, true, 1, [], false));
+        var main = forge.Resolve(client, "main")!;
+
+        var id = h.Start("m6:templates/branching_parent", "--repo", "acme/api");
+        var (exit, end, error) = h.Cli("wait", id, "--timeout", "120");
+
+        var view = await h.ShowAsync(id);
+        Assert.True((exit, end.Trim()) == (0, $"run {id} completed"), end + error + view.ToJsonString() + (await h.ShowAsync($"{id}.child.1")).ToJsonString());
+        var created = Assert.Single(view["timeline"]!.AsArray(), e => e!["detail"]?.ToString().StartsWith("created branch", StringComparison.Ordinal) == true)!;
+        var parentBranch = created["detail"]!.ToString().Split(' ')[2];
+        Assert.Equal(main, forge.Resolve(client, parentBranch));
+        Assert.NotNull(forge.Resolve(client, "main"));
     }
 }

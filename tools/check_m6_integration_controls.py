@@ -28,9 +28,16 @@ WORKFLOW = "src/FeatureFlow.Engine/RunWorkflow.cs"
 CHILD_VALIDATE = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~A_childs_artifact_validate")
 AGENT = "src/FeatureFlow.Engine.Agent/AgentActivities.cs"
 SIBLING = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~A_sibling_merging")
+BRANCHING = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~A_child_in_a_repository")
 LOOP = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~FindingsLoopTests.After_the_fix_loop")
 
 CONTROLS = [
+    {
+        "name": "a parent starts a child without making its work branch in the child's repositories (LOG 196)",
+        "edits": [(WORKFLOW, "if (Workflow.Patched(ParentBranchesPatch))", "if (Workflow.Patched(ParentBranchesPatch) && repositories.Count < 0)")],
+        "tests": [BRANCHING],
+        "expect": ["A_child_in_a_repository_its_parent_never_touched_finds_its_parent_branch_there"],
+    },
     {
         "name": "the agent step's baseline is the parent branch's head (LOG 193)",
         "edits": [(AGENT, "await vcs.MergeBaseAsync(repo, branchRevision, parentHead, ct)", "await vcs.MergeBaseAsync(repo, parentHead, parentHead, ct)")],

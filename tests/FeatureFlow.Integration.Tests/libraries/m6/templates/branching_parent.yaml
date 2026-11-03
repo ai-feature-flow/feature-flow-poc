@@ -1,0 +1,21 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: branching_parent
+  level: epic
+  description: >-
+    Starts a child in a repository this run's own steps never touch, so this run's work
+    branch, the child's parent branch, is made there for the child (LOG 196).
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: child
+    action: run.child
+    with:
+      template: m6:templates/branching_child
+      level: ticket
+      repositories: [acme/client]
+    routes: { completed: { end: completed } }
