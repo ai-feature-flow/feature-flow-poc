@@ -47,7 +47,10 @@ public sealed record ActionResult(string Kind, StepReport? Report, string? Reaso
     /// <summary>The <c>findings</c> namespace after a findings action (<see cref="StepOutcome.Findings"/>).</summary>
     public IReadOnlyDictionary<string, long>? Findings { get; init; }
 
-    public StepOutcome ToOutcome() => new(Kind, Report, Reason, Events) { Findings = Findings };
+    /// <summary>The ledger version the counts were read at (<see cref="StepOutcome.FindingsVersion"/>).</summary>
+    public long FindingsVersion { get; init; }
+
+    public StepOutcome ToOutcome() => new(Kind, Report, Reason, Events) { Findings = Findings, FindingsVersion = FindingsVersion };
 }
 
 /// <summary>An infrastructure failure inside an action: the activity is retried and no attempt is used (docs/01 section 4).</summary>

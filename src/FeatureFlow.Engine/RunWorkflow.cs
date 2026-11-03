@@ -760,7 +760,7 @@ public class RunWorkflow
     void Apply(Step step, StepOutcome outcome)
     {
         if (outcome.Findings is { } counts)
-            core!.Apply(new FindingsChanged(counts));
+            core!.Apply(new FindingsChanged(counts, outcome.FindingsVersion));
         switch (outcome.Kind)
         {
             case StepOutcome.CannotAnswer:

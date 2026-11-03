@@ -78,6 +78,9 @@ public sealed record StepOutcome(string Kind, StepReport? Report, string? Reason
     /// core before the step's outcome, so its routes read the new counts. Null for every other step.
     /// </summary>
     public IReadOnlyDictionary<string, long>? Findings { get; init; }
+
+    /// <summary>The ledger version <see cref="Findings"/> was read at: the core keeps the newest (review F3).</summary>
+    public long FindingsVersion { get; init; }
 }
 
 /// <summary>The engine's endpoints as the agent in a sandbox reaches them, with the step's token (docs/02 section 4.2).</summary>

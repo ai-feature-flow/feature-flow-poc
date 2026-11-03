@@ -77,4 +77,19 @@ public class FindingsNamespaceTests
 
         Assert.Equal((2L, 1L), (resumed.State.Findings["open_blocking"], resumed.State.Findings["repeat_fixes"]));
     }
+
+    [Fact]
+    public void Counts_read_at_an_older_ledger_version_do_not_replace_newer_ones_even_after_a_hand_over()
+    {
+        var (core, _) = RunCore.Start(Std, Ticket, Run);
+        core!.Apply(new FindingsChanged(new Dictionary<string, long> { ["open_blocking"] = 1 }, Version: 7));
+        core = RunCore.Resume(Std, Ticket, JsonSerializer.Deserialize<CarriedCore>(JsonSerializer.Serialize(core.Snapshot()))!);
+
+        // A parallel recorder that read the ledger before the blocking finding was added finishes last.
+        core.Apply(new FindingsChanged(new Dictionary<string, long> { ["open_blocking"] = 0 }, Version: 5));
+        Assert.Equal(1L, core.State.Findings["open_blocking"]);
+
+        core.Apply(new FindingsChanged(new Dictionary<string, long> { ["open_blocking"] = 0 }, Version: 9));
+        Assert.Equal((0L, 9L), (core.State.Findings["open_blocking"], core.State.FindingsVersion));
+    }
 }

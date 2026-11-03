@@ -185,8 +185,11 @@ public sealed record StepCannotAnswer(string StepId, string Reason) : RunInput;
 /// </summary>
 public sealed record ChildPatchProposed(string ChildStepId, PatchDocument Patch, string ProposerStepId) : RunInput;
 
-/// <summary>The counts of the <c>findings</c> namespace, from the ledger (docs/03 section 5.3).</summary>
-public sealed record FindingsChanged(IReadOnlyDictionary<string, long> Counts) : RunInput;
+/// <summary>
+/// The counts of the <c>findings</c> namespace, from the ledger (docs/03 section 5.3), read at ledger
+/// <see cref="Version"/>. Counts read at an older version than the run holds are stale (parallel recorders) and ignored.
+/// </summary>
+public sealed record FindingsChanged(IReadOnlyDictionary<string, long> Counts, long Version = 0) : RunInput;
 
 public enum PatchStatus
 {

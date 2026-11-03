@@ -77,6 +77,9 @@ public sealed class RunState
     public long RunCeilingGranted { get; set; }
 
     public Dictionary<string, long> Findings { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>The ledger version <see cref="Findings"/> was read at; older counts are not applied over newer ones (review F3).</summary>
+    public long FindingsVersion { get; set; }
     public List<TraceEntry> Trace { get; } = [];
     public int NextWaitNumber { get; set; } = 1;
 }
