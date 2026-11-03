@@ -160,7 +160,7 @@ CONTROLS = [
         "name": "re-check N1: an action's evidence is indexed only when its step declares it",
         "edits": [(ACTIONS, "            await run.IndexEvidenceAsync();\n", "")],
         "tests": [ENGINE],
-        "expect": ["A_revert_whose_step_declares_no_artifact_still_undoes_the_delivery", "A_merge_with_an_open_revert_or_a_merged_one_is_not_delivered"],
+        "expect": ["A_revert_whose_step_declares_no_artifact_still_undoes_the_delivery"],
     },
     {
         "name": "re-check N1: a revert of any pull request undoes this merge",
@@ -185,6 +185,20 @@ CONTROLS = [
         "edits": [(ACTIONS, "r.Evidence && r.Action == action && r.Name", "r.Evidence && (r.Action == action || r.Action == \"artifact.import\") && r.Name")],
         "tests": [ENGINE],
         "expect": ["Revert_evidence_indexed_by_another_action_is_not_read"],
+    },
+    # Added with W3's merge: evidence is indexed once.
+    {
+        "name": "declared evidence is indexed by the engine as well as by the workflow",
+        "edits": [(ACTIONS, "reportedEvidence = evidence is not null && !call.Contract.ArtifactsFor(outcome).Any() ? evidence : null;", "reportedEvidence = evidence;")],
+        "tests": [ENGINE],
+        "expect": ["A_declared_revert_record_is_not_indexed_again_by_the_engine",
+                   "A_validation_report_the_step_does_not_declare_is_indexed_once_and_a_declared_one_is_left_to_the_workflow"],
+    },
+    {
+        "name": "artifact.validate's undeclared report is not indexed",
+        "edits": [("src/FeatureFlow.Engine/Actions/Validation.cs", "        run.IndexIfUndeclared(outcome, reference);\n", "")],
+        "tests": [ENGINE],
+        "expect": ["A_validation_report_the_step_does_not_declare_is_indexed_once_and_a_declared_one_is_left_to_the_workflow"],
     },
     # ---- artifact actions ----
     {

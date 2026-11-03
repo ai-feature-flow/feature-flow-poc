@@ -421,9 +421,10 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
     static string? TypeName(string? type) => type is null ? null : LibraryReference.TryParse(type)?.Name ?? type;
 
     /// <summary>
-    /// The evidence type each engine action that makes evidence makes. That evidence goes into the artifact index whether or
-    /// not the step declares an artifact for it (LOG 180): a check that reads evidence, such as <c>delivery.report</c> reading
-    /// reverts, must not depend on how the template was written.
+    /// The evidence type each engine action that makes evidence makes. Evidence a step declares is indexed by the workflow
+    /// with the step's artifacts; evidence it does not declare is indexed here, under <see cref="EngineActions.IndexName"/>, so a
+    /// check that reads evidence, such as <c>delivery.report</c> reading reverts, does not depend on how the template was
+    /// written, and no evidence is indexed twice (LOG 180).
     /// </summary>
     public static readonly IReadOnlyDictionary<string, string> EvidenceTypes = new Dictionary<string, string>(StringComparer.Ordinal)
     {
@@ -433,11 +434,16 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
         ["test.integration"] = "test_results",
         ["ci.checks"] = "check_results",
         ["analysis.run"] = "analysis_results",
+        ["artifact.validate"] = "validation_report",
     };
 
     string? reportedEvidence;
 
-    /// <summary>Writes the evidence the report carried into the artifact index, under <see cref="IndexName"/>; once per execution.</summary>
+    /// <summary>Marks the action's evidence for the artifact index when the step declares no artifact for the outcome (an action that builds its own report calls this).</summary>
+    public void IndexIfUndeclared(string outcome, string? evidence) =>
+        reportedEvidence = evidence is not null && !call.Contract.ArtifactsFor(outcome).Any() ? evidence : null;
+
+    /// <summary>Writes evidence the report carried but the step does not declare into the artifact index; once per execution.</summary>
     public async Task IndexEvidenceAsync()
     {
         if (reportedEvidence is not { } reference || !EvidenceTypes.TryGetValue(call.What, out var type))
@@ -469,7 +475,7 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
     /// <summary>A report with an outcome, outputs (plain values), and the evidence as every artifact the outcome promises.</summary>
     public ActionResult Report(string outcome, IReadOnlyDictionary<string, object?>? outputs = null, string? evidence = null)
     {
-        reportedEvidence = evidence;
+        IndexIfUndeclared(outcome, evidence);
         var artifacts = new Dictionary<string, string>(StringComparer.Ordinal);
         if (evidence is not null)
             foreach (var name in call.Contract.ArtifactsFor(outcome))

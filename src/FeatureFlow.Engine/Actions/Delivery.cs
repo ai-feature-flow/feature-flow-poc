@@ -34,8 +34,9 @@ static class Delivery
         if (names.Count == 0)
             throw ActionStop.CannotAnswer("delivery.report names no repositories and the run has none");
         var records = await run.EvidenceAsync<MergeEvidence>("merge_record", "scm.merge");
-        // From the artifact index, where scm.revert's evidence is whether or not its step declared it.
-        var reverts = await run.IndexedEvidenceAsync<RevertEvidence>("revert_record", "scm.revert");
+        // A revert step that declares its record holds it as an artifact; one that does not, in the artifact index (LOG 180).
+        var reverts = (await run.EvidenceAsync<RevertEvidence>("revert_record", "scm.revert")).Select(r => r.Value)
+            .Concat(await run.IndexedEvidenceAsync<RevertEvidence>("revert_record", "scm.revert")).Distinct().ToList();
         var delivered = new List<DeliveredRepository>();
         foreach (var name in names.Distinct(StringComparer.Ordinal))
         {

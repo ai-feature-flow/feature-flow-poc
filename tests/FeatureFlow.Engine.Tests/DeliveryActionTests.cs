@@ -187,6 +187,18 @@ public sealed class DeliveryActionTests
     }
 
     [Fact]
+    public async Task A_declared_revert_record_is_not_indexed_again_by_the_engine()
+    {
+        await using var w = new ActionWorld();
+        await MergedThenRevertedAsync(w);
+
+        var indexed = (await w.Records.QueryAsync<ArtifactRecord>(Queries.Artifacts, new Dictionary<string, string> { ["run_id"] = w.RunId },
+            TestContext.Current.CancellationToken)).Unwrap();
+
+        Assert.DoesNotContain(indexed, r => r.Name.StartsWith("evidence:", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task A_revert_of_a_different_merge_leaves_this_one_delivered()
     {
         await using var w = new ActionWorld();
