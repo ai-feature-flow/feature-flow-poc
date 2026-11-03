@@ -269,6 +269,24 @@ public sealed class TestingActionTests
         Assert.Contains("failed unexpectedly: InvalidOperationException", result.Reason, StringComparison.Ordinal);
     }
 
+    public static TheoryData<string> NetworkFaults() => new(["http", "io", "socket", "timeout"]);
+
+    [Theory]
+    [MemberData(nameof(NetworkFaults))]
+    public async Task A_network_fault_a_provider_lets_escape_is_retried_as_infrastructure(string kind)
+    {
+        Func<Exception> fault = kind switch
+        {
+            "http" => () => new HttpRequestException("connection reset"),
+            "io" => () => new IOException("broken pipe"),
+            "socket" => () => new System.Net.Sockets.SocketException(10054),
+            _ => () => new TimeoutException("no answer"),
+        };
+        await using var w = new ActionWorld(codeHostThrows: fault);
+
+        await Assert.ThrowsAsync<ActionInfrastructureException>(() => w.RunAsync("scm.catch_up"));
+    }
+
     [Fact]
     public async Task Analysis_honours_min_level_and_fail_on()
     {

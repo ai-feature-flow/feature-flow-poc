@@ -38,7 +38,7 @@ public sealed class ActionWorld : IAsyncDisposable
     /// <summary>Executions per step id, so a step run again is a new execution with its own records.</summary>
     readonly Dictionary<string, int> executions = new(StringComparer.Ordinal);
 
-    public ActionWorld(IReadOnlyDictionary<string, string>? files = null, bool sandbox = true, bool ci = true, bool throwingCodeHost = false)
+    public ActionWorld(IReadOnlyDictionary<string, string>? files = null, bool sandbox = true, bool ci = true, bool throwingCodeHost = false, Func<Exception>? codeHostThrows = null)
     {
         Directory.CreateDirectory(folder);
         Repo = Forge.CreateRepository("acme/api", files ?? new Dictionary<string, string> { ["README.md"] = "# api\n" });
@@ -48,7 +48,9 @@ public sealed class ActionWorld : IAsyncDisposable
         var instances = new Dictionary<string, IReadOnlyDictionary<string, IProvider>>
         {
             ["vcs"] = One(new InMemoryVcs(Forge)),
-            ["code_host"] = One(throwingCodeHost ? new ThrowingCodeHost(new InMemoryCodeHost(Forge)) : new InMemoryCodeHost(Forge)),
+            ["code_host"] = One(throwingCodeHost || codeHostThrows is not null
+                ? new ThrowingCodeHost(new InMemoryCodeHost(Forge), codeHostThrows ?? (() => new InvalidOperationException("a bug")))
+                : new InMemoryCodeHost(Forge)),
             ["artifact_store"] = One(Store),
             ["record_store"] = One(Records),
         };
@@ -210,12 +212,12 @@ public sealed class ActionWorld : IAsyncDisposable
           ] } ] }
           """;
 
-    /// <summary>A code host with a programming error: every default-branch read throws.</summary>
-    sealed class ThrowingCodeHost(ICodeHostProvider inner) : ICodeHostProvider
+    /// <summary>A code host whose default-branch read throws: a programming error, or a network fault it let escape.</summary>
+    sealed class ThrowingCodeHost(ICodeHostProvider inner, Func<Exception> fault) : ICodeHostProvider
     {
         public ProviderDescription Describe() => inner.Describe();
         public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => inner.CheckAsync(cancellationToken);
-        public Task<ProviderResult<string>> GetDefaultBranchAsync(RepoRef repo, CancellationToken cancellationToken) => throw new InvalidOperationException("a bug");
+        public Task<ProviderResult<string>> GetDefaultBranchAsync(RepoRef repo, CancellationToken cancellationToken) => throw fault();
         public Task<ProviderResult<BranchProtection>> GetBranchProtectionAsync(RepoRef repo, string branch, CancellationToken cancellationToken) => inner.GetBranchProtectionAsync(repo, branch, cancellationToken);
         public Task<ProviderResult<RepoFile?>> ReadFileAsync(RepoRef repo, string path, string reference, CancellationToken cancellationToken) => inner.ReadFileAsync(repo, path, reference, cancellationToken);
         public Task<ProviderResult<PullRequestRef>> OpenPullRequestAsync(RepoRef repo, PullRequestSpec spec, string key, CancellationToken cancellationToken) => inner.OpenPullRequestAsync(repo, spec, key, cancellationToken);

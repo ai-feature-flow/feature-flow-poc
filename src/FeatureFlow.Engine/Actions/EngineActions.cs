@@ -66,6 +66,12 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
         {
             return new ActionResult(stop.Kind, null, stop.Message, TimeSpan.Zero, run.Events);
         }
+        catch (Exception e) when (e is HttpRequestException or IOException or System.Net.Sockets.SocketException or TimeoutException)
+        {
+            // A provider should return these as infrastructure errors; one that lets them escape is still retried, not
+            // stopped for a person (re-check R1).
+            throw new ActionInfrastructureException($"{call.What}: {e.GetType().Name}: {e.Message}");
+        }
         catch (Exception e) when (e is not (ActionInfrastructureException or OperationCanceledException))
         {
             // A fault the action did not expect is not retried for ever: a person looks (docs/04 section 1, "cannot answer").

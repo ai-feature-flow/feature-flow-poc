@@ -329,6 +329,14 @@ CONTROLS = [
         "tests": [it("Only_an_action_run_against_providers_has_a_heartbeat_timeout")],
         "expect": ["Only_an_action_run_against_providers_has_a_heartbeat_timeout"],
     },
+    # Added for the re-check of PR 6.
+    {
+        "name": "re-check R1: a network fault a provider lets escape stops the step for a person",
+        "edits": [(ACTIONS, "catch (Exception e) when (e is HttpRequestException or IOException or System.Net.Sockets.SocketException or TimeoutException)",
+                   "catch (Exception e) when (e is ArithmeticException)")],
+        "tests": [(ENGINE, None)],
+        "expect": [("A_network_fault_a_provider_lets_escape_is_retried_as_infrastructure", 4)],
+    },
 ]
 
 
