@@ -191,17 +191,12 @@ public static class RunStartChecks
 
     /// <summary>
     /// Check 24: the default branch of each repository the run targets is protected (docs/05 section 2, the final
-    /// fallback). Protection whose review rules the code host does not show (GitHub's classic protection read without
-    /// administration rights, LOG 110) still passes: protection exists. It is recorded as a warning on the run's
-    /// timeline, so a person knows the review rules were not seen.
+    /// fallback). Any protection counts, classic or rulesets (LOG 147).
     /// </summary>
-    public static void BranchProtection(string repository, string defaultBranch, bool isProtected, DiagnosticBag d, bool reviewRulesKnown = true)
+    public static void BranchProtection(string repository, string defaultBranch, bool isProtected, DiagnosticBag d)
     {
         if (!isProtected)
             d.Add(Checks.BranchProtection, $"{repository}'s default branch {defaultBranch} has no branch protection; protect it on the code host before running");
-        else if (!reviewRulesKnown)
-            d.AddRange([new Diagnostic(Checks.BranchProtection, Severity.Warning,
-                $"{repository}'s default branch {defaultBranch} is protected, but its review rules are unknown: the code host does not show them to the engine")]);
     }
 
     /// <summary>

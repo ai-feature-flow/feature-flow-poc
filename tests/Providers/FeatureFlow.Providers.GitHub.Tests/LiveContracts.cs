@@ -198,7 +198,7 @@ public sealed class GitHubSquashRevertLive : IAsyncLifetime
 
 /// <summary>
 /// The fixture's <c>main</c> is protected only by a ruleset (<c>protect-main</c>: a pull request, no force pushes), which only <c>GET /repos/{owner}/{repo}/rules/branches/main</c> shows; the classic protection endpoint
-/// answers "Branch not protected". Check 24 must see it as protected, with its review rules known. Read only.
+/// answers "Branch not protected". Check 24 must see it as protected. Read only.
 /// </summary>
 [Trait("Category", "Live")]
 public sealed class GitHubRulesetProtectionLive
@@ -219,7 +219,6 @@ public sealed class GitHubRulesetProtectionLive
         Assert.True(protection.Protected);
         Assert.True(protection.RequiresPullRequest);
         Assert.Equal(approvals, protection.RequiredApprovals);
-        Assert.True(protection.ReviewRulesKnown);
         LiveFixture.Log($"protection of main: {protection with { RequiredChecks = [] }}; required checks [{string.Join(", ", protection.RequiredChecks)}]");
     }
 }

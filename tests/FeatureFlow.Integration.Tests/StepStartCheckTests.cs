@@ -2,7 +2,7 @@ namespace FeatureFlow.Integration.Tests;
 
 /// <summary>
 /// Step-start check 32 (docs/09 section 2): a step whose consumed artifact no step has produced, and which it does not
-/// mark optional, does not start; the run raises an intervention instead.
+/// mark optional, does not start; the run raises an intervention instead. And run start's warnings on the timeline.
 /// </summary>
 [Trait("Category", "Integration")]
 public class StepStartCheckTests
@@ -34,5 +34,20 @@ public class StepStartCheckTests
         var (exit, end, _) = h.Cli("wait", id, "--timeout", "60");
 
         Assert.Equal((0, $"run {id} completed"), (exit, end.Trim()));
+    }
+
+    /// <summary>Run start's warnings (here check 34, a parameter never read) reach the run's timeline (LOG 142).</summary>
+    [Fact]
+    public async Task Run_start_warnings_reach_the_timeline()
+    {
+        await using var h = await Harness.StartAsync("start-warnings", libraries: Library);
+        var id = h.Start("m5:templates/warns");
+
+        var (exit, end, _) = h.Cli("wait", id, "--timeout", "60");
+
+        Assert.Equal((0, $"run {id} completed"), (exit, end.Trim()));
+        Assert.Contains((await h.ShowAsync(id))["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "warning"
+            && e["detail"]!.ToString().Contains("check 34", StringComparison.Ordinal)
+            && e["detail"]!.ToString().Contains("'unused'", StringComparison.Ordinal));
     }
 }

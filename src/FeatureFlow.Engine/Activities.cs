@@ -97,7 +97,7 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
             if (work == defaultBranch || work == start.ParentBranch)
                 d.Add(Checks.WorkBranch, $"{name}: the run's work branch '{work}' is its {(work == defaultBranch ? "default" : "parent")} branch; the engine writes only to a branch of its own (metadata.branch_pattern)");
             if (Readable(await host.GetBranchProtectionAsync(repo, defaultBranch, ct), $"{name}: the protection of {defaultBranch}", Checks.BranchProtection, d) is { } protection)
-                RunStartChecks.BranchProtection(name, defaultBranch, protection.Protected, d, protection.ReviewRulesKnown);
+                RunStartChecks.BranchProtection(name, defaultBranch, protection.Protected, d);
             if (Readable(await host.ReadFileAsync(repo, RepositoryManifest.FileName, defaultBranch, ct), $"{name}: {RepositoryManifest.FileName}",
                     Checks.RepositoryLibraryAddsOnly, d) is { } file)
             {

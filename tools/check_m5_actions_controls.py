@@ -375,16 +375,10 @@ CONTROLS = [
         "expect": ["Tier_commands_and_result_paths_come_from_the_parent_branchs_manifest_not_the_heads"],
     },
     {
-        "name": "check 24: protection whose review rules are unknown passes silently",
-        "edits": [(RUN_START, "        else if (!reviewRulesKnown)\n", "        else if (!reviewRulesKnown && repository == \"never a repository\")\n")],
-        "tests": [(ENGINE, None)],
-        "expect": ["Check_24_protection_whose_review_rules_are_unknown_passes_with_a_warning"],
-    },
-    {
-        "name": "check 24: run start's warnings never reach the timeline",
+        "name": "run start's warnings never reach the timeline",
         "edits": [(WORKFLOW, "if (prepared.Warnings.Count > 0 && Workflow.Patched(StartWarningsPatch))", "if (prepared.Warnings.Count > 999 && Workflow.Patched(StartWarningsPatch))")],
-        "tests": [it("Protection_with_unknown_review_rules")],
-        "expect": ["Protection_with_unknown_review_rules_starts_the_run_with_a_warning_on_its_timeline"],
+        "tests": [it("Run_start_warnings_reach_the_timeline")],
+        "expect": ["Run_start_warnings_reach_the_timeline"],
     },
     # Added for the engine-level SP4 (LOG 117's follow-up).
     {

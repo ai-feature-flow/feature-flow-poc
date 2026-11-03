@@ -219,13 +219,11 @@ public sealed class GitHubCodeHostTests
 
         Assert.Equal(new BranchProtection("main", true, true, 2, protection.RequiredChecks, true), protection);
         Assert.Equal(["legacy", "unit"], protection.RequiredChecks);
-        // No classic protection (protection.enabled absent): everything that could set review rules was read.
-        Assert.True(protection.ReviewRulesKnown);
     }
 
-    /// <summary>LOG 110: classic protection's review rules need administration to read, so they are reported unknown, not absent.</summary>
+    /// <summary>LOG 147: classic protection counts as protected, though its review rules need administration to read.</summary>
     [Fact]
-    public async Task Classic_protection_reports_its_review_rules_as_unknown()
+    public async Task Classic_protection_counts_as_protected()
     {
         var (host, github, _) = Host();
         github.On(Get, "~/branches/main", 200, """{"protected":true,"protection":{"enabled":true,"required_status_checks":{"contexts":[],"checks":[]}}}""")
@@ -234,7 +232,6 @@ public sealed class GitHubCodeHostTests
         var protection = (await host.GetBranchProtectionAsync(Repo, "main", Ct)).Unwrap();
 
         Assert.True(protection.Protected);
-        Assert.False(protection.ReviewRulesKnown);
     }
 
     [Fact]

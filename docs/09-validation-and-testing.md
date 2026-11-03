@@ -52,7 +52,7 @@ other documents cite them.
 | 21 | Capability negotiation: every capability the plan needs is offered by a configured provider | Run start, Patch | Yes |
 | 22 | No request exceeds a locked organisation cap: attempts, auto-resolution, checks, budget, toolsets, agent roles (`docs/05` section 3.1) | Run start, Patch | Yes |
 | 23 | **F1**: no merge step into a default branch has `engine_can_merge: true` unless the organisation allows it for that repository. The default branch is read from the code host | Run start, Patch | Yes |
-| 24 | Branch protection exists on each target repository's default branch. Protection whose review rules the code host does not show passes with a warning (LOG 142) | Run start | Yes |
+| 24 | Branch protection exists on each target repository's default branch; classic protection or rulesets both count (LOG 147) | Run start | Yes |
 | 25 | Patch: `base_revision` is current | Patch | Yes |
 | 26 | Patch: `resume_at` exists after the patch (unless sent to a parent) | Patch | Yes |
 | 27 | Patch: the proposer may use the operation; an agent never changes a role | Patch | Yes |
