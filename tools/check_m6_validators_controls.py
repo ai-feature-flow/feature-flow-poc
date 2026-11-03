@@ -33,6 +33,17 @@ EXPRESSIONS = ("tests/FeatureFlow.Expressions.Tests", None)
 VALIDATION_TESTS = ("tests/FeatureFlow.Validation.Tests", "FullyQualifiedName~MutationTests")
 
 FIXTURES = "Every_fixture_gets_its_verdict_and_the_verdict_agrees_with_the_issues"
+INTEGRATION = "tests/FeatureFlow.Integration.Tests"
+
+
+def it(name):
+    """The integration tests whose name contains this text (Temporal at FF_TEMPORAL_ADDRESS)."""
+    return (INTEGRATION, f"FullyQualifiedName~{name}")
+
+
+def warn(path, code):
+    """An error made a warning: its fixture must then come out valid."""
+    return (path, f'Error("{code}"', f'Warn("{code}"')
 
 CONTROLS = [
     # ---- The standard validators: each one's rule, against its failing fixture ----
@@ -95,7 +106,7 @@ CONTROLS = [
     },
     {
         "name": "verification_satisfaction: a child's test results in the index count as this run's",
-        "edits": [(EVIDENCE, "        evidence = evidence.Where(e => own.Contains(e.RunId)).ToList();\n", "")],
+        "edits": [(EVIDENCE, "c.EngineEvidence(Types.TestResults, Check.TestActions).Where(e => own.Contains(e.RunId))", "c.EngineEvidence(Types.TestResults, Check.TestActions)")],
         "tests": [STD_TESTS],
         "expect": ["Satisfaction_counts_only_this_runs_test_results_not_a_childs"],
     },
@@ -134,8 +145,8 @@ CONTROLS = [
     },
     {
         "name": "tests_added: a changed test file that does not hold the claimed test counts",
-        "edits": [(EVIDENCE, "if (test.Symbol is { } symbol && !after.Content.Contains(symbol, StringComparison.Ordinal))",
-                   "if (file.Length < 0 && test.Symbol is { } symbol && !after.Content.Contains(symbol, StringComparison.Ordinal))")],
+        "edits": [(EVIDENCE, "if (!after.Content.Contains(symbol, StringComparison.Ordinal))",
+                   "if (file.Length < 0 && !after.Content.Contains(symbol, StringComparison.Ordinal))")],
         "tests": [STD_TESTS],
         "expect": ["Tests_added_catches_a_fix_that_adds_no_test_in_a_real_git_history"],
     },
@@ -144,6 +155,142 @@ CONTROLS = [
         "edits": [(EVIDENCE, "e.State == FindingStates.Open && e.RegressionTest?.Applicable != false", "e.State == FindingStates.Open")],
         "tests": [STD_TESTS],
         "expect": ["Tests_added_asks_nothing_of_a_finding_where_a_regression_test_does_not_apply_and_names_a_claim_without_a_source"],
+    },
+    # ---- Added for the review of PR 13 ----
+    {
+        "name": "review F1: any owner excuses a criterion (the run itself, or a child that never planned it)",
+        "edits": [(PROVIDER, "item.Owner is { Kind: { } kind, Id: { Length: > 0 } id } && scope is not null && kind == ChildKind(scope.Kind) && id != scope.Id;",
+                   "item.Owner is not null;"),
+                  warn(REQUIREMENTS, "owner_in_child"),
+                  (EVIDENCE, "                if (Check.Delegated(criterion, plan.Value.Scope))\n",
+                   "                if (criterion.Owner is not null)\n                    continue;\n                if (Check.Delegated(criterion, plan.Value.Scope))\n")],
+        "tests": [STD_TESTS, it("ForgeTicketTests.A_planner_that_marks")],
+        "expect": [FIXTURES, "A_planner_that_marks_its_criteria_as_owned_to_skip_testing_does_not_get_a_merge"],
+    },
+    {
+        "name": "review F1: a delegated criterion is excused whether or not its owner planned it",
+        "edits": [(EVIDENCE, "if (tree.Plans.Any(p => !own.Contains(p.RunId) && Owns(criterion.Owner!, p.Document.Scope) && p.Document.Items.Any(i => i.Id == criterion.Id)))",
+                   "if (tree.Plans.Count >= 0)")],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
+        "name": "review F1: an unproved criterion (no method) is only a warning",
+        "edits": [warn(EVIDENCE, "unproved")],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
+        "name": "review F2: tests_added does not need the claimed test to have passed",
+        "edits": [(EVIDENCE, "if (NotPassed(test.Id!, observed.Where(", "if (test.Id!.Length < 0 && NotPassed(test.Id!, observed.Where(")],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES, "Tests_added_catches_a_fix_that_adds_no_test_in_a_real_git_history"],
+    },
+    {
+        "name": "review F2: tests_added accepts the production file the finding is about",
+        "edits": [(EVIDENCE, "if (file == finding.Finding.Location.File)", "if (file == finding.Finding.Location.File + \"x\")")],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
+        "name": "review F2: tests_added takes the claimed test's own symbol (free text)",
+        "edits": [(f"{STD}/Documents.cs", "public string? Symbol => Id?.Split", "public string? Symbol => Source?.Symbol ?? Id?.Split")],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
+        "name": "review F4: tests_added ignores the claim's repository",
+        "edits": [(EVIDENCE, "tests.Where(t => t.Repository is not null && Check.SameRepository(t.Repository, repository)))", "tests.Where(t => t.Repository is not null))")],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {"name": "review F4: no_raised_revision is only a warning", "edits": [warn(EVIDENCE, "no_raised_revision")], "tests": [STD_TESTS], "expect": [FIXTURES]},
+    {"name": "review F4: claim_mismatch is only a warning", "edits": [warn(EVIDENCE, "claim_mismatch")], "tests": [STD_TESTS], "expect": [FIXTURES]},
+    {"name": "review F4: change_not_allowed is only a warning", "edits": [warn(EVIDENCE, "change_not_allowed")], "tests": [STD_TESTS], "expect": [FIXTURES]},
+    {"name": "review F4: unknown_claim is only a warning", "edits": [warn(EVIDENCE, "unknown_claim")], "tests": [STD_TESTS], "expect": [FIXTURES]},
+    {"name": "review F4: invalid_owner is only a warning", "edits": [warn(REQUIREMENTS, "invalid_owner")], "tests": [STD_TESTS], "expect": [FIXTURES]},
+    {"name": "review F4: owned_by_another is only a warning", "edits": [warn(REQUIREMENTS, "owned_by_another")], "tests": [STD_TESTS], "expect": [FIXTURES]},
+    {"name": "review F4: links_changed is only a warning", "edits": [warn(REQUIREMENTS, "links_changed")], "tests": [STD_TESTS], "expect": [FIXTURES]},
+    {"name": "review F4: support_and_reason is only a warning", "edits": [warn(REQUIREMENTS, "support_and_reason")], "tests": [STD_TESTS], "expect": [FIXTURES]},
+    {"name": "review F4: owned_with_methods is only a warning", "edits": [warn(REQUIREMENTS, "owned_with_methods")], "tests": [STD_TESTS], "expect": [FIXTURES]},
+    {
+        "name": "review F4: a missing scope is only a warning",
+        "edits": [(PROVIDER, 'Error("malformed", $"{Describe(subject)} has no scope kind and id"', 'Warn("malformed", $"{Describe(subject)} has no scope kind and id"')],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
+        "name": "review F7: an empty plan is accepted",
+        "edits": [(PROVIDER, 'Error("malformed", $"{Describe(subject)} holds no requirements or acceptance criteria"', 'Warn("malformed", $"{Describe(subject)} holds no requirements or acceptance criteria"')],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
+        "name": "review F4: a repeated id is only a warning",
+        "edits": [(PROVIDER, 'Error("duplicate_id", $"{Describe(subject)} uses id', 'Warn("duplicate_id", $"{Describe(subject)} uses id')],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
+        "name": "review F4: baseline test results count as the change's",
+        "edits": [(EVIDENCE, "is not { Baseline: false } evidence)", "is not { } evidence)")],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
+        "name": "review F4: a test both passed and failed counts as passed",
+        "edits": [(EVIDENCE, "        if (tiers.Any(t => t.Results.Failures.Any(f => f.Name == id)))\n            return \"it failed\";\n        if (tiers.Any(t => t.Results.Passing?.Contains(id) == true))\n            return null;",
+                   "        if (tiers.Any(t => t.Results.Passing?.Contains(id) == true))\n            return null;\n        if (tiers.Any(t => t.Results.Failures.Any(f => f.Name == id)))\n            return \"it failed\";")],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
+        "name": "review F4: the method's tier is ignored (any tier at the revision)",
+        "edits": [(EVIDENCE, "return named.Count > 0 ? named : there;", "return there;")],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
+        "name": "review F4: the trace takes any run's tests",
+        "edits": [(EVIDENCE, "var runs = tree.Observed.Where(o => o.RunId == plan.RunId);", "var runs = tree.Observed.Where(o => o.RunId.Length >= 0);")],
+        "tests": [STD_TESTS],
+        "expect": [("The_trace_takes_tests_and_claims_only_from_the_run_whose_plan_holds_the_item", 1)],
+    },
+    {
+        "name": "review F4: the trace takes any run's claims",
+        "edits": [(EVIDENCE, "var claims = tree.Claims.GetValueOrDefault(plan.RunId) ?? [];", "var claims = tree.Claims.Values.SelectMany(x => x).ToList();")],
+        "tests": [STD_TESTS],
+        "expect": [("The_trace_takes_tests_and_claims_only_from_the_run_whose_plan_holds_the_item", 1)],
+    },
+    {
+        "name": "review F4: with no VCS provider every revision counts as contained",
+        "edits": [(PROVIDER, "        if (vcs is null)\n            return false;", "        if (vcs is null)\n            return true;")],
+        "tests": [STD_TESTS],
+        "expect": ["Tests_at_an_ancestor_of_the_head_are_contained_through_the_VCS_and_not_without_it"],
+    },
+    {
+        "name": "review F3: a subject is the producer with the last step id, not the one an agent step would consume",
+        "edits": [(VALIDATE, ".ThenBy(a => a.StepId, StringComparer.Ordinal)", ".ThenByDescending(a => a.StepId, StringComparer.Ordinal)")],
+        "tests": [ENGINE],
+        "expect": ["A_subject_with_several_producers_is_the_one_an_agent_step_beside_it_would_consume"],
+    },
+    {
+        "name": "review F5: a set is never expanded",
+        "edits": [(VALIDATE, 'if (record?.Action != "artifact.compose")', 'if (record?.Action != "artifact.compose" || reference.Length >= 0)')],
+        "tests": [ENGINE],
+        "expect": ["A_set_made_by_artifact_compose_is_passed_with_its_members"],
+    },
+    {
+        "name": "review F6: a validator's infrastructure error stops for a person instead of being retried",
+        "edits": [(VALIDATE, "if (error.Class == ProviderErrorClass.Infrastructure && !error.IsConfigurationFault)", "if (error.Class == ProviderErrorClass.Infrastructure && error.IsConfigurationFault)")],
+        "tests": [ENGINE],
+        "expect": ["A_validators_infrastructure_error_is_retried_not_an_intervention"],
+    },
+    {
+        "name": "review F4: a map-form subject is optional unless it says otherwise",
+        "edits": [(VALIDATE, 's.GetValueOrDefault("optional") as bool? ?? false', 's.GetValueOrDefault("optional") as bool? ?? true')],
+        "tests": [ENGINE],
+        "expect": ["A_required_subject_that_does_not_exist_or_cannot_be_read_stops_the_step_for_a_person"],
     },
     # ---- Evidence the validators read ----
     {
