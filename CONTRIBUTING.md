@@ -50,8 +50,12 @@ implementing features and making design decisions.
 - **Keep it pluggable and extensible.** External systems sit behind provider
   interfaces with contract tests, and new behaviour should arrive as a new
   provider, action or library content rather than as engine special cases.
-- **Simplicity never relaxes a safety floor** (`docs/05` section 1). Where the
-  two pull apart, keep the floor and find the simplest way to honour it.
+- **Keep the safety floors** (`docs/05` section 1), **but be pragmatic about
+  them.** Close the major loopholes and the cheats an agent is likely to try.
+  Don't build complex defences against every unlikely way an agent might game a
+  check: requirements testing and traceability ("does the product meet its
+  requirements?") catch what slips through. Weigh a defence's complexity against
+  how likely and how harmful the cheat is.
 
 ## The review cycle
 
