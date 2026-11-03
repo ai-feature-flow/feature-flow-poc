@@ -397,7 +397,8 @@ for the queue's result.
 ### 7.4 `scm.revert`
 
 Opens a revert pull request for a merge this run tree made. Outcome `opened`.
-Merging the revert is a separate `scm.merge`.
+Merging the revert is a separate `scm.merge`. Its evidence, `revert_record`, names both pull
+requests, so `delivery.report` does not count a reverted merge (LOG 180).
 
 ---
 
@@ -543,7 +544,7 @@ from an agent reviewer, these two actions and route guards such as
 | `artifact.publish` | `repository`, `folder`, `files`, `previous` (an earlier publication to supersede) | Copies artifacts into a repository in one commit and opens a pull request. `conflict` if the destination changed in a way the earlier publication did not expect; nothing is written (from FF; branch, record and superseding, LOG 182) |
 | `tracker.update` | `op` (`create`, `update`, `transition`, `link`, `comment`), its fields (LOG 183) | One tracker operation. Field mapping is provider configuration. Agents have no tracker write identity; this action and declarative `tracker` on steps are the only write paths, apart from a planner's toolset where policy allows |
 | `notify.send` | `audience`, `message` | A notification that needs no answer. A failure retries and never fails the run |
-| `delivery.report` | `repositories` | Reads the merge records and states, per repository, whether a merge actually happened: the parent branch must still contain the recorded merge (LOG 180). `complete` only if every one merged, so a run redirected past a merge cannot report success (from FF) |
+| `delivery.report` | `repositories` | Reads the merge records and states, per repository, whether a merge actually happened: the merge is of the work branch's current head, the parent branch still contains it, and no revert the run opened of it is merged or open (LOG 180). `complete` only if every one merged, so a run redirected past a merge cannot report success (from FF) |
 
 ---
 

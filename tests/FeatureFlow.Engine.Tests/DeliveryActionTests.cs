@@ -2,6 +2,7 @@ using System.Text.Json;
 using FeatureFlow.Engine.ActionSteps;
 using FeatureFlow.Model.Yaml;
 using FeatureFlow.Providers.Abstractions;
+using FeatureFlow.Providers.Local;
 
 namespace FeatureFlow.Engine.Tests;
 
@@ -99,6 +100,89 @@ public sealed class DeliveryActionTests
 
         Assert.Equal("partial", Outcome(result));
         Assert.Contains(result.Events, e => e.Contains("does not contain the recorded merge", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Work_committed_after_the_merge_is_not_delivered()
+    {
+        await using var w = new ActionWorld();
+        w.EngineMayMerge.Add("acme/api");
+        await ReadyAsync(w);
+        Assert.Equal("merged", Outcome(await w.RunAsync("scm.merge", null, "merge")));
+        // The run loops back and adds work, then is redirected past the merge: the old record must not count.
+        w.CommitWork("b.txt", "more work");
+
+        var result = await w.RunAsync("delivery.report", null, "report");
+
+        Assert.Equal("partial", Outcome(result));
+        Assert.Contains(result.Events, e => e.Contains("work came after the merge", StringComparison.Ordinal));
+    }
+
+    /// <summary>A person merges the run's pull request, then the run's scm.revert opens a revert of it.</summary>
+    static async Task<PullRequestRef> MergedThenRevertedAsync(ActionWorld w)
+    {
+        await ReadyAsync(w);
+        Assert.Equal("wait", (await w.RunAsync("scm.merge", null, "merge", waits: 1)).Kind);
+        w.Forge.MergePullRequest(ActionRunAccess.Pr(w.PullRequests[0]), "octo-person");
+        Assert.Equal("merged", Outcome(await w.RunAsync("scm.merge", null, "merge")));
+        var revert = await w.RunAsync("scm.revert", null, "revert");
+        Assert.Equal("opened", Outcome(revert));
+        var record = JsonSerializer.Deserialize<RevertEvidence>(await w.ReadAsync(revert.Report!.Artifacts["evidence"]), Web)!;
+        return ActionRunAccess.Pr(record.RevertPullRequest);
+    }
+
+    [Fact]
+    public async Task A_merge_with_an_open_revert_or_a_merged_one_is_not_delivered()
+    {
+        await using var w = new ActionWorld();
+        var revert = await MergedThenRevertedAsync(w);
+
+        var pending = await w.RunAsync("delivery.report", null, "report");
+        w.Forge.MergePullRequest(revert, "octo-person");
+        var reverted = await w.RunAsync("delivery.report", null, "report");
+
+        Assert.Equal(("partial", "partial"), (Outcome(pending), Outcome(reverted)));
+        Assert.Contains(pending.Events, e => e.Contains("is open", StringComparison.Ordinal));
+        Assert.Contains(reverted.Events, e => e.Contains("was reverted by", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_revert_closed_without_merging_leaves_the_merge_delivered()
+    {
+        await using var w = new ActionWorld();
+        var revert = await MergedThenRevertedAsync(w);
+        (await new InMemoryCodeHost(w.Forge).ClosePullRequestAsync(revert, null, TestContext.Current.CancellationToken)).Unwrap();
+
+        Assert.Equal("complete", Outcome(await w.RunAsync("delivery.report", null, "report")));
+    }
+
+    /// <summary>A merge record as scm.merge would write it, for the work branch's head.</summary>
+    static async Task RecordAsync(ActionWorld w, string target, string revision)
+    {
+        var record = new MergeEvidence("acme/api", target, "merge", w.Work!, null, revision, "feature-flow", false, null);
+        var reference = (await w.Store.PutAsync(new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(record, Web)), TestContext.Current.CancellationToken)).Unwrap().Id;
+        w.Artifacts.Add(new ArtifactEntry("merge", "merge_record", "std:artifact_types/merge_record", reference, "scm.merge", true));
+    }
+
+    [Fact]
+    public async Task A_merge_record_into_another_branch_is_not_a_merge_into_the_parent()
+    {
+        await using var w = new ActionWorld();
+        w.CommitWork("a.txt", "work");
+        // A revision main does contain, recorded as merged into another branch.
+        await RecordAsync(w, "release", w.Main);
+
+        Assert.Equal("partial", Outcome(await w.RunAsync("delivery.report", null, "report")));
+    }
+
+    [Fact]
+    public async Task A_recorded_revision_the_repository_does_not_have_is_not_a_merge()
+    {
+        await using var w = new ActionWorld();
+        w.CommitWork("a.txt", "work");
+        await RecordAsync(w, "main", new string('f', 40));
+
+        Assert.Equal("partial", Outcome(await w.RunAsync("delivery.report", null, "report")));
     }
 
     [Fact]

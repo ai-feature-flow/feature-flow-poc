@@ -1,0 +1,14 @@
+api_version: feature-flow/v1
+kind: artifact_type
+metadata:
+  name: revert_record
+  description: >-
+    The pull request a revert undoes and the revert pull request that undoes it. Read by delivery.report: a merge whose
+    revert merged, or is still open, is not delivered.
+
+format: json
+evidence: true          # only engine actions may produce it (docs/01 section 5.2, F7)
+produced_by: [scm.revert]
+compatible_with: []
+validators: []
+schema: engine          # the shape is the engine's contract (docs/04), not library content

@@ -11,14 +11,22 @@ public sealed record DeliveryReport(bool Complete, IReadOnlyList<DeliveredReposi
 /// <summary>One repository of a <see cref="DeliveryReport"/>: merged into <see cref="Target"/> at <see cref="Revision"/> by <see cref="MergedBy"/>, or why not.</summary>
 public sealed record DeliveredRepository(string Repository, bool Merged, string Target, string? Revision, string? MergedBy, string? Reason);
 
+/// <summary>
+/// <c>revert_record</c>, written by <c>scm.revert</c>: the pull request reverted and the revert pull request. An engine shape;
+/// <c>delivery.report</c> reads it, so a merge the run reverted is not delivered.
+/// </summary>
+public sealed record RevertEvidence(string Repository, string PullRequest, string RevertPullRequest);
+
 /// <summary>Delivery (docs/04 section 12; RW15): which repositories merged. No deploy.</summary>
 static class Delivery
 {
     /// <summary>
     /// <c>delivery.report</c>: for each repository, the run's merge evidence (<c>merge_record</c> made by <c>scm.merge</c>,
-    /// never an agent's artifact, F7) into the repository's parent branch, confirmed against the remote: the parent branch
-    /// must contain the merged revision now. <c>complete</c> only if every repository merged, so a run redirected past a
-    /// merge, or one whose merge was undone, cannot report success.
+    /// never an agent's artifact, F7) into the repository's parent branch, for the work branch's current head, confirmed
+    /// against the remote: the parent branch must contain the merged revision now, and no revert the run opened of that
+    /// pull request (<c>revert_record</c>, made by <c>scm.revert</c>) may be merged or open. <c>complete</c> only if every
+    /// repository merged, so a run redirected past a merge, with work after its merge, or whose merge was undone, cannot
+    /// report success.
     /// </summary>
     public static async Task<ActionResult> ReportAsync(ActionRun run)
     {
@@ -26,12 +34,14 @@ static class Delivery
         if (names.Count == 0)
             throw ActionStop.CannotAnswer("delivery.report names no repositories and the run has none");
         var records = await run.EvidenceAsync<MergeEvidence>("merge_record", "scm.merge");
+        var reverts = await run.EvidenceAsync<RevertEvidence>("revert_record", "scm.revert");
         var delivered = new List<DeliveredRepository>();
         foreach (var name in names.Distinct(StringComparer.Ordinal))
         {
             var repo = new RepoRef(name);
             var target = await run.ParentBranchAsync(repo);
-            delivered.Add(await ConfirmAsync(run, repo, target, records.Select(r => r.Value).Where(r => r.Repository == name && r.Target == target).ToList()));
+            delivered.Add(await ConfirmAsync(run, repo, target, records.Select(r => r.Value).Where(r => r.Repository == name && r.Target == target).ToList(),
+                reverts.Select(r => r.Value).Where(r => r.Repository == name).ToList()));
         }
 
         var complete = delivered.All(d => d.Merged);
@@ -49,23 +59,50 @@ static class Delivery
         return run.Report(outcome, outputs, run.Call.Contract.ArtifactsFor(outcome).Any() ? await run.PutJsonAsync(report) : null);
     }
 
-    static async Task<DeliveredRepository> ConfirmAsync(ActionRun run, RepoRef repo, string target, IReadOnlyList<MergeEvidence> records)
+    static async Task<DeliveredRepository> ConfirmAsync(ActionRun run, RepoRef repo, string target, IReadOnlyList<MergeEvidence> records,
+        IReadOnlyList<RevertEvidence> reverts)
     {
+        DeliveredRepository Not(string reason) => new(repo.FullName, false, target, null, null, reason);
         if (records.Count == 0)
-            return new DeliveredRepository(repo.FullName, false, target, null, null, "the run holds no merge record for it");
+            return Not("the run holds no merge record for it");
+        var work = ActionRun.Must(await run.Vcs.ResolveAsync(repo, run.WorkReference, run.Ct), "read the work branch");
+        if (work is null)
+            return Not($"its work branch {run.Scope.WorkBranch} no longer exists, so what the run delivers cannot be read");
+        var current = records.Where(r => r.Head == work && r.Revision.Length > 0).ToList();
+        if (current.Count == 0)
+            return Not($"no merge record is for the work branch's head {EngineActions.Short(work)} (merged: {string.Join(", ", records.Select(r => EngineActions.Short(r.Head)))}): work came after the merge");
         var head = ActionRun.Must(await run.Vcs.ResolveAsync(repo, "refs/heads/" + target, run.Ct), $"read {target}");
         if (head is null)
-            return new DeliveredRepository(repo.FullName, false, target, null, null, $"{target} does not exist");
-        foreach (var record in records.Where(r => r.Revision.Length > 0))
+            return Not($"{target} does not exist");
+        foreach (var record in current)
         {
             var contained = await run.Vcs.DescendsFromAsync(repo, head, record.Revision, run.Ct);
             if (contained is { Ok: false, Error.Reason: "not_found" })
                 continue;
-            if (ActionRun.Must(contained, $"check that {target} contains the merge"))
-                return new DeliveredRepository(repo.FullName, true, target, record.Revision, record.MergedBy, null);
+            if (!ActionRun.Must(contained, $"check that {target} contains the merge"))
+                continue;
+            if (await RevertedAsync(run, record, reverts) is { } reverted)
+                return Not(reverted);
+            return new DeliveredRepository(repo.FullName, true, target, record.Revision, record.MergedBy, null);
         }
 
-        return new DeliveredRepository(repo.FullName, false, target, null, null,
-            $"{target} at {EngineActions.Short(head)} does not contain the recorded merge ({string.Join(", ", records.Select(r => EngineActions.Short(r.Revision)))})");
+        return Not($"{target} at {EngineActions.Short(head)} does not contain the recorded merge ({string.Join(", ", current.Select(r => EngineActions.Short(r.Revision)))})");
+    }
+
+    /// <summary>Why a merge counts as undone: a revert the run opened of its pull request has merged, or is still open. Null otherwise.</summary>
+    static async Task<string?> RevertedAsync(ActionRun run, MergeEvidence record, IReadOnlyList<RevertEvidence> reverts)
+    {
+        foreach (var revert in reverts.Where(r => record.PullRequest is not null && r.PullRequest == record.PullRequest))
+        {
+            if (ActionRun.ParsePullRequest(revert.RevertPullRequest) is not { } pr)
+                continue;
+            var state = ActionRun.Must(await run.CodeHost.GetPullRequestAsync(pr, run.Ct), "read the revert pull request");
+            if (state.State == PullRequestStates.Merged)
+                return $"its merge was reverted by {revert.RevertPullRequest}";
+            if (state.State == PullRequestStates.Open)
+                return $"a revert of its merge, {revert.RevertPullRequest}, is open";
+        }
+
+        return null;
     }
 }

@@ -134,6 +134,7 @@ public sealed class ActionWorld : IAsyncDisposable
         "ci.checks" => "std:artifact_types/check_results",
         "analysis.run" => "std:artifact_types/analysis_results",
         "scm.merge" => "std:artifact_types/merge_record",
+        "scm.revert" => "std:artifact_types/revert_record",
         _ => null,
     };
 

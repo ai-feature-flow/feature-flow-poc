@@ -18,7 +18,7 @@ open are LOG 62 to 65, approved 2026-11-01.
 | `prompts/` | The reporting preamble every agent step gets; decision and pull request text |
 | `skills/` | `verification`, `review`, `solution_design` |
 | `roles/` | `planner`, `designer`, `implementer`, `fixer`, `reviewer`, `triager`, `conflict_resolver` |
-| `artifact_types/` | Seven document types and six engine-only evidence types |
+| `artifact_types/` | Seven document types and seven engine-only evidence types |
 | `decision_types/` | The gates std uses, and the engine-raised types by pattern |
 | `status_map.yaml` | The abstract tracker statuses templates use |
 | `tests/` | Workflow test files (`docs/09` section 4.3), one scenario each |
