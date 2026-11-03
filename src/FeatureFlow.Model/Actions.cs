@@ -62,7 +62,7 @@ public static class Actions
         new ActionContract("analysis.run", [S("passed"), F("failed")], null, []),
         new ActionContract("artifact.validate", [S("valid"), F("invalid")], null, []),
         new ActionContract("findings.record", [S("recorded"), B("unavailable")], ["new", "reraised", "reopened", "repeat_fixes"], []),
-        new ActionContract("findings.triage", [S("applied"), F("invalid")], null, [], Escalates: ["invalid"]),
+        new ActionContract("findings.triage", [S("applied"), F("invalid")], ["escalated", "declined_blocking"], [], Escalates: ["invalid"]),
         new ActionContract("repo.inspect", [S("inspected")], null, []),
         new ActionContract("artifact.compose", [S("composed")], null, []),
         new ActionContract("artifact.import", [S("imported")], null, []),
@@ -91,6 +91,8 @@ public static class Actions
         ["reraised"] = "number",
         ["reopened"] = "number",
         ["repeat_fixes"] = "number",
+        ["escalated"] = "number",
+        ["declined_blocking"] = "number",
     };
 
     /// <summary>Added to every step that consumes attempts; routed to escalate by default (docs/03 section 4.3).</summary>

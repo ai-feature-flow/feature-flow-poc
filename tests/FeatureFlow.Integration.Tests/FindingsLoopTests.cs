@@ -26,7 +26,7 @@ public class FindingsLoopTests
         [
             $"verify.review.review_0.assess: [{Report(Blocking)}, {Report("")}]",
             .. Enumerable.Range(1, 4).Select(i => $"verify.review.review_{i}.assess: {Report("")}"),
-            "verify.fix.triage: { outputs: { to_fix: 1, escalated: 0 }, artifacts: { triage: { triage_each_open: open } } }",
+            "verify.fix.triage: { artifacts: { triage: { triage_each_open: open } } }",
             "verify.fix.verify_fix: { outcome: verified, artifacts: { fix_verification: { triage_each_open: fixed } } }",
         ]) + " }";
         var (h, _, _) = await ForgeTicketTests.StartAsync("findings-loop", policy: "  merge: { default_branch: { engine_may_merge: [acme/api] } }", script: script);
@@ -60,6 +60,42 @@ public class FindingsLoopTests
             Assert.Contains(events, e => e.Kind == FindingsLedger.ViewName && e.Detail.StartsWith("1 findings, 1 open", StringComparison.Ordinal));
         }
 
+        Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
+    }
+
+    /// <summary>
+    /// Review F1: the triager alone cannot clear a demonstrated, blocking finding. Every review raises it again on unchanged
+    /// code; the triager marks it fixed, escalated or declined. None of these merges: fixed is not a state the triager may
+    /// set (its triage goes back to it until its attempts run out), and an escalation or a declined blocking finding,
+    /// counted by findings.triage itself, goes to a person. Either way the run stops at an intervention before any merge.
+    /// </summary>
+    [Theory]
+    [InlineData("fixed", "verify.fix.triage")]
+    [InlineData("escalated", "verify.fix.apply_triage")]
+    [InlineData("declined", "verify.fix.apply_triage")]
+    public async Task The_triager_alone_cannot_clear_a_demonstrated_blocking_finding(string state, string stopsAt)
+    {
+        var demonstrated = Blocking.Replace("basis: reasoned", "basis: demonstrated, proof: AppTests.Null fails", StringComparison.Ordinal);
+        var script = "{ " + string.Join(", ",
+        [
+            $"verify.review.review_0.assess: {Report(demonstrated)}",
+            .. Enumerable.Range(1, 4).Select(i => $"verify.review.review_{i}.assess: {Report("")}"),
+            $"verify.fix.triage: {{ artifacts: {{ triage: {{ triage_each_open: {state} }} }} }}",
+        ]) + " }";
+        var (h, forge, repo) = await ForgeTicketTests.StartAsync($"findings-{state}", policy: "  merge: { default_branch: { engine_may_merge: [acme/api] } }", script: script);
+        await using var _h = h;
+        var main = forge.Resolve(repo, "main");
+
+        var id = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=T-1", "--param", "engine_can_merge=true", "--repo", "acme/api");
+        Assert.NotNull(await h.WaitForWaitAsync(id, TimeSpan.FromSeconds(240)));
+
+        var view = await h.ShowAsync(id);
+        var wait = view["waits"]!.AsArray().Single()!;
+        Assert.Equal(("intervention", stopsAt), (wait["kind"]!.ToString(), wait["stepId"]!.ToString()));
+        var path = Harness.StartedSteps(view);
+        Assert.DoesNotContain(path, s => s.StartsWith("deliver.", StringComparison.Ordinal));
+        Assert.DoesNotContain("verify.fix.fix", path);
+        Assert.Equal(main, forge.Resolve(repo, "main"));
         Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
     }
 }

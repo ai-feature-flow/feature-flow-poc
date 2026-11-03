@@ -39,7 +39,7 @@ public static class StepStartChecks
         ["analysis.run"] = [B("baseline"), S("fail_on", "new_issues", "any_issues", "never"), S("min_level", "note", "warning", "error")],
         ["repo.inspect"] = [S("repository")],
         ["findings.record"] = [S("source"), S("reopen_on", "code_change", "always", "never")],
-        ["findings.triage"] = [S("from"), B("post_declines")],
+        ["findings.triage"] = [S("from"), B("post_declines"), A("states")],
     };
 
     /// <summary>Check 31: what is wrong with an action's evaluated inputs, as messages; empty when they satisfy its contract.</summary>

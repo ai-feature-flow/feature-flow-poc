@@ -14,7 +14,7 @@ script:
   verify.fix.apply_triage: [invalid, applied]
   verify.fix.record_fixes: [invalid, applied]
 outputs:
-  verify.fix.triage: { to_fix: 1, escalated: 0 }
+  "findings.open": 1                     # read when the triage is applied: findings left to fix
   "findings.open_blocking": [1, 0]
 
 expect:

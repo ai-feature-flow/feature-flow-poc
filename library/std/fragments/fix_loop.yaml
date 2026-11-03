@@ -3,7 +3,8 @@ kind: fragment
 metadata:
   name: fix_loop
   description: >-
-    A triager decides per open finding; the decisions are applied; a fixer fixes
+    A triager decides per open finding; the decisions are applied, and an
+    escalation or a declined blocking or demonstrated finding goes to a person; a fixer fixes
     what is left open, with regression tests; a verifying reviewer checks each fix
     against its finding on the full diff; the regression tests are validated as
     new. The caller re-tests and re-reviews after the fixed exit.
@@ -36,18 +37,17 @@ steps:
     consumes: [{ name: findings_ledger }]
     produces:
       triaged: [{ name: triage, type: std:artifact_types/triage }]
-    outputs: { to_fix: { type: number }, escalated: { type: number } }
     outcomes: { triaged: success, blocked: blocked }
 
   - id: apply_triage
     action: findings.triage
-    with: { from: triage }
+    with: { from: triage, states: [open, declined, escalated] }   # only the verifier, after a fix, may set fixed
     consumes: [{ name: triage }]
     routes:
-      applied:
-        - when: "steps.triage.outputs.escalated > 0"
-          to: { exit: escalated }
-        - when: "steps.triage.outputs.to_fix == 0"
+      applied:                                    # on the engine's counts, never the triager's own outputs
+        - when: "steps.apply_triage.outputs.escalated > 0 || steps.apply_triage.outputs.declined_blocking > 0"
+          to: { exit: escalated }                 # a person decides an escalation or a declined blocking or demonstrated finding
+        - when: "findings.open == 0"
           to: { exit: fixed }
         - to: fix
       invalid: triage                             # names a finding the ledger does not hold: back to its producer
@@ -88,7 +88,7 @@ steps:
 
   - id: record_fixes
     action: findings.triage
-    with: { from: fix_verification }
+    with: { from: fix_verification, states: [fixed, open] }
     consumes: [{ name: fix_verification }]
     routes: { invalid: verify_fix }
 

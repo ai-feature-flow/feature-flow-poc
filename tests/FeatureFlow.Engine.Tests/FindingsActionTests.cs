@@ -50,8 +50,8 @@ public sealed class FindingsActionTests : IAsyncDisposable
     Task<ActionResult> Record(string reopenOn = "code_change", string stepId = "review.record", string source = "findings_report") =>
         world.RunAsync("findings.record", $"{{ source: {source}, reopen_on: {reopenOn} }}", stepId);
 
-    Task<ActionResult> Triage(string from = "triage", string stepId = "apply_triage", bool postDeclines = true) =>
-        world.RunAsync("findings.triage", $"{{ from: {from}, post_declines: {(postDeclines ? "true" : "false")} }}", stepId);
+    Task<ActionResult> Triage(string from = "triage", string stepId = "apply_triage", bool postDeclines = true, string? states = null) =>
+        world.RunAsync("findings.triage", $"{{ from: {from}, post_declines: {(postDeclines ? "true" : "false")}{(states is null ? "" : ", states: " + states)} }}", stepId);
 
     async Task<IReadOnlyList<FindingRecord>> Ledger(string? runId = null) =>
         (await world.Records.QueryAsync<FindingRecord>(Queries.Findings, new Dictionary<string, string> { ["run_id"] = runId ?? world.RunId }, Ct)).Unwrap();
@@ -454,5 +454,168 @@ public sealed class FindingsActionTests : IAsyncDisposable
 
         Assert.Equal(StepOutcome.CannotAnswer, result.Kind);
         Assert.Contains("reopen_on", result.Reason, StringComparison.Ordinal);
+    }
+
+    // ---- Review of PR 11 ----
+
+    [Theory]
+    [InlineData(FindingStates.Fixed, "[open, declined, escalated]", "invalid")]
+    [InlineData(FindingStates.Declined, "[fixed, open]", "invalid")]
+    [InlineData(FindingStates.Fixed, "[fixed, open]", "applied")]
+    public async Task A_triage_may_set_only_the_states_its_step_allows(string state, string states, string expected)
+    {
+        await Reviewed("review.assess", Finding());
+        await Record();
+        await Triaged("fix.triage", new TriageEntry(Assert.Single(await Ledger()).FindingId, state, "because"));
+
+        var result = await Triage(stepId: "fix.apply_triage", states: states);
+
+        Outcome(result, expected);
+        Assert.Equal(expected == "applied" ? state : FindingStates.Open, Assert.Single(await Ledger()).State);
+        if (expected == "invalid")
+            Assert.Contains(result.Events, e => e.Contains("this step may set only", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_triage_counts_its_escalations_and_its_declines_of_blocking_or_demonstrated_findings_itself()
+    {
+        await Reviewed("review.assess", Finding("blocking"), Finding("demonstrated", blocking: false, basis: FindingBases.Demonstrated, snippet: "void Add()"),
+            Finding("minor", blocking: false, snippet: "class Orders"), Finding("ask", snippet: "x"));
+        await Record();
+        var ledger = await Ledger();
+        string Id(string rule) => ledger.Single(f => f.Finding.Rule == rule).FindingId;
+        await Triaged("fix.triage", new TriageEntry(Id("blocking"), FindingStates.Declined, "no"), new TriageEntry(Id("demonstrated"), FindingStates.Declined, "no"),
+            new TriageEntry(Id("minor"), FindingStates.Declined, "no"), new TriageEntry(Id("ask"), FindingStates.Escalated, "a person decides"));
+
+        var result = await Triage(stepId: "fix.apply_triage");
+
+        Assert.Equal((1L, 2L), (Output(result, "escalated"), Output(result, "declined_blocking")));
+    }
+
+    [Fact]
+    public async Task A_weaker_re_raise_does_not_downgrade_the_finding()
+    {
+        await Reviewed("review.assess", Finding(basis: FindingBases.Demonstrated) with { Proof = "OrdersTests.Add_null fails", Severity = "critical" });
+        await Record();
+        await Reviewed("review.assess", Finding(blocking: false) with { Severity = "low", Description = "Reworded" });
+
+        var again = await Record();
+
+        var finding = Assert.Single(await Ledger()).Finding;
+        Assert.Equal((true, FindingBases.Demonstrated, "critical", "OrdersTests.Add_null fails", "Reworded"),
+            (finding.Blocking, finding.Basis, finding.Severity, finding.Proof, finding.Description));
+        Assert.Equal(1, again.Findings!["open_blocking"]);
+    }
+
+    [Fact]
+    public async Task Each_findings_action_returns_a_higher_ledger_version()
+    {
+        await Reviewed("review.assess", Finding());
+        var first = await Record();
+        var second = await Record();
+        await Triaged("fix.triage", new TriageEntry(Assert.Single(await Ledger()).FindingId, FindingStates.Declined, "no"));
+        var third = await Triage(stepId: "fix.apply_triage");
+
+        Assert.True(first.FindingsVersion > 0 && second.FindingsVersion > first.FindingsVersion && third.FindingsVersion > second.FindingsVersion,
+            $"{first.FindingsVersion}, {second.FindingsVersion}, {third.FindingsVersion}");
+        Assert.Equal(third.FindingsVersion, third.ToOutcome().FindingsVersion);
+    }
+
+    [Fact]
+    public async Task Two_problems_of_one_rule_in_one_file_with_no_symbol_or_snippet_stay_two_and_a_true_duplicate_is_noted()
+    {
+        ReportedFinding Bare(string title) => Finding() with { Title = title, Location = new FindingLocation("acme/api", File) };
+        await Reviewed("review.assess", Bare("x may be null"), Bare("y may be null"), Bare("x may be null"));
+
+        var result = await Record();
+
+        Assert.Equal(2L, Output(result, "new"));
+        Assert.Equal(2, (await Ledger()).Count);
+        Assert.Contains(result.Events, e => e.Contains("\"x may be null\"", StringComparison.Ordinal) && e.Contains("recorded once", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_fix_moves_the_state_revision_so_only_a_later_change_reopens_it()
+    {
+        await Reviewed("review.assess", Finding());
+        await Record();
+        var raisedAt = world.Work;
+        var fixedAt = world.CommitWork(File, "class Orders { void Add() { if (x) { } } } // fixed\n");
+        await Triaged("verify_fix", new TriageEntry(Assert.Single(await Ledger()).FindingId, FindingStates.Fixed, "verified"));
+        Outcome(await Triage(stepId: "fix.record_fixes", states: "[fixed, open]"), "applied");
+        Assert.Equal((fixedAt, raisedAt), (Assert.Single(await Ledger()).StateRevision, (await Ledger())[0].RaisedRevision));
+
+        await Reviewed("review.assess", Finding());
+        Assert.Equal(0L, Output(await Record(), "reopened"));
+        Assert.Equal(FindingStates.Fixed, Assert.Single(await Ledger()).State);
+
+        world.CommitWork(File, "class Orders { void Add() { if (x) { } } } // changed again\n");
+        await Reviewed("review.assess", Finding());
+        Assert.Equal(1L, Output(await Record(), "reopened"));
+        Assert.Equal(FindingStates.Open, Assert.Single(await Ledger()).State);
+    }
+
+    [Fact]
+    public async Task A_triage_naming_a_finding_twice_is_invalid()
+    {
+        await Reviewed("review.assess", Finding());
+        await Record();
+        var id = Assert.Single(await Ledger()).FindingId;
+        await Triaged("fix.triage", new TriageEntry(id, FindingStates.Declined, "no"), new TriageEntry(id, FindingStates.Open, "yes"));
+
+        var result = await Triage(stepId: "fix.apply_triage");
+
+        Outcome(result, "invalid");
+        Assert.Contains(result.Events, e => e.Contains("named more than once", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_triage_of_another_schema_is_invalid()
+    {
+        await Reviewed("review.assess", Finding());
+        await Record();
+        await Produced("fix.triage", "triage", ArtifactShapes.WriteLibrary(new Triage(2, [new TriageEntry(Assert.Single(await Ledger()).FindingId, FindingStates.Open, "x")])));
+
+        var result = await Triage(stepId: "fix.apply_triage");
+
+        Outcome(result, "invalid");
+        Assert.Contains(result.Events, e => e.Contains("schema must be 1", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_finding_raised_in_both_this_run_and_a_child_is_re_raised_in_this_runs_ledger()
+    {
+        var child = world.RunId + ".a.1";
+        var at = DateTimeOffset.UtcNow;
+        (await world.Records.AppendAsync(new RecordBatch(Runs: [new RunRecord(child, world.RunId, "ticket_delivery", "completed", "me", ["acme/api"], false, at, null)]), Ct)).Unwrap();
+        var fingerprint = Fingerprints.Of(Finding());
+        (await world.Records.AppendAsync(new RecordBatch(Findings:
+        [
+            new FindingRecord(child, Fingerprints.LedgerId(child, fingerprint), fingerprint, Finding(), "child", null, FindingStates.Open, world.Work, world.Work, 0, 0, 0, false, at),
+            new FindingRecord(world.RunId, Fingerprints.LedgerId(world.RunId, fingerprint), fingerprint, Finding(), "own", null, FindingStates.Open, world.Work, world.Work, 0, 0, 0, false, at),
+        ]), Ct)).Unwrap();
+        await Reviewed("review.assess", Finding());
+
+        await Record();
+
+        var ledger = await Ledger();
+        Assert.Equal((0, 1), (ledger.Single(f => f.RunId == child).Reraises, ledger.Single(f => f.RunId == world.RunId).Reraises));
+    }
+
+    [Fact]
+    public async Task A_triage_repeating_a_findings_state_changes_nothing()
+    {
+        await Reviewed("review.assess", Finding());
+        await Record();
+        var id = Assert.Single(await Ledger()).FindingId;
+        await Triaged("verify_fix", new TriageEntry(id, FindingStates.Fixed, "verified"));
+        Outcome(await Triage(stepId: "fix.record_fixes"), "applied");
+        var once = Assert.Single(await Ledger());
+        world.CommitWork("src/Other.cs", "class Other { int z; }\n");
+
+        Outcome(await Triage(stepId: "fix.record_fixes"), "applied");
+
+        var twice = Assert.Single(await Ledger());
+        Assert.Equal((1, once.StateRevision), (twice.Fixes, twice.StateRevision));
     }
 }

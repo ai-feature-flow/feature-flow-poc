@@ -53,6 +53,16 @@ public class StdLibraryTests
     }
 
     [Fact]
+    public void Only_an_outcome_added_later_escalates_by_default_and_another_unrouted_outcome_is_still_check_7()
+    {
+        Assert.Equal(["findings.triage invalid"], Actions.All.Values.SelectMany(a => (a.Escalates ?? []).Select(o => $"{a.Name} {o}")));
+
+        var result = Std.Mutate(new Std.Edit("fragments/verify_and_review.yaml", "      passed: review\n      failed: repair\n", "      passed: review\n"));
+
+        Assert.Contains(result.Diagnostics, d => d.Blocks && d.Check == Checks.OutcomeRouted && d.Message.Contains("'failed'", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Every_std_fragment_and_template_is_covered()
     {
         var files = Directory.GetFiles(Path.Combine(Std.Root, "fragments"), "*.yaml")

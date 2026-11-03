@@ -33,5 +33,5 @@ with a reason, or escalated to a person. You change no code.
 | `triaged` | Every open finding has an entry | `triage.yaml` as `triage` |
 | `blocked` | The findings cannot be judged | None |
 
-Outputs: `to_fix` (number of entries left `open`), `escalated` (number of
-entries set `escalated`).
+You may not set `fixed`: only the verifying reviewer does, after a fix. An
+escalation, or a decline of a blocking or demonstrated finding, goes to a person.

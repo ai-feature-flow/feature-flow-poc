@@ -51,9 +51,12 @@ static class FindingsActions
 
         foreach (var reported in report.Findings.Select(f => f with { LedgerId = null, State = null }))
         {
-            var fingerprint = Fingerprints.Of(reported);
+            var fingerprint = FingerprintOf(reported);
             if (!seen.Add(fingerprint))
+            {
+                run.Events.Add($"{raisedBy}'s finding \"{reported.Title}\" ({reported.Rule} in {reported.Location.File}) has the fingerprint of an earlier one in the report; recorded once");
                 continue;
+            }
             var head = await code.HeadAsync(reported.Location.Repository);
             var existing = Match(ledger, fingerprint, run.Call.Step.RunId);
             if (existing is null)
@@ -77,7 +80,7 @@ static class FindingsActions
                          && (reopenOn == Always || (reopenOn == CodeChange && changed));
             var after = existing with
             {
-                Finding = reported,
+                Finding = Merge(existing.Finding, reported),
                 Reraises = existing.Reraises + 1,
                 ReraisedUnchanged = !changed,
                 UpdatedAt = now,
@@ -98,6 +101,33 @@ static class FindingsActions
                 "record the findings");
         run.Events.Add($"findings from {raisedBy}: {tally["new"]} new, {tally["reraised"]} re-raised, {tally["reopened"]} reopened, {tally["repeat_fixes"]} fixed twice before");
         return await ReportAsync(run, "recorded", tally.ToDictionary(kv => kv.Key, kv => (object?)kv.Value), reportRef);
+    }
+
+    /// <summary>
+    /// A finding's fingerprint (docs/01 section 6). An entry with neither a symbol nor a snippet is placed only by rule and
+    /// file, so its title stands in for the snippet: two different problems of one rule in one file stay two (review F4).
+    /// </summary>
+    internal static string FingerprintOf(ReportedFinding f) =>
+        string.IsNullOrWhiteSpace(f.Location.Symbol) && string.IsNullOrWhiteSpace(f.Location.Snippet)
+            ? Fingerprints.Of(f with { Location = f.Location with { Snippet = "title: " + f.Title } })
+            : Fingerprints.Of(f);
+
+    /// <summary>
+    /// A re-raise merged into the finding as recorded: the latest wording, but never weaker. Blocking if either said so,
+    /// demonstrated over reasoned, the higher severity, and a proof kept (review F2), so a later reviewer cannot downgrade it.
+    /// </summary>
+    internal static ReportedFinding Merge(ReportedFinding recorded, ReportedFinding raised)
+    {
+        static int Rank(string severity) => FindingSeverities.All.ToList().IndexOf(severity) is var i and >= 0 ? i : int.MaxValue;
+        var severity = Rank(recorded.Severity) <= Rank(raised.Severity) ? recorded.Severity : raised.Severity;
+        return raised with
+        {
+            Blocking = recorded.Blocking || raised.Blocking,
+            Basis = recorded.Basis == FindingBases.Demonstrated || raised.Basis == FindingBases.Demonstrated ? FindingBases.Demonstrated : raised.Basis,
+            Severity = severity,
+            Proof = raised.Proof ?? recorded.Proof,
+            RequiredCorrection = raised.RequiredCorrection ?? recorded.RequiredCorrection,
+        };
     }
 
     static void Count(Dictionary<string, long> tally, string kind, FindingRecord after)
@@ -211,7 +241,8 @@ static class FindingsActions
         var ledger = await LedgerAsync(run);
         var byId = ledger.GroupBy(x => x.FindingId).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
 
-        var (triage, problems) = ReadTriage(await run.ReadTextAsync(entry.Ref), $"{entry.StepId}'s {from} {entry.Ref}", byId);
+        var allowed = run.Strings("states") is { Count: > 0 } states ? states : FindingStates.All;
+        var (triage, problems) = ReadTriage(await run.ReadTextAsync(entry.Ref), $"{entry.StepId}'s {from} {entry.Ref}", byId, allowed);
         if (problems.Count > 0)
         {
             // Nothing is applied: the triage goes back to its producer (std routes invalid there, LOG 161).
@@ -255,14 +286,23 @@ static class FindingsActions
         if (run.Bool("post_declines", true))
             foreach (var t in triage.Entries.Where(t => t.State == FindingStates.Declined))
                 await PostDeclineAsync(run, byId[t.Finding], t);
-        return await ReportAsync(run, "applied", null, null);
+
+        // Counted from the triage and the ledger, never from what its producer reports about itself (review F1).
+        var outputs = new Dictionary<string, object?>
+        {
+            ["escalated"] = (long)triage.Entries.Count(t => t.State == FindingStates.Escalated),
+            ["declined_blocking"] = (long)triage.Entries.Count(t => t.State == FindingStates.Declined
+                && (byId[t.Finding].Finding.Blocking || byId[t.Finding].Finding.Basis == FindingBases.Demonstrated)),
+        };
+        return await ReportAsync(run, "applied", outputs, null);
     }
 
     /// <summary>
     /// The triage, and what is wrong with it against the ledger: a finding the ledger does not hold, one named twice, a
-    /// state that is not one of the four, an empty reason.
+    /// state that is not one of the four or not one this producer may set (<c>states</c>, review F1), an empty reason.
     /// </summary>
-    internal static (Triage? Triage, List<string> Problems) ReadTriage(string text, string what, IReadOnlyDictionary<string, FindingRecord> ledger)
+    internal static (Triage? Triage, List<string> Problems) ReadTriage(string text, string what, IReadOnlyDictionary<string, FindingRecord> ledger,
+        IReadOnlyList<string> allowed)
     {
         Triage triage;
         try
@@ -294,6 +334,8 @@ static class FindingsActions
                 problems.Add($"{id} is named more than once");
             if (!FindingStates.All.Contains(e.State))
                 problems.Add($"{id}: state must be one of {string.Join(", ", FindingStates.All)}, not '{e.State}'");
+            else if (!allowed.Contains(e.State))
+                problems.Add($"{id}: this step may set only {string.Join(", ", allowed)}, not '{e.State}'");
             if (string.IsNullOrWhiteSpace(e.Reason))
                 problems.Add($"{id}: a reason is required");
         }
@@ -344,17 +386,43 @@ static class FindingsActions
         bool? codeChanged, DateTimeOffset at) =>
         new(runId, findingId, run.Key, kind, state, actor, reason, run.Call.Step.StepId, revision, codeChanged, at);
 
-    /// <summary>The outcome, with the <c>findings</c> namespace as the ledger now stands.</summary>
-    static async Task<ActionResult> ReportAsync(ActionRun run, string outcome, IReadOnlyDictionary<string, object?>? outputs, string? evidence) =>
-        run.Report(outcome, outputs, evidence) with { Findings = FindingsLedger.Counts(await LedgerAsync(run)) };
+    /// <summary>
+    /// The outcome, with the <c>findings</c> namespace as the ledger now stands and the ledger's version: how many events its
+    /// findings hold. Events are only appended, and each write is one batch with an event per finding it changes, so a
+    /// later ledger has a higher version, and parallel recorders' counts are applied newest last (review F3).
+    /// </summary>
+    static async Task<ActionResult> ReportAsync(ActionRun run, string outcome, IReadOnlyDictionary<string, object?>? outputs, string? evidence)
+    {
+        var history = new History(run);
+        var ledger = await LedgerAsync(run);
+        long version;
+        for (var tries = 0; ; tries++)
+        {
+            version = 0;
+            foreach (var finding in ledger)
+                version += (await history.OfAsync(finding)).Count;
+            // The counts and the version must describe one ledger: read again until no writer came between.
+            var again = await LedgerAsync(run);
+            if (again.SequenceEqual(ledger) || tries >= 4)
+            {
+                ledger = again;
+                break;
+            }
+
+            ledger = again;
+        }
+
+        return run.Report(outcome, outputs, evidence) with { Findings = FindingsLedger.Counts(ledger), FindingsVersion = version };
+    }
 
     /// <summary>A finding's history, read when the step may already have recorded it (a retry).</summary>
     sealed class History(ActionRun run)
     {
-        public async Task<FindingEventRecord?> ByThisStepAsync(FindingRecord finding) =>
+        public async Task<IReadOnlyList<FindingEventRecord>> OfAsync(FindingRecord finding) =>
             ActionRun.Must(await run.Provider<IRecordStoreProvider>("record_store").QueryAsync<FindingEventRecord>(Queries.FindingEvents,
-                    new Dictionary<string, string> { ["run_id"] = finding.RunId, ["finding_id"] = finding.FindingId }, run.Ct), "read a finding's history")
-                .LastOrDefault(e => e.Key == run.Key);
+                new Dictionary<string, string> { ["run_id"] = finding.RunId, ["finding_id"] = finding.FindingId }, run.Ct), "read a finding's history");
+
+        public async Task<FindingEventRecord?> ByThisStepAsync(FindingRecord finding) => (await OfAsync(finding)).LastOrDefault(e => e.Key == run.Key);
     }
 
     /// <summary>

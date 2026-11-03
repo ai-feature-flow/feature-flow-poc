@@ -43,14 +43,14 @@ public class MutationTests
         ["expression_parse"] = new(5, "does not parse", "a merge-bar guard that does not parse", [
             new(VerifyAndReview, "        - when: \"findings.open_blocking == 0\"\n", "        - when: \"findings.open_blocking ==\"\n")]),
 
-        ["expression_unknown_output"] = new(5, "has no output 'to_fix'", "a guard reads an output the triager does not declare", [
-            new(FixLoop, "    outputs: { to_fix: { type: number }, escalated: { type: number } }", "    outputs: { remaining: { type: number }, escalated: { type: number } }")]),
+        ["expression_unknown_output"] = new(5, "has no output 'to_fix'", "a guard reads an output findings.triage does not publish", [
+            new(FixLoop, "steps.apply_triage.outputs.escalated > 0 ||", "steps.apply_triage.outputs.to_fix > 0 ||")]),
 
-        ["guard_not_bool"] = new(5, "is int64, not bool", "a fix-loop guard reads the triager's number output as a condition", [
-            new(FixLoop, "        - when: \"steps.triage.outputs.escalated > 0\"", "        - when: \"steps.triage.outputs.to_fix\"")]),
+        ["guard_not_bool"] = new(5, "is int64, not bool", "a fix-loop guard reads a number as a condition", [
+            new(FixLoop, "        - when: \"findings.open == 0\"", "        - when: \"findings.open\"")]),
 
         ["index_access"] = new(5, "index access on", "a fix-loop guard reaches an undeclared parameter and output by index", [
-            new(FixLoop, "        - when: \"steps.triage.outputs.to_fix == 0\"", "        - when: \"params['nope'] == 1 && steps['triage'].outputs.bogus > 0\"")]),
+            new(FixLoop, "        - when: \"findings.open == 0\"", "        - when: \"params['nope'] == 1 && steps['apply_triage'].outputs.bogus > 0\"")]),
 
         ["declared_exhausted"] = new(6, "'attempts_exhausted' is added by the engine and may not be declared", "implement declares attempts_exhausted itself", [
             new(Ticket, "    outcomes: { implemented: success, blocked: blocked }", "    outcomes: { implemented: success, blocked: blocked, attempts_exhausted: failure }")]),

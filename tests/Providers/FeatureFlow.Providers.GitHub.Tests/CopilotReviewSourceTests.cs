@@ -125,6 +125,20 @@ public sealed class CopilotReviewSourceTests : IDisposable
     }
 
     [Fact]
+    public async Task Copilots_newest_review_of_the_revision_is_read()
+    {
+        var github = new FakeGitHub()
+            .On(Get, "~/pulls/7/reviews/91/comments", 200, """[{ "id": 3, "path": "src/New.cs", "line": 1, "body": "Newest", "diff_hunk": "@@ -1 +1 @@\n+x" }]""")
+            .On(Get, "~/pulls/7/reviews/90/comments", 200, """[{ "id": 2, "path": "src/Old.cs", "line": 1, "body": "Older", "diff_hunk": "@@ -1 +1 @@\n+y" }]""")
+            .On(Get, "~/pulls/7/reviews", 200, $"[{CopilotGitHub.Review(91, CopilotGitHub.Head)}, {CopilotGitHub.Review(90, CopilotGitHub.Head)}]");
+        var source = Source(github);
+
+        var report = await ReadAsync(source, (await source.RequestAsync(Target(7), "k", Ct)).Unwrap());
+
+        Assert.Equal("src/New.cs", Assert.Single(report.Findings).Location.File);
+    }
+
+    [Fact]
     public async Task The_instance_can_make_copilots_findings_blocking()
     {
         var source = Source(CopilotGitHub.World(), blocking: true);
