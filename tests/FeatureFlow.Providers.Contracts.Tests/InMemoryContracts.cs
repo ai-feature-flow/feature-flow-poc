@@ -93,3 +93,71 @@ public sealed class InMemoryCiContract : CiContract, IDisposable
         return Task.FromResult(forge.Resolve(Repo, "main")!);
     }
 }
+
+public sealed class InMemoryTrackerContract : TrackerContract
+{
+    readonly InMemoryTracker tracker = new();
+
+    protected override ITrackerProvider Tracker => tracker;
+
+    protected override (string First, string Second) Statuses => ("in_progress", "done");
+
+    protected override Task<IReadOnlyList<string>> CommentsAsync(IssueRef issue) => Task.FromResult(tracker.Comments(issue));
+}
+
+public sealed class InMemoryFindingsSourceContract : FindingsSourceContract, IDisposable
+{
+    readonly string folder = Path.Combine(Path.GetTempPath(), "ff-findings-contract-" + Guid.NewGuid().ToString("N"));
+    readonly InMemoryFindingsSource source;
+    static readonly RepoRef Repo = new("ai-feature-flow/contract");
+
+    public InMemoryFindingsSourceContract()
+    {
+        Store = new FileSystemArtifactStore(folder);
+        source = new InMemoryFindingsSource(() => Store);
+        source.Review(Repo, "reviewed", new FindingsReport(1,
+        [
+            new ReportedFinding("null-check", "Missing null check", "Add throws on null.", "high", true, FindingBases.Reasoned,
+                new FindingLocation(Repo.FullName, "src/Orders.cs", "Orders.Add", "items.Add(item);")),
+        ]), pollsUntilReady: 2);
+    }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(folder))
+            Directory.Delete(folder, recursive: true);
+    }
+
+    protected override IFindingsSourceProvider Source => source;
+
+    protected override IArtifactStoreProvider Store { get; }
+
+    protected override Task<FindingsTarget> ReviewedTargetAsync() => Task.FromResult(new FindingsTarget(Repo, "reviewed", new PullRequestRef(Repo, 1)));
+
+    protected override Task<FindingsTarget> UnavailableTargetAsync() => Task.FromResult(new FindingsTarget(Repo, "not-reviewed"));
+}
+
+public sealed class InMemoryValidatorsContract : ValidatorContract
+{
+    static ValidationRequest Request(string validator, IReadOnlyDictionary<string, string>? options = null, params ValidationSubject[] subjects) =>
+        new(validator, subjects, options ?? new Dictionary<string, string>(), new Dictionary<string, string> { ["acme/api"] = "rev1" }, [], []);
+
+    readonly InMemoryValidators validators = new InMemoryValidators().Add(
+        new ValidatorDescriptor("has_subject", "The subject exists", ["requirements"], new Dictionary<string, string>(), []),
+        r => ValidationResult.Of(r.Subjects.Where(s => s.Absent).Select(s => new ValidationIssue("absent", ValidationSeverities.Error, $"{s.Name} is absent", s.Name)).ToList()));
+
+    protected override IValidatorProvider Validators => validators;
+
+    protected override IReadOnlyList<ValidatorFixture> Fixtures { get; } =
+    [
+        new("scripted, valid", Request(InMemoryValidators.Scripted), true),
+        new("scripted, invalid", Request(InMemoryValidators.Scripted, new Dictionary<string, string> { ["valid"] = "false", ["code"] = "\"nope\"" }), false, "nope"),
+        new("has_subject, present", Request("has_subject", null, new ValidationSubject("requirements", "std:artifact_types/requirements", new ArtifactRef("sha256:1"))), true),
+        new("has_subject, absent", Request("has_subject", null, new ValidationSubject("requirements", "std:artifact_types/requirements", null, "parent")), false, "absent"),
+    ];
+}
+
+public sealed class InMemoryFindingsLedgerContract : FindingsLedgerContract
+{
+    protected override IRecordStoreProvider Store { get; } = new InMemoryRecordStore();
+}

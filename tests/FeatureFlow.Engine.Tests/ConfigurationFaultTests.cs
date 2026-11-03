@@ -36,6 +36,9 @@ public sealed class ConfigurationFaultTests
         public Task<ProviderResult<Unit>> ClosePullRequestAsync(PullRequestRef pullRequest, string? comment, CancellationToken cancellationToken) => inner.ClosePullRequestAsync(pullRequest, comment, cancellationToken);
         public Task<ProviderResult<PullRequestRef>> CreateRevertPullRequestAsync(PullRequestRef pullRequest, string key, CancellationToken cancellationToken) => inner.CreateRevertPullRequestAsync(pullRequest, key, cancellationToken);
         public Task<ProviderResult<CheckStatus>> GetCheckStatusAsync(RepoRef repo, string revision, CancellationToken cancellationToken) => inner.GetCheckStatusAsync(repo, revision, cancellationToken);
+
+        public Task<ProviderResult<CommentRef>> AddCommentAsync(PullRequestRef pullRequest, string body, string key, CancellationToken cancellationToken) =>
+            inner.AddCommentAsync(pullRequest, body, key, cancellationToken);
     }
 
     static (ActionWorld World, Func<RefusingCodeHost> Host) World(string fault, int failures)

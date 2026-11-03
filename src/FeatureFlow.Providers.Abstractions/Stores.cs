@@ -97,6 +97,81 @@ public sealed record QuestionRecord(
 /// <summary>Something that happened during an agent step: a hook call and its decision, a push, model usage. Appended.</summary>
 public sealed record AgentEventRecord(string StepKey, string Kind, string Detail, DateTimeOffset At);
 
+// The findings ledger (docs/01 section 6, docs/02 section 5): one FindingRecord per finding, holding its current state,
+// and its history as FindingEventRecords. A parent's view includes its descendants' ledgers, never the reverse.
+
+/// <summary>
+/// A finding in a run's ledger, written again whenever it changes; the last write wins. <see cref="FindingId"/> is
+/// <see cref="Fingerprints.LedgerId"/> of the run that first raised it; <see cref="Finding"/> is the report entry as last
+/// raised. <see cref="RaisedRevision"/> is the work branch head when it was raised or last reopened (<c>tests_added</c>
+/// compares against it); <see cref="StateRevision"/> the head when its state last changed (a re-raise compares the code
+/// at the fingerprint against it). <see cref="Fixes"/> counts moves to <c>fixed</c>, <see cref="Reraises"/> re-raises,
+/// <see cref="Reopens"/> re-raises that reopened it; <see cref="ReraisedUnchanged"/> is whether the latest re-raise found
+/// the code unchanged.
+/// </summary>
+public sealed record FindingRecord(
+    string RunId,
+    string FindingId,
+    string Fingerprint,
+    ReportedFinding Finding,
+    string Source,
+    string? Model,
+    string State,
+    string? RaisedRevision,
+    string? StateRevision,
+    int Reraises,
+    int Fixes,
+    int Reopens,
+    bool ReraisedUnchanged,
+    DateTimeOffset UpdatedAt);
+
+/// <summary>What a <see cref="FindingEventRecord"/> records.</summary>
+public static class FindingEventKinds
+{
+    public const string Raised = "raised";
+    public const string Reraised = "reraised";
+    public const string Reopened = "reopened";
+
+    /// <summary>A state change from a triage: <c>findings.triage</c>, or a person's decision.</summary>
+    public const string Triaged = "triaged";
+}
+
+/// <summary>
+/// One entry of a finding's history, appended: what happened, the state after it, who did it (a step, an external
+/// source, or the authenticated person, F8) and why, at which work branch revision, and for a re-raise whether the code
+/// at the fingerprint had changed since the state last changed. <see cref="Key"/> makes the append idempotent: one entry
+/// per run, finding and key, so a retried action adds nothing.
+/// </summary>
+public sealed record FindingEventRecord(
+    string RunId,
+    string FindingId,
+    string Key,
+    string Kind,
+    string State,
+    string Actor,
+    string? Reason,
+    string? StepId,
+    string? Revision,
+    bool? CodeChanged,
+    DateTimeOffset At);
+
+/// <summary>
+/// An artifact a run's step produced (the evidence index, docs/02 section 5): the step and execution, the name and
+/// declared type, the reference, the engine action that made it (null for an agent step or decision), and whether its
+/// type is marked evidence. One per run, step, execution and name, so a retried append adds nothing. A parent reads its
+/// completed children's here (a trace across children, docs/04 section 10.2).
+/// </summary>
+public sealed record ArtifactRecord(
+    string RunId,
+    string StepId,
+    int Execution,
+    string Name,
+    string? Type,
+    string Ref,
+    string? Action,
+    bool Evidence,
+    DateTimeOffset At);
+
 public sealed record RecordBatch(
     IReadOnlyList<RunRecord>? Runs = null,
     IReadOnlyList<WaitRecord>? Waits = null,
@@ -106,7 +181,10 @@ public sealed record RecordBatch(
     IReadOnlyList<AgentStepRecord>? AgentSteps = null,
     IReadOnlyList<ReportRecord>? Reports = null,
     IReadOnlyList<QuestionRecord>? Questions = null,
-    IReadOnlyList<AgentEventRecord>? AgentEvents = null);
+    IReadOnlyList<AgentEventRecord>? AgentEvents = null,
+    IReadOnlyList<FindingRecord>? Findings = null,
+    IReadOnlyList<FindingEventRecord>? FindingEvents = null,
+    IReadOnlyList<ArtifactRecord>? Artifacts = null);
 
 /// <summary>
 /// The record store (docs/06 section 3.12). Queries are named, not SQL; the catalogue is <see cref="Queries"/>.
@@ -153,4 +231,16 @@ public static class Queries
 
     /// <summary><see cref="AgentEventRecord"/>: a step's events in order, by <c>step_key</c>.</summary>
     public const string AgentEvents = "agent_events";
+
+    /// <summary>
+    /// <see cref="FindingRecord"/>: the ledger view of the run named by <c>run_id</c>: its findings and every descendant
+    /// run's (by <see cref="RunRecord.ParentRunId"/>), ordered by run id, then finding id.
+    /// </summary>
+    public const string Findings = "findings";
+
+    /// <summary><see cref="FindingEventRecord"/>: one finding's history in the order appended, by <c>run_id</c> (the finding's own run) and <c>finding_id</c>.</summary>
+    public const string FindingEvents = "finding_events";
+
+    /// <summary><see cref="ArtifactRecord"/>: the artifacts of the run named by <c>run_id</c> and of every descendant run, in the order appended.</summary>
+    public const string Artifacts = "artifacts";
 }
