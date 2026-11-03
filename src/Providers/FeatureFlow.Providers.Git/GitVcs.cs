@@ -7,8 +7,8 @@ namespace FeatureFlow.Providers.Git;
 
 /// <summary>
 /// The Git VCS provider (docs/06 section 3.3). The remote is reached from a cache of bare
-/// clones on the worker (docs/02 section 6), with a credential from the broker given to <c>git</c> in its
-/// environment, never in a command line or a URL. A working copy in a sandbox is reached through the sandbox
+/// clones on the worker (docs/02 section 6), in a folder of this process's own under the cache root,
+/// with a credential from the broker given to <c>git</c> in its environment, never in a command line or a URL. A working copy in a sandbox is reached through the sandbox
 /// provider; commits leave it as a bundle (LOG 34). Every push names the revision it expects the reference to
 /// have, so the remote refuses it if anything moved (<c>base_moved</c>).
 /// </summary>
@@ -22,13 +22,22 @@ public sealed class GitVcs(
     readonly ConcurrentDictionary<string, Credential> credentials = new();
     static readonly ConcurrentDictionary<string, SemaphoreSlim> Gates = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// This process's folder under the cache root: its id and a random suffix (process ids repeat across containers and
+    /// restarts), so no other process uses its clones and only the in-process gate per clone is needed (LOG 147).
+    /// </summary>
+    static readonly string ProcessFolder = $"p{Environment.ProcessId}-{Guid.NewGuid().ToString("N")[..8]}";
+
+    /// <summary>Where this process keeps its clones.</summary>
+    public string CacheFolder { get; } = Path.Combine(cache, ProcessFolder);
+
     public ProviderDescription Describe() => new("vcs", "git", "0.1.0", new VcsCapabilities("git", true, true, false));
 
     public async Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken)
     {
         if (EnsureCache() is { } broken)
             return new ProviderResult<Unit>(default, broken);
-        var version = await GitAsync(cache, ["--version"], null, cancellationToken);
+        var version = await GitAsync(CacheFolder, ["--version"], null, cancellationToken);
         return version.Ok && version.Value!.Exit == 0 ? ProviderResult<Unit>.Success(default) : ProviderResult<Unit>.Failure("unreachable", "git cannot be run on the worker");
     }
 
@@ -37,18 +46,18 @@ public sealed class GitVcs(
     {
         try
         {
-            Directory.CreateDirectory(cache);
+            Directory.CreateDirectory(CacheFolder);
             return null;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            return new ProviderError("internal_error", $"the clone cache {cache} cannot be created: {e.Message}");
+            return new ProviderError("internal_error", $"the clone cache {CacheFolder} cannot be created: {e.Message}");
         }
     }
 
     string UrlOf(RepoRef repo) => remoteTemplate.Replace("{repo}", repo.FullName, StringComparison.Ordinal);
 
-    string CacheOf(RepoRef repo) => Path.Combine(cache, repo.FullName.Replace('/', '_') + ".git");
+    string CacheOf(RepoRef repo) => Path.Combine(CacheFolder, repo.FullName.Replace('/', '_') + ".git");
 
     public Task<ProviderResult<string?>> ResolveAsync(RepoRef repo, string reference, CancellationToken cancellationToken) =>
         WithFreshCredentialOnFaultAsync(fresh => ResolveOnceAsync(repo, reference, fresh, cancellationToken));
@@ -61,7 +70,7 @@ public sealed class GitVcs(
             return new ProviderResult<string?>(null, env.Error);
         if (EnsureCache() is { } broken)
             return new ProviderResult<string?>(null, broken);
-        var run = await GitAsync(cache, ["ls-remote", UrlOf(repo), reference], env.Value, cancellationToken);
+        var run = await GitAsync(CacheFolder, ["ls-remote", UrlOf(repo), reference], env.Value, cancellationToken);
         if (Failed(run, "read the remote") is { } failed)
             return new ProviderResult<string?>(null, failed);
         var line = run.Value!.Output.Split('\n').FirstOrDefault(l => l.EndsWith("\t" + reference, StringComparison.Ordinal));
@@ -422,10 +431,9 @@ public sealed class GitVcs(
         || text.Contains("fetch first", StringComparison.Ordinal) || text.Contains("cannot lock ref", StringComparison.Ordinal);
 
     /// <summary>
-    /// Runs <paramref name="work"/> on the repository's cached bare clone, one operation at a time per cache, across
-    /// instances (a static gate per path) and processes (an exclusive lock file beside the cache), because the default
-    /// cache is shared by every worker on a host. Each operation gets its own scratch references under
-    /// <c>refs/ff-cache/op/&lt;guid&gt;</c>, deleted afterwards.
+    /// Runs <paramref name="work"/> on the repository's cached bare clone, one operation at a time per clone (a static
+    /// gate per path: the clones are this process's own, <see cref="CacheFolder"/>). Each operation gets its own scratch
+    /// references under <c>refs/ff-cache/op/&lt;guid&gt;</c>, deleted afterwards.
     /// </summary>
     Task<ProviderResult<T>> WithCacheAsync<T>(RepoRef repo, Func<string, IReadOnlyDictionary<string, string>, string, Task<ProviderResult<T>>> work, bool write,
         CancellationToken cancellationToken) =>
@@ -456,7 +464,6 @@ public sealed class GitVcs(
         {
             if (EnsureCache() is { } broken)
                 return new ProviderResult<T>(default, broken);
-            await using var held = await LockFileAsync(dir + ".lock", cancellationToken);
             // GIT_DIR names the bare clone explicitly, so git works where safe.bareRepository is "explicit".
             var withDir = new Dictionary<string, string>(env.Value!) { ["GIT_DIR"] = dir };
             if (!Directory.Exists(Path.Combine(dir, "objects")))
@@ -485,28 +492,11 @@ public sealed class GitVcs(
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            return ProviderResult<T>.Failure("internal_error", $"the clone cache's lock failed: {e.Message}");
+            return ProviderResult<T>.Failure("internal_error", $"the clone cache failed: {e.Message}");
         }
         finally
         {
             gate.Release();
-        }
-    }
-
-    /// <summary>An exclusive lock on <paramref name="path"/>, held until disposed; another process holding it is waited for.</summary>
-    static async Task<FileStream> LockFileAsync(string path, CancellationToken cancellationToken)
-    {
-        while (true)
-        {
-            try
-            {
-                return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-            }
-            // Held by another process; a missing folder or bad path is not worth waiting for.
-            catch (IOException e) when (e is not (DirectoryNotFoundException or PathTooLongException or FileNotFoundException))
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken);
-            }
         }
     }
 
@@ -611,7 +601,7 @@ public sealed class GitVcs(
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            // Review R6: a hung git must not hold the cache's lock for ever.
+            // Review R6: a hung git must not hold the clone's gate for ever.
             Kill(process);
             return ProviderResult<GitRun>.Failure("timeout", $"git {arguments.FirstOrDefault()} did not finish in {limit.TotalSeconds:F0} s");
         }
@@ -649,7 +639,7 @@ public sealed class GitVcs(
 
     /// <summary>
     /// How long one git command may run before it is killed and the operation fails with <c>timeout</c>
-    /// (infrastructure), so its cache lock is released. Set it under the activity's timeout.
+    /// (infrastructure), so its clone's gate is released. Set it under the activity's timeout.
     /// </summary>
     public TimeSpan CommandTimeout { get; init; } = DefaultCommandTimeout;
 
