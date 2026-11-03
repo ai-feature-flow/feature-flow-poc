@@ -124,6 +124,17 @@ Counts after the round: Git provider tests 35, GitHub default tests 98, default 
 succeeded, its TRX read; the retried trigger adopted run 41549367436; pull request 57 reverted an engine-style squash of
 pull request 55. Afterwards the fixture had only `main` (`5dd0108`) and another builder's pull request 50.
 
+### Coordinator decisions, second round (2026-11-03)
+
+| Decision | What was done | Test and control |
+|---|---|---|
+| LOG 110: add `ReviewRulesKnown` to `BranchProtection` (approved additive change) | `bool ReviewRulesKnown = true`; the GitHub provider sets it false when the branch has classic protection (`protection.enabled`), whose review rules need administration. The fake keeps the default | Classic protection reports unknown; always-true fails it |
+| LOG 112: default-branch dispatch, run id from `return_run_details`, run-name search after a lost answer | Already dispatching on the default branch without tags; a claim with no run recorded now polls for 15 s for a dispatched run whose `run-name` carries the key, records and adopts it, then dispatches again. Results tie to the revision through `CiRunRef.Revision`; `ci.checks` reads push and pull-request runs, which report on the revision | Adoption by run-name; dispatch again when none; no search or a substring match fails the adoption test |
+| Fixture pull request 33 (`run-name` with the key) may be merged once green | Reopened. It has no checks, and `main`'s ruleset requires one approving review with no bypass, so it awaits a person | |
+
+Live run 6, after these: **19 passed** in 3 min 16 s (CI run 41552464251 succeeded with its TRX read; the retry adopted
+41552570629; pull request 68 reverted a squash of 66). Default suite 562 passed.
+
 ### Open questions
 
 1. `BranchProtection` "unknown" review rules: see the proposal in the providers report.
