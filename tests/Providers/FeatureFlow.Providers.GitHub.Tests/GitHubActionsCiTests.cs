@@ -23,7 +23,7 @@ public sealed class GitHubActionsCiTests : IDisposable
     public GitHubActionsCiTests()
     {
         store = new FileSystemArtifactStore(folder);
-        ci = new GitHubActionsCi(github.Api(), () => store);
+        ci = new GitHubActionsCi(github.Api(), () => store) { LostAnswerWindow = TimeSpan.FromMilliseconds(30), LostAnswerInterval = TimeSpan.FromMilliseconds(10) };
     }
 
     public void Dispose()
@@ -99,10 +99,26 @@ public sealed class GitHubActionsCiTests : IDisposable
     }
 
     [Fact]
-    public async Task A_claim_with_no_run_recorded_dispatches_again()
+    public async Task A_claim_with_no_run_recorded_adopts_the_run_whose_run_name_carries_the_key()
     {
-        // The dispatch's answer was lost before the run was recorded: the narrow case that can start a second run.
-        github.On(Get, $"~/git/ref/feature-flow/ci/{Claim}", 200, $$$"""{"object":{"type":"commit","sha":"{{{Sha}}}"}}""");
+        // The dispatch's answer was lost before the run was recorded; the workflow shows the key in its run-name.
+        github.On(Get, $"~/git/ref/feature-flow/ci/{Claim}", 200, $$$"""{"object":{"type":"commit","sha":"{{{Sha}}}"}}""")
+            .On(Post, "~/git/refs", 422, """{"message":"Reference already exists"}""")
+            .On(Get, "~/actions/workflows/unit.yml/runs?event=workflow_dispatch&branch=main", 200,
+                """{"workflow_runs":[{"id":41,"display_title":"ff-contract key-10"},{"id":42,"display_title":"ff-contract key-1","html_url":"https://x/42"}]}""");
+        Dispatchable();
+
+        Assert.Equal(new CiRunRef(Repo, "42", Sha, "https://x/42"), (await ci.TriggerAsync(Repo, Unit, Sha, "key-1", Ct)).Unwrap());
+        Assert.Empty(github.Called(Post, "~/actions/workflows/unit.yml/dispatches"));
+        Assert.Single(github.Called(Post, "~/git/tags"));
+    }
+
+    [Fact]
+    public async Task A_claim_with_no_run_recorded_dispatches_again_when_no_run_carries_the_key()
+    {
+        // The rare worst case: a duplicate run, which is harmless.
+        github.On(Get, $"~/git/ref/feature-flow/ci/{Claim}", 200, $$$"""{"object":{"type":"commit","sha":"{{{Sha}}}"}}""")
+            .On(Get, "~/actions/workflows/unit.yml/runs?event=workflow_dispatch&branch=main", 200, """{"workflow_runs":[{"id":41,"display_title":"unit"}]}""");
         var posts = 0;
         github.On(Post, "~/git/refs", _ => new HttpResponseMessage(posts++ == 0 ? System.Net.HttpStatusCode.UnprocessableEntity : System.Net.HttpStatusCode.Created)
             { Content = new StringContent("""{"message":"Reference already exists"}""") });

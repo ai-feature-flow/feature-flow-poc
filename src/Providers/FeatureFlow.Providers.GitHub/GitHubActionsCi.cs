@@ -81,6 +81,19 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
         if (declared.Value!.Contains("idempotency_key"))
             inputs["idempotency_key"] = key;
 
+        // A claim with no run recorded: an earlier dispatch's answer was lost. Look for its run by the key in its run-name
+        // before dispatching again (coordinator decision on LOG 112); a duplicate run is harmless, a missed one is not.
+        if (!created.Ok)
+        {
+            var lost = await FindByRunNameAsync(repo, job.Workflow, defaultBranch, key, revision, cancellationToken);
+            if (lost is not null)
+            {
+                if (lost.Ok)
+                    await RecordAsync(repo, claim, lost.Value!, cancellationToken);
+                return lost;
+            }
+        }
+
         var dispatched = await Send(repo, HttpMethod.Post, $"/actions/workflows/{GitHubApi.Escape(job.Workflow)}/dispatches",
             new Dictionary<string, object> { ["ref"] = defaultBranch, ["inputs"] = inputs, ["return_run_details"] = true }, cancellationToken);
         if (!dispatched.Ok)
@@ -120,6 +133,39 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
             return ProviderResult<CiRunRef>.Failure("unexpected_response", $"the claim for key {key} records no run");
         var parts = recorded[RunMessage.Length..].Split(' ', 2);
         return ProviderResult<CiRunRef>.Success(new CiRunRef(repo, parts[0], revision, parts.Length > 1 ? parts[1] : null));
+    }
+
+    /// <summary>How long a retry after a lost answer looks for the run by its run-name, and how often.</summary>
+    public TimeSpan LostAnswerWindow { get; init; } = TimeSpan.FromSeconds(15);
+
+    public TimeSpan LostAnswerInterval { get; init; } = TimeSpan.FromSeconds(3);
+
+    /// <summary>
+    /// A dispatched run of the workflow on the default branch whose <c>run-name</c> carries the key as a word (the
+    /// workflow shows <c>inputs.idempotency_key</c> there), polled for <see cref="LostAnswerWindow"/> because the run list
+    /// lags a dispatch by seconds. Null when none appears.
+    /// </summary>
+    async Task<ProviderResult<CiRunRef>?> FindByRunNameAsync(RepoRef repo, string workflow, string defaultBranch, string key, string revision,
+        CancellationToken cancellationToken)
+    {
+        var deadline = DateTimeOffset.UtcNow + LostAnswerWindow;
+        while (true)
+        {
+            var runs = await Send(repo, HttpMethod.Get,
+                $"/actions/workflows/{GitHubApi.Escape(workflow)}/runs?event=workflow_dispatch&branch={GitHubApi.Escape(defaultBranch)}&per_page=50", null, cancellationToken);
+            if (!runs.Ok)
+                return new ProviderResult<CiRunRef>(null, runs.Error);
+            if (runs.Value!.Code != 200)
+                return GitHubApi.Unexpected<CiRunRef>(runs.Value, "GET the workflow's runs");
+            var found = (runs.Value.Json?["workflow_runs"] as JsonArray ?? [])
+                .FirstOrDefault(r => (r?["display_title"]?.GetValue<string>() ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains(key));
+            if (found is not null)
+                return ProviderResult<CiRunRef>.Success(new CiRunRef(repo, found["id"]!.GetValue<long>().ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    revision, found["html_url"]?.GetValue<string>()));
+            if (DateTimeOffset.UtcNow >= deadline)
+                return null;
+            await Task.Delay(LostAnswerInterval, cancellationToken);
+        }
     }
 
     async Task RecordAsync(RepoRef repo, string claim, CiRunRef run, CancellationToken cancellationToken)
