@@ -38,7 +38,8 @@ public sealed class ActionWorld : IAsyncDisposable
     /// <summary>Executions per step id, so a step run again is a new execution with its own records.</summary>
     readonly Dictionary<string, int> executions = new(StringComparer.Ordinal);
 
-    public ActionWorld(IReadOnlyDictionary<string, string>? files = null, bool sandbox = true, bool ci = true, bool throwingCodeHost = false, Func<Exception>? codeHostThrows = null)
+    public ActionWorld(IReadOnlyDictionary<string, string>? files = null, bool sandbox = true, bool ci = true, bool throwingCodeHost = false, Func<Exception>? codeHostThrows = null,
+        Func<ICodeHostProvider, ICodeHostProvider>? codeHost = null)
     {
         Directory.CreateDirectory(folder);
         Repo = Forge.CreateRepository("acme/api", files ?? new Dictionary<string, string> { ["README.md"] = "# api\n" });
@@ -50,7 +51,7 @@ public sealed class ActionWorld : IAsyncDisposable
             ["vcs"] = One(new InMemoryVcs(Forge)),
             ["code_host"] = One(throwingCodeHost || codeHostThrows is not null
                 ? new ThrowingCodeHost(new InMemoryCodeHost(Forge), codeHostThrows ?? (() => new InvalidOperationException("a bug")))
-                : new InMemoryCodeHost(Forge)),
+                : codeHost?.Invoke(new InMemoryCodeHost(Forge)) ?? new InMemoryCodeHost(Forge)),
             ["artifact_store"] = One(Store),
             ["record_store"] = One(Records),
         };
@@ -59,7 +60,10 @@ public sealed class ActionWorld : IAsyncDisposable
         if (sandbox)
             instances["sandbox"] = One(Sandbox);
         var providers = new ProviderSet(instances, instances.Keys.ToDictionary(k => k, _ => "one"), new Dictionary<string, string>());
-        Actions = new EngineActions(providers, new ActionOptions(TimeSpan.FromMilliseconds(5), TimeSpan.FromMilliseconds(5), TimeSpan.FromSeconds(30)));
+        Actions = new EngineActions(providers, new ActionOptions(TimeSpan.FromMilliseconds(5), TimeSpan.FromMilliseconds(5), TimeSpan.FromSeconds(30))
+        {
+            AuthRetry = TimeSpan.FromMilliseconds(1),
+        });
     }
 
     static IReadOnlyDictionary<string, IProvider> One(IProvider provider) => new Dictionary<string, IProvider> { ["one"] = provider };

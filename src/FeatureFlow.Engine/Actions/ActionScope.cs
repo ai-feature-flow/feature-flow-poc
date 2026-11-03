@@ -48,4 +48,8 @@ public sealed record ActionResult(string Kind, StepReport? Report, string? Reaso
 }
 
 /// <summary>An infrastructure failure inside an action: the activity is retried and no attempt is used (docs/01 section 4).</summary>
-public sealed class ActionInfrastructureException(string message) : Exception(message);
+public sealed class ActionInfrastructureException(string message, string? reason = null) : Exception(message)
+{
+    /// <summary>The provider error's reason (docs/06 section 1.1), when one caused it.</summary>
+    public string? Reason { get; } = reason;
+}

@@ -36,9 +36,15 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
 
     /// <summary>
     /// Runs one action. Step-start check 31 comes first: inputs that do not satisfy the action's contract stop the step
-    /// for a person. <paramref name="heartbeat"/> is called while the action polls.
+    /// for a person. <paramref name="heartbeat"/> is called while the action polls. A credential the remote refuses
+    /// (<c>unauthenticated</c>, <c>forbidden</c>) gets a short budget of tries, then the step stops for a person
+    /// (<see cref="ConfigurationFaults"/>); every other infrastructure error is thrown for Temporal to retry.
     /// </summary>
-    public async Task<ActionResult> RunAsync(StepCall call, ActionScope scope, Action heartbeat, CancellationToken cancellationToken)
+    public Task<ActionResult> RunAsync(StepCall call, ActionScope scope, Action heartbeat, CancellationToken cancellationToken) =>
+        ConfigurationFaults.WithBudgetAsync(() => RunOnceAsync(call, scope, heartbeat, cancellationToken), options.AuthRetry, heartbeat,
+            message => ActionResult.CannotAnswer($"{call.What}: {message}", []), cancellationToken);
+
+    async Task<ActionResult> RunOnceAsync(StepCall call, ActionScope scope, Action heartbeat, CancellationToken cancellationToken)
     {
         var run = new ActionRun(this, call, scope, heartbeat, cancellationToken);
         var inputs = call.Inputs.ToDictionary(kv => kv.Key, kv => YamlWriter.ReadPlain(kv.Value), StringComparer.Ordinal);
@@ -87,7 +93,12 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
     /// commits (LOG 96). A step that never touched a repository resets nothing. A work error (a refused push) is
     /// returned, so the run asks a person; only infrastructure errors are thrown, to be retried.
     /// </summary>
-    public async Task<CleanUpResult> CleanUpAsync(string runId, string stepId, int executions, IReadOnlyList<string> repositories, string workBranch,
+    public Task<CleanUpResult> CleanUpAsync(string runId, string stepId, int executions, IReadOnlyList<string> repositories, string workBranch,
+        IReadOnlyList<string> stepIds, CancellationToken ct) =>
+        ConfigurationFaults.WithBudgetAsync(() => CleanUpOnceAsync(runId, stepId, executions, repositories, workBranch, stepIds, ct), options.AuthRetry, () => { },
+            message => new CleanUpResult([], $"clean_up: {message}"), ct);
+
+    async Task<CleanUpResult> CleanUpOnceAsync(string runId, string stepId, int executions, IReadOnlyList<string> repositories, string workBranch,
         IReadOnlyList<string> stepIds, CancellationToken ct)
     {
         var events = new List<string>();
@@ -163,7 +174,7 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
             return result.Value!;
         var error = result.Error!;
         if (error.Class == ProviderErrorClass.Infrastructure)
-            throw new ActionInfrastructureException($"{what}: {error.Reason}: {error.Message}");
+            throw new ActionInfrastructureException($"{what}: {error.Reason}: {error.Message}", error.Reason);
         throw new ActionStop(error.Reason == "cannot_answer" ? StepOutcome.CannotAnswer : StepOutcome.WorkFailed, $"{what}: {error.Reason}: {error.Message}");
     }
 
@@ -178,6 +189,9 @@ public sealed record CleanUpResult(IReadOnlyList<string> Events, string? Error);
 /// <summary>How often actions poll, and their default limits. Tests shorten them.</summary>
 public sealed record ActionOptions(TimeSpan PollInterval, TimeSpan CiPollInterval, TimeSpan CommandTimeout)
 {
+    /// <summary>The first wait of the configuration-fault budget; each later one doubles (<see cref="ConfigurationFaults"/>).</summary>
+    public TimeSpan AuthRetry { get; init; } = ConfigurationFaults.FirstDelay;
+
     public static readonly ActionOptions Default = new(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(15), TimeSpan.FromMinutes(30));
 }
 

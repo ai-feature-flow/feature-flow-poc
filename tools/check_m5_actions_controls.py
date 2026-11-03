@@ -31,6 +31,7 @@ AGENT_ACTIVITY = "src/FeatureFlow.Engine.Agent/AgentActivities.cs"
 CORE = "src/FeatureFlow.Interpreter/RunCore.cs"
 RECOVERY = "src/FeatureFlow.Interpreter/Recovery.cs"
 VALIDATOR = "src/FeatureFlow.Validation/PlanValidator.cs"
+FAULTS = "src/FeatureFlow.Engine/Actions/ConfigurationFaults.cs"
 
 ENGINE = "tests/FeatureFlow.Engine.Tests"
 AGENT = "tests/FeatureFlow.Engine.Agent.Tests"
@@ -393,6 +394,20 @@ CONTROLS = [
         "expect": ["S1_three_tickets_forced_to_collide_all_merge_through_the_engine_and_none_is_lost"],
     },
     # Added for the budget of forbidden and unauthenticated (docs/06 section 1.1).
+    {
+        "name": "configuration faults: a refused credential has no budget and is retried for ever",
+        "edits": [(FAULTS, 'public static bool Is(string? reason) => reason is "unauthenticated" or "forbidden";', 'public static bool Is(string? reason) => reason is "never a reason";')],
+        "tests": [(ENGINE, None)],
+        "expect": [("A_refused_credential_gets_a_short_budget_then_stops_the_step_for_a_person", 2),
+                   "A_clean_up_whose_credential_is_refused_stops_for_a_person_after_the_budget",
+                   ("A_refused_credential_at_run_start_fails_the_start_naming_the_configuration_fault_once_its_budget_is_spent", 3)],
+    },
+    {
+        "name": "configuration faults: the step stops at the first refusal, with no retry",
+        "edits": [(FAULTS, "                if (tries >= Tries)\n                    return exhausted", "                if (tries >= 1)\n                    return exhausted")],
+        "tests": [(ENGINE, None)],
+        "expect": ["A_refused_credential_that_recovers_within_the_budget_does_not_stop_the_step"],
+    },
 ]
 
 

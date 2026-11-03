@@ -35,7 +35,7 @@ Signatures are C#, abbreviated: every method is async, takes a
 | `unreachable`, `server_error`, `internal_error` | Infrastructure | Yes, with backoff | The remote or the network failed; the work did not happen |
 | `timeout` | Infrastructure | Yes | The work **may** have happened: creates find by marker first |
 | `rate_limited` | Infrastructure | Yes, honouring `retry_after` | — |
-| `unauthenticated`, `forbidden` | Infrastructure | A short budget, then the run stops with an intervention naming the configuration fault | Almost always configuration |
+| `unauthenticated`, `forbidden` | Infrastructure | A short budget, then the run stops with an intervention naming the configuration fault. The budget is 5 tries, waiting 1, 2, 4 and 8 s, within one activity attempt; at run start a spent budget refuses the start (LOG 144) | Almost always configuration |
 | `not_found`, `conflict`, `validation_failed`, `rejected` | Work | No | The remote answered; the step maps it to an outcome or an intervention. A permission the provider's identity lacks (GitHub's 403 "Resource not accessible by integration") is `rejected`, named a configuration fault: it does not heal, so it stops for a person at once (LOG 119) |
 | `base_moved` | Work | No | A push was refused because the target moved since it was read |
 | `capability_missing` | Work | No | — |

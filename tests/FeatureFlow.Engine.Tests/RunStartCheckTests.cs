@@ -1,3 +1,4 @@
+using FeatureFlow.Engine.ActionSteps;
 using FeatureFlow.Interpreter;
 using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Library;
@@ -36,7 +37,7 @@ public sealed class RunStartCheckTests
     }
 
     static async Task<DiagnosticBag> CheckAsync(Setup s, bool? engineCanMerge, IReadOnlyList<string>? engineMayMerge = null, string? parentBranch = null,
-        string template = "std:templates/ticket_delivery")
+        string template = "std:templates/ticket_delivery", Func<ICodeHostProvider, ICodeHostProvider>? codeHost = null)
     {
         var d = new DiagnosticBag();
         var libraries = new LibrarySet(Library.Library.Open(StdRoot, d)!,
@@ -51,8 +52,33 @@ public sealed class RunStartCheckTests
             ParentBranch: parentBranch);
         var policy = new RunPolicy(3, 10, 200, null, null, [], EngineMayMerge: engineMayMerge ?? []);
         var checks = new DiagnosticBag();
-        await RunActivities.RepositoryChecksAsync(new InMemoryCodeHost(s.Forge), core!, start, libraries, policy, checks, TestContext.Current.CancellationToken);
+        var host = new InMemoryCodeHost(s.Forge);
+        await RunActivities.RepositoryChecksAsync(codeHost?.Invoke(host) ?? host, core!, start, libraries, policy, checks, TestContext.Current.CancellationToken,
+            TimeSpan.FromMilliseconds(1));
         return checks;
+    }
+
+    [Theory]
+    [InlineData("unauthenticated", int.MaxValue, true)]
+    [InlineData("forbidden", int.MaxValue, true)]
+    [InlineData("forbidden", ConfigurationFaults.Tries - 1, false)]
+    public async Task A_refused_credential_at_run_start_fails_the_start_naming_the_configuration_fault_once_its_budget_is_spent(string fault, int failures, bool refused)
+    {
+        ConfigurationFaultTests.RefusingCodeHost? host = null;
+        var checks = await CheckAsync(Setup.Protected(), engineCanMerge: false, codeHost: inner => host = new ConfigurationFaultTests.RefusingCodeHost(inner, fault, failures));
+
+        Assert.Equal(refused, checks.Any(x => x.Blocks && x.Message.Contains("configuration fault", StringComparison.Ordinal) && x.Message.Contains(fault, StringComparison.Ordinal)));
+        Assert.Equal(refused, checks.Any(x => x.Blocks));
+        Assert.Equal(ConfigurationFaults.Tries, host!.Calls);
+    }
+
+    [Fact]
+    public async Task Another_infrastructure_error_at_run_start_is_retried_by_Temporal_without_a_budget()
+    {
+        ConfigurationFaultTests.RefusingCodeHost? host = null;
+        await Assert.ThrowsAsync<Temporalio.Exceptions.ApplicationFailureException>(() =>
+            CheckAsync(Setup.Protected(), engineCanMerge: false, codeHost: inner => host = new ConfigurationFaultTests.RefusingCodeHost(inner, "unreachable", int.MaxValue)));
+        Assert.Equal(1, host!.Calls);
     }
 
     [Fact]

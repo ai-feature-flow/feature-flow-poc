@@ -81,13 +81,18 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
     /// needs the organisation's leave for that repository. The default branch is read from the code host, never the plan.
     /// </summary>
     public static async Task<IReadOnlyDictionary<string, string>> RepositoryChecksAsync(ICodeHostProvider host, RunCore core, RunStart start, LibrarySet libraries, RunPolicy policy, DiagnosticBag d,
-        CancellationToken ct)
+        CancellationToken ct, TimeSpan? authRetry = null)
     {
+        // A refused credential gets a short budget, then fails the run's start naming the fault (docs/06 section 1.1).
+        Task<ProviderResult<T>> Read<T>(Func<Task<ProviderResult<T>>> read) =>
+            ConfigurationFaults.ReadAsync(read, authRetry ?? ConfigurationFaults.FirstDelay,
+                () => { if (ActivityExecutionContext.HasCurrent) ActivityExecutionContext.Current.Heartbeat(); }, ct);
+
         var defaults = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var name in start.Repositories)
         {
             var repo = new RepoRef(name);
-            var branch = await host.GetDefaultBranchAsync(repo, ct);
+            var branch = await Read(() => host.GetDefaultBranchAsync(repo, ct));
             if (Readable(branch, $"{name}: the default branch", Checks.BranchProtection, d) is not { } defaultBranch)
                 continue;
             defaults[name] = defaultBranch;
@@ -96,9 +101,9 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
             var work = core.WorkBranch();
             if (work == defaultBranch || work == start.ParentBranch)
                 d.Add(Checks.WorkBranch, $"{name}: the run's work branch '{work}' is its {(work == defaultBranch ? "default" : "parent")} branch; the engine writes only to a branch of its own (metadata.branch_pattern)");
-            if (Readable(await host.GetBranchProtectionAsync(repo, defaultBranch, ct), $"{name}: the protection of {defaultBranch}", Checks.BranchProtection, d) is { } protection)
+            if (Readable(await Read(() => host.GetBranchProtectionAsync(repo, defaultBranch, ct)), $"{name}: the protection of {defaultBranch}", Checks.BranchProtection, d) is { } protection)
                 RunStartChecks.BranchProtection(name, defaultBranch, protection.Protected, d, protection.ReviewRulesKnown);
-            if (Readable(await host.ReadFileAsync(repo, RepositoryManifest.FileName, defaultBranch, ct), $"{name}: {RepositoryManifest.FileName}",
+            if (Readable(await Read(() => host.ReadFileAsync(repo, RepositoryManifest.FileName, defaultBranch, ct)), $"{name}: {RepositoryManifest.FileName}",
                     Checks.RepositoryLibraryAddsOnly, d) is { } file)
             {
                 var parsed = new DiagnosticBag();
@@ -141,11 +146,20 @@ public sealed class RunActivities(EngineServices services, ITemporalClient? clie
         return defaults;
     }
 
-    /// <summary>A code host read's value; an infrastructure error is retried, any other is a blocking diagnostic of the check that needed it.</summary>
+    /// <summary>
+    /// A code host read's value. An infrastructure error is retried, except a configuration fault whose budget is spent;
+    /// that, and any work error, is a blocking diagnostic of the check that needed it.
+    /// </summary>
     static T? Readable<T>(ProviderResult<T> result, string what, int check, DiagnosticBag d)
     {
         if (result.Ok)
             return result.Value;
+        if (ConfigurationFaults.Is(result.Error))
+        {
+            d.Add(check, $"{what} cannot be read: {ConfigurationFaults.Describe($"{result.Error!.Reason}: {result.Error.Message}")}");
+            return default;
+        }
+
         if (result.Error!.Class == ProviderErrorClass.Infrastructure)
             throw new ApplicationFailureException($"{what}: {result.Error.Reason}: {result.Error.Message}", errorType: "infrastructure");
         d.Add(check, $"{what} cannot be read: {result.Error.Reason}: {result.Error.Message}");
