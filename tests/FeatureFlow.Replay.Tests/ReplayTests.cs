@@ -23,7 +23,7 @@ public class ReplayTests
     public void The_recorded_histories_are_there()
     {
         // Without this, a missing folder would leave the theory with no cases and nothing replayed.
-        Assert.Equal(["agent_question", "budget_middle", "delivery_tracked", "epic_delivery", "epic_delivery_child", "family_child", "family_parent", "project_session", "project_session_pre_m7",
+        Assert.Equal(["agent_question", "budget_middle", "decision_prompt", "delivery_tracked", "epic_delivery", "epic_delivery_child", "family_child", "family_parent", "project_session", "project_session_pre_m7",
                 "silent_parent_resumed", "sp1_parent", "sp1_parent_resumed", "steering_line", "steering_rerun_branch", "ticket_clean_up", "ticket_delivery", "wait_hand_over", "wait_hand_over_resumed", "wake"],
             Names());
     }
@@ -50,6 +50,13 @@ public class ReplayTests
         Assert.Contains(RunWorkflow.ChildWatchPatch, Markers("family_parent"));
         Assert.Contains(RunWorkflow.ChildInputsPatch, Markers("family_child"));
         Assert.Contains(RunWorkflow.ChildWatchPatch, Markers("silent_parent_resumed"));
+    }
+
+    [Fact]
+    public void A_history_holds_the_M7_decision_prompt_patch_marker()
+    {
+        // A decision's wait recording its rendered prompt (M7 integration): without it, a change to that path would replay green.
+        Assert.Contains(RunWorkflow.DecisionPromptPatch, Markers("decision_prompt"));
     }
 
     [Fact]

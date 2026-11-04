@@ -1348,7 +1348,25 @@ public partial class RunWorkflow
             WaitKind.Breakpoint => ($"{level}.breakpoint", new List<string> { "continue", "retry", "go_to", "replan", "grant_attempts", "end" }),
             _ => ($"{level}.escalation", new List<string> { "retry", "go_to", "replan", "grant_attempts", "end" }),
         };
-        return new WaitRecord(input.RunId, wait.Id, wait.Kind.ToString().ToLowerInvariant(), wait.StepId, type, wait.Reason, choices, open, now);
+        return new WaitRecord(input.RunId, wait.Id, wait.Kind.ToString().ToLowerInvariant(), wait.StepId, type, ReasonOf(wait, step), choices, open, now);
+    }
+
+    /// <summary>The patch marker of a decision's wait recording its rendered prompt as the reason (M7 integration), so Slack and the console show the question.</summary>
+    public const string DecisionPromptPatch = "m7-decision-prompt";
+
+    /// <summary>A decision's rendered prompt, else the core's reason; histories recorded before the marker keep the core's.</summary>
+    string ReasonOf(OpenWait wait, Step? step)
+    {
+        if (wait.Kind != WaitKind.Decision || step?.Decision?.Prompt is not { Unbound: false } prompt || !Workflow.Patched(DecisionPromptPatch))
+            return wait.Reason;
+        try
+        {
+            return core!.RenderPrompt(step.Id, prompt.Text) is { Length: > 0 } text ? text : wait.Reason;
+        }
+        catch (EvaluationException)
+        {
+            return wait.Reason;
+        }
     }
 
     async Task<string> RefuseAsync(IReadOnlyList<string> errors)
