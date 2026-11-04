@@ -296,9 +296,7 @@ Recorded in `docs/LOG.md`; approved by the product owner, 2026-11-01.
 
 ## 8. Open questions
 
-| # | Question | Recommendation |
-|---|---|---|
-| 4 | Which object store and which container platform does the first team deployment use? `docs/07` allows S3 or Azure Blob, and Kubernetes | Build only the one the first adopter needs, in M8. Deferred by the product owner, 2026-11-01, to be revisited |
+None open.
 
 ### Answered
 
@@ -310,3 +308,4 @@ Product owner, 2026-11-01.
 | 2 | How is code work reviewed and where does CI run? May CI hold a model credential and the GitHub App key for the live tests? | Pull requests with required CI on GitHub Actions from M0. Live tests are a separate category, run locally at first, and enabled in CI when the secrets are available, possibly as an optional or separate workflow (section 4.1) |
 | 3 | LOG 62 to 65, the formats chosen while writing std, are unreviewed and M1 implements them. Review before M1 finishes? | Accepted: LOG 62 to 65 approved |
 | 5 | Is a web console in version 1? No document designs one | Yes: a minimal console in M7 |
+| 4 | Which object store and which container platform does the first team deployment use? `docs/07` allows S3 or Azure Blob, and Kubernetes | Product owner, 2026-11-05 (LOG 266). First adopters are a solo developer, then a team on AWS. M8 builds one object store provider on the S3 API (AWS S3, and MinIO for tests and local clusters), and proves the team profile on a local k3d cluster with Postgres, MinIO and Temporal in the cluster. A cloud cluster is later configuration and deployment notes, not engine work |

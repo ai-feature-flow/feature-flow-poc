@@ -119,8 +119,10 @@ is already a check above.
 
 Replay works: Spike 1's nine recorded histories replay cleanly, and removing a
 version guard from Spike 3's interpreter change made a Spike 1 history fail
-replay (`archive/docs/15` section 7; `archive/docs/18` section 4). Every
-behaviour change to the interpreter is versioned with a Temporal patch marker.
+replay (`archive/docs/15` section 7; `archive/docs/18` section 4). From version
+1, every behaviour change to the interpreter is versioned with a Temporal patch
+marker. Before version 1 there is no backward compatibility (LOG 263): a change
+that breaks a recorded history re-records it instead of adding a marker.
 Recorded histories hold references and the run's library text, which is not
 secret (LOG 83). They pass a secret scan before they are committed.
 
