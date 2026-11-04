@@ -60,6 +60,8 @@ public class SurfacesTests
             Organisation = c.Organisation with
             {
                 Notifications = new NotificationsConfig(NotificationEvents.All.ToDictionary(e => e, _ => new NotificationRoute("#ff")), NotificationEvents.All),
+                // The harness's rule leaves from_chat at its default, false; this test's decision may be answered from chat.
+                Policy = c.Organisation.Policy with { Approval = c.Organisation.Policy.Approval.Select(r => r with { FromChat = true }).ToList() },
             },
         };
 
