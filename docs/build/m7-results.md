@@ -1,5 +1,30 @@
 # M7 results: people, policy and steering
 
+## Summary
+
+M7 is done. People now steer runs, answer through Slack, a console or their own machine, and policy says who may do what.
+
+- **Done-when 1:** every run-time override key (docs/05 section 5) has a test showing a role that may and one that may
+  not use it, and each protected or beyond-ceiling variant has one too. A test reads those rows and compares them with
+  the catalogue (`Model.Overrides`), so a new key without a test fails.
+- **Done-when 2 (live):** a person ran `project_delivery`'s requirements session on their machine and submitted
+  (`run-5a6000bc7f32`, `feature-flow-example`). The person was a second identity on its own API host. The run went on
+  past the session with the person recorded as the actor; the run's starter was refused.
+- **Verified-by:**
+  - a request naming another actor in its body is recorded with the authenticated one;
+  - a pre-submit check and the later step receive the same task, tools, model and commit (equal digests, live too).
+- **The three items M6 asked M7 to take first** are built: report-time artifact checks with correction turns (LOG 246);
+  a person triaging findings through a decision (LOG 248); re-running a failed branch of a finished parallel, and an
+  abort closing the run's pull requests (LOG 214, 215).
+
+How it ran: shared interfaces first (PR #16), five builders in parallel (PRs #17 to #21), then integration (`M7 integration: seams and live done-when`).
+Each builder's pull request had an independent review that broke the code to show its tests catch it, and a re-check.
+
+Tests on `m7-integration` at the end: 1,249 default (replay 29 of them), 100 integration, 29 std re-drive.
+
+The sections below are each worker's own, in build order, then integration. They are followed by the coordinator's
+decisions, the list for the product owner, and the consolidated follow-ups.
+
 ## Shared interfaces
 
 What M7's five builders share, built first on `m7-interfaces` (W0), with fakes, contract suites and file splits, and no
@@ -424,3 +449,206 @@ Each mutation made the named tests fail; each was restored and the tests passed 
 | 2 | A person's triage artifact is not written to the record store's artifact index (the core holds it, so `findings.triage` reads it) |
 | 3 | The web console (W3) could show the ledger and take a triage; today it is the API or the CLI |
 | 4 | A decline from a triage with `post_declines: false` is still posted when the pull request later opens, unless `scm.pull_request` says false too (LOG 249) |
+
+## Integration
+
+Worker W6, branch `m7-integration`, from `m7` with PRs #17 to #21 merged. Temporal on port 8733. Judgement calls LOG 256
+to 261, unreviewed.
+
+### Seams fixed
+
+Each fix is the simplest that closes the seam, has a test, and the test a control (a mutation that made it fail, then
+restored).
+
+| # | Seam | Fix | Test (control) |
+|---|---|---|---|
+| 0 | CI flake: a pre-submit check sent while the run hands over to its next run is refused (409, by design), and the session test sent one | `ff session check` and `ff session mcp` try that one refusal again for up to 30 s; the test helper does too (LOG 261) | `SessionClientTests` (no retry fails one; retrying every refusal fails the other) |
+| 1 | A decision's wait recorded the word `decision`, so Slack and the console showed no question (W3 follow-up 1) | The wait records the rendered prompt (patch `m7-decision-prompt`, LOG 257); history `decision_prompt` | `SurfacesTests`: the Slack message and the wait record show the prompt (the core's reason fails both) |
+| 2 | The surfaces test set `notifications` through a harness hook, not the organisation file (W3 Q4) | The test writes `notifications` in the organisation file; the hook is gone (the harness takes organisation lines and `from_chat`). The `from_chat: false` refusal through the Slack gateway is W3's `InboundTests` test | `SurfacesTests` (the reader dropping `notifications`: no post) |
+| 3 | Organisation keys read but not enforced (W2 Q4, LOG 223) | `library_overrides`, `library_inputs`, `policy.toolsets.allowed`, `role_mapping` and `timeouts` refused "not enforced before M8" (LOG 256). Consumed, so kept: `notifications`, `planning.require_review`, `roles`, `teams` | `OrganisationTests` (one key dropped from the refusal fails two) |
+| 4 | `auto_resolved` did not name its actor (W2 Q5) | `<outcome> by policy` (LOG 258) | `PolicyRunTests.An_automatic_answer_names_policy_as_its_actor` (the old detail fails it) |
+| 5 | A session's submission was checked only for parsing (W4 Q1, W5 Q1) | One type check, `ArtifactTypeCheck`, for agents and `artifact.import`; a submission of files that break their types is refused with every error and the session stays open (patch `m7-import-check`, LOG 259) | `SessionRunTests.A_submission_whose_files_break_their_types_...` (import ignoring the errors; the scope without the lock; the helper skipping validators, which also fails two of W5's `ArtifactCheckTests`) |
+| 6 | A person's triage artifact was not in the run's artifact index (W5 Q2) | A decision answer's artifacts are indexed (LOG 260) | `FindingsLoopTests.A_person_triages_...` (not indexed fails it) |
+
+### Done-when 1: who may and may not use each override
+
+`OverrideAuthorisationTests.Every_key_of_the_override_catalogue_has_a_may_and_a_may_not_test` reads the rows of the two
+theories below and checks they cover `Model.Overrides` exactly (10 keys, 4 variants), and that each row's roles agree
+with the catalogue's defaults. Control: a key added to the catalogue with no row fails it.
+
+| Key | May (by default) | May not | Where |
+|---|---|---|---|
+| `answer`, `answer_question` | approver (by the approval rule) | steerer; admin | API |
+| `recover` | steerer; admin | approver; viewer | API |
+| `breakpoint`, `amend`, `grant_attempts`, `abort` | steerer | approver | API |
+| `skip`, `override_library` | steerer | viewer | API |
+| `change_role` | admin | steerer | API |
+| `skip_protected`, `amend_protected`, `override_library_protected`, `grant_attempts_beyond` | admin (the API passes the variant) | steerer (passes none; the run refuses protected content or a grant beyond the ceiling without it) | API, and W1's `SteeringTests`, `SteeringRunTests` |
+
+`policy.overrides` changing a key and a variant, a team adding holders for its own runs, and a grant at an
+intervention needing both `recover` and `grant_attempts` each have their own test (W2).
+
+### Verified-by
+
+Both exist and pass; I broke each again to confirm.
+
+| Check | Tests | Control |
+|---|---|---|
+| A body naming `mallory` is recorded and delivered as the authenticated actor | `OverrideAuthorisationTests` (every key), `PolicyRunTests.An_actor_asserted_...` (a real run), `SessionRunTests` (submission) | The answer's actor from the body at both places it is set: 4 API cases and the run test fail |
+| A pre-submit check and the later step receive the same task, tools, model and commit | `SessionRunTests` (digests equal; differ across commits), `CheckInputsTests` | The check given one extra input: the session test fails (digests differ) |
+
+### Done-when 2, live: a person's requirements session
+
+As the product owner decided (2026-11-04): the coordinator acted as the person, a separate identity. One attempt.
+
+- **Setup:** three hosts on Temporal :8733 sharing one record store and artifact store: the orchestration worker, the
+  starter's API (`m7-starter`, roles viewer, steerer, admin) and the person's API (its own installation, `m7-person`,
+  role approver, its own token). Organisation: std from this branch, one rule `*` for approvers. No agent worker: no
+  agent step runs before `approve`. Model `haiku` configured, unused.
+- **Repository:** `ai-feature-flow/feature-flow-example` (the run's planning repository by default).
+
+| Step | What happened |
+|---|---|
+| Start | `ff run start std:templates/project_delivery --repo ai-feature-flow/feature-flow-example --param project_name=m7-live` as the starter: `run-5a6000bc7f32`. The run opened the session at `define` on `ff/session/run-5a6000bc7f32/decision-1` from `main` (`d033998`); the wait's reason was the rendered prompt (seam 1) |
+| Fetch | As the person: `ff session list`, `ff session fetch --out` (prompt and instructions) |
+| Write | In the person's clone: switched to the session branch, wrote `projects/m7-live/requirements.yaml` (2 requirements) and `architecture.md`, committed `5b2782b`, pushed |
+| Refused | The starter's `ff session submit`: 403, "m7-starter may not act on session ... it needs one of the roles approver" |
+| Check | The person's `ff session check ... check_requirements`: passed (`requirement_support` valid), recorded "by m7-person" |
+| Submit | The person's `ff session submit`: recorded. Timeline: `answered decision-1 submitted by m7-person`; `session_submitted ... at 5b2782b... by m7-person: contract, requirements`; `check_requirements` valid; the run opened `approve` |
+| Parity | The check's digest and the step's `check_inputs` were the same, `sha256:129e6b69...` |
+| Records | The session `submitted`, person `m7-person`; the answer records' actor `m7-person` |
+| End | Aborted at `approve` with `--close-pull-requests` (none had opened). The session branch deleted. Both fixtures have only `main`, no `refs/feature-flow/*`, no open pull request |
+
+Seen live but not changed: session branches are not deleted when a session ends (W4 follow-up 4; deleted by hand). The
+person's push needed only a credential for the fixture, as a person would have. No Slack post was made: the live
+installation configured no notifications provider.
+
+### Tests run
+
+On `m7-integration` at the end (Debug, Temporal :8733, Docker): default suite **1,249 passed**, 0 failed (22 projects;
+replay 29, every history including the new `decision_prompt`); integration **100 passed**; `ff test library/std/tests`
+**29 passed**. Build: 0 warnings.
+
+### Deviations and judgement calls
+
+LOG 256 to 261. Outside the seams: none. The only interface change is additive: `ActionScope.LockRef` (an optional last
+parameter), `SessionNames.HandingOver`, `ArtifactTypeCheck` and `LibraryLock.ArtifactTypeAsync`. W3's LOG 233 (the
+harness `configure` hook) is superseded: the hook is gone.
+
+### Follow-ups
+
+| # | Follow-up |
+|---|---|
+| 1 | M8 lifts each "not enforced before M8" refusal together with the key's consumer (LOG 256) |
+| 2 | A run's clean-up could delete its session branches (W4 follow-up 4, seen live) |
+| 3 | `artifact.import` in a plan stops for a person on a type error; a work-failure outcome might suit a plan that can retry |
+
+## Coordinator decisions
+
+Decisions the coordinator took during M7; those marked PO are the product owner's.
+
+| # | When | Decision | Why |
+|---|---|---|---|
+| C1 | Start | Split: W0 interfaces; W1 steering core; W2 policy and identity; W3 surfaces; W4 sessions; W5 report checks and triage; W6 integration. LOG ranges 201-205 (W0), 206-215, 216-225, 226-235, 236-245, 246-255, 256-265 (W6). Ports 8133..8733; reviewers 8833+ | One worker per area with separate files |
+| C2 | PO, 2026-11-04 | Slack: Socket Mode will be enabled later; build the inbound gateway without it now (signed-request tests); keep a Socket Mode transport easy to add | PO answer in chat |
+| C3 | PO, 2026-11-04 | Done-when 2: the coordinator acts as the person, authenticated as a separate person identity; optional demo with the PO later | PO answer in chat |
+| C4 | W0 review | PR #16 approved and merged; interfaces frozen. Wake with no step wakes every wait; W2 owns the API override endpoint and OverrideRecord, W1 only the workflow handler; LOG 204's teams.<name>.repositories accepted | W0 open questions 1-3 |
+| C5 | Builder reports | Accepted builders' recommendations: W1 Q1-4 (breakpoint holds until cleared; skip gives no outputs; making a protected step unreachable is rejected; F1 for patched merges left to merge-time re-check). W2 Q1-3 (approver apart from admin; interventions authorised by `recover`; starting a run needs steerer); Q4-5 to integration. W3 Q3 (Slack users mapped by configuration); Q1, Q4 to integration; Q2 reminders deferred (follow-up). W4 Q1 yes at integration; Q2 use OIDC for the person; Q3 no agent-step pre-submit checks in M7. W5 Q1-2 at integration; Q3 approver default for triage | Each is the simpler shape and keeps floors |
+| C6 | R1 F5 / R2 F4 | Approving an agent's patch or library override needs the roles the equivalent direct override needs. Contract change authorised: `WaitRecord` gains an optional last parameter `IReadOnlyList<string>? Requires = null` (override keys). W1 adds and persists it and fills it on patch-approval waits; W2's API requires `RolesForKey` of each key in addition to the approval rule | Second route to the same effect must not skip the role |
+| C7 | R2 F8 | An intervention's recovery needs `recover`; `grant_attempts` (and `_beyond`) are required in addition when that is the action | One route, both roles |
+| C8 | R5 F7 | Merge order changed to #20, #18, #17, #21, #19: W5 resolves its RunWorkflow conflict against W4 after #17 merges | W5 carries W4's commit already |
+| C9 | PO, 2026-11-05 | "We are trying not to overcomplicate anything": added to reviewer rules and steered to all builders (simplest fix that closes the real hole; low findings needing real code become follow-ups) | PO instruction |
+| C10 | Replaces C6 | No `WaitRecord.Requires`. Std's `*.patch_approval` default becomes `admin` (W1, LOG entry); who approves agent proposals stays the organisation's approval-rule call. No interface change | Simpler; same effect for std |
+
+## For the product owner
+
+LOG 201 to 261 are unreviewed (201 to 205 shared interfaces, 206 to 215 steering, 216 to 225 policy, 226 to 233
+surfaces, 236 to 245 sessions, 246 to 250 reports and triage, 256 to 261 integration). One line each, with a
+recommendation.
+
+| LOG | What it decided | Recommendation |
+|---|---|---|
+| 201 | Notifications are de-duplicated by the engine (run, step, attempt, event), not the provider | Approve |
+| 202 | A session's shapes; what a person produces (a triage, a session's files) arrives as artifacts on the one answer | Approve: one answer path, so approval rules apply to all |
+| 203 | One override catalogue and one `override` update for every key | Approve |
+| 204 | Authentication is a list of authenticators; roles resolve per scope; teams gain `repositories` | Approve, and add `teams.<name>.repositories` to docs/07 |
+| 205 | The `wake` signal (a hint, the wait reads again) and the file splits | Approve |
+| 206 | A breakpoint holds until cleared and pauses every entry to the step | Approve |
+| 207 | A skip applies when the run next reaches the step, with a chosen outcome and no outputs | Approve: the person routing on the outputs gives a second action, which is rare |
+| 208 | One grant mechanism for the override and the recovery | Approve |
+| 209 | `change_role` is a person's patch; `amend` may omit `resume_at` and never changes a role | Approve |
+| 210 | A patch whose route no longer reaches a protected step "touches" it (one reachability check) | Approve: it closed four bypasses the review found |
+| 211 | `planning.require_review` is fixed in the run's policy at start | Approve |
+| 212 | A mid-run library override: content by hash, the run's lock rewritten, steps in flight keep theirs | Approve |
+| 213 | An agent's library override is always a patch approval, applied as the approver's | Approve; the agent-facing MCP tool is a follow-up |
+| 214 | Going to a step inside a decided join reopens the join, so the run can complete | Approve: M6's live run needed it |
+| 215 | Aborting closes the run tree's pull requests only when asked | Approve |
+| 216 | `admin` > `steerer` > `viewer`; `approver` stands apart | Approve: an admin who should approve also needs the approver group |
+| 217 | A team adds role holders for its own runs and may only raise `min_count`; a run cannot span two teams | Approve |
+| 218 | An intervention is answered as the `recover` override, not by an approval rule | Approve: one rule for one act |
+| 219 | Reading needs `viewer`, starting a run `steerer` | Approve |
+| 220 | OIDC (issuer, audience, keys, groups claim) beside the local token | Approve |
+| 221 | `min_count` counts distinct people; each answer recorded; the delivered actor can be several people | Approve; the race (two answers at once) is a follow-up |
+| 222 | Auto-resolution counts the library's default; an unlocked "not allowed" warns; `policy` is reserved | Approve |
+| 223 | The organisation file is read in full; startup checks span both layers | Approve, with LOG 256 (keys with no consumer are refused) |
+| 224 | The effective policy view: one row per topic with request, cap, result and deciding setting | Approve |
+| 225 | The override endpoint's wire and the CLI | Approve |
+| 226 | The engine notifies from what a run records; a failed send never affects the run | Approve |
+| 227 | A Slack user maps to a person by configuration, not email | Approve for now; an identity-provider lookup later |
+| 228 | The chat gateway makes the ordinary answer call as the mapped person | Approve |
+| 229 | A wake reuses the hand-over's interruption, so no attempt is used | Approve |
+| 230 | Webhooks verified by their provider, de-duplicated in memory | Approve; the 200-run limit is a follow-up |
+| 231 | The console is one static page reading through the API | Approve; OIDC sign-in is a follow-up |
+| 232 | Reminders are not built | Approve the deferral |
+| 233 | A harness `configure` hook | Superseded at integration: the hook is gone |
+| 236 | A session's person is whoever takes it | Approve |
+| 237 | The workspace is a branch and a document fetched through the API; no commit by the engine | Approve |
+| 238 | Pre-submit checks run the later step's own code, `artifact.validate` steps only | Approve; agent-step checks later (coordinator C5) |
+| 239 | The run imports a submission, not the API | Approve; the type check it waited for is LOG 259 |
+| 240 | Only a submission takes the outcome that imports files | Approve |
+| 241 | A check and a submission name a full commit | Approve |
+| 242 | The check update and the workspace document are new wire types in a new file | Approve |
+| 243 | `ff session mcp` is the engine's MCP server for the person's agent | Approve |
+| 244 | A session's activities try five times, then tell the person | Approve |
+| 245 | A dry run opens no session | Approve |
+| 246 | Report-time artifact checks with correction turns; an in-house JSON Schema subset | Approve: it was M6's most costly gap |
+| 247 | std's type rules become the `document_rules` validator | Approve |
+| 248 | A person triages findings through a decision, recorded as that person; std's fix loop routes to it | Approve |
+| 249 | `scm.pull_request` posts the declines the ledger holds | Approve |
+| 250 | A fixed rule vocabulary for std's reviewers | Approve |
+| 256 | Organisation keys nothing enforces are refused "not enforced before M8" | Approve: each returns with its consumer |
+| 257 | A decision's wait records its rendered prompt | Approve |
+| 258 | `auto_resolved` names `policy` as its actor | Approve |
+| 259 | One artifact type check for agents, people and imports | Approve |
+| 260 | A decision answer's artifacts are indexed | Approve |
+| 261 | A check refused during the hand-over is tried again by the client | Approve |
+
+## Consolidated follow-ups
+
+"From" names the follow-ups table of a section of this note and its row: Interfaces, Steering, Policy, Sessions,
+Surfaces, Reports, Integration; M6 is `m6-results.md`'s consolidated follow-ups. Closed during M7 and not listed:
+Interfaces 1, Steering 1, Policy 1 to 3, Sessions 1 and 3, Surfaces 1 and 4, Reports 1 and 2, and M6's 1 to 3, 5, 6
+and 8 (schema checks on import).
+
+| # | Follow-up | From |
+|---|---|---|
+| 1 | **M4 follow-up 12, still open:** the sandbox's network is unrestricted and reaches the Temporal frontend. Fix before any shared deployment (M8) | M6 4 |
+| 2 | M8 lifts each "not enforced before M8" organisation key with its consumer | Integration 1 |
+| 3 | `min_count`: two answers at the same moment can leave the count short; re-read after recording | Policy 6 |
+| 4 | Startup does not resolve the API's `token_ref` or other secret references | Policy 5 |
+| 5 | `merge.require_checks` locked on refuses only a literal `false` at run start | Policy 4 |
+| 6 | An MCP tool for agents to propose a library override (and a patch) | Steering 2 |
+| 7 | `run.child`'s `run_gate: manual` is not built | Steering 3 |
+| 8 | F1 at patch time: a patch adding an engine merge into a default branch is caught only at merge time | Steering 4 |
+| 9 | An abort waits for an action that sends no heartbeat before closing pull requests | Steering 5 |
+| 10 | Role checks on containers' inner agent steps; protected branches of a parallel; a twice-sent library override records twice | Steering 6 |
+| 11 | Pre-submit checks of agent steps | Sessions 2 |
+| 12 | A run's clean-up deletes its session branches | Sessions 4, Integration 2 |
+| 13 | A load check refusing `checks_from` naming a step other than `artifact.validate`; checks capped and cancelled at run end; a test of the `submitting` guard; a gentler re-open of a session that failed to open | Sessions 5 to 8 |
+| 14 | Reminders on open waits; `stalled` and `stuck` notifications once the engine has those states | Surfaces 2, 3 |
+| 15 | The console's OIDC sign-in; the ledger and a triage in the console | Surfaces 5, Reports 3 |
+| 16 | A woken run is chosen among the 200 most recently updated runs; a Slack message updated when answered | Surfaces 6, 7 |
+| 17 | A decline from a triage with `post_declines: false` is still posted when the pull request later opens | Reports 4 |
+| 18 | `docs/07` lists `teams.<name>.repositories` once LOG 204 is approved | Interfaces 2 |
+| 19 | A plan's `artifact.import` stops for a person on a type error; a work-failure outcome might suit a plan that retries | Integration 3 |
+| 20 | Still open from M6: `verification_satisfaction` and the trace checks; the work-item budget's overshoot; `EpicRunTests`' per-child durations; a live hand-over during a CI wait; detached hosts ignoring SIGTERM; the Copilot findings source unseen; M5 follow-ups 3 and 7; watch activities per run; parent counts lag a child's; `wait.condition` on a tracker issue | M6 7, 9 to 18 |
