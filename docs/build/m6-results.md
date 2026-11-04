@@ -434,3 +434,98 @@ index, see no duplicates. After the merge: build 0 warnings, default suite 954 p
 | 4 | Two runs of one tree creating children at the same instant can each pass the last free work item (LOG 187); a child that fails to start stays counted |
 | 5 | `wait.condition` on a tracker issue (M5 follow-up 8) can now use the tracker provider |
 | 6 | No engine default ceiling: with no budget and no organisation ceiling a tree is unlimited (accepted; set a ceiling in shipped profiles) |
+
+## Integration
+
+Worker W5, branch `m6-integration`, from `m6` at `4ff0db2` (PRs 10 to 13 merged). Judgement calls LOG 190 to 199,
+unreviewed. Temporal on port 9033; hosts, model `haiku` and `FF_SECRETS_FILE` as M5's live run; the App's credential
+for the tracker. Controls: `tools/check_m6_integration_controls.py`.
+
+### Seams found and fixed
+
+The coordinator's two seams were checked first; the live runs found the rest. Each fix has a test, and each test a
+control that makes it fail (the script), except where noted.
+
+| # | Seam | Fix | Test (control) |
+|---|---|---|---|
+| a | std `fix_loop` leaves by `fixed` once `tests_added` is valid, without reading `findings.open` | None needed: the caller re-tests, re-reviews and applies the merge bar (`open_blocking == 0`). A non-blocking finding left open stays open in the ledger and the ticket merges; a blocking one left open goes round the fix loop again and nothing merges | `FindingsLoopTests.After_the_fix_loop_...` (2 cases; the merge bar ignoring open blocking findings fails both) |
+| b | `findings.triage`'s "a fix needs a commit" skipped findings with no `RaisedRevision`, which only a finding in a repository the run did not prepare has, and a reviewer writing `api` for `acme/api` made one | `findings.record` names the repository as the run does; a move to `fixed` with no raised revision is `invalid` (LOG 190) | Two `FindingsActionTests` (each rule removed fails its test) |
+| 1 | `artifact.validate` in a child could not read `parent/...` subjects (W3's follow-up 1): every live ticket's `plan.validate` stopped | The workflow fills `ActionScope.Consumed` as for an agent step (LOG 191) | `ChildRunTests.A_childs_artifact_validate_...` on the forge (no consumed artifacts fails it) |
+| 2 | Planners link to `parent/requirements`, the sandbox's name; validators knew bare names only | `requirement_support` and `requirement_inheritance` read both (LOG 191) | 4 fixtures, 4 controls |
+| 3 | Reviewers invented the findings report's fields and wrote YAML that does not parse | std's review skill shows both formats, prose as block scalars (LOG 192) | Library content; std tests pass |
+| 4 | After a sibling merged into the epic's branch, the next ticket's reviewers took the epic's new head as their baseline, which their checkout lacked ("bad object"): all five exhausted their attempts | `IVcsProvider.MergeBaseAsync`; the agent step's baseline is where the work branch parts from its parent (LOG 193) | `ForgeTicketTests.A_sibling_merging_...` (baseline back to the parent's head fails it); contract test for Git and memory |
+| 5 | An implementer spent five minutes downloading a .NET SDK into its sandbox to run a CI-only tier | std's tasks say a `targets: [ci]` tier runs only in CI (LOG 194) | Library content |
+| 6 | Planners guessed `owner`'s shape; the project planner keyed its work list by `id` | std's verification skill and planner tasks show them (LOG 195) | Library content |
+| 7 | A child's parent branch existed only where the parent's own steps had touched a repository: the client epic's first step stopped | `run.child` makes the parent's work branch in the child's repositories first (LOG 196, patch `m6-parent-branches`) | `ChildRunTests.A_child_in_a_repository_...` (activity skipped fails it) |
+| 8 | std `plan_children` could not resolve an epic's own requirements' links to its project's | Its check includes the parent's requirements (LOG 197) | Library content; seen live |
+| 9 | The project tested none of its heads, so `scm.merge` (merge only a head this run tested) refused both repositories | std `project_delivery` gains `tests` before the trace (LOG 197) | `project_main_path` requires `tests_0`, `tests_1` (routing around it fails it) |
+| 10 | A planner wrote a repository without its owner; the broker refused it | `run.child` names repositories as the run does (LOG 198) | The branching test names the child's repository `client` (names kept as written fails it) |
+| 11 | A ticket's check also checked its epic's requirements' links to the project's, which it is not given | `requirement_support` checks only this run's documents (LOG 199) | Fixture (parent's links checked again fails it) |
+| 12 | Copied criteria had to keep exactly the parent's links, while std needs each own requirement supported: three planners flipped between two errors | A copy keeps every parent link and may add its own (LOG 191, amended; docs/04 s10.2 changed) | Fixture; 2 controls |
+| 13 | The specification reviewers never saw the specification: `spec_refs` reached them as hashes | std's reviewers consume `requirements`, `delivery_plan`, `contract` (LOG 192, extended) | Library content; seen live |
+| 14 | A conflict resolver could not merge its parent branch: the sandbox held only the work branch | The checkout also holds the parent branch at its head (LOG 193, extended) | **Live only** (the Git checkout runs only in the Docker agent harness; follow-up 1) |
+
+Not seams on inspection: the findings namespace across a hand-over with a wait interrupted (W1's `WaitHandOverTests`
+and W2's `FindingsNamespaceTests` cover each half; no live hand-over interrupted a wait, see below); a child's findings
+in its parent's counts (they show at the parent's next findings action, W2's follow-up 3; the epics' reviews counted
+their tickets' findings as prior).
+
+### Done-when 1: `epic_delivery` with three tickets (complete)
+
+The epic and its tickets were GitHub issues made by the App: epic #179 ("widget query helpers") naming tickets #176
+(find by name), #177 (count by prefix) and #178 (sorted names), each with acceptance criteria and its own new files.
+Parent branch `ff/m6-live/epic-base` from `main` (`af06a37`). Started with `--continue-as-new-events 200`.
+
+**F1 control** (`run-f37cfe1412e7`): the same start without `--parent-branch` was refused at run start, check 23
+("deliver.merge asks for an engine merge into ... default branch main"); no branch was made.
+
+**Attempt 1** (`run-63c1441a1879`, aborted): found seams 1 to 3; each child's `plan.validate` was recovered by hand
+after the fix, then every reviewer's report failed to parse. Aborted, because the library is pinned at run start.
+
+**The run** (`run-93ee2dd4bf56`, **completed**, 22:33 to 23:27 UTC, 54 minutes, including the waits for the fixes of seams 3 and 4):
+
+| Step | What happened |
+|---|---|
+| `baseline.tests` | Both tiers in CI at `af06a37`: unit 3 passed, integration 1 passed |
+| `design`, `validate_design` | Tracker moved #179 to in progress; requirements and contract written; `requirement_inheritance` and `requirement_support` valid |
+| `tickets.plan`, `tickets.validate` | First plan malformed (`owner` as a string, seam 6), sent back by the validators; second valid: three items with `tracker_issue` #176 to #178 |
+| `tickets.approve` | Approved by a person (`stuart`) through the CLI |
+| `tickets.children_0..2` | Three ticket runs, two at a time. Each: baseline, plan validated against the epic's (`parent/...`), spec auto-approved, implement, tests in CI, five reviewers on the real ledger, satisfaction on CI test names, PR into the epic branch, checks, catch-up, **engine squash merge**, tracker to done. Ticket 2 (#177) hit seam 4 (reviewers granted one attempt each after the fix) and seam 3's YAML twice (`go_to` its reviewer), then caught up with its two merged siblings and merged |
+| hand-over | The epic handed over at 208 events **with ticket 2 still running** (`RunningChildren: 1`), and again before `deliver.checks`. Ticket 2 handed over twice, once **with an intervention open** (`OpenWaits: 1`). No hand-over fell during a CI wait (`InterruptedWaits: 0` throughout) |
+| `verify` | Tests at the epic head `8bebe23`: unit 20 passed, integration 1 passed; five reviewers, 4 findings, none blocking |
+| `trace` | `requirement_trace` valid |
+| `deliver` | PR #183; checks passed; **merge commit `8e7a697`** into `ff/m6-live/epic-base`, by Feature Flow; tracker moved #179 to done |
+
+Checked on GitHub afterwards: `8e7a697` has parents `af06a37` (the base) and `8bebe23` (the epic head) and the trailer
+`Feature-Flow-Merge: run-93ee2dd4bf56/deliver.merge`; the epic branch below it is three squash commits, `76d59d3`,
+`c4036c5`, `8bebe23`, each one parent and its ticket's trailer; the change against `main` is exactly the three new
+source and three new test files; `main` stayed `af06a37`; PRs #180 to #182 closed with their squash commits, #183
+merged; issues #176 to #179 closed by the tracker.
+
+### Done-when 2: `project_delivery` over two repositories (waiting for a person's merge)
+
+The project's requirements session is M7's, and an answer cannot carry artifacts, so the run used a run-only template,
+`m6live:templates/project_delivery_imported`: std's `project_delivery` with `define` an `artifact.import` of
+`projects/widget_count/requirements.yaml` and `architecture.md` at a pinned commit of the scratch branch
+`ff/m6-live/project-docs` (a stand-in for the session, as M5's ticket file was for the tracker). The project: `GET
+/widgets/count` in the API, then `WidgetClient.CountAsync` in the client, delivered in that order.
+
+Attempts 1 to 6 stopped, in order, on: the person's own YAML (a `: ` in plain text; the import refused it), seam 6,
+seam 7, seam 8, seam 9, and a recovery of mine (`go_to` into one branch of a finished parallel left the client epic
+`incomplete`, F9 holding; follow-up 3). Each was aborted and its references deleted before the next.
+
+**The run** (`run-cc7255f7fa09`, started 01:05 UTC):
+
+| Step | What happened |
+|---|---|
+| `define`, `check_requirements`, `approve` | Imported at `0d38a4b`; valid; approved by a person |
+| `epics.plan` .. `epics.approve` | Two epics, `widget_count_api` and `widget_count_client`, one per repository; valid at the first attempt; approved |
+| `epics.children_1` | **Made `ff/project/widget_count` in the client repository at `b7699f6`**, for the child (seam 7), then started it |
+| API epic | Two tickets (store count, endpoint); the second's catch-up conflicted with the first in `WidgetStoreTests.cs`; the resolver now merged the epic branch and resolved it (seam 14, after one retry); epic tests 6 passed; trace valid; **merged into `ff/project/widget_count` as `d2ca7cb`** |
+| client epic | One ticket; its planner needed 3 + 3 granted attempts to cover its own requirements (copied the epic's instead); tests 12 passed; **merged into the client's `ff/project/widget_count` as `a562d3b`** |
+| `tests` | Each project head in CI: API unit 6 passed and integration 1 passed at `d2ca7cb`; client unit 12 passed at `a562d3b` |
+| `trace` | `requirement_trace` valid across project, epics and tickets |
+| `deliver.deliver_0` | PR **#193** from `ff/project/widget_count` into `main`; checks passed; catch-up unchanged; `scm.merge` with `engine_can_merge: false` recorded the action request "a person merges ai-feature-flow/feature-flow-example#193 into main, or closes it to decline" and re-checks about every 35 s. The client's PR opens only after this merges (a chain) |
+
+The rest of this section (the person's merges detected, `delivery.report`, clean-up) follows when the product owner has
+merged.
