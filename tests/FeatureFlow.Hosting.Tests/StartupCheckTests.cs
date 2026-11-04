@@ -55,12 +55,12 @@ public sealed class StartupCheckTests : IDisposable
     [Fact]
     public void A_consistent_pair_of_files_loads()
     {
-        Assert.Empty(Errors(LocalToken, "role_mapping: { planner: { agent_runtime: scripted } }\nnotifications: { events: [failed] }"));
+        Assert.Empty(Errors(LocalToken, "notifications: { events: [failed] }"));
         Assert.Empty(Errors("{ mode: oidc, issuer: \"https://idp.example\", audience: ff }", "roles: { viewer: { idp_groups: [eng] } }"));
     }
 
     [Theory]
-    [InlineData(LocalToken, "role_mapping: { planner: { agent_runtime: claude_code } }", "organisation: role_mapping.planner.agent_runtime 'claude_code' is not an agent_runtime instance")]
+    [InlineData(LocalToken, "role_mapping: { planner: { agent_runtime: scripted } }", "role_mapping is not enforced before M8")]
     [InlineData(LocalToken, "notifications: { events: [failed, exploded] }", "organisation: notifications: 'exploded' is not a notification event")]
     [InlineData(LocalToken, "notifications: { routing: { stuk: { channel: \"#ops\" } } }", "organisation: notifications: 'stuk' is not a notification event")]
     [InlineData("{ mode: oidc, issuer: \"https://idp.example\", audience: ff }", "", "organisation: roles: api.auth.mode is oidc")]
