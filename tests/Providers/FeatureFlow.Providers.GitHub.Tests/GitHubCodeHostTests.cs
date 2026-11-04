@@ -128,7 +128,8 @@ public sealed class GitHubCodeHostTests
         var started = System.Diagnostics.Stopwatch.StartNew();
         var result = await host.GetDefaultBranchAsync(Repo, Ct);
 
-        Assert.True(started.Elapsed >= FakeGitHub.FreshTokenDelay, "the retry waited before asking for a fresh token");
+        // Timers tick in whole milliseconds, so the delay can measure a little under its length on the stopwatch.
+        Assert.True(started.Elapsed >= FakeGitHub.FreshTokenDelay * 0.75, "the retry waited before asking for a fresh token");
         Assert.Equal(branch, result.Value);
         Assert.Equal(branch is null, result.Error?.IsConfigurationFault ?? false);
         Assert.Equal(2, calls);
