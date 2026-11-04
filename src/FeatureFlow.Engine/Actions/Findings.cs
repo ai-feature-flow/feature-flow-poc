@@ -49,7 +49,7 @@ static class FindingsActions
         var now = DateTimeOffset.UtcNow;
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var reported in report.Findings.Select(f => f with { LedgerId = null, State = null, Location = f.Location with { Repository = RepositoryOf(run, f.Location.Repository) } }))
+        foreach (var reported in report.Findings.Select(f => f with { LedgerId = null, State = null, Location = f.Location with { Repository = RepositoryNames.As(f.Location.Repository, run.Scope.Repositories) } }))
         {
             var fingerprint = FingerprintOf(reported);
             if (!seen.Add(fingerprint))
@@ -101,18 +101,6 @@ static class FindingsActions
                 "record the findings");
         run.Events.Add($"findings from {raisedBy}: {tally["new"]} new, {tally["reraised"]} re-raised, {tally["reopened"]} reopened, {tally["repeat_fixes"]} fixed twice before");
         return await ReportAsync(run, "recorded", tally.ToDictionary(kv => kv.Key, kv => (object?)kv.Value), reportRef);
-    }
-
-    /// <summary>
-    /// A finding's repository as the run names it: a reviewer writing <c>api</c> or <c>Acme/Api</c> for the run's
-    /// <c>acme/api</c> means it, and only a repository the run prepared has a head to raise the finding at (LOG 190).
-    /// A name matching none, or several, is kept as written.
-    /// </summary>
-    internal static string RepositoryOf(ActionRun run, string repository)
-    {
-        var matches = run.Scope.Repositories.Where(r => string.Equals(r, repository, StringComparison.OrdinalIgnoreCase)
-                                                         || r.EndsWith("/" + repository, StringComparison.OrdinalIgnoreCase)).ToList();
-        return matches.Count == 1 ? matches[0] : repository;
     }
 
     /// <summary>

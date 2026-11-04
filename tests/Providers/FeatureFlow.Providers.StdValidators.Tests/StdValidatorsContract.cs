@@ -106,6 +106,10 @@ public sealed class StdValidatorsContract : ValidatorContract, IDisposable
             // ---- requirement_ownership ----
             new("requirement_ownership: the epic's plan gives AC-1 to ticket T-1",
                 Request(Names.RequirementOwnership, [w.Subject("child_requirements", "delivery_plan", EpicPlan)]), true),
+            // LOG 200 (review F2 of PR 14): the ticket would copy the link and read parent/ in its own frame, naming the epic's document.
+            new("requirement_ownership: a criterion given to a ticket links upward, to the epic's parent's requirements",
+                Request(Names.RequirementOwnership, [w.Subject("child_requirements", "delivery_plan", EpicPlan.Replace("artifact: requirements", "artifact: parent/requirements"))]),
+                false, "owned_item_links_up"),
             new("requirement_ownership: a criterion of the epic's plan has no owner",
                 Request(Names.RequirementOwnership, [w.Subject("child_requirements", "delivery_plan", EpicPlan.Replace("    owner: { kind: ticket, id: T-1 }", ""))]), false,
                 "missing_owner"),
@@ -135,6 +139,20 @@ public sealed class StdValidatorsContract : ValidatorContract, IDisposable
                 Request(Names.RequirementInheritance, [w.Subject("child_requirements", "delivery_plan", EpicPlan, "parent"),
                     Plan(InheritedPlan().Replace("supports: [{ artifact: requirements, requirement: E-1 }]",
                         "supports: [{ artifact: requirements, requirement: E-1 }, { artifact: requirements, requirement: R-1 }]"))], options: Rewording), true),
+            // LOG 200 (review F2 of PR 14): links compared by the document they name, each resolved in the run that wrote it.
+            // The epic's criterion supports its project's requirements (parent/requirements in the epic, root/requirements in the ticket).
+            new("requirement_inheritance: an upward link copied word for word",
+                Request(Names.RequirementInheritance, [w.Subject("child_requirements", "delivery_plan", EpicPlan.Replace("artifact: requirements", "artifact: parent/requirements"), "parent"),
+                    Plan(InheritedPlan().Replace("artifact: requirements", "artifact: parent/requirements"))], options: Rewording), true),
+            new("requirement_inheritance: an upward link written as the ticket names the same document, root/requirements",
+                Request(Names.RequirementInheritance, [w.Subject("child_requirements", "delivery_plan", EpicPlan.Replace("artifact: requirements", "artifact: parent/requirements"), "parent"),
+                    Plan(InheritedPlan().Replace("artifact: requirements", "artifact: root/requirements"))], options: Rewording), true),
+            new("requirement_inheritance: an upward link copied as a bare name, which names the epic's requirements, not the project's",
+                Request(Names.RequirementInheritance, [w.Subject("child_requirements", "delivery_plan", EpicPlan.Replace("artifact: requirements", "artifact: parent/requirements"), "parent"),
+                    Plan(InheritedPlan())], options: Rewording), false, "links_changed"),
+            new("requirement_inheritance: an upward link as parent/parent/requirements, which is no name a run gives",
+                Request(Names.RequirementInheritance, [w.Subject("child_requirements", "delivery_plan", EpicPlan.Replace("artifact: requirements", "artifact: parent/requirements"), "parent"),
+                    Plan(InheritedPlan().Replace("artifact: requirements", "artifact: parent/parent/requirements"))], options: Rewording), false, "links_changed"),
             new("requirement_inheritance: the inherited criterion links to root/requirements, not the parent's",
                 Request(Names.RequirementInheritance, [w.Subject("child_requirements", "delivery_plan", EpicPlan, "parent"),
                     Plan(InheritedPlan().Replace("artifact: requirements", "artifact: root/requirements"))], options: Rewording), false, "links_changed"),

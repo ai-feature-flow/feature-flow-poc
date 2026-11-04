@@ -30,6 +30,9 @@ public sealed class ValidationActionTests : IAsyncDisposable
     readonly EngineActions actions;
     readonly List<ArtifactEntry> artifacts = [];
     Dictionary<string, string>? consumed;
+
+    /// <summary>The keys of what the step declares it consumes; by default those of <see cref="consumed"/>.</summary>
+    List<string>? declared;
     readonly List<ValidationRequest> seen = [];
 
     public ValidationActionTests()
@@ -98,7 +101,8 @@ public sealed class ValidationActionTests : IAsyncDisposable
             produces.SelectMany(p => new[] { new ArtifactSpec("valid", p), new ArtifactSpec("invalid", p) }).ToList(), new Dictionary<string, string>());
         var call = new StepCall(new StepIdentity(RunId, "ticket_delivery", stepId, 1, $"{RunId}/{stepId}/1"), "action", "artifact.validate",
             inputs.ToDictionary(kv => kv.Key, kv => YamlWriter.WritePlain(kv.Value)), contract, false, null);
-        var scope = new ActionScope([repo.FullName, other.FullName], repo.FullName, Branch, null, artifacts.ToList(), [], [], consumed);
+        var scope = new ActionScope([repo.FullName, other.FullName], repo.FullName, Branch, null, artifacts.ToList(), [], [], consumed,
+            Declared: declared ?? consumed?.Keys.ToList());
         return actions.RunAsync(call, scope, () => { }, Ct);
     }
 
@@ -252,6 +256,7 @@ public sealed class ValidationActionTests : IAsyncDisposable
                 "reviewer", null, "open", "abc", "abc", 0, 0, 0, false, DateTimeOffset.UnixEpoch)]), Ct);
         var own = Produce("plan", "delivery_plan", "delivery_plan", Plan());
         consumed = new Dictionary<string, string> { ["delivery_plan"] = own, ["parent/requirements"] = parentPlan };
+        declared = ["delivery_plan", "parent/requirements", "parent/contract"];     // the step consumes the parent's contract, optional
 
         var result = await ValidateAsync("""
               - validator: spy
@@ -289,6 +294,43 @@ public sealed class ValidationActionTests : IAsyncDisposable
 
         Assert.Equal(StepOutcome.CannotAnswer, result.Kind);
         Assert.Contains("subject parent/child_requirements is from another run", result.Reason);
+    }
+
+    /// <summary>
+    /// Review F1 of PR 14: a subject from another run that the step does not consume stops the step for a person. Passing it
+    /// as absent would let requirement_inheritance pass a child with no parent plan to compare against.
+    /// </summary>
+    [Fact]
+    public async Task A_subject_from_another_run_the_step_does_not_consume_stops_the_step_rather_than_passing_as_absent()
+    {
+        Work();
+        var own = Produce("plan", "delivery_plan", "delivery_plan", Plan());
+        consumed = new Dictionary<string, string> { ["delivery_plan"] = own };
+
+        var result = await ValidateAsync("""
+              - validator: requirement_inheritance
+                subjects: [{ name: child_requirements, from: parent, optional: true }, delivery_plan]
+            """, "plan_validation");
+
+        Assert.Equal(StepOutcome.CannotAnswer, result.Kind);
+        Assert.Contains("subject parent/child_requirements is not consumed by the step", result.Reason);
+    }
+
+    /// <summary>
+    /// Review F5 of PR 14: a subject of this run the step does not list as consumed is still this run's latest of the name
+    /// (LOG 179), with the workflow's consumed artifacts given.
+    /// </summary>
+    [Fact]
+    public async Task A_subject_of_this_run_the_step_does_not_consume_is_its_latest_of_the_name()
+    {
+        Work();
+        var plan = Produce("plan", "delivery_plan", "delivery_plan", Plan());
+        consumed = [];
+
+        var result = await ValidateAsync("  - { validator: spy, subjects: [delivery_plan] }\n", "plan_validation");
+
+        Assert.Equal("valid", result.Report?.Outcome);
+        Assert.Equal(plan, Assert.Single(seen).Subjects.Single().Artifact!.Id);
     }
 
     /// <summary>

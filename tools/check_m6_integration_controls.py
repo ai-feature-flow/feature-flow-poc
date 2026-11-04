@@ -25,6 +25,11 @@ STD_TESTS = ("tests/Providers/FeatureFlow.Providers.StdValidators.Tests", None)
 FIXTURES = "Every_fixture_gets_its_verdict_and_the_verdict_agrees_with_the_issues"
 ENGINE_FINDINGS = ("tests/FeatureFlow.Engine.Tests", "FullyQualifiedName~FindingsActionTests")
 WORKFLOW = "src/FeatureFlow.Engine/RunWorkflow.cs"
+SCOPE = "src/FeatureFlow.Engine/Actions/ActionScope.cs"
+VALIDATE = "src/FeatureFlow.Engine/Actions/Validation.cs"
+ENGINE_VALIDATION = ("tests/FeatureFlow.Engine.Tests", "FullyQualifiedName~ValidationActionTests")
+FORGE = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~ForgeTicketTests.A_std_ticket_runs_on_the_memory_providers")
+PARENT_REF = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~The_checkout_holds_the_parent_branch")
 CHILD_VALIDATE = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~A_childs_artifact_validate")
 AGENT = "src/FeatureFlow.Engine.Agent/AgentActivities.cs"
 SIBLING = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~A_sibling_merging")
@@ -32,6 +37,59 @@ BRANCHING = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~A_child_
 LOOP = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~FindingsLoopTests.After_the_fix_loop")
 
 CONTROLS = [
+    # ---- Review of PR 14 ----
+    {
+        "name": "F1: a subject from another run the step does not consume passes as absent",
+        "edits": [(VALIDATE, 'if (run.Scope.Consumed is not null && spec.From != "current" && run.Scope.Declared?.Contains(key) != true)',
+                   'if (run.Scope.Consumed is not null && spec.From != "current" && run.Scope.Declared?.Contains(key) != true && key == "")')],
+        "tests": [ENGINE_VALIDATION],
+        "expect": ["A_subject_from_another_run_the_step_does_not_consume_stops_the_step_rather_than_passing_as_absent"],
+    },
+    {
+        "name": "F1: std's plan check stops consuming the parent's child_requirements (the reviewer's mutation)",
+        "edits": [("library/std/fragments/plan_and_validate.yaml", "      - { name: child_requirements, from: parent, optional: true }\n      - { name: requirements, from: parent, optional: true }\n    produces:",
+                   "      - { name: requirements, from: parent, optional: true }\n    produces:")],
+        "tests": [FORGE],
+        "expect": ["A_std_ticket_runs_on_the_memory_providers_to_an_engine_merge_into_its_parent_branch"],
+    },
+    {
+        "name": "F2: the parent's links compared as written, not as the child sees them",
+        "edits": [(REQUIREMENTS, '_ when byParent && (artifact.StartsWith("parent/", StringComparison.Ordinal) || artifact.StartsWith("root/", StringComparison.Ordinal)) =>',
+                   '_ when byParent && artifact.StartsWith("never/", StringComparison.Ordinal) =>')],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
+        "name": "F2: a word-for-word copy of a link is not accepted as kept",
+        "edits": [(REQUIREMENTS, "&& (k.Artifact == l.Artifact || Target(k.Artifact, false) == Target(l.Artifact, true))", "&& Target(k.Artifact, false) == Target(l.Artifact, true)")],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
+        "name": "F2: an item given to a child may link upward",
+        "edits": [(REQUIREMENTS, "else if ((item.Supports ?? []).FirstOrDefault(l => l.Artifact?.Contains('/') == true) is { } upward)",
+                   "else if ((item.Supports ?? []).FirstOrDefault(l => l.Artifact?.Contains('|') == true) is { } upward)")],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
+        "name": "F3: the agent's checkout lacks the parent branch",
+        "edits": [(AGENT, "if (parent != workBranch)", "if (parent != workBranch && parent == \"\")")],
+        "tests": [PARENT_REF],
+        "expect": ["The_checkout_holds_the_parent_branch_at_its_head"],
+    },
+    {
+        "name": "F4: a name several repositories end with is taken as the first",
+        "edits": [(SCOPE, "return matches.Count == 1 ? matches[0] : written;", "return matches.Count >= 1 ? matches[0] : written;")],
+        "tests": [ENGINE_FINDINGS],
+        "expect": ["A_repository_is_named_as_the_run_names_it_only_when_exactly_one_matches"],
+    },
+    {
+        "name": "F5: a subject of this run the step does not consume is not found",
+        "edits": [(VALIDATE, "? consumed.GetValueOrDefault(key) ?? (spec.From == \"current\" ? Latest(run, spec.Name) : null)", "? consumed.GetValueOrDefault(key)")],
+        "tests": [ENGINE_VALIDATION],
+        "expect": ["A_subject_of_this_run_the_step_does_not_consume_is_its_latest_of_the_name"],
+    },
     {
         "name": "std's project delivers heads it never tested (LOG 197, extended)",
         "edits": [("library/std/templates/project_delivery.yaml", "    routes:\n      passed: tests\n", "    routes:\n      passed: trace\n")],
@@ -58,7 +116,7 @@ CONTROLS = [
     },
     {
         "name": "run.child passes a child's repositories as written (LOG 198)",
-        "edits": [(WORKFLOW, "return matches.Count == 1 ? matches[0] : written;", "return written;")],
+        "edits": [(SCOPE, "return matches.Count == 1 ? matches[0] : written;", "return written;")],
         "tests": [BRANCHING],
         "expect": ["A_child_in_a_repository_its_parent_never_touched_finds_its_parent_branch_there"],
     },
@@ -114,7 +172,7 @@ CONTROLS = [
     },
     {
         "name": "findings.record keeps a reviewer's short repository name (LOG 190)",
-        "edits": [(FINDINGS, "return matches.Count == 1 ? matches[0] : repository;", "return repository;")],
+        "edits": [(SCOPE, "return matches.Count == 1 ? matches[0] : written;", "return written;")],
         "tests": [ENGINE_FINDINGS],
         "expect": ["A_finding_naming_the_runs_repository_by_short_name_or_case_is_recorded_in_it_and_raised_at_its_head"],
     },

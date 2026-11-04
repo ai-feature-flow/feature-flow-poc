@@ -91,7 +91,16 @@ public sealed partial class RunActivities
                 return new WorkBranchesResult(events, $"{repository} has no branch {parent} to start {call.WorkBranch} from");
             var pushed = await vcs.PushAsync(repo, "refs/heads/" + call.WorkBranch, start.Value, null, null, ct);
             if (pushed is { Ok: false, Error.Reason: "base_moved" })
-                continue;                                      // made meanwhile, by a step of this run or a retry
+            {
+                // Made meanwhile, by a step of this run or a retry: confirmed by reading it again, as WorkHeadAsync does (review F6).
+                var made = await vcs.ResolveAsync(repo, "refs/heads/" + call.WorkBranch, ct);
+                if (Fails(made, $"read {call.WorkBranch} in {repository}") is { } rereadFailed)
+                    return new WorkBranchesResult(events, rereadFailed);
+                if (made.Value is null)
+                    throw new ApplicationFailureException($"{call.WorkBranch} in {repository} was refused as moved, yet does not exist: retried", errorType: "infrastructure");
+                continue;
+            }
+
             if (Fails(pushed, $"create {call.WorkBranch} in {repository}") is { } pushFailed)
                 return new WorkBranchesResult(events, pushFailed);
             events.Add($"created branch {call.WorkBranch} in {repository} at {start.Value[..Math.Min(10, start.Value.Length)]} from {parent}, for a child run");

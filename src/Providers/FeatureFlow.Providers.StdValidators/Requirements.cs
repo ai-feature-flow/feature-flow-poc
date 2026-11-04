@@ -73,21 +73,38 @@ static class Requirements
                     c.Error("invalid_owner",
                         $"{item.Id} in {D(plan)} is owned by {owner.Kind} {owner.Id}; a {scope!.Kind} plan's owner is a {child}, or the {scope.Kind} {scope.Id} itself",
                         plan.Subject.Name, item.Id);
+                else if ((item.Supports ?? []).FirstOrDefault(l => l.Artifact?.Contains('/') == true) is { } upward)
+                    // The child copies the item with its links, and would read upward/x in its own run's frame, where it names
+                    // another document (review F2 of PR 14, LOG 200): an item given to a child supports this run's own items.
+                    c.Error("owned_item_links_up",
+                        $"{item.Id} in {D(plan)} supports {upward.Requirement} in {upward.Artifact}; an item given to a {child} supports this run's own documents (link to requirements, not {upward.Artifact})",
+                        plan.Subject.Name, item.Id);
         }
     }
 
     static bool Owns(PlanOwner? owner, PlanScope scope) => owner is not null && owner.Kind == scope.Kind && owner.Id == scope.Id;
 
     /// <summary>
-    /// An item's links. A child's copy may name the parent's documents by the sandbox's names for them
-    /// (<c>parent/requirements</c>, LOG 191); seen from <paramref name="from"/>'s run, that is <c>requirements</c>.
+    /// What a link names, seen from the child (LOG 191, 200): a link resolves relative to the run that wrote it. In the
+    /// parent's plan (<paramref name="byParent"/>) a bare <c>x</c> is the child's <c>parent/x</c>, and the parent's
+    /// <c>parent/x</c> or <c>root/x</c> is the child's <c>root/x</c> (std's levels are at most three deep, so a child's
+    /// grandparent is its root). In the child's copy a bare <c>x</c> is taken as copied unchanged: the parent's <c>x</c>.
     /// </summary>
-    static IEnumerable<(string?, string?)> Links(PlanItem item, FeatureFlow.Providers.Abstractions.ValidationSubject? from = null)
+    static string? Target(string? artifact, bool byParent) => artifact switch
     {
-        var prefix = from is null || from.From == "current" ? null : from.From.Replace(':', '/') + "/";
-        return (item.Supports ?? [])
-            .Select(l => (prefix is not null && l.Artifact?.StartsWith(prefix, StringComparison.Ordinal) == true ? l.Artifact[prefix.Length..] : l.Artifact, l.Requirement))
-            .Distinct().Order();
+        null => null,
+        _ when !artifact.Contains('/') => "parent/" + artifact,
+        _ when byParent && (artifact.StartsWith("parent/", StringComparison.Ordinal) || artifact.StartsWith("root/", StringComparison.Ordinal)) =>
+            "root/" + artifact[(artifact.IndexOf('/') + 1)..],
+        _ => artifact,
+    };
+
+    /// <summary>The parent's links the copy does not keep: kept word for word, or naming the same document from the child.</summary>
+    static IEnumerable<PlanLink> Dropped(PlanItem copy, PlanItem item)
+    {
+        var copied = (copy.Supports ?? []).ToList();
+        return (item.Supports ?? []).Where(l => !copied.Any(k => k.Requirement == l.Requirement
+                                                                && (k.Artifact == l.Artifact || Target(k.Artifact, false) == Target(l.Artifact, true))));
     }
 
     /// <summary>
@@ -125,7 +142,7 @@ static class Requirements
                 var copy = plan.Value.Items.FirstOrDefault(i => i.Id == item.Id);
                 if (copy is null)
                     c.Error("missing_inherited", $"{D(plan)} does not hold {item.Id}, which {D(parent)} gives {scope.Kind} {scope.Id}", plan.Subject.Name, item.Id);
-                else if (Links(item).Except(Links(copy, parent.Subject)).Any())
+                else if (Dropped(copy, item).Any())
                     // A copy keeps every link the parent gave it; it may add links to this run's own items, which
                     // requirement_support resolves (LOG 191).
                     c.Error("links_changed", $"{item.Id} in {D(plan)} does not support everything it supports in {D(parent)}", plan.Subject.Name, item.Id);
