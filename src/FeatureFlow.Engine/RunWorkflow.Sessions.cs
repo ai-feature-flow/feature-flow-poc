@@ -146,8 +146,9 @@ public partial class RunWorkflow
     /// </summary>
     string? SessionAnswerError(AnswerArgs answer)
     {
+        // Fails closed: a submission (an answer with a revision) is only ever for a session this run opened.
         if (SessionStep(answer.WaitId) is not { } step)
-            return null;
+            return answer.Revision is null ? null : $"{answer.WaitId} is not an open session of run {input.RunId}: nothing to submit";
         var session = SessionNames.Id(input.RunId, answer.WaitId);
         if (submitting.Contains(answer.WaitId))
             return $"session {session} is being submitted";

@@ -178,6 +178,37 @@ public class SessionRunTests
     }
 
     [Fact]
+    public async Task A_session_carried_over_a_hand_over_still_takes_a_submission_and_another_wait_refuses_one()
+    {
+        var (h, forge, repo) = await ForgeTicketTests.StartAsync("session-carry", autoApprove: false);
+        await using var _h = h;
+        var id = h.Start("std:templates/project_delivery", "--param", "project_name=invoicing", "--repo", repo.FullName, "--continue-as-new-events", "100");
+        var http = await ClientAsync(h);
+        var opened = await OpenSessionAsync(h, http, id);
+        var sid = opened["session"]!["sessionId"]!.ToString();
+        var good = Commit(forge, repo, opened["workspace"]!["branch"]!.ToString(), Valid);
+
+        // Checks grow the history until the run hands over with the session's decision open.
+        for (var i = 0; i < 20 && (await h.RunsOfAsync(id)).Count < 2; i++)
+            await CheckAsync(http, sid, good);
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(60);
+        while ((await h.RunsOfAsync(id)).Count < 2 && DateTime.UtcNow < deadline)
+            await Task.Delay(200, TestContext.Current.CancellationToken);
+        Assert.True((await h.RunsOfAsync(id)).Count >= 2, "the run did not hand over");
+
+        Assert.Equal("recorded", (await PostAsync(http, $"sessions/{sid}/submit", new JsonObject { ["revision"] = good }))["result"]!.ToString());
+        await WaitAtAsync(h, id, "approve");
+
+        // A revision on a wait that is not a session is refused, never taken as a plain answer (fails closed).
+        var approve = (await h.ShowAsync(id))["waits"]![0]!["waitId"]!.ToString();
+        var refusal = await Assert.ThrowsAsync<Temporalio.Exceptions.WorkflowUpdateFailedException>(() =>
+            h.Client.GetWorkflowHandle(id).ExecuteUpdateAsync<AnswerReply>(RunWorkflowNames.Answer, [new AnswerArgs(approve, "tester", "approved", null, Revision: good)]));
+        Assert.Contains("is not an open session", refusal.InnerException?.Message ?? refusal.Message);
+        Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
+        await PostAsync(http, $"runs/{id}/abort", new JsonObject { ["reason"] = "the test is done" });
+    }
+
+    [Fact]
     public async Task A_check_runs_only_an_artifact_validate_step_even_when_checks_from_names_another()
     {
         var (h, _, repo) = await ForgeTicketTests.StartAsync("session-publish", autoApprove: false, libraries: [Path.Combine(Harness.TestLibraries, "m7")]);
