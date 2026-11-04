@@ -79,6 +79,7 @@ public partial class RunWorkflow
         answersWhileDraining = c?.AnswersWhileDraining ?? 0;
         questions = c?.Questions?.ToList() ?? [];
         closedQuestions = c?.ClosedQuestions?.ToList() ?? [];
+        sessionWaits = [.. c?.SessionWaits ?? []];
         if (c is not null)
             lastRecordedStatus = "running";
     }
@@ -237,6 +238,8 @@ public partial class RunWorkflow
             return;
         }
 
+        if (core is not null && SessionAnswerError(answer) is { } refused)
+            throw new ApplicationFailureException(refused);
         if (core is not null && core.Check(ToInput(answer)) is { } error)
             throw new ApplicationFailureException(error);
     }
@@ -264,12 +267,19 @@ public partial class RunWorkflow
 
         if (closedQuestions.Contains(answer.WaitId))
             throw new ApplicationFailureException($"timed out: the agent has carried on without an answer to {answer.WaitId}");
+        if (SessionAnswerError(answer) is { } refused)
+            throw new ApplicationFailureException(refused);
+        var session = SessionStep(answer.WaitId);
+        if (session is not null && answer.Revision is not null)
+            return await SubmitAsync(answer, session);
         var result = core!.Apply(ToInput(answer));
         if (!result.Accepted)
             throw new ApplicationFailureException(string.Join("; ", result.Errors));
         answered.Add(new AppliedAnswer(answer.WaitId, Key(answer)));
         core.State.Trace.Add(new TraceEntry("answered", answer.WaitId, $"{Key(answer)} by {answer.Actor}"));
         dirty = true;
+        if (session is not null)
+            await CloseSessionAsync(answer, session);
         return new AnswerReply("recorded");
     }
 
@@ -403,6 +413,9 @@ public partial class RunWorkflow
                 case CleanUp c when Workflow.Patched(CleanUpPatch):
                     await CleanUpAsync(c.StepId);
                     break;
+                case OpenDecision o when IsSession(o.StepId) && !input.DryRun && Workflow.Patched(SessionsPatch):
+                    await OpenSessionAsync(o);
+                    break;
                 case SendPatchToParent p when input.ParentWorkflowId is { } parent:
                     await SignalQuietlyAsync(parent, RunWorkflowNames.ParentPatch,
                         [new ParentPatchSignal(Workflow.Info.WorkflowId, p.StepId, PatchReader.Write(p.Patch))]);
@@ -474,7 +487,23 @@ public partial class RunWorkflow
             return;
         }
 
-        var identity = new StepIdentity(input.RunId, Template.Name, step.Id, s.Execution, $"{input.RunId}/{step.Id}/{s.Execution}");
+        var (call, scope, error) = CallOf(step, new StepIdentity(input.RunId, Template.Name, step.Id, s.Execution, $"{input.RunId}/{step.Id}/{s.Execution}"), inputs);
+        if (error is not null)
+        {
+            core.Apply(new StepCannotAnswer(step.Id, error));
+            dirty = true;
+            return;
+        }
+
+        _ = RunStepAsync(step, s.Execution, call!, scope);
+    }
+
+    /// <summary>
+    /// What a step's activity is given (its call and an engine action's scope), built from the plan and state now, or why it
+    /// cannot be. A session's pre-submit check is given the same, built here, so it stands for the step (docs/09 section 4.2).
+    /// </summary>
+    (StepCall? Call, ActionScope? Scope, string? Error) CallOf(Step step, StepIdentity identity, Dictionary<string, object?> inputs)
+    {
         ActionScope? scope = null;
         // Behind the marker: a history recorded before M5 neither computes a scope nor renders a prompt, so a render
         // that fails cannot replace the activity it scheduled. Only a run whose actions run against providers (fixed at
@@ -486,14 +515,12 @@ public partial class RunWorkflow
             {
                 scope = ScopeOf(step);
                 foreach (var name in Actions.All.GetValueOrDefault(step.Action!)?.ReferenceInputs ?? [])
-                    if (inputs.GetValueOrDefault(name) is string reference && core.RenderPrompt(step.Id, reference) is { } rendered)
+                    if (inputs.GetValueOrDefault(name) is string reference && core!.RenderPrompt(step.Id, reference) is { } rendered)
                         inputs[name] = rendered;
             }
             catch (EvaluationException e)
             {
-                core.Apply(new StepCannotAnswer(step.Id, "a prompt it names cannot be rendered: " + e.Message));
-                dirty = true;
-                return;
+                return (null, null, "a prompt it names cannot be rendered: " + e.Message);
             }
         }
 
@@ -506,9 +533,7 @@ public partial class RunWorkflow
             }
             catch (EvaluationException e)
             {
-                core.Apply(new StepCannotAnswer(step.Id, "its task cannot be rendered: " + e.Message));
-                dirty = true;
-                return;
+                return (null, null, "its task cannot be rendered: " + e.Message);
             }
         }
 
@@ -516,7 +541,7 @@ public partial class RunWorkflow
             step.Form == StepForm.Agent ? step.Agent!.Role?.Text ?? "" : step.Action!,
             inputs.ToDictionary(kv => kv.Key, kv => YamlWriter.WritePlain(kv.Value)),
             Contract(step), input.DryRun, Duration(step.Limits?.Timeout), agent);
-        _ = RunStepAsync(step, s.Execution, call, scope);
+        return (call, scope, null);
     }
 
     /// <summary>
@@ -825,6 +850,7 @@ public partial class RunWorkflow
                 return;
             }
 
+            NoteCheckInputs(step, outcome!);
             Apply(step, outcome!);
         }
         catch (Exception e) when (e is not TemporalException)
@@ -1416,7 +1442,8 @@ public partial class RunWorkflow
             interruptedThisRun));
         var carried = new ShellState(core.Snapshot(), children.ToList(), pendingChildEnds.ToList(), pendingParentPatches.ToList(), answered.ToList(),
             recordedOpenWaits.ToList(), timelineSequence, handOvers.ToList(), cancelledByParent,
-            activitiesStartedWhileDraining, childEndsWhileDraining, answersWhileDraining, questions.ToList(), closedQuestions.ToList());
+            activitiesStartedWhileDraining, childEndsWhileDraining, answersWhileDraining, questions.ToList(), closedQuestions.ToList(),
+            sessionWaits.Count == 0 ? null : sessionWaits.Where(id => core.State.Waits.Any(w => w.Id == id)).ToList());
         // The run's lock carries its library overrides (docs/08 section 5.2).
         var next = input with { Policy = policy, Carried = carried, LockRef = LockRef };
         return Workflow.CreateContinueAsNewException((RunWorkflow w) => w.RunAsync(next));

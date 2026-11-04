@@ -159,7 +159,12 @@ public sealed record StepFailed(string StepId, ErrorClass Class, string Reason) 
 /// </summary>
 public sealed record StepInterrupted(string StepId, string Reason) : RunInput;
 
-public sealed record DecisionAnswered(string StepId, string Outcome) : RunInput;
+/// <summary>
+/// A person answered a decision step. <see cref="Artifacts"/> are what an interactive session's submission produced, by
+/// declared name (docs/04 section 4.4): when given, they must be exactly the artifacts the outcome promises, and are the
+/// step's, as a completed step's are. Null: the answer produces nothing.
+/// </summary>
+public sealed record DecisionAnswered(string StepId, string Outcome, IReadOnlyDictionary<string, string>? Artifacts = null) : RunInput;
 
 /// <summary>
 /// A patch from outside a step: a person through the API, or the engine. <see cref="By"/> is set by the shell

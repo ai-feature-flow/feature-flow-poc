@@ -209,3 +209,93 @@ yet enforced), 224 (effective policy view), 225 (override wire and CLI).
 | 4 | `merge.require_checks` locked on refuses only a literal `require_checks: false` at run start; an expression giving false at merge time is not checked against the cap (`scm.merge` does not read it). Older than M7 |
 | 5 | Startup does not yet resolve the API's `token_ref` or other secret references (docs/07 section 7); a missing one shows as every local-token request refused |
 | 6 | min_count: two answers at the same moment can leave the count short until another answer; re-read after recording (review R2 F7) |
+
+## Interactive sessions
+
+W4, on `m7-sessions`: a decision's interactive session (docs/04 section 4.4) with local hand-off (RW18), pre-submit checks
+with parity (docs/09 section 4.2), and submission. Done-when 2, "a person runs a project's requirements session on
+their machine and submits", is prepared for the live run (how-to below).
+
+**What was built**
+
+| Piece | What |
+|---|---|
+| Opening | When a decision with `session` opens (patch `m7-sessions`), the run makes branch `ff/session/<run>/<wait>` in the session's repository at the run's work branch, else the parent branch; prepares it through the session surface (new kind `local`, the hand-off); stores the workspace document (prompt, files, drafts, context, checks, instructions); records the session `prepared`. Drafts come from consumed artifacts, else the step's last submission (LOG 237) |
+| Reaching it | API `/runs/{id}/sessions`, `/sessions/{sid}` (fetch), `/sessions/{sid}/checks`, `/submit`, `/abandon`, as the authenticated person. CLI `ff session list | fetch [--out] | check <step> | submit | abandon`, and `ff session mcp`, a stdio MCP server with `session_fetch`, `session_check`, `session_submit` for the person's agent tool (LOG 243) |
+| Pre-submit checks | Update `session_check`. The step's call is built by the one function the step itself starts with (`CallOf`), with the session's files imported at the commit standing in for the decision's artifacts, and runs through the same activity. The activity returns a digest of exactly what it received (`CheckInputs`), which the check and the step record. `artifact.validate` steps only (LOG 238) |
+| Submission | An answer carrying the commit (`Revision`): the run imports the files with `artifact.import` and the decision takes the submitting outcome with them as its artifacts, the person as actor (F8). A plain answer cannot take that outcome; abandoning, or any other answer, closes the session (LOG 239, 240) |
+| Core | `DecisionAnswered` carries optional artifacts, exactly those the outcome promises; the re-drive runner answers session decisions with them |
+
+**Checks**
+
+- `SessionRunTests` (integration, memory world): `project_delivery` reaches `define`; round 1 fails its pre-submit check and
+  is submitted anyway, `check_requirements` finds it invalid and a second session opens seeded with it; round 2 is done as a
+  person would (`ff session fetch --out`, the check through `ff session mcp`, `ff session submit`), passes, and the run
+  reaches `approve`. In both rounds the check's digest equals the step's; at different commits they differ. The submitter
+  is the authenticated caller although the body names another. A plain `submitted` answer is refused; abandon ends the run
+  `rejected` and closes the session.
+- After the review: a session decision is a session only if the run opened one behind `m7-sessions`; `project_session`
+  (with the marker) and `project_session_pre_m7` (recorded on the code before sessions, answering `define` with a plain
+  `submitted`) replay. A dry run's decision takes a plain answer. A check of a step other than `artifact.validate` is
+  refused though `checks_from` names it (`m7:templates/session_checks`). The run's own refusals of an update sent
+  directly (artifacts given; not a full commit; abandon with a revision). The CLI refuses an id that is not a session's.
+- `CheckInputsTests`: the digest ignores who the step is, and changes with the task, tools, role (model) or files.
+- `SessionAnswerTests` (core), `SessionApiTests` (who may act; full commits; closed sessions), the local surface against
+  `SessionSurfaceContract`, CLI usage.
+
+**Controls** (each mutation made its check fail, then was restored)
+
+| Mutation | Failed |
+|---|---|
+| The check keeps the later step's own artifacts from an earlier execution | `SessionRunTests`: round 2's digests differ |
+| The check is given another contract, or another form | `SessionRunTests`: digests differ |
+| The check is not given the session's files | `SessionRunTests`: the check fails |
+| The digest leaves out the scope (the files, so the commit) | `SessionRunTests`: two commits' checks are equal |
+| The digest includes the step's identity | `CheckInputsTests` |
+| The core accepts any artifact set on a decision | `SessionAnswerTests` |
+| A plain answer may take `submitted` | `SessionRunTests` (abandon test) |
+| The submitter is taken from the request body | `SessionRunTests` |
+| The CLI and MCP check `HEAD` instead of the commit named | `SessionRunTests` |
+| Any authenticated caller may act on a session; a closed decision's session may be acted on | `SessionApiTests` |
+| Review F1 undone (any decision whose plan declares `session` is one) | Replay of `project_session_pre_m7` (nondeterminism); the dry-run test |
+| A session path changed (its closing record not written) | Replay of `project_session` |
+| The step's activity, or the check's, given another call or scope than built (timeout; contract; form; work branch) | `SessionRunTests`: digests differ |
+| Any action step may be checked | `SessionRunTests` (`session_checks`) |
+| The run accepts artifacts given on a submission; `artifact.import` accepts a revision that is not a commit | `SessionRunTests` (abandon test) |
+| The CLI sends any session id | `CliAppTests` |
+
+**Deviations and judgement calls:** LOG 236 (the person is whoever takes the session), 237 (branch plus fetched document;
+no commit), 238 (checks run the step's own builder; engine-action steps only), 239 (the run imports a submission;
+`AnswerArgs.Artifacts` stays null), 240 (only a submission takes the importing outcome), 241 (full commits), 242 (new wire
+file), 243 (`ff session mcp`), 244 (bounded retries), 245 (no session in a dry run).
+
+**Done-when 2: the live run**
+
+1. **Where**: `project_delivery`'s session works in `params.planning_repository`, by default the run's first repository.
+   Start with `--repo ai-feature-flow/feature-flow-example --param project_name=m7-live`: the person writes
+   `projects/m7-live/requirements.yaml` and `projects/m7-live/architecture.md` on `ff/session/<run>/<wait>`.
+2. **The person**: any caller holding a role that may answer `project.requirements_session` (`approver` by default). With
+   the local token, run a second API host on the same Temporal, record store and artifact store, with its own
+   installation file whose `api.auth` names the person (for example `actor: m7-person, roles: [approver]`) and its own
+   token; with OIDC, the person's own login. The session records whoever submits.
+3. **Steps**: start the run as the starter; `ff run wait <run> --for wait`; then as the person
+   `ff session list <run>`, `git fetch origin <branch> && git switch <branch>` in a clone of the fixture,
+   `ff session fetch <sid> --out ../ff-session`, write and commit both files, `git push origin <branch>`,
+   `ff session check <sid> check_requirements`, `ff session submit <sid>`. The run reaches `approve`. Or point the
+   person's Claude Code at `ff session mcp` (with `FF_API_URL` and `FF_API_TOKEN` set) and let it do the same.
+4. **Leave nothing behind**: abort the run at `approve` (later steps plan epics and open pull requests); delete every
+   `ff/session/<run>/*` branch the run made (`git push origin --delete ...`). Nothing else is written to the fixture
+   before `approve`.
+
+**Follow-ups**
+
+| # | Follow-up |
+|---|---|
+| 1 | Submission checks only what `artifact.import` checks; call the artifact type check (W5's report-time check, LOG 176) on submitted files once it lands (LOG 239) |
+| 2 | Pre-submit checks of agent steps (a reviewer of a spec): their own hidden reference, questions and step token (LOG 238) |
+| 3 | Done at the merge with W2: reading a session needs `viewer` in the run's scope; acting on one needs the approval rule for its decision type (roles in the run's scope, `from_chat`), and a submission or abandonment goes through the one answer path (`SubmitAnswerAsync`, with `min_count`) |
+| 4 | Session branches are not deleted when a session ends; a run's clean-up could remove them |
+| 5 | A load check refusing `checks_from` that names a step other than `artifact.validate`; today the check is refused when asked (LOG 238) |
+| 6 | Checks are not cancelled when the run ends, and are not capped per session; with `artifact.validate` only they are short (review F6) |
+| 7 | The guard refusing a second answer while a submission imports (`submitting`) has no test (review F8, mutation H) |
+| 8 | A session that fails to open can only be abandoned; a re-open action would be gentler (review design note) |

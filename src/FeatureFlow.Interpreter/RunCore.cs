@@ -598,9 +598,28 @@ public sealed partial class RunCore
             return ApplyResult.Refused($"no decision is open at {a.StepId}");
         if (!step.DeclaredOutcomes.Any(o => o.Name == a.Outcome))
             return ApplyResult.Refused($"{a.StepId}: '{a.Outcome}' is not a declared outcome ({string.Join(", ", step.DeclaredOutcomes.Select(o => o.Name))})");
+        if (SessionArtifactsError(step, a) is { } error)
+            return ApplyResult.Refused(error);
         State.Waits.Remove(wait);
-        Finish(step, Record(step.Id), a.Outcome);
+        var record = Record(step.Id);
+        record.Current ??= new Execution { Number = record.Executions };
+        foreach (var (name, reference) in a.Artifacts ?? new Dictionary<string, string>())
+            record.Current.Artifacts[name] = reference;
+        Finish(step, record, a.Outcome);
         return ApplyResult.Ok;
+    }
+
+    /// <summary>Why a decision answer's artifacts are not exactly those its outcome promises, or null; an answer with none is not checked.</summary>
+    static string? SessionArtifactsError(Step step, DecisionAnswered a)
+    {
+        if (a.Artifacts is null)
+            return null;
+        var promised = step.Produces.Where(p => p.Outcome == a.Outcome || (p.Outcome is null && step.Outcomes().Any(o => o.Name == a.Outcome && o.Class == OutcomeClass.Success)))
+            .Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
+        var given = a.Artifacts.Keys.ToHashSet(StringComparer.Ordinal);
+        var errors = given.Except(promised).Order(StringComparer.Ordinal).Select(n => $"artifact '{n}' is not declared for outcome '{a.Outcome}'")
+            .Concat(promised.Except(given).Order(StringComparer.Ordinal).Select(n => $"outcome '{a.Outcome}' promises artifact '{n}', which was not submitted")).ToList();
+        return errors.Count == 0 ? null : $"{a.StepId}: {string.Join("; ", errors)}";
     }
 
     void Finish(Step step, StepRecord record, string outcome)

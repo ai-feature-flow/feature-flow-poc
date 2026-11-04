@@ -367,6 +367,8 @@ public static class LocalProviders
             // M7: in-memory notifications and session surface for engine tests.
             new("notifications", "memory", ["world"], c => InMemoryNotifications.Named(c.Setting("world") ?? "default")),
             new("session_surface", "memory", ["world"], c => InMemorySessionSurface.Named(c.Setting("world") ?? "default")),
+            // M7: version 1's session surface, a hand-off to the person's own agent tool (RW18).
+            new("session_surface", "local", [], _ => new LocalSessionSurface()),
         };
         foreach (var type in ConfigurationReader.ProviderTypes.Where(t => t is not ("artifact_store" or "record_store" or "secrets" or "action_stand_in")))
             list.Add(new ProviderFactory(type, "fake", [], _ => new DescribedOnlyProvider(type)));

@@ -169,7 +169,11 @@ public static class WorkflowTestRunner
 
             RunInput input;
             if (decision)
-                input = new DecisionAnswered(stepId, outcome);
+            {
+                // A session's submission produces the artifacts its outcome promises (docs/04 section 4.4); any other answer none.
+                var submitted = Promised(step, outcome).ToDictionary(n => n, n => $"artifact:{stepId}/{n}/{execution}");
+                input = new DecisionAnswered(stepId, outcome, submitted.Count == 0 ? null : submitted);
+            }
             else if (visit.Error == "infrastructure" && tries.GetValueOrDefault((stepId, execution)) < visit.Times)
             {
                 tries[(stepId, execution)] = tries.GetValueOrDefault((stepId, execution)) + 1;
@@ -198,10 +202,7 @@ public static class WorkflowTestRunner
                 }
 
                 var outputs = Outputs(step, test.Outputs.GetValueOrDefault(stepId), execution, failures);
-                var artifacts = step.Produces
-                    .Where(p => p.Outcome == outcome || (p.Outcome is null && step.Outcomes().Any(o => o.Name == outcome && o.Class == OutcomeClass.Success)))
-                    .Select(p => p.Name).Distinct()
-                    .ToDictionary(n => n, n => $"artifact:{stepId}/{n}/{execution}");
+                var artifacts = Promised(step, outcome).ToDictionary(n => n, n => $"artifact:{stepId}/{n}/{execution}");
                 input = new StepCompleted(stepId, outcome, outputs, artifacts, patch);
             }
 
@@ -374,4 +375,9 @@ public static class WorkflowTestRunner
             return list[Math.Min(k, list.Count - 1)];
         }
     }
+
+    /// <summary>The artifacts a step's outcome promises: those declared for it, and those declared for every success.</summary>
+    static IEnumerable<string> Promised(Step step, string outcome) => step.Produces
+        .Where(p => p.Outcome == outcome || (p.Outcome is null && step.Outcomes().Any(o => o.Name == outcome && o.Class == OutcomeClass.Success)))
+        .Select(p => p.Name).Distinct();
 }

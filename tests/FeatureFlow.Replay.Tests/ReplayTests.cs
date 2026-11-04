@@ -23,7 +23,7 @@ public class ReplayTests
     public void The_recorded_histories_are_there()
     {
         // Without this, a missing folder would leave the theory with no cases and nothing replayed.
-        Assert.Equal(["agent_question", "budget_middle", "delivery_tracked", "epic_delivery", "epic_delivery_child", "family_child", "family_parent",
+        Assert.Equal(["agent_question", "budget_middle", "delivery_tracked", "epic_delivery", "epic_delivery_child", "family_child", "family_parent", "project_session", "project_session_pre_m7",
                 "silent_parent_resumed", "sp1_parent", "sp1_parent_resumed", "steering_line", "steering_rerun_branch", "ticket_clean_up", "ticket_delivery", "wait_hand_over", "wait_hand_over_resumed"],
             Names());
     }
@@ -82,6 +82,15 @@ public class ReplayTests
             .SelectMany(d => d.Value.GetProperty("payloads").EnumerateArray())
             .Select(p => System.Text.Json.JsonDocument.Parse(Convert.FromBase64String(p.GetProperty("data").GetString()!)).RootElement.GetProperty("id").GetString()!)
             .ToList();
+    }
+
+    [Fact]
+    public void A_history_holds_the_sessions_marker_and_one_from_before_it_answers_a_session_decision()
+    {
+        // Sessions (M7): opening, checks, submissions and the step's digest are behind the marker. The second history, recorded
+        // before sessions, answers project_delivery's session decision with a plain `submitted`, which must still replay.
+        Assert.Contains(RunWorkflow.SessionsPatch, Markers("project_session"));
+        Assert.DoesNotContain(RunWorkflow.SessionsPatch, Markers("project_session_pre_m7"));
     }
 
     [Theory]

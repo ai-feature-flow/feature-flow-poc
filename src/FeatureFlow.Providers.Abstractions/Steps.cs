@@ -89,6 +89,12 @@ public sealed record StepOutcome(string Kind, StepReport? Report, string? Reason
 
     /// <summary>The ledger version <see cref="Findings"/> was read at: the core keeps the newest (review F3).</summary>
     public long FindingsVersion { get; init; }
+
+    /// <summary>
+    /// The digest of the call and scope the engine-action activity received (pre-submit parity, docs/09 section 4.2), so a
+    /// session's check and the later step are compared on what they were actually given. Null from other activities.
+    /// </summary>
+    public string? Inputs { get; init; }
 }
 
 /// <summary>The engine's endpoints as the agent in a sandbox reaches them, with the step's token (docs/02 section 4.2).</summary>
