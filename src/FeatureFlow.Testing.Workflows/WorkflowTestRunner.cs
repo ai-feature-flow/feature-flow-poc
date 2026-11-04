@@ -95,6 +95,20 @@ public static class WorkflowTestRunner
             patchPending = false;
         }
 
+        // A person's overrides, made as an administrator would: protected content and beyond the hard ceiling included.
+        foreach (var o in test.Overrides)
+        {
+            var applied = core.Apply(o.Key switch
+            {
+                "breakpoint" => new BreakpointSet(o.StepId, true, "test"),
+                "skip" => new StepSkipped(o.StepId, o.Outcome!, "test", "the test file", MayTouchProtected: true),
+                _ => new AttemptsGranted(o.StepId, o.Attempts, BeyondHardCeiling: true, "test"),
+            });
+            if (!applied.Accepted)
+                failures.Add($"the override {o.Key} {o.StepId} was refused: {string.Join("; ", applied.Errors)}");
+        }
+
+        var answered = new Dictionary<string, int>(StringComparer.Ordinal);
         var queue = new List<(string StepId, int Execution, bool Decision)>();
         var cleanUps = new List<string>();
         var tries = new Dictionary<(string, int), int>();
@@ -120,6 +134,19 @@ public static class WorkflowTestRunner
                 }
             }
 
+            if (queue.Count == 0 && core.State.Status == RunStatus.Running && NextAnswer(test, core, answered) is { } answer)
+            {
+                // Settled at a breakpoint or intervention the file answers: a person answers it, and the run goes on.
+                var given = core.Apply(answer);
+                if (!given.Accepted)
+                {
+                    failures.Add("the answer was refused: " + string.Join("; ", given.Errors));
+                    break;
+                }
+
+                continue;
+            }
+
             if (queue.Count == 0 || core.State.Status != RunStatus.Running)
                 break;
             if (++inputs > MaxInputs)
@@ -142,7 +169,11 @@ public static class WorkflowTestRunner
 
             RunInput input;
             if (decision)
-                input = new DecisionAnswered(stepId, outcome);
+            {
+                // A session's submission produces the artifacts its outcome promises (docs/04 section 4.4); any other answer none.
+                var submitted = Promised(step, outcome).ToDictionary(n => n, n => $"artifact:{stepId}/{n}/{execution}");
+                input = new DecisionAnswered(stepId, outcome, submitted.Count == 0 ? null : submitted);
+            }
             else if (visit.Error == "infrastructure" && tries.GetValueOrDefault((stepId, execution)) < visit.Times)
             {
                 tries[(stepId, execution)] = tries.GetValueOrDefault((stepId, execution)) + 1;
@@ -171,10 +202,7 @@ public static class WorkflowTestRunner
                 }
 
                 var outputs = Outputs(step, test.Outputs.GetValueOrDefault(stepId), execution, failures);
-                var artifacts = step.Produces
-                    .Where(p => p.Outcome == outcome || (p.Outcome is null && step.Outcomes().Any(o => o.Name == outcome && o.Class == OutcomeClass.Success)))
-                    .Select(p => p.Name).Distinct()
-                    .ToDictionary(n => n, n => $"artifact:{stepId}/{n}/{execution}");
+                var artifacts = Promised(step, outcome).ToDictionary(n => n, n => $"artifact:{stepId}/{n}/{execution}");
                 input = new StepCompleted(stepId, outcome, outputs, artifacts, patch);
             }
 
@@ -197,7 +225,8 @@ public static class WorkflowTestRunner
         }
 
         // Names are checked against every revision, since a patch may add steps.
-        foreach (var id in test.Script.Keys.Concat(test.Outputs.Keys).Concat(test.Expand.Keys).Concat(test.ExpectExecutions.Keys).Distinct())
+        foreach (var id in test.Script.Keys.Concat(test.Outputs.Keys).Concat(test.Expand.Keys).Concat(test.ExpectExecutions.Keys)
+                     .Concat(test.Answers.Keys).Concat(test.Overrides.Select(o => o.StepId)).Distinct())
             if (!core.State.IdHistory.Contains(id))
                 failures.Add($"'{id}' is not a step of {test.Template} in any revision of the run");
 
@@ -207,6 +236,11 @@ public static class WorkflowTestRunner
             failures.Add($"{t.StepId}: {t.Detail}");
         if (test.ExpectCleanUp is { } expectCleanUp && !expectCleanUp.SequenceEqual(cleanUps))
             failures.Add($"clean_up commands were [{string.Join(", ", cleanUps)}], expected [{string.Join(", ", expectCleanUp)}]");
+        var skipped = core.State.Trace.Where(t => t.Kind == "skipped").Select(t => t.StepId).ToList();
+        if (test.ExpectSkipped is { } expectSkipped && !expectSkipped.SequenceEqual(skipped))
+            failures.Add($"skipped steps were [{string.Join(", ", skipped)}], expected [{string.Join(", ", expectSkipped)}]");
+        foreach (var (id, list) in test.Answers.Where(a => answered.GetValueOrDefault(a.Key) < a.Value.Count))
+            failures.Add($"{id}: {list.Count - answered.GetValueOrDefault(id)} answer(s) were not used: no breakpoint or intervention opened there for them");
 
         CompareChecks(test, observedChecks, failures, patchDiagnostics);
         if (test.ExpectStatus is { } expected && expected != status)
@@ -265,6 +299,31 @@ public static class WorkflowTestRunner
         return null;
     }
 
+    /// <summary>The file's next answer to a breakpoint or intervention open now, in the order they opened; null when it gives none.</summary>
+    static InterventionAnswered? NextAnswer(WorkflowTest test, RunCore core, Dictionary<string, int> answered)
+    {
+        foreach (var wait in core.State.Waits.Where(w => w.Kind is WaitKind.Breakpoint or WaitKind.Intervention))
+        {
+            var used = answered.GetValueOrDefault(wait.StepId);
+            if (test.Answers.GetValueOrDefault(wait.StepId) is not { } list || used >= list.Count)
+                continue;
+            answered[wait.StepId] = used + 1;
+            var a = list[used];
+            var kind = a.Action switch
+            {
+                "continue" => RecoveryKind.Continue,
+                "go_to" => RecoveryKind.GoTo,
+                "replan" => RecoveryKind.Replan,
+                "grant_attempts" => RecoveryKind.GrantAttempts,
+                "end" => RecoveryKind.End,
+                _ => RecoveryKind.Retry,
+            };
+            return new InterventionAnswered(wait.Id, new Recovery(kind, a.StepId, a.CleanUp, a.Attempts, a.Status is null ? null : RunStatuses.Parse(a.Status), BeyondHardCeiling: true));
+        }
+
+        return null;
+    }
+
     static string? FirstSuccess(Step step) =>
         step.Outcomes().FirstOrDefault(o => o.Class == OutcomeClass.Success)?.Name;
 
@@ -316,4 +375,9 @@ public static class WorkflowTestRunner
             return list[Math.Min(k, list.Count - 1)];
         }
     }
+
+    /// <summary>The artifacts a step's outcome promises: those declared for it, and those declared for every success.</summary>
+    static IEnumerable<string> Promised(Step step, string outcome) => step.Produces
+        .Where(p => p.Outcome == outcome || (p.Outcome is null && step.Outcomes().Any(o => o.Name == outcome && o.Class == OutcomeClass.Success)))
+        .Select(p => p.Name).Distinct();
 }
