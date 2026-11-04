@@ -13,6 +13,7 @@ public sealed class ResultFileTests
 
         Assert.Equal((2, 2, 1), (results.Passed, results.Failed, results.Skipped));
         Assert.Equal([new TestFailure("A", "A failed"), new TestFailure("B", "B failed")], results.Failures);
+        Assert.Equal(["Passes0", "Passes1"], results.Passing);
         Assert.False(results.Clean);
     }
 
@@ -28,6 +29,7 @@ public sealed class ResultFileTests
 
         Assert.Equal((1, 1, 1), (results.Passed, results.Failed, results.Skipped));
         Assert.Equal(new TestFailure("C.bad", "boom"), results.Failures.Single());
+        Assert.Equal(["C.ok"], results.Passing);
     }
 
     [Fact]
@@ -36,6 +38,7 @@ public sealed class ResultFileTests
         var results = ResultFiles.Tests(ResultFormats.Junit, [ActionWorld.JUnit(2), ActionWorld.JUnit(1, "X")], "rev", "it");
 
         Assert.Equal((3, 1), (results.Passed, results.Failed));
+        Assert.Equal(["Api.Works0", "Api.Works1", "Api.Works0"], results.Passing);
     }
 
     [Theory]

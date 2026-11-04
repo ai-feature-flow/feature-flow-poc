@@ -19,6 +19,7 @@ exits:
 
 artifact_types:
   - std:artifact_types/merge_record
+  - std:artifact_types/revert_record
 
 steps:
   - id: deliver
@@ -60,6 +61,7 @@ steps:
       step:
         action: scm.revert
         repository: { expr: "item" }
+        produces: [{ name: revert_record, type: std:artifact_types/revert_record }]
     routes:
       completed: { exit: partial }
       any_failed: { escalate: true }

@@ -10,11 +10,11 @@ handover, which it replaces.
 | The rewrite plan and its status | `docs/PLAN.md` (start here) |
 | Design documents | `docs/00` (principles) to `docs/10` (decisions, risks, spike plan) |
 | The version 1 build plan | `docs/11-build-plan.md` |
-| Judgement calls made without the product owner (LOG 1 to 70 approved 2026-11-01, 71 to 90 on 2026-11-02, 91 to 147 on 2026-11-03; new ones are added unreviewed) | `docs/LOG.md` |
+| Judgement calls made without the product owner (LOG 1 to 70 approved 2026-11-01, 71 to 90 on 2026-11-02, 91 to 147 on 2026-11-03; 148 to 200, from M6, await review; new ones are added unreviewed) | `docs/LOG.md` |
 | The first design | `archive/docs/`, read-only. Spike results there are the evidence the new design cites: `archive/docs/15` (Spike 1), `16` (Spike 2 and the Claude Code proof), `17` and `18` (Spike 3) |
 | Reviews from the product owner | `docs/reviews/review-NN.md` |
 | Spike code | `spikes/01-interpreter`, `spikes/02-real-run`, `spikes/03-concurrent` |
-| Fixture repository | `ai-feature-flow/feature-flow-example`, a small .NET API the spikes run against |
+| Fixture repositories | `ai-feature-flow/feature-flow-example`, a small .NET API the spikes run against, and `ai-feature-flow/feature-flow-example-client`, its client library (from M6, for runs over two repositories) |
 
 ## Writing
 
@@ -107,7 +107,7 @@ work. Give each helper its own Temporal port, task queue and directory where it
 touches shared infrastructure: in Spike 1, two agents sharing a worker corrupted
 a run.
 How a milestone is split, briefed, reviewed and merged, and how the coordinator
-decides, is in the latest handover (`docs/build/handover-2026-11-03-m6.md`,
+decides, is in the latest handover (`docs/build/handover-2026-11-04-m7.md`,
 sections 3 and 4).
 
 ## Local setup (macOS)

@@ -154,6 +154,23 @@ public sealed class GitVcs(
         return ProviderResult<CommitBundle>.Success(new CommitBundle(bundle.Value!, lines[0].Trim(), int.Parse(lines[1].Trim(), System.Globalization.CultureInfo.InvariantCulture)));
     }
 
+    public Task<ProviderResult<string?>> MergeBaseAsync(RepoRef repo, string a, string b, CancellationToken cancellationToken) =>
+        WithCacheAsync(repo, async (dir, env, op) =>
+        {
+            async Task<bool> Present(string r) => Failed(await GitAsync(dir, ["cat-file", "-e", r + "^{commit}"], env, cancellationToken), "") is null;
+            if (!await Present(a) || !await Present(b))
+                await GitAsync(dir, ["fetch", "--no-tags", UrlOf(repo), "+refs/heads/*:refs/ff-cache/heads/*", "+refs/feature-flow/*:refs/ff-cache/ff/*"], env, cancellationToken);
+            var run = await GitAsync(dir, ["merge-base", a, b], env, cancellationToken);
+            if (!run.Ok)
+                return new ProviderResult<string?>(default, run.Error);
+            return run.Value!.Exit switch
+            {
+                0 => ProviderResult<string?>.Success(run.Value.Output.Trim()),
+                1 when await Present(a) && await Present(b) => ProviderResult<string?>.Success(null),
+                _ => ProviderResult<string?>.Failure("not_found", $"{a} or {b} is not on the remote: {FirstLine(run.Value.Error)}"),
+            };
+        }, write: false, cancellationToken);
+
     public Task<ProviderResult<bool>> DescendsFromAsync(RepoRef repo, string revision, string ancestor, CancellationToken cancellationToken) =>
         WithCacheAsync(repo, async (dir, env, op) =>
         {

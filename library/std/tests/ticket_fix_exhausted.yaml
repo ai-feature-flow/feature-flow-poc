@@ -13,7 +13,7 @@ repositories: [acme/api]
 script:
   verify.fix.verify_fix: not_fixed
 outputs:
-  verify.fix.triage: { to_fix: 1, escalated: 0 }
+  "findings.open": 1                     # read when the triage is applied: findings left to fix
   "findings.open_blocking": [1]
 
 expect:

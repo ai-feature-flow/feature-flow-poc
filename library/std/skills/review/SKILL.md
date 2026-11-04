@@ -50,3 +50,46 @@ marks the finding `fixed` only if the defect is gone.
 
 A finding fixed twice and raised again escalates to a person: the loop is not
 converging.
+
+## Report formats
+
+The engine reads these files exactly; any other field name, or YAML that does
+not parse, stops the step for a person. Write every sentence as a block scalar
+(`>-` and the text indented on the next lines), never as plain text after the
+colon: a `: ` inside plain text breaks the YAML. A reviewer writes a findings
+report (`findings.yaml`):
+
+```yaml
+schema: 1
+angle: correctness
+findings:                       # [] when there are none
+  - rule: null_dereference      # a stable id for the kind of defect
+    title: Find may dereference a null name
+    description: >-
+      What is wrong and why, for a fixer who has not read your review.
+    required_correction: >-
+      What must change.
+    severity: high              # critical, high, medium or low
+    blocking: false             # true only with basis: demonstrated
+    basis: reasoned             # demonstrated or reasoned
+    proof: >-
+      For demonstrated only: the failing test or command and its output.
+    location:
+      repository: owner/name    # the repository named in the inputs manifest
+      file: src/Example.cs
+      symbol: Example.Find
+      snippet: return items.First(i => i.Name == name);
+```
+
+A triager, and a verifying reviewer in its `fix_verification.yaml`, write a
+triage, one entry per finding by its `ledger_id` from the ledger view:
+
+```yaml
+schema: 1
+entries:
+  - finding: <ledger_id>
+    state: open                 # open, fixed, declined or escalated, as your task allows
+    reason: >-
+      Why.
+    regression_test: { applicable: true }   # or { applicable: false, reason: ... }
+```

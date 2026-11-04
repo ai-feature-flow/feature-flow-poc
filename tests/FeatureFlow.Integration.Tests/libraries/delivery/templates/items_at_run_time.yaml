@@ -1,0 +1,30 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: items_at_run_time
+  level: epic
+  description: >-
+    A for_each over a list a step reports: known only at run time, so it cannot
+    be expanded when the run starts (docs/03 section 8.2); plan.expand is for that.
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: choose
+    agent:
+      role: std:roles/planner
+      task: delivery:tasks/plan
+    outputs: { repos: { type: array } }
+    outcomes: { chosen: success }
+
+  - id: each
+    for_each:
+      items: { expr: "steps.choose.outputs.repos" }
+      mode: chain
+      step:
+        action: notify.send
+        with: { audience: team, message: { expr: "item" } }
+    routes:
+      completed: { end: completed }

@@ -311,20 +311,26 @@ public static class PlanExpansion
         return (patch, null);
     }
 
-    /// <summary>Replaces each string <c>$.field</c> or <c>$.a.b</c> in the step with the item's value at that path.</summary>
+    /// <summary>
+    /// Replaces each string <c>$.field</c> or <c>$.a.b</c> in the step with the item's value at that path. A path ending in
+    /// <c>?</c> is optional: a map entry whose optional path the item lacks is left out (LOG 185).
+    /// </summary>
     static (YNode? Node, string? Error) Substitute(YNode node, YNode item)
     {
         switch (node)
         {
             case YScalar s when !s.IsNull && s.Text.StartsWith("$.", StringComparison.Ordinal):
                 YNode? value = item;
-                foreach (var part in s.Text[2..].Split('.'))
+                foreach (var part in s.Text[2..].TrimEnd('?').Split('.'))
                     value = (value as YMap)?[part];
                 return value is null ? (null, $"the item has no field {s.Text}") : (value, null);
             case YMap m:
                 var entries = new List<KeyValuePair<YScalar, YNode>>();
                 foreach (var (key, value2) in m.Entries)
                 {
+                    if (value2 is YScalar { IsNull: false } optional && optional.Text.StartsWith("$.", StringComparison.Ordinal) && optional.Text.EndsWith('?')
+                        && Substitute(optional, item).Error is not null)
+                        continue;
                     var (v, e) = Substitute(value2, item);
                     if (e is not null)
                         return (null, e);

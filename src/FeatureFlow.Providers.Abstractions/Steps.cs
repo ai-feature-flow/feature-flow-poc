@@ -60,7 +60,8 @@ public sealed record AgentStepSpec(
     IReadOnlyDictionary<string, string> ParentBranches,
     IReadOnlyDictionary<string, string> Consumed,
     string WorkflowId,
-    string LockRef);
+    string LockRef,
+    string? TrackerIssue = null);
 
 /// <summary>One step for an activity to carry out. <see cref="Agent"/> is set for an agent step from M4.</summary>
 public sealed record StepCall(StepIdentity Step, string Form, string What, IReadOnlyDictionary<string, string> Inputs, StepContract Contract, bool DryRun,
@@ -72,6 +73,15 @@ public sealed record StepOutcome(string Kind, StepReport? Report, string? Reason
     public const string Reported = "reported";
     public const string WorkFailed = "work_failed";
     public const string CannotAnswer = "cannot_answer";
+
+    /// <summary>
+    /// The <c>findings</c> namespace as a findings action left the ledger (docs/03 section 5.3), which the workflow gives the
+    /// core before the step's outcome, so its routes read the new counts. Null for every other step.
+    /// </summary>
+    public IReadOnlyDictionary<string, long>? Findings { get; init; }
+
+    /// <summary>The ledger version <see cref="Findings"/> was read at: the core keeps the newest (review F3).</summary>
+    public long FindingsVersion { get; init; }
 }
 
 /// <summary>The engine's endpoints as the agent in a sandbox reaches them, with the step's token (docs/02 section 4.2).</summary>

@@ -38,6 +38,16 @@ public static class StepStartChecks
         ["test.integration"] = [A("repositories"), A("tier_tags")],
         ["analysis.run"] = [B("baseline"), S("fail_on", "new_issues", "any_issues", "never"), S("min_level", "note", "warning", "error")],
         ["repo.inspect"] = [S("repository")],
+        ["artifact.validate"] = [A("validation")],
+        ["findings.record"] = [S("source"), S("reopen_on", "code_change", "always", "never")],
+        ["findings.triage"] = [S("from"), B("post_declines"), A("states")],
+        // M6 delivery, artifacts and tracker (docs/04 sections 5.1 and 12).
+        ["delivery.report"] = [A("repositories")],
+        ["artifact.compose"] = [S("name"), A("members")],
+        ["artifact.import"] = [S("repository"), S("folder"), A("files"), S("commit"), S("record")],
+        ["artifact.publish"] = [S("repository"), S("folder"), A("files"), S("previous"), S("title"), S("body")],
+        ["tracker.update"] = [S("op", "create", "update", "transition", "link", "comment"), S("issue"), S("title"), S("body"), A("labels"), S("parent"),
+            M("fields"), S("project"), S("status"), S("to"), S("link_type")],
     };
 
     /// <summary>Check 31: what is wrong with an action's evaluated inputs, as messages; empty when they satisfy its contract.</summary>
@@ -80,8 +90,15 @@ public static class StepStartChecks
                 errors.Add($"wait.condition takes exactly one condition of pull_request, checks or tracker, not {conditions.ToString(CultureInfo.InvariantCulture)}");
         }
 
+        if (action == "findings.triage" && inputs.GetValueOrDefault("states") is IList<object?> states
+            && (states.Count == 0 || states.Any(x => x is not string state || !FindingStates.Contains(state))))
+            errors.Add($"findings.triage input 'states' must name one or more of {string.Join(", ", FindingStates)}");
+
         return errors;
     }
+
+    /// <summary>A finding's states (docs/01 section 6), which <c>findings.triage</c>'s <c>states</c> chooses from.</summary>
+    static readonly string[] FindingStates = ["open", "fixed", "declined", "escalated"];
 
     /// <summary>Check 33: a diagnostic for each tag that matches no tier in the manifest read at this step.</summary>
     public static void TierTags(string repository, RepositoryManifest manifest, IEnumerable<string> tags, DiagnosticBag d)

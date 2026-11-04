@@ -98,6 +98,31 @@ public class ConfigurationTests
         Assert.Equal(["planner"], org.Policy.AllowedRoles);
     }
 
+    [Theory]
+    [InlineData("budgets: { max_work_items: { ceiling: 30 } }", 30L, null)]
+    [InlineData("budgets: { max_work_items: { ceiling: 0 } }", null, "needs a ceiling of at least 1")]
+    [InlineData("budgets: { max_work_items: {} }", null, "needs a ceiling of at least 1")]
+    [InlineData("budgets: { max_work_items: { ceiling: 3, locked: false } }", null, "unknown key 'locked'")]
+    public void The_work_item_ceiling_is_read_from_policy_budgets(string budgets, long? ceiling, string? error)
+    {
+        var d = new DiagnosticBag();
+        var org = ConfigurationReader.ReadOrganisation($$"""
+            api_version: feature-flow/v1
+            kind: organisation
+            name: acme
+            libraries: [{ name: std, source: directory, path: ../library/std }]
+            policy:
+              {{budgets}}
+            """, "organisation.yaml", d);
+        if (error is null)
+        {
+            Assert.Empty(d);
+            Assert.Equal(ceiling, org!.Policy.MaxWorkItems);
+        }
+        else
+            Assert.Contains(d, x => x.Blocks && x.Message.Contains(error, StringComparison.Ordinal));
+    }
+
     [Fact]
     public void A_written_node_reads_back_with_the_same_meaning()
     {

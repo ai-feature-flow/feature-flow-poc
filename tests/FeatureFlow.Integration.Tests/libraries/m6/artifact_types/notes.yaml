@@ -1,0 +1,10 @@
+api_version: feature-flow/v1
+kind: artifact_type
+metadata:
+  name: notes
+  description: Free-form notes an agent writes about its work.
+
+format: markdown
+evidence: false
+compatible_with: []
+validators: []

@@ -38,7 +38,7 @@ public sealed record CarriedContainer(IReadOnlyList<int> BranchIndexes, IReadOnl
 
 public sealed record CarriedWait(string Id, string Kind, string StepId, string? Outcome, string Reason, string? Patch, bool FromChild);
 
-public sealed record CarriedEntry(string StepId, bool CleanUp);
+public sealed record CarriedEntry(string StepId, bool CleanUp, bool Resumes = false);
 
 public sealed record CarriedTrace(string Kind, string StepId, string? Detail);
 
@@ -61,7 +61,11 @@ public sealed record CarriedCore(
     long RunCeilingGranted,
     IReadOnlyDictionary<string, long> Findings,
     IReadOnlyList<CarriedTrace> Trace,
-    int NextWaitNumber);
+    int NextWaitNumber)
+{
+    /// <summary>The ledger version the <see cref="Findings"/> counts were read at (review F3).</summary>
+    public long FindingsVersion { get; init; }
+}
 
 public sealed partial class RunCore
 {
@@ -88,14 +92,14 @@ public sealed partial class RunCore
                 kv => new CarriedStep(kv.Value.Executions, kv.Value.AttemptsUsed, kv.Value.RacesUsed, kv.Value.AttemptsGranted, Exec(kv.Value.Current), Exec(kv.Value.Previous))), StringComparer.Ordinal),
             new SortedDictionary<string, CarriedContainer>(s.Containers.ToDictionary(kv => kv.Key,
                 kv => new CarriedContainer(kv.Value.BranchIndexes.ToList(), kv.Value.Branches.Select(b => b.ToString()).ToList(), kv.Value.Active)), StringComparer.Ordinal),
-            s.Pending.Select(e => new CarriedEntry(e.StepId, e.CleanUp)).ToList(),
+            s.Pending.Select(e => new CarriedEntry(e.StepId, e.CleanUp, e.Resumes)).ToList(),
             s.InFlight.ToList(),
             s.Waits.Select(w => new CarriedWait(w.Id, w.Kind.ToString(), w.StepId, w.Outcome, w.Reason, w.Patch is null ? null : PatchReader.Write(w.Patch), w.FromChild)).ToList(),
             s.RunAttempts,
             s.RunCeilingGranted,
             new SortedDictionary<string, long>(s.Findings, StringComparer.Ordinal),
             s.Trace.Select(t => new CarriedTrace(t.Kind, t.StepId, t.Detail)).ToList(),
-            s.NextWaitNumber);
+            s.NextWaitNumber) { FindingsVersion = s.FindingsVersion };
     }
 
     /// <summary>
@@ -135,7 +139,7 @@ public sealed partial class RunCore
                 Branches = container.Branches.Select(Enum.Parse<BranchStatus>).ToList(),
                 Active = container.Active,
             };
-        s.Pending.AddRange(carried.Pending.Select(e => new Entry(e.StepId, e.CleanUp)));
+        s.Pending.AddRange(carried.Pending.Select(e => new Entry(e.StepId, e.CleanUp, e.Resumes)));
         s.InFlight.AddRange(carried.InFlight);
         s.Waits.AddRange(carried.Waits.Select(w => new OpenWait(w.Id, Enum.Parse<WaitKind>(w.Kind), w.StepId, w.Outcome, w.Reason,
             w.Patch is null ? null : PatchReader.ReadWritten(w.Patch), w.FromChild)));
@@ -143,6 +147,7 @@ public sealed partial class RunCore
         s.RunCeilingGranted = carried.RunCeilingGranted;
         foreach (var (name, count) in carried.Findings)
             s.Findings[name] = count;
+        s.FindingsVersion = carried.FindingsVersion;
         s.Trace.AddRange(carried.Trace.Select(t => new TraceEntry(t.Kind, t.StepId, t.Detail)));
         s.NextWaitNumber = carried.NextWaitNumber;
         return core;

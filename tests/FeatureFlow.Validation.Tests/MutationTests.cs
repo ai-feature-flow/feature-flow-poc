@@ -43,14 +43,14 @@ public class MutationTests
         ["expression_parse"] = new(5, "does not parse", "a merge-bar guard that does not parse", [
             new(VerifyAndReview, "        - when: \"findings.open_blocking == 0\"\n", "        - when: \"findings.open_blocking ==\"\n")]),
 
-        ["expression_unknown_output"] = new(5, "has no output 'to_fix'", "a guard reads an output the triager does not declare", [
-            new(FixLoop, "    outputs: { to_fix: { type: number }, escalated: { type: number } }", "    outputs: { remaining: { type: number }, escalated: { type: number } }")]),
+        ["expression_unknown_output"] = new(5, "has no output 'to_fix'", "a guard reads an output findings.triage does not publish", [
+            new(FixLoop, "steps.apply_triage.outputs.escalated > 0 ||", "steps.apply_triage.outputs.to_fix > 0 ||")]),
 
-        ["guard_not_bool"] = new(5, "is int64, not bool", "a fix-loop guard reads the triager's number output as a condition", [
-            new(FixLoop, "        - when: \"steps.triage.outputs.escalated > 0\"", "        - when: \"steps.triage.outputs.to_fix\"")]),
+        ["guard_not_bool"] = new(5, "is int64, not bool", "a fix-loop guard reads a number as a condition", [
+            new(FixLoop, "        - when: \"findings.open == 0\"", "        - when: \"findings.open\"")]),
 
         ["index_access"] = new(5, "index access on", "a fix-loop guard reaches an undeclared parameter and output by index", [
-            new(FixLoop, "        - when: \"steps.triage.outputs.to_fix == 0\"", "        - when: \"params['nope'] == 1 && steps['triage'].outputs.bogus > 0\"")]),
+            new(FixLoop, "        - when: \"findings.open == 0\"", "        - when: \"params['nope'] == 1 && steps['apply_triage'].outputs.bogus > 0\"")]),
 
         ["declared_exhausted"] = new(6, "'attempts_exhausted' is added by the engine and may not be declared", "implement declares attempts_exhausted itself", [
             new(Ticket, "    outcomes: { implemented: success, blocked: blocked }", "    outcomes: { implemented: success, blocked: blocked, attempts_exhausted: failure }")]),
@@ -92,6 +92,10 @@ public class MutationTests
         ["incompatible_producers"] = new(11, "neither type is compatible with the other", "the fixer produces implementation_claims as a different type from the implementer", [
             new(FixLoop, "        - { name: implementation_claims, type: std:artifact_types/evidence_claims }", "        - { name: implementation_claims, type: std:artifact_types/triage }")]),
 
+        ["source_named_artifact"] = new(11, "may not produce an artifact named 'child'", "implement produces an artifact named like a source of consumed artifacts (LOG 153)", [
+            new(Ticket, "      implemented: [{ name: implementation_claims, type: std:artifact_types/evidence_claims }]",
+                "      implemented: [{ name: implementation_claims, type: std:artifact_types/evidence_claims }, { name: child, type: std:artifact_types/evidence_claims }]")]),
+
         ["agent_produces_evidence"] = new(12, "may not produce 'own_results' of evidence type", "implement produces an evidence type (F7)", [
             new(Ticket,
                 "      implemented: [{ name: implementation_claims, type: std:artifact_types/evidence_claims }]",
@@ -131,7 +135,7 @@ public class MutationTests
         ["undeclared_decision_type"] = new(16, "'ticket.spec_approvel' is not declared", "the spec approval's decision type is misspelt", [
             new(Ticket, "      type: ticket.spec_approval\n", "      type: ticket.spec_approvel\n")]),
 
-        ["plan_too_large"] = new(17, "the plan has 2024 steps", "a review over 1,000 angles", [
+        ["plan_too_large"] = new(17, "the plan has 2025 steps", "a review over 1,000 angles", [
             new(Ticket, "      spec_refs: { expr: \"[steps.plan.plan.artifacts.requirements, steps.plan.plan.artifacts.delivery_plan]\" }\n",
                 "      spec_refs: { expr: \"[steps.plan.plan.artifacts.requirements, steps.plan.plan.artifacts.delivery_plan]\" }\n      angles: ["
                 + string.Join(", ", Enumerable.Range(0, 1000).Select(i => $"angle_{i}")) + "]\n")]),

@@ -134,6 +134,13 @@ public enum ErrorClass
 
 public sealed record StepFailed(string StepId, ErrorClass Class, string Reason) : RunInput;
 
+/// <summary>
+/// A running step's activity was stopped before it ended, for example a wait at a hand-over (LOG 139). The step returns
+/// to pending at the same execution: no attempt is used, and when the core next advances it starts that execution again,
+/// so whatever the execution recorded (when a wait began, the head it waits on) still applies.
+/// </summary>
+public sealed record StepInterrupted(string StepId, string Reason) : RunInput;
+
 public sealed record DecisionAnswered(string StepId, string Outcome) : RunInput;
 
 /// <summary>
@@ -185,8 +192,11 @@ public sealed record StepCannotAnswer(string StepId, string Reason) : RunInput;
 /// </summary>
 public sealed record ChildPatchProposed(string ChildStepId, PatchDocument Patch, string ProposerStepId) : RunInput;
 
-/// <summary>The counts of the <c>findings</c> namespace, from the ledger (docs/03 section 5.3).</summary>
-public sealed record FindingsChanged(IReadOnlyDictionary<string, long> Counts) : RunInput;
+/// <summary>
+/// The counts of the <c>findings</c> namespace, from the ledger (docs/03 section 5.3), read at ledger
+/// <see cref="Version"/>. Counts read at an older version than the run holds are stale (parallel recorders) and ignored.
+/// </summary>
+public sealed record FindingsChanged(IReadOnlyDictionary<string, long> Counts, long Version = 0) : RunInput;
 
 public enum PatchStatus
 {

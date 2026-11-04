@@ -16,15 +16,20 @@ plan.
 ## Procedure
 
 1. Read the `solution_design` and `verification` skills, then the inputs.
-2. Fetch the ticket and compare any new clarification with the ratified plan. A
+2. Read the ticket (`/ff/inputs/ticket.md`, read from the tracker when this step
+   started, when the run has one) and compare any new clarification with the ratified plan. A
    material conflict is `blocked`, not an unapproved change of scope. If a
    person's answer would settle it, ask with `ask_human`.
 3. Start from the current checkout. On rework, earlier commits are normally
    kept, but a person may have reset the branch; work from what is there.
 4. Implement every criterion within the design's boundary, following the
    repository's conventions. Add commits; do not rewrite history.
-5. Run the repository's declared test tiers. Read the parsed result files and
-   copy each claimed test's identity exactly as it appears there.
+5. Run the repository's declared test tiers that can run in your sandbox. Read
+   the parsed result files and copy each claimed test's identity exactly as it
+   appears there. A tier whose manifest entry has `targets: [ci]` runs only in
+   CI, after you report: do not install a toolchain to run it. Name its tests
+   as the test framework reports them (for xUnit, the fully qualified method
+   name), and leave them to the engine's run.
 6. Write `claims.yaml`: for every criterion and method, the tests that prove it,
    at the method's repository and tier, each classified against the baseline as
    `new`, `reused` or `modified`, and only as the method allows. List every

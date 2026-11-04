@@ -204,7 +204,7 @@ internal sealed class Evaluator(RunCore core)
     /// A parameter's value in a template or fragment scope (docs/03 section 6.2; LOG 62). It is evaluated at
     /// each read, because a fragment binding may read a step's outputs, which change when the step runs again.
     /// </summary>
-    object? Parameter(Scope scope, string name, Func<string, long> findings)
+    internal object? Parameter(Scope scope, string name, Func<string, long> findings)
     {
         var decl = scope.Document.Parameter(name) ?? throw new EvaluationException($"params.{name} is not declared");
         YNode? node = null;

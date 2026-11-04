@@ -1,8 +1,8 @@
 # Design rewrite plan
 
-Status: design complete 2026-11-01. Build milestones M0 to M5 of
-`docs/11-build-plan.md` merged by 2026-11-03; the latest handover is
-`docs/build/handover-2026-11-03-m6.md`. Started 2026-10-31. This file is the
+Status: design complete 2026-11-01. Build milestones M0 to M6 of
+`docs/11-build-plan.md` merged by 2026-11-04; the latest handover is
+`docs/build/handover-2026-11-04-m7.md`. Started 2026-10-31. This file is the
 resume point: a new session reads it first, then the status table in section 6
 and the latest handover.
 
@@ -115,7 +115,8 @@ Paths in all design documents are relative to the repository root.
 | M0 to M4 (skeleton; plan loader and validator; interpreter core and re-drive; runnable engine with fake providers; agent steps in a sandbox) | Done 2026-11-02 to 2026-11-03, merged at `9279026`. Results in `docs/build/m0-results.md` to `m4-results.md`; LOG 71 to 90 approved; LOG 91 to 106 approved 2026-11-03, with 91 simplified (four runtime settings became fixed defaults) and 106 amended (time on open questions does not count toward `limits.timeout`; `questions.timeout` defaults to 24 hours). State, access and next steps in `docs/build/handover-2026-11-03.md` |
 | SP1 scenario flake on CI | Done 2026-11-03 (pull request 3) |
 | M5 (source control, testing and the first real ticket) | Done 2026-11-03, merged at `ba1f62f` (pull request 7): the done-when's live run merged a real ticket into a non-default parent branch on the fixture. Results in `docs/build/m5-results.md`; LOG 107 to 146 approved 2026-11-03. Next steps, ways of working and decision principles in `docs/build/handover-2026-11-03-m6.md` |
-| M6 (findings, validators and levels), starting with its must-fix from M5: a wait holds up a run's hand-over (LOG 139) | **Next** |
+| M6 (findings, validators and levels) | Done 2026-11-04: the done-whens' live runs delivered an epic of three issue-tracked tickets into its parent branch, and a project over two repositories with the product owner's merges into `main` detected. LOG 139 (a wait held up a run's hand-over) is fixed. Results in `docs/build/m6-results.md`; LOG 148 to 200 await the product owner (its "For the product owner" section). Second fixture `ai-feature-flow/feature-flow-example-client` created. Next steps in `docs/build/handover-2026-11-04-m7.md` |
+| M7 (people, policy and steering), starting with checking produced artifacts at report time (LOG 176) | **Next** |
 
 ## 7. How to resume
 

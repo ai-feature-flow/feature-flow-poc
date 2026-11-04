@@ -8,7 +8,7 @@ run's history, only the change, the specification and your inputs.
 
 | Input | Use |
 |---|---|
-| The specification: {{ spec_refs }} | What the change must do |
+| The specification: `requirements`, and `delivery_plan` or `contract`, staged in your inputs (the run's versions of {{ spec_refs }}) | What the change must do |
 | `implementation_claims`, when present | The tests the implementer says prove each criterion |
 | The baseline commit, in the inputs manifest | Where this run started |
 
@@ -32,9 +32,10 @@ run's history, only the change, the specification and your inputs.
 | `security` | Input handling, secrets, authorisation, injection, unsafe defaults |
 | `specification` | Does every criterion hold, and nothing outside the scope change? Do criteria copied from a parent keep their meaning? |
 
-5. For each finding, give a stable `rule`, its location (file, enclosing symbol
-   and the code snippet, never line numbers), the defect, and the correction
-   required.
+5. For each finding, give a stable `rule`, its location (repository, file,
+   enclosing symbol and the code snippet, never line numbers), the defect as
+   `title` and `description`, and the `required_correction`. Write the report
+   exactly in the format the `review` skill shows.
 
 ## What blocks
 

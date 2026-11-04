@@ -154,7 +154,11 @@ tracker:
 
 Values are status names from the library's status map, which the organisation
 may override, so a template does not hard-code one tracker's statuses. A failed
-tracker update is an infrastructure failure: retried, never a step failure.
+tracker update never fails a step or holds up the run: an infrastructure failure
+is retried a few times, then noted on the timeline, as is one the tracker refuses
+(LOG 186). On a fragment use,
+`on_start` applies when its first step starts and `on` names its exits. The issue
+is the run's tracker issue, from the run request or the `run.child` step (LOG 185).
 More complex tracker work (creating tickets, links, comments) is the
 `tracker.update` action.
 
@@ -222,7 +226,10 @@ For each outcome of each step, the route is the first of:
 3. `defaults.routes.by_class` for the outcome's class.
 4. For class `success`: the next step in the list, or `{ end: completed }` after
    the last step.
-5. For `attempts_exhausted`: `{ escalate: true }` (the engine default).
+5. For `attempts_exhausted`, and an engine action outcome added after
+   libraries were written (`docs/04` section 2 marks it): `{ escalate: true }`
+   (the engine default). A library written before the outcome existed still
+   loads (LOG 161).
 
 An outcome left with no route is a blocking validation error. Validation and
 the readable form show the resolved routes, so every route is visible even
@@ -459,6 +466,7 @@ repository per ticket).
   This is how ordered delivery across repositories is written.
 - A list that is known only at run time (from an artifact) is expanded by the
   `plan.expand` action (section 10.4), which produces the same shapes as a patch.
+  A `for_each` over such a list does not start (check 5, LOG 188).
 
 ---
 
@@ -485,7 +493,7 @@ each repository is taken from this run's work branch, which becomes the child's
 | From the parent | How |
 |---|---|
 | Parameters | `with.parameters`, then the parent's resolved parameters for names the child declares (section 6.2) |
-| Artifacts | The child's steps consume with `from: parent` or `from: root`, pinned at the revision current when the child starts |
+| Artifacts | The child's steps consume with `from: parent` or `from: root`, pinned at the revision current when the child starts (a grandchild's `root` artifacts are pinned when its parent started, LOG 153). In an agent step's sandbox they are named with their source in front, for example `parent/contract` |
 | Ratifications | Inherited: a parent's ratification of an artifact is authority in the child (`docs/01` section 5.3) |
 | The parent branch | `run.parent_branch` |
 | Findings | The parent's view of the ledger includes the child's, not the reverse |

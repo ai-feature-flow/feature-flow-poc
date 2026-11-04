@@ -128,7 +128,8 @@ public sealed class GitHubCodeHostTests
         var started = System.Diagnostics.Stopwatch.StartNew();
         var result = await host.GetDefaultBranchAsync(Repo, Ct);
 
-        Assert.True(started.Elapsed >= FakeGitHub.FreshTokenDelay, "the retry waited before asking for a fresh token");
+        // Timers tick in whole milliseconds, so the delay can measure a little under its length on the stopwatch.
+        Assert.True(started.Elapsed >= FakeGitHub.FreshTokenDelay * 0.75, "the retry waited before asking for a fresh token");
         Assert.Equal(branch, result.Value);
         Assert.Equal(branch is null, result.Error?.IsConfigurationFault ?? false);
         Assert.Equal(2, calls);
@@ -382,6 +383,42 @@ public sealed class GitHubCodeHostTests
         Assert.Equal("closed", JsonNode.Parse(Assert.Single(github.Called(Patch, "~/pulls/7")).Body)!["state"]!.GetValue<string>());
         Assert.Empty(github.Called(Post, "~/issues/8"));
         Assert.Empty(github.Called(Patch, "~/pulls/8"));
+    }
+
+    [Fact]
+    public async Task A_comment_is_posted_with_its_marker_once_and_adopted_by_it_after()
+    {
+        var (host, github, _) = Host();
+        var posted = 0;
+        github.On(Get, "~/issues/7/comments", _ => new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(posted == 0
+                    ? """[{"id":1,"body":"Someone else's."}]"""
+                    : """[{"id":1,"body":"Someone else's."},{"id":42,"body":"Declined.\n\n<!-- feature-flow:key-c -->"}]"""),
+            })
+            .On(Post, "~/issues/7/comments", _ =>
+            {
+                posted++;
+                return new HttpResponseMessage(System.Net.HttpStatusCode.Created) { Content = new StringContent("""{"id":42}""") };
+            });
+
+        var first = (await host.AddCommentAsync(new PullRequestRef(Repo, 7), "Declined.", "key-c", Ct)).Unwrap();
+        var again = (await host.AddCommentAsync(new PullRequestRef(Repo, 7), "Declined.", "key-c", Ct)).Unwrap();
+
+        Assert.Equal((new CommentRef("42"), new CommentRef("42")), (first, again));
+        var body = JsonNode.Parse(Assert.Single(github.Called(Post, "~/issues/7/comments")).Body)!["body"]!.GetValue<string>();
+        Assert.Equal("Declined.\n\n<!-- feature-flow:key-c -->", body);
+    }
+
+    [Fact]
+    public async Task A_comment_answered_with_an_undocumented_success_is_an_unexpected_response()
+    {
+        var (host, github, _) = Host();
+        github.On(Get, "~/issues/7/comments", 200, "[]").On(Post, "~/issues/7/comments", 200, """{"id":42}""");
+
+        var result = await host.AddCommentAsync(new PullRequestRef(Repo, 7), "Declined.", "key-c", Ct);
+
+        Assert.Equal("unexpected_response", result.Error?.Reason);
     }
 
     [Fact]

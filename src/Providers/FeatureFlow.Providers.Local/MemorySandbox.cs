@@ -168,6 +168,12 @@ public sealed class MemorySandbox(Func<IArtifactStoreProvider> store, InMemoryFo
             if (!boxes.TryGetValue(sandbox.Id, out var box))
                 return ProviderResult<Unit>.Failure("not_found", $"no sandbox {sandbox.Id}");
             box.Files[path] = text;
+            // A file copied into a checkout is a change to the in-memory working copy there, as on a real file system.
+            if (forge is not null)
+                lock (forge.Gate)
+                    foreach (var (copy, working) in forge.WorkingCopies)
+                        if (copy.Sandbox.Id == sandbox.Id && path.StartsWith(copy.Path.TrimEnd('/') + "/", StringComparison.Ordinal))
+                            working.Files[path[(copy.Path.TrimEnd('/').Length + 1)..]] = text;
             return ProviderResult<Unit>.Success(default);
         }
     }

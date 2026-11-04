@@ -191,7 +191,8 @@ static class SourceControl
         var revert = ActionRun.Must(await run.CodeHost.CreateRevertPullRequestAsync(pr, $"{run.Call.Step.RunId}/{run.Call.Step.StepId}/revert", run.Ct),
             "open the revert pull request");
         run.Events.Add($"opened {ActionRun.Format(revert)}, reverting {ActionRun.Format(pr)}");
-        return run.Report("opened");
+        // delivery.report reads it: a merge whose revert merged, or is open, is not delivered.
+        return run.Report("opened", evidence: await run.PutJsonAsync(new RevertEvidence(repo.FullName, ActionRun.Format(pr), ActionRun.Format(revert))));
     }
 }
 

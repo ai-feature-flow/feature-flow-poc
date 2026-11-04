@@ -1,0 +1,22 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: budget_tree
+  level: project
+  description: >-
+    A root whose budget allows two descendant runs: its child, and one of the
+    child's two children. The second grandchild is refused (F11).
+
+budget:
+  max_work_items: 2
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: middle
+    action: run.child
+    with: { template: delivery:templates/budget_middle, level: epic }
+    routes:
+      completed: { end: completed }

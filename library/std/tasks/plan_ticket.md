@@ -9,7 +9,7 @@ will be verified. You change no code.
 
 | Input | Use |
 |---|---|
-| The ticket, from the tracker | The source of what is asked. Read its comments; do not assume the newest comment overrides an agreed requirement |
+| The ticket, `/ff/inputs/ticket.md` (the inputs manifest's `ticket`), when the run has a tracker issue | The source of what is asked, read from the tracker when this step started. Without one, the parent's plan is the source |
 | `child_requirements` from the parent, when present | The epic's acceptance criteria. The ones whose owner is this ticket are yours to copy |
 | `contract` from the parent, when present | The epic's design: the boundary you plan within |
 | `baseline_test_results` | Which test tiers this repository actually runs and parses |
@@ -17,7 +17,7 @@ will be verified. You change no code.
 
 ## Procedure
 
-1. Read the `verification` skill. Fetch the ticket. Read the inputs above.
+1. Read the `verification` skill. Read the ticket. Read the inputs above.
 2. Inspect the relevant code and the repository manifest's test tiers. Confirm
    that each tier you intend to name produced parsed results in the baseline. A
    tier that ran without parsed results does not count.
@@ -26,8 +26,10 @@ will be verified. You change no code.
    there is one) or gives a `supports_reason`.
 4. Write `delivery_plan.yaml` with the same scope. If the parent's criteria name
    this ticket as owner, copy each one with its `id` and `supports` unchanged and
-   no `owner`; you may sharpen its wording, not its meaning. Add criteria of your
-   own where the ticket needs them. Give every criterion at least one
+   no `owner`; you may sharpen its wording, not its meaning. Keep every link a
+   copied criterion has; you may add links from it to your own requirements.
+   Every requirement in your `requirements.yaml` must be supported by at least
+   one criterion: link a copied criterion to it, or add a criterion of your own. Give every criterion at least one
    verification method: `kind: parsed_test`, this repository, a tier from step 2,
    `semantic_review: required`. Do not name tests: the implementer maps tests to
    methods later.

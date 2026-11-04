@@ -22,7 +22,16 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
     {
         "scm.catch_up", "scm.pull_request", "scm.merge", "scm.revert", "ci.checks", "wait.condition", "test.run", "test.integration", "analysis.run",
         "repo.inspect",
+        "artifact.validate",
+        "findings.record", "findings.triage",
+        "delivery.report", "artifact.compose", "artifact.import", "artifact.publish", "tracker.update",
     };
+
+    /// <summary>
+    /// The actions that may wait on the outside world between reads (<see cref="ActionResult.Wait"/>): a person, CI or a
+    /// pull request. Their activity is interrupted at a hand-over and resumed at the same execution (LOG 139).
+    /// </summary>
+    public static readonly IReadOnlySet<string> Waits = new HashSet<string>(StringComparer.Ordinal) { "ci.checks", "wait.condition", "scm.merge" };
 
     internal ProviderSet Providers => providers;
 
@@ -48,7 +57,7 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
         run.Inputs = inputs;
         try
         {
-            return call.What switch
+            var result = call.What switch
             {
                 "scm.catch_up" => await SourceControl.CatchUpAsync(run),
                 "scm.pull_request" => await SourceControl.PullRequestAsync(run),
@@ -60,8 +69,18 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
                 "test.integration" => await Testing.IntegrationAsync(run),
                 "analysis.run" => await Testing.AnalysisAsync(run),
                 "repo.inspect" => await Testing.InspectAsync(run),
+                "artifact.validate" => await Validating.ValidateAsync(run, Providers),
+                "findings.record" => await FindingsActions.RecordAsync(run),
+                "findings.triage" => await FindingsActions.TriageAsync(run),
+                "delivery.report" => await Delivery.ReportAsync(run),
+                "artifact.compose" => await Artifacts.ComposeAsync(run),
+                "artifact.import" => await Artifacts.ImportAsync(run),
+                "artifact.publish" => await Artifacts.PublishAsync(run),
+                "tracker.update" => await Tracker.UpdateAsync(run),
                 _ => throw new InvalidOperationException($"{call.What} is not an engine action of this milestone"),
             };
+            await run.IndexEvidenceAsync();
+            return result;
         }
         catch (ActionStop stop)
         {
@@ -171,6 +190,9 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
         throw new ActionStop(error.Reason == "cannot_answer" ? StepOutcome.CannotAnswer : StepOutcome.WorkFailed, $"{what}: {error.Reason}: {error.Message}");
     }
 
+    /// <summary>The name an action's own evidence has in the artifact index, apart from any artifact the step declares (LOG 180).</summary>
+    public static string IndexName(string type) => "evidence:" + type;
+
     public static string Safe(string text) => string.Concat(text.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' or '.' ? c : '_'));
 
     public static string Short(string revision) => revision.Length > 10 ? revision[..10] : revision;
@@ -183,6 +205,9 @@ public sealed record CleanUpResult(IReadOnlyList<string> Events, string? Error);
 public sealed record ActionOptions(TimeSpan PollInterval, TimeSpan CiPollInterval, TimeSpan CommandTimeout)
 {
     public static readonly ActionOptions Default = new(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(15), TimeSpan.FromMinutes(30));
+
+    /// <summary>How long an external reviewer may stay pending before <c>findings.record</c> reports it <c>unavailable</c> (LOG 163).</summary>
+    public TimeSpan ReviewTimeout { get; init; } = TimeSpan.FromMinutes(30);
 }
 
 /// <summary>Ends an action early: a work failure, or an intervention (cannot answer).</summary>
@@ -230,6 +255,9 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
         owner.Providers.ForRun(type, call.DryRun) as T ?? throw ActionStop.CannotAnswer($"{call.What} needs a {type} provider, and none that can serve it is configured");
 
     public T? Optional<T>(string type) where T : class => owner.Providers.ForRun(type, call.DryRun) as T;
+
+    /// <summary>A provider instance by name, such as the findings source a step names (docs/07 section 2).</summary>
+    public T? Instance<T>(string type, string name) where T : class => owner.Providers.Instance(type, name) as T;
 
     public IVcsProvider Vcs => Provider<IVcsProvider>("vcs");
 
@@ -392,9 +420,62 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
 
     static string? TypeName(string? type) => type is null ? null : LibraryReference.TryParse(type)?.Name ?? type;
 
+    /// <summary>
+    /// The evidence type each engine action that makes evidence makes. Evidence a step declares is indexed by the workflow
+    /// with the step's artifacts; evidence it does not declare is indexed here, under <see cref="EngineActions.IndexName"/>, so a
+    /// check that reads evidence, such as <c>delivery.report</c> reading reverts, does not depend on how the template was
+    /// written, and no evidence is indexed twice (LOG 180).
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> EvidenceTypes = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["scm.merge"] = "merge_record",
+        ["scm.revert"] = "revert_record",
+        ["test.run"] = "test_results",
+        ["test.integration"] = "test_results",
+        ["ci.checks"] = "check_results",
+        ["analysis.run"] = "analysis_results",
+        ["artifact.validate"] = "validation_report",
+    };
+
+    string? reportedEvidence;
+
+    /// <summary>Marks the action's evidence for the artifact index when the step declares no artifact for the outcome (an action that builds its own report calls this).</summary>
+    public void IndexIfUndeclared(string outcome, string? evidence) =>
+        reportedEvidence = evidence is not null && !call.Contract.ArtifactsFor(outcome).Any() ? evidence : null;
+
+    /// <summary>Writes evidence the report carried but the step does not declare into the artifact index; once per execution.</summary>
+    public async Task IndexEvidenceAsync()
+    {
+        if (reportedEvidence is not { } reference || !EvidenceTypes.TryGetValue(call.What, out var type))
+            return;
+        var record = new ArtifactRecord(call.Step.RunId, call.Step.StepId, call.Step.Execution, EngineActions.IndexName(type), type, reference, call.What, true, DateTimeOffset.UtcNow);
+        Must(await Records.AppendAsync(new RecordBatch(Artifacts: [record]), ct), "index the evidence");
+    }
+
+    /// <summary>This run's evidence of a type that <paramref name="action"/> made, from the artifact index, read as <typeparamref name="T"/>.</summary>
+    public async Task<List<T>> IndexedEvidenceAsync<T>(string type, string action)
+    {
+        var records = Must(await Records.QueryAsync<ArtifactRecord>(Queries.Artifacts, new Dictionary<string, string> { ["run_id"] = call.Step.RunId }, ct),
+            "read the artifact index");
+        var list = new List<T>();
+        foreach (var reference in records.Where(r => r.RunId == call.Step.RunId && r.Evidence && r.Action == action && r.Name == EngineActions.IndexName(type)).Select(r => r.Ref).Distinct())
+            try
+            {
+                if (JsonSerializer.Deserialize<T>(await ReadTextAsync(reference), Json) is { } value)
+                    list.Add(value);
+            }
+            catch (JsonException)
+            {
+                Events.Add($"indexed {type} {reference} does not read; ignored");
+            }
+
+        return list;
+    }
+
     /// <summary>A report with an outcome, outputs (plain values), and the evidence as every artifact the outcome promises.</summary>
     public ActionResult Report(string outcome, IReadOnlyDictionary<string, object?>? outputs = null, string? evidence = null)
     {
+        IndexIfUndeclared(outcome, evidence);
         var artifacts = new Dictionary<string, string>(StringComparer.Ordinal);
         if (evidence is not null)
             foreach (var name in call.Contract.ArtifactsFor(outcome))

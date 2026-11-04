@@ -5,7 +5,8 @@ description: >-
   A person submits the requirements and architecture; they pass the check and
   are approved. The planner writes two epics and says the project needs
   integration tests; plan.expand starts both epics, which complete. Integration
-  tests pass, the trace holds, and both repositories are delivered in order.
+  tests pass, each repository's project head is tested, the trace holds, and
+  both repositories are delivered in order.
 template: std:templates/project_delivery
 parameters: { project_name: invoicing }
 repositories: [acme/api, acme/web]
@@ -30,6 +31,8 @@ expect:
     - epics.children_0
     - epics.children_1
     - integration
+    - tests_0
+    - tests_1
     - trace.trace
     - deliver.deliver_0.open_pr
     - deliver.deliver_0.merge

@@ -60,7 +60,9 @@ steps:
           subjects: [requirements]
           options: { require_coverage: false }
     consumes: [{ name: requirements }]
-    produces: [{ name: requirements_validation, type: std:artifact_types/validation_report }]
+    produces:                                   # on both outcomes: an invalid result's report goes back with the route
+      valid: [{ name: requirements_validation, type: std:artifact_types/validation_report }]
+      invalid: [{ name: requirements_validation, type: std:artifact_types/validation_report }]
     routes:
       valid: approve
       invalid: define
@@ -89,14 +91,26 @@ steps:
       completed:
         - when: "steps.epics.plan.outputs.needs_integration"
           to: integration
-        - to: trace
+        - to: tests
 
   - id: integration
     action: test.integration
     with: { repositories: { expr: "run.repositories" } }
     produces: [{ name: integration_results, type: std:artifact_types/test_results }]
     routes:
-      passed: trace
+      passed: tests
+
+  - id: tests                     # each repository's project head, with its epics merged: the head deliver merges (LOG 197)
+    for_each:
+      items: { expr: "run.repositories" }
+      mode: parallel
+      step:
+        action: test.run
+        repository: { expr: "item" }
+        produces: [{ name: test_results, type: std:artifact_types/test_results }]
+    routes:
+      completed: trace
+      any_failed: { escalate: true }
 
   - id: trace
     use: std:fragments/trace

@@ -56,7 +56,9 @@ steps:
       - { name: delivery_plan }
       - { name: child_requirements, from: parent, optional: true }
       - { name: requirements, from: parent, optional: true }
-    produces: [{ name: plan_validation, type: std:artifact_types/validation_report }]
+    produces:                                   # on both outcomes: an invalid result's report goes back with the route
+      valid: [{ name: plan_validation, type: std:artifact_types/validation_report }]
+      invalid: [{ name: plan_validation, type: std:artifact_types/validation_report }]
     routes:
       valid: { exit: planned }
       invalid: plan                     # back to the planner; counts against its attempts

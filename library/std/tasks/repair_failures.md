@@ -18,7 +18,8 @@ change. Make it pass without weakening what it checks.
 2. Fix the code, or correct a claim that named the wrong test or tier. Do not
    delete, skip or weaken a test to make it pass, and do not change the ratified
    plan.
-3. Run the affected tiers locally.
+3. Run the affected tiers locally, where they can run in your sandbox (a tier
+   with `targets: [ci]` runs only in CI; do not install a toolchain).
 4. Produce `claims.yaml` again, corrected where a claim was wrong.
 5. Commit everything; the checkout must be clean.
 

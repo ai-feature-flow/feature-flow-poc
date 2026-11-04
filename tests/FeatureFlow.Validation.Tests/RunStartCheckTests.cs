@@ -112,6 +112,22 @@ public class RunStartCheckTests
     }
 
     [Fact]
+    public void Check_22_a_roots_budget_above_the_work_item_ceiling_is_refused_and_a_childs_is_not_read()
+    {
+        var (_, plan) = Load(new Std.Edit("templates/ticket_delivery.yaml", "\nparameters:\n", "\nbudget: { max_work_items: 50 }\n\nparameters:\n"));
+        var policy = Policy() with { MaxWorkItems = 10 };
+        var asRoot = new DiagnosticBag();
+        var asChild = new DiagnosticBag();
+
+        RunStartChecks.Caps(plan, policy, Allowance, asRoot);
+        RunStartChecks.Caps(plan, policy, Allowance, asChild, root: false);
+
+        Assert.Equal([Checks.LockedCap], Blocking(asRoot));
+        Assert.Contains("max_work_items", asRoot.Single().Message, StringComparison.Ordinal);
+        Assert.Empty(asChild);
+    }
+
+    [Fact]
     public void Check_22_an_allowance_above_the_per_step_ceiling_is_refused()
     {
         var (_, plan) = Load(new Std.Edit("templates/ticket_delivery.yaml",

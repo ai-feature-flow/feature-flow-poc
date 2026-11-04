@@ -23,7 +23,8 @@ public class ReplayTests
     public void The_recorded_histories_are_there()
     {
         // Without this, a missing folder would leave the theory with no cases and nothing replayed.
-        Assert.Equal(["agent_question", "epic_delivery", "epic_delivery_child", "sp1_parent", "sp1_parent_resumed", "ticket_clean_up", "ticket_delivery"],
+        Assert.Equal(["agent_question", "budget_middle", "delivery_tracked", "epic_delivery", "epic_delivery_child", "family_child", "family_parent",
+                "silent_parent_resumed", "sp1_parent", "sp1_parent_resumed", "ticket_clean_up", "ticket_delivery", "wait_hand_over", "wait_hand_over_resumed"],
             Names());
     }
 
@@ -32,7 +33,55 @@ public class ReplayTests
     {
         // M5's markers: the clean_up reset and the step start (check 32, an action's scope). Without a history holding
         // them, a change to either path would replay green (review 8).
-        using var history = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(HistoryFolder, "ticket_clean_up.json")));
+        var patches = Markers("ticket_clean_up");
+
+        Assert.Contains(RunWorkflow.CleanUpPatch, patches);
+        Assert.Contains(RunWorkflow.StepStartPatch, patches);
+    }
+
+    [Fact]
+    public void A_history_holds_each_M6_shell_patch_marker()
+    {
+        // A wait interrupted at a hand-over and resumed in the next run (LOG 139); a child's inputs, its awaited end and the
+        // watch of carried children (M3 follow-ups 2, 3 and 10).
+        Assert.Contains(RunWorkflow.InterruptWaitsPatch, Markers("wait_hand_over"));
+        Assert.True(StartsResuming("wait_hand_over_resumed"), "wait_hand_over_resumed does not start with an interrupted step to resume");
+        Assert.Contains(RunWorkflow.ChildInputsPatch, Markers("family_parent"));
+        Assert.Contains(RunWorkflow.ChildWatchPatch, Markers("family_parent"));
+        Assert.Contains(RunWorkflow.ChildInputsPatch, Markers("family_child"));
+        Assert.Contains(RunWorkflow.ChildWatchPatch, Markers("silent_parent_resumed"));
+    }
+
+    /// <summary>Whether a recorded run started from a hand-over carrying a step to resume (LOG 139).</summary>
+    static bool StartsResuming(string name)
+    {
+        using var history = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(HistoryFolder, name + ".json")));
+        var data = history.RootElement.GetProperty("events")[0].GetProperty("workflowExecutionStartedEventAttributes")
+            .GetProperty("input").GetProperty("payloads")[0].GetProperty("data").GetString()!;
+        var start = System.Text.Json.JsonSerializer.Deserialize<FeatureFlow.Interpreter.Wire.RunStart>(Convert.FromBase64String(data))!;
+        return start.Carried?.Core.Pending.Any(e => e.Resumes) == true;
+    }
+
+    /// <summary>The patch markers a recorded history holds.</summary>
+    static List<string> Markers(string name)
+    {
+        using var history = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(HistoryFolder, name + ".json")));
+        return history.RootElement.GetProperty("events").EnumerateArray()
+            .Where(e => e.TryGetProperty("markerRecordedEventAttributes", out _))
+            .SelectMany(e => e.GetProperty("markerRecordedEventAttributes").GetProperty("details").EnumerateObject())
+            .SelectMany(d => d.Value.GetProperty("payloads").EnumerateArray())
+            .Select(p => System.Text.Json.JsonDocument.Parse(Convert.FromBase64String(p.GetProperty("data").GetString()!)).RootElement.GetProperty("id").GetString()!)
+            .ToList();
+    }
+
+    [Theory]
+    [InlineData("delivery_tracked", RunWorkflow.TrackerUpdatesPatch)]
+    [InlineData("budget_middle", RunWorkflow.WorkItemsPatch)]
+    public void A_history_holds_each_M6_delivery_patch_marker(string name, string marker)
+    {
+        // Declarative tracker updates and the work-item budget (M6): without a history holding each marker, a change to
+        // either path would replay green.
+        using var history = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(HistoryFolder, name + ".json")));
         var patches = history.RootElement.GetProperty("events").EnumerateArray()
             .Where(e => e.TryGetProperty("markerRecordedEventAttributes", out _))
             .SelectMany(e => e.GetProperty("markerRecordedEventAttributes").GetProperty("details").EnumerateObject())
@@ -40,8 +89,7 @@ public class ReplayTests
             .Select(p => System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(p.GetProperty("data").GetString()!)))
             .ToList();
 
-        Assert.Contains(patches, p => p.Contains($"\"{RunWorkflow.CleanUpPatch}\"", StringComparison.Ordinal));
-        Assert.Contains(patches, p => p.Contains($"\"{RunWorkflow.StepStartPatch}\"", StringComparison.Ordinal));
+        Assert.Contains(patches, p => p.Contains($"\"{marker}\"", StringComparison.Ordinal));
     }
 
     [Theory]

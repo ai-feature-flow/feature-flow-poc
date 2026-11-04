@@ -250,6 +250,47 @@ public sealed class InMemoryForge
         }
     }
 
+    TaskCompletionSource? checkGate;
+    int heldCheckReads;
+
+    /// <summary>
+    /// Holds every check read (<c>code_host.GetCheckStatus</c>) until <see cref="ReleaseCheckReads"/>: a read in progress,
+    /// for a test where something must happen while it runs. <see cref="HeldCheckReads"/> counts the reads waiting.
+    /// </summary>
+    public void HoldCheckReads()
+    {
+        lock (Gate)
+            checkGate ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    public void ReleaseCheckReads()
+    {
+        TaskCompletionSource? gate;
+        lock (Gate)
+            (gate, checkGate) = (checkGate, null);
+        gate?.TrySetResult();
+    }
+
+    public int HeldCheckReads => Volatile.Read(ref heldCheckReads);
+
+    internal async Task CheckGateAsync()
+    {
+        TaskCompletionSource? gate;
+        lock (Gate)
+            gate = checkGate;
+        if (gate is null)
+            return;
+        Interlocked.Increment(ref heldCheckReads);
+        try
+        {
+            await gate.Task;
+        }
+        finally
+        {
+            Interlocked.Decrement(ref heldCheckReads);
+        }
+    }
+
     /// <summary>A working copy's files, to change as an agent would. Null when nothing is checked out there.</summary>
     public IDictionary<string, string>? WorkingFiles(WorkingCopyRef copy)
     {
@@ -257,7 +298,7 @@ public sealed class InMemoryForge
             return WorkingCopies.GetValueOrDefault(copy)?.Files;
     }
 
-    /// <summary>The comments added to a pull request (on close).</summary>
+    /// <summary>The comments added to a pull request: on close, and by <c>AddCommentAsync</c> with their markers.</summary>
     public IReadOnlyList<string> Comments(PullRequestRef pullRequest)
     {
         lock (Gate)
@@ -319,7 +360,7 @@ public sealed class InMemoryForge
     /// <summary>The commits in <paramref name="to"/>'s history and not in <paramref name="from"/>'s.</summary>
     internal static int Count(Repo r, string from, string to) => Ancestors(r, to).Except(Ancestors(r, from)).Count();
 
-    static string? MergeBase(Repo r, string a, string b)
+    internal static string? MergeBase(Repo r, string a, string b)
     {
         var ofA = Ancestors(r, a);
         var queue = new Queue<string>([b]);
@@ -436,6 +477,11 @@ public sealed class InMemoryVcs(InMemoryForge forge) : IVcsProvider
         Run("DescendsFrom", repo, r => !r.Commits.ContainsKey(revision) || !r.Commits.ContainsKey(ancestor)
             ? ProviderResult<bool>.Failure("not_found", $"{revision} or {ancestor} is not in {repo.FullName}")
             : ProviderResult<bool>.Success(InMemoryForge.Ancestors(r, revision).Contains(ancestor)));
+
+    public Task<ProviderResult<string?>> MergeBaseAsync(RepoRef repo, string a, string b, CancellationToken cancellationToken) =>
+        Run("MergeBase", repo, r => !r.Commits.ContainsKey(a) || !r.Commits.ContainsKey(b)
+            ? ProviderResult<string?>.Failure("not_found", $"{a} or {b} is not in {repo.FullName}")
+            : ProviderResult<string?>.Success(InMemoryForge.MergeBase(r, a, b)));
 
     public Task<ProviderResult<int>> CountCommitsAsync(WorkingCopyRef copy, string fromRevision, string toRevision, CancellationToken cancellationToken) =>
         InCopy("CountCommits", copy, (r, _) => ProviderResult<int>.Success(InMemoryForge.Count(r, fromRevision, toRevision)));
@@ -634,8 +680,25 @@ public sealed class InMemoryCodeHost(InMemoryForge forge) : ICodeHostProvider
             return ProviderResult<PullRequestRef>.Success(new PullRequestRef(pullRequest.Repo, revert.Number));
         });
 
-    public Task<ProviderResult<CheckStatus>> GetCheckStatusAsync(RepoRef repo, string revision, CancellationToken cancellationToken) =>
-        Run("GetCheckStatus", repo, r => ProviderResult<CheckStatus>.Success(new CheckStatus(revision, InMemoryForge.Checks(r, revision).ToList())));
+    public async Task<ProviderResult<CheckStatus>> GetCheckStatusAsync(RepoRef repo, string revision, CancellationToken cancellationToken)
+    {
+        await forge.CheckGateAsync();
+        return await Run("GetCheckStatus", repo, r => ProviderResult<CheckStatus>.Success(new CheckStatus(revision, InMemoryForge.Checks(r, revision).ToList())));
+    }
+
+    public Task<ProviderResult<CommentRef>> AddCommentAsync(PullRequestRef pullRequest, string body, string key, CancellationToken cancellationToken) =>
+        WithPr("AddComment", pullRequest, (_, pr) =>
+        {
+            var marker = $"<!-- feature-flow:{key} -->";
+            var at = pr.Comments.FindIndex(c => c.EndsWith(marker, StringComparison.Ordinal));
+            if (at < 0)
+            {
+                pr.Comments.Add($"{body}\n\n{marker}");
+                at = pr.Comments.Count - 1;
+            }
+
+            return ProviderResult<CommentRef>.Success(new CommentRef($"{pr.Number}-{at + 1}"));
+        });
 
     static string Body(InMemoryForge.PullRequest pr) => $"{pr.Spec.Body}\n\n<!-- feature-flow:{pr.Key} -->";
 

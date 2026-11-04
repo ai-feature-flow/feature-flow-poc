@@ -56,9 +56,16 @@ steps:
     with:
       validation:
         - { validator: requirement_ownership, subjects: [child_requirements] }
-        - { validator: requirement_support, subjects: [requirements, child_requirements] }
-    consumes: [{ name: requirements }, { name: child_requirements }, { name: work_list }]
-    produces: [{ name: children_validation, type: std:artifact_types/validation_report }]
+        # the parent's requirements too: this run's own requirements link up to them when it is a child (LOG 197)
+        - { validator: requirement_support, subjects: [requirements, child_requirements, { name: requirements, from: parent, optional: true }] }
+    consumes:
+      - { name: requirements }
+      - { name: child_requirements }
+      - { name: work_list }
+      - { name: requirements, from: parent, optional: true }
+    produces:                                   # on both outcomes: an invalid result's report goes back with the route
+      valid: [{ name: children_validation, type: std:artifact_types/validation_report }]
+      invalid: [{ name: children_validation, type: std:artifact_types/validation_report }]
     routes:
       valid: approve
       invalid: plan
@@ -84,6 +91,7 @@ steps:
           template: { param: child_template }
           level: { param: child_level }
           repositories: "$.repositories"
+          tracker_issue: "$.tracker_issue?"     # the child's own issue, when the planner names one
           parameters: { param: child_parameters }
     consumes: [{ name: work_list }]
 

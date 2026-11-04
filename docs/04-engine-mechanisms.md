@@ -48,7 +48,7 @@ the standard library's templates set it.
 | | `analysis.run` | `passed` (success), `failed` (failure) |
 | Evidence | `artifact.validate` | `valid` (success), `invalid` (failure) |
 | Findings | `findings.record` | `recorded` (success), `unavailable` (blocked) |
-| | `findings.triage` | `applied` (success) |
+| | `findings.triage` | `applied` (success), `invalid` (failure; added in M6, so it escalates where a plan does not route it, LOG 161) |
 | Repository | `repo.inspect` | `inspected` (success) |
 | Artifacts | `artifact.compose` | `composed` (success) |
 | | `artifact.import` | `imported` (success) |
@@ -96,7 +96,11 @@ reports.
 1. **Prepare.** Create or re-attach the sandbox from the repository manifest;
    check out the work branch (read-only if the role has no write access); run
    the manifest's `setup` commands; stage consumed artifacts, skills and
-   library resources read-only, with a manifest listing them. The manifest also
+   library resources read-only, with a manifest listing them. A consumed
+   artifact is staged under its name; one from another run has its source in
+   front (`parent/<name>`, `root/<name>`, `child/<step id>/<name>`), so a step
+   may consume one name from two runs, and no step may produce an artifact
+   named `parent`, `root` or `child` (check 11; LOG 153). The manifest also
    gives the run's baseline commit and parent branch for the repository, and the
    agent's output folder. A step that consumes the reserved name
    `findings_ledger` is given the ledger's current view, every finding with its
@@ -287,10 +291,10 @@ person declines.
 | Element | Detail |
 |---|---|
 | Form | Child workflow |
-| Inputs | `template`, `level`, `repositories`, `parameters`, `run_gate` (`auto` or `manual`, from FF). `manual` starts the child with a breakpoint before its first step, so a person starts it by answering the breakpoint decision |
+| Inputs | `template`, `level`, `repositories`, `parameters`, `tracker_issue` (the child's own; it never inherits its parent's, LOG 185), `run_gate` (`auto` or `manual`, from FF). `manual` starts the child with a breakpoint before its first step, so a person starts it by answering the breakpoint decision |
 | Outcomes | From the child's status (`docs/03` section 9.3) |
 | Idempotency | By run id and step key: a retry adopts the existing child |
-| Checks | The root's work-item budget before creating the child |
+| Checks | The root's work-item budget before creating the child (F11; counted in the record store, LOG 187) |
 | Artifacts | Out: a reference to the child run. The child's artifacts are consumable with `from: { child: <id> }` |
 
 `parallel` and `for_each` are interpreter constructs, not actions (`docs/03`
@@ -397,7 +401,8 @@ for the queue's result.
 ### 7.4 `scm.revert`
 
 Opens a revert pull request for a merge this run tree made. Outcome `opened`.
-Merging the revert is a separate `scm.merge`.
+Merging the revert is a separate `scm.merge`. Its evidence, `revert_record`, names both pull
+requests, so `delivery.report` does not count a reverted merge (LOG 180).
 
 ---
 
@@ -489,7 +494,7 @@ The standard set, from FF's validators:
 |---|---|
 | `requirement_support` | Every item's `supports` links resolve; every item supports something or gives a reason; every requirement above has a supporter |
 | `requirement_ownership` | Every item in a parent-written plan names an owner |
-| `requirement_inheritance` | A child's plan holds every item it owns, unchanged in id and links, and none owned by another |
+| `requirement_inheritance` | A child's plan holds every item it owns, with its id and every link the parent gave it, compared by the document each names (it may add links, LOG 191, 200), and none owned by another |
 | `verification_method_support` | Every acceptance criterion without an owner has a verification method |
 | `verification_satisfaction` | The agent's evidence claims match passing tests in the engine's test results evidence |
 | `requirement_trace` | Every requirement of this run traces through owners and supporting items, across completed children, to passing tests at commits the work contains |
@@ -516,20 +521,23 @@ workflow's (`docs/01` section 6, RW4).
 | Element | Detail |
 |---|---|
 | Inputs | `source`: an artifact of type findings report (from a reviewer agent step), or a findings source provider by name (an external AI review on the pull request, SonarCloud, a SARIF file). `reopen_on`: when a re-raise of a `fixed` or `declined` finding reopens it: `code_change`, `always` or `never`. The engine default, `code_change`, is a fallback; the standard library sets it explicitly |
-| Outcomes | `recorded`, with outputs `new`, `reraised`, `reopened`, `repeat_fixes` (findings reopened after being fixed at least twice); `unavailable` (the external source could not review, for example Copilot review not enabled) |
-| Behaviour | Fingerprints each finding, matches it against the ledger (including children's), and records it as new or as a re-raise, with whether the code at the fingerprint changed since the finding last changed state. Applies `reopen_on` |
+| Outcomes | `recorded`, with outputs `new`, `reraised`, `reopened`, `repeat_fixes` (findings reopened after being fixed at least twice); `unavailable` (the external source could not review, for example Copilot review not enabled, or it stayed pending for 30 minutes) |
+| Behaviour | Fingerprints each finding, matches it against the ledger (including children's), and records it as new or as a re-raise, with whether the code at the fingerprint changed since the finding last changed state: whether the finding's file differs between that revision and the work branch head (LOG 162). A re-raise never weakens the finding: blocking, demonstrated and the higher severity are kept (LOG 169). Applies `reopen_on`. A report that does not read as a findings report raises an intervention |
 
 ### 11.2 `findings.triage`
 
 | Element | Detail |
 |---|---|
-| Inputs | `from`: a triage artifact (from a triage agent step or a decision's session) listing, per finding, the new state (`fixed`, `declined`, `escalated`, `open`) and a reason; `post_declines` (default `true`: post each decline reason on the pull request) |
-| Outcomes | `applied` |
-| Behaviour | Applies each state change with its actor and reason. A triage entry naming an unknown finding fails validation of the triage artifact, which goes back to its producer |
+| Inputs | `from`: a triage artifact (from a triage agent step or a decision's session) listing, per finding, the new state (`fixed`, `declined`, `escalated`, `open`) and a reason; `states`: the states this step's producer may set (none given: all four; a non-empty list of them, LOG 168); `post_declines` (default `true`: post each decline reason on the pull request) |
+| Outcomes | `applied`, with outputs `escalated` and `declined_blocking` (this triage's escalations, and its declines of blocking or demonstrated findings, counted by the engine); `invalid` (nothing applied) |
+| Behaviour | Applies each state change with its actor and reason. A triage entry naming an unknown finding or a state outside `states`, a move to `fixed` with nothing committed to the finding's repository since it was raised or reopened, or a triage that does not read, is `invalid`; the standard library routes it back to the triage's producer. A plan that does not route `invalid` escalates it (LOG 161). A decline is posted only where a pull request is open for the finding's repository (LOG 164) |
 
 The standard library's fragments build review, triage, fix and verification
 from an agent reviewer, these two actions and route guards such as
-`findings.open_blocking == 0` (`docs/08`).
+`findings.open_blocking == 0` (`docs/08`). Each action returns the `findings`
+namespace (`docs/03` section 5.3) as it left the ledger, with the ledger's
+version, and its routes read the new counts; counts of an older version than the
+run holds are ignored (LOG 169).
 
 ---
 
@@ -539,11 +547,11 @@ from an agent reviewer, these two actions and route guards such as
 |---|---|---|
 | `repo.inspect` | `repository` | Reads the manifest and publishes facts as outputs: tier names and tags, whether CI is configured, the analyser, whether an integration environment is declared, the manifest hash |
 | `artifact.compose` | `name`, `members` | Groups artifacts into a set. Copies and approves nothing |
-| `artifact.import` | `from`: a session submission, or a repository, folder, files and exact commit | Registers files as artifacts at that commit, validated against their types |
-| `artifact.publish` | `repository`, `folder`, `files`, `previous` (an earlier publication to supersede) | Copies artifacts into a repository in one commit and opens a pull request. `conflict` if the destination changed in a way the earlier publication did not expect; nothing is written (from FF) |
-| `tracker.update` | `op` (`create`, `update`, `transition`, `link`, `comment`), its fields | One tracker operation. Field mapping is provider configuration. Agents have no tracker write identity; this action and declarative `tracker` on steps are the only write paths, apart from a planner's toolset where policy allows |
+| `artifact.import` | `from`: a session submission (M7), or a repository, folder, files and exact commit | Registers files as artifacts at that commit, validated against their types (as built: parsed, not yet schema-checked; LOG 181) |
+| `artifact.publish` | `repository`, `folder`, `files`, `previous` (an earlier publication to supersede) | Copies artifacts into a repository in one commit and opens a pull request. `conflict` if the destination changed in a way the earlier publication did not expect; nothing is written (from FF; branch, record and superseding, LOG 182) |
+| `tracker.update` | `op` (`create`, `update`, `transition`, `link`, `comment`), its fields (LOG 183) | One tracker operation. Field mapping is provider configuration. Agents have no tracker write identity; this action and declarative `tracker` on steps are the only write paths, apart from a planner's toolset where policy allows |
 | `notify.send` | `audience`, `message` | A notification that needs no answer. A failure retries and never fails the run |
-| `delivery.report` | `repositories` | Reads the merge records and states, per repository, whether a merge actually happened. `complete` only if every one merged, so a run redirected past a merge cannot report success (from FF) |
+| `delivery.report` | `repositories` | Reads the merge records and states, per repository, whether a merge actually happened: the merge is of the work branch's current head, the parent branch still contains it, and no revert the run opened of it is merged or open (LOG 180). `complete` only if every one merged, so a run redirected past a merge cannot report success (from FF) |
 
 ---
 

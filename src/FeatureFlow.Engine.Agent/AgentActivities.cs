@@ -325,16 +325,21 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
         async Task<bool> PrepareAsync()
         {
             var parent = parentBranch = spec.ParentBranches.GetValueOrDefault(repo.FullName) ?? await DefaultBranchAsync();
-            baseline = Must(await vcs.ResolveAsync(repo, $"refs/heads/{parent}", ct), "read the parent branch")
-                       ?? throw new StepCannotAnswerException($"{repo.FullName} has no branch {parent}");
+            var parentHead = Must(await vcs.ResolveAsync(repo, $"refs/heads/{parent}", ct), "read the parent branch")
+                             ?? throw new StepCannotAnswerException($"{repo.FullName} has no branch {parent}");
             var branchRevision = Must(await vcs.ResolveAsync(repo, $"refs/heads/{workBranch}", ct), "read the work branch");
             if (branchRevision is null)
             {
                 // The engine creates the run's work branch the first time a step touches the repository (docs/04 section 2).
-                Must(await vcs.PushAsync(repo, $"refs/heads/{workBranch}", baseline, null, null, ct), "create the work branch");
-                events.Add($"created branch {workBranch} at {Short(baseline)}");
-                branchRevision = baseline;
+                Must(await vcs.PushAsync(repo, $"refs/heads/{workBranch}", parentHead, null, null, ct), "create the work branch");
+                events.Add($"created branch {workBranch} at {Short(parentHead)}");
+                branchRevision = parentHead;
             }
+
+            // The run's change is what the work branch adds to its parent: from where they part, which is the parent's head
+            // only until a sibling merges into it (LOG 193). The work branch's history always holds it, so the checkout does.
+            baseline = Must(await vcs.MergeBaseAsync(repo, branchRevision, parentHead, ct), "find where the work branch parts from its parent")
+                       ?? throw new StepCannotAnswerException($"{workBranch} shares no history with {parent} in {repo.FullName}");
 
             startRevision = branchRevision;
             // Where the step started, for a later clean_up route's reset (docs/03 section 4.1).
@@ -390,6 +395,10 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
                                   + " && git config --global safe.directory '*' && git config --global init.defaultBranch main", "configure git");
 
             var source = useHidden ? hiddenRevision! : startRevision;
+            // The parent branch at its head too, as a local branch of its name: an agent has no remote (F5), and a
+            // conflict resolver merges it (LOG 193).
+            if (parent != workBranch)
+                Must(await vcs.CheckOutAsync(repo, $"refs/heads/{parent}", parentHead, parent, copy, ct), "check out the parent branch");
             Must(await vcs.CheckOutAsync(repo, useHidden ? hiddenRef : $"refs/heads/{workBranch}", source, workBranch, copy, ct), "check out the work branch");
             await ManifestCommandsAsync(manifest?.Setup ?? [], "setup");
             await StageInputsAsync();
@@ -400,14 +409,37 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
             return useHidden;
         }
 
+        /// <summary>
+        /// The run's ticket (<c>run.tracker_issue</c>), read from the tracker now and staged read-only as
+        /// <c>/ff/inputs/ticket.md</c>, so the agent reads its input without a tracker identity of its own (F5). Null when the
+        /// run has no tracker issue. An issue the tracker does not have stops the step for a person: its input cannot be trusted.
+        /// </summary>
+        async Task<object?> StageTicketAsync()
+        {
+            if (spec.TrackerIssue is not { } key)
+                return null;
+            if (owner.Providers.ForRun("tracker", call.DryRun) is not ITrackerProvider tracker)
+                throw new StepCannotAnswerException($"the run's tracker issue {key} cannot be read: no tracker provider is configured");
+            var read = await tracker.GetIssueAsync(new IssueRef(key), ct);
+            if (read is { Ok: false, Error.Reason: "not_found" })
+                throw new StepCannotAnswerException($"the run's tracker issue {key} does not exist: {read.Error.Message}");
+            var issue = Must(read, $"read the run's tracker issue {key}");
+            var text = $"# {issue.Title}\n\n{issue.Body}\n\n---\n\nTracker issue {issue.Ref.Key}, status {issue.Status}" + (issue.Url is null ? "" : $", {issue.Url}") + "\n";
+            const string path = "/ff/inputs/ticket.md";
+            Must(await sandboxes.CopyInAsync(sandbox, Must(await owner.Store.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(text)), ct)), path, readOnly: true, ct),
+                "stage the ticket");
+            return new { key = issue.Ref.Key, path };
+        }
+
         /// <summary>The inputs manifest (docs/04 section 3.1): inputs, consumed artifacts and skills staged read-only, the baseline, branches and output folder.</summary>
         async Task StageInputsAsync()
         {
             var staged = new List<object>();
-            foreach (var (name, reference) in spec.Consumed)
+            foreach (var (name, consumed) in spec.Consumed)
             {
                 var path = $"/ff/inputs/artifacts/{name}";
-                Must(await sandboxes.CopyInAsync(sandbox, new ArtifactRef(reference), path, readOnly: true, ct), $"stage artifact {name}");
+                var reference = name == FindingsLedger.ViewName ? await LedgerViewAsync() : new ArtifactRef(consumed);
+                Must(await sandboxes.CopyInAsync(sandbox, reference, path, readOnly: true, ct), $"stage artifact {name}");
                 staged.Add(new { name, path });
             }
 
@@ -422,6 +454,7 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
                         skills.Add(new { name = skill, path });
                 }
 
+            var ticket = await StageTicketAsync();
             var manifest = new
             {
                 step = call.Step.StepId,
@@ -434,6 +467,7 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
                 inputs = call.Inputs.ToDictionary(kv => kv.Key, kv => JsonDocument.Parse(JsonOf(kv.Value)).RootElement),
                 artifacts = staged,
                 skills,
+                ticket,
             };
             var bytes = JsonSerializer.SerializeToUtf8Bytes(manifest, new JsonSerializerOptions { WriteIndented = true });
             Must(await sandboxes.CopyInAsync(sandbox, Must(await owner.Store.PutAsync(new MemoryStream(bytes), ct)), paths.InputsManifest, readOnly: true, ct),
@@ -515,6 +549,19 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
 
         async Task<IReadOnlyList<ReportRecord>> ReportsAsync() =>
             Must(await owner.Records.QueryAsync<ReportRecord>(Queries.Reports, new Dictionary<string, string> { ["step_key"] = key }, ct));
+
+        /// <summary>
+        /// The run's ledger view as the step starts (LOG 63): every finding of this run and its children, with its ledger id
+        /// and state, in the <c>findings_report</c> shape. Recorded as an event, so the timeline says what the agent was shown.
+        /// </summary>
+        async Task<ArtifactRef> LedgerViewAsync()
+        {
+            var ledger = Must(await owner.Records.QueryAsync<FindingRecord>(Queries.Findings, new Dictionary<string, string> { ["run_id"] = call.Step.RunId }, ct));
+            var view = Must(await owner.Store.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(ArtifactShapes.WriteLibrary(FindingsLedger.View(ledger)))), ct),
+                "store the ledger view");
+            await EventAsync("findings_ledger", $"{ledger.Count} findings, {ledger.Count(f => f.State == FindingStates.Open)} open: {view.Id}");
+            return view;
+        }
 
         async Task RecordAsync(RecordBatch batch) => Must(await owner.Records.AppendAsync(batch, CancellationToken.None));
 

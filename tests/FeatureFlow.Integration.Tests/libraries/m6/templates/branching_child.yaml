@@ -1,0 +1,18 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: branching_child
+  level: ticket
+  description: An agent commits in the child's repository, on a work branch made from its parent's.
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: work
+    agent:
+      role: std:roles/implementer
+      task: m6:tasks/note
+    outcomes: { written: success }
+    routes: { written: { end: completed } }
