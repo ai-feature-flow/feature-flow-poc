@@ -73,9 +73,9 @@ public sealed class RunNotifier(EngineServices services, ILogger logger, TimeSpa
 
             // A closing record keeps only the wait's id: what it was is in the opening record, and who answered in the answers.
             var opened = await OpenedAsync(wait, ct);
-            var answer = await AnswerOfAsync(wait, ct);
+            var answer = await AnswerOfAsync(wait, batch, ct);
             var what = opened is null ? $"wait {wait.WaitId}" : $"{opened.Kind} {wait.WaitId} ({opened.DecisionType}) at {opened.StepId}";
-            var text = answer is null ? $"{what} closed without an answer from a person" : $"{what} was answered by {answer.Actor}: {Summary(answer.Answer)}";
+            var text = answer is null ? $"{what} closed without an answer from a person" : $"{what} was answered: {answer}";
             list.Add(new Pending(NotificationEvents.Resumed, NotificationEvents.Key(wait.RunId, wait.WaitId, 0, NotificationEvents.Resumed),
                 wait.RunId, opened?.StepId, new Notification(NotificationEvents.Resumed, wait.RunId, $"Run {wait.RunId} resumed", text, opened?.StepId), null));
         }
@@ -103,22 +103,24 @@ public sealed class RunNotifier(EngineServices services, ILogger logger, TimeSpa
         (await Records.QueryAsync<WaitRecord>(Queries.Waits, new Dictionary<string, string> { ["run_id"] = closed.RunId }, ct)).Value?
         .FirstOrDefault(w => w.WaitId == closed.WaitId && w.Kind.Length > 0);
 
-    async Task<AnswerRecord?> AnswerOfAsync(WaitRecord closed, CancellationToken ct) =>
-        (await Records.QueryAsync<AnswerRecord>(Queries.Answers, new Dictionary<string, string> { ["run_id"] = closed.RunId }, ct)).Value?
-        .LastOrDefault(a => a.WaitId == closed.WaitId && a.Result == "recorded");
-
-    /// <summary>An answer as the API recorded it (the answer's arguments as JSON): its outcome or action, not the whole payload.</summary>
-    static string Summary(string answer)
+    /// <summary>
+    /// The answer as the run applied it, from its own timeline (<c>answered</c>: "approved by alice"; for an agent's
+    /// question, <c>question_answered</c>), in this batch or recorded earlier. The API's answer records are not used: the
+    /// run may record the closed wait before the API records the delivery.
+    /// </summary>
+    async Task<string?> AnswerOfAsync(WaitRecord closed, RecordBatch batch, CancellationToken ct)
     {
-        try
+        static string? Of(TimelineRecord t, string waitId) => t.Kind switch
         {
-            var json = System.Text.Json.Nodes.JsonNode.Parse(answer);
-            return json?["outcome"]?.GetValue<string>() ?? json?["action"]?.GetValue<string>() ?? answer;
-        }
-        catch (System.Text.Json.JsonException)
-        {
-            return answer;
-        }
+            "answered" when t.StepId == waitId => t.Detail,
+            "question_answered" when t.Detail?.StartsWith(waitId + " by ", StringComparison.Ordinal) == true => t.Detail[(waitId.Length + 1)..],
+            _ => null,
+        };
+
+        if ((batch.Timeline ?? []).Select(t => Of(t, closed.WaitId)).LastOrDefault(a => a is not null) is { } inBatch)
+            return inBatch;
+        return (await Records.QueryAsync<TimelineRecord>(Queries.Timeline, new Dictionary<string, string> { ["run_id"] = closed.RunId, ["after"] = "0" }, ct)).Value?
+            .Select(t => Of(t, closed.WaitId)).LastOrDefault(a => a is not null);
     }
 
     async Task SendAsync(INotificationsProvider provider, string channel, Pending item, CancellationToken ct)

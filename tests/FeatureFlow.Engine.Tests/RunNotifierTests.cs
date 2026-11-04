@@ -129,12 +129,17 @@ public sealed class RunNotifierTests : IDisposable
     {
         await RecordAsync(Notifier(), new RecordBatch([Run("r1", "running")], [Wait("r1", "decision-1")]));
 
+        // The run records the closed wait with its own account of the answer; the API's record of it may come later.
         await RecordAsync(Notifier(), new RecordBatch(Waits: [Wait("r1", "decision-1", open: false)],
-            Answers: [new AnswerRecord("r1", "decision-1", "alice", """{"waitId":"decision-1","actor":"alice","outcome":"approved"}""", "recorded", now)]));
+            Timeline: [new TimelineRecord("r1", 1, "answered", "decision-1", "approved by alice", now)]));
+        // A question closed by its timeout has no answer.
+        await RecordAsync(Notifier(), new RecordBatch(Waits: [Wait("r1", "q-7", "question"), Wait("r1", "q-7", open: false)]));
 
         var thread = chat.Messages("#decisions").Single().Ref;
-        var resumed = Assert.Single(chat.Messages("#decisions", thread));
-        Assert.Contains("decision decision-1 (ticket.spec_approval) at approve_spec was answered by alice: approved", resumed.Text);
+        var replies = chat.Messages("#decisions", thread);
+        Assert.Contains("decision decision-1 (ticket.spec_approval) at approve_spec was answered: approved by alice", replies[0].Text);
+        Assert.Contains("q-7", replies[^1].Text);
+        Assert.Contains("closed without an answer from a person", replies[^1].Text);
     }
 
     sealed class Broken(Func<Task<ProviderResult<MessageRef>>> send) : INotificationsProvider
