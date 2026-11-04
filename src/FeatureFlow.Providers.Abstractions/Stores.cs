@@ -172,6 +172,82 @@ public sealed record ArtifactRecord(
     bool Evidence,
     DateTimeOffset At);
 
+// M7: people and steering (docs/05 section 5, docs/06 sections 3.10 and 3.11).
+
+/// <summary>
+/// A run-time override (docs/05 section 5), recorded by the API with the authenticated actor (F8), its reason and the
+/// change, before it is delivered and again with the result, as answers are: appended, never replaced. <see cref="Key"/> is
+/// the catalogue key the caller was authorised for (<c>Model.Overrides</c>), a <c>_protected</c> or <c>_beyond</c> variant
+/// included; <see cref="Result"/> is <c>sent</c>, then the workflow's reply or <c>refused: ...</c>.
+/// </summary>
+public sealed record OverrideRecord(
+    string RunId,
+    string OverrideId,
+    string Key,
+    string Actor,
+    string Reason,
+    string? StepId,
+    IReadOnlyDictionary<string, string> Change,
+    string Result,
+    DateTimeOffset At);
+
+/// <summary>
+/// A notification sent (docs/06 section 3.10), once per <see cref="NotificationEvents.Key"/>: the first write is kept, so a
+/// restarted sender finds it and does not post again. <see cref="Thread"/> is the thread it was posted in; a root run's
+/// first message, posted with none, is the thread its children reply in.
+/// </summary>
+public sealed record NotificationRecord(
+    string Key,
+    string RunId,
+    string? StepId,
+    string Event,
+    MessageRef Message,
+    MessageRef? Thread,
+    DateTimeOffset At);
+
+/// <summary>The states of a <see cref="SessionRecord"/>.</summary>
+public static class SessionStatuses
+{
+    public const string Prepared = "prepared";
+    public const string Submitted = "submitted";
+    public const string Closed = "closed";
+}
+
+/// <summary>
+/// An interactive session (docs/04 section 4.4) on a decision's wait, written again whenever it changes; the last write
+/// wins. <see cref="Person"/> is the authenticated actor it is for. On submission, <see cref="SubmittedRevision"/> is the
+/// exact commit imported and <see cref="Artifacts"/> the declared artifacts it produced, by name.
+/// </summary>
+public sealed record SessionRecord(
+    string SessionId,
+    string RunId,
+    string WaitId,
+    string StepId,
+    string Person,
+    string Repository,
+    string Branch,
+    string BaseRevision,
+    string Status,
+    string? SubmittedRevision,
+    IReadOnlyDictionary<string, string>? Artifacts,
+    DateTimeOffset At);
+
+/// <summary>
+/// A pre-submit check a session ran (docs/04 section 4.4), by session and check id, the last write winning: the later
+/// step it stands for, the commit, and <see cref="Inputs"/>, a digest of the task, tools and model it was given, which the
+/// later step's own run must match (parity, docs/09 section 4.2). <see cref="Status"/> is <c>running</c>, <c>passed</c> or
+/// <c>failed</c>; <see cref="ResultRef"/> the result artifact.
+/// </summary>
+public sealed record SessionCheckRecord(
+    string SessionId,
+    string CheckId,
+    string StepId,
+    string Revision,
+    string Inputs,
+    string Status,
+    string? ResultRef,
+    DateTimeOffset At);
+
 public sealed record RecordBatch(
     IReadOnlyList<RunRecord>? Runs = null,
     IReadOnlyList<WaitRecord>? Waits = null,
@@ -184,7 +260,11 @@ public sealed record RecordBatch(
     IReadOnlyList<AgentEventRecord>? AgentEvents = null,
     IReadOnlyList<FindingRecord>? Findings = null,
     IReadOnlyList<FindingEventRecord>? FindingEvents = null,
-    IReadOnlyList<ArtifactRecord>? Artifacts = null);
+    IReadOnlyList<ArtifactRecord>? Artifacts = null,
+    IReadOnlyList<OverrideRecord>? Overrides = null,
+    IReadOnlyList<NotificationRecord>? Notifications = null,
+    IReadOnlyList<SessionRecord>? Sessions = null,
+    IReadOnlyList<SessionCheckRecord>? SessionChecks = null);
 
 /// <summary>
 /// The record store (docs/06 section 3.12). Queries are named, not SQL; the catalogue is <see cref="Queries"/>.
@@ -243,4 +323,22 @@ public static class Queries
 
     /// <summary><see cref="ArtifactRecord"/>: the artifacts of the run named by <c>run_id</c> and of every descendant run, in the order appended.</summary>
     public const string Artifacts = "artifacts";
+
+    /// <summary><see cref="OverrideRecord"/>: a run's overrides in the order appended, by <c>run_id</c>.</summary>
+    public const string Overrides = "overrides";
+
+    /// <summary><see cref="NotificationRecord"/>: the notification named by <c>key</c>, or none.</summary>
+    public const string Notification = "notification";
+
+    /// <summary><see cref="NotificationRecord"/>: a run's notifications in the order first written, by <c>run_id</c>.</summary>
+    public const string Notifications = "notifications";
+
+    /// <summary><see cref="SessionRecord"/>: the session named by <c>session_id</c>.</summary>
+    public const string Session = "session";
+
+    /// <summary><see cref="SessionRecord"/>: a run's sessions, by <c>run_id</c>, ordered by session id.</summary>
+    public const string Sessions = "sessions";
+
+    /// <summary><see cref="SessionCheckRecord"/>: a session's checks, by <c>session_id</c>, ordered by check id.</summary>
+    public const string SessionChecks = "session_checks";
 }

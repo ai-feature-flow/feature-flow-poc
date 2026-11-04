@@ -161,3 +161,27 @@ public sealed class InMemoryFindingsLedgerContract : FindingsLedgerContract
 {
     protected override IRecordStoreProvider Store { get; } = new InMemoryRecordStore();
 }
+
+public sealed class InMemorySteeringRecordsContract : SteeringRecordsContract
+{
+    protected override IRecordStoreProvider Store { get; } = new InMemoryRecordStore();
+}
+
+public sealed class InMemoryNotificationsContract : NotificationsContract
+{
+    readonly InMemoryNotifications notifications = new InMemoryNotifications().AddChannel("#ff-contract");
+
+    protected override INotificationsProvider Notifications => notifications;
+
+    protected override string Channel => "#ff-contract";
+
+    protected override string UnknownChannel => "#ff-nowhere";
+
+    protected override Task<IReadOnlyList<string>> MessagesAsync(string channel, MessageRef? thread) =>
+        Task.FromResult<IReadOnlyList<string>>(notifications.Messages(channel, thread).Select(m => m.Text).ToList());
+}
+
+public sealed class InMemorySessionSurfaceContract : SessionSurfaceContract
+{
+    protected override ISessionSurfaceProvider Surface { get; } = new InMemorySessionSurface();
+}

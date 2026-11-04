@@ -34,6 +34,12 @@ public sealed record DecisionTypeItem(string Name, string? Description, SourceLo
     /// </summary>
     public IReadOnlyList<string> DefaultRoles { get; init; } = [];
 
+    /// <summary>
+    /// The whole <c>default_approval</c> (docs/05 section 4) as a rule matching this type: roles, <c>min_count</c>,
+    /// <c>from_chat</c> and <c>auto</c>, applied when no organisation rule matches. Null where the library gives none.
+    /// </summary>
+    public ApprovalRule? DefaultApproval { get; init; }
+
     /// <summary>A declared name may be a pattern with <c>*</c> standing for one or more characters (docs/05 section 4).</summary>
     public bool Matches(string type)
     {

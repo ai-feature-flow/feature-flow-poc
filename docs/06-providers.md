@@ -107,6 +107,9 @@ The tracker, findings source and validator interfaces as built in M6, the code h
 ledger and artifact index in the record store differ from the signatures below: LOG 148 to 151. How the GitHub
 Issues tracker maps statuses, parents and links is LOG 184.
 
+The notifications and session surface interfaces as built in M7, and the records M7 adds to the record store
+(overrides, notification de-duplication, sessions and their checks), differ from the signatures below: LOG 201 and 202.
+
 ### 3.1 Sandbox
 
 ```csharp

@@ -357,6 +357,9 @@ public static class LocalProviders
             new("tracker", "memory", ["world"], c => InMemoryTracker.Named(c.Setting("world") ?? "default")),
             new("findings_source", "memory", ["world"], c => InMemoryFindingsSource.Named(c.Setting("world") ?? "default", () => Store(c))),
             new("validator", "memory", [], _ => new InMemoryValidators()),
+            // M7: in-memory notifications and session surface for engine tests.
+            new("notifications", "memory", ["world"], c => InMemoryNotifications.Named(c.Setting("world") ?? "default")),
+            new("session_surface", "memory", ["world"], c => InMemorySessionSurface.Named(c.Setting("world") ?? "default")),
         };
         foreach (var type in ConfigurationReader.ProviderTypes.Where(t => t is not ("artifact_store" or "record_store" or "secrets" or "action_stand_in")))
             list.Add(new ProviderFactory(type, "fake", [], _ => new DescribedOnlyProvider(type)));
