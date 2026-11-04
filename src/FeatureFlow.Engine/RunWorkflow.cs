@@ -626,7 +626,7 @@ public partial class RunWorkflow
         return new StepContract(
             step.Outcomes().Where(o => o.Name != Actions.AttemptsExhausted).Select(o => new OutcomeSpec(o.Name, o.Class.Name())).ToList(),
             zero.Keys.ToDictionary(n => n, n => RunCore.OutputType(step, n) ?? "dyn"),
-            step.Produces.Select(p => new ArtifactSpec(p.Outcome, p.Name)).ToList(),
+            step.Produces.Select(p => new ArtifactSpec(p.Outcome, p.Name) { Type = p.Type?.Reference?.ToString() }).ToList(),
             zero.ToDictionary(kv => kv.Key, kv => YamlWriter.WritePlain(kv.Value)))
         {
             Reported = step.Outputs.Select(o => o.Name).ToList(),

@@ -17,6 +17,15 @@ public class FindingsLoopTests
         "{ rule: null-check, title: App may dereference null, description: App has no guard, severity: high, blocking: true, basis: reasoned, "
         + "location: { repository: acme/api, file: src/App.cs, symbol: App, snippet: 'class App {}' } }";
 
+    /// <summary>
+    /// The fixer's claims: its regression test is in the file it wrote (the editing runtime writes work/&lt;step&gt;.txt) and
+    /// passes in the engine's re-test (the TRX names it), so tests_added accepts it. Scripted wherever the fixer runs, since
+    /// the engine checks its claims against their type when it reports (LOG 246).
+    /// </summary>
+    const string FixClaims = "verify.fix.fix: { artifacts: { fix_claims: { schema: 1, claims: [{ criterion: AC-1, verification: unit, tests: "
+        + "[{ repository: acme/api, tier: unit, id: Regression.fix, change: modified, source: { file: work/verify.fix.fix.txt } }] }] }, "
+        + "implementation_claims: { schema: 1, claims: [{ criterion: AC-1, verification: unit, tests: [{ repository: acme/api, tier: unit, id: Adds, change: new }] }] } } }";
+
     static string Report(string findings) => $"{{ artifacts: {{ findings_report: {{ schema: 1, findings: [{findings}] }} }} }}";
 
     [Fact]
@@ -28,11 +37,7 @@ public class FindingsLoopTests
             .. Enumerable.Range(1, 4).Select(i => $"verify.review.review_{i}.assess: {Report("")}"),
             "verify.fix.triage: { artifacts: { triage: { triage_each_open: open } } }",
             "verify.fix.verify_fix: { outcome: verified, artifacts: { fix_verification: { triage_each_open: fixed } } }",
-            // M6 validators: the fixer's regression test is in the file it wrote (the editing runtime writes work/<step>.txt)
-            // and passes in the engine's re-test (the TRX names it), so tests_added accepts it.
-            "verify.fix.fix: { artifacts: { fix_claims: { schema: 1, claims: [{ criterion: AC-1, verification: unit, tests: "
-            + "[{ repository: acme/api, tier: unit, id: Regression.fix, change: modified, source: { file: work/verify.fix.fix.txt } }] }] }, "
-            + "implementation_claims: { schema: 1, claims: [{ criterion: AC-1, verification: unit, tests: [{ repository: acme/api, tier: unit, id: Adds, change: new }] }] } } }",
+            FixClaims,
         ]) + " }";
         var (h, _, _) = await ForgeTicketTests.StartAsync("findings-loop", policy: "  merge: { default_branch: { engine_may_merge: [acme/api] } }", script: script);
         await using var _h = h;
@@ -121,6 +126,7 @@ public class FindingsLoopTests
             .. Enumerable.Range(1, 4).Select(i => $"verify.review.review_{i}.assess: {Report("")}"),
             "verify.fix.triage: { artifacts: { triage: { triage_each_open: open } } }",
             $"verify.fix.verify_fix: {{ outcome: verified, artifacts: {{ fix_verification: {{ triage_each_open: {state} }} }} }}",
+            FixClaims,
         ]) + " }";
         var (h, forge, repo) = await ForgeTicketTests.StartAsync($"verifier-{state}", policy: "  merge: { default_branch: { engine_may_merge: [acme/api] } }", script: script,
             noEdits: noFix ? ["verify.fix.fix"] : null);
@@ -163,9 +169,7 @@ public class FindingsLoopTests
             .. Enumerable.Range(1, 4).Select(i => $"verify.review.review_{i}.assess: {Report("")}"),
             "verify.fix.triage: { artifacts: { triage: { triage_each_open: open } } }",
             $"verify.fix.verify_fix: {{ outcome: verified, artifacts: {{ fix_verification: {{ triage_each_open: {verified}, non_blocking: open }} }} }}",
-            "verify.fix.fix: { artifacts: { fix_claims: { schema: 1, claims: [{ criterion: AC-1, verification: unit, tests: "
-            + "[{ repository: acme/api, tier: unit, id: Regression.fix, change: modified, source: { file: work/verify.fix.fix.txt } }] }] }, "
-            + "implementation_claims: { schema: 1, claims: [{ criterion: AC-1, verification: unit, tests: [{ repository: acme/api, tier: unit, id: Adds, change: new }] }] } } }",
+            FixClaims,
         ]) + " }";
         var (h, forge, repo) = await ForgeTicketTests.StartAsync($"merge-bar-{verified}", policy: "  merge: { default_branch: { engine_may_merge: [acme/api] } }", script: script);
         await using var _h = h;
