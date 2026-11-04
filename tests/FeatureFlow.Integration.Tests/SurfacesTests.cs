@@ -181,8 +181,8 @@ public class SurfacesTests
         Assert.True(status == HttpStatusCode.Accepted, body);
         Assert.Equal($"[\"{id}\"]", JsonNode.Parse(body)!["woken"]!.ToJsonString());
         var woken = await InBackoffAsync(handle, waiting);
-        var timeline = Timeline(await h.ShowAsync(id));
-        Assert.Contains(timeline, e => e is { Kind: "interrupted", Step: "checks" } && e.Detail.StartsWith("woken by github check_run.completed", StringComparison.Ordinal));
+        // The run's records may lag its activities: wait for the entry rather than read the timeline once.
+        var timeline = await TimelineWithAsync(h, id, e => e is { Kind: "interrupted", Step: "checks" } && e.Detail.StartsWith("woken by github check_run.completed", StringComparison.Ordinal));
         Assert.DoesNotContain(timeline, e => e.Kind is "attempt_failed" or "completed");
         Assert.Equal("running", (await h.ShowAsync(id))["run"]!["status"]!.ToString());
 
@@ -203,6 +203,20 @@ public class SurfacesTests
         await h.RecordHistoryAsync(id, "wake");
     }
 
+    static async Task<List<(string Kind, string Step, string Detail)>> TimelineWithAsync(Harness h, string id, Func<(string Kind, string Step, string Detail), bool> entry)
+    {
+        var until = DateTime.UtcNow.AddSeconds(30);
+        var timeline = Timeline(await h.ShowAsync(id));
+        while (!timeline.Any(entry) && DateTime.UtcNow < until)
+        {
+            await Task.Delay(250, Ct);
+            timeline = Timeline(await h.ShowAsync(id));
+        }
+
+        Assert.Contains(timeline, e => entry(e));
+        return timeline;
+    }
+
     static List<(string Kind, string Step, string Detail)> Timeline(JsonNode view) =>
         view["timeline"]!.AsArray().Select(e => (e!["kind"]!.ToString(), e["stepId"]!.ToString(), e["detail"]?.ToString() ?? "")).ToList();
 
@@ -215,7 +229,14 @@ public class SurfacesTests
         {
             Namespace = handle.Client.Options.Namespace,
             Execution = new Temporalio.Api.Common.V1.WorkflowExecution { WorkflowId = handle.Id },
-        })).PendingActivities.SingleOrDefault();
+        })).PendingActivities.Where(a => a.ActivityType.Name == WaitActivity).SingleOrDefault();
+
+    /// <summary>
+    /// The wait's activity type. The run's own activities (writing its records, which also sends notifications) may be
+    /// pending beside it, so the wait is picked by type; more than one of these pending would be two reads of the wait at
+    /// once, which fails the test.
+    /// </summary>
+    const string WaitActivity = "RunAction";
 
     /// <summary>Waits until a wait activity other than <paramref name="previous"/> has read, found the check running, and gone back to its delay.</summary>
     static async Task<string> InBackoffAsync(WorkflowHandle handle, string? previous)
