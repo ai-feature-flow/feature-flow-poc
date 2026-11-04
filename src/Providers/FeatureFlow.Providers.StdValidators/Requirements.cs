@@ -16,6 +16,10 @@ static class Requirements
         for (var p = 0; p < plans.Count; p++)
         {
             var plan = plans[p];
+            // Another run's document is a target here; its own links are that run's to prove, and point at documents this
+            // check is not given (an epic's requirements at its project's, LOG 199).
+            if (plan.Subject.From != "current")
+                continue;
             foreach (var item in plan.Value.Items.Where(i => !string.IsNullOrEmpty(i.Id)))
             {
                 var links = item.Supports ?? [];

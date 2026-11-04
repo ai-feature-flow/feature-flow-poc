@@ -87,6 +87,11 @@ public sealed class StdValidatorsContract : ValidatorContract, IDisposable
             new("requirement_support: a link to the parent's requirements by the sandbox's name for them",
                 Request(Names.RequirementSupport, [w.Subject("requirements", "requirements", TicketRequirements.Replace("artifact: requirements", "artifact: parent/requirements")),
                     w.Subject("requirements", "requirements", EpicRequirements, "parent")]), true),
+            // LOG 199: the epic's requirement links up to its project's, which this check is not given; that is the epic's to prove.
+            new("requirement_support: the parent's own links upwards are not this run's to resolve",
+                Request(Names.RequirementSupport, [Requirements(), Plan(TicketPlan()),
+                    w.Subject("requirements", "requirements", EpicRequirements.Replace("supports_reason: The epic's goal", "supports: [{ artifact: requirements, requirement: P-9 }]"), "parent")],
+                    options: Coverage), true),
             new("requirement_support: a parent/ link does not resolve to this run's own document of the name",
                 Request(Names.RequirementSupport, [w.Subject("requirements", "requirements", TicketRequirements.Replace("artifact: requirements", "artifact: parent/requirements")),
                     w.Subject("requirements", "requirements", EpicRequirements.Replace("kind: epic", "kind: ticket"))]),

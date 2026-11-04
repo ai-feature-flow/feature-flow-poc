@@ -33,6 +33,12 @@ LOOP = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~FindingsLoopT
 
 CONTROLS = [
     {
+        "name": "requirement_support checks the parent's own links (LOG 199)",
+        "edits": [(REQUIREMENTS, 'if (plan.Subject.From != "current")\n                continue;', 'if (plan.Subject.From == "never")\n                continue;')],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
         "name": "run.child passes a child's repositories as written (LOG 198)",
         "edits": [(WORKFLOW, "return matches.Count == 1 ? matches[0] : written;", "return written;")],
         "tests": [BRANCHING],
