@@ -100,3 +100,17 @@ needed. Everything that old histories could reach is behind the patch marker `m7
 | 3 | `run.child`'s `run_gate: manual` (a breakpoint before a child's first step) is not built |
 | 4 | F1 at patch time: a patch adding an engine merge into a default branch is caught only at merge time (`scm.merge` re-checks), not when proposed |
 | 5 | An abort's hold on an action that sends no heartbeat waits for the action to end before the run closes its pull requests (M3 follow-up 9) |
+| 6 | From R1, low: a replaced or inserted container whose inner agent steps change role is not caught by the role checks (top-level `agent.role` only, pre-existing); branches of a `protected: true` parallel are not themselves protected (std protects fragments, which propagate the flag); a protected step inside one branch of a parallel is checked through its parallel, not path by path (LOG 210); an `override_library` sent twice with one id while the first awaits its activity records two entries (harmless; W2 can use the override id as the update id) |
+
+**Review fixes (R1, changes-required)**
+
+| Finding | Fix | Control (mutation that made the check fail) |
+|---|---|---|
+| F1: an agent patch could leave a protected step unrun by a never-true guard, a bypass one step earlier, `resume_at`, or a fake guard | One reachability check replaces route-edge matching (LOG 210); the four probes are tests | No protected step tracked; guarded routes followed by their first entry only |
+| F2: a breakpoint plus go-to left a protected step unrun without `skip_protected` | A go-to or re-plan that leaves one unrun is refused; skip it first (LOG 206) | The refusal off |
+| F3: an amend's `resume_at` forked a running run | Refused at the override update (LOG 209) | The refusal off |
+| F4: a library override reached children's protected steps | Needs `override_library_protected` in a run that starts children (LOG 212) | Children not counted |
+| F5: a steerer approving an agent's proposal reached what only an administrator may change | std's `*.patch_approval` defaults to `admin` (LOG 213) | std back to `steerer` |
+| F6, F7: ended children's pull requests left open; any `pull_request` output counted | Children answer a `pull_requests` query; only `scm.pull_request` and `artifact.publish` count (LOG 215) | Children not read; the action filter off |
+| F8: a skip on a pre-M7 run was accepted, then ignored | Refused (LOG 207) | The refusal off |
+| Untested: the lock across a hand-over; a carried `PastBreakpoint` entry and breakpoint `clean_up`; a skip during a patch approval; a reopened branch's status | Tests added | Each removed in turn |
