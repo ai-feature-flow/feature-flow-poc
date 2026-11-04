@@ -25,12 +25,15 @@ public sealed class OidcTests : IAsyncDisposable
     readonly WebApplication issuer;
     readonly RsaSecurityKey key = new(RSA.Create(2048)) { KeyId = "k1" };
     readonly RsaSecurityKey other = new(RSA.Create(2048)) { KeyId = "k1" };
+    readonly RsaSecurityKey rotated = new(RSA.Create(2048)) { KeyId = "k2" };
+    RsaSecurityKey published;
     readonly string issuerUrl;
     string? metadataIssuer;
     ApiWorld? world;
 
     public OidcTests()
     {
+        published = key;
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         builder.Logging.ClearProviders();
@@ -40,7 +43,7 @@ public sealed class OidcTests : IAsyncDisposable
             ["issuer"] = metadataIssuer ?? issuerUrl!,
             ["jwks_uri"] = issuerUrl + "/jwks",
         }));
-        issuer.MapGet("/jwks", () => Results.Text(JsonSerializer.Serialize(new { keys = new[] { JsonWebKeyConverter.ConvertFromRSASecurityKey(PublicOf(key)) } },
+        issuer.MapGet("/jwks", () => Results.Text(JsonSerializer.Serialize(new { keys = new[] { JsonWebKeyConverter.ConvertFromRSASecurityKey(PublicOf(published!)) } },
             new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull }), "application/json"));
         issuer.StartAsync().GetAwaiter().GetResult();
         issuerUrl = issuer.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
@@ -156,6 +159,26 @@ public sealed class OidcTests : IAsyncDisposable
         Assert.Empty(world!.Temporal.Updates);
         Assert.Equal(HttpStatusCode.OK, (await ApiWorld.PostAsync(With(Token("bob")), "runs/r1/answers", answer)).Status);
         Assert.Equal("ann, bob", ((AnswerArgs)Assert.Single(world.Temporal.Updates).Argument!).Actor);
+    }
+
+    [Fact]
+    public async Task A_token_signed_by_a_rotated_key_is_accepted_once_the_keys_are_read_again()
+    {
+        await WorldAsync();
+        Assert.Equal(HttpStatusCode.OK, await AbortAsync(Token()));
+        published = rotated;
+
+        // The cached keys lack k2: refused, and the keys are read again for later requests.
+        Assert.Equal(HttpStatusCode.Unauthorized, await AbortAsync(Token(signedWith: rotated)));
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        var status = HttpStatusCode.Unauthorized;
+        while (status != HttpStatusCode.OK && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(200, TestContext.Current.CancellationToken);
+            status = await AbortAsync(Token(signedWith: rotated));
+        }
+
+        Assert.Equal(HttpStatusCode.OK, status);
     }
 
     [Fact]

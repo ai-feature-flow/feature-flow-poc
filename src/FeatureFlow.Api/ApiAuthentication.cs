@@ -21,8 +21,8 @@ public static class ApiAuthentication
 /// <c>{issuer}/.well-known/openid-configuration</c> and cached; a token must be signed by one of its keys, issued by the
 /// configured issuer for the configured audience, and unexpired. The actor is the <c>actor_claim</c> claim and the groups
 /// the <c>role_claim</c> claim; the organisation-wide roles come from the groups (docs/05 section 3.3). A token that is
-/// not a JWT is left to the next authenticator; an invalid one is refused, never passed on as someone else. A rotated key is
-/// seen when the cached metadata next refreshes (LOG 220).
+/// not a JWT is left to the next authenticator; an invalid one is refused, never passed on as someone else. A token signed by
+/// a key the cache lacks is refused and asks for a refresh, so later requests see a rotated key (LOG 220).
 /// </summary>
 public sealed class OidcAuthenticator : IAuthenticator
 {
@@ -46,6 +46,9 @@ public sealed class OidcAuthenticator : IAuthenticator
         if (!handler.CanReadToken(token))
             return null;
         var result = await ValidateAsync(token, context.RequestAborted);
+        // A key the cached metadata lacks may be a rotated one: the next request reads the issuer's keys again (LOG 220).
+        if (result.Exception is SecurityTokenSignatureKeyNotFoundException)
+            metadata.RequestRefresh();
         if (!result.IsValid)
             return null;
 

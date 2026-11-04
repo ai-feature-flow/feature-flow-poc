@@ -42,11 +42,11 @@ W5 reports and triage.
 | Finding | Fix | Control (mutation that failed the test) |
 |---|---|---|
 | F1 a team rule could relax by its roles or a broader pattern | A team rule sets only `min_count` and only raises it | The team rule governing whole; a team rule allowed `roles` (`OrganisationTests`) |
-| F2 a run over two teams' repositories took the looser team | Refused at start (API, and run start for children) | The check off (`OverrideAuthorisationTests.Starting_a_run_needs_a_steerer_and_a_run_may_not_span_two_teams`) |
+| F2 a run over two teams' repositories took the looser team | Refused at start (API, and run start for children with its own message, re-check N3) | The check off (`OverrideAuthorisationTests.Starting_a_run_needs_a_steerer_and_a_run_may_not_span_two_teams`); run start skipping it (`OneTeamRunStartTests`) |
 | F3 the local token beside OIDC counted as a second person | A group-less credential may not answer a multi-person wait under OIDC | The refusal off (`OidcTests.The_local_token_is_not_a_second_person_beside_oidc`) |
 | F4 approving a patch skipped `amend_protected` | Coordinator decision C10: W1 makes std's `*.patch_approval` default `admin` (W1's LOG entry); no API change | W1's |
 | F5 a team's roles replaced the organisation's | A team adds holders in its own scope (coordinator's decision) | Team replacing the organisation's holders (`A_team_adds_holders_for_its_own_runs_and_never_takes_the_organisations_away`) |
-| F6 the refresh on an unknown key did not take effect | The dead refresh removed; LOG 220 corrected; follow-up | — |
+| F6 the refresh on an unknown key did not take effect | Re-check N1: one `RequestRefresh` on an unknown key, no immediate retry; the next requests see the rotated key | No refresh (`OidcTests.A_token_signed_by_a_rotated_key_is_accepted_once_the_keys_are_read_again`) |
 | F7 min_count race | Follow-up, LOG 221 | — |
 | F8 / C7 a grant at an intervention needed only `grant_attempts` | Needs `recover` and `grant_attempts` | Either check off (`Granting_attempts_at_an_intervention_needs_recover_and_grant_attempts`) |
 | M10, M11 passed by construction | Tests: a viewer may not start a run; the token's issuer is the configured one even when the metadata names another (the equality check is gone, `ValidIssuer` is the configured issuer) | Start needing only viewer; the issuer taken from the metadata |
@@ -115,11 +115,11 @@ override, OIDC, and the effective policy view.
 | Finding | Fix | Control (mutation that failed the test) |
 |---|---|---|
 | F1 a team rule could relax by its roles or a broader pattern | A team rule sets only `min_count` and only raises it | The team rule governing whole; a team rule allowed `roles` (`OrganisationTests`) |
-| F2 a run over two teams' repositories took the looser team | Refused at start (API, and run start for children) | The check off (`OverrideAuthorisationTests.Starting_a_run_needs_a_steerer_and_a_run_may_not_span_two_teams`) |
+| F2 a run over two teams' repositories took the looser team | Refused at start (API, and run start for children with its own message, re-check N3) | The check off (`OverrideAuthorisationTests.Starting_a_run_needs_a_steerer_and_a_run_may_not_span_two_teams`); run start skipping it (`OneTeamRunStartTests`) |
 | F3 the local token beside OIDC counted as a second person | A group-less credential may not answer a multi-person wait under OIDC | The refusal off (`OidcTests.The_local_token_is_not_a_second_person_beside_oidc`) |
 | F4 approving a patch skipped `amend_protected` | Coordinator decision C10: W1 makes std's `*.patch_approval` default `admin` (W1's LOG entry); no API change | W1's |
 | F5 a team's roles replaced the organisation's | A team adds holders in its own scope (coordinator's decision) | Team replacing the organisation's holders (`A_team_adds_holders_for_its_own_runs_and_never_takes_the_organisations_away`) |
-| F6 the refresh on an unknown key did not take effect | The dead refresh removed; LOG 220 corrected; follow-up | — |
+| F6 the refresh on an unknown key did not take effect | Re-check N1: one `RequestRefresh` on an unknown key, no immediate retry; the next requests see the rotated key | No refresh (`OidcTests.A_token_signed_by_a_rotated_key_is_accepted_once_the_keys_are_read_again`) |
 | F7 min_count race | Follow-up, LOG 221 | — |
 | F8 / C7 a grant at an intervention needed only `grant_attempts` | Needs `recover` and `grant_attempts` | Either check off (`Granting_attempts_at_an_intervention_needs_recover_and_grant_attempts`) |
 | M10, M11 passed by construction | Tests: a viewer may not start a run; the token's issuer is the configured one even when the metadata names another (the equality check is gone, `ValidIssuer` is the configured issuer) | Start needing only viewer; the issuer taken from the metadata |
@@ -141,6 +141,4 @@ yet enforced), 224 (effective policy view), 225 (override wire and CLI).
 | 3 | Read but not enforced on this branch (LOG 223): `role_mapping`, `timeouts`, `library_overrides`, `library_inputs`, `toolsets.allowed`; check at integration which of the others W1 and W3 consumed |
 | 4 | `merge.require_checks` locked on refuses only a literal `require_checks: false` at run start; an expression giving false at merge time is not checked against the cap (`scm.merge` does not read it). Older than M7 |
 | 5 | Startup does not yet resolve the API's `token_ref` or other secret references (docs/07 section 7); a missing one shows as every local-token request refused |
-| 6 | OIDC: a rotated key is accepted only after the metadata cache refreshes (review R2 F6) |
-| 7 | min_count: two answers at the same moment can leave the count short until another answer; re-read after recording (review R2 F7) |
-| 8 | The run-start refusal of a child spanning two teams has no test of its own (the API's refusal and `Approval.MoreThanOneTeam` are tested) |
+| 6 | min_count: two answers at the same moment can leave the count short until another answer; re-read after recording (review R2 F7) |

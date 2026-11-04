@@ -23,7 +23,8 @@ organisation caps and engine floors. A key set in a layer that may not set it is
 a validation error, never ignored.
 
 Teams are not a fifth layer: team overrides live in the organisation file and
-may tighten organisation values, never relax them.
+may tighten organisation values, never relax them. A team may also add holders
+to a people role for its own runs (LOG 217).
 
 ---
 

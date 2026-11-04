@@ -53,8 +53,9 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
         var libraries = Build(snapshots, d);
         var declared = libraries.All.SelectMany(l => l.DecisionTypes).ToList();
         var policy = start.Policy ?? services.Policy(declared);
-        // A child's approval follows its own repositories' team, like the API's for its waits.
-        RunStartChecks.OneTeam(services.Organisation, start.Repositories, d);
+        // A child's approval follows its own repositories' team, like the API's for its waits; it may have one team at most
+        // (LOG 217), as the API checks for a run it starts.
+        var oneTeam = Approval.MoreThanOneTeam(services.Organisation, start.Repositories);
         var team = Approval.TeamFor(services.Organisation, start.Repositories);
         EffectiveApproval ApprovalOf(string type) => Approval.For(type, services.Organisation.Policy, team, declared);
         var template = LibraryReference.TryParse(start.Template);
@@ -81,7 +82,7 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
                 throw new ApplicationFailureException($"{type} is not usable: {failed.Error!.Message}");
 
         return new Prepared(snapshots, policy,
-            d.Where(x => x.Blocks).Select(x => x.ToString()).ToList(),
+            d.Where(x => x.Blocks).Select(x => x.ToString()).Concat(oneTeam is null ? [] : [oneTeam]).ToList(),
             d.Where(x => !x.Blocks).Select(x => x.ToString()).ToList(), defaultBranches, effective);
     }
 
