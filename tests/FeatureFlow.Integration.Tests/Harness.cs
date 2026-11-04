@@ -48,11 +48,12 @@ public sealed class Harness : IAsyncDisposable
     /// For M5's real actions: <paramref name="providers"/> are further lines of the installation's <c>providers</c>
     /// section, whose types should be in <paramref name="omitTypes"/>; <paramref name="policy"/> further lines of the
     /// organisation's <c>policy</c>; <paramref name="installation"/> further top-level installation lines; and
-    /// <paramref name="factories"/> provider factories beside the local ones.
+    /// <paramref name="factories"/> provider factories beside the local ones; <paramref name="configure"/> changes the configuration read.
     /// </para>
     public static async Task<Harness> StartAsync(string name, string script = "{}", bool autoApprove = false, string[]? omitTypes = null,
         string[]? libraries = null, string providers = "", string policy = "", string installation = "", IEnumerable<FeatureFlow.Providers.Abstractions.ProviderFactory>? factories = null,
-        string agentRuntime = "{ default: scripted, dry_run: recording, instances: { scripted: { script: script.yaml }, recording: { folder: recorded } } }")
+        string agentRuntime = "{ default: scripted, dry_run: recording, instances: { scripted: { script: script.yaml }, recording: { folder: recorded } } }",
+        Func<FeatureFlowConfiguration, FeatureFlowConfiguration>? configure = null)
     {
         var folder = IOPath.Combine(IOPath.GetTempPath(), $"ff-it-{name}-{Guid.NewGuid():N}"[..40]);
         Directory.CreateDirectory(folder);
@@ -94,6 +95,9 @@ public sealed class Harness : IAsyncDisposable
             {{policy}}
             """);
         var configuration = FeatureFlowConfiguration.Load(IOPath.Combine(folder, "installation.yaml"), IOPath.Combine(folder, "organisation.yaml"));
+        // M7: settings the organisation reader does not read yet (notifications), set on what it read.
+        if (configure is not null)
+            configuration = configure(configuration);
         harness.Host = await FeatureFlowHost.StartAsync(configuration, LocalProviders.Factories.Concat(factories ?? []), true, true, "http://127.0.0.1:0");
         return harness;
     }

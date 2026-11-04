@@ -750,7 +750,7 @@ public partial class RunWorkflow
         catch (Exception e) when (TemporalException.IsCanceledException(e))
         {
             if (interrupted.Remove(step.Id) && Current(step.Id, execution))
-                core!.Apply(new StepInterrupted(step.Id, "interrupted to hand over to the next run; it resumes there (LOG 139)"));
+                core!.Apply(new StepInterrupted(step.Id, InterruptionReason(step.Id)));
             return;
         }
         catch (ActivityFailureException e) when (interrupted.Contains(step.Id) && e.RetryState == Temporalio.Api.Enums.V1.RetryState.CancelRequested)
@@ -758,7 +758,7 @@ public partial class RunWorkflow
             // The cancel landed while an attempt ran: the attempt's failure (a wait's "not yet", or an infrastructure error)
             // is not retried once a cancel is requested, and acknowledges the cancel as surely as a cancellation does.
             if (interrupted.Remove(step.Id) && Current(step.Id, execution))
-                core!.Apply(new StepInterrupted(step.Id, "interrupted to hand over to the next run; it resumes there (LOG 139)"));
+                core!.Apply(new StepInterrupted(step.Id, InterruptionReason(step.Id)));
             return;
         }
         catch (ActivityFailureException e)

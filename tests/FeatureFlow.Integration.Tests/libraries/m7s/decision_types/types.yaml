@@ -1,0 +1,6 @@
+api_version: feature-flow/v1
+kind: decision_types
+
+decision_types:
+  - name: m7s.go_ahead
+    description: Whether the run goes ahead; the test answers it from the API or a chat button

@@ -1,0 +1,20 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: decide
+  level: ticket
+  description: >-
+    One decision a person answers, then the end: a decision_needed notification with buttons, resumed when it is
+    answered, and completed or failed at the end.
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: go_ahead
+    decision: { type: m7s.go_ahead, prompt: m7s:prompts/go_ahead }
+    outcomes: { approved: success, rejected: failure }
+    routes:
+      approved: { end: completed }
+      rejected: { end: failed }
