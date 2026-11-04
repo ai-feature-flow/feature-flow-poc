@@ -44,7 +44,7 @@ public sealed class StepCannotAnswerException(string message) : Exception(messag
 /// from the same sandbox (docs/02 section 4.3).
 /// </para>
 /// </summary>
-public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, AgentWorkerOptions options)
+public sealed partial class AgentActivities(ProviderSet providers, StepTokens tokens, AgentWorkerOptions options)
 {
     readonly StepTokens tokens = tokens;
     readonly AgentWorkerOptions options = options;
@@ -172,7 +172,7 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
     }
 
     /// <summary>One execution of the lifecycle. Its fields are rebuilt from durable state on every activity attempt.</summary>
-    sealed class Run(AgentActivities owner, StepCall call, IAgentRuntimeProvider runtime, ISandboxProvider sandboxes, IVcsProvider vcs, ActivityExecutionContext context)
+    sealed partial class Run(AgentActivities owner, StepCall call, IAgentRuntimeProvider runtime, ISandboxProvider sandboxes, IVcsProvider vcs, ActivityExecutionContext context)
     {
         readonly AgentStepSpec spec = call.Agent!;
         readonly string key = call.Step.IdempotencyKey;
@@ -640,26 +640,51 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
                     throw new StepCannotAnswerException($"the model refused the step's requests, a configuration fault: {result.Detail}");
 
                 var reports = await ReportsAsync();
-                if (reports.LastOrDefault(r => r.Accepted)?.Report is { } accepted)
-                    return accepted;
                 var rejected = reports.Count(r => !r.Accepted);
-                if (result.ReportFile is { } file && rejected <= spec.CorrectionTurns)
+                StepReport? candidate = null;
+                // The last report counts (docs/04 section 3.3), so a report the engine rejected after accepting it is not taken.
+                if (reports.LastOrDefault() is { Accepted: true, Report: { } accepted })
+                    candidate = accepted;
+                else if (result.ReportFile is { } file && rejected <= spec.CorrectionTurns)
                 {
                     var (checkedReport, errors) = await CheckFileReportAsync(file);
                     await RecordAsync(new RecordBatch(Reports: [new ReportRecord(key, reports.Count + 1, checkedReport is not null, checkedReport, errors, DateTimeOffset.UtcNow)]));
-                    if (checkedReport is not null)
-                        return checkedReport;
-                    rejected++;
-                    if (rejected <= spec.CorrectionTurns)
+                    if (checkedReport is null)
                     {
-                        message = $"The engine rejected report.json:\n{string.Join("\n", errors.Select(e => "- " + e))}\n" +
-                                  $"Fix what it names and write report.json again (correction turn {rejected} of {spec.CorrectionTurns}).";
-                        running = null;
-                        continue;
+                        rejected++;
+                        if (rejected <= spec.CorrectionTurns)
+                        {
+                            message = $"The engine rejected report.json:\n{string.Join("\n", errors.Select(e => "- " + e))}\n" +
+                                      $"Fix what it names and write report.json again (correction turn {rejected} of {spec.CorrectionTurns}).";
+                            running = null;
+                            continue;
+                        }
                     }
+
+                    candidate = checkedReport;
                 }
                 else if (result.Report is { } own)
-                    return own;
+                    candidate = own;
+
+                if (candidate is not null)
+                {
+                    var (stored, problems) = await CheckArtifactsAsync(candidate);
+                    if (problems.Count == 0)
+                        return candidate with { Artifacts = stored };
+                    // An artifact that breaks its type is rejected like a report, from the same allowance of correction turns.
+                    var all = await ReportsAsync();
+                    await RecordAsync(new RecordBatch(Reports: [new ReportRecord(key, all.Count + 1, false, null, problems, DateTimeOffset.UtcNow)]));
+                    rejected = all.Count(r => !r.Accepted) + 1;
+                    if (rejected > spec.CorrectionTurns)
+                        throw new StepWorkException($"the report was rejected {rejected} times; the attempt has failed: its artifacts still break their types: " +
+                                                    string.Join("; ", problems.Take(5)));
+                    message = "The engine checked the artifacts you reported against their types and found errors:\n" +
+                              string.Join("\n", problems.Select(e => "- " + e)) + "\n" +
+                              $"Fix the files in your output folder and {(task.EngineTools ? "call report again" : "write report.json again")} " +
+                              $"(correction turn {rejected} of {spec.CorrectionTurns}).";
+                    running = null;
+                    continue;
+                }
 
                 if (rejected > spec.CorrectionTurns)
                     throw new StepWorkException($"the report was rejected {rejected} times; the attempt has failed: " +
@@ -832,12 +857,10 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
                 throw new StepWorkException("a role with no write access committed: nothing it changed is kept");
             await PushCommitsAsync();
 
-            var artifacts = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (var (name, path) in report.Artifacts)
-            {
-                artifacts[name] = Must(await sandboxes.CopyOutAsync(sandbox, $"{paths.Output}/{path}", ct), $"copy out artifact {name}").Id;
-                events.Add($"artifact {name}: {artifacts[name]}");
-            }
+            // The artifacts were copied out and checked when the report was taken (CheckArtifactsAsync): the output folder is not read again.
+            var artifacts = new Dictionary<string, string>(report.Artifacts, StringComparer.Ordinal);
+            foreach (var (name, reference) in artifacts)
+                events.Add($"artifact {name}: {reference}");
 
             var outputs = report.Outputs.ToDictionary(kv => kv.Key, kv => kv.Value);
             var commits = head == startRevision ? 0 : Must(await vcs.CountCommitsAsync(copy, startRevision, head, ct), "count the step's commits");

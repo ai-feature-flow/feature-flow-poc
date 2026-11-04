@@ -18,6 +18,7 @@ public static partial class ApiApp
     {
         app.MapPost("/runs/{id}/answers", (HttpContext c, string id) => api.Guard(c, caller => api.AnswerAsync(c, caller, id)));
         app.MapPost("/runs/{id}/abort", (HttpContext c, string id) => api.Guard(c, caller => api.AbortAsync(c, caller, id)));
+        app.MapGet("/runs/{id}/findings", (HttpContext c, string id) => api.Guard(c, _ => api.FindingsAsync(c, id)));
     }
 
     /// <summary>The result an answer is recorded with while it waits for more people to answer the same way (<c>min_count</c>).</summary>
@@ -44,6 +45,15 @@ public static partial class ApiApp
             // F8: the actor is the authenticated caller; an actor or roles in the body are ignored.
             var args = new AnswerArgs(waitId, caller.Actor, outcome, action, body["step_id"]?.GetValue<string>(),
                 body["clean_up"]?.GetValue<bool>() ?? false, body["attempts"]?.GetValue<long>() ?? 0, body["status"]?.GetValue<string>());
+            if (body["artifacts"] is { } given)
+            {
+                // What the person produced, such as a triage of findings (LOG 248), stored and sent by reference on the one answer path.
+                var (stored, problem) = await StoreAnswerArtifactsAsync(given, context.RequestAborted);
+                if (problem is not null)
+                    return Error(400, problem);
+                args = args with { Artifacts = stored };
+            }
+
             return await SubmitAnswerAsync(context, caller, run, wait, args);
         }
 
@@ -131,6 +141,45 @@ public static partial class ApiApp
                 await Records.AppendAsync(new RecordBatch(Answers: [new AnswerRecord(runId, waitId, recordedActor, answerText, "refused: " + message, DateTimeOffset.UtcNow)]), ct);
                 return Error(409, message);
             }
+        }
+
+        /// <summary>The most an answer may carry: a person's triage or another small document, not a repository's files.</summary>
+        const int AnswerArtifacts = 16, AnswerArtifactBytes = 1 << 20;
+
+        /// <summary>
+        /// What a person produced in answering, such as a triage of findings (LOG 202, 248): each artifact by declared name,
+        /// given as text or as a JSON value, stored now so the answer carries references. The decision's outcome must promise
+        /// each name (the run refuses others); its content is checked by the step that reads it.
+        /// </summary>
+        async Task<(IReadOnlyDictionary<string, string>? Stored, string? Problem)> StoreAnswerArtifactsAsync(JsonNode given, CancellationToken ct)
+        {
+            if (given is not JsonObject artifacts || artifacts.Count > AnswerArtifacts)
+                return (null, $"artifacts is a map of at most {AnswerArtifacts} artifact names to their content");
+            var stored = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var (name, value) in artifacts)
+            {
+                var text = value switch
+                {
+                    JsonValue v when v.TryGetValue<string>(out var s) => s,
+                    JsonObject or JsonArray => value.ToJsonString(),
+                    _ => null,
+                };
+                if (text is null || text.Trim().Length == 0)
+                    return (null, $"artifact {name} must be given as text or a JSON map or list");
+                var bytes = System.Text.Encoding.UTF8.GetBytes(text);
+                if (bytes.Length > AnswerArtifactBytes)
+                    return (null, $"artifact {name} is {bytes.Length} bytes; an answer's artifacts are at most {AnswerArtifactBytes}");
+                stored[name] = (await Artifacts.PutAsync(new MemoryStream(bytes), ct)).Unwrap().Id;
+            }
+
+            return (stored, null);
+        }
+
+        /// <summary>The run's findings ledger, as a person triaging it needs it: every finding of the run and its children, with its ledger id and state.</summary>
+        public async Task<IResult> FindingsAsync(HttpContext context, string id)
+        {
+            var ledger = (await Records.QueryAsync<FindingRecord>(Queries.Findings, new Dictionary<string, string> { ["run_id"] = id }, context.RequestAborted)).Unwrap();
+            return Results.Text(ArtifactShapes.WriteLibrary(FindingsLedger.View(ledger)), "application/json");
         }
 
         /// <summary>The organisation's libraries' decision types, read now: approval is checked at the moment of use (docs/05 section 8).</summary>

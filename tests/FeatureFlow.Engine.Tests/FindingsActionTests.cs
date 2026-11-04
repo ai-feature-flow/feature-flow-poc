@@ -452,6 +452,44 @@ public sealed class FindingsActionTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_decline_made_before_the_pull_request_opened_is_posted_when_it_opens_and_only_once()
+    {
+        // M6 follow-up 5 (LOG 164, 249): std's fix loop runs before merge_into_parent opens the pull request.
+        await Reviewed("review.assess", Finding(), Finding("b", snippet: "void Add()"));
+        await Record();
+        var ledger = await Ledger();
+        await Triaged("fix.triage", new TriageEntry(ledger[0].FindingId, FindingStates.Declined, "not a bug: x is never null here"));
+        Outcome(await Triage(stepId: "fix.apply_triage"), "applied");
+
+        var opened = await world.RunAsync("scm.pull_request", "{ title: T-1 }", "deliver.open_pr");
+        Outcome(opened, "ready");
+        var pr = ActionRunAccess.Pr(world.PullRequests.Single());
+        Assert.Contains(opened.Events, e => e.StartsWith($"the decline of {ledger[0].FindingId} is posted", StringComparison.Ordinal));
+        // A decline after the pull request opened is posted by its triage; opening again (a re-entry) posts neither twice.
+        await Triaged("fix.triage", new TriageEntry(ledger[1].FindingId, FindingStates.Declined, "by design"));
+        Outcome(await Triage(stepId: "fix.apply_triage_2"), "applied");
+        Outcome(await world.RunAsync("scm.pull_request", "{ title: T-1 }", "deliver.open_pr"), "ready");
+
+        var comments = world.Forge.Comments(pr);
+        Assert.Equal(2, comments.Count);
+        Assert.Contains(comments, c => c.Contains("not a bug: x is never null here", StringComparison.Ordinal));
+        Assert.Contains(comments, c => c.Contains("by design", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_pull_request_with_post_declines_false_posts_none()
+    {
+        await Reviewed("review.assess", Finding());
+        await Record();
+        await Triaged("fix.triage", new TriageEntry(Assert.Single(await Ledger()).FindingId, FindingStates.Declined, "by design"));
+        Outcome(await Triage(stepId: "fix.apply_triage", postDeclines: false), "applied");
+
+        Outcome(await world.RunAsync("scm.pull_request", "{ title: T-1, post_declines: false }", "deliver.open_pr"), "ready");
+
+        Assert.Empty(world.Forge.Comments(ActionRunAccess.Pr(world.PullRequests.Single())));
+    }
+
+    [Fact]
     public async Task Check_31_refuses_an_unknown_reopen_on()
     {
         await Reviewed("review.assess", Finding());
@@ -717,5 +755,126 @@ public sealed class FindingsActionTests : IAsyncDisposable
 
         Assert.Equal(StepOutcome.CannotAnswer, result.Kind);
         Assert.Contains("'states' must name one or more of", result.Reason, StringComparison.Ordinal);
+    }
+
+    // ---- a person's triage through a decision (LOG 248; F8) ----
+
+    /// <summary>
+    /// A decision step's answer as the API records it before delivering it: the authenticated actor, and the answer's
+    /// artifacts by reference. <paramref name="waitStep"/> is the step whose wait the answer is to.
+    /// </summary>
+    async Task Answered(string actor, string waitStep, string artifactRef, string result = "sent", bool refusedToo = false, string? waitId = null)
+    {
+        waitId ??= "w-" + Guid.NewGuid().ToString("N")[..6];
+        var args = new FeatureFlow.Interpreter.Wire.AnswerArgs(waitId, actor, "triaged", Artifacts: new Dictionary<string, string> { ["person_triage"] = artifactRef });
+        var text = System.Text.Json.JsonSerializer.Serialize(args, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        (await world.Records.AppendAsync(new RecordBatch(
+            Waits: [new WaitRecord(world.RunId, waitId, "decision", waitStep, "findings.triage", "", ["triaged", "escalate"], true, DateTimeOffset.UtcNow)],
+            Answers: [new AnswerRecord(world.RunId, waitId, actor, text, result, DateTimeOffset.UtcNow),
+                .. refusedToo ? [new AnswerRecord(world.RunId, waitId, actor, text, "refused: not allowed", DateTimeOffset.UtcNow)] : Array.Empty<AnswerRecord>()]),
+            Ct)).Unwrap();
+    }
+
+    async Task<string> PersonTriaged(string stepId, params TriageEntry[] entries)
+    {
+        await Produced(stepId, "person_triage", ArtifactShapes.WriteLibrary(new Triage(1, entries)));
+        return world.Artifacts.Single(a => a.Name == "person_triage").Ref;
+    }
+
+    [Fact]
+    public async Task A_person_s_triage_through_a_decision_is_recorded_as_the_authenticated_person()
+    {
+        await Reviewed("review", Finding(basis: FindingBases.Demonstrated));
+        Outcome(await Record(), "recorded");
+        var finding = Assert.Single(await Ledger());
+        var reference = await PersonTriaged("fix.person_triage", new TriageEntry(finding.FindingId, FindingStates.Declined, "a known limitation, accepted"));
+        await Answered("alice", "fix.person_triage", reference);
+
+        var result = await Triage(from: "person_triage", stepId: "fix.apply_person_triage");
+
+        Outcome(result, "applied");
+        Assert.Equal(1, Output(result, "declined_blocking"));
+        Assert.Equal(FindingStates.Declined, Assert.Single(await Ledger()).State);
+        var triaged = (await History(finding)).Last();
+        Assert.Equal((FindingEventKinds.Triaged, FindingStates.Declined, "alice"), (triaged.Kind, triaged.State, triaged.Actor));
+        Assert.Contains(result.Events, e => e.Contains("by alice", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("an agent step", false)]
+    [InlineData("another decision", true)]
+    public async Task An_answer_names_the_actor_only_of_the_decision_it_answered(string producer, bool decision)
+    {
+        await Reviewed("review", Finding());
+        Outcome(await Record(), "recorded");
+        var finding = Assert.Single(await Ledger());
+        // The same triage content (so the same reference) produced by another step: an agent's, or another decision's.
+        var reference = await PersonTriaged(producer == "an agent step" ? "fix.triage" : "fix.other_decision",
+            new TriageEntry(finding.FindingId, FindingStates.Open, "fix it"));
+        await Answered("alice", "fix.person_triage", reference);
+        if (decision)
+            await Answered("bob", "fix.elsewhere", "sha256:" + new string('0', 64));
+
+        Outcome(await Triage(from: "person_triage", stepId: "fix.apply_person_triage"), "applied");
+
+        var expected = producer == "an agent step" ? "fix.triage" : "fix.other_decision";
+        Assert.Equal(expected, (await History(finding)).Last().Actor);
+    }
+
+    [Fact]
+    public async Task An_answer_refused_by_the_run_does_not_name_the_actor()
+    {
+        await Reviewed("review", Finding());
+        Outcome(await Record(), "recorded");
+        var finding = Assert.Single(await Ledger());
+        var reference = await PersonTriaged("fix.person_triage", new TriageEntry(finding.FindingId, FindingStates.Open, "fix it"));
+        // As the API writes it: sent before delivery, then the run's refusal of the same answer (review F3).
+        await Answered("mallory", "fix.person_triage", reference, result: "sent", refusedToo: true);
+
+        Outcome(await Triage(from: "person_triage", stepId: "fix.apply_person_triage"), "applied");
+
+        Assert.Equal("fix.person_triage", (await History(finding)).Last().Actor);
+    }
+
+    [Fact]
+    public async Task Each_answer_names_its_actor_only_for_the_triage_it_gave()
+    {
+        // Two answers to two waits of the same decision step, each with its own triage (review F4): the actor is the one whose
+        // answer carried the artifact applied, not the latest answerer.
+        await Reviewed("review", Finding());
+        Outcome(await Record(), "recorded");
+        var finding = Assert.Single(await Ledger());
+        var alices = await PersonTriaged("fix.person_triage", new TriageEntry(finding.FindingId, FindingStates.Open, "fix it"));
+        await Answered("alice", "fix.person_triage", alices);
+        await Answered("bob", "fix.person_triage", "sha256:" + new string('1', 64));
+
+        Outcome(await Triage(from: "person_triage", stepId: "fix.apply_person_triage"), "applied");
+
+        Assert.Equal("alice", (await History(finding)).Last().Actor);
+    }
+
+    [Theory]
+    [InlineData(FindingStates.Escalated, false)]
+    [InlineData(FindingStates.Declined, true)]
+    public async Task A_complete_triage_that_leaves_out_what_the_agent_could_not_clear_is_invalid(string agentState, bool demonstrated)
+    {
+        // Review F1: a person's triage (complete: true) must decide every escalated finding, and every declined blocking or
+        // demonstrated one; leaving one out, even with an empty triage, applies nothing and goes back to the person.
+        await Reviewed("review", Finding(basis: demonstrated ? FindingBases.Demonstrated : FindingBases.Reasoned), Finding("b", snippet: "void Add()"));
+        Outcome(await Record(), "recorded");
+        var ledger = await Ledger();
+        await Triaged("fix.triage", new TriageEntry(ledger[0].FindingId, agentState, "agent"), new TriageEntry(ledger[1].FindingId, FindingStates.Escalated, "agent"));
+        Outcome(await Triage(stepId: "fix.apply_triage"), "applied");
+
+        await PersonTriaged("fix.person_triage", new TriageEntry(ledger[1].FindingId, FindingStates.Open, "fix it"));
+        var partial = await world.RunAsync("findings.triage", "{ from: person_triage, complete: true }", "fix.apply_person_triage");
+        Outcome(partial, "invalid");
+        Assert.Contains(partial.Events, e => e.Contains($"{ledger[0].FindingId} is {agentState}", StringComparison.Ordinal));
+        await Produced("fix.person_triage", "person_triage", ArtifactShapes.WriteLibrary(new Triage(1, [])));
+        Outcome(await world.RunAsync("findings.triage", "{ from: person_triage, complete: true }", "fix.apply_person_triage_2"), "invalid");
+
+        await PersonTriaged("fix.person_triage", new TriageEntry(ledger[0].FindingId, FindingStates.Open, "fix it"), new TriageEntry(ledger[1].FindingId, FindingStates.Open, "fix it"));
+        Outcome(await world.RunAsync("findings.triage", "{ from: person_triage, complete: true }", "fix.apply_person_triage_3"), "applied");
+        Assert.All(await Ledger(), f => Assert.Equal(FindingStates.Open, f.State));
     }
 }

@@ -1,0 +1,30 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: ticket_person_reopens
+description: >-
+  The triager escalates a finding; a person triages it as open (LOG 248), so the
+  fixer fixes it, the verifier verifies the fix, its regression test is
+  validated, and the ticket merges.
+template: std:templates/ticket_delivery
+parameters: { ticket_id: FF-1042 }
+repositories: [acme/api]
+
+outputs:
+  verify.fix.apply_triage: { escalated: 1, declined_blocking: 0 }
+  "findings.open_blocking": [1, 0]
+  "findings.open": 1
+
+expect:
+  status: completed
+  path_includes:
+    - verify.fix.apply_triage
+    - verify.fix.person_triage
+    - verify.fix.apply_person_triage
+    - verify.fix.fix
+    - verify.fix.verify_fix
+    - verify.fix.record_fixes
+    - verify.fix.tests_added
+    - deliver.merge
+  executions:
+    verify.fix.person_triage: 1
+    verify.fix.fix: 1

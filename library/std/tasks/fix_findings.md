@@ -1,14 +1,15 @@
 # Fix the findings
 
-Fix every finding the triage left `open`, each with a regression test unless the
-triage says one does not apply.
+Fix every finding the ledger view shows `open`, each with a regression test
+unless the triage says one does not apply. Where a person's triage names a
+finding, it decides over the triager's.
 
 ## Inputs
 
 | Input | Use |
 |---|---|
 | `findings_ledger` | The findings, with their locations and required corrections |
-| `triage` | Which findings to fix, and where a regression test does not apply |
+| `triage`, `person_triage` (if any) | Why each finding is open, and where a regression test does not apply; the person's entry wins |
 | `implementation_claims` | The current claims, to keep true |
 
 ## Procedure

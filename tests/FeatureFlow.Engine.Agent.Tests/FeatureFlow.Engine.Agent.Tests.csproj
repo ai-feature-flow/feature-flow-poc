@@ -7,6 +7,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\FeatureFlow.Engine.Agent\FeatureFlow.Engine.Agent.csproj" />
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Local\FeatureFlow.Providers.Local.csproj" />
+    <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.StdValidators\FeatureFlow.Providers.StdValidators.csproj" />
   </ItemGroup>
 
 </Project>

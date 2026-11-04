@@ -7,7 +7,8 @@ which findings are now fixed. You cannot change the repository.
 
 | Input | Use |
 |---|---|
-| `findings_ledger`, `triage` | The findings that were to be fixed |
+| `findings_ledger` | The findings to fix: those it shows `open` |
+| `triage`, `person_triage` (if any) | Why each was left open; a person's entry wins |
 | `fix_claims` | The regression tests the fixer names |
 | The baseline commit, in the inputs manifest | For the complete diff |
 

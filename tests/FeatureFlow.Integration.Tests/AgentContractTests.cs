@@ -41,6 +41,35 @@ public sealed class AgentContractTests
         Assert.Equal([false, true], reports.Select(r => r.Accepted));
     }
 
+    /// <summary>
+    /// LOG 246 through the real runtime: the agent reports notes without the heading their type requires. The engine accepts
+    /// the report's shape, checks the stored file, and continues the same Claude Code session with the error; the model,
+    /// given the error as its next message, fixes the file and reports again; the run completes with the corrected file.
+    /// </summary>
+    [Fact]
+    public async Task An_artifact_that_breaks_its_type_is_corrected_in_a_continued_session()
+    {
+        await using var model = new ScriptedModel("model-key-" + Guid.NewGuid().ToString("N"));
+        model.ThenTool("Write", AgentScripts.Write("/ff/out/notes.md", "Notes without a heading\n"))
+            .ThenTool("mcp__engine__report", AgentScripts.Report())
+            .ThenText("Done.")
+            .ThenTool("Write", AgentScripts.Write("/ff/out/notes.md", "# Summary\n\nNotes with their heading.\n"))
+            .ThenTool("mcp__engine__report", AgentScripts.Report())
+            .ThenText("Done.");
+        await model.StartAsync();
+        await using var h = await AgentHarness.StartAsync("artifact-check", model);
+        var runId = h.Start("T-246", "Write notes.md and report.", "m4:templates/checked_step");
+        var status = await h.WaitForEndAsync(runId, RunTimeout);
+
+        Assert.True(status == "completed", $"the run ended {status}:\n{await h.TimelineAsync(runId)}");
+        Assert.Equal([true, false, true], (await h.RecordsAsync<ReportRecord>(Queries.Reports, Key(runId))).Select(r => r.Accepted));
+        // The continued session's turn is the engine's message, naming the file and the rule.
+        Assert.Contains(model.Requests, r => System.Text.RegularExpressions.Regex.Unescape(r.ToJsonString())
+            .Contains("artifact 'notes' (notes.md): heading 'Summary' is required", StringComparison.Ordinal));
+        var sessions = (await h.RecordsAsync<AgentEventRecord>(Queries.AgentEvents, Key(runId))).Where(e => e.Kind == "session").Select(e => e.Detail).ToList();
+        Assert.Equal(["1 started", "1 ended completed", "2 started", "2 ended completed"], sessions);
+    }
+
     /// <summary>SP3 T3: with no engine tools, the agent writes report.json to the output folder the engine created (DR17).</summary>
     [Fact]
     public async Task Without_the_report_tool_the_agent_reports_through_a_file_in_its_output_folder()

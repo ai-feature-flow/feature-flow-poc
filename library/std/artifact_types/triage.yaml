@@ -11,7 +11,7 @@ metadata:
 format: yaml
 evidence: false
 compatible_with: []
-validators: []
+validators: [document_rules]   # each finding triaged once, checked when the triage is produced (LOG 247)
 
 schema:
   type: object

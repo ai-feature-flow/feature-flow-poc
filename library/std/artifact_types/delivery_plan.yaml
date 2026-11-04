@@ -11,7 +11,7 @@ metadata:
 format: yaml
 evidence: false
 compatible_with: []
-validators: []
+validators: [document_rules]   # its rules below, checked when the document is produced (LOG 247)
 
 schema:
   type: object
