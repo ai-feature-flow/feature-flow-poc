@@ -33,6 +33,18 @@ LOOP = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~FindingsLoopT
 
 CONTROLS = [
     {
+        "name": "inheritance refuses a copy that adds a link (LOG 191, amended)",
+        "edits": [(REQUIREMENTS, "else if (Links(item).Except(Links(copy, parent.Subject)).Any())", "else if (!Links(copy, parent.Subject).SequenceEqual(Links(item)))")],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
+        "name": "inheritance lets a copy drop a parent's link (LOG 191, amended)",
+        "edits": [(REQUIREMENTS, "else if (Links(item).Except(Links(copy, parent.Subject)).Any())", "else if (Links(item).Except(Links(copy, parent.Subject)).Any() && item.Id == null)")],
+        "tests": [STD_TESTS],
+        "expect": [FIXTURES],
+    },
+    {
         "name": "requirement_support checks the parent's own links (LOG 199)",
         "edits": [(REQUIREMENTS, 'if (plan.Subject.From != "current")\n                continue;', 'if (plan.Subject.From == "never")\n                continue;')],
         "tests": [STD_TESTS],

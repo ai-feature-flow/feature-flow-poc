@@ -125,8 +125,10 @@ static class Requirements
                 var copy = plan.Value.Items.FirstOrDefault(i => i.Id == item.Id);
                 if (copy is null)
                     c.Error("missing_inherited", $"{D(plan)} does not hold {item.Id}, which {D(parent)} gives {scope.Kind} {scope.Id}", plan.Subject.Name, item.Id);
-                else if (!Links(copy, parent.Subject).SequenceEqual(Links(item)))
-                    c.Error("links_changed", $"{item.Id} in {D(plan)} does not support exactly what it supports in {D(parent)}", plan.Subject.Name, item.Id);
+                else if (Links(item).Except(Links(copy, parent.Subject)).Any())
+                    // A copy keeps every link the parent gave it; it may add links to this run's own items, which
+                    // requirement_support resolves (LOG 191).
+                    c.Error("links_changed", $"{item.Id} in {D(plan)} does not support everything it supports in {D(parent)}", plan.Subject.Name, item.Id);
                 else if (!rewording && (copy.Title != item.Title || copy.Behaviour != item.Behaviour))
                     c.Error("reworded", $"{item.Id} in {D(plan)} is not word for word as in {D(parent)}", plan.Subject.Name, item.Id);
             }

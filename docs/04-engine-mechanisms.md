@@ -494,7 +494,7 @@ The standard set, from FF's validators:
 |---|---|
 | `requirement_support` | Every item's `supports` links resolve; every item supports something or gives a reason; every requirement above has a supporter |
 | `requirement_ownership` | Every item in a parent-written plan names an owner |
-| `requirement_inheritance` | A child's plan holds every item it owns, unchanged in id and links, and none owned by another |
+| `requirement_inheritance` | A child's plan holds every item it owns, with its id and every link the parent gave it (it may add links to its own items, LOG 191), and none owned by another |
 | `verification_method_support` | Every acceptance criterion without an owner has a verification method |
 | `verification_satisfaction` | The agent's evidence claims match passing tests in the engine's test results evidence |
 | `requirement_trace` | Every requirement of this run traces through owners and supporting items, across completed children, to passing tests at commits the work contains |
