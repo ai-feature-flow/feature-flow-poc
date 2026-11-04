@@ -44,7 +44,7 @@ public sealed class InboundTests : IAsyncDisposable
         Directory.Delete(folder, recursive: true);
     }
 
-    HttpClient Start(IReadOnlyList<IAuthenticator>? authenticators = null)
+    HttpClient Start(IReadOnlyList<IAuthenticator>? authenticators = null, bool fromChat = true)
     {
         var slack = new SlackNotifications(_ => Task.FromResult(ProviderResult<string>.Success("xoxb")), _ => Task.FromResult(ProviderResult<string>.Success(SlackSecret)),
             new Dictionary<string, ChatPerson>
@@ -67,7 +67,7 @@ public sealed class InboundTests : IAsyncDisposable
         var installation = new InstallationConfig("localhost:7233", "default", "q", 5120, new Dictionary<string, ProviderTypeConfig>(),
             new ApiAuthConfig("local_token", "secrets/api_token", "tester", ["viewer", "approver", "steerer", "admin"]), 3, 10, Path.Combine(folder, "installation.yaml"));
         var organisation = new OrganisationConfig("t", [],
-            new PolicyConfig([new ApprovalRule("*", ["approver"], 1, true, new Cap<bool>(false, false))], null, null, null, null),
+            new PolicyConfig([new ApprovalRule("*", ["approver"], 1, fromChat, new Cap<bool>(false, false))], null, null, null, null),
             Path.Combine(folder, "organisation.yaml"));
         var app = ApiApp.Build(new ApiServices(providers, installation, organisation, null!) { Authenticators = authenticators ?? [] }, "http://127.0.0.1:0");
         app.StartAsync(Ct).GetAwaiter().GetResult();
@@ -153,6 +153,20 @@ public sealed class InboundTests : IAsyncDisposable
         var sent = Assert.Single(await AnswersAsync(), a => a.Result == "sent");
         Assert.Equal(("alice", "decision-1"), (sent.Actor, sent.WaitId));
         Assert.Contains("\"outcome\":\"approved\"", sent.Answer);
+    }
+
+    [Fact]
+    public async Task A_decision_type_not_answerable_from_chat_is_refused_from_chat_and_nothing_is_recorded()
+    {
+        // The approval rule says from_chat: false. alice may answer it, but not through the gateway.
+        var http = Start(fromChat: false);
+        await OpenWaitAsync();
+
+        var (status, body) = await SendAsync(http, SlackRequest("inbound/chat/slack", Press("U-ALICE")));
+
+        Assert.Equal(HttpStatusCode.Forbidden, status);
+        Assert.Contains("may not be answered from chat", body);
+        Assert.Empty(await AnswersAsync());
     }
 
     [Fact]
