@@ -947,7 +947,8 @@ public class RunWorkflow
             .Where(kv => kv.Value is not null)
             .ToDictionary(kv => kv.Key, kv => YamlWriter.WritePlain(kv.Value));
         var artifacts = crossRun ? RunArtifacts(step) : null;
-        var repositories = (inputs.GetValueOrDefault("repositories") as IEnumerable<object?> ?? input.Repositories).Select(r => r?.ToString() ?? "").ToList();
+        var repositories = (inputs.GetValueOrDefault("repositories") as IEnumerable<object?> ?? input.Repositories)
+            .Select(r => RepositoryNamed(r?.ToString() ?? "", input.Repositories)).ToList();
         var budget = Budget;
         if (budget is not null && Workflow.Patched(WorkItemsPatch)
             && await WorkItemsRefusalAsync(new WorkItemRequest(budget, 1,
@@ -1002,6 +1003,17 @@ public class RunWorkflow
         core!.State.Trace.Add(new TraceEntry("child_started", step.Id, childId));
         if (handle is not null && Workflow.Patched(ChildWatchPatch))
             _ = AwaitChildAsync(handle, childId);
+    }
+
+    /// <summary>
+    /// A repository as this run names it: a planner writing <c>example-client</c> or another case for this run's
+    /// <c>acme/example-client</c> means it (LOG 198, as LOG 190 for findings). A name matching none, or several, is kept.
+    /// </summary>
+    internal static string RepositoryNamed(string written, IReadOnlyList<string> known)
+    {
+        var matches = known.Where(r => string.Equals(r, written, StringComparison.OrdinalIgnoreCase)
+                                       || r.EndsWith("/" + written, StringComparison.OrdinalIgnoreCase)).ToList();
+        return matches.Count == 1 ? matches[0] : written;
     }
 
     /// <summary>The patch marker of a parent creating its work branch in a child's repositories before starting it (LOG 196).</summary>

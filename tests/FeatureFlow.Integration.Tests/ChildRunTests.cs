@@ -215,7 +215,8 @@ public class ChildRunTests
     /// <summary>
     /// LOG 196, found by the live project: a child's parent branch is its parent's work branch, which exists only where the
     /// parent's own steps have touched a repository. Starting a child in another repository makes it there first, from the
-    /// parent's parent branch (here the default branch), so the child's first step finds it.
+    /// parent's parent branch (here the default branch), so the child's first step finds it. The child's repository,
+    /// written short, is named as the run names it (LOG 198).
     /// </summary>
     [Fact]
     public async Task A_child_in_a_repository_its_parent_never_touched_finds_its_parent_branch_there()
@@ -226,7 +227,7 @@ public class ChildRunTests
         forge.Protect(client, new Providers.Abstractions.BranchProtection("main", true, true, 1, [], false));
         var main = forge.Resolve(client, "main")!;
 
-        var id = h.Start("m6:templates/branching_parent", "--repo", "acme/api");
+        var id = h.Start("m6:templates/branching_parent", "--repo", "acme/api", "--repo", "acme/client");
         var (exit, end, error) = h.Cli("wait", id, "--timeout", "120");
 
         var view = await h.ShowAsync(id);
@@ -234,6 +235,6 @@ public class ChildRunTests
         var created = Assert.Single(view["timeline"]!.AsArray(), e => e!["detail"]?.ToString().StartsWith("created branch", StringComparison.Ordinal) == true)!;
         var parentBranch = created["detail"]!.ToString().Split(' ')[2];
         Assert.Equal(main, forge.Resolve(client, parentBranch));
-        Assert.NotNull(forge.Resolve(client, "main"));
+        Assert.Equal(["acme/client"], (await StartOfAsync(h, $"{id}.child.1")).Repositories);
     }
 }

@@ -33,6 +33,12 @@ LOOP = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~FindingsLoopT
 
 CONTROLS = [
     {
+        "name": "run.child passes a child's repositories as written (LOG 198)",
+        "edits": [(WORKFLOW, "return matches.Count == 1 ? matches[0] : written;", "return written;")],
+        "tests": [BRANCHING],
+        "expect": ["A_child_in_a_repository_its_parent_never_touched_finds_its_parent_branch_there"],
+    },
+    {
         "name": "a parent starts a child without making its work branch in the child's repositories (LOG 196)",
         "edits": [(WORKFLOW, "if (Workflow.Patched(ParentBranchesPatch))", "if (Workflow.Patched(ParentBranchesPatch) && repositories.Count < 0)")],
         "tests": [BRANCHING],

@@ -5,7 +5,8 @@ metadata:
   level: epic
   description: >-
     Starts a child in a repository this run's own steps never touch, so this run's work
-    branch, the child's parent branch, is made there for the child (LOG 196).
+    branch, the child's parent branch, is made there for the child (LOG 196). The child's repository is named short, as a
+    planner might (LOG 198).
 
 defaults:
   routes:
@@ -17,5 +18,5 @@ steps:
     with:
       template: m6:templates/branching_child
       level: ticket
-      repositories: [acme/client]
+      repositories: [client]           # as a planner might write it: the run calls it acme/client (LOG 198)
     routes: { completed: { end: completed } }
