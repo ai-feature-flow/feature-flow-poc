@@ -205,8 +205,14 @@ public static class RunStartChecks
     /// auto-resolution where the matching approval rule locks <c>auto</c> off; an <c>scm.merge</c> turning
     /// <c>require_checks</c> off where the organisation locks it on.
     /// </summary>
-    public static void Caps(Plan plan, PolicyConfig policy, Func<Step, long> allowance, DiagnosticBag d, bool root = true)
+    /// <para>
+    /// <paramref name="approval"/> finds the rule that governs a decision type (<see cref="Approval.For"/>); by default the
+    /// organisation's rules. Where the rule does not allow auto-resolution and does not lock it off, the request is not
+    /// refused but has no effect, and a warning says so (docs/05 section 3.1: validation reports where a request was capped).
+    /// </para>
+    public static void Caps(Plan plan, PolicyConfig policy, Func<Step, long> allowance, DiagnosticBag d, bool root = true, Func<string, EffectiveApproval>? approval = null)
     {
+        approval ??= type => Approval.For(type, policy, null, []);
         // F11 is a floor: the organisation's ceiling is never exceeded, so it is locked whatever the file says. Only a root's
         // budget counts (LOG 187): a child's own is not read, so it is not checked.
         if (root && plan.Document.MaxWorkItems is { } asked && policy.MaxWorkItems is { } workItems && asked > workItems)
@@ -215,8 +221,14 @@ public static class RunStartChecks
         {
             if (policy.AttemptsPerStep is { } ceiling && step.ConsumesAttempts && allowance(step) > ceiling)
                 d.Add(Checks.LockedCap, $"{step.Id} allows {allowance(step).ToString(CultureInfo.InvariantCulture)} attempts, above policy.attempts.ceiling.per_step {ceiling.ToString(CultureInfo.InvariantCulture)} (F4)", step.Location, step.Id);
-            if (step.Decision is { Auto: { }, Type: { } type } && policy.RuleFor(type) is { Auto: { Value: false, Locked: true } } rule)
-                d.Add(Checks.LockedCap, $"{step.Id} asks for auto-resolution of {type}; approval rule '{rule.Match}' locks auto off", step.Location, step.Id);
+            if (step.Decision is { Auto: { }, Type: { } type } && approval(type) is { Rule.Auto.Value: false } governing)
+            {
+                if (governing.Rule.Auto.Locked)
+                    d.Add(Checks.LockedCap, $"{step.Id} asks for auto-resolution of {type}; {governing.Source} locks auto off", step.Location, step.Id);
+                else
+                    d.AddRange([new Diagnostic(Checks.LockedCap, Severity.Warning,
+                        $"{step.Id} asks for auto-resolution of {type}; {governing.Source} does not allow it, so a person answers", step.Location, step.Id)]);
+            }
             if (step.Action == "scm.merge" && policy.RequireChecks is { Value: true, Locked: true }
                 && step.With?["require_checks"] is YScalar { } s && s.AsBool() == false)
                 d.Add(Checks.LockedCap, $"{step.Id} sets require_checks false; policy.merge.require_checks is locked true", step.Location, step.Id);
