@@ -9,6 +9,7 @@ metadata:
 
 parameters:
   wait_ms: { type: number, default: 0, description: "How long the parent holds" }
+  kid_wait_ms: { type: number, default: 0, description: "How long the child holds" }
 
 defaults:
   routes:
@@ -17,7 +18,7 @@ defaults:
 steps:
   - id: kid
     action: run.child
-    with: { template: m7steer:templates/steer_pr, level: ticket, repositories: [acme/api], parameters: { wait_ms: 0 } }
+    with: { template: m7steer:templates/steer_pr, level: ticket, repositories: [acme/api], parameters: { wait_ms: { expr: "params.kid_wait_ms" } } }
   - id: hold
     action: notify.send
     with: { audience: [team], message: hold, wait_ms: { expr: "params.wait_ms" } }

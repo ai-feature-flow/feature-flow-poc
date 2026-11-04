@@ -149,6 +149,20 @@ public class SteeringTests
     }
 
     [Fact]
+    public void A_go_to_past_a_protected_step_a_person_skipped_is_allowed()
+    {
+        // R1 re-check R2: the path the refusal names. The protected review is skipped while the run is elsewhere.
+        var (core, driver) = Line_core();
+        Ok(core.Apply(new BreakpointSet("design", true, "ann")));
+        driver.Run();
+        var paused = Assert.Single(core.State.Waits);
+        var past = new InterventionAnswered(paused.Id, new Recovery(RecoveryKind.GoTo, "gate"));
+        Assert.Contains("leave protected step review unrun", core.Check(past));
+        Ok(core.Apply(new StepSkipped("review", "accepted", "root", "reviewed by hand", MayTouchProtected: true)));
+        Assert.Null(core.Check(past));
+    }
+
+    [Fact]
     public void A_skip_is_refused_on_a_run_started_before_m7()
     {
         // R1 F8: such a run would accept the skip, then run the step anyway.

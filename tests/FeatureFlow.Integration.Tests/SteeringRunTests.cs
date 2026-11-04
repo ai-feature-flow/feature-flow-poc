@@ -148,7 +148,7 @@ public class SteeringRunTests
     [Fact]
     public async Task A_library_override_reaches_future_steps_and_a_running_child_while_steps_in_flight_keep_theirs()
     {
-        await using var h = await Harness.StartAsync("steerlib", """{ "steer_line:prepare": { delay_from: wait_ms }, "steer_line:build": { delay: 3s } }""", libraries: Library);
+        await using var h = await Harness.StartAsync("steerlib", """{ "steer_line:prepare": { delay_from: wait_ms }, "steer_line:build": { delay: 3s }, "steer_expand:plan": { delay: 60s } }""", libraries: Library);
         var id = h.Start("m7steer:templates/steer_line", "--param", "wait_ms=0", "--repo", Repo);
         await SendAsync(h, id, Override("breakpoint", "review"));
         await UntilAsync(async () => Harness.StartedSteps(await h.ShowAsync(id)).Contains("build"), "build did not start");
@@ -188,6 +188,9 @@ public class SteeringRunTests
         await UntilAsync(async () => (await h.ShowAsync(child))["timeline"]!.AsArray().Any(e => e!["kind"]!.ToString() == "started"), "the child did not start");
         var inherited = new Dictionary<string, string> { ["item"] = "m7steer:tasks/build", ["with"] = "Build the change. BUILD-V3\n" };
         Assert.Contains("its child runs may resolve", await RefusedAsync(h, parent, Override("override_library", null, inherited)));
+        // Children plan.expand will add count too (R1 re-check R1).
+        var expanding = h.Start("m7steer:templates/steer_expand", "--repo", Repo);
+        Assert.Contains("its child runs may resolve", await RefusedAsync(h, expanding, Override("override_library", null, inherited)));
         await SendAsync(h, parent, Override("override_library", null, inherited, "root", "override_library_protected"));
         var (_, parentEnd, _) = h.Cli("wait", parent, "--timeout", "90");
         Assert.True(parentEnd.Trim() == $"run {parent} completed", parentEnd + (await h.ShowAsync(child)).ToJsonString());
@@ -272,13 +275,15 @@ public class SteeringRunTests
         var host = h.Host.Providers.Required<ICodeHostProvider>("code_host");
 
         // A run, or a parent whose child opened the pull request and has ended (R1 F6).
-        async Task<PullRequestState> AbortAsync(bool close, string template = "steer_pr")
+        async Task<PullRequestState> AbortAsync(bool close, string template = "steer_pr", bool childRunning = false)
         {
             // The hold's activity sends no heartbeat, so the abort waits for it to end (M3 follow-up 9): keep it short.
-            var id = h.Start($"m7steer:templates/{template}", "--param", "wait_ms=6000", "--repo", Repo);
+            var id = template == "steer_pr"
+                ? h.Start($"m7steer:templates/{template}", "--param", "wait_ms=6000", "--repo", Repo)
+                : h.Start($"m7steer:templates/{template}", "--param", "wait_ms=6000", "--param", $"kid_wait_ms={(childRunning ? 6000 : 0)}", "--repo", Repo);
             var opener = template == "steer_pr" ? id : $"{id}.kid.1";
-            await UntilAsync(async () => Harness.StartedSteps(await h.ShowAsync(id)).Contains("hold"), "hold did not start");
-            if (opener != id)
+            await UntilAsync(async () => Harness.StartedSteps(await h.ShowAsync(childRunning ? opener : id)).Contains("hold"), "hold did not start");
+            if (opener != id && !childRunning)
                 Assert.Equal("completed", await h.Client.GetWorkflowHandle(opener).GetResultAsync<string>());
             var opened = Timeline(await h.ShowAsync(opener)).Single(e => e.Kind == "agent" && e.Detail.StartsWith("pull request ", StringComparison.Ordinal)).Detail;
             var named = opened.Split(' ')[2];
@@ -296,6 +301,8 @@ public class SteeringRunTests
         Assert.Equal(PullRequestStates.Open, (await AbortAsync(close: false)).State);
         forge.Commit(repo, "refs/heads/ff/steer-pr", new Dictionary<string, string?> { ["src/App.cs"] = "class App { } \n" });
         Assert.Equal(PullRequestStates.Closed, (await AbortAsync(close: true, "steer_pr_parent")).State);
+        forge.Commit(repo, "refs/heads/ff/steer-pr", new Dictionary<string, string?> { ["src/App.cs"] = "class App {  }\n" });
+        Assert.Equal(PullRequestStates.Closed, (await AbortAsync(close: true, "steer_pr_parent", childRunning: true)).State);
     }
 
     [Fact]

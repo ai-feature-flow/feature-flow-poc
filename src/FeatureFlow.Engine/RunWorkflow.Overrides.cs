@@ -164,9 +164,9 @@ public partial class RunWorkflow
     IReadOnlyList<string> Protected(OverrideArgs o) => o.Key switch
     {
         Overrides.Skip or Overrides.ChangeRole when core!.StepById(o.StepId!) is { Protected: true } => [o.StepId!],
-        // A run that starts children passes the override down, where protected steps it cannot see may resolve it (LOG 212).
+        // A run that starts children, or may once plan.expand adds them, passes the override down, where protected steps it cannot see may resolve it (LOG 212).
         Overrides.OverrideLibrary => core!.ProtectedResolving(o.Change["item"])
-            .Concat(core.Plan.AllSteps.Any(x => x.Action == "run.child") ? ["its child runs"] : []).ToList(),
+            .Concat(core.Plan.AllSteps.Any(x => x.Action is "run.child" or "plan.expand") ? ["its child runs"] : []).ToList(),
         _ => [],
     };
 
