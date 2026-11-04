@@ -571,7 +571,7 @@ API (a squash of the project branch, one parent `af06a37`) and `ef5b410` in the 
 and the project head `a562d3b`). The engine merged nothing into either `main` (F1): every engine merge was into an epic
 or project branch.
 
-Coordinator, 2026-11-04: LOG 191 (amended) and LOG 193's `MergeBaseAsync` accepted, for the product owner's review. Product owner, 2026-11-04: the project's changes stay on both
+Coordinator, 2026-11-04: LOG 191 (amended) and LOG 193's `MergeBaseAsync` accepted; approved by the product owner on 2026-11-04. Product owner, 2026-11-04: the project's changes stay on both
 fixtures' `main`.
 
 ### Review of PR 14 (approve-with-fixes) and fixes
@@ -614,7 +614,7 @@ report: default **959 passed**, integration **77 passed**, 0 failed (Release, Te
   `define` importing the person's documents, since M7's session is not built.
 - People's recoveries were used where agents struggled (granted attempts to planners and reviewers, retried a
   conflict resolver); all are on the runs' timelines with the actor.
-- `requirement_inheritance` now accepts added links (LOG 191 amended; accepted by the coordinator, for the product owner's review); docs/04 section 10.2 updated.
+- `requirement_inheritance` now accepts added links (LOG 191 amended; accepted by the coordinator; approved by the product owner 2026-11-04); docs/04 section 10.2 updated.
 
 ### Follow-ups
 
@@ -648,7 +648,7 @@ Decisions the coordinator took during M6 (minor ones; the two major ones were th
 
 ## For the product owner
 
-LOG 148 to 200 are unreviewed. The entries whose "Needs a look?" column says yes, with a recommendation each:
+LOG 148 to 200 were approved by the product owner on 2026-11-04. The entries whose "Needs a look?" column says yes, with a recommendation each:
 
 | LOG | What it decided | Recommendation |
 |---|---|---|
