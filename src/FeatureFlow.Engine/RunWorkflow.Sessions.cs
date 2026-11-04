@@ -32,6 +32,13 @@ public partial class RunWorkflow
         RetryPolicy = new RetryPolicy { InitialInterval = TimeSpan.FromSeconds(1), MaximumInterval = TimeSpan.FromSeconds(10), MaximumAttempts = 5 },
     };
 
+    /// <summary>
+    /// The decision waits this run opened a session for, behind <see cref="SessionsPatch"/>; carried over a hand-over. Only
+    /// these are sessions: a decision whose plan declares <c>session</c> but that opened none (a history recorded before the
+    /// marker, a dry run) is answered as any decision is.
+    /// </summary>
+    readonly HashSet<string> sessionWaits;
+
     // This run only: a check id already started, and a submission being imported, by wait id.
     readonly HashSet<string> sessionChecks = new(StringComparer.Ordinal);
     readonly HashSet<string> submitting = new(StringComparer.Ordinal);
@@ -40,7 +47,8 @@ public partial class RunWorkflow
 
     /// <summary>The decision step with a session that the open wait <paramref name="waitId"/> is, or null.</summary>
     Step? SessionStep(string waitId) =>
-        core?.State.Waits.FirstOrDefault(w => w.Id == waitId && w.Kind == WaitKind.Decision) is { } wait && core.StepById(wait.StepId) is { Decision.Session: not null } step
+        sessionWaits.Contains(waitId) && core?.State.Waits.FirstOrDefault(w => w.Id == waitId && w.Kind == WaitKind.Decision) is { } wait
+                                      && core.StepById(wait.StepId) is { Decision.Session: not null } step
             ? step
             : null;
 
@@ -51,6 +59,7 @@ public partial class RunWorkflow
         var step = core!.StepById(opened.StepId)!;
         if (core.State.Waits.LastOrDefault(w => w.Kind == WaitKind.Decision && w.StepId == step.Id) is not { } wait)
             return;
+        sessionWaits.Add(wait.Id);
         SessionOpen open;
         try
         {
@@ -148,8 +157,6 @@ public partial class RunWorkflow
                 : null;
         if (answer.Artifacts is not null)
             return $"session {session}: a submission's artifacts are imported by the run from the commit, not given";
-        if (!SessionNames.IsCommit(answer.Revision))
-            return $"session {session}: submit a full commit id, not '{answer.Revision}': a branch can move";
         return answer.Outcome == SubmitOutcome(step) ? null : $"session {session}: a submission takes '{SubmitOutcome(step)}', not '{answer.Outcome}'";
     }
 
@@ -285,6 +292,8 @@ public partial class RunWorkflow
         error = null;
         if (core!.State.Status != RunStatus.Running)
             error = $"the run has ended ({core.State.Status.Name()})";
+        else if (draining)
+            error = "the run is handing over to its next run: try the check again in a moment";
         else if (SessionNames.WaitOf(check.SessionId, input.RunId) is not { } waitId || (session = SessionStep(waitId)) is null)
             error = $"session {check.SessionId} is not open in run {input.RunId}";
         else if (submitting.Contains(waitId))
@@ -295,8 +304,9 @@ public partial class RunWorkflow
             error = $"{check.StepId} is not a check of session {check.SessionId} (checks_from: {string.Join(", ", session.Decision.Session.ChecksFrom)})";
         else if (core.FindStep(check.StepId, session.Scope) is not { } target)
             error = $"{check.StepId} names no step of the plan";
-        else if (target.Form != StepForm.Action)
-            error = $"{check.StepId} is an agent step: a pre-submit check of an agent step is not built in version 1 (LOG 238)";
+        else if (target.Action != SessionNames.CheckAction)
+            error = $"{check.StepId} is {(target.Form == StepForm.Action ? target.Action : $"a{(target.Form == StepForm.Agent ? "n agent" : " decision")} step")}: " +
+                    $"only an {SessionNames.CheckAction} step can be run as a pre-submit check (LOG 238)";
         else
             return target;
         return null;
@@ -327,7 +337,7 @@ public partial class RunWorkflow
 
             // The execution the step will run as; the identity is not part of what the digest compares.
             var execution = (core.State.Steps.GetValueOrDefault(target.Id)?.Executions ?? 0) + 1;
-            var identity = new StepIdentity(input.RunId, Template.Name, target.Id, execution, $"{input.RunId}/{target.Id}/check-{check.CheckId}");
+            var identity = new StepIdentity(input.RunId, Template.Name, target.Id, execution, SessionNames.CheckKey(input.RunId, target.Id, check.CheckId));
             var (call, scope, error) = CallOf(target, identity, inputs);
             if (error is not null)
             {
@@ -336,8 +346,6 @@ public partial class RunWorkflow
             }
 
             scope = AsSubmitted(scope, session, artifacts, target);
-            var digest = CheckInputs.Digest(call!, scope);
-            await RecordCheckAsync(check, target, digest, "running", null);
             StepOutcome outcome;
             try
             {
@@ -350,10 +358,12 @@ public partial class RunWorkflow
             }
             catch (ActivityFailureException e)
             {
-                await EndCheckAsync(check, target, digest, "failed", null, e.InnerException?.Message ?? e.Message);
+                await EndCheckAsync(check, target, "", "failed", null, e.InnerException?.Message ?? e.Message);
                 return;
             }
 
+            // What the activity itself received, as the step's own digest is (NoteCheckInputs).
+            var digest = outcome.Inputs ?? "";
             var report = outcome.Report;
             var passed = report is not null && target.Outcomes().FirstOrDefault(o => o.Name == report.Outcome)?.Class == OutcomeClass.Success;
             await EndCheckAsync(check, target, digest, passed ? "passed" : "failed", report?.Artifacts.Values.FirstOrDefault(),
@@ -418,14 +428,15 @@ public partial class RunWorkflow
     }
 
     /// <summary>
-    /// A step that a session's <c>checks_from</c> names records the digest of what it is given when it starts, as its checks
+    /// A step that a session's <c>checks_from</c> names records the digest of what its activity received, as its checks
     /// recorded theirs, so the two can be compared (docs/09 section 4.2).
     /// </summary>
-    void NoteCheckInputs(Step step, StepCall call, ActionScope? scope)
+    void NoteCheckInputs(Step step, StepOutcome outcome)
     {
-        if (!core!.Plan.AllSteps.Any(s => s.Decision?.Session is { } spec && spec.ChecksFrom.Any(c => core.FindStep(c, s.Scope)?.Id == step.Id))
+        if (outcome.Inputs is not { } digest
+            || !core!.Plan.AllSteps.Any(s => s.Decision?.Session is { } spec && spec.ChecksFrom.Any(c => core.FindStep(c, s.Scope)?.Id == step.Id))
             || !Workflow.Patched(SessionsPatch))
             return;
-        core.State.Trace.Add(new TraceEntry("check_inputs", step.Id, CheckInputs.Digest(call, scope)));
+        core.State.Trace.Add(new TraceEntry("check_inputs", step.Id, digest));
     }
 }

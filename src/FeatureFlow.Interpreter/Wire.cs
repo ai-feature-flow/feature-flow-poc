@@ -141,7 +141,8 @@ public sealed record ShellState(
     int ChildEndsWhileDraining,
     int AnswersWhileDraining,
     IReadOnlyList<OpenQuestion>? Questions = null,
-    IReadOnlyList<string>? ClosedQuestions = null);
+    IReadOnlyList<string>? ClosedQuestions = null,
+    IReadOnlyList<string>? SessionWaits = null);
 
 /// <summary>
 /// The run workflow's input: on the first run, what the API or the parent gives; after a hand-over, the same with

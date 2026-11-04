@@ -27,6 +27,23 @@ public static class SessionNames
     /// <summary>The branch a session's person works on, in the session's repository.</summary>
     public static string Branch(string runId, string waitId) => $"ff/session/{runId}/{waitId}";
 
+    /// <summary>
+    /// The one action a pre-submit check may run (LOG 238): it reads the session's files and changes nothing. Other actions
+    /// either act (merge, publish, open a pull request) or work on the run's work branch, not on the session's files.
+    /// </summary>
+    public const string CheckAction = "artifact.validate";
+
+    /// <summary>The idempotency key of a check's call: never a step execution's, so what the check records is told apart.</summary>
+    public static string CheckKey(string runId, string stepId, string checkId) => $"{runId}/{stepId}/{CheckSegment}/{checkId}";
+
+    public static bool IsCheckKey(string key) => key.Contains($"/{CheckSegment}/", StringComparison.Ordinal);
+
+    const string CheckSegment = "session-check";
+
+    /// <summary>Whether a session id has the form <c>&lt;run&gt;.&lt;wait&gt;</c> with nothing a URL path would read as another segment.</summary>
+    public static bool IsId(string? sessionId) =>
+        sessionId is { Length: > 0 and <= 200 } id && RunOf(id) is { Length: > 0 } && id.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.') && !id.Contains("..", StringComparison.Ordinal);
+
     /// <summary>Whether a revision is a full commit id: what a check and a submission name, since a branch can move.</summary>
     public static bool IsCommit(string? revision) => revision is { Length: 40 or 64 } r && r.All(Uri.IsHexDigit);
 }

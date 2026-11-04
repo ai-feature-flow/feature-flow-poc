@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using FeatureFlow.Interpreter.Wire;
 
 namespace FeatureFlow.Cli;
 
@@ -84,7 +85,7 @@ public sealed class SessionClient(HttpClient http)
 
     public async Task<(int, string)> ListAsync(string runId)
     {
-        var (reply, failure) = await GetAsync($"runs/{runId}/sessions");
+        var (reply, failure) = await GetAsync($"runs/{Uri.EscapeDataString(runId)}/sessions");
         if (reply is null)
             return (1, failure);
         var text = new StringBuilder();
@@ -96,7 +97,9 @@ public sealed class SessionClient(HttpClient http)
     /// <summary>The workspace: where to work, the files to write, the checks, the prompt; with <paramref name="folder"/>, also written there with the drafts and the context.</summary>
     public async Task<(int, string)> FetchAsync(string sid, string? folder)
     {
-        var (reply, failure) = await GetAsync($"sessions/{sid}");
+        if (NotAnId(sid) is { } refused)
+            return refused;
+        var (reply, failure) = await GetAsync($"sessions/{Uri.EscapeDataString(sid)}");
         if (reply is null)
             return (1, failure);
         var w = reply["workspace"]!;
@@ -127,16 +130,18 @@ public sealed class SessionClient(HttpClient http)
     /// <summary>Runs a check on a commit and waits for its result: 0 when it passed.</summary>
     public async Task<(int, string)> CheckAsync(string sid, string step, string? revision, TimeSpan timeout)
     {
+        if (NotAnId(sid) is { } refused)
+            return refused;
         if (Revision(revision) is not { } commit)
             return (2, "no commit to check: give --revision <full commit id>, or run this in a git working copy\n");
-        var (started, failure) = await PostAsync($"sessions/{sid}/checks", new JsonObject { ["step"] = step, ["revision"] = commit });
+        var (started, failure) = await PostAsync($"sessions/{Uri.EscapeDataString(sid)}/checks", new JsonObject { ["step"] = step, ["revision"] = commit });
         if (started is null)
             return (1, failure);
         var checkId = started["check_id"]!.ToString();
         var clock = Stopwatch.StartNew();
         while (clock.Elapsed < timeout)
         {
-            var (list, _) = await GetAsync($"sessions/{sid}/checks");
+            var (list, _) = await GetAsync($"sessions/{Uri.EscapeDataString(sid)}/checks");
             var check = list?["checks"]!.AsArray().FirstOrDefault(c => c!["check"]!["checkId"]!.ToString() == checkId);
             var status = check?["check"]!["status"]!.ToString();
             if (status is "passed" or "failed" && check!["detail"] is { } detail)
@@ -155,17 +160,24 @@ public sealed class SessionClient(HttpClient http)
 
     public async Task<(int, string)> SubmitAsync(string sid, string? revision)
     {
+        if (NotAnId(sid) is { } refused)
+            return refused;
         if (Revision(revision) is not { } commit)
             return (2, "no commit to submit: give --revision <full commit id>, or run this in a git working copy\n");
-        var (reply, failure) = await PostAsync($"sessions/{sid}/submit", new JsonObject { ["revision"] = commit });
+        var (reply, failure) = await PostAsync($"sessions/{Uri.EscapeDataString(sid)}/submit", new JsonObject { ["revision"] = commit });
         return reply is null ? (1, failure) : (0, $"submitted {commit} as {reply["outcome"]}: {reply["result"]}\n");
     }
 
     public async Task<(int, string)> AbandonAsync(string sid)
     {
-        var (reply, failure) = await PostAsync($"sessions/{sid}/abandon", new JsonObject());
+        if (NotAnId(sid) is { } refused)
+            return refused;
+        var (reply, failure) = await PostAsync($"sessions/{Uri.EscapeDataString(sid)}/abandon", new JsonObject());
         return reply is null ? (1, failure) : (0, $"abandoned as {reply["outcome"]}: {reply["result"]}\n");
     }
+
+    /// <summary>A session id comes from text an agent may have read (LOG 242): anything not of its form is refused, never sent.</summary>
+    static (int, string)? NotAnId(string sid) => SessionNames.IsId(sid) ? null : (2, $"'{sid}' is not a session id (<run id>.<wait id>)\n");
 
     /// <summary>The commit named, or the working copy's HEAD; null when there is neither.</summary>
     static string? Revision(string? given)

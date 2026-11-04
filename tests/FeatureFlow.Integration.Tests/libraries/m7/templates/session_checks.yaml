@@ -1,0 +1,33 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: session_checks
+  level: project
+  description: A session whose checks_from names an action that acts (artifact.publish), which a check must never run (LOG 238).
+
+artifact_types: [std:artifact_types/requirements, std:artifact_types/validation_report]
+
+steps:
+  - id: define
+    decision:
+      type: project.requirements_session
+      session:
+        folder: docs
+        files: [{ path: requirements.yaml, name: requirements, type: std:artifact_types/requirements }]
+        checks_from: [check, publish]
+    produces: { submitted: [{ name: requirements, type: std:artifact_types/requirements }] }
+    outcomes: { submitted: success, abandoned: failure }
+    routes: { abandoned: { end: rejected } }
+
+  - id: check
+    action: artifact.validate
+    with: { validation: [{ validator: requirement_support, subjects: [requirements], options: { require_coverage: false } }] }
+    consumes: [{ name: requirements }]
+    produces: { valid: [{ name: report, type: std:artifact_types/validation_report }], invalid: [{ name: report, type: std:artifact_types/validation_report }] }
+    routes: { valid: publish, invalid: define }
+
+  - id: publish
+    action: artifact.publish
+    with: { folder: docs, files: [{ artifact: requirements, path: requirements.yaml }] }
+    consumes: [{ name: requirements }]
+    routes: { published: { end: completed }, conflict: { end: failed } }

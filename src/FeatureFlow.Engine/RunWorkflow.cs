@@ -79,6 +79,7 @@ public partial class RunWorkflow
         answersWhileDraining = c?.AnswersWhileDraining ?? 0;
         questions = c?.Questions?.ToList() ?? [];
         closedQuestions = c?.ClosedQuestions?.ToList() ?? [];
+        sessionWaits = [.. c?.SessionWaits ?? []];
         if (c is not null)
             lastRecordedStatus = "running";
     }
@@ -472,7 +473,6 @@ public partial class RunWorkflow
             return;
         }
 
-        NoteCheckInputs(step, call!, scope);
         _ = RunStepAsync(step, s.Execution, call!, scope);
     }
 
@@ -825,6 +825,7 @@ public partial class RunWorkflow
                 return;
             }
 
+            NoteCheckInputs(step, outcome!);
             Apply(step, outcome!);
         }
         catch (Exception e) when (e is not TemporalException)
@@ -1404,7 +1405,8 @@ public partial class RunWorkflow
             interruptedThisRun));
         var carried = new ShellState(core.Snapshot(), children.ToList(), pendingChildEnds.ToList(), pendingParentPatches.ToList(), answered.ToList(),
             recordedOpenWaits.ToList(), timelineSequence, handOvers.ToList(), cancelledByParent,
-            activitiesStartedWhileDraining, childEndsWhileDraining, answersWhileDraining, questions.ToList(), closedQuestions.ToList());
+            activitiesStartedWhileDraining, childEndsWhileDraining, answersWhileDraining, questions.ToList(), closedQuestions.ToList(),
+            sessionWaits.Count == 0 ? null : sessionWaits.Where(id => core.State.Waits.Any(w => w.Id == id)).ToList());
         var next = input with { Policy = policy, Carried = carried };
         return Workflow.CreateContinueAsNewException((RunWorkflow w) => w.RunAsync(next));
     }

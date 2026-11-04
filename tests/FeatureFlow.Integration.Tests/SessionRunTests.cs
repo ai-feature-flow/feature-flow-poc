@@ -130,6 +130,9 @@ public class SessionRunTests
         Assert.Equal(409, (int)late.StatusCode);
         Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
         await PostAsync(http, $"runs/{id}/abort", new JsonObject { ["reason"] = "the test is done" });
+        h.Cli("wait", id, "--timeout", "60");
+        // A history holding the m7-sessions marker: opening, checks, submissions and the step's digest (docs/09 section 4.1).
+        await h.RecordHistoryAsync(id, "project_session");
     }
 
     [Fact]
@@ -152,11 +155,59 @@ public class SessionRunTests
         Assert.Equal(409, (int)notACheck.StatusCode);
         Assert.Contains("not a check of session", await notACheck.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
 
+        // The run's own refusals, for an update that does not come through the API (F8 of the review).
+        var handle = h.Client.GetWorkflowHandle(id);
+        var commit = new string('a', 40);
+        foreach (var (args, error_) in new[]
+                 {
+                     (new AnswerArgs(wait, "tester", "submitted", null, Revision: "main"), "full commit id"),
+                     (new AnswerArgs(wait, "tester", "submitted", null, Revision: commit, Artifacts: new Dictionary<string, string> { ["requirements"] = "sha256:x", ["contract"] = "sha256:y" }),
+                         "imported by the run"),
+                     (new AnswerArgs(wait, "tester", "abandoned", null, Revision: commit), "a submission takes 'submitted'"),
+                 })
+        {
+            var refusal = await Assert.ThrowsAsync<Temporalio.Exceptions.WorkflowUpdateFailedException>(() => handle.ExecuteUpdateAsync<AnswerReply>(RunWorkflowNames.Answer, [args]));
+            Assert.Contains(error_, refusal.InnerException?.Message ?? refusal.Message);
+        }
+
         Assert.Equal("recorded", (await PostAsync(http, $"sessions/{sid}/abandon", new JsonObject()))["result"]!.ToString());
         var (_, end, _) = h.Cli("wait", id, "--timeout", "60");
         Assert.Equal($"run {id} rejected", end.Trim());
         var record = await GetAsync(http, $"sessions/{sid}");
         Assert.Equal(SessionStatuses.Closed, record["session"]!["status"]!.ToString());
+    }
+
+    [Fact]
+    public async Task A_check_runs_only_an_artifact_validate_step_even_when_checks_from_names_another()
+    {
+        var (h, _, repo) = await ForgeTicketTests.StartAsync("session-publish", autoApprove: false, libraries: [Path.Combine(Harness.TestLibraries, "m7")]);
+        await using var _h = h;
+        var id = h.Start("m7:templates/session_checks", "--repo", repo.FullName);
+        var http = await ClientAsync(h);
+        var sid = (await OpenSessionAsync(h, http, id))["session"]!["sessionId"]!.ToString();
+
+        var refused = await http.PostAsJsonAsync($"sessions/{sid}/checks", new { step = "publish", revision = new string('a', 40) }, TestContext.Current.CancellationToken);
+        Assert.Equal(409, (int)refused.StatusCode);
+        Assert.Contains("only an artifact.validate step", await refused.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        await PostAsync(http, $"runs/{id}/abort", new JsonObject { ["reason"] = "the test is done" });
+    }
+
+    [Fact]
+    public async Task A_dry_run_opens_no_session_and_its_decision_takes_a_plain_answer()
+    {
+        var (h, _, repo) = await ForgeTicketTests.StartAsync("session-dry", autoApprove: false);
+        await using var _h = h;
+        var id = h.Start("std:templates/project_delivery", "--param", "project_name=invoicing", "--repo", repo.FullName, "--dry-run");
+        var http = await ClientAsync(h);
+        await WaitAtAsync(h, id, "define");
+        var wait = (await h.ShowAsync(id))["waits"]![0]!["waitId"]!.ToString();
+
+        var (exit, output, error) = h.Cli("answer", id, wait, "submitted");
+        Assert.True(exit == 0, output + error);
+        // As before sessions: the plain answer produces no files, so the next step that consumes them stops at check 32 (LOG 245).
+        await WaitAtAsync(h, id, "check_requirements");
+        Assert.Empty((await GetAsync(http, $"runs/{id}/sessions"))["sessions"]!.AsArray());
+        await PostAsync(http, $"runs/{id}/abort", new JsonObject { ["reason"] = "the test is done" });
     }
 
     static async Task WaitAtAsync(Harness h, string runId, string step)

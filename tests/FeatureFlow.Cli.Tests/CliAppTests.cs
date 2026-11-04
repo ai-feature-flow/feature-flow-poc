@@ -62,6 +62,21 @@ public class CliAppTests
         Assert.Equal("usage: " + SessionCommands.Usage.Trim(), error.Trim());
     }
 
+    [Theory]
+    [InlineData("submit")]
+    [InlineData("fetch")]
+    [InlineData("abandon")]
+    public void A_session_id_that_is_not_one_is_refused_before_anything_is_sent(string command)
+    {
+        var token = Path.GetTempFileName();
+        // Nothing listens at this address: a request sent would fail with exit 3, not 2.
+        var (code, _, error) = Run("session", command, "../runs/run-1/abort", "--revision", new string('a', 40), "--api", "http://127.0.0.1:9", "--token-file", token);
+        File.Delete(token);
+
+        Assert.Equal(2, code);
+        Assert.Contains("is not a session id", error);
+    }
+
     [Fact]
     public void A_session_command_without_a_token_says_so()
     {

@@ -226,12 +226,12 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
 
             if (result.Kind == ActionResult.Wait)
                 throw new ApplicationFailureException($"waiting: {result.Reason}", errorType: "waiting", nextRetryDelay: result.Delay);
-            return result.ToOutcome();
+            return result.ToOutcome() with { Inputs = CheckInputs.Digest(call, scope) };
         }
 
         var standIn = services.Providers.Required<IActionStandIn>("action_stand_in", call.DryRun);
         var stood = await standIn.RunAsync(new ActionRequest(call.Step, call.What, call.Inputs, call.Contract), ct);
-        return Classify(stood.Error) ?? new StepOutcome(StepOutcome.Reported, stood.Value, null);
+        return Classify(stood.Error) ?? new StepOutcome(StepOutcome.Reported, stood.Value, null) { Inputs = CheckInputs.Digest(call, scope) };
     }
 
     /// <summary>A <c>clean_up</c> route's branch reset before its target step runs again (docs/03 section 4.1; M3 follow-up 5).</summary>
