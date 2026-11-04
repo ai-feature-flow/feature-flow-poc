@@ -232,6 +232,22 @@ public class FindingsLoopTests
         Assert.NotEqual(0, refused);
         Assert.Contains("'triaged' must give artifact person_triage", refusal, StringComparison.Ordinal);
 
+        // An empty triage decides nothing the agent could not clear: applied as invalid, and the person is asked again (review F1).
+        var empty = Path.Combine(h.Folder, "empty_triage.yaml");
+        await File.WriteAllTextAsync(empty, "schema: 1\nentries: []\n", ct);
+        var (emptied, _, emptyError) = h.Cli("answer", id, wait!, "triaged", "--artifact", $"person_triage={empty}");
+        Assert.True(emptied == 0, emptyError);
+        string? again = null;
+        for (var i = 0; i < 300 && (again is null || again == wait); i++)
+        {
+            await Task.Delay(200, ct);
+            again = (await h.ShowAsync(id))["waits"]!.AsArray().FirstOrDefault()?["waitId"]?.ToString();
+        }
+
+        Assert.True(again is not null && again != wait, "the person's decision was not asked again after an empty triage");
+        Assert.Equal(1, Harness.StartedSteps(await h.ShowAsync(id)).Count(s => s == "verify.fix.apply_person_triage"));
+        wait = again;
+
         var (read, ledger, readError) = h.Cli("findings", id);
         Assert.True(read == 0, readError);
         var finding = Assert.Single(ArtifactShapes.ReadLibrary<FindingsReport>(ledger, "the ledger").Findings);
@@ -245,7 +261,7 @@ public class FindingsLoopTests
         var view = await h.ShowAsync(id);
         Assert.True(exit == 0, end + error + view.ToJsonString());
         var path = Harness.StartedSteps(view);
-        Assert.Contains("verify.fix.apply_person_triage", path);
+        Assert.Equal(2, path.Count(s => s == "verify.fix.apply_person_triage"));
         Assert.DoesNotContain("verify.fix.fix", path);
         Assert.Contains("deliver.merge", path);
 

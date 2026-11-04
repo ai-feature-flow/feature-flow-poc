@@ -57,15 +57,21 @@ public sealed class StdValidatorsContract : ValidatorContract, IDisposable
 
         // tests_added: this run's fix claims (indexed), the triage, the engine's results at the fixed head, the ledger.
         ValidationRequest TestsAdded(string claims, string revision, IReadOnlyList<string> passing, string? raised = "", string? testedAt = null,
-            IReadOnlyList<string>? passingWhenRaised = null)
+            IReadOnlyList<string>? passingWhenRaised = null, string triage = TriageText, string? personTriage = null, string state = FindingStates.Fixed)
         {
             var (claimsSubject, claimsRecord) = w.Indexed("fix_claims", "evidence_claims", claims);
             ArtifactRecord[] evidence = passingWhenRaised is null
                 ? [w.TestEvidence(testedAt ?? revision, passing)]
                 : [w.TestEvidence(testedAt ?? revision, passing), w.TestEvidence(w.Main, passingWhenRaised)];
-            return Request(Names.TestsAdded, [claimsSubject, w.Subject("triage", "triage", TriageText)], Frozen(revision),
-                [claimsRecord, .. evidence], [Finding("F-1", raised == "" ? w.Main : raised)]);
+            ValidationSubject[] subjects = personTriage is null
+                ? [claimsSubject, w.Subject("triage", "triage", triage), Absent("person_triage", "current")]
+                : [claimsSubject, w.Subject("triage", "triage", triage), w.Subject("person_triage", "triage", personTriage)];
+            return Request(Names.TestsAdded, subjects, Frozen(revision),
+                [claimsRecord, .. evidence], [Finding("F-1", raised == "" ? w.Main : raised) with { State = state }]);
         }
+
+        // A person's triage over the triager's (review F2, LOG 248).
+        var declinedTriage = TriageText.Replace("state: open, reason: valid", "state: declined, reason: not a bug");
 
         var ownedPlan = TicketPlan(Criterion + "\n    owner: { kind: ticket, id: T-1 }");
         var twoOwners = EpicPlan + "\n" + EpicPlan[EpicPlan.IndexOf("  - id: AC-1", StringComparison.Ordinal)..].Replace("AC-1", "AC-2").Replace("T-1", "T-2");
@@ -239,6 +245,10 @@ public sealed class StdValidatorsContract : ValidatorContract, IDisposable
             new("tests_added: the claim names the finding's own file as ./src/Widgets.cs (review N3)",
                 TestsAdded(Claims(file: "./src/Widgets.cs"), codeOnly, [Id]), false, "no_test_added"),
             new("tests_added: the finding has no revision it was raised on", TestsAdded(Claims(), fixes, [Id], raised: null), false, "no_raised_revision"),
+            new("tests_added: the triager declined the finding, a person reopened it, and the fix claims no new test (review F2)",
+                TestsAdded(Claims("WidgetTests.Existing", "reused"), codeOnly, ["WidgetTests.Existing"], triage: declinedTriage, personTriage: TriageText), false, "no_test_added"),
+            new("tests_added: the triager left the finding open, a person declined it, so no test is needed (review F2)",
+                TestsAdded(Claims("WidgetTests.Existing", "reused"), codeOnly, ["WidgetTests.Existing"], personTriage: declinedTriage, state: FindingStates.Declined), true),
 
             // ---- document_rules (LOG 247) ----
             new("document_rules: std-shaped requirements, plan, triage and work list",

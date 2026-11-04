@@ -9,8 +9,9 @@ Read the ledger (`GET /runs/<run id>/findings`, or `ff run findings <run id>`):
 every finding with its ledger id, state and the reviewer's description. The
 triager's entries, with its reasons, are the `triage` artifact.
 
-Answer `triaged` with an artifact `person_triage` of type `triage`, one entry per
-finding you decide:
+Answer `triaged` with an artifact `person_triage` of type `triage`, with an entry
+for every finding the ledger holds `escalated`, and every `declined` one that is
+blocking or demonstrated; a triage leaving one out comes back to you:
 
 ```yaml
 schema: 1

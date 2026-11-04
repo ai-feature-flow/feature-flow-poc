@@ -67,7 +67,7 @@ steps:
 
   - id: apply_person_triage
     action: findings.triage
-    with: { from: person_triage }       # any state; the state changes are recorded as the person who answered (F8)
+    with: { from: person_triage, complete: true }   # any state, recorded as the person (F8); it must decide every escalated or declined blocking finding
     consumes: [{ name: person_triage }]
     routes:
       applied:
@@ -87,6 +87,7 @@ steps:
     consumes:
       - { name: findings_ledger }
       - { name: triage }
+      - { name: person_triage, optional: true }   # a person's decisions, over the triager's (LOG 248)
       - { name: implementation_claims, optional: true }
       - { name: fix_verification, optional: true }
       - { name: fix_test_results, optional: true }
@@ -105,6 +106,7 @@ steps:
     consumes:
       - { name: findings_ledger }
       - { name: triage }
+      - { name: person_triage, optional: true }
       - { name: fix_claims }
     produces:
       verified: [{ name: fix_verification, type: std:artifact_types/triage }]
@@ -136,8 +138,8 @@ steps:
     action: artifact.validate
     with:
       validation:
-        - { validator: tests_added, subjects: [fix_claims, triage] }
-    consumes: [{ name: fix_claims }, { name: triage }]
+        - { validator: tests_added, subjects: [fix_claims, triage, { name: person_triage, optional: true }] }
+    consumes: [{ name: fix_claims }, { name: triage }, { name: person_triage, optional: true }]
     produces:                                   # on both outcomes: an invalid result's report goes back with the route
       valid: [{ name: fix_validation, type: std:artifact_types/validation_report }]
       invalid: [{ name: fix_validation, type: std:artifact_types/validation_report }]

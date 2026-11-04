@@ -2,8 +2,9 @@ api_version: feature-flow/v1
 kind: workflow_test
 name: ticket_person_triage_invalid
 description: >-
-  A person's triage names a finding the ledger does not hold: findings.triage
-  applies nothing (invalid) and the decision is asked again; the second triage
+  A person's triage names a finding the ledger does not hold, or leaves out one
+  the agent escalated or declined (complete: true, review F1 of PR 21):
+  findings.triage applies nothing (invalid) and the decision is asked again; the second triage
   applies and leaves the finding open for the fixer.
 template: std:templates/ticket_delivery
 parameters: { ticket_id: FF-1042 }
