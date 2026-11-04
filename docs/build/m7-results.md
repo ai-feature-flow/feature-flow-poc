@@ -17,7 +17,7 @@ M7 is done. People now steer runs, answer through Slack, a console or their own 
   a person triaging findings through a decision (LOG 248); re-running a failed branch of a finished parallel, and an
   abort closing the run's pull requests (LOG 214, 215).
 
-How it ran: shared interfaces first (PR #16), five builders in parallel (PRs #17 to #21), then integration (`M7 integration: seams and live done-when`).
+How it ran: shared interfaces first (PR #16), five builders in parallel (PRs #17 to #21), then integration (PR #22).
 Each builder's pull request had an independent review that broke the code to show its tests catch it, and a re-check.
 
 Tests on `m7-integration` at the end: 1,249 default (replay 29 of them), 100 integration, 29 std re-drive.
