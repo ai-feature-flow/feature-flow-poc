@@ -332,8 +332,10 @@ public class SessionRunTests
             if (sessions.Count == 1)
             {
                 var sid = sessions[0]!["sessionId"]!.ToString();
+                // The session's record can land before its wait's: wait for both, as an answer needs the wait record.
+                var waitId = sessions[0]!["waitId"]!.ToString();
                 var fetched = await http.GetAsync($"sessions/{sid}", TestContext.Current.CancellationToken);
-                if (fetched.IsSuccessStatusCode)
+                if (fetched.IsSuccessStatusCode && (await h.ShowAsync(runId))["waits"]!.AsArray().Any(w => w!["waitId"]!.ToString() == waitId))
                     return JsonNode.Parse(await fetched.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))!;
             }
 

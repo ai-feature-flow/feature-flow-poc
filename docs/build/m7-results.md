@@ -467,7 +467,7 @@ restored).
 | 2 | The surfaces test set `notifications` through a harness hook, not the organisation file (W3 Q4) | The test writes `notifications` in the organisation file; the hook is gone (the harness takes organisation lines and `from_chat`). The `from_chat: false` refusal through the Slack gateway is W3's `InboundTests` test | `SurfacesTests` (the reader dropping `notifications`: no post) |
 | 3 | Organisation keys read but not enforced (W2 Q4, LOG 223) | `library_overrides`, `library_inputs`, `policy.toolsets.allowed`, `role_mapping` and `timeouts` refused "not enforced before M8" (LOG 256). Consumed, so kept: `notifications`, `planning.require_review`, `roles`, `teams` | `OrganisationTests` (one key dropped from the refusal fails two) |
 | 4 | `auto_resolved` did not name its actor (W2 Q5) | `<outcome> by policy` (LOG 258) | `PolicyRunTests.An_automatic_answer_names_policy_as_its_actor` (the old detail fails it) |
-| 5 | A session's submission was checked only for parsing (W4 Q1, W5 Q1) | One type check, `ArtifactTypeCheck`, for agents and `artifact.import`; a submission of files that break their types is refused with every error and the session stays open (patch `m7-import-check`, LOG 259) | `SessionRunTests.A_submission_whose_files_break_their_types_...` (import ignoring the errors; the scope without the lock; the helper skipping validators, which also fails two of W5's `ArtifactCheckTests`) |
+| 5 | A session's submission was checked only for parsing (W4 Q1, W5 Q1) | One type check, `ArtifactTypeCheck`, for agents and `artifact.import`; a submission of files that break their types is refused with every error and the session stays open (LOG 259; no patch marker, review R6 F1) | `SessionRunTests.A_submission_whose_files_break_their_types_...` (import ignoring the errors; the scope without the lock; the helper skipping validators, which also fails two of W5's `ArtifactCheckTests`) |
 | 6 | A person's triage artifact was not in the run's artifact index (W5 Q2) | A decision answer's artifacts are indexed (LOG 260) | `FindingsLoopTests.A_person_triages_...` (not indexed fails it) |
 
 ### Done-when 1: who may and may not use each override
@@ -542,6 +542,7 @@ harness `configure` hook) is superseded: the hook is gone.
 | 1 | M8 lifts each "not enforced before M8" refusal together with the key's consumer (LOG 256) |
 | 2 | A run's clean-up could delete its session branches (W4 follow-up 4, seen live) |
 | 3 | `artifact.import` in a plan stops for a person on a type error; a work-failure outcome might suit a plan that can retry |
+| 4 | Artifacts on a person's decision answer (a triage) are not type-checked; `findings.triage` checks a triage's structure, but std's `document_rules` does not run on it (review R6 F2) |
 
 ## Coordinator decisions
 
@@ -619,7 +620,7 @@ recommendation.
 | 256 | Organisation keys nothing enforces are refused "not enforced before M8" | Approve: each returns with its consumer |
 | 257 | A decision's wait records its rendered prompt | Approve |
 | 258 | `auto_resolved` names `policy` as its actor | Approve |
-| 259 | One artifact type check for agents, people and imports | Approve |
+| 259 | One artifact type check for agents, sessions and imports | Approve |
 | 260 | A decision answer's artifacts are indexed | Approve |
 | 261 | A check refused during the hand-over is tried again by the client | Approve |
 
@@ -651,4 +652,5 @@ and 8 (schema checks on import).
 | 17 | A decline from a triage with `post_declines: false` is still posted when the pull request later opens | Reports 4 |
 | 18 | `docs/07` lists `teams.<name>.repositories` once LOG 204 is approved | Interfaces 2 |
 | 19 | A plan's `artifact.import` stops for a person on a type error; a work-failure outcome might suit a plan that retries | Integration 3 |
-| 20 | Still open from M6: `verification_satisfaction` and the trace checks; the work-item budget's overshoot; `EpicRunTests`' per-child durations; a live hand-over during a CI wait; detached hosts ignoring SIGTERM; the Copilot findings source unseen; M5 follow-ups 3 and 7; watch activities per run; parent counts lag a child's; `wait.condition` on a tracker issue | M6 7, 9 to 18 |
+| 20 | Type-check the artifacts on a person's decision answer (a triage) as session files are | Integration 4 |
+| 21 | Still open from M6: `verification_satisfaction` and the trace checks; the work-item budget's overshoot; `EpicRunTests`' per-child durations; a live hand-over during a CI wait; detached hosts ignoring SIGTERM; the Copilot findings source unseen; M5 follow-ups 3 and 7; watch activities per run; parent counts lag a child's; `wait.condition` on a tracker issue | M6 7, 9 to 18 |

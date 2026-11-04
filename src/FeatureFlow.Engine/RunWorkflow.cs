@@ -653,14 +653,8 @@ public partial class RunWorkflow
 
         return new ActionScope(input.Repositories, repository, core.WorkBranch(), input.ParentBranch, artifacts, pullRequests, policy?.EngineMayMerge ?? [],
             Consumed: Workflow.Patched(ChildInputsPatch) ? consumed : null, TrackerIssue: input.TrackerIssue,
-            Declared: Workflow.Patched(ChildInputsPatch) ? declared : null, LockRef: ImportCheckLock());
+            Declared: Workflow.Patched(ChildInputsPatch) ? declared : null, LockRef: LockRef);
     }
-
-    /// <summary>The patch marker of <c>artifact.import</c> checking typed files against their types (M7 integration; W4 follow-up 1).</summary>
-    public const string ImportCheckPatch = "m7-import-check";
-
-    /// <summary>The run's lock for an action's type checks; null in histories recorded before <see cref="ImportCheckPatch"/>.</summary>
-    string? ImportCheckLock() => Workflow.Patched(ImportCheckPatch) ? LockRef : null;
 
     /// <summary>
     /// A <c>clean_up</c> route resets the work branch before its target runs again (docs/03 section 4.1). The activity

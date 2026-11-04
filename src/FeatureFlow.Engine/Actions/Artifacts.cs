@@ -114,7 +114,7 @@ static class Artifacts
 
     /// <summary>
     /// A typed file checked against the run's version of its type, as an agent's report is (LOG 246): its errors. Unchecked
-    /// without a type, or without the run's lock (a run from before M7).
+    /// without a type, or without a lock (<see cref="ActionScope.None"/>).
     /// </summary>
     static async Task<IReadOnlyList<string>> CheckTypeAsync(ActionRun run, string name, string? declared, string path, string text, string reference)
     {
