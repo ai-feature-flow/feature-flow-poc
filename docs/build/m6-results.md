@@ -502,7 +502,7 @@ Checked on GitHub afterwards: `8e7a697` has parents `af06a37` (the base) and `8b
 source and three new test files; `main` stayed `af06a37`; PRs #180 to #182 closed with their squash commits, #183
 merged; issues #176 to #179 closed by the tracker.
 
-### Done-when 2: `project_delivery` over two repositories (waiting for a person's merge)
+### Done-when 2: `project_delivery` over two repositories (complete)
 
 The project's requirements session is M7's, and an answer cannot carry artifacts, so the run used a run-only template,
 `m6live:templates/project_delivery_imported`: std's `project_delivery` with `define` an `artifact.import` of
@@ -530,5 +530,53 @@ seam 7, seam 8, seam 9, and a recovery of mine (`go_to` into one branch of a fin
 | person's merge | The product owner merged #193 (`d033998`, by `sparkkz-makes`). The engine's next check found it: "merged d2ca7cb852 into main as d03399841e (merge, by sparkkz-makes, already merged)"; `deliver_0.merge` completed `merged` |
 | `deliver.deliver_1` | PR **ai-feature-flow/feature-flow-example-client#6** into `main`; checks (unit) passed; catch-up unchanged; `scm.merge` recorded the action request "a person merges ai-feature-flow/feature-flow-example-client#6 into main" |
 
+| person's merge | The product owner merged #6 (`ef5b410`, by `sparkkz-makes`); the engine found it: "merged a562d3bbc0 into main as ef5b410040 (merge, by sparkkz-makes, already merged)" |
+| `deliver.report` | "feature-flow-example: merged into main as d03399841e by sparkkz-makes"; "feature-flow-example-client: merged into main as ef5b410040 by sparkkz-makes"; **`complete`**; the run **completed** |
+
+The project handed over once (at 227 events, after its children had ended); its epics and tickets handed over seven
+times between them, none with a wait in flight (`InterruptedWaits: 0`).
+
+Checked on GitHub afterwards: #193 and #6 are merged, `mergedBy` `sparkkz-makes` (not a bot); `main` is `d033998` in the
+API (a squash of the project branch, one parent `af06a37`) and `ef5b410` in the client (a merge commit, parents `b7699f6`
+and the project head `a562d3b`). The engine merged nothing into either `main` (F1): every engine merge was into an epic
+or project branch.
+
 Product owner, 2026-11-04: LOG 191 (amended) and LOG 193's `MergeBaseAsync` accepted; the project's changes stay on both
-fixtures' `main`. The rest of this section (the second merge, `delivery.report`, clean-up) follows when #6 is merged.
+fixtures' `main`.
+
+### Clean-up
+
+Deleted on both fixtures after the runs: every `ff/epic/*`, `ff/ticket/*`, `ff/project/*` and `ff/m6-live/*` branch and
+every `refs/feature-flow/wip/*` reference the runs made (no `superseded` or `ci` reference was made). Listed afterwards:
+each fixture has only `main`, no `refs/feature-flow/*`, no open pull request, no open issue and no workflow run in
+progress or queued. The `[m6-live]` issues #176 to #179, made by the App for the epic, were closed by the run's tracker
+updates and have a comment linking the run. Closed pull requests stay: #180 to #183 and #187 (an aborted attempt's, closed
+when its branch was deleted) on the API fixture. Not removed: the labels `status: in progress` and `status: code review`
+on the API fixture, the tracker's status labels, since W4's live contract may have made them first. No sandbox container
+was left; hosts and the Temporal server were stopped.
+
+### Tests run
+
+On `m6@4ff0db2` before any change: default 954 passed, integration 72 passed. On `m6-integration` before the first
+report: default **959 passed**, integration **77 passed**, 0 failed (Release, Temporal 9033). Controls: 16 in
+`tools/check_m6_integration_controls.py`, each run when written; all hold.
+
+### Deviations
+
+- Done-when 2 ran `m6live:templates/project_delivery_imported` (run-only, not committed): std's `project_delivery` with
+  `define` importing the person's documents, since M7's session is not built.
+- People's recoveries were used where agents struggled (granted attempts to planners and reviewers, retried a
+  conflict resolver); all are on the runs' timelines with the actor.
+- `requirement_inheritance` now accepts added links (LOG 191 amended, approved); docs/04 section 10.2 updated.
+
+### Follow-ups
+
+| # | Follow-up |
+|---|---|
+| 1 | A Docker-harness test that the agent's checkout holds its parent branch (LOG 193 extended is verified live only) |
+| 2 | Check produced artifacts at report time with correction turns (LOG 176): haiku planners and reviewers lost many attempts to shapes and YAML the validators then refused. Planners still struggle with the three-level requirements model (one live ticket planner needed six granted attempts) |
+| 3 | A person's `go_to` into a branch of a finished parallel re-runs the step but not the join, so the run ends `incomplete` (F9 holds). "Re-run this failed branch" is a recovery M7 should offer |
+| 4 | Aborting a run does not close the pull requests it opened |
+| 5 | A `run.child` start that fails leaves its budget reservation recorded as `starting` (LOG 187, known) |
+| 6 | No live hand-over fell during a CI or merge wait (`InterruptedWaits` stayed 0): W1's `WaitHandOverTests` remain the evidence for LOG 139 |
+| 7 | The hosts ignore SIGTERM and SIGINT when run detached, so stopping them needs SIGKILL |
