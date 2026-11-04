@@ -67,25 +67,48 @@ public class SessionRunTests
         var badCheck = await CheckAsync(http, sid, bad);
         Assert.Equal("failed", badCheck["check"]!["status"]!.ToString());
         Assert.Contains("invalid", badCheck["detail"]!.ToString());
-        Assert.Equal(bad, (await SubmitAsync(http, sid, bad))["revision"]!.ToString());
+        // The body cannot name another actor (F8): the person is the authenticated caller.
+        var firstSubmit = await PostAsync(http, $"sessions/{sid}/submit", new JsonObject { ["revision"] = bad, ["actor"] = "mallory" });
+        Assert.Equal(bad, firstSubmit["revision"]!.ToString());
+        Assert.Equal("tester", (await GetAsync(http, $"sessions/{sid}"))["session"]!["person"]!.ToString());
 
         var second = await OpenSessionAsync(h, http, id, after: sid);
         var view = await h.ShowAsync(id);
         Assert.Equal(badCheck["check"]!["inputs"]!.ToString(), Digests(view, "check_requirements")[0]);
         Assert.Equal(Invalid, second["drafts"]!["requirements.yaml"]!.ToString());
 
-        // Round 2: fixed, checked, submitted. The check at one commit and a submission of another are given different inputs.
+        // Round 2, as a person does it: ff session fetch, the check through the engine MCP server, ff session submit.
         var sid2 = second["session"]!["sessionId"]!.ToString();
         var branch2 = second["workspace"]!["branch"]!.ToString();
+        var folder = Directory.CreateTempSubdirectory("ff-session-").FullName;
+        var (fetchExit, fetched, fetchError) = Session(h, "fetch", sid2, "--out", folder);
+        Assert.True(fetchExit == 0, fetchError);
+        Assert.Contains($"branch {branch2}", fetched);
+        Assert.Equal(Invalid, await File.ReadAllTextAsync(Path.Combine(folder, "drafts", "requirements.yaml"), TestContext.Current.CancellationToken));
+        Assert.Contains("invoicing", await File.ReadAllTextAsync(Path.Combine(folder, "prompt.md"), TestContext.Current.CancellationToken));
+        Directory.Delete(folder, recursive: true);
+
         var good = Commit(forge, repo, branch2, Valid);
-        var goodCheck = await CheckAsync(http, sid2, good);
-        Assert.Equal("passed", goodCheck["check"]!["status"]!.ToString());
+        var replies = Mcp(h,
+            new JsonObject { ["jsonrpc"] = "2.0", ["id"] = 1, ["method"] = "initialize", ["params"] = new JsonObject() },
+            new JsonObject { ["jsonrpc"] = "2.0", ["id"] = 2, ["method"] = "tools/list" },
+            new JsonObject
+            {
+                ["jsonrpc"] = "2.0", ["id"] = 3, ["method"] = "tools/call",
+                ["params"] = new JsonObject { ["name"] = "session_check", ["arguments"] = new JsonObject { ["session_id"] = sid2, ["step"] = "check_requirements", ["revision"] = good } },
+            });
+        Assert.Equal(["session_fetch", "session_check", "session_submit"], replies[1]["result"]!["tools"]!.AsArray().Select(t => t!["name"]!.ToString()));
+        var checkText = replies[2]["result"]!["content"]![0]!["text"]!.ToString();
+        Assert.False(replies[2]["result"]!["isError"]!.GetValue<bool>(), checkText);
+        Assert.Contains($"at {good}: passed", checkText);
+        var goodCheck = (await GetAsync(http, $"sessions/{sid2}/checks"))["checks"]!.AsArray().Single()!;
         Assert.Contains("\"valid\": true", goodCheck["result"]!.ToString());
+        // The check at one commit and at another are given different inputs.
         Assert.NotEqual(badCheck["check"]!["inputs"]!.ToString(), goodCheck["check"]!["inputs"]!.ToString());
 
-        // The body cannot name another actor (F8): the person is the authenticated caller.
-        var submitted = await PostAsync(http, $"sessions/{sid2}/submit", new JsonObject { ["revision"] = good, ["actor"] = "mallory" });
-        Assert.Equal("recorded", submitted["result"]!.ToString());
+        var (submitExit, submittedText, submitError) = Session(h, "submit", sid2, "--revision", good);
+        Assert.True(submitExit == 0, submitError);
+        Assert.Contains($"submitted {good} as submitted: recorded", submittedText);
         await WaitAtAsync(h, id, "approve");
 
         view = await h.ShowAsync(id);
@@ -205,7 +228,25 @@ public class SessionRunTests
         throw new TimeoutException($"check {checkId} of {sid} did not end");
     }
 
-    static Task<JsonNode> SubmitAsync(HttpClient http, string sid, string revision) => PostAsync(http, $"sessions/{sid}/submit", new JsonObject { ["revision"] = revision });
+    /// <summary>Runs <c>ff session ...</c> in this process against this engine's API.</summary>
+    static (int Exit, string Output, string Error) Session(Harness h, params string[] args)
+    {
+        var output = new StringWriter();
+        var error = new StringWriter();
+        var exit = FeatureFlow.Cli.CliApp.Run(["session", .. args, "--api", h.Api, "--token-file", h.TokenFile], output, error);
+        return (exit, output.ToString(), error.ToString());
+    }
+
+    /// <summary>Sends JSON-RPC messages to <c>ff session mcp</c> on its stdin and returns its replies.</summary>
+    static List<JsonNode> Mcp(Harness h, params JsonObject[] messages)
+    {
+        var output = new StringWriter();
+        var error = new StringWriter();
+        var input = new StringReader(string.Join("\n", messages.Select(m => m.ToJsonString())) + "\n");
+        var exit = FeatureFlow.Cli.SessionCommands.RunAsync(["mcp", "--api", h.Api, "--token-file", h.TokenFile], output, error, input).GetAwaiter().GetResult();
+        Assert.True(exit == 0, error.ToString());
+        return output.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => JsonNode.Parse(l)!).ToList();
+    }
 
     static async Task<JsonNode> GetAsync(HttpClient http, string path)
     {

@@ -48,6 +48,29 @@ public class CliAppTests
         Assert.Equal(CliApp.Usage.Trim(), error.Trim());
     }
 
+    [Theory]
+    [InlineData("session", "frobnicate")]
+    [InlineData("session", "check", "s-1")]
+    public void An_unknown_session_command_prints_the_session_usage_and_fails(params string[] args)
+    {
+        var token = Path.GetTempFileName();
+        var (code, output, error) = Run([.. args, "--token-file", token]);
+        File.Delete(token);
+
+        Assert.Equal(2, code);
+        Assert.Empty(output);
+        Assert.Equal("usage: " + SessionCommands.Usage.Trim(), error.Trim());
+    }
+
+    [Fact]
+    public void A_session_command_without_a_token_says_so()
+    {
+        var (code, _, error) = Run("session", "fetch", "s-1", "--token-file", "/no/such/file");
+
+        Assert.Equal(2, code);
+        Assert.StartsWith("no API token", error);
+    }
+
     [Fact]
     public void Validate_a_library_succeeds_on_std()
     {
