@@ -67,8 +67,16 @@ public class PolicyRunTests
         await PostAsync($"runs/{id}/overrides", """{ "key": "breakpoint", "step_id": "implement", "reason": "look", "change": { "set": "true" }, "actor": "mallory" }""");
         Assert.Equal(HttpStatusCode.OK, await PostAsync($"runs/{id}/answers", $$"""{ "wait_id": "{{waitId}}", "outcome": "approved", "actor": "mallory" }"""));
 
-        var timeline = (await h.ShowAsync(id))["timeline"]!.AsArray();
-        Assert.Contains(timeline, e => e!["kind"]!.ToString() == "answered" && e["detail"]!.ToString().EndsWith("by tester", StringComparison.Ordinal));
+        // The run records its timeline after the update returns.
+        var deadline = DateTime.UtcNow + Timeout;
+        string? answered = null;
+        while (answered is null && DateTime.UtcNow < deadline)
+        {
+            answered = (await h.ShowAsync(id))["timeline"]!.AsArray().FirstOrDefault(e => e!["kind"]!.ToString() == "answered")?["detail"]?.ToString();
+            await Task.Delay(200, TestContext.Current.CancellationToken);
+        }
+
+        Assert.EndsWith("by tester", answered);
         var records = new SqliteRecordStore(Path.Combine(h.Folder, "records.db"));
         var p = new Dictionary<string, string> { ["run_id"] = id };
         var answers = (await records.QueryAsync<AnswerRecord>(Queries.Answers, p, TestContext.Current.CancellationToken)).Unwrap();
@@ -79,5 +87,27 @@ public class PolicyRunTests
         Assert.All(overrides, o => Assert.Equal("tester", o.Actor));
         Assert.DoesNotContain(answers, a => a.Answer.Contains("mallory", StringComparison.Ordinal));
         h.Cli("abort", id, "--reason", "test done");
+    }
+
+    [Fact]
+    public async Task The_cli_sends_an_override_with_its_reason_step_and_change_and_an_abort_asking_to_close_pull_requests()
+    {
+        await using var h = await Harness.StartAsync("policy-cli");
+        var id = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=FF-3", "--repo", "acme/api");
+        Assert.NotNull(await h.WaitForWaitAsync(id, Timeout));
+
+        var (badExit, _, bad) = h.Cli("override", id, "skip", "--reason", "r", "--change", "outcome");
+        Assert.Equal((2, true), (badExit, bad.Contains("--change takes <name>=<value>", StringComparison.Ordinal)));
+        h.Cli("override", id, "skip", "--step", "verify.tests", "--reason", "flaky tier", "--change", "outcome=passed", "--change", "note=a=b");
+        var (abortExit, _, abortError) = h.Cli("abort", id, "--reason", "done", "--close-pull-requests");
+        Assert.True(abortExit == 0, abortError);
+
+        var records = new SqliteRecordStore(Path.Combine(h.Folder, "records.db"));
+        var p = new Dictionary<string, string> { ["run_id"] = id };
+        var sent = (await records.QueryAsync<OverrideRecord>(Queries.Overrides, p, TestContext.Current.CancellationToken)).Unwrap().First();
+        Assert.Equal(("skip", "verify.tests", "flaky tier", "tester"), (sent.Key, sent.StepId, sent.Reason, sent.Actor));
+        Assert.Equal(new Dictionary<string, string> { ["outcome"] = "passed", ["note"] = "a=b" }, sent.Change);
+        var abort = (await records.QueryAsync<AnswerRecord>(Queries.Answers, p, TestContext.Current.CancellationToken)).Unwrap().First(a => a.WaitId == "abort");
+        Assert.Equal("done (close pull requests)", abort.Answer);
     }
 }
