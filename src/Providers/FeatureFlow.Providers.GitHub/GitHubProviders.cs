@@ -9,7 +9,7 @@ public static class GitHubProviders
     public static IReadOnlyList<ProviderFactory> Factories { get; } =
     [
         new("credential_broker", "github_app", ["app_id", "installation_id", "key_ref", "key_path", "repositories", "api_base"], Broker),
-        new("code_host", "github", ["api_base"], c => new GitHubCodeHost(Api(c))),
+        new("code_host", "github", ["api_base", "webhook_secret_ref"], c => new GitHubCodeHost(Api(c)) { WebhookSecret = WebhookSecret(c) }),
         new("ci", "github_actions", ["api_base"], c => new GitHubActionsCi(Api(c),
             () => c.Provider("artifact_store") as IArtifactStoreProvider ?? throw new InvalidOperationException("the GitHub Actions provider needs an artifact store"))),
         new("findings_source", "copilot_review", ["api_base", "blocking"], c => new CopilotReviewSource(Api(c),
@@ -30,6 +30,12 @@ public static class GitHubProviders
             throw new InvalidOperationException($"providers.tracker.instances.{c.Instance.Name}.status_map maps each library status to a label or 'closed'");
         return map.Entries.ToDictionary(e => e.Key.Text, e => e.Value.ScalarText()!, StringComparer.Ordinal);
     }
+
+    /// <summary>The webhook secret the inbound gateway verifies deliveries with (M7): a secret reference, never a value in configuration.</summary>
+    static Func<CancellationToken, Task<ProviderResult<string>>>? WebhookSecret(ProviderContext c) =>
+        c.Setting("webhook_secret_ref") is { } reference
+            ? ct => (c.Provider("secrets") as ISecretsProvider ?? throw new InvalidOperationException("webhook_secret_ref needs a secrets provider")).ResolveAsync(reference, ct)
+            : null;
 
     /// <summary>The code host and CI providers take their tokens from the default credential broker, never from configuration.</summary>
     static GitHubApi Api(ProviderContext c) =>

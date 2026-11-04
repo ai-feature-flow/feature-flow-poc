@@ -1,0 +1,20 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: slow_wait
+  level: ticket
+  description: >-
+    A ci.checks that reads only every ten minutes, so only an inbound event can end it within a test: events wake,
+    reads confirm.
+  branch_pattern: ff/slow
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: checks
+    action: ci.checks
+    with: { poll_every: 10m, timeout: 1h, grace: 0s }
+    routes:
+      passed: { end: completed }

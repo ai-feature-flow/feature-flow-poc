@@ -300,6 +300,54 @@ file), 243 (`ff session mcp`), 244 (bounded retries), 245 (no session in a dry r
 | 7 | The guard refusing a second answer while a submission imports (`submitting`) has no test (review F8, mutation H) |
 | 8 | A session that fails to open can only be abandoned; a re-open action would be gentler (review design note) |
 
+## Notifications, inbound and console
+
+W3, branch `m7-surfaces`: Slack notifications, the inbound chat gateway, inbound webhooks and the minimal console.
+
+**What was built**
+
+| Area | What |
+|---|---|
+| Slack provider (`Providers.Slack`) | `chat.postMessage` for messages and thread replies; decisions with their choices as buttons naming run, wait and choice, and a console link. Every Slack answer maps to docs/06 section 1.1. Its receiving side verifies Slack's request signature and a five-minute age, and maps the Slack user to a person by the installation's `users` setting (LOG 227). Registered in every host |
+| Engine notifications (`RunNotifier`) | Sent from the record activity, never workflow code: an opened wait is `decision_needed`, a closed one `resumed`, an ended run `completed` or `failed`. Routed and filtered by `notifications`; once per key (LOG 201); one thread per root run per channel; a failed, throwing or hanging send never affects the run (LOG 226) |
+| Chat gateway | `POST /inbound/chat/{source}`: verified by the provider, then the API's own answer call as the mapped person, channel `chat` (LOG 228) |
+| Webhooks | `POST /inbound/events/{source}`: GitHub deliveries verified by `X-Hub-Signature-256`; a `wake` to each running run naming the repository; once per delivery (LOG 230). The workflow's `wake` handler restarts the wait's execution so it reads again (patch `m7-wake`, LOG 229) |
+| Console | `GET /console`: a static page reading and answering through the API with the person's token; `GET /runs/{id}/plan` gives the readable form with step statuses (LOG 231) |
+
+**Checks**
+
+- Slack: the frozen `NotificationsContract` against the provider and a fake Web API; 20 more tests (buttons, error mapping, signing, mapping, factory). A Live contract is written, not run.
+- `RunNotifierTests` (6): routing and filtering, a restart sends nothing again, threads with a child posting first, `resumed` naming the answer, failure isolation, no provider.
+- `GitHubWebhookTests` (3), `InboundTests` (4) and `ConsoleTests` (2), on the API test host.
+- `SurfacesTests` (2, Temporal): a decision posted with buttons, a signed press answered as the mapped person, the run resuming and completing in one thread; a ten-minute wait that a forged delivery leaves alone, a wrong event wakes to read again with no outcome and no attempt used, and only the true event ends.
+- Replay: a new history `wake` holds the `m7-wake` marker.
+- The console was looked at once in a browser (Playwright) against a live engine: runs, a run's plan, timeline and decision, answered with its button. The look found nested lists rendered as text, now fixed.
+
+**Controls** (each mutation made its check fail, then was restored)
+
+| Mutation | Failed |
+|---|---|
+| Slack: no age check; signature without the body; `thread_ts` dropped; an unmapped user mapped; `not_in_channel` unmapped | Slack provider tests, contract |
+| Notifier: de-dup off; no thread; a child's first message not starting the root's thread; `events` ignored; an exception escaping; no `WaitAsync` for a provider ignoring its token; every intervention choice as a button | `RunNotifierTests` |
+| Wake: does nothing; the event decides (completes the wait without a read); the patch marker call removed | `SurfacesTests`; replay of `wake` |
+| Webhooks: de-dup off; signature unchecked | `InboundTests`, `SurfacesTests`, `GitHubWebhookTests` |
+| Chat: the gateway answering as itself; an unmapped user answering | `InboundTests`, `SurfacesTests` |
+| Console: open waits ignored; the plan not behind authentication; no CSP; run data placed with `innerHTML` | `ConsoleTests` |
+
+**Deviations and judgement calls:** LOG 226 (what the engine sends and when), 227 (Slack users by configuration), 228 (the gateway makes the ordinary answer call; `Inbound.cs` added to the abstractions), 229 (a wake reuses the hand-over's interruption), 230 (webhooks; in-memory delivery de-dup), 231 (the console), 232 (reminders not built), 233 (test harness hook, test library, history).
+
+**Follow-ups**
+
+| # | Follow-up |
+|---|---|
+| 1 | A decision's wait records the word `decision` as its reason, not its rendered prompt, so Slack and the console show no question text. The workflow should record the prompt (W1's file) |
+| 2 | Reminders on open waits (LOG 232): a workflow timer and a configured interval |
+| 3 | `stalled` and `stuck` are sent once the engine has those states |
+| 4 | Done after the merge with W2: `InboundTests` shows a chat answer to a `from_chat: false` type is refused. Still open: the surfaces tests set `notifications` through the harness hook, not the organisation file W2 now reads |
+| 5 | The console needs an OIDC sign-in once W2's OIDC lands; today a person pastes a token |
+| 6 | A woken run is chosen among the 200 most recently updated runs; a query of running runs by repository would remove the limit |
+| 7 | The Slack message could be updated (`chat.update`) when the wait is answered, so a stale button is visibly closed |
+
 ## Report-time checks and triage
 
 Branch `m7-reports` (worker W5), from `m7@10caae7` (the shared interfaces, PR #16).

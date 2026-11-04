@@ -24,7 +24,7 @@ public class ReplayTests
     {
         // Without this, a missing folder would leave the theory with no cases and nothing replayed.
         Assert.Equal(["agent_question", "budget_middle", "delivery_tracked", "epic_delivery", "epic_delivery_child", "family_child", "family_parent", "project_session", "project_session_pre_m7",
-                "silent_parent_resumed", "sp1_parent", "sp1_parent_resumed", "steering_line", "steering_rerun_branch", "ticket_clean_up", "ticket_delivery", "wait_hand_over", "wait_hand_over_resumed"],
+                "silent_parent_resumed", "sp1_parent", "sp1_parent_resumed", "steering_line", "steering_rerun_branch", "ticket_clean_up", "ticket_delivery", "wait_hand_over", "wait_hand_over_resumed", "wake"],
             Names());
     }
 
@@ -60,6 +60,13 @@ public class ReplayTests
         Assert.Contains(RunWorkflow.SteeringPatch, Markers("steering_line"));
         Assert.Contains(RunWorkflow.SteeringPatch, Markers("steering_rerun_branch"));
         Assert.Matches("\"name\":\\s*\"override\"", File.ReadAllText(Path.Combine(HistoryFolder, "steering_line.json")));
+    }
+
+    [Fact]
+    public void A_history_holds_the_wake_patch_marker()
+    {
+        // M7: a wait woken by an inbound webhook, read again, and ended by the event that matched what the read found.
+        Assert.Contains(RunWorkflow.WakePatch, Markers("wake"));
     }
 
     /// <summary>Whether a recorded run started from a hand-over carrying a step to resume (LOG 139).</summary>

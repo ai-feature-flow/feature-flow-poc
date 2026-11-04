@@ -55,13 +55,20 @@ providers:                       # every type: named instances, one default
       claude_code: { model_access: { mode: proxy, key_ref: secrets/anthropic_key } }
       copilot_cli: { endpoint: https://llm-router.internal/v1, model_access: { mode: proxy, key_ref: secrets/router_key } }
   vcs:            { default: git, instances: { git: {} } }
-  code_host:      { default: github, instances: { github: { app_id: 12345, secret_ref: secrets/github_app_key } } }
+  code_host:      { default: github, instances: { github: { app_id: 12345, secret_ref: secrets/github_app_key, webhook_secret_ref: secrets/github_webhook } } }
   ci:             { default: github_actions, instances: { github_actions: {}, teamcity: { base_url: https://tc.internal, secret_ref: secrets/teamcity } } }
   tracker:        { default: jira, instances: { jira: { base_url: https://acme.atlassian.net, secret_ref: secrets/jira, status_map: { in_progress: "In Progress", code_review: "Code Review", done: "Done" } } } }
   findings_source: { instances: { copilot_review: {}, sonarcloud: { secret_ref: secrets/sonar } } }
   validator:      { instances: { std: {} } }
   toolset:        { instances: { jira: { url: https://mcp.internal/jira }, confluence: { url: https://mcp.internal/confluence } } }
-  notifications:  { default: slack, instances: { slack: { secret_ref: secrets/slack } } }
+  notifications:
+    default: slack
+    instances:
+      slack:
+        token_ref: secrets/slack_bot
+        signing_secret_ref: secrets/slack_signing
+        console_url: https://feature-flow.internal/console
+        users: { U0123ABC: { actor: alice, groups: [acme-leads] } }
   session_surface: { default: local_handoff, instances: { local_handoff: {} } }
   artifact_store: { default: azure_blob, instances: { azure_blob: { container: ff-artifacts } } }
   record_store:   { default: postgres, instances: { postgres: { connection_ref: secrets/ff_db } } }
@@ -93,6 +100,8 @@ defaults:                        # engine defaults for limits; not floors
 | `endpoint` | Only on a runtime that declares `CustomEndpoint` |
 | `code_host` identity | Must not be able to change branch protection (F5); checked at startup |
 | `tracker.*.status_map` | Maps the library's abstract statuses to the tracker's (`docs/08` section 1). For `github_issues` (settings `repository`, `status_map`) a status maps to a label or to `closed` (LOG 184) |
+| `notifications.slack` | `token_ref` (the bot token) and `signing_secret_ref` (verifies its buttons at `/inbound/chat/slack`) are secret references. `users` maps a Slack user id to the person its button presses answer as: `actor`, and `groups` or `roles` for the people roles (`docs/05` section 3.3). An unmapped user cannot answer. `console_url` is linked from each message. LOG 227 |
+| `code_host.github.webhook_secret_ref` | The secret GitHub signs webhook deliveries with; deliveries go to `/inbound/events/github` and only wake waits (`docs/02` section 2.3). LOG 228 |
 | `workers.agent_pools[].capabilities` | The sandbox capabilities a pool offers, which route steps to its queue (`docs/02` section 1.1) |
 | `defaults.limits` | Engine defaults per step form and per action. The organisation, workflow and step may override them within ceilings |
 | `temporal.continue_as_new_events` | LOG 87: the history length at which a run hands over (`docs/02` section 3); default 5,120, at least 100 |

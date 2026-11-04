@@ -97,8 +97,9 @@ change (`docs/09`).
 A wait on something actively progressing (CI, a merge queue) polls inside one
 long-running, heartbeating activity: Spike 1 measured 11 history events for a
 60-second polled step (`archive/docs/15` section 6.2). A wait on something idle
-until a person acts (a tracker status, a review approval) is a durable timer
-woken early by an inbound event. In both cases **events wake, reads confirm**:
+until a person acts (a tracker status, a review approval) reads between delays
+(its activity's retry delay), and an inbound event ends the delay early: the wait
+reads again at once (LOG 229). In both cases **events wake, reads confirm**:
 an event is a hint; a read of the remote system decides.
 
 ---
