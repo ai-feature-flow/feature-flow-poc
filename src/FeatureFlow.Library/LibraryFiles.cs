@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using FeatureFlow.Model;
 
 namespace FeatureFlow.Library;
 
@@ -72,4 +73,14 @@ public sealed record LibraryLock(IReadOnlyList<LockedLibrary> Libraries)
     public static LockedLibrary Pin(Library library) =>
         new(library.Name, library.Manifest.Version,
             new SortedDictionary<string, string>(library.Files.All.ToDictionary(kv => kv.Key, kv => LibraryFiles.Hash(kv.Value)), StringComparer.Ordinal));
+
+    /// <summary>The artifact type a reference names, in this lock's version; <paramref name="read"/> gives a file's text by its hash. Null when the lock has none.</summary>
+    public async Task<ArtifactTypeItem?> ArtifactTypeAsync(string declared, Func<string, Task<string>> read)
+    {
+        if (LibraryReference.TryParse(declared) is not { Type: "artifact_types" } reference
+            || Libraries.FirstOrDefault(l => l.Name == reference.Library)?.Files.GetValueOrDefault($"artifact_types/{reference.Name}.yaml") is not { } hash)
+            return null;
+        var d = new DiagnosticBag();
+        return Model.Yaml.YamlText.Parse(await read(hash), declared, d) is { } node ? LibraryItemReader.ReadArtifactType(node, reference.Name, d) : null;
+    }
 }

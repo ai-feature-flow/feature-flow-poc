@@ -233,6 +233,8 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
     public ActionScope Scope => scope;
     public CancellationToken Ct => ct;
     public ActionOptions Options => owner.Options;
+
+    internal ProviderSet Providers => owner.Providers;
     public List<string> Events { get; } = [];
     public IReadOnlyDictionary<string, object?> Inputs { get; set; } = new Dictionary<string, object?>();
     public string Key => call.Step.IdempotencyKey;

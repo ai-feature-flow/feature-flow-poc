@@ -54,16 +54,9 @@ public class SurfacesTests
         }
     }
 
-    static FeatureFlowConfiguration NotifyEverything(FeatureFlowConfiguration c) =>
-        c with
-        {
-            Organisation = c.Organisation with
-            {
-                Notifications = new NotificationsConfig(NotificationEvents.All.ToDictionary(e => e, _ => new NotificationRoute("#ff")), NotificationEvents.All),
-                // The harness's rule leaves from_chat at its default, false; this test's decision may be answered from chat.
-                Policy = c.Organisation.Policy with { Approval = c.Organisation.Policy.Approval.Select(r => r with { FromChat = true }).ToList() },
-            },
-        };
+    /// <summary>Every event to <c>#ff</c>, through the organisation file's <c>notifications</c>.</summary>
+    static readonly string NotifyEverything =
+        "notifications: { routing: { " + string.Join(", ", NotificationEvents.All.Select(e => e + ": { channel: \"#ff\" }")) + " }, events: [" + string.Join(", ", NotificationEvents.All) + "] }";
 
     [Fact]
     public async Task A_decision_answered_with_a_chat_button_is_the_mapped_persons_answer_and_the_run_reports_in_one_thread()
@@ -75,11 +68,15 @@ public class SurfacesTests
             new Dictionary<string, ChatPerson> { ["U-ALICE"] = new("alice", ["approver"], null) },
             "http://console.example", slack, "https://slack.example/api"));
         await using var h = await Harness.StartAsync("chat", omitTypes: ["notifications"], libraries: [Library],
-            providers: "  notifications: { instances: { test_slack: {} } }", factories: [factory], configure: NotifyEverything);
+            providers: "  notifications: { instances: { test_slack: {} } }", factories: [factory],
+            organisation: NotifyEverything, fromChat: true);
 
         var id = h.Start("m7s:templates/decide");
         var waitId = await h.WaitForWaitAsync(id, TimeSpan.FromSeconds(60));
         var decision = await PostedAsync(slack, p => p["blocks"] is not null);
+        // The question is the decision's rendered prompt, not the word "decision", in chat and in the run's wait record (the console's).
+        Assert.Contains("Approve to let the run go on", decision["text"]!.GetValue<string>());
+        Assert.Contains("Approve to let the run go on", (await h.ShowAsync(id))["waits"]![0]!["reason"]!.GetValue<string>());
 
         // The person presses "approved": Slack sends back the button's own value, signed.
         var button = decision["blocks"]!.AsArray().Single(b => b!["type"]!.GetValue<string>() == "actions")!["elements"]!.AsArray()
@@ -95,6 +92,7 @@ public class SurfacesTests
 
         var (exit, end, error) = h.Cli("wait", id, "--timeout", "60");
         Assert.True(exit == 0 && end.Trim() == $"run {id} completed", end + error);
+        await h.RecordHistoryAsync(id, "decision_prompt");
 
         // Recorded as alice, the mapped person, never as the gateway; the run's timeline names her too.
         var records = h.Host.Providers.Required<IRecordStoreProvider>("record_store");

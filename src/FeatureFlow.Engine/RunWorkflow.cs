@@ -289,10 +289,16 @@ public partial class RunWorkflow
         var session = SessionStep(answer.WaitId);
         if (session is not null && answer.Revision is not null)
             return await SubmitAsync(answer, session);
+        var answeredStep = answer.Artifacts is { Count: > 0 } && core!.State.Waits.FirstOrDefault(w => w.Id == answer.WaitId) is { Kind: WaitKind.Decision } decision
+            ? core.StepById(decision.StepId)
+            : null;
         var result = core!.Apply(ToInput(answer));
         if (!result.Accepted)
             throw new ApplicationFailureException(string.Join("; ", result.Errors));
         answered.Add(new AppliedAnswer(answer.WaitId, Key(answer)));
+        // A person's artifacts (a triage, LOG 248) are indexed as a session's submitted files are (W5 follow-up 2).
+        if (answeredStep is not null)
+            IndexArtifacts(answeredStep, answer.Artifacts);
         core.State.Trace.Add(new TraceEntry("answered", answer.WaitId, $"{Key(answer)} by {answer.Actor}"));
         dirty = true;
         if (session is not null)
@@ -647,7 +653,7 @@ public partial class RunWorkflow
 
         return new ActionScope(input.Repositories, repository, core.WorkBranch(), input.ParentBranch, artifacts, pullRequests, policy?.EngineMayMerge ?? [],
             Consumed: Workflow.Patched(ChildInputsPatch) ? consumed : null, TrackerIssue: input.TrackerIssue,
-            Declared: Workflow.Patched(ChildInputsPatch) ? declared : null);
+            Declared: Workflow.Patched(ChildInputsPatch) ? declared : null, LockRef: LockRef);
     }
 
     /// <summary>
@@ -1348,7 +1354,25 @@ public partial class RunWorkflow
             WaitKind.Breakpoint => ($"{level}.breakpoint", new List<string> { "continue", "retry", "go_to", "replan", "grant_attempts", "end" }),
             _ => ($"{level}.escalation", new List<string> { "retry", "go_to", "replan", "grant_attempts", "end" }),
         };
-        return new WaitRecord(input.RunId, wait.Id, wait.Kind.ToString().ToLowerInvariant(), wait.StepId, type, wait.Reason, choices, open, now);
+        return new WaitRecord(input.RunId, wait.Id, wait.Kind.ToString().ToLowerInvariant(), wait.StepId, type, ReasonOf(wait, step), choices, open, now);
+    }
+
+    /// <summary>The patch marker of a decision's wait recording its rendered prompt as the reason (M7 integration), so Slack and the console show the question.</summary>
+    public const string DecisionPromptPatch = "m7-decision-prompt";
+
+    /// <summary>A decision's rendered prompt, else the core's reason; histories recorded before the marker keep the core's.</summary>
+    string ReasonOf(OpenWait wait, Step? step)
+    {
+        if (wait.Kind != WaitKind.Decision || step?.Decision?.Prompt is not { Unbound: false } prompt || !Workflow.Patched(DecisionPromptPatch))
+            return wait.Reason;
+        try
+        {
+            return core!.RenderPrompt(step.Id, prompt.Text) is { Length: > 0 } text ? text : wait.Reason;
+        }
+        catch (EvaluationException)
+        {
+            return wait.Reason;
+        }
     }
 
     async Task<string> RefuseAsync(IReadOnlyList<string> errors)

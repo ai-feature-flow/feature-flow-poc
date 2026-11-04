@@ -83,6 +83,11 @@ public sealed class SessionClient(HttpClient http)
 {
     static readonly JsonSerializerOptions Indented = new() { WriteIndented = true };
 
+    /// <summary>How long a check refused during the run's hand-over is tried again; a hand-over takes moments.</summary>
+    public TimeSpan HandOverRetry { get; init; } = TimeSpan.FromSeconds(30);
+
+    public TimeSpan RetryInterval { get; init; } = TimeSpan.FromSeconds(1);
+
     public async Task<(int, string)> ListAsync(string runId)
     {
         var (reply, failure) = await GetAsync($"runs/{Uri.EscapeDataString(runId)}/sessions");
@@ -134,11 +139,17 @@ public sealed class SessionClient(HttpClient http)
             return refused;
         if (Revision(revision) is not { } commit)
             return (2, "no commit to check: give --revision <full commit id>, or run this in a git working copy\n");
+        var clock = Stopwatch.StartNew();
         var (started, failure) = await PostAsync($"sessions/{Uri.EscapeDataString(sid)}/checks", new JsonObject { ["step"] = step, ["revision"] = commit });
+        while (started is null && failure.Contains(SessionNames.HandingOver, StringComparison.Ordinal) && clock.Elapsed < HandOverRetry)
+        {
+            await Task.Delay(RetryInterval);
+            (started, failure) = await PostAsync($"sessions/{Uri.EscapeDataString(sid)}/checks", new JsonObject { ["step"] = step, ["revision"] = commit });
+        }
+
         if (started is null)
             return (1, failure);
         var checkId = started["check_id"]!.ToString();
-        var clock = Stopwatch.StartNew();
         while (clock.Elapsed < timeout)
         {
             var (list, _) = await GetAsync($"sessions/{Uri.EscapeDataString(sid)}/checks");

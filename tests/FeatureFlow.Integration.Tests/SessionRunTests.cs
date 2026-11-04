@@ -211,6 +211,41 @@ public class SessionRunTests
     }
 
     [Fact]
+    public async Task A_submission_whose_files_break_their_types_is_refused_and_the_session_stays_open()
+    {
+        // The type check an agent's report gets (LOG 246): requirements' schema (an owner is a map) and its validator
+        // document_rules (ids are unique), for what a person submits, through the same check.
+        const string brokenTypes = """
+            schema: 1
+            scope: { kind: project, id: invoicing }
+            requirements:
+              - { id: R-1, title: Invoices are listed, behaviour: A created invoice appears in the list., supports_reason: The project's own, owner: alice }
+              - { id: R-1, title: Invoices are paid, behaviour: An invoice can be paid., supports_reason: The project's own }
+            """;
+        var (h, forge, repo) = await ForgeTicketTests.StartAsync("session-types", autoApprove: false);
+        await using var _h = h;
+        var id = h.Start("std:templates/project_delivery", "--param", "project_name=invoicing", "--repo", repo.FullName);
+        var http = await ClientAsync(h);
+        var opened = await OpenSessionAsync(h, http, id);
+        var sid = opened["session"]!["sessionId"]!.ToString();
+        var branch = opened["workspace"]!["branch"]!.ToString();
+
+        var broken = Commit(forge, repo, branch, brokenTypes);
+        var refused = await http.PostAsJsonAsync($"sessions/{sid}/submit", new { revision = broken }, TestContext.Current.CancellationToken);
+        var text = await refused.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.False(refused.IsSuccessStatusCode, text);
+        Assert.Contains("do not fit their types", text);
+        Assert.Contains("owner", text);
+        Assert.Contains("[document_rules:", text);
+        Assert.Equal(SessionStatuses.Prepared, (await GetAsync(http, $"sessions/{sid}"))["session"]!["status"]!.ToString());
+
+        var good = Commit(forge, repo, branch, Valid);
+        Assert.Equal("recorded", (await PostAsync(http, $"sessions/{sid}/submit", new JsonObject { ["revision"] = good }))["result"]!.ToString());
+        await WaitAtAsync(h, id, "approve");
+        await PostAsync(http, $"runs/{id}/abort", new JsonObject { ["reason"] = "the test is done" });
+    }
+
+    [Fact]
     public async Task A_check_runs_only_an_artifact_validate_step_even_when_checks_from_names_another()
     {
         var (h, _, repo) = await ForgeTicketTests.StartAsync("session-publish", autoApprove: false, libraries: [Path.Combine(Harness.TestLibraries, "m7")]);
@@ -297,8 +332,10 @@ public class SessionRunTests
             if (sessions.Count == 1)
             {
                 var sid = sessions[0]!["sessionId"]!.ToString();
+                // The session's record can land before its wait's: wait for both, as an answer needs the wait record.
+                var waitId = sessions[0]!["waitId"]!.ToString();
                 var fetched = await http.GetAsync($"sessions/{sid}", TestContext.Current.CancellationToken);
-                if (fetched.IsSuccessStatusCode)
+                if (fetched.IsSuccessStatusCode && (await h.ShowAsync(runId))["waits"]!.AsArray().Any(w => w!["waitId"]!.ToString() == waitId))
                     return JsonNode.Parse(await fetched.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))!;
             }
 
@@ -311,7 +348,7 @@ public class SessionRunTests
     /// <summary>Runs a check of <c>check_requirements</c> at <paramref name="revision"/> and waits for its result.</summary>
     static async Task<JsonNode> CheckAsync(HttpClient http, string sid, string revision)
     {
-        var started = await PostAsync(http, $"sessions/{sid}/checks", new JsonObject { ["step"] = "check_requirements", ["revision"] = revision });
+        var started = await StartCheckAsync(http, sid, revision);
         var checkId = started["check_id"]!.ToString();
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(60);
         while (DateTime.UtcNow < deadline)
@@ -323,6 +360,22 @@ public class SessionRunTests
         }
 
         throw new TimeoutException($"check {checkId} of {sid} did not end");
+    }
+
+    /// <summary>Starts a check, trying again while the run hands over to its next run, as <c>ff session check</c> does; any other refusal fails.</summary>
+    static async Task<JsonNode> StartCheckAsync(HttpClient http, string sid, string revision)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
+        while (true)
+        {
+            var body = new JsonObject { ["step"] = "check_requirements", ["revision"] = revision };
+            var response = await http.PostAsync($"sessions/{sid}/checks", new StringContent(body.ToJsonString(), System.Text.Encoding.UTF8, "application/json"), TestContext.Current.CancellationToken);
+            var text = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+            if (response.IsSuccessStatusCode)
+                return JsonNode.Parse(text)!;
+            Assert.True(text.Contains(SessionNames.HandingOver, StringComparison.Ordinal) && DateTime.UtcNow < deadline, $"POST sessions/{sid}/checks: {(int)response.StatusCode} {text}");
+            await Task.Delay(200, TestContext.Current.CancellationToken);
+        }
     }
 
     /// <summary>Runs <c>ff session ...</c> in this process against this engine's API.</summary>

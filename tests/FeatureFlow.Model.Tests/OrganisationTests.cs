@@ -60,6 +60,8 @@ public class OrganisationTests
               approver: { idp_groups: [acme-payments-leads] }
         """;
 
+    static readonly string[] NotEnforced = ["library_overrides", "library_inputs", "policy.toolsets.allowed", "role_mapping", "timeouts"];
+
     static (OrganisationConfig? Organisation, DiagnosticBag Diagnostics) Read(string text)
     {
         var d = new DiagnosticBag();
@@ -71,7 +73,8 @@ public class OrganisationTests
     {
         var (org, d) = Read(Full);
 
-        Assert.Empty(d);
+        // Read and checked, but refused until something acts on them (LOG 256).
+        Assert.Equal(NotEnforced.Select(k => $"{k} is not enforced before M8; remove it").Order(StringComparer.Ordinal), d.Select(x => x.Message).Order(StringComparer.Ordinal));
         Assert.Equal(["acme-leads"], org!.Roles["steerer"].IdpGroups);
         Assert.Equal(new AgentRoleMapping("claude_code", "claude-sonnet"), org.RoleMapping["planner"]);
         Assert.Equal("#ff-ops", org.Notifications.Routing["stuck"].Channel);
@@ -124,6 +127,24 @@ public class OrganisationTests
         var (_, d) = Read(Full.Replace(old, replacement, StringComparison.Ordinal));
 
         Assert.Contains(d, x => x.Blocks && x.Message.Contains(message, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Each_key_read_but_not_enforced_is_refused_alone()
+    {
+        var minimal = "api_version: feature-flow/v1\nkind: organisation\nname: a\nlibraries: []\n";
+        string[] lines =
+        [
+            "library_overrides: { \"std:tasks/a\": \"acme:tasks/a\" }", "library_inputs: { planning_repository: acme/plans }",
+            "policy: { toolsets: { allowed: [jira] } }", "role_mapping: { default: { agent_runtime: claude_code } }", "timeouts: { heartbeat: 30s }",
+        ];
+        foreach (var (line, key) in lines.Zip(NotEnforced))
+        {
+            var (_, d) = Read(minimal + line + "\n");
+            Assert.Equal($"{key} is not enforced before M8; remove it", Assert.Single(d, x => x.Blocks).Message);
+        }
+
+        Assert.Empty(Read(minimal + "policy: { toolsets: {} }\n").Diagnostics);
     }
 
     [Fact]

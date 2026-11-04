@@ -190,6 +190,9 @@ teams:
 | `timeouts.heartbeat` | Describes the platform, not the work, so it is set here and not per step. It dominates crash-recovery time (Spike 1: 87.4 s from a kill to progress, `archive/docs/15` section 6.4) |
 | `timeouts.stalled_after` | Time without successful provider contact before the run shows `stalled`. Time-based, not a retry count |
 
+Until M8, `library_overrides`, `library_inputs`, `policy.toolsets.allowed`, `role_mapping` and `timeouts` are refused at
+startup ("not enforced before M8"): they are read and checked, but nothing acts on them yet (LOG 256).
+
 ---
 
 ## 4. Repository: `feature-flow.yaml`

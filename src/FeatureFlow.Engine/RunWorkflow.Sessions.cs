@@ -247,7 +247,7 @@ public partial class RunWorkflow
             files.Select(f => new ArtifactSpec("imported", f.Name)).ToList(), new Dictionary<string, string>());
         var call = new StepCall(new StepIdentity(input.RunId, Template.Name, step.Id, execution, $"{input.RunId}/{step.Id}/{execution}/{purpose}"),
             "action", "artifact.import", inputs.ToDictionary(kv => kv.Key, kv => YamlWriter.WritePlain(kv.Value)), contract, input.DryRun, null);
-        var scope = new ActionScope(input.Repositories, repository, core.WorkBranch(), input.ParentBranch, [], [], []);
+        var scope = new ActionScope(input.Repositories, repository, core.WorkBranch(), input.ParentBranch, [], [], [], LockRef: LockRef);
         try
         {
             var outcome = await Workflow.ExecuteActivityAsync((RunActivities a) => a.RunActionAsync(call, scope), SessionActivity);
@@ -294,7 +294,7 @@ public partial class RunWorkflow
         if (core!.State.Status != RunStatus.Running)
             error = $"the run has ended ({core.State.Status.Name()})";
         else if (draining)
-            error = "the run is handing over to its next run: try the check again in a moment";
+            error = SessionNames.HandingOver;
         else if (SessionNames.WaitOf(check.SessionId, input.RunId) is not { } waitId || (session = SessionStep(waitId)) is null)
             error = $"session {check.SessionId} is not open in run {input.RunId}";
         else if (submitting.Contains(waitId))

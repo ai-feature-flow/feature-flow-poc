@@ -34,12 +34,18 @@ public sealed partial class AgentActivities
                     continue;
                 var type = await ArtifactTypeAsync(declared)
                            ?? throw new StepCannotAnswerException($"artifact {name}'s type {declared} is not in the run's libraries, so it cannot be checked");
-                var text = await TextAsync(reference);
-                foreach (var error in ArtifactContent.Check(type, text, path))
-                    errors.Add($"artifact '{name}' ({path}): {error}");
-                foreach (var validator in type.Validators)
-                    foreach (var issue in await ValidateAsync(validator, name, declared, reference))
-                        errors.Add($"artifact '{name}' ({path}): {issue}");
+                try
+                {
+                    errors.AddRange(await ArtifactTypeCheck.CheckAsync(type, name, declared, path, await TextAsync(reference), reference, owner.Providers, ct));
+                }
+                catch (ArtifactCheckException e) when (e.Infrastructure)
+                {
+                    throw new ApplicationFailureException(e.Message, errorType: "infrastructure");
+                }
+                catch (ArtifactCheckException e)
+                {
+                    throw new StepCannotAnswerException(e.Message);
+                }
             }
 
             if (errors.Count > 0)
@@ -52,39 +58,8 @@ public sealed partial class AgentActivities
         {
             if (artifactTypes.TryGetValue(declared, out var cached))
                 return cached;
-            ArtifactTypeItem? item = null;
-            if (LibraryReference.TryParse(declared) is { Type: "artifact_types" } reference)
-            {
-                var lockDocument = JsonSerializer.Deserialize<LibraryLock>(await TextAsync(spec.LockRef), Json)!;
-                if (lockDocument.Libraries.FirstOrDefault(l => l.Name == reference.Library)?.Files.GetValueOrDefault($"artifact_types/{reference.Name}.yaml") is { } hash)
-                {
-                    var d = new DiagnosticBag();
-                    var node = YamlText.Parse(await TextAsync(hash), declared, d);
-                    item = node is null ? null : LibraryItemReader.ReadArtifactType(node, reference.Name, d);
-                }
-            }
-
-            return artifactTypes[declared] = item;
-        }
-
-        /// <summary>One of the type's validators over the artifact alone: its errors (warnings do not stop a step).</summary>
-        async Task<IReadOnlyList<string>> ValidateAsync(string validator, string name, string type, string reference)
-        {
-            var (provider, instance) = ValidatorProviders.Find(owner.Providers, validator, out var why)
-                                       ?? throw new StepCannotAnswerException($"artifact {name}'s type {type} names validator {validator}: {why}");
-            var result = await instance.ValidateAsync(new ValidationRequest(validator, [new ValidationSubject(name, type, new ArtifactRef(reference))],
-                new Dictionary<string, string>(), new Dictionary<string, string>(), [], []), ct);
-            if (!result.Ok)
-            {
-                var error = result.Error!;
-                if (error.Class == ProviderErrorClass.Infrastructure && !error.IsConfigurationFault)
-                    throw new ApplicationFailureException($"validator {validator} ({provider}): {error.Reason}: {error.Message}", errorType: "infrastructure");
-                throw new StepCannotAnswerException($"validator {validator} ({provider}) could not check artifact {name}: " +
-                                                    (error.IsConfigurationFault ? error.DescribeFault() : $"{error.Reason}: {error.Message}"));
-            }
-
-            return result.Value!.Issues.Where(i => i.Severity == ValidationSeverities.Error)
-                .Select(i => $"{(i.Item is null ? "" : i.Item + ": ")}{i.Message} [{validator}: {i.Code}]").ToList();
+            var lockDocument = JsonSerializer.Deserialize<LibraryLock>(await TextAsync(spec.LockRef), Json)!;
+            return artifactTypes[declared] = await lockDocument.ArtifactTypeAsync(declared, TextAsync);
         }
     }
 }

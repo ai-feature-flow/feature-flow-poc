@@ -1,3 +1,5 @@
+using FeatureFlow.Model;
+
 namespace FeatureFlow.Providers.Abstractions;
 
 /// <summary>
@@ -122,5 +124,47 @@ public static class ValidatorProviders
             ? $"no validator provider is configured to run {validator}"
             : $"no validator provider offers {validator} (offered: {string.Join(", ", offered.Distinct().Order(StringComparer.Ordinal))})";
         return null;
+    }
+}
+
+/// <summary>A check of an artifact against its type that could not be made: a validator no provider offers, or one that failed.</summary>
+public sealed class ArtifactCheckException(string message, bool infrastructure) : Exception(message)
+{
+    /// <summary>The validator's provider failed for a reason outside the artifact (try again), not a configuration fault.</summary>
+    public bool Infrastructure => infrastructure;
+}
+
+/// <summary>
+/// The check of a produced artifact against its declared type (LOG 246): it reads in its format, fits its schema or
+/// Markdown structure, and passes the type's own validators. One check for what an agent reports and what a person
+/// submits or an <c>artifact.import</c> brings in.
+/// </summary>
+public static class ArtifactTypeCheck
+{
+    /// <summary>The artifact's errors, each naming it and its path; warnings do not count. Throws <see cref="ArtifactCheckException"/> when it cannot be checked.</summary>
+    public static async Task<IReadOnlyList<string>> CheckAsync(ArtifactTypeItem type, string name, string declared, string path, string text, string reference,
+        ProviderSet providers, CancellationToken ct)
+    {
+        var errors = ArtifactContent.Check(type, text, path).Select(e => $"artifact '{name}' ({path}): {e}").ToList();
+        foreach (var validator in type.Validators)
+        {
+            var (provider, instance) = ValidatorProviders.Find(providers, validator, out var why)
+                                       ?? throw new ArtifactCheckException($"artifact {name}'s type {declared} names validator {validator}: {why}", false);
+            var result = await instance.ValidateAsync(new ValidationRequest(validator, [new ValidationSubject(name, declared, new ArtifactRef(reference))],
+                new Dictionary<string, string>(), new Dictionary<string, string>(), [], []), ct);
+            if (!result.Ok)
+            {
+                var error = result.Error!;
+                if (error.Class == ProviderErrorClass.Infrastructure && !error.IsConfigurationFault)
+                    throw new ArtifactCheckException($"validator {validator} ({provider}): {error.Reason}: {error.Message}", true);
+                throw new ArtifactCheckException($"validator {validator} ({provider}) could not check artifact {name}: " +
+                                                 (error.IsConfigurationFault ? error.DescribeFault() : $"{error.Reason}: {error.Message}"), false);
+            }
+
+            errors.AddRange(result.Value!.Issues.Where(i => i.Severity == ValidationSeverities.Error)
+                .Select(i => $"artifact '{name}' ({path}): {(i.Item is null ? "" : i.Item + ": ")}{i.Message} [{validator}: {i.Code}]"));
+        }
+
+        return errors;
     }
 }

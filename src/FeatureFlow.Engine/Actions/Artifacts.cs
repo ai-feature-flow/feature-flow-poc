@@ -80,6 +80,7 @@ static class Artifacts
         var declared = run.Call.Contract.ArtifactsFor("imported").ToList();
         var artifacts = new Dictionary<string, string>(StringComparer.Ordinal);
         var imported = new List<ImportedFile>();
+        var errors = new List<string>();
         foreach (var file in files)
         {
             var path = Join(folder, SafePath(Text(file, "path"), "a file's path"));
@@ -97,7 +98,11 @@ static class Artifacts
             var reference = await PutTextAsync(run, read.Content);
             artifacts[name] = reference;
             imported.Add(new ImportedFile(path, name, Value(file, "type") as string, reference, Hash(read.Content)));
+            errors.AddRange(await CheckTypeAsync(run, name, Value(file, "type") as string, path, read.Content, reference));
         }
+
+        if (errors.Count > 0)
+            throw ActionStop.CannotAnswer($"the files at {EngineActions.Short(commit)} do not fit their types:\n{string.Join("\n", errors)}");
 
         var record = await run.PutJsonAsync(new ImportRecord(repo.FullName, commit, folder, imported));
         foreach (var name in declared.Where(n => !artifacts.ContainsKey(n)))
@@ -105,6 +110,31 @@ static class Artifacts
         run.Events.Add($"imported {string.Join(", ", imported.Select(f => $"{f.Path} as {f.Name}"))} from {repo.FullName} at {EngineActions.Short(commit)}");
         var values = new Dictionary<string, string>(run.Call.Contract.ZeroOutputs, StringComparer.Ordinal);
         return ActionResult.Reported(new StepReport("imported", values, artifacts, $"{run.Call.Step.StepId}: imported"), run.Events);
+    }
+
+    /// <summary>
+    /// A typed file checked against the run's version of its type, as an agent's report is (LOG 246): its errors. Unchecked
+    /// without a type, or without a lock (<see cref="ActionScope.None"/>).
+    /// </summary>
+    static async Task<IReadOnlyList<string>> CheckTypeAsync(ActionRun run, string name, string? declared, string path, string text, string reference)
+    {
+        if (declared is null || run.Scope.LockRef is not { } lockRef)
+            return [];
+        var lockDocument = JsonSerializer.Deserialize<Library.LibraryLock>(await run.ReadTextAsync(lockRef), ActionRun.JsonOptions)!;
+        var type = await lockDocument.ArtifactTypeAsync(declared, run.ReadTextAsync)
+                   ?? throw ActionStop.CannotAnswer($"{path}'s type {declared} is not in the run's libraries, so it cannot be checked");
+        try
+        {
+            return await ArtifactTypeCheck.CheckAsync(type, name, declared, path, text, reference, run.Providers, run.Ct);
+        }
+        catch (ArtifactCheckException e) when (e.Infrastructure)
+        {
+            throw new ActionInfrastructureException(e.Message);
+        }
+        catch (ArtifactCheckException e)
+        {
+            throw ActionStop.CannotAnswer(e.Message);
+        }
     }
 
     /// <summary>

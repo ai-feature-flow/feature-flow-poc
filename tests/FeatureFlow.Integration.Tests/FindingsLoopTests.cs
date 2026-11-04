@@ -273,6 +273,11 @@ public class FindingsLoopTests
         Assert.Equal([(FindingStates.Open, "verify.review.review_0.assess"), (FindingStates.Declined, "verify.fix.triage"), (FindingStates.Declined, "tester")],
             history.Select(e => (e.State, e.Actor)));
         Assert.Equal("A known limitation; accepted for this release", history.Last().Reason);
+        // The person's triage is in the run's artifact index, as a session's submitted files are, once per answer that gave one.
+        var indexed = (await records.QueryAsync<ArtifactRecord>(Queries.Artifacts, new Dictionary<string, string> { ["run_id"] = id }, ct)).Unwrap()
+            .Where(a => a.StepId == "verify.fix.person_triage").ToList();
+        Assert.Equal(2, indexed.Count);
+        Assert.All(indexed, a => Assert.Equal("person_triage", a.Name));
         Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
     }
 }

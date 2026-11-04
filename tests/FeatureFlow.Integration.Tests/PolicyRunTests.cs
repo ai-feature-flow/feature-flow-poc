@@ -40,6 +40,20 @@ public class PolicyRunTests
     }
 
     [Fact]
+    public async Task An_automatic_answer_names_policy_as_its_actor()
+    {
+        // The organisation allows auto-resolution, so approve_spec answers itself; its timeline entry names policy, never a person (docs/04 section 4.2).
+        await using var h = await Harness.StartAsync("policy-auto", autoApprove: true);
+        var id = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=FF-1", "--repo", "acme/api");
+        string? detail = null;
+        for (var until = DateTime.UtcNow + Timeout; detail is null && DateTime.UtcNow < until; await Task.Delay(200, TestContext.Current.CancellationToken))
+            detail = (await h.ShowAsync(id))["timeline"]!.AsArray().FirstOrDefault(e => e!["kind"]!.ToString() == "auto_resolved")?["detail"]?.ToString();
+
+        Assert.Equal("approved by policy", detail);
+        h.Cli("abort", id, "--reason", "test done");
+    }
+
+    [Fact]
     public async Task An_actor_asserted_in_the_body_is_recorded_and_delivered_as_the_authenticated_actor()
     {
         await using var h = await Harness.StartAsync("policy-actor");

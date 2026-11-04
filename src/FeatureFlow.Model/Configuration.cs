@@ -429,6 +429,8 @@ public static class ConfigurationReader
             if (MapReader.Of(p.Node("toolsets"), d, "policy.toolsets") is { } ts)
             {
                 toolsets = ts.Has("allowed") ? ts.StringList("allowed") : null;
+                if (toolsets is not null)
+                    ts.Error("policy.toolsets.allowed is not enforced before M8; remove it", ts.Map.Location);
                 ts.Finish();
             }
 
@@ -507,6 +509,10 @@ public static class ConfigurationReader
 
         var libraryOverrides = StringMap(r, "library_overrides", d, reference: true);
         var libraryInputs = StringMap(r, "library_inputs", d, reference: false);
+        // Read and checked (LOG 223), but nothing acts on them yet: refused, so a file never appears to set what has no effect.
+        foreach (var later in new[] { "library_overrides", "library_inputs", "role_mapping", "timeouts" })
+            if (r.Has(later))
+                r.Error($"{later} is not enforced before M8; remove it", r.Map[later]!.Location);
         r.Finish();
         return new OrganisationConfig(name, libraries, policy, file)
         {

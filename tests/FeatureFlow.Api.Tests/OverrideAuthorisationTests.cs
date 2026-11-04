@@ -84,6 +84,31 @@ public sealed class OverrideAuthorisationTests
         Assert.DoesNotContain("mallory", JsonSerializer.Serialize(delivered.Argument));
     }
 
+    /// <summary>
+    /// Done-when 1, mechanically: the two theories above between them give every key of the catalogue (docs/05 section 5)
+    /// a role that may and one that may not use it, and each variant its base key; and each row's roles agree with the
+    /// catalogue's defaults. A key added to the catalogue without a row fails here.
+    /// </summary>
+    [Fact]
+    public void Every_key_of_the_override_catalogue_has_a_may_and_a_may_not_test()
+    {
+        static IEnumerable<string[]> Rows(string method) =>
+            typeof(OverrideAuthorisationTests).GetMethod(method)!.GetCustomAttributes(typeof(InlineDataAttribute), false).Cast<InlineDataAttribute>().Select(a => a.Data.Cast<string>().ToArray());
+
+        var keys = Rows(nameof(Each_override_by_default_is_for_its_roles_only_and_records_the_authenticated_actor)).ToList();
+        var variants = Rows(nameof(A_steerer_holds_no_variant_and_an_administrator_holds_it)).ToList();
+        var baseKeys = Overrides.DefaultRoles.Keys.Except(Overrides.Variants.Values.SelectMany(v => v)).ToHashSet();
+        Assert.Equal(baseKeys.Order(StringComparer.Ordinal), keys.Select(r => r[0]).Distinct().Order(StringComparer.Ordinal));
+        Assert.Equal(Overrides.Variants.SelectMany(kv => kv.Value.Select(v => (kv.Key, v))).Order(), variants.Select(r => (r[0], r[1])).Order());
+        Assert.Equal(Overrides.DefaultRoles.Count, baseKeys.Count + variants.Count);
+        foreach (var row in keys.Where(r => r[0] is not (Overrides.Answer or Overrides.AnswerQuestion)))
+        {
+            var roles = Overrides.RolesFor(row[0], new Dictionary<string, IReadOnlyList<string>>());
+            Assert.True(PeopleRoles.Expand([row[1]]).Intersect(roles).Any(), $"{row[0]}: {row[1]} may not use it by default");
+            Assert.False(PeopleRoles.Expand([row[2]]).Intersect(roles).Any(), $"{row[0]}: {row[2]} may use it by default");
+        }
+    }
+
     [Theory]
     [InlineData(Overrides.Skip, Overrides.SkipProtected)]
     [InlineData(Overrides.Amend, Overrides.AmendProtected)]

@@ -33,6 +33,9 @@ public static class SessionNames
     /// </summary>
     public const string CheckAction = "artifact.validate";
 
+    /// <summary>The run's refusal of a check while it hands over to its next run: a moment's wait, so clients try again.</summary>
+    public const string HandingOver = "the run is handing over to its next run: try the check again in a moment";
+
     /// <summary>The idempotency key of a check's call: never a step execution's, so what the check records is told apart.</summary>
     public static string CheckKey(string runId, string stepId, string checkId) => $"{runId}/{stepId}/{CheckSegment}/{checkId}";
 
