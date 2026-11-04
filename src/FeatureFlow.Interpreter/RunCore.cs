@@ -252,7 +252,8 @@ public sealed partial class RunCore
         Trace("started", step.Id, $"execution {record.Executions}");
         if (step.Decision is { Auto: { } auto, Type: { } type } && Options.AutoResolve(type))
         {
-            Trace("auto_resolved", step.Id, auto);
+            // The actor of an automatic answer is policy, never a person (docs/04 section 4.2); M7's runs name it.
+            Trace("auto_resolved", step.Id, Options.Steering ? $"{auto} by {PeopleRoles.PolicyActor}" : auto);
             Finish(step, record, auto);
             return;
         }
