@@ -115,7 +115,11 @@ public sealed class FeatureFlowHost : IAsyncDisposable
             await host.StartAgentWorkerAsync(configuration, providers, client, queue);
         if (apiUrl is not null)
         {
-            host.api = ApiApp.Build(new ApiServices(providers, configuration.Installation, configuration.Organisation, client), apiUrl);
+            host.api = ApiApp.Build(new ApiServices(providers, configuration.Installation, configuration.Organisation, client)
+            {
+                Authenticators = ApiAuthentication.For(configuration.Installation.ApiAuth),
+                PeopleRoles = new OrganisationRoles(configuration.Organisation),
+            }, apiUrl);
             await host.api.StartAsync();
             host.ApiAddress = host.api.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
         }
