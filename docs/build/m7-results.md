@@ -37,6 +37,23 @@ W5 reports and triage.
 | The catalogue without admin implied, ignoring the organisation, missing a variant | `OverridesTests` |
 | The API's last authenticator winning | `ApiTests` |
 
+**Review fixes (R2, changes-required)**
+
+| Finding | Fix | Control (mutation that failed the test) |
+|---|---|---|
+| F1 a team rule could relax by its roles or a broader pattern | A team rule sets only `min_count` and only raises it | The team rule governing whole; a team rule allowed `roles` (`OrganisationTests`) |
+| F2 a run over two teams' repositories took the looser team | Refused at start (API, and run start for children) | The check off (`OverrideAuthorisationTests.Starting_a_run_needs_a_steerer_and_a_run_may_not_span_two_teams`) |
+| F3 the local token beside OIDC counted as a second person | A group-less credential may not answer a multi-person wait under OIDC | The refusal off (`OidcTests.The_local_token_is_not_a_second_person_beside_oidc`) |
+| F4 approving a patch skipped `amend_protected` | Coordinator decision C10: W1 makes std's `*.patch_approval` default `admin` (W1's LOG entry); no API change | W1's |
+| F5 a team's roles replaced the organisation's | A team adds holders in its own scope (coordinator's decision) | Team replacing the organisation's holders (`A_team_adds_holders_for_its_own_runs_and_never_takes_the_organisations_away`) |
+| F6 the refresh on an unknown key did not take effect | The dead refresh removed; LOG 220 corrected; follow-up | — |
+| F7 min_count race | Follow-up, LOG 221 | — |
+| F8 / C7 a grant at an intervention needed only `grant_attempts` | Needs `recover` and `grant_attempts` | Either check off (`Granting_attempts_at_an_intervention_needs_recover_and_grant_attempts`) |
+| M10, M11 passed by construction | Tests: a viewer may not start a run; the token's issuer is the configured one even when the metadata names another (the equality check is gone, `ValidIssuer` is the configured issuer) | Start needing only viewer; the issuer taken from the metadata |
+
+The round-1 mutation script restored files with an older timestamp, so a later run could keep an earlier mutation's build.
+After the fix, the round-1 controls were run again; each still failed its own test.
+
 **Deviations and judgement calls:** LOG 201 (de-duplication in the engine), 202 (sessions; one answer payload for what a
 person produced, triage included), 203 (one catalogue, one override update), 204 (authenticators; scoped roles; teams
 gain repositories), 205 (wake signal; file splits).
@@ -57,9 +74,9 @@ override, OIDC, and the effective policy view.
 
 | Area | What | Where |
 |---|---|---|
-| Organisation file (docs/07 sections 3 and 7) | Every key read into the frozen model, unknown keys refused, caps as a value or `{ value, locked }`. People roles are the four of docs/05 section 3.3. A team's approval rules may only tighten the organisation's. Startup checks across the two layers name the layer, key and reason (LOG 223) | `Model/Configuration.cs`, `Hosting/StartupChecks.cs` |
-| People roles | From identity-provider groups, scoped by the run's team: `admin` > `steerer` > `viewer`, `approver` apart (LOG 216, 217) | `Model/Approval.cs` (`PeopleRoles`), `Api/ApiAuthentication.cs` (`OrganisationRoles`) |
-| Approval | One resolver for the API, run start and the view: the team's rule, the organisation's, the library's `default_approval`, the engine's. `min_count` counts distinct people answering the same way, each recorded; `from_chat` against the caller's channel; no caller may act as `policy` (LOG 221, 222) | `Model.Approval`, `ApiApp.Decisions.cs` (`SubmitAnswerAsync`) |
+| Organisation file (docs/07 sections 3 and 7) | Every key read into the frozen model, unknown keys refused, caps as a value or `{ value, locked }`. People roles are the four of docs/05 section 3.3. A team's approval rule sets only `min_count`, and only raises it. Startup checks across the two layers name the layer, key and reason (LOG 223) | `Model/Configuration.cs`, `Hosting/StartupChecks.cs` |
+| People roles | From identity-provider groups; in a team's scope its groups add holders. `admin` > `steerer` > `viewer`, `approver` apart. A run spanning two teams is refused at start (LOG 216, 217) | `Model/Approval.cs` (`PeopleRoles`), `Api/ApiAuthentication.cs` (`OrganisationRoles`) |
+| Approval | One resolver for the API, run start and the view: the organisation's rule, the library's `default_approval`, the engine's; a team only raises `min_count`. `min_count` counts distinct people answering the same way, each recorded; `from_chat` against the caller's channel; no caller may act as `policy` (LOG 221, 222) | `Model.Approval`, `ApiApp.Decisions.cs` (`SubmitAnswerAsync`) |
 | Override authorisation | `POST /runs/{id}/overrides` for the keys the `override` update carries; default roles, `policy.overrides`, and the variants the caller holds passed to the run. A recovery at an intervention is the `recover` override (LOG 218, 225). Reading needs `viewer`, starting a run `steerer` (LOG 219) | `ApiApp.Overrides.cs`, `ApiApp.Authorisation.cs`, `ApiApp.Runs.cs` |
 | OIDC | Discovery, keys, issuer, audience, expiry and signature; actor and groups from configured claims; beside the local token (LOG 220) | `Api/ApiAuthentication.cs`, `api.auth` in the installation |
 | Effective policy view | Per merge step (who merges, checks) and decision step (who answers, auto): request, cap, result, deciding setting. In `ff show --organisation <file> [--repo <r>]` and in the run start record as `policy` timeline entries, patch `m7-effective-policy` (LOG 224) | `Validation/EffectivePolicy.cs`, `Engine/Activities.cs` |
@@ -93,6 +110,23 @@ override, OIDC, and the effective policy view.
 | Run auto rules without library defaults or the team; check 22 silent on an unlocked refusal; the view resolving auto whatever the rule or ignoring `engine_may_merge`; `ff show` ignoring the team | `RunPolicyTests`, `RunStartCheckTests`, `EffectivePolicyTests`, `ShowPolicyTests` |
 | The view not written to the run start record; in-run auto ignoring the team; the CLI dropping the step, splitting a change at its last `=`, never asking to close pull requests | `PolicyRunTests` |
 
+**Review fixes (R2, changes-required)**
+
+| Finding | Fix | Control (mutation that failed the test) |
+|---|---|---|
+| F1 a team rule could relax by its roles or a broader pattern | A team rule sets only `min_count` and only raises it | The team rule governing whole; a team rule allowed `roles` (`OrganisationTests`) |
+| F2 a run over two teams' repositories took the looser team | Refused at start (API, and run start for children) | The check off (`OverrideAuthorisationTests.Starting_a_run_needs_a_steerer_and_a_run_may_not_span_two_teams`) |
+| F3 the local token beside OIDC counted as a second person | A group-less credential may not answer a multi-person wait under OIDC | The refusal off (`OidcTests.The_local_token_is_not_a_second_person_beside_oidc`) |
+| F4 approving a patch skipped `amend_protected` | Coordinator decision C10: W1 makes std's `*.patch_approval` default `admin` (W1's LOG entry); no API change | W1's |
+| F5 a team's roles replaced the organisation's | A team adds holders in its own scope (coordinator's decision) | Team replacing the organisation's holders (`A_team_adds_holders_for_its_own_runs_and_never_takes_the_organisations_away`) |
+| F6 the refresh on an unknown key did not take effect | The dead refresh removed; LOG 220 corrected; follow-up | — |
+| F7 min_count race | Follow-up, LOG 221 | — |
+| F8 / C7 a grant at an intervention needed only `grant_attempts` | Needs `recover` and `grant_attempts` | Either check off (`Granting_attempts_at_an_intervention_needs_recover_and_grant_attempts`) |
+| M10, M11 passed by construction | Tests: a viewer may not start a run; the token's issuer is the configured one even when the metadata names another (the equality check is gone, `ValidIssuer` is the configured issuer) | Start needing only viewer; the issuer taken from the metadata |
+
+The round-1 mutation script restored files with an older timestamp, so a later run could keep an earlier mutation's build.
+After the fix, the round-1 controls were run again; each still failed its own test.
+
 **Deviations and judgement calls:** LOG 216 (role nesting, approver apart), 217 (team scope and overlays), 218 (an
 intervention is answered as `recover`), 219 (viewer to read, steerer to start), 220 (OIDC), 221 (min_count recording),
 222 (library default in the run's auto rules; unlocked warns; `policy` reserved), 223 (file read in full; keys read but not
@@ -107,3 +141,6 @@ yet enforced), 224 (effective policy view), 225 (override wire and CLI).
 | 3 | Read but not enforced on this branch (LOG 223): `role_mapping`, `timeouts`, `library_overrides`, `library_inputs`, `toolsets.allowed`; check at integration which of the others W1 and W3 consumed |
 | 4 | `merge.require_checks` locked on refuses only a literal `require_checks: false` at run start; an expression giving false at merge time is not checked against the cap (`scm.merge` does not read it). Older than M7 |
 | 5 | Startup does not yet resolve the API's `token_ref` or other secret references (docs/07 section 7); a missing one shows as every local-token request refused |
+| 6 | OIDC: a rotated key is accepted only after the metadata cache refreshes (review R2 F6) |
+| 7 | min_count: two answers at the same moment can leave the count short until another answer; re-read after recording (review R2 F7) |
+| 8 | The run-start refusal of a child spanning two teams has no test of its own (the API's refusal and `Approval.MoreThanOneTeam` are tested) |

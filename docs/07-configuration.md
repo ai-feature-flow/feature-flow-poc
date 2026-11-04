@@ -164,7 +164,7 @@ timeouts:
 teams:
   payments:
     policy:
-      approval: [{ match: "*.merge_action", roles: [approver], min_count: 3 }]
+      approval: [{ match: "*.merge_action", min_count: 3 }]   # a team's rule only raises min_count (LOG 217)
     roles:
       approver: { idp_groups: [acme-payments-leads] }
 ```
@@ -175,7 +175,7 @@ teams:
 | `library_overrides` | An organisation item replacing a base item by name, for every run |
 | `policy.*` | Meanings in `docs/05`. A cap may be `{ value, locked }`; a bare value is an unlocked default. Which settings reach running runs is in `docs/05` section 8 |
 | `policy.budgets.max_work_items.ceiling` | F11's ceiling, always locked: a root template asking more does not start; a root that sets no budget gets the ceiling (LOG 187) |
-| `roles`, `teams` | People roles to groups. A run is in the scope of the first team whose `repositories` match one of its repositories; there a role the team defines is held only through the team's groups, and the team's approval rules come first. A team may only tighten (LOG 204, 217) |
+| `roles`, `teams` | People roles to groups. A run is in the scope of the team whose `repositories` match its repositories; a run spanning two teams is refused. In its scope a team's groups add holders to a role, and its approval rules may only raise `min_count` (LOG 204, 217) |
 | `role_mapping.default` | The runtime and model for a role with no entry |
 | `timeouts.heartbeat` | Describes the platform, not the work, so it is set here and not per step. It dominates crash-recovery time (Spike 1: 87.4 s from a kill to progress, `archive/docs/15` section 6.4) |
 | `timeouts.stalled_after` | Time without successful provider contact before the run shows `stalled`. Time-based, not a retry count |
