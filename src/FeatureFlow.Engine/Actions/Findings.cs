@@ -244,6 +244,13 @@ static class FindingsActions
         // No states input allows all four; a list given, even an empty one, allows exactly its states (re-check R3).
         var allowed = run.Inputs.ContainsKey("states") ? run.Strings("states") : FindingStates.All;
         var (triage, problems) = ReadTriage(await run.ReadTextAsync(entry.Ref), $"{entry.StepId}'s {from} {entry.Ref}", byId, allowed);
+        if (problems.Count == 0 && run.Bool("complete", false))
+            // A person's triage answers for everything an agent may not clear alone (review F1, LOG 248): every escalated finding
+            // of this run, and every declined blocking or demonstrated one. One it leaves out goes back to the person.
+            foreach (var undecided in ledger.Where(f => f.RunId == run.Call.Step.RunId && (f.State == FindingStates.Escalated
+                         || (f.State == FindingStates.Declined && (f.Finding.Blocking || f.Finding.Basis == FindingBases.Demonstrated))))
+                         .Where(f => triage!.Entries.All(t => t.Finding != f.FindingId)))
+                problems.Add($"{undecided.FindingId} is {undecided.State}{(undecided.State == FindingStates.Declined ? " though blocking or demonstrated" : "")}; this triage must decide it");
         var code = new CodeAt(run);
         if (problems.Count == 0)
             foreach (var t in triage!.Entries.Where(t => t.State == FindingStates.Fixed && byId[t.Finding].State != FindingStates.Fixed))
@@ -327,8 +334,10 @@ static class FindingsActions
         if (waits.Count == 0)
             return entry.StepId;
         var answers = ActionRun.Must(await records.QueryAsync<AnswerRecord>(Queries.Answers, p, run.Ct), "read the run's answers");
-        // The API records an answer as sent before delivering it; the run accepted this artifact from one of them.
-        return answers.Where(a => waits.Contains(a.WaitId) && a.Result is "sent" or "recorded").Reverse()
+        // The API records an answer as sent before delivering it, then its result; the run accepted this artifact from one of
+        // them. A sent answer the run refused (a later record of the same wait and answer) names no one (review F3).
+        bool Refused(AnswerRecord sent) => answers.Any(a => a.WaitId == sent.WaitId && a.Answer == sent.Answer && a.Result.StartsWith("refused", StringComparison.Ordinal));
+        return answers.Where(a => waits.Contains(a.WaitId) && (a.Result == "recorded" || (a.Result == "sent" && !Refused(a)))).Reverse()
             .FirstOrDefault(a => AnswerArtifacts(a.Answer).Contains(entry.Ref))?.Actor ?? entry.StepId;
     }
 

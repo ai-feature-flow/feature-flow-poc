@@ -40,7 +40,7 @@ public static class StepStartChecks
         ["repo.inspect"] = [S("repository")],
         ["artifact.validate"] = [A("validation")],
         ["findings.record"] = [S("source"), S("reopen_on", "code_change", "always", "never")],
-        ["findings.triage"] = [S("from"), B("post_declines"), A("states")],
+        ["findings.triage"] = [S("from"), B("post_declines"), A("states"), B("complete")],
         // M6 delivery, artifacts and tracker (docs/04 sections 5.1 and 12).
         ["delivery.report"] = [A("repositories")],
         ["artifact.compose"] = [S("name"), A("members")],
