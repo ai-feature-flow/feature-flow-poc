@@ -26,8 +26,10 @@ will be verified. You change no code.
    there is one) or gives a `supports_reason`.
 4. Write `delivery_plan.yaml` with the same scope. If the parent's criteria name
    this ticket as owner, copy each one with its `id` and `supports` unchanged and
-   no `owner`; you may sharpen its wording, not its meaning. Add criteria of your
-   own where the ticket needs them. Give every criterion at least one
+   no `owner`; you may sharpen its wording, not its meaning. Keep every link a
+   copied criterion has; you may add links from it to your own requirements.
+   Every requirement in your `requirements.yaml` must be supported by at least
+   one criterion: link a copied criterion to it, or add a criterion of your own. Give every criterion at least one
    verification method: `kind: parsed_test`, this repository, a tier from step 2,
    `semantic_review: required`. Do not name tests: the implementer maps tests to
    methods later.

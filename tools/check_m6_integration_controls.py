@@ -33,6 +33,12 @@ LOOP = ("tests/FeatureFlow.Integration.Tests", "FullyQualifiedName~FindingsLoopT
 
 CONTROLS = [
     {
+        "name": "std's project delivers heads it never tested (LOG 197, extended)",
+        "edits": [("library/std/templates/project_delivery.yaml", "    routes:\n      passed: tests\n", "    routes:\n      passed: trace\n")],
+        "tests": [("tests/FeatureFlow.Testing.Workflows.Tests", "FullyQualifiedName~Std_workflow_test_passes")],
+        "expect": ["Std_workflow_test_passes"],
+    },
+    {
         "name": "inheritance refuses a copy that adds a link (LOG 191, amended)",
         "edits": [(REQUIREMENTS, "else if (Links(item).Except(Links(copy, parent.Subject)).Any())", "else if (!Links(copy, parent.Subject).SequenceEqual(Links(item)))")],
         "tests": [STD_TESTS],
