@@ -116,8 +116,11 @@ reports.
    unless `on_uncommitted: fail`.
 5. **Verify.** Check the reported outcome is declared; check produced artifacts
    and outputs against their contracts; for a role with no write access, check
-   nothing was committed. Return errors to the same session for up to
-   `correction_turns` turns. Still invalid: the attempt fails.
+   nothing was committed. Each produced artifact is copied out once and its
+   stored bytes checked against its type: format, schema or Markdown structure,
+   and the type's validators (LOG 246). Return errors to the same session for up
+   to `correction_turns` turns, one allowance for reports and artifacts. Still
+   invalid: the attempt fails.
 6. **After changes.** If the step committed, run the manifest's `after_changes`
    commands (formatters, generators) in the same sandbox and commit what they
    change as part of the step (from FF).
@@ -360,9 +363,10 @@ Opens the work branch's pull request into its parent branch, or updates it.
 
 | Element | Detail |
 |---|---|
-| Inputs | `title`, `body` (a prompt reference, rendered) |
+| Inputs | `title`, `body` (a prompt reference, rendered), `draft`, `post_declines` (default `true`) |
 | Outcomes | `ready`. Output: the pull request reference |
 | Idempotency | Marker in the body; a retry adopts the existing pull request |
+| Behaviour | Posts the declines the run's ledger already holds for the repository, under each declining triage's own comment key, so none is posted twice (LOG 249) |
 
 ### 7.3 `scm.merge`
 
@@ -499,6 +503,7 @@ The standard set, from FF's validators:
 | `verification_satisfaction` | The agent's evidence claims match passing tests in the engine's test results evidence |
 | `requirement_trace` | Every requirement of this run traces through owners and supporting items, across completed children, to passing tests at commits the work contains |
 | `tests_added` | A fix's claims name at least one test that is new or changed since the commit the finding was raised on |
+| `document_rules` | The rules std's types state that a schema cannot, one document at a time: unique ids, a work list's dependencies known and acyclic, a finding triaged once. std's types name it, so it runs when the document is produced (LOG 247) |
 
 ### 10.3 `artifact.validate`
 
@@ -528,9 +533,9 @@ workflow's (`docs/01` section 6, RW4).
 
 | Element | Detail |
 |---|---|
-| Inputs | `from`: a triage artifact (from a triage agent step or a decision's session) listing, per finding, the new state (`fixed`, `declined`, `escalated`, `open`) and a reason; `states`: the states this step's producer may set (none given: all four; a non-empty list of them, LOG 168); `post_declines` (default `true`: post each decline reason on the pull request) |
+| Inputs | `from`: a triage artifact (from a triage agent step, or a person's answer to a decision, LOG 248) listing, per finding, the new state (`fixed`, `declined`, `escalated`, `open`) and a reason; `states`: the states this step's producer may set (none given: all four; a non-empty list of them, LOG 168); `post_declines` (default `true`: post each decline reason on the pull request) |
 | Outcomes | `applied`, with outputs `escalated` and `declined_blocking` (this triage's escalations, and its declines of blocking or demonstrated findings, counted by the engine); `invalid` (nothing applied) |
-| Behaviour | Applies each state change with its actor and reason. A triage entry naming an unknown finding or a state outside `states`, a move to `fixed` with nothing committed to the finding's repository since it was raised or reopened, or a triage that does not read, is `invalid`; the standard library routes it back to the triage's producer. A plan that does not route `invalid` escalates it (LOG 161). A decline is posted only where a pull request is open for the finding's repository (LOG 164) |
+| Behaviour | Applies each state change with its actor and reason. A triage entry naming an unknown finding or a state outside `states`, a move to `fixed` with nothing committed to the finding's repository since it was raised or reopened, or a triage that does not read, is `invalid`; the standard library routes it back to the triage's producer. A plan that does not route `invalid` escalates it (LOG 161). A decline is posted only where a pull request is open for the finding's repository (LOG 164); `scm.pull_request` posts earlier ones when it opens (LOG 249). A triage from a person's answer is recorded as the authenticated person who gave it, any other as its producing step (F8, LOG 248) |
 
 The standard library's fragments build review, triage, fix and verification
 from an agent reviewer, these two actions and route guards such as
