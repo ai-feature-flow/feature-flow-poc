@@ -27,7 +27,7 @@ public sealed partial class RunCore
                 if (State.Waits.FirstOrDefault(w => w.Kind == WaitKind.Decision && w.StepId == a.StepId) is null || StepById(a.StepId) is not { } step)
                     return $"no decision is open at {a.StepId}";
                 return step.DeclaredOutcomes.Any(o => o.Name == a.Outcome)
-                    ? null
+                    ? SessionArtifactsError(step, a)
                     : $"{a.StepId}: '{a.Outcome}' is not a declared outcome ({string.Join(", ", step.DeclaredOutcomes.Select(o => o.Name))})";
             case InterventionAnswered i:
                 return RecoveryError(i, out _);
