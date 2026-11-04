@@ -22,6 +22,8 @@ public sealed record FeatureFlowConfiguration(InstallationConfig Installation, O
         var d = new DiagnosticBag();
         var installation = ConfigurationReader.ReadInstallation(File.ReadAllText(installationPath), Path.GetFullPath(installationPath), d);
         var organisation = ConfigurationReader.ReadOrganisation(File.ReadAllText(organisationPath), Path.GetFullPath(organisationPath), d);
+        if (installation is not null && organisation is not null)
+            StartupChecks.Check(installation, organisation, d);
         if (installation is null || organisation is null || d.HasErrors)
             throw new InvalidOperationException("the configuration does not validate:\n" + string.Join("\n", d.Where(x => x.Blocks)));
         return new FeatureFlowConfiguration(installation, organisation);
@@ -113,7 +115,11 @@ public sealed class FeatureFlowHost : IAsyncDisposable
             await host.StartAgentWorkerAsync(configuration, providers, client, queue);
         if (apiUrl is not null)
         {
-            host.api = ApiApp.Build(new ApiServices(providers, configuration.Installation, configuration.Organisation, client), apiUrl);
+            host.api = ApiApp.Build(new ApiServices(providers, configuration.Installation, configuration.Organisation, client)
+            {
+                Authenticators = ApiAuthentication.For(configuration.Installation.ApiAuth),
+                PeopleRoles = new OrganisationRoles(configuration.Organisation),
+            }, apiUrl);
             await host.api.StartAsync();
             host.ApiAddress = host.api.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
         }

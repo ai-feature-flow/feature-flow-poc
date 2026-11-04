@@ -107,7 +107,7 @@ public class RunStartCheckTests
     {
         var (_, plan) = Load();
         var d = new DiagnosticBag();
-        RunStartChecks.Caps(plan, Policy(perStep: 12, new ApprovalRule("*", ["approver"], 1, true, new Cap<bool>(false, false)), new Cap<bool>(true, true)), Allowance, d);
+        RunStartChecks.Caps(plan, Policy(perStep: 12, new ApprovalRule("*", ["approver"], 1, true, new Cap<bool>(true, false)), new Cap<bool>(true, true)), Allowance, d);
         Assert.Empty(d);
     }
 
@@ -123,8 +123,8 @@ public class RunStartCheckTests
         RunStartChecks.Caps(plan, policy, Allowance, asChild, root: false);
 
         Assert.Equal([Checks.LockedCap], Blocking(asRoot));
-        Assert.Contains("max_work_items", asRoot.Single().Message, StringComparison.Ordinal);
-        Assert.Empty(asChild);
+        Assert.Contains("max_work_items", asRoot.Single(x => x.Blocks).Message, StringComparison.Ordinal);
+        Assert.Empty(Blocking(asChild));
     }
 
     [Fact]
@@ -135,7 +135,7 @@ public class RunStartCheckTests
         var d = new DiagnosticBag();
         RunStartChecks.Caps(plan, Policy(perStep: 12), Allowance, d);
         Assert.Equal([Checks.LockedCap], Blocking(d));
-        Assert.Equal("implement", d.Single().StepId);
+        Assert.Equal("implement", d.Single(x => x.Blocks).StepId);
     }
 
     [Fact]
@@ -144,12 +144,17 @@ public class RunStartCheckTests
         var (_, plan) = Load();
         var unlocked = new DiagnosticBag();
         RunStartChecks.Caps(plan, Policy(rule: new ApprovalRule("ticket.*", ["approver"], 1, false, new Cap<bool>(false, false))), Allowance, unlocked);
-        Assert.Empty(unlocked);
+        Assert.Empty(Blocking(unlocked));
+        // Not refused, but reported: the request has no effect (docs/05 section 3.1).
+        Assert.Contains(unlocked, x => x is { Blocks: false, StepId: "approve_spec" } && x.Message.Contains("so a person answers", StringComparison.Ordinal));
+        var allowed = new DiagnosticBag();
+        RunStartChecks.Caps(plan, Policy(rule: new ApprovalRule("ticket.*", ["approver"], 1, false, new Cap<bool>(true, false))), Allowance, allowed);
+        Assert.Empty(allowed);
 
         var locked = new DiagnosticBag();
         RunStartChecks.Caps(plan, Policy(rule: new ApprovalRule("ticket.*", ["approver"], 1, false, new Cap<bool>(false, true))), Allowance, locked);
         Assert.Equal([Checks.LockedCap], Blocking(locked));
-        Assert.Equal("approve_spec", locked.Single().StepId);
+        Assert.Equal("approve_spec", locked.Single(x => x.Blocks).StepId);
     }
 
     [Fact]
@@ -160,10 +165,10 @@ public class RunStartCheckTests
         var d = new DiagnosticBag();
         RunStartChecks.Caps(plan, Policy(requireChecks: new Cap<bool>(true, true)), Allowance, d);
         Assert.Equal([Checks.LockedCap], Blocking(d));
-        Assert.Contains("require_checks", d.Single().Message);
+        Assert.Contains("require_checks", d.Single(x => x.Blocks).Message);
         var unlocked = new DiagnosticBag();
         RunStartChecks.Caps(plan, Policy(requireChecks: new Cap<bool>(true, false)), Allowance, unlocked);
-        Assert.Empty(unlocked);
+        Assert.Empty(Blocking(unlocked));
     }
 
     [Theory]

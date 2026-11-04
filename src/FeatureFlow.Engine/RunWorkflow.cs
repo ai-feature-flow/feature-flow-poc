@@ -104,6 +104,10 @@ public partial class RunWorkflow
             if (prepared.Warnings.Count > 0 && Workflow.Patched(StartWarningsPatch))
                 foreach (var warning in prepared.Warnings)
                     core.State.Trace.Add(new TraceEntry("warning", "", warning));
+            // docs/05 section 7: the effective policy is part of the run start record.
+            if (prepared.EffectivePolicy is { Count: > 0 } effective && Workflow.Patched(EffectivePolicyPatch))
+                foreach (var line in effective)
+                    core.State.Trace.Add(new TraceEntry("policy", "", line));
         }
         else
         {
@@ -630,6 +634,9 @@ public partial class RunWorkflow
 
     /// <summary>The patch marker of run start's warnings on the timeline (M5): histories recorded before it list none.</summary>
     public const string StartWarningsPatch = "m5-start-warnings";
+
+    /// <summary>The patch marker of the effective policy view on the timeline (M7): histories recorded before it list none.</summary>
+    public const string EffectivePolicyPatch = "m7-effective-policy";
 
     /// <summary>The patch marker of the <c>clean_up</c> branch reset (M5): histories recorded before it reset nothing.</summary>
     public const string CleanUpPatch = "m5-clean-up";

@@ -11,6 +11,8 @@
 
   <ItemGroup>
     <PackageReference Include="Temporalio" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
+    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" />
   </ItemGroup>
 
 </Project>
