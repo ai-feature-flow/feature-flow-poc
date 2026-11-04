@@ -371,5 +371,7 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
         var result = await services.RecordStore.AppendAsync(batch, ActivityExecutionContext.Current.CancellationToken);
         if (!result.Ok)
             throw new ApplicationFailureException($"record store: {result.Error!.Message}");
+        // M7: notifications follow what was recorded, here and never in workflow code; a failed send never fails this.
+        await new RunNotifier(services, ActivityExecutionContext.Current.Logger).NotifyAsync(batch, ActivityExecutionContext.Current.CancellationToken);
     }
 }
