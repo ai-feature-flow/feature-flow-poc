@@ -5,6 +5,10 @@ public sealed class Execution
 {
     public required int Number { get; init; }
     public string? Outcome { get; set; }
+
+    /// <summary>A person skipped the step (docs/05 section 5): it ended with <see cref="Outcome"/> without running.</summary>
+    public bool Skipped { get; set; }
+
     public Dictionary<string, object?> Outputs { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, string> Artifacts { get; } = new(StringComparer.Ordinal);
 }
@@ -47,9 +51,10 @@ public sealed class ContainerRecord
 
 /// <summary>
 /// A step a route has entered and the core has not yet started (the run's position, docs/01 section 1.2). An entry that
-/// <see cref="Resumes"/> restarts an interrupted execution (<see cref="StepInterrupted"/>) instead of starting a new one.
+/// <see cref="Resumes"/> restarts an interrupted execution (<see cref="StepInterrupted"/>) instead of starting a new one;
+/// one <see cref="PastBreakpoint"/> was let through its step's breakpoint by a person's answer.
 /// </summary>
-public sealed record Entry(string StepId, bool CleanUp, bool Resumes = false);
+public sealed record Entry(string StepId, bool CleanUp, bool Resumes = false, bool PastBreakpoint = false);
 
 /// <summary>
 /// The run's carried state (docs/02 section 2.1). Every collection the core iterates is a list or an ordinal
@@ -85,4 +90,16 @@ public sealed class RunState
     public long FindingsVersion { get; set; }
     public List<TraceEntry> Trace { get; } = [];
     public int NextWaitNumber { get; set; } = 1;
+
+    /// <summary>Steps with a breakpoint set (docs/04 section 4.5).</summary>
+    public SortedSet<string> Breakpoints { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Steps a person skipped that have not yet been reached, with the outcome each ends with (docs/05 section 5).</summary>
+    public SortedDictionary<string, string> Skips { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Overrides applied, in order, by the API's id (docs/05 section 5).</summary>
+    public List<AppliedOverride> Overrides { get; } = [];
+
+    /// <summary>The run's mid-run library overrides: its lock entries (docs/08 section 5.2).</summary>
+    public List<LibraryOverrideEntry> LibraryOverrides { get; } = [];
 }

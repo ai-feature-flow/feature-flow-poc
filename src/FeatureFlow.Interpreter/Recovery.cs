@@ -35,6 +35,8 @@ public sealed partial class RunCore
                 return State.Waits.Any(w => w.Id == p.WaitId && w.Kind == WaitKind.PatchApproval) ? null : $"no patch approval is open as {p.WaitId}";
             case RunAborted:
                 return null;
+            case BreakpointSet or StepSkipped or AttemptsGranted or RoleChanged or LibraryOverridden or LibraryOverrideProposed:
+                return SteeringError(input);
             default:
                 return $"{input.GetType().Name} is not an answer";
         }
@@ -42,30 +44,21 @@ public sealed partial class RunCore
 
     string? RecoveryError(InterventionAnswered i, out OpenWait? wait)
     {
-        wait = State.Waits.FirstOrDefault(w => w.Id == i.WaitId && w.Kind == WaitKind.Intervention);
+        wait = State.Waits.FirstOrDefault(w => w.Id == i.WaitId && w.Kind is WaitKind.Intervention or WaitKind.Breakpoint);
         if (wait is null)
-            return $"no intervention is open as {i.WaitId}";
+            return $"no intervention or breakpoint is open as {i.WaitId}";
         var action = i.Action;
         switch (action.Kind)
         {
-            case RecoveryKind.Retry:
+            case RecoveryKind.Continue when wait.Kind != WaitKind.Breakpoint:
+                return $"{i.WaitId} is an intervention; continue answers a breakpoint";
+            case RecoveryKind.Retry or RecoveryKind.Continue:
                 return StepById(wait.StepId) is null ? $"{wait.StepId} is not a step of plan revision {State.Revision}; go to another step" : null;
             case RecoveryKind.GrantAttempts:
-                if (action.Attempts <= 0)
-                    return "grant attempts needs a positive number of attempts";
-                if (StepById(wait.StepId) is not { } stopped)
+                if (StepById(wait.StepId) is null)
                     return $"{wait.StepId} is not a step of plan revision {State.Revision}";
-                if (!action.BeyondHardCeiling)
-                {
-                    var allowance = Allowance(stopped) + (State.Steps.GetValueOrDefault(stopped.Id)?.AttemptsGranted ?? 0) + action.Attempts;
-                    if (Options.HardStepCeiling is { } hardStep && allowance > hardStep)
-                        return $"granting {action.Attempts} would give {stopped.Id} {allowance} attempts, above the hard ceiling of {hardStep}; an administrator may grant beyond it (grant_attempts_beyond)";
-                    var ceiling = Options.RunCeiling + State.RunCeilingGranted + action.Attempts;
-                    if (Options.HardRunCeiling is { } hardRun && ceiling > hardRun)
-                        return $"granting {action.Attempts} would raise the run ceiling to {ceiling}, above the hard ceiling of {hardRun}; an administrator may grant beyond it (grant_attempts_beyond)";
-                }
-
-                return null;
+                // A grant at a step that uses no attempts (a decision, a join) raises the run ceiling alone.
+                return GrantError(StepById(wait.StepId)!.ConsumesAttempts ? wait.StepId : null, action.Attempts, action.BeyondHardCeiling);
             case RecoveryKind.GoTo:
                 if (action.StepId is null || FindIn(action.StepId) is not { } target)
                     return $"go to: '{action.StepId}' is not a step of plan revision {State.Revision}";
@@ -96,17 +89,19 @@ public sealed partial class RunCore
             RecoveryKind.GoTo or RecoveryKind.Replan => $"{action.Kind.ToString().ToLowerInvariant()} {action.StepId}{(action.CleanUp ? " (clean_up)" : "")}",
             RecoveryKind.GrantAttempts => $"grant {action.Attempts} attempt(s)",
             RecoveryKind.End => $"end {action.Status!.Value.Name()}",
+            RecoveryKind.Continue => "continue",
             _ => "retry",
         });
+        // At a breakpoint the paused step starts as it was entered, past its breakpoint this once.
+        var resume = wait.Kind == WaitKind.Breakpoint ? new Entry(wait.StepId, wait.CleanUp, PastBreakpoint: true) : new Entry(wait.StepId, false);
         switch (action.Kind)
         {
-            case RecoveryKind.Retry:
-                State.Pending.Add(new Entry(wait.StepId, false));
+            case RecoveryKind.Retry or RecoveryKind.Continue:
+                State.Pending.Add(resume);
                 break;
             case RecoveryKind.GrantAttempts:
-                Record(wait.StepId).AttemptsGranted += action.Attempts;
-                State.RunCeilingGranted += action.Attempts;
-                State.Pending.Add(new Entry(wait.StepId, false));
+                Grant(StepById(wait.StepId)!.ConsumesAttempts ? wait.StepId : null, action.Attempts);
+                State.Pending.Add(resume);
                 break;
             case RecoveryKind.GoTo or RecoveryKind.Replan:
                 State.Pending.Add(new Entry(FindIn(action.StepId!)!, action.CleanUp));

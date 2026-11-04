@@ -30,15 +30,26 @@ public sealed record CarriedRunInfo(
             ParentId, TrackerIssue, ParentBranch, DefaultBranches);
 }
 
-public sealed record CarriedExecution(int Number, string? Outcome, IReadOnlyDictionary<string, string> Outputs, IReadOnlyDictionary<string, string> Artifacts);
+public sealed record CarriedExecution(int Number, string? Outcome, IReadOnlyDictionary<string, string> Outputs, IReadOnlyDictionary<string, string> Artifacts)
+{
+    public bool Skipped { get; init; }
+}
 
 public sealed record CarriedStep(int Executions, int AttemptsUsed, int RacesUsed, long AttemptsGranted, CarriedExecution? Current, CarriedExecution? Previous);
 
 public sealed record CarriedContainer(IReadOnlyList<int> BranchIndexes, IReadOnlyList<string> Branches, bool Active);
 
-public sealed record CarriedWait(string Id, string Kind, string StepId, string? Outcome, string Reason, string? Patch, bool FromChild);
+public sealed record CarriedWait(string Id, string Kind, string StepId, string? Outcome, string Reason, string? Patch, bool FromChild)
+{
+    public bool CleanUp { get; init; }
+    public string? LibraryItem { get; init; }
+    public string? LibraryContent { get; init; }
+}
 
-public sealed record CarriedEntry(string StepId, bool CleanUp, bool Resumes = false);
+public sealed record CarriedEntry(string StepId, bool CleanUp, bool Resumes = false)
+{
+    public bool PastBreakpoint { get; init; }
+}
 
 public sealed record CarriedTrace(string Kind, string StepId, string? Detail);
 
@@ -65,6 +76,15 @@ public sealed record CarriedCore(
 {
     /// <summary>The ledger version the <see cref="Findings"/> counts were read at (review F3).</summary>
     public long FindingsVersion { get; init; }
+
+    /// <summary>Steering (M7): breakpoints, skips not yet reached, overrides applied and the run's library overrides. Null in states carried before M7.</summary>
+    public IReadOnlyList<string>? Breakpoints { get; init; }
+
+    public IReadOnlyDictionary<string, string>? Skips { get; init; }
+
+    public IReadOnlyList<AppliedOverride>? Overrides { get; init; }
+
+    public IReadOnlyList<LibraryOverrideEntry>? LibraryOverrides { get; init; }
 }
 
 public sealed partial class RunCore
@@ -81,7 +101,7 @@ public sealed partial class RunCore
             ? null
             : new CarriedExecution(e.Number, e.Outcome,
                 new SortedDictionary<string, string>(e.Outputs.ToDictionary(kv => kv.Key, kv => YamlWriter.WritePlain(kv.Value)), StringComparer.Ordinal),
-                new SortedDictionary<string, string>(e.Artifacts, StringComparer.Ordinal));
+                new SortedDictionary<string, string>(e.Artifacts, StringComparer.Ordinal)) { Skipped = e.Skipped };
         var s = State;
         return new CarriedCore(
             CarriedRunInfo.From(Run),
@@ -92,14 +112,26 @@ public sealed partial class RunCore
                 kv => new CarriedStep(kv.Value.Executions, kv.Value.AttemptsUsed, kv.Value.RacesUsed, kv.Value.AttemptsGranted, Exec(kv.Value.Current), Exec(kv.Value.Previous))), StringComparer.Ordinal),
             new SortedDictionary<string, CarriedContainer>(s.Containers.ToDictionary(kv => kv.Key,
                 kv => new CarriedContainer(kv.Value.BranchIndexes.ToList(), kv.Value.Branches.Select(b => b.ToString()).ToList(), kv.Value.Active)), StringComparer.Ordinal),
-            s.Pending.Select(e => new CarriedEntry(e.StepId, e.CleanUp, e.Resumes)).ToList(),
+            s.Pending.Select(e => new CarriedEntry(e.StepId, e.CleanUp, e.Resumes) { PastBreakpoint = e.PastBreakpoint }).ToList(),
             s.InFlight.ToList(),
-            s.Waits.Select(w => new CarriedWait(w.Id, w.Kind.ToString(), w.StepId, w.Outcome, w.Reason, w.Patch is null ? null : PatchReader.Write(w.Patch), w.FromChild)).ToList(),
+            s.Waits.Select(w => new CarriedWait(w.Id, w.Kind.ToString(), w.StepId, w.Outcome, w.Reason, w.Patch is null ? null : PatchReader.Write(w.Patch), w.FromChild)
+            {
+                CleanUp = w.CleanUp,
+                LibraryItem = w.LibraryItem,
+                LibraryContent = w.LibraryContent,
+            }).ToList(),
             s.RunAttempts,
             s.RunCeilingGranted,
             new SortedDictionary<string, long>(s.Findings, StringComparer.Ordinal),
             s.Trace.Select(t => new CarriedTrace(t.Kind, t.StepId, t.Detail)).ToList(),
-            s.NextWaitNumber) { FindingsVersion = s.FindingsVersion };
+            s.NextWaitNumber)
+        {
+            FindingsVersion = s.FindingsVersion,
+            Breakpoints = s.Breakpoints.Count == 0 ? null : s.Breakpoints.ToList(),
+            Skips = s.Skips.Count == 0 ? null : new SortedDictionary<string, string>(s.Skips, StringComparer.Ordinal),
+            Overrides = s.Overrides.Count == 0 ? null : s.Overrides.ToList(),
+            LibraryOverrides = s.LibraryOverrides.Count == 0 ? null : s.LibraryOverrides.ToList(),
+        };
     }
 
     /// <summary>
@@ -139,10 +171,15 @@ public sealed partial class RunCore
                 Branches = container.Branches.Select(Enum.Parse<BranchStatus>).ToList(),
                 Active = container.Active,
             };
-        s.Pending.AddRange(carried.Pending.Select(e => new Entry(e.StepId, e.CleanUp, e.Resumes)));
+        s.Pending.AddRange(carried.Pending.Select(e => new Entry(e.StepId, e.CleanUp, e.Resumes, e.PastBreakpoint)));
         s.InFlight.AddRange(carried.InFlight);
         s.Waits.AddRange(carried.Waits.Select(w => new OpenWait(w.Id, Enum.Parse<WaitKind>(w.Kind), w.StepId, w.Outcome, w.Reason,
-            w.Patch is null ? null : PatchReader.ReadWritten(w.Patch), w.FromChild)));
+            w.Patch is null ? null : PatchReader.ReadWritten(w.Patch), w.FromChild)
+        {
+            CleanUp = w.CleanUp,
+            LibraryItem = w.LibraryItem,
+            LibraryContent = w.LibraryContent,
+        }));
         s.RunAttempts = carried.RunAttempts;
         s.RunCeilingGranted = carried.RunCeilingGranted;
         foreach (var (name, count) in carried.Findings)
@@ -150,13 +187,19 @@ public sealed partial class RunCore
         s.FindingsVersion = carried.FindingsVersion;
         s.Trace.AddRange(carried.Trace.Select(t => new TraceEntry(t.Kind, t.StepId, t.Detail)));
         s.NextWaitNumber = carried.NextWaitNumber;
+        foreach (var id in carried.Breakpoints ?? [])
+            s.Breakpoints.Add(id);
+        foreach (var (id, outcome) in carried.Skips ?? new Dictionary<string, string>())
+            s.Skips[id] = outcome;
+        s.Overrides.AddRange(carried.Overrides ?? []);
+        s.LibraryOverrides.AddRange(carried.LibraryOverrides ?? []);
         return core;
 
         static Execution? Exec(CarriedExecution? e)
         {
             if (e is null)
                 return null;
-            var execution = new Execution { Number = e.Number, Outcome = e.Outcome };
+            var execution = new Execution { Number = e.Number, Outcome = e.Outcome, Skipped = e.Skipped };
             foreach (var (name, value) in e.Outputs)
                 execution.Outputs[name] = YamlWriter.ReadPlain(value);
             foreach (var (name, reference) in e.Artifacts)
