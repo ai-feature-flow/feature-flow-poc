@@ -264,6 +264,7 @@ static class FindingsActions
             return await ReportAsync(run, "invalid", null, null);
         }
 
+        var actor = await ActorAsync(run, entry);
         var history = new History(run);
         var findings = new List<FindingRecord>();
         var events = new List<FindingEventRecord>();
@@ -287,13 +288,13 @@ static class FindingsActions
                 applied++;
             }
 
-            events.Add(Event(run, before.RunId, before.FindingId, FindingEventKinds.Triaged, t.State, entry.StepId, t.Reason, head, null, now));
+            events.Add(Event(run, before.RunId, before.FindingId, FindingEventKinds.Triaged, t.State, actor, t.Reason, head, null, now));
         }
 
         if (events.Count > 0)
             ActionRun.Must(await run.Provider<IRecordStoreProvider>("record_store").AppendAsync(new RecordBatch(Findings: findings, FindingEvents: events), run.Ct),
                 "apply the triage");
-        run.Events.Add($"triage from {entry.StepId}: {triage.Entries.Count} entries, {applied} state changes");
+        run.Events.Add($"triage from {entry.StepId}" + (actor == entry.StepId ? "" : $", by {actor}") + $": {triage.Entries.Count} entries, {applied} state changes");
 
         if (run.Bool("post_declines", true))
             foreach (var t in triage.Entries.Where(t => t.State == FindingStates.Declined))
@@ -307,6 +308,41 @@ static class FindingsActions
                 && (byId[t.Finding].Finding.Blocking || byId[t.Finding].Finding.Basis == FindingBases.Demonstrated)),
         };
         return await ReportAsync(run, "applied", outputs, null);
+    }
+
+    /// <summary>
+    /// Who a triage's state changes are recorded as (F8; LOG 169, 248): the authenticated person whose answer to the decision
+    /// step that produced it gave this exact artifact, as the API recorded the answer before delivering it; otherwise the
+    /// producing step (an agent's triage is its step's). Only a decision's wait can carry an answer, so an agent step's
+    /// artifact never takes a person's name.
+    /// </summary>
+    static async Task<string> ActorAsync(ActionRun run, ArtifactEntry entry)
+    {
+        if (entry.Action is not null)
+            return entry.StepId;
+        var records = run.Provider<IRecordStoreProvider>("record_store");
+        var p = new Dictionary<string, string> { ["run_id"] = run.Call.Step.RunId };
+        var waits = ActionRun.Must(await records.QueryAsync<WaitRecord>(Queries.Waits, p, run.Ct), "read the run's waits")
+            .Where(w => w.Kind == "decision" && w.StepId == entry.StepId).Select(w => w.WaitId).ToHashSet(StringComparer.Ordinal);
+        if (waits.Count == 0)
+            return entry.StepId;
+        var answers = ActionRun.Must(await records.QueryAsync<AnswerRecord>(Queries.Answers, p, run.Ct), "read the run's answers");
+        // The API records an answer as sent before delivering it; the run accepted this artifact from one of them.
+        return answers.Where(a => waits.Contains(a.WaitId) && a.Result is "sent" or "recorded").Reverse()
+            .FirstOrDefault(a => AnswerArtifacts(a.Answer).Contains(entry.Ref))?.Actor ?? entry.StepId;
+    }
+
+    static IReadOnlyCollection<string> AnswerArtifacts(string answer)
+    {
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<FeatureFlow.Interpreter.Wire.AnswerArgs>(answer, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))
+                ?.Artifacts?.Values.ToList() ?? [];
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return [];
+        }
     }
 
     /// <summary>

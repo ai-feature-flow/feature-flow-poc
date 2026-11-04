@@ -232,8 +232,25 @@ public partial class RunWorkflow
             return;
         }
 
+        if (core is not null && AnswerArtifactsMissing(answer) is { } missing)
+            throw new ApplicationFailureException(missing);
         if (core is not null && core.Check(ToInput(answer)) is { } error)
             throw new ApplicationFailureException(error);
+    }
+
+    /// <summary>
+    /// An answer to a decision gives the artifacts its outcome promises (a person's triage, LOG 248); a session's step is
+    /// submitted from its commit instead. Checked in the update's validator only, which replay does not run, so committed
+    /// histories of answers without artifacts still replay.
+    /// </summary>
+    string? AnswerArtifactsMissing(AnswerArgs a)
+    {
+        if (core!.State.Waits.FirstOrDefault(w => w.Id == a.WaitId) is not { Kind: WaitKind.Decision } wait || a.Outcome is null
+            || core.StepById(wait.StepId) is not { Decision.Session: null } step)
+            return null;
+        var missing = step.Produces.Where(p => p.Outcome == a.Outcome || (p.Outcome is null && step.Outcomes().Any(o => o.Name == a.Outcome && o.Class == OutcomeClass.Success)))
+            .Select(p => p.Name).Distinct().Where(n => a.Artifacts?.ContainsKey(n) != true).ToList();
+        return missing.Count == 0 ? null : $"{a.WaitId}: '{a.Outcome}' must give artifact {string.Join(", ", missing)}";
     }
 
     [WorkflowUpdate(RunWorkflowNames.Answer)]
@@ -314,7 +331,8 @@ public partial class RunWorkflow
         switch (wait.Kind)
         {
             case WaitKind.Decision:
-                return new DecisionAnswered(wait.StepId, a.Outcome ?? throw new ApplicationFailureException($"{a.WaitId} is a decision: answer with an outcome"));
+                // An answer's artifacts (a person's triage, LOG 202) become the decision step's, as a completed step's do.
+                return new DecisionAnswered(wait.StepId, a.Outcome ?? throw new ApplicationFailureException($"{a.WaitId} is a decision: answer with an outcome"), a.Artifacts);
             case WaitKind.PatchApproval:
                 return a.Action switch
                 {

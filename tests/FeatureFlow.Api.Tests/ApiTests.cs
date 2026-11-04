@@ -38,8 +38,9 @@ public sealed class ApiTests : IAsyncDisposable
             {
                 ["record_store"] = new Dictionary<string, IProvider> { ["sqlite"] = records },
                 ["secrets"] = new Dictionary<string, IProvider> { ["file"] = new FileSecrets(Path.Combine(folder, "secrets.json")) },
+                ["artifact_store"] = new Dictionary<string, IProvider> { ["files"] = new FileSystemArtifactStore(Path.Combine(folder, "artifacts")) },
             },
-            new Dictionary<string, string> { ["record_store"] = "sqlite", ["secrets"] = "file" },
+            new Dictionary<string, string> { ["record_store"] = "sqlite", ["secrets"] = "file", ["artifact_store"] = "files" },
             new Dictionary<string, string>());
         var installation = new InstallationConfig("localhost:7233", "default", "q", 5120, new Dictionary<string, ProviderTypeConfig>(),
             new ApiAuthConfig("local_token", "secrets/api_token", "someone", roles), 3, 10, Path.Combine(folder, "installation.yaml"));
@@ -211,5 +212,61 @@ public sealed class ApiTests : IAsyncDisposable
         Assert.Contains("admin", ApiApp.RolesToAnswer(NoRules, Declared, Wait("intervention", "ticket.escalation")));
         Assert.Contains("admin", ApiApp.RolesToAnswer(NoRules, [], Wait("intervention", "ticket.escalation")));
         Assert.DoesNotContain("admin", ApiApp.RolesToAnswer(NoRules, Declared, Wait("decision", "ticket.spec_approval")));
+    }
+
+    // ---- a person's triage on a decision's answer (LOG 202, 248) ----
+
+    [Fact]
+    public async Task An_answer_s_artifacts_are_stored_and_sent_by_reference_as_the_authenticated_person()
+    {
+        var approver = Start("approver");
+        await OpenWaitAsync("decision-1", "decision", "ticket.spec_approval");
+        const string Triage = "schema: 1\nentries:\n  - { finding: F-1, state: declined, reason: accepted }\n";
+
+        // No Temporal client here: delivery fails after the answer is recorded as sent, which is what findings.triage reads.
+        await PostAsync(approver, "runs/r1/answers", $$"""
+            { "wait_id": "decision-1", "outcome": "triaged", "actor": "someone-else", "artifacts": { "person_triage": {{System.Text.Json.JsonSerializer.Serialize(Triage)}} } }
+            """);
+
+        var sent = Assert.Single((await records.QueryAsync<AnswerRecord>(Queries.Answers, new Dictionary<string, string> { ["run_id"] = "r1" },
+            TestContext.Current.CancellationToken)).Unwrap(), a => a.Result == "sent");
+        Assert.Equal("someone", sent.Actor);
+        var args = System.Text.Json.JsonSerializer.Deserialize<FeatureFlow.Interpreter.Wire.AnswerArgs>(sent.Answer, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))!;
+        Assert.Equal("someone", args.Actor);
+        var stored = new FileSystemArtifactStore(Path.Combine(folder, "artifacts"));
+        await using var content = (await stored.GetAsync(new ArtifactRef(args.Artifacts!["person_triage"]), TestContext.Current.CancellationToken)).Unwrap();
+        Assert.Equal(Triage, await new StreamReader(content).ReadToEndAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Theory]
+    [InlineData("[]", "artifacts is a map")]
+    [InlineData("""{ "person_triage": 3 }""", "must be given as text or a JSON map or list")]
+    [InlineData("""{ "person_triage": "  " }""", "must be given as text or a JSON map or list")]
+    public async Task Artifacts_that_are_not_documents_are_refused_before_anything_is_recorded(string artifacts, string error)
+    {
+        var approver = Start("approver");
+        await OpenWaitAsync("decision-1", "decision", "ticket.spec_approval");
+
+        var (status, text) = await PostAsync(approver, "runs/r1/answers", $$"""{ "wait_id": "decision-1", "outcome": "triaged", "artifacts": {{artifacts}} }""");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Contains(error, text);
+        Assert.Empty((await records.QueryAsync<AnswerRecord>(Queries.Answers, new Dictionary<string, string> { ["run_id"] = "r1" }, TestContext.Current.CancellationToken)).Unwrap());
+    }
+
+    [Fact]
+    public async Task A_run_s_findings_ledger_reads_with_ledger_ids_and_states()
+    {
+        var reader = Start("viewer");
+        var finding = new ReportedFinding("null-check", "Null", "x may be null", "high", true, FindingBases.Reasoned, new FindingLocation("acme/api", "src/A.cs", "A.B", "if (x)"));
+        await records.AppendAsync(new RecordBatch(Findings:
+            [new FindingRecord("r1", "F-1", "fp", finding, "review", null, FindingStates.Escalated, null, null, 0, 0, 0, false, DateTimeOffset.UnixEpoch)]),
+            TestContext.Current.CancellationToken);
+
+        using var response = await reader.GetAsync("runs/r1/findings", TestContext.Current.CancellationToken);
+        var view = ArtifactShapes.ReadLibrary<FindingsReport>(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken), "the ledger");
+
+        var only = Assert.Single(view.Findings);
+        Assert.Equal(("F-1", FindingStates.Escalated), (only.LedgerId, only.State));
     }
 }
