@@ -17,6 +17,10 @@ steps:
   - id: open
     action: scm.pull_request
     with: { title: "Steering test" }
+  - id: note
+    agent: { role: std:roles/implementer, task: m7steer:tasks/build }
+    outputs: { pull_request: { type: string } }     # an agent's output of that name names no pull request the run opened
+    outcomes: { built: success }
   - id: hold
     action: notify.send
     with: { audience: [team], message: hold, wait_ms: { expr: "params.wait_ms" } }

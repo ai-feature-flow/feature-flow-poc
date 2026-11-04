@@ -21,8 +21,8 @@ public partial class RunWorkflow
     /// <summary>The patch marker of M7's steering: reopening a decided join, and closing an aborted run's pull requests.</summary>
     public const string SteeringPatch = "m7-steering";
 
-    /// <summary>Signal, from a parent to a child, before <see cref="RunWorkflowNames.ParentCancelled"/>: the parent's abort closes pull requests, so the child's does too.</summary>
-    public const string ParentClosesPullRequests = "parent_closes_pull_requests";
+    /// <summary>Query: the pull requests a run opened, and the child runs it started (LOG 215), for an aborted ancestor to close.</summary>
+    public const string PullRequestsQuery = "pull_requests";
 
     /// <summary>Signal, from a run to its running children: a library override, which applies to the run tree from that run down (docs/08 section 5.2).</summary>
     public const string ParentLibraryOverride = "parent_library_override";
@@ -133,15 +133,17 @@ public partial class RunWorkflow
                     return absent;
                 if (core.LibraryItemError(o.Change["item"]) is { } itemError)
                     return itemError;
-                return core.ProtectedResolving(o.Change["item"]) is { Count: > 0 } guarded && !Holds(o, Overrides.OverrideLibraryProtected)
-                    ? $"protected steps resolve {o.Change["item"]} ({string.Join(", ", guarded)}): overriding it needs {Overrides.OverrideLibraryProtected}"
+                return Protected(o) is { Count: > 0 } guarded && !Holds(o, Overrides.OverrideLibraryProtected)
+                    ? $"{string.Join(", ", guarded)} may resolve {o.Change["item"]}: overriding it needs {Overrides.OverrideLibraryProtected}"
                     : null;
             case Overrides.Abort:
                 return null;
         }
 
         if (o.Key == Overrides.Amend)
-            return ReadPatch(o.Change["patch"], out var d) is null ? "the patch does not read: " + string.Join("; ", d.Where(x => x.Blocks).Select(x => x.Message)) : null;
+            return ReadPatch(o.Change["patch"], out var d) is not { } patch ? "the patch does not read: " + string.Join("; ", d.Where(x => x.Blocks).Select(x => x.Message))
+                : patch.ResumeAt is not null ? "an amend changes the plan, not where the run is: omit resume_at, then answer a breakpoint or intervention with go_to (LOG 209)"
+                : null;
         return core.Check(SteeringInput(o)!);
     }
 
@@ -162,7 +164,9 @@ public partial class RunWorkflow
     IReadOnlyList<string> Protected(OverrideArgs o) => o.Key switch
     {
         Overrides.Skip or Overrides.ChangeRole when core!.StepById(o.StepId!) is { Protected: true } => [o.StepId!],
-        Overrides.OverrideLibrary => core!.ProtectedResolving(o.Change["item"]),
+        // A run that starts children passes the override down, where protected steps it cannot see may resolve it (LOG 212).
+        Overrides.OverrideLibrary => core!.ProtectedResolving(o.Change["item"])
+            .Concat(core.Plan.AllSteps.Any(x => x.Action == "run.child") ? ["its child runs"] : []).ToList(),
         _ => [],
     };
 
@@ -256,19 +260,24 @@ public partial class RunWorkflow
             core!.State.Trace.Add(new TraceEntry("library_override_rejected", step.Id, $"{item}: {string.Join("; ", result.Errors)}"));
     }
 
-    [WorkflowSignal(ParentClosesPullRequests)]
-    public Task ParentClosesPullRequestsAsync()
-    {
-        closePullRequests = true;
-        return Task.CompletedTask;
-    }
+    [WorkflowQuery(PullRequestsQuery)]
+    public RunPullRequests PullRequests() => new(core is null ? [] : PullRequestsOpened(), core is null ? [] : ChildrenStarted());
 
-    /// <summary>The run's pull requests: every <c>pull_request</c> output its steps' current and previous executions published.</summary>
+    /// <summary>
+    /// The run's pull requests: the <c>pull_request</c> output of its <c>scm.pull_request</c> and <c>artifact.publish</c> steps
+    /// (R1 F7), current and previous executions. Each opens its pull request keyed by run and repository, so earlier executions
+    /// name the same one.
+    /// </summary>
     List<string> PullRequestsOpened() =>
-        core!.State.Steps.OrderBy(kv => kv.Key, StringComparer.Ordinal)
+        core!.State.Steps.Where(kv => core.StepById(kv.Key)?.Action is "scm.pull_request" or "artifact.publish").OrderBy(kv => kv.Key, StringComparer.Ordinal)
             .SelectMany(kv => new[] { kv.Value.Previous, kv.Value.Current })
             .Select(e => e?.Outputs.GetValueOrDefault("pull_request") as string)
             .OfType<string>().Where(pr => pr.Length > 0).Distinct().ToList();
+
+    /// <summary>Every child run this run started, running or ended: one per execution of each <c>run.child</c> step.</summary>
+    List<string> ChildrenStarted() =>
+        core!.State.Steps.Where(kv => core.StepById(kv.Key)?.Action == "run.child").OrderBy(kv => kv.Key, StringComparer.Ordinal)
+            .SelectMany(kv => Enumerable.Range(1, kv.Value.Executions).Select(n => $"{Workflow.Info.WorkflowId}.{kv.Key}.{n}")).ToList();
 
     /// <summary>
     /// Closes an aborted run's open pull requests when the person asked (docs/05 section 5; m6-results follow-up 3). Each is
@@ -279,7 +288,8 @@ public partial class RunWorkflow
         if (!closePullRequests || core!.State.Status != RunStatus.Aborted || !Workflow.Patched(SteeringPatch))
             return;
         var opened = PullRequestsOpened();
-        if (opened.Count == 0)
+        var started = ChildrenStarted();
+        if (opened.Count == 0 && started.Count == 0)
         {
             core.State.Trace.Add(new TraceEntry("pull_request_closed", "", "the run opened no pull requests"));
             return;
@@ -288,7 +298,8 @@ public partial class RunWorkflow
         IReadOnlyList<string> events;
         try
         {
-            events = await Workflow.ExecuteActivityAsync((RunActivities a) => a.ClosePullRequestsAsync(new ClosePullRequestsCall(input.RunId, opened, "", input.DryRun)),
+            // The children's, ended or running, are read from them by the activity: the run tree's pull requests (R1 F6).
+            events = await Workflow.ExecuteActivityAsync((RunActivities a) => a.ClosePullRequestsAsync(new ClosePullRequestsCall(input.RunId, opened, "", input.DryRun, started)),
                 new ActivityOptions { StartToCloseTimeout = TimeSpan.FromMinutes(2), ScheduleToCloseTimeout = TimeSpan.FromMinutes(10), RetryPolicy = new() { MaximumInterval = TimeSpan.FromSeconds(30) } });
         }
         catch (ActivityFailureException e)
@@ -300,6 +311,9 @@ public partial class RunWorkflow
             core.State.Trace.Add(new TraceEntry("pull_request_closed", "", e));
     }
 }
+
+/// <summary>What <see cref="RunWorkflow.PullRequestsQuery"/> answers: the run's pull requests and the child runs it started.</summary>
+public sealed record RunPullRequests(IReadOnlyList<string> PullRequests, IReadOnlyList<string> Children);
 
 /// <summary>A parent's library override for a running child: the item, the stored content's hash, and who and why.</summary>
 public sealed record InheritedLibraryOverride(string Item, string ContentHash, string Actor, string Reason);

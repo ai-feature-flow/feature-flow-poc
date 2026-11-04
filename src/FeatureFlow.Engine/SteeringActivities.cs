@@ -17,8 +17,8 @@ public sealed record LibraryOverrideCall(string LockRef, string Library, string 
 /// <summary>The run's new lock, the file's old and new content hashes, and the libraries as the run now resolves them.</summary>
 public sealed record LibraryOverrideResult(string LockRef, string OldHash, string NewHash, IReadOnlyList<LibrarySnapshot> Libraries);
 
-/// <summary>An aborted run's open pull requests to close, as <c>owner/repo#n</c>, and why (docs/05 section 5).</summary>
-public sealed record ClosePullRequestsCall(string RunId, IReadOnlyList<string> PullRequests, string Reason, bool DryRun);
+/// <summary>An aborted run's pull requests, as <c>owner/repo#n</c>, and the child runs it started, whose own are closed too (docs/05 section 5).</summary>
+public sealed record ClosePullRequestsCall(string RunId, IReadOnlyList<string> PullRequests, string Reason, bool DryRun, IReadOnlyList<string>? Children = null);
 
 /// <summary>The engine's activities for a person's steering (docs/05 section 5): library overrides, and closing an aborted run's pull requests.</summary>
 public sealed partial class RunActivities
@@ -72,7 +72,7 @@ public sealed partial class RunActivities
         if (services.Providers.ForRun("code_host", call.DryRun) is not ICodeHostProvider host)
             return [$"no code host is configured: {string.Join(", ", call.PullRequests)} left as they are"];
         var events = new List<string>();
-        foreach (var text in call.PullRequests)
+        foreach (var text in call.PullRequests.Concat(await DescendantPullRequestsAsync(call.Children ?? [], ct)).Distinct())
         {
             if (ActionRun.ParsePullRequest(text) is not { } pr)
             {
@@ -106,6 +106,32 @@ public sealed partial class RunActivities
         }
 
         return events;
+    }
+
+    /// <summary>The pull requests of the run tree below an aborted run: each child answers the pull requests query, running or ended.</summary>
+    async Task<List<string>> DescendantPullRequestsAsync(IReadOnlyList<string> children, CancellationToken ct)
+    {
+        var found = new List<string>();
+        var queue = new Queue<string>(children);
+        while (client is not null && queue.TryDequeue(out var id))
+        {
+            RunPullRequests answer;
+            try
+            {
+                answer = await client.GetWorkflowHandle(id).QueryAsync<RunPullRequests>(RunWorkflow.PullRequestsQuery, [], new() { Rpc = new() { CancellationToken = ct } });
+            }
+            catch (Exception e) when (e is Temporalio.Exceptions.RpcException { Code: Temporalio.Exceptions.RpcException.StatusCode.NotFound } or Temporalio.Exceptions.WorkflowQueryFailedException)
+            {
+                // A run.child execution that never started its child, or a child from before the query existed.
+                continue;
+            }
+
+            found.AddRange(answer.PullRequests);
+            foreach (var child in answer.Children)
+                queue.Enqueue(child);
+        }
+
+        return found;
     }
 
     static void Infrastructure(ProviderError error)

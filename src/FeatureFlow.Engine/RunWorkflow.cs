@@ -392,9 +392,6 @@ public partial class RunWorkflow
                     if (children.LastOrDefault(x => x.StepId == c.StepId) is { } child)
                     {
                         children.Remove(child);
-                        // An abort that closes pull requests closes the children's too (the run tree's), told first.
-                        if (closePullRequests && core!.State.Status == RunStatus.Aborted)
-                            await SignalQuietlyAsync(child.WorkflowId, ParentClosesPullRequests, []);
                         await SignalQuietlyAsync(child.WorkflowId, RunWorkflowNames.ParentCancelled, []);
                     }
 

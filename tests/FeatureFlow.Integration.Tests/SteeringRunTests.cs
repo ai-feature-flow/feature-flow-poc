@@ -124,6 +124,8 @@ public class SteeringRunTests
         const string limits = "{ api_version: feature-flow/v1, kind: patch, base_revision: 1, changes: [{ op: set, target: review, field: limits, value: { attempts: 2 } }] }";
         Assert.Contains("amend_protected", await RefusedAsync(h, id, Override("amend", null, new() { ["patch"] = limits })));
         Assert.Equal("applied: plan revision 2", (await SendAsync(h, id, Override("amend", null, new() { ["patch"] = limits }, "root", "amend_protected"))).Result);
+        const string moves = "{ api_version: feature-flow/v1, kind: patch, base_revision: 2, resume_at: ship, changes: [{ op: set, target: ship, field: limits, value: { attempts: 2 } }] }";
+        Assert.Contains("omit resume_at", await RefusedAsync(h, id, Override("amend", null, new() { ["patch"] = moves }, "root", "amend_protected")));
         const string role = "{ api_version: feature-flow/v1, kind: patch, base_revision: 2, changes: [{ op: replace, target: build, step: { id: build, agent: { role: std:roles/designer, task: m7steer:tasks/build }, outcomes: { built: success, stuck: blocked } } }] }";
         Assert.Contains("change_role", await RefusedAsync(h, id, Override("amend", null, new() { ["patch"] = role }, "root", "amend_protected")));
         Assert.Equal("applied: plan revision 3", (await SendAsync(h, id, Override("change_role", "build", new() { ["role"] = "std:roles/designer" }, "root"))).Result);
@@ -184,7 +186,9 @@ public class SteeringRunTests
         var parent = h.Start("m7steer:templates/steer_parent", "--param", "wait_ms=4000", "--repo", Repo);
         var child = $"{parent}.kid.1";
         await UntilAsync(async () => (await h.ShowAsync(child))["timeline"]!.AsArray().Any(e => e!["kind"]!.ToString() == "started"), "the child did not start");
-        await SendAsync(h, parent, Override("override_library", null, new() { ["item"] = "m7steer:tasks/build", ["with"] = "Build the change. BUILD-V3\n" }));
+        var inherited = new Dictionary<string, string> { ["item"] = "m7steer:tasks/build", ["with"] = "Build the change. BUILD-V3\n" };
+        Assert.Contains("its child runs may resolve", await RefusedAsync(h, parent, Override("override_library", null, inherited)));
+        await SendAsync(h, parent, Override("override_library", null, inherited, "root", "override_library_protected"));
         var (_, parentEnd, _) = h.Cli("wait", parent, "--timeout", "90");
         Assert.True(parentEnd.Trim() == $"run {parent} completed", parentEnd + (await h.ShowAsync(child)).ToJsonString());
         Assert.Contains("BUILD-V3", (await TasksAsync(h, child)).Single(t => t.Step == "build").Task);
@@ -262,25 +266,29 @@ public class SteeringRunTests
         var repo = forge.CreateRepository(Repo, new Dictionary<string, string> { ["src/App.cs"] = "class App {}\n" });
         forge.Protect(repo, new BranchProtection("main", true, true, 1, [], false));
         forge.Commit(repo, "refs/heads/ff/steer-pr", new Dictionary<string, string?> { ["src/App.cs"] = "class App { }\n" });
-        await using var h = await Harness.StartAsync("steerpr", """{ "steer_pr:hold": { delay_from: wait_ms } }""", omitTypes: ["vcs", "code_host", "ci"], libraries: Library,
+        await using var h = await Harness.StartAsync("steerpr",
+            """{ "steer_pr:hold": { delay_from: wait_ms }, "steer_pr_parent:hold": { delay_from: wait_ms }, "steer_pr:note": { outputs: { pull_request: "acme/api#99" } } }""", omitTypes: ["vcs", "code_host", "ci"], libraries: Library,
             providers: string.Join("\n", new[] { "vcs", "code_host", "ci" }.Select(t => $"  {t}: {{ instances: {{ memory: {{ world: {world} }} }} }}")));
         var host = h.Host.Providers.Required<ICodeHostProvider>("code_host");
 
-        // A run, or a parent whose child opened the pull request: the abort reaches the child, which closes its own.
+        // A run, or a parent whose child opened the pull request and has ended (R1 F6).
         async Task<PullRequestState> AbortAsync(bool close, string template = "steer_pr")
         {
             // The hold's activity sends no heartbeat, so the abort waits for it to end (M3 follow-up 9): keep it short.
             var id = h.Start($"m7steer:templates/{template}", "--param", "wait_ms=6000", "--repo", Repo);
             var opener = template == "steer_pr" ? id : $"{id}.kid.1";
-            await UntilAsync(async () => Harness.StartedSteps(await h.ShowAsync(opener)).Contains("hold"), "hold did not start");
+            await UntilAsync(async () => Harness.StartedSteps(await h.ShowAsync(id)).Contains("hold"), "hold did not start");
+            if (opener != id)
+                Assert.Equal("completed", await h.Client.GetWorkflowHandle(opener).GetResultAsync<string>());
             var opened = Timeline(await h.ShowAsync(opener)).Single(e => e.Kind == "agent" && e.Detail.StartsWith("pull request ", StringComparison.Ordinal)).Detail;
             var named = opened.Split(' ')[2];
             var pr = new PullRequestRef(new RepoRef(named[..named.IndexOf('#', StringComparison.Ordinal)]), int.Parse(named[(named.IndexOf('#', StringComparison.Ordinal) + 1)..], System.Globalization.CultureInfo.InvariantCulture));
             await h.Client.GetWorkflowHandle(id).ExecuteUpdateAsync<AnswerReply>(RunWorkflowNames.Abort, [new AbortArgs("ann", "no longer wanted", close)]);
             Assert.Equal("aborted", await h.Client.GetWorkflowHandle(id).GetResultAsync<string>());
-            Assert.Equal("aborted", await h.Client.GetWorkflowHandle(opener).GetResultAsync<string>());
-            var timeline = Timeline(await h.ShowAsync(opener));
+            var timeline = Timeline(await h.ShowAsync(id));
             Assert.Equal(close, timeline.Any(e => e.Kind == "pull_request_closed" && e.Detail == $"{named}: closed"));
+            // R1 F7: only scm.pull_request and artifact.publish name the run's pull requests, not an agent's output.
+            Assert.DoesNotContain(timeline, e => e.Kind == "pull_request_closed" && e.Detail.Contains("#99", StringComparison.Ordinal));
             return (await host.GetPullRequestAsync(pr, TestContext.Current.CancellationToken)).Value!;
         }
 
@@ -297,6 +305,8 @@ public class SteeringRunTests
         var work = "[" + string.Join(", ", Enumerable.Repeat(600, 40)) + "]";
         var id = h.Start("m7steer:templates/steer_long", "--param", $"work={work}", "--repo", Repo, "--continue-as-new-events", "100");
         var handle = h.Client.GetWorkflowHandle(id);
+        // A library override made before the hand-over must still be what the final step resolves after it (R1 I1).
+        await SendAsync(h, id, Override("override_library", null, new() { ["item"] = "m7steer:tasks/build", ["with"] = "Build the change. BUILD-V5\n" }));
 
         // Sent the moment the run reports it is draining, as SP1's answers were; the handler applies it during the drain.
         var sent = false;
@@ -325,6 +335,7 @@ public class SteeringRunTests
         Assert.Equal(0, h.Cli("answer", id, paused["waitId"]!.ToString(), "continue").Exit);
         var (_, end, _) = h.Cli("wait", id, "--timeout", "120");
         Assert.True(end.Trim() == $"run {id} completed", end + (await h.ShowAsync(id)).ToJsonString());
+        Assert.Contains("BUILD-V5", (await TasksAsync(h, id)).Single(t => t.Step == "final").Task);
         Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
     }
 
