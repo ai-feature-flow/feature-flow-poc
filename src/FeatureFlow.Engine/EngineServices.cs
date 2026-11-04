@@ -35,9 +35,11 @@ public sealed class EngineServices(ProviderSet providers, InstallationConfig ins
 
     /// <summary>
     /// The policy a run starting now enforces (docs/05 section 8): engine defaults from the installation, ceilings
-    /// and allowed roles from the organisation, and which decision types may be auto-resolved.
+    /// and allowed roles from the organisation, and which decision types may be auto-resolved: the organisation's approval
+    /// rules, then the <c>default_approval</c> of the libraries' <paramref name="declared"/> types, in the order
+    /// <see cref="Approval.For"/> reads them.
     /// </summary>
-    public RunPolicy Policy()
+    public RunPolicy Policy(IReadOnlyList<DecisionTypeItem> declared)
     {
         var policy = Organisation.Policy;
         return new RunPolicy(
@@ -46,7 +48,7 @@ public sealed class EngineServices(ProviderSet providers, InstallationConfig ins
             policy.AttemptsPerRun ?? 200,
             policy.AttemptsPerStep,
             policy.AllowedRoles,
-            policy.Approval.Select(r => new AutoRule(r.Match, r.Auto.Value)).ToList(),
+            Approval.AutoRules(policy, declared).Select(r => new AutoRule(r.Match, r.Auto)).ToList(),
             policy.HardPerStep,
             policy.HardPerRun,
             policy.EngineMayMerge,
