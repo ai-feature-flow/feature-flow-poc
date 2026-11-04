@@ -289,10 +289,16 @@ public partial class RunWorkflow
         var session = SessionStep(answer.WaitId);
         if (session is not null && answer.Revision is not null)
             return await SubmitAsync(answer, session);
+        var answeredStep = answer.Artifacts is { Count: > 0 } && core!.State.Waits.FirstOrDefault(w => w.Id == answer.WaitId) is { Kind: WaitKind.Decision } decision
+            ? core.StepById(decision.StepId)
+            : null;
         var result = core!.Apply(ToInput(answer));
         if (!result.Accepted)
             throw new ApplicationFailureException(string.Join("; ", result.Errors));
         answered.Add(new AppliedAnswer(answer.WaitId, Key(answer)));
+        // A person's artifacts (a triage, LOG 248) are indexed as a session's submitted files are (W5 follow-up 2).
+        if (answeredStep is not null)
+            IndexArtifacts(answeredStep, answer.Artifacts);
         core.State.Trace.Add(new TraceEntry("answered", answer.WaitId, $"{Key(answer)} by {answer.Actor}"));
         dirty = true;
         if (session is not null)
@@ -647,8 +653,14 @@ public partial class RunWorkflow
 
         return new ActionScope(input.Repositories, repository, core.WorkBranch(), input.ParentBranch, artifacts, pullRequests, policy?.EngineMayMerge ?? [],
             Consumed: Workflow.Patched(ChildInputsPatch) ? consumed : null, TrackerIssue: input.TrackerIssue,
-            Declared: Workflow.Patched(ChildInputsPatch) ? declared : null);
+            Declared: Workflow.Patched(ChildInputsPatch) ? declared : null, LockRef: ImportCheckLock());
     }
+
+    /// <summary>The patch marker of <c>artifact.import</c> checking typed files against their types (M7 integration; W4 follow-up 1).</summary>
+    public const string ImportCheckPatch = "m7-import-check";
+
+    /// <summary>The run's lock for an action's type checks; null in histories recorded before <see cref="ImportCheckPatch"/>.</summary>
+    string? ImportCheckLock() => Workflow.Patched(ImportCheckPatch) ? LockRef : null;
 
     /// <summary>
     /// A <c>clean_up</c> route resets the work branch before its target runs again (docs/03 section 4.1). The activity

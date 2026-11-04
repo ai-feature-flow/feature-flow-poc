@@ -247,7 +247,7 @@ public partial class RunWorkflow
             files.Select(f => new ArtifactSpec("imported", f.Name)).ToList(), new Dictionary<string, string>());
         var call = new StepCall(new StepIdentity(input.RunId, Template.Name, step.Id, execution, $"{input.RunId}/{step.Id}/{execution}/{purpose}"),
             "action", "artifact.import", inputs.ToDictionary(kv => kv.Key, kv => YamlWriter.WritePlain(kv.Value)), contract, input.DryRun, null);
-        var scope = new ActionScope(input.Repositories, repository, core.WorkBranch(), input.ParentBranch, [], [], []);
+        var scope = new ActionScope(input.Repositories, repository, core.WorkBranch(), input.ParentBranch, [], [], [], LockRef: ImportCheckLock());
         try
         {
             var outcome = await Workflow.ExecuteActivityAsync((RunActivities a) => a.RunActionAsync(call, scope), SessionActivity);
