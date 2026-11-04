@@ -14,8 +14,16 @@ namespace FeatureFlow.Engine;
 /// messages of a root run and its children in one channel go in one thread, started by the first of them. A failed send
 /// is logged and never affects the run; it is tried again only if the record activity itself is retried.
 /// </summary>
-public sealed class RunNotifier(EngineServices services, ILogger logger, TimeSpan? sendTimeout = null)
+public sealed class RunNotifier(EngineServices services, ILogger logger, TimeSpan? sendTimeout = null, TimeSpan? budget = null)
 {
+    /// <summary>
+    /// The most one batch may spend sending, well inside the record activity's two minutes: what is left when it runs out
+    /// is dropped and logged, so a chat that hangs can never fail the activity and hold the run.
+    /// </summary>
+    public static readonly TimeSpan DefaultBudget = TimeSpan.FromSeconds(45);
+
+    readonly TimeSpan budgetFor = budget ?? DefaultBudget;
+
     /// <summary>How long one send may take before it is given up, so a slow chat cannot hold the record activity.</summary>
     public static readonly TimeSpan DefaultSendTimeout = TimeSpan.FromSeconds(10);
 
@@ -34,8 +42,15 @@ public sealed class RunNotifier(EngineServices services, ILogger logger, TimeSpa
         var config = services.Organisation.Notifications;
         if (config.Events.Count == 0 || services.Providers.ForRun("notifications", false) is not INotificationsProvider provider)
             return;
+        var deadline = DateTimeOffset.UtcNow + budgetFor;
         foreach (var item in await PendingAsync(batch, cancellationToken))
         {
+            if (DateTimeOffset.UtcNow >= deadline)
+            {
+                logger.LogWarning("notifications: {Key} and any after it were not sent: this batch used its {Budget} s", item.Key, budgetFor.TotalSeconds);
+                return;
+            }
+
             if (!config.Events.Contains(item.Event))
                 continue;
             if (config.Routing.GetValueOrDefault(item.Event)?.Channel is not { Length: > 0 } channel)
@@ -46,7 +61,7 @@ public sealed class RunNotifier(EngineServices services, ILogger logger, TimeSpa
 
             try
             {
-                await SendAsync(provider, channel, item, cancellationToken);
+                await SendAsync(provider, channel, item, deadline, cancellationToken);
             }
             catch (Exception e) when (e is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {
@@ -123,14 +138,14 @@ public sealed class RunNotifier(EngineServices services, ILogger logger, TimeSpa
             .Select(t => Of(t, closed.WaitId)).LastOrDefault(a => a is not null);
     }
 
-    async Task SendAsync(INotificationsProvider provider, string channel, Pending item, CancellationToken ct)
+    async Task SendAsync(INotificationsProvider provider, string channel, Pending item, DateTimeOffset deadline, CancellationToken ct)
     {
         if ((await Records.QueryAsync<NotificationRecord>(Queries.Notification, new Dictionary<string, string> { ["key"] = item.Key }, ct)).Unwrap().Count > 0)
             return;
         var root = await RootOfAsync(item.RunId, ct);
         var thread = await ThreadAsync(root, channel, ct);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(timeoutAfter);
+        timeout.CancelAfter(TimeSpan.FromTicks(Math.Max(0, Math.Min(timeoutAfter.Ticks, (deadline - DateTimeOffset.UtcNow).Ticks))));
         ProviderResult<MessageRef> sent;
         try
         {

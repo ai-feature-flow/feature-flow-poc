@@ -35,7 +35,7 @@ public sealed class RunNotifierTests : IDisposable
         [NotificationEvents.Failed] = new("#runs"),
     }, [NotificationEvents.DecisionNeeded, NotificationEvents.Resumed, NotificationEvents.Completed, NotificationEvents.Failed]);
 
-    RunNotifier Notifier(NotificationsConfig? config = null, IProvider? provider = null)
+    RunNotifier Notifier(NotificationsConfig? config = null, IProvider? provider = null, TimeSpan? budget = null)
     {
         var providers = new ProviderSet(
             new Dictionary<string, IReadOnlyDictionary<string, IProvider>>
@@ -51,7 +51,7 @@ public sealed class RunNotifierTests : IDisposable
         {
             Notifications = config ?? Routed,
         };
-        return new RunNotifier(new EngineServices(providers, installation, organisation), NullLogger.Instance, TimeSpan.FromMilliseconds(500));
+        return new RunNotifier(new EngineServices(providers, installation, organisation), NullLogger.Instance, TimeSpan.FromMilliseconds(500), budget);
     }
 
     RunRecord Run(string id, string status, string? parent = null) => new(id, parent, "std:templates/ticket_delivery", status, "pat", ["acme/api"], false, now, null);
@@ -187,6 +187,25 @@ public sealed class RunNotifierTests : IDisposable
         // Not recorded, so a retried record activity sends it.
         await Notifier().NotifyAsync(batch, Ct);
         Assert.Equal(2, AllMessages().Count);
+    }
+
+    [Fact]
+    public async Task A_batch_that_meets_a_hanging_chat_stops_at_its_budget_and_drops_the_rest()
+    {
+        var hanging = new Broken(async () =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(30), Ct);
+            return ProviderResult<MessageRef>.Success(new MessageRef("#decisions", "late"));
+        });
+        var batch = new RecordBatch(Waits: Enumerable.Range(1, 8).Select(i => Wait("r1", $"decision-{i}")).ToList());
+        (await records.AppendAsync(batch, Ct)).Unwrap();
+
+        var started = DateTime.UtcNow;
+        await Notifier(provider: hanging, budget: TimeSpan.FromMilliseconds(1200)).NotifyAsync(batch, Ct);
+
+        // Each send gives up after 500 ms; the budget ends the batch after three, not eight.
+        Assert.True(DateTime.UtcNow - started < TimeSpan.FromSeconds(3), $"the batch took {DateTime.UtcNow - started}");
+        Assert.InRange(hanging.Calls, 1, 3);
     }
 
     [Fact]
