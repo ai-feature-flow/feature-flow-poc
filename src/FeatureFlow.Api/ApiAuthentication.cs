@@ -21,7 +21,8 @@ public static class ApiAuthentication
 /// <c>{issuer}/.well-known/openid-configuration</c> and cached; a token must be signed by one of its keys, issued by the
 /// configured issuer for the configured audience, and unexpired. The actor is the <c>actor_claim</c> claim and the groups
 /// the <c>role_claim</c> claim; the organisation-wide roles come from the groups (docs/05 section 3.3). A token that is
-/// not a JWT is left to the next authenticator; an invalid one is refused, never passed on as someone else.
+/// not a JWT is left to the next authenticator; an invalid one is refused, never passed on as someone else. A rotated key is
+/// seen when the cached metadata next refreshes (LOG 220).
 /// </summary>
 public sealed class OidcAuthenticator : IAuthenticator
 {
@@ -45,13 +46,6 @@ public sealed class OidcAuthenticator : IAuthenticator
         if (!handler.CanReadToken(token))
             return null;
         var result = await ValidateAsync(token, context.RequestAborted);
-        // A key the cached metadata lacks may be a rotated one: read the issuer's keys once more.
-        if (result.Exception is SecurityTokenSignatureKeyNotFoundException)
-        {
-            metadata.RequestRefresh();
-            result = await ValidateAsync(token, context.RequestAborted);
-        }
-
         if (!result.IsValid)
             return null;
 
@@ -76,12 +70,10 @@ public sealed class OidcAuthenticator : IAuthenticator
             return new TokenValidationResult { IsValid = false, Exception = e };
         }
 
-        // The discovered issuer must be the configured one, so a metadata document cannot name another.
-        if (!string.Equals(discovered.Issuer?.TrimEnd('/'), settings.Issuer!.TrimEnd('/'), StringComparison.Ordinal))
-            return new TokenValidationResult { IsValid = false, Exception = new SecurityTokenInvalidIssuerException("the discovered issuer is not the configured one") };
         return await handler.ValidateTokenAsync(token, new TokenValidationParameters
         {
-            ValidIssuer = discovered.Issuer,
+            // The configured issuer, not the metadata's: a metadata document cannot name another.
+            ValidIssuer = settings.Issuer,
             ValidAudience = settings.Audience,
             IssuerSigningKeys = discovered.SigningKeys,
             RequireSignedTokens = true,

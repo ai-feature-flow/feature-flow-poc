@@ -27,16 +27,17 @@ public static class PeopleRoles
     }
 
     /// <summary>
-    /// A person's roles from their identity-provider groups (docs/05 section 3.3): the organisation's <c>roles</c>, except
-    /// that a role the run's team defines is held only through the team's groups (a team tightens, LOG 217).
+    /// A person's roles from their identity-provider groups (docs/05 section 3.3): the organisation's <c>roles</c>, and in the
+    /// run's team's scope also the team's. A team adds holders for its own runs; it never takes a role away (LOG 217).
     /// </summary>
     public static IReadOnlyList<string> FromGroups(IReadOnlyCollection<string> groups, OrganisationConfig organisation, TeamConfig? team)
     {
         var held = new List<string>();
         foreach (var role in ConfigurationReader.PeopleRoleNames)
         {
-            var config = team is not null && team.Roles.TryGetValue(role, out var scoped) ? scoped : organisation.Roles.GetValueOrDefault(role);
-            if (config is not null && config.IdpGroups.Any(g => groups.Contains(g)))
+            var byOrganisation = organisation.Roles.GetValueOrDefault(role)?.IdpGroups ?? [];
+            var byTeam = team?.Roles.GetValueOrDefault(role)?.IdpGroups ?? [];
+            if (byOrganisation.Concat(byTeam).Any(groups.Contains))
                 held.Add(role);
         }
 
@@ -49,15 +50,27 @@ public sealed record EffectiveApproval(ApprovalRule Rule, string Source);
 
 /// <summary>
 /// Who may answer a decision (docs/05 sections 3.2 and 4), in one place for the API, run start and the effective policy
-/// view: the first matching rule of the run's team, then of the organisation, then the <c>default_approval</c> of the
-/// library that declares the type (an exact name before a pattern), then the engine's default. The first match wins whole:
-/// its roles, <c>min_count</c>, <c>from_chat</c> and <c>auto</c>.
+/// view: the first matching rule of the organisation, else the <c>default_approval</c> of the library that declares the type
+/// (an exact name before a pattern), else the engine's default. A team's matching rule can only raise its <c>min_count</c>
+/// (LOG 217), so a team never loosens who may answer.
 /// </summary>
 public static class Approval
 {
-    /// <summary>The team whose repositories include one of the run's, the first in the file (LOG 217); null for none.</summary>
-    public static TeamConfig? TeamFor(OrganisationConfig organisation, IReadOnlyList<string> repositories) =>
-        organisation.Teams.Values.FirstOrDefault(t => repositories.Any(r => RepositoryPatterns.Any(t.Repositories, r)));
+    /// <summary>Every team whose repositories include one of the run's. Run start refuses a run with more than one (LOG 217).</summary>
+    public static IReadOnlyList<TeamConfig> TeamsFor(OrganisationConfig organisation, IReadOnlyList<string> repositories) =>
+        organisation.Teams.Values.Where(t => repositories.Any(r => RepositoryPatterns.Any(t.Repositories, r))).ToList();
+
+    /// <summary>
+    /// Why a run may not start, or null: its repositories (or one repository) belong to more than one team, so it could pick
+    /// a looser team by adding a repository (LOG 217).
+    /// </summary>
+    public static string? MoreThanOneTeam(OrganisationConfig organisation, IReadOnlyList<string> repositories) =>
+        TeamsFor(organisation, repositories) is { Count: > 1 } teams
+            ? $"the run's repositories ({string.Join(", ", repositories)}) belong to more than one team ({string.Join(", ", teams.Select(t => t.Name))}); start one run per team"
+            : null;
+
+    /// <summary>The run's team, or null for none. A run in more than one team's scope never starts, so the first is the only one.</summary>
+    public static TeamConfig? TeamFor(OrganisationConfig organisation, IReadOnlyList<string> repositories) => TeamsFor(organisation, repositories).FirstOrDefault();
 
     /// <summary>
     /// The rule for <paramref name="type"/>. <paramref name="kind"/> is the wait's kind, which picks the engine's default
@@ -65,8 +78,14 @@ public static class Approval
     /// </summary>
     public static EffectiveApproval For(string type, PolicyConfig policy, TeamConfig? team, IReadOnlyList<DecisionTypeItem> declared, string kind = "decision")
     {
-        if (team?.Approval.FirstOrDefault(r => r.Matches(type)) is { } teamRule)
-            return new(teamRule, $"team {team.Name} approval rule '{teamRule.Match}'");
+        var governing = Governing(type, policy, declared, kind);
+        if (team?.Approval.FirstOrDefault(r => r.Matches(type)) is { } teamRule && teamRule.MinCount > governing.Rule.MinCount)
+            return new(governing.Rule with { MinCount = teamRule.MinCount }, $"{governing.Source}, min_count from team {team.Name}'s rule '{teamRule.Match}'");
+        return governing;
+    }
+
+    static EffectiveApproval Governing(string type, PolicyConfig policy, IReadOnlyList<DecisionTypeItem> declared, string kind)
+    {
         if (policy.RuleFor(type) is { } rule)
             return new(rule, $"approval rule '{rule.Match}'");
         if (Declared(type, declared) is { } item)
@@ -78,12 +97,11 @@ public static class Approval
 
     /// <summary>
     /// What the run carries to decide auto-resolution in workflow code (docs/05 section 8), in the order <see cref="For"/>
-    /// reads them, so the first match in the list is the rule <see cref="For"/> finds.
+    /// reads them, so the first match in the list is the rule <see cref="For"/> finds. A team's rules do not take part.
     /// </summary>
-    public static IReadOnlyList<(string Match, bool Auto)> AutoRules(PolicyConfig policy, TeamConfig? team, IReadOnlyList<DecisionTypeItem> declared)
+    public static IReadOnlyList<(string Match, bool Auto)> AutoRules(PolicyConfig policy, IReadOnlyList<DecisionTypeItem> declared)
     {
         var list = new List<(string, bool)>();
-        list.AddRange((team?.Approval ?? []).Select(r => (r.Match, r.Auto.Value)));
         list.AddRange(policy.Approval.Select(r => (r.Match, r.Auto.Value)));
         foreach (var item in declared.Where(t => !t.Name.Contains('*')).Concat(declared.Where(t => t.Name.Contains('*'))))
             list.Add((item.Name, item.DefaultApproval?.Auto.Value ?? false));

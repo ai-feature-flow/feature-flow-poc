@@ -37,7 +37,9 @@ public static partial class ApiApp
             if (template is null || LibraryReference.TryParse(template) is null)
                 return Error(400, "template must be a template reference, such as std:templates/ticket_delivery");
             var repositories = body!["repositories"]?.AsArray().Select(n => n!.GetValue<string>()).ToList() ?? [];
-            // Starting a run steers work in its repositories (LOG 219).
+            // Starting a run steers work in its repositories (LOG 219); a run is in at most one team's scope (LOG 217).
+            if (Approval.MoreThanOneTeam(services.Organisation, repositories) is { } teams)
+                return Error(400, teams);
             var scope = ScopeOf(repositories);
             if (Refuse(caller, scope, [PeopleRoles.Steerer], "start a run") is { } refused)
                 return refused;

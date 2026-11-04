@@ -5,7 +5,7 @@ namespace FeatureFlow.Engine.Tests;
 
 /// <summary>
 /// The policy a run fixes at its start (docs/05 section 8): which decision types it may auto-resolve, by the same rule the
-/// API uses for who may answer: the run's team's rule, the organisation's, then the library's <c>default_approval</c>.
+/// API uses for who may answer: the organisation's rule, then the library's <c>default_approval</c>. A team's rule sets only min_count.
 /// </summary>
 public sealed class RunPolicyTests
 {
@@ -23,7 +23,7 @@ public sealed class RunPolicyTests
         organisation);
 
     [Fact]
-    public void A_runs_auto_resolution_follows_its_team_then_the_organisation_then_the_library_default()
+    public void A_runs_auto_resolution_follows_the_organisation_then_the_library_default()
     {
         var organisation = new OrganisationConfig("acme", [], new PolicyConfig([new ApprovalRule("epic.*", ["approver"], 1, false, new Cap<bool>(true, false))], null, null, null, null), "o.yaml")
         {
@@ -35,12 +35,10 @@ public sealed class RunPolicyTests
         };
         var services = Services(organisation);
 
-        var outside = services.Policy(["acme/web"], Declared).ToOptions().AutoResolve;
-        var inside = services.Policy(["acme/payments-api"], Declared).ToOptions().AutoResolve;
+        var outside = services.Policy(Declared).ToOptions().AutoResolve;
 
-        // No organisation rule matches: the library's default allows it; the team's rule does not.
+        // No organisation rule matches: the library's default allows it (a team's rule sets only min_count, so it does not take part).
         Assert.True(outside("ticket.spec_approval"));
-        Assert.False(inside("ticket.spec_approval"));
         // The organisation's rule wins over the library's default.
         Assert.True(outside("epic.ticket_plan_approval"));
         // Nothing matches: never automatic.

@@ -17,31 +17,26 @@ public class PolicyRunTests
     static readonly TimeSpan Timeout = TimeSpan.FromMinutes(2);
 
     [Fact]
-    public async Task The_run_start_record_holds_the_effective_policy_and_a_teams_rule_decides_auto_resolution()
+    public async Task The_run_start_record_holds_the_effective_policy_with_a_teams_min_count()
     {
-        // The organisation allows auto-resolution everywhere; a team owning acme/api takes it away for ticket decisions
-        // (a team tightens). Its lines go after the policy section, at the top level.
-        await using var h = await Harness.StartAsync("policy-team", autoApprove: true, policy: """
+        // A team owning acme/api raises min_count for ticket decisions (LOG 217). Its lines go after the policy section, at the top level.
+        await using var h = await Harness.StartAsync("policy-team", policy: """
             teams:
               api:
                 repositories: [acme/api]
-                policy: { approval: [{ match: "ticket.*", roles: [approver] }] }
+                policy: { approval: [{ match: "ticket.*", min_count: 2 }] }
             """);
-        var outside = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=FF-1", "--repo", "acme/web");
-        var inside = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=FF-1", "--repo", "acme/api");
-
-        var (exit, end, error) = h.Cli("wait", outside, "--timeout", "120");
-        Assert.True(exit == 0, end + error);
-        Assert.Contains((await h.ShowAsync(outside))["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "auto_resolved" && e["stepId"]!.ToString() == "approve_spec");
-        var (waitExit, wait, _) = h.Cli("wait", inside, "--for", "wait", "--timeout", "60");
+        var id = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=FF-1", "--repo", "acme/api");
+        var (waitExit, wait, _) = h.Cli("wait", id, "--for", "wait", "--timeout", "60");
         Assert.True(waitExit == 0 && wait.Contains("decision at approve_spec", StringComparison.Ordinal), wait);
 
-        var policy = (await h.ShowAsync(inside))["timeline"]!.AsArray().Where(e => e!["kind"]!.ToString() == "policy").Select(e => e!["detail"]!.ToString()).ToList();
-        Assert.Contains(policy, l => l.StartsWith("approve_spec auto-resolution: a person answers (auto not allowed)", StringComparison.Ordinal)
-                                     && l.Contains("from: team api approval rule 'ticket.*'", StringComparison.Ordinal));
+        var policy = (await h.ShowAsync(id))["timeline"]!.AsArray().Where(e => e!["kind"]!.ToString() == "policy").Select(e => e!["detail"]!.ToString()).ToList();
+        Assert.Contains(policy, l => l.StartsWith("approve_spec who answers: approver, 2 people", StringComparison.Ordinal)
+                                     && l.Contains("min_count from team api's rule 'ticket.*'", StringComparison.Ordinal));
+        Assert.Contains(policy, l => l.StartsWith("approve_spec auto-resolution: a person answers (auto not allowed)", StringComparison.Ordinal));
         Assert.Contains(policy, l => l.StartsWith("deliver.merge who merges:", StringComparison.Ordinal));
         Assert.Contains(policy, l => l.StartsWith("deliver.merge checks before merging: checks required", StringComparison.Ordinal));
-        h.Cli("abort", inside, "--reason", "test done");
+        h.Cli("abort", id, "--reason", "test done");
     }
 
     [Fact]

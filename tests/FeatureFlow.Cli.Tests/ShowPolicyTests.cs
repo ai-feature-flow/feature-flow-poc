@@ -57,7 +57,7 @@ public sealed class ShowPolicyTests : IDisposable
             teams:
               payments:
                 repositories: ["acme/payments-*"]
-                policy: { approval: [{ match: "ticket.*", roles: [approver], min_count: 2 }] }
+                policy: { approval: [{ match: "ticket.*", min_count: 2 }] }
             """);
 
         var (_, outside, _) = Run("show", Template, "--organisation", organisation);
@@ -66,7 +66,7 @@ public sealed class ShowPolicyTests : IDisposable
         Assert.Equal(0, code);
         Assert.Empty(error);
         Assert.Contains("approve_spec who answers: approver, 1 person, console or CLI only | asks: ticket.spec_approval | cap: - | from: approval rule '*'", outside, StringComparison.Ordinal);
-        Assert.Contains("approve_spec who answers: approver, 2 people, console or CLI only | asks: ticket.spec_approval | cap: - | from: team payments approval rule 'ticket.*'", inside, StringComparison.Ordinal);
+        Assert.Contains("approve_spec who answers: approver, 2 people, console or CLI only | asks: ticket.spec_approval | cap: - | from: approval rule '*', min_count from team payments's rule 'ticket.*'", inside, StringComparison.Ordinal);
     }
 
     [Fact]

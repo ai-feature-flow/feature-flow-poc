@@ -189,6 +189,13 @@ public static class RunStartChecks
             location, stepId);
     }
 
+    /// <summary>A run is in at most one team's scope (<see cref="Approval.MoreThanOneTeam"/>, LOG 217); check 22 refuses it otherwise.</summary>
+    public static void OneTeam(OrganisationConfig organisation, IReadOnlyList<string> repositories, DiagnosticBag d)
+    {
+        if (Approval.MoreThanOneTeam(organisation, repositories) is { } refusal)
+            d.Add(Checks.LockedCap, refusal);
+    }
+
     /// <summary>
     /// Check 24: the default branch of each repository the run targets is protected (docs/05 section 2, the final
     /// fallback). Any protection counts, classic or rulesets (LOG 147).

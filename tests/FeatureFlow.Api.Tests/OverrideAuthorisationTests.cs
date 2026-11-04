@@ -146,7 +146,7 @@ public sealed class OverrideAuthorisationTests
     }
 
     [Fact]
-    public async Task Roles_from_groups_are_scoped_by_the_runs_team()
+    public async Task A_team_adds_holders_for_its_own_runs_and_never_takes_the_organisations_away()
     {
         var organisation = new OrganisationConfig("acme", [], new PolicyConfig([], null, null, null, null), "")
         {
@@ -162,7 +162,7 @@ public sealed class OverrideAuthorisationTests
         const string body = """{ "key": "breakpoint", "step_id": "implement", "reason": "look", "change": { "set": "true" } }""";
 
         Assert.Equal(HttpStatusCode.OK, (await ApiWorld.PostAsync(world.As("lee", groups: "leads"), "runs/web/overrides", body)).Status);
-        Assert.Equal(HttpStatusCode.Forbidden, (await ApiWorld.PostAsync(world.As("lee", groups: "leads"), "runs/pay/overrides", body)).Status);
+        Assert.Equal(HttpStatusCode.OK, (await ApiWorld.PostAsync(world.As("lee", groups: "leads"), "runs/pay/overrides", body)).Status);
         Assert.Equal(HttpStatusCode.OK, (await ApiWorld.PostAsync(world.As("pia", groups: "payments-leads"), "runs/pay/overrides", body)).Status);
         Assert.Equal(HttpStatusCode.Forbidden, (await ApiWorld.PostAsync(world.As("pia", groups: "payments-leads"), "runs/web/overrides", body)).Status);
         // Reading needs viewer, which a steerer holds; a person with no role in the scope does not see the run.
@@ -170,6 +170,47 @@ public sealed class OverrideAuthorisationTests
         var listed = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         Assert.Contains("\"pay\"", listed, StringComparison.Ordinal);
         Assert.DoesNotContain("\"web\"", listed, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Starting_a_run_needs_a_steerer_and_a_run_may_not_span_two_teams()
+    {
+        var organisation = new OrganisationConfig("acme", [], new PolicyConfig([], null, null, null, null), "")
+        {
+            Teams = new Dictionary<string, TeamConfig>
+            {
+                ["misc"] = new("misc", ["acme/misc"], [], new Dictionary<string, PeopleRoleConfig>()),
+                ["pay"] = new("pay", ["acme/pay*"], [new ApprovalRule("*.merge_action", [], 3, false, new Cap<bool>(false, false))], new Dictionary<string, PeopleRoleConfig>()),
+            },
+        };
+        await using var world = new ApiWorld(organisation);
+        const string template = """{ "template": "std:templates/ticket_delivery", "repositories": [REPOS] }""";
+
+        var (viewer, refusal) = await ApiWorld.PostAsync(world.As("vic", "viewer"), "runs", template.Replace("REPOS", "\"acme/web\"", StringComparison.Ordinal));
+        Assert.Equal((HttpStatusCode.Forbidden, true), (viewer, refusal.Contains("vic may not start a run", StringComparison.Ordinal)));
+        // Adding a repository of a looser team must not move the run out of pay's scope (LOG 217): refused before anything starts.
+        var (spanning, why) = await ApiWorld.PostAsync(world.As("sam", "steerer"), "runs", template.Replace("REPOS", "\"acme/misc\", \"acme/pay\"", StringComparison.Ordinal));
+        Assert.Equal((HttpStatusCode.BadRequest, true), (spanning, why.Contains("belong to more than one team (misc, pay)", StringComparison.Ordinal)));
+        Assert.Empty(world.Temporal.Updates);
+    }
+
+    [Fact]
+    public async Task Granting_attempts_at_an_intervention_needs_recover_and_grant_attempts()
+    {
+        var organisation = new OrganisationConfig("acme", [], new PolicyConfig([], null, null, null, null)
+        {
+            Overrides = new Dictionary<string, IReadOnlyList<string>> { [Overrides.Recover] = ["admin"], [Overrides.GrantAttempts] = ["steerer"] },
+        }, "");
+        await using var world = await WorldAsync(organisation);
+        const string grant = """{ "wait_id": "intervention-1", "action": "grant_attempts", "attempts": 1 }""";
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await ApiWorld.PostAsync(world.As("sam", "steerer"), $"runs/{Run}/answers", grant)).Status);
+        var noGrant = organisation with { Policy = organisation.Policy with { Overrides = new Dictionary<string, IReadOnlyList<string>> { [Overrides.GrantAttempts] = ["approver"] } } };
+        await using var other = await WorldAsync(noGrant);
+        Assert.Equal(HttpStatusCode.Forbidden, (await ApiWorld.PostAsync(other.As("sam", "steerer"), $"runs/{Run}/answers", grant)).Status);
+        Assert.Equal(HttpStatusCode.OK, (await ApiWorld.PostAsync(other.As("sam", "steerer"), $"runs/{Run}/answers",
+            """{ "wait_id": "intervention-1", "action": "retry" }""")).Status);
+        Assert.Equal(HttpStatusCode.OK, (await ApiWorld.PostAsync(world.As("ada", "admin"), $"runs/{Run}/answers", grant)).Status);
     }
 
     [Theory]

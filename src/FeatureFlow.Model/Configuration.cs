@@ -501,7 +501,7 @@ public static class ConfigurationReader
             foreach (var (key, node) in tm.Map.Entries)
             {
                 tm.Node(key.Text);
-                if (ReadTeam(key.Text, node, policy, d) is { } team)
+                if (ReadTeam(key.Text, node, d) is { } team)
                     teams[key.Text] = team;
             }
 
@@ -579,11 +579,10 @@ public static class ConfigurationReader
     }
 
     /// <summary>
-    /// A team (docs/07 section 3, LOG 204): the repositories it owns, its approval rules and its people roles. A team
-    /// tightens the organisation, never relaxes it (docs/07 section 1), so a team rule that asks fewer people, allows chat
-    /// or auto-resolution where the organisation's matching rule does not, or unlocks a locked auto, is refused.
+    /// A team (docs/07 section 3, LOG 204, 217): the repositories it owns, approval rules that may only raise <c>min_count</c>,
+    /// and people roles it adds holders to for its own runs. A team never relaxes the organisation (docs/07 section 1).
     /// </summary>
-    static TeamConfig? ReadTeam(string name, YNode node, PolicyConfig organisation, DiagnosticBag d)
+    static TeamConfig? ReadTeam(string name, YNode node, DiagnosticBag d)
     {
         var context = $"teams.{name}";
         if (MapReader.Of(node, d, context) is not { } t)
@@ -591,10 +590,28 @@ public static class ConfigurationReader
         var repositories = t.StringList("repositories");
         if (repositories.Count == 0)
             t.Error($"{context} must list the repositories it owns (patterns such as acme/payments-*)", t.Map.Location);
-        List<ApprovalRule> approval = [];
+        var approval = new List<ApprovalRule>();
         if (MapReader.Of(t.Node("policy"), d, $"{context}.policy") is { } p)
         {
-            approval = ReadApproval(p.Node("approval"), $"{context}.policy.approval", d);
+            // A team's rule only raises min_count over the rule that governs the type (LOG 217): roles, chat and auto stay the organisation's.
+            foreach (var item in LibraryItemReader.Seq(p.Node("approval"), d, $"{context}.policy.approval"))
+                if (MapReader.Of(item, d, $"a {context}.policy.approval rule") is { } a)
+                {
+                    var match = a.String("match", required: true);
+                    var minCount = a.Int("min_count");
+                    if (minCount is null or < 1)
+                        a.Error($"{context}.policy.approval '{match}' needs a min_count of at least 1", a.Map.Location);
+                    foreach (var (key, _) in a.Map.Entries.Where(e => e.Key.Text is not ("match" or "min_count")))
+                    {
+                        a.Node(key.Text);
+                        a.Error($"{context}.policy.approval '{match}': a team's rule sets only match and min_count; {key.Text} is the organisation's", key.Location);
+                    }
+
+                    a.Finish();
+                    if (match is not null && minCount is > 0)
+                        approval.Add(new ApprovalRule(match, [], minCount.Value, false, new Cap<bool>(false, false)));
+                }
+
             foreach (var (key, _) in p.Map.Entries.Where(e => e.Key.Text != "approval"))
             {
                 p.Node(key.Text);
@@ -602,21 +619,6 @@ public static class ConfigurationReader
             }
 
             p.Finish();
-            foreach (var rule in approval)
-                if (organisation.RuleFor(rule.Match) is { } wider)
-                {
-                    var relaxed = new List<string>();
-                    if (rule.MinCount < wider.MinCount)
-                        relaxed.Add($"min_count {rule.MinCount} is below {wider.MinCount}");
-                    if (rule.FromChat && !wider.FromChat)
-                        relaxed.Add("from_chat is allowed");
-                    if (rule.Auto.Value && !wider.Auto.Value)
-                        relaxed.Add("auto is allowed");
-                    if (wider.Auto.Locked && (!rule.Auto.Locked || rule.Auto.Value != wider.Auto.Value))
-                        relaxed.Add("auto is not locked as it is");
-                    if (relaxed.Count > 0)
-                        p.Error($"{context}.policy.approval '{rule.Match}' relaxes the organisation's rule '{wider.Match}' ({string.Join("; ", relaxed)}); a team may only tighten", p.Map.Location);
-                }
         }
 
         var roles = ReadPeopleRoles(t.Node("roles"), $"{context}.roles", d);

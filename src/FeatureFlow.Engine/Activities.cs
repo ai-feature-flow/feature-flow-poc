@@ -52,8 +52,9 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
         IReadOnlyList<string>? effective = null;
         var libraries = Build(snapshots, d);
         var declared = libraries.All.SelectMany(l => l.DecisionTypes).ToList();
-        var policy = start.Policy ?? services.Policy(start.Repositories, declared);
-        // A child's approval follows its own repositories' team; its in-run values are its parent's (docs/05 section 8).
+        var policy = start.Policy ?? services.Policy(declared);
+        // A child's approval follows its own repositories' team, like the API's for its waits.
+        RunStartChecks.OneTeam(services.Organisation, start.Repositories, d);
         var team = Approval.TeamFor(services.Organisation, start.Repositories);
         EffectiveApproval ApprovalOf(string type) => Approval.For(type, services.Organisation.Policy, team, declared);
         var template = LibraryReference.TryParse(start.Template);

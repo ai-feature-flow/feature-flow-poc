@@ -26,6 +26,7 @@ public sealed class OidcTests : IAsyncDisposable
     readonly RsaSecurityKey key = new(RSA.Create(2048)) { KeyId = "k1" };
     readonly RsaSecurityKey other = new(RSA.Create(2048)) { KeyId = "k1" };
     readonly string issuerUrl;
+    string? metadataIssuer;
     ApiWorld? world;
 
     public OidcTests()
@@ -36,7 +37,7 @@ public sealed class OidcTests : IAsyncDisposable
         issuer = builder.Build();
         issuer.MapGet("/.well-known/openid-configuration", (HttpContext c) => Results.Json(new Dictionary<string, object>
         {
-            ["issuer"] = issuerUrl!,
+            ["issuer"] = metadataIssuer ?? issuerUrl!,
             ["jwks_uri"] = issuerUrl + "/jwks",
         }));
         issuer.MapGet("/jwks", () => Results.Text(JsonSerializer.Serialize(new { keys = new[] { JsonWebKeyConverter.ConvertFromRSASecurityKey(PublicOf(key)) } },
@@ -57,12 +58,13 @@ public sealed class OidcTests : IAsyncDisposable
     async Task<ApiWorld> WorldAsync(string? tokenRef = null)
     {
         var auth = new ApiAuthConfig("oidc", tokenRef, "local", ["viewer", "approver", "steerer", "admin"]) { Issuer = issuerUrl, Audience = "feature-flow" };
-        var organisation = new OrganisationConfig("acme", [], new PolicyConfig([], null, null, null, null), "")
+        var organisation = new OrganisationConfig("acme", [], new PolicyConfig([new ApprovalRule("*", ["approver"], 2, false, new Cap<bool>(false, false))], null, null, null, null), "")
         {
-            Roles = new Dictionary<string, PeopleRoleConfig> { ["viewer"] = new(["eng"]), ["steerer"] = new(["leads"]) },
+            Roles = new Dictionary<string, PeopleRoleConfig> { ["viewer"] = new(["eng"]), ["steerer"] = new(["leads"]), ["approver"] = new(["leads"]) },
         };
         world = new ApiWorld(organisation, ApiAuthentication.For(auth), auth);
         await world.RunAsync("r1", "acme/api");
+        await world.WaitAsync("r1", "w1", "decision", "ticket.spec_approval");
         return world;
     }
 
@@ -140,5 +142,27 @@ public sealed class OidcTests : IAsyncDisposable
 
         await WorldAsync();
         Assert.Equal(HttpStatusCode.Unauthorized, await AbortAsync("right"));
+    }
+
+    [Fact]
+    public async Task The_local_token_is_not_a_second_person_beside_oidc()
+    {
+        await WorldAsync(tokenRef: "secrets/api_token");
+        const string answer = """{ "wait_id": "w1", "outcome": "approved" }""";
+
+        Assert.Equal(HttpStatusCode.Accepted, (await ApiWorld.PostAsync(With(Token("ann")), "runs/r1/answers", answer)).Status);
+        var (local, text) = await ApiWorld.PostAsync(With("right"), "runs/r1/answers", answer);
+        Assert.Equal((HttpStatusCode.Forbidden, true), (local, text.Contains("not with the local token", StringComparison.Ordinal)));
+        Assert.Empty(world!.Temporal.Updates);
+        Assert.Equal(HttpStatusCode.OK, (await ApiWorld.PostAsync(With(Token("bob")), "runs/r1/answers", answer)).Status);
+        Assert.Equal("ann, bob", ((AnswerArgs)Assert.Single(world.Temporal.Updates).Argument!).Actor);
+    }
+
+    [Fact]
+    public async Task A_token_must_name_the_configured_issuer_whatever_the_metadata_says()
+    {
+        metadataIssuer = "https://other.example";
+        await WorldAsync();
+        Assert.Equal(HttpStatusCode.Unauthorized, await AbortAsync(Token(issuedBy: "https://other.example")));
     }
 }

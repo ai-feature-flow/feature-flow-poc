@@ -53,13 +53,13 @@ public class EffectivePolicyTests
     }
 
     [Fact]
-    public void A_team_rule_decides_for_a_run_in_the_teams_scope()
+    public void A_team_rule_raises_min_count_for_a_run_in_the_teams_scope()
     {
         var policy = Policy(new ApprovalRule("*", ["approver"], 1, true, new Cap<bool>(true, false)));
-        var team = new TeamConfig("payments", ["acme/payments-*"], [new ApprovalRule("ticket.*", ["approver"], 3, false, new Cap<bool>(false, false))],
+        var team = new TeamConfig("payments", ["acme/payments-*"], [new ApprovalRule("ticket.*", [], 3, false, new Cap<bool>(false, false))],
             new Dictionary<string, PeopleRoleConfig>());
         var rows = EffectivePolicy.For(Ticket(), policy, t => Approval.For(t, policy, team, Declared));
-        Assert.Equal(("approver, 3 people, console or CLI only", "team payments approval rule 'ticket.*'"),
+        Assert.Equal(("approver, 3 people, chat or console", "approval rule '*', min_count from team payments's rule 'ticket.*'"),
             (Row(rows, "approve_spec", "who answers").Result, Row(rows, "approve_spec", "who answers").From));
     }
 

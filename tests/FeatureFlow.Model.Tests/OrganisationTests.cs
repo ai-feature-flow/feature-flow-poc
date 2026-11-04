@@ -55,7 +55,7 @@ public class OrganisationTests
           payments:
             repositories: ["acme/payments-*"]
             policy:
-              approval: [{ match: "*.merge_action", roles: [approver], min_count: 3 }]
+              approval: [{ match: "*.merge_action", min_count: 3 }]
             roles:
               approver: { idp_groups: [acme-payments-leads] }
         """;
@@ -106,10 +106,11 @@ public class OrganisationTests
     [InlineData("skip_protected: [admin]", "answer: [steerer]", "who may answer is set by policy.approval")]
     [InlineData("skip_protected: [admin]", "skip_protected: [root]", "'root' is not a people role")]
     [InlineData("skip_protected: [admin]", "skip_protected: []", "must name at least one people role")]
-    // A team tightens, never relaxes (docs/07 section 1).
-    [InlineData("min_count: 3 }]", "min_count: 1 }]", "relaxes the organisation's rule '*.merge_action' (min_count 1 is below 2)")]
-    [InlineData("min_count: 3 }]", "min_count: 3, from_chat: true }]", "(from_chat is allowed)")]
-    [InlineData("min_count: 3 }]", "min_count: 3, auto: true }]", "(auto is allowed)")]
+    // A team's rule sets only min_count (LOG 217): roles, chat and auto are the organisation's.
+    [InlineData("min_count: 3 }]", "min_count: 3, roles: [viewer] }]", "a team's rule sets only match and min_count; roles is the organisation's")]
+    [InlineData("min_count: 3 }]", "min_count: 3, from_chat: true }]", "from_chat is the organisation's")]
+    [InlineData("min_count: 3 }]", "min_count: 3, auto: true }]", "auto is the organisation's")]
+    [InlineData("min_count: 3 }]", "min_count: 0 }]", "needs a min_count of at least 1")]
     [InlineData("    repositories: [\"acme/payments-*\"]\n", "", "teams.payments must list the repositories it owns")]
     [InlineData("      approval: [{", "      merge: { require_checks: false }\n      approval: [{", "a team's policy holds approval rules only")]
     // Malformed values.
@@ -126,14 +127,6 @@ public class OrganisationTests
     }
 
     [Fact]
-    public void A_team_may_lock_auto_off_where_the_organisation_allows_it()
-    {
-        var (_, d) = Read(Full.Replace("min_count: 3 }]", "min_count: 3, auto: { value: false, locked: true } }]", StringComparison.Ordinal)
-            .Replace("\"*.merge_action\", roles: [approver], min_count: 3", "\"ticket.*\", roles: [approver], min_count: 3", StringComparison.Ordinal));
-        Assert.Empty(d);
-    }
-
-    [Fact]
     public void Roles_nest_admin_over_steerer_over_viewer_and_approver_stands_apart()
     {
         Assert.Equal(["viewer", "steerer", "admin"], PeopleRoles.Expand(["admin"]));
@@ -143,25 +136,29 @@ public class OrganisationTests
     }
 
     [Fact]
-    public void A_persons_roles_come_from_their_groups_and_a_team_role_is_held_only_through_the_teams_groups()
+    public void A_persons_roles_come_from_their_groups_and_a_team_adds_holders_in_its_own_scope_only()
     {
         var org = Read(Full).Organisation!;
         var payments = org.Teams["payments"];
 
         Assert.Equal(["viewer", "approver", "steerer"], PeopleRoles.FromGroups(["acme-leads"], org, null));
-        // In payments' scope, approver is held through acme-payments-leads only; steerer is still the organisation's.
-        Assert.Equal(["viewer", "steerer"], PeopleRoles.FromGroups(["acme-leads"], org, payments));
+        // In payments' scope, acme-payments-leads also hold approver; the organisation's holders keep it (LOG 217).
+        Assert.Equal(["viewer", "approver", "steerer"], PeopleRoles.FromGroups(["acme-leads"], org, payments));
         Assert.Equal(["viewer", "approver"], PeopleRoles.FromGroups(["acme-payments-leads"], org, payments));
         Assert.Empty(PeopleRoles.FromGroups(["acme-payments-leads"], org, null));
         Assert.Empty(PeopleRoles.FromGroups([], org, null));
     }
 
     [Fact]
-    public void A_run_belongs_to_the_first_team_owning_one_of_its_repositories()
+    public void A_run_may_be_in_one_teams_scope_at_most()
     {
-        var org = Read(Full).Organisation!;
+        var org = Read(Full.Replace("teams:\n", "teams:\n  misc:\n    repositories: [\"acme/misc\", \"acme/payments-old\"]\n", StringComparison.Ordinal)).Organisation!;
         Assert.Equal("payments", Approval.TeamFor(org, ["acme/web", "acme/payments-api"])?.Name);
         Assert.Null(Approval.TeamFor(org, ["acme/web"]));
+        Assert.Null(Approval.MoreThanOneTeam(org, ["acme/web", "acme/payments-api"]));
+        // Adding a repository of another team, or a repository two teams match, would let the run pick the looser team.
+        Assert.Contains("more than one team (misc, payments)", Approval.MoreThanOneTeam(org, ["acme/payments-api", "acme/misc"]), StringComparison.Ordinal);
+        Assert.Contains("more than one team", Approval.MoreThanOneTeam(org, ["acme/payments-old"]), StringComparison.Ordinal);
     }
 
     static readonly SourceLocation Nowhere = new("", 0, 0);
@@ -177,7 +174,11 @@ public class OrganisationTests
         ];
         var noRules = new PolicyConfig([], null, null, null, null);
 
-        Assert.Equal((3L, "team payments approval rule '*.merge_action'"), Pick(Approval.For("epic.merge_action", org.Policy, team, declared)));
+        Assert.Equal((3L, "approval rule '*.merge_action', min_count from team payments's rule '*.merge_action'"), Pick(Approval.For("epic.merge_action", org.Policy, team, declared)));
+        Assert.Equal(["approver"], Approval.For("epic.merge_action", org.Policy, team, declared).Rule.Roles);
+        // A team's rule never lowers min_count, whatever its pattern.
+        var lower = team with { Approval = [new ApprovalRule("*", [], 1, false, new Cap<bool>(false, false))] };
+        Assert.Equal((2L, "approval rule '*.merge_action'"), Pick(Approval.For("epic.merge_action", org.Policy, lower, declared)));
         Assert.Equal((2L, "approval rule '*.merge_action'"), Pick(Approval.For("epic.merge_action", org.Policy, null, declared)));
         Assert.Equal((2L, "library default_approval of x.audit"), Pick(Approval.For("x.audit", noRules, null, declared)));
         Assert.Equal((1L, "the engine's default"), Pick(Approval.For("y.other", noRules, null, declared)));
@@ -191,7 +192,6 @@ public class OrganisationTests
     public void The_runs_auto_rules_read_in_the_same_order_so_the_first_match_is_the_governing_rule()
     {
         var policy = new PolicyConfig([new ApprovalRule("ticket.*", ["approver"], 1, false, new Cap<bool>(false, false))], null, null, null, null);
-        var team = new TeamConfig("t", ["a/*"], [new ApprovalRule("ticket.spec_approval", ["approver"], 1, false, new Cap<bool>(true, false))], new Dictionary<string, PeopleRoleConfig>());
         DecisionTypeItem[] declared =
         [
             new("*.escalation", null, Nowhere) { DefaultApproval = new ApprovalRule("*.escalation", ["steerer"], 1, false, new Cap<bool>(false, false)) },
@@ -201,15 +201,13 @@ public class OrganisationTests
         static bool? First(IReadOnlyList<(string Match, bool Auto)> rules, string type) =>
             rules.Where(r => new DecisionTypeItem(r.Match, null, Nowhere).Matches(type) || r.Match == "*").Select(r => (bool?)r.Auto).FirstOrDefault();
 
-        var withTeam = Approval.AutoRules(policy, team, declared);
-        var without = Approval.AutoRules(policy, null, declared);
-        Assert.True(First(withTeam, "ticket.spec_approval"));
+        var without = Approval.AutoRules(policy, declared);
         Assert.False(First(without, "ticket.spec_approval"));
         // No organisation rule matches: the library's default allows it.
         Assert.True(First(without, "epic.plan"));
         Assert.False(First(without, "epic.escalation"));
         foreach (var type in new[] { "ticket.spec_approval", "epic.plan", "epic.escalation" })
-            Assert.Equal(Approval.For(type, policy, team, declared).Rule.Auto.Value, First(withTeam, type));
+            Assert.Equal(Approval.For(type, policy, null, declared).Rule.Auto.Value, First(without, type));
     }
 
     [Fact]

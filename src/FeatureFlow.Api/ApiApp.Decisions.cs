@@ -60,19 +60,26 @@ public static partial class ApiApp
             var scope = ScopeOf(run.Repositories);
             var rule = Approval.For(wait.DecisionType, services.Organisation.Policy, TeamOf(scope), DecisionTypes(), wait.Kind);
             var intervention = wait.Kind == "intervention";
-            var key = intervention ? args.Action == "grant_attempts" ? Overrides.GrantAttempts : Overrides.Recover : null;
-            var needed = key is not null ? RolesForKey(key) : RolesToAnswer(services.Organisation.Policy, DecisionTypes(), wait, TeamOf(scope));
-            if (Refuse(caller, scope, needed, intervention ? $"recover at {wait.DecisionType} ({key})" : $"answer {wait.DecisionType} (approval: {rule.Source})") is { } refused)
+            var grant = intervention && args.Action == "grant_attempts";
+            // A recovery needs recover, and a grant grant_attempts as well (coordinator decision C7).
+            var needed = intervention ? RolesForKey(Overrides.Recover) : RolesToAnswer(services.Organisation.Policy, DecisionTypes(), wait, TeamOf(scope));
+            if (Refuse(caller, scope, needed, intervention ? $"recover at {wait.DecisionType} (recover)" : $"answer {wait.DecisionType} (approval: {rule.Source})") is { } refused)
                 return refused;
+            if (grant && Refuse(caller, scope, RolesForKey(Overrides.GrantAttempts), $"grant attempts at {wait.DecisionType} (grant_attempts)") is { } refusedGrant)
+                return refusedGrant;
             if (caller.FromChat && !rule.Rule.FromChat)
                 return Error(403, $"{wait.DecisionType} may not be answered from chat ({rule.Source}); answer it in the console or the CLI");
 
             args = args with
             {
                 Actor = caller.Actor,
-                BeyondHardCeiling = key == Overrides.GrantAttempts && VariantsHeld(caller, scope, Overrides.GrantAttempts).Contains(Overrides.GrantAttemptsBeyond),
+                BeyondHardCeiling = grant && VariantsHeld(caller, scope, Overrides.GrantAttempts).Contains(Overrides.GrantAttemptsBeyond),
             };
             var minCount = intervention ? 1 : Math.Max(1, rule.Rule.MinCount);
+            // Beside OIDC, a credential with no identity-provider groups (the shared local token) is not a person who can be
+            // counted among several (LOG 221).
+            if (minCount > 1 && caller.Groups is null && services.Installation.ApiAuth.Mode == "oidc")
+                return Error(403, $"{wait.DecisionType} needs {minCount} people ({rule.Source}); answer it as yourself through the identity provider, not with the local token");
             if (minCount > 1)
             {
                 var earlier = (await Records.QueryAsync<AnswerRecord>(Queries.Answers, new Dictionary<string, string> { ["run_id"] = run.RunId }, ct)).Unwrap()
