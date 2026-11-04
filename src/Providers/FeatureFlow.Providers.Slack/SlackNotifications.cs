@@ -30,6 +30,9 @@ public sealed class SlackNotifications(
     /// <summary>Slack refuses a request older than five minutes; so does this, so a captured request cannot be replayed later.</summary>
     public static readonly TimeSpan MaxAge = TimeSpan.FromMinutes(5);
 
+    /// <summary>The last second a date can hold: a larger timestamp is refused, not turned into an exception.</summary>
+    static readonly long MaxUnixSeconds = DateTimeOffset.MaxValue.ToUnixTimeSeconds();
+
     /// <summary>The action id prefix of an answer button; the console link button has another.</summary>
     public const string AnswerAction = "ff_answer";
 
@@ -54,7 +57,7 @@ public sealed class SlackNotifications(
 
     public Task<ProviderResult<MessageRef>> SendAsync(string channel, Notification message, MessageRef? thread, CancellationToken cancellationToken)
     {
-        var text = $"*{message.Title}*\n{message.Text}";
+        var text = $"*{Escape(message.Title)}*\n{Escape(message.Text)}";
         if (LinkOf(message.RunId, message.Link) is { } link)
             text += $"\n<{link}|Open the run in the console>";
         return PostAsync(channel, text, null, thread, cancellationToken);
@@ -63,10 +66,10 @@ public sealed class SlackNotifications(
     public Task<ProviderResult<MessageRef>> PostDecisionAsync(string channel, DecisionRequest request, MessageRef? thread, CancellationToken cancellationToken)
     {
         // The plain text is what a notification and a client without blocks show; it names everything an answer needs.
-        var text = $"*A person is needed ({request.Kind}): {request.DecisionType}* in run {request.RunId}, wait {request.WaitId}"
-                   + (request.StepId is null ? "" : $", step {request.StepId}")
-                   + $"\n{request.Prompt}"
-                   + (request.Choices.Count == 0 ? "" : $"\nChoices: {string.Join(", ", request.Choices)}");
+        var text = Escape($"*A person is needed ({request.Kind}): {request.DecisionType}* in run {request.RunId}, wait {request.WaitId}"
+                          + (request.StepId is null ? "" : $", step {request.StepId}")
+                          + $"\n{request.Prompt}"
+                          + (request.Choices.Count == 0 ? "" : $"\nChoices: {string.Join(", ", request.Choices)}"));
         var link = LinkOf(request.RunId, request.Link);
         var elements = new JsonArray();
         foreach (var (choice, i) in request.Choices.Take(link is null ? MaxButtons : MaxButtons - 1).Select((c, i) => (c, i)))
@@ -99,6 +102,13 @@ public sealed class SlackNotifications(
 
     string? LinkOf(string runId, string? link) =>
         link ?? (consoleUrl is { Length: > 0 } c ? $"{c.TrimEnd('/')}/#/runs/{Uri.EscapeDataString(runId)}" : null);
+
+    /// <summary>
+    /// Run data as Slack text: <c>&amp;</c>, <c>&lt;</c> and <c>&gt;</c> escaped as Slack documents
+    /// (https://api.slack.com/reference/surfaces/formatting#escaping), so text from a run (an agent's question, a tool's
+    /// output) cannot mention a channel, mention a person or add a link. Only the console link is built as markup.
+    /// </summary>
+    public static string Escape(string text) => text.Replace("&", "&amp;", StringComparison.Ordinal).Replace("<", "&lt;", StringComparison.Ordinal).Replace(">", "&gt;", StringComparison.Ordinal);
 
     static string Clip(string text, int max) => text.Length <= max ? text : text[..(max - 1)] + "…";
 
@@ -193,7 +203,7 @@ public sealed class SlackNotifications(
     public async Task<ProviderResult<ChatAnswer>> ReadAnswerAsync(InboundRequest request, CancellationToken cancellationToken)
     {
         if (request.Header("X-Slack-Request-Timestamp") is not { } stamp || request.Header("X-Slack-Signature") is not { } signature
-            || !long.TryParse(stamp, NumberStyles.None, CultureInfo.InvariantCulture, out var seconds))
+            || !long.TryParse(stamp, NumberStyles.None, CultureInfo.InvariantCulture, out var seconds) || seconds > MaxUnixSeconds)
             return ProviderResult<ChatAnswer>.Failure("unauthenticated", "the request is not signed by Slack");
         var age = request.ReceivedAt - DateTimeOffset.FromUnixTimeSeconds(seconds);
         if (age.Duration() > MaxAge)

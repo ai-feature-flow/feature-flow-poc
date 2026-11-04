@@ -123,17 +123,17 @@ public static partial class ApiApp
         {
             if (Find<IChatInbound>(services, s => s.Source == source) is null)
                 return Error(404, $"no provider receives {source} answers");
-            await ReadInboundAsync(context);
-            var caller = await new ChatGatewayAuthenticator().AuthenticateAsync(context, services);
-            var read = context.Items[ChatGatewayAuthenticator.AnswerItem] as ProviderResult<ChatAnswer>;
-            if (caller is null)
-                return read?.Value is { } unmapped
-                    ? Error(403, $"the {source} user {unmapped.ChatUser} is not mapped to a person, so it may not answer")
-                    : read?.Error?.Reason == "validation_failed"
-                        ? Error(400, read.Error.Message)
-                        : Error(401, read?.Error?.Message ?? "unauthenticated");
             try
             {
+                await ReadInboundAsync(context);
+                var caller = await new ChatGatewayAuthenticator().AuthenticateAsync(context, services);
+                var read = context.Items[ChatGatewayAuthenticator.AnswerItem] as ProviderResult<ChatAnswer>;
+                if (caller is null)
+                    return read?.Value is { } unmapped
+                        ? Error(403, $"the {source} user {unmapped.ChatUser} is not mapped to a person, so it may not answer")
+                        : read?.Error?.Reason == "validation_failed"
+                            ? Error(400, read.Error.Message)
+                            : Error(401, read?.Error?.Message ?? "unauthenticated");
                 return await AnswerFromChatAsync(context, caller, read!.Value!);
             }
             catch (Exception e) when (e is not OperationCanceledException)

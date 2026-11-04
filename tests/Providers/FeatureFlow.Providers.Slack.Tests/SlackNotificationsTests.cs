@@ -94,6 +94,26 @@ public sealed class SlackNotificationsTests
     }
 
     [Fact]
+    public async Task Run_data_cannot_mention_a_channel_or_add_a_link_and_only_the_console_link_is_markup()
+    {
+        var fake = new FakeSlack();
+        var slack = Slack.Provider(fake, consoleUrl: "https://ff.example/console");
+        const string hostile = "<!channel> see <https://evil.example|Open the run in the console> for List<T> & more";
+
+        await slack.PostDecisionAsync("#ff", new DecisionRequest("run-1", "q-1", "question", "ticket.question", hostile, ["yes"]), null, Ct);
+        await slack.SendAsync("#ff", new Notification("failed", "run-1", hostile, hostile), null, Ct);
+
+        foreach (var text in fake.Messages.Select(m => m.Text).Concat(fake.Messages.Select(m => m.Blocks?.ToJsonString() ?? "")))
+        {
+            Assert.DoesNotContain("<!channel>", text);
+            Assert.DoesNotContain("<https://evil", text);
+        }
+
+        Assert.Contains("&lt;!channel&gt; see &lt;https://evil.example|Open the run in the console&gt; for List&lt;T&gt; &amp; more", fake.Messages[0].Text);
+        Assert.Contains("<https://ff.example/console/#/runs/run-1|Open the run in the console>", fake.Messages[1].Text);
+    }
+
+    [Fact]
     public async Task A_reply_names_its_thread_and_a_thread_in_another_channel_is_not_found()
     {
         var fake = new FakeSlack();
@@ -195,7 +215,9 @@ public sealed class SlackNotificationsTests
         var old = Slack.Signed(body, at: Slack.Now.AddMinutes(-6));
         var ahead = Slack.Signed(body, at: Slack.Now.AddMinutes(6));
         var unsigned = new InboundRequest(new Dictionary<string, string>(), body, Slack.Now);
-        foreach (var request in new[] { forged, tampered, old, ahead, unsigned })
+        // A timestamp beyond any date is refused, not an exception.
+        var far = new InboundRequest(new Dictionary<string, string> { ["X-Slack-Request-Timestamp"] = "99999999999999", ["X-Slack-Signature"] = "v0=00" }, body, Slack.Now);
+        foreach (var request in new[] { forged, tampered, old, ahead, unsigned, far })
             Assert.Equal("unauthenticated", (await slack.ReadAnswerAsync(request, Ct)).Error?.Reason);
 
         // The control: the same request, unchanged and on time, verifies; so does one four minutes old.
