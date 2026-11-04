@@ -73,8 +73,8 @@ public class SessionRunTests
         Assert.Equal("tester", (await GetAsync(http, $"sessions/{sid}"))["session"]!["person"]!.ToString());
 
         var second = await OpenSessionAsync(h, http, id, after: sid);
-        var view = await h.ShowAsync(id);
-        Assert.Equal(badCheck["check"]!["inputs"]!.ToString(), Digests(view, "check_requirements")[0]);
+        // The next session's record can land before the timeline batch holding the step's digest: wait for it.
+        Assert.Equal(badCheck["check"]!["inputs"]!.ToString(), Assert.Single(await DigestsAsync(h, id, "check_requirements", 1)));
         Assert.Equal(Invalid, second["drafts"]!["requirements.yaml"]!.ToString());
 
         // Round 2, as a person does it: ff session fetch, the check through the engine MCP server, ff session submit.
@@ -111,8 +111,8 @@ public class SessionRunTests
         Assert.Contains($"submitted {good} as submitted: recorded", submittedText);
         await WaitAtAsync(h, id, "approve");
 
-        view = await h.ShowAsync(id);
-        var digests = Digests(view, "check_requirements");
+        var view = await h.ShowAsync(id);
+        var digests = await DigestsAsync(h, id, "check_requirements", 2);
         Assert.Equal(2, digests.Count);
         Assert.Equal(goodCheck["check"]!["inputs"]!.ToString(), digests[1]);
         Assert.Contains(view["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "completed" && e["stepId"]!.ToString() == "check_requirements"
@@ -252,6 +252,19 @@ public class SessionRunTests
         }
 
         throw new TimeoutException($"{runId} opened no wait at {step}: {(await h.ShowAsync(runId)).ToJsonString()}");
+    }
+
+    /// <summary>The step's recorded digests, once there are at least <paramref name="count"/> (or what there is after 60 s).</summary>
+    static async Task<List<string>> DigestsAsync(Harness h, string runId, string step, int count)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(60);
+        while (true)
+        {
+            var digests = Digests(await h.ShowAsync(runId), step);
+            if (digests.Count >= count || DateTime.UtcNow > deadline)
+                return digests;
+            await Task.Delay(200, TestContext.Current.CancellationToken);
+        }
     }
 
     static List<string> Digests(JsonNode view, string step) =>
