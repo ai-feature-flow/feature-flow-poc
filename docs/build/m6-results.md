@@ -527,5 +527,8 @@ seam 7, seam 8, seam 9, and a recovery of mine (`go_to` into one branch of a fin
 | `trace` | `requirement_trace` valid across project, epics and tickets |
 | `deliver.deliver_0` | PR **#193** from `ff/project/widget_count` into `main`; checks passed; catch-up unchanged; `scm.merge` with `engine_can_merge: false` recorded the action request "a person merges ai-feature-flow/feature-flow-example#193 into main, or closes it to decline" and re-checks about every 35 s. The client's PR opens only after this merges (a chain) |
 
-The rest of this section (the person's merges detected, `delivery.report`, clean-up) follows when the product owner has
-merged.
+| person's merge | The product owner merged #193 (`d033998`, by `sparkkz-makes`). The engine's next check found it: "merged d2ca7cb852 into main as d03399841e (merge, by sparkkz-makes, already merged)"; `deliver_0.merge` completed `merged` |
+| `deliver.deliver_1` | PR **ai-feature-flow/feature-flow-example-client#6** into `main`; checks (unit) passed; catch-up unchanged; `scm.merge` recorded the action request "a person merges ai-feature-flow/feature-flow-example-client#6 into main" |
+
+Product owner, 2026-11-04: LOG 191 (amended) and LOG 193's `MergeBaseAsync` accepted; the project's changes stay on both
+fixtures' `main`. The rest of this section (the second merge, `delivery.report`, clean-up) follows when #6 is merged.
