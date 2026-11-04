@@ -1,0 +1,22 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: steer_planner
+  level: ticket
+  description: A planner that may propose a library override, then a build that resolves the content.
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: plan
+    agent:
+      role: std:roles/planner
+      task: m7steer:tasks/plan
+      planning: { targets: [self] }
+    outcomes: { planned: success, blocked: blocked }
+  - id: build
+    agent: { role: std:roles/implementer, task: m7steer:tasks/build }
+    outcomes: { built: success, stuck: blocked }
+    routes: { built: { end: completed } }

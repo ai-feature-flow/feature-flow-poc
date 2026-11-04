@@ -1,0 +1,8 @@
+# Templates for M7's steering tests: run-time overrides, breakpoints, library overrides and recoveries (docs/05 section 5).
+name: m7steer
+version: 0.1.0
+description: Templates for the M7 steering tests (docs/11, M7)
+requires:
+  plan_schema: 1
+dependencies:
+  - { name: std, version: ">=0.1.0" }

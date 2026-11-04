@@ -35,8 +35,11 @@ decision_types:
     description: A question an agent asked with ask_human. Never auto-resolved
     default_approval: { roles: [approver], min_count: 1, auto: false }
   - name: "*.patch_approval"
-    description: An agent's patch that touches protected content or uses a role outside the allowed list
-    default_approval: { roles: [steerer], min_count: 1, auto: false }
+    description: >-
+      An agent's patch or library override that touches protected content, uses a role outside the
+      allowed list, or must be reviewed. Administrators by default, since approving it can reach what
+      only an administrator may change directly (LOG 213)
+    default_approval: { roles: [admin], min_count: 1, auto: false }
   - name: "*.breakpoint"
     description: A person paused the run before a step
     default_approval: { roles: [steerer], min_count: 1, auto: false }

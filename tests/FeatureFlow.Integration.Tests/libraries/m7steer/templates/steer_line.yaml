@@ -1,0 +1,31 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: steer_line
+  level: ticket
+  description: >-
+    A preparation that takes wait_ms, a build, a protected review and a notice: a line a
+    person steers while it runs.
+
+parameters:
+  wait_ms: { type: number, default: 0, description: "How long the preparation takes" }
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: prepare
+    action: notify.send
+    with: { audience: [team], message: prepare, wait_ms: { expr: "params.wait_ms" } }
+  - id: build
+    agent: { role: std:roles/implementer, task: m7steer:tasks/build }
+    outcomes: { built: success, stuck: blocked }
+  - id: review
+    protected: true
+    agent: { role: std:roles/reviewer, task: m7steer:tasks/review }
+    outcomes: { accepted: success, rejected: failure }
+  - id: ship
+    action: notify.send
+    with: { audience: [team], message: shipped }
+    routes: { sent: { end: completed } }

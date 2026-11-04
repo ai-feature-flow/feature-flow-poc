@@ -83,6 +83,18 @@ public sealed record RunOptions
     public long? HardStepCeiling { get; init; }
 
     public long? HardRunCeiling { get; init; }
+
+    /// <summary>
+    /// The organisation's <c>planning.require_review</c> for this run's template (docs/05 section 6): every agent patch
+    /// becomes a patch approval, as a step's <c>planning.review: required</c> makes it.
+    /// </summary>
+    public bool RequireReview { get; init; }
+
+    /// <summary>
+    /// M7's steering: a branch of a decided join entered again reopens the join, and a person's skips apply. The shell sets
+    /// it from a patch marker, so histories recorded before M7 replay as they ran.
+    /// </summary>
+    public bool Steering { get; init; } = true;
 }
 
 /// <summary>Something the core asks the shell to do. The Temporal workflow (M3) or the re-drive runner carries it out.</summary>
@@ -107,6 +119,12 @@ public sealed record EndRun(RunStatus Status) : Command;
 
 /// <summary>A child run's agent step proposed a patch to the parent's plan (docs/03 section 9.4): the shell signals the parent.</summary>
 public sealed record SendPatchToParent(string StepId, PatchDocument Patch) : Command;
+
+/// <summary>
+/// A person approved an agent's library override (docs/05 section 6): the shell stores the content, writes the run's new
+/// lock and gives the core <see cref="LibraryOverridden"/>, with <see cref="Actor"/> as who made it.
+/// </summary>
+public sealed record OverrideLibrary(string WaitId, string Item, string Content, string Actor, string Reason) : Command;
 
 /// <summary>Something that happened, given to the core to apply.</summary>
 public abstract record RunInput;
@@ -150,11 +168,14 @@ public sealed record DecisionAnswered(string StepId, string Outcome, IReadOnlyDi
 
 /// <summary>
 /// A patch from outside a step: a person through the API, or the engine. <see cref="By"/> is set by the shell
-/// from the authenticated caller (F8); the document's own <c>proposed_by</c> is ignored.
+/// from the authenticated caller (F8); the document's own <c>proposed_by</c> is ignored. A person's patch (<c>amend</c>,
+/// docs/05 section 5) is not bound by F3, but touches protected content only when <see cref="MayTouchProtected"/>
+/// (the caller holds <c>amend_protected</c>), and never changes a role (that is <see cref="RoleChanged"/>).
 /// </summary>
-public sealed record PatchProposed(PatchDocument Patch, Proposer By) : RunInput;
+public sealed record PatchProposed(PatchDocument Patch, Proposer By, bool MayTouchProtected = true) : RunInput;
 
-public sealed record PatchAnswered(string WaitId, bool Approve) : RunInput;
+/// <summary>A person's answer to a patch approval; <see cref="Actor"/> is who answered, for an approved library override's lock entry.</summary>
+public sealed record PatchAnswered(string WaitId, bool Approve, string Actor = "") : RunInput;
 
 /// <summary>The recovery actions that answer an intervention (docs/01 section 7.2).</summary>
 public enum RecoveryKind
@@ -173,6 +194,9 @@ public enum RecoveryKind
 
     /// <summary>End the run with a chosen status.</summary>
     End,
+
+    /// <summary>Breakpoints only: start the step that was paused before.</summary>
+    Continue,
 }
 
 /// <summary>A recovery action with its arguments: the step for go to and re-plan, the attempts to grant, the status to end with.</summary>
@@ -184,6 +208,60 @@ public sealed record InterventionAnswered(string WaitId, Recovery Action) : RunI
 
 /// <summary>A person stopped the run (docs/05 section 5, <c>abort</c>): it ends <c>aborted</c>.</summary>
 public sealed record RunAborted(string Reason) : RunInput;
+
+/// <summary>
+/// A person sets or clears a breakpoint (docs/04 section 4.5): the run pauses before <see cref="StepId"/> and opens a
+/// breakpoint decision, each time it is about to start it, until the breakpoint is cleared. Set only on a step that is
+/// not running or waiting.
+/// </summary>
+public sealed record BreakpointSet(string StepId, bool Set, string Actor) : RunInput;
+
+/// <summary>
+/// A person skips a step (docs/05 section 5, <c>skip</c>): the next time the run would start it, it ends with
+/// <see cref="Outcome"/>, a declared outcome, without running and without using an attempt; its record shows it was
+/// skipped. A step at a decision, a breakpoint or an intervention is skipped at once. A protected step needs
+/// <see cref="MayTouchProtected"/> (<c>skip_protected</c>).
+/// </summary>
+public sealed record StepSkipped(string StepId, string Outcome, string Actor, string Reason, bool MayTouchProtected) : RunInput;
+
+/// <summary>
+/// A person grants attempts (docs/05 section 5, <c>grant_attempts</c>): to <see cref="StepId"/>'s allowance and the
+/// run ceiling, or the run ceiling alone when it is null. The same grant as the recovery action, without the retry;
+/// beyond the hard ceiling only with <see cref="BeyondHardCeiling"/> (<c>grant_attempts_beyond</c>, F4).
+/// </summary>
+public sealed record AttemptsGranted(string? StepId, long Attempts, bool BeyondHardCeiling, string Actor) : RunInput;
+
+/// <summary>
+/// A person changes an agent step's role (docs/05 section 5, <c>change_role</c>): applied as a person's patch that
+/// replaces the step with the role changed, the one way a role changes (docs/03 section 10.2).
+/// </summary>
+public sealed record RoleChanged(string StepId, string Role, string Actor, string Reason) : RunInput;
+
+/// <summary>
+/// The content future steps resolve was replaced (docs/08 section 5.2): <see cref="Libraries"/> is the run's library set
+/// with <see cref="Entry"/> applied. Steps in flight keep what they resolved; the plan does not change.
+/// </summary>
+public sealed record LibraryOverridden(LibraryOverrideEntry Entry, Library.LibrarySet Libraries) : RunInput;
+
+/// <summary>
+/// An agent proposed a library override (docs/05 section 6): it never applies at once, but opens a patch approval for
+/// a person; approved, the shell carries it out with the approver as the actor.
+/// </summary>
+public sealed record LibraryOverrideProposed(string StepId, string Item, string Content) : RunInput;
+
+/// <summary>
+/// A lock entry of a mid-run library override (docs/08 section 5.2): the item, its file, the old and new content hashes,
+/// who and why, the steps in flight that keep the old content, and the protected steps that resolve it.
+/// </summary>
+public sealed record LibraryOverrideEntry(
+    string Item,
+    string Path,
+    string OldHash,
+    string NewHash,
+    string Actor,
+    string Reason,
+    IReadOnlyList<string> InFlight,
+    IReadOnlyList<string> ProtectedSteps);
 
 /// <summary>
 /// A running step cannot produce a trustworthy outcome, for example its inputs cannot be evaluated: it stops and
@@ -235,10 +313,23 @@ public enum WaitKind
     Decision,
     Intervention,
     PatchApproval,
+    Breakpoint,
 }
 
-/// <summary>A durable wait for a person: an open decision, an intervention or a patch approval.</summary>
-public sealed record OpenWait(string Id, WaitKind Kind, string StepId, string? Outcome, string Reason, PatchDocument? Patch = null, bool FromChild = false);
+/// <summary>
+/// A durable wait for a person: an open decision, an intervention, a patch approval or a breakpoint. A breakpoint keeps
+/// its entry's <see cref="CleanUp"/>, for the step it paused; a patch approval of an agent's library override holds
+/// <see cref="LibraryItem"/> and <see cref="LibraryContent"/> instead of a patch.
+/// </summary>
+public sealed record OpenWait(string Id, WaitKind Kind, string StepId, string? Outcome, string Reason, PatchDocument? Patch = null, bool FromChild = false)
+{
+    public bool CleanUp { get; init; }
+    public string? LibraryItem { get; init; }
+    public string? LibraryContent { get; init; }
+}
+
+/// <summary>A run-time override the run applied, by the id the API gave it, so a repeat is answered without a second effect.</summary>
+public sealed record AppliedOverride(string Id, string Key, string Result);
 
 /// <summary>Reads the <c>findings</c> namespace when a route is evaluated; each route evaluation reads each name once.</summary>
 public interface IFindingsSource

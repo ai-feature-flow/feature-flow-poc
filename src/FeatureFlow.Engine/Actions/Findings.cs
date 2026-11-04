@@ -338,19 +338,19 @@ static class FindingsActions
         // them. A sent answer the run refused (a later record of the same wait and answer) names no one (review F3).
         bool Refused(AnswerRecord sent) => answers.Any(a => a.WaitId == sent.WaitId && a.Answer == sent.Answer && a.Result.StartsWith("refused", StringComparison.Ordinal));
         return answers.Where(a => waits.Contains(a.WaitId) && (a.Result == "recorded" || (a.Result == "sent" && !Refused(a)))).Reverse()
-            .FirstOrDefault(a => AnswerArtifacts(a.Answer).Contains(entry.Ref))?.Actor ?? entry.StepId;
+            .Select(a => Args(a.Answer)).FirstOrDefault(a => a?.Artifacts?.Values.Contains(entry.Ref) == true)?.Actor ?? entry.StepId;
     }
 
-    static IReadOnlyCollection<string> AnswerArtifacts(string answer)
+    /// <summary>The answer as delivered: its actor is every person who gave it (approval's <c>min_count</c>), authenticated by the API.</summary>
+    static FeatureFlow.Interpreter.Wire.AnswerArgs? Args(string answer)
     {
         try
         {
-            return System.Text.Json.JsonSerializer.Deserialize<FeatureFlow.Interpreter.Wire.AnswerArgs>(answer, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))
-                ?.Artifacts?.Values.ToList() ?? [];
+            return System.Text.Json.JsonSerializer.Deserialize<FeatureFlow.Interpreter.Wire.AnswerArgs>(answer, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
         }
         catch (System.Text.Json.JsonException)
         {
-            return [];
+            return null;
         }
     }
 

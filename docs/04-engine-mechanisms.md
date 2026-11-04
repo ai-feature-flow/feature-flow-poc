@@ -279,7 +279,8 @@ the prompt.
 ### 4.5 Breakpoints and action requests
 
 A **breakpoint** is set by a person through the API on a step of a running run;
-the run pauses before that step and opens a breakpoint decision. An **action
+the run pauses before that step and opens a breakpoint decision, each time it is
+about to start it, until the person clears it (LOG 206). An **action
 request** is opened by a step that needs a person to act outside the engine
 (`scm.merge` with `engine_can_merge: false`); the engine watches for the action
 and closes the decision when it sees it, or takes the `declined` path if the

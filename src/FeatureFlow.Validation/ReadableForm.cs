@@ -16,7 +16,8 @@ public static partial class ReadableForm
     [GeneratedRegex(@"^params\.([a-z][a-z0-9_]*)$")]
     private static partial Regex ParamPath();
 
-    public static string Render(Plan plan, IReadOnlyDictionary<string, string>? statuses = null)
+    /// <summary>The readable form; with <paramref name="effective"/>, the effective policy view at its foot (docs/05 section 7).</summary>
+    public static string Render(Plan plan, IReadOnlyDictionary<string, string>? statuses = null, IReadOnlyList<PolicyRow>? effective = null)
     {
         var steps = plan.AllSteps.ToList();
         var lanes = steps.GroupBy(s => s.Lane).ToDictionary(g => g.Key, g => g.OrderBy(s => s.LaneIndex).ToList());
@@ -83,6 +84,12 @@ public static partial class ReadableForm
             lines.Add(c.ItemsKnown
                 ? $"for_each {container.Id}: {c.Branches.Count} item(s) from {items}, {c.Mode}"
                 : $"for_each {container.Id}: items from {items} are known at binding; shown with one branch, {c.Mode}");
+        }
+
+        if (effective is { Count: > 0 })
+        {
+            lines.Add("Effective policy:");
+            lines.AddRange(EffectivePolicy.Lines(effective).Select(l => "  " + l));
         }
 
         var sb = new StringBuilder();
@@ -189,7 +196,7 @@ public static partial class ReadableForm
         }
     }
 
-    static string Describe(YNode value, Scope scope)
+    internal static string Describe(YNode value, Scope scope)
     {
         if (value.IsSingleKeyMap("expr", out var e) && e is YScalar s)
         {

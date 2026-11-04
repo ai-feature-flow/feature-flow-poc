@@ -25,6 +25,14 @@ public class PlanLoaderTests
     }
 
     [Fact]
+    public void Std_has_administrators_approve_agent_patches_and_library_overrides()
+    {
+        // LOG 213: approving one can reach protected content and roles, which only an administrator may change directly.
+        var std = Library.Open(StdRoot, new DiagnosticBag())!;
+        Assert.Equal(["admin"], std.DecisionTypes.Single(t => t.Name == "*.patch_approval").DefaultRoles);
+    }
+
+    [Fact]
     public void The_manifest_and_items_are_indexed()
     {
         var d = new DiagnosticBag();

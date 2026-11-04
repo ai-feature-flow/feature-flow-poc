@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Model;
 using FeatureFlow.Model.Yaml;
 using FeatureFlow.Providers.Abstractions;
@@ -446,7 +447,8 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
     /// <summary>Writes evidence the report carried but the step does not declare into the artifact index; once per execution.</summary>
     public async Task IndexEvidenceAsync()
     {
-        if (reportedEvidence is not { } reference || !EvidenceTypes.TryGetValue(call.What, out var type))
+        // A session's pre-submit check is not a step's execution: its evidence is not the run's (LOG 238).
+        if (reportedEvidence is not { } reference || !EvidenceTypes.TryGetValue(call.What, out var type) || SessionNames.IsCheckKey(call.Step.IdempotencyKey))
             return;
         var record = new ArtifactRecord(call.Step.RunId, call.Step.StepId, call.Step.Execution, EngineActions.IndexName(type), type, reference, call.What, true, DateTimeOffset.UtcNow);
         Must(await Records.AppendAsync(new RecordBatch(Artifacts: [record]), ct), "index the evidence");

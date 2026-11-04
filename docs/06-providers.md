@@ -407,7 +407,9 @@ interface ISessionSurfaceProvider : IProvider {
 }
 ```
 
-- Version 1: hand-off to the person's own agent tool on their machine (RW18).
+- Version 1: hand-off to the person's own agent tool on their machine (RW18),
+  kind `local`: instructions for `ff session` and its MCP server (`ff session
+  mcp`). With no surface configured the engine gives the same (LOG 243).
 - Submission and checks go through the API, not the surface.
 
 ### 3.12 Artifact store, record store, secrets

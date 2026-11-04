@@ -24,7 +24,8 @@ public sealed record ScriptVisit(
     int Times,
     YMap? Patch,
     bool ToParent,
-    string? Summary);
+    string? Summary,
+    YMap? LibraryOverride = null);
 
 /// <summary>
 /// A fake world's script (kind <c>fake_script</c>): visits per step, keyed <c>&lt;template&gt;:&lt;step id&gt;</c>
@@ -80,7 +81,8 @@ public sealed class FakeScript
             (int)(r.Int("times") ?? 1),
             r.Node("patch") as YMap,
             r.Bool("to_parent") ?? false,
-            r.String("summary"));
+            r.String("summary"),
+            r.Node("library_override") as YMap);
         r.Finish();
         return visit;
     }
@@ -145,7 +147,12 @@ sealed class Reporter(Func<IArtifactStoreProvider> store)
         }
 
         return ProviderResult<StepReport>.Success(new StepReport(outcome, outputs, artifacts, visit?.Summary ?? $"{step.StepId}: {outcome}",
-            visit?.Patch is { } patch ? YamlWriter.Write(patch) : null, visit?.ToParent ?? false));
+            visit?.Patch is { } patch ? YamlWriter.Write(patch) : null, visit?.ToParent ?? false)
+        {
+            LibraryOverride = visit?.LibraryOverride is { } proposed
+                ? proposed.Entries.ToDictionary(e => e.Key.Text, e => e.Value.ScalarText() ?? YamlWriter.Write(e.Value))
+                : null,
+        });
     }
 
     /// <summary>The visit's delay: <c>delay</c>, or <c>delay_from</c>, an input holding milliseconds.</summary>
@@ -360,6 +367,8 @@ public static class LocalProviders
             // M7: in-memory notifications and session surface for engine tests.
             new("notifications", "memory", ["world"], c => InMemoryNotifications.Named(c.Setting("world") ?? "default")),
             new("session_surface", "memory", ["world"], c => InMemorySessionSurface.Named(c.Setting("world") ?? "default")),
+            // M7: version 1's session surface, a hand-off to the person's own agent tool (RW18).
+            new("session_surface", "local", [], _ => new LocalSessionSurface()),
         };
         foreach (var type in ConfigurationReader.ProviderTypes.Where(t => t is not ("artifact_store" or "record_store" or "secrets" or "action_stand_in")))
             list.Add(new ProviderFactory(type, "fake", [], _ => new DescribedOnlyProvider(type)));
