@@ -3,9 +3,11 @@ using FeatureFlow.Providers.Abstractions;
 namespace FeatureFlow.Providers.Local;
 
 /// <summary>
-/// A record store in memory for M6's tests, holding runs and what M6 adds: the findings ledger and the artifact index
-/// (docs/02 section 5). Finding records are kept by run and finding id, the last write winning; finding events and
-/// artifacts are appended once per key. Other records are not kept here: the SQLite store holds them.
+/// A record store in memory for tests, holding runs and what M6 and M7 add: the findings ledger and the artifact index
+/// (docs/02 section 5); overrides, notification de-duplication and sessions. Finding records, sessions and session checks
+/// are kept by key, the last write winning; finding events and artifacts are appended once per key, a notification is kept
+/// once per key with the first write winning, and overrides are appended. Other records are not kept here: the SQLite
+/// store holds them.
 /// </summary>
 public sealed class InMemoryRecordStore : IRecordStoreProvider
 {
@@ -14,6 +16,10 @@ public sealed class InMemoryRecordStore : IRecordStoreProvider
     readonly Dictionary<(string Run, string Finding), FindingRecord> findings = [];
     readonly List<FindingEventRecord> events = [];
     readonly List<ArtifactRecord> artifacts = [];
+    readonly List<OverrideRecord> overrides = [];
+    readonly List<NotificationRecord> notifications = [];
+    readonly Dictionary<string, SessionRecord> sessions = new(StringComparer.Ordinal);
+    readonly Dictionary<(string Session, string Check), SessionCheckRecord> checks = [];
 
     public ProviderDescription Describe() => new("record_store", "memory", "0.1.0", new NoCapabilities());
 
@@ -23,7 +29,7 @@ public sealed class InMemoryRecordStore : IRecordStoreProvider
     {
         if (records.Waits is { Count: > 0 } || records.Timeline is { Count: > 0 } || records.Answers is { Count: > 0 } || records.Locks is { Count: > 0 }
             || records.AgentSteps is { Count: > 0 } || records.Reports is { Count: > 0 } || records.Questions is { Count: > 0 } || records.AgentEvents is { Count: > 0 })
-            throw new NotSupportedException("the in-memory record store keeps only runs, the findings ledger and the artifact index");
+            throw new NotSupportedException("the in-memory record store keeps only runs, the findings ledger, the artifact index, overrides, notifications and sessions");
         lock (gate)
         {
             foreach (var run in records.Runs ?? [])
@@ -36,6 +42,14 @@ public sealed class InMemoryRecordStore : IRecordStoreProvider
             foreach (var a in records.Artifacts ?? [])
                 if (!artifacts.Any(x => x.RunId == a.RunId && x.StepId == a.StepId && x.Execution == a.Execution && x.Name == a.Name))
                     artifacts.Add(a);
+            overrides.AddRange(records.Overrides ?? []);
+            foreach (var n in records.Notifications ?? [])
+                if (!notifications.Any(x => x.Key == n.Key))
+                    notifications.Add(n);
+            foreach (var session in records.Sessions ?? [])
+                sessions[session.SessionId] = session;
+            foreach (var check in records.SessionChecks ?? [])
+                checks[(check.SessionId, check.CheckId)] = check;
         }
 
         return Task.FromResult(ProviderResult<Unit>.Success(default));
@@ -55,6 +69,12 @@ public sealed class InMemoryRecordStore : IRecordStoreProvider
                     .OrderBy(f => f.RunId, StringComparer.Ordinal).ThenBy(f => f.FindingId, StringComparer.Ordinal),
                 Queries.FindingEvents => events.Where(e => e.RunId == P("run_id") && e.FindingId == P("finding_id")),
                 Queries.Artifacts => artifacts.Where(a => Tree(P("run_id")).Contains(a.RunId)),
+                Queries.Overrides => overrides.Where(o => o.RunId == P("run_id")),
+                Queries.Notification => notifications.Where(n => n.Key == P("key")),
+                Queries.Notifications => notifications.Where(n => n.RunId == P("run_id")),
+                Queries.Session => sessions.Values.Where(s => s.SessionId == P("session_id")),
+                Queries.Sessions => sessions.Values.Where(s => s.RunId == P("run_id")).OrderBy(s => s.SessionId, StringComparer.Ordinal),
+                Queries.SessionChecks => checks.Values.Where(c => c.SessionId == P("session_id")).OrderBy(c => c.CheckId, StringComparer.Ordinal),
                 _ => throw new NotSupportedException($"the in-memory record store does not answer {queryName}"),
             };
             return Task.FromResult(ProviderResult<IReadOnlyList<T>>.Success(rows.Cast<T>().ToList()));

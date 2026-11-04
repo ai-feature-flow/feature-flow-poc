@@ -129,6 +129,7 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
                 id INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT NOT NULL, UNIQUE (org_id, run_id, step_id, execution, name));
             """);
         CreateLedger(connection);
+        CreateSteering(connection);
     }
 
     /// <summary>One organisation per installation; the key is there from the start (docs/02 section 5).</summary>
@@ -210,6 +211,7 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
             Execute(connection, "INSERT OR IGNORE INTO artifacts (org_id, run_id, step_id, execution, name, body) VALUES ($o, $r, $s, $e, $n, $b)",
                 ("$o", Org), ("$r", a.RunId), ("$s", a.StepId), ("$e", a.Execution), ("$n", a.Name), ("$b", JsonSerializer.Serialize(a, Json)));
         AppendLedger(connection, records);
+        AppendSteering(connection, records);
         transaction.Commit();
         return Task.FromResult(ProviderResult<Unit>.Success(default));
     }
@@ -246,6 +248,12 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
             Queries.Findings => (RunTree + "SELECT body FROM findings WHERE org_id = $o AND run_id IN tree ORDER BY run_id, finding_id", typeof(FindingRecord), [("$r", P("run_id"))]),
             Queries.FindingEvents => ("SELECT body FROM finding_events WHERE org_id = $o AND run_id = $r AND finding_id = $f ORDER BY id", typeof(FindingEventRecord),
                 [("$r", P("run_id")), ("$f", P("finding_id"))]),
+            Queries.Overrides => ("SELECT body FROM overrides WHERE org_id = $o AND run_id = $r ORDER BY id", typeof(OverrideRecord), [("$r", P("run_id"))]),
+            Queries.Notification => ("SELECT body FROM notifications WHERE org_id = $o AND key = $k", typeof(NotificationRecord), [("$k", P("key"))]),
+            Queries.Notifications => ("SELECT body FROM notifications WHERE org_id = $o AND run_id = $r ORDER BY id", typeof(NotificationRecord), [("$r", P("run_id"))]),
+            Queries.Session => ("SELECT body FROM sessions WHERE org_id = $o AND session_id = $s", typeof(SessionRecord), [("$s", P("session_id"))]),
+            Queries.Sessions => ("SELECT body FROM sessions WHERE org_id = $o AND run_id = $r ORDER BY session_id", typeof(SessionRecord), [("$r", P("run_id"))]),
+            Queries.SessionChecks => ("SELECT body FROM session_checks WHERE org_id = $o AND session_id = $s ORDER BY check_id", typeof(SessionCheckRecord), [("$s", P("session_id"))]),
             _ => throw new ArgumentException($"unknown query {queryName}"),
         };
         if (query.Type != typeof(T))
@@ -289,5 +297,32 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
         foreach (var e in records.FindingEvents ?? [])
             Execute(connection, "INSERT OR IGNORE INTO finding_events (org_id, run_id, finding_id, key, body) VALUES ($o, $r, $f, $k, $b)",
                 ("$o", Org), ("$r", e.RunId), ("$f", e.FindingId), ("$k", e.Key), ("$b", JsonSerializer.Serialize(e, Json)));
+    }
+
+    // ---- People and steering (M7): overrides, notification de-duplication, sessions ----
+
+    static void CreateSteering(SqliteConnection connection) =>
+        Execute(connection, """
+            CREATE TABLE IF NOT EXISTS overrides (org_id TEXT NOT NULL, run_id TEXT NOT NULL, id INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS notifications (org_id TEXT NOT NULL, key TEXT NOT NULL, run_id TEXT NOT NULL, id INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT NOT NULL, UNIQUE (org_id, key));
+            CREATE TABLE IF NOT EXISTS sessions (org_id TEXT NOT NULL, session_id TEXT NOT NULL, run_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (org_id, session_id));
+            CREATE TABLE IF NOT EXISTS session_checks (org_id TEXT NOT NULL, session_id TEXT NOT NULL, check_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (org_id, session_id, check_id));
+            """);
+
+    /// <summary>Overrides are appended; a notification is kept once per key, the first write winning; sessions and their checks replace the last write.</summary>
+    static void AppendSteering(SqliteConnection connection, RecordBatch records)
+    {
+        foreach (var o in records.Overrides ?? [])
+            Execute(connection, "INSERT INTO overrides (org_id, run_id, body) VALUES ($o, $r, $b)",
+                ("$o", Org), ("$r", o.RunId), ("$b", JsonSerializer.Serialize(o, Json)));
+        foreach (var n in records.Notifications ?? [])
+            Execute(connection, "INSERT OR IGNORE INTO notifications (org_id, key, run_id, body) VALUES ($o, $k, $r, $b)",
+                ("$o", Org), ("$k", n.Key), ("$r", n.RunId), ("$b", JsonSerializer.Serialize(n, Json)));
+        foreach (var s in records.Sessions ?? [])
+            Execute(connection, "INSERT OR REPLACE INTO sessions VALUES ($o, $s, $r, $b)",
+                ("$o", Org), ("$s", s.SessionId), ("$r", s.RunId), ("$b", JsonSerializer.Serialize(s, Json)));
+        foreach (var c in records.SessionChecks ?? [])
+            Execute(connection, "INSERT OR REPLACE INTO session_checks VALUES ($o, $s, $c, $b)",
+                ("$o", Org), ("$s", c.SessionId), ("$c", c.CheckId), ("$b", JsonSerializer.Serialize(c, Json)));
     }
 }

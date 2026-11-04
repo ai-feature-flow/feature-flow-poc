@@ -17,10 +17,12 @@ namespace FeatureFlow.Engine;
 /// interpreter's pure core (LOG 66). It starts what the core asks for, awaits the first thing to happen, gives
 /// it back to the core, and records what changed. Continue-as-new follows docs/02 section 3: drain activities,
 /// wait for running handlers (DR15), and carry children, open decisions and the core's state over; children are
-/// started with the abandon parent-close policy and signal the parent's workflow id, never a run id.
+/// started with the abandon parent-close policy and signal the parent's workflow id, never a run id. M7's areas are in
+/// their own files: run-time overrides (<c>RunWorkflow.Overrides.cs</c>), sessions (<c>RunWorkflow.Sessions.cs</c>) and
+/// inbound wakes (<c>RunWorkflow.Inbound.cs</c>).
 /// </summary>
 [Workflow(RunWorkflowNames.Workflow)]
-public class RunWorkflow
+public partial class RunWorkflow
 {
     static readonly RetryPolicy Forever = new() { InitialInterval = TimeSpan.FromSeconds(1), MaximumInterval = TimeSpan.FromSeconds(10), MaximumAttempts = 0 };
 

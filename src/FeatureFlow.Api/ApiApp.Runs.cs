@@ -1,0 +1,114 @@
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using FeatureFlow.Interpreter.Wire;
+using FeatureFlow.Library;
+using FeatureFlow.Model;
+using FeatureFlow.Providers.Abstractions;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Temporalio.Client;
+
+namespace FeatureFlow.Api;
+
+public static partial class ApiApp
+{
+    /// <summary>Runs: start, list and show.</summary>
+    static void MapRuns(WebApplication app, Handlers api)
+    {
+        app.MapPost("/runs", (Delegate)((HttpContext c) => api.Guard(c, caller => api.StartAsync(c, caller))));
+        app.MapGet("/runs", (Delegate)((HttpContext c) => api.Guard(c, _ => api.ListAsync(c))));
+        app.MapGet("/runs/{id}", (HttpContext c, string id) => api.Guard(c, _ => api.ShowAsync(c, id)));
+    }
+
+    sealed partial class Handlers
+    {
+        /// <summary>A plain branch name: not a full reference, no spaces or Git's forbidden characters, no empty or dot-led parts.</summary>
+        static bool ValidBranch(string name) =>
+            name.Length is > 0 and <= 200 && !name.StartsWith("refs/", StringComparison.Ordinal) && !name.EndsWith('/') && !name.EndsWith(".lock", StringComparison.Ordinal)
+            && !name.Contains("..", StringComparison.Ordinal) && !name.Contains("@{", StringComparison.Ordinal)
+            && name.All(c => c > ' ' && c != 127 && c is not ('~' or '^' or ':' or '?' or '*' or '[' or '\\'))
+            && name.Split('/').All(part => part.Length > 0 && !part.StartsWith('.'));
+
+        public async Task<IResult> StartAsync(HttpContext context, Caller caller)
+        {
+            var body = await JsonNode.ParseAsync(context.Request.Body, cancellationToken: context.RequestAborted) as JsonObject;
+            var template = body?["template"]?.GetValue<string>();
+            if (template is null || LibraryReference.TryParse(template) is null)
+                return Error(400, "template must be a template reference, such as std:templates/ticket_delivery");
+            var repositories = body!["repositories"]?.AsArray().Select(n => n!.GetValue<string>()).ToList() ?? [];
+            var parameters = (body["parameters"] as JsonObject ?? []).ToDictionary(kv => kv.Key, kv => kv.Value?.ToJsonString() ?? "null");
+            var dryRun = body["dry_run"]?.GetValue<bool>() ?? false;
+            // The branch the run's work branch starts from and merges into (LOG 137); default the repository's default branch.
+            var parentBranch = body["parent_branch"]?.GetValue<string>();
+            if (parentBranch is not null && !ValidBranch(parentBranch))
+                return Error(400, $"parent_branch must be a branch name, such as ff/epic/billing, not '{parentBranch}'");
+            // The run's tracker issue (run.tracker_issue): its input, read from the tracker, and where declarative updates go.
+            var trackerIssue = body["tracker_issue"]?.GetValue<string>();
+            if (trackerIssue is not null && (trackerIssue.Length is 0 or > 200 || trackerIssue.Any(char.IsControl)))
+                return Error(400, "tracker_issue must be a tracker key, such as ACME-12 or owner/repo#12");
+            var handOver = services.Installation.ContinueAsNewEvents;
+            if (body["continue_as_new_events"]?.GetValue<long>() is { } requested)
+            {
+                // A run's own hand-over threshold is an administrator's override (LOG 87), and never below the floor.
+                if (!caller.Roles.Contains("admin"))
+                    return Error(403, $"{caller.Actor} may not set continue_as_new_events: it needs the admin role");
+                if (requested < ConfigurationReader.MinimumHandOverEvents)
+                    return Error(400, $"continue_as_new_events must be at least {ConfigurationReader.MinimumHandOverEvents}");
+                handOver = requested;
+            }
+
+            var lockRef = await WriteLockAsync(context.RequestAborted);
+            var runId = "run-" + Guid.NewGuid().ToString("N")[..12];
+            var now = DateTimeOffset.UtcNow;
+            await Records.AppendAsync(new RecordBatch(
+                [new RunRecord(runId, null, template, "starting", caller.Actor, repositories, dryRun, now, null)],
+                Locks: [new LockRecord(runId, lockRef, now)]), context.RequestAborted);
+            var start = new RunStart(runId, template, repositories, parameters, lockRef, dryRun, caller.Actor, HandOverEvents: handOver, ParentBranch: parentBranch,
+                TrackerIssue: trackerIssue);
+            await services.Client.StartWorkflowAsync(RunWorkflowNames.Workflow, [start],
+                new WorkflowOptions(runId, services.Installation.TaskQueue));
+            return Results.Json(new { run_id = runId }, Json, statusCode: 201);
+        }
+
+        /// <summary>
+        /// The run's lock (docs/08 sections 3 and 5.1): every content file of the organisation's libraries stored
+        /// by content hash, and the lock that lists them stored as an artifact itself.
+        /// </summary>
+        async Task<string> WriteLockAsync(CancellationToken ct)
+        {
+            var locked = new List<LockedLibrary>();
+            foreach (var source in services.Organisation.Libraries)
+            {
+                var path = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(services.Organisation.Location))!, source.Path));
+                var d = new DiagnosticBag();
+                var library = Library.Library.Open(path, d) ?? throw new InvalidOperationException($"library {source.Name} at {path} does not open: {string.Join("; ", d)}");
+                foreach (var (_, text) in library.Files.All)
+                    (await Artifacts.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(text)), ct)).Unwrap();
+                locked.Add(LibraryLock.Pin(library));
+            }
+
+            var lockText = JsonSerializer.Serialize(new LibraryLock(locked), Json);
+            return (await Artifacts.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(lockText)), ct)).Unwrap().Id;
+        }
+
+        public async Task<IResult> ListAsync(HttpContext context)
+        {
+            var runs = (await Records.QueryAsync<RunRecord>(Queries.Runs, new Dictionary<string, string>(), context.RequestAborted)).Unwrap();
+            return Results.Json(new { runs }, Json);
+        }
+
+        public async Task<IResult> ShowAsync(HttpContext context, string id)
+        {
+            var p = new Dictionary<string, string> { ["run_id"] = id };
+            var run = (await Records.QueryAsync<RunRecord>(Queries.Run, p, context.RequestAborted)).Unwrap().FirstOrDefault();
+            if (run is null)
+                return Error(404, $"no run {id}");
+            var waits = (await Records.QueryAsync<WaitRecord>(Queries.Waits, new Dictionary<string, string>(p) { ["open"] = "true" }, context.RequestAborted)).Unwrap();
+            var after = context.Request.Query["after"].FirstOrDefault() ?? "0";
+            var timeline = (await Records.QueryAsync<TimelineRecord>(Queries.Timeline, new Dictionary<string, string>(p) { ["after"] = after }, context.RequestAborted)).Unwrap();
+            var children = (await Records.QueryAsync<RunRecord>(Queries.Runs, new Dictionary<string, string> { ["parent_run_id"] = id }, context.RequestAborted)).Unwrap();
+            return Results.Json(new { run, waits, timeline, children }, Json);
+        }
+    }
+}

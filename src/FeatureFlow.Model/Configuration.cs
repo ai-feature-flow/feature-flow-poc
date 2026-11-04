@@ -82,10 +82,78 @@ public sealed record PolicyConfig(
 
     /// <summary>The first approval rule whose pattern matches the decision type, or null.</summary>
     public ApprovalRule? RuleFor(string type) => Approval.FirstOrDefault(r => r.Matches(type));
+
+    /// <summary>
+    /// <c>policy.overrides</c> (docs/05 section 5): the people roles for a run-time override key, a variant included, replacing
+    /// its default in <see cref="FeatureFlow.Model.Overrides"/>. Empty: the defaults.
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> Overrides { get; init; } = new Dictionary<string, IReadOnlyList<string>>();
+
+    /// <summary><c>planning.require_review</c> (docs/05 section 3.1): per template name pattern, whether agent patches need a person's review. The first match applies.</summary>
+    public IReadOnlyList<ReviewRule> RequireReview { get; init; } = [];
+
+    /// <summary><c>toolsets.allowed</c>: which external tool servers exist at all. Null: not restricted.</summary>
+    public IReadOnlyList<string>? AllowedToolsets { get; init; }
 }
 
-/// <summary>The organisation layer (docs/07 section 3), as far as M3 reads it.</summary>
-public sealed record OrganisationConfig(string Name, IReadOnlyList<LibrarySourceConfig> Libraries, PolicyConfig Policy, string Location);
+/// <summary>A <c>planning.require_review</c> entry: a template name pattern and whether review is required there, as a cap.</summary>
+public sealed record ReviewRule(string Match, Cap<bool> Value);
+
+/// <summary>A people role (docs/05 section 3.3) as the identity provider's groups that hold it.</summary>
+public sealed record PeopleRoleConfig(IReadOnlyList<string> IdpGroups);
+
+/// <summary>A library agent role's runtime and model (<c>role_mapping</c>, docs/07 section 3). The <c>default</c> entry serves roles with none.</summary>
+public sealed record AgentRoleMapping(string AgentRuntime, string? Model);
+
+/// <summary>Where one notification event goes (<c>notifications.routing</c>).</summary>
+public sealed record NotificationRoute(string Channel);
+
+/// <summary>
+/// <c>notifications</c> (docs/07 section 3, docs/06 section 3.10): the channel per event name, and which events are sent at
+/// all. Empty: nothing is sent.
+/// </summary>
+public sealed record NotificationsConfig(IReadOnlyDictionary<string, NotificationRoute> Routing, IReadOnlyList<string> Events)
+{
+    public static readonly NotificationsConfig None = new(new Dictionary<string, NotificationRoute>(), []);
+}
+
+/// <summary><c>timeouts</c> (docs/07 section 3): how long a step may go silent, and how long without provider contact before a run shows <c>stalled</c>.</summary>
+public sealed record TimeoutsConfig(TimeSpan Heartbeat, TimeSpan StalledAfter)
+{
+    public static readonly TimeoutsConfig Default = new(TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(5));
+}
+
+/// <summary>
+/// A team (<c>teams.&lt;name&gt;</c>, docs/07 section 3): the repositories it owns, by pattern, its approval rules, which come
+/// before the organisation's for a run in its scope, and its people roles, which apply only in its scope (docs/05 section 3.3).
+/// </summary>
+public sealed record TeamConfig(
+    string Name,
+    IReadOnlyList<string> Repositories,
+    IReadOnlyList<ApprovalRule> Approval,
+    IReadOnlyDictionary<string, PeopleRoleConfig> Roles);
+
+/// <summary>The organisation layer (docs/07 section 3). The reader fills what it reads; the rest keeps the defaults below.</summary>
+public sealed record OrganisationConfig(string Name, IReadOnlyList<LibrarySourceConfig> Libraries, PolicyConfig Policy, string Location)
+{
+    /// <summary><c>roles</c>: people roles to identity-provider groups. Empty: only the local token's own roles exist.</summary>
+    public IReadOnlyDictionary<string, PeopleRoleConfig> Roles { get; init; } = new Dictionary<string, PeopleRoleConfig>();
+
+    /// <summary><c>role_mapping</c>: library agent roles to runtime and model.</summary>
+    public IReadOnlyDictionary<string, AgentRoleMapping> RoleMapping { get; init; } = new Dictionary<string, AgentRoleMapping>();
+
+    public NotificationsConfig Notifications { get; init; } = NotificationsConfig.None;
+
+    public TimeoutsConfig Timeouts { get; init; } = TimeoutsConfig.Default;
+
+    public IReadOnlyDictionary<string, TeamConfig> Teams { get; init; } = new Dictionary<string, TeamConfig>();
+
+    /// <summary><c>library_overrides</c>: an organisation item replacing a base item, by reference, for every run (docs/08 section 5).</summary>
+    public IReadOnlyDictionary<string, string> LibraryOverrides { get; init; } = new Dictionary<string, string>();
+
+    /// <summary><c>library_inputs</c>: values for the libraries' declared inputs.</summary>
+    public IReadOnlyDictionary<string, string> LibraryInputs { get; init; } = new Dictionary<string, string>();
+}
 
 /// <summary>
 /// Reads installation and organisation files, refusing unknown keys (docs/07 section 1: a key set where it

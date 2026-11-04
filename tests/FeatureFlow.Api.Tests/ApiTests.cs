@@ -29,7 +29,9 @@ public sealed class ApiTests : IAsyncDisposable
     }
 
     /// <summary>An API whose local token authenticates an actor with <paramref name="roles"/>; its Temporal client is absent.</summary>
-    HttpClient Start(params string[] roles)
+    HttpClient Start(params string[] roles) => Start([], roles);
+
+    HttpClient Start(IReadOnlyList<IAuthenticator> authenticators, params string[] roles)
     {
         var providers = new ProviderSet(
             new Dictionary<string, IReadOnlyDictionary<string, IProvider>>
@@ -44,7 +46,7 @@ public sealed class ApiTests : IAsyncDisposable
         var organisation = new OrganisationConfig("t", [],
             new PolicyConfig([new ApprovalRule("ticket.*", ["approver"], 1, false, new Cap<bool>(false, false))], null, null, null, null),
             Path.Combine(folder, "organisation.yaml"));
-        var app = ApiApp.Build(new ApiServices(providers, installation, organisation, null!), "http://127.0.0.1:0");
+        var app = ApiApp.Build(new ApiServices(providers, installation, organisation, null!) { Authenticators = authenticators }, "http://127.0.0.1:0");
         app.StartAsync().GetAwaiter().GetResult();
         apps.Add(app);
         var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
@@ -84,6 +86,31 @@ public sealed class ApiTests : IAsyncDisposable
         Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync("runs", TestContext.Current.CancellationToken)).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await http.GetAsync("runs", TestContext.Current.CancellationToken)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await http.GetAsync("runs/nope", TestContext.Current.CancellationToken)).StatusCode);
+    }
+
+    /// <summary>An authenticator that accepts a request carrying <c>X-Test-Person</c> as that person, with fixed roles, through chat.</summary>
+    sealed class HeaderAuthenticator(params string[] roles) : IAuthenticator
+    {
+        public Task<Caller?> AuthenticateAsync(Microsoft.AspNetCore.Http.HttpContext context, ApiServices services) =>
+            Task.FromResult(context.Request.Headers["X-Test-Person"].ToString() is { Length: > 0 } person
+                ? new Caller(person, roles, ["a-group"], CallerChannels.Chat)
+                : null);
+    }
+
+    [Fact]
+    public async Task The_first_authenticator_to_accept_a_request_decides_its_caller_and_none_accepting_is_refused()
+    {
+        var http = Start([new HeaderAuthenticator("viewer"), new LocalTokenAuthenticator()], "steerer");
+        using var anonymous = new HttpClient { BaseAddress = http.BaseAddress };
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync("runs", TestContext.Current.CancellationToken)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await http.GetAsync("runs", TestContext.Current.CancellationToken)).StatusCode);
+
+        // The header authenticator comes first: its viewer, not the token's steerer, is refused the abort.
+        using var request = new HttpRequestMessage(HttpMethod.Post, "runs/r1/abort") { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+        request.Headers.Add("X-Test-Person", "pat");
+        using var response = await http.SendAsync(request, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Contains("pat may not abort", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
