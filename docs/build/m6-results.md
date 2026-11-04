@@ -1,5 +1,34 @@
 # M6 results: findings, validators and levels
 
+## Summary
+
+M6 is done. The engine now runs epics and projects, not only single tickets.
+
+- **Done-when 1:** std `epic_delivery` with three tickets, each a GitHub issue, ran on `feature-flow-example`. The
+  engine merged it into its parent branch (`run-93ee2dd4bf56`, merge `8e7a697`).
+- **Done-when 2:** std `project_delivery` delivered to `feature-flow-example`, then `feature-flow-example-client`. The
+  product owner's merges into `main` were detected and `delivery.report` said `complete` (`run-cc7255f7fa09`).
+- **Verified-by:**
+  - each standard validator has a failing and a passing fixture;
+  - an agent step declaring an evidence type is refused at load (check 12);
+  - `tests_added` catches a fix that adds no test.
+- **Must-fix from M5 (LOG 139):** a wait no longer holds up a run's hand-over to a fresh Temporal run (LOG 152).
+
+How it ran: shared interfaces first (PR 9), then four builders in parallel (PRs 10 to 13), then integration and the
+live runs (PR 14). Each pull request had an independent review and a re-check.
+
+- Every first review was "changes-required", and every catch was real. The most serious:
+  - a triager agent alone could close a demonstrated bug and merge (LOG 168);
+  - a planner could mark its own criteria as "owned" and merge with no tests (LOG 178);
+  - `delivery.report` counted a stale or reverted merge (LOG 180);
+  - a wait cancelled mid-read used an attempt (LOG 152).
+- The live runs found 14 more seams (LOG 190 to 200).
+
+Tests on `m6` at the end: 965 default, 78 integration.
+
+The sections below are each worker's own, in build order, then integration. They are followed by the coordinator's
+decisions, the list for the product owner, and the consolidated follow-ups.
+
 ## Waits across the hand-over and child runs
 
 Builder W1, branch `m6-shell`. Settles LOG 139 (a wait held up a run's hand-over, M6's must-fix from M5) and M3
@@ -541,7 +570,7 @@ API (a squash of the project branch, one parent `af06a37`) and `ef5b410` in the 
 and the project head `a562d3b`). The engine merged nothing into either `main` (F1): every engine merge was into an epic
 or project branch.
 
-Product owner, 2026-11-04: LOG 191 (amended) and LOG 193's `MergeBaseAsync` accepted; the project's changes stay on both
+Coordinator, 2026-11-04: LOG 191 (amended) and LOG 193's `MergeBaseAsync` accepted, for the product owner's review. Product owner, 2026-11-04: the project's changes stay on both
 fixtures' `main`.
 
 ### Review of PR 14 (approve-with-fixes) and fixes
@@ -584,7 +613,7 @@ report: default **959 passed**, integration **77 passed**, 0 failed (Release, Te
   `define` importing the person's documents, since M7's session is not built.
 - People's recoveries were used where agents struggled (granted attempts to planners and reviewers, retried a
   conflict resolver); all are on the runs' timelines with the actor.
-- `requirement_inheritance` now accepts added links (LOG 191 amended, approved); docs/04 section 10.2 updated.
+- `requirement_inheritance` now accepts added links (LOG 191 amended; accepted by the coordinator, for the product owner's review); docs/04 section 10.2 updated.
 
 ### Follow-ups
 
@@ -597,3 +626,60 @@ report: default **959 passed**, integration **77 passed**, 0 failed (Release, Te
 | 5 | A `run.child` start that fails leaves its budget reservation recorded as `starting` (LOG 187, known) |
 | 6 | No live hand-over fell during a CI or merge wait (`InterruptedWaits` stayed 0): W1's `WaitHandOverTests` remain the evidence for LOG 139 |
 | 7 | The hosts ignore SIGTERM and SIGINT when run detached, so stopping them needs SIGKILL |
+
+---
+
+## Coordinator decisions
+
+Decisions the coordinator took during M6 (minor ones; the two major ones were the product owner's and are marked).
+
+| # | Decision | Why |
+|---|---|---|
+| 1 | The shared interfaces (PR 9) were approved and frozen, including the code host's new keyed pull request comment (LOG 150) | W2 needed it to post decline reasons; adding it mid-build would have broken the freeze |
+| 2 | W1 writes the artifact index (the record store's list of every artifact a run tree produced, LOG 155). A child reads its parent's and root's artifacts from its start input instead (LOG 153) | One writer; workflow code cannot read the store, and the start input pins "as at the child's start" |
+| 3 | Fixed a timing flake in `GitCredentialRetryTests` (a 20 ms delay measured just under 20 ms). Control: the provider's delay removed made all three retry cases fail | It failed PR 9's CI and was not W0's change |
+| 4 | Principle: the governed agent alone must not clear what blocks it. Only the verifier after a real fix, or a person, closes a blocking or demonstrated finding (LOG 168) | Review of PR 11 |
+| 5 | Principle: acceptance criteria are met only by engine test evidence at the frozen head, or by a person, never by the agent's own classification (LOG 178) | Review of PR 13 |
+| 6 | `delivery.report` counts a merge only if its head is the work branch's current head, it is not reverted, and the target still contains it. A deleted work branch is not later work (LOG 180) | Review and re-check of PR 12 |
+| 7 | Links between requirements are compared by the document they resolve to, not by their sandbox name (LOG 200) | Review of PR 14 |
+| 8 | **Product owner:** the GitHub App was granted Issues: read and write | The tracker and a run's ticket read need it |
+| 9 | **Product owner:** the second fixture, `ai-feature-flow/feature-flow-example-client`, was created (public, ruleset `protect-main` copied from the first fixture). The product owner merged both project pull requests (#193, client #6), and the changes stay on both `main`s | Done-when 2 needs two repositories and a person's merges |
+
+## For the product owner
+
+LOG 148 to 200 are unreviewed. The entries whose "Needs a look?" column says yes, with a recommendation each:
+
+| LOG | What it decided | Recommendation |
+|---|---|---|
+| 161 | `findings.triage` gains an `invalid` outcome, for a triage naming a finding the ledger doesn't hold. An action outcome added later escalates to a person when a plan doesn't route it, so older plans still load | Approve: the same compatibility rule will be needed for any later outcome |
+| 164 | Decline reasons are posted only on an open pull request, so std's ticket flow (which triages before its pull request opens) posts none | Approve, with the follow-up: post the ledger's declines when the pull request opens |
+| 168 | A triager agent may set only `open`, `declined` or `escalated`; only the verifier, after a commit, may set `fixed`. Escalations and declined blocking findings go to a person. The fix loop routes on engine counts | Approve: it closes the review's most serious hole |
+| 171 | Test evidence records the names of passing tests (`TestResults.Passing`, a change to an interface frozen in M5) | Approve: claims can't be checked against what the engine saw without it |
+| 175, 179 | std's `artifact.validate` steps keep their report on both outcomes; one rule for "the latest artifact of a name" | Approve |
+| 176 | Checking produced artifacts against their types (schema, Markdown headings) is deferred | Approve the deferral, but schedule it first in M7: the live runs lost many attempts to it |
+| 178 | Self-owned criteria count as unowned; `tests_added` needs a claimed test that passed in this run's results at the head, in a changed file that isn't the fixed file alone | Approve |
+| 181, 185 | `artifact.import` checks only that files parse, not their schema; the ticket an agent sees has no issue comments | Approve as follow-ups |
+| 186 | Declarative tracker updates give up after a few tries (about two minutes), so the issue's status can go stale but the run never stalls | Approve |
+| 187 | The work-item budget: two runs creating children at the same instant can overshoot by one each; with no budget and no ceiling a tree is unlimited | Approve; set a ceiling in the shipped organisation profiles |
+| 191 (3) | `requirement_inheritance` lets a child's copy keep every parent link and add its own (accepted by the coordinator) | Approve: the parent's meaning is kept, and it is what planners naturally write |
+| 192 | std reviewers consume the specification they review against; whether to stage artifact types for agents generally is open | Approve; fold into the report-time checks (LOG 176) |
+| 193 | An agent step's baseline is the merge base with its parent (`IVcsProvider.MergeBaseAsync`, an interface addition, accepted by the coordinator). The checkout also holds the parent branch | Approve |
+
+## Consolidated follow-ups
+
+| # | Follow-up | From |
+|---|---|---|
+| 1 | **First in M7:** check produced artifacts at report time, with correction turns (LOG 176; `docs/01` section 5.4). Haiku planners lost many attempts to it | Integration 2, Validators 2, Findings 1 |
+| 2 | A person triages findings through a decision, recorded as the authenticated person (F8). Until then an escalation is answered with an intervention's recovery actions (LOG 168, 169) | Findings 7 |
+| 3 | Recoveries: re-run a failed branch of a finished parallel step (today `go_to` re-runs the step but not the join, so the run ends `incomplete`); aborting a run closes its pull requests | Integration 3, 4 |
+| 4 | **M4 12, still open:** the sandbox's network is unrestricted and reaches the Temporal frontend. Fix before any shared deployment | Earlier milestones |
+| 5 | Post the ledger's decline reasons when `scm.pull_request` opens the pull request (LOG 164) | Findings 2 |
+| 6 | A fixed rule vocabulary for std's reviewers, so a re-raise matches and `repeat_fixes` accrues | Findings 6 |
+| 7 | `verification_satisfaction` doesn't check that a review accepted the claims; the trace doesn't check that a child completed | Validators 3, 4 |
+| 8 | Schema checks on `artifact.import`; issue comments in the staged ticket; declarative `on.<exit>` through guarded routes and nested fragments | Delivery 1 to 3 |
+| 9 | The work-item budget's concurrent-creation overshoot and a failed child start staying counted (LOG 187) | Delivery 4, Integration 5 |
+| 10 | `EpicRunTests`' thin margin (one hand-over with a child running): raise the fake implementer's delay, or assert it from the timeline | Shell 1 |
+| 11 | No live hand-over fell during a CI or merge wait, so `WaitHandOverTests` remain LOG 139's evidence | Integration 6 |
+| 12 | The hosts ignore SIGTERM and SIGINT when run detached | Integration 7 |
+| 13 | Copilot code review is off on the fixture, so the Copilot findings source has been seen only answering `unavailable` | Findings 4 |
+| 14 | M5 follow-up 3 (a re-run reviewer isn't told which files it left unread) and M5 follow-up 7 (`test.integration` starting services) are still open | M5 |
