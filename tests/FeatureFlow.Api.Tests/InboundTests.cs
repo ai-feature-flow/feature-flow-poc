@@ -51,6 +51,7 @@ public sealed class InboundTests : IAsyncDisposable
             {
                 ["U-ALICE"] = new("alice", ["approver"], null),
                 ["U-VIC"] = new("vic", ["viewer"], null),
+                ["U-STEVE"] = new("steve", ["approver", "steerer"], null),
             });
         var github = new GitHubCodeHost(new GitHubApi(() => null)) { WebhookSecret = _ => Task.FromResult(ProviderResult<string>.Success(HookSecret)) };
         var providers = new ProviderSet(
@@ -74,12 +75,12 @@ public sealed class InboundTests : IAsyncDisposable
         return new HttpClient { BaseAddress = new Uri(app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First()) };
     }
 
-    static string Press(string user, string choice = "approved") =>
+    static string Press(string user, string choice = "approved", string wait = "decision-1") =>
         "payload=" + Uri.EscapeDataString(new JsonObject
         {
             ["type"] = "block_actions",
             ["user"] = new JsonObject { ["id"] = user },
-            ["actions"] = new JsonArray { new JsonObject { ["action_id"] = "ff_answer_0", ["value"] = new JsonObject { ["r"] = "r1", ["w"] = "decision-1", ["c"] = choice }.ToJsonString() } },
+            ["actions"] = new JsonArray { new JsonObject { ["action_id"] = "ff_answer_0", ["value"] = new JsonObject { ["r"] = "r1", ["w"] = wait, ["c"] = choice }.ToJsonString() } },
         }.ToJsonString());
 
     static HttpRequestMessage SlackRequest(string path, string body, string secret = SlackSecret)
@@ -152,6 +153,34 @@ public sealed class InboundTests : IAsyncDisposable
         var sent = Assert.Single(await AnswersAsync(), a => a.Result == "sent");
         Assert.Equal(("alice", "decision-1"), (sent.Actor, sent.WaitId));
         Assert.Contains("\"outcome\":\"approved\"", sent.Answer);
+    }
+
+    [Fact]
+    public async Task A_chat_retry_on_an_intervention_is_sent_as_its_recovery_action()
+    {
+        var http = Start();
+        var now = DateTimeOffset.UtcNow;
+        await records.AppendAsync(new RecordBatch(
+            [new RunRecord("r1", null, "m7s:templates/decide", "running", "x", [], false, now, null)],
+            [new WaitRecord("r1", "intervention-2", "intervention", "go_ahead", "ticket.escalation", "stuck", ["retry", "end"], true, now)]), Ct);
+
+        // This API has no Temporal: the answer is recorded as sent, then its delivery fails.
+        await SendAsync(http, SlackRequest("inbound/chat/slack", Press("U-STEVE", "retry", "intervention-2")));
+
+        var sent = Assert.Single(await AnswersAsync(), a => a.Result == "sent");
+        Assert.Equal("steve", sent.Actor);
+        Assert.Contains("\"action\":\"retry\"", sent.Answer);
+    }
+
+    [Fact]
+    public async Task A_timestamp_beyond_any_date_is_unauthenticated_not_a_server_error()
+    {
+        var http = Start();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "inbound/chat/slack") { Content = new StringContent(Press("U-ALICE"), Encoding.UTF8, "application/x-www-form-urlencoded") };
+        request.Headers.Add("X-Slack-Request-Timestamp", "99999999999999");
+        request.Headers.Add("X-Slack-Signature", "v0=00");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await SendAsync(http, request)).Status);
     }
 
     [Fact]
