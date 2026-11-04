@@ -113,6 +113,49 @@ public class SteeringRunTests
         await h.RecordHistoryAsync(id, "steering_line");
     }
 
+    /// <summary>
+    /// Every key the API's override endpoint takes reaches the workflow's override update: sent with <c>ff run override</c>,
+    /// authorised by the API (the harness caller is an administrator, so it holds every variant), applied by the run and
+    /// recorded on its timeline with the authenticated actor. Abort, which has its own route, closes nothing here.
+    /// </summary>
+    [Fact]
+    public async Task Every_override_key_reaches_the_run_through_the_api()
+    {
+        await using var h = await Harness.StartAsync("steerapi", """{ "steer_line:prepare": { delay_from: wait_ms } }""", libraries: Library);
+        var id = h.Start("m7steer:templates/steer_line", "--param", "wait_ms=4000", "--repo", Repo);
+        await UntilAsync(async () => Harness.StartedSteps(await h.ShowAsync(id)).Contains("prepare"), "prepare did not start");
+
+        (string Key, string? Step, string[] Change)[] sent =
+        [
+            ("breakpoint", "review", ["set=true"]),
+            ("skip", "ship", ["outcome=sent"]),
+            ("grant_attempts", "build", ["attempts=1"]),
+            ("change_role", "build", ["role=std:roles/designer"]),
+            ("amend", null, ["patch={ api_version: feature-flow/v1, kind: patch, base_revision: 2, changes: [{ op: set, target: ship, field: limits, value: { attempts: 2 } }] }"]),
+            ("override_library", null, ["item=m7steer:tasks/review", "with=Review the change. REVIEW-API"]),
+        ];
+        foreach (var (key, step, change) in sent)
+        {
+            var args = new List<string> { "override", id, key, "--reason", $"api {key}" };
+            if (step is not null)
+                args.AddRange(["--step", step]);
+            foreach (var c in change)
+                args.AddRange(["--change", c]);
+            var (exit, output, error) = h.Cli([.. args]);
+            Assert.True(exit == 0, $"{key}: {output}{error}");
+        }
+
+        var paused = await OpenWaitAsync(h, id, "breakpoint");
+        Assert.Equal(0, h.Cli("answer", id, paused["waitId"]!.ToString(), "continue").Exit);
+        var (_, end, _) = h.Cli("wait", id, "--timeout", "60");
+        var view = await h.ShowAsync(id);
+        Assert.True(end.Trim() == $"run {id} completed", end + view.ToJsonString());
+        var overrides = Timeline(view).Where(e => e.Kind == "override").Select(e => e.Detail).ToList();
+        Assert.Equal(sent.Select(x => $"{x.Key} by tester: api {x.Key}"), overrides.Select(d => d[..d.IndexOf(" -> ", StringComparison.Ordinal)]));
+        Assert.Contains("REVIEW-API", (await TasksAsync(h, id)).Single(t => t.Step == "review").Task);
+        Assert.Contains(Timeline(view), e => e is { Kind: "skipped", Step: "ship" });
+    }
+
     [Fact]
     public async Task A_persons_amend_role_change_and_grant_are_bounded_by_their_variants()
     {
