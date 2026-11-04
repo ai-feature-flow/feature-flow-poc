@@ -67,9 +67,11 @@ public sealed class ArtifactCheckTests : IAsyncDisposable
     /// A planner in a memory sandbox: each session (started, or continued with the engine's message) is one turn, which
     /// writes the plan to the output folder and calls the real <c>report</c> tool, as the sandbox client forwards it.
     /// </summary>
-    sealed class PlannerRuntime(MemorySandbox sandboxes, AgentEndpointServices endpoint, IReadOnlyList<Turn> turns) : IAgentRuntimeProvider
+    sealed class PlannerRuntime(MemorySandbox sandboxes, AgentEndpointServices endpoint, IReadOnlyList<Turn> turns, bool file = false) : IAgentRuntimeProvider
     {
+        const string Report = """{"outcome":"planned","summary":"Planned the project.","artifacts":{"requirements":"requirements.yaml"}}""";
         int next;
+        string? reportFile;
 
         public int Started { get; private set; }
         public List<string> Continued { get; } = [];
@@ -96,7 +98,10 @@ public sealed class ArtifactCheckTests : IAsyncDisposable
             var turn = turns[Math.Min(next++, turns.Count - 1)];
             if (turn.Plan is { } plan)
                 sandboxes.WriteFile(sandbox, $"{task.Paths!.Output}/requirements.yaml", plan);
-            if (turn.Reports)
+            if (turn.Reports && file)
+                // A runtime without the engine's tools writes report.json instead (docs/04 section 3.3).
+                reportFile = Report;
+            else if (turn.Reports)
             {
                 var claims = endpoint.Tokens.Check(task.Engine!.StepToken)!;
                 var report = JsonDocument.Parse("""
@@ -115,7 +120,7 @@ public sealed class ArtifactCheckTests : IAsyncDisposable
             Task.FromResult(ProviderResult<AgentProgress>.Success(new AgentProgress(true, 1)));
 
         public Task<ProviderResult<AgentResult>> GetResultAsync(AgentSession session, CancellationToken cancellationToken) =>
-            Task.FromResult(ProviderResult<AgentResult>.Success(new AgentResult(null, SessionEnd.Completed)));
+            Task.FromResult(ProviderResult<AgentResult>.Success(new AgentResult(null, SessionEnd.Completed, ReportFile: reportFile)));
 
         public Task<ProviderResult<Unit>> StopAsync(AgentSession session, CancellationToken cancellationToken) => Task.FromResult(ProviderResult<Unit>.Success(default));
     }
@@ -133,12 +138,12 @@ public sealed class ArtifactCheckTests : IAsyncDisposable
         return (await store.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(lockText)), CancellationToken.None)).Unwrap().Id;
     }
 
-    async Task<(StepOutcome Outcome, PlannerRuntime Runtime)> RunAsync(IReadOnlyList<Turn> turns, bool validators = true, string type = RequirementsType)
+    async Task<(StepOutcome Outcome, PlannerRuntime Runtime)> RunAsync(IReadOnlyList<Turn> turns, bool validators = true, string type = RequirementsType, bool file = false)
     {
         var client = Path.Combine(folder, "ff-sandbox");
         await File.WriteAllTextAsync(client, "a stand-in for the sandbox client", TestContext.Current.CancellationToken);
         var endpoint = new AgentEndpointServices(tokens, records, new NoSignals(), null);
-        var runtime = new PlannerRuntime(sandbox, endpoint, turns);
+        var runtime = new PlannerRuntime(sandbox, endpoint, turns, file);
         var vcs = new InMemoryVcs(forge);
         var codeHost = new InMemoryCodeHost(forge);
         var instances = new Dictionary<string, IReadOnlyDictionary<string, IProvider>>
@@ -193,6 +198,18 @@ public sealed class ArtifactCheckTests : IAsyncDisposable
         Assert.Contains("artifact 'requirements' (requirements.yaml): requirements[0].owner (line 8): must be a map, not text 'billing' [type]", message, StringComparison.Ordinal);
         Assert.Contains("correction turn 1 of 2", message, StringComparison.Ordinal);
         // The endpoint accepted the report's shape twice; the engine rejected the first artifact in between.
+        Assert.Equal([true, false, true], (await ReportsAsync()).Select(r => r.Accepted));
+        Assert.Equal(Valid, await TextAsync(outcome.Report!.Artifacts["requirements"]));
+    }
+
+    [Fact]
+    public async Task An_artifact_reported_through_report_json_is_checked_and_corrected_the_same_way()
+    {
+        // Review F6: the file fallback's report goes through the same artifact check.
+        var (outcome, runtime) = await RunAsync([new Turn(OwnerAsText), new Turn(Valid)], file: true);
+
+        Assert.Equal(StepOutcome.Reported, outcome.Kind);
+        Assert.Contains("requirements[0].owner (line 8): must be a map", Assert.Single(runtime.Continued), StringComparison.Ordinal);
         Assert.Equal([true, false, true], (await ReportsAsync()).Select(r => r.Accepted));
         Assert.Equal(Valid, await TextAsync(outcome.Report!.Artifacts["requirements"]));
     }
