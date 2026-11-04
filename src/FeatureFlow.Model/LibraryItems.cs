@@ -24,7 +24,21 @@ public sealed record Manifest(
 
 public sealed record RoleItem(string Name, string WriteAccess, IReadOnlyList<string> Tools, IReadOnlyList<string> Toolsets, ItemRef? DeprecatedBy);
 
-public sealed record ArtifactTypeItem(string Name, string Format, bool Evidence, IReadOnlyList<ItemRef> CompatibleWith, IReadOnlyList<string> ProducedBy, ItemRef? DeprecatedBy);
+public sealed record ArtifactTypeItem(string Name, string Format, bool Evidence, IReadOnlyList<ItemRef> CompatibleWith, IReadOnlyList<string> ProducedBy, ItemRef? DeprecatedBy)
+{
+    /// <summary>The JSON Schema (<see cref="ArtifactSchema"/>), or null for none or an engine-defined shape (<c>schema: engine</c>).</summary>
+    public YNode? Schema { get; init; }
+
+    /// <summary>A Markdown type's structure: headings it must have, front matter keys it must give, and identifiers it must hold.</summary>
+    public IReadOnlyList<string> RequiredHeadings { get; init; } = [];
+
+    public IReadOnlyList<string> FrontMatterRequired { get; init; } = [];
+
+    public IReadOnlyList<string> IdentifierPatterns { get; init; } = [];
+
+    /// <summary>Validators (by name, from the validator providers) checked against every artifact of the type when it is produced.</summary>
+    public IReadOnlyList<string> Validators { get; init; } = [];
+}
 
 public sealed record DecisionTypeItem(string Name, string? Description, SourceLocation Location)
 {
@@ -197,27 +211,37 @@ public static class LibraryItemReader
         foreach (var item in Seq(r.Node("compatible_with"), d, "compatible_with"))
             if (Ref(item, r, "compatible_with entry") is { } c)
                 compatible.Add(c);
-        if (r.Node("validators") is { } validators and not YSeq and not YScalar { IsNull: true })
-            r.Error("validators must be a list", validators.Location);
+        var validatorNames = r.StringList("validators");
         var schema = r.Node("schema");
         if (schema is YScalar s && s.Text != "engine")
             r.Error("schema must be a JSON Schema map, or 'engine' for an engine-defined shape", schema.Location);
+        else if (schema is YMap)
+            foreach (var (message, location) in ArtifactSchema.Problems(schema))
+                r.Error(message, location);
+        IReadOnlyList<string> headings = [], frontMatter = [], identifiers = [];
         if (MapReader.Of(r.Node("markdown"), d, "markdown") is { } md)
         {
-            md.StringList("required_headings");
+            headings = md.StringList("required_headings");
             if (MapReader.Of(md.Node("front_matter"), d, "markdown.front_matter") is { } fm)
             {
-                fm.StringList("required");
+                frontMatter = fm.StringList("required");
                 fm.Finish();
             }
 
-            md.StringList("identifier_patterns");
+            identifiers = md.StringList("identifier_patterns");
             md.Finish();
         }
 
         r.StringList("rules");
         r.Finish();
-        return new ArtifactTypeItem(name, format, evidence, compatible, producedBy, deprecated);
+        return new ArtifactTypeItem(name, format, evidence, compatible, producedBy, deprecated)
+        {
+            Schema = schema as YMap,
+            RequiredHeadings = headings,
+            FrontMatterRequired = frontMatter,
+            IdentifierPatterns = identifiers,
+            Validators = validatorNames,
+        };
     }
 
     public static IReadOnlyList<DecisionTypeItem> ReadDecisionTypes(YNode root, DiagnosticBag d)
