@@ -63,7 +63,88 @@ public class SteeringTests
             routes: { completed: { end: completed }, any_failed: { escalate: true } }
         """;
 
-    static readonly Probe Lib = new("steering", ("line", Line), ("fan", Fan), ("chain", Chain));
+    /// <summary>A planner with authority over its own plan, ahead of a protected review it might route around.</summary>
+    const string Planned = """
+        api_version: feature-flow/v1
+        kind: template
+        metadata: { name: planned, level: ticket }
+        defaults:
+          routes:
+            by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+        steps:
+          - id: plan
+            agent:
+              role: std:roles/planner
+              task: std:tasks/repair_failures
+              planning: { targets: [self] }
+            outcomes: { planned: success, blocked: blocked }
+          - id: build
+            action: test.run
+          - id: review
+            protected: true
+            action: artifact.validate
+          - id: ship
+            action: notify.send
+            routes: { sent: { end: completed } }
+        """;
+
+    static readonly Probe Lib = new("steering", ("line", Line), ("fan", Fan), ("chain", Chain), ("planned", Planned));
+
+    static ApplyResult PlannerPatch(RunCore core, string changes) =>
+        core.Apply(new StepCompleted("plan", "planned", Patch: new PatchDocument("run-1", new Proposer("agent", "plan"), "test", 1, "build",
+            changes.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(Op).ToList(), new Model.SourceLocation("t", 1, 1))));
+
+    [Fact]
+    public void An_agent_patch_routing_around_a_protected_step_awaits_a_person()
+    {
+        // review stays reachable through build's failure, but build's passed now goes round it.
+        var core = Lib.Start("planned");
+        core.Advance();
+        var result = PlannerPatch(core, """
+            { op: set, target: build, field: routes.passed, value: ship }
+            { op: set, target: build, field: routes.failed, value: review }
+            """);
+        Assert.True(result.Patch!.Status == PatchStatus.Pending, string.Join("; ", result.Patch.Diagnostics));
+        Assert.Contains(result.Patch.Diagnostics, d => d.Message.Contains("re-routes build's passed away from protected step review", StringComparison.Ordinal));
+
+        // The same patch, older run (no Steering): applied, as before M7.
+        var old = Lib.Start("planned", new RunOptions { Steering = false });
+        old.Advance();
+        Assert.Equal(PatchStatus.Applied, PlannerPatch(old, """
+            { op: set, target: build, field: routes.passed, value: ship }
+            { op: set, target: build, field: routes.failed, value: review }
+            """).Patch!.Status);
+    }
+
+    [Fact]
+    public void The_organisations_require_review_makes_every_agent_patch_await_a_person()
+    {
+        const string harmless = "{ op: set, target: build, field: limits, value: { attempts: 2 } }";
+        var core = Lib.Start("planned", new RunOptions { RequireReview = true });
+        core.Advance();
+        var result = PlannerPatch(core, harmless);
+        Assert.Equal(PatchStatus.Pending, result.Patch!.Status);
+        Assert.Contains("planning.require_review", Assert.Single(result.Patch.Diagnostics).Message);
+
+        var free = Lib.Start("planned");
+        free.Advance();
+        Assert.Equal(PatchStatus.Applied, PlannerPatch(free, harmless).Patch!.Status);
+    }
+
+    [Fact]
+    public void An_agents_library_override_opens_a_patch_approval_and_approved_asks_the_shell_to_apply_it()
+    {
+        var core = Lib.Start("planned");
+        core.Advance();
+        Assert.Contains("not templates", core.Check(new LibraryOverrideProposed("plan", "std:templates/ticket_delivery", "x")) ?? "");
+        Ok(core.Apply(new LibraryOverrideProposed("plan", "std:tasks/repair_failures", "new text")));
+        var wait = Assert.Single(core.State.Waits);
+        Assert.Equal((WaitKind.PatchApproval, "std:tasks/repair_failures"), (wait.Kind, wait.LibraryItem));
+        Ok(core.Apply(new PatchAnswered(wait.Id, true, "ann")));
+        var command = Assert.Single(core.Advance().OfType<OverrideLibrary>());
+        Assert.Equal(("std:tasks/repair_failures", "new text", "ann"), (command.Item, command.Content, command.Actor));
+        Assert.Empty(core.State.Waits);
+    }
 
     /// <summary>Each step's success; the gate, a person's decision, is left open.</summary>
     static RunInput? Succeed(string id) => id switch

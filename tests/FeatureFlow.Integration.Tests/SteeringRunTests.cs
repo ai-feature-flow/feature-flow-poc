@@ -255,7 +255,7 @@ public class SteeringRunTests
     }
 
     [Fact]
-    public async Task Aborting_with_close_pull_requests_closes_the_runs_open_pull_request_and_without_leaves_it()
+    public async Task Aborting_with_close_pull_requests_closes_the_run_trees_open_pull_requests_and_without_leaves_them()
     {
         var world = $"it-steer-{Guid.NewGuid():N}";
         var forge = InMemoryForge.Named(world);
@@ -266,23 +266,28 @@ public class SteeringRunTests
             providers: string.Join("\n", new[] { "vcs", "code_host", "ci" }.Select(t => $"  {t}: {{ instances: {{ memory: {{ world: {world} }} }} }}")));
         var host = h.Host.Providers.Required<ICodeHostProvider>("code_host");
 
-        async Task<PullRequestState> AbortAsync(bool close)
+        // A run, or a parent whose child opened the pull request: the abort reaches the child, which closes its own.
+        async Task<PullRequestState> AbortAsync(bool close, string template = "steer_pr")
         {
-            var id = h.Start("m7steer:templates/steer_pr", "--param", "wait_ms=30000", "--repo", Repo);
-            await UntilAsync(async () => Harness.StartedSteps(await h.ShowAsync(id)).Contains("hold"), "hold did not start");
-            var opened = Timeline(await h.ShowAsync(id)).Single(e => e.Kind == "agent" && e.Detail.StartsWith("pull request ", StringComparison.Ordinal)).Detail;
+            // The hold's activity sends no heartbeat, so the abort waits for it to end (M3 follow-up 9): keep it short.
+            var id = h.Start($"m7steer:templates/{template}", "--param", "wait_ms=6000", "--repo", Repo);
+            var opener = template == "steer_pr" ? id : $"{id}.kid.1";
+            await UntilAsync(async () => Harness.StartedSteps(await h.ShowAsync(opener)).Contains("hold"), "hold did not start");
+            var opened = Timeline(await h.ShowAsync(opener)).Single(e => e.Kind == "agent" && e.Detail.StartsWith("pull request ", StringComparison.Ordinal)).Detail;
             var named = opened.Split(' ')[2];
             var pr = new PullRequestRef(new RepoRef(named[..named.IndexOf('#', StringComparison.Ordinal)]), int.Parse(named[(named.IndexOf('#', StringComparison.Ordinal) + 1)..], System.Globalization.CultureInfo.InvariantCulture));
             await h.Client.GetWorkflowHandle(id).ExecuteUpdateAsync<AnswerReply>(RunWorkflowNames.Abort, [new AbortArgs("ann", "no longer wanted", close)]);
             Assert.Equal("aborted", await h.Client.GetWorkflowHandle(id).GetResultAsync<string>());
-            var timeline = Timeline(await h.ShowAsync(id));
+            Assert.Equal("aborted", await h.Client.GetWorkflowHandle(opener).GetResultAsync<string>());
+            var timeline = Timeline(await h.ShowAsync(opener));
             Assert.Equal(close, timeline.Any(e => e.Kind == "pull_request_closed" && e.Detail == $"{named}: closed"));
             return (await host.GetPullRequestAsync(pr, TestContext.Current.CancellationToken)).Value!;
         }
 
         Assert.Equal(PullRequestStates.Closed, (await AbortAsync(close: true)).State);
-        forge.Commit(repo, "refs/heads/ff/steer-pr", new Dictionary<string, string?> { ["src/App.cs"] = "class App { } \n" });
         Assert.Equal(PullRequestStates.Open, (await AbortAsync(close: false)).State);
+        forge.Commit(repo, "refs/heads/ff/steer-pr", new Dictionary<string, string?> { ["src/App.cs"] = "class App { } \n" });
+        Assert.Equal(PullRequestStates.Closed, (await AbortAsync(close: true, "steer_pr_parent")).State);
     }
 
     [Fact]

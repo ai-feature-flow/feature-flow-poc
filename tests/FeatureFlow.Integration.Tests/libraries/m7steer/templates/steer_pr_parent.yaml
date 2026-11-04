@@ -1,0 +1,19 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: steer_pr_parent
+  level: epic
+  description: A parent whose child opens a pull request and holds, so aborting the parent can close the child's.
+
+parameters:
+  wait_ms: { type: number, default: 0, description: "Inherited by the child" }
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: kid
+    action: run.child
+    with: { template: m7steer:templates/steer_pr, level: ticket, repositories: [acme/api], parameters: {} }
+    routes: { completed: { end: completed } }
