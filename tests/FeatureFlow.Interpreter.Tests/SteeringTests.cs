@@ -90,8 +90,8 @@ public class SteeringTests
 
     static readonly Probe Lib = new("steering", ("line", Line), ("fan", Fan), ("chain", Chain), ("planned", Planned));
 
-    static ApplyResult PlannerPatch(RunCore core, string changes) =>
-        core.Apply(new StepCompleted("plan", "planned", Patch: new PatchDocument("run-1", new Proposer("agent", "plan"), "test", 1, "build",
+    static ApplyResult PlannerPatch(RunCore core, string changes, string resumeAt = "build") =>
+        core.Apply(new StepCompleted("plan", "planned", Patch: new PatchDocument("run-1", new Proposer("agent", "plan"), "test", 1, resumeAt,
             changes.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(Op).ToList(), new Model.SourceLocation("t", 1, 1))));
 
     [Fact]
@@ -105,7 +105,7 @@ public class SteeringTests
             { op: set, target: build, field: routes.failed, value: review }
             """);
         Assert.True(result.Patch!.Status == PatchStatus.Pending, string.Join("; ", result.Patch.Diagnostics));
-        Assert.Contains(result.Patch.Diagnostics, d => d.Message.Contains("re-routes build's passed away from protected step review", StringComparison.Ordinal));
+        Assert.Contains(result.Patch.Diagnostics, d => d.Message.Contains("leaves protected step review unrun", StringComparison.Ordinal));
 
         // The same patch, older run (no Steering): applied, as before M7.
         var old = Lib.Start("planned", new RunOptions { Steering = false });
@@ -114,6 +114,55 @@ public class SteeringTests
             { op: set, target: build, field: routes.passed, value: ship }
             { op: set, target: build, field: routes.failed, value: review }
             """).Patch!.Status);
+    }
+
+    /// <summary>R1 F1: four ways round a protected step that a check on direct routes missed; each leaves review unrun.</summary>
+    [Theory]
+    [InlineData("{ op: set, target: build, field: limits, value: { attempts: 2 } }", "ship")]
+    [InlineData("{ op: set, target: plan, field: routes.planned, value: ship }\n{ op: set, target: plan, field: routes.blocked, value: build }", "build")]
+    [InlineData("{ op: set, target: build, field: routes.passed, value: [{ when: \"false\", to: review }, { to: ship }] }", "build")]
+    [InlineData("{ op: insert, before: review, step: { id: lint, action: test.run, routes: { passed: [{ when: \"false\", to: review }, { to: { end: completed } }], failed: review, baseline_failed: review } } }", "build")]
+    public void An_agent_patch_that_leaves_a_protected_step_unrun_awaits_a_person(string changes, string resumeAt)
+    {
+        var core = Lib.Start("planned");
+        core.Advance();
+        var result = PlannerPatch(core, changes, resumeAt);
+        Assert.True(result.Patch!.Status == PatchStatus.Pending, string.Join("; ", result.Patch.Diagnostics));
+        Assert.Contains(result.Patch.Diagnostics, d => d.Message.Contains("leaves protected step review unrun", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_go_to_that_leaves_a_protected_step_unrun_is_refused_until_a_person_skips_it()
+    {
+        // R1 F2: a breakpoint on the protected review, then go to ship past it.
+        var (core, driver) = Line_core();
+        Ok(core.Apply(new BreakpointSet("review", true, "ann")));
+        driver.Run();
+        var paused = Assert.Single(core.State.Waits);
+        Assert.Contains("leave protected step review unrun", core.Check(new InterventionAnswered(paused.Id, new Recovery(RecoveryKind.GoTo, "ship"))));
+        Assert.Null(core.Check(new InterventionAnswered(paused.Id, new Recovery(RecoveryKind.GoTo, "design"))));
+
+        Ok(core.Apply(new StepSkipped("review", "accepted", "root", "reviewed by hand", MayTouchProtected: true)));
+        driver.Run();
+        Assert.True(core.State.Steps["review"].Current is { Skipped: true });
+        Assert.DoesNotContain(core.State.Waits, w => w.Kind == WaitKind.Breakpoint);
+    }
+
+    [Fact]
+    public void A_skip_is_refused_on_a_run_started_before_m7()
+    {
+        // R1 F8: such a run would accept the skip, then run the step anyway.
+        var (core, _) = Line_core(new RunOptions { Steering = false });
+        Assert.Contains("started before skips existed", core.Check(new StepSkipped("ship", "sent", "ann", "r", true)));
+    }
+
+    [Fact]
+    public void A_skip_is_refused_while_the_steps_patch_awaits_approval()
+    {
+        var core = Lib.Start("planned", new RunOptions { RequireReview = true });
+        core.Advance();
+        Assert.Equal(PatchStatus.Pending, PlannerPatch(core, "{ op: set, target: build, field: limits, value: { attempts: 2 } }").Patch!.Status);
+        Assert.Contains("patch awaiting approval", core.Check(new StepSkipped("plan", "planned", "ann", "r", true)));
     }
 
     [Fact]
@@ -386,7 +435,7 @@ public class SteeringTests
         ], new Model.SourceLocation("t", 1, 1));
         var refused = core.Apply(new PatchProposed(bypass, new Proposer("human", null), MayTouchProtected: false));
         Assert.Equal([Model.Checks.PatchProtected], refused.Patch!.BlockingChecks);
-        Assert.Contains(refused.Patch.Diagnostics, d => d.Message.Contains("away from protected step review", StringComparison.Ordinal));
+        Assert.Contains(refused.Patch.Diagnostics, d => d.Message.Contains("leaves protected step review unrun", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -414,6 +463,9 @@ public class SteeringTests
         Assert.Equal("fan", wait.StepId);
 
         Ok(core.Apply(new InterventionAnswered(wait.Id, new Recovery(RecoveryKind.GoTo, "b"))));
+        driver.Advance();
+        // While b runs again its branch is running, so a join counting open branches waits for it.
+        Assert.Equal([BranchStatus.Succeeded, BranchStatus.Running, BranchStatus.Succeeded], core.State.Containers["fan"].Branches);
         driver.Run();
         Assert.Equal(RunStatus.Completed, core.State.Status);
         Assert.Equal(1, core.State.Steps["a"].Executions);
@@ -464,6 +516,22 @@ public class SteeringTests
     // ---- Carried across a hand-over ------------------------------------------------------------------
 
     [Fact]
+    public void A_breakpoint_waits_clean_up_survives_a_snapshot()
+    {
+        var (core, driver) = Line_core();
+        Ok(core.Apply(new BreakpointSet("review", true, "ann")));
+        driver.Respond = (id, _) => id == "review" ? new StepCompleted(id, "rejected") : Succeed(id);
+        driver.Run();
+        Ok(core.Apply(new InterventionAnswered(core.State.Waits[0].Id, new Recovery(RecoveryKind.Continue))));
+        driver.Run();
+        Ok(core.Apply(new InterventionAnswered(core.State.Waits[0].Id, new Recovery(RecoveryKind.GoTo, "review", CleanUp: true))));
+        driver.Advance();
+        var resumed = RunCore.Resume(Lib.Libraries, Probe.Ref("line"),
+            System.Text.Json.JsonSerializer.Deserialize<CarriedCore>(System.Text.Json.JsonSerializer.Serialize(core.Snapshot()))!);
+        Assert.True(Assert.Single(resumed.State.Waits) is { Kind: WaitKind.Breakpoint, CleanUp: true });
+    }
+
+    [Fact]
     public void Breakpoints_skips_and_overrides_survive_a_snapshot()
     {
         var (core, driver) = Line_core();
@@ -480,6 +548,10 @@ public class SteeringTests
         Assert.Equal("o-1", Assert.Single(resumed.State.Overrides).Id);
         Assert.Equal(WaitKind.Breakpoint, Assert.Single(resumed.State.Waits).Kind);
         Ok(resumed.Apply(new InterventionAnswered(paused.Id, new Recovery(RecoveryKind.Continue))));
+        // The entry let through the breakpoint is carried as such: resumed again, it starts rather than pausing.
+        var again = RunCore.Resume(Lib.Libraries, Probe.Ref("line"),
+            System.Text.Json.JsonSerializer.Deserialize<CarriedCore>(System.Text.Json.JsonSerializer.Serialize(resumed.Snapshot()))!);
+        Assert.Contains(again.State.Pending, e => e is { StepId: "review", PastBreakpoint: true });
         var d2 = new Driver(resumed) { Respond = (id, _) => Succeed(id) };
         d2.Run();
         Assert.Equal(WaitKind.Decision, Assert.Single(resumed.State.Waits).Kind);

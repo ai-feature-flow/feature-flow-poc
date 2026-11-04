@@ -64,11 +64,11 @@ public sealed partial class RunCore
                     return $"go to: '{action.StepId}' is not a step of plan revision {State.Revision}";
                 return action.CleanUp && StepById(target)?.Form == StepForm.Decision
                     ? $"go to: {target} is a decision, which touches no repository; clean_up resets to where a step started, so go to the step after it"
-                    : null;
+                    : Bypasses(wait.StepId, target);
             case RecoveryKind.Replan:
                 if (action.StepId is null || FindIn(action.StepId) is not { } id)
                     return $"re-plan: '{action.StepId}' is not a step of plan revision {State.Revision}";
-                return StepById(id)?.Agent?.Planning is null ? $"re-plan: {id} is not an agent step with planning authority" : null;
+                return StepById(id)?.Agent?.Planning is null ? $"re-plan: {id} is not an agent step with planning authority" : Bypasses(wait.StepId, id);
             case RecoveryKind.End:
                 return action.Status is { } status && EndableStatuses.Contains(status)
                     ? null
@@ -76,6 +76,21 @@ public sealed partial class RunCore
             default:
                 return $"unknown recovery action {action.Kind}";
         }
+    }
+
+    /// <summary>
+    /// A go-to that would leave a protected step unrun is a skip of it, which needs <c>skip_protected</c>: the person skips it
+    /// first with the override, then goes to the step (LOG 206). Behind Steering, so histories recorded before M7 replay.
+    /// </summary>
+    string? Bypasses(string stopped, string target)
+    {
+        if (!Options.Steering)
+            return null;
+        var before = Positions();
+        var after = before.Where(id => id != stopped).Append(target).ToList();
+        return StillToRun(Plan, before).Except(StillToRun(Plan, after)).FirstOrDefault() is { } left
+            ? $"go to {target} would leave protected step {left} unrun: skip it first ({Model.Overrides.SkipProtected}), then go to {target}"
+            : null;
     }
 
     ApplyResult Recover(InterventionAnswered i)

@@ -151,7 +151,7 @@ public sealed partial class RunCore
             CheckCeilings(next, d);
         }
 
-        if (human && !mayTouchProtected && next is not null && ProtectedReasons(patch, next).ToList() is { Count: > 0 } guarded)
+        if (human && !mayTouchProtected && next is not null && ProtectedReasons(patch, next, null).ToList() is { Count: > 0 } guarded)
             foreach (var reason in guarded)
                 d.Add(Checks.PatchProtected, $"{reason}: a person's patch to protected content needs {Model.Overrides.AmendProtected}", patch.Location);
 
@@ -268,7 +268,7 @@ public sealed partial class RunCore
     /// </summary>
     IEnumerable<string> PendingReasons(PatchDocument patch, Step? proposer, Plan next)
     {
-        foreach (var reason in ProtectedReasons(patch, next))
+        foreach (var reason in ProtectedReasons(patch, next, proposer?.Id))
             yield return reason;
         foreach (var op in patch.Changes)
             if (RoleOf(op.Step) is { } role && Options.AllowedRoles is { } allowed
@@ -283,52 +283,84 @@ public sealed partial class RunCore
 
     /// <summary>
     /// How a patch touches protected content (F3; docs/03 section 10.3): it removes or changes a protected step or a route out
-    /// of it, or routes around one, so a route that reached a protected step now goes elsewhere. A step the patch adds that
-    /// leads only to that protected step (or escalates, or ends the run other than completed) does not route around it.
-    /// A patch that makes a step unreachable fails the load checks (check 9) whoever proposes it.
+    /// of it, or it leaves a protected step unrun that the run would otherwise run (LOG 210): one the run is at, or one on
+    /// every path from where the run is to <c>end: completed</c>, every guarded route counted as possible. After the patch the
+    /// run continues from where it is, from <c>resume_at</c>, and from the proposer's own routes.
     /// </summary>
-    IEnumerable<string> ProtectedReasons(PatchDocument patch, Plan next)
+    IEnumerable<string> ProtectedReasons(PatchDocument patch, Plan next, string? proposerId)
     {
-        var nextById = next.AllSteps.GroupBy(s => s.Id).ToDictionary(g => g.Key, g => g.First());
         foreach (var op in patch.Changes)
             if (StepById(op.Target) is { Protected: true } target && (op.Op != "insert" || op.Position == "after"))
                 yield return $"{op.Op} touches protected step {target.Id} (F3)";
 
-        // Routing around a protected step came with M7 (Steering), so histories recorded before it replay as they ran.
+        // Leaving a protected step unrun came with M7 (Steering), so histories recorded before it replay as they ran.
         if (!Options.Steering)
             yield break;
-
-        // A step the patch adds is a guard on the way into a protected step, not a way round it, if every route of it leads
-        // there or stops the run for a person (an insert before or after it, a chain).
-        var guards = new HashSet<(string Guard, string Protected)>();
-        foreach (var added in next.AllSteps.Where(s => !byId.ContainsKey(s.Id)))
-        {
-            var targets = added.ResolvedRoutes.SelectMany(r => Targets(r.Target)).Distinct().ToList();
-            if (targets.Count == 1 && StepById(targets[0])?.Protected == true && added.ResolvedRoutes.All(r => r.Target is not ResolvedEnd { Status: "completed" }))
-                guards.Add((added.Id, targets[0]));
-        }
-
-        foreach (var step in Plan.AllSteps)
-        {
-            if (!nextById.TryGetValue(step.Id, out var after))
-                continue;
-            foreach (var route in step.ResolvedRoutes)
-            {
-                var now = after.ResolvedRoutes.FirstOrDefault(r => r.Outcome == route.Outcome);
-                var nowTargets = now is null ? [] : Targets(now.Target).ToList();
-                foreach (var target in Targets(route.Target).Distinct().Where(t => StepById(t)?.Protected == true))
-                    if (!nowTargets.Contains(target) && !nowTargets.Any(t => guards.Contains((t, target))))
-                        yield return $"re-routes {step.Id}'s {route.Outcome} away from protected step {target} (F3)";
-            }
-        }
+        var before = Positions().Concat(proposerId is null ? [] : [proposerId]).ToList();
+        // The proposer stays a way on: its routes are how the run leaves it whenever it runs again.
+        var after = Positions().Where(id => id != proposerId).Concat(proposerId is null ? [] : [proposerId]).ToList();
+        if (patch.ResumeAt is { } at && FindIn(next, next.AllSteps.GroupBy(x => x.Id).ToDictionary(g => g.Key, g => g.First()), at) is { } resume)
+            after.Add(resume);
+        foreach (var left in StillToRun(Plan, before).Except(StillToRun(next, after)))
+            yield return $"leaves protected step {left} unrun (F3)";
     }
 
-    static IEnumerable<string> Targets(Resolved target) => target switch
+    /// <summary>Where the run is: steps entered and not started, steps running, steps waiting for a person, and parallels that have started.</summary>
+    List<string> Positions() =>
+        State.Pending.Select(e => e.StepId).Concat(State.InFlight)
+            .Concat(State.Waits.Where(w => w.Kind != WaitKind.PatchApproval).Select(w => w.StepId))
+            .Concat(State.Containers.Where(c => c.Value.Active).Select(c => c.Key)).Distinct().ToList();
+
+    /// <summary>The protected steps a plan still runs from <paramref name="starts"/>: one it is at, or one on every path to <c>end: completed</c>. A step a person skipped does not count.</summary>
+    List<string> StillToRun(Plan plan, IReadOnlyCollection<string> starts) =>
+        plan.AllSteps.Where(s => s.Protected && !State.Skips.ContainsKey(s.Id) && (starts.Contains(s.Id) || !Completes(plan, starts, s.Id)))
+            .Select(s => s.Id).ToList();
+
+    /// <summary>
+    /// Whether the run can reach <c>end: completed</c> from <paramref name="starts"/> without running <paramref name="avoid"/>.
+    /// A parallel leads to each of its branches; a branch's end leads on to its parallel's routes. Escalations lead nowhere: a
+    /// person decides what happens next.
+    /// </summary>
+    static bool Completes(Plan plan, IEnumerable<string> starts, string avoid)
     {
-        ResolvedStep s => [s.StepId],
-        ResolvedGuarded g => g.Entries.SelectMany(e => Targets(e.Target)),
-        _ => [],
-    };
+        const string After = "\u0000after:";
+        var steps = plan.AllSteps.GroupBy(x => x.Id).ToDictionary(g => g.Key, g => g.First());
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var queue = new Queue<string>(starts.Where(steps.ContainsKey));
+        while (queue.TryDequeue(out var id))
+        {
+            if (id == avoid || !seen.Add(id))
+                continue;
+            IEnumerable<Resolved> next;
+            if (id.StartsWith(After, StringComparison.Ordinal))
+                next = steps[id[After.Length..]].ResolvedRoutes.Select(r => r.Target);
+            else if (steps[id].Container is { } container && container.Branches.Any(b => b.Steps.Count > 0))
+            {
+                foreach (var branch in container.Branches)
+                    queue.Enqueue(branch.Steps.Count > 0 ? branch.Steps[0].Id : After + id);
+                continue;
+            }
+            else
+                next = steps[id].ResolvedRoutes.Select(r => r.Target);
+
+            foreach (var target in next.SelectMany(Leaves))
+                switch (target)
+                {
+                    case ResolvedEnd { Status: "completed" }:
+                        return true;
+                    case ResolvedStep to:
+                        queue.Enqueue(to.StepId);
+                        break;
+                    case ResolvedBranchEnd branchEnd:
+                        queue.Enqueue(After + branchEnd.ContainerId);
+                        break;
+                }
+        }
+
+        return false;
+    }
+
+    static IEnumerable<Resolved> Leaves(Resolved target) => target is ResolvedGuarded g ? g.Entries.SelectMany(e => Leaves(e.Target)) : [target];
 }
 
 /// <summary>
