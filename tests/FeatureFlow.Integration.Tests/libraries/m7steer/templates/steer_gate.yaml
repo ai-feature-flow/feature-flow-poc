@@ -1,0 +1,12 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: steer_gate
+  level: ticket
+  description: A child a person passes or fails at its gate.
+
+steps:
+  - id: gate
+    decision: { type: delivery.partial_recovery, prompt: std:prompts/partial_delivery }
+    outcomes: { go: success, stop: failure }
+    routes: { go: { end: completed }, stop: { end: failed } }

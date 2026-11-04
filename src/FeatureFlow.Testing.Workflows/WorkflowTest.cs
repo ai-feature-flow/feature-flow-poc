@@ -7,6 +7,15 @@ namespace FeatureFlow.Testing.Workflows;
 /// <summary>What a step does on one visit: an outcome, or an error class first (docs/09 section 4.3).</summary>
 public sealed record Visit(string? Outcome, string? Error = null, int Times = 1);
 
+/// <summary>
+/// A person's run-time override in a test (docs/05 section 5), applied at the run's start as an administrator would:
+/// <c>breakpoint</c>, <c>skip</c> (with <c>outcome</c>) or <c>grant_attempts</c> (with <c>attempts</c>) on a step.
+/// </summary>
+public sealed record TestOverride(string Key, string StepId, string? Outcome = null, long Attempts = 0);
+
+/// <summary>A person's answer to a breakpoint or intervention in a test: a recovery action (docs/01 section 7.2).</summary>
+public sealed record TestAnswer(string Action, string? StepId = null, bool CleanUp = false, long Attempts = 0, string? Status = null);
+
 /// <summary>A workflow test file (docs/09 section 4.3; LOG 75).</summary>
 public sealed class WorkflowTest
 {
@@ -40,6 +49,15 @@ public sealed class WorkflowTest
 
     /// <summary>The steps a <c>clean_up</c> route reset the branch for, in order.</summary>
     public List<string>? ExpectCleanUp { get; init; }
+
+    /// <summary>A person's overrides, applied in order when the run starts.</summary>
+    public List<TestOverride> Overrides { get; } = [];
+
+    /// <summary>A person's answers to the breakpoints and interventions opened at a step, in the order they open.</summary>
+    public Dictionary<string, List<TestAnswer>> Answers { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>The steps a person's skip ended without running, in order.</summary>
+    public List<string>? ExpectSkipped { get; init; }
 }
 
 public static class WorkflowTestReader
@@ -80,7 +98,21 @@ public static class WorkflowTestReader
             ExpectStatus = expect?.Enum("status", ["running", "completed", "failed", "rejected", "partial", "aborted", "incomplete"]),
             ExpectEscalated = expect?.Has("escalated") == true ? expect.StringList("escalated").ToList() : null,
             ExpectCleanUp = expect?.Has("clean_up") == true ? expect.StringList("clean_up").ToList() : null,
+            ExpectSkipped = expect?.Has("skipped") == true ? expect.StringList("skipped").ToList() : null,
         };
+
+        foreach (var item in r.Node("overrides") is { } overrides ? LibraryItemReader.Seq(overrides, d, "overrides") : [])
+            if (ReadOverride(item, d) is { } o)
+                test.Overrides.Add(o);
+
+        if (MapReader.Of(r.Node("answers"), d, "answers") is { } answers)
+            foreach (var (key, value) in answers.Map.Entries)
+            {
+                answers.Node(key.Text);
+                var list = (value is YSeq seq ? seq.Items : [value]).Select(v => ReadAnswer(v, d)).OfType<TestAnswer>().ToList();
+                if (list.Count > 0)
+                    test.Answers[key.Text] = list;
+            }
 
         if (MapReader.Of(r.Node("parameters"), d, "parameters") is { } ps)
             foreach (var (key, value) in ps.Map.Entries)
@@ -154,6 +186,57 @@ public static class WorkflowTestReader
 
         r.Finish();
         return test;
+    }
+
+    public static readonly IReadOnlyList<string> OverrideKeys = ["breakpoint", "skip", "grant_attempts"];
+
+    static TestOverride? ReadOverride(YNode node, DiagnosticBag d)
+    {
+        if (MapReader.Of(node, d, "an override") is not { } m)
+            return null;
+        var key = OverrideKeys.FirstOrDefault(m.Has);
+        if (key is null)
+        {
+            m.Error($"an override is one of {string.Join(", ", OverrideKeys)}, naming the step", m.Map.Location);
+            return null;
+        }
+
+        var o = new TestOverride(key, m.String(key, required: true) ?? "", m.String("outcome", required: key == "skip"), m.Int("attempts") ?? 0);
+        if (key == "grant_attempts" && o.Attempts <= 0)
+            m.Error("grant_attempts needs attempts, a positive number", m.Map.Location);
+        m.Finish();
+        return o;
+    }
+
+    public static readonly IReadOnlyList<string> AnswerActions = ["continue", "retry", "go_to", "replan", "grant_attempts", "end"];
+
+    static TestAnswer? ReadAnswer(YNode node, DiagnosticBag d)
+    {
+        if (node is YScalar { IsNull: false } s)
+        {
+            if (s.Text is "continue" or "retry")
+                return new TestAnswer(s.Text);
+            d.Add(Checks.Schema, $"an answer is continue, retry, or a map such as {{ go_to: <step> }}, not '{s.Text}'", s.Location);
+            return null;
+        }
+
+        if (MapReader.Of(node, d, "an answer") is not { } m)
+            return null;
+        var action = AnswerActions.FirstOrDefault(m.Has);
+        TestAnswer? answer = action switch
+        {
+            "go_to" or "replan" => new TestAnswer(action, m.String(action, required: true), m.Bool("clean_up") ?? false),
+            "grant_attempts" => new TestAnswer(action, Attempts: m.Int(action) ?? 0),
+            "end" => new TestAnswer(action, Status: m.String(action, required: true)),
+            "continue" or "retry" => new TestAnswer(action),
+            _ => null,
+        };
+        if (answer is null)
+            m.Error($"an answer is one of {string.Join(", ", AnswerActions)}", m.Map.Location);
+        else if (action is "continue" or "retry")
+            m.Node(action);
+        m.Finish();
+        return answer;
     }
 
     static Visit? ReadVisit(YNode node, DiagnosticBag d)

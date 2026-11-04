@@ -52,7 +52,7 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
         IReadOnlyList<string>? effective = null;
         var libraries = Build(snapshots, d);
         var declared = libraries.All.SelectMany(l => l.DecisionTypes).ToList();
-        var policy = start.Policy ?? services.Policy(declared);
+        var policy = start.Policy ?? services.Policy(declared) with { RequireReview = RequiresReview(services.Organisation.Policy, start.Template) };
         // A child's approval follows its own repositories' team, like the API's for its waits; it may have one team at most
         // (LOG 217), as the API checks for a run it starts.
         var oneTeam = Approval.MoreThanOneTeam(services.Organisation, start.Repositories);

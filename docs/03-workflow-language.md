@@ -569,7 +569,7 @@ There is no operation to change a step's role: privilege comes from the role
 | Result | When |
 |---|---|
 | Applied | Valid, and touches nothing protected, or comes from a human with the right role |
-| Pending decision | An agent's patch that touches a protected step (removes it, changes it, changes a route out of it, or makes it unreachable), or adds a step whose role is outside the organisation's allowed list. A human approves or rejects it (`docs/01` section 7.1) |
+| Pending decision | An agent's patch that touches a protected step (removes it, changes it, changes a route out of it, or leaves it unrun where the run would have run it), or adds a step whose role is outside the organisation's allowed list. A human approves or rejects it (`docs/01` section 7.1). A patch that makes any step unreachable fails check 9, whoever proposes it (LOG 210) |
 | Rejected | Invalid, stale, or it would relax a safety floor. Recorded, never silently dropped. An agent's invalid patch goes back to it for correction turns first |
 
 Validation of a patch runs every load check on the plan as it will be after the

@@ -98,7 +98,7 @@ public partial class RunWorkflow
             policy = prepared.Policy;
             libraries = RunActivities.Build(prepared.Libraries, new DiagnosticBag());
             var (started, diagnostics) = RunCore.Start(libraries, Template, RunActivities.RunInfoOf(input) with { DefaultBranches = prepared.DefaultBranches },
-                policy.ToOptions() with { BranchFromPattern = Workflow.Patched(BranchPatternPatch) });
+                policy.ToOptions() with { BranchFromPattern = Workflow.Patched(BranchPatternPatch), Steering = Workflow.Patched(SteeringPatch) });
             core = started ?? throw new ApplicationFailureException("the plan passed run start but does not load: " + string.Join("; ", diagnostics.Take(3)));
             // docs/09 section 1: a warning changes nothing, and is listed in the run start record (the timeline).
             if (prepared.Warnings.Count > 0 && Workflow.Patched(StartWarningsPatch))
@@ -114,7 +114,8 @@ public partial class RunWorkflow
             var snapshot = await Workflow.ExecuteActivityAsync((RunActivities a) => a.LoadLibrariesAsync(input.LockRef), Light);
             policy = input.Policy!;
             libraries = RunActivities.Build(snapshot, new DiagnosticBag());
-            core = RunCore.Resume(libraries, Template, input.Carried.Core, policy.ToOptions() with { BranchFromPattern = Workflow.Patched(BranchPatternPatch) });
+            core = RunCore.Resume(libraries, Template, input.Carried.Core,
+                policy.ToOptions() with { BranchFromPattern = Workflow.Patched(BranchPatternPatch), Steering = Workflow.Patched(SteeringPatch) });
             // Questions carried over a hand-over get their timers again (docs/02 section 3: timers are re-created from state).
             foreach (var open in questions.ToList())
                 _ = TimeOutQuestionAsync(open);
@@ -283,6 +284,7 @@ public partial class RunWorkflow
     public async Task<AnswerReply> AbortAsync(AbortArgs abort)
     {
         await Workflow.WaitConditionAsync(() => core is not null);
+        closePullRequests |= abort.ClosePullRequests;
         var result = core!.Apply(new RunAborted($"{abort.Reason} (by {abort.Actor})"));
         if (!result.Accepted)
             throw new ApplicationFailureException(string.Join("; ", result.Errors));
@@ -322,19 +324,23 @@ public partial class RunWorkflow
             case WaitKind.PatchApproval:
                 return a.Action switch
                 {
-                    "approve" => new PatchAnswered(a.WaitId, true),
-                    "reject" => new PatchAnswered(a.WaitId, false),
+                    "approve" => new PatchAnswered(a.WaitId, true, a.Actor),
+                    "reject" => new PatchAnswered(a.WaitId, false, a.Actor),
                     _ => throw new ApplicationFailureException($"{a.WaitId} is a patch approval: answer approve or reject"),
                 };
             default:
-                var kind = a.Action switch
+                // A breakpoint's continue may come as its outcome (ff run answer <run> <wait> continue).
+                var kind = (wait.Kind == WaitKind.Breakpoint ? a.Action ?? a.Outcome : a.Action) switch
                 {
                     "retry" => RecoveryKind.Retry,
                     "go_to" => RecoveryKind.GoTo,
                     "replan" => RecoveryKind.Replan,
                     "grant_attempts" => RecoveryKind.GrantAttempts,
                     "end" => RecoveryKind.End,
-                    _ => throw new ApplicationFailureException($"{a.WaitId} is an intervention: answer retry, go_to, replan, grant_attempts or end"),
+                    "continue" when wait.Kind == WaitKind.Breakpoint => RecoveryKind.Continue,
+                    _ => throw new ApplicationFailureException(wait.Kind == WaitKind.Breakpoint
+                        ? $"{a.WaitId} is a breakpoint: answer continue, retry, go_to, replan, grant_attempts or end"
+                        : $"{a.WaitId} is an intervention: answer retry, go_to, replan, grant_attempts or end"),
                 };
                 RunStatus? status = a.Status is null ? null : RunStatuses.Parse(a.Status);
                 return new InterventionAnswered(a.WaitId, new Recovery(kind, a.StepId, a.CleanUp, a.Attempts, status, a.BeyondHardCeiling));
@@ -400,6 +406,18 @@ public partial class RunWorkflow
                 case SendPatchToParent p when input.ParentWorkflowId is { } parent:
                     await SignalQuietlyAsync(parent, RunWorkflowNames.ParentPatch,
                         [new ParentPatchSignal(Workflow.Info.WorkflowId, p.StepId, PatchReader.Write(p.Patch))]);
+                    break;
+                case OverrideLibrary o:
+                    // A person approved an agent's library override (docs/05 section 6): it is theirs, recorded as their override.
+                    try
+                    {
+                        await OverrideLibraryAsync(o.Item, o.Content, null, o.Actor, o.Reason);
+                    }
+                    catch (ApplicationFailureException e)
+                    {
+                        core!.State.Trace.Add(new TraceEntry("library_override_refused", "", $"{o.Item} ({o.WaitId}): {e.Message}"));
+                    }
+
                     break;
             }
         }
@@ -690,7 +708,7 @@ public partial class RunWorkflow
             input.ParentBranch is { } parentBranch ? input.Repositories.ToDictionary(r => r, _ => parentBranch) : new Dictionary<string, string>(),
             consumed,
             Workflow.Info.WorkflowId,
-            input.LockRef,
+            LockRef,
             TrackerIssue: input.TrackerIssue);
     }
 
@@ -877,6 +895,8 @@ public partial class RunWorkflow
         var result = core!.Apply(completed);
         if (result.Accepted)
             IndexArtifacts(step, completed.Artifacts);
+        if (result.Accepted && report.LibraryOverride is { } proposal)
+            ProposeLibraryOverride(step, proposal);
         if (!result.Accepted)
         {
             // Correction turns arrive in M4; until then an output contract error fails the attempt (docs/04 section 3.1, step 5).
@@ -985,7 +1005,7 @@ public partial class RunWorkflow
         }
 
         var childInput = new RunStart(childId, template, repositories, parameters,
-            input.LockRef, input.DryRun, input.Requester, Workflow.Info.WorkflowId, step.Id, input.HandOverEvents, ParentBranch: core!.WorkBranch(),
+            LockRef, input.DryRun, input.Requester, Workflow.Info.WorkflowId, step.Id, input.HandOverEvents, ParentBranch: core!.WorkBranch(),
             ParentArtifacts: artifacts, RootArtifacts: crossRun ? input.ParentWorkflowId is null ? artifacts : input.RootArtifacts : null,
             TrackerIssue: inputs.GetValueOrDefault("tracker_issue") as string, WorkItems: budget);
         ChildWorkflowHandle? handle = null;
@@ -1256,13 +1276,16 @@ public partial class RunWorkflow
         questionRecords.Clear();
         var artifacts = artifactRecords.ToList();
         artifactRecords.Clear();
+        var locks = lockRecords.ToList();
+        lockRecords.Clear();
 
         var status = core.State.Status.Name();
         var runs = status == lastRecordedStatus ? [] : new List<RunRecord> { RunRecordOf(status, null, now) };
         lastRecordedStatus = status;
-        if (timeline.Count == 0 && waits.Count == 0 && runs.Count == 0 && answers.Count == 0 && artifacts.Count == 0)
+        if (timeline.Count == 0 && waits.Count == 0 && runs.Count == 0 && answers.Count == 0 && artifacts.Count == 0 && locks.Count == 0)
             return false;
-        var batch = new RecordBatch(runs, waits, timeline, Questions: answers.Count == 0 ? null : answers, Artifacts: artifacts.Count == 0 ? null : artifacts);
+        var batch = new RecordBatch(runs, waits, timeline, Locks: locks.Count == 0 ? null : locks, Questions: answers.Count == 0 ? null : answers,
+            Artifacts: artifacts.Count == 0 ? null : artifacts);
         await Workflow.ExecuteActivityAsync((RunActivities a) => a.RecordAsync(batch), Light);
         return true;
     }
@@ -1278,6 +1301,7 @@ public partial class RunWorkflow
         {
             WaitKind.Decision => (step?.Decision?.Type ?? $"{level}.decision", step?.DeclaredOutcomes.Select(o => o.Name).ToList() ?? []),
             WaitKind.PatchApproval => ($"{level}.patch_approval", new List<string> { "approve", "reject" }),
+            WaitKind.Breakpoint => ($"{level}.breakpoint", new List<string> { "continue", "retry", "go_to", "replan", "grant_attempts", "end" }),
             _ => ($"{level}.escalation", new List<string> { "retry", "go_to", "replan", "grant_attempts", "end" }),
         };
         return new WaitRecord(input.RunId, wait.Id, wait.Kind.ToString().ToLowerInvariant(), wait.StepId, type, wait.Reason, choices, open, now);
@@ -1304,6 +1328,12 @@ public partial class RunWorkflow
         // sandbox before the run ends. Histories recorded before this change ended without waiting.
         if (inFlightActivities > 0 && Workflow.Patched(WaitCancellationPatch))
             await Workflow.WaitConditionAsync(() => inFlightActivities == 0);
+        if (closePullRequests)
+        {
+            await CloseAbortedPullRequestsAsync();
+            await RecordAsync();
+        }
+
         await TellParentAsync();
         return core!.State.Status.Name();
     }
@@ -1387,7 +1417,8 @@ public partial class RunWorkflow
         var carried = new ShellState(core.Snapshot(), children.ToList(), pendingChildEnds.ToList(), pendingParentPatches.ToList(), answered.ToList(),
             recordedOpenWaits.ToList(), timelineSequence, handOvers.ToList(), cancelledByParent,
             activitiesStartedWhileDraining, childEndsWhileDraining, answersWhileDraining, questions.ToList(), closedQuestions.ToList());
-        var next = input with { Policy = policy, Carried = carried };
+        // The run's lock carries its library overrides (docs/08 section 5.2).
+        var next = input with { Policy = policy, Carried = carried, LockRef = LockRef };
         return Workflow.CreateContinueAsNewException((RunWorkflow w) => w.RunAsync(next));
     }
 }

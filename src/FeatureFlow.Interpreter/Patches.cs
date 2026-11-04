@@ -15,7 +15,7 @@ public sealed partial class RunCore
     {
         var patch = input.Patch with { ProposedBy = input.By };
         var proposer = input.By.StepId is { } id ? StepById(id) : null;
-        var result = Propose(patch, proposer);
+        var result = Propose(patch, proposer, mayTouchProtected: input.MayTouchProtected);
         if (result.Status == PatchStatus.Applied)
             Resume(patch, proposer?.Id ?? "");
         return new ApplyResult(true, [], result);
@@ -24,6 +24,16 @@ public sealed partial class RunCore
     ApplyResult PatchDecision(PatchAnswered answer)
     {
         var wait = State.Waits.FirstOrDefault(w => w.Id == answer.WaitId && w.Kind == WaitKind.PatchApproval);
+        if (wait is { LibraryItem: { } item })
+        {
+            // An agent's library override (docs/05 section 6): approved, the shell carries it out with the approver as the actor.
+            State.Waits.Remove(wait);
+            Trace(answer.Approve ? "library_override_approved" : "library_override_rejected", wait.StepId, $"{item} by {answer.Actor}");
+            if (answer.Approve)
+                outbox.Add(new OverrideLibrary(wait.Id, item, wait.LibraryContent ?? "", answer.Actor, $"approved proposal of {wait.StepId}"));
+            return ApplyResult.Ok;
+        }
+
         if (wait?.Patch is not { } patch)
             return ApplyResult.Refused($"no patch approval is open as {answer.WaitId}");
         State.Waits.Remove(wait);
@@ -80,8 +90,15 @@ public sealed partial class RunCore
     static string? FindIn(Plan plan, IReadOnlyDictionary<string, Step> steps, string id) =>
         steps.ContainsKey(id) ? id : plan.Instances.FirstOrDefault(i => i.Id == id)?.FirstStepId;
 
-    PatchResult Propose(PatchDocument patch, Step? proposer, bool approved = false, bool fromChild = false, string? childStepId = null)
+    /// <summary>
+    /// The one path every patch takes. A person's patch (<c>amend</c>) is not bound by F3 but touches protected content only
+    /// when <paramref name="mayTouchProtected"/>, may omit <c>resume_at</c> (the run continues where it was), and changes a
+    /// role only as <c>change_role</c> (<paramref name="roleChange"/>).
+    /// </summary>
+    PatchResult Propose(PatchDocument patch, Step? proposer, bool approved = false, bool fromChild = false, string? childStepId = null,
+        bool mayTouchProtected = true, bool roleChange = false)
     {
+        var human = patch.ProposedBy.Type == "human";
         var d = new DiagnosticBag();
         if (libraries is null || template is null)
         {
@@ -92,7 +109,7 @@ public sealed partial class RunCore
         if (patch.BaseRevision != State.Revision)
             d.Add(Checks.PatchBaseRevision, $"base_revision {patch.BaseRevision} is not the current revision {State.Revision}; re-propose against it", patch.Location);
         if (!fromChild)
-            CheckProposer(patch, proposer, d);
+            CheckProposer(patch, proposer, d, roleChange);
         else
             CheckRoleUnchanged(patch, d);
         CheckRunning(patch, proposer, d);
@@ -126,7 +143,7 @@ public sealed partial class RunCore
             var nextById = next.AllSteps.GroupBy(s => s.Id).ToDictionary(g => g.Key, g => g.First());
             if (patch.ResumeAt is null)
             {
-                if (!fromChild)
+                if (!fromChild && !human)
                     d.Add(Checks.PatchResumeAt, "resume_at is required", patch.Location);
             }
             else if (FindIn(next, nextById, patch.ResumeAt) is null)
@@ -134,10 +151,14 @@ public sealed partial class RunCore
             CheckCeilings(next, d);
         }
 
+        if (human && !mayTouchProtected && next is not null && ProtectedReasons(patch, next, null).ToList() is { Count: > 0 } guarded)
+            foreach (var reason in guarded)
+                d.Add(Checks.PatchProtected, $"{reason}: a person's patch to protected content needs {Model.Overrides.AmendProtected}", patch.Location);
+
         if (d.HasErrors)
             return Reject(patch, d);
 
-        if (!approved && patch.ProposedBy.Type == "agent" && PendingReasons(patch, proposer).ToList() is { Count: > 0 } reasons)
+        if (!approved && patch.ProposedBy.Type == "agent" && PendingReasons(patch, proposer, next!).ToList() is { Count: > 0 } reasons)
         {
             foreach (var reason in reasons)
                 d.Add(Checks.PatchProtected, reason, patch.Location, proposer?.Id);
@@ -163,11 +184,16 @@ public sealed partial class RunCore
         return new PatchResult(PatchStatus.Rejected, d);
     }
 
-    /// <summary>Check 27: the proposer may use each operation, and an agent never changes a role.</summary>
-    void CheckProposer(PatchDocument patch, Step? proposer, DiagnosticBag d)
+    /// <summary>Check 27: the proposer may use each operation; an agent never changes a role, and a person only by <c>change_role</c>.</summary>
+    void CheckProposer(PatchDocument patch, Step? proposer, DiagnosticBag d, bool roleChange = false)
     {
         switch (patch.ProposedBy.Type)
         {
+            case "human" when !roleChange:
+                foreach (var op in patch.Changes.Where(o => o.Op == "replace"))
+                    if (StepById(op.Target)?.Agent?.Role?.Text is { } held && RoleOf(op.Step) != held)
+                        d.Add(Checks.PatchProposer, $"replace of {op.Target} changes its role from {held} to {RoleOf(op.Step) ?? "none"}; a person changes a role with change_role (docs/05 section 5)", op.Location);
+                break;
             case "agent":
                 if (proposer?.Agent?.Planning is not { } planning || !planning.Targets.Contains("self"))
                 {
@@ -236,23 +262,105 @@ public sealed partial class RunCore
         }
     }
 
-    /// <summary>Check 29: an agent's patch that touches protected content, uses an unlisted role, or must be reviewed.</summary>
-    IEnumerable<string> PendingReasons(PatchDocument patch, Step? proposer)
+    /// <summary>
+    /// Check 29: an agent's patch that touches protected content, adds or changes a step to use an unlisted role (F10), or
+    /// must be reviewed: the step's <c>planning.review: required</c>, or the organisation's <c>planning.require_review</c>.
+    /// </summary>
+    IEnumerable<string> PendingReasons(PatchDocument patch, Step? proposer, Plan next)
     {
+        foreach (var reason in ProtectedReasons(patch, next, proposer?.Id))
+            yield return reason;
         foreach (var op in patch.Changes)
-        {
-            var target = StepById(op.Target);
-            var touches = op.Op != "insert" || op.Position == "after";
-            if (target is { Protected: true } && touches)
-                yield return $"{op.Op} touches protected step {target.Id} (F3)";
             if (RoleOf(op.Step) is { } role && Options.AllowedRoles is { } allowed
                 && !allowed.Contains(LibraryReference.TryParse(role)?.Name ?? role))
                 yield return $"{op.Op} uses role {role}, which is not in planning.allowed_roles";
-        }
 
         if (proposer?.Agent?.Planning?.Review == "required")
             yield return $"{proposer.Id} has planning.review: required";
+        else if (Options.RequireReview)
+            yield return "the organisation requires review of agent patches for this template (planning.require_review)";
     }
+
+    /// <summary>
+    /// How a patch touches protected content (F3; docs/03 section 10.3): it removes or changes a protected step or a route out
+    /// of it, or it leaves a protected step unrun that the run would otherwise run (LOG 210): one the run is at, or one on
+    /// every path from where the run is to <c>end: completed</c>, every guarded route counted as possible. After the patch the
+    /// run continues from where it is, from <c>resume_at</c>, and from the proposer's own routes.
+    /// </summary>
+    IEnumerable<string> ProtectedReasons(PatchDocument patch, Plan next, string? proposerId)
+    {
+        foreach (var op in patch.Changes)
+            if (StepById(op.Target) is { Protected: true } target && (op.Op != "insert" || op.Position == "after"))
+                yield return $"{op.Op} touches protected step {target.Id} (F3)";
+
+        // Leaving a protected step unrun came with M7 (Steering), so histories recorded before it replay as they ran.
+        if (!Options.Steering)
+            yield break;
+        var before = Positions().Concat(proposerId is null ? [] : [proposerId]).ToList();
+        // The proposer stays a way on: its routes are how the run leaves it whenever it runs again.
+        var after = Positions().Where(id => id != proposerId).Concat(proposerId is null ? [] : [proposerId]).ToList();
+        if (patch.ResumeAt is { } at && FindIn(next, next.AllSteps.GroupBy(x => x.Id).ToDictionary(g => g.Key, g => g.First()), at) is { } resume)
+            after.Add(resume);
+        foreach (var left in StillToRun(Plan, before).Except(StillToRun(next, after)))
+            yield return $"leaves protected step {left} unrun (F3)";
+    }
+
+    /// <summary>Where the run is: steps entered and not started, steps running, steps waiting for a person, and parallels that have started.</summary>
+    List<string> Positions() =>
+        State.Pending.Select(e => e.StepId).Concat(State.InFlight)
+            .Concat(State.Waits.Where(w => w.Kind != WaitKind.PatchApproval).Select(w => w.StepId))
+            .Concat(State.Containers.Where(c => c.Value.Active).Select(c => c.Key)).Distinct().ToList();
+
+    /// <summary>The protected steps a plan still runs from <paramref name="starts"/>: one it is at, or one on every path to <c>end: completed</c>. A step a person skipped does not count.</summary>
+    List<string> StillToRun(Plan plan, IReadOnlyCollection<string> starts) =>
+        plan.AllSteps.Where(s => s.Protected && !State.Skips.ContainsKey(s.Id) && (starts.Contains(s.Id) || !Completes(plan, starts, s.Id)))
+            .Select(s => s.Id).ToList();
+
+    /// <summary>
+    /// Whether the run can reach <c>end: completed</c> from <paramref name="starts"/> without running <paramref name="avoid"/>.
+    /// A parallel leads to each of its branches; a branch's end leads on to its parallel's routes. Escalations lead nowhere: a
+    /// person decides what happens next.
+    /// </summary>
+    static bool Completes(Plan plan, IEnumerable<string> starts, string avoid)
+    {
+        const string After = "\u0000after:";
+        var steps = plan.AllSteps.GroupBy(x => x.Id).ToDictionary(g => g.Key, g => g.First());
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var queue = new Queue<string>(starts.Where(steps.ContainsKey));
+        while (queue.TryDequeue(out var id))
+        {
+            if (id == avoid || !seen.Add(id))
+                continue;
+            IEnumerable<Resolved> next;
+            if (id.StartsWith(After, StringComparison.Ordinal))
+                next = steps[id[After.Length..]].ResolvedRoutes.Select(r => r.Target);
+            else if (steps[id].Container is { } container && container.Branches.Any(b => b.Steps.Count > 0))
+            {
+                foreach (var branch in container.Branches)
+                    queue.Enqueue(branch.Steps.Count > 0 ? branch.Steps[0].Id : After + id);
+                continue;
+            }
+            else
+                next = steps[id].ResolvedRoutes.Select(r => r.Target);
+
+            foreach (var target in next.SelectMany(Leaves))
+                switch (target)
+                {
+                    case ResolvedEnd { Status: "completed" }:
+                        return true;
+                    case ResolvedStep to:
+                        queue.Enqueue(to.StepId);
+                        break;
+                    case ResolvedBranchEnd branchEnd:
+                        queue.Enqueue(After + branchEnd.ContainerId);
+                        break;
+                }
+        }
+
+        return false;
+    }
+
+    static IEnumerable<Resolved> Leaves(Resolved target) => target is ResolvedGuarded g ? g.Entries.SelectMany(e => Leaves(e.Target)) : [target];
 }
 
 /// <summary>
