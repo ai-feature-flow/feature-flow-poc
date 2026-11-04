@@ -29,7 +29,7 @@ public static class StepStartChecks
     public static readonly IReadOnlyDictionary<string, IReadOnlyList<ActionInput>> Inputs = new Dictionary<string, IReadOnlyList<ActionInput>>
     {
         ["scm.catch_up"] = [S("repository")],
-        ["scm.pull_request"] = [S("title"), S("body"), B("draft")],
+        ["scm.pull_request"] = [S("title"), S("body"), B("draft"), B("post_declines")],
         ["scm.merge"] = [B("engine_can_merge"), B("squash"), B("require_checks"), B("require_tested")],
         ["scm.revert"] = [S("pull_request")],
         ["ci.checks"] = [A("expected"), D("grace"), D("timeout"), D("poll_every", MinimumPoll)],

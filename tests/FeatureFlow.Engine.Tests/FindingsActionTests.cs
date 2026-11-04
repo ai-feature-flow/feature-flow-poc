@@ -452,6 +452,44 @@ public sealed class FindingsActionTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_decline_made_before_the_pull_request_opened_is_posted_when_it_opens_and_only_once()
+    {
+        // M6 follow-up 5 (LOG 164, 249): std's fix loop runs before merge_into_parent opens the pull request.
+        await Reviewed("review.assess", Finding(), Finding("b", snippet: "void Add()"));
+        await Record();
+        var ledger = await Ledger();
+        await Triaged("fix.triage", new TriageEntry(ledger[0].FindingId, FindingStates.Declined, "not a bug: x is never null here"));
+        Outcome(await Triage(stepId: "fix.apply_triage"), "applied");
+
+        var opened = await world.RunAsync("scm.pull_request", "{ title: T-1 }", "deliver.open_pr");
+        Outcome(opened, "ready");
+        var pr = ActionRunAccess.Pr(world.PullRequests.Single());
+        Assert.Contains(opened.Events, e => e.StartsWith($"the decline of {ledger[0].FindingId} is posted", StringComparison.Ordinal));
+        // A decline after the pull request opened is posted by its triage; opening again (a re-entry) posts neither twice.
+        await Triaged("fix.triage", new TriageEntry(ledger[1].FindingId, FindingStates.Declined, "by design"));
+        Outcome(await Triage(stepId: "fix.apply_triage_2"), "applied");
+        Outcome(await world.RunAsync("scm.pull_request", "{ title: T-1 }", "deliver.open_pr"), "ready");
+
+        var comments = world.Forge.Comments(pr);
+        Assert.Equal(2, comments.Count);
+        Assert.Contains(comments, c => c.Contains("not a bug: x is never null here", StringComparison.Ordinal));
+        Assert.Contains(comments, c => c.Contains("by design", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_pull_request_with_post_declines_false_posts_none()
+    {
+        await Reviewed("review.assess", Finding());
+        await Record();
+        await Triaged("fix.triage", new TriageEntry(Assert.Single(await Ledger()).FindingId, FindingStates.Declined, "by design"));
+        Outcome(await Triage(stepId: "fix.apply_triage", postDeclines: false), "applied");
+
+        Outcome(await world.RunAsync("scm.pull_request", "{ title: T-1, post_declines: false }", "deliver.open_pr"), "ready");
+
+        Assert.Empty(world.Forge.Comments(ActionRunAccess.Pr(world.PullRequests.Single())));
+    }
+
+    [Fact]
     public async Task Check_31_refuses_an_unknown_reopen_on()
     {
         await Reviewed("review.assess", Finding());

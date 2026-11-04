@@ -391,6 +391,38 @@ static class FindingsActions
         return (problems.Count == 0 ? triage : null, problems);
     }
 
+    static string DeclineBody(FindingRecord finding, string? reason)
+    {
+        var where = finding.Finding.Location.Symbol is { Length: > 0 } symbol ? $"`{finding.Finding.Location.File}` ({symbol})" : $"`{finding.Finding.Location.File}`";
+        return $"**Finding {finding.FindingId} declined**: {finding.Finding.Title}\n\n{where}\n\n{reason}";
+    }
+
+    /// <summary>
+    /// The declines the ledger holds for a repository, posted when its pull request opens or is updated (M6 follow-up 5;
+    /// LOG 164, 249), unless the step says <c>post_declines: false</c>. Each is posted under the key of the triage that
+    /// declined it, the key that triage posts under itself, so a decline is posted once whichever comes first. Only this
+    /// run's own findings: a child's belong on its own pull request.
+    /// </summary>
+    internal static async Task PostLedgerDeclinesAsync(ActionRun run, RepoRef repo, PullRequestRef pr)
+    {
+        if (!run.Bool("post_declines", true))
+            return;
+        var records = run.Provider<IRecordStoreProvider>("record_store");
+        var runId = run.Call.Step.RunId;
+        var declined = ActionRun.Must(await records.QueryAsync<FindingRecord>(Queries.Findings, new Dictionary<string, string> { ["run_id"] = runId }, run.Ct), "read the findings ledger")
+            .Where(f => f.RunId == runId && f.State == FindingStates.Declined && RepositoryNames.As(f.Finding.Location.Repository, [repo.FullName]) == repo.FullName);
+        foreach (var finding in declined)
+        {
+            var history = ActionRun.Must(await records.QueryAsync<FindingEventRecord>(Queries.FindingEvents,
+                new Dictionary<string, string> { ["run_id"] = runId, ["finding_id"] = finding.FindingId }, run.Ct), "read the finding's history");
+            if (history.LastOrDefault(e => e.Kind == FindingEventKinds.Triaged && e.State == FindingStates.Declined) is not { } decline)
+                continue;
+            var comment = ActionRun.Must(await run.CodeHost.AddCommentAsync(pr, DeclineBody(finding, decline.Reason), $"{decline.Key}/{finding.FindingId}", run.Ct),
+                "post a decline on the pull request");
+            run.Events.Add($"the decline of {finding.FindingId} is posted on {ActionRun.Format(pr)} ({comment.Id})");
+        }
+    }
+
     /// <summary>
     /// A decline's reason on the pull request of the finding's repository, once per triage and finding (the comment's
     /// key). Before a pull request is open there is nowhere to post it; the timeline says so (LOG 164).
@@ -404,9 +436,8 @@ static class FindingsActions
             return;
         }
 
-        var where = finding.Finding.Location.Symbol is { Length: > 0 } symbol ? $"`{finding.Finding.Location.File}` ({symbol})" : $"`{finding.Finding.Location.File}`";
-        var body = $"**Finding {finding.FindingId} declined**: {finding.Finding.Title}\n\n{where}\n\n{entry.Reason}";
-        var comment = ActionRun.Must(await run.CodeHost.AddCommentAsync(pr, body, $"{run.Key}/{finding.FindingId}", run.Ct), "post a decline on the pull request");
+        var comment = ActionRun.Must(await run.CodeHost.AddCommentAsync(pr, DeclineBody(finding, entry.Reason), $"{run.Key}/{finding.FindingId}", run.Ct),
+            "post a decline on the pull request");
         run.Events.Add($"the decline of {finding.FindingId} is posted on {ActionRun.Format(pr)} ({comment.Id})");
     }
 
