@@ -661,6 +661,49 @@ public sealed class FindingsActionTests : IAsyncDisposable
         Outcome(await Triage(stepId: "fix.record_fixes"), "invalid");
     }
 
+    // ---- Integration (LOG 190) ----
+
+    [Theory]
+    [InlineData("api")]
+    [InlineData("Acme/API")]
+    public async Task A_finding_naming_the_runs_repository_by_short_name_or_case_is_recorded_in_it_and_raised_at_its_head(string written)
+    {
+        await Reviewed("review.assess", Finding() with { Location = Finding().Location with { Repository = written } });
+
+        Outcome(await Record(), "recorded");
+
+        var finding = Assert.Single(await Ledger());
+        Assert.Equal(("acme/api", world.Work), (finding.Finding.Location.Repository, finding.RaisedRevision));
+        await Reviewed("review.assess", Finding());
+        Assert.Equal(1L, Output(await Record(), "reraised"));
+    }
+
+    /// <summary>LOG 190 and 198 (review F4 of PR 14): one rule for findings and child runs; a name several repositories end with is kept.</summary>
+    [Theory]
+    [InlineData("api", "acme/api,acme/web", "acme/api")]
+    [InlineData("ACME/Web", "acme/api,acme/web", "acme/web")]
+    [InlineData("api", "acme/api,other/api", "api")]
+    [InlineData("client", "acme/api", "client")]
+    public void A_repository_is_named_as_the_run_names_it_only_when_exactly_one_matches(string written, string known, string expected) =>
+        Assert.Equal(expected, RepositoryNames.As(written, known.Split(',')));
+
+    [Fact]
+    public async Task A_finding_in_a_repository_the_run_has_not_prepared_cannot_be_fixed_by_a_triage()
+    {
+        await Reviewed("review.assess", Finding() with { Location = Finding().Location with { Repository = "acme/elsewhere" } });
+        await Record();
+        var finding = Assert.Single(await Ledger());
+        Assert.Null(finding.RaisedRevision);
+        Fixer();
+        await Triaged("verify_fix", new TriageEntry(finding.FindingId, FindingStates.Fixed, "verified"));
+
+        var result = await Triage(stepId: "fix.record_fixes", states: "[fixed, open]");
+
+        Outcome(result, "invalid");
+        Assert.Contains(result.Events, e => e.Contains("which this run has not prepared", StringComparison.Ordinal));
+        Assert.Equal(FindingStates.Open, Assert.Single(await Ledger()).State);
+    }
+
     [Theory]
     [InlineData("[]")]
     [InlineData("[open, resolved]")]

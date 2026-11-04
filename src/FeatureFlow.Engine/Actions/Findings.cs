@@ -49,7 +49,7 @@ static class FindingsActions
         var now = DateTimeOffset.UtcNow;
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var reported in report.Findings.Select(f => f with { LedgerId = null, State = null }))
+        foreach (var reported in report.Findings.Select(f => f with { LedgerId = null, State = null, Location = f.Location with { Repository = RepositoryNames.As(f.Location.Repository, run.Scope.Repositories) } }))
         {
             var fingerprint = FingerprintOf(reported);
             if (!seen.Add(fingerprint))
@@ -250,7 +250,9 @@ static class FindingsActions
             {
                 // A fix needs a commit: nothing on the work branch since the finding was raised or reopened is no fix (re-check R1).
                 var raised = byId[t.Finding];
-                if (raised.RaisedRevision is { } at && await code.HeadAsync(raised.Finding.Location.Repository) == at)
+                if (raised.RaisedRevision is not { } at)
+                    problems.Add($"{t.Finding}: it was raised in {raised.Finding.Location.Repository}, which this run has not prepared, so no commit of this run can fix it (LOG 190)");
+                else if (await code.HeadAsync(raised.Finding.Location.Repository) == at)
                     problems.Add($"{t.Finding}: nothing has been committed to {raised.Finding.Location.Repository} since it was raised at {EngineActions.Short(at)}, so it cannot be fixed");
             }
 

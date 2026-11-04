@@ -118,6 +118,19 @@ public abstract class VcsContract : ContractBase
     }
 
     [Fact]
+    public async Task The_merge_base_is_where_two_histories_part()
+    {
+        var main = await At(Main);
+        var work = await Change(Work, "a.txt", "1", from: Main);
+        var other = await Change(Main, "b.txt", "2");
+
+        Assert.Equal(main, Ok(await Vcs.MergeBaseAsync(Repo, work, other, Ct)));
+        Assert.Equal(main, Ok(await Vcs.MergeBaseAsync(Repo, other, work, Ct)));
+        Assert.Equal(work, Ok(await Vcs.MergeBaseAsync(Repo, work, work, Ct)));
+        Assert.Equal(main, Ok(await Vcs.MergeBaseAsync(Repo, work, main, Ct)));
+    }
+
+    [Fact]
     public async Task A_catch_up_with_nothing_to_merge_succeeds_unchanged()
     {
         // GitHub's merge API answered this with 204 and no body, which Spike 3 misread as an error.

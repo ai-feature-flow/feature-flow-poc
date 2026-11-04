@@ -139,6 +139,13 @@ public sealed class Check(ValidationRequest request, IArtifactStoreProvider stor
     public IReadOnlyList<ValidationSubject> Present(params string[] types) =>
         request.Subjects.SelectMany(s => s.Members ?? [s]).Where(s => !s.Absent && types.Contains(ValidatorDescriptor.TypeName(s.Type))).ToList();
 
+    /// <summary>
+    /// Whether a plan link's <c>artifact</c> names this subject: by its name, or, for a subject from another run, by the
+    /// name the agent step's sandbox gives it (<c>parent/requirements</c>, LOG 153, 191), which names only that subject.
+    /// </summary>
+    public static bool Names(ValidationSubject s, string? artifact) =>
+        artifact == s.Name || (s.From != "current" && artifact == $"{s.From.Replace(':', '/')}/{s.Name}");
+
     public static string Describe(ValidationSubject s) => s.From == "current" ? s.Name : $"{s.Name} (from {s.From})";
 
     public async Task<string> TextAsync(string reference)

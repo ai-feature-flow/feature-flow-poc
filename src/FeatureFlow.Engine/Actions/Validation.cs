@@ -165,8 +165,12 @@ static class Validating
     static async Task<ValidationSubject> SubjectAsync(ActionRun run, SubjectSpec spec, IReadOnlyDictionary<string, ArtifactRecord> types, bool hasParent)
     {
         var key = spec.From == "current" ? spec.Name : $"{spec.From.Replace(':', '/')}/{spec.Name}";
+        // A subject from another run must be one the step consumes: "absent" is said only of a declared optional consume
+        // that resolves to nothing, never of one the plan forgot to consume (review F1).
+        if (run.Scope.Consumed is not null && spec.From != "current" && run.Scope.Declared?.Contains(key) != true)
+            throw ActionStop.CannotAnswer($"subject {key} is not consumed by the step; add it to the step's consumes");
         var reference = run.Scope.Consumed is { } consumed
-            ? consumed.GetValueOrDefault(key)
+            ? consumed.GetValueOrDefault(key) ?? (spec.From == "current" ? Latest(run, spec.Name) : null)
             : spec.From == "current" ? Latest(run, spec.Name) : null;
         // Without the workflow's consumed artifacts, a subject from another run of a run that has one cannot be told absent;
         // passing it as absent would let requirement_inheritance pass a child with nothing to compare (LOG 173).

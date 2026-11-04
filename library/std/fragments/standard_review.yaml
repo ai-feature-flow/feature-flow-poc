@@ -35,7 +35,10 @@ steps:
           with:
             angle: { expr: "item" }
             spec_refs: { expr: "params.spec_refs" }
-          consumes:
+          consumes:                             # the specification, staged: spec_refs alone are references the agent cannot read
+            - { name: requirements, optional: true }
+            - { name: delivery_plan, optional: true }
+            - { name: contract, optional: true }
             - { name: implementation_claims, optional: true }
           produces:
             reviewed: [{ name: findings_report, type: std:artifact_types/findings_report }]

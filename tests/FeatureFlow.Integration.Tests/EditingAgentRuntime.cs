@@ -85,18 +85,21 @@ public sealed class EditingAgentRuntime(ScriptedAgentRuntime inner, InMemoryForg
 
     /// <summary>
     /// A scripted artifact <c>{ triage_each_open: &lt;state&gt; }</c> becomes a triage of every open finding in the ledger
-    /// view the engine staged for the step (LOG 63), as a triager or verifying reviewer would write from it.
+    /// view the engine staged for the step (LOG 63), as a triager or verifying reviewer would write from it. With
+    /// <c>non_blocking: &lt;state&gt;</c> too, open findings that are not blocking get that state instead.
     /// </summary>
     string TriageEachOpen((SandboxHandle Sandbox, AgentTask Task) started, string content)
     {
         if (!content.Contains("triage_each_open", StringComparison.Ordinal))
             return content;
-        var state = (string)((IDictionary<string, object?>)FeatureFlow.Model.Yaml.YamlWriter.ReadPlain(content)!)["triage_each_open"]!;
+        var script = (IDictionary<string, object?>)FeatureFlow.Model.Yaml.YamlWriter.ReadPlain(content)!;
+        var state = (string)script["triage_each_open"]!;
+        var nonBlocking = script.TryGetValue("non_blocking", out var other) ? (string)other! : state;
         var staged = sandboxes.ReadFile(started.Sandbox, "/ff/inputs/artifacts/" + FindingsLedger.ViewName)
                      ?? throw new InvalidOperationException($"{started.Task.Step.StepId}: no ledger view was staged");
         var view = ArtifactShapes.ReadLibrary<FindingsReport>(staged, "the staged ledger view");
         return ArtifactShapes.WriteLibrary(new Triage(1, view.Findings.Where(f => f.State == FindingStates.Open)
-            .Select(f => new TriageEntry(f.LedgerId!, state, $"scripted: {state}")).ToList()));
+            .Select(f => f.Blocking ? new TriageEntry(f.LedgerId!, state, $"scripted: {state}") : new TriageEntry(f.LedgerId!, nonBlocking, $"scripted: {nonBlocking}")).ToList()));
     }
 
     public Task<ProviderResult<Unit>> StopAsync(AgentSession session, CancellationToken cancellationToken) => inner.StopAsync(session, cancellationToken);

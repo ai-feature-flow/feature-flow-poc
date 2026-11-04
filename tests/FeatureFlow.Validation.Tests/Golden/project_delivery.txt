@@ -9,24 +9,27 @@ Template project_delivery (level project)
   5  epics.validate                      action    artifact.validate              -       pending  invalid->epics.plan
   6  epics.approve                       decision  project.epic_plan_approval     -       pending  rejected->epics.plan
   7  epics.expand                        action    plan.expand                    -       pending
-  8  epics.children                      parallel  join all, max 2                -       pending  completed->[if steps.epics.plan.outputs.needs_integration: integration; else trace.trace]
+  8  epics.children                      parallel  join all, max 2                -       pending  completed->[if steps.epics.plan.outputs.needs_integration: integration; else tests]
   9  integration                         action    test.integration               -       pending
- 10  trace.trace                         action    artifact.validate              -       pending  [protected]
- 11  deliver.deliver                     chain     in order                       -       pending  any_failed->deliver.report  [protected]
- 12  deliver.deliver_0.open_pr           action    scm.pull_request               -       pending  ready->[if params.external_findings != '': deliver.deliver_0.external_review; else deliver.deliver_0.checks]  [protected]
- 13  deliver.deliver_0.external_review   action    findings.record                -       pending  recorded->[if findings.open_blocking > 0: join; else deliver.deliver_0.checks]  unavailable->deliver.deliver_0.checks  [protected]
- 14  deliver.deliver_0.checks            action    ci.checks                      -       pending  failed->join  [protected]
- 15  deliver.deliver_0.catch_up          action    scm.catch_up                   -       pending  updated->[if steps.catch_up.outputs.changed: deliver.deliver_0.retest; else deliver.deliver_0.merge]  conflict->deliver.deliver_0.resolve_conflict  [protected]
- 16  deliver.deliver_0.retest            action    test.run                       -       pending  passed->deliver.deliver_0.checks  failed->join  [protected]
- 17  deliver.deliver_0.resolve_conflict  agent     conflict_resolver              branch  pending  resolved->join  [protected]
- 18  deliver.deliver_0.merge             action    scm.merge                      -       pending  base_moved->deliver.deliver_0.catch_up  checks_failed->join  declined->join  [protected]
- 19  deliver.report                      action    delivery.report                -       pending  complete->end(completed)  partial->deliver.recover  [protected]
- 20  deliver.recover                     decision  delivery.partial_recovery      -       pending  retry->deliver.deliver  fix_forward->end(partial)  revert->deliver.revert_merges  [protected]
- 21  deliver.revert_merges               for_each  join all                       -       pending  completed->end(partial)  [protected]
- 22  deliver.revert_merges_0             action    scm.revert                     -       pending  [protected]
+ 10  tests                               for_each  join all                       -       pending
+ 11  tests_0                             action    test.run                       -       pending
+ 12  trace.trace                         action    artifact.validate              -       pending  [protected]
+ 13  deliver.deliver                     chain     in order                       -       pending  any_failed->deliver.report  [protected]
+ 14  deliver.deliver_0.open_pr           action    scm.pull_request               -       pending  ready->[if params.external_findings != '': deliver.deliver_0.external_review; else deliver.deliver_0.checks]  [protected]
+ 15  deliver.deliver_0.external_review   action    findings.record                -       pending  recorded->[if findings.open_blocking > 0: join; else deliver.deliver_0.checks]  unavailable->deliver.deliver_0.checks  [protected]
+ 16  deliver.deliver_0.checks            action    ci.checks                      -       pending  failed->join  [protected]
+ 17  deliver.deliver_0.catch_up          action    scm.catch_up                   -       pending  updated->[if steps.catch_up.outputs.changed: deliver.deliver_0.retest; else deliver.deliver_0.merge]  conflict->deliver.deliver_0.resolve_conflict  [protected]
+ 18  deliver.deliver_0.retest            action    test.run                       -       pending  passed->deliver.deliver_0.checks  failed->join  [protected]
+ 19  deliver.deliver_0.resolve_conflict  agent     conflict_resolver              branch  pending  resolved->join  [protected]
+ 20  deliver.deliver_0.merge             action    scm.merge                      -       pending  base_moved->deliver.deliver_0.catch_up  checks_failed->join  declined->join  [protected]
+ 21  deliver.report                      action    delivery.report                -       pending  complete->end(completed)  partial->deliver.recover  [protected]
+ 22  deliver.recover                     decision  delivery.partial_recovery      -       pending  retry->deliver.deliver  fix_forward->end(partial)  revert->deliver.revert_merges  [protected]
+ 23  deliver.revert_merges               for_each  join all                       -       pending  completed->end(partial)  [protected]
+ 24  deliver.revert_merges_0             action    scm.revert                     -       pending  [protected]
 
 Protected: trace.*, deliver.*
 Defaults: blocked, failure -> escalate; success -> next; attempts_exhausted -> escalate; in a branch, other outcomes -> join
 Fragments: epics = std:fragments/plan_children; trace = std:fragments/trace; deliver = std:fragments/deliver_in_order; deliver.deliver_0 = std:fragments/merge_into_parent
+for_each tests: items from run.repositories are known at binding; shown with one branch, parallel
 for_each deliver.deliver: items from params.repositories are known at binding; shown with one branch, chain
 for_each deliver.revert_merges: items from params.repositories are known at binding; shown with one branch, parallel

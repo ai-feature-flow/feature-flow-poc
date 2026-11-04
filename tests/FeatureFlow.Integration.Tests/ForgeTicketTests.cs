@@ -61,7 +61,7 @@ public class ForgeTicketTests
 
     /// <summary>A fresh world with the fixture repository, protected, and an engine whose memory providers use it.</summary>
     internal static async Task<(Harness H, InMemoryForge Forge, RepoRef Repo)> StartAsync(string name, string policy = "", bool autoApprove = true, string? script = null,
-        string[]? noEdits = null)
+        string[]? noEdits = null, string[]? libraries = null)
     {
         var world = $"it-{name}-{Guid.NewGuid():N}";
         foreach (var step in noEdits ?? [])
@@ -73,7 +73,7 @@ public class ForgeTicketTests
         var steps = script ?? Reviews();
         if (!steps.Contains("\"plan.plan\"", StringComparison.Ordinal))
             steps = "{ " + PlanAndClaims + ",\n" + steps.TrimStart()[1..];
-        var h = await Harness.StartAsync(name, script: steps, autoApprove: autoApprove, omitTypes: ["sandbox", "vcs", "code_host", "ci", "validator"],
+        var h = await Harness.StartAsync(name, script: steps, autoApprove: autoApprove, omitTypes: ["sandbox", "vcs", "code_host", "ci", "validator"], libraries: libraries,
             providers: string.Join("\n", new[] { "vcs", "code_host", "ci", "sandbox" }.Select(t => $"  {t}: {{ instances: {{ memory: {{ world: {world} }} }} }}"))
                        + "\n  validator: { instances: { std: {} } }",
             agentRuntime: $"{{ default: editing, dry_run: recording, instances: {{ editing: {{ provider: editing, script: script.yaml, world: {world} }}, recording: {{ folder: recorded }} }} }}",
@@ -188,6 +188,36 @@ public class ForgeTicketTests
         Assert.Equal(main, forge.Resolve(repo, "main"));
         var state = (await new InMemoryCodeHost(forge).GetPullRequestAsync(new PullRequestRef(repo, 1), TestContext.Current.CancellationToken)).Unwrap();
         Assert.Equal(("ff/epic/E-1", "ff/ticket/T-4"), (state.Base, state.Head));
+    }
+
+    /// <summary>
+    /// LOG 193, found by the live epic: a sibling ticket merges into the epic's branch after this ticket branched from it. The
+    /// reviewers' baseline is where the ticket parts from the epic's branch, not its new head, so the change they must read
+    /// is the ticket's own file, not the sibling's (which is not in the ticket's checkout), and the ticket lands beside it.
+    /// </summary>
+    [Fact]
+    public async Task A_sibling_merging_into_the_parent_branch_is_not_part_of_the_change_the_reviewers_read()
+    {
+        var (h, forge, repo) = await StartAsync("forge-sibling");
+        await using var _ = h;
+        forge.Commit(repo, "refs/heads/ff/epic/E-2", new Dictionary<string, string?> { ["epic.txt"] = "the epic's work\n" });
+
+        var id = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=T-5", "--param", "engine_can_merge=true", "--repo", Repo,
+            "--parent-branch", "ff/epic/E-2");
+        var deadline = DateTime.UtcNow.AddSeconds(120);
+        while (!Harness.StartedSteps(await h.ShowAsync(id)).Contains("plan.plan") && DateTime.UtcNow < deadline)
+            await Task.Delay(200, TestContext.Current.CancellationToken);
+        forge.Commit(repo, "refs/heads/ff/epic/E-2", new Dictionary<string, string?> { ["sibling.txt"] = "a sibling ticket's work\n" });
+        var (exit, end, error) = h.Cli("wait", id, "--timeout", "240");
+
+        var view = await h.ShowAsync(id);
+        Assert.True(exit == 0, end + error + view.ToJsonString());
+        Assert.Equal($"run {id} completed", end.Trim());
+        Assert.Contains(view["timeline"]!.AsArray(), e => e!["stepId"]!.ToString() == "verify.review.review_0.assess"
+                                                          && e["detail"]?.ToString().Contains("changed_files_unread=0", StringComparison.Ordinal) == true);
+        var landed = forge.Resolve(repo, "ff/epic/E-2")!;
+        Assert.Equal("a sibling ticket's work\n", forge.ReadFile(repo, landed, "sibling.txt"));
+        Assert.StartsWith("implement execution 1", forge.ReadFile(repo, landed, "work/implement.txt"), StringComparison.Ordinal);
     }
 
     [Fact]

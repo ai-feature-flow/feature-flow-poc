@@ -569,8 +569,18 @@ public class RunWorkflow
             repository = null;
         }
 
+        // What the step consumes, keyed and resolved as for an agent step at its place, so artifact.validate reads subjects
+        // from the parent or root as this run was started with them (LOG 173, 191).
+        var consumed = new Dictionary<string, string>(StringComparer.Ordinal);
+        var declared = step.Consumes.Where(c => !IsLedgerView(c)).Select(ConsumedKey).Distinct().ToList();
+        if (Workflow.Patched(ChildInputsPatch))
+            foreach (var c in step.Consumes.Where(c => !IsLedgerView(c)))
+                if (ConsumedArtifact(step, c) is { } reference)
+                    consumed.TryAdd(ConsumedKey(c), reference);
+
         return new ActionScope(input.Repositories, repository, core.WorkBranch(), input.ParentBranch, artifacts, pullRequests, policy?.EngineMayMerge ?? [],
-            TrackerIssue: input.TrackerIssue);
+            Consumed: Workflow.Patched(ChildInputsPatch) ? consumed : null, TrackerIssue: input.TrackerIssue,
+            Declared: Workflow.Patched(ChildInputsPatch) ? declared : null);
     }
 
     /// <summary>
@@ -939,7 +949,8 @@ public class RunWorkflow
             .Where(kv => kv.Value is not null)
             .ToDictionary(kv => kv.Key, kv => YamlWriter.WritePlain(kv.Value));
         var artifacts = crossRun ? RunArtifacts(step) : null;
-        var repositories = (inputs.GetValueOrDefault("repositories") as IEnumerable<object?> ?? input.Repositories).Select(r => r?.ToString() ?? "").ToList();
+        var repositories = (inputs.GetValueOrDefault("repositories") as IEnumerable<object?> ?? input.Repositories)
+            .Select(r => RepositoryNames.As(r?.ToString() ?? "", input.Repositories)).ToList();
         var budget = Budget;
         if (budget is not null && Workflow.Patched(WorkItemsPatch)
             && await WorkItemsRefusalAsync(new WorkItemRequest(budget, 1,
@@ -948,6 +959,20 @@ public class RunWorkflow
             core!.Apply(new StepCannotAnswer(step.Id, refused));
             dirty = true;
             return;
+        }
+
+        if (Workflow.Patched(ParentBranchesPatch))
+        {
+            // The child's parent branch is this run's work branch, in every repository the child is given (LOG 196).
+            var made = await EnsureWorkBranchesAsync(new WorkBranchesCall(repositories, core!.WorkBranch(), input.ParentBranch, input.DryRun));
+            foreach (var e in made.Events)
+                core.State.Trace.Add(new TraceEntry("agent", step.Id, e));
+            if (made.Error is { } error)
+            {
+                core.Apply(new StepCannotAnswer(step.Id, error));
+                dirty = true;
+                return;
+            }
         }
 
         var childInput = new RunStart(childId, template, repositories, parameters,
@@ -980,6 +1005,22 @@ public class RunWorkflow
         core!.State.Trace.Add(new TraceEntry("child_started", step.Id, childId));
         if (handle is not null && Workflow.Patched(ChildWatchPatch))
             _ = AwaitChildAsync(handle, childId);
+    }
+
+    /// <summary>The patch marker of a parent creating its work branch in a child's repositories before starting it (LOG 196).</summary>
+    public const string ParentBranchesPatch = "m6-parent-branches";
+
+    async Task<WorkBranchesResult> EnsureWorkBranchesAsync(WorkBranchesCall call)
+    {
+        BeginActivity();
+        try
+        {
+            return await Workflow.ExecuteActivityAsync((RunActivities a) => a.EnsureWorkBranchesAsync(call), Light);
+        }
+        finally
+        {
+            EndActivity();
+        }
     }
 
     /// <summary>The patch marker of a child's inherited parameters and artifacts, and of consumes across runs (M3 follow-ups 2 and 3).</summary>

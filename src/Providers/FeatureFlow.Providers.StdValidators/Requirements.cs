@@ -16,6 +16,10 @@ static class Requirements
         for (var p = 0; p < plans.Count; p++)
         {
             var plan = plans[p];
+            // Another run's document is a target here; its own links are that run's to prove, and point at documents this
+            // check is not given (an epic's requirements at its project's, LOG 199).
+            if (plan.Subject.From != "current")
+                continue;
             foreach (var item in plan.Value.Items.Where(i => !string.IsNullOrEmpty(i.Id)))
             {
                 var links = item.Supports ?? [];
@@ -26,10 +30,10 @@ static class Requirements
                     c.Error("support_and_reason", $"{item.Id} in {D(plan)} both supports items and gives a supports_reason; it does one or the other", plan.Subject.Name, item.Id);
                 foreach (var link in links)
                 {
-                    var targets = plans.Where((t, i) => i != p && t.Subject.Name == link.Artifact).ToList();
+                    var targets = plans.Where((t, i) => i != p && Check.Names(t.Subject, link.Artifact)).ToList();
                     if (targets.Count == 0)
                         c.Error("unresolved_link",
-                            c.Request.Subjects.Any(s => s.Name == link.Artifact && s.Absent)
+                            c.Request.Subjects.Any(s => Check.Names(s, link.Artifact) && s.Absent)
                                 ? $"{item.Id} in {D(plan)} supports {link.Requirement} in {link.Artifact}, which does not exist"
                                 : $"{item.Id} in {D(plan)} supports {link.Requirement} in {link.Artifact}, which is not a subject of this check",
                             plan.Subject.Name, item.Id);
@@ -69,12 +73,39 @@ static class Requirements
                     c.Error("invalid_owner",
                         $"{item.Id} in {D(plan)} is owned by {owner.Kind} {owner.Id}; a {scope!.Kind} plan's owner is a {child}, or the {scope.Kind} {scope.Id} itself",
                         plan.Subject.Name, item.Id);
+                else if ((item.Supports ?? []).FirstOrDefault(l => l.Artifact?.Contains('/') == true) is { } upward)
+                    // The child copies the item with its links, and would read upward/x in its own run's frame, where it names
+                    // another document (review F2 of PR 14, LOG 200): an item given to a child supports this run's own items.
+                    c.Error("owned_item_links_up",
+                        $"{item.Id} in {D(plan)} supports {upward.Requirement} in {upward.Artifact}; an item given to a {child} supports this run's own documents (link to requirements, not {upward.Artifact})",
+                        plan.Subject.Name, item.Id);
         }
     }
 
     static bool Owns(PlanOwner? owner, PlanScope scope) => owner is not null && owner.Kind == scope.Kind && owner.Id == scope.Id;
 
-    static IEnumerable<(string?, string?)> Links(PlanItem item) => (item.Supports ?? []).Select(l => (l.Artifact, l.Requirement)).Distinct().Order();
+    /// <summary>
+    /// What a link names, seen from the child (LOG 191, 200): a link resolves relative to the run that wrote it. In the
+    /// parent's plan (<paramref name="byParent"/>) a bare <c>x</c> is the child's <c>parent/x</c>, and the parent's
+    /// <c>parent/x</c> or <c>root/x</c> is the child's <c>root/x</c> (std's levels are at most three deep, so a child's
+    /// grandparent is its root). In the child's copy a bare <c>x</c> is taken as copied unchanged: the parent's <c>x</c>.
+    /// </summary>
+    static string? Target(string? artifact, bool byParent) => artifact switch
+    {
+        null => null,
+        _ when !artifact.Contains('/') => "parent/" + artifact,
+        _ when byParent && (artifact.StartsWith("parent/", StringComparison.Ordinal) || artifact.StartsWith("root/", StringComparison.Ordinal)) =>
+            "root/" + artifact[(artifact.IndexOf('/') + 1)..],
+        _ => artifact,
+    };
+
+    /// <summary>The parent's links the copy does not keep: kept word for word, or naming the same document from the child.</summary>
+    static IEnumerable<PlanLink> Dropped(PlanItem copy, PlanItem item)
+    {
+        var copied = (copy.Supports ?? []).ToList();
+        return (item.Supports ?? []).Where(l => !copied.Any(k => k.Requirement == l.Requirement
+                                                                && (k.Artifact == l.Artifact || Target(k.Artifact, false) == Target(l.Artifact, true))));
+    }
 
     /// <summary>
     /// <c>requirement_inheritance</c>: the parent's plan is every subject from another run, this run's plan every subject
@@ -111,8 +142,10 @@ static class Requirements
                 var copy = plan.Value.Items.FirstOrDefault(i => i.Id == item.Id);
                 if (copy is null)
                     c.Error("missing_inherited", $"{D(plan)} does not hold {item.Id}, which {D(parent)} gives {scope.Kind} {scope.Id}", plan.Subject.Name, item.Id);
-                else if (!Links(copy).SequenceEqual(Links(item)))
-                    c.Error("links_changed", $"{item.Id} in {D(plan)} does not support exactly what it supports in {D(parent)}", plan.Subject.Name, item.Id);
+                else if (Dropped(copy, item).Any())
+                    // A copy keeps every link the parent gave it; it may add links to this run's own items, which
+                    // requirement_support resolves (LOG 191).
+                    c.Error("links_changed", $"{item.Id} in {D(plan)} does not support everything it supports in {D(parent)}", plan.Subject.Name, item.Id);
                 else if (!rewording && (copy.Title != item.Title || copy.Behaviour != item.Behaviour))
                     c.Error("reworded", $"{item.Id} in {D(plan)} is not word for word as in {D(parent)}", plan.Subject.Name, item.Id);
             }

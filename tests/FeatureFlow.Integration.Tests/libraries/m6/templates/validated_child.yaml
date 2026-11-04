@@ -1,0 +1,42 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: validated_child
+  level: ticket
+  description: >-
+    Writes requirements that support its parent's, naming them as its sandbox does
+    (parent/requirements), and validates them against the parent's with an engine action.
+
+artifact_types:
+  - std:artifact_types/requirements
+  - std:artifact_types/validation_report
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: plan
+    agent:
+      role: std:roles/planner
+      task: m6:tasks/note
+    consumes: [{ name: requirements, from: parent }]
+    produces:
+      written: [{ name: requirements, type: std:artifact_types/requirements }]
+    outcomes: { written: success }
+    routes: { written: validate }
+
+  - id: validate
+    action: artifact.validate
+    with:
+      validation:
+        - validator: requirement_support
+          subjects: [requirements, { name: requirements, from: parent }]
+          options: { require_coverage: false }
+    consumes: [{ name: requirements }, { name: requirements, from: parent }]
+    produces:
+      valid: [{ name: plan_validation, type: std:artifact_types/validation_report }]
+      invalid: [{ name: plan_validation, type: std:artifact_types/validation_report }]
+    routes:
+      valid: { end: completed }
+      invalid: { end: rejected }

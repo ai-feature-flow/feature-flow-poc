@@ -14,6 +14,15 @@ public sealed record TrackerCall(string Issue, string Status, string StepId, boo
 /// </summary>
 public sealed record WorkItemRequest(WorkItemBudget Budget, int Adding, RunRecord? Child = null);
 
+/// <summary>
+/// A parent run's work branch in each repository it gives a child (LOG 196): the child's parent branch. Created from the
+/// parent's own parent branch, else the repository's default branch, where it does not exist yet.
+/// </summary>
+public sealed record WorkBranchesCall(IReadOnlyList<string> Repositories, string WorkBranch, string? ParentBranch, bool DryRun);
+
+/// <summary>What <see cref="RunActivities.EnsureWorkBranchesAsync"/> did, for the timeline, or why it could not.</summary>
+public sealed record WorkBranchesResult(IReadOnlyList<string> Events, string? Error);
+
 /// <summary>The engine's activities for delivery: declarative tracker updates and the work-item budget.</summary>
 public sealed partial class RunActivities
 {
@@ -34,6 +43,70 @@ public sealed partial class RunActivities
         if (error.Class == ProviderErrorClass.Infrastructure && !error.IsConfigurationFault)
             throw new ApplicationFailureException($"tracker: {error.Reason}: {error.Message}", errorType: "infrastructure");
         return $"could not move {call.Issue} to {call.Status}: {(error.IsConfigurationFault ? error.DescribeFault() : $"{error.Reason}: {error.Message}")}";
+    }
+
+    /// <summary>
+    /// Creates the run's work branch in each repository that lacks it, as the first step to touch a repository does
+    /// (docs/04 section 2), so a child started with it as its parent branch finds it (LOG 196). An infrastructure error is
+    /// retried; a missing parent branch or a configuration fault comes back as the reason the step stops for a person.
+    /// </summary>
+    [Activity]
+    public async Task<WorkBranchesResult> EnsureWorkBranchesAsync(WorkBranchesCall call)
+    {
+        var ct = ActivityExecutionContext.Current.CancellationToken;
+        if (services.Providers.ForRun("vcs", call.DryRun) is not IVcsProvider vcs || services.Providers.ForRun("code_host", call.DryRun) is not ICodeHostProvider host)
+            return new WorkBranchesResult([], null);
+        var events = new List<string>();
+        string? Fails<T>(ProviderResult<T> result, string what)
+        {
+            if (result.Ok)
+                return null;
+            var error = result.Error!;
+            if (error.Class == ProviderErrorClass.Infrastructure && !error.IsConfigurationFault)
+                throw new ApplicationFailureException($"{what}: {error.Reason}: {error.Message}", errorType: "infrastructure");
+            return $"could not {what}: {(error.IsConfigurationFault ? error.DescribeFault() : $"{error.Reason}: {error.Message}")}";
+        }
+
+        foreach (var repository in call.Repositories)
+        {
+            var repo = new RepoRef(repository);
+            var work = await vcs.ResolveAsync(repo, "refs/heads/" + call.WorkBranch, ct);
+            if (Fails(work, $"read {call.WorkBranch} in {repository}") is { } readFailed)
+                return new WorkBranchesResult(events, readFailed);
+            if (work.Value is not null)
+                continue;
+            var parent = call.ParentBranch;
+            if (parent is null)
+            {
+                var named = await host.GetDefaultBranchAsync(repo, ct);
+                if (Fails(named, $"read {repository}'s default branch") is { } defaultFailed)
+                    return new WorkBranchesResult(events, defaultFailed);
+                parent = named.Value!;
+            }
+
+            var start = await vcs.ResolveAsync(repo, "refs/heads/" + parent, ct);
+            if (Fails(start, $"read {parent} in {repository}") is { } parentFailed)
+                return new WorkBranchesResult(events, parentFailed);
+            if (start.Value is null)
+                return new WorkBranchesResult(events, $"{repository} has no branch {parent} to start {call.WorkBranch} from");
+            var pushed = await vcs.PushAsync(repo, "refs/heads/" + call.WorkBranch, start.Value, null, null, ct);
+            if (pushed is { Ok: false, Error.Reason: "base_moved" })
+            {
+                // Made meanwhile, by a step of this run or a retry: confirmed by reading it again, as WorkHeadAsync does (review F6).
+                var made = await vcs.ResolveAsync(repo, "refs/heads/" + call.WorkBranch, ct);
+                if (Fails(made, $"read {call.WorkBranch} in {repository}") is { } rereadFailed)
+                    return new WorkBranchesResult(events, rereadFailed);
+                if (made.Value is null)
+                    throw new ApplicationFailureException($"{call.WorkBranch} in {repository} was refused as moved, yet does not exist: retried", errorType: "infrastructure");
+                continue;
+            }
+
+            if (Fails(pushed, $"create {call.WorkBranch} in {repository}") is { } pushFailed)
+                return new WorkBranchesResult(events, pushFailed);
+            events.Add($"created branch {call.WorkBranch} in {repository} at {start.Value[..Math.Min(10, start.Value.Length)]} from {parent}, for a child run");
+        }
+
+        return new WorkBranchesResult(events, null);
     }
 
     /// <summary>

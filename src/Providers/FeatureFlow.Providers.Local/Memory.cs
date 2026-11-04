@@ -360,7 +360,7 @@ public sealed class InMemoryForge
     /// <summary>The commits in <paramref name="to"/>'s history and not in <paramref name="from"/>'s.</summary>
     internal static int Count(Repo r, string from, string to) => Ancestors(r, to).Except(Ancestors(r, from)).Count();
 
-    static string? MergeBase(Repo r, string a, string b)
+    internal static string? MergeBase(Repo r, string a, string b)
     {
         var ofA = Ancestors(r, a);
         var queue = new Queue<string>([b]);
@@ -477,6 +477,11 @@ public sealed class InMemoryVcs(InMemoryForge forge) : IVcsProvider
         Run("DescendsFrom", repo, r => !r.Commits.ContainsKey(revision) || !r.Commits.ContainsKey(ancestor)
             ? ProviderResult<bool>.Failure("not_found", $"{revision} or {ancestor} is not in {repo.FullName}")
             : ProviderResult<bool>.Success(InMemoryForge.Ancestors(r, revision).Contains(ancestor)));
+
+    public Task<ProviderResult<string?>> MergeBaseAsync(RepoRef repo, string a, string b, CancellationToken cancellationToken) =>
+        Run("MergeBase", repo, r => !r.Commits.ContainsKey(a) || !r.Commits.ContainsKey(b)
+            ? ProviderResult<string?>.Failure("not_found", $"{a} or {b} is not in {repo.FullName}")
+            : ProviderResult<string?>.Success(InMemoryForge.MergeBase(r, a, b)));
 
     public Task<ProviderResult<int>> CountCommitsAsync(WorkingCopyRef copy, string fromRevision, string toRevision, CancellationToken cancellationToken) =>
         InCopy("CountCommits", copy, (r, _) => ProviderResult<int>.Success(InMemoryForge.Count(r, fromRevision, toRevision)));

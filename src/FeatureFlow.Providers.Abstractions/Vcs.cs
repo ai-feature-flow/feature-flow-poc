@@ -72,6 +72,9 @@ public interface IVcsProvider : IProvider
     /// <summary>Whether <paramref name="revision"/> descends from <paramref name="ancestor"/> (or is it), on the remote's history.</summary>
     Task<ProviderResult<bool>> DescendsFromAsync(RepoRef repo, string revision, string ancestor, CancellationToken cancellationToken);
 
+    /// <summary>The newest commit both revisions descend from, on the remote's history; null when they share none (LOG 193).</summary>
+    Task<ProviderResult<string?>> MergeBaseAsync(RepoRef repo, string a, string b, CancellationToken cancellationToken);
+
     /// <summary>How many commits are in <paramref name="toRevision"/> and not in <paramref name="fromRevision"/>.</summary>
     Task<ProviderResult<int>> CountCommitsAsync(WorkingCopyRef copy, string fromRevision, string toRevision, CancellationToken cancellationToken);
 

@@ -74,6 +74,27 @@ public sealed class AgentStepTests
     }
 
     /// <summary>
+    /// LOG 193, review F3 of PR 14: the agent's checkout holds its parent branch at the parent's head as a local branch of
+    /// its name, so a conflict resolver, with no remote (F5), can merge it. Here the parent is the default branch.
+    /// </summary>
+    [Fact]
+    public async Task The_checkout_holds_the_parent_branch_at_its_head()
+    {
+        await using var model = new ScriptedModel("model-key-" + Guid.NewGuid().ToString("N"));
+        model.ThenBash("cd /ff/work && (git rev-parse --verify -q refs/heads/main || echo none) > /ff/out/notes.md")
+            .ThenTool("mcp__engine__report", AgentScripts.Report())
+            .ThenText("Done.");
+        await model.StartAsync();
+        await using var h = await AgentHarness.StartAsync("parent-ref", model);
+        var runId = h.Start("T-31", "Note the parent branch's head.");
+        var status = await h.WaitForEndAsync(runId, RunTimeout);
+        var timeline = await h.TimelineAsync(runId);
+
+        Assert.True(status == "completed", $"the run ended {status}:\n{timeline}");
+        Assert.Equal(h.MainRevision, (await h.ArtifactTextAsync(AgentScripts.Reference(timeline, "artifact notes: "))).Trim());
+    }
+
+    /// <summary>
     /// Hooks (docs/02 section 4.1): a <c>git push</c> is denied with the reason, and the files the agent read are
     /// recorded, so the engine publishes <c>coverage_known</c> and <c>changed_files_unread</c> (docs/04 section 3.6).
     /// The agent commits two files and reads one of them.
