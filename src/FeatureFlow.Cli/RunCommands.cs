@@ -18,9 +18,13 @@ public static class RunCommands
                ff run start <template> [--param <name>=<value>]... [--repo <owner/name>]... [--parent-branch <branch>] [--tracker-issue <key>] [--dry-run] [--continue-as-new-events <n>]
                ff run show <run id> [--timeline]
                ff run wait <run id> [--for end | wait] [--timeout <seconds>]
-               ff run answer <run id> <wait id> <outcome | approve | reject>
+               ff run answer <run id> <wait id> <outcome | approve | reject> [--artifact <name>=<file>]...
+               ff run findings <run id>
                ff run recover <run id> <wait id> retry | go_to <step> [--clean-up] | replan <step> | grant_attempts <n> | end <status>
-               ff run abort <run id> [--reason <text>]
+               ff run abort <run id> [--reason <text>] [--close-pull-requests]
+               ff run override <run id> <key> --reason <text> [--step <step id>] [--change <name>=<value>]...
+                 (key: breakpoint, skip, amend, change_role, grant_attempts or override_library; the run applies a
+                 protected or beyond-ceiling variant where your roles hold it)
                (every ff run command takes [--api <url>] [--token-file <file>])
         """;
 
@@ -31,7 +35,7 @@ public static class RunCommands
         var positional = new List<string>();
         for (var i = 0; i < args.Length; i++)
         {
-            if (args[i] is "--dry-run" or "--timeline" or "--clean-up")
+            if (args[i] is "--dry-run" or "--timeline" or "--clean-up" or "--close-pull-requests")
                 flags.Add(args[i]);
             else if (args[i].StartsWith("--", StringComparison.Ordinal) && i + 1 < args.Length)
             {
@@ -67,7 +71,9 @@ public static class RunCommands
                 case ["wait", var id]:
                     return await client.WaitAsync(id, Option("--for") ?? "end", TimeSpan.FromSeconds(double.Parse(Option("--timeout") ?? "300", System.Globalization.CultureInfo.InvariantCulture)));
                 case ["answer", var id, var wait, var outcome]:
-                    return await client.AnswerAsync(id, new JsonObject { ["wait_id"] = wait, ["outcome"] = outcome });
+                    return await client.AnswerAsync(id, Answer(wait, outcome, options.GetValueOrDefault("--artifact") ?? []));
+                case ["findings", var id]:
+                    return await client.PrintAsync($"runs/{id}/findings");
                 case ["recover", var id, var wait, "retry"]:
                     return await client.AnswerAsync(id, new JsonObject { ["wait_id"] = wait, ["action"] = "retry" });
                 case ["recover", var id, var wait, var action, var step] when action is "go_to" or "replan":
@@ -77,7 +83,13 @@ public static class RunCommands
                 case ["recover", var id, var wait, "end", var status]:
                     return await client.AnswerAsync(id, new JsonObject { ["wait_id"] = wait, ["action"] = "end", ["status"] = status });
                 case ["abort", var id]:
-                    return await client.SendAsync($"runs/{id}/abort", new JsonObject { ["reason"] = Option("--reason") ?? "aborted from the CLI" });
+                    return await client.SendAsync($"runs/{id}/abort", new JsonObject
+                    {
+                        ["reason"] = Option("--reason") ?? "aborted from the CLI",
+                        ["close_pull_requests"] = flags.Contains("--close-pull-requests"),
+                    });
+                case ["override", var id, var key] when Option("--reason") is { } reason:
+                    return await client.OverrideAsync(id, key, reason, Option("--step"), options.GetValueOrDefault("--change") ?? []);
             }
         }
         catch (HttpRequestException e)
@@ -85,13 +97,38 @@ public static class RunCommands
             error.WriteLine($"the API at {api} did not answer: {e.Message}");
             return 3;
         }
+        catch (Exception e) when (e is ArgumentException or IOException)
+        {
+            error.WriteLine(e.Message);
+            return 2;
+        }
 
         error.WriteLine("usage: " + Usage.TrimStart());
         return 2;
     }
 
+    /// <summary>A decision's answer; each <c>--artifact name=file</c> gives what the person produced, such as a triage (LOG 248).</summary>
+    static JsonObject Answer(string wait, string outcome, List<string> artifacts)
+    {
+        var body = new JsonObject { ["wait_id"] = wait, ["outcome"] = outcome };
+        if (artifacts.Count > 0)
+            body["artifacts"] = new JsonObject(artifacts.Select(a => a.Split('=', 2)).Select(p =>
+                KeyValuePair.Create(p[0], (JsonNode?)JsonValue.Create(File.ReadAllText(p.Length == 2 ? p[1] : throw new ArgumentException($"--artifact takes <name>=<file>, not {p[0]}"))))));
+        return body;
+    }
+
     sealed class Client(HttpClient http, TextWriter output, TextWriter error)
     {
+        /// <summary>A GET's reply as it came, for a document such as the findings ledger.</summary>
+        public async Task<int> PrintAsync(string path)
+        {
+            var reply = await GetAsync(path);
+            if (reply is null)
+                return 1;
+            output.WriteLine(reply.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            return 0;
+        }
+
         public async Task<int> StartAsync(string template, List<string> parameters, List<string> repositories, bool dryRun, string? handOver, string? parentBranch = null,
             string? trackerIssue = null)
         {
@@ -178,6 +215,28 @@ public static class RunCommands
         }
 
         public async Task<int> AnswerAsync(string id, JsonObject body) => await SendAsync($"runs/{id}/answers", body);
+
+        /// <summary>A run-time override (docs/05 section 5): its key, reason, step and its arguments by name, each given as <c>name=value</c>.</summary>
+        public async Task<int> OverrideAsync(string id, string key, string reason, string? step, List<string> changes)
+        {
+            var change = new JsonObject();
+            foreach (var c in changes)
+            {
+                var eq = c.IndexOf('=');
+                if (eq <= 0)
+                {
+                    error.WriteLine($"--change takes <name>=<value>, not '{c}'");
+                    return 2;
+                }
+
+                change[c[..eq]] = c[(eq + 1)..];
+            }
+
+            var body = new JsonObject { ["key"] = key, ["reason"] = reason, ["change"] = change };
+            if (step is not null)
+                body["step_id"] = step;
+            return await SendAsync($"runs/{id}/overrides", body);
+        }
 
         public async Task<int> SendAsync(string path, JsonObject body)
         {

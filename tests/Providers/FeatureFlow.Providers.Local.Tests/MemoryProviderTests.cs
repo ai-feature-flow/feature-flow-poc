@@ -83,6 +83,16 @@ public sealed class MemoryProviderTests
         Assert.Same(InMemoryForge.Named(world), vcs.Forge);
     }
 
+    [Fact]
+    public void Notifications_and_the_session_surface_compose_by_world()
+    {
+        var world = "test-" + Guid.NewGuid().ToString("N");
+
+        Assert.Same(InMemoryNotifications.Named(world), Create("notifications", world));
+        Assert.Same(InMemorySessionSurface.Named(world), Create("session_surface", world));
+        Assert.NotSame(InMemoryNotifications.Named(world), Create("notifications", world + "-other"));
+    }
+
     static IProvider Create(string type, string world)
     {
         var factory = LocalProviders.Factories.Single(f => f.Type == type && f.Kind == "memory");

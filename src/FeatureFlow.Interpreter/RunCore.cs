@@ -15,7 +15,7 @@ namespace FeatureFlow.Interpreter;
 /// </summary>
 public sealed partial class RunCore
 {
-    readonly LibrarySet? libraries;
+    LibrarySet? libraries;
     readonly LibraryReference? template;
     readonly List<Command> outbox = [];
     readonly Evaluator evaluator;
@@ -157,7 +157,7 @@ public sealed partial class RunCore
 
     void Progressed() => enteredWithoutProgress.Clear();
 
-    bool WaitingOn(string stepId) => State.Waits.Any(w => w.StepId == stepId && w.Kind == WaitKind.Decision);
+    bool WaitingOn(string stepId) => State.Waits.Any(w => w.StepId == stepId && w.Kind is WaitKind.Decision or WaitKind.Breakpoint);
 
     StepRecord Record(string stepId)
     {
@@ -190,8 +190,20 @@ public sealed partial class RunCore
             return;
         }
 
+        if (Options.Steering)
+        {
+            Reopen(step);
+            if (State.Skips.Remove(step.Id, out var skipped))
+            {
+                EndSkipped(step, skipped);
+                return;
+            }
+        }
+
         if (step.Container is not null)
         {
+            if (Paused(entry, step))
+                return;
             // A clean_up aimed at a container is the clean_up of the first step it starts: the step that touches the
             // repository and records where it started (re-check R3).
             EnterContainer(step, entry.CleanUp);
@@ -212,6 +224,9 @@ public sealed partial class RunCore
                 return;
             }
 
+            if (Paused(entry, step))
+                return;
+
             // Re-entry clears the current outcome, outputs and artifacts; the earlier execution stays readable (DR12).
             CleanUpFor(entry, step);
             record.Previous = record.Current;
@@ -228,6 +243,8 @@ public sealed partial class RunCore
         }
 
         // A decision: no attempts (docs/01 section 3.2). Re-entry clears it like any step.
+        if (Paused(entry, step))
+            return;
         CleanUpFor(entry, step);
         record.Previous = record.Current;
         record.Executions++;
@@ -235,7 +252,8 @@ public sealed partial class RunCore
         Trace("started", step.Id, $"execution {record.Executions}");
         if (step.Decision is { Auto: { } auto, Type: { } type } && Options.AutoResolve(type))
         {
-            Trace("auto_resolved", step.Id, auto);
+            // The actor of an automatic answer is policy, never a person (docs/04 section 4.2); M7's runs name it.
+            Trace("auto_resolved", step.Id, Options.Steering ? $"{auto} by {PeopleRoles.PolicyActor}" : auto);
             Finish(step, record, auto);
             return;
         }
@@ -358,6 +376,7 @@ public sealed partial class RunCore
             RunAborted a => Abort(a),
             StepCannotAnswer s => CannotAnswer(s),
             ChildPatchProposed p => ProposeFromChild(p),
+            BreakpointSet or StepSkipped or AttemptsGranted or RoleChanged or LibraryOverridden or LibraryOverrideProposed => Steer(input),
             _ => ApplyResult.Refused($"unknown input {input.GetType().Name}"),
         };
     }
@@ -580,9 +599,28 @@ public sealed partial class RunCore
             return ApplyResult.Refused($"no decision is open at {a.StepId}");
         if (!step.DeclaredOutcomes.Any(o => o.Name == a.Outcome))
             return ApplyResult.Refused($"{a.StepId}: '{a.Outcome}' is not a declared outcome ({string.Join(", ", step.DeclaredOutcomes.Select(o => o.Name))})");
+        if (SessionArtifactsError(step, a) is { } error)
+            return ApplyResult.Refused(error);
         State.Waits.Remove(wait);
-        Finish(step, Record(step.Id), a.Outcome);
+        var record = Record(step.Id);
+        record.Current ??= new Execution { Number = record.Executions };
+        foreach (var (name, reference) in a.Artifacts ?? new Dictionary<string, string>())
+            record.Current.Artifacts[name] = reference;
+        Finish(step, record, a.Outcome);
         return ApplyResult.Ok;
+    }
+
+    /// <summary>Why a decision answer's artifacts are not exactly those its outcome promises, or null; an answer with none is not checked.</summary>
+    static string? SessionArtifactsError(Step step, DecisionAnswered a)
+    {
+        if (a.Artifacts is null)
+            return null;
+        var promised = step.Produces.Where(p => p.Outcome == a.Outcome || (p.Outcome is null && step.Outcomes().Any(o => o.Name == a.Outcome && o.Class == OutcomeClass.Success)))
+            .Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
+        var given = a.Artifacts.Keys.ToHashSet(StringComparer.Ordinal);
+        var errors = given.Except(promised).Order(StringComparer.Ordinal).Select(n => $"artifact '{n}' is not declared for outcome '{a.Outcome}'")
+            .Concat(promised.Except(given).Order(StringComparer.Ordinal).Select(n => $"outcome '{a.Outcome}' promises artifact '{n}', which was not submitted")).ToList();
+        return errors.Count == 0 ? null : $"{a.StepId}: {string.Join("; ", errors)}";
     }
 
     void Finish(Step step, StepRecord record, string outcome)

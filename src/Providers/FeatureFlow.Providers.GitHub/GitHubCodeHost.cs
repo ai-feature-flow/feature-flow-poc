@@ -11,7 +11,7 @@ namespace FeatureFlow.Providers.GitHub;
 /// any other success is <c>unexpected_response</c>, a work error, so it is never retried forever. Creates write the
 /// key as a hidden marker in the body, <c>&lt;!-- feature-flow:KEY --&gt;</c>, and adopt what a retry finds.
 /// </summary>
-public sealed class GitHubCodeHost(GitHubApi api) : ICodeHostProvider
+public sealed partial class GitHubCodeHost(GitHubApi api) : ICodeHostProvider
 {
     static readonly IReadOnlyDictionary<string, string> Permissions = GitHubApi.CodeHostPermissions;
     static readonly IReadOnlyDictionary<string, string> ReadPermissions = GitHubApi.CodeHostReadPermissions;

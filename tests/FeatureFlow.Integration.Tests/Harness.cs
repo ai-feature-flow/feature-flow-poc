@@ -48,11 +48,13 @@ public sealed class Harness : IAsyncDisposable
     /// For M5's real actions: <paramref name="providers"/> are further lines of the installation's <c>providers</c>
     /// section, whose types should be in <paramref name="omitTypes"/>; <paramref name="policy"/> further lines of the
     /// organisation's <c>policy</c>; <paramref name="installation"/> further top-level installation lines; and
-    /// <paramref name="factories"/> provider factories beside the local ones.
+    /// <paramref name="factories"/> provider factories beside the local ones; <paramref name="organisation"/> further top-level organisation
+    /// lines; <paramref name="fromChat"/> the approval rule's <c>from_chat</c>.
     /// </para>
     public static async Task<Harness> StartAsync(string name, string script = "{}", bool autoApprove = false, string[]? omitTypes = null,
         string[]? libraries = null, string providers = "", string policy = "", string installation = "", IEnumerable<FeatureFlow.Providers.Abstractions.ProviderFactory>? factories = null,
-        string agentRuntime = "{ default: scripted, dry_run: recording, instances: { scripted: { script: script.yaml }, recording: { folder: recorded } } }")
+        string agentRuntime = "{ default: scripted, dry_run: recording, instances: { scripted: { script: script.yaml }, recording: { folder: recorded } } }",
+        string organisation = "", bool fromChat = false)
     {
         var folder = IOPath.Combine(IOPath.GetTempPath(), $"ff-it-{name}-{Guid.NewGuid():N}"[..40]);
         Directory.CreateDirectory(folder);
@@ -90,8 +92,9 @@ public sealed class Harness : IAsyncDisposable
             {{sources}}
             policy:
               approval:
-                - { match: "*", roles: [approver], auto: {{(autoApprove ? "true" : "false")}} }
+                - { match: "*", roles: [approver], auto: {{(autoApprove ? "true" : "false")}}, from_chat: {{(fromChat ? "true" : "false")}} }
             {{policy}}
+            {{organisation}}
             """);
         var configuration = FeatureFlowConfiguration.Load(IOPath.Combine(folder, "installation.yaml"), IOPath.Combine(folder, "organisation.yaml"));
         harness.Host = await FeatureFlowHost.StartAsync(configuration, LocalProviders.Factories.Concat(factories ?? []), true, true, "http://127.0.0.1:0");

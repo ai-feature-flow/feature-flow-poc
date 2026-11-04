@@ -1,0 +1,8 @@
+# Templates for M7's surfaces (W3): notifications at a decision and at the end, and a wait an inbound webhook wakes.
+name: m7s
+version: 0.1.0
+description: Templates for the M7 surfaces tests (docs/11, M7)
+requires:
+  plan_schema: 1
+dependencies:
+  - { name: std, version: ">=0.1.0" }

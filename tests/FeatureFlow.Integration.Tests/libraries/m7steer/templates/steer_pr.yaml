@@ -1,0 +1,27 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: steer_pr
+  level: ticket
+  description: Opens a pull request, then holds for wait_ms, so a person can abort the run with its pull request open.
+  branch_pattern: ff/steer-pr
+
+parameters:
+  wait_ms: { type: number, default: 0, description: "How long the hold takes" }
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: open
+    action: scm.pull_request
+    with: { title: "Steering test" }
+  - id: note
+    agent: { role: std:roles/implementer, task: m7steer:tasks/build }
+    outputs: { pull_request: { type: string } }     # an agent's output of that name names no pull request the run opened
+    outcomes: { built: success }
+  - id: hold
+    action: notify.send
+    with: { audience: [team], message: hold, wait_ms: { expr: "params.wait_ms" } }
+    routes: { sent: { end: completed } }

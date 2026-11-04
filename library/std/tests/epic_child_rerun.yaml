@@ -1,0 +1,28 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: epic_child_rerun
+description: >-
+  One of two tickets fails and the children's join escalates (as in
+  epic_child_failed). A person re-runs only the failed ticket with go_to; it
+  completes, the join decides again with both branches succeeded, and the
+  epic goes on to verify and merge. The ticket that passed is not re-run.
+template: std:templates/epic_delivery
+parameters: { epic_name: billing, engine_can_merge: true }
+repositories: [acme/api]
+
+expand:
+  tickets.expand:
+    - { name: invoice_totals, repositories: [acme/api] }
+    - { name: invoice_export, repositories: [acme/api] }
+script:
+  tickets.children_1: [failed, completed]
+answers:
+  tickets.children: { go_to: tickets.children_1 }
+
+expect:
+  status: completed
+  path_includes: [tickets.children_1, tickets.children_1, verify.tests, deliver.merge]
+  executions:
+    tickets.children_0: 1
+    tickets.children_1: 2
+    deliver.merge: 1

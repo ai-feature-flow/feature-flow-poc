@@ -19,7 +19,8 @@ public sealed record ArtifactEntry(string StepId, string Name, string? Type, str
 /// step's; null where the workflow does not give them, and then a subject from this run is its latest of the name; the run's tracker issue
 /// (<c>run.tracker_issue</c>), if it has one; and the keys of every artifact the step declares it consumes, resolved or not
 /// (<see cref="Declared"/>), so an action can tell a declared optional artifact that does not exist from one the step never
-/// consumes (LOG 191, review F1).
+/// consumes (LOG 191, review F1); and the run's library lock, so <c>artifact.import</c> checks a typed file against the run's
+/// version of its type (null, as in <see cref="None"/>: not checked).
 /// </summary>
 public sealed record ActionScope(
     IReadOnlyList<string> Repositories,
@@ -31,7 +32,8 @@ public sealed record ActionScope(
     IReadOnlyList<string> EngineMayMerge,
     IReadOnlyDictionary<string, string>? Consumed = null,
     string? TrackerIssue = null,
-    IReadOnlyList<string>? Declared = null)
+    IReadOnlyList<string>? Declared = null,
+    string? LockRef = null)
 {
     public static readonly ActionScope None = new([], null, "", null, [], [], []);
 }

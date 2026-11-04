@@ -361,7 +361,11 @@ static class Evidence
         foreach (var subject in c.Present(Types.EvidenceClaims))
             tests.AddRange(((await c.ReadAsync<ClaimsDocument>(subject))?.Claims ?? []).SelectMany(x => x.Tests ?? []));
 
-        var needed = entries.Where(e => e.State == FindingStates.Open && e.RegressionTest?.Applicable != false).ToList();
+        // Any triage subject (the triager's, a person's) may leave a finding open; a later one may decide otherwise, which the
+        // ledger shows: one it now holds declined or escalated needs no test (review F2, LOG 248).
+        var settled = c.Request.Findings.Where(f => f.State is FindingStates.Declined or FindingStates.Escalated).Select(f => f.FindingId).ToHashSet(StringComparer.Ordinal);
+        var needed = entries.Where(e => e.State == FindingStates.Open && e.RegressionTest?.Applicable != false && !settled.Contains(e.Finding))
+            .DistinctBy(e => e.Finding).ToList();
         if (needed.Count == 0 || await OwnObservedAsync(c) is not var (_, observed))
             return;
         foreach (var entry in needed)

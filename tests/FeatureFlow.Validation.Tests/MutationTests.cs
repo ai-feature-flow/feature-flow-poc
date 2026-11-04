@@ -47,10 +47,12 @@ public class MutationTests
             new(FixLoop, "steps.apply_triage.outputs.escalated > 0 ||", "steps.apply_triage.outputs.to_fix > 0 ||")]),
 
         ["guard_not_bool"] = new(5, "is int64, not bool", "a fix-loop guard reads a number as a condition", [
-            new(FixLoop, "        - when: \"findings.open == 0\"", "        - when: \"findings.open\"")]),
+            new(FixLoop, "        - when: \"findings.open == 0\"\n          to: { exit: fixed }\n        - to: fix\n      invalid: triage",
+                "        - when: \"findings.open\"\n          to: { exit: fixed }\n        - to: fix\n      invalid: triage")]),
 
         ["index_access"] = new(5, "index access on", "a fix-loop guard reaches an undeclared parameter and output by index", [
-            new(FixLoop, "        - when: \"findings.open == 0\"", "        - when: \"params['nope'] == 1 && steps['apply_triage'].outputs.bogus > 0\"")]),
+            new(FixLoop, "        - when: \"findings.open == 0\"\n          to: { exit: fixed }\n        - to: fix\n      invalid: triage",
+                "        - when: \"params['nope'] == 1 && steps['apply_triage'].outputs.bogus > 0\"\n          to: { exit: fixed }\n        - to: fix\n      invalid: triage")]),
 
         ["declared_exhausted"] = new(6, "'attempts_exhausted' is added by the engine and may not be declared", "implement declares attempts_exhausted itself", [
             new(Ticket, "    outcomes: { implemented: success, blocked: blocked }", "    outcomes: { implemented: success, blocked: blocked, attempts_exhausted: failure }")]),
@@ -83,7 +85,8 @@ public class MutationTests
                 "      reverify: verify\n\n  - id: announce\n    action: notify.send\n    with: { audience: team, message: merged }\n")]),
 
         ["cycle_without_exit"] = new(10, "has no route out", "the fix loop's validated tests go back to the fixer instead of leaving", [
-            new(FixLoop, "      valid: { exit: fixed }\n      invalid: fix", "      valid: fix\n      invalid: fix")]),
+            new(FixLoop, "      valid: { exit: fixed }\n      invalid: fix", "      valid: fix\n      invalid: fix"),
+            new(FixLoop, "          to: { exit: fixed }\n        - to: fix\n      invalid: person_triage", "          to: fix\n        - to: fix\n      invalid: person_triage")]),
 
         ["missing_producer"] = new(11, "consumes 'delivery_plans', which no step produces", "implement consumes an artifact no step produces", [
             new(Ticket, "      - { name: requirements }\n      - { name: delivery_plan }\n      - { name: contract, from: parent, optional: true }\n      - { name: baseline_test_results }",
@@ -135,7 +138,7 @@ public class MutationTests
         ["undeclared_decision_type"] = new(16, "'ticket.spec_approvel' is not declared", "the spec approval's decision type is misspelt", [
             new(Ticket, "      type: ticket.spec_approval\n", "      type: ticket.spec_approvel\n")]),
 
-        ["plan_too_large"] = new(17, "the plan has 2025 steps", "a review over 1,000 angles", [
+        ["plan_too_large"] = new(17, "the plan has 2027 steps", "a review over 1,000 angles", [
             new(Ticket, "      spec_refs: { expr: \"[steps.plan.plan.artifacts.requirements, steps.plan.plan.artifacts.delivery_plan]\" }\n",
                 "      spec_refs: { expr: \"[steps.plan.plan.artifacts.requirements, steps.plan.plan.artifacts.delivery_plan]\" }\n      angles: ["
                 + string.Join(", ", Enumerable.Range(0, 1000).Select(i => $"angle_{i}")) + "]\n")]),

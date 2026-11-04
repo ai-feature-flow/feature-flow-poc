@@ -244,6 +244,13 @@ static class FindingsActions
         // No states input allows all four; a list given, even an empty one, allows exactly its states (re-check R3).
         var allowed = run.Inputs.ContainsKey("states") ? run.Strings("states") : FindingStates.All;
         var (triage, problems) = ReadTriage(await run.ReadTextAsync(entry.Ref), $"{entry.StepId}'s {from} {entry.Ref}", byId, allowed);
+        if (problems.Count == 0 && run.Bool("complete", false))
+            // A person's triage answers for everything an agent may not clear alone (review F1, LOG 248): every escalated finding
+            // of this run, and every declined blocking or demonstrated one. One it leaves out goes back to the person.
+            foreach (var undecided in ledger.Where(f => f.RunId == run.Call.Step.RunId && (f.State == FindingStates.Escalated
+                         || (f.State == FindingStates.Declined && (f.Finding.Blocking || f.Finding.Basis == FindingBases.Demonstrated))))
+                         .Where(f => triage!.Entries.All(t => t.Finding != f.FindingId)))
+                problems.Add($"{undecided.FindingId} is {undecided.State}{(undecided.State == FindingStates.Declined ? " though blocking or demonstrated" : "")}; this triage must decide it");
         var code = new CodeAt(run);
         if (problems.Count == 0)
             foreach (var t in triage!.Entries.Where(t => t.State == FindingStates.Fixed && byId[t.Finding].State != FindingStates.Fixed))
@@ -264,6 +271,7 @@ static class FindingsActions
             return await ReportAsync(run, "invalid", null, null);
         }
 
+        var actor = await ActorAsync(run, entry);
         var history = new History(run);
         var findings = new List<FindingRecord>();
         var events = new List<FindingEventRecord>();
@@ -287,13 +295,13 @@ static class FindingsActions
                 applied++;
             }
 
-            events.Add(Event(run, before.RunId, before.FindingId, FindingEventKinds.Triaged, t.State, entry.StepId, t.Reason, head, null, now));
+            events.Add(Event(run, before.RunId, before.FindingId, FindingEventKinds.Triaged, t.State, actor, t.Reason, head, null, now));
         }
 
         if (events.Count > 0)
             ActionRun.Must(await run.Provider<IRecordStoreProvider>("record_store").AppendAsync(new RecordBatch(Findings: findings, FindingEvents: events), run.Ct),
                 "apply the triage");
-        run.Events.Add($"triage from {entry.StepId}: {triage.Entries.Count} entries, {applied} state changes");
+        run.Events.Add($"triage from {entry.StepId}" + (actor == entry.StepId ? "" : $", by {actor}") + $": {triage.Entries.Count} entries, {applied} state changes");
 
         if (run.Bool("post_declines", true))
             foreach (var t in triage.Entries.Where(t => t.State == FindingStates.Declined))
@@ -307,6 +315,43 @@ static class FindingsActions
                 && (byId[t.Finding].Finding.Blocking || byId[t.Finding].Finding.Basis == FindingBases.Demonstrated)),
         };
         return await ReportAsync(run, "applied", outputs, null);
+    }
+
+    /// <summary>
+    /// Who a triage's state changes are recorded as (F8; LOG 169, 248): the authenticated person whose answer to the decision
+    /// step that produced it gave this exact artifact, as the API recorded the answer before delivering it; otherwise the
+    /// producing step (an agent's triage is its step's). Only a decision's wait can carry an answer, so an agent step's
+    /// artifact never takes a person's name.
+    /// </summary>
+    static async Task<string> ActorAsync(ActionRun run, ArtifactEntry entry)
+    {
+        if (entry.Action is not null)
+            return entry.StepId;
+        var records = run.Provider<IRecordStoreProvider>("record_store");
+        var p = new Dictionary<string, string> { ["run_id"] = run.Call.Step.RunId };
+        var waits = ActionRun.Must(await records.QueryAsync<WaitRecord>(Queries.Waits, p, run.Ct), "read the run's waits")
+            .Where(w => w.Kind == "decision" && w.StepId == entry.StepId).Select(w => w.WaitId).ToHashSet(StringComparer.Ordinal);
+        if (waits.Count == 0)
+            return entry.StepId;
+        var answers = ActionRun.Must(await records.QueryAsync<AnswerRecord>(Queries.Answers, p, run.Ct), "read the run's answers");
+        // The API records an answer as sent before delivering it, then its result; the run accepted this artifact from one of
+        // them. A sent answer the run refused (a later record of the same wait and answer) names no one (review F3).
+        bool Refused(AnswerRecord sent) => answers.Any(a => a.WaitId == sent.WaitId && a.Answer == sent.Answer && a.Result.StartsWith("refused", StringComparison.Ordinal));
+        return answers.Where(a => waits.Contains(a.WaitId) && (a.Result == "recorded" || (a.Result == "sent" && !Refused(a)))).Reverse()
+            .Select(a => Args(a.Answer)).FirstOrDefault(a => a?.Artifacts?.Values.Contains(entry.Ref) == true)?.Actor ?? entry.StepId;
+    }
+
+    /// <summary>The answer as delivered: its actor is every person who gave it (approval's <c>min_count</c>), authenticated by the API.</summary>
+    static FeatureFlow.Interpreter.Wire.AnswerArgs? Args(string answer)
+    {
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<FeatureFlow.Interpreter.Wire.AnswerArgs>(answer, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -355,6 +400,38 @@ static class FindingsActions
         return (problems.Count == 0 ? triage : null, problems);
     }
 
+    static string DeclineBody(FindingRecord finding, string? reason)
+    {
+        var where = finding.Finding.Location.Symbol is { Length: > 0 } symbol ? $"`{finding.Finding.Location.File}` ({symbol})" : $"`{finding.Finding.Location.File}`";
+        return $"**Finding {finding.FindingId} declined**: {finding.Finding.Title}\n\n{where}\n\n{reason}";
+    }
+
+    /// <summary>
+    /// The declines the ledger holds for a repository, posted when its pull request opens or is updated (M6 follow-up 5;
+    /// LOG 164, 249), unless the step says <c>post_declines: false</c>. Each is posted under the key of the triage that
+    /// declined it, the key that triage posts under itself, so a decline is posted once whichever comes first. Only this
+    /// run's own findings: a child's belong on its own pull request.
+    /// </summary>
+    internal static async Task PostLedgerDeclinesAsync(ActionRun run, RepoRef repo, PullRequestRef pr)
+    {
+        if (!run.Bool("post_declines", true))
+            return;
+        var records = run.Provider<IRecordStoreProvider>("record_store");
+        var runId = run.Call.Step.RunId;
+        var declined = ActionRun.Must(await records.QueryAsync<FindingRecord>(Queries.Findings, new Dictionary<string, string> { ["run_id"] = runId }, run.Ct), "read the findings ledger")
+            .Where(f => f.RunId == runId && f.State == FindingStates.Declined && RepositoryNames.As(f.Finding.Location.Repository, [repo.FullName]) == repo.FullName);
+        foreach (var finding in declined)
+        {
+            var history = ActionRun.Must(await records.QueryAsync<FindingEventRecord>(Queries.FindingEvents,
+                new Dictionary<string, string> { ["run_id"] = runId, ["finding_id"] = finding.FindingId }, run.Ct), "read the finding's history");
+            if (history.LastOrDefault(e => e.Kind == FindingEventKinds.Triaged && e.State == FindingStates.Declined) is not { } decline)
+                continue;
+            var comment = ActionRun.Must(await run.CodeHost.AddCommentAsync(pr, DeclineBody(finding, decline.Reason), $"{decline.Key}/{finding.FindingId}", run.Ct),
+                "post a decline on the pull request");
+            run.Events.Add($"the decline of {finding.FindingId} is posted on {ActionRun.Format(pr)} ({comment.Id})");
+        }
+    }
+
     /// <summary>
     /// A decline's reason on the pull request of the finding's repository, once per triage and finding (the comment's
     /// key). Before a pull request is open there is nowhere to post it; the timeline says so (LOG 164).
@@ -368,9 +445,8 @@ static class FindingsActions
             return;
         }
 
-        var where = finding.Finding.Location.Symbol is { Length: > 0 } symbol ? $"`{finding.Finding.Location.File}` ({symbol})" : $"`{finding.Finding.Location.File}`";
-        var body = $"**Finding {finding.FindingId} declined**: {finding.Finding.Title}\n\n{where}\n\n{entry.Reason}";
-        var comment = ActionRun.Must(await run.CodeHost.AddCommentAsync(pr, body, $"{run.Key}/{finding.FindingId}", run.Ct), "post a decline on the pull request");
+        var comment = ActionRun.Must(await run.CodeHost.AddCommentAsync(pr, DeclineBody(finding, entry.Reason), $"{run.Key}/{finding.FindingId}", run.Ct),
+            "post a decline on the pull request");
         run.Events.Add($"the decline of {finding.FindingId} is posted on {ActionRun.Format(pr)} ({comment.Id})");
     }
 

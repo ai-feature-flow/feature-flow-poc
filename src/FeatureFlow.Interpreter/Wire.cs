@@ -31,7 +31,43 @@ public static class RunWorkflowNames
     /// 3.4). Idempotent by the question id, which the sandbox client assigned (LOG 59).
     /// </summary>
     public const string QuestionOpened = "question_opened";
+
+    /// <summary>
+    /// Update: a person's run-time override (docs/05 section 5) other than an answer or an abort, with <see cref="OverrideArgs"/>.
+    /// The API authorised the key and recorded the override (an <c>OverrideRecord</c>) first, as it does answers.
+    /// </summary>
+    public const string Override = "override";
+
+    /// <summary>
+    /// Signal, from the inbound gateway: an external event (a webhook) that may end a wait early, with <see cref="WakeSignal"/>.
+    /// A hint: the wait reads again to confirm (events wake, reads confirm), so a wrong or repeated wake changes nothing.
+    /// </summary>
+    public const string Wake = "wake";
 }
+
+/// <summary>
+/// A run-time override (docs/05 section 5), from the API, which authenticated <see cref="Actor"/> (F8) and authorised
+/// <see cref="Key"/>, a base key of <c>Model.Overrides</c>. <see cref="Variants"/> are the variant keys the caller also holds
+/// (<c>skip_protected</c>, <c>grant_attempts_beyond</c>): the workflow refuses an override on protected content, or beyond
+/// the hard ceiling, without the matching one, since only it knows what is protected. <see cref="Change"/> holds the
+/// key's arguments by name (for example <c>outcome</c> for <c>skip</c>, <c>patch</c> for <c>amend</c>, <c>role</c> for
+/// <c>change_role</c>, <c>attempts</c> for <c>grant_attempts</c>, <c>set</c> for <c>breakpoint</c>, <c>item</c> and <c>with</c>
+/// for <c>override_library</c>). Idempotent by <see cref="OverrideId"/>, which the API assigns.
+/// </summary>
+public sealed record OverrideArgs(
+    string OverrideId,
+    string Key,
+    string Actor,
+    string Reason,
+    string? StepId,
+    IReadOnlyDictionary<string, string> Change,
+    IReadOnlyList<string>? Variants = null);
+
+/// <summary>
+/// An external event that may end a wait early: its source (<c>code_host</c>, <c>ci</c>, <c>tracker</c>), the event's name,
+/// and the step to wake, or null for every wait of the run.
+/// </summary>
+public sealed record WakeSignal(string Source, string Event, string? StepId = null);
 
 /// <summary>A question an agent asked: the run opens a question decision for it, answered with the <c>answer</c> update.</summary>
 public sealed record QuestionSignal(string QuestionId, string StepId, string StepKey, string Text, IReadOnlyList<string> Options, long TimeoutSeconds);
@@ -44,7 +80,8 @@ public sealed record AutoRule(string Match, bool Auto);
 
 /// <summary>
 /// The limits and policy a run enforces, fixed when it starts (docs/05 section 8) and carried in its state,
-/// because workflow code cannot read configuration.
+/// because workflow code cannot read configuration. <see cref="RequireReview"/> is the organisation's
+/// <c>planning.require_review</c> for the run's template (M7).
 /// </summary>
 public sealed record RunPolicy(
     long DefaultAttempts,
@@ -57,7 +94,8 @@ public sealed record RunPolicy(
     long? HardRunCeiling = null,
     IReadOnlyList<string>? EngineMayMerge = null,
     bool? BuiltActions = null,
-    long? WorkItemCeiling = null)
+    long? WorkItemCeiling = null,
+    bool? RequireReview = null)
 {
     public RunOptions ToOptions() => new()
     {
@@ -69,6 +107,7 @@ public sealed record RunPolicy(
         AutoResolve = type => AutoRules.FirstOrDefault(r => Matches(r.Match, type))?.Auto ?? false,
         HardStepCeiling = HardStepCeiling,
         HardRunCeiling = HardRunCeiling,
+        RequireReview = RequireReview ?? false,
     };
 
     static bool Matches(string pattern, string type) =>
@@ -105,7 +144,8 @@ public sealed record ShellState(
     int ChildEndsWhileDraining,
     int AnswersWhileDraining,
     IReadOnlyList<OpenQuestion>? Questions = null,
-    IReadOnlyList<string>? ClosedQuestions = null);
+    IReadOnlyList<string>? ClosedQuestions = null,
+    IReadOnlyList<string>? SessionWaits = null);
 
 /// <summary>
 /// The run workflow's input: on the first run, what the API or the parent gives; after a hand-over, the same with
@@ -143,7 +183,9 @@ public sealed record WorkItemBudget(string RootRunId, long Limit);
 /// A person's answer, from the API, which authenticated the actor and recorded the answer first (docs/04
 /// section 4.1). For a decision, <see cref="Outcome"/>; for a patch approval, <see cref="Action"/>
 /// <c>approve</c> or <c>reject</c>; for an intervention, a recovery <see cref="Action"/>: <c>retry</c>,
-/// <c>go_to</c>, <c>replan</c>, <c>grant_attempts</c> or <c>end</c>.
+/// <c>go_to</c>, <c>replan</c>, <c>grant_attempts</c> or <c>end</c>. An answer may carry what the person produced:
+/// <see cref="Artifacts"/>, by declared name, already stored and validated by the API (a session's submitted files, a
+/// person's <c>triage</c>), and <see cref="Revision"/>, the exact commit a session submitted.
 /// </summary>
 public sealed record AnswerArgs(
     string WaitId,
@@ -154,9 +196,12 @@ public sealed record AnswerArgs(
     bool CleanUp = false,
     long Attempts = 0,
     string? Status = null,
-    bool BeyondHardCeiling = false);
+    bool BeyondHardCeiling = false,
+    IReadOnlyDictionary<string, string>? Artifacts = null,
+    string? Revision = null);
 
-public sealed record AbortArgs(string Actor, string Reason);
+/// <summary>A person stops the run; <see cref="ClosePullRequests"/> asks that the pull requests it opened be closed too (docs/05 section 5).</summary>
+public sealed record AbortArgs(string Actor, string Reason, bool ClosePullRequests = false);
 
 public sealed record AnswerReply(string Result);
 

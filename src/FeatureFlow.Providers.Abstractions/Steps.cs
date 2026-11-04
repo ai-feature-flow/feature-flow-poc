@@ -4,7 +4,11 @@ namespace FeatureFlow.Providers.Abstractions;
 public sealed record OutcomeSpec(string Name, string Class);
 
 /// <summary>An artifact a step promises: for one outcome, or for every success outcome when <see cref="Outcome"/> is null.</summary>
-public sealed record ArtifactSpec(string? Outcome, string Name);
+public sealed record ArtifactSpec(string? Outcome, string Name)
+{
+    /// <summary>Its declared artifact type, a library reference (<c>std:artifact_types/requirements</c>), when the step names one.</summary>
+    public string? Type { get; init; }
+}
 
 /// <summary>
 /// What a step must report (docs/03 section 7, docs/04 section 3.3): its outcomes, the outputs it publishes with
@@ -35,7 +39,14 @@ public sealed record StepReport(
     IReadOnlyDictionary<string, string> Artifacts,
     string? Summary = null,
     string? Patch = null,
-    bool PatchToParent = false);
+    bool PatchToParent = false)
+{
+    /// <summary>
+    /// A library override an agent with planning authority proposes (docs/05 section 6): <c>item</c>, a library reference,
+    /// and <c>with</c>, the new content. It never applies at once; it becomes a patch approval for a person (M7).
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? LibraryOverride { get; init; }
+}
 
 /// <summary>Who the step is: enough for a provider to find its work and for a fake to find its script.</summary>
 public sealed record StepIdentity(string RunId, string Template, string StepId, int Execution, string IdempotencyKey);
@@ -82,6 +93,12 @@ public sealed record StepOutcome(string Kind, StepReport? Report, string? Reason
 
     /// <summary>The ledger version <see cref="Findings"/> was read at: the core keeps the newest (review F3).</summary>
     public long FindingsVersion { get; init; }
+
+    /// <summary>
+    /// The digest of the call and scope the engine-action activity received (pre-submit parity, docs/09 section 4.2), so a
+    /// session's check and the later step are compared on what they were actually given. Null from other activities.
+    /// </summary>
+    public string? Inputs { get; init; }
 }
 
 /// <summary>The engine's endpoints as the agent in a sandbox reaches them, with the step's token (docs/02 section 4.2).</summary>

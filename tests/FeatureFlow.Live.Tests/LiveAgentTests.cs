@@ -85,6 +85,37 @@ public sealed class LiveAgentTests
         }
     }
 
+    /// <summary>
+    /// LOG 246 live: the real model reports notes without the heading their type requires (it is told to), the engine checks
+    /// the stored file and continues the same session with the error, and the model corrects the file and reports again.
+    /// </summary>
+    [Fact]
+    public async Task An_artifact_that_breaks_its_type_is_corrected_by_the_real_model_in_its_session()
+    {
+        await using var h = await AgentHarness.StartAsync("live-check", null, Live);
+        var ticket = Ticket("check");
+        var runId = h.Start(ticket, "Do not change the repository. Write notes.md in your output folder holding exactly the single line 'hello', with no " +
+                                    "heading, and report the outcome implemented with outputs answer set to none and the artifact notes set to notes.md. " +
+                                    "If the engine then says the notes are wrong, correct them as it says and report again.", "m4:templates/checked_step");
+        var hidden = AgentHarness.HiddenReference(runId, "implement");
+        var branch = $"refs/heads/ff/ticket/{ticket}";
+        try
+        {
+            var status = await h.WaitForEndAsync(runId, RunTimeout);
+
+            Assert.True(status == "completed", $"the run ended {status}:\n{await h.TimelineAsync(runId)}");
+            var reports = await h.RecordsAsync<ReportRecord>(Queries.Reports, AgentScripts.Key(runId));
+            Assert.Contains(reports, r => !r.Accepted && r.Errors.Any(e => e.Contains("heading 'Summary' is required", StringComparison.Ordinal)));
+            Assert.True(reports[^1].Accepted);
+        }
+        finally
+        {
+            await LogRunAsync(h, "artifact-check", runId);
+            await h.StopRunAsync(runId);
+            await h.DeleteRemoteReferencesAsync(branch, hidden);
+        }
+    }
+
     /// <summary>SP2 live: the real agent asks, the worker restarts, the person answers, and the agent uses the answer.</summary>
     [Fact]
     public async Task A_question_is_answered_after_the_agent_worker_is_restarted()

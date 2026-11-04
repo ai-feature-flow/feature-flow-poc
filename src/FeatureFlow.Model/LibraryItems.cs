@@ -24,15 +24,35 @@ public sealed record Manifest(
 
 public sealed record RoleItem(string Name, string WriteAccess, IReadOnlyList<string> Tools, IReadOnlyList<string> Toolsets, ItemRef? DeprecatedBy);
 
-public sealed record ArtifactTypeItem(string Name, string Format, bool Evidence, IReadOnlyList<ItemRef> CompatibleWith, IReadOnlyList<string> ProducedBy, ItemRef? DeprecatedBy);
+public sealed record ArtifactTypeItem(string Name, string Format, bool Evidence, IReadOnlyList<ItemRef> CompatibleWith, IReadOnlyList<string> ProducedBy, ItemRef? DeprecatedBy)
+{
+    /// <summary>The JSON Schema (<see cref="ArtifactSchema"/>), or null for none or an engine-defined shape (<c>schema: engine</c>).</summary>
+    public YNode? Schema { get; init; }
+
+    /// <summary>A Markdown type's structure: headings it must have, front matter keys it must give, and identifiers it must hold.</summary>
+    public IReadOnlyList<string> RequiredHeadings { get; init; } = [];
+
+    public IReadOnlyList<string> FrontMatterRequired { get; init; } = [];
+
+    public IReadOnlyList<string> IdentifierPatterns { get; init; } = [];
+
+    /// <summary>Validators (by name, from the validator providers) checked against every artifact of the type when it is produced.</summary>
+    public IReadOnlyList<string> Validators { get; init; } = [];
+}
 
 public sealed record DecisionTypeItem(string Name, string? Description, SourceLocation Location)
 {
     /// <summary>
     /// <c>default_approval.roles</c>: who may answer when no organisation approval rule matches the type
-    /// (docs/05 section 4). The default's <c>auto</c>, <c>min_count</c> and <c>from_chat</c> are not applied yet.
+    /// (docs/05 section 4). The whole default is <see cref="DefaultApproval"/>.
     /// </summary>
     public IReadOnlyList<string> DefaultRoles { get; init; } = [];
+
+    /// <summary>
+    /// The whole <c>default_approval</c> (docs/05 section 4) as a rule matching this type: roles, <c>min_count</c>,
+    /// <c>from_chat</c> and <c>auto</c>, applied when no organisation rule matches. Null where the library gives none.
+    /// </summary>
+    public ApprovalRule? DefaultApproval { get; init; }
 
     /// <summary>A declared name may be a pattern with <c>*</c> standing for one or more characters (docs/05 section 4).</summary>
     public bool Matches(string type)
@@ -191,27 +211,37 @@ public static class LibraryItemReader
         foreach (var item in Seq(r.Node("compatible_with"), d, "compatible_with"))
             if (Ref(item, r, "compatible_with entry") is { } c)
                 compatible.Add(c);
-        if (r.Node("validators") is { } validators and not YSeq and not YScalar { IsNull: true })
-            r.Error("validators must be a list", validators.Location);
+        var validatorNames = r.StringList("validators");
         var schema = r.Node("schema");
         if (schema is YScalar s && s.Text != "engine")
             r.Error("schema must be a JSON Schema map, or 'engine' for an engine-defined shape", schema.Location);
+        else if (schema is YMap)
+            foreach (var (message, location) in ArtifactSchema.Problems(schema))
+                r.Error(message, location);
+        IReadOnlyList<string> headings = [], frontMatter = [], identifiers = [];
         if (MapReader.Of(r.Node("markdown"), d, "markdown") is { } md)
         {
-            md.StringList("required_headings");
+            headings = md.StringList("required_headings");
             if (MapReader.Of(md.Node("front_matter"), d, "markdown.front_matter") is { } fm)
             {
-                fm.StringList("required");
+                frontMatter = fm.StringList("required");
                 fm.Finish();
             }
 
-            md.StringList("identifier_patterns");
+            identifiers = md.StringList("identifier_patterns");
             md.Finish();
         }
 
         r.StringList("rules");
         r.Finish();
-        return new ArtifactTypeItem(name, format, evidence, compatible, producedBy, deprecated);
+        return new ArtifactTypeItem(name, format, evidence, compatible, producedBy, deprecated)
+        {
+            Schema = schema as YMap,
+            RequiredHeadings = headings,
+            FrontMatterRequired = frontMatter,
+            IdentifierPatterns = identifiers,
+            Validators = validatorNames,
+        };
     }
 
     public static IReadOnlyList<DecisionTypeItem> ReadDecisionTypes(YNode root, DiagnosticBag d)
@@ -231,18 +261,20 @@ public static class LibraryItemReader
                 var name = dt.String("name", required: true);
                 var description = dt.String("description");
                 IReadOnlyList<string> roles = [];
+                ApprovalRule? approval = null;
                 if (MapReader.Of(dt.Node("default_approval"), d, "default_approval") is { } a)
                 {
                     roles = a.StringList("roles");
-                    a.Int("min_count");
-                    a.Bool("auto");
-                    a.Bool("from_chat");
+                    var minCount = a.Int("min_count") ?? 1;
+                    if (minCount < 1)
+                        a.Error("default_approval.min_count must be at least 1", a.Map.Location);
+                    approval = new ApprovalRule(name ?? "", roles, minCount, a.Bool("from_chat") ?? false, new Cap<bool>(a.Bool("auto") ?? false, false));
                     a.Finish();
                 }
 
                 dt.Finish();
                 if (name is not null)
-                    list.Add(new DecisionTypeItem(name, description, item.Location) { DefaultRoles = roles });
+                    list.Add(new DecisionTypeItem(name, description, item.Location) { DefaultRoles = roles, DefaultApproval = approval });
             }
 
         r.Finish();

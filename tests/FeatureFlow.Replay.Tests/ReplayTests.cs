@@ -23,8 +23,8 @@ public class ReplayTests
     public void The_recorded_histories_are_there()
     {
         // Without this, a missing folder would leave the theory with no cases and nothing replayed.
-        Assert.Equal(["agent_question", "budget_middle", "delivery_tracked", "epic_delivery", "epic_delivery_child", "family_child", "family_parent",
-                "silent_parent_resumed", "sp1_parent", "sp1_parent_resumed", "ticket_clean_up", "ticket_delivery", "wait_hand_over", "wait_hand_over_resumed"],
+        Assert.Equal(["agent_question", "budget_middle", "decision_prompt", "delivery_tracked", "epic_delivery", "epic_delivery_child", "family_child", "family_parent", "project_session", "project_session_pre_m7",
+                "silent_parent_resumed", "sp1_parent", "sp1_parent_resumed", "steering_line", "steering_rerun_branch", "ticket_clean_up", "ticket_delivery", "wait_hand_over", "wait_hand_over_resumed", "wake"],
             Names());
     }
 
@@ -52,6 +52,30 @@ public class ReplayTests
         Assert.Contains(RunWorkflow.ChildWatchPatch, Markers("silent_parent_resumed"));
     }
 
+    [Fact]
+    public void A_history_holds_the_M7_decision_prompt_patch_marker()
+    {
+        // A decision's wait recording its rendered prompt (M7 integration): without it, a change to that path would replay green.
+        Assert.Contains(RunWorkflow.DecisionPromptPatch, Markers("decision_prompt"));
+    }
+
+    [Fact]
+    public void A_history_holds_the_M7_steering_patch_marker_and_its_overrides()
+    {
+        // A person's overrides and a breakpoint's answer (steering_line), and a failed branch of a decided join re-run
+        // (steering_rerun_branch): without a history on each path, a change to it would replay green.
+        Assert.Contains(RunWorkflow.SteeringPatch, Markers("steering_line"));
+        Assert.Contains(RunWorkflow.SteeringPatch, Markers("steering_rerun_branch"));
+        Assert.Matches("\"name\":\\s*\"override\"", File.ReadAllText(Path.Combine(HistoryFolder, "steering_line.json")));
+    }
+
+    [Fact]
+    public void A_history_holds_the_wake_patch_marker()
+    {
+        // M7: a wait woken by an inbound webhook, read again, and ended by the event that matched what the read found.
+        Assert.Contains(RunWorkflow.WakePatch, Markers("wake"));
+    }
+
     /// <summary>Whether a recorded run started from a hand-over carrying a step to resume (LOG 139).</summary>
     static bool StartsResuming(string name)
     {
@@ -72,6 +96,15 @@ public class ReplayTests
             .SelectMany(d => d.Value.GetProperty("payloads").EnumerateArray())
             .Select(p => System.Text.Json.JsonDocument.Parse(Convert.FromBase64String(p.GetProperty("data").GetString()!)).RootElement.GetProperty("id").GetString()!)
             .ToList();
+    }
+
+    [Fact]
+    public void A_history_holds_the_sessions_marker_and_one_from_before_it_answers_a_session_decision()
+    {
+        // Sessions (M7): opening, checks, submissions and the step's digest are behind the marker. The second history, recorded
+        // before sessions, answers project_delivery's session decision with a plain `submitted`, which must still replay.
+        Assert.Contains(RunWorkflow.SessionsPatch, Markers("project_session"));
+        Assert.DoesNotContain(RunWorkflow.SessionsPatch, Markers("project_session_pre_m7"));
     }
 
     [Theory]

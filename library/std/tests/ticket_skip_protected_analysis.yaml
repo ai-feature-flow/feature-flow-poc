@@ -1,0 +1,20 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: ticket_skip_protected_analysis
+description: >-
+  An administrator skips the static analysis in the protected verification
+  (skip_protected), ending it as passed without running it. It never starts;
+  the run goes on to review and merge, and the record shows the skip. A skipped
+  step publishes no outputs, so a route that reads one would stop for a person.
+template: std:templates/ticket_delivery
+parameters: { ticket_id: FF-1042 }
+repositories: [acme/api]
+
+overrides:
+  - { skip: verify.analysis, outcome: passed }
+
+expect:
+  status: completed
+  skipped: [verify.analysis]
+  path_includes: [verify.tests, verify.review.review_0.assess, verify.satisfaction, deliver.merge]
+  executions: { verify.analysis: 0, deliver.merge: 1 }
