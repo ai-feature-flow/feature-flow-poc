@@ -20,6 +20,9 @@ decision_types:
   - name: project.epic_plan_approval
     description: Approve the project's epic list and the requirements each epic owns
     default_approval: { roles: [approver], min_count: 1, auto: false }
+  - name: findings.triage
+    description: Triage the findings an agent may not clear alone (escalated, or a declined blocking or demonstrated one), recorded as you
+    default_approval: { roles: [approver], min_count: 1, auto: false }
   - name: delivery.partial_recovery
     description: Choose how to recover when ordered delivery merged some repositories and not others
     default_approval: { roles: [approver], min_count: 1, auto: false }

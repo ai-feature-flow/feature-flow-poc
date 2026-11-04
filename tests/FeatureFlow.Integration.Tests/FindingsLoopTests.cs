@@ -77,13 +77,14 @@ public class FindingsLoopTests
     /// Review F1: the triager alone cannot clear a demonstrated, blocking finding. Every review raises it again on unchanged
     /// code; the triager marks it fixed, escalated or declined. None of these merges: fixed is not a state the triager may
     /// set (its triage goes back to it until its attempts run out), and an escalation or a declined blocking finding,
-    /// counted by findings.triage itself, goes to a person. Either way the run stops at an intervention before any merge.
+    /// counted by findings.triage itself, goes to a person: an intervention, or (LOG 248) the person's triage decision. Either
+    /// way the run stops for a person before any merge.
     /// </summary>
     [Theory]
-    [InlineData("fixed", "verify.fix.triage")]
-    [InlineData("escalated", "verify.fix.apply_triage")]
-    [InlineData("declined", "verify.fix.apply_triage")]
-    public async Task The_triager_alone_cannot_clear_a_demonstrated_blocking_finding(string state, string stopsAt)
+    [InlineData("fixed", "intervention", "verify.fix.triage")]
+    [InlineData("escalated", "decision", "verify.fix.person_triage")]
+    [InlineData("declined", "decision", "verify.fix.person_triage")]
+    public async Task The_triager_alone_cannot_clear_a_demonstrated_blocking_finding(string state, string kind, string stopsAt)
     {
         var demonstrated = Blocking.Replace("basis: reasoned", "basis: demonstrated, proof: AppTests.Null fails", StringComparison.Ordinal);
         var script = "{ " + string.Join(", ",
@@ -101,7 +102,7 @@ public class FindingsLoopTests
 
         var view = await h.ShowAsync(id);
         var wait = view["waits"]!.AsArray().Single()!;
-        Assert.Equal(("intervention", stopsAt), (wait["kind"]!.ToString(), wait["stepId"]!.ToString()));
+        Assert.Equal((kind, stopsAt), (wait["kind"]!.ToString(), wait["stepId"]!.ToString()));
         var path = Harness.StartedSteps(view);
         Assert.DoesNotContain(path, s => s.StartsWith("deliver.", StringComparison.Ordinal));
         Assert.DoesNotContain("verify.fix.fix", path);
@@ -200,6 +201,62 @@ public class FindingsLoopTests
 
         var ledger = (await records.QueryAsync<FindingRecord>(Queries.Findings, new Dictionary<string, string> { ["run_id"] = id }, ct)).Unwrap();
         Assert.Equal((verified, FindingStates.Open), (ledger.Single(f => f.Finding.Blocking).State, ledger.Single(f => !f.Finding.Blocking).State));
+        Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
+    }
+
+    /// <summary>
+    /// LOG 248, F8: the triager declines a demonstrated blocking finding, which it may not clear alone, so a person triages it
+    /// in a decision. An answer without the triage is refused. The person reads the ledger, declines the finding with a reason
+    /// through the CLI, and the decline is recorded as the authenticated person (the harness's token is "tester"), not as a
+    /// step. Nothing is left open, so the fix loop ends without a fix, and the ticket merges.
+    /// </summary>
+    [Fact]
+    public async Task A_person_triages_what_the_triager_may_not_clear_and_is_recorded_as_the_actor()
+    {
+        var demonstrated = Blocking.Replace("basis: reasoned", "basis: demonstrated, proof: AppTests.Null fails", StringComparison.Ordinal);
+        var script = "{ " + string.Join(", ",
+        [
+            $"verify.review.review_0.assess: [{Report(demonstrated)}, {Report("")}]",
+            .. Enumerable.Range(1, 4).Select(i => $"verify.review.review_{i}.assess: {Report("")}"),
+            "verify.fix.triage: { artifacts: { triage: { triage_each_open: declined } } }",
+        ]) + " }";
+        var (h, _, _) = await ForgeTicketTests.StartAsync("person-triage", policy: "  merge: { default_branch: { engine_may_merge: [acme/api] } }", script: script);
+        await using var _h = h;
+        var ct = TestContext.Current.CancellationToken;
+
+        var id = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=T-1", "--param", "engine_can_merge=true", "--repo", "acme/api");
+        var wait = await h.WaitForWaitAsync(id, TimeSpan.FromSeconds(240));
+        Assert.Equal(("decision", "verify.fix.person_triage"), ((await h.ShowAsync(id))["waits"]![0]!["kind"]!.ToString(), (await h.ShowAsync(id))["waits"]![0]!["stepId"]!.ToString()));
+
+        var (refused, _, refusal) = h.Cli("answer", id, wait!, "triaged");
+        Assert.NotEqual(0, refused);
+        Assert.Contains("'triaged' must give artifact person_triage", refusal, StringComparison.Ordinal);
+
+        var (read, ledger, readError) = h.Cli("findings", id);
+        Assert.True(read == 0, readError);
+        var finding = Assert.Single(ArtifactShapes.ReadLibrary<FindingsReport>(ledger, "the ledger").Findings);
+        Assert.Equal(FindingStates.Declined, finding.State);
+        var triage = Path.Combine(h.Folder, "person_triage.yaml");
+        await File.WriteAllTextAsync(triage, $"schema: 1\nentries:\n  - {{ finding: {finding.LedgerId}, state: declined, reason: \"A known limitation; accepted for this release\" }}\n", ct);
+        var (answered, _, answerError) = h.Cli("answer", id, wait!, "triaged", "--artifact", $"person_triage={triage}");
+        Assert.True(answered == 0, answerError);
+
+        var (exit, end, error) = h.Cli("wait", id, "--timeout", "240");
+        var view = await h.ShowAsync(id);
+        Assert.True(exit == 0, end + error + view.ToJsonString());
+        var path = Harness.StartedSteps(view);
+        Assert.Contains("verify.fix.apply_person_triage", path);
+        Assert.DoesNotContain("verify.fix.fix", path);
+        Assert.Contains("deliver.merge", path);
+
+        var records = new SqliteRecordStore(Path.Combine(h.Folder, "records.db"));
+        var recorded = Assert.Single((await records.QueryAsync<FindingRecord>(Queries.Findings, new Dictionary<string, string> { ["run_id"] = id }, ct)).Unwrap());
+        Assert.Equal(FindingStates.Declined, recorded.State);
+        var history = (await records.QueryAsync<FindingEventRecord>(Queries.FindingEvents,
+            new Dictionary<string, string> { ["run_id"] = id, ["finding_id"] = recorded.FindingId }, ct)).Unwrap();
+        Assert.Equal([(FindingStates.Open, "verify.review.review_0.assess"), (FindingStates.Declined, "verify.fix.triage"), (FindingStates.Declined, "tester")],
+            history.Select(e => (e.State, e.Actor)));
+        Assert.Equal("A known limitation; accepted for this release", history.Last().Reason);
         Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
     }
 }

@@ -3,12 +3,15 @@ kind: workflow_test
 name: ticket_triage_to_person
 description: >-
   The triager declines a blocking finding. findings.triage counts it
-  (declined_blocking, an engine output, not the triager's own), so the fix loop
-  leaves by its escalated exit and a person decides before any merge.
+  (declined_blocking, an engine output, not the triager's own), so a person
+  triages it in a decision before any fix or merge (LOG 248). This person
+  escalates: the fix loop leaves by its escalated exit.
 template: std:templates/ticket_delivery
 parameters: { ticket_id: FF-1042 }
 repositories: [acme/api]
 
+script:
+  verify.fix.person_triage: escalate
 outputs:
   verify.fix.apply_triage: { escalated: 0, declined_blocking: 1 }
   "findings.open_blocking": [1]
@@ -19,7 +22,9 @@ expect:
   path_includes:
     - verify.fix.triage
     - verify.fix.apply_triage
-  escalated: [verify.fix.apply_triage]
+    - verify.fix.person_triage
+  escalated: [verify.fix.person_triage]
   executions:
+    verify.fix.apply_person_triage: 0
     verify.fix.fix: 0
     deliver.merge: 0

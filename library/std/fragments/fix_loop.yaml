@@ -4,7 +4,8 @@ metadata:
   name: fix_loop
   description: >-
     A triager decides per open finding; the decisions are applied, and an
-    escalation or a declined blocking or demonstrated finding goes to a person; a fixer fixes
+    escalation or a declined blocking or demonstrated finding goes to a person,
+    who triages in a decision (any state, recorded as that person); a fixer fixes
     what is left open, with regression tests; a verifying reviewer checks each fix
     against its finding on the full diff; the fix is re-tested and its regression
     tests are validated as new and passing. The caller re-tests and re-reviews after the fixed exit.
@@ -47,11 +48,35 @@ steps:
     routes:
       applied:                                    # on the engine's counts, never the triager's own outputs
         - when: "steps.apply_triage.outputs.escalated > 0 || steps.apply_triage.outputs.declined_blocking > 0"
-          to: { exit: escalated }                 # a person decides an escalation or a declined blocking or demonstrated finding
+          to: person_triage                       # a person decides an escalation or a declined blocking or demonstrated finding
         - when: "findings.open == 0"
           to: { exit: fixed }
         - to: fix
       invalid: triage                             # names a finding the ledger does not hold: back to its producer
+
+  - id: person_triage                   # what the agent alone may not clear (LOG 168), a person triages (LOG 248)
+    decision:
+      type: findings.triage
+      prompt: std:prompts/findings_triage
+    consumes: [{ name: findings_ledger }, { name: triage }]
+    produces:
+      triaged: [{ name: person_triage, type: std:artifact_types/triage }]
+    outcomes: { triaged: success, escalate: blocked }
+    routes:
+      escalate: { exit: escalated }
+
+  - id: apply_person_triage
+    action: findings.triage
+    with: { from: person_triage }       # any state; the state changes are recorded as the person who answered (F8)
+    consumes: [{ name: person_triage }]
+    routes:
+      applied:
+        - when: "steps.apply_person_triage.outputs.escalated > 0"
+          to: { exit: escalated }                 # the person escalates beyond this loop
+        - when: "findings.open == 0"
+          to: { exit: fixed }
+        - to: fix
+      invalid: person_triage                      # names a finding the ledger does not hold: back to the person
 
   - id: fix
     agent:
@@ -95,7 +120,7 @@ steps:
     routes:
       applied:                                    # as apply_triage: should states be widened, a person still decides
         - when: "steps.record_fixes.outputs.escalated > 0 || steps.record_fixes.outputs.declined_blocking > 0"
-          to: { exit: escalated }
+          to: person_triage
         - to: retest
       invalid: verify_fix
 
