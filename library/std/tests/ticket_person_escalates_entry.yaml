@@ -1,0 +1,26 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: ticket_person_escalates_entry
+description: >-
+  The triager escalates a finding; the person triages it and leaves it
+  escalated (an entry, not the escalate answer), so the fix loop leaves by its
+  escalated exit before any fix or merge (review F5 of PR 21).
+template: std:templates/ticket_delivery
+parameters: { ticket_id: FF-1042 }
+repositories: [acme/api]
+
+outputs:
+  verify.fix.apply_triage: { escalated: 1, declined_blocking: 0 }
+  verify.fix.apply_person_triage: { escalated: 1, declined_blocking: 0 }
+  "findings.open_blocking": [1]
+  "findings.open": 0
+
+expect:
+  status: running
+  path_includes:
+    - verify.fix.person_triage
+    - verify.fix.apply_person_triage
+  escalated: [verify.fix.apply_person_triage]
+  executions:
+    verify.fix.fix: 0
+    deliver.merge: 0

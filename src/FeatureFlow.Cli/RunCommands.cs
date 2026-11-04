@@ -18,7 +18,8 @@ public static class RunCommands
                ff run start <template> [--param <name>=<value>]... [--repo <owner/name>]... [--parent-branch <branch>] [--tracker-issue <key>] [--dry-run] [--continue-as-new-events <n>]
                ff run show <run id> [--timeline]
                ff run wait <run id> [--for end | wait] [--timeout <seconds>]
-               ff run answer <run id> <wait id> <outcome | approve | reject>
+               ff run answer <run id> <wait id> <outcome | approve | reject> [--artifact <name>=<file>]...
+               ff run findings <run id>
                ff run recover <run id> <wait id> retry | go_to <step> [--clean-up] | replan <step> | grant_attempts <n> | end <status>
                ff run abort <run id> [--reason <text>] [--close-pull-requests]
                ff run override <run id> <key> --reason <text> [--step <step id>] [--change <name>=<value>]...
@@ -70,7 +71,9 @@ public static class RunCommands
                 case ["wait", var id]:
                     return await client.WaitAsync(id, Option("--for") ?? "end", TimeSpan.FromSeconds(double.Parse(Option("--timeout") ?? "300", System.Globalization.CultureInfo.InvariantCulture)));
                 case ["answer", var id, var wait, var outcome]:
-                    return await client.AnswerAsync(id, new JsonObject { ["wait_id"] = wait, ["outcome"] = outcome });
+                    return await client.AnswerAsync(id, Answer(wait, outcome, options.GetValueOrDefault("--artifact") ?? []));
+                case ["findings", var id]:
+                    return await client.PrintAsync($"runs/{id}/findings");
                 case ["recover", var id, var wait, "retry"]:
                     return await client.AnswerAsync(id, new JsonObject { ["wait_id"] = wait, ["action"] = "retry" });
                 case ["recover", var id, var wait, var action, var step] when action is "go_to" or "replan":
@@ -94,13 +97,38 @@ public static class RunCommands
             error.WriteLine($"the API at {api} did not answer: {e.Message}");
             return 3;
         }
+        catch (Exception e) when (e is ArgumentException or IOException)
+        {
+            error.WriteLine(e.Message);
+            return 2;
+        }
 
         error.WriteLine("usage: " + Usage.TrimStart());
         return 2;
     }
 
+    /// <summary>A decision's answer; each <c>--artifact name=file</c> gives what the person produced, such as a triage (LOG 248).</summary>
+    static JsonObject Answer(string wait, string outcome, List<string> artifacts)
+    {
+        var body = new JsonObject { ["wait_id"] = wait, ["outcome"] = outcome };
+        if (artifacts.Count > 0)
+            body["artifacts"] = new JsonObject(artifacts.Select(a => a.Split('=', 2)).Select(p =>
+                KeyValuePair.Create(p[0], (JsonNode?)JsonValue.Create(File.ReadAllText(p.Length == 2 ? p[1] : throw new ArgumentException($"--artifact takes <name>=<file>, not {p[0]}"))))));
+        return body;
+    }
+
     sealed class Client(HttpClient http, TextWriter output, TextWriter error)
     {
+        /// <summary>A GET's reply as it came, for a document such as the findings ledger.</summary>
+        public async Task<int> PrintAsync(string path)
+        {
+            var reply = await GetAsync(path);
+            if (reply is null)
+                return 1;
+            output.WriteLine(reply.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            return 0;
+        }
+
         public async Task<int> StartAsync(string template, List<string> parameters, List<string> repositories, bool dryRun, string? handOver, string? parentBranch = null,
             string? trackerIssue = null)
         {

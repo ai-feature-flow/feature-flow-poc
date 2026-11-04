@@ -41,7 +41,8 @@ static class SourceControl
 
     /// <summary>
     /// <c>scm.pull_request</c> (section 7.2): opens the work branch's pull request into its parent branch, or updates the
-    /// one this run opened. Its key is the run's and the repository's, so a re-entry or retry adopts it.
+    /// one this run opened. Its key is the run's and the repository's, so a re-entry or retry adopts it. The declines the
+    /// ledger already holds for the repository are posted on it (LOG 249).
     /// </summary>
     public static async Task<ActionResult> PullRequestAsync(ActionRun run)
     {
@@ -52,6 +53,7 @@ static class SourceControl
             run.Bool("draft", false));
         var pr = ActionRun.Must(await run.CodeHost.OpenPullRequestAsync(repo, spec, $"{run.Call.Step.RunId}/{repo.FullName}/pull_request", run.Ct), "open the pull request");
         run.Events.Add($"pull request {ActionRun.Format(pr)} from {run.Scope.WorkBranch} into {parent}");
+        await FindingsActions.PostLedgerDeclinesAsync(run, repo, pr);
         return run.Report("ready", new Dictionary<string, object?> { ["pull_request"] = ActionRun.Format(pr) });
     }
 

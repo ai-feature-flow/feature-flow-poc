@@ -57,15 +57,25 @@ public sealed class StdValidatorsContract : ValidatorContract, IDisposable
 
         // tests_added: this run's fix claims (indexed), the triage, the engine's results at the fixed head, the ledger.
         ValidationRequest TestsAdded(string claims, string revision, IReadOnlyList<string> passing, string? raised = "", string? testedAt = null,
-            IReadOnlyList<string>? passingWhenRaised = null)
+            IReadOnlyList<string>? passingWhenRaised = null, string triage = TriageText, string? personTriage = null, string state = FindingStates.Fixed,
+            bool stdSubjects = false)
         {
             var (claimsSubject, claimsRecord) = w.Indexed("fix_claims", "evidence_claims", claims);
             ArtifactRecord[] evidence = passingWhenRaised is null
                 ? [w.TestEvidence(testedAt ?? revision, passing)]
                 : [w.TestEvidence(testedAt ?? revision, passing), w.TestEvidence(w.Main, passingWhenRaised)];
-            return Request(Names.TestsAdded, [claimsSubject, w.Subject("triage", "triage", TriageText)], Frozen(revision),
-                [claimsRecord, .. evidence], [Finding("F-1", raised == "" ? w.Main : raised)]);
+            ValidationSubject[] subjects = personTriage is null
+                ? [claimsSubject, w.Subject("triage", "triage", triage), Absent("person_triage", "current")]
+                : [claimsSubject, w.Subject("triage", "triage", triage), w.Subject("person_triage", "triage", personTriage)];
+            if (stdSubjects)
+                // Only the subjects std's fix_loop actually gives tests_added (review R-F1), so the fixture guards std's wiring too.
+                subjects = subjects.Where(x => StdTestsAddedSubjects.Contains(x.Name)).ToArray();
+            return Request(Names.TestsAdded, subjects, Frozen(revision),
+                [claimsRecord, .. evidence], [Finding("F-1", raised == "" ? w.Main : raised) with { State = state }]);
         }
+
+        // A person's triage over the triager's (review F2, LOG 248).
+        var declinedTriage = TriageText.Replace("state: open, reason: valid", "state: declined, reason: not a bug");
 
         var ownedPlan = TicketPlan(Criterion + "\n    owner: { kind: ticket, id: T-1 }");
         var twoOwners = EpicPlan + "\n" + EpicPlan[EpicPlan.IndexOf("  - id: AC-1", StringComparison.Ordinal)..].Replace("AC-1", "AC-2").Replace("T-1", "T-2");
@@ -239,7 +249,55 @@ public sealed class StdValidatorsContract : ValidatorContract, IDisposable
             new("tests_added: the claim names the finding's own file as ./src/Widgets.cs (review N3)",
                 TestsAdded(Claims(file: "./src/Widgets.cs"), codeOnly, [Id]), false, "no_test_added"),
             new("tests_added: the finding has no revision it was raised on", TestsAdded(Claims(), fixes, [Id], raised: null), false, "no_raised_revision"),
+            new("tests_added: the triager declined the finding, a person reopened it, and the fix claims no new test (review F2)",
+                TestsAdded(Claims("WidgetTests.Existing", "reused"), codeOnly, ["WidgetTests.Existing"], triage: declinedTriage, personTriage: TriageText), false, "no_test_added"),
+            new("tests_added with std fix_loop's own subjects: a finding a person reopened needs its regression test (review R-F1)",
+                TestsAdded(Claims("WidgetTests.Existing", "reused"), codeOnly, ["WidgetTests.Existing"], triage: declinedTriage, personTriage: TriageText, stdSubjects: true),
+                false, "no_test_added"),
+            new("tests_added: the triager left the finding open, a person declined it, so no test is needed (review F2)",
+                TestsAdded(Claims("WidgetTests.Existing", "reused"), codeOnly, ["WidgetTests.Existing"], personTriage: declinedTriage, state: FindingStates.Declined), true),
+
+            // ---- document_rules (LOG 247) ----
+            new("document_rules: std-shaped requirements, plan, triage and work list",
+                Request(Names.DocumentRules, [Requirements(), Plan(TicketPlan()), w.Subject("triage", "triage", TriageText), w.Subject("tickets", "work_list", WorkList("a", "b"))]), true),
+            new("document_rules: a requirement id used twice",
+                Request(Names.DocumentRules, [w.Subject("requirements", "requirements", TicketRequirements + "\n" + TicketRequirements[TicketRequirements.IndexOf("  - id:", StringComparison.Ordinal)..])]),
+                false, "duplicate_id"),
+            new("document_rules: a method id used twice in one criterion",
+                Request(Names.DocumentRules, [Plan(TicketPlan(Criterion + "\n" + Method + "\n      - { id: unit, kind: parsed_test, repository: acme/api, tier: unit, semantic_review: required }"))]),
+                false, "duplicate_id"),
+            new("document_rules: a finding triaged twice",
+                Request(Names.DocumentRules, [w.Subject("triage", "triage", TriageText + "\n" + TriageText[TriageText.IndexOf("  - ", StringComparison.Ordinal)..])]), false, "duplicate_id"),
+            new("document_rules: a work item name used twice", Request(Names.DocumentRules, [w.Subject("tickets", "work_list", WorkList("b", null))]), false, "duplicate_id"),
+            new("document_rules: a dependency on an item not in the list", Request(Names.DocumentRules, [w.Subject("tickets", "work_list", WorkList("a", "c"))]), false,
+                "unknown_dependency"),
+            new("document_rules: dependencies in a cycle", Request(Names.DocumentRules, [w.Subject("tickets", "work_list", WorkList("a", "b", "a"))]), false,
+                "dependency_cycle"),
         ];
+    }
+
+    /// <summary>A work list of two items, <paramref name="first"/> and b, each depending on what is given for it.</summary>
+    static string WorkList(string first, string? firstNeeds, string? bNeeds = null) =>
+        $"schema: 1\nlevel: ticket\nitems:\n  - {{ name: {first}, title: A, repositories: [acme/api], boundary: A, owns: [AC-1]{Needs(firstNeeds)} }}\n" +
+        $"  - {{ name: b, title: B, repositories: [acme/api], boundary: B, owns: [AC-2]{Needs(bNeeds)} }}\n";
+
+    static string Needs(string? name) => name is null ? "" : $", depends_on: [{name}]";
+
+    /// <summary>The subject names std's <c>fix_loop</c> gives its <c>tests_added</c> step, read from the library file.</summary>
+    static IReadOnlySet<string> StdTestsAddedSubjects
+    {
+        get
+        {
+            var dir = new DirectoryInfo(AppContext.BaseDirectory);
+            while (!File.Exists(Path.Combine(dir.FullName, "FeatureFlow.slnx")))
+                dir = dir.Parent!;
+            var file = Path.Combine(dir.FullName, "library", "std", "fragments", "fix_loop.yaml");
+            var root = (Model.Yaml.YMap)Model.Yaml.YamlText.Parse(File.ReadAllText(file), file, new Model.DiagnosticBag())!;
+            var step = ((Model.Yaml.YSeq)root["steps"]!).Items.OfType<Model.Yaml.YMap>().Single(m => (m["id"] as Model.Yaml.YScalar)?.Text == "tests_added");
+            var entry = (Model.Yaml.YMap)((Model.Yaml.YSeq)((Model.Yaml.YMap)step["with"]!)["validation"]!).Items[0];
+            return ((Model.Yaml.YSeq)entry["subjects"]!).Items
+                .Select(x => x is Model.Yaml.YMap m ? ((Model.Yaml.YScalar)m["name"]!).Text : ((Model.Yaml.YScalar)x).Text).ToHashSet(StringComparer.Ordinal);
+        }
     }
 
     public void Dispose() => w.Dispose();

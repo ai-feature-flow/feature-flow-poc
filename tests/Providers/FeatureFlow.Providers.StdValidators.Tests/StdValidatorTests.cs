@@ -265,7 +265,7 @@ public sealed class StdValidatorTests : IDisposable
     {
         var factory = Assert.Single(StdValidatorProviders.Factories);
         Assert.Equal(("validator", "std"), (factory.Type, factory.Kind));
-        Assert.Equal(7, w.Validators.Validators().Count);
+        Assert.Equal(8, w.Validators.Validators().Count);
     }
 
     /// <summary>A real git repository in a temporary folder, and a code host that reads its files at revisions with <c>git show</c>.</summary>

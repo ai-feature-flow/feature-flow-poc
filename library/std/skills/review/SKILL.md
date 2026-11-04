@@ -14,11 +14,34 @@ not two.
 
 | Fingerprint part | Write it so it is stable |
 |---|---|
-| `rule` | A short id for the kind of defect, for example `null_dereference`, `missing_authorisation`, `test_asserts_nothing` |
+| `rule` | The kind of defect, from the vocabulary below; the engine refuses any other |
 | `location.file`, `location.symbol` | The file and the enclosing function or class |
 | `location.snippet` | The code the finding is about, a few lines, copied exactly |
 
 Never use line numbers: they move.
+
+Rules, one per finding; pick the nearest. Two reviewers raising the same
+problem then give it the same rule, so it is matched as one finding.
+
+| Rule | The defect |
+|---|---|
+| `wrong_behaviour` | The change does not do what a requirement or criterion says, or does something outside its scope |
+| `null_dereference` | A value that may be null or missing is used |
+| `missing_validation` | Input is not checked before use |
+| `missing_authorisation` | An action is not checked against who may take it |
+| `injection` | Untrusted input reaches a query, command, path or template |
+| `secret_exposed` | A credential or secret is logged, returned, committed or sent |
+| `security` | Any other security defect: unsafe defaults, weak crypto, information leaks |
+| `error_handling` | Errors are swallowed, mis-reported or leave inconsistent state |
+| `resource_leak` | A connection, file, handle or subscription is not released |
+| `concurrency` | A race, deadlock or unsafe shared state |
+| `performance` | Needless work that matters at the expected scale |
+| `api_contract` | A published interface, schema or contract changes incompatibly |
+| `missing_test` | Behaviour the change adds or alters has no test |
+| `test_asserts_nothing` | A test whose setup or assertions do not show the behaviour it claims |
+| `convention` | The repository's stated conventions are not followed |
+| `maintainability` | Duplication, needless complexity or misleading names |
+| `documentation` | Documentation the change makes wrong or leaves missing |
 
 A finding that was fixed or declined reopens only if its code changed since
 (the std setting). Raising it again on unchanged code does not reopen it.

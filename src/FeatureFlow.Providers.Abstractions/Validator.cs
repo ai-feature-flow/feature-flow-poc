@@ -95,3 +95,32 @@ public interface IValidatorProvider : IProvider
     /// </summary>
     Task<ProviderResult<ValidationResult>> ValidateAsync(ValidationRequest request, CancellationToken cancellationToken);
 }
+
+public static class ValidatorProviders
+{
+    /// <summary>
+    /// The validator provider instance that offers <paramref name="validator"/>: the default first, then the others by name.
+    /// Null, with why, when none does.
+    /// </summary>
+    public static (string Name, IValidatorProvider Provider)? Find(ProviderSet providers, string validator, out string why)
+    {
+        var offered = new List<string>();
+        foreach (var (name, instance) in providers.Instances("validator"))
+            if (instance is IValidatorProvider provider)
+            {
+                var names = provider.Validators().Select(v => v.Name).ToList();
+                if (names.Contains(validator))
+                {
+                    why = "";
+                    return (name, provider);
+                }
+
+                offered.AddRange(names);
+            }
+
+        why = offered.Count == 0
+            ? $"no validator provider is configured to run {validator}"
+            : $"no validator provider offers {validator} (offered: {string.Join(", ", offered.Distinct().Order(StringComparer.Ordinal))})";
+        return null;
+    }
+}

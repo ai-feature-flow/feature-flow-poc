@@ -1,0 +1,13 @@
+api_version: feature-flow/v1
+kind: artifact_type
+metadata:
+  name: checked_notes
+  description: Notes with a structure the engine checks when the agent reports them (LOG 246).
+
+format: markdown
+evidence: false
+compatible_with: []
+validators: []
+
+markdown:
+  required_headings: [Summary]

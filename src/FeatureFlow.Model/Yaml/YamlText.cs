@@ -19,8 +19,9 @@ public static class YamlText
             diagnostics.Add(Checks.Schema, $"malformed YAML: {e.Message}{inner}", new SourceLocation(file, (int)e.Start.Line, (int)e.Start.Column));
             return null;
         }
-        catch (ArgumentException e)
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException)
         {
+            // YamlDotNet's scanner throws these, not a YamlException, on some malformed flow collections.
             diagnostics.Add(Checks.Schema, $"malformed YAML: {e.Message}", new SourceLocation(file, 1, 1));
             return null;
         }

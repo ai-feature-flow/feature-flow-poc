@@ -11,7 +11,7 @@ metadata:
 format: yaml
 evidence: false
 compatible_with: []
-validators: []          # cross-artifact rules are chosen by each workflow's artifact.validate step
+validators: [document_rules]   # its rules below, checked when the document is produced (LOG 247); cross-artifact rules are each workflow's artifact.validate step
 
 schema:
   type: object
@@ -36,7 +36,7 @@ schema:
           supports_reason: { type: string, minLength: 1 }
           end_to_end: { type: boolean }
           owner: { $ref: "#/$defs/owner" }
-        not: { required: [supports, supports_reason], properties: { supports: { minItems: 1 } } }
+        not: { description: "gives both supports and supports_reason; give one or the other", required: [supports, supports_reason], properties: { supports: { minItems: 1 } } }
   $defs:
     id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
     scope:

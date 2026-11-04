@@ -3,12 +3,14 @@ kind: workflow_test
 name: ticket_verifier_to_person
 description: >-
   The verifying reviewer's verdict declines a blocking finding (possible only
-  where record_fixes' states allow it). findings.triage counts it, and the fix
-  loop leaves by its escalated exit: a person decides before any merge.
+  where record_fixes' states allow it). findings.triage counts it, and a person
+  triages it in a decision before any merge (LOG 248); this one escalates.
 template: std:templates/ticket_delivery
 parameters: { ticket_id: FF-1042 }
 repositories: [acme/api]
 
+script:
+  verify.fix.person_triage: escalate
 outputs:
   verify.fix.record_fixes: { escalated: 0, declined_blocking: 1 }
   "findings.open_blocking": [1]
@@ -20,7 +22,8 @@ expect:
     - verify.fix.fix
     - verify.fix.verify_fix
     - verify.fix.record_fixes
-  escalated: [verify.fix.record_fixes]
+    - verify.fix.person_triage
+  escalated: [verify.fix.person_triage]
   executions:
     verify.fix.tests_added: 0
     deliver.merge: 0

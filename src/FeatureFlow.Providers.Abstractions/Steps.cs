@@ -4,7 +4,11 @@ namespace FeatureFlow.Providers.Abstractions;
 public sealed record OutcomeSpec(string Name, string Class);
 
 /// <summary>An artifact a step promises: for one outcome, or for every success outcome when <see cref="Outcome"/> is null.</summary>
-public sealed record ArtifactSpec(string? Outcome, string Name);
+public sealed record ArtifactSpec(string? Outcome, string Name)
+{
+    /// <summary>Its declared artifact type, a library reference (<c>std:artifact_types/requirements</c>), when the step names one.</summary>
+    public string? Type { get; init; }
+}
 
 /// <summary>
 /// What a step must report (docs/03 section 7, docs/04 section 3.3): its outcomes, the outputs it publishes with

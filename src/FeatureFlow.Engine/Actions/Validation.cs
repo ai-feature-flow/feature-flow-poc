@@ -216,20 +216,6 @@ static class Validating
     }
 
     /// <summary>The validator provider instance that offers a validator: the default first, then the others by name.</summary>
-    static (string Name, IValidatorProvider Provider) Find(ProviderSet providers, string validator)
-    {
-        var offered = new List<string>();
-        foreach (var (name, instance) in providers.Instances("validator"))
-            if (instance is IValidatorProvider provider)
-            {
-                var names = provider.Validators().Select(v => v.Name).ToList();
-                if (names.Contains(validator))
-                    return (name, provider);
-                offered.AddRange(names);
-            }
-
-        throw ActionStop.CannotAnswer(offered.Count == 0
-            ? $"artifact.validate needs a validator provider for {validator}, and none is configured"
-            : $"no validator provider offers {validator} (offered: {string.Join(", ", offered.Distinct().Order(StringComparer.Ordinal))})");
-    }
+    static (string Name, IValidatorProvider Provider) Find(ProviderSet providers, string validator) =>
+        ValidatorProviders.Find(providers, validator, out var why) ?? throw ActionStop.CannotAnswer($"artifact.validate: {why}");
 }
