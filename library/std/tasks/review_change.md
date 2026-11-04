@@ -8,7 +8,7 @@ run's history, only the change, the specification and your inputs.
 
 | Input | Use |
 |---|---|
-| The specification: {{ spec_refs }} | What the change must do |
+| The specification: `requirements`, and `delivery_plan` or `contract`, staged in your inputs (the run's versions of {{ spec_refs }}) | What the change must do |
 | `implementation_claims`, when present | The tests the implementer says prove each criterion |
 | The baseline commit, in the inputs manifest | Where this run started |
 
