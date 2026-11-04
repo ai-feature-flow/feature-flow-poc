@@ -11,8 +11,22 @@ public sealed record ProviderInstanceConfig(string Type, string Name, string Kin
 /// </summary>
 public sealed record ProviderTypeConfig(string Type, string? Default, string? DryRun, IReadOnlyDictionary<string, ProviderInstanceConfig> Instances);
 
-/// <summary>API authentication. Version 1's solo profile: a local token (docs/02 section 7).</summary>
-public sealed record ApiAuthConfig(string Mode, string? TokenRef, string Actor, IReadOnlyList<string> Roles);
+/// <summary>
+/// API authentication (docs/02 section 7, docs/07 section 2): the local token, whose actor and roles are fixed here, and with
+/// mode <c>oidc</c> bearer tokens from <see cref="Issuer"/> for <see cref="Audience"/>, the actor from the
+/// <see cref="ActorClaim"/> claim and the identity-provider groups from <see cref="GroupsClaim"/> (<c>role_claim</c>). With
+/// OIDC, a <see cref="TokenRef"/> keeps the local token working beside it.
+/// </summary>
+public sealed record ApiAuthConfig(string Mode, string? TokenRef, string Actor, IReadOnlyList<string> Roles)
+{
+    public string? Issuer { get; init; }
+
+    public string? Audience { get; init; }
+
+    public string GroupsClaim { get; init; } = "groups";
+
+    public string ActorClaim { get; init; } = "sub";
+}
 
 /// <summary>
 /// The agent worker's endpoint (docs/02 section 4.2; LOG 68, LOG 91): where it listens, the URLs at which sandboxes
@@ -246,10 +260,23 @@ public static class ConfigurationReader
             if (MapReader.Of(api.Node("auth"), d, "api.auth") is { } a)
             {
                 var mode = a.Enum("mode", ["local_token", "oidc"], required: true) ?? "local_token";
-                if (mode == "oidc")
-                    a.Error("api.auth.mode oidc arrives in M7; M3 has local_token only", a.Map.Location);
+                var oidc = mode == "oidc";
                 var roles = a.StringList("roles");
-                auth = new ApiAuthConfig(mode, a.String("token_ref", required: true), a.String("actor") ?? "local", roles.Count == 0 ? auth.Roles : roles);
+                foreach (var role in roles.Where(x => !PeopleRoleNames.Contains(x)))
+                    a.Error($"api.auth.roles: '{role}' is not a people role; the roles are {string.Join(", ", PeopleRoleNames)}", a.Map.Location);
+                var actor = a.String("actor") ?? "local";
+                // F8: actor policy is an automatic answer's, never a person's (docs/04 section 4.2).
+                if (actor == PeopleRoles.PolicyActor)
+                    a.Error($"api.auth.actor: '{PeopleRoles.PolicyActor}' is the actor of automatic answers and cannot be a person", a.Map.Location);
+                auth = new ApiAuthConfig(mode, a.String("token_ref", required: !oidc), actor, roles.Count == 0 ? auth.Roles : roles)
+                {
+                    Issuer = oidc ? a.String("issuer", required: true) : null,
+                    Audience = oidc ? a.String("audience", required: true) : null,
+                    GroupsClaim = oidc ? a.String("role_claim") ?? "groups" : "groups",
+                    ActorClaim = oidc ? a.String("actor_claim") ?? "sub" : "sub",
+                };
+                if (auth.Issuer is { } issuer && (!Uri.TryCreate(issuer, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps && !uri.IsLoopback))
+                    a.Error($"api.auth.issuer must be an https URL (http only for a loopback issuer), not '{issuer}'", a.Map.Location);
                 a.Finish();
             }
 
@@ -324,14 +351,7 @@ public static class ConfigurationReader
         var policy = new PolicyConfig([], null, null, null, null);
         if (MapReader.Of(r.Node("policy"), d, "policy") is { } p)
         {
-            var rules = new List<ApprovalRule>();
-            foreach (var item in LibraryItemReader.Seq(p.Node("approval"), d, "policy.approval"))
-                if (MapReader.Of(item, d, "an approval rule") is { } a)
-                {
-                    rules.Add(new ApprovalRule(a.String("match", required: true) ?? "*", a.StringList("roles"), a.Int("min_count") ?? 1,
-                        a.Bool("from_chat") ?? false, BoolCap(a, "auto", d) ?? new Cap<bool>(false, false)));
-                    a.Finish();
-                }
+            var rules = ReadApproval(p.Node("approval"), "policy.approval", d);
 
             long? perStep = null, perRun = null;
             long hardStep = DefaultHardPerStep, hardRun = DefaultHardPerRun;
@@ -358,9 +378,22 @@ public static class ConfigurationReader
             }
 
             IReadOnlyList<string>? allowed = null;
+            var requireReview = new List<ReviewRule>();
             if (MapReader.Of(p.Node("planning"), d, "policy.planning") is { } pl)
             {
                 allowed = pl.Has("allowed_roles") ? pl.StringList("allowed_roles") : null;
+                foreach (var item in LibraryItemReader.Seq(pl.Node("require_review"), d, "policy.planning.require_review"))
+                    if (MapReader.Of(item, d, "a policy.planning.require_review entry") is { } rr)
+                    {
+                        var match = rr.String("match", required: true);
+                        var value = BoolCap(rr, "value", d);
+                        if (value is null)
+                            rr.Error("a policy.planning.require_review entry needs a value", rr.Map.Location);
+                        rr.Finish();
+                        if (match is not null && value is not null)
+                            requireReview.Add(new ReviewRule(match, value));
+                    }
+
                 pl.Finish();
             }
 
@@ -392,26 +425,237 @@ public static class ConfigurationReader
                 budgets.Finish();
             }
 
-            foreach (var later in new[] { "toolsets", "overrides" })
-                if (p.Has(later))
+            IReadOnlyList<string>? toolsets = null;
+            if (MapReader.Of(p.Node("toolsets"), d, "policy.toolsets") is { } ts)
+            {
+                toolsets = ts.Has("allowed") ? ts.StringList("allowed") : null;
+                ts.Finish();
+            }
+
+            var overrides = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+            if (MapReader.Of(p.Node("overrides"), d, "policy.overrides") is { } o)
+                foreach (var (key, _) in o.Map.Entries)
                 {
-                    p.Node(later);
-                    p.Error($"policy.{later} is not enforced before M7; remove it", p.Map[later]!.Location);
+                    var roles = o.StringList(key.Text);
+                    if (!FeatureFlow.Model.Overrides.IsKey(key.Text))
+                        o.Error($"policy.overrides.{key.Text}: not a run-time override key; the keys are {string.Join(", ", FeatureFlow.Model.Overrides.DefaultRoles.Keys)}", key.Location);
+                    else if (key.Text is FeatureFlow.Model.Overrides.Answer or FeatureFlow.Model.Overrides.AnswerQuestion)
+                        o.Error($"policy.overrides.{key.Text}: who may answer is set by policy.approval, not here", key.Location);
+                    else if (roles.Count == 0)
+                        o.Error($"policy.overrides.{key.Text} must name at least one people role", key.Location);
+                    else
+                        overrides[key.Text] = PeopleRoleList(roles, $"policy.overrides.{key.Text}", o, key.Location);
                 }
 
             p.Finish();
-            policy = new PolicyConfig(rules, perStep, perRun, allowed, requireChecks, hardStep, hardRun) { EngineMayMerge = engineMayMerge, MaxWorkItems = maxWorkItems };
+            policy = new PolicyConfig(rules, perStep, perRun, allowed, requireChecks, hardStep, hardRun)
+            {
+                EngineMayMerge = engineMayMerge, MaxWorkItems = maxWorkItems, Overrides = overrides, RequireReview = requireReview, AllowedToolsets = toolsets,
+            };
         }
 
-        foreach (var later in new[] { "library_overrides", "library_inputs", "roles", "role_mapping", "notifications", "timeouts", "teams" })
-            if (r.Has(later))
+        var people = ReadPeopleRoles(r.Node("roles"), "roles", d);
+        var roleMapping = new Dictionary<string, AgentRoleMapping>(StringComparer.Ordinal);
+        if (MapReader.Of(r.Node("role_mapping"), d, "role_mapping") is { } rm)
+            foreach (var (key, node) in rm.Map.Entries)
             {
-                r.Node(later);
-                r.Error($"{later} is not read before M7; remove it", r.Map[later]!.Location);
+                rm.Node(key.Text);
+                if (MapReader.Of(node, d, $"role_mapping.{key.Text}") is not { } m)
+                    continue;
+                var runtime = m.String("agent_runtime", required: true);
+                var model = m.String("model");
+                m.Finish();
+                if (runtime is not null)
+                    roleMapping[key.Text] = new AgentRoleMapping(runtime, model);
             }
 
+        var notifications = NotificationsConfig.None;
+        if (MapReader.Of(r.Node("notifications"), d, "notifications") is { } n)
+        {
+            var routing = new Dictionary<string, NotificationRoute>(StringComparer.Ordinal);
+            if (MapReader.Of(n.Node("routing"), d, "notifications.routing") is { } rt)
+                foreach (var (key, node) in rt.Map.Entries)
+                {
+                    rt.Node(key.Text);
+                    if (MapReader.Of(node, d, $"notifications.routing.{key.Text}") is not { } route)
+                        continue;
+                    var channel = route.String("channel", required: true);
+                    route.Finish();
+                    if (channel is not null)
+                        routing[key.Text] = new NotificationRoute(channel);
+                }
+
+            notifications = new NotificationsConfig(routing, n.StringList("events"));
+            n.Finish();
+        }
+
+        var timeouts = TimeoutsConfig.Default;
+        if (MapReader.Of(r.Node("timeouts"), d, "timeouts") is { } t)
+        {
+            timeouts = new TimeoutsConfig(DurationOf(t, "heartbeat") ?? timeouts.Heartbeat, DurationOf(t, "stalled_after") ?? timeouts.StalledAfter);
+            t.Finish();
+        }
+
+        var teams = new Dictionary<string, TeamConfig>(StringComparer.Ordinal);
+        if (MapReader.Of(r.Node("teams"), d, "teams") is { } tm)
+            foreach (var (key, node) in tm.Map.Entries)
+            {
+                tm.Node(key.Text);
+                if (ReadTeam(key.Text, node, policy, d) is { } team)
+                    teams[key.Text] = team;
+            }
+
+        var libraryOverrides = StringMap(r, "library_overrides", d, reference: true);
+        var libraryInputs = StringMap(r, "library_inputs", d, reference: false);
         r.Finish();
-        return new OrganisationConfig(name, libraries, policy, file);
+        return new OrganisationConfig(name, libraries, policy, file)
+        {
+            Roles = people,
+            RoleMapping = roleMapping,
+            Notifications = notifications,
+            Timeouts = timeouts,
+            Teams = teams,
+            LibraryOverrides = libraryOverrides,
+            LibraryInputs = libraryInputs,
+        };
+    }
+
+    /// <summary>The people roles of docs/05 section 3.3. No other name is a people role.</summary>
+    public static readonly IReadOnlyList<string> PeopleRoleNames = [PeopleRoles.Viewer, PeopleRoles.Approver, PeopleRoles.Steerer, PeopleRoles.Admin];
+
+    /// <summary>Approval rules (docs/05 section 3.2), in order: the first matching rule applies.</summary>
+    static List<ApprovalRule> ReadApproval(YNode? node, string context, DiagnosticBag d)
+    {
+        var rules = new List<ApprovalRule>();
+        foreach (var item in LibraryItemReader.Seq(node, d, context))
+            if (MapReader.Of(item, d, $"a {context} rule") is { } a)
+            {
+                var match = a.String("match", required: true) ?? "*";
+                var roles = PeopleRoleList(a.StringList("roles"), $"{context} '{match}' roles", a, a.Map.Location);
+                if (roles.Count == 0)
+                    a.Error($"{context} '{match}' must name at least one people role", a.Map.Location);
+                var minCount = a.Int("min_count") ?? 1;
+                if (minCount < 1)
+                    a.Error($"{context} '{match}': min_count must be at least 1", a.Map.Location);
+                rules.Add(new ApprovalRule(match, roles, minCount, a.Bool("from_chat") ?? false, BoolCap(a, "auto", d) ?? new Cap<bool>(false, false)));
+                a.Finish();
+            }
+
+        return rules;
+    }
+
+    static IReadOnlyList<string> PeopleRoleList(IReadOnlyList<string> roles, string context, MapReader r, SourceLocation location)
+    {
+        foreach (var role in roles.Where(x => !PeopleRoleNames.Contains(x)))
+            r.Error($"{context}: '{role}' is not a people role; the roles are {string.Join(", ", PeopleRoleNames)}", location);
+        return roles.Where(PeopleRoleNames.Contains).ToList();
+    }
+
+    /// <summary><c>roles</c>: each people role to the identity-provider groups that hold it.</summary>
+    static Dictionary<string, PeopleRoleConfig> ReadPeopleRoles(YNode? node, string context, DiagnosticBag d)
+    {
+        var roles = new Dictionary<string, PeopleRoleConfig>(StringComparer.Ordinal);
+        if (MapReader.Of(node, d, context) is not { } r)
+            return roles;
+        foreach (var (key, value) in r.Map.Entries)
+        {
+            r.Node(key.Text);
+            if (!PeopleRoleNames.Contains(key.Text))
+            {
+                r.Error($"{context}.{key.Text}: not a people role; the roles are {string.Join(", ", PeopleRoleNames)}", key.Location);
+                continue;
+            }
+
+            if (MapReader.Of(value, d, $"{context}.{key.Text}") is not { } role)
+                continue;
+            var groups = role.StringList("idp_groups");
+            if (groups.Count == 0)
+                role.Error($"{context}.{key.Text} must list its idp_groups", role.Map.Location);
+            role.Finish();
+            roles[key.Text] = new PeopleRoleConfig(groups);
+        }
+
+        return roles;
+    }
+
+    /// <summary>
+    /// A team (docs/07 section 3, LOG 204): the repositories it owns, its approval rules and its people roles. A team
+    /// tightens the organisation, never relaxes it (docs/07 section 1), so a team rule that asks fewer people, allows chat
+    /// or auto-resolution where the organisation's matching rule does not, or unlocks a locked auto, is refused.
+    /// </summary>
+    static TeamConfig? ReadTeam(string name, YNode node, PolicyConfig organisation, DiagnosticBag d)
+    {
+        var context = $"teams.{name}";
+        if (MapReader.Of(node, d, context) is not { } t)
+            return null;
+        var repositories = t.StringList("repositories");
+        if (repositories.Count == 0)
+            t.Error($"{context} must list the repositories it owns (patterns such as acme/payments-*)", t.Map.Location);
+        List<ApprovalRule> approval = [];
+        if (MapReader.Of(t.Node("policy"), d, $"{context}.policy") is { } p)
+        {
+            approval = ReadApproval(p.Node("approval"), $"{context}.policy.approval", d);
+            foreach (var (key, _) in p.Map.Entries.Where(e => e.Key.Text != "approval"))
+            {
+                p.Node(key.Text);
+                p.Error($"{context}.policy.{key.Text}: a team's policy holds approval rules only; caps are the organisation's", key.Location);
+            }
+
+            p.Finish();
+            foreach (var rule in approval)
+                if (organisation.RuleFor(rule.Match) is { } wider)
+                {
+                    var relaxed = new List<string>();
+                    if (rule.MinCount < wider.MinCount)
+                        relaxed.Add($"min_count {rule.MinCount} is below {wider.MinCount}");
+                    if (rule.FromChat && !wider.FromChat)
+                        relaxed.Add("from_chat is allowed");
+                    if (rule.Auto.Value && !wider.Auto.Value)
+                        relaxed.Add("auto is allowed");
+                    if (wider.Auto.Locked && (!rule.Auto.Locked || rule.Auto.Value != wider.Auto.Value))
+                        relaxed.Add("auto is not locked as it is");
+                    if (relaxed.Count > 0)
+                        p.Error($"{context}.policy.approval '{rule.Match}' relaxes the organisation's rule '{wider.Match}' ({string.Join("; ", relaxed)}); a team may only tighten", p.Map.Location);
+                }
+        }
+
+        var roles = ReadPeopleRoles(t.Node("roles"), $"{context}.roles", d);
+        t.Finish();
+        return new TeamConfig(name, repositories, approval, roles);
+    }
+
+    static Dictionary<string, string> StringMap(MapReader r, string key, DiagnosticBag d, bool reference)
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (MapReader.Of(r.Node(key), d, key) is not { } m)
+            return map;
+        foreach (var (name, _) in m.Map.Entries)
+            if (m.String(name.Text) is { } value)
+            {
+                if (reference && (LibraryReference.TryParse(name.Text) is null || LibraryReference.TryParse(value) is null))
+                    m.Error($"{key}.{name.Text}: both sides must be library references such as std:tasks/implement_ticket", name.Location);
+                map[name.Text] = value;
+            }
+
+        return map;
+    }
+
+    static TimeSpan? DurationOf(MapReader r, string key)
+    {
+        var text = r.String(key);
+        if (text is null)
+            return null;
+        var unit = text.Length > 1 ? text[^1] : ' ';
+        if (long.TryParse(text[..^1], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n) && n > 0)
+            switch (unit)
+            {
+                case 's': return TimeSpan.FromSeconds(n);
+                case 'm': return TimeSpan.FromMinutes(n);
+                case 'h': return TimeSpan.FromHours(n);
+            }
+
+        r.Error($"{key} must be a duration such as 30s, 5m or 1h, not '{text}'", r.Map[key]!.Location);
+        return null;
     }
 
     static void Header(MapReader r, string kind)

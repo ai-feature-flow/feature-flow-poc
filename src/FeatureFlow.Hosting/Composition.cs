@@ -22,6 +22,8 @@ public sealed record FeatureFlowConfiguration(InstallationConfig Installation, O
         var d = new DiagnosticBag();
         var installation = ConfigurationReader.ReadInstallation(File.ReadAllText(installationPath), Path.GetFullPath(installationPath), d);
         var organisation = ConfigurationReader.ReadOrganisation(File.ReadAllText(organisationPath), Path.GetFullPath(organisationPath), d);
+        if (installation is not null && organisation is not null)
+            StartupChecks.Check(installation, organisation, d);
         if (installation is null || organisation is null || d.HasErrors)
             throw new InvalidOperationException("the configuration does not validate:\n" + string.Join("\n", d.Where(x => x.Blocks)));
         return new FeatureFlowConfiguration(installation, organisation);

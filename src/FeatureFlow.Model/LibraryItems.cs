@@ -30,7 +30,7 @@ public sealed record DecisionTypeItem(string Name, string? Description, SourceLo
 {
     /// <summary>
     /// <c>default_approval.roles</c>: who may answer when no organisation approval rule matches the type
-    /// (docs/05 section 4). The default's <c>auto</c>, <c>min_count</c> and <c>from_chat</c> are not applied yet.
+    /// (docs/05 section 4). The whole default is <see cref="DefaultApproval"/>.
     /// </summary>
     public IReadOnlyList<string> DefaultRoles { get; init; } = [];
 
@@ -237,18 +237,20 @@ public static class LibraryItemReader
                 var name = dt.String("name", required: true);
                 var description = dt.String("description");
                 IReadOnlyList<string> roles = [];
+                ApprovalRule? approval = null;
                 if (MapReader.Of(dt.Node("default_approval"), d, "default_approval") is { } a)
                 {
                     roles = a.StringList("roles");
-                    a.Int("min_count");
-                    a.Bool("auto");
-                    a.Bool("from_chat");
+                    var minCount = a.Int("min_count") ?? 1;
+                    if (minCount < 1)
+                        a.Error("default_approval.min_count must be at least 1", a.Map.Location);
+                    approval = new ApprovalRule(name ?? "", roles, minCount, a.Bool("from_chat") ?? false, new Cap<bool>(a.Bool("auto") ?? false, false));
                     a.Finish();
                 }
 
                 dt.Finish();
                 if (name is not null)
-                    list.Add(new DecisionTypeItem(name, description, item.Location) { DefaultRoles = roles });
+                    list.Add(new DecisionTypeItem(name, description, item.Location) { DefaultRoles = roles, DefaultApproval = approval });
             }
 
         r.Finish();
