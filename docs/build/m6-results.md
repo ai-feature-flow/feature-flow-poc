@@ -544,6 +544,23 @@ or project branch.
 Product owner, 2026-11-04: LOG 191 (amended) and LOG 193's `MergeBaseAsync` accepted; the project's changes stay on both
 fixtures' `main`.
 
+### Review of PR 14 (approve-with-fixes) and fixes
+
+| Finding | Fix | Test | Control |
+|---|---|---|---|
+| F1 (medium, fail-open): a subject from another run the step does not consume passed as absent, so an inheritance check could pass with no parent plan | `artifact.validate` stops for a person ("not consumed by the step"); absent only for a declared optional consume (`ActionScope.Declared`, LOG 200). No load-time check: std's subjects arrive as a parameter | `ValidationActionTests.A_subject_from_another_run_the_step_does_not_consume_...` | The stop removed fails it; the reviewer's mutation (std's plan check not consuming the parent's `child_requirements`) now fails `ForgeTicketTests` |
+| F2 (medium): an epic criterion linking `parent/requirements` could never be inherited | Links compared by the document each names, resolved in the run that wrote it; `requirement_ownership` refuses upward links on an item given to a child (`owned_item_links_up`) (LOG 200) | The reviewer's four fixtures (word for word and `root/` kept; bare and `parent/parent/` refused) and an ownership fixture | Parent links compared as written; word-for-word copies not counted; upward links allowed: each fails the fixtures |
+| F3 (low): the parent branch in the agent's checkout was untested | `AgentStepTests.The_checkout_holds_the_parent_branch_at_its_head` (Docker harness); the side effect (an agent can merge its parent to make a commit) accepted in LOG 193 | The new test | Parent checkout skipped fails it |
+| F4 (low): ambiguous names untested; two copies of the rule | One helper, `RepositoryNames.As` | Theory of 4 cases, one ambiguous | `Count >= 1` fails the ambiguous case |
+| F5 (low): the current-subject fallback untested | — | `ValidationActionTests.A_subject_of_this_run_the_step_does_not_consume_is_its_latest_of_the_name` | Fallback removed fails it |
+| F6 (low): no re-read after `base_moved` | `EnsureWorkBranchesAsync` reads the branch again, as `WorkHeadAsync` does | None (a race test would be needed) | — |
+
+Design notes applied: LOG 190 (a prepared repository with no work branch yet has no raised revision; unreachable in std),
+LOG 191 (3) wording (any added link is allowed, and proves nothing across runs), docs/04 section 10.2.
+
+After the fixes: default **965 passed**, integration **78 passed**, 0 failed (Release, Temporal 9033). The ten controls
+for the review hold, and those for LOG 190 and 198 after the helper moved.
+
 ### Clean-up
 
 Deleted on both fixtures after the runs: every `ff/epic/*`, `ff/ticket/*`, `ff/project/*` and `ff/m6-live/*` branch and
@@ -559,7 +576,7 @@ was left; hosts and the Temporal server were stopped.
 
 On `m6@4ff0db2` before any change: default 954 passed, integration 72 passed. On `m6-integration` before the first
 report: default **959 passed**, integration **77 passed**, 0 failed (Release, Temporal 9033). Controls: 16 in
-`tools/check_m6_integration_controls.py`, each run when written; all hold.
+`tools/check_m6_integration_controls.py` (24 after the review), each run when written; all hold.
 
 ### Deviations
 
