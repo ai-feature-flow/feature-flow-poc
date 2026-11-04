@@ -47,3 +47,56 @@ gain repositories), 205 (wake signal; file splits).
 |---|---|
 | 1 | The override update, wake signal and their handlers have no implementation yet: W1 (`override`), W3 (`wake`). Until then Temporal rejects an `override` update and holds a `wake` signal unhandled |
 | 2 | `docs/07` should list `teams.<name>.repositories` once LOG 204 is approved |
+
+## Steering core
+
+What W1 built on `m7-steering`: a person's run-time overrides in the interpreter and the run workflow (docs/05 section 5),
+breakpoints, mid-run library overrides, the gaps in agent proposals (F3, F10), and the two recoveries M6's live runs
+needed. Everything that old histories could reach is behind the patch marker `m7-steering`.
+
+**What was built**
+
+| Area | What |
+|---|---|
+| The `override` update | `RunWorkflow.Overrides.cs` carries out `breakpoint`, `skip`, `amend`, `change_role`, `grant_attempts`, `override_library` and `abort` through the core, with the actor the API authenticated (F8). It refuses protected content or a grant beyond the hard ceiling unless the caller holds the variant (`skip_protected`, `amend_protected`, `override_library_protected`, `grant_attempts_beyond`), names the protected steps in its reply, is idempotent by override id, and records each on the timeline. Answers and recoveries stay on the `answer` update (LOG 203) |
+| Breakpoints | The run pauses before the step and opens a `<level>.breakpoint` wait, answered with `continue` or any recovery; it holds until cleared (LOG 206) |
+| Skips, grants, role changes, amends | A skip ends the step with a chosen outcome, using no attempt (LOG 207). One grant mechanism for the override and the recovery (LOG 208). `change_role` is a person's patch; `amend` may omit `resume_at` and never changes a role (LOG 209) |
+| Mid-run library override | Content stored by hash, the run's lock rewritten (its last lock record is the run's lock), future steps resolve the new content while steps in flight keep theirs, running children are told by signal, later children inherit the lock; a lock entry with actor, reason, old and new hash, steps in flight and protected steps affected (LOG 212) |
+| Agent proposals | An agent patch that routes around a protected step, or falls under the organisation's `planning.require_review`, awaits a person (LOG 210, 211). An agent's library override is always a patch approval, applied as the approver's (LOG 213) |
+| Recoveries | Going to a failed branch of a decided `parallel` or chain reopens its join, so the run can complete (LOG 214). An abort may close the run tree's open pull requests (LOG 215) |
+| Re-drive tests | The workflow test format gains `overrides`, `answers` and `expect.skipped` (docs/09 section 4.3); std gains `ticket_breakpoint_before_merge`, `ticket_skip_protected_analysis` and `epic_child_rerun` |
+
+**Checks**
+
+- `SteeringTests` (21, interpreter core), `RequireReviewTests` (1), the three std re-drive tests (`ff test library/std/tests`, 25).
+- `SteeringRunTests` (7, Temporal): a breakpoint and a protected skip; amend, role change and grant within their variants; a
+  library override reaching a later step and a running child while a step in flight keeps its task; an agent's library
+  override approved by a person; re-running a failed child of a join; an abort closing the run tree's pull requests (and
+  one leaving them); an override sent while the run drains for a hand-over, carried into the next run.
+- Two recorded histories, `steering_line` and `steering_rerun_branch`, replay; every older history still replays.
+
+**Controls** (each mutation made its check fail, then was restored)
+
+| Mutation | Failed |
+|---|---|
+| No pause at a breakpoint; a skip never applied; a decided join not reopened | `SteeringTests` and the matching std re-drive test |
+| A protected skip, or a person's protected amend, without the variant; an amend changing a role; a grant above the hard ceiling | `SteeringTests` |
+| Routing around a protected step allowed; the organisation's `require_review` ignored; breakpoints not carried in a snapshot | `SteeringTests` |
+| Reopening a join with the marker's path off | `Replay.Tests` (`steering_rerun_branch` does not replay) |
+| Every variant treated as held | `SteeringRunTests`: the protected skip is not refused |
+| The core not resolving from the new libraries | `SteeringRunTests`: the review still gets `REVIEW-V1` |
+| Pull requests never closed; children not told to close theirs | `SteeringRunTests`: the abort test |
+| Breakpoints not carried across a hand-over | `SteeringRunTests`: the hand-over test's run never pauses |
+
+**Deviations and judgement calls:** LOG 206 to 215. Additive changes outside the per-area files: `RunPolicy.RequireReview`
+(`Wire.cs`, not in the frozen list), `StepReport.LibraryOverride` and the scripted runtime's `library_override`.
+
+**Follow-ups**
+
+| # | Follow-up |
+|---|---|
+| 1 | W2's API: pass the caller's variant keys in `OverrideArgs.Variants`, and `close_pull_requests` from the abort request into `AbortArgs.ClosePullRequests` (today's endpoint does not) |
+| 2 | An MCP tool for agents to propose a library override (and a patch), so real runtimes can use LOG 213's path |
+| 3 | `run.child`'s `run_gate: manual` (a breakpoint before a child's first step) is not built |
+| 4 | F1 at patch time: a patch adding an engine merge into a default branch is caught only at merge time (`scm.merge` re-checks), not when proposed |
+| 5 | An abort's hold on an action that sends no heartbeat waits for the action to end before the run closes its pull requests (M3 follow-up 9) |
