@@ -239,8 +239,32 @@ public sealed class StdValidatorsContract : ValidatorContract, IDisposable
             new("tests_added: the claim names the finding's own file as ./src/Widgets.cs (review N3)",
                 TestsAdded(Claims(file: "./src/Widgets.cs"), codeOnly, [Id]), false, "no_test_added"),
             new("tests_added: the finding has no revision it was raised on", TestsAdded(Claims(), fixes, [Id], raised: null), false, "no_raised_revision"),
+
+            // ---- document_rules (LOG 247) ----
+            new("document_rules: std-shaped requirements, plan, triage and work list",
+                Request(Names.DocumentRules, [Requirements(), Plan(TicketPlan()), w.Subject("triage", "triage", TriageText), w.Subject("tickets", "work_list", WorkList("a", "b"))]), true),
+            new("document_rules: a requirement id used twice",
+                Request(Names.DocumentRules, [w.Subject("requirements", "requirements", TicketRequirements + "\n" + TicketRequirements[TicketRequirements.IndexOf("  - id:", StringComparison.Ordinal)..])]),
+                false, "duplicate_id"),
+            new("document_rules: a method id used twice in one criterion",
+                Request(Names.DocumentRules, [Plan(TicketPlan(Criterion + "\n" + Method + "\n      - { id: unit, kind: parsed_test, repository: acme/api, tier: unit, semantic_review: required }"))]),
+                false, "duplicate_id"),
+            new("document_rules: a finding triaged twice",
+                Request(Names.DocumentRules, [w.Subject("triage", "triage", TriageText + "\n" + TriageText[TriageText.IndexOf("  - ", StringComparison.Ordinal)..])]), false, "duplicate_id"),
+            new("document_rules: a work item name used twice", Request(Names.DocumentRules, [w.Subject("tickets", "work_list", WorkList("b", null))]), false, "duplicate_id"),
+            new("document_rules: a dependency on an item not in the list", Request(Names.DocumentRules, [w.Subject("tickets", "work_list", WorkList("a", "c"))]), false,
+                "unknown_dependency"),
+            new("document_rules: dependencies in a cycle", Request(Names.DocumentRules, [w.Subject("tickets", "work_list", WorkList("a", "b", "a"))]), false,
+                "dependency_cycle"),
         ];
     }
+
+    /// <summary>A work list of two items, <paramref name="first"/> and b, each depending on what is given for it.</summary>
+    static string WorkList(string first, string? firstNeeds, string? bNeeds = null) =>
+        $"schema: 1\nlevel: ticket\nitems:\n  - {{ name: {first}, title: A, repositories: [acme/api], boundary: A, owns: [AC-1]{Needs(firstNeeds)} }}\n" +
+        $"  - {{ name: b, title: B, repositories: [acme/api], boundary: B, owns: [AC-2]{Needs(bNeeds)} }}\n";
+
+    static string Needs(string? name) => name is null ? "" : $", depends_on: [{name}]";
 
     public void Dispose() => w.Dispose();
 }

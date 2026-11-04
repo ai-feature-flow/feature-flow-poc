@@ -5,7 +5,7 @@ using FeatureFlow.Providers.Abstractions;
 namespace FeatureFlow.Providers.StdValidators;
 
 /// <summary>
-/// The standard validator provider (docs/06 section 3.8, docs/04 section 10.2): the seven validators of std's
+/// The standard validator provider (docs/06 section 3.8, docs/04 section 10.2): the eight validators of std's
 /// workflows. Deterministic: each reads only its request, artifact content from the artifact store, files at fixed
 /// revisions from the code host (<c>tests_added</c>) and ancestry between fixed revisions from the VCS provider's clones
 /// (<c>requirement_trace</c>). Evidence is only what an engine action produced: an index entry with an action and an
@@ -50,6 +50,11 @@ public sealed class StdValidators(Func<IArtifactStoreProvider?> store, Func<ICod
                 "is new or changed since the revision the finding was raised on, and holds the test",
                 [Types.EvidenceClaims, Types.Triage], None, []),
             Evidence.TestsAddedAsync),
+        (new ValidatorDescriptor(Names.DocumentRules,
+                "The rules std's artifact types state that a schema cannot, one document at a time: ids unique (methods within their criterion), " +
+                "a work list's names unique, its dependencies known and acyclic, and a triage naming each finding once",
+                [Types.Requirements, Types.DeliveryPlan, Types.WorkList, Types.Triage], None, []),
+            DocumentRules.CheckAsync),
     ];
 
     public ProviderDescription Describe() => new("validator", "std", "0.1.0", new NoCapabilities());
@@ -94,6 +99,7 @@ public static class Names
     public const string VerificationSatisfaction = "verification_satisfaction";
     public const string RequirementTrace = "requirement_trace";
     public const string TestsAdded = "tests_added";
+    public const string DocumentRules = "document_rules";
 }
 
 /// <summary>The artifact type names (std's) the standard validators read and offer.</summary>
@@ -105,6 +111,7 @@ public static class Types
     public const string TestResults = "test_results";
     public const string MergeRecord = "merge_record";
     public const string Triage = "triage";
+    public const string WorkList = "work_list";
     public const string TraceReport = "trace_report";
 }
 
