@@ -294,7 +294,7 @@ public partial class RunWorkflow
         if (core!.State.Status != RunStatus.Running)
             error = $"the run has ended ({core.State.Status.Name()})";
         else if (draining)
-            error = "the run is handing over to its next run: try the check again in a moment";
+            error = SessionNames.HandingOver;
         else if (SessionNames.WaitOf(check.SessionId, input.RunId) is not { } waitId || (session = SessionStep(waitId)) is null)
             error = $"session {check.SessionId} is not open in run {input.RunId}";
         else if (submitting.Contains(waitId))

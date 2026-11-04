@@ -311,7 +311,7 @@ public class SessionRunTests
     /// <summary>Runs a check of <c>check_requirements</c> at <paramref name="revision"/> and waits for its result.</summary>
     static async Task<JsonNode> CheckAsync(HttpClient http, string sid, string revision)
     {
-        var started = await PostAsync(http, $"sessions/{sid}/checks", new JsonObject { ["step"] = "check_requirements", ["revision"] = revision });
+        var started = await StartCheckAsync(http, sid, revision);
         var checkId = started["check_id"]!.ToString();
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(60);
         while (DateTime.UtcNow < deadline)
@@ -323,6 +323,22 @@ public class SessionRunTests
         }
 
         throw new TimeoutException($"check {checkId} of {sid} did not end");
+    }
+
+    /// <summary>Starts a check, trying again while the run hands over to its next run, as <c>ff session check</c> does; any other refusal fails.</summary>
+    static async Task<JsonNode> StartCheckAsync(HttpClient http, string sid, string revision)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
+        while (true)
+        {
+            var body = new JsonObject { ["step"] = "check_requirements", ["revision"] = revision };
+            var response = await http.PostAsync($"sessions/{sid}/checks", new StringContent(body.ToJsonString(), System.Text.Encoding.UTF8, "application/json"), TestContext.Current.CancellationToken);
+            var text = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+            if (response.IsSuccessStatusCode)
+                return JsonNode.Parse(text)!;
+            Assert.True(text.Contains(SessionNames.HandingOver, StringComparison.Ordinal) && DateTime.UtcNow < deadline, $"POST sessions/{sid}/checks: {(int)response.StatusCode} {text}");
+            await Task.Delay(200, TestContext.Current.CancellationToken);
+        }
     }
 
     /// <summary>Runs <c>ff session ...</c> in this process against this engine's API.</summary>
