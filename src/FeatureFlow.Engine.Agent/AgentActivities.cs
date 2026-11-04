@@ -395,6 +395,10 @@ public sealed class AgentActivities(ProviderSet providers, StepTokens tokens, Ag
                                   + " && git config --global safe.directory '*' && git config --global init.defaultBranch main", "configure git");
 
             var source = useHidden ? hiddenRevision! : startRevision;
+            // The parent branch at its head too, as a local branch of its name: an agent has no remote (F5), and a
+            // conflict resolver merges it (LOG 193).
+            if (parent != workBranch)
+                Must(await vcs.CheckOutAsync(repo, $"refs/heads/{parent}", parentHead, parent, copy, ct), "check out the parent branch");
             Must(await vcs.CheckOutAsync(repo, useHidden ? hiddenRef : $"refs/heads/{workBranch}", source, workBranch, copy, ct), "check out the work branch");
             await ManifestCommandsAsync(manifest?.Setup ?? [], "setup");
             await StageInputsAsync();
