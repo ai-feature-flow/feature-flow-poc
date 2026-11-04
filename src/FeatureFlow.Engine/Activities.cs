@@ -17,9 +17,12 @@ namespace FeatureFlow.Engine;
 /// <summary>A library's content files, as workflow code receives them from the lock.</summary>
 public sealed record LibrarySnapshot(string Name, IReadOnlyDictionary<string, string> Files);
 
-/// <summary>What run start gives the workflow: the locked libraries, the run's policy, and any blocking diagnostics.</summary>
+/// <summary>
+/// What run start gives the workflow: the locked libraries, the run's policy, any blocking diagnostics, and the effective
+/// policy view (docs/05 section 7) for the run start record.
+/// </summary>
 public sealed record Prepared(IReadOnlyList<LibrarySnapshot> Libraries, RunPolicy Policy, IReadOnlyList<string> Errors, IReadOnlyList<string> Warnings,
-    IReadOnlyDictionary<string, string>? DefaultBranches = null);
+    IReadOnlyDictionary<string, string>? DefaultBranches = null, IReadOnlyList<string>? EffectivePolicy = null);
 
 /// <summary>A child run as its parent reads it: its Temporal status, its result (its run status), and the latest artifact of each name it produced.</summary>
 public sealed record ChildRead(string Status, string? Result, IReadOnlyDictionary<string, string>? Artifacts = null);
@@ -44,10 +47,17 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
     {
         var ct = ActivityExecutionContext.Current.CancellationToken;
         var snapshots = await LoadLibrariesAsync(start.LockRef);
-        var policy = start.Policy ?? services.Policy();
         var d = new DiagnosticBag();
         IReadOnlyDictionary<string, string>? defaultBranches = null;
+        IReadOnlyList<string>? effective = null;
         var libraries = Build(snapshots, d);
+        var declared = libraries.All.SelectMany(l => l.DecisionTypes).ToList();
+        var policy = start.Policy ?? services.Policy(declared) with { RequireReview = RequiresReview(services.Organisation.Policy, start.Template) };
+        // A child's approval follows its own repositories' team, like the API's for its waits; it may have one team at most
+        // (LOG 217), as the API checks for a run it starts.
+        var oneTeam = Approval.MoreThanOneTeam(services.Organisation, start.Repositories);
+        var team = Approval.TeamFor(services.Organisation, start.Repositories);
+        EffectiveApproval ApprovalOf(string type) => Approval.For(type, services.Organisation.Policy, team, declared);
         var template = LibraryReference.TryParse(start.Template);
         if (template is null)
             d.Add(Checks.ReferenceResolves, $"'{start.Template}' is not a template reference");
@@ -60,9 +70,10 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
             if (core is not null)
             {
                 RunStartChecks.Capabilities(core.Plan, libraries, services.Providers.Offered(start.DryRun), d);
-                RunStartChecks.Caps(core.Plan, services.Organisation.Policy, core.Allowance, d, root: start.ParentWorkflowId is null);
+                RunStartChecks.Caps(core.Plan, services.Organisation.Policy, core.Allowance, d, root: start.ParentWorkflowId is null, approval: ApprovalOf);
                 if (services.Providers.ForRun("code_host", start.DryRun) is ICodeHostProvider host)
                     defaultBranches = await RepositoryChecksAsync(host, core, start, libraries, policy, d, ct);
+                effective = EffectivePolicy.Lines(EffectivePolicy.For(core.Plan, services.Organisation.Policy, ApprovalOf, step => MergeTargets(core, start, step, defaultBranches)));
             }
         }
 
@@ -71,8 +82,39 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
                 throw new ApplicationFailureException($"{type} is not usable: {failed.Error!.Message}");
 
         return new Prepared(snapshots, policy,
-            d.Where(x => x.Blocks).Select(x => x.ToString()).ToList(),
-            d.Where(x => !x.Blocks).Select(x => x.ToString()).ToList(), defaultBranches);
+            d.Where(x => x.Blocks).Select(x => x.ToString()).Concat(oneTeam is null ? [] : [oneTeam]).ToList(),
+            d.Where(x => !x.Blocks).Select(x => x.ToString()).ToList(), defaultBranches, effective);
+    }
+
+    /// <summary>
+    /// A merge step's resolved <c>engine_can_merge</c> and targets for the effective policy view, as check 23 resolves them:
+    /// the step's repository or every repository of the run, each with its default branch where the merge goes into it.
+    /// </summary>
+    static (bool? EngineCanMerge, IReadOnlyList<MergeTarget> Targets) MergeTargets(RunCore core, RunStart start, Model.Plans.Step step,
+        IReadOnlyDictionary<string, string>? defaults)
+    {
+        bool? engineCanMerge;
+        IReadOnlyList<string> repositories;
+        try
+        {
+            repositories = core.ResolveRepository(step.Id) is { } one ? [one] : start.Repositories;
+        }
+        catch (EvaluationException)
+        {
+            repositories = start.Repositories;
+        }
+
+        try
+        {
+            engineCanMerge = core.ResolveInputs(step.Id).GetValueOrDefault("engine_can_merge", true) as bool?;
+        }
+        catch (EvaluationException)
+        {
+            engineCanMerge = null;
+        }
+
+        return (engineCanMerge, repositories.Select(r => new MergeTarget(r,
+            defaults?.GetValueOrDefault(r) is { } branch && (start.ParentBranch ?? branch) == branch ? branch : null)).ToList());
     }
 
     /// <summary>

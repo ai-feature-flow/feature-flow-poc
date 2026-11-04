@@ -35,7 +35,14 @@ public sealed record StepReport(
     IReadOnlyDictionary<string, string> Artifacts,
     string? Summary = null,
     string? Patch = null,
-    bool PatchToParent = false);
+    bool PatchToParent = false)
+{
+    /// <summary>
+    /// A library override an agent with planning authority proposes (docs/05 section 6): <c>item</c>, a library reference,
+    /// and <c>with</c>, the new content. It never applies at once; it becomes a patch approval for a person (M7).
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? LibraryOverride { get; init; }
+}
 
 /// <summary>Who the step is: enough for a provider to find its work and for a fake to find its script.</summary>
 public sealed record StepIdentity(string RunId, string Template, string StepId, int Execution, string IdempotencyKey);

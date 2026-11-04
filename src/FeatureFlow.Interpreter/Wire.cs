@@ -80,7 +80,8 @@ public sealed record AutoRule(string Match, bool Auto);
 
 /// <summary>
 /// The limits and policy a run enforces, fixed when it starts (docs/05 section 8) and carried in its state,
-/// because workflow code cannot read configuration.
+/// because workflow code cannot read configuration. <see cref="RequireReview"/> is the organisation's
+/// <c>planning.require_review</c> for the run's template (M7).
 /// </summary>
 public sealed record RunPolicy(
     long DefaultAttempts,
@@ -93,7 +94,8 @@ public sealed record RunPolicy(
     long? HardRunCeiling = null,
     IReadOnlyList<string>? EngineMayMerge = null,
     bool? BuiltActions = null,
-    long? WorkItemCeiling = null)
+    long? WorkItemCeiling = null,
+    bool? RequireReview = null)
 {
     public RunOptions ToOptions() => new()
     {
@@ -105,6 +107,7 @@ public sealed record RunPolicy(
         AutoResolve = type => AutoRules.FirstOrDefault(r => Matches(r.Match, type))?.Auto ?? false,
         HardStepCeiling = HardStepCeiling,
         HardRunCeiling = HardRunCeiling,
+        RequireReview = RequireReview ?? false,
     };
 
     static bool Matches(string pattern, string type) =>

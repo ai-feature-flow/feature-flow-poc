@@ -165,7 +165,7 @@ public sealed class SessionClient(HttpClient http)
         if (Revision(revision) is not { } commit)
             return (2, "no commit to submit: give --revision <full commit id>, or run this in a git working copy\n");
         var (reply, failure) = await PostAsync($"sessions/{Uri.EscapeDataString(sid)}/submit", new JsonObject { ["revision"] = commit });
-        return reply is null ? (1, failure) : (0, $"submitted {commit} as {reply["outcome"]}: {reply["result"]}\n");
+        return reply is null ? (1, failure) : (0, $"submitted {commit}: {reply["result"]}\n");
     }
 
     public async Task<(int, string)> AbandonAsync(string sid)
@@ -173,7 +173,7 @@ public sealed class SessionClient(HttpClient http)
         if (NotAnId(sid) is { } refused)
             return refused;
         var (reply, failure) = await PostAsync($"sessions/{Uri.EscapeDataString(sid)}/abandon", new JsonObject());
-        return reply is null ? (1, failure) : (0, $"abandoned as {reply["outcome"]}: {reply["result"]}\n");
+        return reply is null ? (1, failure) : (0, $"abandoned: {reply["result"]}\n");
     }
 
     /// <summary>A session id comes from text an agent may have read (LOG 242): anything not of its form is refused, never sent.</summary>

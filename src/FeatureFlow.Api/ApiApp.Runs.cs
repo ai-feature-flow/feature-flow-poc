@@ -17,8 +17,8 @@ public static partial class ApiApp
     static void MapRuns(WebApplication app, Handlers api)
     {
         app.MapPost("/runs", (Delegate)((HttpContext c) => api.Guard(c, caller => api.StartAsync(c, caller))));
-        app.MapGet("/runs", (Delegate)((HttpContext c) => api.Guard(c, _ => api.ListAsync(c))));
-        app.MapGet("/runs/{id}", (HttpContext c, string id) => api.Guard(c, _ => api.ShowAsync(c, id)));
+        app.MapGet("/runs", (Delegate)((HttpContext c) => api.Guard(c, caller => api.ListAsync(c, caller))));
+        app.MapGet("/runs/{id}", (HttpContext c, string id) => api.Guard(c, caller => api.ShowAsync(c, caller, id)));
     }
 
     sealed partial class Handlers
@@ -37,6 +37,12 @@ public static partial class ApiApp
             if (template is null || LibraryReference.TryParse(template) is null)
                 return Error(400, "template must be a template reference, such as std:templates/ticket_delivery");
             var repositories = body!["repositories"]?.AsArray().Select(n => n!.GetValue<string>()).ToList() ?? [];
+            // Starting a run steers work in its repositories (LOG 219); a run is in at most one team's scope (LOG 217).
+            if (Approval.MoreThanOneTeam(services.Organisation, repositories) is { } teams)
+                return Error(400, teams);
+            var scope = ScopeOf(repositories);
+            if (Refuse(caller, scope, [PeopleRoles.Steerer], "start a run") is { } refused)
+                return refused;
             var parameters = (body["parameters"] as JsonObject ?? []).ToDictionary(kv => kv.Key, kv => kv.Value?.ToJsonString() ?? "null");
             var dryRun = body["dry_run"]?.GetValue<bool>() ?? false;
             // The branch the run's work branch starts from and merges into (LOG 137); default the repository's default branch.
@@ -51,8 +57,8 @@ public static partial class ApiApp
             if (body["continue_as_new_events"]?.GetValue<long>() is { } requested)
             {
                 // A run's own hand-over threshold is an administrator's override (LOG 87), and never below the floor.
-                if (!caller.Roles.Contains("admin"))
-                    return Error(403, $"{caller.Actor} may not set continue_as_new_events: it needs the admin role");
+                if (Refuse(caller, scope, [PeopleRoles.Admin], "set continue_as_new_events") is { } notAdmin)
+                    return notAdmin;
                 if (requested < ConfigurationReader.MinimumHandOverEvents)
                     return Error(400, $"continue_as_new_events must be at least {ConfigurationReader.MinimumHandOverEvents}");
                 handOver = requested;
@@ -92,17 +98,19 @@ public static partial class ApiApp
             return (await Artifacts.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(lockText)), ct)).Unwrap().Id;
         }
 
-        public async Task<IResult> ListAsync(HttpContext context)
+        /// <summary>The runs the caller may read: those where it is a viewer in the run's scope (docs/05 section 3.3).</summary>
+        public async Task<IResult> ListAsync(HttpContext context, Caller caller)
         {
-            var runs = (await Records.QueryAsync<RunRecord>(Queries.Runs, new Dictionary<string, string>(), context.RequestAborted)).Unwrap();
+            var runs = (await Records.QueryAsync<RunRecord>(Queries.Runs, new Dictionary<string, string>(), context.RequestAborted)).Unwrap()
+                .Where(r => RolesIn(caller, ScopeOf(r.Repositories)).Contains(PeopleRoles.Viewer)).ToList();
             return Results.Json(new { runs }, Json);
         }
 
-        public async Task<IResult> ShowAsync(HttpContext context, string id)
+        public async Task<IResult> ShowAsync(HttpContext context, Caller caller, string id)
         {
             var p = new Dictionary<string, string> { ["run_id"] = id };
             var run = (await Records.QueryAsync<RunRecord>(Queries.Run, p, context.RequestAborted)).Unwrap().FirstOrDefault();
-            if (run is null)
+            if (run is null || !RolesIn(caller, ScopeOf(run.Repositories)).Contains(PeopleRoles.Viewer))
                 return Error(404, $"no run {id}");
             var waits = (await Records.QueryAsync<WaitRecord>(Queries.Waits, new Dictionary<string, string>(p) { ["open"] = "true" }, context.RequestAborted)).Unwrap();
             var after = context.Request.Query["after"].FirstOrDefault() ?? "0";

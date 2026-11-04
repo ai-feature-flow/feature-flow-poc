@@ -69,8 +69,10 @@ public class SessionRunTests
         Assert.Contains("invalid", badCheck["detail"]!.ToString());
         // The body cannot name another actor (F8): the person is the authenticated caller.
         var firstSubmit = await PostAsync(http, $"sessions/{sid}/submit", new JsonObject { ["revision"] = bad, ["actor"] = "mallory" });
-        Assert.Equal(bad, firstSubmit["revision"]!.ToString());
-        Assert.Equal("tester", (await GetAsync(http, $"sessions/{sid}"))["session"]!["person"]!.ToString());
+        Assert.Equal("recorded", firstSubmit["result"]!.ToString());
+        var firstRecord = (await GetAsync(http, $"sessions/{sid}"))["session"]!;
+        Assert.Equal(bad, firstRecord["submittedRevision"]!.ToString());
+        Assert.Equal("tester", firstRecord["person"]!.ToString());
 
         var second = await OpenSessionAsync(h, http, id, after: sid);
         // The next session's record can land before the timeline batch holding the step's digest: wait for it.
@@ -108,7 +110,7 @@ public class SessionRunTests
 
         var (submitExit, submittedText, submitError) = Session(h, "submit", sid2, "--revision", good);
         Assert.True(submitExit == 0, submitError);
-        Assert.Contains($"submitted {good} as submitted: recorded", submittedText);
+        Assert.Contains($"submitted {good}: recorded", submittedText);
         await WaitAtAsync(h, id, "approve");
 
         var view = await h.ShowAsync(id);

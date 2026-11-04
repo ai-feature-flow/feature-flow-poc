@@ -24,7 +24,7 @@ public class ReplayTests
     {
         // Without this, a missing folder would leave the theory with no cases and nothing replayed.
         Assert.Equal(["agent_question", "budget_middle", "delivery_tracked", "epic_delivery", "epic_delivery_child", "family_child", "family_parent", "project_session", "project_session_pre_m7",
-                "silent_parent_resumed", "sp1_parent", "sp1_parent_resumed", "ticket_clean_up", "ticket_delivery", "wait_hand_over", "wait_hand_over_resumed"],
+                "silent_parent_resumed", "sp1_parent", "sp1_parent_resumed", "steering_line", "steering_rerun_branch", "ticket_clean_up", "ticket_delivery", "wait_hand_over", "wait_hand_over_resumed"],
             Names());
     }
 
@@ -50,6 +50,16 @@ public class ReplayTests
         Assert.Contains(RunWorkflow.ChildWatchPatch, Markers("family_parent"));
         Assert.Contains(RunWorkflow.ChildInputsPatch, Markers("family_child"));
         Assert.Contains(RunWorkflow.ChildWatchPatch, Markers("silent_parent_resumed"));
+    }
+
+    [Fact]
+    public void A_history_holds_the_M7_steering_patch_marker_and_its_overrides()
+    {
+        // A person's overrides and a breakpoint's answer (steering_line), and a failed branch of a decided join re-run
+        // (steering_rerun_branch): without a history on each path, a change to it would replay green.
+        Assert.Contains(RunWorkflow.SteeringPatch, Markers("steering_line"));
+        Assert.Contains(RunWorkflow.SteeringPatch, Markers("steering_rerun_branch"));
+        Assert.Matches("\"name\":\\s*\"override\"", File.ReadAllText(Path.Combine(HistoryFolder, "steering_line.json")));
     }
 
     /// <summary>Whether a recorded run started from a hand-over carrying a step to resume (LOG 139).</summary>

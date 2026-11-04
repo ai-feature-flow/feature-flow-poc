@@ -31,13 +31,18 @@ public sealed class SessionApiTests : IAsyncDisposable
     }
 
     /// <summary>A person other than the run's starter, by header, with <paramref name="roles"/>; the local token is the starter's.</summary>
-    sealed class PersonAuthenticator(params string[] roles) : IAuthenticator
+    sealed class PersonAuthenticator(bool chat, params string[] roles) : IAuthenticator
     {
         public Task<Caller?> AuthenticateAsync(Microsoft.AspNetCore.Http.HttpContext context, ApiServices services) =>
-            Task.FromResult(context.Request.Headers["X-Test-Person"].ToString() is { Length: > 0 } person ? new Caller(person, roles) : null);
+            Task.FromResult(context.Request.Headers["X-Test-Person"].ToString() is { Length: > 0 } person
+                ? new Caller(person, roles, null, chat ? CallerChannels.Chat : CallerChannels.Api)
+                : null);
     }
 
-    HttpClient Start(params string[] personRoles)
+    HttpClient Start(params string[] personRoles) => Start(["approver"], false, personRoles);
+
+    /// <summary>An API whose approval rule for the session's decision type needs <paramref name="ruleRoles"/>; <paramref name="chat"/> callers come through chat.</summary>
+    HttpClient Start(string[] ruleRoles, bool chat, params string[] personRoles)
     {
         var providers = new ProviderSet(
             new Dictionary<string, IReadOnlyDictionary<string, IProvider>>
@@ -50,10 +55,10 @@ public sealed class SessionApiTests : IAsyncDisposable
         var installation = new InstallationConfig("localhost:7233", "default", "q", 5120, new Dictionary<string, ProviderTypeConfig>(),
             new ApiAuthConfig("local_token", "secrets/api_token", "starter", ["steerer", "approver"]), 3, 10, Path.Combine(folder, "installation.yaml"));
         var organisation = new OrganisationConfig("t", [],
-            new PolicyConfig([new ApprovalRule("project.requirements_session", ["approver"], 1, false, new Cap<bool>(false, false))], null, null, null, null),
+            new PolicyConfig([new ApprovalRule("project.requirements_session", ruleRoles, 1, false, new Cap<bool>(false, false))], null, null, null, null),
             Path.Combine(folder, "organisation.yaml"));
         var app = ApiApp.Build(new ApiServices(providers, installation, organisation, null!)
-            { Authenticators = [new PersonAuthenticator(personRoles), new LocalTokenAuthenticator()] }, "http://127.0.0.1:0");
+            { Authenticators = [new PersonAuthenticator(chat, personRoles), new LocalTokenAuthenticator()] }, "http://127.0.0.1:0");
         app.StartAsync().GetAwaiter().GetResult();
         apps.Add(app);
         var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
@@ -108,6 +113,25 @@ public sealed class SessionApiTests : IAsyncDisposable
             Assert.Contains("pat may not act on session", text);
         }
 
+        Assert.Empty(await AnswersAsync());
+    }
+
+    [Theory]
+    [InlineData("approver", false, HttpStatusCode.Forbidden)]
+    [InlineData("lead", true, HttpStatusCode.Forbidden)]
+    [InlineData("lead", false, HttpStatusCode.Conflict)]
+    public async Task The_approval_rule_for_the_decision_type_decides_who_may_submit(string personRole, bool chat, HttpStatusCode expected)
+    {
+        // The rule needs lead, which the person holds or not; from_chat is false. Authorised, the submission goes on and is
+        // refused only because this test's session has no workspace (409).
+        var http = Start(["lead"], chat, "viewer", personRole);
+        await OpenSessionAsync();
+
+        var (status, text) = await PostAsync(http, $"sessions/{Sid}/submit", $$"""{ "revision": "{{Commit}}" }""");
+
+        Assert.True(expected == status, text);
+        if (expected == HttpStatusCode.Forbidden)
+            Assert.Contains(chat ? "may not be answered from chat" : "approval:", text);
         Assert.Empty(await AnswersAsync());
     }
 

@@ -147,6 +147,7 @@ resolve, for example a corrected task prompt. It does not change the plan.
 | Who | A person with the role for content overrides (`docs/05` section 5). An agent may propose one, which becomes a decision |
 | Scope | Steps that start after the override; steps in flight keep what they resolved. It applies to the run tree from that run down |
 | Record | Actor, reason, old and new hash, and the step it applies from. A lock entry, not a plan revision |
+| What it replaces | Tasks, prompts, skills and artifact types: not templates or fragments (the plan, changed by a patch), roles (`change_role`) or evidence types (F7) (LOG 212) |
 | Protected steps | Allowed, with the `admin` role (`docs/05` section 5): correcting a broken prompt on a protected step is the main case. The record shows that a protected step is affected |
 | Any run | Works on every run, whatever its template. FF could override only runs whose template spawned children (`../feature-factory/issues.md`) |
 

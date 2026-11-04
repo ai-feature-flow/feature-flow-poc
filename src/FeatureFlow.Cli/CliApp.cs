@@ -14,7 +14,7 @@ public static class CliApp
     public const string Usage = """
         usage: ff --version
                ff validate <library folder | template or fragment file> [--library <folder>]...
-               ff show <template file> [--library <folder>]...
+               ff show <template file> [--library <folder>]... [--organisation <file>] [--repo <owner/name>]...
                ff test <workflow test file | folder of them> [--library <folder>]... [--trace]
         """ + "\n" + RunCommands.Usage + "\n" + SessionCommands.Usage;
 
@@ -38,16 +38,37 @@ public static class CliApp
         var trace = args.Length >= 2 && args[0] == "test" && args.Contains("--trace");
         if (trace)
             args = args.Where(a => a != "--trace").ToArray();
+        string? organisation = null;
+        var repositories = new List<string>();
+        if (args.Length >= 2 && args[0] == "show")
+            args = ShowOptions(args, ref organisation, repositories);
         if (args.Length >= 2 && args[0] is "validate" or "show" or "test" && ParseLibraries(args[2..]) is { } others)
             return args[0] switch
             {
                 "validate" => Validate(args[1], others, output, error),
-                "show" => Show(args[1], others, output, error),
+                "show" => Show(args[1], others, organisation, repositories, output, error),
                 _ => Test(args[1], others, trace, output, error),
             };
 
         error.WriteLine(Usage);
         return 2;
+    }
+
+    /// <summary>Takes <c>--organisation</c> and <c>--repo</c> out of <c>ff show</c>'s arguments.</summary>
+    static string[] ShowOptions(string[] args, ref string? organisation, List<string> repositories)
+    {
+        var rest = new List<string>();
+        for (var i = 0; i < args.Length; i++)
+            if (args[i] is "--organisation" or "--repo" && i + 1 < args.Length)
+            {
+                if (args[i] == "--organisation")
+                    organisation = args[++i];
+                else
+                    repositories.Add(args[++i]);
+            }
+            else
+                rest.Add(args[i]);
+        return rest.ToArray();
     }
 
     static List<string>? ParseLibraries(string[] rest)
@@ -112,7 +133,11 @@ public static class CliApp
         return failed == 0 ? 0 : 1;
     }
 
-    static int Show(string path, List<string> others, TextWriter output, TextWriter error)
+    /// <summary>
+    /// The readable form with the effective policy view (docs/05 section 7): against the organisation file given, in the scope
+    /// of the team owning the repositories given, else against no organisation (the engine's and the libraries' defaults).
+    /// </summary>
+    static int Show(string path, List<string> others, string? organisationFile, List<string> repositories, TextWriter output, TextWriter error)
     {
         if (Locate(path, error) is not { } item)
             return 2;
@@ -130,7 +155,28 @@ public static class CliApp
             return 1;
         }
 
-        output.Write(ReadableForm.Render(plan));
+        var organisation = new OrganisationConfig("none", [], new PolicyConfig([], null, null, null, null), "");
+        if (organisationFile is not null)
+        {
+            var d = new DiagnosticBag();
+            if (!File.Exists(organisationFile) || ConfigurationReader.ReadOrganisation(File.ReadAllText(organisationFile), Path.GetFullPath(organisationFile), d) is not { } read || d.HasErrors)
+            {
+                error.WriteLine($"{organisationFile} is not a valid organisation file");
+                foreach (var diagnostic in d.Where(x => x.Blocks))
+                    error.WriteLine(diagnostic);
+                return 2;
+            }
+
+            organisation = read;
+        }
+
+        var team = Approval.TeamFor(organisation, repositories);
+        var declared = others.Prepend(item.Root).Select(root => Library.Library.Open(root, new DiagnosticBag())).OfType<Library.Library>()
+            .SelectMany(l => l.DecisionTypes).ToList();
+        var effective = EffectivePolicy.For(plan, organisation.Policy, type => Approval.For(type, organisation.Policy, team, declared));
+        output.Write(ReadableForm.Render(plan, effective: effective));
+        if (organisationFile is null)
+            output.WriteLine("(no --organisation given: the effective policy shows the libraries' and the engine's defaults)");
         return 0;
     }
 

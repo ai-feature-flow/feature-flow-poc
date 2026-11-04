@@ -20,7 +20,10 @@ public static class RunCommands
                ff run wait <run id> [--for end | wait] [--timeout <seconds>]
                ff run answer <run id> <wait id> <outcome | approve | reject>
                ff run recover <run id> <wait id> retry | go_to <step> [--clean-up] | replan <step> | grant_attempts <n> | end <status>
-               ff run abort <run id> [--reason <text>]
+               ff run abort <run id> [--reason <text>] [--close-pull-requests]
+               ff run override <run id> <key> --reason <text> [--step <step id>] [--change <name>=<value>]...
+                 (key: breakpoint, skip, amend, change_role, grant_attempts or override_library; the run applies a
+                 protected or beyond-ceiling variant where your roles hold it)
                (every ff run command takes [--api <url>] [--token-file <file>])
         """;
 
@@ -31,7 +34,7 @@ public static class RunCommands
         var positional = new List<string>();
         for (var i = 0; i < args.Length; i++)
         {
-            if (args[i] is "--dry-run" or "--timeline" or "--clean-up")
+            if (args[i] is "--dry-run" or "--timeline" or "--clean-up" or "--close-pull-requests")
                 flags.Add(args[i]);
             else if (args[i].StartsWith("--", StringComparison.Ordinal) && i + 1 < args.Length)
             {
@@ -77,7 +80,13 @@ public static class RunCommands
                 case ["recover", var id, var wait, "end", var status]:
                     return await client.AnswerAsync(id, new JsonObject { ["wait_id"] = wait, ["action"] = "end", ["status"] = status });
                 case ["abort", var id]:
-                    return await client.SendAsync($"runs/{id}/abort", new JsonObject { ["reason"] = Option("--reason") ?? "aborted from the CLI" });
+                    return await client.SendAsync($"runs/{id}/abort", new JsonObject
+                    {
+                        ["reason"] = Option("--reason") ?? "aborted from the CLI",
+                        ["close_pull_requests"] = flags.Contains("--close-pull-requests"),
+                    });
+                case ["override", var id, var key] when Option("--reason") is { } reason:
+                    return await client.OverrideAsync(id, key, reason, Option("--step"), options.GetValueOrDefault("--change") ?? []);
             }
         }
         catch (HttpRequestException e)
@@ -178,6 +187,28 @@ public static class RunCommands
         }
 
         public async Task<int> AnswerAsync(string id, JsonObject body) => await SendAsync($"runs/{id}/answers", body);
+
+        /// <summary>A run-time override (docs/05 section 5): its key, reason, step and its arguments by name, each given as <c>name=value</c>.</summary>
+        public async Task<int> OverrideAsync(string id, string key, string reason, string? step, List<string> changes)
+        {
+            var change = new JsonObject();
+            foreach (var c in changes)
+            {
+                var eq = c.IndexOf('=');
+                if (eq <= 0)
+                {
+                    error.WriteLine($"--change takes <name>=<value>, not '{c}'");
+                    return 2;
+                }
+
+                change[c[..eq]] = c[(eq + 1)..];
+            }
+
+            var body = new JsonObject { ["key"] = key, ["reason"] = reason, ["change"] = change };
+            if (step is not null)
+                body["step_id"] = step;
+            return await SendAsync($"runs/{id}/overrides", body);
+        }
 
         public async Task<int> SendAsync(string path, JsonObject body)
         {
