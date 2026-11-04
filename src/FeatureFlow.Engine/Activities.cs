@@ -44,7 +44,7 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
     {
         var ct = ActivityExecutionContext.Current.CancellationToken;
         var snapshots = await LoadLibrariesAsync(start.LockRef);
-        var policy = start.Policy ?? services.Policy();
+        var policy = start.Policy ?? services.Policy() with { RequireReview = RequiresReview(services.Organisation.Policy, start.Template) };
         var d = new DiagnosticBag();
         IReadOnlyDictionary<string, string>? defaultBranches = null;
         var libraries = Build(snapshots, d);
