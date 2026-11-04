@@ -13,4 +13,9 @@
     <PackageReference Include="Temporalio" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Console\console.html" LogicalName="FeatureFlow.Api.Console.console.html" />
+    <EmbeddedResource Include="Console\console.js" LogicalName="FeatureFlow.Api.Console.console.js" />
+  </ItemGroup>
+
 </Project>
