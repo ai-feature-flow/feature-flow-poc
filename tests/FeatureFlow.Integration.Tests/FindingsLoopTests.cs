@@ -14,7 +14,7 @@ namespace FeatureFlow.Integration.Tests;
 public class FindingsLoopTests
 {
     const string Blocking =
-        "{ rule: null-check, title: App may dereference null, description: App has no guard, severity: high, blocking: true, basis: reasoned, "
+        "{ rule: null_dereference, title: App may dereference null, description: App has no guard, severity: high, blocking: true, basis: reasoned, "
         + "location: { repository: acme/api, file: src/App.cs, symbol: App, snippet: 'class App {}' } }";
 
     /// <summary>
@@ -162,7 +162,7 @@ public class FindingsLoopTests
     [InlineData("open")]
     public async Task After_the_fix_loop_the_merge_bar_decides_on_what_is_still_open(string verified)
     {
-        var minor = "{ rule: naming, title: App is a vague name, description: App says little, severity: low, blocking: false, basis: reasoned, "
+        var minor = "{ rule: maintainability, title: App is a vague name, description: App says little, severity: low, blocking: false, basis: reasoned, "
                     + "location: { repository: acme/api, file: src/App.cs, symbol: App, snippet: 'class App' } }";
         var script = "{ " + string.Join(", ",
         [

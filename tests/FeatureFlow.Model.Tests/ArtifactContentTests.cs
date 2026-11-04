@@ -209,4 +209,19 @@ public class ArtifactContentTests
         ], ArtifactContent.Check(type!, "tags: [a, 1, c]\ncount: 9\nflag: yes please\n", "t.yaml"));
         Assert.Equal(["count (line 1): must be a whole number, not text '3' [type]"], ArtifactContent.Check(type!, "count: \"3\"\n", "t.yaml"));
     }
+
+    [Fact]
+    public void A_reviewer_s_rule_must_come_from_std_s_vocabulary()
+    {
+        // M6 follow-up 6 (LOG 250): a fixed vocabulary, so the same problem raised again matches by fingerprint.
+        const string Report = """
+            schema: 1
+            findings:
+              - { rule: null_dereference, title: T, description: D, severity: high, blocking: false, basis: reasoned, location: { repository: acme/api, file: a.cs } }
+            """;
+
+        Assert.Empty(ArtifactContent.Check(Std("findings_report"), Report, "findings.yaml"));
+        var error = Assert.Single(ArtifactContent.Check(Std("findings_report"), Report.Replace("null_dereference", "null-check"), "findings.yaml"));
+        Assert.StartsWith("findings[0].rule (line 3): must be one of \"wrong_behaviour\", \"null_dereference\"", error, StringComparison.Ordinal);
+    }
 }
