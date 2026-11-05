@@ -9,15 +9,16 @@ namespace FeatureFlow.Providers.Kubernetes.Tests;
 
 /// <summary>
 /// The sandbox contract against the Kubernetes pod sandbox on a cluster that enforces network policies (a k3d cluster).
-/// The cluster is the kubeconfig context <c>FF_K8S_CONTEXT</c> names, with the sandbox image (<see cref="Image"/>) already
-/// imported. The test applies the repository's <c>sandbox-network-policy.yaml</c> in a namespace of its own, with a stand-in
+/// The cluster is the kubeconfig context <c>FF_K8S_CONTEXT</c> names, or the current context of the kubeconfig file
+/// <c>FF_KUBECONFIG</c> names (the CI deployment's), with the sandbox image (<see cref="Image"/>) already imported. The test applies the repository's <c>sandbox-network-policy.yaml</c> in a namespace of its own, with a stand-in
 /// store (Temporal, Postgres, MinIO) beside the sandboxes and a stand-in agent worker (labelled as one) in another namespace,
 /// as a deployment has it, each listening on a port.
 /// </summary>
 [Trait("Category", "Cluster")]
 public sealed class KubernetesSandboxContractTests : SandboxContract
 {
-    public const string Image = "feature-flow-sandbox:m8";
+    /// <summary>The sandbox image already in the cluster: <c>FF_SANDBOX_IMAGE</c>, else <c>feature-flow-sandbox:m8</c>.</summary>
+    public static readonly string Image = Environment.GetEnvironmentVariable("FF_SANDBOX_IMAGE") is { Length: > 0 } image ? image : "feature-flow-sandbox:m8";
     public const string Namespace = "ff-sandbox-contract";
 
     /// <summary>The stand-in agent worker's namespace: in a deployment the worker and the sandboxes are in different ones.</summary>
@@ -108,10 +109,14 @@ public static class ClusterWorld
 
     public static Task<IKubernetes> ClientAsync()
     {
-        Assert.SkipWhen(Environment.GetEnvironmentVariable("FF_K8S_CONTEXT") is not { Length: > 0 },
-            "the Cluster tests need FF_K8S_CONTEXT naming a kubeconfig context of a cluster that enforces network policies");
+        Assert.SkipWhen(Context is null && KubeConfig is null,
+            "the Cluster tests need FF_K8S_CONTEXT (a kubeconfig context) or FF_KUBECONFIG (a kubeconfig file) for a cluster that enforces network policies");
         return Client.Value;
     }
+
+    static string? Context => Environment.GetEnvironmentVariable("FF_K8S_CONTEXT") is { Length: > 0 } c ? c : null;
+
+    static string? KubeConfig => Environment.GetEnvironmentVariable("FF_KUBECONFIG") is { Length: > 0 } k ? k : null;
 
     public static string NodeAddress { get; private set; } = "";
 
@@ -127,7 +132,7 @@ public static class ClusterWorld
 
     static async Task<IKubernetes> SetUpAsync()
     {
-        var client = new k8s.Kubernetes(KubernetesClientConfiguration.BuildConfigFromConfigFile(currentContext: Environment.GetEnvironmentVariable("FF_K8S_CONTEXT")));
+        var client = new k8s.Kubernetes(KubernetesClientConfiguration.BuildConfigFromConfigFile(kubeconfigPath: KubeConfig, currentContext: Context));
         foreach (var ns in new[] { KubernetesSandboxContractTests.Namespace, KubernetesSandboxContractTests.WorkerNamespace })
             await Ignore409(() => client.CoreV1.CreateNamespaceAsync(new V1Namespace { Metadata = new V1ObjectMeta { Name = ns } }));
         var manifest = Path.Combine(AppContext.BaseDirectory, "sandbox-network-policy.yaml");
