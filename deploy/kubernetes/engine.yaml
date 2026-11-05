@@ -10,11 +10,15 @@ kind: Namespace
 metadata:
   name: feature-flow
 ---
-# Sandboxes run here, apart from the engine, behind their own network policy (network-policies.yaml).
+# Sandboxes run here, apart from the engine, behind their own network policy (network-policies.yaml). Pod Security's
+# baseline level refuses host networking, privileged containers and host paths, which would put a pod outside the
+# policy or on the node, whatever account creates it.
 apiVersion: v1
 kind: Namespace
 metadata:
   name: feature-flow-sandboxes
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
 ---
 # The hosts' account. The agent worker creates, runs commands in and removes sandbox pods (the Kubernetes sandbox,
 # docs/06 section 3.1), and every host checks the sandbox provider at startup, so all three share it; its rights are

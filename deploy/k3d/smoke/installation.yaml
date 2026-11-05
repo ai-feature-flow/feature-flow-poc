@@ -1,5 +1,6 @@
-# A trial installation for the k3d cluster: the real stores and Temporal in the cluster, with fake providers for
-# everything outside it and a scripted agent, so a std ticket run completes with no GitHub, tracker or model:
+# A trial installation for the k3d cluster: the real stores and Temporal in the cluster, payloads encrypted, with fake
+# providers for everything outside it and a scripted agent, so a std ticket run completes with no GitHub, tracker or
+# model:
 #
 #   deploy/k3d/up.sh deploy/k3d/smoke
 #
@@ -7,10 +8,21 @@
 api_version: feature-flow/v1
 kind: installation
 development: true               # fake providers are for development only
-temporal: { address: "temporal.feature-flow.svc:7233", namespace: default, task_queue: feature-flow }
+temporal:
+  address: "temporal.feature-flow.svc:7233"
+  namespace: default
+  task_queue: feature-flow
+  payload_codec: { name: aes_gcm, key_ref: secrets/payload_key }
 providers:
-  record_store: { default: sqlite, instances: { sqlite: { path: /tmp/records.db } } }
-  artifact_store: { default: filesystem, instances: { filesystem: { root: /tmp/artifacts } } }
+  record_store: { default: postgres, instances: { postgres: { connection_ref: secrets/record_store_connection } } }
+  artifact_store:
+    default: s3
+    instances:
+      s3:
+        bucket: feature-flow
+        endpoint: http://minio.feature-flow.svc:9000
+        access_key_ref: secrets/object_store_access_key
+        secret_key_ref: secrets/object_store_secret_key
   secrets: { default: file, instances: { file: { path: /var/run/secrets/feature-flow/secrets.json } } }
   agent_runtime: { default: scripted, instances: { scripted: { script: script.yaml } } }
   action_stand_in: { default: scripted, instances: { scripted: { script: script.yaml } } }

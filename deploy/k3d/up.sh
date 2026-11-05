@@ -15,10 +15,13 @@
 #   FF_SKIP_BUILD   set to 1 to import the images already built rather than build them
 #   K3D             the k3d command (default k3d)
 #
+# Run one up.sh per Docker daemon at a time: the images are tagged feature-flow-*:dev in the daemon, so two runs from
+# different checkouts would overwrite each other's images before importing them.
+#
 # Generated secrets: created once, kept in the Secret feature-flow-infrastructure, and added to secrets.json for the
 # installation to name: record_store_connection (a Postgres connection string), object_store_access_key and
-# object_store_secret_key (MinIO's), step_token_key (agent_worker.token_key_ref) and api_token (a local_token for the
-# API), the last two only where the folder's secrets.json has none. Nothing secret is printed; read the API token with
+# object_store_secret_key (MinIO's), and, only where the folder's secrets.json has none, step_token_key
+# (agent_worker.token_key_ref), api_token (a local_token for the API) and payload_key (temporal.payload_codec's key). Nothing secret is printed; read the API token with
 #   kubectl -n feature-flow get secret feature-flow-infrastructure -o jsonpath='{.data.api-token}' | base64 -d
 set -euo pipefail
 
@@ -60,22 +63,28 @@ rerun=$(kubectl -n feature-flow get deployment/api -o name 2>/dev/null || true)
 kubectl apply -k "$root/deploy/k3d" >/dev/null
 
 random() { head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
-if ! kubectl -n feature-flow get secret feature-flow-infrastructure >/dev/null 2>&1; then
-  kubectl -n feature-flow create secret generic feature-flow-infrastructure \
-    --from-literal=postgres-password="$(random)" --from-literal=minio-user=feature-flow --from-literal=minio-password="$(random)" \
-    --from-literal=step-token-key="$(random)" --from-literal=api-token="$(random)" >/dev/null
-fi
-infrastructure() { kubectl -n feature-flow get secret feature-flow-infrastructure -o "jsonpath={.data.$1}" | base64 -d; }
+infrastructure() { { kubectl -n feature-flow get secret feature-flow-infrastructure -o "jsonpath={.data.$1}" 2>/dev/null || true; } | base64 -d; }
+# Each generated secret is made once and kept; a key an older up.sh did not make is added. Values go through stdin.
+for key in postgres-password minio-password step-token-key api-token payload-key; do
+  value=$(infrastructure "$key")
+  if [ -z "$value" ]; then
+    if [ "$key" = payload-key ]; then value=$(head -c 32 /dev/urandom | base64); else value=$(random); fi
+  fi
+  printf '%s=%s\n' "$key" "$value"
+done | { cat; printf 'minio-user=feature-flow\n'; } |
+  kubectl -n feature-flow create secret generic feature-flow-infrastructure --from-env-file=/dev/stdin --dry-run=client -o yaml |
+  kubectl apply -f - >/dev/null
 
-# secrets.json: the folder's own secrets, with the generated ones added. Values go through stdin, never arguments.
-for key in postgres-password minio-user minio-password step-token-key api-token; do infrastructure $key; echo; done |
+# secrets.json: the folder's own secrets, with the generated ones added.
+for key in postgres-password minio-user minio-password step-token-key api-token payload-key; do infrastructure $key; echo; done |
   python3 -c '
 import json, os, sys
-postgres, user, password, step, api = sys.stdin.read().split("\n")[:5]
+postgres, user, password, step, api, payload = sys.stdin.read().split("\n")[:6]
 path = os.path.join(sys.argv[1], "secrets.json")
 secrets = json.load(open(path)) if os.path.exists(path) else {}
 secrets.setdefault("step_token_key", step)
 secrets.setdefault("api_token", api)
+secrets.setdefault("payload_key", payload)
 secrets.update({
     "record_store_connection": f"Host=postgres.feature-flow.svc;Database=feature_flow;Username=feature_flow;Password={postgres}",
     "object_store_access_key": user,

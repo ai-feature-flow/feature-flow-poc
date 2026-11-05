@@ -40,6 +40,18 @@ public class DeploymentTests
         Assert.Equal(open, await ProbeAsync(Engine, null, open));
     }
 
+    [Fact]
+    public async Task The_hosts_account_cannot_put_a_pod_outside_the_sandboxes_policy()
+    {
+        // A host-network pod would ignore every network policy; Pod Security's baseline level refuses it. A plain pod is
+        // accepted, so the refusal is the level's, not a missing right.
+        string[] run = ["-n", Sandboxes, "--as=system:serviceaccount:feature-flow:feature-flow", "run", $"probe-{Guid.NewGuid():N}"[..20],
+            "--image=curlimages/curl:8.17.0", "--restart=Never", "--dry-run=server"];
+        await Kubectl.OkAsync(run);
+        var (exit, output) = await Kubectl.RunAsync([.. run, """--overrides={"spec":{"hostNetwork":true}}"""]);
+        Assert.True(exit != 0 && output.Contains("violates PodSecurity"), $"a host-network pod was not refused: {output}");
+    }
+
     [Theory]
     [InlineData("api")]
     [InlineData("orchestration-worker")]

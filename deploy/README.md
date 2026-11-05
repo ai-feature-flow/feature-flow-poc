@@ -45,7 +45,9 @@ The installation names `sqlite`, `filesystem`, `file` secrets (with `from_enviro
 `deploy/k3d/up.sh <config folder>` creates a k3d cluster (default name `feature-flow`), builds and imports the images,
 and deploys Temporal's dev server, Postgres and MinIO, each on its own volume, with the three hosts. Its kubeconfig goes
 to its own file (`~/.config/feature-flow/<cluster>.kubeconfig`); your default context is not changed. Run it again to
-apply changed configuration; `deploy/k3d/down.sh` deletes the cluster and its data.
+apply changed configuration; `deploy/k3d/down.sh` deletes the cluster and its data. Run one `up.sh` per Docker daemon
+at a time: images are tagged `feature-flow-*:dev` in the daemon, so two runs from different checkouts would overwrite
+each other's images.
 
 | Config folder | Runs |
 |---|---|
@@ -53,7 +55,8 @@ apply changed configuration; `deploy/k3d/down.sh` deletes the cluster and its da
 | A copy of `distribution-template/config` | The small-company profile: Jira, GitHub, GitHub Actions, the Kubernetes sandbox, a real agent |
 
 The folder's files become the ConfigMap `feature-flow-config`; its `secrets.json`, with the generated database and
-MinIO passwords, API token and step-token key added, becomes the Secret `feature-flow-secrets`, which the installation's
+MinIO passwords, API token, step-token key and payload key (`temporal.payload_codec`, which encrypts what Temporal
+stores) added, becomes the Secret `feature-flow-secrets`, which the installation's
 `file` secrets provider reads. Nothing secret is printed. To use the API:
 
 ```sh
@@ -63,9 +66,17 @@ kubectl -n feature-flow get secret feature-flow-infrastructure -o jsonpath='{.da
 ff run start std:templates/ticket_delivery --param ticket_id=T-1 --api http://localhost:8480 --token-file token
 ```
 
+After restoring the database from a backup, rebuild the run index from Temporal with the hosts' `reconcile` command
+(`docs/02` section 5):
+
+```sh
+kubectl -n feature-flow exec deploy/orchestration-worker -- /app/feature-flow-host reconcile
+```
+
 Network policies (k3s enforces them): Temporal, Postgres and MinIO accept only the hosts; the agent worker's endpoint
 accepts only sandboxes and hosts; sandboxes, in namespace `feature-flow-sandboxes`, reach only DNS, the agent worker and
-the public internet. The hosts' account may manage pods only in the sandboxes' namespace.
+the public internet. The hosts' account may manage pods only in the sandboxes' namespace, where Pod Security's
+`baseline` level refuses host networking, privileged containers and host paths.
 
 ## A cloud cluster on AWS
 

@@ -8,6 +8,7 @@ temporal:
   address: temporal.feature-flow.svc:7233
   namespace: default
   task_queue: feature-flow
+  payload_codec: { name: aes_gcm, key_ref: secrets/payload_key }   # encrypts what Temporal stores; keep the key safe
 
 providers:
   record_store:
