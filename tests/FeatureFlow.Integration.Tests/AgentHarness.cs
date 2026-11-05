@@ -19,7 +19,7 @@ namespace FeatureFlow.Integration.Tests;
 /// </summary>
 public static class AgentWorld
 {
-    public const string Image = "feature-flow-sandbox:m4";
+    public const string Image = "feature-flow-sandbox:m8";
     static readonly Lazy<Task<string>> Client = new(PrepareAsync);
 
     public static Task<string> SandboxClientAsync() => Client.Value;
