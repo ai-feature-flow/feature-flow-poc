@@ -18,7 +18,7 @@ public static partial class ApiApp
     {
         app.MapPost("/runs/{id}/answers", (HttpContext c, string id) => api.Guard(c, caller => api.AnswerAsync(c, caller, id)));
         app.MapPost("/runs/{id}/abort", (HttpContext c, string id) => api.Guard(c, caller => api.AbortAsync(c, caller, id)));
-        app.MapGet("/runs/{id}/findings", (HttpContext c, string id) => api.Guard(c, _ => api.FindingsAsync(c, id)));
+        app.MapGet("/runs/{id}/findings", (HttpContext c, string id) => api.Guard(c, caller => api.FindingsAsync(c, caller, id)));
     }
 
     /// <summary>The result an answer is recorded with while it waits for more people to answer the same way (<c>min_count</c>).</summary>
@@ -179,8 +179,10 @@ public static partial class ApiApp
         }
 
         /// <summary>The run's findings ledger, as a person triaging it needs it: every finding of the run and its children, with its ledger id and state.</summary>
-        public async Task<IResult> FindingsAsync(HttpContext context, string id)
+        public async Task<IResult> FindingsAsync(HttpContext context, Caller caller, string id)
         {
+            if (await VisibleRunAsync(caller, id, context.RequestAborted) is null)
+                return Error(404, $"no run {id}");
             var ledger = (await Records.QueryAsync<FindingRecord>(Queries.Findings, new Dictionary<string, string> { ["run_id"] = id }, context.RequestAborted)).Unwrap();
             return Results.Text(ArtifactShapes.WriteLibrary(FindingsLedger.View(ledger)), "application/json");
         }

@@ -366,8 +366,8 @@ existing GitHub App; Jira on the sandbox site; the payload codec; std from
 tested since M7; there is no identity provider in the cluster). Every approval rule `auto: false`, so a person answered
 each decision. The hosts were given a CA bundle by hand for this machine's TLS inspection (seam 2).
 
-**Tracker.** A Jira epic FWFEED-115 ("widget query helpers") and three tasks under it, FWFEED-116 (find by name),
-FWFEED-117 (count by prefix) and FWFEED-118 (sorted names), in M6's shape: each with acceptance criteria and its own
+**Tracker.** (Issue keys show the Jira sandbox project as `SANDBOX`; nothing company-specific in the repository, LOG 266.) A Jira epic SANDBOX-115 ("widget query helpers") and three tasks under it, SANDBOX-116 (find by name),
+SANDBOX-117 (count by prefix) and SANDBOX-118 (sorted names), in M6's shape: each with acceptance criteria and its own
 new files; all labelled `feature-flow-test`. Parent branch `ff/m8-live/epic-base` from `main` (`d033998`). Started with
 `--continue-as-new-events 200`.
 
@@ -380,16 +380,16 @@ a question that waited twelve minutes unseen, and the approvals):
 | Step | What happened |
 |---|---|
 | `baseline` | Both tiers in GitHub Actions at `d033998`: unit 6 passed, integration 1 passed |
-| `design`, `validate_design` | Jira moved FWFEED-115 to In Progress. Sessions 1 to 3 hit seam 2 (502s); after the bundle the agent worker restarted, the step re-attached its sandbox and session 4 wrote the requirements and contract. `requirement_inheritance` and `requirement_support` valid |
-| `tickets.plan`, `tickets.validate` | A valid plan at the first attempt: three items with `tracker_issue` FWFEED-116 to 118 |
+| `design`, `validate_design` | Jira moved SANDBOX-115 to In Progress. Sessions 1 to 3 hit seam 2 (502s); after the bundle the agent worker restarted, the step re-attached its sandbox and session 4 wrote the requirements and contract. `requirement_inheritance` and `requirement_support` valid |
+| `tickets.plan`, `tickets.validate` | A valid plan at the first attempt: three items with `tracker_issue` SANDBOX-116 to 118 |
 | `tickets.approve` | Read with `ff run artifact`'s route by hand (seam 5), approved by `w5-operator` |
 | `tickets.children_0..2` | Three ticket runs, two at a time, each in its own sandbox pods: baseline, plan validated against the epic's, spec approved by `w5-operator`, implement on `haiku`, tests in CI, five reviewers on `sonnet` (role_mapping, read from each session's start), satisfaction, PR into the epic branch, checks, catch-up, **engine squash merge**, Jira to Done. Each handed over once or twice (`continued_as_new`) |
-| Ticket FWFEED-116 | After catching up with FWFEED-117's merge, the retest failed in CI: both tickets had declared `public static class WidgetQueries` (CS0101). The repair step renamed its class (`ebee5e9`), the tests passed (14), the five reviewers re-reviewed, and it merged |
-| Ticket FWFEED-118 | Its implementer asked through `ask_human` which of the design's class name and the ticket's own-file rule to keep; `w5-operator` answered "a new file with its own class" through `ff run answer` |
+| Ticket SANDBOX-116 | After catching up with SANDBOX-117's merge, the retest failed in CI: both tickets had declared `public static class WidgetQueries` (CS0101). The repair step renamed its class (`ebee5e9`), the tests passed (14), the five reviewers re-reviewed, and it merged |
+| Ticket SANDBOX-118 | Its implementer asked through `ask_human` which of the design's class name and the ticket's own-file rule to keep; `w5-operator` answered "a new file with its own class" through `ff run answer` |
 | hand-over | The epic handed over once (at 224 events, after its children ended) |
 | `verify` | Tests at the epic head `26e803b`: unit 17 passed, integration 1 passed; five reviewers, 3 new findings and 1 re-raised, none blocking |
 | `trace` | `requirement_trace` valid |
-| `deliver` | PR #197; checks passed; **merge commit `020295e`** into `ff/m8-live/epic-base`, by Feature Flow; Jira moved FWFEED-115 to Done |
+| `deliver` | PR #197; checks passed; **merge commit `020295e`** into `ff/m8-live/epic-base`, by Feature Flow; Jira moved SANDBOX-115 to Done |
 
 Checked afterwards, outside the engine:
 
@@ -397,7 +397,7 @@ Checked afterwards, outside the engine:
   `Feature-Flow-Merge: run-85af56149b09/deliver.merge`. Below it, three single-parent squash commits, one per ticket.
   The change against `main` is exactly three new source and three new test files. `main` stayed `d033998`. PRs #194
   to #196 closed with their squash commits, #197 merged.
-- Jira: FWFEED-115 to 118 Done, each moved by the tracker (tickets through In Progress and In Review).
+- Jira: SANDBOX-115 to 118 Done, each moved by the tracker (tickets through In Progress and In Review).
 - Temporal (port-forwarded): the tree's nine histories (four workflows and five hand-overs) hold 1,004 payloads, every
   one `binary/encrypted`; no ticket key, ticket name or branch name appears in them as text.
 - Postgres: the tree's 4 run records, 757 timeline rows, 81 artifact records, 10 answer records and 8 findings. MinIO:
@@ -442,7 +442,7 @@ warnings. CI on the pull request: green on every push since the runner fault, wi
 
 Deleted on the fixture after the run: the branches `ff/m8-live/epic-base` (`020295e`), `ff/epic/widget_queries`
 (`26e803b`), the three `ff/ticket/*`, and four `refs/feature-flow/wip/*` references the run left. The fixture has only
-`main` (`d033998`) and no open pull request. FWFEED-115 to 118 are Done (closed). The k3d cluster `ff-w5` is deleted.
+`main` (`d033998`) and no open pull request. SANDBOX-115 to 118 are Done (closed). The k3d cluster `ff-w5` is deleted.
 
 ### Follow-ups
 
@@ -463,7 +463,8 @@ Agents, Integration; M7 is `m7-results.md`'s consolidated follow-ups. Closed dur
 Operations 5 (the notifier's budget flake), Operations 6 (the codec key's reference checked at startup), and M7's 1 (the
 sandbox's network, proven on the cluster), 2 (each organisation key decided, LOG 267 to 270), 4 (startup resolves every
 secret reference), 14's `stalled` and `stuck`, 18 (`teams.<name>.repositories` in docs/07) and 21's "detached hosts
-ignore SIGTERM" (LOG 312). Dropped by the product owner (LOG 264): M7's 3, 6, 7 and 9.
+ignore SIGTERM" (LOG 312), and Integration 3 (`GET /runs/{id}/findings`, and `/runs/{id}/plan` too, now
+refuse a caller who is not a viewer of the run, LOG 327). Dropped by the product owner (LOG 264): M7's 3, 6, 7 and 9.
 
 | # | Follow-up | From |
 |---|---|---|
@@ -484,7 +485,6 @@ ignore SIGTERM" (LOG 312). Dropped by the product owner (LOG 264): M7's 3, 6, 7 
 | 14 | One model proxy serves every runtime; a runtime on another upstream needs a proxy per runtime instance. The proxy records but does not pin each request's model | Agents 1, 6 |
 | 15 | Copilot CLI: the hook's `continue: false` with the engine unreachable is untested; the agent can add its own skills or agents to Copilot's sticky home; `CopilotCliRuntime` repeats part of `ClaudeCodeRuntime` | Agents 2 to 4 |
 | 16 | No sweeper removes sandbox pods or containers whose run has closed | Agents 5 |
-| 17 | `GET /runs/{id}/findings` does not check that the caller may see the run | Integration 3 |
 | 18 | A completed run leaves its work branches and `refs/feature-flow/wip/*` on the code host; a run's clean-up could also delete its session branches | Integration 4, M7 12 |
 | 19 | `merge.require_checks` locked on refuses only a literal `false` at run start | M7 5 |
 | 20 | F1 at patch time: a patch adding an engine merge into a default branch is caught only at merge time | M7 8 |
@@ -495,3 +495,22 @@ ignore SIGTERM" (LOG 312). Dropped by the product owner (LOG 264): M7's 3, 6, 7 
 | 25 | A decline from a triage with `post_declines: false` is still posted when the pull request later opens | M7 17 |
 | 26 | A plan's `artifact.import` stops for a person on a type error; type-check the artifacts on a person's decision answer | M7 19, 20 |
 | 27 | Still open from M6: `verification_satisfaction` and the trace checks; the work-item budget's overshoot; `EpicRunTests`' per-child durations; a live hand-over during a CI wait; the Copilot findings source unseen; M5 follow-ups 3 and 7; watch activities per run; parent counts lag a child's; `wait.condition` on a tracker issue | M7 21 |
+
+## Coordinator decisions
+
+Decisions the coordinator took during M8; those marked PO are the product owner's. Pull requests are into `m8`.
+
+| # | When | Decision | Why |
+|---|---|---|---|
+| C1 | PO | Organisation keys: build `role_mapping`; remove `library_overrides`, `library_inputs`, `policy.toolsets.allowed` and `timeouts` (LOG 267 to 270) | The coordinator's recommendations, accepted |
+| C2 | PO | Live Jira tests use a Jira sandbox project, its site and project given by environment variables only (LOG 266: nothing company-specific in the repository); Copilot CLI live tests use the signed-in CLI | Product owner's answers |
+| C3 | Start | W0 (foundations) alone first: compatibility code out (LOG 263), the dropped keys refused, interface readiness and the builder split. Then four builders: stores, agents, operations, packaging; then integration. The sandbox network fix (M4 follow-up 12) is the agents builder's first deliverable, proven again on the deployed cluster by integration | Workflow-wide changes before parallel work; the fix lives with the pod sandbox |
+| C4 | W0 | W0's recommendations accepted: no extra host seam (stores merged before operations); Postgres and MinIO as test containers in the `Integration` category; a `Cluster` category with one CI job; `workers` stays refused; the provider interfaces and contract suites frozen | Simplest |
+| C5 | W0 merge | #25 merged on green CI before its review finished so the builders could start; review R0's two wording fixes in #26 | The diff was mostly deletions and additive suites |
+| C6 | Reviews | Every pull request had an independent review and a re-check: #25 R0 approve-with-fixes; #28 stores R1 changes-required (an unreadable `git` library let a looser approval rule decide; Postgres refused NUL; reconcile could overwrite a newer record; credentials in a git URL); #29 operations R3 changes-required (the provider decorator turned a provider bug into an infinite retry); #30 agents R2 changes-required (a restarted Docker sandbox could be handed back with an open network; nothing guarded Copilot's hooks); #27 packaging R4 approve-with-fixes (no Pod Security on the sandbox namespace let the hosts' account create a pod outside every policy); #32 integration R5 approve-with-fixes (the artifact route served a child's artifacts through its parent) | Every catch was real |
+| C7 | R3 | Duplicate `stalled`/`stuck` messages from several orchestration replicas: documented with one replica in the deployment, not a singleton job (LOG 307) | Duplicates only cost messages |
+| C8 | R1 re-check | An unreadable library refuses only answers the libraries decide; recovery and organisation-rule answers go on (LOG 289) | A git outage must not block recovering a run |
+| C9 | R2 re-check | The deployment keeps its own, tighter sandbox policy; the provider's file serves a sandbox in the worker's namespace and the tests (LOG 294) | Correct as built |
+| C10 | Integration | Done-when 1 on the small-company profile with the API on a local token, not OIDC | OIDC is tested since M7; an in-cluster identity provider would prove nothing new |
+| C11 | Integration | Kept the artifact read route (LOG 325), narrowed by R5 to the run's own artifacts; added the `model_unreachable` timeline line (LOG 326) | A person in the team profile must read what they ratify; ten silent minutes in the live run |
+| C12 | Close | The coordinator closed Integration follow-up 3 itself: every read of a run needs the viewer role (LOG 327) | The same hole R5 found on the artifact route |

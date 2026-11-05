@@ -303,8 +303,9 @@ public sealed class ApiTests : IAsyncDisposable
     {
         var reader = Start("viewer");
         var finding = new ReportedFinding("null-check", "Null", "x may be null", "high", true, FindingBases.Reasoned, new FindingLocation("acme/api", "src/A.cs", "A.B", "if (x)"));
-        await records.AppendAsync(new RecordBatch(Findings:
-            [new FindingRecord("r1", "F-1", "fp", finding, "review", null, FindingStates.Escalated, null, null, 0, 0, 0, false, DateTimeOffset.UnixEpoch)]),
+        await records.AppendAsync(new RecordBatch(
+            [new RunRecord("r1", null, "std:templates/ticket_delivery", "running", "x", [], false, DateTimeOffset.UnixEpoch, null)],
+            Findings: [new FindingRecord("r1", "F-1", "fp", finding, "review", null, FindingStates.Escalated, null, null, 0, 0, 0, false, DateTimeOffset.UnixEpoch)]),
             TestContext.Current.CancellationToken);
 
         using var response = await reader.GetAsync("runs/r1/findings", TestContext.Current.CancellationToken);
@@ -312,5 +313,25 @@ public sealed class ApiTests : IAsyncDisposable
 
         var only = Assert.Single(view.Findings);
         Assert.Equal(("F-1", FindingStates.Escalated), (only.LedgerId, only.State));
+        using var refused = await Start().GetAsync("runs/r1/findings", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NotFound, refused.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_run_s_plan_is_shown_only_to_a_viewer_of_the_run()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await records.AppendAsync(new RecordBatch([new RunRecord("r1", null, "std:templates/ticket_delivery", "running", "x", [], false, DateTimeOffset.UnixEpoch, null)]), ct);
+
+        async Task<string> ReadAsync(HttpClient http)
+        {
+            using var response = await http.GetAsync("runs/r1/plan", ct);
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+            return await response.Content.ReadAsStringAsync(ct);
+        }
+
+        // The viewer gets past the run check to the missing lock; a caller who may not see the run is told it does not exist.
+        Assert.Contains("no library lock", await ReadAsync(Start("viewer")));
+        Assert.Contains("no run r1", await ReadAsync(Start()));
     }
 }
