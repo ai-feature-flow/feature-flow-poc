@@ -315,7 +315,7 @@ The sandbox's network (M4 follow-up 12), the Kubernetes pod sandbox, the Copilot
 ## Integration
 
 Worker W5, branch `m8-integration`, from `m8` at `30319c8` (PRs #25 to #31 merged). Temporal on port 8633 for local
-runs; k3d cluster `ff-w5`. Judgement calls LOG 321 to 330, unreviewed.
+runs; k3d cluster `ff-w5`. Judgement calls LOG 321 to 325, unreviewed.
 
 ### Cross-piece checks
 
@@ -328,8 +328,163 @@ On the merged `m8` before any change (Debug, `-m:4`).
 | The three host images and the sandbox image | Built by `up.sh` |
 | `deploy/k3d/up.sh deploy/k3d/smoke` from no cluster | Up in 2 min 20 s; each host restarted 4 times while Postgres started (Packaging follow-up 1) |
 | `Cluster` suite against it | 21 passed (Integration 7, Kubernetes 14) |
-| M4 follow-up 12 on the deployed cluster, by hand | A pod in `feature-flow-sandboxes` (the sandbox image) is refused by Temporal, Postgres, MinIO and the API, and reaches the agent worker and github.com |
+| M4 follow-up 12 on the deployed cluster, by hand, before the live run | A pod in `feature-flow-sandboxes` (the sandbox image) is refused by Temporal, Postgres, MinIO and the API, and reaches the agent worker and github.com |
+| The same during the live run, from a real sandbox pod the agent worker made, as root | Refused by Temporal, Postgres, MinIO, the API and the Kubernetes API; reaches the agent worker and github.com; no token, key or secret variable in its environment |
 
 Controls for the hand check: with the sandboxes' egress policy deleted, the probe reaches the API (Temporal and the
 stores stay refused by their own ingress policy, a second layer); with that policy deleted too, it reaches all four.
 Re-applying `deploy/k3d` restores the refusals.
+
+### Seams found and fixed
+
+Each fix is its own commit, with a test and a control (a mutation that made the test fail, then restored).
+
+| # | Seam | Fix | Test (control) |
+|---|---|---|---|
+| 1 | The `git` library source reads only a repository's root, and std lives at `library/std` of the engine's repository, so the done-when's "std from Git" could not be configured | A `git` source takes an optional `path`, as `directory` does; absolute or `..` refused (LOG 321) | `GitLibrarySourceTests.A_library_in_a_folder_...` (the resolver ignoring `path` fails it); two `OrganisationTests` rows (the reader's check removed fails both) |
+| 2 | In the cluster every model request failed 502 for ten minutes with nothing in any log: this machine's network re-signs the model API's TLS and the image trusts only public roots (DR20 holds for a process on a laptop, not an image) | The model proxy writes the cause to its log and its 502 body (the step's transcript). `deploy/README.md` shows a deployment adding a CA bundle through `SSL_CERT_FILE`; no engine setting (LOG 322) | `EndpointTests.With_the_model_unreachable_...` (the old body fails it). In the pod: `UntrustedRoot` without the bundle, the model API reached with it |
+| 3 | Done-when 2: docs/09's failure injection names "Temporal unavailable", which no test covered; CI's logs gave only per-assembly totals; the integration job built a sandbox image tagged `:m4` that no test used | `TemporalOutageTests` stops and restarts its own dev server under a waiting run; CI lists every test it runs; the job builds `:m8` (LOG 323) | The host's workers stopped 12 s after start (a worker that does not come back): the test fails. It also asserts an answer during the outage is refused, so the outage is real |
+| 4 | A CI flake on this PR, "the command ... was lost" (`DockerSandboxContractTests`): `ShellSandbox`'s status read could see a finished command, reaped but with its exit code not yet written, as lost | A command runs while the start script waiting on it lives, which writes the code before it ends (LOG 324). Shared by the Docker and Kubernetes sandboxes | Reproduced with a 1 s gap injected before the code is written: every Docker contract test failed; with the fix and the gap, 14 of 14 pass. New contract test (Docker and Kubernetes): a command killed with its waiter reads as lost, and 20 short commands each read as ended (a status that never says lost fails it) |
+| 5 | A person approving the epic's ticket plan ratifies its work list, but in the team profile nothing let them read it: the artifacts are in MinIO inside the cluster and the timeline shows only references. I read them from MinIO by hand | `GET /runs/{id}/artifacts/{reference}` and `ff run artifact`: a reference in the run tree's artifact index, for a viewer of the run (LOG 325) | `ApiTests.A_viewer_reads_the_artifacts_...` (without the index check, or without the viewer check, it fails). Live: the epic's work list read through the CLI; the same reference through a child run refused |
+
+Not seams: the GitHub App broker needed its `repositories` list (my configuration); the first CI run's Cluster job
+failed when the runner's k3s node restarted during the image builds (the next run passed).
+
+### Done-when 1: the M6 epic on the small-company profile in k3d (complete)
+
+**Setup.** Cluster `ff-w5` from `deploy/k3d/up.sh` with an installation copied from the distribution template (kept
+outside the repository): Postgres, MinIO and Temporal's dev server in the cluster with the three hosts; the Kubernetes
+pod sandbox; Claude Code through the model proxy on the product owner's subscription; GitHub, GitHub Actions and the
+existing GitHub App; Jira on the sandbox site; the payload codec; std from
+`ai-feature-flow/feature-flow-poc` at `m8-integration`, `path: library/std` (seam 1); `role_mapping` with
+`reviewer` on `sonnet` and `default` on `haiku`; the API's local token, actor `w5-operator` with all four roles (OIDC is
+tested since M7; there is no identity provider in the cluster). Every approval rule `auto: false`, so a person answered
+each decision. The hosts were given a CA bundle by hand for this machine's TLS inspection (seam 2).
+
+**Tracker.** A Jira epic FWFEED-115 ("widget query helpers") and three tasks under it, FWFEED-116 (find by name),
+FWFEED-117 (count by prefix) and FWFEED-118 (sorted names), in M6's shape: each with acceptance criteria and its own
+new files; all labelled `feature-flow-test`. Parent branch `ff/m8-live/epic-base` from `main` (`d033998`). Started with
+`--continue-as-new-events 200`.
+
+**F1 control** (`run-625fd895d5fd`): the same start without `--parent-branch` was refused at run start, check 23
+(an engine merge into the default branch `main`); no branch was made.
+
+**The run** (`run-85af56149b09`, **completed**, 06:25 to 07:36 UTC, 71 minutes, including the ten minutes of seam 2,
+a question that waited twelve minutes unseen, and the approvals):
+
+| Step | What happened |
+|---|---|
+| `baseline` | Both tiers in GitHub Actions at `d033998`: unit 6 passed, integration 1 passed |
+| `design`, `validate_design` | Jira moved FWFEED-115 to In Progress. Sessions 1 to 3 hit seam 2 (502s); after the bundle the agent worker restarted, the step re-attached its sandbox and session 4 wrote the requirements and contract. `requirement_inheritance` and `requirement_support` valid |
+| `tickets.plan`, `tickets.validate` | A valid plan at the first attempt: three items with `tracker_issue` FWFEED-116 to 118 |
+| `tickets.approve` | Read with `ff run artifact`'s route by hand (seam 5), approved by `w5-operator` |
+| `tickets.children_0..2` | Three ticket runs, two at a time, each in its own sandbox pods: baseline, plan validated against the epic's, spec approved by `w5-operator`, implement on `haiku`, tests in CI, five reviewers on `sonnet` (role_mapping, read from each session's start), satisfaction, PR into the epic branch, checks, catch-up, **engine squash merge**, Jira to Done. Each handed over once or twice (`continued_as_new`) |
+| Ticket FWFEED-116 | After catching up with FWFEED-117's merge, the retest failed in CI: both tickets had declared `public static class WidgetQueries` (CS0101). The repair step renamed its class (`ebee5e9`), the tests passed (14), the five reviewers re-reviewed, and it merged |
+| Ticket FWFEED-118 | Its implementer asked through `ask_human` which of the design's class name and the ticket's own-file rule to keep; `w5-operator` answered "a new file with its own class" through `ff run answer` |
+| hand-over | The epic handed over once (at 224 events, after its children ended) |
+| `verify` | Tests at the epic head `26e803b`: unit 17 passed, integration 1 passed; five reviewers, 3 new findings and 1 re-raised, none blocking |
+| `trace` | `requirement_trace` valid |
+| `deliver` | PR #197; checks passed; **merge commit `020295e`** into `ff/m8-live/epic-base`, by Feature Flow; Jira moved FWFEED-115 to Done |
+
+Checked afterwards, outside the engine:
+
+- GitHub: `020295e` has parents `d033998` (the base) and `26e803b` (the epic head), author Feature Flow, trailer
+  `Feature-Flow-Merge: run-85af56149b09/deliver.merge`. Below it, three single-parent squash commits, one per ticket.
+  The change against `main` is exactly three new source and three new test files. `main` stayed `d033998`. PRs #194
+  to #196 closed with their squash commits, #197 merged.
+- Jira: FWFEED-115 to 118 Done, each moved by the tracker (tickets through In Progress and In Review).
+- Temporal (port-forwarded): the tree's nine histories (four workflows and five hand-overs) hold 1,004 payloads, every
+  one `binary/encrypted`; no ticket key, ticket name or branch name appears in them as text.
+- Postgres: the tree's 4 run records, 757 timeline rows, 81 artifact records, 10 answer records and 8 findings. MinIO:
+  407 objects.
+
+### Done-when 2: every test type of docs/09 section 4.2 runs in CI
+
+Read from the logs of CI run 41982380701 on this PR (`148edbb`), which list every test (seam 3): default job 1,388
+passed, integration 169, cluster 21; none failed or skipped.
+
+| Type | Job: tests (count in that run) |
+|---|---|
+| Validation | Default: `StdLibraryTests` 20, `MutationTests` 37, `RunStartCheckTests` 17, `EffectivePolicyTests` 4 |
+| Re-drive | Default: `WorkflowTestRunnerTests` 37 (std's workflow test files) |
+| Readable form | Default: `ReadableFormTests` 4 |
+| Replay | Default: `ReplayTests` 35 |
+| Failure injection | Integration: worker crash `AgentResumeTests` 2; lost sandbox and hook endpoint unreachable `AgentBoundaryTests` 10; Temporal unavailable `TemporalOutageTests` 1 (new); continue-as-new with children and open decisions `ContinueAsNewTests` 1, `EpicRunTests` 1; `StepFailureTests` 1. Default: stale patch `PatchTests` 18; hook endpoint unreachable `SandboxClientTests` 14 |
+| Run-time rules | Default: `Engine.Tests` 278. Integration: `PolicyRunTests` 4, `StepStartCheckTests` 3 |
+| Provider contracts | Default: `Providers.Contracts.Tests` 72 and each provider's own. Integration: Postgres (record store 12, ledger 5, steering 4), S3 7, Docker sandbox 14. Cluster: Kubernetes sandbox 14 |
+| Merge race | Integration: `MergeRaceTests` 4, `EngineMergeRaceTests` 5 |
+| Agent reporting | Integration: `AgentContractTests` 5 (`report`, `ask_human`), `AgentResumeTests` (`ask_human` across a worker restart), `AgentBoundaryTests` (`checkpoint`). `propose_patch` is not an agent tool in version 1 (M4 deviation 5, LOG 264): a step's proposed patch is tested in default (`PatchTests`) and an agent's proposal through a run in integration (`SteeringRunTests`) |
+| Pre-submit parity | Integration: `SessionRunTests` 6 |
+| The deployment | Cluster: `DeploymentTests` 6, `ClusterRunTests` 1. Integration: `HostProcessTests` 3 |
+
+### Tests run
+
+On `m8-integration` at the end (Debug, `-m:4`, Temporal :8633, Docker): default suite **1,389 passed**, 0 failed (24
+projects; replay 35); integration **170 passed**, 0 failed (Integration 117, Postgres 26, S3 12, Docker 15). Cluster
+suite on `ff-w5` before the live run: 21 passed; the Kubernetes sandbox contract again after seam 4: 15 passed. Build: 0
+warnings. CI on the pull request: green on every push since the runner fault, with the Cluster job.
+
+### Deviations
+
+- The live installation, its secrets and the CA bundle are outside the repository (LOG 266). The bundle was added to
+  the three deployments with `kubectl patch`, as `deploy/README.md` now describes.
+- The API used the local token (coordinator's decision): `w5-operator`'s approvals and answer are the authenticated
+  person's, recorded as such. No notifications were configured, so the agent's question was found by looking.
+- The agent worker restarted twice during the run (the CA bundle, then the image with these fixes after the run had
+  completed); the design step re-attached its sandbox and went on.
+
+### Clean-up
+
+Deleted on the fixture after the run: the branches `ff/m8-live/epic-base` (`020295e`), `ff/epic/widget_queries`
+(`26e803b`), the three `ff/ticket/*`, and four `refs/feature-flow/wip/*` references the run left. The fixture has only
+`main` (`d033998`) and no open pull request. FWFEED-115 to 118 are Done (closed). The k3d cluster `ff-w5` is deleted.
+
+### Follow-ups
+
+| # | Follow-up |
+|---|---|
+| 1 | A model the agent worker cannot reach shows nowhere in the run: each session ends "model unreachable" (resumable, no activity failure), so the stuck-run check sees nothing and the timeline shows only "design started" for as long as it lasts. A timeline event when a session ends unreachable would show it |
+| 2 | A host whose Temporal worker task faults keeps running without it (`Composition.Run` does not watch the task), so a pod stays alive polling nothing. The host could exit and let Kubernetes restart it |
+| 3 | `GET /runs/{id}/findings` checks only that the caller is authenticated, not that it may see the run, as the run view and the artifact read do |
+| 4 | A completed run leaves its work branches and `refs/feature-flow/wip/*` references on the code host (deleted by hand, as in M6) |
+| 5 | `up.sh` does not check that `k3d image import` succeeded (the failed CI run printed an error and went on) |
+
+## Consolidated follow-ups
+
+"From" names the follow-ups table of a section of this note and its row: Foundations, Stores, Packaging, Operations,
+Agents, Integration; M7 is `m7-results.md`'s consolidated follow-ups. Closed during M8 and not listed: Foundations 1 to
+4 (the sandbox contract, the provider decorator, one library resolver, the artifact index's order), Stores 5 and
+Operations 5 (the notifier's budget flake), Operations 6 (the codec key's reference checked at startup), and M7's 1 (the
+sandbox's network, proven on the cluster), 2 (each organisation key decided, LOG 267 to 270), 4 (startup resolves every
+secret reference), 14's `stalled` and `stuck`, 18 (`teams.<name>.repositories` in docs/07) and 21's "detached hosts
+ignore SIGTERM" (LOG 312). Dropped by the product owner (LOG 264): M7's 3, 6, 7 and 9.
+
+| # | Follow-up | From |
+|---|---|---|
+| 1 | Temporal Cloud cannot be configured: the installation reads no `temporal.tls`, `temporal.auth` or `expected_retention` | Stores 4, Packaging 2 |
+| 2 | A host exits when Temporal or a store is unreachable at startup (four restarts on a fresh k3d cluster); it could retry. And a host whose worker task faults keeps running without it | Packaging 1, Integration 2 |
+| 3 | No image is published; `cgr.dev/chainguard/minio:latest` is not pinned; `up.sh` does not check that its images imported | Packaging 3, 4, Integration 5 |
+| 4 | The payload codec has no key id, so its key cannot be rotated without losing old histories | Stores 2 |
+| 5 | Reconcile rebuilds only run records, not waits and timelines | Stores 3 |
+| 6 | A private `git` library is cloned with the host's own Git credentials, not the broker | Stores 1 |
+| 7 | Store design notes from review R1: duplicated appends on a lost commit acknowledgement; the lock does not pin a library's commit; symlinks in a library clone; S3 reads are not checked against their hash | Stores, R1 notes |
+| 8 | Metrics and logs export (docs/02 section 8 lists step duration, retries, tokens) | Operations 1 |
+| 9 | The GitHub Issues tracker reads only above the newest listed issue; give it Jira's gap read (LOG 302) | Operations 2 |
+| 10 | Reminders on open waits (an agent's question waited twelve minutes unseen in the live run, with no notifications configured) | Operations 3, M7 14 |
+| 11 | The console lists `stalled` and `stuck` under "Decisions"; the console's OIDC sign-in; the ledger and a triage in the console | Operations 4, M7 15 |
+| 12 | Several orchestration replicas each send their own `stalled`, `stuck` and `resumed` | Operations 7 |
+| 13 | A model the agent worker cannot reach shows nowhere in the run (no timeline event, not `stalled`) | Integration 1 |
+| 14 | One model proxy serves every runtime; a runtime on another upstream needs a proxy per runtime instance. The proxy records but does not pin each request's model | Agents 1, 6 |
+| 15 | Copilot CLI: the hook's `continue: false` with the engine unreachable is untested; the agent can add its own skills or agents to Copilot's sticky home; `CopilotCliRuntime` repeats part of `ClaudeCodeRuntime` | Agents 2 to 4 |
+| 16 | No sweeper removes sandbox pods or containers whose run has closed | Agents 5 |
+| 17 | `GET /runs/{id}/findings` does not check that the caller may see the run | Integration 3 |
+| 18 | A completed run leaves its work branches and `refs/feature-flow/wip/*` on the code host; a run's clean-up could also delete its session branches | Integration 4, M7 12 |
+| 19 | `merge.require_checks` locked on refuses only a literal `false` at run start | M7 5 |
+| 20 | F1 at patch time: a patch adding an engine merge into a default branch is caught only at merge time | M7 8 |
+| 21 | Role checks on containers' inner agent steps; protected branches of a parallel; a twice-sent library override records twice | M7 10 |
+| 22 | Pre-submit checks of agent steps | M7 11 |
+| 23 | A load check refusing `checks_from` naming a step other than `artifact.validate`; checks capped and cancelled at run end; a test of the `submitting` guard; a gentler re-open of a session that failed to open | M7 13 |
+| 24 | A woken run is chosen among the 200 most recently updated runs; a Slack message updated when answered | M7 16 |
+| 25 | A decline from a triage with `post_declines: false` is still posted when the pull request later opens | M7 17 |
+| 26 | A plan's `artifact.import` stops for a person on a type error; type-check the artifacts on a person's decision answer | M7 19, 20 |
+| 27 | Still open from M6: `verification_satisfaction` and the trace checks; the work-item budget's overshoot; `EpicRunTests`' per-child durations; a live hand-over during a CI wait; the Copilot findings source unseen; M5 follow-ups 3 and 7; watch activities per run; parent counts lag a child's; `wait.condition` on a tracker issue | M7 21 |
