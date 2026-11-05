@@ -98,7 +98,7 @@ public sealed class ObservabilityTests : IDisposable
         var tracker = Decorated(_ => never.Task, TimeSpan.FromMilliseconds(100));
         var clock = Stopwatch.StartNew();
 
-        var result = await tracker.GetIssueAsync(new IssueRef("A-1"), Ct);
+        var result = await tracker.GetIssueAsync(new IssueRef("A-1"), Ct).WaitAsync(TimeSpan.FromSeconds(10), Ct);
 
         Assert.Equal((ProviderErrorClass.Infrastructure, "timeout"), (result.Error!.Class, result.Error.Reason));
         Assert.True(clock.Elapsed < TimeSpan.FromSeconds(10), $"took {clock.Elapsed}");
@@ -115,12 +115,12 @@ public sealed class ObservabilityTests : IDisposable
             return ProviderResult<Issue>.Success(Found);
         }, TimeSpan.FromMilliseconds(100));
 
-        Assert.Equal("timeout", (await tracker.GetIssueAsync(new IssueRef("A-1"), Ct)).Error!.Reason);
+        Assert.Equal("timeout", (await tracker.GetIssueAsync(new IssueRef("A-1"), Ct).WaitAsync(TimeSpan.FromSeconds(10), Ct)).Error!.Reason);
         Assert.True(given.IsCancellationRequested);
     }
 
     [Fact]
-    public async Task An_exception_is_internal_error_and_a_provider_exception_keeps_its_error()
+    public async Task An_exception_is_recorded_on_the_span_and_re_thrown_and_a_provider_exception_keeps_its_error()
     {
         var thrown = Decorated(_ => throw new InvalidOperationException("a bug"));
         var asyncThrown = Decorated(async _ =>
@@ -130,14 +130,14 @@ public sealed class ObservabilityTests : IDisposable
         });
         var unwrapped = Decorated(_ => throw new ProviderException(new ProviderError("not_found", "no such issue")));
 
-        var first = (await thrown.GetIssueAsync(new IssueRef("A-1"), Ct)).Error!;
-        var second = (await asyncThrown.GetIssueAsync(new IssueRef("A-1"), Ct)).Error!;
-        var third = (await unwrapped.GetIssueAsync(new IssueRef("A-1"), Ct)).Error!;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => thrown.GetIssueAsync(new IssueRef("A-1"), Ct));
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => asyncThrown.GetIssueAsync(new IssueRef("A-1"), Ct));
+        Assert.Equal("not_found", (await unwrapped.GetIssueAsync(new IssueRef("A-1"), Ct)).Error!.Reason);
 
-        Assert.Equal(("internal_error", ProviderErrorClass.Infrastructure), (first.Reason, first.Class));
-        Assert.Contains("tracker.GetIssue threw InvalidOperationException: a bug", first.Message);
-        Assert.Equal("internal_error", second.Reason);
-        Assert.Equal("not_found", third.Reason);
+        var failed = spans.Where(s => s.GetTagItem("error.type") is not null).ToList();
+        Assert.Equal(new[] { typeof(InvalidOperationException).FullName, typeof(KeyNotFoundException).FullName }.Order(), failed.Select(s => (string?)s.GetTagItem("error.type")).Order());
+        Assert.All(failed, s => Assert.Equal(ActivityStatusCode.Error, s.Status));
+        Assert.Contains(failed, s => s.StatusDescription!.Contains("tracker.GetIssue threw InvalidOperationException: a bug", StringComparison.Ordinal));
     }
 
     [Fact]

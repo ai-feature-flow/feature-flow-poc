@@ -109,7 +109,9 @@ defaults:                        # engine defaults for limits; not floors
 | `temporal.continue_as_new_events` | LOG 87: the history length at which a run hands over (`docs/02` section 3); default 5,120, at least 100 |
 | `api.auth` | `local_token` (`token_ref`, `actor`, `roles`) or `oidc` (`issuer`, `audience`, `role_claim`, default `groups`, and `actor_claim`, default `sub`); with `oidc`, a `token_ref` keeps the local token working beside it. The actor `policy` is reserved for automatic answers (LOG 220, 222) |
 
-Scaling (replica counts) is deployment configuration, not engine configuration.
+Scaling (replica counts) is deployment configuration, not engine configuration. Each orchestration worker runs the stuck-run
+check (`docs/02` section 8): with more than one replica, a `stalled`, `stuck` or `resumed` message may be sent once per
+replica; one orchestration replica avoids that (LOG 307).
 
 ---
 

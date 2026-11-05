@@ -58,9 +58,9 @@ every secret reference (M7 follow-up 4), built on `m8-operations` (W3).
 | Area | Change |
 |---|---|
 | Jira tracker | `tracker` kind `jira` over Jira Cloud's REST API v3 (`FeatureFlow.Providers.Jira`): `status_map` to Jira status names, transitions chosen by the status they lead to, parents (a subtask under a non-epic), typed links, plain-text descriptions and comments, idempotency by a hashed key label (issues) and a hidden comment property (comments). The secret holds `<account email>:<API token>`. A search reads the issues Jira's index has not caught up with (LOG 301, 302) |
-| Provider decorator | Composition wraps every provider instance in one generic proxy that keeps all its interfaces: a span per call, its type's timeout, and classification (`timeout`; an exception is `internal_error`) (LOG 303, 304). Closes Foundations follow-up 2 |
+| Provider decorator | Composition wraps every provider instance in one generic proxy that keeps all its interfaces: a span per call, its type's timeout, and classification (`timeout`; a `ProviderException` keeps its error; any other exception is recorded on the span and re-thrown, so an action still stops for a person) (LOG 303, 304). Closes Foundations follow-up 2 |
 | Tracing | `observability.otlp_endpoint` is read, no longer refused, and traces are exported there with OTLP over gRPC. Temporal's tracing interceptor is on every client and worker with W3C propagation set explicitly: a run is one trace from the API's start through its activities, each provider call inside its activity (LOG 305) |
-| Stuck runs | A check beside each orchestration worker, every minute (fixed timings, LOG 270): runs without timeline progress for 15 minutes are looked up in Temporal; an activity failing with infrastructure errors is `stalled`, and after 30 minutes nothing alive with nobody awaited is `stuck`. Each shows as an open wait of that kind, notified once through `RunNotifier`, closed with `resumed` when the run moves or ends. It never changes a run (LOG 306, 307). M7 follow-up 14's `stalled` and `stuck` |
+| Stuck runs | A check beside each orchestration worker, every minute (fixed timings, LOG 270): runs without timeline progress for 15 minutes are looked up in Temporal; an activity failing with infrastructure errors is `stalled`, and after 30 minutes nothing alive with nobody awaited is `stuck`. Each shows as an open wait of that kind, notified through `RunNotifier`, closed with `resumed` only when the run moves or ends. It never changes a run; one run's fault does not stop a pass (LOG 306, 307). M7 follow-up 14's `stalled` and `stuck` |
 | Secret references | Every host resolves `api.auth.token_ref`, `agent_worker.token_key_ref` and every provider setting ending in `_ref` before it connects to Temporal, and stops naming each key and reference that does not resolve or is empty, never a value (LOG 308). M7 follow-up 4 |
 
 **Checks**
@@ -102,3 +102,19 @@ provider type, not per call (LOG 304).
 | 4 | The console lists `stalled` and `stuck` under "Decisions" (with no controls); a heading for positions would read better |
 | 5 | M7's `RunNotifierTests` hanging-chat budget test failed twice (calls outside 1 to 3) in its project's runs at load average 19, and passed in the 21 runs after; on `m8` it passed 6 of 6. It times a 1.2 s budget by the wall clock, so CPU starvation can starve its first send; whether this branch's extra test classes add to it was not settled |
 | 6 | When the payload codec (W1) lands, its `key_ref` joins `StartupChecks.SecretReferences` if it is not a provider setting |
+| 7 | With several orchestration replicas, each runs the stuck-run check and may send its own `stalled`, `stuck` or `resumed` for the same stretch (R3 F2). A single runner, such as a fixed-id workflow, if duplicates matter |
+
+**Fix round (review R3)**
+
+| Finding | Fix | Test | Mutation that fails it |
+|---|---|---|---|
+| F1: the decorator made a provider's exception `internal_error`, retried for ever, where M5 stops for a person | The decorator records the exception on the span and re-throws; a `ProviderException` keeps its error (docs/06 s1, LOG 303) | `TestingActionTests`: the unexpected-exception and network-fault tests also run with every provider decorated, as composition does (`ActionWorld(decorated: true)`); `ObservabilityTests` checks the re-throw and the span | Re-throw replaced by `internal_error`: the decorated unexpected-exception case fails, the undecorated one passes |
+| F2: several orchestration replicas each send `stalled`/`stuck`/`resumed` | No singleton or lock (coordinator: R3's option b). LOG 307 says each replica may send its own message; docs/07 says one replica avoids it; follow-up 7 | None (a documented limit) | None |
+| F3: a check that missed the cause closed the wait with a false `resumed`, and it never reopened | A wait closes only when the run has moved (its last timeline sequence changed) or ended | `StuckRunsRecordTests` (record store and notifications real, Temporal's answer scripted): a missed check leaves the wait open and posts nothing | Close also when nothing is found: the test fails |
+| F4: one run's error stopped the pass | Caught and logged per run | `StuckRunsRecordTests`: a run whose look-up throws, listed first, does not stop the next | No per-run catch: the test fails |
+| R3 M21: already in the status, untested | Test added | `An_issue_already_in_the_status_is_left_as_it_is` (no transitions call) | Skip removed: fails |
+| R3 M22: the "not mapped" refusal, untested | Test added | `A_status_the_map_does_not_name_is_refused_before_Jira_is_asked` | Unmapped passed through as a Jira name: fails |
+| R3 M23: transition by name passed | The fake's transitions are named "Move to X", unlike their statuses | `A_transition_is_chosen_by_the_status_it_leads_to` | Chosen by name only: fails |
+| R3 M24: one wait per stretch, untested | Test added | `StuckRunsRecordTests`: once the run moves, the old wait closes and the new stretch opens `stalled-2` | Id without its stretch: three tests fail |
+| R3 M1: the timeout test hung rather than failed | The two timeout tests bound the call to 10 s | Same tests | `WaitAsync` removed: they fail in 10 s |
+| R3 note: VCS timeout per call, git's per command | One line in LOG 304 | None | None |

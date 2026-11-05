@@ -1,4 +1,7 @@
+using FeatureFlow.Model;
 using FeatureFlow.Providers.Abstractions;
+using FeatureFlow.Providers.Local;
+using Microsoft.Extensions.Logging.Abstractions;
 using Google.Protobuf.WellKnownTypes;
 using Temporalio.Api.Enums.V1;
 using Temporalio.Api.Failure.V1;
@@ -90,5 +93,131 @@ public sealed class StuckRunsTests
     {
         Assert.Null(Classify(TimeSpan.FromMinutes(20), activities: Activity("RunAgentStep", PendingActivityState.Scheduled)));
         Assert.Null(Classify(TimeSpan.FromMinutes(20), task: new PendingWorkflowTaskInfo { Attempt = 3 }));
+    }
+}
+
+/// <summary>
+/// The check's record-store side (LOG 307): which waits it opens and closes, and what it sends, with Temporal's answer
+/// scripted. A wait closes only when the run has moved or ended; one run's fault does not stop the pass.
+/// </summary>
+public sealed class StuckRunsRecordTests : IDisposable
+{
+    static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    readonly string folder = Path.Combine(Path.GetTempPath(), "ff-stuck-" + Guid.NewGuid().ToString("N"));
+    readonly SqliteRecordStore records;
+    readonly InMemoryNotifications chat = new();
+    readonly Dictionary<string, StuckFinding?> findings = [];
+    readonly DateTimeOffset start = DateTimeOffset.UtcNow.AddHours(-1);
+
+    public StuckRunsRecordTests()
+    {
+        Directory.CreateDirectory(folder);
+        records = new SqliteRecordStore(Path.Combine(folder, "records.db"));
+    }
+
+    public void Dispose() => Directory.Delete(folder, recursive: true);
+
+    StuckRuns Check()
+    {
+        var providers = new ProviderSet(
+            new Dictionary<string, IReadOnlyDictionary<string, IProvider>>
+            {
+                ["record_store"] = new Dictionary<string, IProvider> { ["sqlite"] = records },
+                ["notifications"] = new Dictionary<string, IProvider> { ["chat"] = chat },
+            },
+            new Dictionary<string, string> { ["record_store"] = "sqlite", ["notifications"] = "chat" },
+            new Dictionary<string, string>());
+        var installation = new InstallationConfig("localhost:7233", "default", "q", 5120, new Dictionary<string, ProviderTypeConfig>(),
+            new ApiAuthConfig("local_token", null, "someone", []), 3, 10, Path.Combine(folder, "installation.yaml"));
+        string[] events = [NotificationEvents.Stalled, NotificationEvents.Stuck, NotificationEvents.Resumed];
+        var organisation = new OrganisationConfig("t", [], new PolicyConfig([], null, null, null, null), Path.Combine(folder, "organisation.yaml"))
+        {
+            Notifications = new NotificationsConfig(events.ToDictionary(e => e, _ => new NotificationRoute("#ff")), events),
+        };
+        return new StuckRuns(new EngineServices(providers, installation, organisation), null, NullLogger.Instance,
+            new StuckRunTimings(TimeSpan.Zero, TimeSpan.Zero, TimeSpan.FromMinutes(1)),
+            (run, _, _, _) => findings.TryGetValue(run, out var f) ? Task.FromResult(f) : throw new InvalidOperationException($"Temporal refused {run}"));
+    }
+
+    async Task RecordAsync(RecordBatch batch) => (await records.AppendAsync(batch, Ct)).Unwrap();
+
+    Task StartAsync(string run) => RecordAsync(new RecordBatch(
+        [new RunRecord(run, null, "std:templates/ticket_delivery", "running", "pat", [], false, start, null)],
+        Timeline: [new TimelineRecord(run, 1, "started", "baseline.tests", null, start)]));
+
+    Task MoveAsync(string run, long sequence) => RecordAsync(new RecordBatch(Timeline: [new TimelineRecord(run, sequence, "started", "plan", null, DateTimeOffset.UtcNow)]));
+
+    async Task<List<string>> OpenAsync(string run) =>
+        (await records.QueryAsync<WaitRecord>(Queries.Waits, new Dictionary<string, string> { ["run_id"] = run, ["open"] = "true" }, Ct)).Unwrap()
+        .Select(w => w.WaitId).ToList();
+
+    List<string> Posted() => chat.Messages("#ff").SelectMany(m => chat.Messages("#ff", m.Ref).Prepend(m)).Select(m => m.Text.Split(']')[0] + "]").ToList();
+
+    static StuckFinding Stalled => new(NotificationEvents.Stalled, "the tracker is unreachable");
+
+    [Fact]
+    public async Task A_check_that_does_not_see_the_cause_leaves_the_wait_open_and_sends_nothing()
+    {
+        await StartAsync("r1");
+        findings["r1"] = Stalled;
+        await Check().CheckAsync(Ct);
+
+        // A heartbeating retry between failures: Classify finds nothing, but the run has not moved.
+        findings["r1"] = null;
+        await Check().CheckAsync(Ct);
+        findings["r1"] = Stalled;
+        await Check().CheckAsync(Ct);
+
+        Assert.Equal(["stalled-1"], await OpenAsync("r1"));
+        Assert.Equal(["[stalled]"], Posted());
+    }
+
+    [Fact]
+    public async Task Once_the_run_moves_its_wait_closes_and_a_new_stretch_opens_its_own()
+    {
+        await StartAsync("r1");
+        findings["r1"] = Stalled;
+        await Check().CheckAsync(Ct);
+
+        await MoveAsync("r1", 2);
+        await Check().CheckAsync(Ct);
+
+        Assert.Equal(["stalled-2"], await OpenAsync("r1"));
+        Assert.Equal(["[stalled]", "[resumed]", "[stalled]"], Posted());
+
+        await MoveAsync("r1", 3);
+        findings["r1"] = null;
+        await Check().CheckAsync(Ct);
+
+        Assert.Empty(await OpenAsync("r1"));
+        Assert.Equal(["[stalled]", "[resumed]", "[stalled]", "[resumed]"], Posted());
+    }
+
+    [Fact]
+    public async Task A_run_that_ended_has_its_wait_closed()
+    {
+        await StartAsync("r1");
+        findings["r1"] = new StuckFinding(NotificationEvents.Stuck, "nothing is in flight");
+        await Check().CheckAsync(Ct);
+        await RecordAsync(new RecordBatch([new RunRecord("r1", null, "std:templates/ticket_delivery", "aborted", "pat", [], false, DateTimeOffset.UtcNow, null)]));
+
+        await Check().CheckAsync(Ct);
+
+        Assert.Empty(await OpenAsync("r1"));
+        Assert.Equal(["[stuck]", "[resumed]"], Posted());
+    }
+
+    [Fact]
+    public async Task A_run_that_cannot_be_checked_does_not_stop_the_pass()
+    {
+        // "r-bad" is listed first (most recently updated) and has no scripted answer: the finder throws for it.
+        await StartAsync("r1");
+        await RecordAsync(new RecordBatch([new RunRecord("r-bad", null, "std:templates/ticket_delivery", "running", "pat", [], false, start.AddMinutes(1), null)]));
+        findings["r1"] = Stalled;
+
+        await Check().CheckAsync(Ct);
+
+        Assert.Equal(["stalled-1"], await OpenAsync("r1"));
     }
 }

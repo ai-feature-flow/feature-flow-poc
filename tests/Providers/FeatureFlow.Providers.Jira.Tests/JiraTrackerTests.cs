@@ -101,6 +101,33 @@ public sealed class JiraTrackerTests
     }
 
     [Fact]
+    public async Task An_issue_already_in_the_status_is_left_as_it_is()
+    {
+        var (jira, tracker) = await WithIssueAsync();
+        jira.Issue("ACME-1").Status = "In Progress";
+        var before = jira.Calls.Count;
+
+        Assert.True((await tracker.TransitionAsync(new IssueRef("ACME-1"), "in_progress", Ct)).Ok);
+
+        Assert.DoesNotContain(jira.Calls.Skip(before), c => c.Path.Contains("/transitions", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_status_the_map_does_not_name_is_refused_before_Jira_is_asked()
+    {
+        var (jira, tracker) = await WithIssueAsync();
+        var before = jira.Calls.Count;
+
+        // "Done" is a Jira status the workflow offers, but the library's status name is what is mapped, and "Done" is not one.
+        var refused = await tracker.TransitionAsync(new IssueRef("ACME-1"), "Done", Ct);
+
+        Assert.Equal("validation_failed", refused.Error!.Reason);
+        Assert.Contains("status 'Done' is not mapped", refused.Error.Message);
+        Assert.Equal(before, jira.Calls.Count);
+        Assert.Equal("To Do", jira.Issue("ACME-1").Status);
+    }
+
+    [Fact]
     public async Task A_transition_is_chosen_by_the_status_it_leads_to()
     {
         var (jira, tracker) = await WithIssueAsync();

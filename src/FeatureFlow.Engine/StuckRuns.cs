@@ -26,10 +26,14 @@ public sealed record StuckFinding(string Kind, string Reason);
 /// each says why. A run whose activity keeps failing with an infrastructure error is <c>stalled</c>: a provider is
 /// unreachable, and the run waits rather than failing (P5). A run with nothing in flight, nobody awaited and a workflow
 /// task failing or an activity no worker takes is <c>stuck</c>. Each shows as an open wait of that kind on the run, its
-/// notification sent once; the wait closes, sending <c>resumed</c>, when the run moves again or ends. A kind opens at most
-/// once per stretch without progress, so a check that sees an activity between attempts does not post again.
+/// notification sent when it opens; the wait closes, sending <c>resumed</c>, only when the run moves again (a new timeline
+/// entry) or ends. At most one wait opens per stretch without progress, so a check that sees an activity between attempts
+/// neither closes it nor posts again. Each orchestration replica runs its own check: with several, each may post its own
+/// message for the same stretch (LOG 307).
 /// </summary>
-public sealed class StuckRuns(EngineServices services, ITemporalClient client, ILogger logger, StuckRunTimings? timings = null)
+/// <para><paramref name="find"/> replaces the look-up in Temporal (tests of the record-store side).</para>
+public sealed class StuckRuns(EngineServices services, ITemporalClient? client, ILogger logger, StuckRunTimings? timings = null,
+    Func<string, bool, TimeSpan, CancellationToken, Task<StuckFinding?>>? find = null)
 {
     readonly StuckRunTimings t = timings ?? StuckRunTimings.Default;
 
@@ -62,7 +66,17 @@ public sealed class StuckRuns(EngineServices services, ITemporalClient client, I
         var now = DateTimeOffset.UtcNow;
         var runs = (await Records.QueryAsync<RunRecord>(Queries.Runs, new Dictionary<string, string>(), cancellationToken)).Unwrap();
         foreach (var run in runs.Where(r => Active(r) || now - r.UpdatedAt < TimeSpan.FromDays(1)))
-            await CheckRunAsync(run, now, cancellationToken);
+        {
+            // One run's fault (a record it cannot read, a description Temporal refuses) must not hide the runs after it.
+            try
+            {
+                await CheckRunAsync(run, now, cancellationToken);
+            }
+            catch (Exception e) when (e is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                logger.LogWarning(e, "stuck runs: {RunId} could not be checked; the pass goes on", run.RunId);
+            }
+        }
     }
 
     static bool Active(RunRecord run) => run.Status is "starting" or "running";
@@ -80,17 +94,18 @@ public sealed class StuckRuns(EngineServices services, ITemporalClient client, I
         var last = timeline.LastOrDefault();
         var progress = last is null || last.At < run.UpdatedAt ? run.UpdatedAt : last.At;
         var finding = Active(run) && now - progress >= t.StalledAfter
-            ? await FindAsync(run.RunId, waits.Any(w => w.Open && !Ours(w)), now - progress, ct)
+            ? await (find ?? FindAsync)(run.RunId, waits.Any(w => w.Open && !Ours(w)), now - progress, ct)
             : null;
 
+        // A wait belongs to a stretch without progress, named by the run's last timeline entry. It closes only when the run
+        // has moved (a new entry) or ended, never because one check did not see the cause: a heartbeating retry between
+        // failures must not send a false "resumed" (LOG 307). At most one wait per stretch, and none reopens.
+        var stretch = (last?.Sequence ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture);
         var batch = new List<WaitRecord>();
-        // One wait per kind and stretch without progress, named by the last timeline entry: seeing the run again opens nothing
-        // new, and a wait from an earlier stretch closes because the run has moved since.
-        var id = $"{finding?.Kind}-{last?.Sequence ?? 0}";
-        foreach (var wait in opened.Where(w => w.Kind != finding?.Kind || w.WaitId != id))
+        foreach (var wait in opened.Where(w => !Active(run) || StretchOf(w.WaitId) != stretch))
             batch.Add(wait with { Open = false, UpdatedAt = now });
-        if (finding is not null && waits.All(w => w.WaitId != id))
-            batch.Add(new WaitRecord(run.RunId, id, finding.Kind, "", finding.Kind, finding.Reason, [], true, now));
+        if (finding is not null && waits.All(w => !(Ours(w) && StretchOf(w.WaitId) == stretch)))
+            batch.Add(new WaitRecord(run.RunId, $"{finding.Kind}-{stretch}", finding.Kind, "", finding.Kind, finding.Reason, [], true, now));
         if (batch.Count == 0)
             return;
         var records = new RecordBatch(Waits: batch);
@@ -100,13 +115,16 @@ public sealed class StuckRuns(EngineServices services, ITemporalClient client, I
         await new RunNotifier(services, logger).NotifyAsync(records, ct);
     }
 
+    static string StretchOf(string waitId) => waitId[(waitId.LastIndexOf('-') + 1)..];
+
     async Task<StuckFinding?> FindAsync(string runId, bool personAwaited, TimeSpan quiet, CancellationToken ct)
     {
         DescribeWorkflowExecutionResponse description;
         try
         {
-            description = await client.WorkflowService.DescribeWorkflowExecutionAsync(
-                new DescribeWorkflowExecutionRequest { Namespace = client.Options.Namespace, Execution = new Temporalio.Api.Common.V1.WorkflowExecution { WorkflowId = runId } },
+            var temporal = client ?? throw new InvalidOperationException("stuck-run detection needs a Temporal client");
+            description = await temporal.WorkflowService.DescribeWorkflowExecutionAsync(
+                new DescribeWorkflowExecutionRequest { Namespace = temporal.Options.Namespace, Execution = new Temporalio.Api.Common.V1.WorkflowExecution { WorkflowId = runId } },
                 new() { CancellationToken = ct });
         }
         catch (RpcException e) when (e.Code == RpcException.StatusCode.NotFound)

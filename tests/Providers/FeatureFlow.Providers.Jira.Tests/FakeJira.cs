@@ -7,7 +7,7 @@ namespace FeatureFlow.Providers.Jira.Tests;
 
 /// <summary>
 /// Jira Cloud's REST API v3 in memory, for the parts the tracker uses: issues, JQL search, transitions, issue links and
-/// comments with properties. Its workflow lets any status move to any other. The search index lags: the
+/// comments with properties. Its workflow lets any status move to any other, by transitions named unlike their statuses. The search index lags: the
 /// <see cref="Unlisted"/> newest issues are left out of every JQL result, as Jira's index lags a create. A request without
 /// the basic credential <see cref="Credential"/> is refused with 401; <see cref="Answer"/> overrides a route.
 /// </summary>
@@ -100,7 +100,7 @@ public sealed partial class FakeJira : HttpMessageHandler
                     ("GET", "/transitions") => Json(200, new JsonObject
                     {
                         ["transitions"] = new JsonArray(Statuses.Where(s => s != issue.Status).Select((s, n) => (JsonNode)new JsonObject
-                            { ["id"] = (n + 11).ToString(System.Globalization.CultureInfo.InvariantCulture), ["name"] = s, ["to"] = new JsonObject { ["name"] = s } }).ToArray()),
+                            { ["id"] = (n + 11).ToString(System.Globalization.CultureInfo.InvariantCulture), ["name"] = "Move to " + s, ["to"] = new JsonObject { ["name"] = s } }).ToArray()),
                     }),
                     ("POST", "/transitions") => Transition(issue, json!),
                     ("GET", "/comment") => Comments(issue, query),

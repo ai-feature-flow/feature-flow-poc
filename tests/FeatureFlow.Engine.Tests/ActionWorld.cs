@@ -1,3 +1,4 @@
+using FeatureFlow.Hosting;
 using System.Text;
 using FeatureFlow.Engine.ActionSteps;
 using FeatureFlow.Model;
@@ -44,7 +45,7 @@ public sealed class ActionWorld : IAsyncDisposable
     readonly Dictionary<string, int> executions = new(StringComparer.Ordinal);
 
     public ActionWorld(IReadOnlyDictionary<string, string>? files = null, bool sandbox = true, bool ci = true, bool throwingCodeHost = false, Func<Exception>? codeHostThrows = null,
-        Func<ICodeHostProvider, ICodeHostProvider>? codeHost = null, Func<Func<IArtifactStoreProvider>, IFindingsSourceProvider>? findingsSource = null)
+        Func<ICodeHostProvider, ICodeHostProvider>? codeHost = null, Func<Func<IArtifactStoreProvider>, IFindingsSourceProvider>? findingsSource = null, bool decorated = false)
     {
         Directory.CreateDirectory(folder);
         Repo = Forge.CreateRepository("acme/api", files ?? new Dictionary<string, string> { ["README.md"] = "# api\n" });
@@ -67,6 +68,10 @@ public sealed class ActionWorld : IAsyncDisposable
             instances["sandbox"] = One(Sandbox);
         if (findingsSource is not null)
             instances["findings_source"] = One(findingsSource(() => Store));
+        // As composition wraps them in production (docs/02 section 8), when a test asks.
+        if (decorated)
+            foreach (var type in instances.Keys.ToList())
+                instances[type] = One(ProviderCalls.Decorate(type, "one", instances[type]["one"]));
         var providers = Providers = new ProviderSet(instances, instances.Keys.ToDictionary(k => k, _ => "one"), new Dictionary<string, string>());
         Actions = new EngineActions(providers, new ActionOptions(TimeSpan.FromMilliseconds(5), TimeSpan.FromMilliseconds(5), TimeSpan.FromSeconds(30)));
     }

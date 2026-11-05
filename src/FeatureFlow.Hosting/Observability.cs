@@ -15,9 +15,10 @@ namespace FeatureFlow.Hosting;
 /// The engine's provider decorator (docs/02 section 8, docs/06 section 1): every provider instance composition creates is
 /// wrapped, keeping every interface it implements, so each call that returns a <see cref="ProviderResult{T}"/> gets a span
 /// (<c>&lt;type&gt;.&lt;method&gt;</c>, tagged with the instance and, on failure, the error's reason and class), its type's
-/// default timeout (docs/06 section 1.2) and error classification: a call past its timeout is <c>timeout</c>, an exception
-/// is <c>internal_error</c> (a <see cref="ProviderException"/> keeps its error), both infrastructure. A cancellation the
-/// caller asked for still throws. Providers add attributes only.
+/// default timeout (docs/06 section 1.2) and error classification: a call past its timeout is <c>timeout</c>
+/// (infrastructure), and a <see cref="ProviderException"/> becomes its own error. Any other exception is recorded on the span
+/// and re-thrown, so the caller decides as before: an action stops for a person on a provider's bug (LOG 303). A
+/// cancellation the caller asked for still throws. Providers add attributes only.
 /// </summary>
 public static class ProviderCalls
 {
@@ -102,7 +103,7 @@ public static class ProviderCalls
             try
             {
                 if (thrown is not null)
-                    throw thrown;
+                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(thrown);
                 // WaitAsync as well as the token: a provider that ignores its token cannot hold the caller past the timeout.
                 result = await call!.WaitAsync(limit.Token);
             }
@@ -124,7 +125,14 @@ public static class ProviderCalls
             }
             catch (Exception e)
             {
-                result = ProviderResult<T>.Failure("internal_error", $"{what} threw {e.GetType().Name}: {e.Message}");
+                // Not reclassified (LOG 303): the caller decides, as it did before the decorator. An action stops for a
+                // person on a provider's bug and retries only network faults (docs/06 section 1).
+                activity?.SetTag("error.type", e.GetType().FullName);
+                activity?.AddException(e);
+                activity?.SetStatus(ActivityStatusCode.Error, $"{what} threw {e.GetType().Name}: {e.Message}");
+                activity?.Dispose();
+                limit.Dispose();
+                throw;
             }
 
             if (result.Error is { } error)
