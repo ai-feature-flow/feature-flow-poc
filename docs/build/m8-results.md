@@ -91,6 +91,7 @@ for Foundations follow-up 4 (the artifact index's order).
 | Reconcile | The list not scoped to the task queue; terminated read as `completed`; only missing records rebuilt; every record rewritten: the test fails each time |
 | `git` source | The `ref` ignored; the clone kept; startup ignoring the problem: the tag, temp and startup tests fail |
 | Index order | Without the fix, the injected delay fails `ChildRunTests` as W0 saw; the six old histories fail replay against the new workflow |
+| Test containers | A pull's progress on standard error mixed into the container id, with an image not yet pulled: all 24 Postgres tests fail, as they did on the PR's first CI run |
 
 **Deviations and judgement calls:** LOG 281 to 288.
 
