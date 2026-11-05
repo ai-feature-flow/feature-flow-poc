@@ -229,6 +229,7 @@ Version 1 is complete when M8 is done.
 |---|---|---|
 | Default | Nothing | Every pull request, required |
 | Integration | Temporal CLI dev server, Docker | Every pull request, required |
+| Cluster | A k3d cluster with the deployment (`deploy/k3d`), Docker | Every pull request, in its own job (LOG 316) |
 | Live | A model credential and the GitHub App's key | Locally at first. When CI may hold those secrets, in a separate CI workflow that is optional or scheduled, so a missing secret never fails a pull request (open question 2) |
 
 Development moves to a Windows machine soon. The Docker sandbox there uses

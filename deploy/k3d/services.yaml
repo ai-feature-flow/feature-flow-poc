@@ -1,0 +1,204 @@
+# The k3d profile's services, in the cluster (LOG 266): Temporal's dev server, Postgres and MinIO, each on its own
+# volume and reachable only from the three hosts. Their passwords are in the Secret feature-flow-infrastructure, which
+# up.sh generates. On a cloud cluster these are Temporal Cloud (or Temporal's Helm chart), RDS and S3 instead
+# (deploy/README.md).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: temporal
+  namespace: feature-flow
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 1Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal
+  namespace: feature-flow
+  labels: { app.kubernetes.io/name: temporal }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/name: temporal }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: temporal }
+    spec:
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: temporal
+          image: temporalio/temporal:1.10.0
+          args: [server, start-dev, --ip, 0.0.0.0, --headless, --db-filename, /data/temporal.db]
+          ports: [{ name: grpc, containerPort: 7233 }]
+          readinessProbe: { tcpSocket: { port: grpc }, periodSeconds: 5 }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: data, mountPath: /data }]
+      volumes:
+        - { name: data, persistentVolumeClaim: { claimName: temporal } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal
+  namespace: feature-flow
+spec:
+  selector: { app.kubernetes.io/name: temporal }
+  ports: [{ name: grpc, port: 7233, targetPort: grpc }]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres
+  namespace: feature-flow
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 1Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: feature-flow
+  labels: { app.kubernetes.io/name: postgres }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/name: postgres }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: postgres }
+    spec:
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, runAsUser: 70, fsGroup: 70, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          env:
+            - { name: POSTGRES_USER, value: feature_flow }
+            - { name: POSTGRES_DB, value: feature_flow }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: feature-flow-infrastructure, key: postgres-password } }
+          ports: [{ name: postgres, containerPort: 5432 }]
+          readinessProbe: { exec: { command: [pg_isready, -U, feature_flow] }, periodSeconds: 5 }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+            - { name: run, mountPath: /var/run/postgresql }
+      volumes:
+        - { name: data, persistentVolumeClaim: { claimName: postgres } }
+        - { name: run, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: feature-flow
+spec:
+  selector: { app.kubernetes.io/name: postgres }
+  ports: [{ name: postgres, port: 5432, targetPort: postgres }]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio
+  namespace: feature-flow
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 2Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: feature-flow
+  labels: { app.kubernetes.io/name: minio }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/name: minio }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: minio }
+    spec:
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, runAsUser: 65532, fsGroup: 65532, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: minio
+          image: cgr.dev/chainguard/minio:latest
+          args: [server, /data]
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom: { secretKeyRef: { name: feature-flow-infrastructure, key: minio-user } }
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom: { secretKeyRef: { name: feature-flow-infrastructure, key: minio-password } }
+          ports: [{ name: s3, containerPort: 9000 }]
+          readinessProbe: { httpGet: { path: /minio/health/ready, port: s3 }, periodSeconds: 5 }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: data, mountPath: /data }]
+      volumes:
+        - { name: data, persistentVolumeClaim: { claimName: minio } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: feature-flow
+spec:
+  selector: { app.kubernetes.io/name: minio }
+  ports: [{ name: s3, port: 9000, targetPort: s3 }]
+---
+# Creates the artifact bucket, feature-flow, once MinIO is ready; a bucket that exists is left as it is.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-bucket
+  namespace: feature-flow
+spec:
+  backoffLimit: 30
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: minio-bucket }
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, runAsUser: 100, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: bucket
+          image: curlimages/curl:8.17.0
+          command: [sh, -c]
+          args:
+            - >-
+              code=$(curl -s -o /dev/null -w '%{http_code}' --aws-sigv4 aws:amz:us-east-1:s3 --user "$USER:$PASSWORD"
+              -X PUT http://minio:9000/feature-flow) && echo "$code" && { [ "$code" = 200 ] || [ "$code" = 409 ]; }
+          env:
+            - name: USER
+              valueFrom: { secretKeyRef: { name: feature-flow-infrastructure, key: minio-user } }
+            - name: PASSWORD
+              valueFrom: { secretKeyRef: { name: feature-flow-infrastructure, key: minio-password } }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: services
+  namespace: feature-flow
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app.kubernetes.io/name, operator: In, values: [temporal, postgres, minio] }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { feature-flow/host: "true" }
+      ports: [{ port: 7233 }, { port: 5432 }, { port: 9000 }]
+    - from:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: minio-bucket }
+      ports: [{ port: 9000 }]

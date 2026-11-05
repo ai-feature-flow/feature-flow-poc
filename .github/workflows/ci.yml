@@ -1,5 +1,14 @@
-# Required on every pull request (docs/11 section 4.1). The live category, which needs a real
-# agent runtime and the GitHub App, is excluded here.
+# Runs on every pull request (docs/11 section 4.1): the default, integration and cluster categories. The live
+# category, which needs a real agent runtime and the GitHub App, is excluded here.
+#
+# Where each test type of docs/09 section 4.2 runs:
+#   validation, re-drive, readable form, replay      default (FeatureFlow.Validation.Tests, Testing.Workflows.Tests, Replay.Tests)
+#   run-time rules                                   default (Engine.Tests) and integration (PolicyRunTests, StepStartCheckTests)
+#   provider contracts                               default (in-process providers), integration (Docker, and Postgres and
+#                                                    MinIO in containers), cluster (the Kubernetes pod sandbox)
+#   failure injection, merge race, agent reporting,  integration (ContinueAsNewTests, AgentResumeTests, MergeRaceTests,
+#   pre-submit parity                                EngineMergeRaceTests, AgentContractTests, SessionRunTests)
+#   the deployment: images, network policies, stop  cluster (Cluster/DeploymentTests) and integration (HostProcessTests)
 name: CI
 
 on:
@@ -24,7 +33,7 @@ jobs:
         with:
           global-json-file: global.json
       - run: dotnet build FeatureFlow.slnx -c Release
-      - run: dotnet test FeatureFlow.slnx -c Release --no-build --filter "Category!=Integration&Category!=Live"
+      - run: dotnet test FeatureFlow.slnx -c Release --no-build --filter "Category!=Integration&Category!=Live&Category!=Cluster"
 
   integration:
     name: Integration tests
@@ -55,3 +64,31 @@ jobs:
         run: docker build -q -t feature-flow-sandbox:m4 -f src/Providers/FeatureFlow.Providers.Docker/sandbox.Dockerfile src/Providers/FeatureFlow.Providers.Docker
       - run: dotnet build FeatureFlow.slnx -c Release
       - run: dotnet test FeatureFlow.slnx -c Release --no-build --filter "Category=Integration"
+
+  cluster:
+    name: Cluster tests
+    runs-on: ubuntu-latest
+    env:
+      FF_K3D_CLUSTER: ff-ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Install k3d
+        run: curl -sSf https://raw.githubusercontent.com/k3d-io/k3d/v5.9.0/install.sh | TAG=v5.9.0 bash
+      # The k3d profile with the smoke configuration: Temporal, Postgres and MinIO in the cluster, the three host images
+      # built here, fake providers outside the cluster (deploy/README.md).
+      - name: Bring up the k3d deployment
+        run: |
+          echo "FF_KUBECONFIG=$RUNNER_TEMP/ff-ci.kubeconfig" >> "$GITHUB_ENV"
+          FF_KUBECONFIG="$RUNNER_TEMP/ff-ci.kubeconfig" deploy/k3d/up.sh deploy/k3d/smoke
+      - run: dotnet build FeatureFlow.slnx -c Release
+      - run: dotnet test FeatureFlow.slnx -c Release --no-build --filter "Category=Cluster"
+      - name: Show the cluster's state
+        if: failure()
+        run: |
+          kubectl --kubeconfig "$FF_KUBECONFIG" get pods -A
+          for d in api orchestration-worker agent-worker; do
+            kubectl --kubeconfig "$FF_KUBECONFIG" -n feature-flow logs "deployment/$d" --tail 100 || true
+          done

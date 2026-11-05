@@ -1,0 +1,8 @@
+api_version: feature-flow/v1
+kind: organisation
+name: trial
+libraries:
+  - { name: std, source: directory, path: /opt/feature-flow/library/std }
+policy:
+  approval:
+    - { match: "*", roles: [approver], auto: true }
