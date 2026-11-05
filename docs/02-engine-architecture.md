@@ -208,11 +208,11 @@ planned approach (`archive/docs/01` section 4.7).
 | Rule | Detail |
 |---|---|
 | Reads | The console and API read the record store, never Temporal queries |
-| Payloads | Never transcripts, diffs, code or secrets in workflow state; a pluggable payload codec for organisations that encrypt payloads |
+| Payloads | Never transcripts, diffs, code or secrets in workflow state; a pluggable payload codec for organisations that encrypt payloads (`aes_gcm`, LOG 284) |
 | Findings summary | Capped in state; over the cap, only blocking findings are kept in state and the rest referenced |
 | Git is not a store | Publishing artifacts to a repository for people to read is an action (`artifact.publish`) |
 | Tenancy | One organisation per installation; `org_id` in record store keys from the start |
-| Recovery | Database backups and object store versioning; a reconcile job rebuilds the run index from Temporal |
+| Recovery | Database backups and object store versioning; a reconcile job rebuilds the run index from Temporal (the hosts' `reconcile` command, run after a restore, LOG 285) |
 
 ---
 

@@ -8,6 +8,22 @@ public sealed class MemoryProviderTests
     static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
+    public async Task The_memory_store_keeps_the_newer_run_record_as_the_other_stores_do()
+    {
+        var store = new InMemoryRecordStore();
+        var at = new DateTimeOffset(2026, 11, 5, 0, 0, 0, TimeSpan.Zero);
+        RunRecord Run(string status, int minutes, string? detail = null) => new("r", null, "std:templates/t", status, "me", [], false, at.AddMinutes(minutes), detail);
+        async Task<RunRecord> ReadAsync() => Assert.Single((await store.QueryAsync<RunRecord>(Queries.Run, new Dictionary<string, string> { ["run_id"] = "r" }, Ct)).Unwrap());
+
+        (await store.AppendAsync(new RecordBatch([Run("completed", 10)]), Ct)).Unwrap();
+        (await store.AppendAsync(new RecordBatch([Run("running", 5)]), Ct)).Unwrap();
+        Assert.Equal("completed", (await ReadAsync()).Status);
+
+        (await store.AppendAsync(new RecordBatch([Run("failed", 10, "same moment")]), Ct)).Unwrap();
+        Assert.Equal("same moment", (await ReadAsync()).Detail);
+    }
+
+    [Fact]
     public async Task A_scripted_fault_fails_the_next_call_only()
     {
         var forge = new InMemoryForge();

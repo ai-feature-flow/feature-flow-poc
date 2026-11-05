@@ -48,6 +48,77 @@ prepared. No provider implementations.
 | 3 | Library sources are resolved to a directory in three places (`ApiApp.Runs`, `ApiApp.Decisions`, `StartupChecks`); the `git` source needs one resolver used by all three |
 | 4 | `ChildRunTests`' artifact-index order raced once in the full integration runs (it passed 5 of 5 alone). The workflow starts a child before it records the step that produced the parent's artifact, so under load the child's records can land first. New runs took the same order before M8. Fix in the workflow (record before starting children, re-recording the histories that breaks), not by loosening the assertion |
 
+## Stores
+
+The team profile's stores and the recovery and confidentiality around them, built on `m8-stores` (W1): a Postgres record
+store, an artifact store on the S3 API, the payload codec, the reconcile command, the `git` library source, and the fix
+for Foundations follow-up 4 (the artifact index's order).
+
+**What was built**
+
+| Area | Change |
+|---|---|
+| Postgres record store | `record_store` kind `postgres`, setting `connection_ref` (the secret holding the connection string). The SQLite store's tables in Postgres, `jsonb` bodies, `org_id` first in every key; one numbered schema script applied at first use under an advisory lock (LOG 281) |
+| S3 artifact store | `artifact_store` kind `s3`: `bucket`, `region`, `endpoint` (MinIO, path-style), `access_key_ref` with `secret_key_ref`, or the AWS SDK's credential chain. Objects `sha256/<hex>`, written once; signed URLs are presigned GETs (LOG 283) |
+| Payload codec | `temporal.payload_codec: { name: aes_gcm, key_ref }`. AES-256-GCM over each whole payload, and failure messages through encoded attributes. All hosts connect through `TemporalConnection`, so the API and both workers use it (LOG 284) |
+| Reconcile | `<host> reconcile --installation ... --organisation ...` on any of the three hosts: one pass over the run workflows on the installation's task queue, writing the run records the store lacks or shows open when Temporal has closed them (LOG 285) |
+| `git` library source | `source: git` with `repository` and `ref` (a branch or tag, else the default branch). `LibrarySources.OpenAsync` resolves every source for run start, answers and startup checks: a fresh shallow clone, read and deleted (LOG 286). `package` stays refused (LOG 287) |
+| Artifact index order | The workflow records what it holds before it starts a child, so a parent's artifacts reach the index before its child's. Six histories with children re-recorded (LOG 288) |
+| Test containers | `tests/Providers/Shared/Container.cs` starts Postgres (`postgres:16-alpine`) and MinIO (`cgr.dev/chainguard/minio`, LOG 282) with the Docker CLI, one per test assembly, in the Integration category |
+
+**Checks**
+
+| Check | Shows |
+|---|---|
+| `RecordStoreContract`, `FindingsLedgerContract`, `SteeringRecordsContract` on Postgres (19) | The Postgres store keeps every record as the SQLite store does |
+| Postgres's own (5) | The connection comes from the named secret; a wrong password is `unauthenticated`, a closed port `unreachable`, a missing secret `not_found`; four stores starting together apply the schema once; every table has `org_id`; a newer schema is refused |
+| `ArtifactStoreContract` on MinIO (7) | Content addressing, 12 MB round trip, `not_found`, a signed URL read with no credentials |
+| S3's own (5) | Keys from the named secrets; one key reference alone refused; wrong key, missing bucket, closed port classified; an unsigned URL refused and a signed one expiring; an artifact written once |
+| Codec unit tests (6) and reader tests (4) | Round trip; no plaintext; tamper and wrong key refused; the key secret's form; failure messages encrypted; `payload_codec` needs a known name and a `key_ref` |
+| Codec in a run (2) | With the codec every payload in every history of a ticket run is `binary/encrypted` and none holds the run's ticket id; the history replays with the key and not without. Without the codec the same walk finds the ticket id |
+| Reconcile (1) | Two run records deleted (a completed run and an open one) and a third run terminated outside the engine: the command rebuilds all three (`completed`, `running`, `incomplete`) with their template, requester, parent and repositories, counts only its own queue's runs, and a second pass writes nothing |
+| `git` source (5 Hosting, 6 Model, 1 integration) | A branch read as it is now, a tag as it was, the default branch; nothing left in temp; a missing ref or repository named; a non-library refused; startup checks fetch; each source takes only its keys; a run's lock pins the branch as it was at run start while the next run sees a push |
+| `ChildRunTests` index order | Reproduced W0's failure by delaying the parent's record activity 3 s; passes with the fix and the delay |
+
+**Controls** (each broke the guarded code, ran the check, saw it fail, and restored it)
+
+| Check | Mutation |
+|---|---|
+| Postgres contracts | A closing wait replaces the body; runs listed oldest first; the timeline replaced on conflict: the matching contract test fails each time |
+| `org_id` in every table | `locks` created without `org_id`: the schema test fails |
+| S3 | A signed URL without the existence check; the TTL ignored; a put without the HEAD: the `not_found`, expiry and written-once tests fail |
+| Codec | Hosts connect without the codec's converter: the run test fails. Failure attributes not encoded; encode passes payloads through: the unit tests fail |
+| Reconcile | The list not scoped to the task queue; terminated read as `completed`; only missing records rebuilt; every record rewritten: the test fails each time |
+| `git` source | The `ref` ignored; the clone kept; startup ignoring the problem: the tag, temp and startup tests fail |
+| Index order | Without the fix, the injected delay fails `ChildRunTests` as W0 saw; the six old histories fail replay against the new workflow |
+| Test containers | A pull's progress on standard error mixed into the container id, with an image not yet pulled: all 24 Postgres tests fail, as they did on the PR's first CI run |
+
+**Deviations and judgement calls:** LOG 281 to 288.
+
+**Follow-ups**
+
+| # | Follow-up |
+|---|---|
+| 1 | A private `git` library repository is cloned with the host's own Git credentials (LOG 286), not the credential broker. If adopters want the GitHub App to read it, the broker issues a read-only token for the library repository |
+| 2 | The payload codec has no key id, so a key cannot be rotated without losing old histories' readability (LOG 284) |
+| 3 | Reconcile rebuilds only run records; a restored database also lacks newer waits and timelines, which the runs write again only as they change (LOG 285) |
+| 4 | docs/07's `temporal.auth`, `temporal.tls` and `expected_retention` are not read by the installation reader yet; a Temporal that needs TLS or an API key (Temporal Cloud) cannot be configured |
+| 5 | `RunNotifierTests.A_batch_that_meets_a_hanging_chat_stops_at_its_budget_and_drops_the_rest` asserts a batch ends within 3 s of wall clock; it failed once in a full default run on this machine under load and passed 3 of 3 alone. Not changed here |
+
+**Fix round (review R1)**
+
+| Finding | Fix | Test | Mutation that fails it |
+|---|---|---|---|
+| F1: an answer skipped a `git` library that did not clone, so its approval rules dropped out and the engine's default let an approver answer a steerer's decision | Libraries are read only when they can change the outcome (no organisation rule for the type, not an intervention); then any that does not open refuses the answer or session action: 503 "library X cannot be read now; try again" (LOG 289) | `epic.escalation` with `std` as a directory: approver 403; with `std` from a git source that does not clone: 503, nothing recorded or delivered | Skipping the unreadable library again: the approver gets 200. Re-check: with an organisation rule `*` (or for an intervention) an unclonable library does not block the answer (200); reading always fails that test, never reading fails the 503 one. The memory store's newer-record rule has its own test |
+| F2: Postgres's `jsonb` refuses NUL, a retryable `server_error`, so a record with outside text could retry for ever | An escaped NUL is written as U+FFFD; a literal backslash-u0000 is kept (LOG 290) | Contract: a run whose detail holds NUL and a literal `\u0000` is written and reads back intact, NUL kept or replaced (SQLite and Postgres) | No replacement (22P05); a naive replace that also rewrites the literal text |
+| F3: reconcile's "running", stamped now, could overwrite the run's own newer `completed`; so could a late activity | A run record replaces only one no newer than itself, in all three stores; reconcile dates an open run at its workflow run's start (LOG 290) | Contract: an older write leaves the newer record, an equal-time write replaces it. Integration: the run's `completed` written between reconcile's read and its write survives | The rule removed in Postgres or SQLite; `<` for `<=`; reconcile stamping now |
+| F4: a `repository` URL with a password would reach logs and errors | The organisation reader refuses a URL with a password, or any user name over http(s); an SSH user name is allowed (LOG 289) | Three refused URLs; `ssh://git@...` read | The check disabled: the three rows fail |
+
+R1's "passes by construction" notes need no control: one organisation per installation makes `org_id` isolation untestable
+in version 1 (the keys are checked), and the codec's constructor already refuses any key but 32 bytes. R1's design notes
+on lost commit acknowledgements (duplicated appends), the lock not pinning the library's commit, symlinks in a library
+clone and unchecked S3 read hashes are follow-ups, not changed here.
+
 ## Operations
 
 The Jira tracker, OpenTelemetry tracing with the engine's provider decorator, stuck-run detection, and startup resolving
@@ -101,7 +172,7 @@ provider type, not per call (LOG 304).
 | 3 | M7 follow-up 14's reminders on open waits are not built |
 | 4 | The console lists `stalled` and `stuck` under "Decisions" (with no controls); a heading for positions would read better |
 | 5 | M7's `RunNotifierTests` hanging-chat budget test failed twice (calls outside 1 to 3) in its project's runs at load average 19, and passed in the 21 runs after; on `m8` it passed 6 of 6. It times a 1.2 s budget by the wall clock, so CPU starvation can starve its first send; whether this branch's extra test classes add to it was not settled |
-| 6 | When the payload codec (W1) lands, its `key_ref` joins `StartupChecks.SecretReferences` if it is not a provider setting |
+| 6 | Done in the merge of W1's stores: `temporal.payload_codec.key_ref` is among the references startup resolves |
 | 7 | With several orchestration replicas, each runs the stuck-run check and may send its own `stalled`, `stuck` or `resumed` for the same stretch (R3 F2). A single runner, such as a fixed-id workflow, if duplicates matter |
 
 **Fix round (review R3)**

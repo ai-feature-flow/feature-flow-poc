@@ -27,6 +27,7 @@ public sealed class SecretCheckTests
             api_version: feature-flow/v1
             kind: installation
             development: true
+            temporal: { address: "localhost:7233", payload_codec: { name: aes_gcm, key_ref: secrets/payload_key } }
             providers:
               agent_runtime: { instances: { claude: { provider: claude_code, model_access: { mode: proxy, key_ref: secrets/model } } } }
               notifications: { instances: { slack: { token_ref: secrets/slack_bot, signing_secret_ref: secrets/slack_signing } } }
@@ -54,6 +55,7 @@ public sealed class SecretCheckTests
         ["secrets/jira"] = "bot@example.com:jira-value",
         ["secrets/step_key"] = "step-value",
         ["secrets/api_token"] = "api-value",
+        ["secrets/payload_key"] = "payload-value",
     };
 
     [Fact]
@@ -63,6 +65,7 @@ public sealed class SecretCheckTests
         [
             ("api.auth.token_ref", "secrets/api_token"),
             ("agent_worker.token_key_ref", "secrets/step_key"),
+            ("temporal.payload_codec.key_ref", "secrets/payload_key"),
             ("providers.agent_runtime.instances.claude.model_access.key_ref", "secrets/model"),
             ("providers.notifications.instances.slack.token_ref", "secrets/slack_bot"),
             ("providers.notifications.instances.slack.signing_secret_ref", "secrets/slack_signing"),

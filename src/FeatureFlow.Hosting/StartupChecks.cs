@@ -1,3 +1,4 @@
+using FeatureFlow.Api;
 using FeatureFlow.Model;
 using FeatureFlow.Model.Yaml;
 using FeatureFlow.Providers.Abstractions;
@@ -24,22 +25,17 @@ public static class StartupChecks
         if (installation.ApiAuth.Mode == "oidc" && organisation.Roles.Count == 0)
             Fail(d, "organisation: roles: api.auth.mode is oidc in the installation, so people roles come from identity-provider groups, and the organisation maps none");
 
-        var root = Path.GetDirectoryName(Path.GetFullPath(organisation.Location))!;
+        // docs/07 section 7: library sources are reachable. Startup is synchronous; a git source is fetched here once.
         foreach (var source in organisation.Libraries)
-        {
-            var path = Path.GetFullPath(Path.Combine(root, source.Path));
-            var opened = new DiagnosticBag();
-            if (!Directory.Exists(path))
-                Fail(d, $"organisation: libraries.{source.Name}: the directory {path} does not exist");
-            else if (Library.Library.Open(path, opened) is null || opened.HasErrors)
-                Fail(d, $"organisation: libraries.{source.Name}: the library at {path} does not open: {string.Join("; ", opened.Where(x => x.Blocks).Take(3).Select(x => x.Message))}");
-        }
+            if (LibrarySources.OpenAsync(source, organisation.Location, CancellationToken.None).GetAwaiter().GetResult() is { Library: null, Problem: { } problem })
+                Fail(d, $"organisation: libraries.{source.Name}: {problem}");
     }
 
     static void Fail(DiagnosticBag d, string message) => d.Add(Checks.Schema, message);
 
     /// <summary>
-    /// Every secret reference the installation names, with where: <c>api.auth.token_ref</c>, <c>agent_worker.token_key_ref</c>
+    /// Every secret reference the installation names, with where: <c>api.auth.token_ref</c>, <c>agent_worker.token_key_ref</c>,
+/// <c>temporal.payload_codec.key_ref</c>
     /// and every provider setting whose key ends in <c>_ref</c>, however deep (<c>model_access.key_ref</c>).
     /// </summary>
     public static IReadOnlyList<(string Key, string Reference)> SecretReferences(InstallationConfig installation)
@@ -49,6 +45,8 @@ public static class StartupChecks
             found.Add(("api.auth.token_ref", token));
         if (installation.AgentWorker?.TokenKeyRef is { } key)
             found.Add(("agent_worker.token_key_ref", key));
+        if (installation.PayloadCodec?.KeyRef is { } codec)
+            found.Add(("temporal.payload_codec.key_ref", codec));
         foreach (var (type, config) in installation.Providers)
             foreach (var (name, instance) in config.Instances)
                 Walk(instance.Settings, $"providers.{type}.instances.{name}");

@@ -139,8 +139,11 @@ public static partial class ApiApp
                 .FirstOrDefault(w => w.WaitId == session.WaitId);
             if (session.Status != SessionStatuses.Prepared || wait is not { Open: true })
                 return (null, null, null, Error(409, $"session {sid} is {(session.Status == SessionStatuses.Prepared ? "no longer open" : session.Status)}"));
-            var rule = Approval.For(wait.DecisionType, services.Organisation.Policy, TeamOf(scope), DecisionTypes(), wait.Kind);
-            if (Refuse(caller, scope, RolesToAnswer(services.Organisation.Policy, DecisionTypes(), wait, TeamOf(scope)),
+            var (types, unreadable) = await DecisionTypesAsync(wait, ct);
+            if (types is null)
+                return (null, null, null, unreadable);
+            var rule = Approval.For(wait.DecisionType, services.Organisation.Policy, TeamOf(scope), types, wait.Kind);
+            if (Refuse(caller, scope, RolesToAnswer(services.Organisation.Policy, types, wait, TeamOf(scope)),
                     $"act on session {sid} ({wait.DecisionType}; approval: {rule.Source})") is { } refused)
                 return (null, null, null, refused);
             if (caller.FromChat && !rule.Rule.FromChat)

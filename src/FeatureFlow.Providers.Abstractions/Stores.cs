@@ -19,7 +19,7 @@ public interface ISecretsProvider : IProvider
 
 // Records the record store holds (docs/02 section 5). The API reads only these, never Temporal queries.
 
-/// <summary>A run: its status, template and parent. Written again whenever it changes; the last write wins.</summary>
+/// <summary>A run: its status, template and parent. Written again whenever it changes; a write replaces a record no newer than itself (by <see cref="UpdatedAt"/>), so a late write never undoes a newer one.</summary>
 public sealed record RunRecord(
     string RunId,
     string? ParentRunId,

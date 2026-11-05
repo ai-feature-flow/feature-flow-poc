@@ -64,6 +64,28 @@ public class ConfigurationTests
         Assert.Null(ConfigurationReader.ReadInstallation(Installation, "installation.yaml", new DiagnosticBag())!.OtlpEndpoint);
     }
 
+    [Fact]
+    public void An_installation_reads_its_payload_codec()
+    {
+        var d = new DiagnosticBag();
+        var config = ConfigurationReader.ReadInstallation(Installation.Replace("continue_as_new_events: 400 }",
+            "continue_as_new_events: 400, payload_codec: { name: aes_gcm, key_ref: secrets/payload_key } }", StringComparison.Ordinal), "installation.yaml", d)!;
+        Assert.Empty(d);
+        Assert.Equal(new PayloadCodecConfig("aes_gcm", "secrets/payload_key"), config.PayloadCodec);
+        Assert.Null(ConfigurationReader.ReadInstallation(Installation, "installation.yaml", new DiagnosticBag())!.PayloadCodec);
+    }
+
+    [Theory]
+    [InlineData("continue_as_new_events: 400 }", "continue_as_new_events: 400, payload_codec: { name: rot13, key_ref: secrets/k } }", "rot13")]
+    [InlineData("continue_as_new_events: 400 }", "continue_as_new_events: 400, payload_codec: { name: aes_gcm } }", "key_ref")]
+    [InlineData("continue_as_new_events: 400 }", "continue_as_new_events: 400, payload_codec: { name: aes_gcm, key_ref: secrets/k, key: abc } }", "unknown key 'key'")]
+    public void A_payload_codec_needs_a_known_name_and_a_key_reference(string old, string replacement, string message)
+    {
+        var d = new DiagnosticBag();
+        ConfigurationReader.ReadInstallation(Installation.Replace(old, replacement, StringComparison.Ordinal), "installation.yaml", d);
+        Assert.Contains(d, x => x.Blocks && x.Message.Contains(message, StringComparison.Ordinal));
+    }
+
     [Theory]
     [InlineData("defaults:", "agent_worker: { listen: \"http://0.0.0.0:8490\", token_key_ref: secrets/k }\ndefaults:", "agent_worker.urls must list")]
     [InlineData("defaults:", "agent_worker: { listen: \"http://0.0.0.0:8490\", urls: [\"http://h:1\"] }\ndefaults:", "agent_worker.token_key_ref must name")]
