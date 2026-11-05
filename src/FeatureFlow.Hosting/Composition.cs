@@ -33,7 +33,7 @@ public sealed record FeatureFlowConfiguration(InstallationConfig Installation, O
 /// <summary>
 /// Composition (docs/06 section 4): selects and creates each configured provider instance from the factories a
 /// host registers, by type and kind. An instance whose kind no factory provides, or with a setting its factory
-/// does not take, is a configuration error.
+/// does not take, is a configuration error. Each instance is wrapped by the engine's decorator (<see cref="ProviderCalls"/>).
 /// </summary>
 public static class ProviderComposer
 {
@@ -59,7 +59,7 @@ public static class ProviderComposer
 
                 foreach (var key in instance.Settings.Keys.Where(k => !factory.Settings.Contains(k)))
                     errors.Add($"providers.{type}.instances.{name}: unknown setting '{key}'");
-                named[name] = factory.Create(new ProviderContext(instance, baseDirectory, t => set?.ForRun(t, false)));
+                named[name] = ProviderCalls.Decorate(type, name, factory.Create(new ProviderContext(instance, baseDirectory, t => set?.ForRun(t, false))));
             }
 
             instances[type] = named;
@@ -79,6 +79,7 @@ public sealed class FeatureFlowHost : IAsyncDisposable
     readonly List<Task> workers = [];
     WebApplication? api;
     WebApplication? agentEndpoint;
+    OpenTelemetry.Trace.TracerProvider? tracing;
 
     FeatureFlowHost(FeatureFlowConfiguration configuration, ProviderSet providers, ITemporalClient client)
     {
@@ -104,8 +105,9 @@ public sealed class FeatureFlowHost : IAsyncDisposable
         var client = await TemporalClient.ConnectAsync(new TemporalClientConnectOptions(configuration.Installation.TemporalAddress)
         {
             Namespace = configuration.Installation.TemporalNamespace,
+            Interceptors = [Tracing.Interceptor()],
         });
-        var host = new FeatureFlowHost(configuration, providers, client);
+        var host = new FeatureFlowHost(configuration, providers, client) { tracing = Tracing.Start(configuration.Installation.OtlpEndpoint) };
         var services = new EngineServices(providers, configuration.Installation, configuration.Organisation);
         var activities = new RunActivities(services, client);
         var queue = configuration.Installation.TaskQueue;
@@ -202,6 +204,8 @@ public sealed class FeatureFlowHost : IAsyncDisposable
         catch (OperationCanceledException)
         {
         }
+
+        tracing?.Dispose();
     }
 }
 
