@@ -16,6 +16,13 @@
     <ProjectReference Include="..\..\src\FeatureFlow.Cli\FeatureFlow.Cli.csproj" />
   </ItemGroup>
 
+  <!-- Built, not referenced: HostProcessTests runs the hosts as processes. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\hosts\FeatureFlow.Host.Api\FeatureFlow.Host.Api.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\hosts\FeatureFlow.Host.OrchestrationWorker\FeatureFlow.Host.OrchestrationWorker.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\hosts\FeatureFlow.Host.AgentWorker\FeatureFlow.Host.AgentWorker.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Temporalio" />
   </ItemGroup>
