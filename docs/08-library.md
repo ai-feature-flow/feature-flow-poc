@@ -99,8 +99,8 @@ Where the folder comes from is a **source**:
 | Source | Use |
 |---|---|
 | `directory` | A path the API service can read. The solo profile's normal source: edit a file, start a run, and the change is used |
-| `git` | A repository and a reference (branch or tag), fetched by the API service. The usual source for a team or organisation |
-| `package` | A NuGet package. Optional, for distributing versioned libraries publicly |
+| `git` | A repository and a reference (branch or tag), fetched by the API service at each read with its own Git credentials (LOG 286). The usual source for a team or organisation |
+| `package` | A NuGet package, for distributing versioned libraries publicly. Not in version 1 (LOG 287) |
 
 Whatever the source, at run start the API resolves every content item the run
 needs, stores each in the artifact store by content hash, and writes the run's
@@ -235,6 +235,6 @@ by the standard library. The last column says how to change it.
 
 | # | Question | Recommendation |
 |---|---|---|
-| 1 | Is the `git` library source fetched by the API at run start acceptable for the enterprise profile, where the API may not reach every repository host? | Yes, with `package` as the fallback for hosts the API cannot reach |
+| 1 | Is the `git` library source fetched by the API at run start acceptable for the enterprise profile, where the API may not reach every repository host? | Yes, with `package` as the fallback for hosts the API cannot reach. `package` is not in version 1 (LOG 287), so until it is, a library the API cannot fetch is copied to a `directory` or a reachable `git` repository |
 
 Judgement calls made in this document are in `docs/LOG.md`, entries 38 to 42.
