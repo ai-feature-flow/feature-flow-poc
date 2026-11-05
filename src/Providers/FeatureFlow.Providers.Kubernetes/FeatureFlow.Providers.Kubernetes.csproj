@@ -5,4 +5,12 @@
     <ProjectReference Include="..\..\FeatureFlow.Model\FeatureFlow.Model.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="KubernetesClient" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="sandbox-network-policy.yaml" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
