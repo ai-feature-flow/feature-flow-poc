@@ -348,6 +348,10 @@ Each fix is its own commit, with a test and a control (a mutation that made the 
 | 5 | A person approving the epic's ticket plan ratifies its work list, but in the team profile nothing let them read it: the artifacts are in MinIO inside the cluster and the timeline shows only references. I read them from MinIO by hand | `GET /runs/{id}/artifacts/{reference}` and `ff run artifact`: an artifact the run itself recorded, for a viewer of the run; a child's is read through the child (review R5, F1); one the store no longer holds is 404 (R5, F2) (LOG 325) | `ApiTests.A_viewer_reads_the_artifacts_its_run_recorded_...` (without the index check, without the viewer check, serving the whole tree, or a missing object as an error: each fails it). Live: the epic's work list read through the CLI; the same reference through a child run refused |
 | 6 | Seam 2's ten minutes of 502s showed nowhere in the run: each session ended resumably, so no activity failed and the stuck-run check saw nothing; the timeline said only "design started" (coordinator's decision after the report) | The agent worker records `model_unreachable` and signals the run, which shows `model_unreachable <step>: <cause>` on its timeline, once per step and cause (LOG 326) | `EndpointTests.A_model_unreachable_is_signalled_to_the_run_once_per_step_and_cause` (without the once-per-cause check it fails); `AgentCredentialTests.With_the_model_unreachable_...` now asserts one such line across at least three failed attempts (without the check, or with the workflow ignoring the signal, it fails) |
 
+CI flake after review R5: `StuckRunTests.An_activity_no_worker_takes_...` found no `stuck` wait when the run's own record
+write was still in flight (a started activity counts as alive). Reproduced by delaying that write 3 s; the test now waits
+until the agent step is the only pending activity, and passes with the delay.
+
 Not seams: the GitHub App broker needed its `repositories` list (my configuration); the first CI run's Cluster job
 failed when the runner's k3s node restarted during the image builds (the next run passed).
 

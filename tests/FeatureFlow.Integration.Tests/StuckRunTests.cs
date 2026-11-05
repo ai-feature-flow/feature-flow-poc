@@ -92,7 +92,9 @@ public class StuckRunTests
         await using var h = await StartAsync("stuck", agentWorker: false);
         var id = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=FF-13");
         var check = Check(h, TimeSpan.Zero);
-        await UntilAsync(async () => (await PendingAsync(h, id)).Any(a => a.ActivityType.Name == "RunAgentStep"), "the planner's agent step to be scheduled");
+        // Only the agent step left pending: the run's own record write, an activity in flight, would count as alive (a CI race).
+        await UntilAsync(async () => (await PendingAsync(h, id)).Select(a => a.ActivityType.Name).SequenceEqual(["RunAgentStep"]),
+            "the planner's agent step to be the only pending activity");
 
         await check.CheckAsync(Ct);
 
