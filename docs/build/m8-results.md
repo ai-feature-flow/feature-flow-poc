@@ -463,7 +463,8 @@ Agents, Integration; M7 is `m7-results.md`'s consolidated follow-ups. Closed dur
 Operations 5 (the notifier's budget flake), Operations 6 (the codec key's reference checked at startup), and M7's 1 (the
 sandbox's network, proven on the cluster), 2 (each organisation key decided, LOG 267 to 270), 4 (startup resolves every
 secret reference), 14's `stalled` and `stuck`, 18 (`teams.<name>.repositories` in docs/07) and 21's "detached hosts
-ignore SIGTERM" (LOG 312). Dropped by the product owner (LOG 264): M7's 3, 6, 7 and 9.
+ignore SIGTERM" (LOG 312), and Integration 3 (`GET /runs/{id}/findings`, and `/runs/{id}/plan` too, now
+refuse a caller who is not a viewer of the run, LOG 327). Dropped by the product owner (LOG 264): M7's 3, 6, 7 and 9.
 
 | # | Follow-up | From |
 |---|---|---|
@@ -484,7 +485,6 @@ ignore SIGTERM" (LOG 312). Dropped by the product owner (LOG 264): M7's 3, 6, 7 
 | 14 | One model proxy serves every runtime; a runtime on another upstream needs a proxy per runtime instance. The proxy records but does not pin each request's model | Agents 1, 6 |
 | 15 | Copilot CLI: the hook's `continue: false` with the engine unreachable is untested; the agent can add its own skills or agents to Copilot's sticky home; `CopilotCliRuntime` repeats part of `ClaudeCodeRuntime` | Agents 2 to 4 |
 | 16 | No sweeper removes sandbox pods or containers whose run has closed | Agents 5 |
-| 17 | `GET /runs/{id}/findings` does not check that the caller may see the run | Integration 3 |
 | 18 | A completed run leaves its work branches and `refs/feature-flow/wip/*` on the code host; a run's clean-up could also delete its session branches | Integration 4, M7 12 |
 | 19 | `merge.require_checks` locked on refuses only a literal `false` at run start | M7 5 |
 | 20 | F1 at patch time: a patch adding an engine merge into a default branch is caught only at merge time | M7 8 |

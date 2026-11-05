@@ -107,6 +107,13 @@ public static partial class ApiApp
             return Results.Json(new { runs }, Json);
         }
 
+        /// <summary>The run, if the caller is a viewer in its scope; null otherwise, so every read of a run refuses alike (404).</summary>
+        async Task<RunRecord?> VisibleRunAsync(Caller caller, string id, CancellationToken ct)
+        {
+            var run = (await Records.QueryAsync<RunRecord>(Queries.Run, new Dictionary<string, string> { ["run_id"] = id }, ct)).Unwrap().FirstOrDefault();
+            return run is not null && RolesIn(caller, ScopeOf(run.Repositories)).Contains(PeopleRoles.Viewer) ? run : null;
+        }
+
         public async Task<IResult> ShowAsync(HttpContext context, Caller caller, string id)
         {
             var p = new Dictionary<string, string> { ["run_id"] = id };
