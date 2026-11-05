@@ -77,7 +77,7 @@ public sealed record CarriedCore(
     /// <summary>The ledger version the <see cref="Findings"/> counts were read at (review F3).</summary>
     public long FindingsVersion { get; init; }
 
-    /// <summary>Steering (M7): breakpoints, skips not yet reached, overrides applied and the run's library overrides. Null in states carried before M7.</summary>
+    /// <summary>Steering (M7): breakpoints, skips not yet reached, overrides applied and the run's library overrides. Each null when empty.</summary>
     public IReadOnlyList<string>? Breakpoints { get; init; }
 
     public IReadOnlyDictionary<string, string>? Skips { get; init; }

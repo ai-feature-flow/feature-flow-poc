@@ -185,7 +185,7 @@ internal sealed class Evaluator(RunCore core)
             ["repositories"] = run.Repositories.Cast<object?>().ToList(),
             ["branch"] = run.Repositories.ToDictionary(r => r, r => (object?)core.WorkBranch()),
             // A named parent branch (a child's, or a start's, LOG 137); otherwise the default branch run start read from the
-            // code host. Only a run with no code host, or a history from before M5, shows main.
+            // code host. Only a run with no code host shows main.
             ["parent_branch"] = run.Repositories.ToDictionary(r => r, r => (object?)(run.ParentBranch ?? run.DefaultBranches?.GetValueOrDefault(r) ?? "main")),
             ["tracker_issue"] = run.TrackerIssue ?? "",
             ["parent_id"] = run.ParentId ?? "",

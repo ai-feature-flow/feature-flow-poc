@@ -8,9 +8,6 @@ namespace FeatureFlow.Engine;
 /// <summary>Inbound wakes (<c>RunWorkflowNames.Wake</c>, <c>WakeSignal</c>): an event ends a wait's delay early; the wait reads again to confirm. M7, W3.</summary>
 public partial class RunWorkflow
 {
-    /// <summary>The patch marker of the wake signal's handler (M7): a history recorded before it held a wake unhandled.</summary>
-    public const string WakePatch = "m7-wake";
-
     /// <summary>Waits a wake has cancelled, by step, with the activity's token and what woke them, until the cancellation lands.</summary>
     readonly Dictionary<string, (CancellationTokenSource Token, string Reason)> woken = new(StringComparer.Ordinal);
 
@@ -26,7 +23,7 @@ public partial class RunWorkflow
     [WorkflowSignal(RunWorkflowNames.Wake)]
     public Task WakeAsync(WakeSignal wake)
     {
-        if (core is null || draining || !Workflow.Patched(WakePatch))
+        if (core is null || draining)
             return Task.CompletedTask;
         foreach (var (stepId, token) in stepTokens.OrderBy(kv => kv.Key, StringComparer.Ordinal).ToList())
         {

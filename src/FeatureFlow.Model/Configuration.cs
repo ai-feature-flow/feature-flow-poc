@@ -105,9 +105,6 @@ public sealed record PolicyConfig(
 
     /// <summary><c>planning.require_review</c> (docs/05 section 3.1): per template name pattern, whether agent patches need a person's review. The first match applies.</summary>
     public IReadOnlyList<ReviewRule> RequireReview { get; init; } = [];
-
-    /// <summary><c>toolsets.allowed</c>: which external tool servers exist at all. Null: not restricted.</summary>
-    public IReadOnlyList<string>? AllowedToolsets { get; init; }
 }
 
 /// <summary>A <c>planning.require_review</c> entry: a template name pattern and whether review is required there, as a cap.</summary>
@@ -131,12 +128,6 @@ public sealed record NotificationsConfig(IReadOnlyDictionary<string, Notificatio
     public static readonly NotificationsConfig None = new(new Dictionary<string, NotificationRoute>(), []);
 }
 
-/// <summary><c>timeouts</c> (docs/07 section 3): how long a step may go silent, and how long without provider contact before a run shows <c>stalled</c>.</summary>
-public sealed record TimeoutsConfig(TimeSpan Heartbeat, TimeSpan StalledAfter)
-{
-    public static readonly TimeoutsConfig Default = new(TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(5));
-}
-
 /// <summary>
 /// A team (<c>teams.&lt;name&gt;</c>, docs/07 section 3): the repositories it owns, by pattern, its approval rules, which come
 /// before the organisation's for a run in its scope, and its people roles, which apply only in its scope (docs/05 section 3.3).
@@ -158,15 +149,7 @@ public sealed record OrganisationConfig(string Name, IReadOnlyList<LibrarySource
 
     public NotificationsConfig Notifications { get; init; } = NotificationsConfig.None;
 
-    public TimeoutsConfig Timeouts { get; init; } = TimeoutsConfig.Default;
-
     public IReadOnlyDictionary<string, TeamConfig> Teams { get; init; } = new Dictionary<string, TeamConfig>();
-
-    /// <summary><c>library_overrides</c>: an organisation item replacing a base item, by reference, for every run (docs/08 section 5).</summary>
-    public IReadOnlyDictionary<string, string> LibraryOverrides { get; init; } = new Dictionary<string, string>();
-
-    /// <summary><c>library_inputs</c>: values for the libraries' declared inputs.</summary>
-    public IReadOnlyDictionary<string, string> LibraryInputs { get; init; } = new Dictionary<string, string>();
 }
 
 /// <summary>
@@ -425,14 +408,8 @@ public static class ConfigurationReader
                 budgets.Finish();
             }
 
-            IReadOnlyList<string>? toolsets = null;
-            if (MapReader.Of(p.Node("toolsets"), d, "policy.toolsets") is { } ts)
-            {
-                toolsets = ts.Has("allowed") ? ts.StringList("allowed") : null;
-                if (toolsets is not null)
-                    ts.Error("policy.toolsets.allowed is not enforced before M8; remove it", ts.Map.Location);
-                ts.Finish();
-            }
+            // Its only key, allowed, is not in version 1 (LOG 270).
+            NotInVersion1(p, "toolsets", "policy.toolsets");
 
             var overrides = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
             if (MapReader.Of(p.Node("overrides"), d, "policy.overrides") is { } o)
@@ -452,7 +429,7 @@ public static class ConfigurationReader
             p.Finish();
             policy = new PolicyConfig(rules, perStep, perRun, allowed, requireChecks, hardStep, hardRun)
             {
-                EngineMayMerge = engineMayMerge, MaxWorkItems = maxWorkItems, Overrides = overrides, RequireReview = requireReview, AllowedToolsets = toolsets,
+                EngineMayMerge = engineMayMerge, MaxWorkItems = maxWorkItems, Overrides = overrides, RequireReview = requireReview,
             };
         }
 
@@ -491,13 +468,6 @@ public static class ConfigurationReader
             n.Finish();
         }
 
-        var timeouts = TimeoutsConfig.Default;
-        if (MapReader.Of(r.Node("timeouts"), d, "timeouts") is { } t)
-        {
-            timeouts = new TimeoutsConfig(DurationOf(t, "heartbeat") ?? timeouts.Heartbeat, DurationOf(t, "stalled_after") ?? timeouts.StalledAfter);
-            t.Finish();
-        }
-
         var teams = new Dictionary<string, TeamConfig>(StringComparer.Ordinal);
         if (MapReader.Of(r.Node("teams"), d, "teams") is { } tm)
             foreach (var (key, node) in tm.Map.Entries)
@@ -507,22 +477,18 @@ public static class ConfigurationReader
                     teams[key.Text] = team;
             }
 
-        var libraryOverrides = StringMap(r, "library_overrides", d, reference: true);
-        var libraryInputs = StringMap(r, "library_inputs", d, reference: false);
-        // Read and checked (LOG 223), but nothing acts on them yet: refused, so a file never appears to set what has no effect.
-        foreach (var later in new[] { "library_overrides", "library_inputs", "role_mapping", "timeouts" })
-            if (r.Has(later))
-                r.Error($"{later} is not enforced before M8; remove it", r.Map[later]!.Location);
+        // Read and checked (LOG 223), but nothing acts on it yet: refused, so a file never appears to set what has no effect.
+        if (r.Has("role_mapping"))
+            r.Error("role_mapping is not enforced before M8; remove it", r.Map["role_mapping"]!.Location);
+        foreach (var key in new[] { "library_overrides", "library_inputs", "timeouts" })
+            NotInVersion1(r, key, key);
         r.Finish();
         return new OrganisationConfig(name, libraries, policy, file)
         {
             Roles = people,
             RoleMapping = roleMapping,
             Notifications = notifications,
-            Timeouts = timeouts,
             Teams = teams,
-            LibraryOverrides = libraryOverrides,
-            LibraryInputs = libraryInputs,
         };
     }
 
@@ -632,38 +598,13 @@ public static class ConfigurationReader
         return new TeamConfig(name, repositories, approval, roles);
     }
 
-    static Dictionary<string, string> StringMap(MapReader r, string key, DiagnosticBag d, bool reference)
+    /// <summary>A key the design once had that version 1 leaves out (LOG 268 to 270): refused, its content unread.</summary>
+    static void NotInVersion1(MapReader r, string key, string name)
     {
-        var map = new Dictionary<string, string>(StringComparer.Ordinal);
-        if (MapReader.Of(r.Node(key), d, key) is not { } m)
-            return map;
-        foreach (var (name, _) in m.Map.Entries)
-            if (m.String(name.Text) is { } value)
-            {
-                if (reference && (LibraryReference.TryParse(name.Text) is null || LibraryReference.TryParse(value) is null))
-                    m.Error($"{key}.{name.Text}: both sides must be library references such as std:tasks/implement_ticket", name.Location);
-                map[name.Text] = value;
-            }
-
-        return map;
-    }
-
-    static TimeSpan? DurationOf(MapReader r, string key)
-    {
-        var text = r.String(key);
-        if (text is null)
-            return null;
-        var unit = text.Length > 1 ? text[^1] : ' ';
-        if (long.TryParse(text[..^1], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n) && n > 0)
-            switch (unit)
-            {
-                case 's': return TimeSpan.FromSeconds(n);
-                case 'm': return TimeSpan.FromMinutes(n);
-                case 'h': return TimeSpan.FromHours(n);
-            }
-
-        r.Error($"{key} must be a duration such as 30s, 5m or 1h, not '{text}'", r.Map[key]!.Location);
-        return null;
+        if (!r.Has(key))
+            return;
+        r.Node(key);
+        r.Error($"{name} is not supported in version 1; remove it", r.Map[key]!.Location);
     }
 
     static void Header(MapReader r, string kind)

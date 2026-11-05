@@ -30,6 +30,7 @@
     <Project Path="src/Providers/FeatureFlow.Providers.Kubernetes/FeatureFlow.Providers.Kubernetes.csproj" />
     <Project Path="src/Providers/FeatureFlow.Providers.Local/FeatureFlow.Providers.Local.csproj" />
     <Project Path="src/Providers/FeatureFlow.Providers.Postgres/FeatureFlow.Providers.Postgres.csproj" />
+    <Project Path="src/Providers/FeatureFlow.Providers.S3/FeatureFlow.Providers.S3.csproj" />
     <Project Path="src/Providers/FeatureFlow.Providers.Slack/FeatureFlow.Providers.Slack.csproj" />
     <Project Path="src/Providers/FeatureFlow.Providers.StdValidators/FeatureFlow.Providers.StdValidators.csproj" />
   </Folder>
@@ -63,6 +64,7 @@
     <Project Path="tests/Providers/FeatureFlow.Providers.Kubernetes.Tests/FeatureFlow.Providers.Kubernetes.Tests.csproj" />
     <Project Path="tests/Providers/FeatureFlow.Providers.Local.Tests/FeatureFlow.Providers.Local.Tests.csproj" />
     <Project Path="tests/Providers/FeatureFlow.Providers.Postgres.Tests/FeatureFlow.Providers.Postgres.Tests.csproj" />
+    <Project Path="tests/Providers/FeatureFlow.Providers.S3.Tests/FeatureFlow.Providers.S3.Tests.csproj" />
     <Project Path="tests/Providers/FeatureFlow.Providers.Slack.Tests/FeatureFlow.Providers.Slack.Tests.csproj" />
     <Project Path="tests/Providers/FeatureFlow.Providers.StdValidators.Tests/FeatureFlow.Providers.StdValidators.Tests.csproj" />
   </Folder>

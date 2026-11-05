@@ -101,8 +101,6 @@ public sealed partial class RunCore
 
     string? SkipError(StepSkipped s)
     {
-        if (!Options.Steering)
-            return "this run started before skips existed (M7): it cannot skip a step";
         if (StepById(s.StepId) is not { } step)
             return $"{s.StepId} is not a step of plan revision {State.Revision}";
         var outcomes = step.Outcomes().Where(o => o.Name != Actions.AttemptsExhausted).Select(o => o.Name).ToList();

@@ -63,8 +63,7 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
             d.Add(Checks.ReferenceResolves, $"'{start.Template}' is not a template reference");
         else
         {
-            // The branch pattern is rendered as a new run's workflow renders it (patch m4-branch-pattern), for the work-branch check.
-            var (core, loaded) = RunCore.Start(libraries, template, RunInfoOf(start), policy.ToOptions() with { BranchFromPattern = true });
+            var (core, loaded) = RunCore.Start(libraries, template, RunInfoOf(start), policy.ToOptions());
             d.AddRange(loaded);
             RunStartChecks.LibraryRequirements(libraries, EngineInfo.Version, d);
             if (core is not null)

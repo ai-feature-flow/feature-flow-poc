@@ -13,6 +13,11 @@
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.GitHub\FeatureFlow.Providers.GitHub.csproj" />
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.StdValidators\FeatureFlow.Providers.StdValidators.csproj" />
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Slack\FeatureFlow.Providers.Slack.csproj" />
+    <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Postgres\FeatureFlow.Providers.Postgres.csproj" />
+    <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.S3\FeatureFlow.Providers.S3.csproj" />
+    <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Kubernetes\FeatureFlow.Providers.Kubernetes.csproj" />
+    <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.CopilotCli\FeatureFlow.Providers.CopilotCli.csproj" />
+    <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Jira\FeatureFlow.Providers.Jira.csproj" />
   </ItemGroup>
 
 </Project>

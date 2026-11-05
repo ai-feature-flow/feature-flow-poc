@@ -31,7 +31,10 @@ public sealed class ValidationActionTests : IAsyncDisposable
     readonly List<ArtifactEntry> artifacts = [];
     Dictionary<string, string>? consumed;
 
-    /// <summary>The keys of what the step declares it consumes; by default those of <see cref="consumed"/>.</summary>
+    /// <summary>
+    /// The keys of what the step declares it consumes; by default those of <see cref="consumed"/>, else the parent's plans,
+    /// which std's plan step consumes (optional) and a standalone ticket does not have.
+    /// </summary>
     List<string>? declared;
     readonly List<ValidationRequest> seen = [];
 
@@ -102,7 +105,7 @@ public sealed class ValidationActionTests : IAsyncDisposable
         var call = new StepCall(new StepIdentity(RunId, "ticket_delivery", stepId, 1, $"{RunId}/{stepId}/1"), "action", "artifact.validate",
             inputs.ToDictionary(kv => kv.Key, kv => YamlWriter.WritePlain(kv.Value)), contract, false, null);
         var scope = new ActionScope([repo.FullName, other.FullName], repo.FullName, Branch, null, artifacts.ToList(), [], [], consumed,
-            Declared: declared ?? consumed?.Keys.ToList());
+            Declared: declared ?? consumed?.Keys.ToList() ?? ["parent/requirements", "parent/child_requirements"]);
         return actions.RunAsync(call, scope, () => { }, Ct);
     }
 
@@ -276,26 +279,6 @@ public sealed class ValidationActionTests : IAsyncDisposable
         Assert.Equal("F-1", Assert.Single(request.Findings).FindingId);
     }
 
-    [Fact]
-    public async Task In_a_child_run_a_subject_from_its_parent_the_workflow_did_not_resolve_stops_the_step_rather_than_passing_as_absent()
-    {
-        Work();
-        Produce("plan", "delivery_plan", "delivery_plan", Plan());
-        await records.AppendAsync(new RecordBatch(Runs:
-        [
-            new RunRecord("run-epic", null, "epic_delivery", "running", "someone", ["acme/api"], false, DateTimeOffset.UnixEpoch, null),
-            new RunRecord(RunId, "run-epic", "ticket_delivery", "running", "someone", ["acme/api"], false, DateTimeOffset.UnixEpoch, null),
-        ]), Ct);
-
-        var result = await ValidateAsync("""
-              - validator: requirement_inheritance
-                subjects: [{ name: child_requirements, from: parent, optional: true }, delivery_plan]
-            """, "plan_validation");
-
-        Assert.Equal(StepOutcome.CannotAnswer, result.Kind);
-        Assert.Contains("subject parent/child_requirements is from another run", result.Reason);
-    }
-
     /// <summary>
     /// Review F1 of PR 14: a subject from another run that the step does not consume stops the step for a person. Passing it
     /// as absent would let requirement_inheritance pass a child with no parent plan to compare against.
@@ -334,7 +317,7 @@ public sealed class ValidationActionTests : IAsyncDisposable
     }
 
     /// <summary>
-    /// Without the workflow's consumed artifacts, a subject is the one an agent step at the same place would consume
+    /// A subject of this run that is not among the step's consumed artifacts is the one an agent step at the same place would consume
     /// (review F3): a producer in the step's own scope first, then the first by step id. Here verify.satisfaction sees the
     /// fixer's claims (verify.fix.fix), as the repair agent beside it does, not implement's or verify.repair's.
     /// </summary>

@@ -27,7 +27,7 @@ public sealed class TrackerUpdateAndBudgetTests
 
     static (RunCore? Core, IReadOnlyList<Diagnostic> Diagnostics) Start(string template, params (string Name, string Value)[] parameters) =>
         RunCore.Start(Libraries(new DiagnosticBag()), LibraryReference.TryParse(template)!,
-            new RunInfo("run-1", ["acme/api"], parameters.ToDictionary(p => p.Name, p => YamlWriter.Read(p.Value))), new RunOptions { BranchFromPattern = true });
+            new RunInfo("run-1", ["acme/api"], parameters.ToDictionary(p => p.Name, p => YamlWriter.Read(p.Value))));
 
     static Plan Load(string template, params (string Name, string Value)[] parameters)
     {

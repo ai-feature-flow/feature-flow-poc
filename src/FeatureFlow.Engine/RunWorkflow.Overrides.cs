@@ -18,9 +18,6 @@ namespace FeatureFlow.Engine;
 /// </summary>
 public partial class RunWorkflow
 {
-    /// <summary>The patch marker of M7's steering: reopening a decided join, and closing an aborted run's pull requests.</summary>
-    public const string SteeringPatch = "m7-steering";
-
     /// <summary>Query: the pull requests a run opened, and the child runs it started (LOG 215), for an aborted ancestor to close.</summary>
     public const string PullRequestsQuery = "pull_requests";
 
@@ -285,7 +282,7 @@ public partial class RunWorkflow
     /// </summary>
     async Task CloseAbortedPullRequestsAsync()
     {
-        if (!closePullRequests || core!.State.Status != RunStatus.Aborted || !Workflow.Patched(SteeringPatch))
+        if (!closePullRequests || core!.State.Status != RunStatus.Aborted)
             return;
         var opened = PullRequestsOpened();
         var started = ChildrenStarted();
