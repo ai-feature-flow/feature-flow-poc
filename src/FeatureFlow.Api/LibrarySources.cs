@@ -30,7 +30,12 @@ public static class LibrarySources
             var where = source.Ref is null ? source.Repository : $"{source.Repository} at {source.Ref}";
             string[] branch = source.Ref is null ? [] : ["--branch", source.Ref];
             var (exit, error) = await GitAsync(["clone", "--quiet", "--depth", "1", "--no-tags", .. branch, "--", source.Repository!, checkout], ct);
-            return exit == 0 ? Open(checkout, $"the library in {where}") : (null, $"{where} does not clone: {error.Trim()}");
+            if (exit != 0)
+                return (null, $"{where} does not clone: {error.Trim()}");
+            var folder = Path.Combine(checkout, source.Path);
+            return Directory.Exists(folder)
+                ? Open(folder, source.Path.Length == 0 ? $"the library in {where}" : $"the library at {source.Path} in {where}")
+                : (null, $"{where} has no folder {source.Path}");
         }
         finally
         {

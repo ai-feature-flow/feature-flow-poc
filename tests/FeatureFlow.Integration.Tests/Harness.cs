@@ -52,13 +52,14 @@ public sealed class Harness : IAsyncDisposable
     /// lines; <paramref name="fromChat"/> the approval rule's <c>from_chat</c>; <paramref name="temporal"/> further keys of the
     /// installation's <c>temporal</c> map, after a comma; <paramref name="secrets"/> further secrets beside the API token;
     /// <paramref name="librarySources"/> further entries of the organisation's <c>libraries</c>, as YAML maps;
-    /// <paramref name="agentWorker"/> false starts no agent worker.
+    /// <paramref name="agentWorker"/> false starts no agent worker; <paramref name="temporalAddress"/> another Temporal than
+    /// <see cref="TemporalAddress"/>.
     /// </para>
     public static async Task<Harness> StartAsync(string name, string script = "{}", bool autoApprove = false, string[]? omitTypes = null,
         string[]? libraries = null, string providers = "", string policy = "", string installation = "", IEnumerable<FeatureFlow.Providers.Abstractions.ProviderFactory>? factories = null,
         string agentRuntime = "{ default: scripted, dry_run: recording, instances: { scripted: { script: script.yaml }, recording: { folder: recorded } } }",
         string organisation = "", bool fromChat = false, string temporal = "", IReadOnlyDictionary<string, string>? secrets = null, string[]? librarySources = null,
-        bool agentWorker = true)
+        bool agentWorker = true, string? temporalAddress = null)
     {
         var folder = IOPath.Combine(IOPath.GetTempPath(), $"ff-it-{name}-{Guid.NewGuid():N}"[..40]);
         Directory.CreateDirectory(folder);
@@ -74,7 +75,7 @@ public sealed class Harness : IAsyncDisposable
             api_version: feature-flow/v1
             kind: installation
             development: true
-            temporal: { address: "{{TemporalAddress}}", namespace: default, task_queue: {{queue}}{{temporal}} }
+            temporal: { address: "{{temporalAddress ?? TemporalAddress}}", namespace: default, task_queue: {{queue}}{{temporal}} }
             providers:
               artifact_store: { default: filesystem, instances: { filesystem: { root: artifacts } } }
               record_store: { default: sqlite, instances: { sqlite: { path: records.db } } }

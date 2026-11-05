@@ -98,6 +98,7 @@ public class OrganisationTests
               - { name: acme_delivery, source: git, repository: "https://git.example/acme/library.git", ref: v3 }
               - { name: acme_tools, source: git, repository: "git@git.example:acme/tools.git" }
               - { name: acme_ssh, source: git, repository: "ssh://git@git.example/acme/ssh.git" }
+              - { name: std, source: git, repository: "https://git.example/acme/engine.git", ref: v1, path: library/std }
             """);
 
         Assert.Empty(d);
@@ -105,11 +106,13 @@ public class OrganisationTests
         Assert.Equal(new LibrarySourceConfig("acme_tools", "git", "", "git@git.example:acme/tools.git", null), org.Libraries[1]);
         // A user name alone, as SSH uses, is not a credential.
         Assert.Equal("ssh://git@git.example/acme/ssh.git", org.Libraries[2].Repository);
+        Assert.Equal(new LibrarySourceConfig("std", "git", "library/std", "https://git.example/acme/engine.git", "v1"), org.Libraries[3]);
     }
 
     [Theory]
     [InlineData("{ name: a, source: git, ref: main }", "needs 'repository'")]
-    [InlineData("{ name: a, source: git, repository: r, path: lib }", "unknown key 'path'")]
+    [InlineData("{ name: a, source: git, repository: r, path: ../lib }", "libraries.a.path must be a folder inside the repository")]
+    [InlineData("{ name: a, source: git, repository: r, path: /etc }", "libraries.a.path must be a folder inside the repository")]
     [InlineData("{ name: a, source: git, repository: r, ref: --upload-pack=x }", "libraries.a.ref must be a branch or tag name")]
     [InlineData("{ name: a, source: directory, path: lib, repository: r }", "unknown key 'repository'")]
     [InlineData("{ name: a, source: package, path: lib }", "the package library source is not supported in version 1")]

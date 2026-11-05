@@ -71,7 +71,7 @@ public abstract class ShellSandbox(string user, Func<IArtifactStoreProvider> sto
             script.Append($"cd {Quote(wd)}\n");
         script.Append("exec ").Append(command.AsRoot ? "" : $"setpriv --reuid={User} --regid={User} --init-groups --no-new-privs -- ")
             .Append(string.Join(" ", command.Arguments.Select(Quote))).Append('\n');
-        var start = $"cd {dir}\nsetsid sh {dir}/run.sh > {dir}/out 2>&1 < /dev/null &\nchild=$!\necho $child > {dir}/pid\nset +e\nwait $child\necho $? > {dir}/exit\n";
+        var start = $"echo $$ > {dir}/waiter\ncd {dir}\nsetsid sh {dir}/run.sh > {dir}/out 2>&1 < /dev/null &\nchild=$!\necho $child > {dir}/pid\nset +e\nwait $child\necho $? > {dir}/exit\n";
         foreach (var (file, content) in new[] { ("run.sh", script.ToString()), ("start.sh", start) })
             if (await Write(sandbox, $"{dir}/{file}", Encoding.UTF8.GetBytes(content), cancellationToken) is { } failed)
                 return failed.Convert<CommandHandle>();
@@ -104,7 +104,10 @@ public abstract class ShellSandbox(string user, Func<IArtifactStoreProvider> sto
     public async Task<ProviderResult<CommandStatus>> GetCommandStatusAsync(CommandHandle command, long cursor, CancellationToken cancellationToken)
     {
         var dir = $"/ff/cmd/{CommandId(command.Key)}";
-        var script = $"cd {dir} || exit 3; if [ -f exit ]; then echo \"E:$(cat exit)\"; elif kill -0 \"$(cat pid)\" 2>/dev/null; then echo R; else echo L; fi; tail -c +{cursor + 1} out";
+        // Running while the start script that waits for the command lives: it writes the exit code before it ends, so a
+        // command that has ended but whose code is not yet written still reads as running, never as lost.
+        var script = $"cd {dir} || exit 3; if [ -s exit ]; then echo \"E:$(cat exit)\"; elif kill -0 \"$(cat waiter)\" 2>/dev/null; then echo R; " +
+                     $"elif [ -s exit ]; then echo \"E:$(cat exit)\"; else echo L; fi; tail -c +{cursor + 1} out";
         var run = await ExecAsync(command.Sandbox, script, null, cancellationToken);
         if (!run.Ok)
             return new ProviderResult<CommandStatus>(null, run.Error);

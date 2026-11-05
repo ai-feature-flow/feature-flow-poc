@@ -38,7 +38,7 @@ public sealed partial class ModelProxy(ModelProxyOptions options, HttpMessageHan
     [GeneratedRegex("\"output_tokens\"\\s*:\\s*(\\d+)")]
     private static partial Regex OutputTokens();
 
-    /// <summary>Forwards one request whose step token the endpoint has checked. Returns the usage seen, for the step's record.</summary>
+    /// <summary>Forwards one request whose step token the endpoint has checked. Returns the usage seen, for the step's record, and why the model could not be reached when it could not.</summary>
     /// <summary>
     /// The only requests forwarded (LOG 104): the Messages API and its token count, by POST, as relative paths. Anything
     /// else is refused before the credential is read, so an agent cannot point the proxy at another host.
@@ -54,13 +54,13 @@ public sealed partial class ModelProxy(ModelProxyOptions options, HttpMessageHan
         return target.Scheme == upstream.Scheme && target.Host == upstream.Host && target.Port == upstream.Port ? target : null;
     }
 
-    public async Task<(int Status, long InputTokens, long OutputTokens, string? Model)> ForwardAsync(HttpContext context, string path, CancellationToken cancellationToken)
+    public async Task<(int Status, long InputTokens, long OutputTokens, string? Model, string? Unreachable)> ForwardAsync(HttpContext context, string path, CancellationToken cancellationToken)
     {
         if (Target(options.Upstream, context.Request.Method, path, context.Request.QueryString.Value ?? "") is not { } target)
         {
             context.Response.StatusCode = 404;
             await context.Response.WriteAsync("""{"type":"error","error":{"type":"not_found_error","message":"the model proxy does not forward this request"}}""", cancellationToken);
-            return (404, 0, 0, null);
+            return (404, 0, 0, null, null);
         }
 
         var credential = await options.Credential(cancellationToken);
@@ -68,7 +68,7 @@ public sealed partial class ModelProxy(ModelProxyOptions options, HttpMessageHan
         {
             context.Response.StatusCode = 503;
             await context.Response.WriteAsync("""{"type":"error","error":{"type":"api_error","message":"the model proxy has no credential configured"}}""", cancellationToken);
-            return (503, 0, 0, null);
+            return (503, 0, 0, null, null);
         }
 
         using var request = new HttpRequestMessage(new HttpMethod(context.Request.Method), target);
@@ -103,11 +103,18 @@ public sealed partial class ModelProxy(ModelProxyOptions options, HttpMessageHan
         {
             response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         }
-        catch (HttpRequestException)
+        catch (HttpRequestException e)
         {
+            // The cause (a refused connection, a certificate the host does not trust) is for whoever runs the worker to fix.
+            var cause = e.InnerException is { } inner ? $"{e.Message} {inner.Message}" : e.Message;
+            Console.Error.WriteLine($"Model proxy: {target.Host} could not be reached: {cause}");
             context.Response.StatusCode = 502;
-            await context.Response.WriteAsync("""{"type":"error","error":{"type":"api_error","message":"the model proxy could not reach the model"}}""", cancellationToken);
-            return (502, 0, 0, model);
+            await context.Response.WriteAsync(System.Text.Json.JsonSerializer.Serialize(new
+            {
+                type = "error",
+                error = new { type = "api_error", message = $"the model proxy could not reach the model: {cause}" },
+            }), cancellationToken);
+            return (502, 0, 0, model, cause);
         }
 
         using (response)
@@ -130,7 +137,7 @@ public sealed partial class ModelProxy(ModelProxyOptions options, HttpMessageHan
             }
 
             var text = System.Text.Encoding.UTF8.GetString(seen.ToArray());
-            return ((int)response.StatusCode, Max(InputTokens(), text), Max(OutputTokens(), text), model);
+            return ((int)response.StatusCode, Max(InputTokens(), text), Max(OutputTokens(), text), model, null);
         }
     }
 

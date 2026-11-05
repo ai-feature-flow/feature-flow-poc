@@ -33,6 +33,12 @@ public static class RunWorkflowNames
     public const string QuestionOpened = "question_opened";
 
     /// <summary>
+    /// Signal, from the agent worker's model proxy: a step's model cannot be reached, and why (LOG 326). The run records it
+    /// on its timeline; the agent worker sends it once per step and cause.
+    /// </summary>
+    public const string ModelUnreachable = "model_unreachable";
+
+    /// <summary>
     /// Update: a person's run-time override (docs/05 section 5) other than an answer or an abort, with <see cref="OverrideArgs"/>.
     /// The API authorised the key and recorded the override (an <c>OverrideRecord</c>) first, as it does answers.
     /// </summary>
@@ -71,6 +77,9 @@ public sealed record WakeSignal(string Source, string Event, string? StepId = nu
 
 /// <summary>A question an agent asked: the run opens a question decision for it, answered with the <c>answer</c> update.</summary>
 public sealed record QuestionSignal(string QuestionId, string StepId, string StepKey, string Text, IReadOnlyList<string> Options, long TimeoutSeconds);
+
+/// <summary>A step's model could not be reached through the model proxy, with the cause the proxy saw.</summary>
+public sealed record ModelUnreachableSignal(string StepId, string Cause);
 
 /// <summary>A question the run holds open, carried across continue-as-new; <see cref="Deadline"/> is when it times out.</summary>
 public sealed record OpenQuestion(QuestionSignal Question, DateTimeOffset Deadline);

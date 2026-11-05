@@ -20,6 +20,7 @@ public static class RunCommands
                ff run wait <run id> [--for end | wait] [--timeout <seconds>]
                ff run answer <run id> <wait id> <outcome | approve | reject> [--artifact <name>=<file>]...
                ff run findings <run id>
+               ff run artifact <run id> <reference>
                ff run recover <run id> <wait id> retry | go_to <step> [--clean-up] | replan <step> | grant_attempts <n> | end <status>
                ff run abort <run id> [--reason <text>] [--close-pull-requests]
                ff run override <run id> <key> --reason <text> [--step <step id>] [--change <name>=<value>]...
@@ -74,6 +75,8 @@ public static class RunCommands
                     return await client.AnswerAsync(id, Answer(wait, outcome, options.GetValueOrDefault("--artifact") ?? []));
                 case ["findings", var id]:
                     return await client.PrintAsync($"runs/{id}/findings");
+                case ["artifact", var id, var reference]:
+                    return await client.PrintTextAsync($"runs/{id}/artifacts/{Uri.EscapeDataString(reference)}");
                 case ["recover", var id, var wait, "retry"]:
                     return await client.AnswerAsync(id, new JsonObject { ["wait_id"] = wait, ["action"] = "retry" });
                 case ["recover", var id, var wait, var action, var step] when action is "go_to" or "replan":
@@ -126,6 +129,20 @@ public static class RunCommands
             if (reply is null)
                 return 1;
             output.WriteLine(reply.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            return 0;
+        }
+
+        /// <summary>A GET's reply as text, for an artifact (YAML, Markdown or JSON as it was written).</summary>
+        public async Task<int> PrintTextAsync(string path)
+        {
+            using var response = await http.GetAsync(path);
+            if (!response.IsSuccessStatusCode)
+            {
+                await ReadAsync(response, quiet: false);
+                return 1;
+            }
+
+            output.Write(await response.Content.ReadAsStringAsync());
             return 0;
         }
 

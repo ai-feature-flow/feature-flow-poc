@@ -105,6 +105,10 @@ public sealed class AgentCredentialTests
         Assert.Equal("running", view["run"]!["status"]!.ToString());
         Assert.Empty(view["waits"]!.AsArray());
         Assert.DoesNotContain("attempt_failed", await h.TimelineAsync(runId));
+        // The timeline says why (LOG 326): once for this cause, though every attempt's requests failed the same way.
+        var unreachable = await UntilTimelineAsync(h, runId, "model_unreachable implement: ");
+        Assert.Single(unreachable);
+        Assert.Contains("refused", unreachable[0], StringComparison.OrdinalIgnoreCase);
 
         // The model comes back: the next retry continues the session and the step completes.
         await model.StartAsync();
@@ -117,5 +121,21 @@ public sealed class AgentCredentialTests
         var sessions = (await h.RecordsAsync<AgentEventRecord>(Queries.AgentEvents, Key(runId))).Where(e => e.Kind == "session").Select(e => e.Detail).ToList();
         Assert.Contains("1 ended model_unreachable", sessions);
         Assert.Contains(sessions, s => s.EndsWith("ended completed", StringComparison.Ordinal));
+    }
+
+    /// <summary>The timeline lines starting with <paramref name="prefix"/>, once there is one: the run records a signal's entry a moment after it arrives.</summary>
+    static async Task<List<string>> UntilTimelineAsync(AgentHarness h, string runId, string prefix)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        List<string> lines;
+        do
+        {
+            lines = (await h.TimelineAsync(runId)).Split('\n').Where(l => l.StartsWith(prefix, StringComparison.Ordinal)).ToList();
+            if (lines.Count > 0)
+                return lines;
+            await Task.Delay(250, TestContext.Current.CancellationToken);
+        }
+        while (DateTime.UtcNow < deadline);
+        return lines;
     }
 }
