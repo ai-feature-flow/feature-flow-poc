@@ -101,10 +101,7 @@ public sealed class FeatureFlowHost : IAsyncDisposable
         foreach (var type in providers.Types)
             if (providers.ForRun(type, false) is { } provider && await provider.CheckAsync(CancellationToken.None) is { Ok: false } failed)
                 throw new InvalidOperationException($"the {type} provider is not usable: {failed.Error!.Message}");
-        var client = await TemporalClient.ConnectAsync(new TemporalClientConnectOptions(configuration.Installation.TemporalAddress)
-        {
-            Namespace = configuration.Installation.TemporalNamespace,
-        });
+        var client = await TemporalConnection.ConnectAsync(configuration.Installation, providers);
         var host = new FeatureFlowHost(configuration, providers, client);
         var services = new EngineServices(providers, configuration.Installation, configuration.Organisation);
         var activities = new RunActivities(services, client);

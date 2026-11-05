@@ -58,7 +58,14 @@ public sealed record InstallationConfig(
     long DefaultRaces,
     string Location,
     bool Development = false,
-    AgentWorkerConfig? AgentWorker = null);
+    AgentWorkerConfig? AgentWorker = null)
+{
+    /// <summary><c>temporal.payload_codec</c> (docs/02 section 5): encrypts what the engine sends Temporal. Null: payloads as they are.</summary>
+    public PayloadCodecConfig? PayloadCodec { get; init; }
+}
+
+/// <summary>A payload codec: its name (<c>aes_gcm</c>, the only one in version 1) and the secret holding its key.</summary>
+public sealed record PayloadCodecConfig(string Name, string KeyRef);
 
 /// <summary>A library source of the organisation layer (docs/08 section 3). M3 reads the <c>directory</c> source.</summary>
 public sealed record LibrarySourceConfig(string Name, string Source, string Path);
@@ -190,8 +197,15 @@ public static class ConfigurationReader
         Header(r, "installation");
         string address = "localhost:7233", ns = "default", queue = "feature-flow-orchestration";
         long events = DefaultHandOverEvents;
+        PayloadCodecConfig? codec = null;
         if (MapReader.Of(r.Node("temporal"), d, "temporal") is { } t)
         {
+            if (MapReader.Of(t.Node("payload_codec"), d, "temporal.payload_codec") is { } pc)
+            {
+                codec = new PayloadCodecConfig(pc.Enum("name", ["aes_gcm"], required: true) ?? "aes_gcm", pc.String("key_ref", required: true) ?? "");
+                pc.Finish();
+            }
+
             address = t.String("address") ?? address;
             ns = t.String("namespace") ?? ns;
             queue = t.String("task_queue") ?? queue;
@@ -310,7 +324,7 @@ public static class ConfigurationReader
             foreach (var instance in runtimes.Instances.Values.Where(i => i.Settings["engine_tools"].ScalarText() == "false"))
                 r.Error($"providers.agent_runtime.instances.{instance.Name}: engine_tools: false is for development only; set development: true", r.Map.Location);
         r.Finish();
-        return new InstallationConfig(address, ns, queue, events, providers, auth, attempts, races, file, development, agentWorker);
+        return new InstallationConfig(address, ns, queue, events, providers, auth, attempts, races, file, development, agentWorker) { PayloadCodec = codec };
     }
 
     public static OrganisationConfig? ReadOrganisation(string text, string file, DiagnosticBag d)
