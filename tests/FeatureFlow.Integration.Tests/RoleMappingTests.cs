@@ -44,6 +44,11 @@ public sealed class RoleMappingTests
         // No model in the reviewer's entry: the claude_strong instance's own model shows it ran on that instance.
         // Claude Code resolves the alias to its current Opus model.
         Assert.StartsWith("claude-opus-", ModelOf("Review the role mapping ticket."), StringComparison.Ordinal);
+        // The proxy's record of each model request names the model the runtime asked for (review R2, F3).
+        var models = (await h.RecordsAsync<FeatureFlow.Providers.Abstractions.AgentEventRecord>(FeatureFlow.Providers.Abstractions.Queries.AgentEvents, $"{implementer}/implement/1"))
+            .Where(e => e.Kind == "model").Select(e => e.Detail).ToList();
+        Assert.NotEmpty(models);
+        Assert.All(models, d => Assert.EndsWith($"model={ImplementerModel}", d, StringComparison.Ordinal));
         // Each step ran on its own runtime instance, and the run's record names it with the model.
         Assert.Contains($"session 1 started on runtime claude_code with model {ImplementerModel}", await h.TimelineAsync(implementer));
         Assert.Contains("session 1 started on runtime claude_strong with model of the runtime", await h.TimelineAsync(reviewer));

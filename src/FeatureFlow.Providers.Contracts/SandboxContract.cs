@@ -132,6 +132,17 @@ public abstract class SandboxContract : ContractBase, IAsyncLifetime
         Assert.Equal("cdef", Ok(await Sandboxes.GetCommandStatusAsync(handle, 2, Ct)).Output);
     }
 
+    /// <summary>Review R2, F4: the agent's processes run under a seccomp filter and cannot gain privileges (no setuid escalation).</summary>
+    [Fact]
+    public async Task The_agent_cannot_gain_privileges_and_runs_under_seccomp()
+    {
+        var (exit, output) = await RunAsync("grep -E '^(NoNewPrivs|Seccomp):' /proc/self/status");
+
+        Assert.Equal(0, exit);
+        Assert.Matches(@"NoNewPrivs:\s+1", output);
+        Assert.Matches(@"Seccomp:\s+2", output);
+    }
+
     [Fact]
     public async Task The_agent_cannot_forge_its_commands_records()
     {

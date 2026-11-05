@@ -157,6 +157,8 @@ The sandbox's network (M4 follow-up 12), the Kubernetes pod sandbox, the Copilot
 | `role_mapping` | The workflow ignoring the mapping, the worker ignoring the step's instance, Claude Code ignoring the task's model: each fails `RoleMappingTests` |
 | Copilot hooks | No `PreToolUse` hook: the push is attempted. The exit-2 denial for Copilot: the agent sees no reason. `HookPolicy` without `engine-*` or `path`: 4 tests fail |
 
+**Review R2 fix round:** F1 every Docker attach re-closes a network found open; F2 the Copilot test tries to remove, replace and switch off the engine's hooks; F3 the proxy records each request's model; F4 seccomp and no privilege escalation for the pod, `no_new_privs` for the agent on both platforms; F5 the pod's memory request is below its limit. Each with a control in the PR's report.
+
 **Deviations and judgement calls:** LOG 291 to 297.
 
 **Follow-ups**
@@ -167,3 +169,5 @@ The sandbox's network (M4 follow-up 12), the Kubernetes pod sandbox, the Copilot
 | 2 | Copilot CLI's handling of the hook's `continue: false` when the engine is unreachable is untested: the MCP path ends the runtime itself, the hook path may let the call through (as "unreachable is not denied" requires) without stopping the session |
 | 3 | The agent can add its own files (skills, agents) to Copilot's sticky home between sessions of a step. They run in the same sandbox with the same rights; only `settings.json` and `mcp-config.json` are protected |
 | 4 | `CopilotCliRuntime` repeats some of `ClaudeCodeRuntime` (the `FF_` environment, the result's marker and report file); a shared helper would need a home in `Providers.Abstractions` |
+| 5 | No sweeper removes sandbox pods (or containers) whose run has closed: a run terminated, or an activity never run again, leaves its pod. Its memory request is 256Mi, below its limit, until one exists (review R2, F5) |
+| 6 | The model a step runs on is the runtime's choice: the proxy records the model each request names but does not refuse another (review R2, F3). Pinning it at the proxy needs each runtime's background models too |

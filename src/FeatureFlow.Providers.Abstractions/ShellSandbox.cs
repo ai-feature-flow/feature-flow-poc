@@ -69,7 +69,7 @@ public abstract class ShellSandbox(string user, Func<IArtifactStoreProvider> sto
             script.Append($"export {name}={Quote(value)}\n");
         if (command.WorkingDirectory is { } wd)
             script.Append($"cd {Quote(wd)}\n");
-        script.Append("exec ").Append(command.AsRoot ? "" : $"setpriv --reuid={User} --regid={User} --init-groups -- ")
+        script.Append("exec ").Append(command.AsRoot ? "" : $"setpriv --reuid={User} --regid={User} --init-groups --no-new-privs -- ")
             .Append(string.Join(" ", command.Arguments.Select(Quote))).Append('\n');
         var start = $"cd {dir}\nsetsid sh {dir}/run.sh > {dir}/out 2>&1 < /dev/null &\nchild=$!\necho $child > {dir}/pid\nset +e\nwait $child\necho $? > {dir}/exit\n";
         foreach (var (file, content) in new[] { ("run.sh", script.ToString()), ("start.sh", start) })
@@ -220,6 +220,15 @@ public abstract class ShellSandbox(string user, Func<IArtifactStoreProvider> sto
             s.Append($"ip6tables -A OUTPUT -d {net} -j REJECT\n");
         return s.ToString();
     }
+
+    /// <summary>
+    /// <see cref="NetworkScript"/>, run only when the last rule of each family is missing: for every attach, so a container
+    /// restarted without its rules (by a crash, a failed or cancelled attach) is closed again, while a running agent's network
+    /// is never flushed and reopened (review R2, F1).
+    /// </summary>
+    public static string EnsureNetworkScript(IEnumerable<Uri> reach) =>
+        "if iptables -C OUTPUT -d 224.0.0.0/3 -j REJECT 2>/dev/null && ip6tables -C OUTPUT -d ::ffff:0:0/96 -j REJECT 2>/dev/null; then exit 0; fi\n"
+        + NetworkScript(reach);
 
     /// <summary>Quotes a word for <c>sh</c>.</summary>
     public static string Quote(string value) => "'" + value.Replace("'", "'\"'\"'") + "'";

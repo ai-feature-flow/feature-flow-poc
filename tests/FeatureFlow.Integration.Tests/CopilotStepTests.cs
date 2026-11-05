@@ -17,16 +17,24 @@ public sealed class CopilotStepTests
     static string StepKey(string runId) => $"{runId}/implement/1";
 
     /// <summary>
-    /// An implementer step on Copilot CLI commits, is denied a push by the hook (its settings are the engine's), reports
+    /// An implementer step on Copilot CLI commits, cannot remove, replace or switch off the engine's hooks, is denied a push
+    /// by the hook (its settings are the engine's), reports
     /// through the engine's tool, and its commit reaches the work branch. Copilot's MCP tools are named <c>engine-*</c>.
     /// </summary>
     [Fact]
     public async Task A_copilot_step_commits_is_denied_a_push_and_reports_through_the_engine()
     {
         await using var model = new ScriptedModel("model-key-" + Guid.NewGuid().ToString("N"));
-        string? pushResult = null;
+        string? pushResult = null, tamperResult = null;
         model.Then(_ => Bash("cd /ff/work && echo a > a.txt && git add -A && git commit -q -m 'Add a'"))
-            .Then(_ => Bash("cd /ff/work && git push origin HEAD"))
+            // Review R2, F2: the agent tries to remove or replace the engine's hooks, then to switch them off, before it pushes.
+            .Then(_ => Bash("rm -f /ff/copilot/settings.json; mv /ff/copilot/settings.json /ff/copilot/old.json; echo '{}' > /ff/copilot/settings.json; " +
+                            "echo '{\"disableAllHooks\":true}' > /ff/copilot/settings.local.json; echo '--- settings'; cat /ff/copilot/settings.json"))
+            .Then(c =>
+            {
+                tamperResult = c.LastToolResult;
+                return Bash("cd /ff/work && git push origin HEAD");
+            })
             .Then(c =>
             {
                 pushResult = c.LastToolResult;
@@ -42,6 +50,11 @@ public sealed class CopilotStepTests
 
         Assert.True(status == "completed", $"the run ended {status}:\n{timeline}");
         Assert.Contains("never push", pushResult);
+        // The engine's settings survived the attempt, hooks and all.
+        Assert.NotNull(tamperResult);
+        Assert.Contains("--- settings", tamperResult);
+        var settings = tamperResult[(tamperResult.IndexOf("--- settings", StringComparison.Ordinal) + 1)..];
+        Assert.Contains("/ff/bin/ff-sandbox hook pre_tool_use copilot", settings);
         var events = await h.RecordsAsync<AgentEventRecord>(Queries.AgentEvents, StepKey(runId));
         Assert.Contains(events, e => e.Kind == "hook_pre_tool_use" && e.Detail.StartsWith("Bash deny", StringComparison.Ordinal));
         Assert.Contains(events, e => e.Kind == "hook_pre_tool_use" && e.Detail.StartsWith("engine-report allow", StringComparison.Ordinal));

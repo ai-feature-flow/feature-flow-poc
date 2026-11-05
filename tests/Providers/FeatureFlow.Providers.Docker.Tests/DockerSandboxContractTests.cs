@@ -10,6 +10,8 @@ namespace FeatureFlow.Providers.Docker.Tests;
 /// The sandbox contract against the Docker sandbox. The agent worker is a listener on this machine, reached as
 /// <c>host.docker.internal</c>; the forbidden endpoints stand for what else runs beside it: another port of the same host
 /// (a store, Temporal), a service bound to the host's loopback, and a neighbouring container on the Docker network.
+/// Docker Desktop's networks are in 192.168/16 and 172.16/12 and give containers no IPv6, so the rules for 10/8 and for
+/// IPv6 are not exercised here (review R2); the Kubernetes contract runs against 10/8 (k3d's pods and services).
 /// </summary>
 [Trait("Category", "Integration")]
 public sealed class DockerSandboxContractTests : SandboxContract
@@ -70,6 +72,23 @@ public sealed class DockerSandboxContractTests : SandboxContract
         store.Stop();
         loopback.Stop();
         Directory.Delete(folder, recursive: true);
+    }
+
+    /// <summary>
+    /// Review R2, F1: a container that runs without its rules (restarted by Docker, or started by an attach that failed
+    /// before closing its network) is closed again by the next attach.
+    /// </summary>
+    [Fact]
+    public async Task A_container_running_without_its_rules_is_closed_again_on_attach()
+    {
+        var cli = new DockerCli();
+        Assert.Equal(0, (await cli.RunAsync(["restart", "-t", "0", Sandbox.Id], Ct)).Unwrap().Exit);
+
+        Ok(await Sandboxes.AttachAsync(Key, Ct));
+
+        foreach (var endpoint in Forbidden)
+            Assert.False(await ConnectsAsync(endpoint), $"after the restart, the sandbox reaches {endpoint}");
+        Assert.True(await ConnectsAsync(Reachable));
     }
 
     [Fact]

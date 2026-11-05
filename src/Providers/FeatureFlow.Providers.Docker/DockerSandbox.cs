@@ -72,16 +72,13 @@ public sealed class DockerSandbox(string image, string user, Func<IArtifactStore
             return new ProviderResult<SandboxHandle>(null, inspect.Error);
         if (inspect.Value!.Exit != 0)
             return ProviderResult<SandboxHandle>.Failure("not_found", $"no sandbox for {key}");
-        if (inspect.Value.Text.Trim() != "true")
-        {
-            // A restarted container starts with no rules: close its network again before it is used.
-            var handle = new SandboxHandle(name, "docker");
-            if (await Docker(["start", name], "start", cancellationToken) is { } failed)
-                return failed.Convert<SandboxHandle>();
-            if (await Check(ExecAsync(handle, NetworkScript(reach), null, cancellationToken), "close its network") is { } open)
-                return open.Convert<SandboxHandle>();
-        }
-
+        var handle = new SandboxHandle(name, "docker");
+        if (inspect.Value.Text.Trim() != "true" && await Docker(["start", name], "start", cancellationToken) is { } failed)
+            return failed.Convert<SandboxHandle>();
+        // Every attach makes sure the network is closed: a restarted container starts with no rules, and an earlier attach
+        // may have started it and failed before closing it (review R2, F1).
+        if (await Check(ExecAsync(handle, EnsureNetworkScript(reach), null, cancellationToken), "close its network") is { } open)
+            return open.Convert<SandboxHandle>();
         return ProviderResult<SandboxHandle>.Success(new SandboxHandle(name, "docker"));
     }
 

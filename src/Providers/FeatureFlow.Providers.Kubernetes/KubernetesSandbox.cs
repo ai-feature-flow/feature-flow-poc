@@ -11,7 +11,7 @@ namespace FeatureFlow.Providers.Kubernetes;
 /// The Kubernetes pod sandbox (docs/06 section 3.1; the team profile). One pod per sandbox, named from the step's key, so a
 /// new worker finds it again (docs/02 section 4.3); commands and copies are <see cref="ShellSandbox"/>'s, over the API's exec.
 /// <para>
-/// The pod has CPU and memory limits, no service account token and no service environment variables, so it holds no
+/// The pod has CPU and memory limits, the default seccomp profile, no privilege escalation, no service account token and no service environment variables, so it holds no
 /// credential to the cluster and no list of its services (F6). Its <c>/ff</c> folder is an <c>emptyDir</c>, so a restarted
 /// container keeps the step's work and its commands read as lost, as a restarted Docker container's do. Its network is the
 /// <see cref="NetworkPolicyName"/> policy's, which selects every sandbox pod by <see cref="AppLabel"/>: the agent worker and
@@ -81,9 +81,16 @@ public sealed class KubernetesSandbox(IKubernetes client, string @namespace, str
                     Resources = new V1ResourceRequirements
                     {
                         Limits = new Dictionary<string, ResourceQuantity> { ["cpu"] = new(cpu), ["memory"] = new(memory) },
-                        Requests = new Dictionary<string, ResourceQuantity> { ["cpu"] = new("100m"), ["memory"] = new(memory) },
+                        // Review R2, F5: a request below the limit, so a pod left behind reserves little (no sweeper yet).
+                        Requests = new Dictionary<string, ResourceQuantity> { ["cpu"] = new("100m"), ["memory"] = new("256Mi") },
                     },
                     VolumeMounts = [new V1VolumeMount { Name = "ff", MountPath = "/ff" }],
+                    // Review R2, F4: the runtime's default seccomp profile, and no process gains privileges it was not started with.
+                    SecurityContext = new V1SecurityContext
+                    {
+                        SeccompProfile = new V1SeccompProfile { Type = "RuntimeDefault" },
+                        AllowPrivilegeEscalation = false,
+                    },
                 },
             ],
             Volumes = [new V1Volume { Name = "ff", EmptyDir = new V1EmptyDirVolumeSource() }],
