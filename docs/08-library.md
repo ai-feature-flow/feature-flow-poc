@@ -99,7 +99,7 @@ Where the folder comes from is a **source**:
 | Source | Use |
 |---|---|
 | `directory` | A path the API service can read. The solo profile's normal source: edit a file, start a run, and the change is used |
-| `git` | A repository and a reference (branch or tag), fetched by the API service at each read with its own Git credentials (LOG 286). The usual source for a team or organisation |
+| `git` | A repository, a reference (branch or tag) and optionally the library's folder in it, fetched by the API service at each read with its own Git credentials (LOG 286, 321). The usual source for a team or organisation |
 | `package` | A NuGet package, for distributing versioned libraries publicly. Not in version 1 (LOG 287) |
 
 Whatever the source, at run start the API resolves every content item the run

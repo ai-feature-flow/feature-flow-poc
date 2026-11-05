@@ -92,6 +92,26 @@ public sealed class GitLibrarySourceTests : IDisposable
         Assert.Contains("no library.yaml", opened.Problem);
     }
 
+    [Fact]
+    public async Task A_library_in_a_folder_of_its_repository_is_read_from_its_path()
+    {
+        var engine = Path.Combine(folder, "engine");
+        CopyTree(Path.Combine(FindRoot(), "library", "std"), Path.Combine(engine, "library", "std"));
+        Git(engine, "init", "-q", "--initial-branch=main");
+        Git(engine, "add", "-A");
+        Git(engine, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "engine");
+
+        var nested = await LibrarySources.OpenAsync(new LibrarySourceConfig("std", "git", "library/std", engine, "main"), Organisation, Ct);
+        var root = await LibrarySources.OpenAsync(new LibrarySourceConfig("std", "git", "", engine, "main"), Organisation, Ct);
+        var missing = await LibrarySources.OpenAsync(new LibrarySourceConfig("std", "git", "library/nothing", engine, "main"), Organisation, Ct);
+
+        Assert.Equal("std", nested.Library!.Manifest.Name);
+        Assert.Null(root.Library);
+        Assert.Contains("no library.yaml", root.Problem);
+        Assert.Null(missing.Library);
+        Assert.Contains($"{engine} at main has no folder library/nothing", missing.Problem);
+    }
+
     [Theory]
     [InlineData("main", null)]
     [InlineData("no-such-branch", "organisation: libraries.acme: ")]

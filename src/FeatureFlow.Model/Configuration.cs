@@ -371,7 +371,10 @@ public static class ConfigurationReader
                     if (Uri.TryCreate(repository, UriKind.Absolute, out var url) && url.UserInfo.Length > 0
                         && (url.UserInfo.Contains(':') || url.Scheme is "http" or "https"))
                         l.Error($"libraries.{libName}.repository must not hold credentials; use the host's Git credentials", l.Map.Location);
-                    lib = new LibrarySourceConfig(libName, "git", "", repository, reference);
+                    var path = l.String("path") ?? "";
+                    if (Path.IsPathRooted(path) || path.Split('/', '\\').Contains(".."))
+                        l.Error($"libraries.{libName}.path must be a folder inside the repository, not '{path}'", l.Map.Location);
+                    lib = new LibrarySourceConfig(libName, "git", path, repository, reference);
                 }
                 else
                 {
