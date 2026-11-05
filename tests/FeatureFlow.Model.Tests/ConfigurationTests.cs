@@ -93,7 +93,7 @@ public class ConfigurationTests
     [InlineData("recording: { folder: rec } } }", "recording: { folder: rec }, claude: { provider: claude_code, engine_tools: false } } }", "engine_tools: false is for development only")]
     [InlineData("  record_store: { default: sqlite, instances: { sqlite: { path: records.db } } }", "  record_stor: { instances: { sqlite: {} } }", "unknown provider type 'record_stor'")]
     [InlineData("  record_store: { default: sqlite,", "  record_store: { default: postgres,", "names instance 'postgres'")]
-    [InlineData("defaults:", "workers: { mode: local }\ndefaults:", "workers is not read before M8")]
+    [InlineData("defaults:", "workers: { mode: local }\ndefaults:", "workers is not supported in version 1")]
     [InlineData("defaults:", "observability: { otlp_endpoint: \"otel:4317\" }\ndefaults:", "observability.otlp_endpoint must be an http or https URL")]
     [InlineData("defaults:", "observability: {}\ndefaults:", "otlp_endpoint")]
     [InlineData("defaults:", "observability: { otlp_endpoint: \"http://otel:4317\", sampling: 0.5 }\ndefaults:", "unknown key 'sampling'")]

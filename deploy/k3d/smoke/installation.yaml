@@ -1,6 +1,6 @@
-# A trial installation for the k3d cluster: the real stores and Temporal in the cluster, payloads encrypted, with fake
-# providers for everything outside it and a scripted agent, so a std ticket run completes with no GitHub, tracker or
-# model:
+# A trial installation for the k3d cluster: the real stores, Temporal and sandbox provider in the cluster, payloads
+# encrypted, with fake providers for everything outside it and a scripted agent (which makes no sandbox), so a std
+# ticket run completes with no GitHub, tracker or model:
 #
 #   deploy/k3d/up.sh deploy/k3d/smoke
 #
@@ -26,7 +26,7 @@ providers:
   secrets: { default: file, instances: { file: { path: /var/run/secrets/feature-flow/secrets.json } } }
   agent_runtime: { default: scripted, instances: { scripted: { script: script.yaml } } }
   action_stand_in: { default: scripted, instances: { scripted: { script: script.yaml } } }
-  sandbox: { instances: { fake: {} } }
+  sandbox: { default: kubernetes, instances: { kubernetes: { namespace: feature-flow-sandboxes, image: feature-flow-sandbox:dev } } }
   vcs: { instances: { fake: {} } }
   code_host: { instances: { fake: {} } }
   ci: { instances: { fake: {} } }

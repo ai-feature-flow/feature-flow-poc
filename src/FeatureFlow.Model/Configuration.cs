@@ -312,12 +312,12 @@ public static class ConfigurationReader
             aw.Finish();
         }
 
-        foreach (var later in new[] { "workers" })
-            if (r.Has(later))
-            {
-                r.Node(later);
-                r.Error($"{later} is not read before M8; remove it", r.Map[later]!.Location);
-            }
+        // Replica counts are the deployment's; pools by sandbox capability are not in version 1 (LOG 318).
+        if (r.Has("workers"))
+        {
+            r.Node("workers");
+            r.Error("workers is not supported in version 1; remove it", r.Map["workers"]!.Location);
+        }
 
         string? otlpEndpoint = null;
         if (MapReader.Of(r.Node("observability"), d, "observability") is { } o)
