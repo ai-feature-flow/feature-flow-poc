@@ -311,3 +311,25 @@ The sandbox's network (M4 follow-up 12), the Kubernetes pod sandbox, the Copilot
 | 4 | `CopilotCliRuntime` repeats some of `ClaudeCodeRuntime` (the `FF_` environment, the result's marker and report file); a shared helper would need a home in `Providers.Abstractions` |
 | 5 | No sweeper removes sandbox pods (or containers) whose run has closed: a run terminated, or an activity never run again, leaves its pod. Its memory request is 256Mi, below its limit, until one exists (review R2, F5) |
 | 6 | The model a step runs on is the runtime's choice: the proxy records the model each request names but does not refuse another (review R2, F3). Pinning it at the proxy needs each runtime's background models too |
+
+## Integration
+
+Worker W5, branch `m8-integration`, from `m8` at `30319c8` (PRs #25 to #31 merged). Temporal on port 8633 for local
+runs; k3d cluster `ff-w5`. Judgement calls LOG 321 to 330, unreviewed.
+
+### Cross-piece checks
+
+On the merged `m8` before any change (Debug, `-m:4`).
+
+| Check | Result |
+|---|---|
+| Default suite | 1,382 passed, 0 failed (24 projects) |
+| Integration suite (Temporal :8633, Docker) | 168 passed, 0 failed (Integration 116, Postgres 26, S3 12, Docker 14) |
+| The three host images and the sandbox image | Built by `up.sh` |
+| `deploy/k3d/up.sh deploy/k3d/smoke` from no cluster | Up in 2 min 20 s; each host restarted 4 times while Postgres started (Packaging follow-up 1) |
+| `Cluster` suite against it | 21 passed (Integration 7, Kubernetes 14) |
+| M4 follow-up 12 on the deployed cluster, by hand | A pod in `feature-flow-sandboxes` (the sandbox image) is refused by Temporal, Postgres, MinIO and the API, and reaches the agent worker and github.com |
+
+Controls for the hand check: with the sandboxes' egress policy deleted, the probe reaches the API (Temporal and the
+stores stay refused by their own ingress policy, a second layer); with that policy deleted too, it reaches all four.
+Re-applying `deploy/k3d` restores the refusals.
