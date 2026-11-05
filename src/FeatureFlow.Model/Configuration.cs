@@ -58,10 +58,20 @@ public sealed record InstallationConfig(
     long DefaultRaces,
     string Location,
     bool Development = false,
-    AgentWorkerConfig? AgentWorker = null);
+    AgentWorkerConfig? AgentWorker = null)
+{
+    /// <summary><c>temporal.payload_codec</c> (docs/02 section 5): encrypts what the engine sends Temporal. Null: payloads as they are.</summary>
+    public PayloadCodecConfig? PayloadCodec { get; init; }
+}
 
-/// <summary>A library source of the organisation layer (docs/08 section 3). M3 reads the <c>directory</c> source.</summary>
-public sealed record LibrarySourceConfig(string Name, string Source, string Path);
+/// <summary>A payload codec: its name (<c>aes_gcm</c>, the only one in version 1) and the secret holding its key.</summary>
+public sealed record PayloadCodecConfig(string Name, string KeyRef);
+
+/// <summary>
+/// A library source of the organisation layer (docs/08 section 3): a <c>directory</c> at <see cref="Path"/>, relative to the
+/// organisation file, or a <c>git</c> <see cref="Repository"/> at <see cref="Ref"/>, a branch or tag (its default branch when null).
+/// </summary>
+public sealed record LibrarySourceConfig(string Name, string Source, string Path, string? Repository = null, string? Ref = null);
 
 /// <summary>A cap: a value, and whether a request may exceed it (docs/05 section 3.1).</summary>
 public sealed record Cap<T>(T Value, bool Locked);
@@ -190,8 +200,15 @@ public static class ConfigurationReader
         Header(r, "installation");
         string address = "localhost:7233", ns = "default", queue = "feature-flow-orchestration";
         long events = DefaultHandOverEvents;
+        PayloadCodecConfig? codec = null;
         if (MapReader.Of(r.Node("temporal"), d, "temporal") is { } t)
         {
+            if (MapReader.Of(t.Node("payload_codec"), d, "temporal.payload_codec") is { } pc)
+            {
+                codec = new PayloadCodecConfig(pc.Enum("name", ["aes_gcm"], required: true) ?? "aes_gcm", pc.String("key_ref", required: true) ?? "");
+                pc.Finish();
+            }
+
             address = t.String("address") ?? address;
             ns = t.String("namespace") ?? ns;
             queue = t.String("task_queue") ?? queue;
@@ -310,7 +327,7 @@ public static class ConfigurationReader
             foreach (var instance in runtimes.Instances.Values.Where(i => i.Settings["engine_tools"].ScalarText() == "false"))
                 r.Error($"providers.agent_runtime.instances.{instance.Name}: engine_tools: false is for development only; set development: true", r.Map.Location);
         r.Finish();
-        return new InstallationConfig(address, ns, queue, events, providers, auth, attempts, races, file, development, agentWorker);
+        return new InstallationConfig(address, ns, queue, events, providers, auth, attempts, races, file, development, agentWorker) { PayloadCodec = codec };
     }
 
     public static OrganisationConfig? ReadOrganisation(string text, string file, DiagnosticBag d)
@@ -324,9 +341,27 @@ public static class ConfigurationReader
             if (MapReader.Of(item, d, "a library source") is { } l)
             {
                 var source = l.Enum("source", ["directory", "git", "package"], required: true);
-                if (source is "git" or "package")
-                    l.Error($"the {source} library source arrives in M8; M3 reads directory", l.Map.Location);
-                var lib = new LibrarySourceConfig(l.String("name", required: true) ?? "", source ?? "directory", l.String("path", required: true) ?? "");
+                var libName = l.String("name", required: true) ?? "";
+                if (source == "package")
+                    l.Error("the package library source is not supported in version 1; use directory or git", l.Map.Location);
+                LibrarySourceConfig lib;
+                if (source == "git")
+                {
+                    var reference = l.String("ref");
+                    if (reference is not null && (reference.Length == 0 || reference.StartsWith('-')))
+                        l.Error($"libraries.{libName}.ref must be a branch or tag name, not '{reference}'", l.Map.Location);
+                    var repository = l.String("repository", required: true) ?? "";
+                    // Credentials come from the host's Git setup (LOG 286, 289): a URL holding one would reach logs and errors.
+                    if (Uri.TryCreate(repository, UriKind.Absolute, out var url) && url.UserInfo.Length > 0
+                        && (url.UserInfo.Contains(':') || url.Scheme is "http" or "https"))
+                        l.Error($"libraries.{libName}.repository must not hold credentials; use the host's Git credentials", l.Map.Location);
+                    lib = new LibrarySourceConfig(libName, "git", "", repository, reference);
+                }
+                else
+                {
+                    lib = new LibrarySourceConfig(libName, source ?? "directory", l.String("path", required: true) ?? "");
+                }
+
                 l.Finish();
                 libraries.Add(lib);
             }

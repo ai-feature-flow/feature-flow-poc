@@ -102,10 +102,7 @@ public sealed class FeatureFlowHost : IAsyncDisposable
         foreach (var type in providers.Types)
             if (providers.ForRun(type, false) is { } provider && await provider.CheckAsync(CancellationToken.None) is { Ok: false } failed)
                 throw new InvalidOperationException($"the {type} provider is not usable: {failed.Error!.Message}");
-        var client = await TemporalClient.ConnectAsync(new TemporalClientConnectOptions(configuration.Installation.TemporalAddress)
-        {
-            Namespace = configuration.Installation.TemporalNamespace,
-        });
+        var client = await TemporalConnection.ConnectAsync(configuration.Installation, providers);
         var host = new FeatureFlowHost(configuration, providers, client);
         var services = new EngineServices(providers, configuration.Installation, configuration.Organisation);
         var activities = new RunActivities(services, client);
@@ -227,11 +224,14 @@ public static class HostArguments
     /// <summary>
     /// Runs a host until SIGTERM or Ctrl+C, then stops its workers and endpoints and exits 0. Without its own handler a
     /// host with a web endpoint never exited on SIGTERM: ASP.NET's handler took the signal and stopped only the endpoint.
+    /// With the first argument <c>reconcile</c>, rebuilds the run index once and exits (<see cref="RunIndex"/>).
     /// </summary>
     public static async Task<int> RunAsync(string[] args, IEnumerable<ProviderFactory> factories, bool orchestration, bool agent, bool apiHost)
     {
         var (installation, organisation) = Files(args);
         var configuration = FeatureFlowConfiguration.Load(installation, organisation);
+        if (args.FirstOrDefault() == "reconcile")
+            return await ReconcileAsync(configuration, factories, Console.Out);
         using var cancel = new CancellationTokenSource();
         void Stop(PosixSignalContext context)
         {
@@ -253,6 +253,20 @@ public static class HostArguments
         }
 
         Console.WriteLine("Stopped");
+        return 0;
+    }
+
+    /// <summary>The <c>reconcile</c> command: the installation's record store and Temporal, one pass, a line saying what it did.</summary>
+    public static async Task<int> ReconcileAsync(FeatureFlowConfiguration configuration, IEnumerable<ProviderFactory> factories, TextWriter output)
+    {
+        var providers = ProviderComposer.Compose(configuration.Installation, factories);
+        var records = providers.Required<IRecordStoreProvider>("record_store");
+        (await records.CheckAsync(CancellationToken.None)).Unwrap();
+        var client = await TemporalConnection.ConnectAsync(configuration.Installation, providers);
+        var result = await RunIndex.ReconcileAsync(client, configuration.Installation.TaskQueue, records, CancellationToken.None);
+        await output.WriteLineAsync($"reconcile: {result.Runs} runs in Temporal on {configuration.Installation.TaskQueue}, {result.Rebuilt.Count} records rebuilt");
+        foreach (var run in result.Rebuilt)
+            await output.WriteLineAsync($"  {run.RunId} {run.Status}");
         return 0;
     }
 }

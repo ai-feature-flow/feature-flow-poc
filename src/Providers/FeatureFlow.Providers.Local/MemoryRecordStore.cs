@@ -33,7 +33,8 @@ public sealed class InMemoryRecordStore : IRecordStoreProvider
         lock (gate)
         {
             foreach (var run in records.Runs ?? [])
-                runs[run.RunId] = run;
+                if (!runs.TryGetValue(run.RunId, out var known) || known.UpdatedAt <= run.UpdatedAt)
+                    runs[run.RunId] = run;
             foreach (var finding in records.Findings ?? [])
                 findings[(finding.RunId, finding.FindingId)] = finding;
             foreach (var e in records.FindingEvents ?? [])

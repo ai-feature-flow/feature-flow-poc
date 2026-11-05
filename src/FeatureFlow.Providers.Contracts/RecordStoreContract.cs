@@ -48,6 +48,34 @@ public abstract class RecordStoreContract : ContractBase
     }
 
     [Fact]
+    public async Task An_older_run_record_does_not_replace_a_newer_one()
+    {
+        // A late write (reconcile's view of an open run, a timed-out activity finishing on another host) must not undo a newer one.
+        Ok(await Append(new RecordBatch(Runs: [Run("late", "completed", minutes: 10)])));
+        Ok(await Append(new RecordBatch(Runs: [Run("late", "running", minutes: 5) with { Detail = "stale" }])));
+
+        var kept = Assert.Single(await Query<RunRecord>(Queries.Run, ("run_id", Id("late"))));
+        Assert.Equal(("completed", (string?)null, At.AddMinutes(10)), (kept.Status, kept.Detail, kept.UpdatedAt));
+
+        // A write at the same moment still replaces it: the rule refuses only what is older.
+        Ok(await Append(new RecordBatch(Runs: [Run("late", "failed", minutes: 10) with { Detail = "same moment" }])));
+        Assert.Equal("same moment", Assert.Single(await Query<RunRecord>(Queries.Run, ("run_id", Id("late")))).Detail);
+    }
+
+    [Fact]
+    public async Task A_record_holding_a_nul_character_is_written_and_reads_back_with_it_kept_or_replaced()
+    {
+        // Text from outside can hold NUL; Postgres's jsonb refuses it, so a store may write U+FFFD instead. The rest is kept,
+        // a literal backslash-u0000 included.
+        const string text = "before\0after, and a literal \\u0000 too";
+        Ok(await Append(new RecordBatch(Runs: [Run("nul", "failed") with { Detail = text }])));
+
+        var detail = Assert.Single(await Query<RunRecord>(Queries.Run, ("run_id", Id("nul")))).Detail!;
+        Assert.Equal(text.Replace('\0', '\uFFFD'), detail.Replace('\0', '\uFFFD'));
+        Assert.Contains("\\u0000", detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Runs_list_a_parents_children_by_id_and_otherwise_the_most_recently_updated_first()
     {
         Ok(await Append(new RecordBatch(Runs: [Run("root", "running", minutes: 1), Run("root.b", "running", "root", 3), Run("root.a", "running", "root", 2)])));
