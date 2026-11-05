@@ -68,11 +68,14 @@ public static partial class ApiApp
         {
             var ct = context.RequestAborted;
             var scope = ScopeOf(run.Repositories);
-            var rule = Approval.For(wait.DecisionType, services.Organisation.Policy, TeamOf(scope), DecisionTypes(), wait.Kind);
+            var (types, unreadable) = await DecisionTypesAsync(wait, ct);
+            if (types is null)
+                return unreadable!;
+            var rule = Approval.For(wait.DecisionType, services.Organisation.Policy, TeamOf(scope), types, wait.Kind);
             var intervention = wait.Kind == "intervention";
             var grant = intervention && args.Action == "grant_attempts";
             // A recovery needs recover, and a grant grant_attempts as well (coordinator decision C7).
-            var needed = intervention ? RolesForKey(Overrides.Recover) : RolesToAnswer(services.Organisation.Policy, DecisionTypes(), wait, TeamOf(scope));
+            var needed = intervention ? RolesForKey(Overrides.Recover) : RolesToAnswer(services.Organisation.Policy, types, wait, TeamOf(scope));
             if (Refuse(caller, scope, needed, intervention ? $"recover at {wait.DecisionType} (recover)" : $"answer {wait.DecisionType} (approval: {rule.Source})") is { } refused)
                 return refused;
             if (grant && Refuse(caller, scope, RolesForKey(Overrides.GrantAttempts), $"grant attempts at {wait.DecisionType} (grant_attempts)") is { } refusedGrant)
@@ -182,18 +185,25 @@ public static partial class ApiApp
             return Results.Text(ArtifactShapes.WriteLibrary(FindingsLedger.View(ledger)), "application/json");
         }
 
-        /// <summary>The organisation's libraries' decision types, read now: approval is checked at the moment of use (docs/05 section 8).</summary>
-        List<DecisionTypeItem> DecisionTypes()
+        /// <summary>
+        /// The organisation's libraries' decision types, read now: approval is checked at the moment of use (docs/05 section 8).
+        /// They decide only a decision with no organisation rule for its type; an intervention's roles come from the
+        /// <c>recover</c> override. Only then are the libraries read, and one that cannot be read refuses the answer (503)
+        /// rather than leaving its approval rules out, which would let the engine's looser default decide (LOG 289).
+        /// </summary>
+        async Task<(List<DecisionTypeItem>? Types, IResult? Refused)> DecisionTypesAsync(WaitRecord wait, CancellationToken ct)
         {
             var types = new List<DecisionTypeItem>();
+            if (wait.Kind == "intervention" || services.Organisation.Policy.RuleFor(wait.DecisionType) is not null)
+                return (types, null);
             foreach (var source in services.Organisation.Libraries)
             {
-                var path = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(services.Organisation.Location))!, source.Path));
-                if (Library.Library.Open(path, new DiagnosticBag()) is { } library)
-                    types.AddRange(library.DecisionTypes);
+                if ((await LibrarySources.OpenAsync(source, services.Organisation.Location, ct)).Library is not { } library)
+                    return (null, Error(503, $"library {source.Name} cannot be read now; try again"));
+                types.AddRange(library.DecisionTypes);
             }
 
-            return types;
+            return (types, null);
         }
 
         public async Task<IResult> AbortAsync(HttpContext context, Caller caller, string id)

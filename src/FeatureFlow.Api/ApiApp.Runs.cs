@@ -86,9 +86,9 @@ public static partial class ApiApp
             var locked = new List<LockedLibrary>();
             foreach (var source in services.Organisation.Libraries)
             {
-                var path = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(services.Organisation.Location))!, source.Path));
-                var d = new DiagnosticBag();
-                var library = Library.Library.Open(path, d) ?? throw new InvalidOperationException($"library {source.Name} at {path} does not open: {string.Join("; ", d)}");
+                var (library, problem) = await LibrarySources.OpenAsync(source, services.Organisation.Location, ct);
+                if (library is null)
+                    throw new InvalidOperationException($"library {source.Name}: {problem}");
                 foreach (var (_, text) in library.Files.All)
                     (await Artifacts.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(text)), ct)).Unwrap();
                 locked.Add(LibraryLock.Pin(library));

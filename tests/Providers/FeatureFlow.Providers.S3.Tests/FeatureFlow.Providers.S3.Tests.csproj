@@ -6,4 +6,8 @@
     <ProjectReference Include="..\..\..\src\FeatureFlow.Providers.Contracts\FeatureFlow.Providers.Contracts.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\Shared\Container.cs" Link="Container.cs" />
+  </ItemGroup>
+
 </Project>

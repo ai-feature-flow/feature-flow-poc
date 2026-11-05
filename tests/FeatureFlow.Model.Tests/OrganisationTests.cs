@@ -6,7 +6,7 @@ namespace FeatureFlow.Model.Tests;
 /// </summary>
 public class OrganisationTests
 {
-    /// <summary>docs/07 section 3's example, with a directory library (git arrives in M8) and a team's repositories (LOG 204).</summary>
+    /// <summary>docs/07 section 3's example, with a directory library and a team's repositories (LOG 204).</summary>
     const string Full = """
         api_version: feature-flow/v1
         kind: organisation
@@ -86,6 +86,42 @@ public class OrganisationTests
         Assert.Equal(["acme-payments-leads"], team.Roles["approver"].IdpGroups);
         Assert.Equal(new Cap<bool>(false, false), org.Policy.RuleFor("epic.merge_action")!.Auto);
         Assert.True(org.Policy.RuleFor("ticket.spec_approval")!.FromChat);
+    }
+
+    [Fact]
+    public void A_git_library_source_reads_its_repository_and_ref()
+    {
+        var (org, d) = Read("""
+            api_version: feature-flow/v1
+            kind: organisation
+            name: acme
+            libraries:
+              - { name: acme_delivery, source: git, repository: "https://git.example/acme/library.git", ref: v3 }
+              - { name: acme_tools, source: git, repository: "git@git.example:acme/tools.git" }
+              - { name: acme_ssh, source: git, repository: "ssh://git@git.example/acme/ssh.git" }
+            """);
+
+        Assert.Empty(d);
+        Assert.Equal(new LibrarySourceConfig("acme_delivery", "git", "", "https://git.example/acme/library.git", "v3"), org!.Libraries[0]);
+        Assert.Equal(new LibrarySourceConfig("acme_tools", "git", "", "git@git.example:acme/tools.git", null), org.Libraries[1]);
+        // A user name alone, as SSH uses, is not a credential.
+        Assert.Equal("ssh://git@git.example/acme/ssh.git", org.Libraries[2].Repository);
+    }
+
+    [Theory]
+    [InlineData("{ name: a, source: git, ref: main }", "needs 'repository'")]
+    [InlineData("{ name: a, source: git, repository: r, path: lib }", "unknown key 'path'")]
+    [InlineData("{ name: a, source: git, repository: r, ref: --upload-pack=x }", "libraries.a.ref must be a branch or tag name")]
+    [InlineData("{ name: a, source: directory, path: lib, repository: r }", "unknown key 'repository'")]
+    [InlineData("{ name: a, source: package, path: lib }", "the package library source is not supported in version 1")]
+    [InlineData("{ name: a, source: git, repository: \"https://bot:s3cret@git.example/acme/lib.git\" }", "libraries.a.repository must not hold credentials")]
+    [InlineData("{ name: a, source: git, repository: \"https://ghp_token@git.example/acme/lib.git\" }", "libraries.a.repository must not hold credentials")]
+    [InlineData("{ name: a, source: git, repository: \"ssh://git:s3cret@git.example/acme/lib.git\" }", "libraries.a.repository must not hold credentials")]
+    public void A_library_source_takes_only_its_own_keys(string library, string message)
+    {
+        var (_, d) = Read($"api_version: feature-flow/v1\nkind: organisation\nname: acme\nlibraries:\n  - {library}\n");
+
+        Assert.Contains(d, x => x.Blocks && x.Message.Contains(message, StringComparison.Ordinal));
     }
 
     [Theory]
