@@ -82,7 +82,7 @@ change (`docs/09`).
 | Decisions do not block | An open decision is a durable wait alongside running steps |
 | Every execution is checked | The allowance and the run ceiling are checked before every start, including loop re-entry (F4) |
 | How a run ends | By an `end` route; otherwise `incomplete` (F9) |
-| Versioning | Every behaviour change is wrapped in a Temporal patch marker so old histories replay. The plan schema is versioned separately |
+| Versioning | From version 1, every behaviour change is wrapped in a Temporal patch marker so old histories replay. Before version 1 there is no backward compatibility: a change re-records the histories it breaks and adds no marker (LOG 263). The plan schema is versioned separately |
 
 ### 2.2 Execution forms
 

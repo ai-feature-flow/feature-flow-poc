@@ -24,7 +24,8 @@ a validation error, never ignored.
 
 Teams are not a fifth layer: team overrides live in the organisation file and
 may tighten organisation values, never relax them. A team may also add holders
-to a people role for its own runs (LOG 217).
+to a people role for its own runs (LOG 217). Teams are optional and frozen for
+version 1 (LOG 262): a solo or single-team organisation leaves `teams` out.
 
 ---
 
