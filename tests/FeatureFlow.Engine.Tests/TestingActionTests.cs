@@ -276,10 +276,13 @@ public sealed class TestingActionTests
         Assert.Contains("does not parse", result.Reason, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task An_unexpected_exception_in_an_action_raises_an_intervention_rather_than_a_retry()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task An_unexpected_exception_in_an_action_raises_an_intervention_rather_than_a_retry(bool decorated)
     {
-        await using var w = new ActionWorld(throwingCodeHost: true);
+        // Decorated: as production composes it (LOG 303), the decorator re-throws, so a provider's bug still stops for a person.
+        await using var w = new ActionWorld(throwingCodeHost: true, decorated: decorated);
 
         var result = await w.RunAsync("scm.catch_up");
 
@@ -287,11 +290,12 @@ public sealed class TestingActionTests
         Assert.Contains("failed unexpectedly: InvalidOperationException", result.Reason, StringComparison.Ordinal);
     }
 
-    public static TheoryData<string> NetworkFaults() => new(["http", "io", "socket", "timeout"]);
+    public static TheoryData<string, bool> NetworkFaults() =>
+        new(from kind in new[] { "http", "io", "socket", "timeout" } from decorated in new[] { false, true } select (kind, decorated));
 
     [Theory]
     [MemberData(nameof(NetworkFaults))]
-    public async Task A_network_fault_a_provider_lets_escape_is_retried_as_infrastructure(string kind)
+    public async Task A_network_fault_a_provider_lets_escape_is_retried_as_infrastructure(string kind, bool decorated)
     {
         Func<Exception> fault = kind switch
         {
@@ -300,7 +304,7 @@ public sealed class TestingActionTests
             "socket" => () => new System.Net.Sockets.SocketException(10054),
             _ => () => new TimeoutException("no answer"),
         };
-        await using var w = new ActionWorld(codeHostThrows: fault);
+        await using var w = new ActionWorld(codeHostThrows: fault, decorated: decorated);
 
         await Assert.ThrowsAsync<ActionInfrastructureException>(() => w.RunAsync("scm.catch_up"));
     }

@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Temporalio.Client;
 using Temporalio.Worker;
 
@@ -34,7 +35,7 @@ public sealed record FeatureFlowConfiguration(InstallationConfig Installation, O
 /// <summary>
 /// Composition (docs/06 section 4): selects and creates each configured provider instance from the factories a
 /// host registers, by type and kind. An instance whose kind no factory provides, or with a setting its factory
-/// does not take, is a configuration error.
+/// does not take, is a configuration error. Each instance is wrapped by the engine's decorator (<see cref="ProviderCalls"/>).
 /// </summary>
 public static class ProviderComposer
 {
@@ -60,7 +61,7 @@ public static class ProviderComposer
 
                 foreach (var key in instance.Settings.Keys.Where(k => !factory.Settings.Contains(k)))
                     errors.Add($"providers.{type}.instances.{name}: unknown setting '{key}'");
-                named[name] = factory.Create(new ProviderContext(instance, baseDirectory, t => set?.ForRun(t, false)));
+                named[name] = ProviderCalls.Decorate(type, name, factory.Create(new ProviderContext(instance, baseDirectory, t => set?.ForRun(t, false))));
             }
 
             instances[type] = named;
@@ -80,6 +81,7 @@ public sealed class FeatureFlowHost : IAsyncDisposable
     readonly List<Task> workers = [];
     WebApplication? api;
     WebApplication? agentEndpoint;
+    OpenTelemetry.Trace.TracerProvider? tracing;
 
     FeatureFlowHost(FeatureFlowConfiguration configuration, ProviderSet providers, ITemporalClient client)
     {
@@ -102,13 +104,18 @@ public sealed class FeatureFlowHost : IAsyncDisposable
         foreach (var type in providers.Types)
             if (providers.ForRun(type, false) is { } provider && await provider.CheckAsync(CancellationToken.None) is { Ok: false } failed)
                 throw new InvalidOperationException($"the {type} provider is not usable: {failed.Error!.Message}");
+        await StartupChecks.CheckSecretsAsync(configuration.Installation, providers, CancellationToken.None);
         var client = await TemporalConnection.ConnectAsync(configuration.Installation, providers);
-        var host = new FeatureFlowHost(configuration, providers, client);
+        var host = new FeatureFlowHost(configuration, providers, client) { tracing = Tracing.Start(configuration.Installation.OtlpEndpoint) };
         var services = new EngineServices(providers, configuration.Installation, configuration.Organisation);
         var activities = new RunActivities(services, client);
         var queue = configuration.Installation.TaskQueue;
         if (orchestrationWorker)
+        {
             host.Run(new TemporalWorker(client, new TemporalWorkerOptions(queue).AddWorkflow<RunWorkflow>().AddAllActivities(activities)));
+            // Stuck-run detection (docs/02 section 8) runs beside the orchestration worker; it only records and notifies.
+            host.workers.Add(new StuckRuns(services, client, client.Options.LoggerFactory.CreateLogger<StuckRuns>()).RunAsync(host.stop.Token));
+        }
         if (agentWorker)
             await host.StartAgentWorkerAsync(configuration, providers, client, queue);
         if (apiUrl is not null)
@@ -200,6 +207,8 @@ public sealed class FeatureFlowHost : IAsyncDisposable
         catch (OperationCanceledException)
         {
         }
+
+        tracing?.Dispose();
     }
 }
 

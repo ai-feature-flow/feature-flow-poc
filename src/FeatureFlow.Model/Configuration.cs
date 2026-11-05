@@ -62,6 +62,9 @@ public sealed record InstallationConfig(
 {
     /// <summary><c>temporal.payload_codec</c> (docs/02 section 5): encrypts what the engine sends Temporal. Null: payloads as they are.</summary>
     public PayloadCodecConfig? PayloadCodec { get; init; }
+
+    /// <summary><c>observability.otlp_endpoint</c> (docs/02 section 8): where traces are exported with OTLP; null exports none.</summary>
+    public string? OtlpEndpoint { get; init; }
 }
 
 /// <summary>A payload codec: its name (<c>aes_gcm</c>, the only one in version 1) and the secret holding its key.</summary>
@@ -309,12 +312,21 @@ public static class ConfigurationReader
             aw.Finish();
         }
 
-        foreach (var later in new[] { "workers", "observability" })
+        foreach (var later in new[] { "workers" })
             if (r.Has(later))
             {
                 r.Node(later);
                 r.Error($"{later} is not read before M8; remove it", r.Map[later]!.Location);
             }
+
+        string? otlpEndpoint = null;
+        if (MapReader.Of(r.Node("observability"), d, "observability") is { } o)
+        {
+            otlpEndpoint = o.String("otlp_endpoint", required: true);
+            if (otlpEndpoint is not null && (!Uri.TryCreate(otlpEndpoint, UriKind.Absolute, out var otlp) || otlp.Scheme != Uri.UriSchemeHttps && otlp.Scheme != Uri.UriSchemeHttp))
+                o.Error($"observability.otlp_endpoint must be an http or https URL, not '{otlpEndpoint}'", o.Map.Location);
+            o.Finish();
+        }
 
         // A development installation may configure the fake and in-memory providers and the action stand-in (LOG 81, LOG 107).
         var development = r.Bool("development") ?? false;
@@ -327,7 +339,11 @@ public static class ConfigurationReader
             foreach (var instance in runtimes.Instances.Values.Where(i => i.Settings["engine_tools"].ScalarText() == "false"))
                 r.Error($"providers.agent_runtime.instances.{instance.Name}: engine_tools: false is for development only; set development: true", r.Map.Location);
         r.Finish();
-        return new InstallationConfig(address, ns, queue, events, providers, auth, attempts, races, file, development, agentWorker) { PayloadCodec = codec };
+        return new InstallationConfig(address, ns, queue, events, providers, auth, attempts, races, file, development, agentWorker)
+        {
+            PayloadCodec = codec,
+            OtlpEndpoint = otlpEndpoint,
+        };
     }
 
     public static OrganisationConfig? ReadOrganisation(string text, string file, DiagnosticBag d)

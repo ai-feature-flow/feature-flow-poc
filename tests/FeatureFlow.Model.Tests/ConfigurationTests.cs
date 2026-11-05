@@ -54,6 +54,17 @@ public class ConfigurationTests
     }
 
     [Fact]
+    public void An_installation_reads_where_traces_are_exported()
+    {
+        var d = new DiagnosticBag();
+        var config = ConfigurationReader.ReadInstallation(Installation.Replace("defaults:", "observability: { otlp_endpoint: \"https://otel.example:4317\" }\ndefaults:",
+            StringComparison.Ordinal), "installation.yaml", d)!;
+        Assert.Empty(d);
+        Assert.Equal("https://otel.example:4317", config.OtlpEndpoint);
+        Assert.Null(ConfigurationReader.ReadInstallation(Installation, "installation.yaml", new DiagnosticBag())!.OtlpEndpoint);
+    }
+
+    [Fact]
     public void An_installation_reads_its_payload_codec()
     {
         var d = new DiagnosticBag();
@@ -83,6 +94,9 @@ public class ConfigurationTests
     [InlineData("  record_store: { default: sqlite, instances: { sqlite: { path: records.db } } }", "  record_stor: { instances: { sqlite: {} } }", "unknown provider type 'record_stor'")]
     [InlineData("  record_store: { default: sqlite,", "  record_store: { default: postgres,", "names instance 'postgres'")]
     [InlineData("defaults:", "workers: { mode: local }\ndefaults:", "workers is not read before M8")]
+    [InlineData("defaults:", "observability: { otlp_endpoint: \"otel:4317\" }\ndefaults:", "observability.otlp_endpoint must be an http or https URL")]
+    [InlineData("defaults:", "observability: {}\ndefaults:", "otlp_endpoint")]
+    [InlineData("defaults:", "observability: { otlp_endpoint: \"http://otel:4317\", sampling: 0.5 }\ndefaults:", "unknown key 'sampling'")]
     [InlineData("  limits: { attempts: 4 }", "  limits: { attempts: 4, retries: 2 }", "unknown key 'retries'")]
     [InlineData("continue_as_new_events: 400", "continue_as_new_events: 50", "must be at least 100")]
     [InlineData("  record_store: { default: sqlite,", "  code_host: { instances: { fake: {} } }\n  record_store: { default: sqlite,", "for development only")]

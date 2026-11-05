@@ -14,7 +14,12 @@ public static class TemporalConnection
 {
     public static async Task<ITemporalClient> ConnectAsync(InstallationConfig installation, ProviderSet providers)
     {
-        var options = new TemporalClientConnectOptions(installation.TemporalAddress) { Namespace = installation.TemporalNamespace };
+        var options = new TemporalClientConnectOptions(installation.TemporalAddress)
+        {
+            Namespace = installation.TemporalNamespace,
+            // A run is one trace (docs/02 section 8, LOG 305), whatever else the client carries.
+            Interceptors = [Tracing.Interceptor()],
+        };
         if (installation.PayloadCodec is { } codec)
         {
             var secrets = providers.ForRun("secrets", false) as ISecretsProvider
