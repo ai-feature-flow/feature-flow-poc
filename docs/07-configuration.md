@@ -49,12 +49,12 @@ workers:
     - { queue: feature-flow-agent, capabilities: [os_linux, docker] }
 
 providers:                       # every type: named instances, one default
-  sandbox:        { default: kubernetes_pod, instances: { kubernetes_pod: {} } }
+  sandbox:        { default: kubernetes, instances: { kubernetes: { image: "registry.internal/feature-flow-sandbox:1.0", namespace: feature-flow-sandboxes } } }
   agent_runtime:
     default: claude_code
     instances:
       claude_code: { model_access: { mode: proxy, key_ref: secrets/anthropic_key } }
-      copilot_cli: { endpoint: https://llm-router.internal/v1, model_access: { mode: proxy, key_ref: secrets/router_key } }
+      copilot_cli: { model: claude-haiku-4-5, model_access: { mode: proxy } }
   vcs:            { default: git, instances: { git: {} } }
   code_host:      { default: github, instances: { github: { app_id: 12345, secret_ref: secrets/github_app_key, webhook_secret_ref: secrets/github_webhook } } }
   ci:             { default: github_actions, instances: { github_actions: {}, teamcity: { base_url: https://tc.internal, secret_ref: secrets/teamcity } } }
@@ -96,9 +96,12 @@ defaults:                        # engine defaults for limits; not floors
 | `providers.<type>.instances` | Several instances of one type may coexist (two CI systems, two agent runtimes). Other settings select one by name |
 | `agent_runtime.*.model_access` | `proxy` (a proxy adds the key to model requests) or `per_run_key` (a key with a spend limit and expiry). Required for every runtime (F6). With `proxy`, `upstream` is the model API (default the Anthropic API) and `auth` how the key is sent: `api_key` (default) or `oauth` (a subscription token). LOG 91 |
 | `agent_runtime.claude_code` | `model`, `executable`, and `engine_tools`: `false` offers the agent no engine tools, for SP3's file fall-back test, and is refused unless `development: true`. LOG 91 |
+| `agent_runtime.copilot_cli` | The same four settings as `claude_code`. Copilot reaches the model through the same model proxy, as a custom Anthropic provider with the step's token; one proxy, configured by the default runtime's `model_access`, serves every runtime instance (LOG 293) |
+| `sandbox.docker` | `image` (the sandbox image, `feature-flow-sandbox`), `user` (the agent's, default `node`), `docker` (the executable). Its network reaches only `agent_worker`'s `urls` and `model_base_url`, and the internet (LOG 291) |
+| `sandbox.kubernetes` | `image`, `user`, `namespace` (default `default`), `cpu` (default 2) and `memory` (default 4Gi) limits per pod, and `context` (a kubeconfig context; omitted, the cluster the worker runs in). Its network is `sandbox-network-policy.yaml`, which must be applied in `namespace` first; the agent worker's pods carry `app.kubernetes.io/name: feature-flow-agent-worker` (LOG 294) |
 | `agent_worker` | LOG 91: `listen` (the agent worker's endpoint), `urls` (its replicas as sandboxes reach them), `model_base_url` (the model proxy as sandboxes reach it; default the first of `urls` with `/model`), `token_key_ref` (the secret every replica signs step tokens with) and `sandbox_client` (the executable copied into each sandbox). How often commits are pushed (30 seconds), Claude Code's own model retries, the hook's hold (120 seconds) and the sandbox client's retry (10 minutes) are fixed defaults, not settings |
 | `secrets.file.from_environment` | Secret names the `file` provider reads from the process environment, such as the solo profile's subscription token. LOG 91 |
-| `endpoint` | Only on a runtime that declares `CustomEndpoint` |
+| `endpoint` | Not in version 1: every runtime reaches its model through the one model proxy; a per-runtime upstream is a follow-up (LOG 293) |
 | `code_host` identity | Must not be able to change branch protection (F5); checked at startup |
 | `tracker.*.status_map` | Maps the library's abstract statuses to the tracker's (`docs/08` section 1). For `github_issues` (settings `repository`, `status_map`) a status maps to a label or to `closed` (LOG 184) |
 | `notifications.slack` | `token_ref` (the bot token) and `signing_secret_ref` (verifies its buttons at `/inbound/chat/slack`) are secret references. `users` maps a Slack user id to the person its button presses answer as: `actor`, and `groups` or `roles` for the people roles (`docs/05` section 3.3). An unmapped user cannot answer. `console_url` is linked from each message. LOG 227 |
@@ -177,11 +180,10 @@ teams:
 | `policy.*` | Meanings in `docs/05`. A cap may be `{ value, locked }`; a bare value is an unlocked default. Which settings reach running runs is in `docs/05` section 8 |
 | `policy.budgets.max_work_items.ceiling` | F11's ceiling, always locked: a root template asking more does not start; a root that sets no budget gets the ceiling (LOG 187) |
 | `roles`, `teams` | People roles to groups. A run is in the scope of the team whose `repositories` match its repositories; a run spanning two teams is refused. In its scope a team's groups add holders to a role, and its approval rules may only raise `min_count` (LOG 204, 217) |
-| `role_mapping.default` | The runtime and model for a role with no entry |
+| `role_mapping` | Each library agent role's `agent_runtime` (an instance of the installation's) and `model` (default: that instance's own). `default` serves roles with no entry; with neither, the installation's default runtime runs the step with its own model. Fixed for a run when it starts (LOG 267, 295) |
 
 `library_overrides`, `library_inputs`, `policy.toolsets` (whose only key was `allowed`) and `timeouts` are not in
-version 1 and are refused at startup, whatever they hold (LOG 268 to 270, 273). `role_mapping` is enforced from M8
-(LOG 267).
+version 1 and are refused at startup, whatever they hold (LOG 268 to 270, 273).
 
 ---
 
@@ -313,7 +315,7 @@ credentials (F5) and model keys (F6).
 
 | When | Checks |
 |---|---|
-| Startup | Schemas; provider packages present; secret references resolve; Temporal reachable; expected retention (warn); every agent runtime has `model_access`; `endpoint` only where supported; the code host identity cannot change protection; library sources reachable |
+| Startup | Schemas; provider packages present; secret references resolve; Temporal reachable; expected retention (warn); every agent runtime has `model_access`; the code host identity cannot change protection; library sources reachable |
 | Run start | The template validates (`docs/09`); every capability the plan needs is offered; caps respected; F1 for every merge step into a default branch, reading the default branch from the code host; branch protection exists on default branches; decision types known; library lock written |
 | Each step | The manifest read from the branch and its hash recorded; capabilities checked again if the manifest changed |
 
