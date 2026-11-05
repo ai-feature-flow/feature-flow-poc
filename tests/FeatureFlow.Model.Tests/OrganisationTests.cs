@@ -13,9 +13,6 @@ public class OrganisationTests
         name: acme
         libraries:
           - { name: std, source: directory, path: ../library/std }
-        library_overrides:
-          std:tasks/implement_ticket: acme_delivery:tasks/implement_ticket
-        library_inputs: { planning_repository: acme/plans }
         policy:
           approval:
             - { match: "*.merge_action", roles: [approver], min_count: 2, from_chat: false, auto: false }
@@ -31,8 +28,6 @@ public class OrganisationTests
           planning:
             allowed_roles: [planner, implementer, fixer]
             require_review: [{ match: "*:templates/project_*", value: true }]
-          toolsets:
-            allowed: [jira, confluence]
           overrides:
             skip_protected: [admin]
         roles:
@@ -48,9 +43,6 @@ public class OrganisationTests
             decision_needed: { channel: "#ff-decisions" }
             stuck:           { channel: "#ff-ops" }
           events: [decision_needed, failed, completed]
-        timeouts:
-          heartbeat: 30s
-          stalled_after: 5m
         teams:
           payments:
             repositories: ["acme/payments-*"]
@@ -60,7 +52,14 @@ public class OrganisationTests
               approver: { idp_groups: [acme-payments-leads] }
         """;
 
-    static readonly string[] NotEnforced = ["library_overrides", "library_inputs", "policy.toolsets.allowed", "role_mapping", "timeouts"];
+    /// <summary>Keys version 1 leaves out (LOG 268 to 270), each as a minimal file sets it and as the refusal names it.</summary>
+    static readonly (string Line, string Key)[] NotInVersion1 =
+    [
+        ("library_overrides: { \"std:tasks/a\": \"acme:tasks/a\" }", "library_overrides"),
+        ("library_inputs: { planning_repository: acme/plans }", "library_inputs"),
+        ("policy: { toolsets: { allowed: [jira] } }", "policy.toolsets"),
+        ("timeouts: { heartbeat: 30s }", "timeouts"),
+    ];
 
     static (OrganisationConfig? Organisation, DiagnosticBag Diagnostics) Read(string text)
     {
@@ -73,17 +72,13 @@ public class OrganisationTests
     {
         var (org, d) = Read(Full);
 
-        // Read and checked, but refused until something acts on them (LOG 256).
-        Assert.Equal(NotEnforced.Select(k => $"{k} is not enforced before M8; remove it").Order(StringComparer.Ordinal), d.Select(x => x.Message).Order(StringComparer.Ordinal));
+        // Read and checked, but refused until M8's Agents work acts on it (LOG 256, 267).
+        Assert.Equal(["role_mapping is not enforced before M8; remove it"], d.Select(x => x.Message));
         Assert.Equal(["acme-leads"], org!.Roles["steerer"].IdpGroups);
         Assert.Equal(new AgentRoleMapping("claude_code", "claude-sonnet"), org.RoleMapping["planner"]);
         Assert.Equal("#ff-ops", org.Notifications.Routing["stuck"].Channel);
         Assert.Equal(["decision_needed", "failed", "completed"], org.Notifications.Events);
-        Assert.Equal(new TimeoutsConfig(TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(5)), org.Timeouts);
-        Assert.Equal("acme_delivery:tasks/implement_ticket", org.LibraryOverrides["std:tasks/implement_ticket"]);
-        Assert.Equal("acme/plans", org.LibraryInputs["planning_repository"]);
         Assert.Equal(["admin"], org.Policy.Overrides["skip_protected"]);
-        Assert.Equal(["jira", "confluence"], org.Policy.AllowedToolsets);
         Assert.Equal(new ReviewRule("*:templates/project_*", new Cap<bool>(true, false)), org.Policy.RequireReview.Single());
         var team = org.Teams["payments"];
         Assert.Equal(["acme/payments-*"], team.Repositories);
@@ -95,9 +90,8 @@ public class OrganisationTests
 
     [Theory]
     // Unknown keys anywhere are refused, never ignored (docs/07 section 1).
-    [InlineData("timeouts:\n  heartbeat: 30s", "timeouts:\n  heartbeat: 30s\n  retries: 3", "unknown key 'retries' in timeouts")]
+    [InlineData("notifications:\n", "notifications:\n  retries: 3\n", "unknown key 'retries' in notifications")]
     [InlineData("\nroles:\n", "\nrolez: {}\nroles:\n", "unknown key 'rolez'")]
-    [InlineData("toolsets:\n    allowed:", "toolsets:\n    allow:", "unknown key 'allow'")]
     // People roles are the four of docs/05 section 3.3.
     [InlineData("  admin:    { idp_groups: [acme-platform] }", "  owner:    { idp_groups: [acme-platform] }", "roles.owner: not a people role")]
     [InlineData("  admin:    { idp_groups: [acme-platform] }", "  admin:    {}", "roles.admin must list its idp_groups")]
@@ -117,8 +111,6 @@ public class OrganisationTests
     [InlineData("    repositories: [\"acme/payments-*\"]\n", "", "teams.payments must list the repositories it owns")]
     [InlineData("      approval: [{", "      merge: { require_checks: false }\n      approval: [{", "a team's policy holds approval rules only")]
     // Malformed values.
-    [InlineData("heartbeat: 30s", "heartbeat: soon", "heartbeat must be a duration")]
-    [InlineData("std:tasks/implement_ticket: acme", "implement_ticket: acme", "both sides must be library references")]
     [InlineData("  planner:     { agent_runtime: claude_code, model: claude-sonnet }", "  planner:     { model: claude-sonnet }", "role_mapping.planner needs 'agent_runtime'")]
     [InlineData("require_review: [{ match: \"*:templates/project_*\", value: true }]", "require_review: [{ match: \"*:templates/project_*\" }]", "needs a value")]
     public void An_organisation_refuses_what_it_does_not_read(string old, string replacement, string message)
@@ -130,21 +122,20 @@ public class OrganisationTests
     }
 
     [Fact]
-    public void Each_key_read_but_not_enforced_is_refused_alone()
+    public void Each_key_not_in_version_1_is_refused_alone_whatever_it_holds()
     {
         var minimal = "api_version: feature-flow/v1\nkind: organisation\nname: a\nlibraries: []\n";
-        string[] lines =
-        [
-            "library_overrides: { \"std:tasks/a\": \"acme:tasks/a\" }", "library_inputs: { planning_repository: acme/plans }",
-            "policy: { toolsets: { allowed: [jira] } }", "role_mapping: { default: { agent_runtime: claude_code } }", "timeouts: { heartbeat: 30s }",
-        ];
-        foreach (var (line, key) in lines.Zip(NotEnforced))
+        foreach (var (line, key) in NotInVersion1)
         {
             var (_, d) = Read(minimal + line + "\n");
-            Assert.Equal($"{key} is not enforced before M8; remove it", Assert.Single(d, x => x.Blocks).Message);
+            Assert.Equal($"{key} is not supported in version 1; remove it", Assert.Single(d, x => x.Blocks).Message);
         }
 
-        Assert.Empty(Read(minimal + "policy: { toolsets: {} }\n").Diagnostics);
+        // Its content is not read: a malformed value is refused for the key alone.
+        Assert.Equal("timeouts is not supported in version 1; remove it", Assert.Single(Read(minimal + "timeouts: { heartbeat: soon }\n").Diagnostics).Message);
+        Assert.Equal("policy.toolsets is not supported in version 1; remove it", Assert.Single(Read(minimal + "policy: { toolsets: {} }\n").Diagnostics).Message);
+        Assert.Equal("role_mapping is not enforced before M8; remove it",
+            Assert.Single(Read(minimal + "role_mapping: { default: { agent_runtime: claude_code } }\n").Diagnostics, x => x.Blocks).Message);
     }
 
     [Fact]
