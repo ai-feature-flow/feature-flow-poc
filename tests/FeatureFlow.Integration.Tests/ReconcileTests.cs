@@ -54,8 +54,52 @@ public class ReconcileTests
         Assert.StartsWith($"reconcile: 3 runs in Temporal on {h.Host.Configuration.Installation.TaskQueue}, 0 records rebuilt", again.ToString());
     }
 
+    [Fact]
+    public async Task A_run_that_ends_while_reconcile_works_keeps_its_own_newer_record()
+    {
+        await using var h = await Harness.StartAsync("reconcile-race");
+        var id = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=FF-4");
+        Assert.NotNull(await h.WaitForWaitAsync(id, Timeout));
+        var before = await RecordAsync(h, id) ?? throw new InvalidOperationException("no record");
+        await DeleteRunRecordsAsync(h, id);
+        await VisibleAsync(h, 1, terminated: 0);
+        var records = h.Host.Providers.Required<IRecordStoreProvider>("record_store");
+
+        // The run's own final record is written after reconcile read the store and before its batch lands (R1, F3).
+        var ended = before with { Status = "completed", UpdatedAt = DateTimeOffset.UtcNow, Detail = null };
+        var result = await RunIndex.ReconcileAsync(h.Client, h.Host.Configuration.Installation.TaskQueue,
+            new WritesFirst(records, new RecordBatch([ended])), TestContext.Current.CancellationToken);
+
+        Assert.Equal("running", Assert.Single(result.Rebuilt).Status);
+        Assert.Equal(("completed", (string?)null), ((await RecordAsync(h, id))!.Status, (await RecordAsync(h, id))!.Detail));
+    }
+
+    /// <summary>A record store that appends <paramref name="first"/> just before the first batch it is given.</summary>
+    sealed class WritesFirst(IRecordStoreProvider inner, RecordBatch first) : IRecordStoreProvider
+    {
+        bool written;
+
+        public ProviderDescription Describe() => inner.Describe();
+
+        public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => inner.CheckAsync(cancellationToken);
+
+        public async Task<ProviderResult<Unit>> AppendAsync(RecordBatch records, CancellationToken cancellationToken)
+        {
+            if (!written)
+            {
+                written = true;
+                (await inner.AppendAsync(first, cancellationToken)).Unwrap();
+            }
+
+            return await inner.AppendAsync(records, cancellationToken);
+        }
+
+        public Task<ProviderResult<IReadOnlyList<T>>> QueryAsync<T>(string queryName, IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken) =>
+            inner.QueryAsync<T>(queryName, parameters, cancellationToken);
+    }
+
     /// <summary>Waits until Temporal's list (eventually consistent) shows the queue's runs, the terminated one closed: reconcile reads that list.</summary>
-    static async Task VisibleAsync(Harness h, int count)
+    static async Task VisibleAsync(Harness h, int count, int terminated = 1)
     {
         var deadline = DateTime.UtcNow + Timeout;
         while (true)
@@ -63,7 +107,7 @@ public class ReconcileTests
             var listed = new List<Temporalio.Client.WorkflowExecution>();
             await foreach (var e in h.Client.ListWorkflowsAsync($"TaskQueue = '{h.Host.Configuration.Installation.TaskQueue}'"))
                 listed.Add(e);
-            if (listed.Count == count && listed.Count(e => e.Status == Temporalio.Api.Enums.V1.WorkflowExecutionStatus.Terminated) == 1)
+            if (listed.Count == count && listed.Count(e => e.Status == Temporalio.Api.Enums.V1.WorkflowExecutionStatus.Terminated) == terminated)
                 return;
             if (DateTime.UtcNow > deadline)
                 throw new TimeoutException($"Temporal lists {listed.Count} runs on the queue, not {count}");

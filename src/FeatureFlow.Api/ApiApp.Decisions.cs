@@ -68,7 +68,9 @@ public static partial class ApiApp
         {
             var ct = context.RequestAborted;
             var scope = ScopeOf(run.Repositories);
-            var types = await DecisionTypesAsync(ct);
+            var (types, unreadable) = await DecisionTypesAsync(ct);
+            if (types is null)
+                return unreadable!;
             var rule = Approval.For(wait.DecisionType, services.Organisation.Policy, TeamOf(scope), types, wait.Kind);
             var intervention = wait.Kind == "intervention";
             var grant = intervention && args.Action == "grant_attempts";
@@ -183,14 +185,22 @@ public static partial class ApiApp
             return Results.Text(ArtifactShapes.WriteLibrary(FindingsLedger.View(ledger)), "application/json");
         }
 
-        /// <summary>The organisation's libraries' decision types, read now: approval is checked at the moment of use (docs/05 section 8).</summary>
-        async Task<List<DecisionTypeItem>> DecisionTypesAsync(CancellationToken ct)
+        /// <summary>
+        /// The organisation's libraries' decision types, read now: approval is checked at the moment of use (docs/05 section 8).
+        /// A library that cannot be read refuses the answer (503) rather than leaving its approval rules out, which would let
+        /// the engine's looser default decide (LOG 289).
+        /// </summary>
+        async Task<(List<DecisionTypeItem>? Types, IResult? Refused)> DecisionTypesAsync(CancellationToken ct)
         {
             var types = new List<DecisionTypeItem>();
             foreach (var source in services.Organisation.Libraries)
-                if ((await LibrarySources.OpenAsync(source, services.Organisation.Location, ct)).Library is { } library)
-                    types.AddRange(library.DecisionTypes);
-            return types;
+            {
+                if ((await LibrarySources.OpenAsync(source, services.Organisation.Location, ct)).Library is not { } library)
+                    return (null, Error(503, $"library {source.Name} cannot be read now; try again"));
+                types.AddRange(library.DecisionTypes);
+            }
+
+            return (types, null);
         }
 
         public async Task<IResult> AbortAsync(HttpContext context, Caller caller, string id)

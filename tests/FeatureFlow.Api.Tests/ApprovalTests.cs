@@ -100,6 +100,25 @@ public sealed class ApprovalTests
     }
 
     [Fact]
+    public async Task A_library_that_cannot_be_read_refuses_the_answer_rather_than_dropping_its_approval_rules()
+    {
+        // std reserves *.escalation for a steerer; with no organisation rule, its default decides.
+        await using var readable = await WorldAsync(Organisation(), "epic.escalation");
+        Assert.Equal(HttpStatusCode.Forbidden, (await AnswerAsync(readable.As("ann", "approver"))).Status);
+
+        // The same library from a git source that does not clone: without it the engine's default (approver) would let ann in.
+        var unreachable = new OrganisationConfig("acme", [new LibrarySourceConfig("std", "git", "", Path.Combine(Path.GetTempPath(), "ff-no-such-" + Guid.NewGuid().ToString("N") + ".git"), "main")],
+            new PolicyConfig([], null, null, null, null), "");
+        await using var world = await WorldAsync(unreachable, "epic.escalation");
+        var (status, text) = await AnswerAsync(world.As("ann", "approver"));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, status);
+        Assert.Contains("library std cannot be read now; try again", text, StringComparison.Ordinal);
+        Assert.Empty(world.Temporal.Updates);
+        Assert.Empty(await world.QueryAsync<AnswerRecord>(Queries.Answers, Run));
+    }
+
+    [Fact]
     public async Task A_teams_rule_comes_before_the_organisations_for_its_runs()
     {
         var organisation = Organisation(Rule("*")) with

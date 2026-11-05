@@ -350,7 +350,12 @@ public static class ConfigurationReader
                     var reference = l.String("ref");
                     if (reference is not null && (reference.Length == 0 || reference.StartsWith('-')))
                         l.Error($"libraries.{libName}.ref must be a branch or tag name, not '{reference}'", l.Map.Location);
-                    lib = new LibrarySourceConfig(libName, "git", "", l.String("repository", required: true) ?? "", reference);
+                    var repository = l.String("repository", required: true) ?? "";
+                    // Credentials come from the host's Git setup (LOG 286, 289): a URL holding one would reach logs and errors.
+                    if (Uri.TryCreate(repository, UriKind.Absolute, out var url) && url.UserInfo.Length > 0
+                        && (url.UserInfo.Contains(':') || url.Scheme is "http" or "https"))
+                        l.Error($"libraries.{libName}.repository must not hold credentials; use the host's Git credentials", l.Map.Location);
+                    lib = new LibrarySourceConfig(libName, "git", "", repository, reference);
                 }
                 else
                 {

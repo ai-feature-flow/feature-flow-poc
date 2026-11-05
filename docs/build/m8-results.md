@@ -104,3 +104,17 @@ for Foundations follow-up 4 (the artifact index's order).
 | 3 | Reconcile rebuilds only run records; a restored database also lacks newer waits and timelines, which the runs write again only as they change (LOG 285) |
 | 4 | docs/07's `temporal.auth`, `temporal.tls` and `expected_retention` are not read by the installation reader yet; a Temporal that needs TLS or an API key (Temporal Cloud) cannot be configured |
 | 5 | `RunNotifierTests.A_batch_that_meets_a_hanging_chat_stops_at_its_budget_and_drops_the_rest` asserts a batch ends within 3 s of wall clock; it failed once in a full default run on this machine under load and passed 3 of 3 alone. Not changed here |
+
+**Fix round (review R1)**
+
+| Finding | Fix | Test | Mutation that fails it |
+|---|---|---|---|
+| F1: an answer skipped a `git` library that did not clone, so its approval rules dropped out and the engine's default let an approver answer a steerer's decision | Any library that does not open refuses the answer or session action: 503 "library X cannot be read now; try again" (LOG 289) | `epic.escalation` with `std` as a directory: approver 403; with `std` from a git source that does not clone: 503, nothing recorded or delivered | Skipping the unreadable library again: the approver gets 200 |
+| F2: Postgres's `jsonb` refuses NUL, a retryable `server_error`, so a record with outside text could retry for ever | An escaped NUL is written as U+FFFD; a literal backslash-u0000 is kept (LOG 290) | Contract: a run whose detail holds NUL and a literal `\u0000` is written and reads back intact, NUL kept or replaced (SQLite and Postgres) | No replacement (22P05); a naive replace that also rewrites the literal text |
+| F3: reconcile's "running", stamped now, could overwrite the run's own newer `completed`; so could a late activity | A run record replaces only one no newer than itself, in all three stores; reconcile dates an open run at its workflow run's start (LOG 290) | Contract: an older write leaves the newer record, an equal-time write replaces it. Integration: the run's `completed` written between reconcile's read and its write survives | The rule removed in Postgres or SQLite; `<` for `<=`; reconcile stamping now |
+| F4: a `repository` URL with a password would reach logs and errors | The organisation reader refuses a URL with a password, or any user name over http(s); an SSH user name is allowed (LOG 289) | Three refused URLs; `ssh://git@...` read | The check disabled: the three rows fail |
+
+R1's "passes by construction" notes need no control: one organisation per installation makes `org_id` isolation untestable
+in version 1 (the keys are checked), and the codec's constructor already refuses any key but 32 bytes. R1's design notes
+on lost commit acknowledgements (duplicated appends), the lock not pinning the library's commit, symlinks in a library
+clone and unchecked S3 read hashes are follow-ups, not changed here.

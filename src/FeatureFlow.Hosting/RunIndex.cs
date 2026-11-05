@@ -17,7 +17,9 @@ public sealed record ReconcileResult(int Runs, IReadOnlyList<RunRecord> Rebuilt)
 /// template, parent, requester, repositories and dry run come from the input its workflow started with; its status from
 /// Temporal: an open workflow is <c>running</c>, a completed one has its result (the run's own status), a failed one is
 /// <c>failed</c>, and one terminated, cancelled or timed out outside the engine <c>incomplete</c> (F9: never
-/// <c>completed</c>). Waits, timelines and the rest are not rebuilt: the run index is what lists and links runs.
+/// <c>completed</c>). A rebuilt record is dated when its workflow closed, or for an open run when its current workflow
+/// run started, so any record the run writes itself is newer and wins (LOG 290): a run that ends during the pass is
+/// never set back to <c>running</c>. Waits, timelines and the rest are not rebuilt: the run index is what lists and links runs.
 /// </summary>
 public static class RunIndex
 {
@@ -48,7 +50,7 @@ public static class RunIndex
                 _ => "incomplete",
             };
             rebuilt.Add(new RunRecord(start.RunId, start.ParentWorkflowId, start.Template, status, start.Requester, start.Repositories, start.DryRun,
-                description.CloseTime is { } closed ? new DateTimeOffset(closed, TimeSpan.Zero) : DateTimeOffset.UtcNow, Detail));
+                new DateTimeOffset(description.CloseTime ?? description.StartTime, TimeSpan.Zero), Detail));
         }
 
         if (rebuilt.Count > 0)

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using FeatureFlow.Providers.Abstractions;
 using Npgsql;
 
@@ -7,7 +8,7 @@ namespace FeatureFlow.Providers.Postgres;
 
 /// <summary>
 /// The record store on Postgres (docs/06 section 3.12; the small-company profile, docs/07 section 6). The same tables and
-/// rules as the SQLite store: runs, waits, locks, agent steps, questions, findings, sessions and their checks are kept by
+/// rules as the SQLite store: runs (the newer record kept, by <c>updated_at</c>), waits, locks, agent steps, questions, findings, sessions and their checks are kept by
 /// key, the last write winning (a closing wait keeps what its opening record said; an answered or timed-out question is
 /// not reopened); the timeline, finding events, the artifact index and notifications are kept once per key, so a retried
 /// append adds nothing; answers, reports, agent events and overrides are appended. Every key starts with
@@ -105,7 +106,14 @@ public sealed class PostgresRecordStore(Func<CancellationToken, Task<ProviderRes
         await command.ExecuteNonQueryAsync(ct);
     }
 
-    static string Body<T>(T record) => JsonSerializer.Serialize(record, Json);
+    /// <summary>
+    /// A record as JSON for a <c>jsonb</c> column, which refuses the NUL character (SQLSTATE 22P05): an escaped NUL becomes
+    /// U+FFFD, so text from outside (an agent's report, a reviewer's finding) never leaves a record unwritable (LOG 290).
+    /// A literal backslash before <c>u0000</c> is left alone.
+    /// </summary>
+    static string Body<T>(T record) => EscapedNul.Replace(JsonSerializer.Serialize(record, Json), @"$1\uFFFD");
+
+    static readonly Regex EscapedNul = new(@"(?<!\\)((?:\\\\)*)\\u0000", RegexOptions.Compiled);
 
     public Task<ProviderResult<Unit>> AppendAsync(RecordBatch records, CancellationToken cancellationToken) =>
         Guarded(async ct =>
@@ -118,6 +126,7 @@ public sealed class PostgresRecordStore(Func<CancellationToken, Task<ProviderRes
                 await Run("""
                     INSERT INTO runs VALUES (@o, @r, @p, @u, @b::jsonb)
                     ON CONFLICT (org_id, run_id) DO UPDATE SET parent_run_id = excluded.parent_run_id, updated_at = excluded.updated_at, body = excluded.body
+                    WHERE runs.updated_at <= excluded.updated_at
                     """, ("r", run.RunId), ("p", run.ParentRunId), ("u", run.UpdatedAt), ("b", Body(run)));
             foreach (var wait in records.Waits ?? [])
             {
