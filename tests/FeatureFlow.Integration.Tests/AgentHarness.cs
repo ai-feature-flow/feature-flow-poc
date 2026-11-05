@@ -88,6 +88,12 @@ public sealed record AgentHarnessOptions
     /// <c>FF_SECRETS_FILE</c> names, outside the repository; no value of it is printed.
     /// </summary>
     public bool Live { get; init; }
+
+    /// <summary>More agent runtime instances, as YAML lines under <c>agent_runtime.instances</c>, each reaching the same proxy.</summary>
+    public IReadOnlyList<string> MoreRuntimes { get; init; } = [];
+
+    /// <summary>More organisation keys, as YAML, such as a <c>role_mapping</c>.</summary>
+    public string MoreOrganisation { get; init; } = "";
 }
 
 /// <summary>
@@ -193,6 +199,7 @@ public sealed class AgentHarness : IAsyncDisposable
                     model: haiku
                     engine_tools: {{(options.EngineTools ? "true" : "false")}}
                     model_access: {{modelAccess}}
+            {{string.Join("\n", options.MoreRuntimes.Select(r => "      " + r.Replace("{model_access}", modelAccess)))}}
               vcs: {{vcs}}
             {{broker}}
               action_stand_in: { default: scripted, instances: { scripted: { script: script.yaml } } }
@@ -210,6 +217,7 @@ public sealed class AgentHarness : IAsyncDisposable
             policy:
               approval:
                 - { match: "*", roles: [approver], auto: false }
+            {{options.MoreOrganisation}}
             """);
         var loaded = FeatureFlowConfiguration.Load(IOPath.Combine(folder, "installation.yaml"), IOPath.Combine(folder, "organisation.yaml"));
         h.Configuration = loaded with

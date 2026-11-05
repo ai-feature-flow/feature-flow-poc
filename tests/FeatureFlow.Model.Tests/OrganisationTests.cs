@@ -72,8 +72,7 @@ public class OrganisationTests
     {
         var (org, d) = Read(Full);
 
-        // Read and checked, but refused until M8's Agents work acts on it (LOG 256, 267).
-        Assert.Equal(["role_mapping is not enforced before M8; remove it"], d.Select(x => x.Message));
+        Assert.Empty(d);
         Assert.Equal(["acme-leads"], org!.Roles["steerer"].IdpGroups);
         Assert.Equal(new AgentRoleMapping("claude_code", "claude-sonnet"), org.RoleMapping["planner"]);
         Assert.Equal("#ff-ops", org.Notifications.Routing["stuck"].Channel);
@@ -134,8 +133,8 @@ public class OrganisationTests
         // Its content is not read: a malformed value is refused for the key alone.
         Assert.Equal("timeouts is not supported in version 1; remove it", Assert.Single(Read(minimal + "timeouts: { heartbeat: soon }\n").Diagnostics).Message);
         Assert.Equal("policy.toolsets is not supported in version 1; remove it", Assert.Single(Read(minimal + "policy: { toolsets: {} }\n").Diagnostics).Message);
-        Assert.Equal("role_mapping is not enforced before M8; remove it",
-            Assert.Single(Read(minimal + "role_mapping: { default: { agent_runtime: claude_code } }\n").Diagnostics, x => x.Blocks).Message);
+        // role_mapping is in version 1 (LOG 267).
+        Assert.Empty(Read(minimal + "role_mapping: { default: { agent_runtime: claude_code } }\n").Diagnostics);
     }
 
     [Fact]

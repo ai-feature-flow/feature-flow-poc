@@ -477,9 +477,6 @@ public static class ConfigurationReader
                     teams[key.Text] = team;
             }
 
-        // Read and checked (LOG 223), but nothing acts on it yet: refused, so a file never appears to set what has no effect.
-        if (r.Has("role_mapping"))
-            r.Error("role_mapping is not enforced before M8; remove it", r.Map["role_mapping"]!.Location);
         foreach (var key in new[] { "library_overrides", "library_inputs", "timeouts" })
             NotInVersion1(r, key, key);
         r.Finish();
