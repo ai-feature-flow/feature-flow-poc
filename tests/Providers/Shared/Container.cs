@@ -29,15 +29,16 @@ public sealed class Container : IAsyncDisposable
         return new Container(id, address);
     }
 
-    /// <summary>Runs a command inside the container; its exit code and output.</summary>
-    public Task<(int Exit, string Output)> ExecAsync(params string[] command) => RunAsync(["exec", id, .. command]);
-
     public async ValueTask DisposeAsync() => await RunAsync(["rm", "-f", id]);
 
-    static async Task<string> DockerAsync(string[] args) =>
-        await RunAsync(args) is (0, var output) ? output : throw new InvalidOperationException($"docker {args[0]} failed");
+    /// <summary>A command's standard output. A pull's progress goes to standard error, so it never mixes with a container id.</summary>
+    static async Task<string> DockerAsync(string[] args)
+    {
+        var (exit, output, error) = await RunAsync(args);
+        return exit == 0 ? output : throw new InvalidOperationException($"docker {args[0]} failed: {error.Trim()}");
+    }
 
-    static async Task<(int Exit, string Output)> RunAsync(string[] args)
+    static async Task<(int Exit, string Output, string Error)> RunAsync(string[] args)
     {
         var start = new ProcessStartInfo("docker") { RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (var a in args)
@@ -46,6 +47,6 @@ public sealed class Container : IAsyncDisposable
         var output = process.StandardOutput.ReadToEndAsync();
         var error = process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync();
-        return (process.ExitCode, await output + await error);
+        return (process.ExitCode, await output, await error);
     }
 }
