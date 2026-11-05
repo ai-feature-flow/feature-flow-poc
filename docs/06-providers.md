@@ -105,7 +105,8 @@ to 115.
 
 The tracker, findings source and validator interfaces as built in M6, the code host's comments, and the findings
 ledger and artifact index in the record store differ from the signatures below: LOG 148 to 151. How the GitHub
-Issues tracker maps statuses, parents and links is LOG 184.
+Issues tracker maps statuses, parents and links is LOG 184; the Jira tracker, LOG 301 and 302. The engine's decorator
+(spans, timeouts, classification) is LOG 303 and 304.
 
 The notifications and session surface interfaces as built in M7, and the records M7 adds to the record store
 (overrides, notification de-duplication, sessions and their checks), differ from the signatures below: LOG 201 and 202.

@@ -249,9 +249,9 @@ tree that is not an agent's sandbox.
 |---|---|
 | Standard | OpenTelemetry traces, metrics and logs, with a configurable exporter |
 | Traces | One trace per run; spans per step, activity and provider call |
-| Provider calls | Wrapped by a decorator that adds spans, timeouts and error classification |
-| Metrics | Step duration, attempts, infrastructure retries, schedule-to-start latency per queue, tokens and cost, findings by severity, decision wait time, sandbox start time |
-| Stuck runs | Detected by heartbeat age and the progress rule; a notification is sent |
+| Provider calls | Wrapped by a decorator that adds spans, timeouts (by provider type) and error classification (LOG 303, 304) |
+| Metrics | Step duration, attempts, infrastructure retries, schedule-to-start latency per queue, tokens and cost, findings by severity, decision wait time, sandbox start time. Not exported in version 1 (LOG 305) |
+| Stuck runs | A periodic check: the record store names runs without progress, Temporal's pending work says why. A provider failing is `stalled`, nothing alive is `stuck`; each shows as an open wait and is notified, then `resumed` (LOG 306, 307) |
 | Cost | Tokens, model and compute time recorded per step from version 1, from hooks or the runtime's usage output, and from the model proxy where there is one. Budgets are not in version 1 |
 | Logs | Secrets scrubbed at the logging layer; transcripts are artifacts, not logs |
 

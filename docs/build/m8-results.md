@@ -47,3 +47,58 @@ prepared. No provider implementations.
 | 2 | `docs/02` section 8's provider decorator (spans, timeouts, classification) does not exist; the Operations builder adds it in `ProviderComposer` |
 | 3 | Library sources are resolved to a directory in three places (`ApiApp.Runs`, `ApiApp.Decisions`, `StartupChecks`); the `git` source needs one resolver used by all three |
 | 4 | `ChildRunTests`' artifact-index order raced once in the full integration runs (it passed 5 of 5 alone). The workflow starts a child before it records the step that produced the parent's artifact, so under load the child's records can land first. New runs took the same order before M8. Fix in the workflow (record before starting children, re-recording the histories that breaks), not by loosening the assertion |
+
+## Operations
+
+The Jira tracker, OpenTelemetry tracing with the engine's provider decorator, stuck-run detection, and startup resolving
+every secret reference (M7 follow-up 4), built on `m8-operations` (W3).
+
+**What was built**
+
+| Area | Change |
+|---|---|
+| Jira tracker | `tracker` kind `jira` over Jira Cloud's REST API v3 (`FeatureFlow.Providers.Jira`): `status_map` to Jira status names, transitions chosen by the status they lead to, parents (a subtask under a non-epic), typed links, plain-text descriptions and comments, idempotency by a hashed key label (issues) and a hidden comment property (comments). The secret holds `<account email>:<API token>`. A search reads the issues Jira's index has not caught up with (LOG 301, 302) |
+| Provider decorator | Composition wraps every provider instance in one generic proxy that keeps all its interfaces: a span per call, its type's timeout, and classification (`timeout`; an exception is `internal_error`) (LOG 303, 304). Closes Foundations follow-up 2 |
+| Tracing | `observability.otlp_endpoint` is read, no longer refused, and traces are exported there with OTLP over gRPC. Temporal's tracing interceptor is on every client and worker with W3C propagation set explicitly: a run is one trace from the API's start through its activities, each provider call inside its activity (LOG 305) |
+| Stuck runs | A check beside each orchestration worker, every minute (fixed timings, LOG 270): runs without timeline progress for 15 minutes are looked up in Temporal; an activity failing with infrastructure errors is `stalled`, and after 30 minutes nothing alive with nobody awaited is `stuck`. Each shows as an open wait of that kind, notified once through `RunNotifier`, closed with `resumed` when the run moves or ends. It never changes a run (LOG 306, 307). M7 follow-up 14's `stalled` and `stuck` |
+| Secret references | Every host resolves `api.auth.token_ref`, `agent_worker.token_key_ref` and every provider setting ending in `_ref` before it connects to Temporal, and stops naming each key and reference that does not resolve or is empty, never a value (LOG 308). M7 follow-up 4 |
+
+**Checks**
+
+| Check | Shows |
+|---|---|
+| `JiraTrackerContract` (the tracker contract against an in-memory Jira whose index lags) and `JiraTrackerTests` (32) | The contract, error classification, status reading, transitions the workflow does not offer, subtasks, link direction, markers, a retried create after out-of-order indexing |
+| `JiraTrackerLiveContract` (Live, sandbox site from environment variables) | The contract and a `blocks` link's direction on a real site: 10 of 10, twice. Every issue labelled `feature-flow-test` and closed; none left open (checked by JQL) |
+| `ObservabilityTests` (9) | A span per call with its tags; a timeout even when the provider ignores its token; exceptions classified; the caller's cancellation still throws; every interface kept; composition decorates; spans reach an OTLP gRPC endpoint |
+| `ObservabilityRunTests` (integration) | A dry-run ticket's activities are one trace with the API's start, and `record_store.Append` is a span inside `RunActivity:Record` |
+| `StuckRunsTests` (7), `RunNotifierTests` (1 new) | The rules for stalled and stuck; their waits are messages, and closing is `resumed` |
+| `StuckRunTests` (integration, 2) | A tests action unreachable four times shows `stalled` once with its reason, then `resumed`, and the run completes; with no agent worker the planner's step shows `stuck`, an agent worker coming up closes it with `resumed`, and the run completes |
+| `SecretCheckTests` (5), `ConfigurationTests` (4 new) | References found at any depth; failures named without values; a host stops before Temporal; the `observability` key read and checked |
+
+**Controls** (each broke the guarded code, ran the check, saw it fail, and restored it)
+
+| Check | Mutation |
+|---|---|
+| Jira retried create | Written before the fix (the first Live run made a duplicate, FWFEED-83 and 84): it failed; passes with the gap read |
+| Jira lagging index | Forward reading off (`MaxMisses = 0`): two contract tests fail |
+| Decorator | Not applied in composition; no OTLP exporter; caller's span not restored; no `WaitAsync` (the timeout test hangs); exceptions not caught: each fails its test |
+| One trace per run | Without the explicit propagator: one run spread over 39 traces |
+| Stuck rules | Heartbeating recovery ignored; a condition wait not counted alive; a failing workflow task ignored; the notifier treating `stalled` as a decision: each fails its test |
+| Stuck waits close once the run moves | The first version closed only on a change of kind: the stuck integration test failed with the wait still open |
+| Secret check | Not called at host start; no walk into nested settings: each fails its test |
+
+**Deviations and judgement calls:** LOG 301 to 308. From `docs/02` section 8: traces only, no metrics or logs export
+(LOG 305); spans per activity stand for steps; stuck runs are found from the record store and Temporal's pending work
+rather than heartbeat age alone (LOG 306); `stuck` is shown as a position beside `stalled` (LOG 307). Timeouts are per
+provider type, not per call (LOG 304).
+
+**Follow-ups**
+
+| # | Follow-up |
+|---|---|
+| 1 | Metrics and logs export (`docs/02` section 8 lists step duration, retries, tokens and more) |
+| 2 | The GitHub Issues tracker reads only above the newest listed issue (LOG 184); Jira showed indexes can list a later issue first. Give it LOG 302's gap read |
+| 3 | M7 follow-up 14's reminders on open waits are not built |
+| 4 | The console lists `stalled` and `stuck` under "Decisions" (with no controls); a heading for positions would read better |
+| 5 | M7's `RunNotifierTests` hanging-chat budget test failed twice (calls outside 1 to 3) in its project's runs at load average 19, and passed in the 21 runs after; on `m8` it passed 6 of 6. It times a 1.2 s budget by the wall clock, so CPU starvation can starve its first send; whether this branch's extra test classes add to it was not settled |
+| 6 | When the payload codec (W1) lands, its `key_ref` joins `StartupChecks.SecretReferences` if it is not a provider setting |
