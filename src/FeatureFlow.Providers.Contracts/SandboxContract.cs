@@ -112,6 +112,31 @@ public abstract class SandboxContract : ContractBase, IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_command_that_ends_reads_as_ended_and_one_killed_with_its_sandboxs_processes_as_lost()
+    {
+        var marker = "lost-" + Guid.NewGuid().ToString("N");
+        var handle = Ok(await Sandboxes.StartCommandAsync(Sandbox, new SandboxCommand(["sh", "-c", $"echo {marker}; sleep 117"]), $"{Key}/lost", Ct));
+        Assert.True(Ok(await Sandboxes.GetCommandStatusAsync(handle, 0, Ct)).Running);
+
+        // As a sandbox restart would: the command and the process waiting on it end, and nothing records an exit code.
+        await RunAsync($"p=$(pgrep -f '{marker}' | head -1); kill -9 \"$(ps -o ppid= -p \"$p\")\" \"$p\"", root: true);
+        CommandStatus status;
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+        do
+        {
+            await Task.Delay(200, Ct);
+            status = Ok(await Sandboxes.GetCommandStatusAsync(handle, 0, Ct));
+        }
+        while (status.Running && DateTimeOffset.UtcNow < deadline);
+
+        Assert.Equal((false, true, null), (status.Running, status.Lost, status.ExitCode));
+        // Many short commands in a row each read as ended with their own code, never as lost (an ended command's code is
+        // written a moment after it ends).
+        for (var i = 0; i < 20; i++)
+            Assert.Equal(i % 3, (await RunAsync($"exit {i % 3}")).Exit);
+    }
+
+    [Fact]
     public async Task Output_is_read_from_the_cursor()
     {
         var handle = Ok(await Sandboxes.StartCommandAsync(Sandbox, new SandboxCommand(["sh", "-c", "printf abc; sleep 1; printf def"]), $"{Key}/cursor", Ct));
