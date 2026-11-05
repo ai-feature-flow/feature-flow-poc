@@ -18,5 +18,10 @@
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="xunit.v3.extensibility.core" Version="3.2.2" />
     <PackageVersion Include="xunit.v3.assert" Version="3.2.2" />
+    <!-- M8 operations: OpenTelemetry and the provider decorator (docs/02 section 8). -->
+    <PackageVersion Include="OpenTelemetry" Version="1.20.1" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.20.1" />
+    <PackageVersion Include="Temporalio.Extensions.OpenTelemetry" Version="1.21.0" />
+    <PackageVersion Include="Castle.Core" Version="5.2.1" />
   </ItemGroup>
 </Project>

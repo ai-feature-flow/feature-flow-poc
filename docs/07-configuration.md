@@ -58,7 +58,7 @@ providers:                       # every type: named instances, one default
   vcs:            { default: git, instances: { git: {} } }
   code_host:      { default: github, instances: { github: { app_id: 12345, secret_ref: secrets/github_app_key, webhook_secret_ref: secrets/github_webhook } } }
   ci:             { default: github_actions, instances: { github_actions: {}, teamcity: { base_url: https://tc.internal, secret_ref: secrets/teamcity } } }
-  tracker:        { default: jira, instances: { jira: { base_url: https://acme.atlassian.net, secret_ref: secrets/jira, status_map: { in_progress: "In Progress", code_review: "Code Review", done: "Done" } } } }
+  tracker:        { default: jira, instances: { jira: { base_url: https://acme.atlassian.net, secret_ref: secrets/jira, project: ACME, status_map: { in_progress: "In Progress", code_review: "Code Review", done: "Done" } } } }
   findings_source: { instances: { copilot_review: {}, sonarcloud: { secret_ref: secrets/sonar } } }
   validator:      { instances: { std: {} } }
   toolset:        { instances: { jira: { url: https://mcp.internal/jira }, confluence: { url: https://mcp.internal/confluence } } }
@@ -103,7 +103,8 @@ defaults:                        # engine defaults for limits; not floors
 | `secrets.file.from_environment` | Secret names the `file` provider reads from the process environment, such as the solo profile's subscription token. LOG 91 |
 | `endpoint` | Not in version 1: every runtime reaches its model through the one model proxy; a per-runtime upstream is a follow-up (LOG 293) |
 | `code_host` identity | Must not be able to change branch protection (F5); checked at startup |
-| `tracker.*.status_map` | Maps the library's abstract statuses to the tracker's (`docs/08` section 1). For `github_issues` (settings `repository`, `status_map`) a status maps to a label or to `closed` (LOG 184) |
+| `tracker.*.status_map` | Maps the library's abstract statuses to the tracker's (`docs/08` section 1). For `github_issues` (settings `repository`, `status_map`) a status maps to a label or to `closed` (LOG 184). For `jira` (settings `base_url`, `secret_ref`, `project`, `issue_type`, default Task, and `status_map`) a status maps to a Jira status name, default `in_progress` to "In Progress", `code_review` to "In Review" and `done` to "Done"; the secret holds `<account email>:<API token>` (LOG 301) |
+| `observability.otlp_endpoint` | Where traces are exported with OTLP over gRPC: an http or https URL. Without it nothing is exported. Version 1 exports traces only; metrics and logs are later (LOG 305) |
 | `notifications.slack` | `token_ref` (the bot token) and `signing_secret_ref` (verifies its buttons at `/inbound/chat/slack`) are secret references. `users` maps a Slack user id to the person its button presses answer as: `actor`, and `groups` or `roles` for the people roles (`docs/05` section 3.3). An unmapped user cannot answer. `console_url` is linked from each message. LOG 227 |
 | `code_host.github.webhook_secret_ref` | The secret GitHub signs webhook deliveries with; deliveries go to `/inbound/events/github` and only wake waits (`docs/02` section 2.3). LOG 228 |
 | `workers.agent_pools[].capabilities` | The sandbox capabilities a pool offers, which route steps to its queue (`docs/02` section 1.1) |
@@ -114,7 +115,9 @@ defaults:                        # engine defaults for limits; not floors
 | `artifact_store.s3` | `bucket` (required, created by the deployment), `region` (default `us-east-1`), `endpoint` for a store other than AWS such as MinIO (path-style), and `access_key_ref` with `secret_key_ref`, set together; without them the AWS SDK's credential chain applies, such as an EKS service account's role. LOG 283 |
 | `api.auth` | `local_token` (`token_ref`, `actor`, `roles`) or `oidc` (`issuer`, `audience`, `role_claim`, default `groups`, and `actor_claim`, default `sub`); with `oidc`, a `token_ref` keeps the local token working beside it. The actor `policy` is reserved for automatic answers (LOG 220, 222) |
 
-Scaling (replica counts) is deployment configuration, not engine configuration.
+Scaling (replica counts) is deployment configuration, not engine configuration. Each orchestration worker runs the stuck-run
+check (`docs/02` section 8): with more than one replica, a `stalled`, `stuck` or `resumed` message may be sent once per
+replica; one orchestration replica avoids that (LOG 307).
 
 ---
 
@@ -318,7 +321,7 @@ credentials (F5) and model keys (F6).
 
 | When | Checks |
 |---|---|
-| Startup | Schemas; provider packages present; secret references resolve; Temporal reachable; expected retention (warn); every agent runtime has `model_access`; the code host identity cannot change protection; library sources reachable |
+| Startup | Schemas; provider packages present; secret references resolve (every `*_ref` setting, naming the key, never a value; LOG 308); Temporal reachable; expected retention (warn); every agent runtime has `model_access`; the code host identity cannot change protection; library sources reachable |
 | Run start | The template validates (`docs/09`); every capability the plan needs is offered; caps respected; F1 for every merge step into a default branch, reading the default branch from the code host; branch protection exists on default branches; decision types known; library lock written |
 | Each step | The manifest read from the branch and its hash recorded; capabilities checked again if the manifest changed |
 
