@@ -3,8 +3,8 @@
 #
 # Every sandbox pod (label app.kubernetes.io/name: feature-flow-sandbox) may reach only:
 #   - the cluster's DNS;
-#   - the agent worker's pods (label app.kubernetes.io/name: feature-flow-agent-worker), which serve the hook endpoint,
-#     the engine's tools and the model proxy;
+#   - the agent worker's pods (label app.kubernetes.io/name: feature-flow-agent-worker, in any namespace), which serve
+#     the hook endpoint, the engine's tools and the model proxy;
 #   - the public internet: package registries and the code host.
 # Nothing else in the cluster (Temporal, Postgres, MinIO, the API, the Kubernetes API) or on its nodes, and no
 # connection to a sandbox is accepted. The cluster's network plugin must enforce network policies (k3s does).
@@ -27,8 +27,10 @@ spec:
       ports:
         - { protocol: UDP, port: 53 }
         - { protocol: TCP, port: 53 }
+    # In any namespace: the agent worker may run in another namespace than the sandboxes.
     - to:
-        - podSelector:
+        - namespaceSelector: {}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: feature-flow-agent-worker
     - to:

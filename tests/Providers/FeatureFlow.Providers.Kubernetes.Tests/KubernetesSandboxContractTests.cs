@@ -11,13 +11,17 @@ namespace FeatureFlow.Providers.Kubernetes.Tests;
 /// The sandbox contract against the Kubernetes pod sandbox on a cluster that enforces network policies (a k3d cluster).
 /// The cluster is the kubeconfig context <c>FF_K8S_CONTEXT</c> names, with the sandbox image (<see cref="Image"/>) already
 /// imported. The test applies the repository's <c>sandbox-network-policy.yaml</c> in a namespace of its own, with a stand-in
-/// agent worker (labelled as one) and a stand-in store (Temporal, Postgres, MinIO), each listening on a port.
+/// store (Temporal, Postgres, MinIO) beside the sandboxes and a stand-in agent worker (labelled as one) in another namespace,
+/// as a deployment has it, each listening on a port.
 /// </summary>
 [Trait("Category", "Cluster")]
 public sealed class KubernetesSandboxContractTests : SandboxContract
 {
     public const string Image = "feature-flow-sandbox:m8";
     public const string Namespace = "ff-sandbox-contract";
+
+    /// <summary>The stand-in agent worker's namespace: in a deployment the worker and the sandboxes are in different ones.</summary>
+    public const string WorkerNamespace = "ff-sandbox-contract-worker";
 
     readonly string folder = Directory.CreateTempSubdirectory("ff-k8s-contract-").FullName;
     readonly FileSystemArtifactStore artifacts;
@@ -27,7 +31,7 @@ public sealed class KubernetesSandboxContractTests : SandboxContract
 
     protected override ISandboxProvider Sandboxes => sandboxes!;
     protected override IArtifactStoreProvider Store => artifacts;
-    protected override Uri Reachable => new($"http://agent-worker.{Namespace}.svc.cluster.local:8471");
+    protected override Uri Reachable => new($"http://agent-worker.{WorkerNamespace}.svc.cluster.local:8471");
 
     protected override IReadOnlyList<Uri> Forbidden =>
     [
@@ -124,22 +128,22 @@ public static class ClusterWorld
     static async Task<IKubernetes> SetUpAsync()
     {
         var client = new k8s.Kubernetes(KubernetesClientConfiguration.BuildConfigFromConfigFile(currentContext: Environment.GetEnvironmentVariable("FF_K8S_CONTEXT")));
-        await Ignore409(() => client.CoreV1.CreateNamespaceAsync(new V1Namespace { Metadata = new V1ObjectMeta { Name = KubernetesSandboxContractTests.Namespace } }));
+        foreach (var ns in new[] { KubernetesSandboxContractTests.Namespace, KubernetesSandboxContractTests.WorkerNamespace })
+            await Ignore409(() => client.CoreV1.CreateNamespaceAsync(new V1Namespace { Metadata = new V1ObjectMeta { Name = ns } }));
         var manifest = Path.Combine(AppContext.BaseDirectory, "sandbox-network-policy.yaml");
         var policy = KubernetesYaml.Deserialize<V1NetworkPolicy>(await File.ReadAllTextAsync(manifest));
         await client.NetworkingV1.DeleteNamespacedNetworkPolicyAsync(policy.Metadata.Name, KubernetesSandboxContractTests.Namespace).ContinueWith(_ => { });
         await client.NetworkingV1.CreateNamespacedNetworkPolicyAsync(policy, KubernetesSandboxContractTests.Namespace);
-        await StandInAsync(client, "agent-worker", "feature-flow-agent-worker", 8471);
-        await StandInAsync(client, "store", "store", 5432);
+        await StandInAsync(client, KubernetesSandboxContractTests.WorkerNamespace, "agent-worker", "feature-flow-agent-worker", 8471);
+        await StandInAsync(client, KubernetesSandboxContractTests.Namespace, "store", "store", 5432);
         var nodes = await client.CoreV1.ListNodeAsync();
         NodeAddress = nodes.Items[0].Status.Addresses.First(a => a.Type == "InternalIP").Address;
         return client;
     }
 
     /// <summary>A pod listening on a port, with a service of the same name, labelled <paramref name="app"/>.</summary>
-    static async Task StandInAsync(IKubernetes client, string name, string app, int port)
+    static async Task StandInAsync(IKubernetes client, string ns, string name, string app, int port)
     {
-        var ns = KubernetesSandboxContractTests.Namespace;
         var labels = new Dictionary<string, string> { ["app.kubernetes.io/name"] = app };
         await Ignore409(() => client.CoreV1.CreateNamespacedPodAsync(new V1Pod
         {

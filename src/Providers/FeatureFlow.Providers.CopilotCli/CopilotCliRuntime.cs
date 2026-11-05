@@ -160,6 +160,10 @@ public sealed class CopilotCliRuntime(CopilotCliOptions options, Func<ISandboxPr
             options.Executable, "--output-format", "json", resume ? "--resume" : "--session-id", SessionId(task.Step.IdempotencyKey),
             "--model", task.Model ?? options.Model,
             "--no-ask-user", "--disable-builtin-mcps", "--no-custom-instructions", "--no-auto-update", "--disable-client-telemetry",
+            // The sandbox is the boundary for files and network (a read-only checkout, a closed network): Copilot's own checks
+            // of paths and URLs in a command would only refuse a build's caches and registries. Never --allow-all-tools or
+            // --allow-all, which trust the folder and load the repository's hooks and MCP servers.
+            "--allow-all-paths", "--allow-all-urls",
             "--add-dir", paths.Output, "--add-dir", Path.GetDirectoryName(paths.InputsManifest)!.Replace('\\', '/'),
             "--usage-output-file", $"{StateFolder}/copilot-usage-{task.Session}.json",
             "--log-dir", $"{StateFolder}/copilot-logs",

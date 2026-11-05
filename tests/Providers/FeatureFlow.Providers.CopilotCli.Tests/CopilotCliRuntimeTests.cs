@@ -72,7 +72,8 @@ public sealed class CopilotCliRuntimeTests
             Assert.Contains("'--disable-builtin-mcps' '--no-custom-instructions'", line, StringComparison.Ordinal);
             // An untrusted folder: the repository's hooks, MCP servers and instructions are not loaded, and no permission is blanket.
             Assert.DoesNotContain("trust", line, StringComparison.Ordinal);
-            Assert.DoesNotContain("allow-all", line, StringComparison.Ordinal);
+            Assert.DoesNotContain("'--allow-all-tools'", line, StringComparison.Ordinal);
+            Assert.DoesNotContain("'--allow-all'", line, StringComparison.Ordinal);
             Assert.DoesNotContain("yolo", line, StringComparison.Ordinal);
         }
     }

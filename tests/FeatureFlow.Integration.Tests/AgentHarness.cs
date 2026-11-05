@@ -90,6 +90,9 @@ public sealed record AgentHarnessOptions
     /// </summary>
     public bool Live { get; init; }
 
+    /// <summary>The key the proxy sends instead of the model's own: SP5 N2, a credential the model refuses.</summary>
+    public string? ModelKey { get; init; }
+
     /// <summary>The default agent runtime: <c>claude_code</c>, or <c>copilot_cli</c> (M8).</summary>
     public string Runtime { get; init; } = "claude_code";
 
@@ -165,7 +168,8 @@ public sealed class AgentHarness : IAsyncDisposable
             h.Repository = FixtureRepository;
             vcs = "{ default: git, instances: { git: { cache: clones } } }";
             broker = $$"""  credential_broker: { default: github_app, instances: { github_app: { app_id: "{{app["github-app-id"]}}", installation_id: "{{app["github-installation-id"]}}", key_path: "{{app["github-app-key"]}}", repositories: [{{FixtureRepository}}] } } }""";
-            modelAccess = "{ mode: proxy, key_ref: secrets/CLAUDE_CODE_OAUTH_TOKEN, upstream: \"https://api.anthropic.com\", auth: oauth }";
+            // SP5's negative controls replace the model's address (N1) or the proxy's key (N2).
+            modelAccess = $$"""{ mode: proxy, key_ref: secrets/{{(options.ModelKey is null ? "CLAUDE_CODE_OAUTH_TOKEN" : "model_key")}}, upstream: "{{options.ModelUpstream ?? "https://api.anthropic.com"}}", auth: oauth }""";
             secretsFromEnvironment = ", from_environment: [CLAUDE_CODE_OAUTH_TOKEN]";
         }
         else
@@ -181,7 +185,7 @@ public sealed class AgentHarness : IAsyncDisposable
         {
             ["api_token"] = token,
             ["step_token_key"] = Guid.NewGuid().ToString("N"),
-            ["model_key"] = model?.Credential ?? "",
+            ["model_key"] = options.ModelKey ?? model?.Credential ?? "",
         }));
         await File.WriteAllTextAsync(IOPath.Combine(folder, "script.yaml"), "api_version: feature-flow/v1\nkind: fake_script\nsteps: {}\n");
         var queue = $"ff-m4-{name}-{Guid.NewGuid():N}"[..30] + "-orchestration";
