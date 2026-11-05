@@ -60,12 +60,13 @@ public abstract class ArtifactStoreContract : ContractBase
         Assert.Equal(large, await ReadAsync(big));
     }
 
+    /// <summary>A well-formed reference to nothing stored, and references not of the <c>sha256:&lt;hex&gt;</c> form.</summary>
     [Theory]
     [InlineData("sha256:0000000000000000000000000000000000000000000000000000000000000000")]
     [InlineData("../../etc/passwd")]
     [InlineData("sha256:../../etc/passwd")]
     [InlineData("")]
-    public async Task A_reference_that_names_nothing_is_not_found(string id)
+    public async Task A_malformed_or_unknown_reference_is_not_found(string id)
     {
         Refused(await Store.GetAsync(new ArtifactRef(id), Ct), "not_found");
         Refused(await Store.GetSignedUrlAsync(new ArtifactRef(id), TimeSpan.FromMinutes(5), Ct), "not_found");

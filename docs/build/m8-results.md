@@ -21,7 +21,7 @@ prepared. No provider implementations.
 | Check | Shows |
 |---|---|
 | Replay of 19 re-recorded histories | Today's workflow replays every recorded path |
-| Each history takes the path it covers (14 rows) | A change to any covered path fails a replay rather than passing unseen |
+| Each history takes the path it covers (14 rows) | Every covered path has a history recorded on it, so a change to that path's commands (activities, signals, updates, children) fails a replay. A `text` row proves only that the history took the path: replay compares commands, not activity inputs, so a change confined to an input or a record's text is caught by the unit and integration tests instead |
 | Each key not in version 1 is refused alone, whatever it holds | The four refusals, with malformed content still refused only for the key |
 | `RecordStoreContract`, `ArtifactStoreContract` on SQLite and the filesystem | The solo profile's stores meet the suites the Postgres and S3 providers must pass |
 | Architecture test | The S3 project is in the reference rule table and obeys it |
