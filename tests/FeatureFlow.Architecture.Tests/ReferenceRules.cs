@@ -30,6 +30,7 @@ public static class ReferenceRules
         "FeatureFlow.Providers.Slack",
         "FeatureFlow.Providers.Jira",
         "FeatureFlow.Providers.Postgres",
+        "FeatureFlow.Providers.S3",
         "FeatureFlow.Providers.Kubernetes",
     ];
 

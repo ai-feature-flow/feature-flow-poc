@@ -82,7 +82,7 @@ src/
     FeatureFlow.Providers.ClaudeCode/   Agent runtime
     FeatureFlow.Providers.CopilotCli/   Agent runtime
     FeatureFlow.Providers.StdValidators/  The standard validators (docs/04 section 10.2)
-    FeatureFlow.Providers.Slack/, .Jira/, .Postgres/, .Kubernetes/, an object store provider (open question 4)
+    FeatureFlow.Providers.Slack/, .Jira/, .Postgres/, .Kubernetes/, .S3/ (the object store on the S3 API, LOG 266)
 hosts/
   FeatureFlow.Host.Api/, FeatureFlow.Host.OrchestrationWorker/, FeatureFlow.Host.AgentWorker/
 tests/
