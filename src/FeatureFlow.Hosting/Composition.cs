@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Temporalio.Client;
 using Temporalio.Worker;
 
@@ -112,7 +113,11 @@ public sealed class FeatureFlowHost : IAsyncDisposable
         var activities = new RunActivities(services, client);
         var queue = configuration.Installation.TaskQueue;
         if (orchestrationWorker)
+        {
             host.Run(new TemporalWorker(client, new TemporalWorkerOptions(queue).AddWorkflow<RunWorkflow>().AddAllActivities(activities)));
+            // Stuck-run detection (docs/02 section 8) runs beside the orchestration worker; it only records and notifies.
+            host.workers.Add(new StuckRuns(services, client, client.Options.LoggerFactory.CreateLogger<StuckRuns>()).RunAsync(host.stop.Token));
+        }
         if (agentWorker)
             await host.StartAgentWorkerAsync(configuration, providers, client, queue);
         if (apiUrl is not null)

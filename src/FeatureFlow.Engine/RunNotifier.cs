@@ -7,7 +7,7 @@ namespace FeatureFlow.Engine;
 /// <summary>
 /// Sends a run's notifications (docs/06 section 3.10) from what the run records, in the record activity, never in
 /// workflow code: an opened wait is <c>decision_needed</c> with its kind and choices, a closed one <c>resumed</c>, an
-/// ended run <c>completed</c> or <c>failed</c>. Organisation configuration, read when sending, routes each event to a
+/// ended run <c>completed</c> or <c>failed</c>. Stuck-run detection's waits are <c>stalled</c> or <c>stuck</c> (<see cref="StuckRuns"/>). Organisation configuration, read when sending, routes each event to a
 /// channel and filters which are sent at all (<c>notifications.routing</c>, <c>notifications.events</c>, docs/07
 /// section 3). Each message is sent once per <see cref="NotificationEvents.Key"/>, kept as a
 /// <see cref="NotificationRecord"/> (LOG 201), so a retried record activity or a restart does not repeat it. All
@@ -78,6 +78,14 @@ public sealed class RunNotifier(EngineServices services, ILogger logger, TimeSpa
         var list = new List<Pending>();
         foreach (var wait in batch.Waits ?? [])
         {
+            // Stuck-run detection's waits (StuckRuns): the event of their kind, a message rather than a decision to answer.
+            if (wait.Open && wait.Kind is NotificationEvents.Stalled or NotificationEvents.Stuck)
+            {
+                list.Add(new Pending(wait.Kind, NotificationEvents.Key(wait.RunId, wait.WaitId, 0, wait.Kind), wait.RunId, null,
+                    new Notification(wait.Kind, wait.RunId, $"Run {wait.RunId} is {wait.Kind}", wait.Reason), null));
+                continue;
+            }
+
             if (wait.Open)
             {
                 var choices = wait.Kind == "intervention" ? wait.Choices.Where(InterventionButtons.Contains).ToList() : wait.Choices.ToList();
@@ -90,7 +98,9 @@ public sealed class RunNotifier(EngineServices services, ILogger logger, TimeSpa
             var opened = await OpenedAsync(wait, ct);
             var answer = await AnswerOfAsync(wait, batch, ct);
             var what = opened is null ? $"wait {wait.WaitId}" : $"{opened.Kind} {wait.WaitId} ({opened.DecisionType}) at {opened.StepId}";
-            var text = answer is null ? $"{what} closed without an answer from a person" : $"{what} was answered: {answer}";
+            var text = opened?.Kind is NotificationEvents.Stalled or NotificationEvents.Stuck
+                ? $"no longer {opened.Kind}: the run has moved or ended"
+                : answer is null ? $"{what} closed without an answer from a person" : $"{what} was answered: {answer}";
             list.Add(new Pending(NotificationEvents.Resumed, NotificationEvents.Key(wait.RunId, wait.WaitId, 0, NotificationEvents.Resumed),
                 wait.RunId, opened?.StepId, new Notification(NotificationEvents.Resumed, wait.RunId, $"Run {wait.RunId} resumed", text, opened?.StepId), null));
         }

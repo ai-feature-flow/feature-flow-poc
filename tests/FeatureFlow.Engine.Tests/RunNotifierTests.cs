@@ -216,6 +216,27 @@ public sealed class RunNotifierTests : IDisposable
         Assert.Empty(await NotificationsOf("r1"));
     }
 
+    [Fact]
+    public async Task A_stalled_or_stuck_wait_is_its_event_as_a_message_and_its_closing_is_resumed()
+    {
+        var config = new NotificationsConfig(new Dictionary<string, NotificationRoute>
+        {
+            [NotificationEvents.Stalled] = new("#runs"),
+            [NotificationEvents.Stuck] = new("#runs"),
+            [NotificationEvents.Resumed] = new("#runs"),
+        }, [NotificationEvents.Stalled, NotificationEvents.Stuck, NotificationEvents.Resumed]);
+        WaitRecord Of(string kind, string id) => new("r1", id, kind, "", kind, $"why it is {kind}", [], true, now);
+
+        await RecordAsync(Notifier(config), new RecordBatch(Waits: [Of(NotificationEvents.Stalled, "stalled-4")]));
+        await RecordAsync(Notifier(config), new RecordBatch(Waits: [Of(NotificationEvents.Stalled, "stalled-4") with { Open = false }, Of(NotificationEvents.Stuck, "stuck-4")]));
+
+        var messages = AllMessages();
+        Assert.All(messages, m => Assert.Null(m.Decision));
+        Assert.Equal(["[stalled] Run r1 is stalled\nwhy it is stalled", "[resumed] Run r1 resumed\nno longer stalled: the run has moved or ended", "[stuck] Run r1 is stuck\nwhy it is stuck"],
+            messages.Select(m => m.Text));
+        Assert.Equal([NotificationEvents.Stalled, NotificationEvents.Resumed, NotificationEvents.Stuck], (await NotificationsOf("r1")).Select(n => n.Event));
+    }
+
     List<PostedMessage> AllMessages() =>
         new[] { "#decisions", "#runs" }.SelectMany(c => chat.Messages(c).SelectMany(m => chat.Messages(c, m.Ref).Prepend(m))).ToList();
 
