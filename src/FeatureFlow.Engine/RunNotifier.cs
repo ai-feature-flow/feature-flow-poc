@@ -42,10 +42,10 @@ public sealed class RunNotifier(EngineServices services, ILogger logger, TimeSpa
         var config = services.Organisation.Notifications;
         if (config.Events.Count == 0 || services.Providers.ForRun("notifications", false) is not INotificationsProvider provider)
             return;
-        var deadline = DateTimeOffset.UtcNow + budgetFor;
+        var spent = System.Diagnostics.Stopwatch.StartNew();
         foreach (var item in await PendingAsync(batch, cancellationToken))
         {
-            if (DateTimeOffset.UtcNow >= deadline)
+            if (spent.Elapsed >= budgetFor)
             {
                 logger.LogWarning("notifications: {Key} and any after it were not sent: this batch used its {Budget} s", item.Key, budgetFor.TotalSeconds);
                 return;
@@ -61,7 +61,14 @@ public sealed class RunNotifier(EngineServices services, ILogger logger, TimeSpa
 
             try
             {
-                await SendAsync(provider, channel, item, deadline, cancellationToken);
+                // A send the budget cut short ends the batch. Checking the clock alone let one more start: a timer can fire a
+                // moment before the clock reads the deadline.
+                if (await SendAsync(provider, channel, item, () => budgetFor - spent.Elapsed, cancellationToken))
+                {
+                    logger.LogWarning("notifications: {Key} was cut short and any after it were not sent: this batch used its {Budget} s", item.Key,
+                        budgetFor.TotalSeconds);
+                    return;
+                }
             }
             catch (Exception e) when (e is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {
@@ -148,14 +155,16 @@ public sealed class RunNotifier(EngineServices services, ILogger logger, TimeSpa
             .Select(t => Of(t, closed.WaitId)).LastOrDefault(a => a is not null);
     }
 
-    async Task SendAsync(INotificationsProvider provider, string channel, Pending item, DateTimeOffset deadline, CancellationToken ct)
+    /// <summary>Sends one message unless it was sent before; true when the batch's budget, not the send's own timeout, ended it.</summary>
+    async Task<bool> SendAsync(INotificationsProvider provider, string channel, Pending item, Func<TimeSpan> left, CancellationToken ct)
     {
         if ((await Records.QueryAsync<NotificationRecord>(Queries.Notification, new Dictionary<string, string> { ["key"] = item.Key }, ct)).Unwrap().Count > 0)
-            return;
+            return false;
         var root = await RootOfAsync(item.RunId, ct);
         var thread = await ThreadAsync(root, channel, ct);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(TimeSpan.FromTicks(Math.Max(0, Math.Min(timeoutAfter.Ticks, (deadline - DateTimeOffset.UtcNow).Ticks))));
+        var remaining = left();
+        timeout.CancelAfter(TimeSpan.FromTicks(Math.Max(0, Math.Min(timeoutAfter.Ticks, remaining.Ticks))));
         ProviderResult<MessageRef> sent;
         try
         {
@@ -166,13 +175,15 @@ public sealed class RunNotifier(EngineServices services, ILogger logger, TimeSpa
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
+            if (remaining < timeoutAfter)
+                return true;
             sent = ProviderResult<MessageRef>.Failure("timeout", $"no answer within {timeoutAfter.TotalSeconds:0} s");
         }
 
         if (!sent.Ok)
         {
             logger.LogWarning("notifications: {Key} to {Channel} was not sent: {Reason}: {Message}; the run carries on", item.Key, channel, sent.Error!.Reason, sent.Error.Message);
-            return;
+            return false;
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -181,6 +192,7 @@ public sealed class RunNotifier(EngineServices services, ILogger logger, TimeSpa
         if (thread is null && root != item.RunId)
             records.Add(new NotificationRecord(NotificationEvents.Key(root, null, 0, $"{ThreadEvent}:{channel}"), root, null, ThreadEvent, sent.Value!, null, now));
         (await Records.AppendAsync(new RecordBatch(Notifications: records), ct)).Unwrap();
+        return false;
     }
 
     /// <summary>The thread a root run's messages in <paramref name="channel"/> reply in: the first top-level message recorded for it there.</summary>
