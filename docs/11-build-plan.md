@@ -82,7 +82,7 @@ src/
     FeatureFlow.Providers.ClaudeCode/   Agent runtime
     FeatureFlow.Providers.CopilotCli/   Agent runtime
     FeatureFlow.Providers.StdValidators/  The standard validators (docs/04 section 10.2)
-    FeatureFlow.Providers.Slack/, .Jira/, .Postgres/, .Kubernetes/, an object store provider (open question 4)
+    FeatureFlow.Providers.Slack/, .Jira/, .Postgres/, .Kubernetes/, .S3/ (the object store on the S3 API, LOG 266)
 hosts/
   FeatureFlow.Host.Api/, FeatureFlow.Host.OrchestrationWorker/, FeatureFlow.Host.AgentWorker/
 tests/
@@ -229,6 +229,7 @@ Version 1 is complete when M8 is done.
 |---|---|---|
 | Default | Nothing | Every pull request, required |
 | Integration | Temporal CLI dev server, Docker | Every pull request, required |
+| Cluster | A k3d cluster with the deployment (`deploy/k3d`), Docker | Every pull request, in its own job (LOG 316) |
 | Live | A model credential and the GitHub App's key | Locally at first. When CI may hold those secrets, in a separate CI workflow that is optional or scheduled, so a missing secret never fails a pull request (open question 2) |
 
 Development moves to a Windows machine soon. The Docker sandbox there uses

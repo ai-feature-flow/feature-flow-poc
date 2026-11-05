@@ -107,7 +107,7 @@ work. Give each helper its own Temporal port, task queue and directory where it
 touches shared infrastructure: in Spike 1, two agents sharing a worker corrupted
 a run.
 How a milestone is split, briefed, reviewed and merged, and how the coordinator
-decides, is in the latest handover (`docs/build/handover-2026-11-05-m8.md`,
+decides, is in the latest handover (`docs/build/handover-2026-11-05-v1.md`,
 sections 3 and 4).
 
 ## Local setup (macOS)
@@ -119,7 +119,7 @@ sections 3 and 4).
 | Agent runtime | `claude` on `PATH`, signed in to the Anthropic subscription. The spikes use model `haiku` |
 | Secrets | `~/keys/feature-flow-secrets.json`, outside the repository, passed as `FF_SECRETS_FILE`. It holds the GitHub App id (5507595) and installation id (176108462), and the path to the App's private key. Never commit a credential, and never print one |
 | Pushing | `origin` uses an SSH host alias that can push to both the design and the fixture repository |
-| Sandbox image (M4) | `feature-flow-sandbox:m4`, from `src/Providers/FeatureFlow.Providers.Docker/sandbox.Dockerfile`. The integration tests build it if it is absent, and publish the sandbox client for the Docker host's architecture |
+| Sandbox image (M8) | `feature-flow-sandbox:m8`, from `src/Providers/FeatureFlow.Providers.Docker/sandbox.Dockerfile`. The integration tests build it if it is absent, and publish the sandbox client for the Docker host's architecture |
 | Live tests (M4) | `dotnet test tests/FeatureFlow.Live.Tests` with `FF_TEMPORAL_ADDRESS`, `FF_SECRETS_FILE` and `CLAUDE_CODE_OAUTH_TOKEN` set. They spend model tokens and push a branch and a hidden reference to the fixture repository, which each test removes |
 
 ## Design principles worth not losing

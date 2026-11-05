@@ -1,2 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\FeatureFlow.Providers.Abstractions\FeatureFlow.Providers.Abstractions.csproj" />
+    <ProjectReference Include="..\..\FeatureFlow.Model\FeatureFlow.Model.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="KubernetesClient" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="sandbox-network-policy.yaml" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

@@ -1,8 +1,8 @@
 # Design rewrite plan
 
-Status: design complete 2026-11-01. Build milestones M0 to M7 of
-`docs/11-build-plan.md` merged by 2026-11-05; the latest handover is
-`docs/build/handover-2026-11-05-m8.md`. Started 2026-10-31. This file is the
+Status: design complete 2026-11-01. Version 1 built: milestones M0 to M8 of
+`docs/11-build-plan.md` done by 2026-11-05; the latest handover is
+`docs/build/handover-2026-11-05-v1.md`. Started 2026-10-31. This file is the
 resume point: a new session reads it first, then the status table in section 6
 and the latest handover.
 
@@ -117,7 +117,8 @@ Paths in all design documents are relative to the repository root.
 | M5 (source control, testing and the first real ticket) | Done 2026-11-03, merged at `ba1f62f` (pull request 7): the done-when's live run merged a real ticket into a non-default parent branch on the fixture. Results in `docs/build/m5-results.md`; LOG 107 to 146 approved 2026-11-03. Next steps, ways of working and decision principles in `docs/build/handover-2026-11-03-m6.md` |
 | M6 (findings, validators and levels) | Done 2026-11-04: the done-whens' live runs delivered an epic of three issue-tracked tickets into its parent branch, and a project over two repositories with the product owner's merges into `main` detected. LOG 139 (a wait held up a run's hand-over) is fixed. Results in `docs/build/m6-results.md`; LOG 148 to 200 approved by the product owner 2026-11-04. Second fixture `ai-feature-flow/feature-flow-example-client` created. Next steps in `docs/build/handover-2026-11-04-m7.md` |
 | M7 (people, policy and steering) | Done 2026-11-05 (pull requests 16 to 22): run-time overrides with who may use each, organisation policy and people roles, OIDC, Slack notifications and chat answers, webhooks, a minimal console, interactive sessions with pre-submit checks, report-time artifact checks and a person triaging findings. The done-when's live run had a second authenticated person submit a project's requirements session. Results in `docs/build/m7-results.md`; LOG 201 to 261, awaiting review |
-| M8 (team profile and operations), starting with the sandbox's network (M4 follow-up 12) | **Next** |
+| M8 (team profile and operations) | Done 2026-11-05 (pull requests 25 to 32): the sandbox's network closed (M4 follow-up 12), compatibility code removed, a Postgres record store, an S3 artifact store, the payload codec, reconcile, the `git` library source, the Kubernetes pod sandbox, Copilot CLI, `role_mapping`, Jira, OpenTelemetry, stuck-run detection, host images, a k3d deployment, a distribution template and a `Cluster` CI job. The done-when's live run delivered an epic of three Jira tickets on k3d. Results in `docs/build/m8-results.md`; LOG 271 to 327, awaiting review. **Version 1 is built** |
+| After version 1: the product owner's review of LOG 271 to 327, and what to take from M8's consolidated follow-ups | **Next** (`docs/build/handover-2026-11-05-v1.md` section 2) |
 
 ## 7. How to resume
 

@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using FeatureFlow.Api;
 using FeatureFlow.Engine;
@@ -9,6 +10,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Temporalio.Client;
 using Temporalio.Worker;
 
@@ -33,7 +35,7 @@ public sealed record FeatureFlowConfiguration(InstallationConfig Installation, O
 /// <summary>
 /// Composition (docs/06 section 4): selects and creates each configured provider instance from the factories a
 /// host registers, by type and kind. An instance whose kind no factory provides, or with a setting its factory
-/// does not take, is a configuration error.
+/// does not take, is a configuration error. Each instance is wrapped by the engine's decorator (<see cref="ProviderCalls"/>).
 /// </summary>
 public static class ProviderComposer
 {
@@ -46,6 +48,8 @@ public static class ProviderComposer
         var dryRun = installation.Providers.Where(p => p.Value.DryRun is not null).ToDictionary(p => p.Key, p => p.Value.DryRun!);
         ProviderSet? set = null;
         var errors = new List<string>();
+        var worker = installation.AgentWorker ?? AgentWorkerConfig.None;
+        var reach = worker.Urls.Append(worker.ModelBaseUrl).OfType<string>().Select(u => new Uri(u)).ToList();
         foreach (var (type, config) in installation.Providers)
         {
             var named = new Dictionary<string, IProvider>(StringComparer.Ordinal);
@@ -59,7 +63,8 @@ public static class ProviderComposer
 
                 foreach (var key in instance.Settings.Keys.Where(k => !factory.Settings.Contains(k)))
                     errors.Add($"providers.{type}.instances.{name}: unknown setting '{key}'");
-                named[name] = factory.Create(new ProviderContext(instance, baseDirectory, t => set?.ForRun(t, false)));
+                named[name] = ProviderCalls.Decorate(type, name,
+                    factory.Create(new ProviderContext(instance, baseDirectory, t => set?.ForRun(t, false)) { SandboxReach = reach }));
             }
 
             instances[type] = named;
@@ -79,6 +84,7 @@ public sealed class FeatureFlowHost : IAsyncDisposable
     readonly List<Task> workers = [];
     WebApplication? api;
     WebApplication? agentEndpoint;
+    OpenTelemetry.Trace.TracerProvider? tracing;
 
     FeatureFlowHost(FeatureFlowConfiguration configuration, ProviderSet providers, ITemporalClient client)
     {
@@ -101,16 +107,18 @@ public sealed class FeatureFlowHost : IAsyncDisposable
         foreach (var type in providers.Types)
             if (providers.ForRun(type, false) is { } provider && await provider.CheckAsync(CancellationToken.None) is { Ok: false } failed)
                 throw new InvalidOperationException($"the {type} provider is not usable: {failed.Error!.Message}");
-        var client = await TemporalClient.ConnectAsync(new TemporalClientConnectOptions(configuration.Installation.TemporalAddress)
-        {
-            Namespace = configuration.Installation.TemporalNamespace,
-        });
-        var host = new FeatureFlowHost(configuration, providers, client);
+        await StartupChecks.CheckSecretsAsync(configuration.Installation, providers, CancellationToken.None);
+        var client = await TemporalConnection.ConnectAsync(configuration.Installation, providers);
+        var host = new FeatureFlowHost(configuration, providers, client) { tracing = Tracing.Start(configuration.Installation.OtlpEndpoint) };
         var services = new EngineServices(providers, configuration.Installation, configuration.Organisation);
         var activities = new RunActivities(services, client);
         var queue = configuration.Installation.TaskQueue;
         if (orchestrationWorker)
+        {
             host.Run(new TemporalWorker(client, new TemporalWorkerOptions(queue).AddWorkflow<RunWorkflow>().AddAllActivities(activities)));
+            // Stuck-run detection (docs/02 section 8) runs beside the orchestration worker; it only records and notifies.
+            host.workers.Add(new StuckRuns(services, client, client.Options.LoggerFactory.CreateLogger<StuckRuns>()).RunAsync(host.stop.Token));
+        }
         if (agentWorker)
             await host.StartAgentWorkerAsync(configuration, providers, client, queue);
         if (apiUrl is not null)
@@ -202,6 +210,8 @@ public sealed class FeatureFlowHost : IAsyncDisposable
         catch (OperationCanceledException)
         {
         }
+
+        tracing?.Dispose();
     }
 }
 
@@ -223,22 +233,52 @@ public static class HostArguments
             organisation ?? throw new ArgumentException("--organisation <file> or FF_ORGANISATION is required"));
     }
 
-    /// <summary>Runs a host until Ctrl+C.</summary>
+    /// <summary>
+    /// Runs a host until SIGTERM or Ctrl+C, then stops its workers and endpoints and exits 0. Without its own handler a
+    /// host with a web endpoint never exited on SIGTERM: ASP.NET's handler took the signal and stopped only the endpoint.
+    /// With the first argument <c>reconcile</c>, rebuilds the run index once and exits (<see cref="RunIndex"/>).
+    /// </summary>
     public static async Task<int> RunAsync(string[] args, IEnumerable<ProviderFactory> factories, bool orchestration, bool agent, bool apiHost)
     {
         var (installation, organisation) = Files(args);
         var configuration = FeatureFlowConfiguration.Load(installation, organisation);
+        if (args.FirstOrDefault() == "reconcile")
+            return await ReconcileAsync(configuration, factories, Console.Out);
         using var cancel = new CancellationTokenSource();
-        Console.CancelKeyPress += (_, e) =>
+        void Stop(PosixSignalContext context)
         {
-            e.Cancel = true;
+            context.Cancel = true;
             cancel.Cancel();
-        };
+        }
+
+        using var terminate = PosixSignalRegistration.Create(PosixSignal.SIGTERM, Stop);
+        using var interrupt = PosixSignalRegistration.Create(PosixSignal.SIGINT, Stop);
         var url = Environment.GetEnvironmentVariable("FF_API_LISTEN") ?? "http://127.0.0.1:8480";
-        await using var host = await FeatureFlowHost.StartAsync(configuration, factories, orchestration, agent, apiHost ? url : null);
-        if (host.ApiAddress is { } address)
-            Console.WriteLine($"API listening on {address}");
-        await host.WaitAsync(cancel.Token);
+        await using (var host = await FeatureFlowHost.StartAsync(configuration, factories, orchestration, agent, apiHost ? url : null))
+        {
+            if (host.ApiAddress is { } address)
+                Console.WriteLine($"API listening on {address}");
+            if (host.AgentEndpointAddress is { } endpoint)
+                Console.WriteLine($"Agent endpoint listening on {endpoint}");
+            Console.WriteLine("Started");
+            await host.WaitAsync(cancel.Token);
+        }
+
+        Console.WriteLine("Stopped");
+        return 0;
+    }
+
+    /// <summary>The <c>reconcile</c> command: the installation's record store and Temporal, one pass, a line saying what it did.</summary>
+    public static async Task<int> ReconcileAsync(FeatureFlowConfiguration configuration, IEnumerable<ProviderFactory> factories, TextWriter output)
+    {
+        var providers = ProviderComposer.Compose(configuration.Installation, factories);
+        var records = providers.Required<IRecordStoreProvider>("record_store");
+        (await records.CheckAsync(CancellationToken.None)).Unwrap();
+        var client = await TemporalConnection.ConnectAsync(configuration.Installation, providers);
+        var result = await RunIndex.ReconcileAsync(client, configuration.Installation.TaskQueue, records, CancellationToken.None);
+        await output.WriteLineAsync($"reconcile: {result.Runs} runs in Temporal on {configuration.Installation.TaskQueue}, {result.Rebuilt.Count} records rebuilt");
+        foreach (var run in result.Rebuilt)
+            await output.WriteLineAsync($"  {run.RunId} {run.Status}");
         return 0;
     }
 }

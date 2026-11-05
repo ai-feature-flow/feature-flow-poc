@@ -47,7 +47,7 @@ public sealed class RunStartCheckTests
         if (engineCanMerge is { } ecm)
             parameters["engine_can_merge"] = YamlWriter.Read(ecm ? "true" : "false");
         var (core, loaded) = RunCore.Start(libraries, LibraryReference.TryParse(template)!, new RunInfo("run-1", repositories, parameters),
-            new RunOptions { BranchFromPattern = true });
+            new RunOptions());
         Assert.DoesNotContain(loaded, x => x.Blocks);
         var start = new RunStart("run-1", "std:templates/ticket_delivery", repositories, new Dictionary<string, string>(), "lock", false, "tester",
             ParentBranch: parentBranch);

@@ -22,9 +22,6 @@ namespace FeatureFlow.Engine;
 /// </summary>
 public partial class RunWorkflow
 {
-    /// <summary>The patch marker of interactive sessions (M7): histories recorded before it open no session and record no check digests.</summary>
-    public const string SessionsPatch = "m7-sessions";
-
     /// <summary>A session's activities have a person waiting on them: a few tries, then the person is told, rather than a wait for ever.</summary>
     static readonly ActivityOptions SessionActivity = new()
     {
@@ -33,9 +30,8 @@ public partial class RunWorkflow
     };
 
     /// <summary>
-    /// The decision waits this run opened a session for, behind <see cref="SessionsPatch"/>; carried over a hand-over. Only
-    /// these are sessions: a decision whose plan declares <c>session</c> but that opened none (a history recorded before the
-    /// marker, a dry run) is answered as any decision is.
+    /// The decision waits this run opened a session for; carried over a hand-over. Only these are sessions: a decision whose
+    /// plan declares <c>session</c> but that opened none (a dry run) is answered as any decision is.
     /// </summary>
     readonly HashSet<string> sessionWaits;
 
@@ -435,8 +431,7 @@ public partial class RunWorkflow
     void NoteCheckInputs(Step step, StepOutcome outcome)
     {
         if (outcome.Inputs is not { } digest
-            || !core!.Plan.AllSteps.Any(s => s.Decision?.Session is { } spec && spec.ChecksFrom.Any(c => core.FindStep(c, s.Scope)?.Id == step.Id))
-            || !Workflow.Patched(SessionsPatch))
+            || !core!.Plan.AllSteps.Any(s => s.Decision?.Session is { } spec && spec.ChecksFrom.Any(c => core.FindStep(c, s.Scope)?.Id == step.Id)))
             return;
         core.State.Trace.Add(new TraceEntry("check_inputs", step.Id, digest));
     }

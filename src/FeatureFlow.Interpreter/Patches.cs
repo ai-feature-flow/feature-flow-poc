@@ -293,9 +293,6 @@ public sealed partial class RunCore
             if (StepById(op.Target) is { Protected: true } target && (op.Op != "insert" || op.Position == "after"))
                 yield return $"{op.Op} touches protected step {target.Id} (F3)";
 
-        // Leaving a protected step unrun came with M7 (Steering), so histories recorded before it replay as they ran.
-        if (!Options.Steering)
-            yield break;
         var before = Positions().Concat(proposerId is null ? [] : [proposerId]).ToList();
         // The proposer stays a way on: its routes are how the run leaves it whenever it runs again.
         var after = Positions().Where(id => id != proposerId).Concat(proposerId is null ? [] : [proposerId]).ToList();

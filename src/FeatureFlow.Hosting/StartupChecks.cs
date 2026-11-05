@@ -1,4 +1,6 @@
+using FeatureFlow.Api;
 using FeatureFlow.Model;
+using FeatureFlow.Model.Yaml;
 using FeatureFlow.Providers.Abstractions;
 
 namespace FeatureFlow.Hosting;
@@ -23,17 +25,74 @@ public static class StartupChecks
         if (installation.ApiAuth.Mode == "oidc" && organisation.Roles.Count == 0)
             Fail(d, "organisation: roles: api.auth.mode is oidc in the installation, so people roles come from identity-provider groups, and the organisation maps none");
 
-        var root = Path.GetDirectoryName(Path.GetFullPath(organisation.Location))!;
+        // docs/07 section 7: library sources are reachable. Startup is synchronous; a git source is fetched here once.
         foreach (var source in organisation.Libraries)
-        {
-            var path = Path.GetFullPath(Path.Combine(root, source.Path));
-            var opened = new DiagnosticBag();
-            if (!Directory.Exists(path))
-                Fail(d, $"organisation: libraries.{source.Name}: the directory {path} does not exist");
-            else if (Library.Library.Open(path, opened) is null || opened.HasErrors)
-                Fail(d, $"organisation: libraries.{source.Name}: the library at {path} does not open: {string.Join("; ", opened.Where(x => x.Blocks).Take(3).Select(x => x.Message))}");
-        }
+            if (LibrarySources.OpenAsync(source, organisation.Location, CancellationToken.None).GetAwaiter().GetResult() is { Library: null, Problem: { } problem })
+                Fail(d, $"organisation: libraries.{source.Name}: {problem}");
     }
 
     static void Fail(DiagnosticBag d, string message) => d.Add(Checks.Schema, message);
+
+    /// <summary>
+    /// Every secret reference the installation names, with where: <c>api.auth.token_ref</c>, <c>agent_worker.token_key_ref</c>,
+/// <c>temporal.payload_codec.key_ref</c>
+    /// and every provider setting whose key ends in <c>_ref</c>, however deep (<c>model_access.key_ref</c>).
+    /// </summary>
+    public static IReadOnlyList<(string Key, string Reference)> SecretReferences(InstallationConfig installation)
+    {
+        var found = new List<(string, string)>();
+        if (installation.ApiAuth.TokenRef is { } token)
+            found.Add(("api.auth.token_ref", token));
+        if (installation.AgentWorker?.TokenKeyRef is { } key)
+            found.Add(("agent_worker.token_key_ref", key));
+        if (installation.PayloadCodec?.KeyRef is { } codec)
+            found.Add(("temporal.payload_codec.key_ref", codec));
+        foreach (var (type, config) in installation.Providers)
+            foreach (var (name, instance) in config.Instances)
+                Walk(instance.Settings, $"providers.{type}.instances.{name}");
+        return found;
+
+        void Walk(YNode? node, string path)
+        {
+            if (node is YMap map)
+                foreach (var (k, v) in map.Entries)
+                {
+                    if (k.Text.EndsWith("_ref", StringComparison.Ordinal) && v.ScalarText() is { Length: > 0 } reference)
+                        found.Add(($"{path}.{k.Text}", reference));
+                    else
+                        Walk(v, $"{path}.{k.Text}");
+                }
+            else if (node is YSeq seq)
+                for (var i = 0; i < seq.Items.Count; i++)
+                    Walk(seq.Items[i], $"{path}[{i}]");
+        }
+    }
+
+    /// <summary>
+    /// Startup resolves every secret reference (<see cref="SecretReferences"/>) through the secrets provider, so a missing
+    /// secret stops the host at once rather than the first run that needs it. A failure names the key and the reference,
+    /// never a value.
+    /// </summary>
+    public static async Task CheckSecretsAsync(InstallationConfig installation, ProviderSet providers, CancellationToken cancellationToken)
+    {
+        var failures = new List<string>();
+        var secrets = providers.ForRun("secrets", false) as ISecretsProvider;
+        foreach (var (key, reference) in SecretReferences(installation))
+        {
+            if (secrets is null)
+            {
+                failures.Add($"{key} names the secret '{reference}', and no secrets provider is configured");
+                continue;
+            }
+
+            var resolved = await secrets.ResolveAsync(reference, cancellationToken);
+            if (!resolved.Ok)
+                failures.Add($"{key}: the secret '{reference}' does not resolve ({resolved.Error!.Reason}: {resolved.Error.Message})");
+            else if (string.IsNullOrEmpty(resolved.Value))
+                failures.Add($"{key}: the secret '{reference}' is empty");
+        }
+
+        if (failures.Count > 0)
+            throw new InvalidOperationException("the installation's secret references do not resolve:\n" + string.Join("\n", failures));
+    }
 }

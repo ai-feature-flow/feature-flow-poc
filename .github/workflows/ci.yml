@@ -1,5 +1,20 @@
-# Required on every pull request (docs/11 section 4.1). The live category, which needs a real
-# agent runtime and the GitHub App, is excluded here.
+# Runs on every pull request (docs/11 section 4.1): the default, integration and cluster categories. The live
+# category, which needs a real agent runtime and the GitHub App, is excluded here. Each test is listed in the job's log
+# (console verbosity normal), so what a job ran can be read from it.
+#
+# Where each test type of docs/09 section 4.2 runs:
+#   validation, re-drive, readable form, replay      default (FeatureFlow.Validation.Tests, Testing.Workflows.Tests, Replay.Tests)
+#   run-time rules                                   default (Engine.Tests) and integration (PolicyRunTests, StepStartCheckTests)
+#   provider contracts                               default (in-process providers), integration (Docker, and Postgres and
+#                                                    MinIO in containers), cluster (the Kubernetes pod sandbox)
+#   failure injection                                integration: worker crash (AgentResumeTests), lost sandbox and hook
+#                                                    endpoint unreachable (AgentBoundaryTests), Temporal unavailable
+#                                                    (TemporalOutageTests), continue-as-new with children and open decisions
+#                                                    (ContinueAsNewTests, EpicRunTests); default: stale patch (PatchTests),
+#                                                    hook endpoint unreachable (SandboxClientTests)
+#   merge race, agent reporting, pre-submit parity   integration (MergeRaceTests, EngineMergeRaceTests, AgentContractTests,
+#                                                    SessionRunTests)
+#   the deployment: images, network policies, stop  cluster (Cluster/DeploymentTests) and integration (HostProcessTests)
 name: CI
 
 on:
@@ -24,7 +39,7 @@ jobs:
         with:
           global-json-file: global.json
       - run: dotnet build FeatureFlow.slnx -c Release
-      - run: dotnet test FeatureFlow.slnx -c Release --no-build --filter "Category!=Integration&Category!=Live"
+      - run: dotnet test FeatureFlow.slnx -c Release --no-build --filter "Category!=Integration&Category!=Live&Category!=Cluster" --logger "console;verbosity=normal"
 
   integration:
     name: Integration tests
@@ -50,8 +65,38 @@ jobs:
           cat "$RUNNER_TEMP/temporal.log"
           exit 1
       - run: docker version
-      # M4's agent step tests run Claude Code in this image against a scripted model; no model credential is used.
+      # The agent step tests run Claude Code and Copilot CLI in this image against a scripted model; no model credential is used.
       - name: Build the sandbox image
-        run: docker build -q -t feature-flow-sandbox:m4 -f src/Providers/FeatureFlow.Providers.Docker/sandbox.Dockerfile src/Providers/FeatureFlow.Providers.Docker
+        run: docker build -q -t feature-flow-sandbox:m8 -f src/Providers/FeatureFlow.Providers.Docker/sandbox.Dockerfile src/Providers/FeatureFlow.Providers.Docker
       - run: dotnet build FeatureFlow.slnx -c Release
-      - run: dotnet test FeatureFlow.slnx -c Release --no-build --filter "Category=Integration"
+      - run: dotnet test FeatureFlow.slnx -c Release --no-build --filter "Category=Integration" --logger "console;verbosity=normal"
+
+  cluster:
+    name: Cluster tests
+    runs-on: ubuntu-latest
+    env:
+      FF_K3D_CLUSTER: ff-ci
+      # The sandbox image deploy/k3d/up.sh imports, for the sandbox contract's pods.
+      FF_SANDBOX_IMAGE: feature-flow-sandbox:dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Install k3d
+        run: curl -sSf https://raw.githubusercontent.com/k3d-io/k3d/v5.9.0/install.sh | TAG=v5.9.0 bash
+      # The k3d profile with the smoke configuration: Temporal, Postgres and MinIO in the cluster, the three host images
+      # built here, fake providers outside the cluster (deploy/README.md).
+      - name: Bring up the k3d deployment
+        run: |
+          echo "FF_KUBECONFIG=$RUNNER_TEMP/ff-ci.kubeconfig" >> "$GITHUB_ENV"
+          FF_KUBECONFIG="$RUNNER_TEMP/ff-ci.kubeconfig" deploy/k3d/up.sh deploy/k3d/smoke
+      - run: dotnet build FeatureFlow.slnx -c Release
+      - run: dotnet test FeatureFlow.slnx -c Release --no-build --filter "Category=Cluster" --logger "console;verbosity=normal"
+      - name: Show the cluster's state
+        if: failure()
+        run: |
+          kubectl --kubeconfig "$FF_KUBECONFIG" get pods -A
+          for d in api orchestration-worker agent-worker; do
+            kubectl --kubeconfig "$FF_KUBECONFIG" -n feature-flow logs "deployment/$d" --tail 100 || true
+          done

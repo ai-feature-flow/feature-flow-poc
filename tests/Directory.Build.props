@@ -3,7 +3,8 @@
 
   <!-- Every test project is an xUnit v3 executable. Tests that need Temporal or Docker carry
        [Trait("Category", "Integration")]; tests that need a real agent or GitHub carry
-       [Trait("Category", "Live")] (docs/11 section 4.1). -->
+       [Trait("Category", "Live")]; tests that need the k3d deployment carry [Trait("Category", "Cluster")]
+       (docs/11 section 4.1). -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>

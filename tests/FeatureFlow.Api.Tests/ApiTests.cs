@@ -255,12 +255,57 @@ public sealed class ApiTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_viewer_reads_the_artifacts_its_run_recorded_and_nothing_else()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var store = new FileSystemArtifactStore(Path.Combine(folder, "artifacts"));
+        var plan = (await store.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes("items:\n  - name: one\n")), ct)).Unwrap().Id;
+        var childs = (await store.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes("# the child's design\n")), ct)).Unwrap().Id;
+        var elsewhere = (await store.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes("another run's\n")), ct)).Unwrap().Id;
+        const string gone = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+        var now = DateTimeOffset.UtcNow;
+        await records.AppendAsync(new RecordBatch(
+            [
+                new RunRecord("r1", null, "std:templates/epic_delivery", "running", "x", [], false, now, null),
+                new RunRecord("r1.c", "r1", "std:templates/ticket_delivery", "running", "x", [], false, now, null),
+                new RunRecord("r2", null, "std:templates/ticket_delivery", "running", "x", [], false, now, null),
+            ],
+            Artifacts:
+            [
+                new ArtifactRecord("r1", "tickets.plan", 1, "work_list", null, plan, null, false, now),
+                new ArtifactRecord("r1.c", "plan", 1, "requirements", null, childs, null, false, now),
+                new ArtifactRecord("r2", "plan", 1, "requirements", null, elsewhere, null, false, now),
+                new ArtifactRecord("r1", "design", 1, "contract", null, gone, null, false, now),
+            ]), ct);
+        var viewer = Start("viewer");
+
+        async Task<(HttpStatusCode, string)> ReadAsync(HttpClient http, string run, string reference)
+        {
+            using var response = await http.GetAsync($"runs/{run}/artifacts/{Uri.EscapeDataString(reference)}", ct);
+            return (response.StatusCode, await response.Content.ReadAsStringAsync(ct));
+        }
+
+        Assert.Equal((HttpStatusCode.OK, "items:\n  - name: one\n"), await ReadAsync(viewer, "r1", plan));
+        Assert.Equal((HttpStatusCode.OK, "# the child's design\n"), await ReadAsync(viewer, "r1.c", childs));
+        // A child's artifact is read through the child, whose scope may differ from its parent's (review R5, F1).
+        Assert.Equal(HttpStatusCode.NotFound, (await ReadAsync(viewer, "r1", childs)).Item1);
+        Assert.Equal(HttpStatusCode.NotFound, (await ReadAsync(viewer, "r1", elsewhere)).Item1);
+        // Indexed, but no longer in the store (removed by hand or by a lifecycle rule): 404, not a server error (R5, F2).
+        Assert.Equal(HttpStatusCode.NotFound, (await ReadAsync(viewer, "r1", gone)).Item1);
+        Assert.Equal(HttpStatusCode.NotFound, (await ReadAsync(viewer, "r1.c", plan)).Item1);
+        // The person who ratifies the plan reads it; a caller who may not see the run does not.
+        Assert.Equal(HttpStatusCode.OK, (await ReadAsync(Start("approver"), "r1", plan)).Item1);
+        Assert.Equal(HttpStatusCode.NotFound, (await ReadAsync(Start(), "r1", plan)).Item1);
+    }
+
+    [Fact]
     public async Task A_run_s_findings_ledger_reads_with_ledger_ids_and_states()
     {
         var reader = Start("viewer");
         var finding = new ReportedFinding("null-check", "Null", "x may be null", "high", true, FindingBases.Reasoned, new FindingLocation("acme/api", "src/A.cs", "A.B", "if (x)"));
-        await records.AppendAsync(new RecordBatch(Findings:
-            [new FindingRecord("r1", "F-1", "fp", finding, "review", null, FindingStates.Escalated, null, null, 0, 0, 0, false, DateTimeOffset.UnixEpoch)]),
+        await records.AppendAsync(new RecordBatch(
+            [new RunRecord("r1", null, "std:templates/ticket_delivery", "running", "x", [], false, DateTimeOffset.UnixEpoch, null)],
+            Findings: [new FindingRecord("r1", "F-1", "fp", finding, "review", null, FindingStates.Escalated, null, null, 0, 0, 0, false, DateTimeOffset.UnixEpoch)]),
             TestContext.Current.CancellationToken);
 
         using var response = await reader.GetAsync("runs/r1/findings", TestContext.Current.CancellationToken);
@@ -268,5 +313,25 @@ public sealed class ApiTests : IAsyncDisposable
 
         var only = Assert.Single(view.Findings);
         Assert.Equal(("F-1", FindingStates.Escalated), (only.LedgerId, only.State));
+        using var refused = await Start().GetAsync("runs/r1/findings", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NotFound, refused.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_run_s_plan_is_shown_only_to_a_viewer_of_the_run()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await records.AppendAsync(new RecordBatch([new RunRecord("r1", null, "std:templates/ticket_delivery", "running", "x", [], false, DateTimeOffset.UnixEpoch, null)]), ct);
+
+        async Task<string> ReadAsync(HttpClient http)
+        {
+            using var response = await http.GetAsync("runs/r1/plan", ct);
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+            return await response.Content.ReadAsStringAsync(ct);
+        }
+
+        // The viewer gets past the run check to the missing lock; a caller who may not see the run is told it does not exist.
+        Assert.Contains("no library lock", await ReadAsync(Start("viewer")));
+        Assert.Contains("no run r1", await ReadAsync(Start()));
     }
 }

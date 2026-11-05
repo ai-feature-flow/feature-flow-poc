@@ -1,0 +1,79 @@
+# Your Feature Flow installation: the small-company profile (docs/07 section 6) with Jira, GitHub and GitHub Actions.
+# As it stands it runs in the local k3d cluster (deploy/k3d/up.sh config): Temporal, Postgres and MinIO in the cluster.
+# Lines marked "yours" need your own values; README.md says what changes on a cloud cluster.
+api_version: feature-flow/v1
+kind: installation
+
+temporal:
+  address: temporal.feature-flow.svc:7233
+  namespace: default
+  task_queue: feature-flow
+  payload_codec: { name: aes_gcm, key_ref: secrets/payload_key }   # encrypts what Temporal stores; keep the key safe
+
+providers:
+  record_store:
+    default: postgres
+    instances: { postgres: { connection_ref: secrets/record_store_connection } }
+  artifact_store:
+    default: s3
+    instances:
+      s3:
+        bucket: feature-flow
+        endpoint: http://minio.feature-flow.svc:9000      # leave out on AWS S3
+        access_key_ref: secrets/object_store_access_key   # leave both out on AWS: the pod's IAM role applies
+        secret_key_ref: secrets/object_store_secret_key
+  secrets:
+    default: file
+    instances: { file: { path: /var/run/secrets/feature-flow/secrets.json } }
+  sandbox:
+    default: kubernetes
+    instances:
+      kubernetes: { namespace: feature-flow-sandboxes, image: feature-flow-sandbox:dev }   # yours: your registry's image
+  agent_runtime:
+    default: claude_code
+    instances:
+      claude_code: { model_access: { mode: proxy, key_ref: secrets/model_key } }
+  vcs:
+    default: git
+    instances: { git: {} }
+  credential_broker:
+    default: github_app
+    instances:
+      github_app: { app_id: "0", installation_id: "0", key_ref: secrets/github_app_key }   # yours: your GitHub App
+  code_host:
+    default: github
+    instances: { github: {} }
+  ci:
+    default: github_actions
+    instances: { github_actions: {} }
+  tracker:
+    default: jira
+    instances:
+      jira: { base_url: "https://your-site.atlassian.net", secret_ref: secrets/jira, project: PROJ }   # yours
+  findings_source:
+    instances: { copilot_review: {} }
+  validator:
+    instances: { std: {} }
+  session_surface:
+    default: local
+    instances: { local: {} }
+
+# Sandboxes call the agent worker here (docs/02 section 4.2).
+agent_worker:
+  listen: "http://0.0.0.0:8481"
+  urls: ["http://agent-worker.feature-flow.svc:8481"]
+  token_key_ref: secrets/step_token_key
+  sandbox_client: /app/sandbox-client/ff-sandbox
+
+# Optional: export traces over OTLP (gRPC) to your collector.
+# observability: { otlp_endpoint: "http://otel-collector.observability.svc:4317" }
+
+# People sign in with your identity provider; the local token stays for automation.
+api:
+  auth:
+    mode: oidc
+    issuer: "https://your-idp.example.com"      # yours
+    audience: feature-flow                       # yours
+    token_ref: secrets/api_token
+    actor: operator
+    roles: [viewer]

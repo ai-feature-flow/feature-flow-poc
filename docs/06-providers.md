@@ -20,7 +20,7 @@ Signatures are C#, abbreviated: every method is async, takes a
 | Base interface | `Describe()` returns name, version, typed capability records, capabilities required from other providers, and a configuration schema. `CheckAsync()` is called at startup and run start |
 | Capabilities | Typed records, never strings. A caller checks before use and fails with a named missing capability. A run checks every capability its plan needs when it starts (P9) |
 | Short and bounded | No method waits on human or external time. Long work is started and polled; waiting is the engine's (`docs/02` section 2.3) |
-| Classified results | Expected failures are `ProviderError` values with a class and a reason (section 1.1). Exceptions are programming errors; the engine's decorator turns one into an infrastructure error with reason `internal_error`, so it is visible |
+| Classified results | Expected failures are `ProviderError` values with a class and a reason (section 1.1). Exceptions are programming errors. The engine's decorator records one on the call's span and re-throws it, so the caller decides: an engine action stops for a person (an intervention), and only network faults are retried (LOG 303) |
 | Every success mapped | Every documented success response of the remote system maps to a result, including empty ones such as GitHub's 204 for a merge with nothing to merge. An unmapped success is `unexpected_response`, a **work** error, so it is never retried forever (Spike 3, `archive/docs/18` section 4) |
 | Idempotent creates | A create method takes an idempotency key and writes a hidden marker into the object. On `timeout` the caller finds by marker and adopts before retrying, because the object may already exist |
 | Credentials | Only from the credential broker (section 3.13). No provider reads a credential from configuration |
@@ -105,7 +105,8 @@ to 115.
 
 The tracker, findings source and validator interfaces as built in M6, the code host's comments, and the findings
 ledger and artifact index in the record store differ from the signatures below: LOG 148 to 151. How the GitHub
-Issues tracker maps statuses, parents and links is LOG 184.
+Issues tracker maps statuses, parents and links is LOG 184; the Jira tracker, LOG 301 and 302. The engine's decorator
+(spans, timeouts, classification) is LOG 303 and 304.
 
 The notifications and session surface interfaces as built in M7, and the records M7 adds to the record store
 (overrides, notification de-duplication, sessions and their checks), differ from the signatures below: LOG 201 and 202.
@@ -153,6 +154,11 @@ abbreviated: every method also takes a cancellation token, and `..X` stands for
   the per-step token (`docs/02` section 4.2).
 - Network policy, CPU and memory limits are applied where the capability is
   declared. FF's containers had none (`../feature-factory/issues.md`).
+- Built in M8: a sandbox reaches the agent worker (its `urls` and model proxy)
+  and the internet, never Temporal, the stores or anything else on its host or
+  cluster. Docker closes it with rules inside the container (LOG 291); the
+  Kubernetes pod sandbox with a network policy (LOG 294). Both share one command
+  machinery (LOG 292) and pass `SandboxContract`, which checks the network.
 
 ### 3.2 Agent runtime
 
@@ -189,6 +195,10 @@ interface IAgentRuntimeProvider : IProvider {
   Windows and macOS but only the Anthropic API; Copilot CLI works through an
   OpenAI-compatible router but its tool-call hooks did not fire with a
   third-party model.
+- Built in M8: the Copilot CLI runtime, reaching the model through the same
+  proxy as a custom Anthropic provider, with SP5's checks held live (LOG 293,
+  296). Each step's runtime instance and model follow its role (`role_mapping`,
+  LOG 295).
 
 ### 3.3 VCS
 
@@ -373,8 +383,8 @@ interface IToolsetProvider : IProvider {
 - The engine MCP server **proxies** these tools to the agent. The external
   server's credentials stay with the engine, never in the sandbox (from FF's
   design for external MCP servers).
-- A role names toolsets and, optionally, a tool allow-list within each. The
-  organisation lists which toolsets exist (`docs/05` section 3.1).
+- A role names toolsets and, optionally, a tool allow-list within each. Version 1
+  connects no external toolsets, so nothing restricts them yet (LOG 270).
 - Each call is recorded on the timeline with the step and the tool. A tool that
   writes (creating a ticket) is marked as writing in its descriptor, so a role
   with `write_access: none` cannot call it unless the role allows it explicitly.

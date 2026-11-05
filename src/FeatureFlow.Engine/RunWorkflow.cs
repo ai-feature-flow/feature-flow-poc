@@ -99,14 +99,14 @@ public partial class RunWorkflow
             policy = prepared.Policy;
             libraries = RunActivities.Build(prepared.Libraries, new DiagnosticBag());
             var (started, diagnostics) = RunCore.Start(libraries, Template, RunActivities.RunInfoOf(input) with { DefaultBranches = prepared.DefaultBranches },
-                policy.ToOptions() with { BranchFromPattern = Workflow.Patched(BranchPatternPatch), Steering = Workflow.Patched(SteeringPatch) });
+                policy.ToOptions());
             core = started ?? throw new ApplicationFailureException("the plan passed run start but does not load: " + string.Join("; ", diagnostics.Take(3)));
             // docs/09 section 1: a warning changes nothing, and is listed in the run start record (the timeline).
-            if (prepared.Warnings.Count > 0 && Workflow.Patched(StartWarningsPatch))
+            if (prepared.Warnings.Count > 0)
                 foreach (var warning in prepared.Warnings)
                     core.State.Trace.Add(new TraceEntry("warning", "", warning));
             // docs/05 section 7: the effective policy is part of the run start record.
-            if (prepared.EffectivePolicy is { Count: > 0 } effective && Workflow.Patched(EffectivePolicyPatch))
+            if (prepared.EffectivePolicy is { Count: > 0 } effective)
                 foreach (var line in effective)
                     core.State.Trace.Add(new TraceEntry("policy", "", line));
         }
@@ -116,26 +116,23 @@ public partial class RunWorkflow
             policy = input.Policy!;
             libraries = RunActivities.Build(snapshot, new DiagnosticBag());
             core = RunCore.Resume(libraries, Template, input.Carried.Core,
-                policy.ToOptions() with { BranchFromPattern = Workflow.Patched(BranchPatternPatch), Steering = Workflow.Patched(SteeringPatch) });
+                policy.ToOptions());
             // Questions carried over a hand-over get their timers again (docs/02 section 3: timers are re-created from state).
             foreach (var open in questions.ToList())
                 _ = TimeOutQuestionAsync(open);
             // Children an earlier run started can no longer be awaited here; a watch notices one that ends without
             // signalling (M3 follow-up 10).
-            if (children.Count > 0 && Workflow.Patched(ChildWatchPatch))
+            if (children.Count > 0)
                 _ = WatchCarriedChildrenAsync(children.Select(c => c.WorkflowId).ToList());
         }
 
-        // The floor on the event threshold and the byte threshold came after histories were recorded; older
-        // histories replay without them (docs/09 section 4.1).
-        var limits = Workflow.Patched(HandOverLimitsPatch);
-        var events = limits ? Math.Max(input.HandOverEvents, ConfigurationReader.MinimumHandOverEvents) : input.HandOverEvents;
+        var events = Math.Max(input.HandOverEvents, ConfigurationReader.MinimumHandOverEvents);
         while (true)
         {
             dirty = false;
             ProcessSignals();
             if (!draining && core.State.Status == RunStatus.Running
-                && (Workflow.CurrentHistoryLength >= events || (limits && Workflow.CurrentHistorySize >= HandOverBytes)))
+                && (Workflow.CurrentHistoryLength >= events || Workflow.CurrentHistorySize >= HandOverBytes))
                 draining = true;
             if (draining)
                 InterruptWaits();
@@ -186,6 +183,17 @@ public partial class RunWorkflow
         var open = new OpenQuestion(question, Workflow.UtcNow + TimeSpan.FromSeconds(question.TimeoutSeconds));
         questions.Add(open);
         _ = TimeOutQuestionAsync(open);
+        dirty = true;
+        return Task.CompletedTask;
+    }
+
+    /// <summary>The agent worker could not reach a step's model (LOG 326): shown on the timeline, nothing else changes.</summary>
+    [WorkflowSignal(RunWorkflowNames.ModelUnreachable)]
+    public Task ModelUnreachableAsync(ModelUnreachableSignal signal)
+    {
+        if (core is null)
+            return Task.CompletedTask;
+        core.State.Trace.Add(new TraceEntry("model_unreachable", signal.StepId, signal.Cause));
         dirty = true;
         return Task.CompletedTask;
     }
@@ -434,10 +442,10 @@ public partial class RunWorkflow
                     }
 
                     break;
-                case CleanUp c when Workflow.Patched(CleanUpPatch):
+                case CleanUp c:
                     await CleanUpAsync(c.StepId);
                     break;
-                case OpenDecision o when IsSession(o.StepId) && !input.DryRun && Workflow.Patched(SessionsPatch):
+                case OpenDecision o when IsSession(o.StepId) && !input.DryRun:
                     await OpenSessionAsync(o);
                     break;
                 case SendPatchToParent p when input.ParentWorkflowId is { } parent:
@@ -504,7 +512,7 @@ public partial class RunWorkflow
             return;
         }
 
-        if (Workflow.Patched(StepStartPatch) && MissingConsumed(step) is { } missing)
+        if (MissingConsumed(step) is { } missing)
         {
             core.Apply(new StepCannotAnswer(step.Id, missing));
             dirty = true;
@@ -529,11 +537,9 @@ public partial class RunWorkflow
     (StepCall? Call, ActionScope? Scope, string? Error) CallOf(Step step, StepIdentity identity, Dictionary<string, object?> inputs)
     {
         ActionScope? scope = null;
-        // Behind the marker: a history recorded before M5 neither computes a scope nor renders a prompt, so a render
-        // that fails cannot replace the activity it scheduled. Only a run whose actions run against providers (fixed at
-        // its start) gets a scope; otherwise, and in a dry run, the stand-in serves the action.
-        if (step.Form == StepForm.Action && EngineActions.Built.Contains(step.Action!) && Workflow.Patched(StepStartPatch)
-            && policy?.BuiltActions == true && !input.DryRun)
+        // Only a run whose actions run against providers (fixed at its start) gets a scope; otherwise, and in a dry run,
+        // the stand-in serves the action.
+        if (step.Form == StepForm.Action && EngineActions.Built.Contains(step.Action!) && policy?.BuiltActions == true && !input.DryRun)
         {
             try
             {
@@ -549,7 +555,7 @@ public partial class RunWorkflow
         }
 
         AgentStepSpec? agent = null;
-        if (step.Form == StepForm.Agent && Workflow.Patched(AgentStepPatch))
+        if (step.Form == StepForm.Agent)
         {
             try
             {
@@ -570,14 +576,11 @@ public partial class RunWorkflow
 
     /// <summary>
     /// Check 32 at step start (docs/09 section 2): every artifact the step consumes, and does not mark <c>optional</c>,
-    /// exists: from its own run, its parent or root as they were when this run started, or a child as it ended. Before
-    /// <see cref="ChildInputsPatch"/>, only artifacts from its own run were checked.
+    /// exists: from its own run, its parent or root as they were when this run started, or a child as it ended.
     /// </summary>
     string? MissingConsumed(Step step)
     {
-        var crossRun = Workflow.Patched(ChildInputsPatch);
-        var missing = step.Consumes.Where(c => !c.Optional && !IsLedgerView(c)
-                                               && (crossRun ? ConsumedArtifact(step, c) is null : c.From == "current" && LatestArtifact(step, c.Name) is null))
+        var missing = step.Consumes.Where(c => !c.Optional && !IsLedgerView(c) && ConsumedArtifact(step, c) is null)
             .Select(ConsumedKey).Distinct().ToList();
         return missing.Count == 0 ? null : $"check 32 ({Checks.Title(Checks.ConsumedArtifacts)}): {step.Id} consumes {string.Join(", ", missing)}, which no step has produced";
     }
@@ -646,14 +649,12 @@ public partial class RunWorkflow
         // from the parent or root as this run was started with them (LOG 173, 191).
         var consumed = new Dictionary<string, string>(StringComparer.Ordinal);
         var declared = step.Consumes.Where(c => !IsLedgerView(c)).Select(ConsumedKey).Distinct().ToList();
-        if (Workflow.Patched(ChildInputsPatch))
-            foreach (var c in step.Consumes.Where(c => !IsLedgerView(c)))
-                if (ConsumedArtifact(step, c) is { } reference)
-                    consumed.TryAdd(ConsumedKey(c), reference);
+        foreach (var c in step.Consumes.Where(c => !IsLedgerView(c)))
+            if (ConsumedArtifact(step, c) is { } reference)
+                consumed.TryAdd(ConsumedKey(c), reference);
 
         return new ActionScope(input.Repositories, repository, core.WorkBranch(), input.ParentBranch, artifacts, pullRequests, policy?.EngineMayMerge ?? [],
-            Consumed: Workflow.Patched(ChildInputsPatch) ? consumed : null, TrackerIssue: input.TrackerIssue,
-            Declared: Workflow.Patched(ChildInputsPatch) ? declared : null, LockRef: LockRef);
+            Consumed: consumed, TrackerIssue: input.TrackerIssue, Declared: declared, LockRef: LockRef);
     }
 
     /// <summary>
@@ -681,18 +682,6 @@ public partial class RunWorkflow
         }
     }
 
-    /// <summary>The patch marker of run start's warnings on the timeline (M5): histories recorded before it list none.</summary>
-    public const string StartWarningsPatch = "m5-start-warnings";
-
-    /// <summary>The patch marker of the effective policy view on the timeline (M7): histories recorded before it list none.</summary>
-    public const string EffectivePolicyPatch = "m7-effective-policy";
-
-    /// <summary>The patch marker of the <c>clean_up</c> branch reset (M5): histories recorded before it reset nothing.</summary>
-    public const string CleanUpPatch = "m5-clean-up";
-
-    /// <summary>The patch marker of M5's step start: check 32, and an engine action's scope and rendered prompts.</summary>
-    public const string StepStartPatch = "m5-step-start";
-
     /// <summary>What a step must report, for its provider.</summary>
     static StepContract Contract(Step step)
     {
@@ -707,18 +696,6 @@ public partial class RunWorkflow
         };
     }
 
-    /// <summary>The patch marker of the agent step's settings (M4): histories recorded before it call the agent step without them.</summary>
-    public const string AgentStepPatch = "m4-agent-step";
-
-    /// <summary>The patch marker of the work branch following <c>metadata.branch_pattern</c> (LOG 97).</summary>
-    public const string BranchPatternPatch = "m4-branch-pattern";
-
-    /// <summary>The patch marker of waiting for a cancelled step's activity to finish (M3 follow-up 9).</summary>
-    public const string WaitCancellationPatch = "m4-wait-cancellation";
-
-    /// <summary>The patch marker of an agent step's activity timeout allowing for its open questions (LOG 106).</summary>
-    public const string QuestionWaitPatch = "log-106-question-wait";
-
     /// <summary>
     /// An agent step's settings from the plan (docs/04 section 3): the role's write access and tool classes, the
     /// rendered task, limits, branches, and the latest artifact of each name it consumes. Workflow code holds the
@@ -728,18 +705,18 @@ public partial class RunWorkflow
     {
         var agent = step.Agent!;
         var role = agent.Role?.Reference is { } roleRef ? libraries?.Resolve(roleRef)?.Role(roleRef.Name) : null;
+        var binding = policy?.AgentFor(agent.Role?.Reference?.Name);
         var (taskText, taskLibrary) = core!.RenderTask(step.Id);
         var limits = step.Limits;
         var questionsMax = limits?.QuestionsMax ?? (limits?.QuestionsTimeout is not null ? 3 : 0);
         var branch = core.WorkBranch();
         var consumed = new Dictionary<string, string>(StringComparer.Ordinal);
-        var crossRun = Workflow.Patched(ChildInputsPatch);
         foreach (var c in step.Consumes)
             if (IsLedgerView(c))
                 // The ledger changes outside the run's artifacts: the agent worker stages its view when the step starts (LOG 63).
                 consumed[c.Name] = FindingsLedger.ViewName;
-            else if ((crossRun ? ConsumedArtifact(step, c) : LatestArtifact(step, c.Name)) is { } reference)
-                consumed.TryAdd(crossRun ? ConsumedKey(c) : c.Name, reference);
+            else if (ConsumedArtifact(step, c) is { } reference)
+                consumed.TryAdd(ConsumedKey(c), reference);
         return new AgentStepSpec(
             agent.WriteAccess ?? role?.WriteAccess ?? "none",
             role?.Tools ?? ["read", "search"],
@@ -758,17 +735,19 @@ public partial class RunWorkflow
             consumed,
             Workflow.Info.WorkflowId,
             LockRef,
-            TrackerIssue: input.TrackerIssue);
+            TrackerIssue: input.TrackerIssue,
+            Runtime: binding?.AgentRuntime,
+            Model: binding?.Model);
     }
 
     /// <summary>
-    /// The agent step activity's own timeout: the step's limit and an hour's margin, plus, behind
-    /// <see cref="QuestionWaitPatch"/>, the longest its questions may stay open, which do not count toward the limit (LOG 106).
+    /// The agent step activity's own timeout: the step's limit and an hour's margin, plus the longest its questions may
+    /// stay open, which do not count toward the limit (LOG 106).
     /// </summary>
     static TimeSpan AgentStepTimeout(StepCall call)
     {
         var timeout = (call.Timeout ?? AgentLimits.DefaultTimeout) + TimeSpan.FromHours(1);
-        return call.Agent is { QuestionsMax: > 0 } spec && Workflow.Patched(QuestionWaitPatch) ? timeout + spec.QuestionsTimeout * spec.QuestionsMax : timeout;
+        return call.Agent is { QuestionsMax: > 0 } spec ? timeout + spec.QuestionsTimeout * spec.QuestionsMax : timeout;
     }
 
     /// <summary>A duration such as <c>30m</c> or <c>4h</c> (docs/03 section 2.1).</summary>
@@ -861,7 +840,7 @@ public partial class RunWorkflow
             {
                 var items = YamlWriter.Read(expandItems, "items") as YSeq ?? throw new FormatException("plan.expand's list is not a list");
                 var (patch, error) = PlanExpansion.Build(core!, step.Id, items.Items);
-                if (error is null && Budget is { } budget && WorkItems.ChildSteps(patch!) is > 0 and var adding && Workflow.Patched(WorkItemsPatch))
+                if (error is null && Budget is { } budget && WorkItems.ChildSteps(patch!) is > 0 and var adding)
                 {
                     error = await WorkItemsRefusalAsync(new WorkItemRequest(budget, adding));
                     if (!Current(step.Id, execution))
@@ -890,10 +869,9 @@ public partial class RunWorkflow
 
     /// <summary>
     /// A cancelled step's activity is waited for (M3 follow-up 9), so a cancelled agent step has stopped its agent
-    /// and removed its sandbox before the run moves on. Histories recorded before this change keep the old type.
+    /// and removed its sandbox before the run moves on.
     /// </summary>
-    static ActivityCancellationType StepCancellation() =>
-        Workflow.Patched(WaitCancellationPatch) ? ActivityCancellationType.WaitCancellationCompleted : ActivityCancellationType.TryCancel;
+    static ActivityCancellationType StepCancellation() => ActivityCancellationType.WaitCancellationCompleted;
 
     /// <summary>A step that ended no longer waits on its questions: their waits close unanswered.</summary>
     void CloseQuestionsOf(string stepKey)
@@ -1023,15 +1001,14 @@ public partial class RunWorkflow
         var template = inputs.GetValueOrDefault("template") as string ?? "";
         var given = inputs.GetValueOrDefault("parameters") as IReadOnlyDictionary<string, object?> ?? new Dictionary<string, object?>();
         // docs/03 section 9.2: the parent's resolved parameters for names the child declares, and its artifacts as they are now.
-        var crossRun = Workflow.Patched(ChildInputsPatch);
-        var parameters = (crossRun ? core!.ChildParameters(template, given) : given)
+        var parameters = core!.ChildParameters(template, given)
             .Where(kv => kv.Value is not null)
             .ToDictionary(kv => kv.Key, kv => YamlWriter.WritePlain(kv.Value));
-        var artifacts = crossRun ? RunArtifacts(step) : null;
+        var artifacts = RunArtifacts(step);
         var repositories = (inputs.GetValueOrDefault("repositories") as IEnumerable<object?> ?? input.Repositories)
             .Select(r => RepositoryNames.As(r?.ToString() ?? "", input.Repositories)).ToList();
         var budget = Budget;
-        if (budget is not null && Workflow.Patched(WorkItemsPatch)
+        if (budget is not null
             && await WorkItemsRefusalAsync(new WorkItemRequest(budget, 1,
                 new RunRecord(childId, Workflow.Info.WorkflowId, template, "starting", input.Requester, repositories, input.DryRun, Workflow.UtcNow, null))) is { } refused)
         {
@@ -1040,24 +1017,24 @@ public partial class RunWorkflow
             return;
         }
 
-        if (Workflow.Patched(ParentBranchesPatch))
+        // The child's parent branch is this run's work branch, in every repository the child is given (LOG 196).
+        var made = await EnsureWorkBranchesAsync(new WorkBranchesCall(repositories, core!.WorkBranch(), input.ParentBranch, input.DryRun));
+        foreach (var e in made.Events)
+            core.State.Trace.Add(new TraceEntry("agent", step.Id, e));
+        if (made.Error is { } error)
         {
-            // The child's parent branch is this run's work branch, in every repository the child is given (LOG 196).
-            var made = await EnsureWorkBranchesAsync(new WorkBranchesCall(repositories, core!.WorkBranch(), input.ParentBranch, input.DryRun));
-            foreach (var e in made.Events)
-                core.State.Trace.Add(new TraceEntry("agent", step.Id, e));
-            if (made.Error is { } error)
-            {
-                core.Apply(new StepCannotAnswer(step.Id, error));
-                dirty = true;
-                return;
-            }
+            core.Apply(new StepCannotAnswer(step.Id, error));
+            dirty = true;
+            return;
         }
 
         var childInput = new RunStart(childId, template, repositories, parameters,
             LockRef, input.DryRun, input.Requester, Workflow.Info.WorkflowId, step.Id, input.HandOverEvents, ParentBranch: core!.WorkBranch(),
-            ParentArtifacts: artifacts, RootArtifacts: crossRun ? input.ParentWorkflowId is null ? artifacts : input.RootArtifacts : null,
+            ParentArtifacts: artifacts, RootArtifacts: input.ParentWorkflowId is null ? artifacts : input.RootArtifacts,
             TrackerIssue: inputs.GetValueOrDefault("tracker_issue") as string, WorkItems: budget);
+        // What this run has produced is recorded before a child exists, so the artifact index lists a parent's artifacts
+        // before the child's that may consume them (m8-results Foundations, follow-up 4).
+        await RecordAsync();
         ChildWorkflowHandle? handle = null;
         try
         {
@@ -1082,12 +1059,9 @@ public partial class RunWorkflow
 
         children.Add(new ChildRun(step.Id, execution, childId));
         core!.State.Trace.Add(new TraceEntry("child_started", step.Id, childId));
-        if (handle is not null && Workflow.Patched(ChildWatchPatch))
+        if (handle is not null)
             _ = AwaitChildAsync(handle, childId);
     }
-
-    /// <summary>The patch marker of a parent creating its work branch in a child's repositories before starting it (LOG 196).</summary>
-    public const string ParentBranchesPatch = "m6-parent-branches";
 
     async Task<WorkBranchesResult> EnsureWorkBranchesAsync(WorkBranchesCall call)
     {
@@ -1101,12 +1075,6 @@ public partial class RunWorkflow
             EndActivity();
         }
     }
-
-    /// <summary>The patch marker of a child's inherited parameters and artifacts, and of consumes across runs (M3 follow-ups 2 and 3).</summary>
-    public const string ChildInputsPatch = "m6-child-inputs";
-
-    /// <summary>The patch marker of watching children for an end they did not signal (M3 follow-up 10).</summary>
-    public const string ChildWatchPatch = "m6-child-watch";
 
     /// <summary>
     /// The run that started a child is told by Temporal when the child closes, however it ended: a child that ends
@@ -1180,12 +1148,6 @@ public partial class RunWorkflow
 
     // ---- Delivery: the work-item budget and declarative tracker updates (M6) ------------------------
 
-    /// <summary>The patch marker of the work-item budget (F11): histories recorded before it start children unchecked.</summary>
-    public const string WorkItemsPatch = "m6-work-items";
-
-    /// <summary>The patch marker of declarative tracker updates: histories recorded before it made none.</summary>
-    public const string TrackerUpdatesPatch = "m6-tracker-updates";
-
     /// <summary>The run tree's work-item budget: the root's own, passed to every child unchanged; null when it is unlimited.</summary>
     WorkItemBudget? Budget => input.WorkItems ?? (input.ParentWorkflowId is null ? WorkItems.Root(input.RunId, core!.Plan, policy) : null);
 
@@ -1237,8 +1199,6 @@ public partial class RunWorkflow
     /// <summary>Makes one tracker update and notes it on the timeline. An update that fails never fails the step, nor holds up the run.</summary>
     async Task TrackAsync(TrackerUpdate update)
     {
-        if (!Workflow.Patched(TrackerUpdatesPatch))
-            return;
         var call = new TrackerCall(input.TrackerIssue!, update.Status, update.StepId, input.DryRun);
         string note;
         try
@@ -1278,9 +1238,8 @@ public partial class RunWorkflow
             return;
         children.Remove(child);
         var status = read.Status == "Completed" ? RunStatuses.Parse(read.Result ?? "") ?? RunStatus.Failed : RunStatus.Failed;
-        // A refused end stops the step for a person; histories recorded before the marker dropped it.
-        if (Current(child.StepId, child.Execution) && core!.Apply(new StepCompleted(child.StepId, RunCore.ChildOutcome(status), Artifacts: read.Artifacts)) is { Accepted: false } refused
-            && Workflow.Patched(ChildInputsPatch))
+        // A refused end stops the step for a person.
+        if (Current(child.StepId, child.Execution) && core!.Apply(new StepCompleted(child.StepId, RunCore.ChildOutcome(status), Artifacts: read.Artifacts)) is { Accepted: false } refused)
             core.Apply(new StepCannotAnswer(child.StepId, "the child's end could not be applied: " + string.Join("; ", refused.Errors)));
     }
 
@@ -1357,13 +1316,10 @@ public partial class RunWorkflow
         return new WaitRecord(input.RunId, wait.Id, wait.Kind.ToString().ToLowerInvariant(), wait.StepId, type, ReasonOf(wait, step), choices, open, now);
     }
 
-    /// <summary>The patch marker of a decision's wait recording its rendered prompt as the reason (M7 integration), so Slack and the console show the question.</summary>
-    public const string DecisionPromptPatch = "m7-decision-prompt";
-
-    /// <summary>A decision's rendered prompt, else the core's reason; histories recorded before the marker keep the core's.</summary>
+    /// <summary>A decision's rendered prompt, else the core's reason, so Slack and the console show the question (M7 integration).</summary>
     string ReasonOf(OpenWait wait, Step? step)
     {
-        if (wait.Kind != WaitKind.Decision || step?.Decision?.Prompt is not { Unbound: false } prompt || !Workflow.Patched(DecisionPromptPatch))
+        if (wait.Kind != WaitKind.Decision || step?.Decision?.Prompt is not { Unbound: false } prompt)
             return wait.Reason;
         try
         {
@@ -1393,8 +1349,8 @@ public partial class RunWorkflow
         foreach (var token in stepTokens.Values)
             token.Cancel();
         // A cancelled step's activity is waited for (M3 follow-up 9): an agent step stops its agent and removes its
-        // sandbox before the run ends. Histories recorded before this change ended without waiting.
-        if (inFlightActivities > 0 && Workflow.Patched(WaitCancellationPatch))
+        // sandbox before the run ends.
+        if (inFlightActivities > 0)
             await Workflow.WaitConditionAsync(() => inFlightActivities == 0);
         if (closePullRequests)
         {
@@ -1412,9 +1368,6 @@ public partial class RunWorkflow
             await SignalQuietlyAsync(parent, RunWorkflowNames.ChildEnded, [Workflow.Info.WorkflowId]);
     }
 
-    /// <summary>The patch marker of interrupting waits at a hand-over (LOG 139): histories recorded before it drain them.</summary>
-    public const string InterruptWaitsPatch = "m6-interrupt-waits";
-
     /// <summary>
     /// LOG 139: a wait (<see cref="EngineActions.Waits"/>) may last days, so a draining run does not wait for it. Its
     /// activity is cancelled, and once the cancellation completes the core returns the step to pending at the same
@@ -1426,8 +1379,7 @@ public partial class RunWorkflow
         childWatch?.Cancel();
         foreach (var (stepId, token) in stepTokens.OrderBy(kv => kv.Key, StringComparer.Ordinal).ToList())
         {
-            if (interrupted.Contains(stepId) || core!.StepById(stepId) is not { Form: StepForm.Action, Action: { } action } || !EngineActions.Waits.Contains(action)
-                || !Workflow.Patched(InterruptWaitsPatch))
+            if (interrupted.Contains(stepId) || core!.StepById(stepId) is not { Form: StepForm.Action, Action: { } action } || !EngineActions.Waits.Contains(action))
                 continue;
             interrupted.Add(stepId);
             interruptedThisRun++;
@@ -1435,17 +1387,11 @@ public partial class RunWorkflow
         }
     }
 
-    /// <summary>The patch marker of the hand-over threshold's floor and byte limit.</summary>
-    public const string HandOverLimitsPatch = "m3-hand-over-limits";
-
     /// <summary>
     /// History bytes at which a run hands over whatever its event count (docs/02 section 3: the event threshold or
     /// the payload byte limit, whichever comes first). Temporal warns at 10 MB of history; this stays under it.
     /// </summary>
     public const int HandOverBytes = 8 * 1024 * 1024;
-
-    /// <summary>The patch marker of the hand-over record (docs/09 section 4.1): histories recorded before it take the old path.</summary>
-    public const string RecordHandOverPatch = "m3-record-hand-over";
 
     /// <summary>
     /// Continues-as-new once nothing is in flight. DR15: an answer accepted during the drain is applied by its
@@ -1466,9 +1412,9 @@ public partial class RunWorkflow
                 return false;
             if (late.Count > 0 || recorded || !Workflow.AllHandlersFinished || inFlightActivities > 0)
                 continue;
-            if (!handOverRecorded && Workflow.Patched(RecordHandOverPatch))
+            if (!handOverRecorded)
             {
-                // The timeline shows each hand-over (M3); histories recorded before this change replay without it.
+                // The timeline shows each hand-over (M3).
                 handOverRecorded = true;
                 core.State.Trace.Add(new TraceEntry("continued_as_new", "", $"run {handOvers.Count + 1} follows at {Workflow.CurrentHistoryLength} history events"));
                 continue;

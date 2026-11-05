@@ -18,6 +18,7 @@
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Local\FeatureFlow.Providers.Local.csproj" />
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Docker\FeatureFlow.Providers.Docker.csproj" />
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.ClaudeCode\FeatureFlow.Providers.ClaudeCode.csproj" />
+    <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.CopilotCli\FeatureFlow.Providers.CopilotCli.csproj" />
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Git\FeatureFlow.Providers.Git.csproj" />
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.GitHub\FeatureFlow.Providers.GitHub.csproj" />
     <ProjectReference Include="..\..\src\FeatureFlow.Cli\FeatureFlow.Cli.csproj" />

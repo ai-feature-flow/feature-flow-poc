@@ -25,7 +25,7 @@ static class Validating
         var entries = Entries(run.Inputs.GetValueOrDefault("validation"));
         var runId = run.Call.Step.RunId;
         var frozen = await FreezeAsync(run);
-        var (index, types, hasParent) = await IndexAsync(run, runId);
+        var (index, types) = await IndexAsync(run, runId);
         var findings = ActionRun.Must(await Records(run).QueryAsync<FindingRecord>(Queries.Findings, new Dictionary<string, string> { ["run_id"] = runId }, run.Ct),
             "read the findings ledger");
 
@@ -36,7 +36,7 @@ static class Validating
             var (name, provider) = Find(providers, entry.Validator);
             var subjects = new List<ValidationSubject>();
             foreach (var spec in entry.Subjects)
-                subjects.Add(await SubjectAsync(run, spec, types, hasParent));
+                subjects.Add(await SubjectAsync(run, spec, types));
             var result = await provider.ValidateAsync(new ValidationRequest(entry.Validator, subjects, entry.Options, frozen, index, findings), run.Ct);
             if (!result.Ok)
             {
@@ -133,7 +133,7 @@ static class Validating
     /// The artifact index validators get: this run's artifacts as the workflow holds them, then its descendants' from the
     /// record store. Also every artifact of the run tree by reference, for the declared type of a subject from another run.
     /// </summary>
-    static async Task<(List<ArtifactRecord> Index, Dictionary<string, ArtifactRecord> ByRef, bool HasParent)> IndexAsync(ActionRun run, string runId)
+    static async Task<(List<ArtifactRecord> Index, Dictionary<string, ArtifactRecord> ByRef)> IndexAsync(ActionRun run, string runId)
     {
         var records = Records(run);
         async Task<IReadOnlyList<ArtifactRecord>> Of(string id) =>
@@ -154,7 +154,7 @@ static class Validating
         var byRef = new Dictionary<string, ArtifactRecord>(StringComparer.Ordinal);
         foreach (var record in (root == runId ? [] : await Of(root)).Concat(index))
             byRef[record.Ref] = record;
-        return (index, byRef, root != runId);
+        return (index, byRef);
     }
 
     /// <summary>
@@ -162,20 +162,14 @@ static class Validating
     /// declared type; a set (made by <c>artifact.compose</c>) with its members. Absent when it does not exist and is
     /// optional (LOG 63).
     /// </summary>
-    static async Task<ValidationSubject> SubjectAsync(ActionRun run, SubjectSpec spec, IReadOnlyDictionary<string, ArtifactRecord> types, bool hasParent)
+    static async Task<ValidationSubject> SubjectAsync(ActionRun run, SubjectSpec spec, IReadOnlyDictionary<string, ArtifactRecord> types)
     {
         var key = spec.From == "current" ? spec.Name : $"{spec.From.Replace(':', '/')}/{spec.Name}";
         // A subject from another run must be one the step consumes: "absent" is said only of a declared optional consume
         // that resolves to nothing, never of one the plan forgot to consume (review F1).
-        if (run.Scope.Consumed is not null && spec.From != "current" && run.Scope.Declared?.Contains(key) != true)
+        if (spec.From != "current" && run.Scope.Declared?.Contains(key) != true)
             throw ActionStop.CannotAnswer($"subject {key} is not consumed by the step; add it to the step's consumes");
-        var reference = run.Scope.Consumed is { } consumed
-            ? consumed.GetValueOrDefault(key) ?? (spec.From == "current" ? Latest(run, spec.Name) : null)
-            : spec.From == "current" ? Latest(run, spec.Name) : null;
-        // Without the workflow's consumed artifacts, a subject from another run of a run that has one cannot be told absent;
-        // passing it as absent would let requirement_inheritance pass a child with nothing to compare (LOG 173).
-        if (reference is null && run.Scope.Consumed is null && spec.From != "current" && hasParent)
-            throw ActionStop.CannotAnswer($"subject {key} is from another run, and this engine does not resolve it for actions yet");
+        var reference = run.Scope.Consumed?.GetValueOrDefault(key) ?? (spec.From == "current" ? Latest(run, spec.Name) : null);
         if (reference is null)
             return spec.Optional
                 ? new ValidationSubject(spec.Name, null, null, spec.From)

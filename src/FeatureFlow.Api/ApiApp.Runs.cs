@@ -19,6 +19,7 @@ public static partial class ApiApp
         app.MapPost("/runs", (Delegate)((HttpContext c) => api.Guard(c, caller => api.StartAsync(c, caller))));
         app.MapGet("/runs", (Delegate)((HttpContext c) => api.Guard(c, caller => api.ListAsync(c, caller))));
         app.MapGet("/runs/{id}", (HttpContext c, string id) => api.Guard(c, caller => api.ShowAsync(c, caller, id)));
+        app.MapGet("/runs/{id}/artifacts/{reference}", (HttpContext c, string id, string reference) => api.Guard(c, caller => api.ArtifactAsync(c, caller, id, reference)));
     }
 
     sealed partial class Handlers
@@ -86,9 +87,9 @@ public static partial class ApiApp
             var locked = new List<LockedLibrary>();
             foreach (var source in services.Organisation.Libraries)
             {
-                var path = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(services.Organisation.Location))!, source.Path));
-                var d = new DiagnosticBag();
-                var library = Library.Library.Open(path, d) ?? throw new InvalidOperationException($"library {source.Name} at {path} does not open: {string.Join("; ", d)}");
+                var (library, problem) = await LibrarySources.OpenAsync(source, services.Organisation.Location, ct);
+                if (library is null)
+                    throw new InvalidOperationException($"library {source.Name}: {problem}");
                 foreach (var (_, text) in library.Files.All)
                     (await Artifacts.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(text)), ct)).Unwrap();
                 locked.Add(LibraryLock.Pin(library));
@@ -106,6 +107,13 @@ public static partial class ApiApp
             return Results.Json(new { runs }, Json);
         }
 
+        /// <summary>The run, if the caller is a viewer in its scope; null otherwise, so every read of a run refuses alike (404).</summary>
+        async Task<RunRecord?> VisibleRunAsync(Caller caller, string id, CancellationToken ct)
+        {
+            var run = (await Records.QueryAsync<RunRecord>(Queries.Run, new Dictionary<string, string> { ["run_id"] = id }, ct)).Unwrap().FirstOrDefault();
+            return run is not null && RolesIn(caller, ScopeOf(run.Repositories)).Contains(PeopleRoles.Viewer) ? run : null;
+        }
+
         public async Task<IResult> ShowAsync(HttpContext context, Caller caller, string id)
         {
             var p = new Dictionary<string, string> { ["run_id"] = id };
@@ -117,6 +125,23 @@ public static partial class ApiApp
             var timeline = (await Records.QueryAsync<TimelineRecord>(Queries.Timeline, new Dictionary<string, string>(p) { ["after"] = after }, context.RequestAborted)).Unwrap();
             var children = (await Records.QueryAsync<RunRecord>(Queries.Runs, new Dictionary<string, string> { ["parent_run_id"] = id }, context.RequestAborted)).Unwrap();
             return Results.Json(new { run, waits, timeline, children }, Json);
+        }
+
+        /// <summary>
+        /// An artifact the run itself recorded (the references its timeline shows), for a viewer of the run: what a person reads
+        /// before ratifying it (docs/01). A child's artifacts are read through the child, whose scope may differ (review R5, F1).
+        /// </summary>
+        public async Task<IResult> ArtifactAsync(HttpContext context, Caller caller, string id, string reference)
+        {
+            var p = new Dictionary<string, string> { ["run_id"] = id };
+            var run = (await Records.QueryAsync<RunRecord>(Queries.Run, p, context.RequestAborted)).Unwrap().FirstOrDefault();
+            if (run is null || !RolesIn(caller, ScopeOf(run.Repositories)).Contains(PeopleRoles.Viewer))
+                return Error(404, $"no run {id}");
+            var indexed = (await Records.QueryAsync<ArtifactRecord>(Queries.Artifacts, p, context.RequestAborted)).Unwrap();
+            if (!indexed.Any(a => a.RunId == id && a.Ref == reference))
+                return Error(404, $"no artifact {reference} in run {id}");
+            var read = await Artifacts.GetAsync(new ArtifactRef(reference), context.RequestAborted);
+            return read.Ok ? Results.Stream(read.Value!, "application/octet-stream") : Error(404, $"artifact {reference} cannot be read: {read.Error!.Message}");
         }
     }
 }

@@ -5,6 +5,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="OpenTelemetry" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="Temporalio.Extensions.OpenTelemetry" />
+    <PackageReference Include="Castle.Core" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\FeatureFlow.Engine\FeatureFlow.Engine.csproj" />
     <ProjectReference Include="..\FeatureFlow.Engine.Agent\FeatureFlow.Engine.Agent.csproj" />
     <ProjectReference Include="..\FeatureFlow.Api\FeatureFlow.Api.csproj" />

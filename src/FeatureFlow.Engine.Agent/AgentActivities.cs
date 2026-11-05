@@ -63,7 +63,11 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
     public async Task<StepOutcome> RunAgentStepAsync(StepCall call)
     {
         var context = ActivityExecutionContext.Current;
-        var runtime = providers.Required<IAgentRuntimeProvider>("agent_runtime", call.DryRun);
+        // A dry run keeps its dry-run runtime; otherwise the step's role picks the instance (LOG 267), else the default.
+        var runtime = call.Agent?.Runtime is { } name && !call.DryRun
+            ? providers.Instance("agent_runtime", name) as IAgentRuntimeProvider
+              ?? throw new InvalidOperationException($"role_mapping names the agent runtime '{name}', which this agent worker does not configure")
+            : providers.Required<IAgentRuntimeProvider>("agent_runtime", call.DryRun);
         if (call.Agent is null || call.DryRun || providers.ForRun("sandbox", false) is not ISandboxProvider sandboxes
             || providers.ForRun("vcs", false) is not IVcsProvider vcs)
             return await WithoutSandboxAsync(runtime, call, context);
@@ -220,6 +224,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                 Engine = new EngineEndpoints(owner.options.AgentUrls, owner.options.ModelBaseUrl, token),
                 Paths = paths,
                 Questions = spec.QuestionsMax > 0,
+                Model = spec.Model,
             };
 
             try
@@ -616,7 +621,9 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                     }
 
                     await EventAsync("session", $"{number} started");
-                    events.Add($"session {number} started");
+                    // docs/08 section 6.1: the record names the runtime instance and model each step ran on (LOG 267).
+                    events.Add($"session {number} started on runtime {spec.Runtime ?? owner.Providers.Instances("agent_runtime").FirstOrDefault().Name}"
+                               + $" with model {spec.Model ?? "of the runtime"}");
                 }
 
                 await SuperviseAsync(running);

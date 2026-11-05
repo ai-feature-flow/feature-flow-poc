@@ -22,7 +22,7 @@ public static partial class ApiApp
     {
         app.MapGet("/console", () => Page("console.html", "text/html; charset=utf-8"));
         app.MapGet("/console/console.js", () => Page("console.js", "text/javascript; charset=utf-8"));
-        app.MapGet("/runs/{id}/plan", (HttpContext c, string id) => api.Guard(c, _ => api.ReadableFormAsync(c, id)));
+        app.MapGet("/runs/{id}/plan", (HttpContext c, string id) => api.Guard(c, caller => api.ReadableFormAsync(c, caller, id)));
     }
 
     static readonly Dictionary<string, string> Pages = new(StringComparer.Ordinal);
@@ -62,11 +62,11 @@ public static partial class ApiApp
         /// each step's status from the run's timeline and open waits. It is the plan as the run started: changes made while
         /// it runs (expansions, accepted patches) are in its timeline.
         /// </summary>
-        public async Task<IResult> ReadableFormAsync(HttpContext context, string id)
+        public async Task<IResult> ReadableFormAsync(HttpContext context, Caller caller, string id)
         {
             var ct = context.RequestAborted;
             var p = new Dictionary<string, string> { ["run_id"] = id };
-            if ((await Records.QueryAsync<RunRecord>(Queries.Run, p, ct)).Unwrap().FirstOrDefault() is not { } run)
+            if (await VisibleRunAsync(caller, id, ct) is not { } run)
                 return Error(404, $"no run {id}");
             if (await LockOfAsync(run, ct) is not { } lockRef || LibraryReference.TryParse(run.Template) is not { } template)
                 return Error(404, $"run {id} has no library lock to show its plan from");

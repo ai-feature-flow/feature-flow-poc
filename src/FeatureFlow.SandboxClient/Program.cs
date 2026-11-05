@@ -1,5 +1,5 @@
 // ff-sandbox: the client in the sandbox (LOG 67). `ff-sandbox mcp` is the stdio MCP server for the engine tools;
-// `ff-sandbox hook <event>` is the hook command. Both read FF_ENGINE_URLS and FF_STEP_TOKEN.
+// `ff-sandbox hook <event> [copilot]` is the hook command. Both read FF_ENGINE_URLS and FF_STEP_TOKEN.
 using System.Globalization;
 using FeatureFlow.SandboxClient;
 
@@ -15,11 +15,12 @@ switch (args.FirstOrDefault())
         return 0;
     case "hook" when args.Length > 1:
         var hookEngine = EngineClient.FromEnvironment(log, Seconds("FF_HOOK_HOLD_SECONDS", 120));
-        return await HookCommand.RunAsync(args[1], hookEngine, Console.In, Console.Out, Console.Error, log, CancellationToken.None);
+        return await HookCommand.RunAsync(args[1], hookEngine, Console.In, Console.Out, Console.Error, log, CancellationToken.None,
+            copilot: args.ElementAtOrDefault(2) == "copilot");
     case "--version":
         Console.WriteLine("ff-sandbox 0.1.0");
         return 0;
     default:
-        Console.Error.WriteLine("usage: ff-sandbox mcp | ff-sandbox hook <event>");
+        Console.Error.WriteLine("usage: ff-sandbox mcp | ff-sandbox hook <event> [copilot]");
         return 64;
 }

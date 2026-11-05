@@ -8,11 +8,20 @@
     <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.23.0" />
     <PackageVersion Include="Cel.NET" Version="2.3.1" />
     <PackageVersion Include="YamlDotNet" Version="16.3.0" />
+    <PackageVersion Include="KubernetesClient" Version="21.0.8" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.14" />
+    <!-- M8 stores (W1): the Postgres record store and the S3 artifact store. -->
+    <PackageVersion Include="Npgsql" Version="10.0.3" />
+    <PackageVersion Include="AWSSDK.S3" Version="4.0.104.9" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="xunit.v3.extensibility.core" Version="3.2.2" />
     <PackageVersion Include="xunit.v3.assert" Version="3.2.2" />
+    <!-- M8 operations: OpenTelemetry and the provider decorator (docs/02 section 8). -->
+    <PackageVersion Include="OpenTelemetry" Version="1.20.1" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.20.1" />
+    <PackageVersion Include="Temporalio.Extensions.OpenTelemetry" Version="1.21.0" />
+    <PackageVersion Include="Castle.Core" Version="5.2.1" />
   </ItemGroup>
 </Project>

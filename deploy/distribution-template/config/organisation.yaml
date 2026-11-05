@@ -1,0 +1,23 @@
+# Your organisation (docs/07 section 3): who may do what, and which library runs.
+api_version: feature-flow/v1
+kind: organisation
+name: your-organisation                          # yours
+
+libraries:
+  # std ships in the images. Add your own library from a repository, for example:
+  #   - { name: delivery, source: git, repository: "https://github.com/your-org/feature-flow-library.git", ref: main }
+  - { name: std, source: directory, path: /opt/feature-flow/library/std }
+
+policy:
+  approval:
+    - { match: "*", roles: [approver], min_count: 1, from_chat: false, auto: false }
+
+roles:                                           # people roles to your identity provider's groups (yours)
+  viewer:   { idp_groups: [engineering] }
+  approver: { idp_groups: [engineering-leads] }
+  steerer:  { idp_groups: [engineering-leads] }
+  admin:    { idp_groups: [platform] }
+
+role_mapping:                                    # which runtime and model each library agent role runs on (yours)
+  reviewer: { agent_runtime: claude_code, model: opus }
+  default:  { agent_runtime: claude_code, model: sonnet }

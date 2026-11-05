@@ -14,7 +14,7 @@ it (`docs/04`). Keys are snake_case (RW12).
 | Layer | Where | Set by | Holds |
 |---|---|---|---|
 | Installation | Deployment configuration | Operator | Temporal, workers, provider instances, API authentication, observability, engine defaults for limits |
-| Organisation | A configuration file or service, with team overrides | Organisation | Policy and caps (`docs/05`), people roles, agent role mapping, libraries, notifications routing, timeouts |
+| Organisation | A configuration file or service, with team overrides | Organisation | Policy and caps (`docs/05`), people roles, agent role mapping, libraries, notifications routing |
 | Repository | `feature-flow.yaml` at the repository root | Repository maintainers | How to set up, test, analyse and run the repository; library additions |
 | Run | The run request, through the API | Requester | Template, parameters, repositories, limit overrides |
 
@@ -43,22 +43,17 @@ temporal:
   payload_codec: { name: aes_gcm, key_ref: secrets/payload_key }   # optional
   expected_retention: 30d        # checked at startup; a mismatch warns
 
-workers:
-  mode: kubernetes               # local | docker | kubernetes
-  agent_pools:
-    - { queue: feature-flow-agent, capabilities: [os_linux, docker] }
-
 providers:                       # every type: named instances, one default
-  sandbox:        { default: kubernetes_pod, instances: { kubernetes_pod: {} } }
+  sandbox:        { default: kubernetes, instances: { kubernetes: { image: "registry.internal/feature-flow-sandbox:1.0", namespace: feature-flow-sandboxes } } }
   agent_runtime:
     default: claude_code
     instances:
       claude_code: { model_access: { mode: proxy, key_ref: secrets/anthropic_key } }
-      copilot_cli: { endpoint: https://llm-router.internal/v1, model_access: { mode: proxy, key_ref: secrets/router_key } }
+      copilot_cli: { model: claude-haiku-4-5, model_access: { mode: proxy } }
   vcs:            { default: git, instances: { git: {} } }
   code_host:      { default: github, instances: { github: { app_id: 12345, secret_ref: secrets/github_app_key, webhook_secret_ref: secrets/github_webhook } } }
   ci:             { default: github_actions, instances: { github_actions: {}, teamcity: { base_url: https://tc.internal, secret_ref: secrets/teamcity } } }
-  tracker:        { default: jira, instances: { jira: { base_url: https://acme.atlassian.net, secret_ref: secrets/jira, status_map: { in_progress: "In Progress", code_review: "Code Review", done: "Done" } } } }
+  tracker:        { default: jira, instances: { jira: { base_url: https://acme.atlassian.net, secret_ref: secrets/jira, project: ACME, status_map: { in_progress: "In Progress", code_review: "Code Review", done: "Done" } } } }
   findings_source: { instances: { copilot_review: {}, sonarcloud: { secret_ref: secrets/sonar } } }
   validator:      { instances: { std: {} } }
   toolset:        { instances: { jira: { url: https://mcp.internal/jira }, confluence: { url: https://mcp.internal/confluence } } }
@@ -71,7 +66,7 @@ providers:                       # every type: named instances, one default
         console_url: https://feature-flow.internal/console
         users: { U0123ABC: { actor: alice, groups: [acme-leads] } }
   session_surface: { default: local_handoff, instances: { local_handoff: {} } }
-  artifact_store: { default: azure_blob, instances: { azure_blob: { container: ff-artifacts } } }
+  artifact_store: { default: s3, instances: { s3: { bucket: acme-ff-artifacts, region: eu-west-1 } } }
   record_store:   { default: postgres, instances: { postgres: { connection_ref: secrets/ff_db } } }
   secrets:        { default: azure_key_vault, instances: { azure_key_vault: { vault: acme-kv } } }
   credential_broker: { default: github_app, instances: { github_app: {} } }
@@ -96,19 +91,29 @@ defaults:                        # engine defaults for limits; not floors
 | `providers.<type>.instances` | Several instances of one type may coexist (two CI systems, two agent runtimes). Other settings select one by name |
 | `agent_runtime.*.model_access` | `proxy` (a proxy adds the key to model requests) or `per_run_key` (a key with a spend limit and expiry). Required for every runtime (F6). With `proxy`, `upstream` is the model API (default the Anthropic API) and `auth` how the key is sent: `api_key` (default) or `oauth` (a subscription token). LOG 91 |
 | `agent_runtime.claude_code` | `model`, `executable`, and `engine_tools`: `false` offers the agent no engine tools, for SP3's file fall-back test, and is refused unless `development: true`. LOG 91 |
+| `agent_runtime.copilot_cli` | The same four settings as `claude_code`. Copilot reaches the model through the same model proxy, as a custom Anthropic provider with the step's token; one proxy, configured by the default runtime's `model_access`, serves every runtime instance (LOG 293) |
+| `sandbox.docker` | `image` (the sandbox image, `feature-flow-sandbox`), `user` (the agent's, default `node`), `docker` (the executable). Its network reaches only `agent_worker`'s `urls` and `model_base_url`, and the internet (LOG 291) |
+| `sandbox.kubernetes` | `image`, `user`, `namespace` (default `default`), `cpu` (default 2) and `memory` (default 4Gi) limits per pod, and `context` (a kubeconfig context; omitted, the cluster the worker runs in). Its network is `sandbox-network-policy.yaml`, which must be applied in `namespace` first; the agent worker's pods carry `app.kubernetes.io/name: feature-flow-agent-worker` (LOG 294) |
 | `agent_worker` | LOG 91: `listen` (the agent worker's endpoint), `urls` (its replicas as sandboxes reach them), `model_base_url` (the model proxy as sandboxes reach it; default the first of `urls` with `/model`), `token_key_ref` (the secret every replica signs step tokens with) and `sandbox_client` (the executable copied into each sandbox). How often commits are pushed (30 seconds), Claude Code's own model retries, the hook's hold (120 seconds) and the sandbox client's retry (10 minutes) are fixed defaults, not settings |
 | `secrets.file.from_environment` | Secret names the `file` provider reads from the process environment, such as the solo profile's subscription token. LOG 91 |
-| `endpoint` | Only on a runtime that declares `CustomEndpoint` |
+| `endpoint` | Not in version 1: every runtime reaches its model through the one model proxy; a per-runtime upstream is a follow-up (LOG 293) |
 | `code_host` identity | Must not be able to change branch protection (F5); checked at startup |
-| `tracker.*.status_map` | Maps the library's abstract statuses to the tracker's (`docs/08` section 1). For `github_issues` (settings `repository`, `status_map`) a status maps to a label or to `closed` (LOG 184) |
+| `tracker.*.status_map` | Maps the library's abstract statuses to the tracker's (`docs/08` section 1). For `github_issues` (settings `repository`, `status_map`) a status maps to a label or to `closed` (LOG 184). For `jira` (settings `base_url`, `secret_ref`, `project`, `issue_type`, default Task, and `status_map`) a status maps to a Jira status name, default `in_progress` to "In Progress", `code_review` to "In Review" and `done` to "Done"; the secret holds `<account email>:<API token>` (LOG 301) |
+| `observability.otlp_endpoint` | Where traces are exported with OTLP over gRPC: an http or https URL. Without it nothing is exported. Version 1 exports traces only; metrics and logs are later (LOG 305) |
 | `notifications.slack` | `token_ref` (the bot token) and `signing_secret_ref` (verifies its buttons at `/inbound/chat/slack`) are secret references. `users` maps a Slack user id to the person its button presses answer as: `actor`, and `groups` or `roles` for the people roles (`docs/05` section 3.3). An unmapped user cannot answer. `console_url` is linked from each message. LOG 227 |
 | `code_host.github.webhook_secret_ref` | The secret GitHub signs webhook deliveries with; deliveries go to `/inbound/events/github` and only wake waits (`docs/02` section 2.3). LOG 228 |
-| `workers.agent_pools[].capabilities` | The sandbox capabilities a pool offers, which route steps to its queue (`docs/02` section 1.1) |
 | `defaults.limits` | Engine defaults per step form and per action. The organisation, workflow and step may override them within ceilings |
 | `temporal.continue_as_new_events` | LOG 87: the history length at which a run hands over (`docs/02` section 3); default 5,120, at least 100 |
+| `temporal.payload_codec` | Encrypts every payload, and failure messages, the engine sends Temporal. `name: aes_gcm` (the only codec); `key_ref` names a secret of 32 random bytes in base64 (`openssl rand -base64 32`). Replaying an encrypted history needs the same key. LOG 284 |
+| `record_store.postgres` | `connection_ref` names the secret holding the connection string (`Host=...;Database=...;Username=...;Password=...`). The schema is created or migrated at first use. LOG 281 |
+| `artifact_store.s3` | `bucket` (required, created by the deployment), `region` (default `us-east-1`), `endpoint` for a store other than AWS such as MinIO (path-style), and `access_key_ref` with `secret_key_ref`, set together; without them the AWS SDK's credential chain applies, such as an EKS service account's role. LOG 283 |
 | `api.auth` | `local_token` (`token_ref`, `actor`, `roles`) or `oidc` (`issuer`, `audience`, `role_claim`, default `groups`, and `actor_claim`, default `sub`); with `oidc`, a `token_ref` keeps the local token working beside it. The actor `policy` is reserved for automatic answers (LOG 220, 222) |
 
-Scaling (replica counts) is deployment configuration, not engine configuration.
+Scaling (replica counts) is deployment configuration, not engine configuration. `workers` (a worker mode and agent
+pools by sandbox capability) is not in version 1 and is refused at startup; every agent worker serves the one agent
+queue (LOG 318). Each orchestration worker runs the stuck-run
+check (`docs/02` section 8): with more than one replica, a `stalled`, `stuck` or `resumed` message may be sent once per
+replica; one orchestration replica avoids that (LOG 307).
 
 ---
 
@@ -120,11 +125,8 @@ kind: organisation
 name: acme
 
 libraries:                                  # docs/08 sections 3 and 4
-  - { name: std, source: package, version: ">=1.0.0 <2.0.0" }
-  - { name: acme_delivery, source: git, repository: acme/ff-library, ref: main }
-library_overrides:                          # organisation content replacing std items
-  std:tasks/implement_ticket: acme_delivery:tasks/implement_ticket
-library_inputs: { planning_repository: acme/plans }
+  - { name: std, source: directory, path: /opt/feature-flow/library/std }
+  - { name: acme_delivery, source: git, repository: "https://github.com/acme/ff-library.git", ref: main }
 
 policy:                                     # meanings in docs/05
   approval:
@@ -141,8 +143,6 @@ policy:                                     # meanings in docs/05
   planning:
     allowed_roles: [planner, implementer, fixer]
     require_review: [{ match: "*:templates/project_*", value: true }]
-  toolsets:
-    allowed: [jira, confluence]
   overrides:                                # default roles for run-time overrides (docs/05 section 5)
     skip_protected: [admin]
 
@@ -168,10 +168,6 @@ notifications:
     failed:          { channel: "#ff-runs" }
   events: [decision_needed, failed, completed]
 
-timeouts:
-  heartbeat: 30s                            # how long a step may go silent
-  stalled_after: 5m                         # unreachable provider before a run shows stalled
-
 teams:
   payments:
     policy:
@@ -182,17 +178,14 @@ teams:
 
 | Key | Notes |
 |---|---|
-| `libraries` | Sources and versions. The first library is the base for references without a library name |
-| `library_overrides` | An organisation item replacing a base item by name, for every run |
+| `libraries` | Each a `name` and a `source`: `directory` with `path` (relative to this file), or `git` with `repository` (anything Git can clone, with the host's own Git credentials; a URL holding a credential is refused, LOG 289) `ref` (a branch or tag; default the repository's default branch) and `path` (the library's folder inside the repository; default its root, LOG 321), fetched at each read (LOG 286). `package` is not in version 1 (LOG 287). The first library is the base for references without a library name |
 | `policy.*` | Meanings in `docs/05`. A cap may be `{ value, locked }`; a bare value is an unlocked default. Which settings reach running runs is in `docs/05` section 8 |
 | `policy.budgets.max_work_items.ceiling` | F11's ceiling, always locked: a root template asking more does not start; a root that sets no budget gets the ceiling (LOG 187) |
 | `roles`, `teams` | People roles to groups. A run is in the scope of the team whose `repositories` match its repositories; a run spanning two teams is refused. In its scope a team's groups add holders to a role, and its approval rules may only raise `min_count` (LOG 204, 217) |
-| `role_mapping.default` | The runtime and model for a role with no entry |
-| `timeouts.heartbeat` | Describes the platform, not the work, so it is set here and not per step. It dominates crash-recovery time (Spike 1: 87.4 s from a kill to progress, `archive/docs/15` section 6.4) |
-| `timeouts.stalled_after` | Time without successful provider contact before the run shows `stalled`. Time-based, not a retry count |
+| `role_mapping` | Each library agent role's `agent_runtime` (an instance of the installation's) and `model` (default: that instance's own). `default` serves roles with no entry; with neither, the installation's default runtime runs the step with its own model. Fixed for a run when it starts (LOG 267, 295) |
 
-Until M8, `library_overrides`, `library_inputs`, `policy.toolsets.allowed`, `role_mapping` and `timeouts` are refused at
-startup ("not enforced before M8"): they are read and checked, but nothing acts on them yet (LOG 256).
+`library_overrides`, `library_inputs`, `policy.toolsets` (whose only key was `allowed`) and `timeouts` are not in
+version 1 and are refused at startup, whatever they hold (LOG 268 to 270, 273).
 
 ---
 
@@ -307,10 +300,10 @@ The same code runs in every profile; only configuration differs.
 | Sandbox | Local Docker | Kubernetes pod | Kubernetes pod; Docker and Windows tiers delegated to CI |
 | Tiers that need Docker | A privileged container, permitted only in this profile | CI delegation, or a rootless container runtime where supported | CI delegation |
 | Tracker, code host, CI | GitHub Issues, GitHub, GitHub Actions | Jira, GitHub, GitHub Actions | Jira, GitHub, GitHub Actions and TeamCity |
-| Stores | Local filesystem, SQLite | S3 or Blob, Postgres | Organisation object store and database |
+| Stores | Local filesystem, SQLite | S3 (or an S3 API store such as MinIO), Postgres | Organisation object store and database |
 | Secrets | Environment or file | Cloud secret manager | Internal platform, short-lived |
 | Credentials | The developer's token, used only by the engine | GitHub App | GitHub App |
-| Library source | `directory` | `git` | `git` or `package` |
+| Library source | `directory` | `git` | `git` |
 | API authentication | Local token | OIDC | OIDC |
 | Default-branch merges | A person, unless the solo organisation file lists the repository | A person | A person; two approvers |
 
@@ -324,7 +317,7 @@ credentials (F5) and model keys (F6).
 
 | When | Checks |
 |---|---|
-| Startup | Schemas; provider packages present; secret references resolve; Temporal reachable; expected retention (warn); every agent runtime has `model_access`; `endpoint` only where supported; the code host identity cannot change protection; library sources reachable |
+| Startup | Schemas; provider packages present; secret references resolve (every `*_ref` setting, naming the key, never a value; LOG 308); Temporal reachable; expected retention (warn); every agent runtime has `model_access`; the code host identity cannot change protection; library sources reachable |
 | Run start | The template validates (`docs/09`); every capability the plan needs is offered; caps respected; F1 for every merge step into a default branch, reading the default branch from the code host; branch protection exists on default branches; decision types known; library lock written |
 | Each step | The manifest read from the branch and its hash recorded; capabilities checked again if the manifest changed |
 

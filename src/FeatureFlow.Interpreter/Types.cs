@@ -58,12 +58,6 @@ public sealed record RunOptions
     /// <summary><c>limits.races</c> for <c>scm.merge</c> when unset (docs/04 section 7.3; LOG 61).</summary>
     public long DefaultRaces { get; init; } = 10;
 
-    /// <summary>
-    /// Whether the work branch follows <c>metadata.branch_pattern</c> (LOG 97). The shell sets it from a patch marker,
-    /// so runs recorded before M4 keep <c>ff/&lt;level&gt;/&lt;run id&gt;</c>.
-    /// </summary>
-    public bool BranchFromPattern { get; init; }
-
     /// <summary>The run ceiling: attempts across every step of the run (F4).</summary>
     public long RunCeiling { get; init; } = 200;
 
@@ -89,12 +83,6 @@ public sealed record RunOptions
     /// becomes a patch approval, as a step's <c>planning.review: required</c> makes it.
     /// </summary>
     public bool RequireReview { get; init; }
-
-    /// <summary>
-    /// M7's steering: a branch of a decided join entered again reopens the join, and a person's skips apply. The shell sets
-    /// it from a patch marker, so histories recorded before M7 replay as they ran.
-    /// </summary>
-    public bool Steering { get; init; } = true;
 }
 
 /// <summary>Something the core asks the shell to do. The Temporal workflow (M3) or the re-drive runner carries it out.</summary>

@@ -80,12 +80,10 @@ public sealed partial class RunCore
 
     /// <summary>
     /// A go-to that would leave a protected step unrun is a skip of it, which needs <c>skip_protected</c>: the person skips it
-    /// first with the override, then goes to the step (LOG 206). Behind Steering, so histories recorded before M7 replay.
+    /// first with the override, then goes to the step (LOG 206).
     /// </summary>
     string? Bypasses(string stopped, string target)
     {
-        if (!Options.Steering)
-            return null;
         var before = Positions();
         var after = before.Where(id => id != stopped).Append(target).ToList();
         return StillToRun(Plan, before).Except(StillToRun(Plan, after)).FirstOrDefault() is { } left
@@ -256,7 +254,7 @@ public sealed partial class RunCore
     {
         var level = Plan.Document.Level ?? "run";
         var fallback = $"ff/{level}/{Run.Id}";
-        if (!Options.BranchFromPattern || Plan.Document.BranchPattern is not { } pattern || renderingBranch)
+        if (Plan.Document.BranchPattern is not { } pattern || renderingBranch)
             return fallback;
         renderingBranch = true;
         try

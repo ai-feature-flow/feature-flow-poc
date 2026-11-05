@@ -5,6 +5,7 @@ using FeatureFlow.Cli;
 using FeatureFlow.Hosting;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Providers.ClaudeCode;
+using FeatureFlow.Providers.CopilotCli;
 using FeatureFlow.Providers.Docker;
 using FeatureFlow.Providers.Git;
 using FeatureFlow.Providers.GitHub;
@@ -19,7 +20,7 @@ namespace FeatureFlow.Integration.Tests;
 /// </summary>
 public static class AgentWorld
 {
-    public const string Image = "feature-flow-sandbox:m4";
+    public const string Image = "feature-flow-sandbox:m8";
     static readonly Lazy<Task<string>> Client = new(PrepareAsync);
 
     public static Task<string> SandboxClientAsync() => Client.Value;
@@ -88,6 +89,18 @@ public sealed record AgentHarnessOptions
     /// <c>FF_SECRETS_FILE</c> names, outside the repository; no value of it is printed.
     /// </summary>
     public bool Live { get; init; }
+
+    /// <summary>The key the proxy sends instead of the model's own: SP5 N2, a credential the model refuses.</summary>
+    public string? ModelKey { get; init; }
+
+    /// <summary>The default agent runtime: <c>claude_code</c>, or <c>copilot_cli</c> (M8).</summary>
+    public string Runtime { get; init; } = "claude_code";
+
+    /// <summary>More agent runtime instances, as YAML lines under <c>agent_runtime.instances</c>, each reaching the same proxy.</summary>
+    public IReadOnlyList<string> MoreRuntimes { get; init; } = [];
+
+    /// <summary>More organisation keys, as YAML, such as a <c>role_mapping</c>.</summary>
+    public string MoreOrganisation { get; init; } = "";
 }
 
 /// <summary>
@@ -102,6 +115,11 @@ public sealed class AgentHarness : IAsyncDisposable
         .Append(ClaudeCodeProviders.Runtime(o => o with
         {
             MaxRetries = options.Live ? 2 : 0,
+            HookHold = TimeSpan.FromSeconds(options.HookHoldSeconds),
+            ClientRetry = TimeSpan.FromSeconds(options.ClientRetrySeconds),
+        }))
+        .Append(CopilotCliProviders.Runtime(o => o with
+        {
             HookHold = TimeSpan.FromSeconds(options.HookHoldSeconds),
             ClientRetry = TimeSpan.FromSeconds(options.ClientRetrySeconds),
         }))
@@ -150,7 +168,8 @@ public sealed class AgentHarness : IAsyncDisposable
             h.Repository = FixtureRepository;
             vcs = "{ default: git, instances: { git: { cache: clones } } }";
             broker = $$"""  credential_broker: { default: github_app, instances: { github_app: { app_id: "{{app["github-app-id"]}}", installation_id: "{{app["github-installation-id"]}}", key_path: "{{app["github-app-key"]}}", repositories: [{{FixtureRepository}}] } } }""";
-            modelAccess = "{ mode: proxy, key_ref: secrets/CLAUDE_CODE_OAUTH_TOKEN, upstream: \"https://api.anthropic.com\", auth: oauth }";
+            // SP5's negative controls replace the model's address (N1) or the proxy's key (N2).
+            modelAccess = $$"""{ mode: proxy, key_ref: secrets/{{(options.ModelKey is null ? "CLAUDE_CODE_OAUTH_TOKEN" : "model_key")}}, upstream: "{{options.ModelUpstream ?? "https://api.anthropic.com"}}", auth: oauth }""";
             secretsFromEnvironment = ", from_environment: [CLAUDE_CODE_OAUTH_TOKEN]";
         }
         else
@@ -166,7 +185,7 @@ public sealed class AgentHarness : IAsyncDisposable
         {
             ["api_token"] = token,
             ["step_token_key"] = Guid.NewGuid().ToString("N"),
-            ["model_key"] = model?.Credential ?? "",
+            ["model_key"] = options.ModelKey ?? model?.Credential ?? "",
         }));
         await File.WriteAllTextAsync(IOPath.Combine(folder, "script.yaml"), "api_version: feature-flow/v1\nkind: fake_script\nsteps: {}\n");
         var queue = $"ff-m4-{name}-{Guid.NewGuid():N}"[..30] + "-orchestration";
@@ -187,12 +206,13 @@ public sealed class AgentHarness : IAsyncDisposable
               secrets: { default: file, instances: { file: { path: secrets.json{{secretsFromEnvironment}} } } }
               sandbox: { default: docker, instances: { docker: { image: "{{AgentWorld.Image}}" } } }
               agent_runtime:
-                default: claude_code
+                default: {{options.Runtime}}
                 instances:
-                  claude_code:
-                    model: haiku
+                  {{options.Runtime}}:
+                    model: {{(options.Runtime == "copilot_cli" ? "claude-haiku-4-5" : "haiku")}}
                     engine_tools: {{(options.EngineTools ? "true" : "false")}}
                     model_access: {{modelAccess}}
+            {{string.Join("\n", options.MoreRuntimes.Select(r => "      " + r.Replace("{model_access}", modelAccess)))}}
               vcs: {{vcs}}
             {{broker}}
               action_stand_in: { default: scripted, instances: { scripted: { script: script.yaml } } }
@@ -210,6 +230,7 @@ public sealed class AgentHarness : IAsyncDisposable
             policy:
               approval:
                 - { match: "*", roles: [approver], auto: false }
+            {{options.MoreOrganisation}}
             """);
         var loaded = FeatureFlowConfiguration.Load(IOPath.Combine(folder, "installation.yaml"), IOPath.Combine(folder, "organisation.yaml"));
         h.Configuration = loaded with
