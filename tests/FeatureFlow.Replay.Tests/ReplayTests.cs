@@ -29,8 +29,10 @@ public class ReplayTests
     }
 
     /// <summary>
-    /// Each history takes the path it was recorded for, so a change to that path fails its replay rather than replaying
-    /// green (review 8). The evidence is an activity, signal or update the path schedules or handles, or text it records.
+    /// Each history was recorded on the path it covers (review 8). The evidence is an activity, signal or update the path
+    /// schedules or handles, so a change to those commands fails the history's replay; or text the path records (a
+    /// <c>text</c> row), which proves only that the history took the path. Replay compares commands, not activity inputs:
+    /// a change confined to an activity's input or a record's text is caught by the unit and integration tests, not here.
     /// </summary>
     [Theory]
     [InlineData("ticket_clean_up", "activity CleanUp")]
