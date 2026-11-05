@@ -6,12 +6,13 @@ namespace FeatureFlow.SandboxClient;
 /// The hook command (docs/02 section 4.1): sends the runtime's hook input to a replica and applies its decision.
 /// Unreachable is not denied (risk R19): it holds and retries across replicas for the hold time, then stops the
 /// session in a resumable state. Its exit codes follow Claude Code's hooks: 0 allows, 2 blocks with the reason
-/// on standard error.
+/// on standard error. Copilot CLI shows the agent only the exit code of a hook that exits 2, so for it
+/// (<paramref name="copilot"/>) a denial is its JSON decision with the reason, and exit 0.
 /// </summary>
 public static class HookCommand
 {
     public static async Task<int> RunAsync(string hook, EngineClient engine, TextReader input, TextWriter output, TextWriter error, ClientLog log,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool copilot = false)
     {
         var text = await input.ReadToEndAsync(cancellationToken);
         JsonNode body;
@@ -44,7 +45,14 @@ public static class HookCommand
         if (reply["decision"]?.ToString() == "allow" || hook != "pre_tool_use" && reply["decision"]?.ToString() != "deny")
             return 0;
         // Fail closed: a denial, or an answer with no decision (an expired or revoked token, a refused call), blocks it.
-        await error.WriteLineAsync(reply["reason"]?.ToString() ?? "the engine did not allow this call: " + (reply["error"]?.ToString() ?? "no decision"));
+        var reason = reply["reason"]?.ToString() ?? "the engine did not allow this call: " + (reply["error"]?.ToString() ?? "no decision");
+        if (copilot)
+        {
+            await output.WriteLineAsync(new JsonObject { ["permissionDecision"] = "deny", ["permissionDecisionReason"] = reason }.ToJsonString());
+            return 0;
+        }
+
+        await error.WriteLineAsync(reason);
         return 2;
     }
 }

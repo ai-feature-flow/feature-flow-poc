@@ -54,6 +54,8 @@ public sealed record StepIdentity(string RunId, string Template, string StepId, 
 /// <summary>
 /// An agent step's settings, as the workflow resolved them from the plan (docs/04 section 3): the role's write
 /// access and tool classes, the rendered task, the limits, the run's branches, and the artifacts it consumes.
+/// <see cref="Runtime"/> and <see cref="Model"/> follow its role through the run's <c>role_mapping</c>, fixed at its start
+/// (LOG 267); null for the installation's default runtime and that runtime's own model.
 /// </summary>
 public sealed record AgentStepSpec(
     string WriteAccess,
@@ -72,7 +74,9 @@ public sealed record AgentStepSpec(
     IReadOnlyDictionary<string, string> Consumed,
     string WorkflowId,
     string LockRef,
-    string? TrackerIssue = null);
+    string? TrackerIssue = null,
+    string? Runtime = null,
+    string? Model = null);
 
 /// <summary>One step for an activity to carry out. <see cref="Agent"/> is set for an agent step from M4.</summary>
 public sealed record StepCall(StepIdentity Step, string Form, string What, IReadOnlyDictionary<string, string> Inputs, StepContract Contract, bool DryRun,
@@ -127,6 +131,9 @@ public sealed record AgentTask(StepIdentity Step, string Role, string? TaskText,
     public bool EngineTools { get; init; } = true;
 
     public bool Questions { get; init; }
+
+    /// <summary>The model the step's role maps to (LOG 267); null for the runtime instance's own <c>model</c>.</summary>
+    public string? Model { get; init; }
 
     /// <summary>Which session of the step this is: 1 for the first; each continuation (a correction turn, a resume) adds one.</summary>
     public int Session { get; init; } = 1;

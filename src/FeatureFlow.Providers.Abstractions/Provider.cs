@@ -93,6 +93,13 @@ public sealed record ProviderContext(ProviderInstanceConfig Instance, string Bas
 
     /// <summary>A path setting, relative to the configuration file's folder.</summary>
     public string? PathSetting(string key) => Setting(key) is { } p ? Path.GetFullPath(Path.Combine(BaseDirectory, p)) : null;
+
+    /// <summary>
+    /// The engine's URLs a sandbox must reach: the agent worker's <c>urls</c> and its <c>model_base_url</c> (docs/07 section 2).
+    /// A sandbox provider allows these and the public internet, and nothing else on the worker's host or network (M4
+    /// follow-up 12).
+    /// </summary>
+    public IReadOnlyList<Uri> SandboxReach { get; init; } = [];
 }
 
 /// <summary>Creates one kind of provider for one type, by the kind name configuration uses (docs/06 section 4).</summary>

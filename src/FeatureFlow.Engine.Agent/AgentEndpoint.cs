@@ -82,8 +82,9 @@ public static class AgentEndpoint
                 return;
             }
 
-            var (status, input, output) = await s.Proxy.ForwardAsync(http, path ?? "", http.RequestAborted);
-            await AppendAsync(s, new RecordBatch(AgentEvents: [new AgentEventRecord(claims.StepKey, "model", $"{http.Request.Method} /{path} {status} in={input} out={output}", DateTimeOffset.UtcNow)]));
+            var (status, input, output, model) = await s.Proxy.ForwardAsync(http, path ?? "", http.RequestAborted);
+            await AppendAsync(s, new RecordBatch(AgentEvents: [new AgentEventRecord(claims.StepKey, "model",
+                $"{http.Request.Method} /{path} {status} in={input} out={output} model={model ?? "none"}", DateTimeOffset.UtcNow)]));
         });
     }
 

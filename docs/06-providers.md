@@ -154,6 +154,11 @@ abbreviated: every method also takes a cancellation token, and `..X` stands for
   the per-step token (`docs/02` section 4.2).
 - Network policy, CPU and memory limits are applied where the capability is
   declared. FF's containers had none (`../feature-factory/issues.md`).
+- Built in M8: a sandbox reaches the agent worker (its `urls` and model proxy)
+  and the internet, never Temporal, the stores or anything else on its host or
+  cluster. Docker closes it with rules inside the container (LOG 291); the
+  Kubernetes pod sandbox with a network policy (LOG 294). Both share one command
+  machinery (LOG 292) and pass `SandboxContract`, which checks the network.
 
 ### 3.2 Agent runtime
 
@@ -190,6 +195,10 @@ interface IAgentRuntimeProvider : IProvider {
   Windows and macOS but only the Anthropic API; Copilot CLI works through an
   OpenAI-compatible router but its tool-call hooks did not fire with a
   third-party model.
+- Built in M8: the Copilot CLI runtime, reaching the model through the same
+  proxy as a custom Anthropic provider, with SP5's checks held live (LOG 293,
+  296). Each step's runtime instance and model follow its role (`role_mapping`,
+  LOG 295).
 
 ### 3.3 VCS
 

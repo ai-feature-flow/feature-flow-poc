@@ -81,7 +81,8 @@ public sealed record AutoRule(string Match, bool Auto);
 /// <summary>
 /// The limits and policy a run enforces, fixed when it starts (docs/05 section 8) and carried in its state,
 /// because workflow code cannot read configuration. <see cref="RequireReview"/> is the organisation's
-/// <c>planning.require_review</c> for the run's template (M7).
+/// <c>planning.require_review</c> for the run's template (M7). <see cref="RoleMapping"/> is its <c>role_mapping</c>: each
+/// library agent role's runtime instance and model (LOG 267).
 /// </summary>
 public sealed record RunPolicy(
     long DefaultAttempts,
@@ -95,8 +96,18 @@ public sealed record RunPolicy(
     IReadOnlyList<string>? EngineMayMerge = null,
     bool? BuiltActions = null,
     long? WorkItemCeiling = null,
-    bool? RequireReview = null)
+    bool? RequireReview = null,
+    IReadOnlyDictionary<string, Model.AgentRoleMapping>? RoleMapping = null)
 {
+    /// <summary>
+    /// The runtime instance and model an agent of <paramref name="role"/> runs with: its own entry, else <c>default</c>; null
+    /// with neither, when the installation's default runtime runs it with that runtime's own model.
+    /// </summary>
+    public Model.AgentRoleMapping? AgentFor(string? role) =>
+        RoleMapping is null ? null
+        : role is not null && RoleMapping.TryGetValue(role, out var own) ? own
+        : RoleMapping.GetValueOrDefault("default");
+
     public RunOptions ToOptions() => new()
     {
         DefaultAttempts = DefaultAttempts,

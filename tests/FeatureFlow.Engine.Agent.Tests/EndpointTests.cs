@@ -167,7 +167,7 @@ public sealed class EndpointTests : IDisposable
         });
         var proxy = new ModelProxy(new ModelProxyOptions(new Uri("https://model.example/"), auth, _ => Task.FromResult<string?>("real-credential")), upstream);
         var context = Request("Bearer step-token");
-        var (status, input, output) = await proxy.ForwardAsync(context, "v1/messages", Ct);
+        var (status, input, output, model) = await proxy.ForwardAsync(context, "v1/messages", Ct);
 
         var sent = Assert.Single(upstream.Seen);
         Assert.Equal("https://model.example/v1/messages", sent.RequestUri!.ToString());
@@ -184,7 +184,7 @@ public sealed class EndpointTests : IDisposable
             Assert.Null(sent.Headers.Authorization);
         }
 
-        Assert.Equal((200, 12L, 34L), (status, input, output));
+        Assert.Equal((200, 12L, 34L, "haiku"), (status, input, output, model));
         context.Response.Body.Position = 0;
         Assert.Contains("message_delta", await new StreamReader(context.Response.Body).ReadToEndAsync(Ct));
     }
@@ -211,7 +211,7 @@ public sealed class EndpointTests : IDisposable
         }), upstream);
         var context = Request("Bearer step-token");
         context.Request.Method = method;
-        var (status, _, _) = await proxy.ForwardAsync(context, path, Ct);
+        var (status, _, _, _) = await proxy.ForwardAsync(context, path, Ct);
 
         Assert.Equal(404, status);
         Assert.Empty(upstream.Seen);
@@ -256,7 +256,7 @@ public sealed class EndpointTests : IDisposable
         var upstream = new Upstream(_ => throw new HttpRequestException("refused"));
         var proxy = new ModelProxy(new ModelProxyOptions(new Uri("https://model.example/"), "api_key", _ => Task.FromResult<string?>("real-credential")), upstream);
         var context = Request("Bearer step-token");
-        var (status, _, _) = await proxy.ForwardAsync(context, "v1/messages", Ct);
+        var (status, _, _, _) = await proxy.ForwardAsync(context, "v1/messages", Ct);
         Assert.Equal(502, status);
         context.Response.Body.Position = 0;
         Assert.DoesNotContain("real-credential", await new StreamReader(context.Response.Body).ReadToEndAsync(Ct));

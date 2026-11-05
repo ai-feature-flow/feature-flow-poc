@@ -694,6 +694,7 @@ public partial class RunWorkflow
     {
         var agent = step.Agent!;
         var role = agent.Role?.Reference is { } roleRef ? libraries?.Resolve(roleRef)?.Role(roleRef.Name) : null;
+        var binding = policy?.AgentFor(agent.Role?.Reference?.Name);
         var (taskText, taskLibrary) = core!.RenderTask(step.Id);
         var limits = step.Limits;
         var questionsMax = limits?.QuestionsMax ?? (limits?.QuestionsTimeout is not null ? 3 : 0);
@@ -723,7 +724,9 @@ public partial class RunWorkflow
             consumed,
             Workflow.Info.WorkflowId,
             LockRef,
-            TrackerIssue: input.TrackerIssue);
+            TrackerIssue: input.TrackerIssue,
+            Runtime: binding?.AgentRuntime,
+            Model: binding?.Model);
     }
 
     /// <summary>

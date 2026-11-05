@@ -35,7 +35,7 @@ public sealed class EngineServices(ProviderSet providers, InstallationConfig ins
 
     /// <summary>
     /// The policy a run starting now enforces (docs/05 section 8): engine defaults from the installation, ceilings
-    /// and allowed roles from the organisation, and which decision types may be auto-resolved: the organisation's approval
+    /// and allowed roles from the organisation, its <c>role_mapping</c>, and which decision types may be auto-resolved: the organisation's approval
     /// rules, then the <c>default_approval</c> of the libraries' <paramref name="declared"/> types, in the order
     /// <see cref="Approval.For"/> reads them.
     /// </summary>
@@ -54,6 +54,7 @@ public sealed class EngineServices(ProviderSet providers, InstallationConfig ins
             policy.EngineMayMerge,
             // Whether M5's actions run against providers for this run, fixed at its start like the rest of its policy.
             Providers.ForRun("vcs", false) is IVcsProvider && Providers.ForRun("code_host", false) is ICodeHostProvider,
-            policy.MaxWorkItems);
+            policy.MaxWorkItems,
+            RoleMapping: Organisation.RoleMapping.Count > 0 ? Organisation.RoleMapping : null);
     }
 }

@@ -86,8 +86,23 @@ public sealed class ReportAndHookTests
     [InlineData("MultiEdit", """{"file_path":".git/config"}""")]
     [InlineData("Bash", """{"command":"echo x >> .git/config"}""")]
     [InlineData("Bash", """{"command":"cp evil .git/hooks/post-commit"}""")]
+    // Copilot CLI names the file "path" (LOG 293).
+    [InlineData("Edit", """{"path":"/ff/work/.git/config","old_str":"a","new_str":"b"}""")]
+    [InlineData("Write", """{"path":"/ff/work/.git/hooks/pre-commit","file_text":"x"}""")]
     public void Nobody_edits_the_repository_s_git_folder(string tool, string input) =>
         Assert.Equal("deny", HookPolicy.PreToolUse(Implementer, tool, Json(input)).Decision);
+
+    /// <summary>Copilot CLI names the engine's tools <c>engine-&lt;tool&gt;</c>, as Claude Code names them <c>mcp__engine__&lt;tool&gt;</c>: always allowed.</summary>
+    [Theory]
+    [InlineData("mcp__engine__report")]
+    [InlineData("engine-report")]
+    [InlineData("engine-ask_human")]
+    public void The_engines_tools_are_allowed_under_either_runtime_s_name(string tool) =>
+        Assert.Equal("allow", HookPolicy.PreToolUse(Reviewer with { Tools = [] }, tool, Json("""{"outcome":"done"}""")).Decision);
+
+    [Fact]
+    public void A_file_copilot_opens_is_recorded_from_its_path() =>
+        Assert.Equal("/ff/work/a.cs", HookPolicy.FileOpened("Read", Json("""{"path":"/ff/work/a.cs"}""")));
 
     [Fact]
     public void A_file_whose_name_only_contains_git_may_be_edited() =>

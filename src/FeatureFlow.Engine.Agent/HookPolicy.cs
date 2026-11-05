@@ -16,6 +16,11 @@ public sealed record HookDecision(string Decision, string? Reason = null)
 /// write access, deny <c>git push</c> (the engine pushes, F5), deny edits to the repository's <c>.git</c> folder,
 /// and deny a tool outside the role's tool classes. Write access is also enforced by the sandbox (a read-only
 /// checkout), so a runtime without hooks keeps the control (docs/04 section 3.7).
+/// <para>
+/// Claude Code and Copilot CLI send the same hook input with the same tool names (Copilot maps its own: <c>view</c> is
+/// <c>Read</c>, <c>create</c> is <c>Write</c>), except that Copilot names a file <c>path</c>, not <c>file_path</c>, and an
+/// engine tool <c>engine-report</c>, not <c>mcp__engine__report</c>.
+/// </para>
 /// </summary>
 public static partial class HookPolicy
 {
@@ -39,14 +44,14 @@ public static partial class HookPolicy
 
     public static HookDecision PreToolUse(StepClaims claims, string tool, JsonElement input)
     {
-        if (tool.StartsWith("mcp__engine__", StringComparison.Ordinal))
+        if (tool.StartsWith("mcp__engine__", StringComparison.Ordinal) || tool.StartsWith("engine-", StringComparison.Ordinal))
             return HookDecision.Allow;
         var allowed = claims.Tools.SelectMany(c => ToolClasses.GetValueOrDefault(c, [])).ToHashSet(StringComparer.Ordinal);
         if (!allowed.Contains(tool))
             return HookDecision.Deny($"{tool} is not one of this role's tools");
         if (Writing.Contains(tool) && claims.WriteAccess == "none")
             return HookDecision.Deny("this role cannot change files: its checkout is read-only");
-        if (Writing.Contains(tool) && Text(input, "file_path") is { } path && GitFolder().IsMatch(path))
+        if (Writing.Contains(tool) && (Text(input, "file_path") ?? Text(input, "path")) is { } path && GitFolder().IsMatch(path))
             return HookDecision.Deny("the repository's .git folder is the engine's; do not edit it");
         if (tool == "Bash" && Text(input, "command") is { } command)
         {
@@ -61,7 +66,7 @@ public static partial class HookPolicy
 
     /// <summary>The file a tool call opened, for the record of files read (docs/04 section 3.6), or null.</summary>
     public static string? FileOpened(string tool, JsonElement input) =>
-        tool is "Read" or "NotebookRead" or "Edit" or "MultiEdit" or "Write" ? Text(input, "file_path") ?? Text(input, "notebook_path") : null;
+        tool is "Read" or "NotebookRead" or "Edit" or "MultiEdit" or "Write" ? Text(input, "file_path") ?? Text(input, "notebook_path") ?? Text(input, "path") : null;
 
     static string? Text(JsonElement e, string name) =>
         e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;

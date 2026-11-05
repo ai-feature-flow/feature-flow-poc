@@ -100,7 +100,9 @@ public sealed class ScriptedModel : IAsyncDisposable
         var body = (await JsonNode.ParseAsync(http.Request.Body))!;
         JsonObject block;
         var tools = body["tools"]?.AsArray().Select(t => t?["name"]?.ToString()).ToList() ?? [];
-        if (!tools.Contains("Bash") && !tools.Contains("Read") && !tools.Any(t => t?.StartsWith("mcp__", StringComparison.Ordinal) == true))
+        // An agent's request offers its tools: Claude Code's (Bash, Read, mcp__engine__*) or Copilot CLI's (bash, view, engine-*).
+        if (!tools.Any(t => t is "Bash" or "Read" or "bash" or "view" || t?.StartsWith("mcp__", StringComparison.Ordinal) == true
+                            || t?.StartsWith("engine-", StringComparison.Ordinal) == true))
             block = new JsonObject { ["type"] = "text", ["text"] = "ok" };
         else
         {

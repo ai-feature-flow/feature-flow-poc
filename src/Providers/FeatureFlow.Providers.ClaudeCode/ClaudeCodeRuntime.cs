@@ -151,7 +151,7 @@ public sealed class ClaudeCodeRuntime(ClaudeCodeOptions options, Func<ISandboxPr
         var paths = task.Paths!;
         var parts = new List<string>
         {
-            options.Executable, "-p", "--output-format", "stream-json", "--verbose", "--model", options.Model,
+            options.Executable, "-p", "--output-format", "stream-json", "--verbose", "--model", task.Model ?? options.Model,
             resume ? "--resume" : "--session-id", SessionId(task.Step.IdempotencyKey),
             "--setting-sources", "user",
             "--tools", string.Join(",", tools.DefaultIfEmpty("Read")),

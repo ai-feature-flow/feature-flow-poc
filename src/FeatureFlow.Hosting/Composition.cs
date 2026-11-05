@@ -48,6 +48,8 @@ public static class ProviderComposer
         var dryRun = installation.Providers.Where(p => p.Value.DryRun is not null).ToDictionary(p => p.Key, p => p.Value.DryRun!);
         ProviderSet? set = null;
         var errors = new List<string>();
+        var worker = installation.AgentWorker ?? AgentWorkerConfig.None;
+        var reach = worker.Urls.Append(worker.ModelBaseUrl).OfType<string>().Select(u => new Uri(u)).ToList();
         foreach (var (type, config) in installation.Providers)
         {
             var named = new Dictionary<string, IProvider>(StringComparer.Ordinal);
@@ -61,7 +63,8 @@ public static class ProviderComposer
 
                 foreach (var key in instance.Settings.Keys.Where(k => !factory.Settings.Contains(k)))
                     errors.Add($"providers.{type}.instances.{name}: unknown setting '{key}'");
-                named[name] = ProviderCalls.Decorate(type, name, factory.Create(new ProviderContext(instance, baseDirectory, t => set?.ForRun(t, false))));
+                named[name] = ProviderCalls.Decorate(type, name,
+                    factory.Create(new ProviderContext(instance, baseDirectory, t => set?.ForRun(t, false)) { SandboxReach = reach }));
             }
 
             instances[type] = named;

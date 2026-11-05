@@ -70,6 +70,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       FF_K3D_CLUSTER: ff-ci
+      # The sandbox image deploy/k3d/up.sh imports, for the sandbox contract's pods.
+      FF_SANDBOX_IMAGE: feature-flow-sandbox:dev
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4

@@ -6,4 +6,8 @@
     <ProjectReference Include="..\..\..\src\FeatureFlow.Providers.Contracts\FeatureFlow.Providers.Contracts.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="KubernetesClient" />
+  </ItemGroup>
+
 </Project>

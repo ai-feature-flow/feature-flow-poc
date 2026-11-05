@@ -11,6 +11,7 @@ public static class DockerProviders
             c.RequiredSetting("image"),
             c.Setting("user") ?? "node",
             () => c.Provider("artifact_store") as IArtifactStoreProvider ?? throw new InvalidOperationException("the Docker sandbox needs an artifact store"),
-            new DockerCli(c.Setting("docker") ?? "docker"))),
+            new DockerCli(c.Setting("docker") ?? "docker"),
+            c.SandboxReach)),
     ];
 }
