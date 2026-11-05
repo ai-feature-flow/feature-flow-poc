@@ -49,19 +49,22 @@ public sealed class Harness : IAsyncDisposable
     /// section, whose types should be in <paramref name="omitTypes"/>; <paramref name="policy"/> further lines of the
     /// organisation's <c>policy</c>; <paramref name="installation"/> further top-level installation lines; and
     /// <paramref name="factories"/> provider factories beside the local ones; <paramref name="organisation"/> further top-level organisation
-    /// lines; <paramref name="fromChat"/> the approval rule's <c>from_chat</c>.
+    /// lines; <paramref name="fromChat"/> the approval rule's <c>from_chat</c>; <paramref name="temporal"/> further keys of the
+    /// installation's <c>temporal</c> map, after a comma; <paramref name="secrets"/> further secrets beside the API token;
+    /// <paramref name="librarySources"/> further entries of the organisation's <c>libraries</c>, as YAML maps.
     /// </para>
     public static async Task<Harness> StartAsync(string name, string script = "{}", bool autoApprove = false, string[]? omitTypes = null,
         string[]? libraries = null, string providers = "", string policy = "", string installation = "", IEnumerable<FeatureFlow.Providers.Abstractions.ProviderFactory>? factories = null,
         string agentRuntime = "{ default: scripted, dry_run: recording, instances: { scripted: { script: script.yaml }, recording: { folder: recorded } } }",
-        string organisation = "", bool fromChat = false)
+        string organisation = "", bool fromChat = false, string temporal = "", IReadOnlyDictionary<string, string>? secrets = null, string[]? librarySources = null)
     {
         var folder = IOPath.Combine(IOPath.GetTempPath(), $"ff-it-{name}-{Guid.NewGuid():N}"[..40]);
         Directory.CreateDirectory(folder);
         var harness = new Harness(folder);
         var token = Guid.NewGuid().ToString("N");
         await File.WriteAllTextAsync(harness.TokenFile, token);
-        await File.WriteAllTextAsync(IOPath.Combine(folder, "secrets.json"), JsonSerializer.Serialize(new Dictionary<string, string> { ["api_token"] = token }));
+        await File.WriteAllTextAsync(IOPath.Combine(folder, "secrets.json"), JsonSerializer.Serialize(
+            new Dictionary<string, string>(secrets ?? new Dictionary<string, string>()) { ["api_token"] = token }));
         await File.WriteAllTextAsync(IOPath.Combine(folder, "script.yaml"), $"api_version: feature-flow/v1\nkind: fake_script\nsteps: {script}\n");
         var fakes = string.Join("\n", FakeTypes.Except(omitTypes ?? []).Select(t => $"  {t}: {{ instances: {{ fake: {{}} }} }}"));
         var queue = $"ff-{name}-{Guid.NewGuid():N}"[..30] + "-orchestration";
@@ -69,7 +72,7 @@ public sealed class Harness : IAsyncDisposable
             api_version: feature-flow/v1
             kind: installation
             development: true
-            temporal: { address: "{{TemporalAddress}}", namespace: default, task_queue: {{queue}} }
+            temporal: { address: "{{TemporalAddress}}", namespace: default, task_queue: {{queue}}{{temporal}} }
             providers:
               artifact_store: { default: filesystem, instances: { filesystem: { root: artifacts } } }
               record_store: { default: sqlite, instances: { sqlite: { path: records.db } } }
@@ -83,7 +86,7 @@ public sealed class Harness : IAsyncDisposable
               auth: { mode: local_token, token_ref: secrets/api_token, actor: tester, roles: [viewer, approver, steerer, admin] }
             """);
         var sources = string.Join("\n", (libraries ?? []).Prepend(IOPath.Combine(RepositoryRoot, "library", "std"))
-            .Select(p => $"  - {{ name: {IOPath.GetFileName(p)}, source: directory, path: \"{p}\" }}"));
+            .Select(p => $"  - {{ name: {IOPath.GetFileName(p)}, source: directory, path: \"{p}\" }}").Concat((librarySources ?? []).Select(l => "  - " + l)));
         await File.WriteAllTextAsync(IOPath.Combine(folder, "organisation.yaml"), $$"""
             api_version: feature-flow/v1
             kind: organisation

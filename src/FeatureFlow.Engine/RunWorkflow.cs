@@ -1021,6 +1021,9 @@ public partial class RunWorkflow
             LockRef, input.DryRun, input.Requester, Workflow.Info.WorkflowId, step.Id, input.HandOverEvents, ParentBranch: core!.WorkBranch(),
             ParentArtifacts: artifacts, RootArtifacts: input.ParentWorkflowId is null ? artifacts : input.RootArtifacts,
             TrackerIssue: inputs.GetValueOrDefault("tracker_issue") as string, WorkItems: budget);
+        // What this run has produced is recorded before a child exists, so the artifact index lists a parent's artifacts
+        // before the child's that may consume them (m8-results Foundations, follow-up 4).
+        await RecordAsync();
         ChildWorkflowHandle? handle = null;
         try
         {

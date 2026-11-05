@@ -164,9 +164,14 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
     {
         using var connection = Open();
         using var transaction = connection.BeginTransaction();
+        // A run record replaces one no newer than itself, so a late write never undoes a newer one (LOG 290).
         foreach (var run in records.Runs ?? [])
-            Execute(connection, "INSERT OR REPLACE INTO runs VALUES ($o, $r, $p, $u, $b)",
-                ("$o", Org), ("$r", run.RunId), ("$p", run.ParentRunId), ("$u", run.UpdatedAt.ToString("O")), ("$b", JsonSerializer.Serialize(run, Json)));
+            Execute(connection, """
+                INSERT INTO runs VALUES ($o, $r, $p, $u, $b)
+                ON CONFLICT (org_id, run_id) DO UPDATE SET parent_run_id = excluded.parent_run_id, updated_at = excluded.updated_at, body = excluded.body
+                WHERE excluded.updated_at >= runs.updated_at
+                """,
+                ("$o", Org), ("$r", run.RunId), ("$p", run.ParentRunId), ("$u", run.UpdatedAt.ToUniversalTime().ToString("O")), ("$b", JsonSerializer.Serialize(run, Json)));
         foreach (var wait in records.Waits ?? [])
         {
             // A record that closes a wait keeps what the opening record said about it.

@@ -5,4 +5,8 @@
     <ProjectReference Include="..\..\FeatureFlow.Model\FeatureFlow.Model.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+
 </Project>

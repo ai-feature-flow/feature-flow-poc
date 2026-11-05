@@ -5,4 +5,8 @@
     <ProjectReference Include="..\..\FeatureFlow.Model\FeatureFlow.Model.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="AWSSDK.S3" />
+  </ItemGroup>
+
 </Project>

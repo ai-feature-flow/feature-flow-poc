@@ -71,7 +71,7 @@ providers:                       # every type: named instances, one default
         console_url: https://feature-flow.internal/console
         users: { U0123ABC: { actor: alice, groups: [acme-leads] } }
   session_surface: { default: local_handoff, instances: { local_handoff: {} } }
-  artifact_store: { default: azure_blob, instances: { azure_blob: { container: ff-artifacts } } }
+  artifact_store: { default: s3, instances: { s3: { bucket: acme-ff-artifacts, region: eu-west-1 } } }
   record_store:   { default: postgres, instances: { postgres: { connection_ref: secrets/ff_db } } }
   secrets:        { default: azure_key_vault, instances: { azure_key_vault: { vault: acme-kv } } }
   credential_broker: { default: github_app, instances: { github_app: {} } }
@@ -109,6 +109,9 @@ defaults:                        # engine defaults for limits; not floors
 | `workers.agent_pools[].capabilities` | The sandbox capabilities a pool offers, which route steps to its queue (`docs/02` section 1.1) |
 | `defaults.limits` | Engine defaults per step form and per action. The organisation, workflow and step may override them within ceilings |
 | `temporal.continue_as_new_events` | LOG 87: the history length at which a run hands over (`docs/02` section 3); default 5,120, at least 100 |
+| `temporal.payload_codec` | Encrypts every payload, and failure messages, the engine sends Temporal. `name: aes_gcm` (the only codec); `key_ref` names a secret of 32 random bytes in base64 (`openssl rand -base64 32`). Replaying an encrypted history needs the same key. LOG 284 |
+| `record_store.postgres` | `connection_ref` names the secret holding the connection string (`Host=...;Database=...;Username=...;Password=...`). The schema is created or migrated at first use. LOG 281 |
+| `artifact_store.s3` | `bucket` (required, created by the deployment), `region` (default `us-east-1`), `endpoint` for a store other than AWS such as MinIO (path-style), and `access_key_ref` with `secret_key_ref`, set together; without them the AWS SDK's credential chain applies, such as an EKS service account's role. LOG 283 |
 | `api.auth` | `local_token` (`token_ref`, `actor`, `roles`) or `oidc` (`issuer`, `audience`, `role_claim`, default `groups`, and `actor_claim`, default `sub`); with `oidc`, a `token_ref` keeps the local token working beside it. The actor `policy` is reserved for automatic answers (LOG 220, 222) |
 
 Scaling (replica counts) is deployment configuration, not engine configuration.
@@ -123,8 +126,8 @@ kind: organisation
 name: acme
 
 libraries:                                  # docs/08 sections 3 and 4
-  - { name: std, source: package, version: ">=1.0.0 <2.0.0" }
-  - { name: acme_delivery, source: git, repository: acme/ff-library, ref: main }
+  - { name: std, source: directory, path: /opt/feature-flow/library/std }
+  - { name: acme_delivery, source: git, repository: "https://github.com/acme/ff-library.git", ref: main }
 
 policy:                                     # meanings in docs/05
   approval:
@@ -176,7 +179,7 @@ teams:
 
 | Key | Notes |
 |---|---|
-| `libraries` | Sources and versions. The first library is the base for references without a library name |
+| `libraries` | Each a `name` and a `source`: `directory` with `path` (relative to this file), or `git` with `repository` (anything Git can clone, with the host's own Git credentials; a URL holding a credential is refused, LOG 289) and `ref` (a branch or tag; default the repository's default branch), fetched at each read (LOG 286). `package` is not in version 1 (LOG 287). The first library is the base for references without a library name |
 | `policy.*` | Meanings in `docs/05`. A cap may be `{ value, locked }`; a bare value is an unlocked default. Which settings reach running runs is in `docs/05` section 8 |
 | `policy.budgets.max_work_items.ceiling` | F11's ceiling, always locked: a root template asking more does not start; a root that sets no budget gets the ceiling (LOG 187) |
 | `roles`, `teams` | People roles to groups. A run is in the scope of the team whose `repositories` match its repositories; a run spanning two teams is refused. In its scope a team's groups add holders to a role, and its approval rules may only raise `min_count` (LOG 204, 217) |
@@ -298,10 +301,10 @@ The same code runs in every profile; only configuration differs.
 | Sandbox | Local Docker | Kubernetes pod | Kubernetes pod; Docker and Windows tiers delegated to CI |
 | Tiers that need Docker | A privileged container, permitted only in this profile | CI delegation, or a rootless container runtime where supported | CI delegation |
 | Tracker, code host, CI | GitHub Issues, GitHub, GitHub Actions | Jira, GitHub, GitHub Actions | Jira, GitHub, GitHub Actions and TeamCity |
-| Stores | Local filesystem, SQLite | S3 or Blob, Postgres | Organisation object store and database |
+| Stores | Local filesystem, SQLite | S3 (or an S3 API store such as MinIO), Postgres | Organisation object store and database |
 | Secrets | Environment or file | Cloud secret manager | Internal platform, short-lived |
 | Credentials | The developer's token, used only by the engine | GitHub App | GitHub App |
-| Library source | `directory` | `git` | `git` or `package` |
+| Library source | `directory` | `git` | `git` |
 | API authentication | Local token | OIDC | OIDC |
 | Default-branch merges | A person, unless the solo organisation file lists the repository | A person | A person; two approvers |
 
