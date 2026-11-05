@@ -78,6 +78,27 @@ accepts only sandboxes and hosts; sandboxes, in namespace `feature-flow-sandboxe
 the public internet. The hosts' account may manage pods only in the sandboxes' namespace, where Pod Security's
 `baseline` level refuses host networking, privileged containers and host paths.
 
+## Behind a TLS-inspecting proxy
+
+The hosts call GitHub, the tracker and the model API trusting the image's public roots (the platform's trust store,
+`docs/10` DR20; in a container the image is the platform). Where the network re-signs TLS with its own root, those
+calls fail with `UntrustedRoot`; the agent worker's model proxy then answers every model request 502, naming the cause
+in its log and in the step's transcript. Give the hosts a bundle of the public roots and your proxy's root, and point
+`SSL_CERT_FILE` at it (LOG 322). Sandboxes need nothing for the model: they reach it through the agent worker. A
+Kustomize patch for the three deployments, with the bundle as a ConfigMap `trusted-ca` (`ca-bundle.pem`):
+
+```yaml
+- op: add
+  path: /spec/template/spec/volumes/-
+  value: { name: trusted-ca, configMap: { name: trusted-ca } }
+- op: add
+  path: /spec/template/spec/containers/0/volumeMounts/-
+  value: { name: trusted-ca, mountPath: /etc/ssl/trusted, readOnly: true }
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value: { name: SSL_CERT_FILE, value: /etc/ssl/trusted/ca-bundle.pem }
+```
+
 ## A cloud cluster on AWS
 
 The same manifests (`deploy/kubernetes`) with AWS services in place of the k3d ones. This is configuration only; the

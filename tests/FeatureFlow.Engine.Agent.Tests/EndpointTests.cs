@@ -251,14 +251,18 @@ public sealed class EndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task With_the_model_unreachable_the_proxy_answers_502_and_never_the_credential()
+    public async Task With_the_model_unreachable_the_proxy_answers_502_with_the_cause_and_never_the_credential()
     {
-        var upstream = new Upstream(_ => throw new HttpRequestException("refused"));
+        var upstream = new Upstream(_ => throw new HttpRequestException("The SSL connection could not be established.",
+            new System.Security.Authentication.AuthenticationException("The remote certificate is invalid: UntrustedRoot")));
         var proxy = new ModelProxy(new ModelProxyOptions(new Uri("https://model.example/"), "api_key", _ => Task.FromResult<string?>("real-credential")), upstream);
         var context = Request("Bearer step-token");
         var (status, _, _, _) = await proxy.ForwardAsync(context, "v1/messages", Ct);
         Assert.Equal(502, status);
         context.Response.Body.Position = 0;
-        Assert.DoesNotContain("real-credential", await new StreamReader(context.Response.Body).ReadToEndAsync(Ct));
+        var body = System.Text.Json.Nodes.JsonNode.Parse(await new StreamReader(context.Response.Body).ReadToEndAsync(Ct))!;
+        Assert.Equal("the model proxy could not reach the model: The SSL connection could not be established. The remote certificate is invalid: UntrustedRoot",
+            body["error"]!["message"]!.GetValue<string>());
+        Assert.DoesNotContain("real-credential", body.ToJsonString());
     }
 }

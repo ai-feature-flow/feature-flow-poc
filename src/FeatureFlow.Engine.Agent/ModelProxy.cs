@@ -103,10 +103,17 @@ public sealed partial class ModelProxy(ModelProxyOptions options, HttpMessageHan
         {
             response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         }
-        catch (HttpRequestException)
+        catch (HttpRequestException e)
         {
+            // The cause (a refused connection, a certificate the host does not trust) is for whoever runs the worker to fix.
+            var cause = e.InnerException is { } inner ? $"{e.Message} {inner.Message}" : e.Message;
+            Console.Error.WriteLine($"Model proxy: {target.Host} could not be reached: {cause}");
             context.Response.StatusCode = 502;
-            await context.Response.WriteAsync("""{"type":"error","error":{"type":"api_error","message":"the model proxy could not reach the model"}}""", cancellationToken);
+            await context.Response.WriteAsync(System.Text.Json.JsonSerializer.Serialize(new
+            {
+                type = "error",
+                error = new { type = "api_error", message = $"the model proxy could not reach the model: {cause}" },
+            }), cancellationToken);
             return (502, 0, 0, model);
         }
 
