@@ -315,7 +315,7 @@ The sandbox's network (M4 follow-up 12), the Kubernetes pod sandbox, the Copilot
 ## Integration
 
 Worker W5, branch `m8-integration`, from `m8` at `30319c8` (PRs #25 to #31 merged). Temporal on port 8633 for local
-runs; k3d cluster `ff-w5`. Judgement calls LOG 321 to 325, unreviewed.
+runs; k3d cluster `ff-w5`. Judgement calls LOG 321 to 326, unreviewed.
 
 ### Cross-piece checks
 
@@ -346,6 +346,7 @@ Each fix is its own commit, with a test and a control (a mutation that made the 
 | 3 | Done-when 2: docs/09's failure injection names "Temporal unavailable", which no test covered; CI's logs gave only per-assembly totals; the integration job built a sandbox image tagged `:m4` that no test used | `TemporalOutageTests` stops and restarts its own dev server under a waiting run; CI lists every test it runs; the job builds `:m8` (LOG 323) | The host's workers stopped 12 s after start (a worker that does not come back): the test fails. It also asserts an answer during the outage is refused, so the outage is real |
 | 4 | A CI flake on this PR, "the command ... was lost" (`DockerSandboxContractTests`): `ShellSandbox`'s status read could see a finished command, reaped but with its exit code not yet written, as lost | A command runs while the start script waiting on it lives, which writes the code before it ends (LOG 324). Shared by the Docker and Kubernetes sandboxes | Reproduced with a 1 s gap injected before the code is written: every Docker contract test failed; with the fix and the gap, 14 of 14 pass. New contract test (Docker and Kubernetes): a command killed with its waiter reads as lost, and 20 short commands each read as ended (a status that never says lost fails it) |
 | 5 | A person approving the epic's ticket plan ratifies its work list, but in the team profile nothing let them read it: the artifacts are in MinIO inside the cluster and the timeline shows only references. I read them from MinIO by hand | `GET /runs/{id}/artifacts/{reference}` and `ff run artifact`: a reference in the run tree's artifact index, for a viewer of the run (LOG 325) | `ApiTests.A_viewer_reads_the_artifacts_...` (without the index check, or without the viewer check, it fails). Live: the epic's work list read through the CLI; the same reference through a child run refused |
+| 6 | Seam 2's ten minutes of 502s showed nowhere in the run: each session ended resumably, so no activity failed and the stuck-run check saw nothing; the timeline said only "design started" (coordinator's decision after the report) | The agent worker records `model_unreachable` and signals the run, which shows `model_unreachable <step>: <cause>` on its timeline, once per step and cause (LOG 326) | `EndpointTests.A_model_unreachable_is_signalled_to_the_run_once_per_step_and_cause` (without the once-per-cause check it fails); `AgentCredentialTests.With_the_model_unreachable_...` now asserts one such line across at least three failed attempts (without the check, or with the workflow ignoring the signal, it fails) |
 
 Not seams: the GitHub App broker needed its `repositories` list (my configuration); the first CI run's Cluster job
 failed when the runner's k3s node restarted during the image builds (the next run passed).
@@ -422,7 +423,7 @@ passed, integration 169, cluster 21; none failed or skipped.
 On `m8-integration` at the end (Debug, `-m:4`, Temporal :8633, Docker): default suite **1,389 passed**, 0 failed (24
 projects; replay 35); integration **170 passed**, 0 failed (Integration 117, Postgres 26, S3 12, Docker 15). Cluster
 suite on `ff-w5` before the live run: 21 passed; the Kubernetes sandbox contract again after seam 4: 15 passed. Build: 0
-warnings. CI on the pull request: green on every push since the runner fault, with the Cluster job.
+warnings. CI on the pull request: green on every push since the runner fault, with the Cluster job. After seam 6: `Engine.Agent.Tests` 88 passed, replay 35 passed, integration 170 passed again.
 
 ### Deviations
 
@@ -443,7 +444,7 @@ Deleted on the fixture after the run: the branches `ff/m8-live/epic-base` (`0202
 
 | # | Follow-up |
 |---|---|
-| 1 | A model the agent worker cannot reach shows nowhere in the run: each session ends "model unreachable" (resumable, no activity failure), so the stuck-run check sees nothing and the timeline shows only "design started" for as long as it lasts. A timeline event when a session ends unreachable would show it |
+| 1 | Done (seam 6, LOG 326): a model the agent worker cannot reach now shows on the run's timeline. It is still not a `stalled` position or a notification |
 | 2 | A host whose Temporal worker task faults keeps running without it (`Composition.Run` does not watch the task), so a pod stays alive polling nothing. The host could exit and let Kubernetes restart it |
 | 3 | `GET /runs/{id}/findings` checks only that the caller is authenticated, not that it may see the run, as the run view and the artifact read do |
 | 4 | A completed run leaves its work branches and `refs/feature-flow/wip/*` references on the code host (deleted by hand, as in M6) |
@@ -473,7 +474,7 @@ ignore SIGTERM" (LOG 312). Dropped by the product owner (LOG 264): M7's 3, 6, 7 
 | 10 | Reminders on open waits (an agent's question waited twelve minutes unseen in the live run, with no notifications configured) | Operations 3, M7 14 |
 | 11 | The console lists `stalled` and `stuck` under "Decisions"; the console's OIDC sign-in; the ledger and a triage in the console | Operations 4, M7 15 |
 | 12 | Several orchestration replicas each send their own `stalled`, `stuck` and `resumed` | Operations 7 |
-| 13 | A model the agent worker cannot reach shows nowhere in the run (no timeline event, not `stalled`) | Integration 1 |
+| 13 | A model the agent worker cannot reach shows on the timeline (LOG 326) but is not a `stalled` position or a notification | Integration 1 |
 | 14 | One model proxy serves every runtime; a runtime on another upstream needs a proxy per runtime instance. The proxy records but does not pin each request's model | Agents 1, 6 |
 | 15 | Copilot CLI: the hook's `continue: false` with the engine unreachable is untested; the agent can add its own skills or agents to Copilot's sticky home; `CopilotCliRuntime` repeats part of `ClaudeCodeRuntime` | Agents 2 to 4 |
 | 16 | No sweeper removes sandbox pods or containers whose run has closed | Agents 5 |

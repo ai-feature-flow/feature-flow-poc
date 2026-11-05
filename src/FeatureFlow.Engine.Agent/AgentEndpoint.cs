@@ -10,16 +10,21 @@ using Temporalio.Client;
 
 namespace FeatureFlow.Engine.Agent;
 
-/// <summary>Tells a run that an agent asked a question. The Temporal implementation signals the run's workflow id.</summary>
+/// <summary>Tells a run that an agent asked a question, or that its model cannot be reached. The Temporal implementation signals the run's workflow id.</summary>
 public interface IRunSignals
 {
     Task QuestionOpenedAsync(string workflowId, QuestionSignal question, CancellationToken cancellationToken);
+
+    Task ModelUnreachableAsync(string workflowId, ModelUnreachableSignal signal, CancellationToken cancellationToken);
 }
 
 public sealed class TemporalRunSignals(ITemporalClient client) : IRunSignals
 {
     public Task QuestionOpenedAsync(string workflowId, QuestionSignal question, CancellationToken cancellationToken) =>
         client.GetWorkflowHandle(workflowId).SignalAsync(RunWorkflowNames.QuestionOpened, [question], new WorkflowSignalOptions { Rpc = new RpcOptions { CancellationToken = cancellationToken } });
+
+    public Task ModelUnreachableAsync(string workflowId, ModelUnreachableSignal signal, CancellationToken cancellationToken) =>
+        client.GetWorkflowHandle(workflowId).SignalAsync(RunWorkflowNames.ModelUnreachable, [signal], new WorkflowSignalOptions { Rpc = new RpcOptions { CancellationToken = cancellationToken } });
 }
 
 /// <summary>What the agent endpoint uses: tokens, the record store, the run's signal, and the model proxy.</summary>
@@ -82,11 +87,29 @@ public static class AgentEndpoint
                 return;
             }
 
-            var (status, input, output, model) = await s.Proxy.ForwardAsync(http, path ?? "", http.RequestAborted);
+            var (status, input, output, model, unreachable) = await s.Proxy.ForwardAsync(http, path ?? "", http.RequestAborted);
             await AppendAsync(s, new RecordBatch(AgentEvents: [new AgentEventRecord(claims.StepKey, "model",
                 $"{http.Request.Method} /{path} {status} in={input} out={output} model={model ?? "none"}", DateTimeOffset.UtcNow)]));
+            if (unreachable is not null)
+                await ModelUnreachableAsync(s, claims, unreachable, CancellationToken.None);
         });
     }
+
+    /// <summary>
+    /// The model could not be reached for this step (LOG 326): recorded as an agent event and signalled to the run, which
+    /// shows it on its timeline, once per step and cause. A runtime retries many times, so later failures with the same
+    /// cause add nothing. The check reads the record store, so any replica serves it.
+    /// </summary>
+    public static async Task ModelUnreachableAsync(AgentEndpointServices s, StepClaims claims, string cause, CancellationToken cancellationToken)
+    {
+        var events = (await s.Records.QueryAsync<AgentEventRecord>(Queries.AgentEvents, new Dictionary<string, string> { ["step_key"] = claims.StepKey }, cancellationToken)).Unwrap();
+        if (events.Any(e => e.Kind == ModelUnreachableEvent && e.Detail == cause))
+            return;
+        await AppendAsync(s, new RecordBatch(AgentEvents: [new AgentEventRecord(claims.StepKey, ModelUnreachableEvent, cause, DateTimeOffset.UtcNow)]));
+        await s.Signals.ModelUnreachableAsync(claims.WorkflowId, new ModelUnreachableSignal(claims.StepId, cause), cancellationToken);
+    }
+
+    public const string ModelUnreachableEvent = "model_unreachable";
 
     static string? Bearer(HttpContext http) =>
         http.Request.Headers.Authorization.FirstOrDefault() is { } value && value.StartsWith("Bearer ", StringComparison.Ordinal) ? value["Bearer ".Length..].Trim() : null;

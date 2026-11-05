@@ -26,9 +26,17 @@ public sealed class EndpointTests : IDisposable
     {
         public List<QuestionSignal> Sent { get; } = [];
 
+        public List<(string WorkflowId, ModelUnreachableSignal Signal)> Unreachable { get; } = [];
+
         public Task QuestionOpenedAsync(string workflowId, QuestionSignal question, CancellationToken cancellationToken)
         {
             Sent.Add(question);
+            return Task.CompletedTask;
+        }
+
+        public Task ModelUnreachableAsync(string workflowId, ModelUnreachableSignal signal, CancellationToken cancellationToken)
+        {
+            Unreachable.Add((workflowId, signal));
             return Task.CompletedTask;
         }
     }
@@ -167,7 +175,7 @@ public sealed class EndpointTests : IDisposable
         });
         var proxy = new ModelProxy(new ModelProxyOptions(new Uri("https://model.example/"), auth, _ => Task.FromResult<string?>("real-credential")), upstream);
         var context = Request("Bearer step-token");
-        var (status, input, output, model) = await proxy.ForwardAsync(context, "v1/messages", Ct);
+        var (status, input, output, model, _) = await proxy.ForwardAsync(context, "v1/messages", Ct);
 
         var sent = Assert.Single(upstream.Seen);
         Assert.Equal("https://model.example/v1/messages", sent.RequestUri!.ToString());
@@ -211,7 +219,7 @@ public sealed class EndpointTests : IDisposable
         }), upstream);
         var context = Request("Bearer step-token");
         context.Request.Method = method;
-        var (status, _, _, _) = await proxy.ForwardAsync(context, path, Ct);
+        var (status, _, _, _, _) = await proxy.ForwardAsync(context, path, Ct);
 
         Assert.Equal(404, status);
         Assert.Empty(upstream.Seen);
@@ -257,12 +265,24 @@ public sealed class EndpointTests : IDisposable
             new System.Security.Authentication.AuthenticationException("The remote certificate is invalid: UntrustedRoot")));
         var proxy = new ModelProxy(new ModelProxyOptions(new Uri("https://model.example/"), "api_key", _ => Task.FromResult<string?>("real-credential")), upstream);
         var context = Request("Bearer step-token");
-        var (status, _, _, _) = await proxy.ForwardAsync(context, "v1/messages", Ct);
+        var (status, _, _, _, unreachable) = await proxy.ForwardAsync(context, "v1/messages", Ct);
         Assert.Equal(502, status);
         context.Response.Body.Position = 0;
         var body = System.Text.Json.Nodes.JsonNode.Parse(await new StreamReader(context.Response.Body).ReadToEndAsync(Ct))!;
         Assert.Equal("the model proxy could not reach the model: The SSL connection could not be established. The remote certificate is invalid: UntrustedRoot",
             body["error"]!["message"]!.GetValue<string>());
         Assert.DoesNotContain("real-credential", body.ToJsonString());
+        Assert.Equal("The SSL connection could not be established. The remote certificate is invalid: UntrustedRoot", unreachable);
+    }
+
+    [Fact]
+    public async Task A_model_unreachable_is_signalled_to_the_run_once_per_step_and_cause()
+    {
+        var other = Claims with { StepKey = "run-1/review/1", StepId = "review" };
+        foreach (var (claims, cause) in new[] { (Claims, "refused"), (Claims, "refused"), (Claims, "UntrustedRoot"), (Claims, "refused"), (other, "refused") })
+            await AgentEndpoint.ModelUnreachableAsync(services, claims, cause, Ct);
+
+        Assert.Equal([("run-1", new ModelUnreachableSignal("implement", "refused")), ("run-1", new ModelUnreachableSignal("implement", "UntrustedRoot")),
+            ("run-1", new ModelUnreachableSignal("review", "refused"))], signals.Unreachable);
     }
 }

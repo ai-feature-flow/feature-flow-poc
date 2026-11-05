@@ -187,6 +187,17 @@ public partial class RunWorkflow
         return Task.CompletedTask;
     }
 
+    /// <summary>The agent worker could not reach a step's model (LOG 326): shown on the timeline, nothing else changes.</summary>
+    [WorkflowSignal(RunWorkflowNames.ModelUnreachable)]
+    public Task ModelUnreachableAsync(ModelUnreachableSignal signal)
+    {
+        if (core is null)
+            return Task.CompletedTask;
+        core.State.Trace.Add(new TraceEntry("model_unreachable", signal.StepId, signal.Cause));
+        dirty = true;
+        return Task.CompletedTask;
+    }
+
     /// <summary>On timeout the agent is told no answer came, and carries on (docs/04 section 3.4; LOG 18).</summary>
     async Task TimeOutQuestionAsync(OpenQuestion open)
     {

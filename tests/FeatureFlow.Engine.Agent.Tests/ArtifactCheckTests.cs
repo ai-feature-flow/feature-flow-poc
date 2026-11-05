@@ -173,6 +173,8 @@ public sealed class ArtifactCheckTests : IAsyncDisposable
     sealed class NoSignals : IRunSignals
     {
         public Task QuestionOpenedAsync(string workflowId, FeatureFlow.Interpreter.Wire.QuestionSignal question, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task ModelUnreachableAsync(string workflowId, FeatureFlow.Interpreter.Wire.ModelUnreachableSignal signal, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     static IReadOnlyDictionary<string, IProvider> One(IProvider provider) => new Dictionary<string, IProvider> { ["one"] = provider };
