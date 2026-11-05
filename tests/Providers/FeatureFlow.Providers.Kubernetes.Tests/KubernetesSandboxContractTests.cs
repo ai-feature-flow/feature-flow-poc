@@ -143,7 +143,41 @@ public static class ClusterWorld
         await StandInAsync(client, KubernetesSandboxContractTests.Namespace, "store", "store", 5432);
         var nodes = await client.CoreV1.ListNodeAsync();
         NodeAddress = nodes.Items[0].Status.Addresses.First(a => a.Type == "InternalIP").Address;
+        await PolicyEnforcedAsync(client);
         return client;
+    }
+
+    /// <summary>
+    /// A network policy takes effect a moment after it is applied (a deployment applies it before the agent worker starts).
+    /// Waits, at most a minute, until a sandbox-labelled probe is refused by the stand-in store and reaches the stand-in
+    /// worker, so the tests see the policy in force (review R2 re-check, F2).
+    /// </summary>
+    static async Task PolicyEnforcedAsync(IKubernetes client)
+    {
+        var probe = new KubernetesSandbox(client, KubernetesSandboxContractTests.Namespace, KubernetesSandboxContractTests.Image, "node", "1", "1Gi",
+            () => throw new InvalidOperationException("the probe copies nothing"));
+        var key = "contract/policy-probe-" + Guid.NewGuid().ToString("N");
+        var handle = (await probe.CreateAsync(new SandboxSpec(key, "/ff/home", new Dictionary<string, string>(), []), CancellationToken.None)).Unwrap();
+        try
+        {
+            async Task<bool> Connects(string host, int port) =>
+                (await probe.RunAsync(handle, new SandboxCommand(["bash", "-c", $"timeout 3 bash -c '</dev/tcp/{host}/{port}'"], AsRoot: true),
+                    $"{key}/{Guid.NewGuid():N}", CancellationToken.None)).Unwrap().Exit == 0;
+            var deadline = DateTimeOffset.UtcNow.AddSeconds(60);
+            while (DateTimeOffset.UtcNow < deadline)
+            {
+                if (!await Connects($"store.{KubernetesSandboxContractTests.Namespace}.svc.cluster.local", 5432)
+                    && await Connects($"agent-worker.{KubernetesSandboxContractTests.WorkerNamespace}.svc.cluster.local", 8471))
+                    return;
+                await Task.Delay(1000);
+            }
+
+            throw new InvalidOperationException("the sandbox network policy was not in force within a minute of being applied");
+        }
+        finally
+        {
+            await probe.DisposeAsync(handle, CancellationToken.None);
+        }
     }
 
     /// <summary>A pod listening on a port, with a service of the same name, labelled <paramref name="app"/>.</summary>
