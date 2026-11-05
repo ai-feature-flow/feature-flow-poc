@@ -126,6 +126,32 @@ public sealed class SandboxClientTests : IDisposable
         Assert.Contains("never push", error.ToString());
     }
 
+    /// <summary>Copilot CLI shows the agent only the exit code of a hook that exits 2, so its denial is a JSON decision with the reason (LOG 293).</summary>
+    [Theory]
+    [InlineData("deny", "never push")]
+    [InlineData(null, "unknown or revoked step token")]
+    public async Task For_copilot_the_hook_command_denies_with_a_json_decision_and_its_reason(string? decision, string reason)
+    {
+        var replicas = new Replicas((_, _) => decision is null ? new JsonObject { ["error"] = reason } : new JsonObject { ["decision"] = decision, ["reason"] = reason });
+        var output = new StringWriter();
+        var exit = await HookCommand.RunAsync("pre_tool_use", Client(replicas), new StringReader("""{"tool_name":"Bash"}"""), output, new StringWriter(),
+            new ClientLog(null), Ct, copilot: true);
+        Assert.Equal(0, exit);
+        var answer = JsonNode.Parse(output.ToString())!;
+        Assert.Equal("deny", answer["permissionDecision"]!.ToString());
+        Assert.Contains(reason, answer["permissionDecisionReason"]!.ToString());
+    }
+
+    [Fact]
+    public async Task For_copilot_an_allowed_call_prints_nothing()
+    {
+        var replicas = new Replicas((_, _) => new JsonObject { ["decision"] = "allow" });
+        var output = new StringWriter();
+        Assert.Equal(0, await HookCommand.RunAsync("pre_tool_use", Client(replicas), new StringReader("""{"tool_name":"Read"}"""), output, new StringWriter(),
+            new ClientLog(null), Ct, copilot: true));
+        Assert.Empty(output.ToString());
+    }
+
     /// <summary>Review finding 6: an answer with no decision (an expired or revoked token's 401) blocks the call; it never allows it.</summary>
     [Fact]
     public async Task The_hook_command_fails_closed_on_an_answer_with_no_decision()

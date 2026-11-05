@@ -5,6 +5,7 @@ using FeatureFlow.Cli;
 using FeatureFlow.Hosting;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Providers.ClaudeCode;
+using FeatureFlow.Providers.CopilotCli;
 using FeatureFlow.Providers.Docker;
 using FeatureFlow.Providers.Git;
 using FeatureFlow.Providers.GitHub;
@@ -89,6 +90,9 @@ public sealed record AgentHarnessOptions
     /// </summary>
     public bool Live { get; init; }
 
+    /// <summary>The default agent runtime: <c>claude_code</c>, or <c>copilot_cli</c> (M8).</summary>
+    public string Runtime { get; init; } = "claude_code";
+
     /// <summary>More agent runtime instances, as YAML lines under <c>agent_runtime.instances</c>, each reaching the same proxy.</summary>
     public IReadOnlyList<string> MoreRuntimes { get; init; } = [];
 
@@ -108,6 +112,11 @@ public sealed class AgentHarness : IAsyncDisposable
         .Append(ClaudeCodeProviders.Runtime(o => o with
         {
             MaxRetries = options.Live ? 2 : 0,
+            HookHold = TimeSpan.FromSeconds(options.HookHoldSeconds),
+            ClientRetry = TimeSpan.FromSeconds(options.ClientRetrySeconds),
+        }))
+        .Append(CopilotCliProviders.Runtime(o => o with
+        {
             HookHold = TimeSpan.FromSeconds(options.HookHoldSeconds),
             ClientRetry = TimeSpan.FromSeconds(options.ClientRetrySeconds),
         }))
@@ -193,10 +202,10 @@ public sealed class AgentHarness : IAsyncDisposable
               secrets: { default: file, instances: { file: { path: secrets.json{{secretsFromEnvironment}} } } }
               sandbox: { default: docker, instances: { docker: { image: "{{AgentWorld.Image}}" } } }
               agent_runtime:
-                default: claude_code
+                default: {{options.Runtime}}
                 instances:
-                  claude_code:
-                    model: haiku
+                  {{options.Runtime}}:
+                    model: {{(options.Runtime == "copilot_cli" ? "claude-haiku-4-5" : "haiku")}}
                     engine_tools: {{(options.EngineTools ? "true" : "false")}}
                     model_access: {{modelAccess}}
             {{string.Join("\n", options.MoreRuntimes.Select(r => "      " + r.Replace("{model_access}", modelAccess)))}}
