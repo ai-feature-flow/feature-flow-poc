@@ -6,9 +6,9 @@ namespace FeatureFlow.Replay.Tests;
 
 /// <summary>
 /// Recorded Temporal histories replay against the current workflow code (docs/09 section 4.1). A change to
-/// workflow behaviour that an old history did not take must be wrapped in a patch marker
-/// (<c>Workflow.Patched</c>), or these fail with a nondeterminism error. The histories are the first runs of the
-/// M3 integration tests and of M4's question test (an agent step that asks, a question signal, an answer), recorded with <c>FF_RECORD_HISTORIES</c> and kept in <c>tests/histories/</c>. No
+/// workflow behaviour that a history took fails its replay with a nondeterminism error. There is no backward compatibility
+/// before version 1 (LOG 263): such a change re-records the histories it breaks, never adds a patch marker. The histories
+/// are first runs of integration tests, recorded with <c>FF_RECORD_HISTORIES</c> and kept in <c>tests/histories/</c>. No
 /// Temporal server is needed.
 /// </summary>
 public class ReplayTests
@@ -23,57 +23,41 @@ public class ReplayTests
     public void The_recorded_histories_are_there()
     {
         // Without this, a missing folder would leave the theory with no cases and nothing replayed.
-        Assert.Equal(["agent_question", "budget_middle", "decision_prompt", "delivery_tracked", "epic_delivery", "epic_delivery_child", "family_child", "family_parent", "project_session", "project_session_pre_m7",
+        Assert.Equal(["agent_question", "budget_middle", "decision_prompt", "delivery_tracked", "epic_delivery", "epic_delivery_child", "family_child", "family_parent", "project_session",
                 "silent_parent_resumed", "sp1_parent", "sp1_parent_resumed", "steering_line", "steering_rerun_branch", "ticket_clean_up", "ticket_delivery", "wait_hand_over", "wait_hand_over_resumed", "wake"],
             Names());
     }
 
-    [Fact]
-    public void A_history_holds_each_M5_patch_marker()
+    /// <summary>
+    /// Each history takes the path it was recorded for, so a change to that path fails its replay rather than replaying
+    /// green (review 8). The evidence is an activity, signal or update the path schedules or handles, or text it records.
+    /// </summary>
+    [Theory]
+    [InlineData("ticket_clean_up", "activity CleanUp")]
+    [InlineData("ticket_clean_up", "text \"Declared\"")]
+    [InlineData("family_parent", "activity EnsureWorkBranches")]
+    [InlineData("family_parent", "activity ReadChild")]
+    [InlineData("silent_parent_resumed", "activity WatchChildren")]
+    [InlineData("delivery_tracked", "activity UpdateTracker")]
+    [InlineData("budget_middle", "activity ReserveWorkItems")]
+    [InlineData("decision_prompt", "text Approve to let the run go on")]
+    [InlineData("steering_line", "update override")]
+    [InlineData("steering_rerun_branch", "text \"Kind\":\"reopened\"")]
+    [InlineData("wake", "signal wake")]
+    [InlineData("project_session", "activity OpenSession")]
+    [InlineData("project_session", "update session_check")]
+    [InlineData("agent_question", "signal question_opened")]
+    public void A_history_takes_the_path_it_covers(string name, string evidence)
     {
-        // M5's markers: the clean_up reset and the step start (check 32, an action's scope). Without a history holding
-        // them, a change to either path would replay green (review 8).
-        var patches = Markers("ticket_clean_up");
-
-        Assert.Contains(RunWorkflow.CleanUpPatch, patches);
-        Assert.Contains(RunWorkflow.StepStartPatch, patches);
+        var (kind, value) = (evidence[..evidence.IndexOf(' ')], evidence[(evidence.IndexOf(' ') + 1)..]);
+        Assert.Contains(Evidence(name), e => e.Kind == kind && e.Value.Contains(value, StringComparison.Ordinal));
     }
 
     [Fact]
-    public void A_history_holds_each_M6_shell_patch_marker()
+    public void A_resumed_history_starts_with_an_interrupted_wait_to_resume()
     {
-        // A wait interrupted at a hand-over and resumed in the next run (LOG 139); a child's inputs, its awaited end and the
-        // watch of carried children (M3 follow-ups 2, 3 and 10).
-        Assert.Contains(RunWorkflow.InterruptWaitsPatch, Markers("wait_hand_over"));
+        // A wait interrupted at a hand-over and resumed in the next run (LOG 139).
         Assert.True(StartsResuming("wait_hand_over_resumed"), "wait_hand_over_resumed does not start with an interrupted step to resume");
-        Assert.Contains(RunWorkflow.ChildInputsPatch, Markers("family_parent"));
-        Assert.Contains(RunWorkflow.ChildWatchPatch, Markers("family_parent"));
-        Assert.Contains(RunWorkflow.ChildInputsPatch, Markers("family_child"));
-        Assert.Contains(RunWorkflow.ChildWatchPatch, Markers("silent_parent_resumed"));
-    }
-
-    [Fact]
-    public void A_history_holds_the_M7_decision_prompt_patch_marker()
-    {
-        // A decision's wait recording its rendered prompt (M7 integration): without it, a change to that path would replay green.
-        Assert.Contains(RunWorkflow.DecisionPromptPatch, Markers("decision_prompt"));
-    }
-
-    [Fact]
-    public void A_history_holds_the_M7_steering_patch_marker_and_its_overrides()
-    {
-        // A person's overrides and a breakpoint's answer (steering_line), and a failed branch of a decided join re-run
-        // (steering_rerun_branch): without a history on each path, a change to it would replay green.
-        Assert.Contains(RunWorkflow.SteeringPatch, Markers("steering_line"));
-        Assert.Contains(RunWorkflow.SteeringPatch, Markers("steering_rerun_branch"));
-        Assert.Matches("\"name\":\\s*\"override\"", File.ReadAllText(Path.Combine(HistoryFolder, "steering_line.json")));
-    }
-
-    [Fact]
-    public void A_history_holds_the_wake_patch_marker()
-    {
-        // M7: a wait woken by an inbound webhook, read again, and ended by the event that matched what the read found.
-        Assert.Contains(RunWorkflow.WakePatch, Markers("wake"));
     }
 
     /// <summary>Whether a recorded run started from a hand-over carrying a step to resume (LOG 139).</summary>
@@ -86,43 +70,32 @@ public class ReplayTests
         return start.Carried?.Core.Pending.Any(e => e.Resumes) == true;
     }
 
-    /// <summary>The patch markers a recorded history holds.</summary>
-    static List<string> Markers(string name)
+    /// <summary>
+    /// What a history shows of its path: <c>activity</c>, <c>signal</c> and <c>update</c> names, and <c>text</c> for each
+    /// payload, decoded, that a scheduled activity was given (for example a record of the timeline).
+    /// </summary>
+    static List<(string Kind, string Value)> Evidence(string name)
     {
         using var history = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(HistoryFolder, name + ".json")));
-        return history.RootElement.GetProperty("events").EnumerateArray()
-            .Where(e => e.TryGetProperty("markerRecordedEventAttributes", out _))
-            .SelectMany(e => e.GetProperty("markerRecordedEventAttributes").GetProperty("details").EnumerateObject())
-            .SelectMany(d => d.Value.GetProperty("payloads").EnumerateArray())
-            .Select(p => System.Text.Json.JsonDocument.Parse(Convert.FromBase64String(p.GetProperty("data").GetString()!)).RootElement.GetProperty("id").GetString()!)
-            .ToList();
-    }
+        var found = new List<(string Kind, string Value)>();
+        foreach (var e in history.RootElement.GetProperty("events").EnumerateArray())
+        {
+            if (e.TryGetProperty("activityTaskScheduledEventAttributes", out var activity))
+            {
+                found.Add(("activity", activity.GetProperty("activityType").GetProperty("name").GetString()!));
+                if (activity.TryGetProperty("input", out var input))
+                    foreach (var payload in input.GetProperty("payloads").EnumerateArray())
+                        if (payload.TryGetProperty("data", out var data))
+                            found.Add(("text", System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(data.GetString()!))));
+            }
 
-    [Fact]
-    public void A_history_holds_the_sessions_marker_and_one_from_before_it_answers_a_session_decision()
-    {
-        // Sessions (M7): opening, checks, submissions and the step's digest are behind the marker. The second history, recorded
-        // before sessions, answers project_delivery's session decision with a plain `submitted`, which must still replay.
-        Assert.Contains(RunWorkflow.SessionsPatch, Markers("project_session"));
-        Assert.DoesNotContain(RunWorkflow.SessionsPatch, Markers("project_session_pre_m7"));
-    }
+            if (e.TryGetProperty("workflowExecutionSignaledEventAttributes", out var signal))
+                found.Add(("signal", signal.GetProperty("signalName").GetString()!));
+            if (e.TryGetProperty("workflowExecutionUpdateAcceptedEventAttributes", out var update))
+                found.Add(("update", update.GetProperty("acceptedRequest").GetProperty("input").GetProperty("name").GetString()!));
+        }
 
-    [Theory]
-    [InlineData("delivery_tracked", RunWorkflow.TrackerUpdatesPatch)]
-    [InlineData("budget_middle", RunWorkflow.WorkItemsPatch)]
-    public void A_history_holds_each_M6_delivery_patch_marker(string name, string marker)
-    {
-        // Declarative tracker updates and the work-item budget (M6): without a history holding each marker, a change to
-        // either path would replay green.
-        using var history = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(HistoryFolder, name + ".json")));
-        var patches = history.RootElement.GetProperty("events").EnumerateArray()
-            .Where(e => e.TryGetProperty("markerRecordedEventAttributes", out _))
-            .SelectMany(e => e.GetProperty("markerRecordedEventAttributes").GetProperty("details").EnumerateObject())
-            .SelectMany(d => d.Value.GetProperty("payloads").EnumerateArray())
-            .Select(p => System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(p.GetProperty("data").GetString()!)))
-            .ToList();
-
-        Assert.Contains(patches, p => p.Contains($"\"{marker}\"", StringComparison.Ordinal));
+        return found;
     }
 
     [Theory]

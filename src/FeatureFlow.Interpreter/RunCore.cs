@@ -190,14 +190,11 @@ public sealed partial class RunCore
             return;
         }
 
-        if (Options.Steering)
+        Reopen(step);
+        if (State.Skips.Remove(step.Id, out var skipped))
         {
-            Reopen(step);
-            if (State.Skips.Remove(step.Id, out var skipped))
-            {
-                EndSkipped(step, skipped);
-                return;
-            }
+            EndSkipped(step, skipped);
+            return;
         }
 
         if (step.Container is not null)
@@ -252,8 +249,8 @@ public sealed partial class RunCore
         Trace("started", step.Id, $"execution {record.Executions}");
         if (step.Decision is { Auto: { } auto, Type: { } type } && Options.AutoResolve(type))
         {
-            // The actor of an automatic answer is policy, never a person (docs/04 section 4.2); M7's runs name it.
-            Trace("auto_resolved", step.Id, Options.Steering ? $"{auto} by {PeopleRoles.PolicyActor}" : auto);
+            // The actor of an automatic answer is policy, never a person (docs/04 section 4.2).
+            Trace("auto_resolved", step.Id, $"{auto} by {PeopleRoles.PolicyActor}");
             Finish(step, record, auto);
             return;
         }

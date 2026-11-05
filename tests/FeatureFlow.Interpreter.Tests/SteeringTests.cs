@@ -106,14 +106,6 @@ public class SteeringTests
             """);
         Assert.True(result.Patch!.Status == PatchStatus.Pending, string.Join("; ", result.Patch.Diagnostics));
         Assert.Contains(result.Patch.Diagnostics, d => d.Message.Contains("leaves protected step review unrun", StringComparison.Ordinal));
-
-        // The same patch, older run (no Steering): applied, as before M7.
-        var old = Lib.Start("planned", new RunOptions { Steering = false });
-        old.Advance();
-        Assert.Equal(PatchStatus.Applied, PlannerPatch(old, """
-            { op: set, target: build, field: routes.passed, value: ship }
-            { op: set, target: build, field: routes.failed, value: review }
-            """).Patch!.Status);
     }
 
     /// <summary>R1 F1: four ways round a protected step that a check on direct routes missed; each leaves review unrun.</summary>
@@ -160,14 +152,6 @@ public class SteeringTests
         Assert.Contains("leave protected step review unrun", core.Check(past));
         Ok(core.Apply(new StepSkipped("review", "accepted", "root", "reviewed by hand", MayTouchProtected: true)));
         Assert.Null(core.Check(past));
-    }
-
-    [Fact]
-    public void A_skip_is_refused_on_a_run_started_before_m7()
-    {
-        // R1 F8: such a run would accept the skip, then run the step anyway.
-        var (core, _) = Line_core(new RunOptions { Steering = false });
-        Assert.Contains("started before skips existed", core.Check(new StepSkipped("ship", "sent", "ann", "r", true)));
     }
 
     [Fact]
@@ -486,17 +470,6 @@ public class SteeringTests
         Assert.Equal(2, core.State.Steps["b"].Executions);
         Assert.Contains(core.State.Trace, t => t is { Kind: "reopened", StepId: "fan" });
         Assert.Equal(1, core.State.Steps["fan"].Executions);
-    }
-
-    [Fact]
-    public void Without_steering_the_old_behaviour_ends_incomplete()
-    {
-        var core = Lib.Start("fan", new RunOptions { Steering = false });
-        var driver = new Driver(core) { Respond = (id, e) => id == "b" && e == 1 ? new StepCompleted(id, "failed") : Succeed(id) };
-        driver.Run();
-        Ok(core.Apply(new InterventionAnswered(core.State.Waits[0].Id, new Recovery(RecoveryKind.GoTo, "b"))));
-        driver.Run();
-        Assert.Equal(RunStatus.Incomplete, core.State.Status);
     }
 
     [Fact]
