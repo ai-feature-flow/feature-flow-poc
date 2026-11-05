@@ -112,7 +112,7 @@ public abstract class SandboxContract : ContractBase, IAsyncLifetime
     }
 
     [Fact]
-    public async Task A_command_that_ends_reads_as_ended_and_one_killed_with_its_sandboxs_processes_as_lost()
+    public async Task A_command_killed_with_the_process_waiting_on_it_reads_as_lost()
     {
         var marker = "lost-" + Guid.NewGuid().ToString("N");
         var handle = Ok(await Sandboxes.StartCommandAsync(Sandbox, new SandboxCommand(["sh", "-c", $"echo {marker}; sleep 117"]), $"{Key}/lost", Ct));
@@ -130,10 +130,29 @@ public abstract class SandboxContract : ContractBase, IAsyncLifetime
         while (status.Running && DateTimeOffset.UtcNow < deadline);
 
         Assert.Equal((false, true, null), (status.Running, status.Lost, status.ExitCode));
-        // Many short commands in a row each read as ended with their own code, never as lost (an ended command's code is
-        // written a moment after it ends).
-        for (var i = 0; i < 20; i++)
-            Assert.Equal(i % 3, (await RunAsync($"exit {i % 3}")).Exit);
+    }
+
+    [Fact]
+    public async Task A_command_whose_process_has_gone_reads_as_running_until_its_code_is_written()
+    {
+        // The moment between a command's process ending and its exit code being written, held open by hand: the recorded
+        // process id now names no process, while the process waiting on the command lives (review R5's race guard).
+        var marker = "late-" + Guid.NewGuid().ToString("N");
+        var handle = Ok(await Sandboxes.StartCommandAsync(Sandbox, new SandboxCommand(["sh", "-c", $"echo {marker}; sleep 3"]), $"{Key}/late", Ct));
+        await RunAsync($"e=echo; d=$(dirname \"$(grep -l \"$e {marker}\" /ff/cmd/*/run.sh)\"); echo 4194300 > \"$d/pid\"", root: true);
+
+        var first = Ok(await Sandboxes.GetCommandStatusAsync(handle, 0, Ct));
+        Assert.Equal((true, false), (first.Running, first.Lost));
+        CommandStatus status;
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+        do
+        {
+            await Task.Delay(200, Ct);
+            status = Ok(await Sandboxes.GetCommandStatusAsync(handle, 0, Ct));
+        }
+        while (status.Running && DateTimeOffset.UtcNow < deadline);
+
+        Assert.Equal((false, false, 0), (status.Running, status.Lost, status.ExitCode));
     }
 
     [Fact]

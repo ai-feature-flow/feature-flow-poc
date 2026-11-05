@@ -255,13 +255,14 @@ public sealed class ApiTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task A_viewer_reads_the_artifacts_its_run_and_children_recorded_and_nothing_else()
+    public async Task A_viewer_reads_the_artifacts_its_run_recorded_and_nothing_else()
     {
         var ct = TestContext.Current.CancellationToken;
         var store = new FileSystemArtifactStore(Path.Combine(folder, "artifacts"));
         var plan = (await store.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes("items:\n  - name: one\n")), ct)).Unwrap().Id;
         var childs = (await store.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes("# the child's design\n")), ct)).Unwrap().Id;
         var elsewhere = (await store.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes("another run's\n")), ct)).Unwrap().Id;
+        const string gone = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
         var now = DateTimeOffset.UtcNow;
         await records.AppendAsync(new RecordBatch(
             [
@@ -274,6 +275,7 @@ public sealed class ApiTests : IAsyncDisposable
                 new ArtifactRecord("r1", "tickets.plan", 1, "work_list", null, plan, null, false, now),
                 new ArtifactRecord("r1.c", "plan", 1, "requirements", null, childs, null, false, now),
                 new ArtifactRecord("r2", "plan", 1, "requirements", null, elsewhere, null, false, now),
+                new ArtifactRecord("r1", "design", 1, "contract", null, gone, null, false, now),
             ]), ct);
         var viewer = Start("viewer");
 
@@ -284,8 +286,12 @@ public sealed class ApiTests : IAsyncDisposable
         }
 
         Assert.Equal((HttpStatusCode.OK, "items:\n  - name: one\n"), await ReadAsync(viewer, "r1", plan));
-        Assert.Equal((HttpStatusCode.OK, "# the child's design\n"), await ReadAsync(viewer, "r1", childs));
+        Assert.Equal((HttpStatusCode.OK, "# the child's design\n"), await ReadAsync(viewer, "r1.c", childs));
+        // A child's artifact is read through the child, whose scope may differ from its parent's (review R5, F1).
+        Assert.Equal(HttpStatusCode.NotFound, (await ReadAsync(viewer, "r1", childs)).Item1);
         Assert.Equal(HttpStatusCode.NotFound, (await ReadAsync(viewer, "r1", elsewhere)).Item1);
+        // Indexed, but no longer in the store (removed by hand or by a lifecycle rule): 404, not a server error (R5, F2).
+        Assert.Equal(HttpStatusCode.NotFound, (await ReadAsync(viewer, "r1", gone)).Item1);
         Assert.Equal(HttpStatusCode.NotFound, (await ReadAsync(viewer, "r1.c", plan)).Item1);
         // The person who ratifies the plan reads it; a caller who may not see the run does not.
         Assert.Equal(HttpStatusCode.OK, (await ReadAsync(Start("approver"), "r1", plan)).Item1);
