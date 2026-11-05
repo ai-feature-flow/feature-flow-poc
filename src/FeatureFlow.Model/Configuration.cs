@@ -67,8 +67,11 @@ public sealed record InstallationConfig(
 /// <summary>A payload codec: its name (<c>aes_gcm</c>, the only one in version 1) and the secret holding its key.</summary>
 public sealed record PayloadCodecConfig(string Name, string KeyRef);
 
-/// <summary>A library source of the organisation layer (docs/08 section 3). M3 reads the <c>directory</c> source.</summary>
-public sealed record LibrarySourceConfig(string Name, string Source, string Path);
+/// <summary>
+/// A library source of the organisation layer (docs/08 section 3): a <c>directory</c> at <see cref="Path"/>, relative to the
+/// organisation file, or a <c>git</c> <see cref="Repository"/> at <see cref="Ref"/>, a branch or tag (its default branch when null).
+/// </summary>
+public sealed record LibrarySourceConfig(string Name, string Source, string Path, string? Repository = null, string? Ref = null);
 
 /// <summary>A cap: a value, and whether a request may exceed it (docs/05 section 3.1).</summary>
 public sealed record Cap<T>(T Value, bool Locked);
@@ -338,9 +341,22 @@ public static class ConfigurationReader
             if (MapReader.Of(item, d, "a library source") is { } l)
             {
                 var source = l.Enum("source", ["directory", "git", "package"], required: true);
-                if (source is "git" or "package")
-                    l.Error($"the {source} library source arrives in M8; M3 reads directory", l.Map.Location);
-                var lib = new LibrarySourceConfig(l.String("name", required: true) ?? "", source ?? "directory", l.String("path", required: true) ?? "");
+                var libName = l.String("name", required: true) ?? "";
+                if (source == "package")
+                    l.Error("the package library source is not supported in version 1; use directory or git", l.Map.Location);
+                LibrarySourceConfig lib;
+                if (source == "git")
+                {
+                    var reference = l.String("ref");
+                    if (reference is not null && (reference.Length == 0 || reference.StartsWith('-')))
+                        l.Error($"libraries.{libName}.ref must be a branch or tag name, not '{reference}'", l.Map.Location);
+                    lib = new LibrarySourceConfig(libName, "git", "", l.String("repository", required: true) ?? "", reference);
+                }
+                else
+                {
+                    lib = new LibrarySourceConfig(libName, source ?? "directory", l.String("path", required: true) ?? "");
+                }
+
                 l.Finish();
                 libraries.Add(lib);
             }

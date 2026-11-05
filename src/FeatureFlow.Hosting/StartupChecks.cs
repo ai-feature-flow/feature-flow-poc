@@ -1,3 +1,4 @@
+using FeatureFlow.Api;
 using FeatureFlow.Model;
 using FeatureFlow.Providers.Abstractions;
 
@@ -23,16 +24,10 @@ public static class StartupChecks
         if (installation.ApiAuth.Mode == "oidc" && organisation.Roles.Count == 0)
             Fail(d, "organisation: roles: api.auth.mode is oidc in the installation, so people roles come from identity-provider groups, and the organisation maps none");
 
-        var root = Path.GetDirectoryName(Path.GetFullPath(organisation.Location))!;
+        // docs/07 section 7: library sources are reachable. Startup is synchronous; a git source is fetched here once.
         foreach (var source in organisation.Libraries)
-        {
-            var path = Path.GetFullPath(Path.Combine(root, source.Path));
-            var opened = new DiagnosticBag();
-            if (!Directory.Exists(path))
-                Fail(d, $"organisation: libraries.{source.Name}: the directory {path} does not exist");
-            else if (Library.Library.Open(path, opened) is null || opened.HasErrors)
-                Fail(d, $"organisation: libraries.{source.Name}: the library at {path} does not open: {string.Join("; ", opened.Where(x => x.Blocks).Take(3).Select(x => x.Message))}");
-        }
+            if (LibrarySources.OpenAsync(source, organisation.Location, CancellationToken.None).GetAwaiter().GetResult() is { Library: null, Problem: { } problem })
+                Fail(d, $"organisation: libraries.{source.Name}: {problem}");
     }
 
     static void Fail(DiagnosticBag d, string message) => d.Add(Checks.Schema, message);

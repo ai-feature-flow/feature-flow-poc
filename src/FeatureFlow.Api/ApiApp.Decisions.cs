@@ -68,11 +68,12 @@ public static partial class ApiApp
         {
             var ct = context.RequestAborted;
             var scope = ScopeOf(run.Repositories);
-            var rule = Approval.For(wait.DecisionType, services.Organisation.Policy, TeamOf(scope), DecisionTypes(), wait.Kind);
+            var types = await DecisionTypesAsync(ct);
+            var rule = Approval.For(wait.DecisionType, services.Organisation.Policy, TeamOf(scope), types, wait.Kind);
             var intervention = wait.Kind == "intervention";
             var grant = intervention && args.Action == "grant_attempts";
             // A recovery needs recover, and a grant grant_attempts as well (coordinator decision C7).
-            var needed = intervention ? RolesForKey(Overrides.Recover) : RolesToAnswer(services.Organisation.Policy, DecisionTypes(), wait, TeamOf(scope));
+            var needed = intervention ? RolesForKey(Overrides.Recover) : RolesToAnswer(services.Organisation.Policy, types, wait, TeamOf(scope));
             if (Refuse(caller, scope, needed, intervention ? $"recover at {wait.DecisionType} (recover)" : $"answer {wait.DecisionType} (approval: {rule.Source})") is { } refused)
                 return refused;
             if (grant && Refuse(caller, scope, RolesForKey(Overrides.GrantAttempts), $"grant attempts at {wait.DecisionType} (grant_attempts)") is { } refusedGrant)
@@ -183,16 +184,12 @@ public static partial class ApiApp
         }
 
         /// <summary>The organisation's libraries' decision types, read now: approval is checked at the moment of use (docs/05 section 8).</summary>
-        List<DecisionTypeItem> DecisionTypes()
+        async Task<List<DecisionTypeItem>> DecisionTypesAsync(CancellationToken ct)
         {
             var types = new List<DecisionTypeItem>();
             foreach (var source in services.Organisation.Libraries)
-            {
-                var path = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(services.Organisation.Location))!, source.Path));
-                if (Library.Library.Open(path, new DiagnosticBag()) is { } library)
+                if ((await LibrarySources.OpenAsync(source, services.Organisation.Location, ct)).Library is { } library)
                     types.AddRange(library.DecisionTypes);
-            }
-
             return types;
         }
 

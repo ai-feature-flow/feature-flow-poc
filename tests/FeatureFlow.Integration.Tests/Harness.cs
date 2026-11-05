@@ -50,12 +50,13 @@ public sealed class Harness : IAsyncDisposable
     /// organisation's <c>policy</c>; <paramref name="installation"/> further top-level installation lines; and
     /// <paramref name="factories"/> provider factories beside the local ones; <paramref name="organisation"/> further top-level organisation
     /// lines; <paramref name="fromChat"/> the approval rule's <c>from_chat</c>; <paramref name="temporal"/> further keys of the
-    /// installation's <c>temporal</c> map, after a comma; <paramref name="secrets"/> further secrets beside the API token.
+    /// installation's <c>temporal</c> map, after a comma; <paramref name="secrets"/> further secrets beside the API token;
+    /// <paramref name="librarySources"/> further entries of the organisation's <c>libraries</c>, as YAML maps.
     /// </para>
     public static async Task<Harness> StartAsync(string name, string script = "{}", bool autoApprove = false, string[]? omitTypes = null,
         string[]? libraries = null, string providers = "", string policy = "", string installation = "", IEnumerable<FeatureFlow.Providers.Abstractions.ProviderFactory>? factories = null,
         string agentRuntime = "{ default: scripted, dry_run: recording, instances: { scripted: { script: script.yaml }, recording: { folder: recorded } } }",
-        string organisation = "", bool fromChat = false, string temporal = "", IReadOnlyDictionary<string, string>? secrets = null)
+        string organisation = "", bool fromChat = false, string temporal = "", IReadOnlyDictionary<string, string>? secrets = null, string[]? librarySources = null)
     {
         var folder = IOPath.Combine(IOPath.GetTempPath(), $"ff-it-{name}-{Guid.NewGuid():N}"[..40]);
         Directory.CreateDirectory(folder);
@@ -85,7 +86,7 @@ public sealed class Harness : IAsyncDisposable
               auth: { mode: local_token, token_ref: secrets/api_token, actor: tester, roles: [viewer, approver, steerer, admin] }
             """);
         var sources = string.Join("\n", (libraries ?? []).Prepend(IOPath.Combine(RepositoryRoot, "library", "std"))
-            .Select(p => $"  - {{ name: {IOPath.GetFileName(p)}, source: directory, path: \"{p}\" }}"));
+            .Select(p => $"  - {{ name: {IOPath.GetFileName(p)}, source: directory, path: \"{p}\" }}").Concat((librarySources ?? []).Select(l => "  - " + l)));
         await File.WriteAllTextAsync(IOPath.Combine(folder, "organisation.yaml"), $$"""
             api_version: feature-flow/v1
             kind: organisation
