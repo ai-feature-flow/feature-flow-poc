@@ -16,18 +16,13 @@ kind: Namespace
 metadata:
   name: feature-flow-sandboxes
 ---
+# The hosts' account. The agent worker creates, runs commands in and removes sandbox pods (the Kubernetes sandbox,
+# docs/06 section 3.1), and every host checks the sandbox provider at startup, so all three share it; its rights are
+# only in the sandboxes' namespace.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: feature-flow-host
-  namespace: feature-flow
-automountServiceAccountToken: false
----
-# The agent worker creates, runs commands in and removes sandbox pods (the kubernetes_pod sandbox, docs/06 section 3.1).
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: feature-flow-agent-worker
+  name: feature-flow
   namespace: feature-flow
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -42,15 +37,18 @@ rules:
   - apiGroups: [""]
     resources: [pods/exec, pods/log]
     verbs: [create, get]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [get]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: feature-flow-agent-worker
+  name: feature-flow
   namespace: feature-flow-sandboxes
 subjects:
   - kind: ServiceAccount
-    name: feature-flow-agent-worker
+    name: feature-flow
     namespace: feature-flow
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -62,16 +60,16 @@ kind: Deployment
 metadata:
   name: api
   namespace: feature-flow
-  labels: { app.kubernetes.io/name: api, app.kubernetes.io/part-of: feature-flow }
+  labels: { app.kubernetes.io/name: feature-flow-api, app.kubernetes.io/part-of: feature-flow }
 spec:
   replicas: 1
   selector:
-    matchLabels: { app.kubernetes.io/name: api }
+    matchLabels: { app.kubernetes.io/name: feature-flow-api }
   template:
     metadata:
-      labels: { app.kubernetes.io/name: api, app.kubernetes.io/part-of: feature-flow, feature-flow/host: "true" }
+      labels: { app.kubernetes.io/name: feature-flow-api, app.kubernetes.io/part-of: feature-flow, feature-flow/host: "true" }
     spec:
-      serviceAccountName: feature-flow-host
+      serviceAccountName: feature-flow
       securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
       containers:
         - name: api
@@ -99,7 +97,7 @@ metadata:
   name: api
   namespace: feature-flow
 spec:
-  selector: { app.kubernetes.io/name: api }
+  selector: { app.kubernetes.io/name: feature-flow-api }
   ports: [{ name: http, port: 8480, targetPort: http }]
 ---
 # The engine's clone cache (docs/02 section 6) is under /tmp, rebuilt from the remote after a restart.
@@ -108,16 +106,16 @@ kind: Deployment
 metadata:
   name: orchestration-worker
   namespace: feature-flow
-  labels: { app.kubernetes.io/name: orchestration-worker, app.kubernetes.io/part-of: feature-flow }
+  labels: { app.kubernetes.io/name: feature-flow-orchestration-worker, app.kubernetes.io/part-of: feature-flow }
 spec:
   replicas: 1
   selector:
-    matchLabels: { app.kubernetes.io/name: orchestration-worker }
+    matchLabels: { app.kubernetes.io/name: feature-flow-orchestration-worker }
   template:
     metadata:
-      labels: { app.kubernetes.io/name: orchestration-worker, app.kubernetes.io/part-of: feature-flow, feature-flow/host: "true" }
+      labels: { app.kubernetes.io/name: feature-flow-orchestration-worker, app.kubernetes.io/part-of: feature-flow, feature-flow/host: "true" }
     spec:
-      serviceAccountName: feature-flow-host
+      serviceAccountName: feature-flow
       securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
       containers:
         - name: orchestration-worker
@@ -142,16 +140,16 @@ kind: Deployment
 metadata:
   name: agent-worker
   namespace: feature-flow
-  labels: { app.kubernetes.io/name: agent-worker, app.kubernetes.io/part-of: feature-flow }
+  labels: { app.kubernetes.io/name: feature-flow-agent-worker, app.kubernetes.io/part-of: feature-flow }
 spec:
   replicas: 1
   selector:
-    matchLabels: { app.kubernetes.io/name: agent-worker }
+    matchLabels: { app.kubernetes.io/name: feature-flow-agent-worker }
   template:
     metadata:
-      labels: { app.kubernetes.io/name: agent-worker, app.kubernetes.io/part-of: feature-flow, feature-flow/host: "true" }
+      labels: { app.kubernetes.io/name: feature-flow-agent-worker, app.kubernetes.io/part-of: feature-flow, feature-flow/host: "true" }
     spec:
-      serviceAccountName: feature-flow-agent-worker
+      serviceAccountName: feature-flow
       securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
       containers:
         - name: agent-worker
@@ -180,5 +178,5 @@ metadata:
   name: agent-worker
   namespace: feature-flow
 spec:
-  selector: { app.kubernetes.io/name: agent-worker }
+  selector: { app.kubernetes.io/name: feature-flow-agent-worker }
   ports: [{ name: endpoint, port: 8481, targetPort: endpoint }]

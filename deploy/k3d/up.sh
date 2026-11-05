@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Brings up Feature Flow in a local k3d cluster (the k3d profile, deploy/README.md): Temporal, Postgres and MinIO in the
-# cluster, the three hosts from images built here, and the configuration in a folder you give:
+# cluster, the three hosts and the sandbox from images built here, and the configuration in a folder you give:
 #
 #   deploy/k3d/up.sh <config folder>
 #
@@ -43,15 +43,18 @@ mkdir -p "$(dirname "$KUBECONFIG")"
 "$k3d" kubeconfig get "$cluster" > "$KUBECONFIG"
 chmod 600 "$KUBECONFIG"
 
-images=(api:Api orchestration-worker:OrchestrationWorker agent-worker:AgentWorker)
-for image in "${images[@]}"; do
-  name=feature-flow-${image%%:*}:dev
-  if [ "${FF_SKIP_BUILD:-}" != 1 ]; then
-    echo "Building $name"
-    docker build -q -f "$root/deploy/images/host.Dockerfile" --build-arg "HOST=${image#*:}" -t "$name" "$root" >/dev/null
-  fi
-  "$k3d" image import -c "$cluster" "$name" >/dev/null
-done
+# The three hosts' images and the sandbox image (src/Providers/FeatureFlow.Providers.Docker/sandbox.Dockerfile), tagged dev.
+sandbox=$root/src/Providers/FeatureFlow.Providers.Docker
+if [ "${FF_SKIP_BUILD:-}" != 1 ]; then
+  for image in api:Api orchestration-worker:OrchestrationWorker agent-worker:AgentWorker; do
+    echo "Building feature-flow-${image%%:*}:dev"
+    docker build -q -f "$root/deploy/images/host.Dockerfile" --build-arg "HOST=${image#*:}" -t "feature-flow-${image%%:*}:dev" "$root" >/dev/null
+  done
+  echo "Building feature-flow-sandbox:dev"
+  docker build -q -f "$sandbox/sandbox.Dockerfile" -t feature-flow-sandbox:dev "$sandbox" >/dev/null
+fi
+"$k3d" image import -c "$cluster" feature-flow-api:dev feature-flow-orchestration-worker:dev feature-flow-agent-worker:dev \
+  feature-flow-sandbox:dev >/dev/null
 
 rerun=$(kubectl -n feature-flow get deployment/api -o name 2>/dev/null || true)
 kubectl apply -k "$root/deploy/k3d" >/dev/null

@@ -4,9 +4,11 @@ namespace FeatureFlow.Integration.Tests.Cluster;
 
 /// <summary>
 /// The k3d deployment (deploy/k3d), brought up by <c>deploy/k3d/up.sh deploy/k3d/smoke</c> before these run: its
-/// network policies (M4 follow-up 12) and the hosts' clean stop when Kubernetes stops a pod.
+/// network policies (M4 follow-up 12) and the hosts' clean stop when Kubernetes stops a pod. One collection with the
+/// cluster's other tests, which a stopped pod would disturb.
 /// </summary>
 [Trait("Category", "Cluster")]
+[Collection("Cluster")]
 public class DeploymentTests
 {
     const string Engine = "feature-flow", Sandboxes = "feature-flow-sandboxes";
@@ -25,7 +27,7 @@ public class DeploymentTests
     public async Task A_sandbox_reaches_only_the_agent_worker_and_the_internet()
     {
         string[] open = ["agent-worker", "internet"];
-        Assert.Equal(open, await ProbeAsync(Sandboxes, null, open));
+        Assert.Equal(open, await ProbeAsync(Sandboxes, "app.kubernetes.io/name=feature-flow-sandbox", open));
     }
 
     [Fact]
@@ -45,7 +47,7 @@ public class DeploymentTests
     public async Task A_host_pod_stops_cleanly_when_Kubernetes_stops_it(string host)
     {
         await Kubectl.OkAsync("-n", Engine, "rollout", "status", $"deployment/{host}", "--timeout=180s");
-        var pod = (await Kubectl.OkAsync("-n", Engine, "get", "pod", "-l", $"app.kubernetes.io/name={host}", "--field-selector=status.phase=Running",
+        var pod = (await Kubectl.OkAsync("-n", Engine, "get", "pod", "-l", $"app.kubernetes.io/name=feature-flow-{host}", "--field-selector=status.phase=Running",
             "-o", "jsonpath={.items[0].metadata.name}")).Trim();
         var (logs, output) = Kubectl.Start("-n", Engine, "logs", "-f", pod);
         try
