@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using FeatureFlow.Api;
 using FeatureFlow.Engine;
@@ -220,7 +221,11 @@ public static class HostArguments
             organisation ?? throw new ArgumentException("--organisation <file> or FF_ORGANISATION is required"));
     }
 
-    /// <summary>Runs a host until Ctrl+C, or with the first argument <c>reconcile</c>, rebuilds the run index once and exits (<see cref="RunIndex"/>).</summary>
+    /// <summary>
+    /// Runs a host until SIGTERM or Ctrl+C, then stops its workers and endpoints and exits 0. Without its own handler a
+    /// host with a web endpoint never exited on SIGTERM: ASP.NET's handler took the signal and stopped only the endpoint.
+    /// With the first argument <c>reconcile</c>, rebuilds the run index once and exits (<see cref="RunIndex"/>).
+    /// </summary>
     public static async Task<int> RunAsync(string[] args, IEnumerable<ProviderFactory> factories, bool orchestration, bool agent, bool apiHost)
     {
         var (installation, organisation) = Files(args);
@@ -228,16 +233,26 @@ public static class HostArguments
         if (args.FirstOrDefault() == "reconcile")
             return await ReconcileAsync(configuration, factories, Console.Out);
         using var cancel = new CancellationTokenSource();
-        Console.CancelKeyPress += (_, e) =>
+        void Stop(PosixSignalContext context)
         {
-            e.Cancel = true;
+            context.Cancel = true;
             cancel.Cancel();
-        };
+        }
+
+        using var terminate = PosixSignalRegistration.Create(PosixSignal.SIGTERM, Stop);
+        using var interrupt = PosixSignalRegistration.Create(PosixSignal.SIGINT, Stop);
         var url = Environment.GetEnvironmentVariable("FF_API_LISTEN") ?? "http://127.0.0.1:8480";
-        await using var host = await FeatureFlowHost.StartAsync(configuration, factories, orchestration, agent, apiHost ? url : null);
-        if (host.ApiAddress is { } address)
-            Console.WriteLine($"API listening on {address}");
-        await host.WaitAsync(cancel.Token);
+        await using (var host = await FeatureFlowHost.StartAsync(configuration, factories, orchestration, agent, apiHost ? url : null))
+        {
+            if (host.ApiAddress is { } address)
+                Console.WriteLine($"API listening on {address}");
+            if (host.AgentEndpointAddress is { } endpoint)
+                Console.WriteLine($"Agent endpoint listening on {endpoint}");
+            Console.WriteLine("Started");
+            await host.WaitAsync(cancel.Token);
+        }
+
+        Console.WriteLine("Stopped");
         return 0;
     }
 

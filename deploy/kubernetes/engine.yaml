@@ -1,0 +1,186 @@
+# The engine on Kubernetes (docs/02 section 1): the API and the two workers, each its own image and deployment. Every
+# cluster uses these as they are; a cluster's own services (Temporal, the database, the object store) and its
+# configuration come from an overlay (deploy/k3d, or a team's copy of deploy/distribution-template).
+#
+# Configuration: the ConfigMap feature-flow-config holds installation.yaml, organisation.yaml and any file they name;
+# the Secret feature-flow-secrets holds secrets.json, which the installation's `file` secrets provider reads. The
+# overlay creates both.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: feature-flow
+---
+# Sandboxes run here, apart from the engine, behind their own network policy (network-policies.yaml). Pod Security's
+# baseline level refuses host networking, privileged containers and host paths, which would put a pod outside the
+# policy or on the node, whatever account creates it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: feature-flow-sandboxes
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+---
+# The hosts' account. The agent worker creates, runs commands in and removes sandbox pods (the Kubernetes sandbox,
+# docs/06 section 3.1), and every host checks the sandbox provider at startup, so all three share it; its rights are
+# only in the sandboxes' namespace.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: feature-flow
+  namespace: feature-flow
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: feature-flow-sandboxes
+  namespace: feature-flow-sandboxes
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [create, get, list, watch, delete]
+  - apiGroups: [""]
+    resources: [pods/exec, pods/log]
+    verbs: [create, get]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: feature-flow
+  namespace: feature-flow-sandboxes
+subjects:
+  - kind: ServiceAccount
+    name: feature-flow
+    namespace: feature-flow
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: feature-flow-sandboxes
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: feature-flow
+  labels: { app.kubernetes.io/name: feature-flow-api, app.kubernetes.io/part-of: feature-flow }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: feature-flow-api }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: feature-flow-api, app.kubernetes.io/part-of: feature-flow, feature-flow/host: "true" }
+    spec:
+      serviceAccountName: feature-flow
+      securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: api
+          image: feature-flow-api
+          ports: [{ name: http, containerPort: 8480 }]
+          readinessProbe: { tcpSocket: { port: http }, periodSeconds: 5 }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          env:
+            - { name: HOME, value: /tmp }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 1Gi }
+          volumeMounts:
+            - { name: config, mountPath: /etc/feature-flow, readOnly: true }
+            - { name: secrets, mountPath: /var/run/secrets/feature-flow, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: config, configMap: { name: feature-flow-config } }
+        - { name: secrets, secret: { secretName: feature-flow-secrets } }
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: feature-flow
+spec:
+  selector: { app.kubernetes.io/name: feature-flow-api }
+  ports: [{ name: http, port: 8480, targetPort: http }]
+---
+# The engine's clone cache (docs/02 section 6) is under /tmp, rebuilt from the remote after a restart.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestration-worker
+  namespace: feature-flow
+  labels: { app.kubernetes.io/name: feature-flow-orchestration-worker, app.kubernetes.io/part-of: feature-flow }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: feature-flow-orchestration-worker }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: feature-flow-orchestration-worker, app.kubernetes.io/part-of: feature-flow, feature-flow/host: "true" }
+    spec:
+      serviceAccountName: feature-flow
+      securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: orchestration-worker
+          image: feature-flow-orchestration-worker
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          env:
+            - { name: HOME, value: /tmp }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 1Gi }
+          volumeMounts:
+            - { name: config, mountPath: /etc/feature-flow, readOnly: true }
+            - { name: secrets, mountPath: /var/run/secrets/feature-flow, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: config, configMap: { name: feature-flow-config } }
+        - { name: secrets, secret: { secretName: feature-flow-secrets } }
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-worker
+  namespace: feature-flow
+  labels: { app.kubernetes.io/name: feature-flow-agent-worker, app.kubernetes.io/part-of: feature-flow }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: feature-flow-agent-worker }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: feature-flow-agent-worker, app.kubernetes.io/part-of: feature-flow, feature-flow/host: "true" }
+    spec:
+      serviceAccountName: feature-flow
+      securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: agent-worker
+          image: feature-flow-agent-worker
+          ports: [{ name: endpoint, containerPort: 8481 }]
+          readinessProbe: { tcpSocket: { port: endpoint }, periodSeconds: 5 }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          env:
+            - { name: HOME, value: /tmp }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 1Gi }
+          volumeMounts:
+            - { name: config, mountPath: /etc/feature-flow, readOnly: true }
+            - { name: secrets, mountPath: /var/run/secrets/feature-flow, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: config, configMap: { name: feature-flow-config } }
+        - { name: secrets, secret: { secretName: feature-flow-secrets } }
+        - { name: tmp, emptyDir: {} }
+---
+# Sandboxes call the agent worker's endpoint here: hooks, engine tools and the model proxy (docs/02 section 4.2).
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-worker
+  namespace: feature-flow
+spec:
+  selector: { app.kubernetes.io/name: feature-flow-agent-worker }
+  ports: [{ name: endpoint, port: 8481, targetPort: endpoint }]

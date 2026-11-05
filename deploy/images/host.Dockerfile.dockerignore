@@ -1,0 +1,9 @@
+**
+!global.json
+!Directory.Build.props
+!Directory.Packages.props
+!src/
+!hosts/
+!library/std/
+**/bin/
+**/obj/

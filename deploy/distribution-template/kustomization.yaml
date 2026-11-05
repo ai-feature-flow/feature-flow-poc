@@ -1,0 +1,16 @@
+# Deploys Feature Flow to your own cluster with your configuration: kubectl apply -k .
+# Temporal, the database and the object store are yours (README.md). Create the Secret feature-flow-secrets, holding
+# secrets.json, from your secret manager before the hosts start.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  # The engine's manifests at the Feature Flow release you run.
+  - https://github.com/ai-feature-flow/feature-flow-poc//deploy/kubernetes?ref=main
+configMapGenerator:
+  - name: feature-flow-config
+    namespace: feature-flow
+    files: [config/installation.yaml, config/organisation.yaml]
+images:                                          # yours: where you pushed the images
+  - { name: feature-flow-api, newName: registry.example.com/feature-flow-api, newTag: "0.1.0" }
+  - { name: feature-flow-orchestration-worker, newName: registry.example.com/feature-flow-orchestration-worker, newTag: "0.1.0" }
+  - { name: feature-flow-agent-worker, newName: registry.example.com/feature-flow-agent-worker, newTag: "0.1.0" }

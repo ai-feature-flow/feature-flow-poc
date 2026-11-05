@@ -1,0 +1,11 @@
+# The k3d profile (deploy/README.md): the engine, with Temporal, Postgres and MinIO in the cluster. up.sh applies it
+# and creates the configuration and secrets from a configuration folder.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../kubernetes
+  - services.yaml
+images:
+  - { name: feature-flow-api, newTag: dev }
+  - { name: feature-flow-orchestration-worker, newTag: dev }
+  - { name: feature-flow-agent-worker, newTag: dev }
