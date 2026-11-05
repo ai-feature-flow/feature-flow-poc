@@ -179,8 +179,9 @@ teams:
 | `roles`, `teams` | People roles to groups. A run is in the scope of the team whose `repositories` match its repositories; a run spanning two teams is refused. In its scope a team's groups add holders to a role, and its approval rules may only raise `min_count` (LOG 204, 217) |
 | `role_mapping.default` | The runtime and model for a role with no entry |
 
-`library_overrides`, `library_inputs`, `policy.toolsets.allowed` and `timeouts` are not in version 1 and are refused at
-startup (LOG 268 to 270). `role_mapping` is enforced from M8 (LOG 267).
+`library_overrides`, `library_inputs`, `policy.toolsets` (whose only key was `allowed`) and `timeouts` are not in
+version 1 and are refused at startup, whatever they hold (LOG 268 to 270, 273). `role_mapping` is enforced from M8
+(LOG 267).
 
 ---
 
