@@ -79,7 +79,7 @@ every secret reference (M7 follow-up 4), built on `m8-operations` (W3).
 
 | Check | Mutation |
 |---|---|
-| Jira retried create | Written before the fix (the first Live run made a duplicate, FWFEED-83 and 84): it failed; passes with the gap read |
+| Jira retried create | Written before the fix (the first Live run made a duplicate issue): it failed; passes with the gap read |
 | Jira lagging index | Forward reading off (`MaxMisses = 0`): two contract tests fail |
 | Decorator | Not applied in composition; no OTLP exporter; caller's span not restored; no `WaitAsync` (the timeout test hangs); exceptions not caught: each fails its test |
 | One trace per run | Without the explicit propagator: one run spread over 39 traces |
