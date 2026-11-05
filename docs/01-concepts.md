@@ -61,7 +61,7 @@ a position is a set of entries, one per active step or wait.
 | `awaiting_decision` | A decision is open (section 7), with its kind |
 | `awaiting_child` | A child run is in progress |
 | `awaiting_condition` | A wait for an external state (a pull request merged, a tracker status) |
-| `stalled` | A provider has been unreachable for longer than the organisation's threshold. The run alerts and waits; it never fails on its own (P5) |
+| `stalled` | A provider has been unreachable for longer than a fixed threshold (LOG 270). The run alerts and waits; it never fails on its own (P5) |
 
 Position, not status, tells a human what they can do about a run. The idea is
 from FF, extended to parallel steps.

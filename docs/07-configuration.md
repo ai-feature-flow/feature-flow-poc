@@ -14,7 +14,7 @@ it (`docs/04`). Keys are snake_case (RW12).
 | Layer | Where | Set by | Holds |
 |---|---|---|---|
 | Installation | Deployment configuration | Operator | Temporal, workers, provider instances, API authentication, observability, engine defaults for limits |
-| Organisation | A configuration file or service, with team overrides | Organisation | Policy and caps (`docs/05`), people roles, agent role mapping, libraries, notifications routing, timeouts |
+| Organisation | A configuration file or service, with team overrides | Organisation | Policy and caps (`docs/05`), people roles, agent role mapping, libraries, notifications routing |
 | Repository | `feature-flow.yaml` at the repository root | Repository maintainers | How to set up, test, analyse and run the repository; library additions |
 | Run | The run request, through the API | Requester | Template, parameters, repositories, limit overrides |
 
@@ -122,9 +122,6 @@ name: acme
 libraries:                                  # docs/08 sections 3 and 4
   - { name: std, source: package, version: ">=1.0.0 <2.0.0" }
   - { name: acme_delivery, source: git, repository: acme/ff-library, ref: main }
-library_overrides:                          # organisation content replacing std items
-  std:tasks/implement_ticket: acme_delivery:tasks/implement_ticket
-library_inputs: { planning_repository: acme/plans }
 
 policy:                                     # meanings in docs/05
   approval:
@@ -141,8 +138,6 @@ policy:                                     # meanings in docs/05
   planning:
     allowed_roles: [planner, implementer, fixer]
     require_review: [{ match: "*:templates/project_*", value: true }]
-  toolsets:
-    allowed: [jira, confluence]
   overrides:                                # default roles for run-time overrides (docs/05 section 5)
     skip_protected: [admin]
 
@@ -168,10 +163,6 @@ notifications:
     failed:          { channel: "#ff-runs" }
   events: [decision_needed, failed, completed]
 
-timeouts:
-  heartbeat: 30s                            # how long a step may go silent
-  stalled_after: 5m                         # unreachable provider before a run shows stalled
-
 teams:
   payments:
     policy:
@@ -183,16 +174,13 @@ teams:
 | Key | Notes |
 |---|---|
 | `libraries` | Sources and versions. The first library is the base for references without a library name |
-| `library_overrides` | An organisation item replacing a base item by name, for every run |
 | `policy.*` | Meanings in `docs/05`. A cap may be `{ value, locked }`; a bare value is an unlocked default. Which settings reach running runs is in `docs/05` section 8 |
 | `policy.budgets.max_work_items.ceiling` | F11's ceiling, always locked: a root template asking more does not start; a root that sets no budget gets the ceiling (LOG 187) |
 | `roles`, `teams` | People roles to groups. A run is in the scope of the team whose `repositories` match its repositories; a run spanning two teams is refused. In its scope a team's groups add holders to a role, and its approval rules may only raise `min_count` (LOG 204, 217) |
 | `role_mapping.default` | The runtime and model for a role with no entry |
-| `timeouts.heartbeat` | Describes the platform, not the work, so it is set here and not per step. It dominates crash-recovery time (Spike 1: 87.4 s from a kill to progress, `archive/docs/15` section 6.4) |
-| `timeouts.stalled_after` | Time without successful provider contact before the run shows `stalled`. Time-based, not a retry count |
 
-Until M8, `library_overrides`, `library_inputs`, `policy.toolsets.allowed`, `role_mapping` and `timeouts` are refused at
-startup ("not enforced before M8"): they are read and checked, but nothing acts on them yet (LOG 256).
+`library_overrides`, `library_inputs`, `policy.toolsets.allowed` and `timeouts` are not in version 1 and are refused at
+startup (LOG 268 to 270). `role_mapping` is enforced from M8 (LOG 267).
 
 ---
 

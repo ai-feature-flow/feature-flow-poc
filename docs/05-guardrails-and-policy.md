@@ -76,7 +76,7 @@ limit. Validation reports where a request was capped.
 | Work items | `budget.max_work_items` on the root template | Ceiling (F11), always locked (LOG 187) |
 | Review of agent patches | `planning.review` | `planning.require_review`, per template name pattern |
 | Agent roles | The roles a template's steps name | `planning.allowed_roles` for steps an agent adds (section 6) |
-| Toolsets | The role's toolsets | `toolsets.allowed`: which external tool servers exist at all |
+| Toolsets | The role's toolsets | None in version 1: no external toolsets are connected (LOG 270) |
 
 A request that exceeds its cap is not silently lowered. Where the cap is an
 organisation **default** (`locked: false`), the request applies; where it is

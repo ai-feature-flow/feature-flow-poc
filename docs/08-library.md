@@ -118,13 +118,12 @@ from (from FF).
 | Layer | May |
 |---|---|
 | Base: `std` | Define everything |
-| Organisation: libraries named in organisation configuration | Override any content item by name; add content. An override of a role may tighten its write access or remove tools, never widen them (F10) |
+| Organisation: libraries named in organisation configuration | Add content: its own templates, tasks and roles under its own name. Overriding a base item by name is not in version 1 (LOG 268) |
 | Repository: the `library` section of `feature-flow.yaml` | Name a default template; **add** skills, resources and tasks under its own name. Not override. Read from the default branch, so an agent cannot change what it is given |
 | Run: a library override | Replace content for this run's future steps (section 5.2) |
 
-A template refers to content by library name, so an organisation override is
-explicit: `acme_delivery:tasks/implement_ticket` replaces `std:tasks/implement_ticket`
-only where the organisation's configuration maps one to the other.
+A template refers to content by library name, so an organisation that wants its own
+`implement_ticket` writes `acme_delivery:tasks/implement_ticket` and a template that uses it.
 
 ---
 

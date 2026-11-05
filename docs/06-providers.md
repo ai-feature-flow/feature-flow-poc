@@ -373,8 +373,8 @@ interface IToolsetProvider : IProvider {
 - The engine MCP server **proxies** these tools to the agent. The external
   server's credentials stay with the engine, never in the sandbox (from FF's
   design for external MCP servers).
-- A role names toolsets and, optionally, a tool allow-list within each. The
-  organisation lists which toolsets exist (`docs/05` section 3.1).
+- A role names toolsets and, optionally, a tool allow-list within each. Version 1
+  connects no external toolsets, so nothing restricts them yet (LOG 270).
 - Each call is recorded on the timeline with the step and the tool. A tool that
   writes (creating a ticket) is marked as writing in its descriptor, so a role
   with `write_access: none` cannot call it unless the role allows it explicitly.
