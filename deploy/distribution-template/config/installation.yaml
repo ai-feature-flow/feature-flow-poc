@@ -65,6 +65,9 @@ agent_worker:
   token_key_ref: secrets/step_token_key
   sandbox_client: /app/sandbox-client/ff-sandbox
 
+# Optional: export traces over OTLP (gRPC) to your collector.
+# observability: { otlp_endpoint: "http://otel-collector.observability.svc:4317" }
+
 # People sign in with your identity provider; the local token stays for automation.
 api:
   auth:

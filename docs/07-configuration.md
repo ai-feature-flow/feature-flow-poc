@@ -43,11 +43,6 @@ temporal:
   payload_codec: { name: aes_gcm, key_ref: secrets/payload_key }   # optional
   expected_retention: 30d        # checked at startup; a mismatch warns
 
-workers:
-  mode: kubernetes               # local | docker | kubernetes
-  agent_pools:
-    - { queue: feature-flow-agent, capabilities: [os_linux, docker] }
-
 providers:                       # every type: named instances, one default
   sandbox:        { default: kubernetes, instances: { kubernetes: { image: "registry.internal/feature-flow-sandbox:1.0", namespace: feature-flow-sandboxes } } }
   agent_runtime:
@@ -107,7 +102,6 @@ defaults:                        # engine defaults for limits; not floors
 | `observability.otlp_endpoint` | Where traces are exported with OTLP over gRPC: an http or https URL. Without it nothing is exported. Version 1 exports traces only; metrics and logs are later (LOG 305) |
 | `notifications.slack` | `token_ref` (the bot token) and `signing_secret_ref` (verifies its buttons at `/inbound/chat/slack`) are secret references. `users` maps a Slack user id to the person its button presses answer as: `actor`, and `groups` or `roles` for the people roles (`docs/05` section 3.3). An unmapped user cannot answer. `console_url` is linked from each message. LOG 227 |
 | `code_host.github.webhook_secret_ref` | The secret GitHub signs webhook deliveries with; deliveries go to `/inbound/events/github` and only wake waits (`docs/02` section 2.3). LOG 228 |
-| `workers.agent_pools[].capabilities` | The sandbox capabilities a pool offers, which route steps to its queue (`docs/02` section 1.1) |
 | `defaults.limits` | Engine defaults per step form and per action. The organisation, workflow and step may override them within ceilings |
 | `temporal.continue_as_new_events` | LOG 87: the history length at which a run hands over (`docs/02` section 3); default 5,120, at least 100 |
 | `temporal.payload_codec` | Encrypts every payload, and failure messages, the engine sends Temporal. `name: aes_gcm` (the only codec); `key_ref` names a secret of 32 random bytes in base64 (`openssl rand -base64 32`). Replaying an encrypted history needs the same key. LOG 284 |
@@ -115,7 +109,9 @@ defaults:                        # engine defaults for limits; not floors
 | `artifact_store.s3` | `bucket` (required, created by the deployment), `region` (default `us-east-1`), `endpoint` for a store other than AWS such as MinIO (path-style), and `access_key_ref` with `secret_key_ref`, set together; without them the AWS SDK's credential chain applies, such as an EKS service account's role. LOG 283 |
 | `api.auth` | `local_token` (`token_ref`, `actor`, `roles`) or `oidc` (`issuer`, `audience`, `role_claim`, default `groups`, and `actor_claim`, default `sub`); with `oidc`, a `token_ref` keeps the local token working beside it. The actor `policy` is reserved for automatic answers (LOG 220, 222) |
 
-Scaling (replica counts) is deployment configuration, not engine configuration. Each orchestration worker runs the stuck-run
+Scaling (replica counts) is deployment configuration, not engine configuration. `workers` (a worker mode and agent
+pools by sandbox capability) is not in version 1 and is refused at startup; every agent worker serves the one agent
+queue (LOG 318). Each orchestration worker runs the stuck-run
 check (`docs/02` section 8): with more than one replica, a `stalled`, `stuck` or `resumed` message may be sent once per
 replica; one orchestration replica avoids that (LOG 307).
 

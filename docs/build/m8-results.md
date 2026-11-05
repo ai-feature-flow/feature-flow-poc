@@ -132,8 +132,8 @@ this makes it possible.
 | Clean stop (M6 follow-up 7) | A host handles SIGTERM and SIGINT itself, stops its workers and endpoints, logs `Stopped` and exits 0. ASP.NET's handler had taken SIGTERM in the API and the agent worker and stopped only the endpoint, so they never exited (LOG 312) |
 | Images | `deploy/images/host.Dockerfile`, one for the three hosts (`HOST`): ASP.NET runtime, git, tini as process 1, the image's unprivileged user, std in `/opt/feature-flow/library/std`, the sandbox client in the agent worker's. No configuration or secret baked in (LOG 311) |
 | Engine manifests | `deploy/kubernetes`: the three deployments (read-only root, no privilege), services, one account with rights only in the sandboxes' namespace, network policies: ingress denied by default, sandboxes reach only DNS, the agent worker and the public internet (LOG 314). The sandboxes' namespace enforces Pod Security's `baseline`, so no pod there escapes the policies through the host's network, privilege or paths (R4 F1) |
-| k3d profile | `deploy/k3d`: Temporal's dev server, Postgres and MinIO in the cluster, each on a volume and reachable only from the hosts (LOG 315). `up.sh <config folder>` creates the cluster with its own kubeconfig file, builds and imports the images, generates the infrastructure secrets once and makes the ConfigMap and Secret (LOG 313); `down.sh` deletes it. `smoke/` is a trial configuration: Postgres, MinIO and the payload codec, with fake providers outside the cluster (LOG 317) |
-| Distribution template | `deploy/distribution-template`: the small-company profile's installation and organisation, an example secrets file, a Kustomize overlay for a team's own cluster, a README |
+| k3d profile | `deploy/k3d`: Temporal's dev server, Postgres and MinIO in the cluster, each on a volume and reachable only from the hosts (LOG 315). `up.sh <config folder>` creates the cluster with its own kubeconfig file, builds and imports the images, generates the infrastructure secrets once and makes the ConfigMap and Secret (LOG 313); `down.sh` deletes it. `smoke/` is a trial configuration: Postgres, MinIO, the payload codec and the Kubernetes sandbox (checked at startup by all three hosts), with fake providers outside the cluster (LOG 317) |
+| Distribution template | `deploy/distribution-template`: the small-company profile's installation and organisation (with `role_mapping` and an optional `observability.otlp_endpoint`), an example secrets file, a Kustomize overlay for a team's own cluster, a README |
 | Deployment notes | `deploy/README.md`: the solo developer, k3d, and AWS (EKS, RDS, S3, Temporal's Helm chart) as configuration |
 | CI | A `Cluster` category and job: k3d, `up.sh deploy/k3d/smoke`, the `Cluster` tests. `ci.yml` names where each test type runs (LOG 316) |
 
@@ -160,6 +160,7 @@ Where each test type of `docs/09` section 4.2 runs (done-when 2):
 | `DeploymentTests`: hosts only | A pod labelled as a host reaches all six targets (the method sees what is open); a plain pod in the engine's namespace reaches only the API and the internet |
 | `DeploymentTests`: clean stop (3) | Deleting each host's pod takes under 20 s (the grace period is 30) and its log ends `Stopped` |
 | `DeploymentTests`: Pod Security | With the hosts' account, a host-network pod in the sandboxes' namespace is refused by Pod Security; a plain one is accepted (server dry run) |
+| `DeploymentConfigurationTests` (2, default) | `deploy/k3d/smoke` and the distribution template's configuration pass the startup checks and compose with every host's factories (settings, role_mapping's runtimes), so they cannot drift from the providers |
 | `ClusterRunTests` | A std ticket run started through the API's pod completes across the three pods, recorded in Postgres and MinIO; every payload of its Temporal history is `binary/encrypted` (checked by hand once) |
 
 **Controls** (each broke the guarded code, ran the check, saw it fail, and restored it)
@@ -171,6 +172,7 @@ Where each test type of `docs/09` section 4.2 runs (done-when 2):
 | Hosts only | The services' policy opened to every pod: a plain pod reaches Temporal, Postgres and MinIO |
 | Clean stop | The API image built without the fix: no `Stopped`, and the pod waits out its grace period |
 | The account's rights | The role without reading network policies: the API crash-loops (the Kubernetes sandbox's startup check) |
+| Configuration | The template's `connection_ref` renamed: "unknown setting"; its reviewer mapped to an absent runtime: the role_mapping check. Each fails the test |
 | Pod Security | The namespace's `baseline` label removed: the host-network pod is accepted, and the test fails |
 | tini | Without it, a host that fails at startup spins at full CPU forever as process 1; with it, it exits 134 |
 
@@ -180,11 +182,10 @@ Where each test type of `docs/09` section 4.2 runs (done-when 2):
 
 | # | Follow-up |
 |---|---|
-| 1 | A new pod's first connection to Temporal can be refused while k3s applies network policies to it; the host exits and Kubernetes restarts it once. A host could retry its first connection instead (docs/02 section 7) |
+| 1 | A host exits when Temporal or a store is not reachable at startup, and Kubernetes restarts it: on a fresh k3d cluster the hosts start before Postgres is ready (four restarts), and a new pod's first connection can be refused while k3s applies its network policies. A host could retry at startup instead (docs/02 section 7) |
 | 2 | Temporal Cloud needs `temporal.tls` and `temporal.auth` in the installation (docs/07 section 2 shows them; nothing reads them) |
 | 3 | No image is published: a team builds the images at a release and pushes them to its registry |
-| 4 | Once the Agents builder's work is in `m8`: the smoke configuration's sandbox becomes the Kubernetes sandbox (its startup check then runs in all three hosts), the distribution template gains `role_mapping`, and a default test checks that the template and smoke configurations read and compose with every host's factories. All passed on a local scratch merge |
-| 5 | `cgr.dev/chainguard/minio:latest` is not pinned, so a cluster run is not exactly reproducible |
+| 4 | `cgr.dev/chainguard/minio:latest` is not pinned, so a cluster run is not exactly reproducible |
 
 ## Operations
 

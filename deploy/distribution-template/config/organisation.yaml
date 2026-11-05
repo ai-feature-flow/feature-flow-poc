@@ -17,3 +17,7 @@ roles:                                           # people roles to your identity
   approver: { idp_groups: [engineering-leads] }
   steerer:  { idp_groups: [engineering-leads] }
   admin:    { idp_groups: [platform] }
+
+role_mapping:                                    # which runtime and model each library agent role runs on (yours)
+  reviewer: { agent_runtime: claude_code, model: opus }
+  default:  { agent_runtime: claude_code, model: sonnet }
