@@ -1,0 +1,72 @@
+# Network policies (k3s and most clusters enforce them). Inside the engine's namespace nothing is reachable unless a
+# policy below allows it; the hosts' own outbound traffic (GitHub, the tracker, the model API) is not restricted.
+# A cluster's services (Temporal, Postgres, MinIO in deploy/k3d) are reachable only from pods labelled
+# feature-flow/host: "true", the three hosts; the overlay that adds a service adds its policy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: feature-flow
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+# The API is the entry point for people, chat and webhooks.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api
+  namespace: feature-flow
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: api }
+  policyTypes: [Ingress]
+  ingress:
+    - ports: [{ port: 8480 }]
+---
+# The agent worker's endpoint, for sandboxes and the other hosts.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agent-worker
+  namespace: feature-flow
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: agent-worker }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: feature-flow-sandboxes }
+        - podSelector:
+            matchLabels: { feature-flow/host: "true" }
+      ports: [{ port: 8481 }]
+---
+# Sandboxes (M4 follow-up 12): no inbound traffic; outbound only to DNS, the agent worker's endpoint and the public
+# internet. Private and link-local ranges are excluded, so a sandbox reaches neither Temporal, the stores, the API,
+# other sandboxes nor a cloud provider's instance metadata.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sandboxes
+  namespace: feature-flow-sandboxes
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: kube-system }
+          podSelector:
+            matchLabels: { k8s-app: kube-dns }
+      ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: feature-flow }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: agent-worker }
+      ports: [{ port: 8481 }]
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16]

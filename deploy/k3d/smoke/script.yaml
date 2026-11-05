@@ -1,0 +1,4 @@
+# The scripted agent and actions: every step succeeds at once.
+api_version: feature-flow/v1
+kind: fake_script
+steps: {}
