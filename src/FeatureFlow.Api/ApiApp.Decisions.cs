@@ -68,7 +68,7 @@ public static partial class ApiApp
         {
             var ct = context.RequestAborted;
             var scope = ScopeOf(run.Repositories);
-            var (types, unreadable) = await DecisionTypesAsync(ct);
+            var (types, unreadable) = await DecisionTypesAsync(wait, ct);
             if (types is null)
                 return unreadable!;
             var rule = Approval.For(wait.DecisionType, services.Organisation.Policy, TeamOf(scope), types, wait.Kind);
@@ -187,12 +187,15 @@ public static partial class ApiApp
 
         /// <summary>
         /// The organisation's libraries' decision types, read now: approval is checked at the moment of use (docs/05 section 8).
-        /// A library that cannot be read refuses the answer (503) rather than leaving its approval rules out, which would let
-        /// the engine's looser default decide (LOG 289).
+        /// They decide only a decision with no organisation rule for its type; an intervention's roles come from the
+        /// <c>recover</c> override. Only then are the libraries read, and one that cannot be read refuses the answer (503)
+        /// rather than leaving its approval rules out, which would let the engine's looser default decide (LOG 289).
         /// </summary>
-        async Task<(List<DecisionTypeItem>? Types, IResult? Refused)> DecisionTypesAsync(CancellationToken ct)
+        async Task<(List<DecisionTypeItem>? Types, IResult? Refused)> DecisionTypesAsync(WaitRecord wait, CancellationToken ct)
         {
             var types = new List<DecisionTypeItem>();
+            if (wait.Kind == "intervention" || services.Organisation.Policy.RuleFor(wait.DecisionType) is not null)
+                return (types, null);
             foreach (var source in services.Organisation.Libraries)
             {
                 if ((await LibrarySources.OpenAsync(source, services.Organisation.Location, ct)).Library is not { } library)

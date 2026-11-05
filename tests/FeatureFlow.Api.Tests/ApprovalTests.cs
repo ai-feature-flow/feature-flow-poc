@@ -119,6 +119,21 @@ public sealed class ApprovalTests
     }
 
     [Fact]
+    public async Task A_library_that_cannot_be_read_does_not_block_an_answer_it_cannot_change()
+    {
+        // An organisation rule for every type decides, so the unreadable library is not read, and an intervention's roles
+        // come from the recover override: neither waits on a git host.
+        var unreachable = new LibrarySourceConfig("acme", "git", "", Path.Combine(Path.GetTempPath(), "ff-no-such-" + Guid.NewGuid().ToString("N") + ".git"), "main");
+        var governed = Organisation(Rule("*")) with { Libraries = [new LibrarySourceConfig("std", "directory", Std), unreachable] };
+        await using var world = await WorldAsync(governed, "epic.escalation");
+        Assert.Equal(HttpStatusCode.OK, (await AnswerAsync(world.As("ann", "approver"))).Status);
+
+        await using var recovery = await WorldAsync(Organisation() with { Libraries = [unreachable] }, "ticket.escalation", kind: "intervention");
+        var (status, text) = await ApiWorld.PostAsync(recovery.As("sam", "steerer"), $"runs/{Run}/answers", """{ "wait_id": "w1", "action": "retry" }""");
+        Assert.True(status == HttpStatusCode.OK, text);
+    }
+
+    [Fact]
     public async Task A_teams_rule_comes_before_the_organisations_for_its_runs()
     {
         var organisation = Organisation(Rule("*")) with
