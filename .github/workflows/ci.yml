@@ -1,5 +1,8 @@
-# Runs on every pull request (docs/11 section 4.1): the default, integration and cluster categories. The live
-# category, which needs a real agent runtime and the GitHub App, is excluded here. Each test is listed in the job's log
+# While main development goes on (product owner, 2026-11-07), a pull request runs only the default category; the
+# integration and cluster categories run on every push to main, when started by hand, or on a pull request labelled
+# `full-ci` (use it for workflow code, providers or deploy/). When main development finishes, run all three on every
+# pull request again and make them required (docs/11 section 4.1). The live category, which needs a real agent runtime
+# and the GitHub App, is excluded here. Each test is listed in the job's log
 # (console verbosity normal), so what a job ran can be read from it.
 #
 # Where each test type of docs/09 section 4.2 runs:
@@ -19,8 +22,10 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -43,6 +48,7 @@ jobs:
 
   integration:
     name: Integration tests
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'full-ci')
     runs-on: ubuntu-latest
     env:
       FF_TEMPORAL_ADDRESS: localhost:7233
@@ -73,6 +79,7 @@ jobs:
 
   cluster:
     name: Cluster tests
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'full-ci')
     runs-on: ubuntu-latest
     env:
       FF_K3D_CLUSTER: ff-ci

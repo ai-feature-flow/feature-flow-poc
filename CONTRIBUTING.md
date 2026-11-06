@@ -64,7 +64,8 @@ in `docs/reviews/`. Apply it, then push. Keep design work on `main`; do not
 drift onto a branch.
 
 Code work (`src/`, `hosts/`, `tests/`, from build milestone M0) goes through
-pull requests, which merge only when CI passes (`docs/11` section 4.1).
+pull requests, which merge only when CI passes (`docs/11` section 4.1; while main development goes on, a pull
+request runs only the default tests unless labelled `full-ci`).
 
 ## Commits
 
