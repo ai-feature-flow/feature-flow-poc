@@ -391,7 +391,17 @@ the product owner accepted all five. Approved as written.
 
 ## From M8
 
-Entries from building team profile and operations (`docs/11`, M8). Unreviewed.
+Entries from building team profile and operations (`docs/11`, M8). Approved by the product owner, 2026-11-07, as the
+coordinator recommended, with these notes:
+
+- 282: MinIO stays on `:latest`; pin it by digest only if `:latest` causes a problem.
+- 293: using Copilot quota is a goal. M8 follow-up 14 is next: a proxy upstream for Copilot, or a GitHub token
+  scoped only to Copilot requests as F6's `per_run_key`. F6 stays a floor.
+- 306: a `stalled` position clears only when the run moves or ends.
+- 314: follow-up added: the agent worker gets its own service account; the API and orchestration worker skip the
+  sandbox's startup check.
+- 316: the `Cluster` job on every pull request is revisited with the CI plan after version 1.
+- LOG 263 still holds: no backward compatibility while the product owner is the only user.
 
 | # | Where | Decision | Why | Needs a look? |
 |---|---|---|---|---|

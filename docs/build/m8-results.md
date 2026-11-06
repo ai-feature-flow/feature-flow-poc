@@ -482,9 +482,10 @@ refuse a caller who is not a viewer of the run, LOG 327). Dropped by the product
 | 12 | Several orchestration replicas each send their own `stalled`, `stuck` and `resumed` | Operations 7 |
 | 13a | A Temporal outage during a running or completing activity is not tested | Integration 6 |
 | 13 | A model the agent worker cannot reach shows on the timeline (LOG 326) but is not a `stalled` position or a notification | Integration 1 |
-| 14 | One model proxy serves every runtime; a runtime on another upstream needs a proxy per runtime instance. The proxy records but does not pin each request's model | Agents 1, 6 |
+| 14 | **Next (product owner, 2026-11-07: use Copilot quota).** One model proxy serves every runtime; a runtime on another upstream needs a proxy per runtime instance. Check first: a proxy upstream for Copilot (can the CLI's backend URL be set; GitHub's terms), or a GitHub token scoped only to Copilot requests as F6's `per_run_key`. The proxy records but does not pin each request's model | Agents 1, 6; LOG 293 |
 | 15 | Copilot CLI: the hook's `continue: false` with the engine unreachable is untested; the agent can add its own skills or agents to Copilot's sticky home; `CopilotCliRuntime` repeats part of `ClaudeCodeRuntime` | Agents 2 to 4 |
 | 16 | No sweeper removes sandbox pods or containers whose run has closed | Agents 5 |
+| 16a | The three hosts share one service account that can create and exec into sandbox pods; give the agent worker its own, and skip the sandbox's startup check on the API and orchestration worker | Packaging, R4 note; LOG 314 |
 | 18 | A completed run leaves its work branches and `refs/feature-flow/wip/*` on the code host; a run's clean-up could also delete its session branches | Integration 4, M7 12 |
 | 19 | `merge.require_checks` locked on refuses only a literal `false` at run start | M7 5 |
 | 20 | F1 at patch time: a patch adding an engine merge into a default branch is caught only at merge time | M7 8 |
