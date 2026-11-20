@@ -3,7 +3,7 @@
 Status: design complete 2026-11-01. Version 1 built: milestones M0 to M8 of
 `docs/11-build-plan.md` done by 2026-11-05; the latest handover is
 `docs/build/handover-2026-11-05-v1.md`. Next phase: `docs/12-build-plan-phase-2.md`,
-drafted 2026-11-21 and awaiting review. Started 2026-10-31. This file is the
+drafted 2026-11-21 and awaiting the product owner's review. Started 2026-10-31. This file is the
 resume point: a new session reads it first, then the status table in section 6
 and the latest handover.
 
@@ -137,7 +137,8 @@ Paths in all design documents are relative to the repository root.
 | M8 (team profile and operations) | Done 2026-11-05 (pull requests 25 to 32): the sandbox's network closed (M4 follow-up 12), compatibility code removed, a Postgres record store, an S3 artifact store, the payload codec, reconcile, the `git` library source, the Kubernetes pod sandbox, Copilot CLI, `role_mapping`, Jira, OpenTelemetry, stuck-run detection, host images, a k3d deployment, a distribution template and a `Cluster` CI job. The done-when's live run delivered an epic of three Jira tickets on k3d. Results in `docs/build/m8-results.md`; LOG 271 to 327, approved by the product owner 2026-11-07. **Version 1 is built** |
 | After version 1: what to take from M8's consolidated follow-ups (Copilot quota first, follow-up 14) and a lighter CI while development goes on | Superseded 2026-11-21 by the next-phase plan: the M8 follow-ups the design review took up (Copilot quota as follow-up 14 in A5) and the CI plan are in its milestones and ways of working |
 | Next-phase plan: design review (findings F1 to F21, L1 to L11) and console design (gaps G1 to G14), product owner decisions NP1 to NP9 | Drafted 2026-11-21 in `docs/12-build-plan-phase-2.md`: milestones A1 to A6 (alpha) and R1 to R5 (first full release); owning documents 00, 02, 04, 05, 06 and 07 updated, unbuilt items marked planned. Judgement calls LOG 328 to 346, unreviewed |
-| Independent review of the next-phase plan, then product owner review of it and LOG 328 to 346; then start A1 | **Next** |
+| Next-phase plan review | Independent review done 2026-11-21: no blocking findings; its fourteen findings fixed in the plan and LOG |
+| Product owner review of `docs/12` (section 7 open questions) and LOG 328 to 346; then start A1 | **Next** |
 
 ## 7. How to resume
 

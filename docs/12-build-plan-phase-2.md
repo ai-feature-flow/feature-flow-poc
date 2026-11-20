@@ -297,7 +297,7 @@ Nothing is deferred beyond first full release.
 
 ## 7. Open questions
 
-Questions 3 to 6 have a default this plan follows unless the product owner
+Questions 3 to 7 have a default this plan follows unless the product owner
 overrides it; each names the milestone that needs the answer before it starts.
 
 1. **`api.auth.mode: none`** (LOG 333). Is a console with no sign-in acceptable
