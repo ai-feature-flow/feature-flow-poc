@@ -4,6 +4,28 @@ using FeatureFlow.Model.Plans;
 namespace FeatureFlow.Interpreter;
 
 /// <summary>
+/// The decision an engine action raises (docs/04 section 4.5; LOG 331): a decision-kind wait on an action step, of type
+/// <c>&lt;level&gt;.merge_action</c>, answered <see cref="Approve"/> or <see cref="Reject"/>. Approval lets the step ask a
+/// person to merge; rejection ends the step <see cref="Declined"/>, as closing the pull request does (LOG A1-2a).
+/// <c>scm.merge</c> is the only action that raises an action decision: <c>RunCore.ActionDecisionOf</c> and
+/// <c>RunCore.IsActionDecision</c> take any decision wait on an action step to be this one, so an action that raises a
+/// decision of another type must change them.
+/// </summary>
+public static class ActionDecisions
+{
+    public const string Approve = "approve";
+    public const string Reject = "reject";
+
+    /// <summary>The step's outcome when the decision is rejected.</summary>
+    public const string Declined = "declined";
+
+    public static readonly IReadOnlyList<string> Choices = [Approve, Reject];
+
+    /// <summary>The decision type an action raises at a run's level.</summary>
+    public static string Type(string level) => $"{level}.merge_action";
+}
+
+/// <summary>
 /// The decision an engine action raises while it runs (docs/04 section 4.5; LOG 331): <c>scm.merge</c>'s
 /// <c>&lt;level&gt;.merge_action</c>. It is a decision-kind wait on the action step, not a step of its own, so approval
 /// rules on its type apply as on any decision. The step goes on watching the code host while it is open: an approval
