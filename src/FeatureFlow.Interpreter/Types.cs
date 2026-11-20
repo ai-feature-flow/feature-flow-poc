@@ -83,6 +83,14 @@ public sealed record RunOptions
     /// becomes a patch approval, as a step's <c>planning.review: required</c> makes it.
     /// </summary>
     public bool RequireReview { get; init; }
+
+    /// <summary>The organisation's <c>merge.require_checks</c> and <c>merge.require_tested</c> caps (docs/05 section 3.1), which a patch must not loosen (F1). Null: none.</summary>
+    public Model.Cap<bool>? RequireChecks { get; init; }
+
+    public Model.Cap<bool>? RequireTested { get; init; }
+
+    /// <summary>The caps one step is checked against (check 22), as at run start.</summary>
+    public Validation.StepCaps StepCaps => new(StepCeiling, RequireChecks, RequireTested);
 }
 
 /// <summary>Something the core asks the shell to do. The Temporal workflow (M3) or the re-drive runner carries it out.</summary>

@@ -288,8 +288,8 @@ public sealed partial class RunCore
     public long Allowance(Step step) =>
         step.Limits?.Attempts ?? step.Scope.DocumentScope.Document.Defaults.Limits?.Attempts ?? Options.DefaultAttempts;
 
-    public long RaceAllowance(Step step) =>
-        step.Limits?.Races ?? step.Scope.DocumentScope.Document.Defaults.Limits?.Races ?? Options.DefaultRaces;
+    /// <summary>The race allowance (<see cref="Validation.StepCaps.RaceAllowance"/>): the step's or its document's, else the engine default held to the per-step ceiling.</summary>
+    public long RaceAllowance(Step step) => Validation.StepCaps.RaceAllowance(step, Options.DefaultRaces, Options.StepCeiling);
 
     string? Exhausted(Step step, StepRecord record)
     {

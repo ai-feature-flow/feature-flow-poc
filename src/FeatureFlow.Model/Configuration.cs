@@ -107,6 +107,12 @@ public sealed record PolicyConfig(
     /// </summary>
     public long? MaxWorkItems { get; init; }
 
+    /// <summary>
+    /// <c>merge.require_tested</c> (docs/05 section 3.1): locked true, an <c>scm.merge</c> cannot turn <c>require_tested</c>
+    /// off, as <see cref="RequireChecks"/> holds <c>require_checks</c> (LOG 342). Null: not set.
+    /// </summary>
+    public Cap<bool>? RequireTested { get; init; }
+
     /// <summary>The first approval rule whose pattern matches the decision type, or null.</summary>
     public ApprovalRule? RuleFor(string type) => Approval.FirstOrDefault(r => r.Matches(type));
 
@@ -434,11 +440,12 @@ public static class ConfigurationReader
                 pl.Finish();
             }
 
-            Cap<bool>? requireChecks = null;
+            Cap<bool>? requireChecks = null, requireTested = null;
             IReadOnlyList<string> engineMayMerge = [];
             if (MapReader.Of(p.Node("merge"), d, "policy.merge") is { } m)
             {
                 requireChecks = BoolCap(m, "require_checks", d);
+                requireTested = BoolCap(m, "require_tested", d);
                 if (MapReader.Of(m.Node("default_branch"), d, "policy.merge.default_branch") is { } db)
                 {
                     engineMayMerge = db.StringList("engine_may_merge");
@@ -484,6 +491,7 @@ public static class ConfigurationReader
             policy = new PolicyConfig(rules, perStep, perRun, allowed, requireChecks, hardStep, hardRun)
             {
                 EngineMayMerge = engineMayMerge, MaxWorkItems = maxWorkItems, Overrides = overrides, RequireReview = requireReview,
+                RequireTested = requireTested,
             };
         }
 

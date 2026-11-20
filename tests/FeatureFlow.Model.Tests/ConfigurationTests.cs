@@ -123,7 +123,7 @@ public class ConfigurationTests
                 - { match: "*", roles: [approver], auto: true }
               attempts: { ceiling: { per_step: 5, per_run: 40 }, hard_ceiling: { per_step: 8, per_run: 60 } }
               planning: { allowed_roles: [planner] }
-              merge: { require_checks: { value: true, locked: true } }
+              merge: { require_checks: { value: true, locked: true }, require_tested: { value: true, locked: true } }
             """, "organisation.yaml", d)!;
         Assert.Empty(d);
         Assert.Equal((5L, 40L), (org.Policy.AttemptsPerStep, org.Policy.AttemptsPerRun));
@@ -131,6 +131,7 @@ public class ConfigurationTests
         Assert.Equal(new Cap<bool>(false, true), org.Policy.RuleFor("delivery.merge_action")!.Auto);
         Assert.Equal(new Cap<bool>(true, false), org.Policy.RuleFor("ticket.spec_approval")!.Auto);
         Assert.Equal(new Cap<bool>(true, true), org.Policy.RequireChecks);
+        Assert.Equal(new Cap<bool>(true, true), org.Policy.RequireTested);
         Assert.Equal(["planner"], org.Policy.AllowedRoles);
     }
 

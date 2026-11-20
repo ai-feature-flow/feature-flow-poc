@@ -72,10 +72,10 @@ limit. Validation reports where a request was capped.
 |---|---|---|
 | Auto-resolution of a decision | `auto: <outcome>` on the decision | Whether auto-resolution is allowed, per decision type pattern |
 | Engine merge into the default branch | `engine_can_merge: true` | F1 |
-| Checks before merging | `require_checks` on `scm.merge` | `merge.require_checks`: if set, a workflow cannot turn checks off |
-| Tests before merging | `require_tested` on `scm.merge` | None in version 1. Planned (`docs/12` A1, LOG 342): `merge.require_tested`, applied as `merge.require_checks` is |
+| Checks before merging | `require_checks` on `scm.merge` | `merge.require_checks`: locked true, a workflow cannot turn checks off. The step may leave `require_checks` unset or set it to a literal `true`; any other value, an expression included, is refused, since run start cannot show that an expression gives `true` (LOG A1-1a) |
+| Tests before merging | `require_tested` on `scm.merge` | `merge.require_tested`, applied as `merge.require_checks` is (LOG 342) |
 | Attempts | `limits.attempts` | Ceilings per step form and per run (F4) |
-| Merge races | `limits.races` on `scm.merge` | None of its own: the per-step attempts ceiling. Version 1 checks races against it only when a patch changes them; planned (`docs/12` A1, LOG 340): at run start too |
+| Merge races | `limits.races` on `scm.merge` | None of its own: the per-step attempts ceiling (LOG 340). A `limits.races` above it is refused; a merge step that sets none, itself or in its document's `defaults.limits`, gets the installation's default held to the ceiling (LOG A1-1b) |
 | Work items | `budget.max_work_items` on the root template | Ceiling (F11), always locked (LOG 187) |
 | Review of agent patches | `planning.review` | `planning.require_review`, per template name pattern |
 | Agent roles | The roles a template's steps name | `planning.allowed_roles` for steps an agent adds (section 6) |
@@ -84,6 +84,11 @@ limit. Validation reports where a request was capped.
 A request that exceeds its cap is not silently lowered. Where the cap is an
 organisation **default** (`locked: false`), the request applies; where it is
 **locked**, a template that exceeds it fails validation with the setting's name.
+Run start checks every step against the locked caps, and a patch the steps it
+adds or changes, by the same function (check 22), so a patch cannot reach a
+value a template could not start with (F1). The caps are carried in the run's
+state for this (section 8); the step itself does not check them again, since
+no step can hold a value the two checks refused (LOG A1-1a).
 
 ### 3.2 Who may decide: approval
 
@@ -208,6 +213,7 @@ result, and which setting decided it.
 |---|---|---|
 | Who merges | A person (action request) | F1: `acme/api` not in `engine_may_merge` |
 | Checks required | Yes | `merge.require_checks: true`, locked |
+| Tests required | Yes | `merge.require_tested: true`, locked |
 | Who may act on the merge request | `approver`, 2 people, console only | Approval rule `*.merge_action` |
 
 The view is part of the plan's readable form and of the run start record.

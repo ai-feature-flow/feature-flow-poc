@@ -200,10 +200,9 @@ public static class RunStartChecks
     }
 
     /// <summary>
-    /// Check 22 at run start: no step exceeds a locked organisation cap (docs/05 section 3.1). Covered here: a
-    /// step's attempt allowance above <c>policy.attempts.ceiling.per_step</c>; a decision asking for
-    /// auto-resolution where the matching approval rule locks <c>auto</c> off; an <c>scm.merge</c> turning
-    /// <c>require_checks</c> off where the organisation locks it on.
+    /// Check 22 at run start: no step exceeds a locked organisation cap (docs/05 section 3.1). Covered here: each
+    /// step's caps (<see cref="StepCaps"/>, the same function a patch is checked with); a decision asking for
+    /// auto-resolution where the matching approval rule locks <c>auto</c> off.
     /// </summary>
     /// <para>
     /// <paramref name="approval"/> finds the rule that governs a decision type (<see cref="Approval.For"/>); by default the
@@ -217,10 +216,11 @@ public static class RunStartChecks
         // budget counts (LOG 187): a child's own is not read, so it is not checked.
         if (root && plan.Document.MaxWorkItems is { } asked && policy.MaxWorkItems is { } workItems && asked > workItems)
             d.Add(Checks.LockedCap, $"budget.max_work_items {asked.ToString(CultureInfo.InvariantCulture)} is above policy.budgets.max_work_items.ceiling {workItems.ToString(CultureInfo.InvariantCulture)} (F11)");
+        var caps = StepCaps.Of(policy);
         foreach (var step in plan.AllSteps)
         {
-            if (policy.AttemptsPerStep is { } ceiling && step.ConsumesAttempts && allowance(step) > ceiling)
-                d.Add(Checks.LockedCap, $"{step.Id} allows {allowance(step).ToString(CultureInfo.InvariantCulture)} attempts, above policy.attempts.ceiling.per_step {ceiling.ToString(CultureInfo.InvariantCulture)} (F4)", step.Location, step.Id);
+            foreach (var breach in caps.Breaches(step, allowance(step)))
+                d.Add(Checks.LockedCap, breach, step.Location, step.Id);
             if (step.Decision is { Auto: { }, Type: { } type } && approval(type) is { Rule.Auto.Value: false } governing)
             {
                 if (governing.Rule.Auto.Locked)
@@ -229,9 +229,6 @@ public static class RunStartChecks
                     d.AddRange([new Diagnostic(Checks.LockedCap, Severity.Warning,
                         $"{step.Id} asks for auto-resolution of {type}; {governing.Source} does not allow it, so a person answers", step.Location, step.Id)]);
             }
-            if (step.Action == "scm.merge" && policy.RequireChecks is { Value: true, Locked: true }
-                && step.With?["require_checks"] is YScalar { } s && s.AsBool() == false)
-                d.Add(Checks.LockedCap, $"{step.Id} sets require_checks false; policy.merge.require_checks is locked true", step.Location, step.Id);
         }
     }
 }

@@ -30,7 +30,8 @@ public static class EffectivePolicy
             if (step.Action == "scm.merge")
             {
                 rows.Add(WhoMerges(step, policy, merges?.Invoke(step)));
-                rows.Add(Checks(step, policy));
+                rows.Add(Floor(step, "checks before merging", "require_checks", "policy.merge.require_checks", policy.RequireChecks));
+                rows.Add(Floor(step, "tests before merging", "require_tested", "policy.merge.require_tested", policy.RequireTested));
             }
 
             if (step is { Form: StepForm.Decision, Decision: { } decision })
@@ -71,19 +72,20 @@ public static class EffectivePolicy
         return new PolicyRow(step.Id, "who merges", asked, cap, string.Join("; ", results.DefaultIfEmpty("no repository")), from);
     }
 
-    static PolicyRow Checks(Step step, PolicyConfig policy)
+    /// <summary>A merge evidence floor, <c>require_checks</c> or <c>require_tested</c>: what the step asks and what its locked or default cap makes of it.</summary>
+    static PolicyRow Floor(Step step, string topic, string input, string key, Cap<bool>? floor)
     {
-        var value = step.With?["require_checks"];
-        var request = value is null ? "require_checks not set (the action's default, true)" : "require_checks = " + ReadableForm.Describe(value, step.Scope);
-        var cap = policy.RequireChecks is { } c ? $"require_checks {(c.Value ? "true" : "false")}{(c.Locked ? ", locked" : "")}" : "none";
+        var value = step.With?[input];
+        var noun = input == "require_checks" ? "checks" : "tests";
+        var request = value is null ? $"{input} not set (the action's default, true)" : $"{input} = " + ReadableForm.Describe(value, step.Scope);
+        var cap = floor is { } c ? $"{input} {(c.Value ? "true" : "false")}{(c.Locked ? ", locked" : "")}" : "none";
         var literal = (value as YScalar)?.AsBool();
-        var (result, from) = policy.RequireChecks is { Value: true, Locked: true } && literal == false
-            ? ("refused at run start (check 22)", "policy.merge.require_checks, locked")
-            : (literal ?? true) ? ("checks required", value is null ? "scm.merge's default" : "the workflow's request")
-            : ("checks not required", policy.RequireChecks is { Value: true } ? "the workflow's request (the organisation's default is not locked)" : "the workflow's request");
-        if (value is not null && literal is null)
-            result = "as the expression gives at the step (true unless it gives false)";
-        return new PolicyRow(step.Id, "checks before merging", request, cap, result, from);
+        var (result, from) = floor is { Value: true, Locked: true } && value is not null && literal != true
+            ? ("refused at run start (check 22)", $"{key}, locked")
+            : value is not null && literal is null ? ("as the expression gives at the step (true unless it gives false)", "the workflow's request")
+            : (literal ?? true) ? ($"{noun} required", value is null ? "scm.merge's default" : "the workflow's request")
+            : ($"{noun} not required", floor is { Value: true } ? "the workflow's request (the organisation's default is not locked)" : "the workflow's request");
+        return new PolicyRow(step.Id, topic, request, cap, result, from);
     }
 
     /// <summary>The view as lines, for the readable form and the run start record.</summary>

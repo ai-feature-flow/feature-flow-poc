@@ -245,20 +245,19 @@ public sealed partial class RunCore
                ?? (State.Containers.TryGetValue(target, out var c) && c.Active ? target : null);
     }
 
-    /// <summary>Check 22: no allowance above the organisation's per-step cap, for steps the patch adds or changes (LOG 78).</summary>
+    /// <summary>
+    /// Check 22 on a patch: the steps it adds or changes are held to the organisation's caps by the same function as at run
+    /// start (<see cref="StepCaps"/>; LOG 78, F1). A breach a step already had is not the patch's: run start refused it.
+    /// </summary>
     void CheckCeilings(Plan next, DiagnosticBag d)
     {
-        if (Options.StepCeiling is not { } ceiling)
-            return;
-        foreach (var step in next.AllSteps.Where(s => s.ConsumesAttempts))
+        var caps = Options.StepCaps;
+        foreach (var step in next.AllSteps)
         {
             var before = StepById(step.Id);
-            var attempts = Allowance(step);
-            var races = RaceAllowance(step);
-            if (attempts > ceiling && (before is null || Allowance(before) != attempts))
-                d.Add(Checks.LockedCap, $"sets {step.Id}'s attempts to {attempts}, above the cap of {ceiling} (F4)", step.Location, step.Id);
-            if (step.Action == "scm.merge" && races > ceiling && (before is null || RaceAllowance(before) != races))
-                d.Add(Checks.LockedCap, $"sets {step.Id}'s races to {races}, above the cap of {ceiling} (F4)", step.Location, step.Id);
+            var had = before is null ? [] : caps.Breaches(before, Allowance(before)).ToHashSet(StringComparer.Ordinal);
+            foreach (var breach in caps.Breaches(step, Allowance(step)).Where(b => !had.Contains(b)))
+                d.Add(Checks.LockedCap, breach, step.Location, step.Id);
         }
     }
 
