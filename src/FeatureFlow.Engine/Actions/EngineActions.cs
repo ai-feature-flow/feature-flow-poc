@@ -7,7 +7,7 @@ using FeatureFlow.Model.Yaml;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Validation;
 
-namespace FeatureFlow.Engine.ActionSteps;
+namespace FeatureFlow.Engine.Actions;
 
 /// <summary>
 /// The engine actions M5 builds (docs/04 sections 7 to 9 and 12), called by <c>RunActionAsync</c>. Other actions stay
@@ -145,20 +145,20 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
             var current = Must(await vcs.ResolveAsync(repo, reference, ct), "read the work branch");
             if (current is not null && current != start)
             {
-                await KeepAsync(vcs, repo, $"refs/feature-flow/superseded/{Safe(runId)}/{Safe(stepId)}/{Short(current)}", current, ct);
+                await KeepAsync(vcs, repo, WorkRefs.Superseded(runId, stepId, current), current, ct);
                 Must(await vcs.PushAsync(repo, reference, start, null, current, ct), "reset the work branch");
-                events.Add($"clean_up: reset {name} {workBranch} from {Short(current)} to {Short(start)}, where {stepId} started");
+                events.Add($"clean_up: reset {name} {workBranch} from {Revisions.Short(current)} to {Revisions.Short(start)}, where {stepId} started");
             }
 
             foreach (var step in stepIds)
             {
-                var hidden = $"refs/feature-flow/wip/{Safe(runId)}/{Safe(step)}";
+                var hidden = WorkRefs.Hidden(runId, step);
                 if (Must(await vcs.ResolveAsync(repo, hidden, ct), "read a hidden reference") is not { } at || at == start
                     || Must(await vcs.DescendsFromAsync(repo, start, at, ct), "compare a hidden reference"))
                     continue;
-                await KeepAsync(vcs, repo, $"refs/feature-flow/superseded/{Safe(runId)}/{Safe(step)}/{Short(at)}", at, ct);
+                await KeepAsync(vcs, repo, WorkRefs.Superseded(runId, step, at), at, ct);
                 Must(await vcs.PushAsync(repo, hidden, start, null, at, ct), "move a hidden reference back");
-                events.Add($"clean_up: moved {name} {hidden} back from {Short(at)} to {Short(start)}");
+                events.Add($"clean_up: moved {name} {hidden} back from {Revisions.Short(at)} to {Revisions.Short(start)}");
             }
         }
 
@@ -193,10 +193,6 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
 
     /// <summary>The name an action's own evidence has in the artifact index, apart from any artifact the step declares (LOG 180).</summary>
     public static string IndexName(string type) => "evidence:" + type;
-
-    public static string Safe(string text) => string.Concat(text.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' or '.' ? c : '_'));
-
-    public static string Short(string revision) => revision.Length > 10 ? revision[..10] : revision;
 }
 
 /// <summary>What a <c>clean_up</c> reset did, and the work error that stopped it, if one did.</summary>
@@ -250,7 +246,7 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
     public IReadOnlyList<string> Strings(string name) =>
         (Inputs.GetValueOrDefault(name) as IEnumerable<object?> ?? []).Select(x => Convert.ToString(x, CultureInfo.InvariantCulture) ?? "").ToList();
 
-    public TimeSpan Duration(string name, TimeSpan fallback) => String(name) is { } text && StepStartChecks.Duration(text) is { } d ? d : fallback;
+    public TimeSpan Duration(string name, TimeSpan fallback) => String(name) is { } text && Durations.Parse(text) is { } d ? d : fallback;
 
     // ---- Providers ----
 
@@ -312,7 +308,7 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
                 if (pushed is { Ok: false, Error.Reason: "base_moved" } && tries < 3)
                     continue;
                 Must(pushed, "create the work branch");
-                Events.Add($"created branch {scope.WorkBranch} in {repo.FullName} at {EngineActions.Short(start)} from {parent}");
+                Events.Add($"created branch {scope.WorkBranch} in {repo.FullName} at {Revisions.Short(start)} from {parent}");
                 head = start;
             }
 
@@ -333,7 +329,7 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
         RepositoryManifest manifest;
         try
         {
-            manifest = RepositoryManifest.Parse(file.Content, file.Hash, $"{repo.FullName}:{RepositoryManifest.FileName} at {EngineActions.Short(revision)}");
+            manifest = RepositoryManifest.Parse(file.Content, file.Hash, $"{repo.FullName}:{RepositoryManifest.FileName} at {Revisions.Short(revision)}");
         }
         catch (FormatException e)
         {
@@ -341,7 +337,7 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
         }
 
         await EventAsync("manifest", $"{repo.FullName} {file.Hash} at {revision}");
-        Events.Add($"manifest of {repo.FullName} at {EngineActions.Short(revision)}: {file.Hash}");
+        Events.Add($"manifest of {repo.FullName} at {Revisions.Short(revision)}: {file.Hash}");
         return manifest;
     }
 

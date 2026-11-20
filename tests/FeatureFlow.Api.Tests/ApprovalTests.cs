@@ -14,15 +14,7 @@ public sealed class ApprovalTests
 {
     const string Run = "r1";
 
-    static readonly string Std = Path.Combine(FindRoot(), "library", "std");
-
-    static string FindRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "FeatureFlow.slnx")))
-                return dir.FullName;
-        throw new InvalidOperationException("FeatureFlow.slnx not found");
-    }
+    static readonly string Std = Path.Combine(Repository.Root, "library", "std");
 
     static OrganisationConfig Organisation(params ApprovalRule[] rules) =>
         new("acme", [new LibrarySourceConfig("std", "directory", Std)], new PolicyConfig(rules, null, null, null, null), "");

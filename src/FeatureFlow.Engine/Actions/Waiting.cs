@@ -1,6 +1,6 @@
 using FeatureFlow.Providers.Abstractions;
 
-namespace FeatureFlow.Engine.ActionSteps;
+namespace FeatureFlow.Engine.Actions;
 
 /// <summary>
 /// The waiting actions (docs/04 section 8). Each activity attempt reads once; while the condition is open it ends with
@@ -43,7 +43,7 @@ static class Waiting
         var target = state?.Base ?? await run.ParentBranchAsync(repo);
         var waitedOn = await run.RememberAsync("checks_head", head);
         if (waitedOn != head)
-            throw ActionStop.CannotAnswer($"the head of {(pr is null ? run.Scope.WorkBranch : ActionRun.Format(pr))} changed from {EngineActions.Short(waitedOn)} to {EngineActions.Short(head)} while its checks were awaited");
+            throw ActionStop.CannotAnswer($"the head of {(pr is null ? run.Scope.WorkBranch : ActionRun.Format(pr))} changed from {Revisions.Short(waitedOn)} to {Revisions.Short(head)} while its checks were awaited");
         var since = await run.SinceAsync();
         var elapsed = DateTimeOffset.UtcNow - since;
         var timeout = run.Duration("timeout", TimeSpan.FromHours(2));
@@ -52,7 +52,7 @@ static class Waiting
         if (pending.Count > 0)
         {
             if (elapsed > timeout)
-                throw ActionStop.CannotAnswer($"the checks on {EngineActions.Short(head)} did not finish within {timeout}: {string.Join("; ", pending)}");
+                throw ActionStop.CannotAnswer($"the checks on {Revisions.Short(head)} did not finish within {timeout}: {string.Join("; ", pending)}");
             return ActionResult.Waiting(string.Join("; ", pending), run.Duration("poll_every", run.Options.PollInterval), run.Events);
         }
 
@@ -60,9 +60,9 @@ static class Waiting
         var skipped = status.Checks.Count(c => c.Conclusion == Conclusions.Skipped);
         run.Events.Add(status.Checks.Count == 0
             ? hasCi
-                ? $"{repo.FullName} has CI configured, but no check appeared on {EngineActions.Short(head)} within {grace}"
-                : $"{repo.FullName} has no CI and no checks on {EngineActions.Short(head)}"
-            : $"checks on {EngineActions.Short(head)}: {string.Join(", ", status.Checks.Select(c => $"{c.Name} {c.Conclusion}"))}");
+                ? $"{repo.FullName} has CI configured, but no check appeared on {Revisions.Short(head)} within {grace}"
+                : $"{repo.FullName} has no CI and no checks on {Revisions.Short(head)}"
+            : $"checks on {Revisions.Short(head)}: {string.Join(", ", status.Checks.Select(c => $"{c.Name} {c.Conclusion}"))}");
         var evidence = await run.PutJsonAsync(new CheckEvidence(repo.FullName, head, pr is null ? null : ActionRun.Format(pr), failed.Count == 0, skipped, status.Checks));
         return run.Report(failed.Count == 0 ? "passed" : "failed", new Dictionary<string, object?> { ["skipped"] = (long)skipped }, evidence);
     }

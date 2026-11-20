@@ -1,7 +1,7 @@
 using System.Globalization;
 using FeatureFlow.Providers.Abstractions;
 
-namespace FeatureFlow.Engine.ActionSteps;
+namespace FeatureFlow.Engine.Actions;
 
 /// <summary>
 /// <c>findings.record</c> and <c>findings.triage</c> (docs/04 section 11): the ledger is the engine's, what to do about
@@ -260,7 +260,7 @@ static class FindingsActions
                 if (raised.RaisedRevision is not { } at)
                     problems.Add($"{t.Finding}: it was raised in {raised.Finding.Location.Repository}, which this run has not prepared, so no commit of this run can fix it (LOG 190)");
                 else if (await code.HeadAsync(raised.Finding.Location.Repository) == at)
-                    problems.Add($"{t.Finding}: nothing has been committed to {raised.Finding.Location.Repository} since it was raised at {EngineActions.Short(at)}, so it cannot be fixed");
+                    problems.Add($"{t.Finding}: nothing has been committed to {raised.Finding.Location.Repository} since it was raised at {Revisions.Short(at)}, so it cannot be fixed");
             }
 
         if (problems.Count > 0)
@@ -546,7 +546,7 @@ static class FindingsActions
             var key = (location.Repository, location.File, revision);
             if (!files.TryGetValue(key, out var hash))
                 files[key] = hash = ActionRun.Must(await run.CodeHost.ReadFileAsync(new RepoRef(location.Repository), location.File, revision, run.Ct),
-                    $"read {location.File} at {EngineActions.Short(revision)}")?.Hash;
+                    $"read {location.File} at {Revisions.Short(revision)}")?.Hash;
             return hash;
         }
     }

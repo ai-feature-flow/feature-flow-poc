@@ -12,9 +12,7 @@ namespace FeatureFlow.Interpreter.Tests;
 /// </summary>
 public sealed class Probe
 {
-    public static string RepositoryRoot { get; } = FindRoot();
-
-    public static string StdRoot => Path.Combine(RepositoryRoot, "library", "std");
+    public static string StdRoot => Path.Combine(Repository.Root, "library", "std");
 
     public Probe(string key, params (string Name, string Yaml)[] templates)
     {
@@ -50,14 +48,6 @@ public sealed class Probe
         var d = new DiagnosticBag();
         var plan = PlanLoader.LoadTemplate(Libraries, Ref(name), d)!;
         return (plan, d);
-    }
-
-    static string FindRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "FeatureFlow.slnx")))
-                return dir.FullName;
-        throw new InvalidOperationException("FeatureFlow.slnx not found above the test output folder");
     }
 }
 

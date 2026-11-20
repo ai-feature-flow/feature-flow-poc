@@ -3,7 +3,7 @@ using FeatureFlow.Model;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Validation;
 
-namespace FeatureFlow.Engine.ActionSteps;
+namespace FeatureFlow.Engine.Actions;
 
 /// <summary>
 /// The testing and analysis actions (docs/04 section 9) and <c>repo.inspect</c> (section 12). The manifest is read at
@@ -65,7 +65,7 @@ static class Testing
                 if (earlier.Repository == repo.FullName && earlier.Revision == head && !earlier.Baseline
                     && earlier.Tiers.Select(x => x.Tier).Order().SequenceEqual(tiers.Select(x => x.Name).Order()))
                 {
-                    run.Events.Add($"{EngineActions.Short(head)} was already tested by {entry.StepId}; its result is adopted and nothing runs");
+                    run.Events.Add($"{Revisions.Short(head)} was already tested by {entry.StepId}; its result is adopted and nothing runs");
                     return (earlier, entry.Ref);
                 }
 
@@ -95,7 +95,7 @@ static class Testing
             results.Add(await CiTierAsync(run, ci!, repo, tier, head));
 
         foreach (var r in results)
-            run.Events.Add($"tier {r.Tier} at {EngineActions.Short(head)}: {r.Passed} passed, {r.Failed} failed, {r.Skipped} skipped" +
+            run.Events.Add($"tier {r.Tier} at {Revisions.Short(head)}: {r.Passed} passed, {r.Failed} failed, {r.Skipped} skipped" +
                            (r.Failures.Count == 0 ? "" : $" ({string.Join("; ", r.Failures.Take(5).Select(f => f.Name))})"));
         return (new TestEvidence(repo.FullName, head, baseline, results.All(r => r.Clean), results), null);
     }
@@ -111,7 +111,7 @@ static class Testing
         var at = ActionRun.Must(await run.Vcs.ResolveAsync(repo, "refs/heads/" + parent, run.Ct), "read the parent branch")
                  ?? throw ActionStop.CannotAnswer($"{repo.FullName} has no parent branch {parent}");
         var evidence = await run.ManifestAsync(repo, at)
-                       ?? throw ActionStop.CannotAnswer($"{repo.FullName} has no {RepositoryManifest.FileName} on {parent} at {EngineActions.Short(at)}: the engine cannot tell how to {what} it");
+                       ?? throw ActionStop.CannotAnswer($"{repo.FullName} has no {RepositoryManifest.FileName} on {parent} at {Revisions.Short(at)}: the engine cannot tell how to {what} it");
         return (evidence, evidence.Setup);
     }
 
@@ -240,7 +240,7 @@ static class Testing
 
         if (baseline)
         {
-            run.Events.Add($"baseline analysis at {EngineActions.Short(head)}: {results.Issues.Count} issues");
+            run.Events.Add($"baseline analysis at {Revisions.Short(head)}: {results.Issues.Count} issues");
             return run.Report("passed", evidence: await run.PutJsonAsync(new AnalysisEvidence(repo.FullName, head, analysis.Analyser, true, true, results.Issues, [])));
         }
 
@@ -257,7 +257,7 @@ static class Testing
             "never" => false,
             _ => fresh.Count > 0,
         };
-        run.Events.Add($"analysis at {EngineActions.Short(head)}: {counted.Count} issues at {minimum} or above, {fresh.Count} new" +
+        run.Events.Add($"analysis at {Revisions.Short(head)}: {counted.Count} issues at {minimum} or above, {fresh.Count} new" +
                        (fresh.Count == 0 ? "" : $" ({string.Join("; ", fresh.Take(5).Select(i => $"{i.RuleId} {i.Path}:{i.Line}"))})"));
         var evidence = new AnalysisEvidence(repo.FullName, head, analysis.Analyser, false, !failed, results.Issues, fresh.Select(i => i.Fingerprint).ToList());
         return run.Report(failed ? "failed" : "passed", evidence: await run.PutJsonAsync(evidence));

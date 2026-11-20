@@ -38,7 +38,7 @@ public class HostProcessTests
             kind: organisation
             name: host-test
             libraries:
-              - { name: std, source: directory, path: "{{IOPath.Combine(Harness.RepositoryRoot, "library", "std")}}" }
+              - { name: std, source: directory, path: "{{IOPath.Combine(Repository.Root, "library", "std")}}" }
             """, TestContext.Current.CancellationToken);
         var start = new ProcessStartInfo("dotnet") { RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = folder };
         start.ArgumentList.Add(HostDll(host));
@@ -92,7 +92,7 @@ public class HostProcessTests
     static string HostDll(string host)
     {
         var configuration = new DirectoryInfo(AppContext.BaseDirectory).Parent!.Name;
-        var dll = IOPath.Combine(Harness.RepositoryRoot, "hosts", $"FeatureFlow.Host.{host}", "bin", configuration, "net10.0", $"FeatureFlow.Host.{host}.dll");
+        var dll = IOPath.Combine(Repository.Root, "hosts", $"FeatureFlow.Host.{host}", "bin", configuration, "net10.0", $"FeatureFlow.Host.{host}.dll");
         Assert.True(File.Exists(dll), $"{dll} is not built");
         return dll;
     }

@@ -8,18 +8,10 @@ namespace FeatureFlow.Engine.Tests;
 /// <summary><c>run.parent_branch</c> (docs/03 section 5): the named parent branch, else the default branch run start read.</summary>
 public sealed class ParentBranchValueTests
 {
-    static string Root()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "FeatureFlow.slnx")))
-                return dir.FullName;
-        throw new InvalidOperationException("FeatureFlow.slnx not found");
-    }
-
     static string Render(RunInfo run)
     {
         var d = new DiagnosticBag();
-        var root = Root();
+        var root = Repository.Root;
         var libraries = new LibrarySet(Library.Library.Open(Path.Combine(root, "library", "std"), d)!,
             Library.Library.Open(Path.Combine(root, "tests", "FeatureFlow.Integration.Tests", "libraries", "m5"), d)!);
         var (core, loaded) = RunCore.Start(libraries, LibraryReference.TryParse("m5:templates/where")!, run);

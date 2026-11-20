@@ -14,8 +14,6 @@ public sealed partial record LibraryReference(string Library, string? Constraint
     [GeneratedRegex(@"^(?<lib>[a-z][a-z0-9_]*)(@(?<ver>[^:]+))?:(?<type>[a-z_]+)/(?<name>[a-z][a-z0-9_]*)$")]
     private static partial Regex Pattern();
 
-    public static bool LooksLikeReference(string text) => Pattern().IsMatch(text);
-
     public static LibraryReference? TryParse(string text)
     {
         var match = Pattern().Match(text);

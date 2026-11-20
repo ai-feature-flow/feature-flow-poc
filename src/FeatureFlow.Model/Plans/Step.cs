@@ -223,7 +223,7 @@ public sealed record FragmentInstance(string Id, ItemRef Fragment, Scope Scope, 
 }
 
 /// <summary>A template after fragment and <c>for_each</c> expansion, with routes resolved.</summary>
-public sealed class Plan
+public sealed partial class Plan
 {
     public required DocumentInfo Document { get; init; }
     public required Scope Root { get; init; }

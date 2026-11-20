@@ -25,7 +25,7 @@ public sealed class UnservableActionTests
 
     static StepCall Call(string action, bool dryRun) =>
         new(new StepIdentity("run-1", "t", "step", 1, "run-1/step/1"), "action", action, new Dictionary<string, string>(),
-            new StepContract(Actions.All[action].Outcomes.Select(o => new OutcomeSpec(o.Name, o.Class.Name())).ToList(), new Dictionary<string, string>(), [],
+            new StepContract(Model.Actions.All[action].Outcomes.Select(o => new OutcomeSpec(o.Name, o.Class.Name())).ToList(), new Dictionary<string, string>(), [],
                 new Dictionary<string, string>()), dryRun, null);
 
     [Theory]
@@ -66,10 +66,7 @@ public sealed class UnservableActionTests
         File.WriteAllText(Path.Combine(root, "library.yaml"), "name: probe\nversion: 0.1.0\n");
         File.WriteAllText(Path.Combine(root, "templates", "commenting.yaml"), Commenting);
         var d = new DiagnosticBag();
-        var repository = new DirectoryInfo(AppContext.BaseDirectory);
-        while (!File.Exists(Path.Combine(repository.FullName, "FeatureFlow.slnx")))
-            repository = repository.Parent!;
-        var std = Path.Combine(repository.FullName, "library", "std");
+        var std = Path.Combine(Repository.Root, "library", "std");
         var libraries = new LibrarySet(Library.Library.Open(std, d)!, Library.Library.Open(root, d)!);
         var (core, loaded) = RunCore.Start(libraries, new LibraryReference("probe", null, "templates", "commenting"),
             new RunInfo("run-1", ["acme/api"], new Dictionary<string, YNode>()));

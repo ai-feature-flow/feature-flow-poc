@@ -5,16 +5,7 @@ namespace FeatureFlow.Testing.Workflows.Tests;
 /// <summary>Std's workflow tests (library/std/tests), and the runner's own behaviour on test files that must fail.</summary>
 public class WorkflowTestRunnerTests
 {
-    static readonly string RepositoryRoot = FindRoot();
-    static readonly string StdTests = Path.Combine(RepositoryRoot, "library", "std", "tests");
-
-    static string FindRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "FeatureFlow.slnx")))
-                return dir.FullName;
-        throw new InvalidOperationException("FeatureFlow.slnx not found above the test output folder");
-    }
+    static readonly string StdTests = Path.Combine(Repository.Root, "library", "std", "tests");
 
     public static TheoryData<string> StdTestFiles() =>
         new(Directory.GetFiles(StdTests, "*.yaml").Select(Path.GetFileNameWithoutExtension).Order(StringComparer.Ordinal)!);
@@ -52,7 +43,7 @@ public class WorkflowTestRunnerTests
         File.WriteAllText(path, text.Replace(old, replacement, StringComparison.Ordinal));
         try
         {
-            return WorkflowTestRunner.RunPath(path, [Path.Combine(RepositoryRoot, "library", "std")]).Single();
+            return WorkflowTestRunner.RunPath(path, [Path.Combine(Repository.Root, "library", "std")]).Single();
         }
         finally
         {
@@ -101,7 +92,7 @@ public class WorkflowTestRunnerTests
     {
         // Granting a huge allowance stands in for a missing allowance check: the fix loop never stops.
         var test = WorkflowTestReader.Read(Path.Combine(StdTests, "ticket_fix_exhausted.yaml"), new DiagnosticBag())!;
-        var libraries = new Library.LibrarySet(Library.Library.Open(Path.Combine(RepositoryRoot, "library", "std"), new DiagnosticBag())!);
+        var libraries = new Library.LibrarySet(Library.Library.Open(Path.Combine(Repository.Root, "library", "std"), new DiagnosticBag())!);
 
         var result = WorkflowTestRunner.Run(test, libraries, new Interpreter.RunOptions { DefaultAttempts = 1_000_000, RunCeiling = 10_000_000 });
 

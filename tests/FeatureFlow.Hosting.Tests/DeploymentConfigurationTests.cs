@@ -31,7 +31,7 @@ public class DeploymentConfigurationTests
     [InlineData("deploy/distribution-template/config")]
     public void A_shipped_configuration_validates_and_composes_with_the_hosts_providers(string folder)
     {
-        var root = FindRoot();
+        var root = Repository.Root;
         var copy = Path.Combine(Path.GetTempPath(), $"ff-config-{Guid.NewGuid():N}");
         Directory.CreateDirectory(copy);
         try
@@ -49,13 +49,5 @@ public class DeploymentConfigurationTests
         {
             Directory.Delete(copy, recursive: true);
         }
-    }
-
-    static string FindRoot()
-    {
-        var dir = AppContext.BaseDirectory;
-        while (!File.Exists(Path.Combine(dir, "FeatureFlow.slnx")))
-            dir = Path.GetDirectoryName(dir)!;
-        return dir;
     }
 }

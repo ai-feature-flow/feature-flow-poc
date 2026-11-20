@@ -27,7 +27,7 @@ public static class AgentWorld
 
     static async Task<string> PrepareAsync()
     {
-        var root = Harness.RepositoryRoot;
+        var root = Repository.Root;
         var (exit, _) = await RunAsync("docker", ["image", "inspect", Image]);
         if (exit != 0)
         {
@@ -225,7 +225,7 @@ public sealed class AgentHarness : IAsyncDisposable
             kind: organisation
             name: integration
             libraries:
-              - { name: std, source: directory, path: "{{IOPath.Combine(Harness.RepositoryRoot, "library", "std")}}" }
+              - { name: std, source: directory, path: "{{IOPath.Combine(Testing.Support.Repository.Root, "library", "std")}}" }
               - { name: m4, source: directory, path: "{{IOPath.Combine(Harness.TestLibraries, "m4")}}" }
             policy:
               approval:

@@ -31,7 +31,6 @@ public sealed class PlanValidator
     readonly Plan plan;
     readonly LibrarySet libraries;
     readonly DiagnosticBag d;
-    readonly Dictionary<string, Step> byId = [];
     readonly HashSet<string> usedParameters = [];
 
     PlanValidator(Plan plan, LibrarySet libraries, DiagnosticBag diagnostics)
@@ -39,8 +38,6 @@ public sealed class PlanValidator
         this.plan = plan;
         this.libraries = libraries;
         d = diagnostics;
-        foreach (var step in plan.AllSteps)
-            byId.TryAdd(step.Id, step);
     }
 
     bool Standalone => plan.Root.Standalone;
@@ -345,18 +342,9 @@ public sealed class PlanValidator
             return;
         }
 
-        if (operand[0] == "steps" && ResolveStepPath(operand, e.Scope) is { } resolved && operand.Count <= resolved.FieldIndex + 1
+        if (operand[0] == "steps" && plan.LongestStepPrefix(operand, e.Scope) is { } resolved && operand.Count <= resolved.FieldIndex + 1
             && (operand.Count <= resolved.FieldIndex || operand[resolved.FieldIndex] is "outputs" or "artifacts"))
             d.Add(Checks.Expression, $"{e.Where}: index access on {text} is not allowed; name the value", e.Location, e.StepId);
-    }
-
-    /// <summary>The step a <c>steps.</c> path names, and the position of the field after the step id.</summary>
-    (Step Step, int FieldIndex)? ResolveStepPath(IReadOnlyList<string> path, Scope scope)
-    {
-        for (var k = path.Count - 1; k >= 1; k--)
-            if (FindStep(string.Join(".", path.Skip(1).Take(k)), scope) is { } target)
-                return (target, k + 1);
-        return null;
     }
 
     /// <summary>
@@ -368,7 +356,7 @@ public sealed class PlanValidator
         var typed = new Dictionary<string, string>();
         foreach (var path in paths.Where(p => p[0] == "steps"))
         {
-            if (ResolveStepPath(path, scope) is not { } resolved || resolved.FieldIndex >= path.Count)
+            if (plan.LongestStepPrefix(path, scope) is not { } resolved || resolved.FieldIndex >= path.Count)
                 continue;
             var (step, at) = resolved;
             var prefix = string.Join(".", path.Take(at + 1));
@@ -418,43 +406,28 @@ public sealed class PlanValidator
 
     void CheckStepPath(IReadOnlyList<string> path, Expression e)
     {
-        for (var k = path.Count - 1; k >= 1; k--)
+        if (plan.LongestStepPrefix(path, e.Scope) is not ({ } target, var at))
         {
-            var local = string.Join(".", path.Skip(1).Take(k));
-            if (FindStep(local, e.Scope) is not { } target)
-                continue;
-            if (k + 1 >= path.Count)
-                return;
-            var field = path[k + 1];
-            if (!StepFields.Contains(field))
-            {
-                d.Add(Checks.Expression, $"{e.Where}: steps.{local}.{field} is not a step value ({string.Join(", ", StepFields)})", e.Location, e.StepId);
-                return;
-            }
-
-            if (k + 2 >= path.Count)
-                return;
-            var name = path[k + 2];
-            if (field == "outputs" && Outputs(target) is { } outputs && !outputs.Contains(name))
-                d.Add(Checks.Expression, $"{e.Where}: step {target.Id} has no output '{name}' ({string.Join(", ", outputs.Order())})", e.Location, e.StepId);
-            if (field == "artifacts" && !target.Produces.Any(p => p.Name == name))
-                d.Add(Checks.Expression, $"{e.Where}: step {target.Id} produces no artifact '{name}'", e.Location, e.StepId);
+            d.Add(Checks.Expression, $"{e.Where}: steps.{string.Join(".", path.Skip(1))} names no step", e.Location, e.StepId);
             return;
         }
 
-        d.Add(Checks.Expression, $"{e.Where}: steps.{string.Join(".", path.Skip(1))} names no step", e.Location, e.StepId);
-    }
-
-    /// <summary>A step referenced from an expression: in the branch, then the enclosing scopes up to the document.</summary>
-    Step? FindStep(string local, Scope scope)
-    {
-        for (var s = scope; ; s = s.Parent!)
+        if (at >= path.Count)
+            return;
+        var field = path[at];
+        if (!StepFields.Contains(field))
         {
-            if (byId.TryGetValue(s.Prefix + local, out var step))
-                return step;
-            if (s.Kind != ScopeKind.Branch)
-                return null;
+            d.Add(Checks.Expression, $"{e.Where}: steps.{string.Join(".", path.Skip(1).Take(at - 1))}.{field} is not a step value ({string.Join(", ", StepFields)})", e.Location, e.StepId);
+            return;
         }
+
+        if (at + 1 >= path.Count)
+            return;
+        var name = path[at + 1];
+        if (field == "outputs" && Outputs(target) is { } outputs && !outputs.Contains(name))
+            d.Add(Checks.Expression, $"{e.Where}: step {target.Id} has no output '{name}' ({string.Join(", ", outputs.Order())})", e.Location, e.StepId);
+        if (field == "artifacts" && !target.Produces.Any(p => p.Name == name))
+            d.Add(Checks.Expression, $"{e.Where}: step {target.Id} produces no artifact '{name}'", e.Location, e.StepId);
     }
 
     static HashSet<string>? Outputs(Step step)
@@ -531,7 +504,7 @@ public sealed class PlanValidator
             // A step reachable only through plan.expand's target or on_other counts as reachable (docs/09 section 2.2).
             if (step.Action == "plan.expand" && step.With is { } with)
                 foreach (var key in new[] { "target", "on_other" })
-                    if (with[key].ScalarText() is { } local && FindStep(local, step.Scope) is { } target)
+                    if (with[key].ScalarText() is { } local && plan.FindStep(local, step.Scope) is { } target)
                         g.Edges[g.Index[step.Id]].Add(g.Index[target.Id]);
         }
 
@@ -547,7 +520,6 @@ public sealed class PlanValidator
     /// </summary>
     void CheckCleanUpTargets()
     {
-        var byId = plan.AllSteps.GroupBy(s => s.Id).ToDictionary(g => g.Key, g => g.First());
         IEnumerable<ResolvedStep> CleanUps(Resolved target) => target switch
         {
             ResolvedStep { CleanUp: true } s => [s],
@@ -557,7 +529,7 @@ public sealed class PlanValidator
         foreach (var step in plan.AllSteps)
             foreach (var route in step.ResolvedRoutes)
                 foreach (var target in CleanUps(route.Target))
-                    if (byId.GetValueOrDefault(target.StepId) is { Form: StepForm.Decision })
+                    if (plan.StepById(target.StepId) is { Form: StepForm.Decision })
                         d.Add(Checks.RouteTarget, $"the route for '{route.Outcome}' resets the work branch for decision {target.StepId} with clean_up; a decision touches no repository, so route to the step after it",
                             step.Location, step.Id);
     }
@@ -597,8 +569,8 @@ public sealed class PlanValidator
             var members = component.ToHashSet();
             if (component.Any(n => g.Edges[n].Any(t => !members.Contains(t))))
                 continue;
-            var steps = component.Select(n => g.Names[n]).Where(byId.ContainsKey).OrderBy(id => Order(id)).ToList();
-            var first = byId[steps[0]];
+            var steps = component.Select(n => g.Names[n]).Where(id => plan.StepById(id) is not null).OrderBy(id => Order(id)).ToList();
+            var first = plan.StepById(steps[0])!;
             d.Add(Checks.CycleExit,
                 $"the cycle {string.Join(" -> ", steps)} has no route out: every outcome stays in it or escalates",
                 first.Location, first.Id);
@@ -733,7 +705,7 @@ public sealed class PlanValidator
             {
                 if (input.From.StartsWith("child:", StringComparison.Ordinal))
                 {
-                    if (FindStep(input.From["child:".Length..], step.Scope) is null)
+                    if (plan.FindStep(input.From["child:".Length..], step.Scope) is null)
                         d.Add(Checks.ArtifactProducer, $"consumes '{input.Name}' from child '{input.From[6..]}', which is not a step", input.Location, step.Id);
                     continue;
                 }

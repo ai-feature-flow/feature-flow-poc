@@ -128,10 +128,7 @@ public sealed class ArtifactCheckTests : IAsyncDisposable
     /// <summary>The run's lock over std, as run start writes it: every file by content hash, and the lock itself.</summary>
     async Task<string> LockAsync()
     {
-        var root = new DirectoryInfo(AppContext.BaseDirectory);
-        while (!File.Exists(Path.Combine(root.FullName, "FeatureFlow.slnx")))
-            root = root.Parent!;
-        var std = FeatureFlow.Library.Library.Open(Path.Combine(root.FullName, "library", "std"), new DiagnosticBag())!;
+        var std = FeatureFlow.Library.Library.Open(Path.Combine(Repository.Root, "library", "std"), new DiagnosticBag())!;
         foreach (var (_, text) in std.Files.All)
             (await store.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(text)), CancellationToken.None)).Unwrap();
         var lockText = JsonSerializer.Serialize(new LibraryLock([LibraryLock.Pin(std)]), new JsonSerializerOptions(JsonSerializerDefaults.Web));

@@ -11,15 +11,7 @@ public sealed class StartupCheckTests : IDisposable
 
     public void Dispose() => Directory.Delete(folder, recursive: true);
 
-    static string Std => Path.Combine(FindRoot(), "library", "std");
-
-    static string FindRoot()
-    {
-        var dir = AppContext.BaseDirectory;
-        while (!File.Exists(Path.Combine(dir, "FeatureFlow.slnx")))
-            dir = Path.GetDirectoryName(dir)!;
-        return dir;
-    }
+    static string Std => Path.Combine(Repository.Root, "library", "std");
 
     List<string> Errors(string auth, string organisation)
     {

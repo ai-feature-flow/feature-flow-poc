@@ -1,7 +1,7 @@
 using System.Text.Json.Serialization;
 using FeatureFlow.Providers.Abstractions;
 
-namespace FeatureFlow.Engine.ActionSteps;
+namespace FeatureFlow.Engine.Actions;
 
 /// <summary>
 /// An artifact the run holds now: the step and name it was produced under, its declared type, its reference, the

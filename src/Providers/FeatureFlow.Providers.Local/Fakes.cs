@@ -75,7 +75,7 @@ public sealed class FakeScript
             r.String("outcome_from"),
             r.Node("outputs") as YMap,
             r.Node("artifacts") as YMap,
-            Duration(r.String("delay")),
+            r.String("delay") is { Length: > 0 } delay ? Durations.Parse(delay) ?? throw new FormatException($"'{delay}' is not a duration") : TimeSpan.Zero,
             r.String("delay_from"),
             r.Enum("error", ["work", "infrastructure", "cannot_answer"]),
             (int)(r.Int("times") ?? 1),
@@ -85,23 +85,6 @@ public sealed class FakeScript
             r.Node("library_override") as YMap);
         r.Finish();
         return visit;
-    }
-
-    /// <summary>A duration such as <c>500ms</c>, <c>2s</c> or <c>1m</c>.</summary>
-    public static TimeSpan Duration(string? text)
-    {
-        if (string.IsNullOrEmpty(text))
-            return TimeSpan.Zero;
-        var unit = text.EndsWith("ms", StringComparison.Ordinal) ? "ms" : text[^1..];
-        var number = double.Parse(text[..^unit.Length], CultureInfo.InvariantCulture);
-        return unit switch
-        {
-            "ms" => TimeSpan.FromMilliseconds(number),
-            "s" => TimeSpan.FromSeconds(number),
-            "m" => TimeSpan.FromMinutes(number),
-            "h" => TimeSpan.FromHours(number),
-            _ => throw new FormatException($"'{text}' is not a duration"),
-        };
     }
 
     public ScriptVisit? Visit(StepIdentity step)

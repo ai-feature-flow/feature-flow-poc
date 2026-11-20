@@ -1,6 +1,6 @@
 using FeatureFlow.Providers.Abstractions;
 
-namespace FeatureFlow.Engine.ActionSteps;
+namespace FeatureFlow.Engine.Actions;
 
 /// <summary>The source control actions (docs/04 section 7). Every write names the revision it expects (LOG 107).</summary>
 static class SourceControl
@@ -28,13 +28,13 @@ static class SourceControl
             var caught = ActionRun.Must(result, "catch up with the parent branch");
             if (caught.Conflicted)
             {
-                run.Events.Add($"catching {run.Scope.WorkBranch} up with {parent} at {EngineActions.Short(caught.ParentRevision)} conflicts in: {string.Join(", ", caught.Conflicts)}");
+                run.Events.Add($"catching {run.Scope.WorkBranch} up with {parent} at {Revisions.Short(caught.ParentRevision)} conflicts in: {string.Join(", ", caught.Conflicts)}");
                 return run.Report("conflict");
             }
 
             run.Events.Add(caught.Changed
-                ? $"caught {run.Scope.WorkBranch} up with {parent} at {EngineActions.Short(caught.ParentRevision)}: now {EngineActions.Short(caught.WorkRevision)}"
-                : $"{run.Scope.WorkBranch} already contains {parent} at {EngineActions.Short(caught.ParentRevision)}");
+                ? $"caught {run.Scope.WorkBranch} up with {parent} at {Revisions.Short(caught.ParentRevision)}: now {Revisions.Short(caught.WorkRevision)}"
+                : $"{run.Scope.WorkBranch} already contains {parent} at {Revisions.Short(caught.ParentRevision)}");
             return run.Report("updated", new Dictionary<string, object?> { ["changed"] = caught.Changed });
         }
     }
@@ -140,15 +140,15 @@ static class SourceControl
             // docs/04 section 7.3: a passing test.run result; test.integration's does not count.
             var tests = await run.EvidenceAsync<TestEvidence>("test_results", "test.run");
             if (!tests.Any(t => t.Value.Repository == repo.FullName && t.Value.Revision == head && t.Value.Passed))
-                return $"require_tested: no passing test.run result for {repo.FullName} at {EngineActions.Short(head)}, the head being merged" +
-                       (tests.Count == 0 ? "" : $" (results exist for {string.Join(", ", tests.Select(t => $"{t.Entry.StepId} at {EngineActions.Short(t.Value.Revision)}{(t.Value.Passed ? "" : " failed")}"))})");
+                return $"require_tested: no passing test.run result for {repo.FullName} at {Revisions.Short(head)}, the head being merged" +
+                       (tests.Count == 0 ? "" : $" (results exist for {string.Join(", ", tests.Select(t => $"{t.Entry.StepId} at {Revisions.Short(t.Value.Revision)}{(t.Value.Passed ? "" : " failed")}"))})");
         }
 
         if (run.Bool("require_checks", true))
         {
             var checks = await run.EvidenceAsync<CheckEvidence>("check_results", "ci.checks");
             if (!checks.Any(c => c.Value.Repository == repo.FullName && c.Value.Revision == head && c.Value.Passed))
-                return $"require_checks: no passing ci.checks result for {repo.FullName} at {EngineActions.Short(head)}, the head being merged";
+                return $"require_checks: no passing ci.checks result for {repo.FullName} at {Revisions.Short(head)}, the head being merged";
         }
 
         return null;
@@ -205,7 +205,7 @@ static class SourceControl
         string mergedBy, bool alreadyMerged, PullRequestRef? pr)
     {
         var record = new MergeEvidence(repo.FullName, target, method, head, before, revision, mergedBy, alreadyMerged, pr is null ? null : ActionRun.Format(pr));
-        run.Events.Add($"merged {EngineActions.Short(head)} into {target} as {EngineActions.Short(revision)} ({method}, by {mergedBy}{(alreadyMerged ? ", already merged" : "")})");
+        run.Events.Add($"merged {Revisions.Short(head)} into {target} as {Revisions.Short(revision)} ({method}, by {mergedBy}{(alreadyMerged ? ", already merged" : "")})");
         return run.Report("merged", evidence: await run.PutJsonAsync(record));
     }
 

@@ -3,7 +3,7 @@ using FeatureFlow.Model.Yaml;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Validation;
 
-namespace FeatureFlow.Engine.ActionSteps;
+namespace FeatureFlow.Engine.Actions;
 
 /// <summary>
 /// <c>artifact.validate</c> (docs/04 section 10.3): each validator over its subjects, against the run's repositories
@@ -125,7 +125,7 @@ static class Validating
                 frozen[name] = head;
         run.Events.Add(frozen.Count == 0
             ? "no repository has a work branch yet; validators see no frozen revision"
-            : "frozen: " + string.Join(", ", frozen.Select(kv => $"{kv.Key} at {EngineActions.Short(kv.Value)}")));
+            : "frozen: " + string.Join(", ", frozen.Select(kv => $"{kv.Key} at {Revisions.Short(kv.Value)}")));
         return frozen;
     }
 

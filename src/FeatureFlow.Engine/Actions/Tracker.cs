@@ -1,6 +1,6 @@
 using FeatureFlow.Providers.Abstractions;
 
-namespace FeatureFlow.Engine.ActionSteps;
+namespace FeatureFlow.Engine.Actions;
 
 /// <summary>
 /// <c>tracker.update</c> (docs/04 section 12): one tracker operation with the engine's identity. Agents have no tracker

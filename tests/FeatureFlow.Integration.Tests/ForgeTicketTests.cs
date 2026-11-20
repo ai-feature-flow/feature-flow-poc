@@ -1,6 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using FeatureFlow.Engine.ActionSteps;
+using FeatureFlow.Engine.Actions;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Providers.Local;
 using FeatureFlow.Providers.StdValidators;
@@ -264,7 +264,7 @@ public class ForgeTicketTests
         var again = await WaitForAnotherWaitAsync(h, id, approval!);
 
         Assert.Equal(planned, forge.Resolve(repo, "ff/ticket/T-5"));
-        Assert.Equal(stray, forge.Resolve(repo, $"refs/feature-flow/superseded/{id}/plan.plan/{stray[..10]}"));
+        Assert.Equal(stray, forge.Resolve(repo, $"refs/feature-flow/superseded/{id}/plan.plan/{stray[..12]}"));
         var trace = Trace(await h.ShowAsync(id));
         Assert.Contains(trace, d => d.StartsWith("clean_up: reset acme/api ff/ticket/T-5", StringComparison.Ordinal));
 

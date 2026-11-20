@@ -819,15 +819,6 @@ public sealed partial class RunCore
         outbox.Add(new EndRun(status));
     }
 
-    /// <summary>A step named in an expression, as the load check finds it: in a branch first, then outwards.</summary>
-    public Step? FindStep(string local, Scope scope)
-    {
-        for (var s = scope; ; s = s.Parent!)
-        {
-            if (byId.TryGetValue(s.Prefix + local, out var step))
-                return step;
-            if (s.Kind != ScopeKind.Branch)
-                return null;
-        }
-    }
+    /// <summary>A step named in an expression, as the load check finds it (<see cref="Plan.FindStep"/>).</summary>
+    public Step? FindStep(string local, Scope scope) => Plan.FindStep(local, scope);
 }

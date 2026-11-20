@@ -1,4 +1,4 @@
-using FeatureFlow.Engine.ActionSteps;
+using FeatureFlow.Engine.Actions;
 using FeatureFlow.Interpreter;
 using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Library;
@@ -544,7 +544,7 @@ public partial class RunWorkflow
             try
             {
                 scope = ScopeOf(step);
-                foreach (var name in Actions.All.GetValueOrDefault(step.Action!)?.ReferenceInputs ?? [])
+                foreach (var name in Model.Actions.All.GetValueOrDefault(step.Action!)?.ReferenceInputs ?? [])
                     if (inputs.GetValueOrDefault(name) is string reference && core!.RenderPrompt(step.Id, reference) is { } rendered)
                         inputs[name] = rendered;
             }
@@ -570,7 +570,7 @@ public partial class RunWorkflow
         var call = new StepCall(identity, step.Form == StepForm.Agent ? "agent" : "action",
             step.Form == StepForm.Agent ? step.Agent!.Role?.Text ?? "" : step.Action!,
             inputs.ToDictionary(kv => kv.Key, kv => YamlWriter.WritePlain(kv.Value)),
-            Contract(step), input.DryRun, Duration(step.Limits?.Timeout), agent);
+            Contract(step), input.DryRun, Durations.Parse(step.Limits?.Timeout), agent);
         return (call, scope, null);
     }
 
@@ -604,13 +604,13 @@ public partial class RunWorkflow
         };
     }
 
+    /// <summary>The run's reserved <c>findings_ledger</c>: the ledger's view, staged by the agent worker, never a produced artifact (LOG 63, 167).</summary>
+    static bool IsLedgerView(ArtifactIn consumed) => consumed.From == "current" && consumed.Name == FindingsLedger.ViewName;
+
     /// <summary>
     /// The name a consumed artifact goes by in the step's inputs and its sandbox: its own from this run, else with its
     /// source in front (<c>parent/contract</c>, <c>child/ticket_a/summary</c>), so a step can consume one name from two runs.
     /// </summary>
-    /// <summary>The run's reserved <c>findings_ledger</c>: the ledger's view, staged by the agent worker, never a produced artifact (LOG 63, 167).</summary>
-    static bool IsLedgerView(ArtifactIn consumed) => consumed.From == "current" && consumed.Name == FindingsLedger.ViewName;
-
     static string ConsumedKey(ArtifactIn consumed) =>
         consumed.From == "current" ? consumed.Name : $"{consumed.From.Replace(':', '/')}/{consumed.Name}";
 
@@ -688,7 +688,7 @@ public partial class RunWorkflow
     {
         var zero = RunCore.ZeroOutputs(step);
         return new StepContract(
-            step.Outcomes().Where(o => o.Name != Actions.AttemptsExhausted).Select(o => new OutcomeSpec(o.Name, o.Class.Name())).ToList(),
+            step.Outcomes().Where(o => o.Name != Model.Actions.AttemptsExhausted).Select(o => new OutcomeSpec(o.Name, o.Class.Name())).ToList(),
             zero.Keys.ToDictionary(n => n, n => RunCore.OutputType(step, n) ?? "dyn"),
             step.Produces.Select(p => new ArtifactSpec(p.Outcome, p.Name) { Type = p.Type?.Reference?.ToString() }).ToList(),
             zero.ToDictionary(kv => kv.Key, kv => YamlWriter.WritePlain(kv.Value)))
@@ -726,7 +726,7 @@ public partial class RunWorkflow
             agent.Skills.Select(s => s.Reference?.ToString()).OfType<string>().ToList(),
             (int)(limits?.CorrectionTurns ?? 2),
             (int)questionsMax,
-            Duration(limits?.QuestionsTimeout) ?? AgentLimits.DefaultQuestionsTimeout,
+            Durations.Parse(limits?.QuestionsTimeout) ?? AgentLimits.DefaultQuestionsTimeout,
             agent.Push,
             agent.OnUncommitted,
             core.Plan.Document.Level ?? "run",
@@ -750,12 +750,6 @@ public partial class RunWorkflow
         var timeout = (call.Timeout ?? AgentLimits.DefaultTimeout) + TimeSpan.FromHours(1);
         return call.Agent is { QuestionsMax: > 0 } spec ? timeout + spec.QuestionsTimeout * spec.QuestionsMax : timeout;
     }
-
-    /// <summary>A duration such as <c>30m</c> or <c>4h</c> (docs/03 section 2.1).</summary>
-    static TimeSpan? Duration(string? text) =>
-        text is { Length: > 1 } t && long.TryParse(t[..^1], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n)
-            ? t[^1] switch { 's' => TimeSpan.FromSeconds(n), 'm' => TimeSpan.FromMinutes(n), 'h' => TimeSpan.FromHours(n), 'd' => TimeSpan.FromDays(n), _ => null }
-            : null;
 
     async Task RunStepAsync(Step step, int execution, StepCall call, ActionScope? scope = null)
     {
@@ -939,7 +933,7 @@ public partial class RunWorkflow
             ProposeLibraryOverride(step, proposal);
         if (!result.Accepted)
         {
-            // Correction turns arrive in M4; until then an output contract error fails the attempt (docs/04 section 3.1, step 5).
+            // The agent worker's correction turns have run (docs/04 section 3.3); a report the core still refuses fails the attempt.
             core.Apply(new StepFailed(step.Id, ErrorClass.Work, "output contract: " + string.Join("; ", result.Errors)));
         }
     }

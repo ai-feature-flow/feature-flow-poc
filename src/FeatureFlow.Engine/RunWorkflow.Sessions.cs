@@ -1,4 +1,4 @@
-using FeatureFlow.Engine.ActionSteps;
+using FeatureFlow.Engine.Actions;
 using FeatureFlow.Interpreter;
 using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Model;
@@ -72,7 +72,7 @@ public partial class RunWorkflow
         {
             var result = await Workflow.ExecuteActivityAsync((RunActivities a) => a.OpenSessionAsync(open), SessionActivity);
             core.State.Trace.Add(new TraceEntry("session_opened", step.Id,
-                $"{open.SessionId}: {open.Repository} branch {open.Branch} at {EngineActions.Short(result.BaseRevision)}"));
+                $"{open.SessionId}: {open.Repository} branch {open.Branch} at {Revisions.Short(result.BaseRevision)}"));
         }
         catch (ActivityFailureException e)
         {
@@ -317,7 +317,7 @@ public partial class RunWorkflow
             var (artifacts, importError) = await ImportSessionAsync(session, check.Revision, "check-" + check.CheckId);
             if (artifacts is null)
             {
-                await EndCheckAsync(check, target, "", "failed", null, $"the session's files at {EngineActions.Short(check.Revision)} cannot be imported: {importError}");
+                await EndCheckAsync(check, target, "", "failed", null, $"the session's files at {Revisions.Short(check.Revision)} cannot be imported: {importError}");
                 return;
             }
 
@@ -419,7 +419,7 @@ public partial class RunWorkflow
     async Task EndCheckAsync(SessionCheckArgs check, Step target, string digest, string status, string? result, string detail)
     {
         // The detail (the step's outcome, or why the check could not run) goes on the run's timeline, which the API shows with the check.
-        core!.State.Trace.Add(new TraceEntry("session_check", target.Id, $"{check.SessionId} {check.CheckId} at {EngineActions.Short(check.Revision)} by {check.Actor}: {status}: {detail}"));
+        core!.State.Trace.Add(new TraceEntry("session_check", target.Id, $"{check.SessionId} {check.CheckId} at {Revisions.Short(check.Revision)} by {check.Actor}: {status}: {detail}"));
         dirty = true;
         await RecordCheckAsync(check, target, digest, status, result);
     }

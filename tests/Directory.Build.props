@@ -4,20 +4,24 @@
   <!-- Every test project is an xUnit v3 executable. Tests that need Temporal or Docker carry
        [Trait("Category", "Integration")]; tests that need a real agent or GitHub carry
        [Trait("Category", "Live")]; tests that need the k3d deployment carry [Trait("Category", "Cluster")]
-       (docs/11 section 4.1). -->
+       (docs/11 section 4.1). FeatureFlow.Testing.Support is the one library here: the helpers every test project
+       references and imports. -->
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
+    <IsTestSupport Condition="'$(MSBuildProjectName)' == 'FeatureFlow.Testing.Support'">true</IsTestSupport>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(IsTestSupport)' != 'true'">
+    <OutputType>Exe</OutputType>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(IsTestSupport)' != 'true'">
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" />
-  </ItemGroup>
-
-  <ItemGroup>
+    <ProjectReference Include="$(MSBuildThisFileDirectory)FeatureFlow.Testing.Support/FeatureFlow.Testing.Support.csproj" />
     <Using Include="Xunit" />
+    <Using Include="FeatureFlow.Testing.Support" />
   </ItemGroup>
 </Project>

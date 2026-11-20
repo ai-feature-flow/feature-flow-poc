@@ -167,7 +167,7 @@ A `report` with a `success` outcome must give every output the step declares,
 each of its declared type (a `number` is whole). A missing or mistyped output
 is an output contract error: the errors go back to the agent for correction
 turns, like an invalid patch (LOG 76, 79). The interpreter's core refuses such
-a report from M2; correction turns arrive with the agent step in M4.
+a report too, so one that reaches the workflow fails the attempt as a work error.
 
 The agent worker checks a report when the `report` tool is called, so
 correction turns happen inside the session: up to `correction_turns` rejections

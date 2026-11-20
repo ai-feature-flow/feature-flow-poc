@@ -208,7 +208,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                 throw new StepCannotAnswerException("the agent step names no repository");
             repo = new RepoRef(spec.Branches.Keys.First());
             workBranch = spec.Branches[repo.FullName];
-            hiddenRef = HiddenReference(call.Step);
+            hiddenRef = WorkRefs.Hidden(call.Step.RunId, call.Step.StepId);
             await RecordAsync(new RecordBatch(AgentSteps:
             [
                 new AgentStepRecord(key, call.Step.RunId, spec.WorkflowId, call.Step.StepId, spec.Level, call.Contract, spec.CorrectionTurns, spec.QuestionsMax,
@@ -318,14 +318,6 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             throw new StepWorkException($"the step ran out of time: its limit of {(call.Timeout ?? AgentLimits.DefaultTimeout).TotalMinutes:F0} minutes from {deadline - (call.Timeout ?? AgentLimits.DefaultTimeout):O}, not counting time its questions were open, has passed");
         }
 
-        static string HiddenReference(StepIdentity step) => $"refs/feature-flow/wip/{Safe(step.RunId)}/{Safe(step.StepId)}";
-
-        /// <summary>Where a hidden reference's commits are kept when a later attempt does not build on them.</summary>
-        public static string SupersededReference(StepIdentity step, string revision) =>
-            $"refs/feature-flow/superseded/{Safe(step.RunId)}/{Safe(step.StepId)}/{revision[..Math.Min(12, revision.Length)]}";
-
-        static string Safe(string text) => string.Concat(text.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' or '.' ? c : '_'));
-
         /// <summary>Creates or re-attaches to the sandbox. Returns whether an earlier attempt's commits were checked out.</summary>
         async Task<bool> PrepareAsync()
         {
@@ -337,7 +329,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             {
                 // The engine creates the run's work branch the first time a step touches the repository (docs/04 section 2).
                 Must(await vcs.PushAsync(repo, $"refs/heads/{workBranch}", parentHead, null, null, ct), "create the work branch");
-                events.Add($"created branch {workBranch} at {Short(parentHead)}");
+                events.Add($"created branch {workBranch} at {Revisions.Short(parentHead)}");
                 branchRevision = parentHead;
             }
 
@@ -359,10 +351,10 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             {
                 // The earlier attempt's commits are kept for a person (docs/04 section 3.7) under a reference of their own
                 // before this attempt's pushes replace the hidden reference (LOG 96).
-                var kept = SupersededReference(call.Step, hiddenRevision);
+                var kept = WorkRefs.Superseded(call.Step.RunId, call.Step.StepId, hiddenRevision);
                 if (Must(await vcs.ResolveAsync(repo, kept, ct), "read the superseded reference") is null)
                     Must(await vcs.PushAsync(repo, kept, hiddenRevision, null, null, ct), "keep the superseded commits");
-                events.Add($"hidden reference at {Short(hiddenRevision)} does not build on {workBranch} at {Short(startRevision)}: not used; kept as {kept}");
+                events.Add($"hidden reference at {Revisions.Short(hiddenRevision)} does not build on {workBranch} at {Revisions.Short(startRevision)}: not used; kept as {kept}");
                 await EventAsync("superseded", $"{hiddenRevision} as {kept}");
             }
             lastPushed = useHidden ? hiddenRevision! : startRevision;
@@ -409,7 +401,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             await StageInputsAsync();
             if (spec.WriteAccess == "none")
                 Must(await sandboxes.MakeReadOnlyAsync(sandbox, paths.Checkout, ct), "make the checkout read-only");
-            events.Add($"sandbox created; checkout of {workBranch} at {Short(source)}" + (useHidden ? " from the hidden reference" : ""));
+            events.Add($"sandbox created; checkout of {workBranch} at {Revisions.Short(source)}" + (useHidden ? " from the hidden reference" : ""));
             await EventAsync("sandbox", "created " + sandbox.Id);
             return useHidden;
         }
@@ -803,7 +795,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             var bundle = Must(await vcs.FetchCommitsAsync(copy, lastPushed, ct), "take the commits out of the sandbox");
             Must(await vcs.PushAsync(repo, hiddenRef, bundle.Head, bundle, hiddenRevision, ct), "push to the hidden reference");
             hiddenRevision = lastPushed = bundle.Head;
-            events.Add($"pushed {Short(bundle.Head)} to {hiddenRef}");
+            events.Add($"pushed {Revisions.Short(bundle.Head)} to {hiddenRef}");
             await EventAsync("pushed", $"{bundle.Head} to {hiddenRef}");
         }
 
@@ -843,7 +835,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                     if (spec.OnUncommitted == "fail")
                         throw new StepWorkException("the agent left uncommitted changes and the step has on_uncommitted: fail");
                     var committed = Must(await vcs.CommitAllAsync(copy, $"Uncommitted changes left by {call.Step.StepId}", ct), "commit leftovers");
-                    events.Add($"committed leftovers as {Short(committed ?? "")}");
+                    events.Add($"committed leftovers as {Revisions.Short(committed ?? "")}");
                 }
             }
 
@@ -855,7 +847,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                 await ManifestCommandsAsync(manifest.AfterChanges, "after_changes");
                 if (Must(await vcs.CommitAllAsync(copy, $"Changes by after_changes for {call.Step.StepId}", ct), "commit after_changes") is { } formatted)
                 {
-                    events.Add($"committed after_changes as {Short(formatted)}");
+                    events.Add($"committed after_changes as {Revisions.Short(formatted)}");
                     head = formatted;
                 }
             }
@@ -889,9 +881,9 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                 // The work branch moves once, to the final commit (docs/04 section 3.1, step 7), and only forward: the
                 // final commit must build on the branch as the step found it (LOG 96).
                 if (!Must(await vcs.DescendsFromAsync(repo, head, startRevision, ct), "compare the final commit with the work branch"))
-                    throw new StepWorkException($"the final commit {Short(head)} does not build on {workBranch} at {Short(startRevision)}; the branch is not moved");
+                    throw new StepWorkException($"the final commit {Revisions.Short(head)} does not build on {workBranch} at {Revisions.Short(startRevision)}; the branch is not moved");
                 Must(await vcs.PushAsync(repo, $"refs/heads/{workBranch}", head, null, startRevision, ct), "move the work branch");
-                events.Add($"moved {workBranch} to {Short(head)}");
+                events.Add($"moved {workBranch} to {Revisions.Short(head)}");
                 await EventAsync("moved", $"{workBranch} to {head}");
             }
 
@@ -964,7 +956,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             RepositoryManifest read;
             try
             {
-                read = RepositoryManifest.Parse(file.Content, file.Hash, $"{repo.FullName}:{RepositoryManifest.FileName} at {Short(startRevision)}");
+                read = RepositoryManifest.Parse(file.Content, file.Hash, $"{repo.FullName}:{RepositoryManifest.FileName} at {Revisions.Short(startRevision)}");
             }
             catch (FormatException e)
             {
@@ -994,7 +986,5 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             if (run.Exit != 0)
                 throw new ApplicationFailureException($"could not {what} in the sandbox: {run.Output.Trim()}", errorType: "infrastructure");
         }
-
-        static string Short(string revision) => revision.Length > 10 ? revision[..10] : revision;
     }
 }

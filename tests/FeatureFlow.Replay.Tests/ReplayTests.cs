@@ -13,7 +13,7 @@ namespace FeatureFlow.Replay.Tests;
 /// </summary>
 public class ReplayTests
 {
-    static string HistoryFolder { get; } = Path.Combine(FindRoot(), "tests", "histories");
+    static string HistoryFolder { get; } = Path.Combine(Repository.Root, "tests", "histories");
 
     static string[] Names() => Directory.GetFiles(HistoryFolder, "*.json").Select(f => Path.GetFileNameWithoutExtension(f)).Order(StringComparer.Ordinal).ToArray();
 
@@ -125,13 +125,5 @@ public class ReplayTests
             .GetProperty("input").GetProperty("payloads")[0].GetProperty("data").GetString()!;
         using var input = System.Text.Json.JsonDocument.Parse(Convert.FromBase64String(data));
         return input.RootElement.GetProperty("RunId").GetString()!;
-    }
-
-    static string FindRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "FeatureFlow.slnx")))
-                return dir.FullName;
-        throw new InvalidOperationException("FeatureFlow.slnx not found above the test output folder");
     }
 }

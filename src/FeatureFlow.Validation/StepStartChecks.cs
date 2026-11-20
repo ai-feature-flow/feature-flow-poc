@@ -72,14 +72,14 @@ public static class StepStartChecks
                 "boolean" => value is bool,
                 "array" => value is IList<object?>,
                 "map" => value is IDictionary<string, object?>,
-                "duration" => value is string d && Duration(d) is not null,
+                "duration" => value is string d && Durations.Parse(d) is not null,
                 _ => true,
             };
             if (!ok)
                 errors.Add($"{action} input '{name}' must be {input.Kind switch { "duration" => "a duration such as 30s, 5m or 2h", "boolean" => "true or false", "array" => "a list", _ => "a " + input.Kind }}, not {Describe(value)}");
             else if (input.Allowed is { } allowed && value is string text && !allowed.Contains(text))
                 errors.Add($"{action} input '{name}' must be one of {string.Join(", ", allowed)}, not '{text}'");
-            else if (input.Minimum is { } minimum && value is string d && Duration(d) < minimum)
+            else if (input.Minimum is { } minimum && value is string d && Durations.Parse(d) < minimum)
                 errors.Add($"{action} input '{name}' must be at least {minimum.TotalSeconds.ToString(CultureInfo.InvariantCulture)}s, not {d}");
         }
 
@@ -105,24 +105,6 @@ public static class StepStartChecks
     {
         foreach (var tag in manifest.UnknownTags(tags))
             d.Add(Checks.TierTags, $"{repository}: tag '{tag}' matches no tier of {RepositoryManifest.FileName} (its tiers: {string.Join(", ", manifest.Tiers.Select(t => $"{t.Name} [{string.Join(", ", t.Tags)}]"))})");
-    }
-
-    /// <summary>A duration such as <c>500ms</c>, <c>30s</c>, <c>5m</c>, <c>2h</c> or <c>7d</c> (docs/03 section 2.1), or null.</summary>
-    public static TimeSpan? Duration(string text)
-    {
-        var unit = text.EndsWith("ms", StringComparison.Ordinal) ? "ms" : text.Length > 0 ? text[^1..] : "";
-        if (text.Length <= unit.Length
-            || !double.TryParse(text[..^unit.Length], NumberStyles.Float, CultureInfo.InvariantCulture, out var n) || n < 0)
-            return null;
-        return unit switch
-        {
-            "ms" => TimeSpan.FromMilliseconds(n),
-            "s" => TimeSpan.FromSeconds(n),
-            "m" => TimeSpan.FromMinutes(n),
-            "h" => TimeSpan.FromHours(n),
-            "d" => TimeSpan.FromDays(n),
-            _ => null,
-        };
     }
 
     static string Describe(object value) => value switch

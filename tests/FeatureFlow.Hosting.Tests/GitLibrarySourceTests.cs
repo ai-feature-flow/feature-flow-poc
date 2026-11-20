@@ -21,7 +21,7 @@ public sealed class GitLibrarySourceTests : IDisposable
     {
         work = Path.Combine(folder, "work");
         bare = Path.Combine(folder, "library.git");
-        CopyTree(Path.Combine(FindRoot(), "library", "std"), work);
+        CopyTree(Path.Combine(Repository.Root, "library", "std"), work);
         Git(work, "init", "-q", "--initial-branch=main");
         Git(work, "add", "-A");
         Git(work, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "std");
@@ -96,7 +96,7 @@ public sealed class GitLibrarySourceTests : IDisposable
     public async Task A_library_in_a_folder_of_its_repository_is_read_from_its_path()
     {
         var engine = Path.Combine(folder, "engine");
-        CopyTree(Path.Combine(FindRoot(), "library", "std"), Path.Combine(engine, "library", "std"));
+        CopyTree(Path.Combine(Repository.Root, "library", "std"), Path.Combine(engine, "library", "std"));
         Git(engine, "init", "-q", "--initial-branch=main");
         Git(engine, "add", "-A");
         Git(engine, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "engine");
@@ -163,13 +163,5 @@ public sealed class GitLibrarySourceTests : IDisposable
         process.WaitForExit();
         if (process.ExitCode != 0)
             throw new InvalidOperationException($"git {string.Join(' ', args)}: {error}");
-    }
-
-    static string FindRoot()
-    {
-        var dir = AppContext.BaseDirectory;
-        while (!File.Exists(Path.Combine(dir, "FeatureFlow.slnx")))
-            dir = Path.GetDirectoryName(dir)!;
-        return dir;
     }
 }

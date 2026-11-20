@@ -1,5 +1,5 @@
 using System.Text.Json;
-using FeatureFlow.Engine.ActionSteps;
+using FeatureFlow.Engine.Actions;
 using FeatureFlow.Model.Yaml;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Providers.Local;
@@ -373,14 +373,14 @@ public sealed class SourceControlActionTests
         Assert.Equal("updated", Outcome(await w.RunAsync("scm.catch_up", null, "plan")));   // records where "plan" started
         var start = w.Work!;
         var discarded = w.CommitWork("b.txt", "work to discard");
-        var hidden = $"refs/feature-flow/wip/{EngineActions.Safe(w.RunId)}/implement";
+        var hidden = $"refs/feature-flow/wip/{WorkRefs.Safe(w.RunId)}/implement";
         w.Forge.SetReference(w.Repo, hidden, discarded);
 
         var events = (await w.Actions.CleanUpAsync(w.RunId, "plan", 1, [w.Repo.FullName], ActionWorld.WorkBranch, ["plan", "implement"], TestContext.Current.CancellationToken)).Events;
 
         Assert.Equal(start, w.Work);
         Assert.Equal(start, w.Forge.Resolve(w.Repo, hidden));
-        Assert.Equal(discarded, w.Forge.Resolve(w.Repo, $"refs/feature-flow/superseded/{EngineActions.Safe(w.RunId)}/plan/{EngineActions.Short(discarded)}"));
+        Assert.Equal(discarded, w.Forge.Resolve(w.Repo, $"refs/feature-flow/superseded/{WorkRefs.Safe(w.RunId)}/plan/{discarded[..12]}"));
         Assert.Equal(2, events.Count);
     }
 

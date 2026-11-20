@@ -20,9 +20,7 @@ public sealed class Harness : IAsyncDisposable
     public static string TemporalAddress =>
         Environment.GetEnvironmentVariable("FF_TEMPORAL_ADDRESS") is { Length: > 0 } address ? address : "localhost:7233";
 
-    public static string RepositoryRoot { get; } = FindRoot();
-
-    public static string TestLibraries => IOPath.Combine(RepositoryRoot, "tests", "FeatureFlow.Integration.Tests", "libraries");
+    public static string TestLibraries => IOPath.Combine(Repository.Root, "tests", "FeatureFlow.Integration.Tests", "libraries");
 
     /// <summary>The types the stand-in and fake providers fill, so capability negotiation passes for std (check 21).</summary>
     public static readonly string[] FakeTypes = ["sandbox", "vcs", "code_host", "ci", "tracker", "validator", "notifications"];
@@ -88,7 +86,7 @@ public sealed class Harness : IAsyncDisposable
             api:
               auth: { mode: local_token, token_ref: secrets/api_token, actor: tester, roles: [viewer, approver, steerer, admin] }
             """);
-        var sources = string.Join("\n", (libraries ?? []).Prepend(IOPath.Combine(RepositoryRoot, "library", "std"))
+        var sources = string.Join("\n", (libraries ?? []).Prepend(IOPath.Combine(Repository.Root, "library", "std"))
             .Select(p => $"  - {{ name: {IOPath.GetFileName(p)}, source: directory, path: \"{p}\" }}").Concat((librarySources ?? []).Select(l => "  - " + l)));
         await File.WriteAllTextAsync(IOPath.Combine(folder, "organisation.yaml"), $$"""
             api_version: feature-flow/v1
@@ -244,13 +242,5 @@ public sealed class Harness : IAsyncDisposable
         catch (IOException)
         {
         }
-    }
-
-    static string FindRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            if (File.Exists(IOPath.Combine(dir.FullName, "FeatureFlow.slnx")))
-                return dir.FullName;
-        throw new InvalidOperationException("FeatureFlow.slnx not found above the test output folder");
     }
 }
