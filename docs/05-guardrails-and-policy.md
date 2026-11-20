@@ -50,6 +50,7 @@ may grant beyond the hard ceiling (section 5).
 | The workflow's part | A merge step's `engine_can_merge` is the workflow's request. Into the default branch, it may be `true` only where F1 allows |
 | Enforcement | At validation (start and every patch), and again by `scm.merge` at merge time, reading the target and the default branch from the code host, never from the plan |
 | When the engine may not merge | The step asks a person to merge on the code host and waits (an action request, `docs/04` section 4.5) |
+| A person merges on the code host before the request is answered | Accepted; the run continues and the timeline records the code host login and that the decision was not given through Feature Flow. Branch protection on the code host governs merges made there; approval rules on `*.merge_action` govern merges requested through Feature Flow (planned, `docs/12` A1; LOG 341) |
 | When the code host refuses an allowed engine merge | The same: an action request |
 | Final fallback | Branch protection on the default branch, configured by an identity the engine does not hold. The engine checks it exists at run start and never holds a bypass |
 
@@ -72,11 +73,13 @@ limit. Validation reports where a request was capped.
 | Auto-resolution of a decision | `auto: <outcome>` on the decision | Whether auto-resolution is allowed, per decision type pattern |
 | Engine merge into the default branch | `engine_can_merge: true` | F1 |
 | Checks before merging | `require_checks` on `scm.merge` | `merge.require_checks`: if set, a workflow cannot turn checks off |
+| Tests before merging | `require_tested` on `scm.merge` | None in version 1. Planned (`docs/12` A1, LOG 342): `merge.require_tested`, applied as `merge.require_checks` is |
 | Attempts | `limits.attempts` | Ceilings per step form and per run (F4) |
+| Merge races | `limits.races` on `scm.merge` | None of its own: the per-step attempts ceiling. Version 1 checks races against it only when a patch changes them; planned (`docs/12` A1, LOG 340): at run start too |
 | Work items | `budget.max_work_items` on the root template | Ceiling (F11), always locked (LOG 187) |
 | Review of agent patches | `planning.review` | `planning.require_review`, per template name pattern |
 | Agent roles | The roles a template's steps name | `planning.allowed_roles` for steps an agent adds (section 6) |
-| Toolsets | The role's toolsets | None in version 1: no external toolsets are connected (LOG 270) |
+| Toolsets | The role's toolsets | None in version 1: no external toolsets are connected (LOG 270). Refusing the toolset settings at load is planned (`docs/06` section 3.9) |
 
 A request that exceeds its cap is not silently lowered. Where the cap is an
 organisation **default** (`locked: false`), the request applies; where it is
@@ -144,7 +147,7 @@ decision_types:
 |---|---|
 | Unknown type | A decision type no library declares is a validation error at load |
 | Precedence | An organisation rule that matches wins over the library's default |
-| Engine-raised types | The engine raises decisions of type `<level>.escalation`, `<level>.question`, `<level>.patch_approval`, `<level>.breakpoint` and `<level>.merge_action`, with `<level>` the run's level. Every intervention, whatever raised it (an `escalate` route, a step that cannot answer, a timeout), has type `<level>.escalation`. The standard library declares them with patterns (`*.escalation` and so on) |
+| Engine-raised types | The engine raises decisions of type `<level>.escalation`, `<level>.question`, `<level>.patch_approval`, `<level>.breakpoint` and `<level>.merge_action`, with `<level>` the run's level. Every intervention, whatever raised it (an `escalate` route, a step that cannot answer, a timeout), has type `<level>.escalation`. The standard library declares them with patterns (`*.escalation` and so on). Version 1 does not yet raise `<level>.merge_action`, so a rule on it has no effect; raising it is planned (`docs/04` section 4.5; `docs/12` A1). A rule on it governs merges requested through Feature Flow, not a merge a person makes directly on the code host, which branch protection governs (LOG 341) |
 
 ---
 

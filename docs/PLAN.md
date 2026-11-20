@@ -2,7 +2,8 @@
 
 Status: design complete 2026-11-01. Version 1 built: milestones M0 to M8 of
 `docs/11-build-plan.md` done by 2026-11-05; the latest handover is
-`docs/build/handover-2026-11-05-v1.md`. Started 2026-10-31. This file is the
+`docs/build/handover-2026-11-05-v1.md`. Next phase: `docs/12-build-plan-phase-2.md`,
+drafted 2026-11-21 and awaiting the product owner's review. Started 2026-10-31. This file is the
 resume point: a new session reads it first, then the status table in section 6
 and the latest handover.
 
@@ -58,6 +59,24 @@ them.
 | RW17 | The agent hook endpoint is served by the agent worker, not the API and not inside the sandbox. Detail in `02` |
 | RW18 | Interactive human sessions (a person working in their own agent tool, with pre-submit checks) are in version 1 |
 
+Product owner, 2026-11-21, on the design review and the console design for the
+next phase. `docs/12` section 1.2 refers to them.
+
+| # | Decision |
+|---|---|
+| NP1 | Guiding principle: the engine runs anywhere from one developer on a laptop to a corporate cloud install. Authentication is pluggable or configurable; a fork with bespoke handlers is acceptable (`docs/00` P13) |
+| NP2 | Two release stages: alpha, the product owner running locally, first; then the first full release, which includes the enterprise profile |
+| NP3 | Console: Design A of the console design, TypeScript with a Node build, served by the API at `/console`, with hash routes. The build tool is a judgement call (LOG 344) |
+| NP4 | Console sign-in: none or a local token in alpha; OIDC with PKCE (Okta) for the enterprise profile |
+| NP5 | The console's first slice includes the steering controls (G10, G11) and live updates by server-sent events (G8) |
+| NP6 | Any viewer of a run may read its agent transcripts |
+| NP7 | F2: the `<level>.merge_action` decision is built |
+| NP8 | F7: the enterprise profile (Temporal Cloud connection, TeamCity, SonarCloud) is required for the first full release, not alpha. F19: toolsets are not in version 1; the settings accepted but unused are refused |
+| NP9 | The review's other recommendations are accepted, F14 as a milestone item. Ways of working: the default test set on a pull request, the full set by a `full-ci` label; targeted tests plus the default suite while building; one review per pull request; live runs only where a done-when needs one |
+| NP10 | Product owner, 2026-11-21, answering `docs/12` section 7: questions 1, 3, 5, 6 and 7 accepted as proposed: `api.auth.mode: none` on loopback only (LOG 333); engine simplification (A2) before oversight (LOG 330); `dry_run` kept, a lockable `merge.require_tested` added, `notify.send` removed (LOG 342) |
+| NP11 | Question 2: backward compatibility returns at the first full release, not alpha. Question 8: assume the Okta tenant can register a public browser client for the console; verify before R2 starts |
+| NP12 | Question 4, overridden: a pull request merged on the code host before the `<level>.merge_action` decision is answered is accepted and the run continues. The decision closes as answered on the code host, the timeline records the code host login and that the decision was not given through Feature Flow, and no intervention is raised. Branch protection governs merges made on the code host; Feature Flow's approval rules govern merges requested through it (LOG 341) |
+
 ## 4. Document structure
 
 Each document owns the facts listed and does not restate another's.
@@ -75,7 +94,8 @@ Each document owns the facts listed and does not restate another's.
 | 08 | `08-library.md` | Library format and sources, lock, mid-run override, and the standard library's templates and fragments |
 | 09 | `09-validation-and-testing.md` | Validation phases and checks, workflow testing, interpreter replay tests |
 | 10 | `10-decisions-and-risks.md` | Decision register, risk register, spike plan, evidence index |
-| 11 | `11-build-plan.md` | Version 1 build: code location and layout, build order, milestones, carry-over from spikes |
+| 11 | `11-build-plan.md` | Version 1 build: code location and layout, build order, milestones M0 to M8, carry-over from spikes |
+| 12 | `12-build-plan-phase-2.md` | Phase 2 build: release stages, alpha and first full release milestones, and where each design review finding and console gap is built |
 
 Reviews from the product owner go in `docs/reviews/`, as before.
 
@@ -118,7 +138,11 @@ Paths in all design documents are relative to the repository root.
 | M6 (findings, validators and levels) | Done 2026-11-04: the done-whens' live runs delivered an epic of three issue-tracked tickets into its parent branch, and a project over two repositories with the product owner's merges into `main` detected. LOG 139 (a wait held up a run's hand-over) is fixed. Results in `docs/build/m6-results.md`; LOG 148 to 200 approved by the product owner 2026-11-04. Second fixture `ai-feature-flow/feature-flow-example-client` created. Next steps in `docs/build/handover-2026-11-04-m7.md` |
 | M7 (people, policy and steering) | Done 2026-11-05 (pull requests 16 to 22): run-time overrides with who may use each, organisation policy and people roles, OIDC, Slack notifications and chat answers, webhooks, a minimal console, interactive sessions with pre-submit checks, report-time artifact checks and a person triaging findings. The done-when's live run had a second authenticated person submit a project's requirements session. Results in `docs/build/m7-results.md`; LOG 201 to 261, awaiting review |
 | M8 (team profile and operations) | Done 2026-11-05 (pull requests 25 to 32): the sandbox's network closed (M4 follow-up 12), compatibility code removed, a Postgres record store, an S3 artifact store, the payload codec, reconcile, the `git` library source, the Kubernetes pod sandbox, Copilot CLI, `role_mapping`, Jira, OpenTelemetry, stuck-run detection, host images, a k3d deployment, a distribution template and a `Cluster` CI job. The done-when's live run delivered an epic of three Jira tickets on k3d. Results in `docs/build/m8-results.md`; LOG 271 to 327, approved by the product owner 2026-11-07. **Version 1 is built** |
-| After version 1: what to take from M8's consolidated follow-ups (Copilot quota first, follow-up 14) and a lighter CI while development goes on | **Next** (`docs/build/handover-2026-11-05-v1.md` section 2) |
+| After version 1: what to take from M8's consolidated follow-ups (Copilot quota first, follow-up 14) and a lighter CI while development goes on | Superseded 2026-11-21 by the next-phase plan: the M8 follow-ups the design review took up (Copilot quota as follow-up 14 in A5) and the CI plan are in its milestones and ways of working |
+| Next-phase plan: design review (findings F1 to F21, L1 to L11) and console design (gaps G1 to G14), product owner decisions NP1 to NP9 (answers to its open questions NP10 to NP12) | Drafted 2026-11-21 in `docs/12-build-plan-phase-2.md`: milestones A1 to A6 (alpha) and R1 to R5 (first full release); owning documents 00, 02, 04, 05, 06 and 07 updated, unbuilt items marked planned. Judgement calls LOG 328 to 346, unreviewed |
+| Next-phase plan review | Independent review done 2026-11-21: no blocking findings; its fourteen findings fixed in the plan and LOG |
+| Product owner answers to `docs/12` section 7 | Done 2026-11-21: all eight answered (NP10 to NP12); question 4 overridden (LOG 341). LOG 330, 333, 341 and 342 decided; LOG 328, 329, 331, 332 and 334 to 346 still unreviewed |
+| Push the `docs/12` branch, once the product owner approves the push; then start A1 | **Next** |
 
 ## 7. How to resume
 

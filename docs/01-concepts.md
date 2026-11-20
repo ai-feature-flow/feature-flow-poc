@@ -3,8 +3,8 @@
 Status: draft, 2026-10-31.
 
 This document owns the domain model. Every other document uses these terms as
-defined here and does not redefine them. Principles are cited by number (P1 to
-P12, `docs/00-principles.md`); decisions by number (RW1 to RW18,
+defined here and does not redefine them. Principles are cited by number
+(`docs/00-principles.md`); decisions by number (RW1 to RW18,
 `docs/PLAN.md` section 3).
 
 | Section | Concept |

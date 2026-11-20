@@ -84,7 +84,7 @@ section 1).
 | 3.7 | Findings source | `findings.record` |
 | 3.8 | Validator | `artifact.validate` |
 | 3.9 | Toolset | Agent steps, through the engine MCP server |
-| 3.10 | Notifications | Decisions, `notify.send`, stuck runs |
+| 3.10 | Notifications | Decisions, stuck runs, and `notify.send` (never built; planned removal, `docs/12` A1) |
 | 3.11 | Session surface | Interactive sessions |
 | 3.12 | Artifact store, record store, secrets | The engine itself |
 | 3.13 | Credential broker | Every provider |
@@ -385,6 +385,11 @@ interface IToolsetProvider : IProvider {
   design for external MCP servers).
 - A role names toolsets and, optionally, a tool allow-list within each. Version 1
   connects no external toolsets, so nothing restricts them yet (LOG 270).
+  Version 1 still accepts a `toolset` provider instance, a role's `toolsets` and
+  a library item's `requires.toolsets`, and does nothing with them. Refusing all
+  three at load, as `policy.toolsets` already is (LOG 273), is planned
+  (`docs/12` A1, review F19). This section describes the design for when
+  toolsets are built (section 5).
 - Each call is recorded on the timeline with the step and the tool. A tool that
   writes (creating a ticket) is marked as writing in its descriptor, so a role
   with `write_access: none` cannot call it unless the role allows it explicitly.
@@ -475,7 +480,7 @@ requests (`archive/docs/16` section 2).
 | Rule | Detail |
 |---|---|
 | Version 1 | Providers are in-process .NET packages. A host project references the providers it ships; configuration selects them by name |
-| Organisation customisation | A **distribution repository**, not a fork: the organisation's own providers, a small host project that builds its worker and API images, and its configuration. A fork is needed only for core changes |
+| Organisation customisation | A **distribution repository**, not a fork: the organisation's own providers, a small host project that builds its worker and API images, and its configuration. A fork is needed only for core changes, and is acceptable for bespoke authentication handlers (`docs/00` P13). Version 1 has no published packages or sample host, so today a distribution needs the engine's source; both are planned (`docs/12` R1, review F6) |
 | Later | A remote provider adapter for providers in other languages or needing isolation |
 
 ---
@@ -490,6 +495,7 @@ requests (`archive/docs/16` section 2).
 | Session surfaces other than hand-off | Review rounds on a pull request, console chat, chat-thread questions: later |
 | VCS systems other than Git | The interface allows one |
 | Remote provider adapter | Section 4 |
+| Toolset providers (section 3.9) | Product owner, 2026-11-21: not in version 1. Their settings are to be refused rather than accepted and ignored (`docs/12` A1) |
 
 ---
 
