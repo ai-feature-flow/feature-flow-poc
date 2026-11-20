@@ -44,4 +44,13 @@ public sealed class RunPolicyTests
         // Nothing matches: never automatic.
         Assert.False(outside("project.requirements_approval"));
     }
+
+    [Fact]
+    public void A_run_carries_the_organisations_merge_floors_and_ceiling_so_a_patch_is_checked_against_them()
+    {
+        var policy = new PolicyConfig([], 7, null, null, new Cap<bool>(true, true)) { RequireTested = new Cap<bool>(true, true) };
+        var caps = Services(new OrganisationConfig("acme", [], policy, "o.yaml")).Policy(Declared).ToOptions().StepCaps;
+
+        Assert.Equal(new FeatureFlow.Validation.StepCaps(7, new Cap<bool>(true, true), new Cap<bool>(true, true)), caps);
+    }
 }

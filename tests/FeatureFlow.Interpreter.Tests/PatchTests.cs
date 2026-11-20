@@ -266,7 +266,45 @@ public class PatchTests
         Assert.Equal([30], widened.Patch!.BlockingChecks);
         Assert.Contains("check 13", widened.Patch.Diagnostics.Single().Message);
         Assert.Equal([22], ceiling.Patch!.BlockingChecks);
-        Assert.Contains("above the cap of 5", ceiling.Patch.Diagnostics.Single().Message);
+        Assert.Contains("above policy.attempts.ceiling.per_step 5", ceiling.Patch.Diagnostics.Single().Message);
+    }
+
+    static string InsertMerge(string with) =>
+        $"  - {{ op: insert, after: build, step: {{ id: land, action: scm.merge{with} }} }}";
+
+    static readonly RunOptions LockedFloors = new() { RequireChecks = new Cap<bool>(true, true), RequireTested = new Cap<bool>(true, true) };
+
+    [Theory]
+    [InlineData("require_checks", "false")]
+    [InlineData("require_checks", "{ expr: \"true\" }")]
+    [InlineData("require_tested", "false")]
+    [InlineData("require_tested", "{ expr: \"true\" }")]
+    public void Check_22_a_patch_cannot_loosen_a_locked_merge_floor_by_a_literal_or_an_expression(string input, string value)
+    {
+        var (_, refused) = Propose(ByPlanner, InsertMerge($", with: {{ {input}: {value} }}"), options: LockedFloors);
+        var (_, met) = Propose(ByPlanner, InsertMerge($", with: {{ {input}: true }}"), options: LockedFloors);
+        var (_, unlocked) = Propose(ByPlanner, InsertMerge($", with: {{ {input}: {value} }}"),
+            options: new RunOptions { RequireChecks = new Cap<bool>(true, false), RequireTested = new Cap<bool>(true, false) });
+
+        Assert.Equal([22], refused.Patch!.BlockingChecks);
+        Assert.Contains($"policy.merge.{input} is locked true", refused.Patch.Diagnostics.Single().Message, StringComparison.Ordinal);
+        Assert.Equal(PatchStatus.Applied, met.Patch!.Status);
+        Assert.Equal(PatchStatus.Applied, unlocked.Patch!.Status);
+    }
+
+    [Fact]
+    public void Check_22_a_patch_cannot_set_races_above_the_per_step_ceiling_and_a_merge_asking_none_is_held_to_it()
+    {
+        var ceiling = new RunOptions { StepCeiling = 5 };
+        var (_, refused) = Propose(ByPlanner, InsertMerge(", limits: { races: 6 }"), options: ceiling);
+        var (_, within) = Propose(ByPlanner, InsertMerge(", limits: { races: 5 }"), options: ceiling);
+        var (core, asksNone) = Propose(ByPlanner, InsertMerge(""), options: ceiling);
+
+        Assert.Equal([22], refused.Patch!.BlockingChecks);
+        Assert.Contains("allows 6 races, above policy.attempts.ceiling.per_step 5", refused.Patch.Diagnostics.Single().Message, StringComparison.Ordinal);
+        Assert.Equal(PatchStatus.Applied, within.Patch!.Status);
+        Assert.Equal(PatchStatus.Applied, asksNone.Patch!.Status);
+        Assert.Equal(5, core.RaceAllowance(core.StepById("land")!));
     }
 
     [Fact]

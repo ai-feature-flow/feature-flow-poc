@@ -143,6 +143,7 @@ policy:                                     # meanings in docs/05
   merge:
     default_branch: { engine_may_merge: ["acme/poc-*"] }
     require_checks: { value: true, locked: true }
+    require_tested: { value: true, locked: true }
   attempts:
     ceiling: { per_step: 5, per_run: 40 }
     hard_ceiling: { per_step: 8, per_run: 60 }
@@ -188,6 +189,7 @@ teams:
 |---|---|
 | `libraries` | Each a `name` and a `source`: `directory` with `path` (relative to this file), or `git` with `repository` (anything Git can clone, with the host's own Git credentials; a URL holding a credential is refused, LOG 289) `ref` (a branch or tag; default the repository's default branch) and `path` (the library's folder inside the repository; default its root, LOG 321), fetched at each read (LOG 286). `package` is not in version 1 (LOG 287). The first library is the base for references without a library name |
 | `policy.*` | Meanings in `docs/05`. A cap may be `{ value, locked }`; a bare value is an unlocked default. Which settings reach running runs is in `docs/05` section 8 |
+| `policy.merge.require_checks`, `policy.merge.require_tested` | Caps on `scm.merge`'s `require_checks` and `require_tested`: locked true, a workflow cannot turn them off (`docs/05` section 3.1) |
 | `policy.budgets.max_work_items.ceiling` | F11's ceiling, always locked: a root template asking more does not start; a root that sets no budget gets the ceiling (LOG 187) |
 | `roles`, `teams` | People roles to groups. A run is in the scope of the team whose `repositories` match its repositories; a run spanning two teams is refused. In its scope a team's groups add holders to a role, and its approval rules may only raise `min_count` (LOG 204, 217) |
 | `role_mapping` | Each library agent role's `agent_runtime` (an instance of the installation's) and `model` (default: that instance's own). `default` serves roles with no entry; with neither, the installation's default runtime runs the step with its own model. Fixed for a run when it starts (LOG 267, 295) |

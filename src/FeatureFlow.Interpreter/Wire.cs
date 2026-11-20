@@ -91,7 +91,8 @@ public sealed record AutoRule(string Match, bool Auto);
 /// The limits and policy a run enforces, fixed when it starts (docs/05 section 8) and carried in its state,
 /// because workflow code cannot read configuration. <see cref="RequireReview"/> is the organisation's
 /// <c>planning.require_review</c> for the run's template (M7). <see cref="RoleMapping"/> is its <c>role_mapping</c>: each
-/// library agent role's runtime instance and model (LOG 267).
+/// library agent role's runtime instance and model (LOG 267). <see cref="RequireChecks"/> and <see cref="RequireTested"/>
+/// are its <c>merge.require_checks</c> and <c>merge.require_tested</c> caps, which a patch is checked against (F1).
 /// </summary>
 public sealed record RunPolicy(
     long DefaultAttempts,
@@ -106,7 +107,9 @@ public sealed record RunPolicy(
     bool? BuiltActions = null,
     long? WorkItemCeiling = null,
     bool? RequireReview = null,
-    IReadOnlyDictionary<string, Model.AgentRoleMapping>? RoleMapping = null)
+    IReadOnlyDictionary<string, Model.AgentRoleMapping>? RoleMapping = null,
+    Model.Cap<bool>? RequireChecks = null,
+    Model.Cap<bool>? RequireTested = null)
 {
     /// <summary>
     /// The runtime instance and model an agent of <paramref name="role"/> runs with: its own entry, else <c>default</c>; null
@@ -128,6 +131,8 @@ public sealed record RunPolicy(
         HardStepCeiling = HardStepCeiling,
         HardRunCeiling = HardRunCeiling,
         RequireReview = RequireReview ?? false,
+        RequireChecks = RequireChecks,
+        RequireTested = RequireTested,
     };
 
     static bool Matches(string pattern, string type) =>
