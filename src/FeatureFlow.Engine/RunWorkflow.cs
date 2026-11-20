@@ -889,23 +889,29 @@ public partial class RunWorkflow
     bool Current(string stepId, int execution) =>
         core!.State.Status == RunStatus.Running && core.State.InFlight.Contains(stepId) && core.State.Steps.GetValueOrDefault(stepId)?.Executions == execution;
 
+    /// <summary>
+    /// The core input a step activity's outcome gives when it is not a report: cannot answer (the core raises an
+    /// intervention), a work failure, or an action's decision. Null: a report, which <see cref="Apply"/> checks itself.
+    /// </summary>
+    public static RunInput? Ending(string stepId, StepOutcome outcome) => outcome.Kind switch
+    {
+        StepOutcome.CannotAnswer => new StepCannotAnswer(stepId, outcome.Reason ?? "cannot answer"),
+        StepOutcome.WorkFailed => new StepFailed(stepId, ErrorClass.Work, outcome.Reason ?? "work failure"),
+        StepOutcome.Decide => new ActionDecisionRequested(stepId, outcome.Reason ?? "a person decides"),
+        _ => null,
+    };
+
     void Apply(Step step, StepOutcome outcome)
     {
         if (outcome.Findings is { } counts)
             core!.Apply(new FindingsChanged(counts, outcome.FindingsVersion));
-        switch (outcome.Kind)
+        if (Ending(step.Id, outcome) is { } ending)
         {
-            case StepOutcome.CannotAnswer:
-                core!.Apply(new StepCannotAnswer(step.Id, outcome.Reason ?? "cannot answer"));
-                return;
-            case StepOutcome.WorkFailed:
-                core!.Apply(new StepFailed(step.Id, ErrorClass.Work, outcome.Reason ?? "work failure"));
-                return;
-            case StepOutcome.Decide:
+            if (ending is ActionDecisionRequested)
                 foreach (var e in outcome.Events ?? [])
                     core!.State.Trace.Add(new TraceEntry("agent", step.Id, e));
-                core!.Apply(new ActionDecisionRequested(step.Id, outcome.Reason ?? "a person decides"));
-                return;
+            core!.Apply(ending);
+            return;
         }
 
         foreach (var e in outcome.Events ?? [])
