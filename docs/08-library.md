@@ -162,7 +162,7 @@ left open are LOG 62 to 65, approved 2026-11-01.
 
 | Role | Write access | Notes |
 |---|---|---|
-| `planner` | none | May hold planning authority; tracker toolset where allowed |
+| `planner` | none | May hold planning authority; tracker toolset where allowed (toolsets are not in version 1, `docs/06` section 3.9) |
 | `designer` | none | — |
 | `implementer` | branch | `ask_human` enabled by its standard steps |
 | `fixer` | branch | — |
