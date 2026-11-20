@@ -97,7 +97,8 @@ from the library, expanded when the template loads). Both are defined in
 
 An agent step names a **role**: library content that says what the agent may
 do. The role sets the agent's write access (none, its own branch, or the whole
-repository), its tools and toolsets, and which runtime capabilities it needs. A
+repository), its tools, and which runtime capabilities it needs (toolsets are
+not in version 1, `docs/06` section 3.9). A
 step may tighten its role's write access but never widen it, and may not change
 its tools (P8). Which runtime and model a role runs on is organisation
 configuration.

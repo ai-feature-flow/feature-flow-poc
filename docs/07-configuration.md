@@ -56,7 +56,6 @@ providers:                       # every type: named instances, one default
   tracker:        { default: jira, instances: { jira: { base_url: https://acme.atlassian.net, secret_ref: secrets/jira, project: ACME, status_map: { in_progress: "In Progress", code_review: "Code Review", done: "Done" } } } }
   findings_source: { instances: { copilot_review: {}, sonarcloud: { secret_ref: secrets/sonar } } }
   validator:      { instances: { std: {} } }
-  toolset:        { instances: { jira: { url: https://mcp.internal/jira }, confluence: { url: https://mcp.internal/confluence } } }
   notifications:
     default: slack
     instances:
@@ -90,8 +89,7 @@ The example shows an enterprise installation, including settings that are not
 built yet. Planned for the first full release (`docs/12` R3, review F7):
 `temporal.auth`, `temporal.tls` and `expected_retention` (version 1 connects with
 the address, namespace and payload codec only), the `teamcity` CI instance and
-the `sonarcloud` findings analyser. The `toolset` instances are not in version 1
-and are refused at load (`docs/06` section 3.9). Which other example settings are
+the `sonarcloud` findings analyser. Which other example settings are
 unbuilt is review F14, corrected in `docs/12` A6.
 
 | Key | Notes |
@@ -146,8 +144,8 @@ policy:                                     # meanings in docs/05
     require_checks: { value: true, locked: true }
     require_tested: { value: true, locked: true }
   attempts:
-    ceiling: { per_step: 5, per_run: 40 }
-    hard_ceiling: { per_step: 8, per_run: 60 }
+    ceiling: { per_step: 12, per_run: 40 }        # std's merge_into_parent asks 12 attempts
+    hard_ceiling: { per_step: 16, per_run: 60 }
   budgets:
     max_work_items: { ceiling: 30 }
   planning:

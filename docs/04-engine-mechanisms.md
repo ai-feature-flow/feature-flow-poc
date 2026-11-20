@@ -107,7 +107,7 @@ reports.
    `findings_ledger` is given the ledger's current view, every finding with its
    ledger id and state, in the shape of a findings report (LOG 63).
 2. **Start.** Render the task, prepend the library's reporting preamble, and
-   start the agent runtime in the sandbox with the role's tools and toolsets.
+   start the agent runtime in the sandbox with the role's tools.
 3. **Supervise.** Heartbeat. About every 30 seconds, ask the VCS provider
    whether the working copy has new commits; if so, push them to the hidden
    work-in-progress reference. Serve hook calls, the engine tools (section 3.3)
@@ -333,7 +333,7 @@ sent as a signal (`docs/03` section 9.4).
 
 A planner with tracker tools in its toolset may create tickets for the child
 runs it proposes, marking each with the run's label so a later re-plan finds
-them (from FF).
+them (from FF). Toolsets are not in version 1 (`docs/06` section 3.9).
 
 ### 6.2 `plan.expand`
 
