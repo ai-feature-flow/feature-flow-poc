@@ -50,6 +50,7 @@ may grant beyond the hard ceiling (section 5).
 | The workflow's part | A merge step's `engine_can_merge` is the workflow's request. Into the default branch, it may be `true` only where F1 allows |
 | Enforcement | At validation (start and every patch), and again by `scm.merge` at merge time, reading the target and the default branch from the code host, never from the plan |
 | When the engine may not merge | The step asks a person to merge on the code host and waits (an action request, `docs/04` section 4.5) |
+| A person merges on the code host before the request is answered | Accepted; the run continues and the timeline records the code host login and that the decision was not given through Feature Flow. Branch protection on the code host governs merges made there; approval rules on `*.merge_action` govern merges requested through Feature Flow (planned, `docs/12` A1; LOG 341) |
 | When the code host refuses an allowed engine merge | The same: an action request |
 | Final fallback | Branch protection on the default branch, configured by an identity the engine does not hold. The engine checks it exists at run start and never holds a bypass |
 
@@ -146,7 +147,7 @@ decision_types:
 |---|---|
 | Unknown type | A decision type no library declares is a validation error at load |
 | Precedence | An organisation rule that matches wins over the library's default |
-| Engine-raised types | The engine raises decisions of type `<level>.escalation`, `<level>.question`, `<level>.patch_approval`, `<level>.breakpoint` and `<level>.merge_action`, with `<level>` the run's level. Every intervention, whatever raised it (an `escalate` route, a step that cannot answer, a timeout), has type `<level>.escalation`. The standard library declares them with patterns (`*.escalation` and so on). Version 1 does not yet raise `<level>.merge_action`, so a rule on it has no effect; raising it is planned (`docs/04` section 4.5; `docs/12` A1) |
+| Engine-raised types | The engine raises decisions of type `<level>.escalation`, `<level>.question`, `<level>.patch_approval`, `<level>.breakpoint` and `<level>.merge_action`, with `<level>` the run's level. Every intervention, whatever raised it (an `escalate` route, a step that cannot answer, a timeout), has type `<level>.escalation`. The standard library declares them with patterns (`*.escalation` and so on). Version 1 does not yet raise `<level>.merge_action`, so a rule on it has no effect; raising it is planned (`docs/04` section 4.5; `docs/12` A1). A rule on it governs merges requested through Feature Flow, not a merge a person makes directly on the code host, which branch protection governs (LOG 341) |
 
 ---
 

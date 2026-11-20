@@ -288,8 +288,12 @@ person declines. Version 1 watches without opening a decision record (section
 7). Planned (`docs/12` A1, review F2): the action request is a
 `<level>.merge_action` decision like any other, so approval rules on it
 (`docs/05` section 3.2) take effect. A pull request merged on the code host
-before that decision is answered fails the step as a policy breach and raises an
-intervention (LOG 341).
+before that decision is answered is accepted and the run continues: the engine
+closes the decision as answered on the code host, records on the run timeline
+the code host login of whoever merged and that the decision was not given
+through Feature Flow, and raises no intervention. Branch protection on the code
+host governs merges made there; the approval rules govern merges requested
+through Feature Flow (LOG 341, the product owner's decision of 2026-11-21).
 
 ---
 

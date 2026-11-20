@@ -1,6 +1,6 @@
 # Phase 2 build plan: alpha and first full release
 
-Status: draft for review, 2026-11-21.
+Status: drafted and reviewed 2026-11-21; the product owner answered its open questions the same day (section 7).
 
 This document owns how the next phase of Feature Flow is built: the release
 stages, the order of the work, the milestones and what each must show. Version 1
@@ -9,7 +9,8 @@ stages, the order of the work, the milestones and what each must show. Version 1
 design of the same date (Design A, API gaps G1 to G14) and the product owner's
 decisions on both (`docs/PLAN.md` section 3). What the engine does stays owned by
 `docs/00` to `docs/10`; this document cites them and does not restate them.
-Judgement calls made here are LOG 328 to 346, unreviewed.
+Judgement calls made here are LOG 328 to 346; LOG 330, 333, 341 and 342 were
+decided by the product owner on 2026-11-21, the rest are unreviewed.
 
 ---
 
@@ -28,7 +29,7 @@ follow. Nothing in alpha depends on an R milestone.
 ### 1.2 Decisions this plan follows
 
 The product owner's decisions of 2026-11-21 are recorded in `docs/PLAN.md`
-section 3 (NP1 to NP9). In short:
+section 3 (NP1 to NP9, and NP10 to NP12 for the answers in section 7). In short:
 
 - **Deployment range.** The open-source base serves one developer locally, with a
   console that needs no sign-in, and a corporate cloud install. Authentication is
@@ -96,8 +97,8 @@ L several weeks.
 
 | | |
 |---|---|
-| Builds | **F1**, a locked cap cannot be bypassed: caps held in `RunPolicy`, one cap function used at run start and on patches, so an expression or a patch that loosens a locked `require_checks` is refused (today only a literal `false` is, `RunStartChecks.cs:232-234`; `SourceControl.cs:143`; `Patches.cs:249-262`); a `merge.require_tested` policy key, applied by the same function (LOG 342). **F1, races**: `limits.races` shares the per-step attempts ceiling on every path; today a patch is checked against it (`Patches.cs:260-261`) and run start is not (`RunStartChecks.cs:222-223`) (LOG 340). **F2**, the merge action request becomes a `<level>.merge_action` decision, raised by `SourceControl.ActionRequestAsync` (`SourceControl.cs:152-175`, which today polls the pull request and opens no wait), so approval rules on it take effect (`docs/04` section 4.5; LOG 123 superseded). A pull request merged on the code host before the decision is answered fails the step as a policy breach and raises an intervention (LOG 341). **F3, small part**: `notify.send` removed from `docs/04` and from the action contracts (`Actions.cs:71`; it is absent from `EngineActions.Built`, `EngineActions.cs:22-29`; LOG 342), and an action no provider can serve raises an intervention instead of retrying. **F19**: the `toolset` provider type (in the type list at `Configuration.cs:177`), a role's `toolsets` (`LibraryItems.cs:185-197`) and a library item's `requires.toolsets` (`LibraryItems.cs:95-100`) refused at load, beside the existing development-only refusals (`Configuration.cs:331-340`), as `policy.toolsets` already is (LOG 273). **L4, part**: the `scripted` agent runtime refused outside `development: true`. **L9**: evidence types refused on `artifact.import` at load |
-| Done when | A negative test per path for `require_checks`: a locked `require_checks` loosened by an expression, and by a patch, is each refused; the same for a locked `require_tested`. Separate negative tests for races: a `limits.races` above the per-step ceiling is refused at run start, and by a patch. A run whose policy requires approval on `ticket.merge_action` opens that decision and, once it is answered, asks the person to merge; a pull request merged on the code host before the answer fails the step and opens an intervention, shown by a test. A plan using an unservable action stops at an intervention. Each refused setting has a load test naming its key |
+| Builds | **F1**, a locked cap cannot be bypassed: caps held in `RunPolicy`, one cap function used at run start and on patches, so an expression or a patch that loosens a locked `require_checks` is refused (today only a literal `false` is, `RunStartChecks.cs:232-234`; `SourceControl.cs:143`; `Patches.cs:249-262`); a `merge.require_tested` policy key, applied by the same function (LOG 342). **F1, races**: `limits.races` shares the per-step attempts ceiling on every path; today a patch is checked against it (`Patches.cs:260-261`) and run start is not (`RunStartChecks.cs:222-223`) (LOG 340). **F2**, the merge action request becomes a `<level>.merge_action` decision, raised by `SourceControl.ActionRequestAsync` (`SourceControl.cs:152-175`, which today polls the pull request and opens no wait), so approval rules on it take effect (`docs/04` section 4.5; LOG 123 superseded). A pull request merged on the code host before the decision is answered is accepted and the run continues: the engine closes the decision as answered on the code host and records, on the run timeline, the code host login of whoever merged and that the decision was not given through Feature Flow; no intervention is raised. Branch protection on the code host governs merges made there; Feature Flow's approval rules govern merges requested through it (LOG 341, product owner 2026-11-21). **F3, small part**: `notify.send` removed from `docs/04` and from the action contracts (`Actions.cs:71`; it is absent from `EngineActions.Built`, `EngineActions.cs:22-29`; LOG 342), and an action no provider can serve raises an intervention instead of retrying. **F19**: the `toolset` provider type (in the type list at `Configuration.cs:177`), a role's `toolsets` (`LibraryItems.cs:185-197`) and a library item's `requires.toolsets` (`LibraryItems.cs:95-100`) refused at load, beside the existing development-only refusals (`Configuration.cs:331-340`), as `policy.toolsets` already is (LOG 273). **L4, part**: the `scripted` agent runtime refused outside `development: true`. **L9**: evidence types refused on `artifact.import` at load |
+| Done when | A negative test per path for `require_checks`: a locked `require_checks` loosened by an expression, and by a patch, is each refused; the same for a locked `require_tested`. Separate negative tests for races: a `limits.races` above the per-step ceiling is refused at run start, and by a patch. A run whose policy requires approval on `ticket.merge_action` opens that decision and, once it is answered, asks the person to merge; a pull request merged on the code host before the answer closes the decision as answered on the code host, records the merger's code host login on the run timeline, raises no intervention and lets the run continue, shown by a test. A plan using an unservable action stops at an intervention. Each refused setting has a load test naming its key |
 | Depends on | None |
 | Effort | M |
 | Stage | Alpha |
@@ -275,10 +276,10 @@ Nothing is deferred beyond first full release.
 |---|---|
 | 328 | File name `12-build-plan-phase-2.md` |
 | 329 | Milestones named A and R by release stage |
-| 330 | Engine simplification (A2) before the oversight API and console |
+| 330 | Engine simplification (A2) before the oversight API and console (accepted by the product owner, 2026-11-21) |
 | 331 | F2 and F3-small before A2, though F2 touches a wait |
 | 332 | Reminders (F21) after F11, in A3 |
-| 333 | A loopback-only `none` authentication mode for the alpha console |
+| 333 | A loopback-only `none` authentication mode for the alpha console (accepted by the product owner, 2026-11-21) |
 | 334 | Pluggable authentication built on the existing `IAuthenticator` list, in R2 after F6 |
 | 335 | Extension points (R1) placed in first full release |
 | 336 | G9, G12 and G13 placed in first full release |
@@ -286,8 +287,8 @@ Nothing is deferred beyond first full release.
 | 338 | Planned items marked in the owning documents with this plan's milestone |
 | 339 | F19 enforced by refusal at load, not by removing the toolset sections from the design |
 | 340 | Races share the per-step attempts ceiling on every path, run start included |
-| 341 | A pull request merged on the code host before the `<level>.merge_action` answer fails the step as a policy breach |
-| 342 | Defaults for dry run, `require_tested` and `notify.send`, applying unless the product owner overrides |
+| 341 | A pull request merged on the code host before the `<level>.merge_action` answer is accepted and the run continues (the product owner's decision, 2026-11-21) |
+| 342 | Dry run kept, `require_tested` added, `notify.send` removed (accepted by the product owner, 2026-11-21) |
 | 343 | LOG 325 amended: artifacts listed and transcripts indexed in A3 |
 | 344 | Vite as the console's build tool |
 | 345 | F12 in alpha (A5), not with the extension points in R1 |
@@ -295,30 +296,38 @@ Nothing is deferred beyond first full release.
 
 ---
 
-## 7. Open questions
+## 7. Product owner answers
 
-Questions 3 to 7 have a default this plan follows unless the product owner
-overrides it; each names the milestone that needs the answer before it starts.
+The product owner answered the plan's eight open questions on 2026-11-21
+(`docs/PLAN.md` section 3, NP10 to NP12). Questions 1, 2, 3 and 5 to 8 were
+accepted as proposed; question 4 was overridden.
 
-1. **`api.auth.mode: none`** (LOG 333). Is a console with no sign-in acceptable
-   when the host has checked at start that the API is bound only to loopback, or
-   should alpha keep the pasted local token alone?
-2. **Version numbering.** LOG 263 dropped backward compatibility for version 1's
-   build. Does it return at alpha, or at first full release?
-3. **Milestone order** (LOG 330). The review recommends oversight (F5, F9, F4,
-   F21) before engine simplification; this plan puts simplification (A2) first,
-   so the console arrives one large milestone later. Accept the reversal, or
-   follow the review's order? Default: simplification first. Needed before A2.
+1. **`api.auth.mode: none`** (LOG 333). Accepted: alpha's console may run with
+   no sign-in when the host has checked at start that the API is bound only to
+   loopback; the pasted local token remains the other mode. A4.
+2. **Version numbering.** Backward compatibility, dropped for version 1's build
+   (LOG 263), returns at the first full release, not alpha.
+3. **Milestone order** (LOG 330). Accepted: engine simplification (A2) before
+   the oversight API (A3) and the console (A4), reversing the review's order.
 4. **Merge on the code host before the merge decision is answered** (F2,
-   LOG 341). Default: the step fails as a policy breach and raises an
-   intervention. Needed before A1.
-5. **Dry run** (F3, LOG 342). Default: keep `dry_run`, served by the memory and
-   recording providers. Needed before A2.
-6. **`require_tested`** (F1, LOG 342). Default: add a lockable
-   `merge.require_tested` policy key, applied by F1's cap function. Needed
-   before A1.
-7. **`notify.send`** (F3, LOG 342). Default: remove it from `docs/04` sections 2
-   and 12 and from the action contracts; it was never built, and notifications of
-   decisions and stuck runs do not depend on it. Needed before A1.
-8. **Okta for R2.** Can the corporate tenant register a public browser client for
-   the console? If not, R2 needs a server-side session instead (about S to M more).
+   LOG 341). **Overridden.** The proposed default (fail the step as a policy
+   breach) is not taken. A pull request merged on the code host before the
+   `<level>.merge_action` decision is answered is accepted and the run
+   continues: the engine closes the decision as answered on the code host,
+   records the code host login of whoever merged and that the decision was not
+   given through Feature Flow on the run timeline, and raises no intervention.
+   Branch protection on the code host governs merges made there; Feature Flow's
+   approval rules govern merges requested through it. In the product owner's
+   words: "if an engineer merges in github then there is not much that anyone can
+   do so there is no point stopping - often an engineer will review and just
+   click merge by habit in github, so the workflow should accept and continue".
+   A1.
+5. **Dry run** (F3, LOG 342). Accepted: keep `dry_run`, served by the memory and
+   recording providers. A2.
+6. **`require_tested`** (F1, LOG 342). Accepted: add a lockable
+   `merge.require_tested` policy key, applied by F1's cap function. A1.
+7. **`notify.send`** (F3, LOG 342). Accepted: remove it from `docs/04` sections 2
+   and 12 and from the action contracts. A1.
+8. **Okta for R2.** Assume the corporate tenant can register a public browser
+   client for the console (OIDC with PKCE); verify this before R2 starts. If it
+   cannot, R2 needs a server-side session instead (about S to M more).
