@@ -654,7 +654,8 @@ public partial class RunWorkflow
                 consumed.TryAdd(ConsumedKey(c), reference);
 
         return new ActionScope(input.Repositories, repository, core.WorkBranch(), input.ParentBranch, artifacts, pullRequests, policy?.EngineMayMerge ?? [],
-            Consumed: consumed, TrackerIssue: input.TrackerIssue, Declared: declared, LockRef: LockRef);
+            Consumed: consumed, TrackerIssue: input.TrackerIssue, Declared: declared, LockRef: LockRef,
+            Decision: core.ActionDecisionState(step.Id) is { } decided ? new StepDecision(core.ActionDecisionType, decided) : null);
     }
 
     /// <summary>
@@ -899,6 +900,11 @@ public partial class RunWorkflow
                 return;
             case StepOutcome.WorkFailed:
                 core!.Apply(new StepFailed(step.Id, ErrorClass.Work, outcome.Reason ?? "work failure"));
+                return;
+            case StepOutcome.Decide:
+                foreach (var e in outcome.Events ?? [])
+                    core!.State.Trace.Add(new TraceEntry("agent", step.Id, e));
+                core!.Apply(new ActionDecisionRequested(step.Id, outcome.Reason ?? "a person decides"));
                 return;
         }
 
@@ -1308,6 +1314,7 @@ public partial class RunWorkflow
         var step = core.StepById(wait.StepId);
         var (type, choices) = wait.Kind switch
         {
+            WaitKind.Decision when step?.Form == StepForm.Action => (core.ActionDecisionType, ActionDecisions.Choices.ToList()),
             WaitKind.Decision => (step?.Decision?.Type ?? $"{level}.decision", step?.DeclaredOutcomes.Select(o => o.Name).ToList() ?? []),
             WaitKind.PatchApproval => ($"{level}.patch_approval", new List<string> { "approve", "reject" }),
             WaitKind.Breakpoint => ($"{level}.breakpoint", new List<string> { "continue", "retry", "go_to", "replan", "grant_attempts", "end" }),

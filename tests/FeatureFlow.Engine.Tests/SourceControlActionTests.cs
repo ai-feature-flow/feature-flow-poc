@@ -256,11 +256,13 @@ public sealed class SourceControlActionTests
 
         var waiting = await w.RunAsync("scm.merge", null, "merge", waits: 1);
 
-        Assert.Equal(ActionResult.Wait, waiting.Kind);
+        // A person must merge: the step asks the run to open its merge_action decision first (LOG 331).
+        Assert.Equal(StepOutcome.Decide, waiting.Kind);
         Assert.Equal(before, w.Main);
         Assert.Contains(waiting.Events, e => e.StartsWith("F1 at merge time", StringComparison.Ordinal));
 
-        // A person merges on the code host: the step sees it and records them.
+        // Approved, a person merges on the code host: the step sees it and records them.
+        w.Decision = new StepDecision("ticket.merge_action", "approve");
         var pr = ActionRunAccess.Pr(w.PullRequests[0]);
         var merged = await w.RunAsync("scm.merge", null, "merge", beforeEachRead: () =>
         {
@@ -284,6 +286,51 @@ public sealed class SourceControlActionTests
             new InMemoryCodeHost(w.Forge).ClosePullRequestAsync(pr, "not wanted", default).GetAwaiter().GetResult());
 
         Assert.Equal("declined", Outcome(result));
+    }
+
+    [Fact]
+    public async Task An_action_request_raises_its_merge_action_decision_and_asks_a_person_to_merge_only_once_it_is_approved()
+    {
+        await using var w = new ActionWorld();
+        w.CommitWork("a.txt", "work");
+        await TestedAndCheckedAsync(w);
+        var before = w.Main;
+
+        var decide = await w.RunAsync("scm.merge", "{ engine_can_merge: false }", "merge");
+        Assert.Equal(StepOutcome.Decide, decide.Kind);
+        Assert.Contains("acme/api#1", decide.Reason, StringComparison.Ordinal);
+
+        // While the decision is open the step watches the pull request, and has asked no one to merge yet.
+        w.Decision = new StepDecision("ticket.merge_action", StepDecision.Open);
+        var open = await w.RunAsync("scm.merge", "{ engine_can_merge: false }", "merge", waits: 1);
+        Assert.Equal(ActionResult.Wait, open.Kind);
+        Assert.Contains("ticket.merge_action", open.Reason, StringComparison.Ordinal);
+        Assert.DoesNotContain(await w.EventsAsync("merge", 2), e => e.Kind == "action_request");
+
+        // Approved: the step asks a person to merge, and waits for them.
+        w.Decision = new StepDecision("ticket.merge_action", "approve");
+        var asked = await w.RunAsync("scm.merge", "{ engine_can_merge: false }", "merge", waits: 1);
+        Assert.Equal(ActionResult.Wait, asked.Kind);
+        Assert.Contains(await w.EventsAsync("merge", 3), e => e is { Kind: "action_request", Detail: "a person merges acme/api#1 into main, or closes it to decline" });
+        Assert.Equal(before, w.Main);
+    }
+
+    [Fact]
+    public async Task A_merge_on_the_code_host_while_the_decision_is_open_is_merged_and_says_who_merged_and_that_the_decision_was_bypassed()
+    {
+        await using var w = new ActionWorld();
+        var head = w.CommitWork("a.txt", "work");
+        await TestedAndCheckedAsync(w);
+        var pr = ActionRunAccess.Pr(w.PullRequests[0]);
+        w.Decision = new StepDecision("ticket.merge_action", StepDecision.Open);
+        w.Forge.MergePullRequest(pr, "bob");
+
+        var merged = await w.RunAsync("scm.merge", "{ engine_can_merge: false }", "merge");
+
+        Assert.Equal("merged", Outcome(merged));
+        Assert.Contains("bob merged acme/api#1 on the code host before ticket.merge_action was answered: the decision was not given through Feature Flow", merged.Events);
+        var record = JsonSerializer.Deserialize<MergeEvidence>(await w.ReadAsync(merged.Report!.Artifacts["evidence"]), new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        Assert.Equal(("bob", head), (record.MergedBy, record.Head));
     }
 
     [Fact]

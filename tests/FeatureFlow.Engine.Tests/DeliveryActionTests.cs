@@ -46,8 +46,8 @@ public sealed class DeliveryActionTests
     {
         await using var w = new ActionWorld();
         await ReadyAsync(w);
-        // The engine may not merge into main (F1): the merge waits for a person, who merges on the code host.
-        Assert.Equal("wait", (await w.RunAsync("scm.merge", null, "merge", waits: 1)).Kind);
+        // The engine may not merge into main (F1): the merge asks for its merge_action decision, and a person merges on the code host.
+        Assert.Equal(StepOutcome.Decide, (await w.RunAsync("scm.merge", null, "merge", waits: 1)).Kind);
         w.Forge.MergePullRequest(ActionRunAccess.Pr(w.PullRequests[0]), "octo-person");
         Assert.Equal("merged", Outcome(await w.RunAsync("scm.merge", null, "merge")));
 
@@ -122,7 +122,7 @@ public sealed class DeliveryActionTests
     static async Task<PullRequestRef> MergedThenRevertedAsync(ActionWorld w)
     {
         await ReadyAsync(w);
-        Assert.Equal("wait", (await w.RunAsync("scm.merge", null, "merge", waits: 1)).Kind);
+        Assert.Equal(StepOutcome.Decide, (await w.RunAsync("scm.merge", null, "merge", waits: 1)).Kind);
         w.Forge.MergePullRequest(ActionRunAccess.Pr(w.PullRequests[0]), "octo-person");
         Assert.Equal("merged", Outcome(await w.RunAsync("scm.merge", null, "merge")));
         var revert = await w.RunAsync("scm.revert", null, "revert");
@@ -160,7 +160,7 @@ public sealed class DeliveryActionTests
     static async Task<PullRequestRef> PersonMergedAsync(ActionWorld w)
     {
         await ReadyAsync(w);
-        Assert.Equal("wait", (await w.RunAsync("scm.merge", null, "merge", waits: 1)).Kind);
+        Assert.Equal(StepOutcome.Decide, (await w.RunAsync("scm.merge", null, "merge", waits: 1)).Kind);
         var pr = ActionRunAccess.Pr(w.PullRequests[0]);
         w.Forge.MergePullRequest(pr, "octo-person");
         Assert.Equal("merged", Outcome(await w.RunAsync("scm.merge", null, "merge")));

@@ -157,7 +157,7 @@ public sealed partial class RunCore
 
     void Progressed() => enteredWithoutProgress.Clear();
 
-    bool WaitingOn(string stepId) => State.Waits.Any(w => w.StepId == stepId && w.Kind is WaitKind.Decision or WaitKind.Breakpoint);
+    bool WaitingOn(string stepId) => State.Waits.Any(w => w.StepId == stepId && w.Kind is WaitKind.Decision or WaitKind.Breakpoint && !IsActionDecision(w));
 
     StepRecord Record(string stepId)
     {
@@ -366,6 +366,7 @@ public sealed partial class RunCore
             StepFailed f => Failed(f),
             StepInterrupted i => Interrupted(i),
             DecisionAnswered a => Answered(a),
+            ActionDecisionRequested r => RequestActionDecision(r),
             PatchProposed p => ProposeOutside(p),
             PatchAnswered p => PatchDecision(p),
             FindingsChanged f => SetFindings(f),
@@ -450,6 +451,7 @@ public sealed partial class RunCore
 
         var record = Record(step.Id);
         State.InFlight.Remove(step.Id);
+        CloseActionDecision(step.Id, c.Outcome);
         foreach (var (name, value) in outputs)
             record.Current!.Outputs[name] = value;
         foreach (var (name, reference) in c.Artifacts ?? new Dictionary<string, string>())
@@ -572,6 +574,7 @@ public sealed partial class RunCore
         }
 
         State.InFlight.Remove(step.Id);
+        CloseActionDecision(step.Id, null);
         if (IsMerge(step))
             record.AttemptsUsed++;
         Trace("attempt_failed", step.Id, f.Reason);
@@ -594,6 +597,8 @@ public sealed partial class RunCore
         var wait = State.Waits.FirstOrDefault(w => w.Kind == WaitKind.Decision && w.StepId == a.StepId);
         if (wait is null || StepById(a.StepId) is not { } step)
             return ApplyResult.Refused($"no decision is open at {a.StepId}");
+        if (IsActionDecision(wait))
+            return AnswerActionDecision(step, wait, a);
         if (!step.DeclaredOutcomes.Any(o => o.Name == a.Outcome))
             return ApplyResult.Refused($"{a.StepId}: '{a.Outcome}' is not a declared outcome ({string.Join(", ", step.DeclaredOutcomes.Select(o => o.Name))})");
         if (SessionArtifactsError(step, a) is { } error)
