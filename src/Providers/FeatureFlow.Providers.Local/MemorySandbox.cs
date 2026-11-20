@@ -76,6 +76,13 @@ public sealed class MemorySandbox(Func<IArtifactStoreProvider> store, InMemoryFo
             boxes[sandbox.Id].Files[path] = content;
     }
 
+    /// <summary>Whether this provider made the sandbox and it still exists.</summary>
+    public bool Holds(SandboxHandle sandbox)
+    {
+        lock (gate)
+            return boxes.ContainsKey(sandbox.Id);
+    }
+
     public string? ReadFile(SandboxHandle sandbox, string path)
     {
         lock (gate)

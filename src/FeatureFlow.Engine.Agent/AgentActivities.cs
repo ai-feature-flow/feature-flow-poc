@@ -68,9 +68,8 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             ? providers.Instance("agent_runtime", name) as IAgentRuntimeProvider
               ?? throw new InvalidOperationException($"role_mapping names the agent runtime '{name}', which this agent worker does not configure")
             : providers.Required<IAgentRuntimeProvider>("agent_runtime", call.DryRun);
-        if (call.Agent is null || call.DryRun || providers.ForRun("sandbox", false) is not ISandboxProvider sandboxes
-            || providers.ForRun("vcs", false) is not IVcsProvider vcs)
-            return await WithoutSandboxAsync(runtime, call, context);
+        if (providers.ForRun("sandbox", call.DryRun) is not ISandboxProvider sandboxes || providers.ForRun("vcs", call.DryRun) is not IVcsProvider vcs)
+            return new StepOutcome(StepOutcome.CannotAnswer, null, $"an agent step needs a sandbox and a vcs provider{(call.DryRun ? " for a dry run" : "")}, and one is not configured");
         try
         {
             return await new Run(this, call, runtime, sandboxes, vcs, context).ExecuteAsync();
@@ -83,57 +82,6 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
         {
             return new StepOutcome(StepOutcome.CannotAnswer, null, e.Message);
         }
-    }
-
-    /// <summary>M3's path, kept for the scripted and recording runtimes: no sandbox, the runtime's own report.</summary>
-    static async Task<StepOutcome> WithoutSandboxAsync(IAgentRuntimeProvider runtime, StepCall call, ActivityExecutionContext context)
-    {
-        var ct = context.CancellationToken;
-        var task = new AgentTask(call.Step, call.What, null, call.Inputs, call.Contract);
-        var started = await runtime.StartAsync(SandboxHandle.None, task, new AgentLimits(call.Timeout, call.Agent?.CorrectionTurns ?? 2), ct);
-        if (Classify(started.Error) is { } early)
-            return early;
-        var session = started.Value!;
-        try
-        {
-            while (true)
-            {
-                context.Heartbeat();
-                var progress = await runtime.GetProgressAsync(session, ct);
-                if (Classify(progress.Error) is { } failed)
-                    return failed;
-                if (progress.Value!.Finished)
-                    break;
-                await Task.Delay(TimeSpan.FromMilliseconds(250), ct);
-            }
-
-            var result = await runtime.GetResultAsync(session, ct);
-            return Classify(result.Error) ?? (result.Value!.Report is { } report
-                ? new StepOutcome(StepOutcome.Reported, report, null)
-                : new StepOutcome(StepOutcome.WorkFailed, null, "the agent ended without reporting"));
-        }
-        catch (OperationCanceledException)
-        {
-            await runtime.StopAsync(session, CancellationToken.None);
-            throw;
-        }
-    }
-
-    /// <summary>
-    /// An infrastructure error is thrown, so Temporal retries and no attempt is used, except a configuration fault, which
-    /// stops the step for a person (docs/06 section 1.1); a work error is returned.
-    /// </summary>
-    static StepOutcome? Classify(ProviderError? error)
-    {
-        if (error is null)
-            return null;
-        if (error.Reason == "cannot_answer")
-            return new StepOutcome(StepOutcome.CannotAnswer, null, error.Message);
-        if (error.IsConfigurationFault)
-            return new StepOutcome(StepOutcome.CannotAnswer, null, error.DescribeFault());
-        if (error.Class == ProviderErrorClass.Infrastructure)
-            throw new ApplicationFailureException($"{error.Reason}: {error.Message}", errorType: "infrastructure");
-        return new StepOutcome(StepOutcome.WorkFailed, null, $"{error.Reason}: {error.Message}");
     }
 
     /// <summary>The sandbox client, put in the artifact store once per worker, then copied into each sandbox.</summary>
@@ -937,7 +885,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
         /// </summary>
         async Task<string> DefaultBranchAsync()
         {
-            if (owner.Providers.ForRun("code_host", false) is not ICodeHostProvider host)
+            if (owner.Providers.ForRun("code_host", call.DryRun) is not ICodeHostProvider host)
             {
                 events.Add("no code host is configured: the parent branch is taken to be main");
                 return "main";
@@ -949,7 +897,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
         /// <summary>The repository manifest at the work branch as the step found it, read through the code host and recorded by hash (RW11).</summary>
         async Task<RepositoryManifest?> ManifestAsync()
         {
-            if (owner.Providers.ForRun("code_host", false) is not ICodeHostProvider host)
+            if (owner.Providers.ForRun("code_host", call.DryRun) is not ICodeHostProvider host)
                 return null;
             if (Must(await host.ReadFileAsync(repo, RepositoryManifest.FileName, startRevision, ct), "read the repository manifest") is not { } file)
                 return null;

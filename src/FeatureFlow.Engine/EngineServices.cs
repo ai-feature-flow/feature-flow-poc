@@ -52,8 +52,6 @@ public sealed class EngineServices(ProviderSet providers, InstallationConfig ins
             policy.HardPerStep,
             policy.HardPerRun,
             policy.EngineMayMerge,
-            // Whether M5's actions run against providers for this run, fixed at its start like the rest of its policy.
-            Providers.ForRun("vcs", false) is IVcsProvider && Providers.ForRun("code_host", false) is ICodeHostProvider,
             policy.MaxWorkItems,
             RoleMapping: Organisation.RoleMapping.Count > 0 ? Organisation.RoleMapping : null,
             RequireChecks: policy.RequireChecks,

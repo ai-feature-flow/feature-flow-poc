@@ -10,23 +10,13 @@ using FeatureFlow.Validation;
 namespace FeatureFlow.Engine.Actions;
 
 /// <summary>
-/// The engine actions M5 builds (docs/04 sections 7 to 9 and 12), called by <c>RunActionAsync</c>. Other actions stay
-/// on the stand-in (LOG 81) until their milestone. Each call runs against the providers of docs/06 and records what it
-/// did; an action that cannot produce a trustworthy outcome raises an intervention instead of guessing (docs/04 section 1).
+/// The engine actions (docs/04 sections 7 to 9 and 12), called by <c>RunActionAsync</c>. Each call runs against the
+/// providers the run uses (docs/06) and records what it did; an action that cannot produce a trustworthy outcome raises
+/// an intervention instead of guessing (docs/04 section 1).
 /// </summary>
 public sealed class EngineActions(ProviderSet providers, ActionOptions? options = null)
 {
     readonly ActionOptions options = options ?? ActionOptions.Default;
-
-    /// <summary>The actions built here. <c>test.integration</c> is <c>test.run</c> across repositories (LOG 120).</summary>
-    public static readonly IReadOnlySet<string> Built = new HashSet<string>(StringComparer.Ordinal)
-    {
-        "scm.catch_up", "scm.pull_request", "scm.merge", "scm.revert", "ci.checks", "wait.condition", "test.run", "test.integration", "analysis.run",
-        "repo.inspect",
-        "artifact.validate",
-        "findings.record", "findings.triage",
-        "delivery.report", "artifact.compose", "artifact.import", "artifact.publish", "tracker.update",
-    };
 
     /// <summary>
     /// The actions that may wait on the outside world between reads (<see cref="ActionResult.Wait"/>): a person, CI or a
@@ -35,12 +25,6 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
     public static readonly IReadOnlySet<string> Waits = new HashSet<string>(StringComparer.Ordinal) { "ci.checks", "wait.condition", "scm.merge" };
 
     internal ProviderSet Providers => providers;
-
-    /// <summary>
-    /// Whether the installation configures real source control: a VCS and a code host provider that implement their
-    /// interfaces. Without them (the <c>fake</c> providers of M3's tests) built actions go to the stand-in (LOG 121).
-    /// </summary>
-    public bool HasSourceControl => providers.ForRun("vcs", false) is IVcsProvider && providers.ForRun("code_host", false) is ICodeHostProvider;
 
     internal ActionOptions Options => options;
 
@@ -137,15 +121,15 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
     /// the reset removes is kept under <c>refs/feature-flow/superseded/...</c>, and the hidden references of the run's
     /// agent steps that build beyond that revision are moved back to it, so a re-run step does not pick up discarded
     /// commits (LOG 96). A step that never touched a repository resets nothing. A work error (a refused push) is
-    /// returned, so the run asks a person; only infrastructure errors are thrown, to be retried.
+    /// returned, so the run asks a person; only infrastructure errors are thrown, to be retried. A dry run resets on its dry-run VCS.
     /// </summary>
     public async Task<CleanUpResult> CleanUpAsync(string runId, string stepId, int executions, IReadOnlyList<string> repositories, string workBranch,
-        IReadOnlyList<string> stepIds, CancellationToken ct)
+        IReadOnlyList<string> stepIds, CancellationToken ct, bool dryRun = false)
     {
         var events = new List<string>();
         try
         {
-            return new CleanUpResult(await ResetAsync(runId, stepId, executions, repositories, workBranch, stepIds, events, ct), null);
+            return new CleanUpResult(await ResetAsync(runId, stepId, executions, repositories, workBranch, stepIds, events, dryRun, ct), null);
         }
         catch (ActionStop stop)
         {
@@ -155,9 +139,9 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
     }
 
     async Task<IReadOnlyList<string>> ResetAsync(string runId, string stepId, int executions, IReadOnlyList<string> repositories, string workBranch,
-        IReadOnlyList<string> stepIds, List<string> events, CancellationToken ct)
+        IReadOnlyList<string> stepIds, List<string> events, bool dryRun, CancellationToken ct)
     {
-        if (providers.ForRun("vcs", false) is not IVcsProvider vcs)
+        if (providers.ForRun("vcs", dryRun) is not IVcsProvider vcs)
             return ["clean_up: no VCS provider is configured; nothing to reset"];
         var starts = new Dictionary<string, string>(StringComparer.Ordinal);
         for (var n = executions; n >= 1 && starts.Count == 0; n--)

@@ -103,7 +103,7 @@ public partial class RunWorkflow
         return new SessionOpen(input.RunId, step.Id, execution, SessionNames.Id(input.RunId, waitId), waitId, repository, SessionNames.Branch(input.RunId, waitId),
             core.WorkBranch(), input.ParentBranch, folder,
             spec.Files.Select(f => new SessionDocumentFile(f.Path, f.Name, f.Type?.Text, Seed(f.Name))).ToList(),
-            prompt, context, spec.ChecksFrom, SubmitOutcome(step), AbandonOutcome(step));
+            prompt, context, spec.ChecksFrom, SubmitOutcome(step), AbandonOutcome(step), input.DryRun);
     }
 
     /// <summary>The session's repository (its own, else the run's first) and folder, evaluated now.</summary>
@@ -346,7 +346,7 @@ public partial class RunWorkflow
             StepOutcome outcome;
             try
             {
-                outcome = await Workflow.ExecuteActivityAsync((RunActivities a) => a.RunActionAsync(call!, scope), new ActivityOptions
+                outcome = await Workflow.ExecuteActivityAsync((RunActivities a) => a.RunActionAsync(call!, scope!), new ActivityOptions
                 {
                     StartToCloseTimeout = (call!.Timeout ?? TimeSpan.FromHours(2)) + TimeSpan.FromMinutes(10),
                     HeartbeatTimeout = scope is null ? null : TimeSpan.FromMinutes(2),

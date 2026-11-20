@@ -25,7 +25,6 @@ providers:
         secret_key_ref: secrets/object_store_secret_key
   secrets: { default: file, instances: { file: { path: /var/run/secrets/feature-flow/secrets.json } } }
   agent_runtime: { default: scripted, instances: { scripted: { script: script.yaml } } }
-  action_stand_in: { default: scripted, instances: { scripted: { script: script.yaml } } }
   sandbox: { default: kubernetes, instances: { kubernetes: { namespace: feature-flow-sandboxes, image: feature-flow-sandbox:dev } } }
   vcs: { instances: { fake: {} } }
   code_host: { instances: { fake: {} } }

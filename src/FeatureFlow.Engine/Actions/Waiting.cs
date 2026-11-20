@@ -88,20 +88,65 @@ static class Waiting
 
     /// <summary>
     /// <c>wait.condition</c> (section 8.2): one condition on the run's pull request (<c>approved</c>, <c>merged</c>,
-    /// <c>mergeable</c>) or its checks. <c>met</c>; <c>unmet</c> when the pull request is closed unmerged, changes are
-    /// requested, or the checks fail; the checks are judged as <c>ci.checks</c> judges them, with its default grace. The
-    /// timeout (default 7 days) raises an intervention. Tracker conditions wait for
-    /// the tracker provider (M7) and raise an intervention now.
+    /// <c>mergeable</c>), its checks, or a tracker issue. <c>met</c>; <c>unmet</c> when the pull request is closed unmerged,
+    /// changes are requested, the checks fail, or the issue is in one of the condition's <c>unmet</c> statuses; the checks
+    /// are judged as <c>ci.checks</c> judges them, with its default grace. The timeout (default 7 days) raises an intervention.
     /// </summary>
     public static async Task<ActionResult> ConditionAsync(ActionRun run)
     {
+        var timeout = run.Duration("timeout", TimeSpan.FromDays(7));
+        var (outcome, waiting, elapsed) = run.Inputs.GetValueOrDefault("tracker") is { } tracker
+            ? await TrackerConditionAsync(run, tracker)
+            : await PullRequestConditionAsync(run);
+
+        if (outcome is null)
+        {
+            if (elapsed > timeout)
+                throw ActionStop.CannotAnswer($"wait.condition timed out after {timeout}: {waiting}");
+            return ActionResult.Waiting(waiting, run.Duration("poll_every", run.Options.PollInterval), run.Events);
+        }
+
+        run.Events.Add(waiting);
+        return run.Report(outcome);
+    }
+
+    /// <summary>
+    /// <c>tracker: { issue, statuses, unmet }</c>: <c>met</c> when the issue's status is one of <c>statuses</c>, <c>unmet</c>
+    /// when it is one of <c>unmet</c>, else waiting. The issue defaults to the run's tracker issue.
+    /// </summary>
+    static async Task<(string? Outcome, string Waiting, TimeSpan Elapsed)> TrackerConditionAsync(ActionRun run, object condition)
+    {
+        if (condition is not IReadOnlyDictionary<string, object?> map)
+            throw ActionStop.CannotAnswer("wait.condition's tracker condition must be a map of issue, statuses and unmet");
+        IReadOnlyList<string> Names(string key) => map.GetValueOrDefault(key) switch
+        {
+            null => [],
+            string one => [one],
+            IEnumerable<object?> many => many.Select(x => x as string ?? throw ActionStop.CannotAnswer($"wait.condition's tracker {key} must name statuses")).ToList(),
+            _ => throw ActionStop.CannotAnswer($"wait.condition's tracker {key} must name statuses"),
+        };
+        var statuses = Names("statuses");
+        var unmet = Names("unmet");
+        if (statuses.Count == 0)
+            throw ActionStop.CannotAnswer("wait.condition's tracker condition names no statuses to wait for");
+        var issue = new IssueRef(map.GetValueOrDefault("issue") as string ?? run.Scope.TrackerIssue
+            ?? throw ActionStop.CannotAnswer("wait.condition's tracker condition names no issue and the run has no tracker issue"));
+        var tracker = run.Provider<ITrackerProvider>("tracker");
+        var since = await run.SinceAsync();
+        var read = ActionRun.Must(await tracker.GetIssueAsync(issue, run.Ct), $"read {issue.Key}");
+        var outcome = statuses.Contains(read.Status) ? "met" : unmet.Contains(read.Status) ? "unmet" : null;
+        var waiting = outcome is null
+            ? $"waiting for {issue.Key} ({read.Status}) to be {string.Join(" or ", statuses)}"
+            : $"{issue.Key} is {read.Status}";
+        return (outcome, waiting, DateTimeOffset.UtcNow - since);
+    }
+
+    static async Task<(string? Outcome, string Waiting, TimeSpan Elapsed)> PullRequestConditionAsync(ActionRun run)
+    {
         var repo = run.Repository();
-        if (run.Inputs.GetValueOrDefault("tracker") is not null)
-            throw ActionStop.CannotAnswer("wait.condition on a tracker issue needs the tracker provider, which arrives in a later milestone");
         var pr = run.PullRequest(repo) ?? throw ActionStop.CannotAnswer($"wait.condition waits on this run's pull request in {repo.FullName}, and it has opened none");
         var since = await run.SinceAsync();
         var elapsed = DateTimeOffset.UtcNow - since;
-        var timeout = run.Duration("timeout", TimeSpan.FromDays(7));
         var state = ActionRun.Must(await run.CodeHost.GetPullRequestAsync(pr, run.Ct), "read the pull request");
         var name = ActionRun.Format(pr);
 
@@ -128,14 +173,6 @@ static class Waiting
                 : ("met", $"the checks on {name} passed");
         }
 
-        if (outcome is null)
-        {
-            if (elapsed > timeout)
-                throw ActionStop.CannotAnswer($"wait.condition timed out after {timeout}: {waiting}");
-            return ActionResult.Waiting(waiting, run.Duration("poll_every", run.Options.PollInterval), run.Events);
-        }
-
-        run.Events.Add(waiting);
-        return run.Report(outcome);
+        return (outcome, waiting, elapsed);
     }
 }

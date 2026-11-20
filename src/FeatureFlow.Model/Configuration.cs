@@ -182,8 +182,6 @@ public static class ConfigurationReader
     [
         "sandbox", "agent_runtime", "vcs", "code_host", "ci", "tracker", "findings_source", "validator",
         "notifications", "session_surface", "artifact_store", "record_store", "secrets", "credential_broker",
-        // M3 only (LOG 81): the stand-in for the actions later milestones build.
-        "action_stand_in",
     ];
 
     const long DefaultHandOverEvents = 5120;
@@ -341,12 +339,12 @@ public static class ConfigurationReader
             o.Finish();
         }
 
-        // A development installation may configure the fake and in-memory providers and the action stand-in (LOG 81, LOG 107).
+        // A development installation may configure the fake and in-memory providers (LOG 107).
         var development = r.Bool("development") ?? false;
         if (!development)
             foreach (var (type, config) in providers)
-                foreach (var instance in config.Instances.Values.Where(i => i.Kind is "fake" or "memory" || type == "action_stand_in"))
-                    r.Error($"providers.{type}.instances.{instance.Name}: the {(type == "action_stand_in" ? "action stand-in" : "fake provider")} is for development only; set development: true", r.Map.Location);
+                foreach (var instance in config.Instances.Values.Where(i => i.Kind is "fake" or "memory"))
+                    r.Error($"providers.{type}.instances.{instance.Name}: the fake provider is for development only; set development: true", r.Map.Location);
         // A runtime without the engine's tools reports only through a file: a test setting (SP3 T3), not for production.
         // The scripted runtime is a test double that runs no agent (L4).
         if (!development && providers.TryGetValue("agent_runtime", out var runtimes))

@@ -334,10 +334,10 @@ CONTROLS = [
         "expect": ["A_clean_up_the_remote_refuses_raises_an_intervention_at_the_step_it_was_for"],
     },
     {
-        "name": "review 13: a built action served by the stand-in gets a heartbeat timeout",
-        "edits": [(WORKFLOW, "&& policy?.BuiltActions == true && !input.DryRun)", "&& !input.DryRun)")],
-        "tests": [it("Only_an_action_run_against_providers_has_a_heartbeat_timeout")],
-        "expect": ["Only_an_action_run_against_providers_has_a_heartbeat_timeout"],
+        "name": "review 13: an engine action is scheduled with no heartbeat timeout",
+        "edits": [(WORKFLOW, "HeartbeatTimeout = scope is null ? null : TimeSpan.FromMinutes(2),", "HeartbeatTimeout = null,")],
+        "tests": [it("Every_action_has_a_heartbeat_timeout")],
+        "expect": ["Every_action_has_a_heartbeat_timeout"],
     },
     # Added for the re-check of PR 6.
     {

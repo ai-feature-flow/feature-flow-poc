@@ -121,27 +121,27 @@ public sealed class LocalProviderTests : IDisposable
         await File.WriteAllTextAsync(script, """
             api_version: feature-flow/v1
             kind: fake_script
-            steps: { "test.run_step": { error: infrastructure, times: 2 } }
+            steps: { implement: { error: infrastructure, times: 2 } }
             """, Ct);
         var store = new FileSystemArtifactStore(Path.Combine(folder, "artifacts"));
-        var standIn = new ScriptedActionStandIn(FakeScript.Read(script), () => store);
-        var request = new ActionRequest(Step(1, "test.run_step"), "test.run", new Dictionary<string, string>(), Contract);
-        Assert.Equal(ProviderErrorClass.Infrastructure, (await standIn.RunAsync(request, Ct)).Error!.Class);
-        Assert.Equal(ProviderErrorClass.Infrastructure, (await standIn.RunAsync(request, Ct)).Error!.Class);
-        Assert.Equal("implemented", (await standIn.RunAsync(request, Ct)).Unwrap().Outcome);
+        var runtime = new ScriptedAgentRuntime(FakeScript.Read(script), () => store);
+        var task = new AgentTask(Step(1), "implementer", null, new Dictionary<string, string>(), Contract);
+        Assert.Equal(ProviderErrorClass.Infrastructure, (await runtime.StartAsync(SandboxHandle.None, task, new AgentLimits(null, 2), Ct)).Error!.Class);
+        Assert.Equal(ProviderErrorClass.Infrastructure, (await runtime.StartAsync(SandboxHandle.None, task, new AgentLimits(null, 2), Ct)).Error!.Class);
+        Assert.Equal("implemented", (await RunAgentAsync(runtime, Step(1))).Outcome);
     }
 
     [Fact]
-    public async Task A_recording_provider_writes_each_call_and_does_not_act()
+    public async Task The_recording_runtime_writes_each_step_it_is_given_and_reports_the_first_success()
     {
         var store = new FileSystemArtifactStore(Path.Combine(folder, "artifacts"));
-        var recorder = new Recorder(Path.Combine(folder, "recorded"), () => store);
-        var standIn = new RecordingActionStandIn(recorder);
-        var report = (await standIn.RunAsync(new ActionRequest(Step(1, "merge"), "scm.merge", new Dictionary<string, string> { ["squash"] = "true" }, Contract), Ct)).Unwrap();
-        Assert.Equal("implemented", report.Outcome);
+        var runtime = new RecordingAgentRuntime(new Recorder(Path.Combine(folder, "recorded"), () => store));
+        var session = (await runtime.StartAsync(SandboxHandle.None, new AgentTask(Step(1), "implementer", null, new Dictionary<string, string> { ["ticket"] = "\"T-1\"" }, Contract),
+            new AgentLimits(null, 2), Ct)).Unwrap();
+        Assert.Equal("implemented", (await runtime.GetResultAsync(session, Ct)).Unwrap().Report!.Outcome);
         var line = Assert.Single(await File.ReadAllLinesAsync(Path.Combine(folder, "recorded", "run-1.jsonl"), Ct));
-        Assert.Contains("\"what\":\"scm.merge\"", line);
-        Assert.Contains("\"squash\":\"true\"", line);
+        Assert.Contains("\"what\":\"implementer\"", line);
+        Assert.Contains("\"ticket\":", line);
     }
 
     [Fact]

@@ -23,7 +23,7 @@ public class StuckRunTests
         "notifications: { routing: { " + string.Join(", ", events.Select(e => e + ": { channel: \"#ff\" }")) + " }, events: [" + string.Join(", ", events) + "] }";
 
     static Task<Harness> StartAsync(string name, string script = "{}", bool agentWorker = true) =>
-        Harness.StartAsync(name, script, autoApprove: true, omitTypes: ["notifications"], agentWorker: agentWorker,
+        Harness.StartAsync(name, script, autoApprove: true, without: ["notifications"], agentWorker: agentWorker,
             providers: $"  notifications: {{ instances: {{ memory: {{ world: {name}-{Guid.NewGuid():N} }} }} }}",
             organisation: Routed(NotificationEvents.Stalled, NotificationEvents.Stuck, NotificationEvents.Resumed));
 

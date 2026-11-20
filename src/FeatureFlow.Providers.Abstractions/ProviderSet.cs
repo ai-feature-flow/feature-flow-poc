@@ -18,11 +18,19 @@ public sealed class ProviderSet(IReadOnlyDictionary<string, IReadOnlyDictionary<
             ? named.OrderBy(kv => kv.Key == defaults.GetValueOrDefault(type) ? 0 : 1).ThenBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => (kv.Key, kv.Value)).ToList()
             : [];
 
-    /// <summary>The instance a run uses for a type: the dry-run instance for a dry run where one is configured, else the default.</summary>
+    /// <summary>The types a dry run takes from the default instance when it has no <c>dry_run</c> one: the engine's own (docs/07 section 5).</summary>
+    public static readonly IReadOnlySet<string> SharedInDryRun = new HashSet<string>(StringComparer.Ordinal) { "artifact_store", "record_store", "secrets", "credential_broker" };
+
+    /// <summary>
+    /// The instance a run uses for a type: its default; in a dry run its <c>dry_run</c> instance, and none where it has none,
+    /// except the types in <see cref="SharedInDryRun"/>, so a dry run never acts through a provider that acts for real.
+    /// </summary>
     public IProvider? ForRun(string type, bool dryRun)
     {
         if (dryRun && dryRunInstances.TryGetValue(type, out var dry))
             return Instance(type, dry);
+        if (dryRun && !SharedInDryRun.Contains(type))
+            return null;
         return defaults.TryGetValue(type, out var name) ? Instance(type, name) : null;
     }
 
