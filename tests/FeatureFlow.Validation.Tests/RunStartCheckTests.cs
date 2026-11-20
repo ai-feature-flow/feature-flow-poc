@@ -201,6 +201,13 @@ public class RunStartCheckTests
         Assert.DoesNotContain(held, x => x.Message.Contains("races", StringComparison.Ordinal));
         Assert.Equal(3, StepCaps.RaceAllowance(std.AllSteps.First(s => s.Action == "scm.merge"), 10, 3));
         Assert.Equal(13, StepCaps.RaceAllowance(plan.AllSteps.First(s => s.Action == "scm.merge"), 10, 3));
+
+        // A race allowance asked for in the document's defaults is a request too, and is refused the same way.
+        var (_, byDefaults) = Load(new Std.Edit("fragments/merge_into_parent.yaml",
+            "artifact_types:\n  - std:artifact_types/check_results", "defaults:\n  limits: { races: 13 }\n\nartifact_types:\n  - std:artifact_types/check_results"));
+        var viaDefaults = new DiagnosticBag();
+        RunStartChecks.Caps(byDefaults, Policy(perStep: 12), Allowance, viaDefaults);
+        Assert.Contains(viaDefaults, x => x.Blocks && x.Message.Contains("allows 13 races, above policy.attempts.ceiling.per_step 12", StringComparison.Ordinal));
     }
 
     [Theory]
