@@ -54,7 +54,7 @@ the standard library's templates set it.
 | | `artifact.import` | `imported` (success) |
 | | `artifact.publish` | `published` (success), `conflict` (blocked) |
 | Tracker and notifications | `tracker.update` | `done` (success), `not_found` (failure) |
-| | `notify.send` | `sent` (success) |
+| | `notify.send` | `sent` (success). Never built; planned removal (`docs/12` A1, LOG 342) |
 | Delivery | `delivery.report` | `complete` (success), `partial` (failure) |
 
 Twenty-one actions, down from forty step kinds in the first design. What went:
@@ -287,7 +287,9 @@ and closes the decision when it sees it, or takes the `declined` path if the
 person declines. Version 1 watches without opening a decision record (section
 7). Planned (`docs/12` A1, review F2): the action request is a
 `<level>.merge_action` decision like any other, so approval rules on it
-(`docs/05` section 3.2) take effect.
+(`docs/05` section 3.2) take effect. A pull request merged on the code host
+before that decision is answered fails the step as a policy breach and raises an
+intervention (LOG 341).
 
 ---
 
@@ -378,10 +380,10 @@ Merges the work branch into its parent branch.
 
 | Element | Detail |
 |---|---|
-| Inputs | `engine_can_merge` (default `true`), `squash` (default `false`), `require_checks` (default `true`: a passing `ci.checks` result for the exact head being merged must exist), `require_tested` (default `true`: a passing `test.run` result for the exact head being merged must exist). The organisation may lock either (`docs/05` section 3.1) |
+| Inputs | `engine_can_merge` (default `true`), `squash` (default `false`), `require_checks` (default `true`: a passing `ci.checks` result for the exact head being merged must exist), `require_tested` (default `true`: a passing `test.run` result for the exact head being merged must exist). The organisation may lock `require_checks` (`docs/05` section 3.1); locking `require_tested` is planned (`docs/12` A1) |
 | Outcomes | `merged`; `base_moved` (the parent moved since catch-up); `checks_failed`; `declined` (a person asked to merge declined) |
 | Idempotency | If the parent already contains the merge, or a person's merge is on the code host, the merge happened: `merged` |
-| Limits | Attempts 3 by default, used by executions that end other than `base_moved`. A `base_moved` loop through catch-up re-enters this step and counts against `limits.races` instead (default 10), checked on every execution like any allowance (F4), so a work branch that keeps losing races is still bounded, then escalates. A refusal means a sibling merged, so the loop cannot spin without progress (SP4; LOG 61) |
+| Limits | Attempts 3 by default, used by executions that end other than `base_moved`. A `base_moved` loop through catch-up re-enters this step and counts against `limits.races` instead (default 10), checked on every execution like any allowance (F4), so a work branch that keeps losing races is still bounded, then escalates. A refusal means a sibling merged, so the loop cannot spin without progress (SP4; LOG 61). `limits.races` is held under the per-step attempts ceiling when a patch changes it; checking it at run start too is planned (`docs/12` A1, LOG 340) |
 
 When the engine merges: it builds the merge commit (or squash commit) from
 exactly the head the evidence was recorded for, and pushes it to the parent,
@@ -559,7 +561,7 @@ run holds are ignored (LOG 169).
 | `artifact.import` | `from`: a session submission (M7), or a repository, folder, files and exact commit | Registers files as artifacts at that commit, validated against their types (as built: parsed, not yet schema-checked; LOG 181) |
 | `artifact.publish` | `repository`, `folder`, `files`, `previous` (an earlier publication to supersede) | Copies artifacts into a repository in one commit and opens a pull request. `conflict` if the destination changed in a way the earlier publication did not expect; nothing is written (from FF; branch, record and superseding, LOG 182) |
 | `tracker.update` | `op` (`create`, `update`, `transition`, `link`, `comment`), its fields (LOG 183) | One tracker operation. Field mapping is provider configuration. Agents have no tracker write identity; this action and declarative `tracker` on steps are the only write paths, apart from a planner's toolset where policy allows |
-| `notify.send` | `audience`, `message` | A notification that needs no answer. A failure retries and never fails the run |
+| `notify.send` | `audience`, `message` | A notification that needs no answer. A failure retries and never fails the run. Never built; planned removal (`docs/12` A1, LOG 342) |
 | `delivery.report` | `repositories` | Reads the merge records and states, per repository, whether a merge actually happened: the merge is of the work branch's current head, the parent branch still contains it, and no revert the run opened of it is merged or open (LOG 180). `complete` only if every one merged, so a run redirected past a merge cannot report success (from FF) |
 
 ---

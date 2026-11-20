@@ -72,7 +72,9 @@ limit. Validation reports where a request was capped.
 | Auto-resolution of a decision | `auto: <outcome>` on the decision | Whether auto-resolution is allowed, per decision type pattern |
 | Engine merge into the default branch | `engine_can_merge: true` | F1 |
 | Checks before merging | `require_checks` on `scm.merge` | `merge.require_checks`: if set, a workflow cannot turn checks off |
+| Tests before merging | `require_tested` on `scm.merge` | None in version 1. Planned (`docs/12` A1, LOG 342): `merge.require_tested`, applied as `merge.require_checks` is |
 | Attempts | `limits.attempts` | Ceilings per step form and per run (F4) |
+| Merge races | `limits.races` on `scm.merge` | None of its own: the per-step attempts ceiling. Version 1 checks races against it only when a patch changes them; planned (`docs/12` A1, LOG 340): at run start too |
 | Work items | `budget.max_work_items` on the root template | Ceiling (F11), always locked (LOG 187) |
 | Review of agent patches | `planning.review` | `planning.require_review`, per template name pattern |
 | Agent roles | The roles a template's steps name | `planning.allowed_roles` for steps an agent adds (section 6) |

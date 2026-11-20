@@ -9,7 +9,7 @@ stages, the order of the work, the milestones and what each must show. Version 1
 design of the same date (Design A, API gaps G1 to G14) and the product owner's
 decisions on both (`docs/PLAN.md` section 3). What the engine does stays owned by
 `docs/00` to `docs/10`; this document cites them and does not restate them.
-Judgement calls made here are LOG 328 to 339, unreviewed.
+Judgement calls made here are LOG 328 to 346, unreviewed.
 
 ---
 
@@ -34,8 +34,8 @@ section 3 (NP1 to NP9). In short:
   console that needs no sign-in, and a corporate cloud install. Authentication is
   pluggable or configurable; a fork with bespoke handlers is acceptable
   (`docs/00` P13).
-- **Console.** Design A: TypeScript built with Node (Vite, Preact or React),
-  embedded in `FeatureFlow.Api` and served at `/console`, keeping the hash routes
+- **Console.** Design A: TypeScript with a Node build, embedded in
+  `FeatureFlow.Api` and served at `/console`, keeping the hash routes
   `#/runs` and `#/runs/{id}` that Slack links use (`SlackNotifications.cs:104`).
   The first slice includes steering (G10, G11) and server-sent events (G8). Any
   viewer of a run may read its transcripts.
@@ -73,7 +73,7 @@ These replace `docs/11` section 4.1 for this phase where they differ.
 | # | Milestone | Stage | Why it comes here |
 |---|---|---|---|
 | A1 | Control gaps | Alpha | Correctness and safety faults, each small (review step 1). Refusing unused settings early stops new configuration depending on them |
-| A2 | Engine simplification | Alpha | Every new action, wait or record kind added before it copies the current pattern (review step 3). A3 adds a wait-related feature (reminders) and new records |
+| A2 | Engine simplification | Alpha | Every new action, wait or record kind added before it copies the current pattern. The review put oversight (its step 2: F5, F9, F4, F21) before simplification (its step 3); this plan reverses the two, because F5, F9, F21 and the G routes add waits, records and actions that would otherwise copy the current pattern. As a result the console arrives one large milestone later, and F4 moves to A5 (LOG 330; section 7, question 3) |
 | A3 | Oversight API | Alpha | The console's reads and writes. Built on A2's single wait routing and action registry |
 | A4 | Console first slice | Alpha | Needs A3's routes and contracts |
 | A5 | Sandboxes and runtimes | Alpha | Independent of A3 and A4; may run alongside them after A2 |
@@ -96,8 +96,8 @@ L several weeks.
 
 | | |
 |---|---|
-| Builds | **F1**, a locked cap cannot be bypassed: caps held in `RunPolicy`, one cap function used at run start and on patches, so an expression or a patch that loosens a locked `require_checks` is refused (today only a literal `false` is, `RunStartChecks.cs:232-234`; `SourceControl.cs:143`; `Patches.cs:249-262`); the race ceiling under the same cap; then `require_tested` built or removed from `docs/04`. **F2**, the merge action request becomes a `<level>.merge_action` decision, so approval rules on it take effect (`docs/04` section 7.3; LOG 123 superseded). **F3, small part**: `notify.send` built or removed (it is absent from `EngineActions.Built`, `EngineActions.cs:22-29`), and an action no provider can serve raises an intervention instead of retrying. **F19**: the `toolset` provider type, role `toolsets` and manifest `requires.toolsets` refused at load (`Configuration.cs:331`; `LibraryItems.cs:100, 185-197`), as `policy.toolsets` already is (LOG 273). **L4, part**: the `scripted` agent runtime refused outside `development: true`. **L9**: evidence types refused on `artifact.import` at load |
-| Done when | A negative test per path: a locked `require_checks` loosened by an expression, by a patch, and by a race re-entry is each refused. A run whose policy requires approval on `ticket.merge_action` waits for it and merges only after the answer. A plan using an unservable action stops at an intervention. Each refused setting has a load test naming its key |
+| Builds | **F1**, a locked cap cannot be bypassed: caps held in `RunPolicy`, one cap function used at run start and on patches, so an expression or a patch that loosens a locked `require_checks` is refused (today only a literal `false` is, `RunStartChecks.cs:232-234`; `SourceControl.cs:143`; `Patches.cs:249-262`); a `merge.require_tested` policy key, applied by the same function (LOG 342). **F1, races**: `limits.races` shares the per-step attempts ceiling on every path; today a patch is checked against it (`Patches.cs:260-261`) and run start is not (`RunStartChecks.cs:222-223`) (LOG 340). **F2**, the merge action request becomes a `<level>.merge_action` decision, raised by `SourceControl.ActionRequestAsync` (`SourceControl.cs:152-175`, which today polls the pull request and opens no wait), so approval rules on it take effect (`docs/04` section 4.5; LOG 123 superseded). A pull request merged on the code host before the decision is answered fails the step as a policy breach and raises an intervention (LOG 341). **F3, small part**: `notify.send` removed from `docs/04` and from the action contracts (`Actions.cs:71`; it is absent from `EngineActions.Built`, `EngineActions.cs:22-29`; LOG 342), and an action no provider can serve raises an intervention instead of retrying. **F19**: the `toolset` provider type (in the type list at `Configuration.cs:177`), a role's `toolsets` (`LibraryItems.cs:185-197`) and a library item's `requires.toolsets` (`LibraryItems.cs:95-100`) refused at load, beside the existing development-only refusals (`Configuration.cs:331-340`), as `policy.toolsets` already is (LOG 273). **L4, part**: the `scripted` agent runtime refused outside `development: true`. **L9**: evidence types refused on `artifact.import` at load |
+| Done when | A negative test per path for `require_checks`: a locked `require_checks` loosened by an expression, and by a patch, is each refused; the same for a locked `require_tested`. Separate negative tests for races: a `limits.races` above the per-step ceiling is refused at run start, and by a patch. A run whose policy requires approval on `ticket.merge_action` opens that decision and, once it is answered, asks the person to merge; a pull request merged on the code host before the answer fails the step and opens an intervention, shown by a test. A plan using an unservable action stops at an intervention. Each refused setting has a load test naming its key |
 | Depends on | None |
 | Effort | M |
 | Stage | Alpha |
@@ -109,8 +109,8 @@ The review's step 3, done together because the changes touch the same code in
 
 | | |
 |---|---|
-| Builds | **F3, rest**: delete the M3 action stand-in (`action_stand_in`, `IActionStandIn`, `Built`, `BuiltActions`, `HasSourceControl`, `WithoutSandboxAsync`) and the `wait.condition` tracker stub (`Waiting.cs:100`); tests move to the memory providers; a dry run becomes recording providers or is dropped, and `docs/07` section 5 follows. **F10**: one action descriptor registry replaces the nine tables keyed by action name. **F8**: logic and state move out of the Temporal shell (`RunWorkflow`, 2,239 lines in four files) into the interpreter core, and child runs and questions into `RunState`. **F11**: one human-wait mechanism: `WaitKind.Question` added, `Decision` renamed `Gate`, one routing function for every wait; LOG 93 amended. **L1**: shared rules in one place (classification, step lookup, duration parsing, short references). **L2**: one recovery-name table. **L6**: compatibility leftovers removed (no backward compatibility, LOG 263). **L7**: one repository-root test helper |
-| Done when | The default and integration suites pass with the stand-in deleted. The architecture test fails if the shell holds a routing decision the core can make. Adding a test action needs one registry entry and nothing else, shown by a test. Agent questions, gates and interventions open, answer and time out through one routing function, each with a re-drive test |
+| Builds | **F3, rest**: delete the M3 action stand-in (`action_stand_in`, `IActionStandIn`, `Built`, `BuiltActions`, `HasSourceControl`, `WithoutSandboxAsync`) and the `wait.condition` tracker stub (`Waiting.cs:100`); tests move to the memory providers; a dry run is kept, served by the memory and recording providers, and `docs/07` section 5 follows (LOG 342). **F10**: one action descriptor registry replaces the nine tables keyed by action name, and every action gets an input schema in it, `run.child` included, so unknown keys such as `run_gate` are refused (F14, code part; `StepStartChecks.cs:28-51` has no `run.child` entry; LOG 346). **F8**: logic and state move out of the Temporal shell (`RunWorkflow`, 2,239 lines in four files) into the interpreter core, and child runs and questions into `RunState`. **F11**: one human-wait mechanism: `WaitKind.Question` added, `Decision` renamed `Gate`, one routing function for every wait; LOG 93 amended. **L1**: shared rules in one place (classification, step lookup, duration parsing, short references). **L2**: one recovery-name table. **L6**: compatibility leftovers removed (no backward compatibility, LOG 263). **L7**: one repository-root test helper |
+| Done when | The default and integration suites pass with the stand-in deleted. The architecture test fails if the shell holds a routing decision the core can make. Adding a test action needs one registry entry and nothing else, shown by a test. A plan with `run_gate` on `run.child` is refused at load. Agent questions, gates and interventions open, answer and time out through one routing function, each with a re-drive test |
 | Depends on | A1 (F2 and F3-small settle what the registry must hold) |
 | Effort | L |
 | Stage | Alpha |
@@ -121,7 +121,7 @@ The reads and writes the console's first slice uses, built on A2.
 
 | | |
 |---|---|
-| Builds | **F5 / G3**: a required `reason` on answers and aborts, recorded on `AnswerRecord` (`AnswerArgs` has none, `Wire.cs:210-221`), passed to the next agent in a run-context artifact with `context: full` and the retry cause. **F9 / G5**: transcripts indexed, `GET /runs/{id}/artifacts`, and each gate wait linked to the artifacts its step consumed (LOG 325). **G1**: `GET /attention`, open waits across runs that the caller may answer, with a store query in SQLite and Postgres. **G2**: `GET /me`, and `can_answer` per wait on `GET /runs/{id}`. **G4**: closed waits, answers with `min_count` progress, and overrides readable. **G8**: `GET /events`, server-sent events carrying change notifications, fed by one poller per API replica over new "updated after" store queries. **G10**: templates read, entrypoints and parameters from the configured libraries. **G11 / F18, engine part**: each accepted plan revision recorded as an artifact, the current revision served as data; `ff` steering accepts `--change name=@file`. **F21 / G14**: reminders on open waits, interval in organisation configuration (M8 follow-up 10; LOG 232). **L3 / G7**: request and response records for the routes above, and an OpenAPI document |
+| Builds | **F5 / G3**: a required `reason` on answers and aborts, recorded on `AnswerRecord` (`AnswerArgs` has none, `Wire.cs:210-221`), passed to the next agent in a run-context artifact with `context: full` and the retry cause. **F9 / G5**: transcripts indexed, `GET /runs/{id}/artifacts`, and each gate wait linked to the artifacts its step consumed. This amends LOG 325, which decided no listing (LOG 343). **G1**: `GET /attention`, open waits across runs that the caller may answer, with a store query in SQLite and Postgres. **G2**: `GET /me`, and `can_answer` per wait on `GET /runs/{id}`. **G4**: closed waits, answers with `min_count` progress, and overrides readable. **G8**: `GET /events`, server-sent events carrying change notifications, fed by one poller per API replica over new "updated after" store queries. **G10**: templates read, entrypoints and parameters from the configured libraries. **G11 / F18, engine part**: each accepted plan revision recorded as an artifact, the current revision served as data; `ff` steering accepts `--change name=@file`. **F21 / G14**: reminders on open waits, interval in organisation configuration (M8 follow-up 10; LOG 232). **L3 / G7**: request and response records for the routes above, and an OpenAPI document |
 | Done when | API tests for each route, on SQLite and Postgres where a store query is new. A rejection on a gate with a reason produces a fix attempt whose prompt carries the reason, shown by a re-drive test. A reminder fires once per interval on a test clock and stops when the wait closes. The OpenAPI document is generated in the build and checked against the routes |
 | Depends on | A2 (F21 needs F11's routing; F5 and G11 add records through F10's registry) |
 | Effort | L (several M items, mostly independent) |
@@ -131,8 +131,8 @@ The reads and writes the console's first slice uses, built on A2.
 
 | | |
 |---|---|
-| Builds | **Design A**: a TypeScript single-page application at `/console`, built with Node and Vite, embedded in `FeatureFlow.Api` as hashed assets; Node in CI and in `deploy/images/host.Dockerfile`; a client generated from A3's OpenAPI document; the text-only rule of the M7 console kept (`console.js:1-3`). **Sign-in for alpha**: no sign-in for a loopback-only API (a planned `api.auth.mode: none`), or the pasted local token. **Screens**: "Needs me" (G1, G2); the run page with open and closed waits, child runs, timeline and current plan (G4, G11); the decision form with a required reason, consumed artifacts as links, all recovery actions including `continue`, a step picker for `go_to` and `replan`, and `min_count` progress; artifacts and transcripts, readable by any viewer of the run (G5); abort; start a run from a template (G10); steering with breakpoint, skip, amend, retry and attempt grants against the current plan (**F18**, G11); live updates over `/events` (G8). **Console defect**: `stalled` and `stuck` shown as status, not as decisions, and `continue` in the recovery list (`console.js:74, 116-117`; M8 follow-up 11) |
-| Done when | Playwright tests in the default CI job, against an API on the in-memory providers, cover: find a wait in "Needs me", answer it with a reason, see the closed wait; start a run; set a breakpoint and continue; an update arrives over `/events` without a reload. The Slack link `#/runs/{id}` opens the run. A test fails if markup is inserted from API data. One live run by the product owner on the local profile, driven from the console only |
+| Builds | **Design A**: a TypeScript single-page application at `/console`, built with Node and Vite (LOG 344; the UI library is chosen in this milestone), embedded in `FeatureFlow.Api` as hashed assets; Node in CI and in `deploy/images/host.Dockerfile`; a client generated from A3's OpenAPI document; the text-only rule of the M7 console kept (`console.js:1-3`). **Sign-in for alpha**: no sign-in when the API is bound only to loopback (a planned `api.auth.mode: none`, which checks the bound address at start and refuses to start otherwise, since `FF_API_LISTEN` may name any address, `Composition.cs:256`; LOG 333), or the pasted local token. **Screens**: "Needs me" (G1, G2); the run page with open and closed waits, child runs, timeline and current plan (G4, G11); the decision form with a required reason, consumed artifacts as links, all recovery actions including `continue`, a step picker for `go_to` and `replan`, and `min_count` progress; artifacts and transcripts, readable by any viewer of the run (G5); abort; start a run from a template (G10); steering with breakpoint, skip, amend, retry and attempt grants against the current plan (**F18**, G11); live updates over `/events` (G8). **Console defect**: `stalled` and `stuck` shown as status, not as decisions, and `continue` in the recovery list (`console.js:74, 116-117`; M8 follow-up 11) |
+| Done when | Playwright tests in the default CI job, against an API on the in-memory providers, cover: find a wait in "Needs me", answer it with a reason, see the closed wait; start a run; set a breakpoint and continue; an update arrives over `/events` without a reload. The Slack link `#/runs/{id}` opens the run. A test fails if markup is inserted from API data. One live run by the product owner on the local profile, driven from the console only. A host with `api.auth.mode: none` and `FF_API_LISTEN` set to a non-loopback address refuses to start, shown by a test |
 | Depends on | A3 |
 | Effort | M (console) plus S (build chain and asset serving) |
 | Stage | Alpha |
@@ -141,8 +141,8 @@ The reads and writes the console's first slice uses, built on A2.
 
 | | |
 |---|---|
-| Builds | **F4**: the sandbox built from the repository's `environment.image` (`Manifest.cs:83`; M4 follow-up 1). **F12**: an agent runtime base class with hook normalisation, a runtime contract suite, and `model_access` per runtime instance (M8 follow-ups 14 and 15). **L5**: the `engine_tools` switch and the unused `api.base_url` key removed. **L10**: the provider supplies its own fault hint instead of the GitHub-specific text in `ProviderError.DescribeFault` |
-| Done when | A run on a repository that declares an image runs its tests in that image (integration test with a local image). Both built-in runtimes pass the runtime contract suite; a deliberately broken hook mapping fails it. Configuration naming `engine_tools` or `api.base_url` is refused |
+| Builds | **F4**: the sandbox built from the repository's `environment.image` (`Manifest.cs:83`), the base sandbox image's contract documented in `docs/06`, and M4 follow-up 1 restored to the follow-up list, which the m8 consolidation dropped. **F12** (in alpha rather than R1, LOG 345): an agent runtime base class with hook normalisation, a runtime contract suite, and `model_access` per runtime instance (M8 follow-ups 14 and 15). **L5**: the `engine_tools` switch and the unused `api.base_url` key removed. **L10**: the provider supplies its own fault hint instead of the GitHub-specific text in `ProviderError.DescribeFault` |
+| Done when | A run on a repository that declares an image runs its tests in that image (integration test with a local image). Both built-in runtimes pass the runtime contract suite; a deliberately broken hook mapping fails it. Configuration naming `engine_tools` or `api.base_url` is refused. `docs/06` states the base sandbox image's contract, and M4 follow-up 1 is back on the follow-up list |
 | Depends on | A2 |
 | Effort | M |
 | Stage | Alpha |
@@ -163,8 +163,8 @@ The review's step 4.
 
 | | |
 |---|---|
-| Builds | **F6**: an organisation adds a provider without forking the engine: a host project composed from `StandardProviders.Factories` plus its own, a sample host, and the engine published as packages (`docs/06` section 4). A fork with bespoke handlers remains acceptable (`docs/00` P13). **F15**: std templates as fragment wrappers, so changing one std task or role does not mean copying the template chain. **F16**: capability flags either read by the engine or removed. **F17**: record kinds declared once; each store reads the declaration instead of re-encoding queries and write rules; the separate memory store deleted. **F13**: `findings.triage`'s classes that need a person moved from the engine (`Findings.cs:247-253`) to workflow policy. **L4, rest**: test doubles moved to `Providers.Testing`. **L8**: tracker status identity as a provider default |
-| Done when | The sample host adds a provider of its own and runs a workflow test with it, built against the published packages only. Each store passes the record contract suite from the declarations. An organisation library that wraps one std task changes it in every std template that uses it without copying those templates, shown by a load test |
+| Builds | **F6**: an organisation adds a provider without forking the engine: a host project composed from a new `StandardProviders.Factories` (the standard packages' `Factories` lists, such as `GitHubProviders` and `ClaudeCodeRuntime`, combined) plus its own, a sample host, and the engine published as packages (`docs/06` section 4). A fork with bespoke handlers remains acceptable (`docs/00` P13). **F15**: std templates as fragment wrappers, so changing one std task or role does not mean copying the template chain. **F16**: capability flags either read by the engine or removed, and capabilities checked on the instance a step's role maps to, not the default instance of its type (`ProviderSet.Offered`, `ProviderSet.cs:33-40`). **F17**: record kinds declared once; each store reads the declaration instead of re-encoding queries and write rules; the separate memory store deleted. **F13**: `findings.triage`'s classes that need a person moved from the engine (`Findings.cs:247-253`) to workflow policy. **L4, rest**: test doubles moved to `Providers.Testing`. **L8**: tracker status identity as a provider default |
+| Done when | The sample host adds a provider of its own and runs a workflow test with it, built against the published packages only. Each store passes the record contract suite from the declarations. An organisation library that wraps one std task changes it in every std template that uses it without copying those templates, shown by a load test. A step whose role maps to an instance lacking a required capability is refused at run start although the type's default instance has it |
 | Depends on | A2 |
 | Effort | L |
 | Stage | First full release |
@@ -217,9 +217,9 @@ Every review finding and console gap, and the milestone that carries it.
 
 | Id | What | Milestone |
 |---|---|---|
-| F1 | Locked `require_checks` bypassed by expression or patch | A1 |
-| F2 | Merge action request is not a decision | A1 |
-| F3 | Action stand-in on the production path | A1 (`notify.send`, unservable actions); A2 (stand-in and dry-run branches removed) |
+| F1 | Locked `require_checks` bypassed by expression or patch; races not checked at run start | A1 |
+| F2 | Merge action request is not a decision | A1 (with a code-host merge before the answer failing the step) |
+| F3 | Action stand-in on the production path | A1 (`notify.send` removed, unservable actions); A2 (stand-in and dry-run branches removed) |
 | F4 | Sandbox not built from the repository's environment | A5 |
 | F5 | Reasons and retry causes do not reach the next agent | A3 |
 | F6 | Providers cannot be added without a fork | R1 |
@@ -230,7 +230,7 @@ Every review finding and console gap, and the milestone that carries it.
 | F11 | Three mechanisms for human waits | A2 |
 | F12 | A new agent runtime needs engine changes | A5 |
 | F13 | `findings.triage` fixes classes in the engine | R1 |
-| F14 | Design documents describe dropped or unbuilt mechanisms | A6 |
+| F14 | Design documents describe dropped or unbuilt mechanisms | A2 (`run.child` input schema refuses `run_gate`); A6 (documents) |
 | F15 | Changing one std task means copying the template chain | R1 |
 | F16 | Capability flags never read | R1 |
 | F17 | Record kinds re-encoded in each store | R1 |
@@ -285,19 +285,40 @@ Nothing is deferred beyond first full release.
 | 337 | F14 as alpha's last milestone |
 | 338 | Planned items marked in the owning documents with this plan's milestone |
 | 339 | F19 enforced by refusal at load, not by removing the toolset sections from the design |
+| 340 | Races share the per-step attempts ceiling on every path, run start included |
+| 341 | A pull request merged on the code host before the `<level>.merge_action` answer fails the step as a policy breach |
+| 342 | Defaults for dry run, `require_tested` and `notify.send`, applying unless the product owner overrides |
+| 343 | LOG 325 amended: artifacts listed and transcripts indexed in A3 |
+| 344 | Vite as the console's build tool |
+| 345 | F12 in alpha (A5), not with the extension points in R1 |
+| 346 | F14's code part (`run.child` input schema) placed in A2 under F10 |
 
 ---
 
 ## 7. Open questions
 
+Questions 3 to 6 have a default this plan follows unless the product owner
+overrides it; each names the milestone that needs the answer before it starts.
+
 1. **`api.auth.mode: none`** (LOG 333). Is a console with no sign-in acceptable
-   when the API listens only on loopback, or should alpha keep the pasted local
-   token alone?
+   when the host has checked at start that the API is bound only to loopback, or
+   should alpha keep the pasted local token alone?
 2. **Version numbering.** LOG 263 dropped backward compatibility for version 1's
    build. Does it return at alpha, or at first full release?
-3. **Dry run** (F3). Keep `dry_run` as recording providers, or drop it? A2 needs
-   the answer; the review leaves both open.
-4. **`require_tested`** (F1). Build it, or remove it from `docs/04`?
-5. **`notify.send`** (F3). Build it, or remove it from the action list?
-6. **Okta for R2.** Can the corporate tenant register a public browser client for
+3. **Milestone order** (LOG 330). The review recommends oversight (F5, F9, F4,
+   F21) before engine simplification; this plan puts simplification (A2) first,
+   so the console arrives one large milestone later. Accept the reversal, or
+   follow the review's order? Default: simplification first. Needed before A2.
+4. **Merge on the code host before the merge decision is answered** (F2,
+   LOG 341). Default: the step fails as a policy breach and raises an
+   intervention. Needed before A1.
+5. **Dry run** (F3, LOG 342). Default: keep `dry_run`, served by the memory and
+   recording providers. Needed before A2.
+6. **`require_tested`** (F1, LOG 342). Default: add a lockable
+   `merge.require_tested` policy key, applied by F1's cap function. Needed
+   before A1.
+7. **`notify.send`** (F3, LOG 342). Default: remove it from `docs/04` sections 2
+   and 12 and from the action contracts; it was never built, and notifications of
+   decisions and stuck runs do not depend on it. Needed before A1.
+8. **Okta for R2.** Can the corporate tenant register a public browser client for
    the console? If not, R2 needs a server-side session instead (about S to M more).

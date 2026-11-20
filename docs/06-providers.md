@@ -84,7 +84,7 @@ section 1).
 | 3.7 | Findings source | `findings.record` |
 | 3.8 | Validator | `artifact.validate` |
 | 3.9 | Toolset | Agent steps, through the engine MCP server |
-| 3.10 | Notifications | Decisions, `notify.send`, stuck runs |
+| 3.10 | Notifications | Decisions, stuck runs, and `notify.send` (never built; planned removal, `docs/12` A1) |
 | 3.11 | Session surface | Interactive sessions |
 | 3.12 | Artifact store, record store, secrets | The engine itself |
 | 3.13 | Credential broker | Every provider |
@@ -386,7 +386,7 @@ interface IToolsetProvider : IProvider {
 - A role names toolsets and, optionally, a tool allow-list within each. Version 1
   connects no external toolsets, so nothing restricts them yet (LOG 270).
   Version 1 still accepts a `toolset` provider instance, a role's `toolsets` and
-  a manifest's `requires.toolsets`, and does nothing with them. Refusing all
+  a library item's `requires.toolsets`, and does nothing with them. Refusing all
   three at load, as `policy.toolsets` already is (LOG 273), is planned
   (`docs/12` A1, review F19). This section describes the design for when
   toolsets are built (section 5).

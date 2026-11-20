@@ -1,7 +1,7 @@
 # Outline of the design
 
 Status: accepted 2026-10-31 and used to write `01` to `10`. The written documents now own their structure; section 3 maps to their actual sections. Companion to `PLAN.md` (the rewrite plan)
-and `00-principles.md` (principles P1 to P12).
+and `00-principles.md` (principles P1 to P13).
 
 For each document: what it owns, its sections, what it takes from the first
 design (`archive/docs/`) and from Feature Factory (FF, `../feature-factory/docs/`),
