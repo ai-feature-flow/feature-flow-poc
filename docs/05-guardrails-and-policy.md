@@ -28,7 +28,7 @@ floors have no setting at all.
 | F4 | **Attempt ceilings.** Allowances stay within the organisation's ceiling per step and per run, checked on every execution of a step, including when a loop re-enters it. A steerer's grants stay within the hard ceiling; an administrator may grant beyond it for one run, audited, so a long run is never stranded by its ceilings | Organisation |
 | F5 | **No push credential for agents.** Agents hold a read-only code host credential, per step. Only the engine pushes and merges. The engine's own identity cannot change branch protection | None |
 | F6 | **Model credentials stay out of the sandbox.** A proxy adds the key, or a per-run key with a spend limit and expiry is used (`docs/07` section 2, `model_access`) | Installation chooses the mode |
-| F7 | **Evidence integrity.** Evidence artifact types are produced only by engine actions (`docs/01` section 5.2) | None |
+| F7 | **Evidence integrity.** Evidence artifact types are produced only by engine actions (`docs/01` section 5.2), and not by `artifact.import`, which brings in files the engine did not make (`docs/04` section 10.1) | None |
 | F8 | **Record integrity.** Every decision and override records the actor from authentication, never from the request. An answer that requires a person cannot be given by policy, automation or an agent | None |
 | F9 | **Run status integrity.** A run reports `completed` only by reaching `{ end: completed }`. A run that stops without reaching any `end` route is `incomplete` | None |
 | F10 | **Privilege from role.** A step may tighten its role's write access, never widen it, and may not change its tools. A setting that governs safety is never read from a file an agent can edit | None |
@@ -79,7 +79,7 @@ limit. Validation reports where a request was capped.
 | Work items | `budget.max_work_items` on the root template | Ceiling (F11), always locked (LOG 187) |
 | Review of agent patches | `planning.review` | `planning.require_review`, per template name pattern |
 | Agent roles | The roles a template's steps name | `planning.allowed_roles` for steps an agent adds (section 6) |
-| Toolsets | The role's toolsets | None in version 1: no external toolsets are connected (LOG 270). Refusing the toolset settings at load is planned (`docs/06` section 3.9) |
+| Toolsets | The role's toolsets | None: toolsets are not in version 1, and their settings (`providers.toolset`, a role's `toolsets`, a library's `requires.toolsets`, `policy.toolsets`) are refused at load (`docs/06` section 3.9; LOG 270, 339) |
 
 A request that exceeds its cap is not silently lowered. Where the cap is an
 organisation **default** (`locked: false`), the request applies; where it is

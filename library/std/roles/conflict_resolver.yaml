@@ -6,5 +6,4 @@ metadata:
 
 write_access: branch
 tools: [read, search, edit, shell]
-toolsets: []
 requires: []

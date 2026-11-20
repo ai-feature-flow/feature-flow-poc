@@ -174,7 +174,7 @@ public static class ConfigurationReader
 {
     public static readonly IReadOnlyList<string> ProviderTypes =
     [
-        "sandbox", "agent_runtime", "vcs", "code_host", "ci", "tracker", "findings_source", "validator", "toolset",
+        "sandbox", "agent_runtime", "vcs", "code_host", "ci", "tracker", "findings_source", "validator",
         "notifications", "session_surface", "artifact_store", "record_store", "secrets", "credential_broker",
         // M3 only (LOG 81): the stand-in for the actions later milestones build.
         "action_stand_in",
@@ -227,6 +227,13 @@ public static class ConfigurationReader
             foreach (var (key, node) in p.Map.Entries)
             {
                 p.Node(key.Text);
+                // Toolsets are not in version 1 (F19, LOG 339): refused, not accepted and left unused.
+                if (key.Text == "toolset")
+                {
+                    p.Error("providers.toolset is not supported in version 1; remove it", key.Location);
+                    continue;
+                }
+
                 if (!ProviderTypes.Contains(key.Text))
                 {
                     p.Error($"unknown provider type '{key.Text}'", key.Location);
@@ -335,9 +342,15 @@ public static class ConfigurationReader
                 foreach (var instance in config.Instances.Values.Where(i => i.Kind is "fake" or "memory" || type == "action_stand_in"))
                     r.Error($"providers.{type}.instances.{instance.Name}: the {(type == "action_stand_in" ? "action stand-in" : "fake provider")} is for development only; set development: true", r.Map.Location);
         // A runtime without the engine's tools reports only through a file: a test setting (SP3 T3), not for production.
+        // The scripted runtime is a test double that runs no agent (L4).
         if (!development && providers.TryGetValue("agent_runtime", out var runtimes))
-            foreach (var instance in runtimes.Instances.Values.Where(i => i.Settings["engine_tools"].ScalarText() == "false"))
-                r.Error($"providers.agent_runtime.instances.{instance.Name}: engine_tools: false is for development only; set development: true", r.Map.Location);
+            foreach (var instance in runtimes.Instances.Values)
+            {
+                if (instance.Settings["engine_tools"].ScalarText() == "false")
+                    r.Error($"providers.agent_runtime.instances.{instance.Name}: engine_tools: false is for development only; set development: true", r.Map.Location);
+                if (instance.Kind == "scripted")
+                    r.Error($"providers.agent_runtime.instances.{instance.Name}: the scripted runtime is for development only; set development: true", r.Map.Location);
+            }
         r.Finish();
         return new InstallationConfig(address, ns, queue, events, providers, auth, attempts, races, file, development, agentWorker)
         {
@@ -650,7 +663,7 @@ public static class ConfigurationReader
     }
 
     /// <summary>A key the design once had that version 1 leaves out (LOG 268 to 270): refused, its content unread.</summary>
-    static void NotInVersion1(MapReader r, string key, string name)
+    internal static void NotInVersion1(MapReader r, string key, string name)
     {
         if (!r.Has(key))
             return;

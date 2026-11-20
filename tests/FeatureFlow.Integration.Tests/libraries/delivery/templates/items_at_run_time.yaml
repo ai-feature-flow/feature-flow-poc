@@ -24,7 +24,7 @@ steps:
       items: { expr: "steps.choose.outputs.repos" }
       mode: chain
       step:
-        action: notify.send
+        action: artifact.compose
         with: { audience: team, message: { expr: "item" } }
     routes:
       completed: { end: completed }

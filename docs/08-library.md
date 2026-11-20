@@ -22,7 +22,7 @@ author may change.
 | Tasks | `tasks/` | Markdown instructions for one agent step: objective, procedure, what each outcome means |
 | Skills | `skills/` | Reusable guidance an agent reads on demand: one folder per skill with a `SKILL.md` |
 | Resources | Named in the manifest | Folders of shared reference material, mounted read-only beside the skills so a skill can link to them (from FF) |
-| Roles | `roles/` | Agent roles: write access, tools, toolsets, required runtime capabilities (`docs/01` section 2.2) |
+| Roles | `roles/` | Agent roles: write access, tools, required runtime capabilities (`docs/01` section 2.2). Toolsets are not in version 1: a role's `toolsets` is refused at load (LOG 339) |
 | Artifact types | `artifact_types/` | Schema (JSON Schema for data; required headings, front matter and identifier patterns for Markdown), the validators to run on production, `evidence: true` for engine-only types, `compatible_with` |
 | Decision types | `decision_types/` | Names and default approval rules (`docs/05` section 4) |
 | Prompts | `prompts/` | Markdown for decisions, pull request bodies, the agent reporting preamble |
@@ -59,7 +59,6 @@ requires:
   engine: ">=1.0.0"
   plan_schema: 1
   capabilities: [tracker.hierarchy, code_host.pull_request]
-  toolsets: [jira, confluence]
 
 dependencies:
   - { name: std, version: ">=1.0.0 <2.0.0" }

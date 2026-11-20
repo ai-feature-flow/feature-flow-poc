@@ -13,7 +13,6 @@ public sealed record Manifest(
     string? Version,
     string? Description,
     IReadOnlyList<string> RequiredCapabilities,
-    IReadOnlyList<string> RequiredToolsets,
     string? RequiredEngine,
     long? PlanSchema,
     IReadOnlyList<LibraryDependency> Dependencies,
@@ -22,7 +21,7 @@ public sealed record Manifest(
     IReadOnlyList<Entrypoint> Entrypoints,
     IReadOnlyList<string> NotificationEvents);
 
-public sealed record RoleItem(string Name, string WriteAccess, IReadOnlyList<string> Tools, IReadOnlyList<string> Toolsets, ItemRef? DeprecatedBy);
+public sealed record RoleItem(string Name, string WriteAccess, IReadOnlyList<string> Tools, ItemRef? DeprecatedBy);
 
 public sealed record ArtifactTypeItem(string Name, string Format, bool Evidence, IReadOnlyList<ItemRef> CompatibleWith, IReadOnlyList<string> ProducedBy, ItemRef? DeprecatedBy)
 {
@@ -89,7 +88,7 @@ public static class LibraryItemReader
         var version = r.String("version");
         var description = r.String("description");
 
-        IReadOnlyList<string> capabilities = [], toolsets = [];
+        IReadOnlyList<string> capabilities = [];
         string? engine = null;
         long? planSchema = null;
         if (MapReader.Of(r.Node("requires"), d, "requires") is { } req)
@@ -97,7 +96,8 @@ public static class LibraryItemReader
             engine = req.String("engine");
             planSchema = req.Int("plan_schema");
             capabilities = req.StringList("capabilities");
-            toolsets = req.StringList("toolsets");
+            // Toolsets are not in version 1 (F19, LOG 339).
+            ConfigurationReader.NotInVersion1(req, "toolsets", "requires.toolsets");
             req.Finish();
         }
 
@@ -134,7 +134,7 @@ public static class LibraryItemReader
         r.Finish();
         return name is null
             ? null
-            : new Manifest(name, version, description, capabilities, toolsets, engine, planSchema, dependencies, inputs, resources, entrypoints, events);
+            : new Manifest(name, version, description, capabilities, engine, planSchema, dependencies, inputs, resources, entrypoints, events);
     }
 
     /// <summary>Reads the common header: api_version, kind and metadata. Returns the metadata reader, unfinished.</summary>
@@ -182,19 +182,11 @@ public static class LibraryItemReader
         var tools = r.StringList("tools");
         foreach (var tool in tools.Where(t => !RoleTools.Contains(t)))
             r.Error($"unknown tool class '{tool}'; tools are {string.Join(", ", RoleTools)} (LOG 65)", r.Map["tools"]!.Location);
-        var toolsets = new List<string>();
-        foreach (var item in Seq(r.Node("toolsets"), d, "toolsets"))
-            if (MapReader.Of(item, d, "a toolset") is { } ts)
-            {
-                if (ts.String("name", required: true) is { } n)
-                    toolsets.Add(n);
-                ts.StringList("tools");
-                ts.Finish();
-            }
-
+        // Toolsets are not in version 1 (F19, LOG 339).
+        ConfigurationReader.NotInVersion1(r, "toolsets", "toolsets");
         r.StringList("requires");
         r.Finish();
-        return new RoleItem(name, access, tools, toolsets, deprecated);
+        return new RoleItem(name, access, tools, deprecated);
     }
 
     public static ArtifactTypeItem? ReadArtifactType(YNode root, string name, DiagnosticBag d)

@@ -84,7 +84,7 @@ section 1).
 | 3.7 | Findings source | `findings.record` |
 | 3.8 | Validator | `artifact.validate` |
 | 3.9 | Toolset | Agent steps, through the engine MCP server |
-| 3.10 | Notifications | Decisions, stuck runs, and `notify.send` (never built; planned removal, `docs/12` A1) |
+| 3.10 | Notifications | Decisions and stuck runs |
 | 3.11 | Session surface | Interactive sessions |
 | 3.12 | Artifact store, record store, secrets | The engine itself |
 | 3.13 | Credential broker | Every provider |
@@ -95,7 +95,9 @@ LOG 81: while later milestones build the engine actions, a
 temporary type `action_stand_in` runs them, scripted or recording, and a
 `fake` provider of any type only describes itself. Neither is configured in a
 production installation: an installation that configures one must set
-`development: true`.
+`development: true`, as must one that configures the `scripted` agent runtime
+(L4). An action that neither the providers nor a stand-in can serve stops for
+a person (`docs/04` section 1).
 
 The VCS, code host and CI interfaces as built in M5 differ from the signatures below: catch-up and merge take an
 expected revision and a key, the code host reads a file and has no merge method, and CI results are returned as
@@ -384,11 +386,10 @@ interface IToolsetProvider : IProvider {
   server's credentials stay with the engine, never in the sandbox (from FF's
   design for external MCP servers).
 - A role names toolsets and, optionally, a tool allow-list within each. Version 1
-  connects no external toolsets, so nothing restricts them yet (LOG 270).
-  Version 1 still accepts a `toolset` provider instance, a role's `toolsets` and
-  a library item's `requires.toolsets`, and does nothing with them. Refusing all
-  three at load, as `policy.toolsets` already is (LOG 273), is planned
-  (`docs/12` A1, review F19). This section describes the design for when
+  connects no external toolsets: the engine refuses at load a `toolset`
+  provider type, a role's `toolsets` and a library item's
+  `requires.toolsets`, each naming its key, as it does `policy.toolsets`
+  (LOG 273, LOG 339). This section describes the design for when
   toolsets are built (section 5).
 - Each call is recorded on the timeline with the step and the tool. A tool that
   writes (creating a ticket) is marked as writing in its descriptor, so a role
@@ -495,7 +496,7 @@ requests (`archive/docs/16` section 2).
 | Session surfaces other than hand-off | Review rounds on a pull request, console chat, chat-thread questions: later |
 | VCS systems other than Git | The interface allows one |
 | Remote provider adapter | Section 4 |
-| Toolset providers (section 3.9) | Product owner, 2026-11-21: not in version 1. Their settings are to be refused rather than accepted and ignored (`docs/12` A1) |
+| Toolset providers (section 3.9) | Product owner, 2026-11-21: not in version 1. Their settings are refused at load rather than accepted and ignored (LOG 339) |
 
 ---
 

@@ -91,7 +91,7 @@ built yet. Planned for the first full release (`docs/12` R3, review F7):
 `temporal.auth`, `temporal.tls` and `expected_retention` (version 1 connects with
 the address, namespace and payload codec only), the `teamcity` CI instance and
 the `sonarcloud` findings analyser. The `toolset` instances are not in version 1
-and are to be refused (`docs/06` section 3.9). Which other example settings are
+and are refused at load (`docs/06` section 3.9). Which other example settings are
 unbuilt is review F14, corrected in `docs/12` A6.
 
 | Key | Notes |
@@ -100,6 +100,7 @@ unbuilt is review F14, corrected in `docs/12` A6.
 | `agent_runtime.*.model_access` | `proxy` (a proxy adds the key to model requests) or `per_run_key` (a key with a spend limit and expiry). Required for every runtime (F6). With `proxy`, `upstream` is the model API (default the Anthropic API) and `auth` how the key is sent: `api_key` (default) or `oauth` (a subscription token). LOG 91 |
 | `agent_runtime.claude_code` | `model`, `executable`, and `engine_tools`: `false` offers the agent no engine tools, for SP3's file fall-back test, and is refused unless `development: true`. LOG 91 |
 | `agent_runtime.copilot_cli` | The same four settings as `claude_code`. Copilot reaches the model through the same model proxy, as a custom Anthropic provider with the step's token; one proxy, configured by the default runtime's `model_access`, serves every runtime instance (LOG 293) |
+| `agent_runtime.scripted` | A test double that runs no agent and reports what its `script` says. Refused unless `development: true` (L4), as are the `fake` and `memory` providers and the `action_stand_in` type (LOG 81) |
 | `sandbox.docker` | `image` (the sandbox image, `feature-flow-sandbox`), `user` (the agent's, default `node`), `docker` (the executable). Its network reaches only `agent_worker`'s `urls` and `model_base_url`, and the internet (LOG 291) |
 | `sandbox.kubernetes` | `image`, `user`, `namespace` (default `default`), `cpu` (default 2) and `memory` (default 4Gi) limits per pod, and `context` (a kubeconfig context; omitted, the cluster the worker runs in). Its network is `sandbox-network-policy.yaml`, which must be applied in `namespace` first; the agent worker's pods carry `app.kubernetes.io/name: feature-flow-agent-worker` (LOG 294) |
 | `agent_worker` | LOG 91: `listen` (the agent worker's endpoint), `urls` (its replicas as sandboxes reach them), `model_base_url` (the model proxy as sandboxes reach it; default the first of `urls` with `/model`), `token_key_ref` (the secret every replica signs step tokens with) and `sandbox_client` (the executable copied into each sandbox). How often commits are pushed (30 seconds), Claude Code's own model retries, the hook's hold (120 seconds) and the sandbox client's retry (10 minutes) are fixed defaults, not settings |
@@ -193,7 +194,9 @@ teams:
 | `role_mapping` | Each library agent role's `agent_runtime` (an instance of the installation's) and `model` (default: that instance's own). `default` serves roles with no entry; with neither, the installation's default runtime runs the step with its own model. Fixed for a run when it starts (LOG 267, 295) |
 
 `library_overrides`, `library_inputs`, `policy.toolsets` (whose only key was `allowed`) and `timeouts` are not in
-version 1 and are refused at startup, whatever they hold (LOG 268 to 270, 273).
+version 1 and are refused at startup, whatever they hold (LOG 268 to 270, 273). So are the installation's
+`providers.toolset`, and a library role's `toolsets` and a library manifest's `requires.toolsets` when the library
+loads, each refusal naming its key (F19, LOG 339).
 
 ---
 
