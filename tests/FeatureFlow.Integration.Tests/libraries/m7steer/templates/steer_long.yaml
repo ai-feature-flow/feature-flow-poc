@@ -18,7 +18,7 @@ steps:
       items: { expr: "params.work" }
       mode: chain
       step:
-        action: notify.send
+        action: artifact.compose
         with: { audience: [team], message: work, wait_ms: { expr: "item" } }
   - id: final
     agent: { role: std:roles/implementer, task: m7steer:tasks/build }

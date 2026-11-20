@@ -40,7 +40,7 @@ public sealed record Outcome(string Name, OutcomeClass Class);
 public sealed record ActionContract(string Name, IReadOnlyList<Outcome> Outcomes, IReadOnlyList<string>? Outputs, IReadOnlyList<string> ReferenceInputs,
     IReadOnlyList<string>? Escalates = null);
 
-/// <summary>The twenty-one engine actions of docs/04 section 2.</summary>
+/// <summary>The twenty engine actions of docs/04 section 2.</summary>
 public static class Actions
 {
     static Outcome S(string n) => new(n, OutcomeClass.Success);
@@ -68,7 +68,6 @@ public static class Actions
         new ActionContract("artifact.import", [S("imported")], null, []),
         new ActionContract("artifact.publish", [S("published"), B("conflict")], null, []),
         new ActionContract("tracker.update", [S("done"), F("not_found")], null, []),
-        new ActionContract("notify.send", [S("sent")], null, []),
         new ActionContract("delivery.report", [S("complete"), F("partial")], null, []),
     }.ToDictionary(a => a.Name);
 

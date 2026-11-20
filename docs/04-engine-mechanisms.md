@@ -22,7 +22,7 @@ the standard library's templates set it.
 | Idempotency | Every step has a key: a hash of run id, step id, execution number and its stable inputs. A remote object the engine creates carries a hidden marker (a branch suffix, a pull request body comment, a commit trailer, a tracker label), so a retry finds and adopts it instead of creating a duplicate |
 | Repository manifest | A step that touches a repository reads `feature-flow.yaml` from the branch when it starts and records the hash (RW11). The `library` section is read from the default branch only (`docs/07` section 4) |
 | Errors | Provider errors are classified as infrastructure (retried with backoff, free) or work (routed by outcome) (`docs/06`). A step may reclassify because it knows the intent: an agent that ran out of time is a work result |
-| Cannot answer | When a step cannot produce a trustworthy outcome (no manifest, a checkout not at the expected commit, results it cannot parse, a missing capability), it raises an **intervention** instead of guessing an outcome (P11, from FF) |
+| Cannot answer | When a step cannot produce a trustworthy outcome (no manifest, a checkout not at the expected commit, results it cannot parse, a missing capability), it raises an **intervention** instead of guessing an outcome (P11, from FF). An action no provider can serve is one: it runs against the installation's providers only when it is built, the run is not a dry run and a VCS and a code host provider are configured; otherwise only the action stand-in (`docs/06` section 3) serves it, and with none configured the step cannot answer rather than being retried for ever (LOG A1-3a) |
 | Waiting | No step waits on human or external time inside a provider call. Human waits are durable workflow waits; external waits poll inside one long-running, heartbeating activity, or wake on an inbound event and then confirm by reading (`docs/02`) |
 | Cost | Every step records tokens, model and compute time |
 | Audit | Every step records its start, each attempt, each resume, and its outcome in the run timeline |
@@ -53,11 +53,12 @@ the standard library's templates set it.
 | Artifacts | `artifact.compose` | `composed` (success) |
 | | `artifact.import` | `imported` (success) |
 | | `artifact.publish` | `published` (success), `conflict` (blocked) |
-| Tracker and notifications | `tracker.update` | `done` (success), `not_found` (failure) |
-| | `notify.send` | `sent` (success). Never built; planned removal (`docs/12` A1, LOG 342) |
+| Tracker | `tracker.update` | `done` (success), `not_found` (failure) |
 | Delivery | `delivery.report` | `complete` (success), `partial` (failure) |
 
-Twenty-one actions, down from forty step kinds in the first design. What went:
+Twenty actions, down from forty step kinds in the first design. A plan naming
+any other action, `notify.send` included (never built; removed, LOG 342), is
+refused at load as an unknown action. What went:
 
 | First design | Now |
 |---|---|
@@ -489,6 +490,9 @@ note.
 Artifact types marked `evidence: true` may be produced only by engine actions
 (`docs/01` section 5.2). The standard evidence types: test results, analysis
 results, check results, merge records, validation reports, trace reports.
+Load check 12 refuses an agent step, a decision or a session that produces
+one, and an `artifact.import` that declares one for what it imports or names
+one as a file's `type`: an imported file is not evidence the engine made (L9).
 
 ### 10.2 Validators
 
@@ -565,7 +569,6 @@ run holds are ignored (LOG 169).
 | `artifact.import` | `from`: a session submission (M7), or a repository, folder, files and exact commit | Registers files as artifacts at that commit, validated against their types (as built: parsed, not yet schema-checked; LOG 181) |
 | `artifact.publish` | `repository`, `folder`, `files`, `previous` (an earlier publication to supersede) | Copies artifacts into a repository in one commit and opens a pull request. `conflict` if the destination changed in a way the earlier publication did not expect; nothing is written (from FF; branch, record and superseding, LOG 182) |
 | `tracker.update` | `op` (`create`, `update`, `transition`, `link`, `comment`), its fields (LOG 183) | One tracker operation. Field mapping is provider configuration. Agents have no tracker write identity; this action and declarative `tracker` on steps are the only write paths, apart from a planner's toolset where policy allows |
-| `notify.send` | `audience`, `message` | A notification that needs no answer. A failure retries and never fails the run. Never built; planned removal (`docs/12` A1, LOG 342) |
 | `delivery.report` | `repositories` | Reads the merge records and states, per repository, whether a merge actually happened: the merge is of the work branch's current head, the parent branch still contains it, and no revert the run opened of it is merged or open (LOG 180). `complete` only if every one merged, so a run redirected past a merge cannot report success (from FF) |
 
 ---

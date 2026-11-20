@@ -81,7 +81,7 @@ public static class Checks
         [9] = "reachability",
         [10] = "cycle without a route out",
         [11] = "consumed artifact producer",
-        [12] = "evidence type produced by an agent or decision",
+        [12] = "evidence type produced by an agent, a decision or an import",
         [13] = "write access and tools",
         [14] = "fragment",
         [15] = "parallel branch routes",

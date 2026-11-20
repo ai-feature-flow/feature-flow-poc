@@ -25,7 +25,7 @@ public class ShellInputTests
           ticket_id: { type: string, required: true }
         steps:
           - id: prepare
-            action: notify.send
+            action: artifact.compose
             with: { message: { expr: "'ticket ' + params.ticket_id" }, audience: [team] }
           - id: work
             action: test.run
@@ -70,9 +70,9 @@ public class ShellInputTests
             action: run.child
             with: { template: probe:templates/child, level: ticket, repositories: [acme/api], parameters: {} }
           - id: ship
-            action: notify.send
+            action: artifact.compose
             protected: true
-            routes: { sent: { end: completed } }
+            routes: { composed: { end: completed } }
         """;
 
     static readonly Probe Lib = new("shell", ("retrying", Retrying), ("child", Child), ("parent", Parent));
@@ -102,7 +102,7 @@ public class ShellInputTests
     public void Granting_attempts_at_an_exhausted_step_runs_it_again_and_retry_alone_escalates_again()
     {
         var core = Retrying_core(out var driver);
-        driver.Respond = (id, _) => id == "work" ? new StepFailed(id, ErrorClass.Work, "flaky") : new StepCompleted(id, "sent");
+        driver.Respond = (id, _) => id == "work" ? new StepFailed(id, ErrorClass.Work, "flaky") : new StepCompleted(id, "composed");
         driver.Run();
         var wait = Assert.Single(core.State.Waits);
         Assert.Equal(WaitKind.Intervention, wait.Kind);
@@ -130,7 +130,7 @@ public class ShellInputTests
         // The step allows 2 attempts; the hard ceiling is 3 (F4; docs/05 section 5, grant_attempts_beyond).
         var (core, d) = RunCore.Start(Lib.Libraries, Probe.Ref("retrying"), TicketRun(), new RunOptions { HardStepCeiling = 3 });
         Assert.True(core is not null, string.Join("\n", d));
-        var driver = new Driver(core!) { Respond = (id, _) => id == "work" ? new StepFailed(id, ErrorClass.Work, "x") : new StepCompleted(id, "sent") };
+        var driver = new Driver(core!) { Respond = (id, _) => id == "work" ? new StepFailed(id, ErrorClass.Work, "x") : new StepCompleted(id, "composed") };
         driver.Run();
         var answer = new InterventionAnswered(core!.State.Waits.Single().Id, new Recovery(RecoveryKind.GrantAttempts, Attempts: attempts, BeyondHardCeiling: administrator));
         var result = core.Apply(answer);
@@ -143,7 +143,7 @@ public class ShellInputTests
     public void A_grant_that_raises_the_run_ceiling_above_its_hard_ceiling_needs_an_administrator()
     {
         var (core, _) = RunCore.Start(Lib.Libraries, Probe.Ref("retrying"), TicketRun(), new RunOptions { RunCeiling = 3, HardRunCeiling = 4 });
-        var driver = new Driver(core!) { Respond = (id, _) => id == "work" ? new StepFailed(id, ErrorClass.Work, "x") : new StepCompleted(id, "sent") };
+        var driver = new Driver(core!) { Respond = (id, _) => id == "work" ? new StepFailed(id, ErrorClass.Work, "x") : new StepCompleted(id, "composed") };
         driver.Run();
         var wait = core!.State.Waits.Single().Id;
         Assert.Contains("run ceiling", core.Check(new InterventionAnswered(wait, new Recovery(RecoveryKind.GrantAttempts, Attempts: 2))));
@@ -154,7 +154,7 @@ public class ShellInputTests
     public void Go_to_with_clean_up_and_re_plan_enter_the_named_step()
     {
         var core = Retrying_core(out var driver);
-        driver.Respond = (id, _) => id == "work" ? new StepFailed(id, ErrorClass.Work, "x") : new StepCompleted(id, id == "plan" ? "planned" : "sent");
+        driver.Respond = (id, _) => id == "work" ? new StepFailed(id, ErrorClass.Work, "x") : new StepCompleted(id, id == "plan" ? "planned" : "composed");
         driver.Run();
         var wait = core.State.Waits.Single();
 
@@ -173,7 +173,7 @@ public class ShellInputTests
     public void A_person_may_end_a_run_failed_but_not_completed()
     {
         var core = Retrying_core(out var driver);
-        driver.Respond = (id, _) => id == "work" ? new StepFailed(id, ErrorClass.Work, "x") : new StepCompleted(id, "sent");
+        driver.Respond = (id, _) => id == "work" ? new StepFailed(id, ErrorClass.Work, "x") : new StepCompleted(id, "composed");
         driver.Run();
         var wait = core.State.Waits.Single();
         Assert.NotNull(core.Check(new InterventionAnswered(wait.Id, new Recovery(RecoveryKind.End, Status: RunStatus.Completed))));
@@ -228,7 +228,7 @@ public class ShellInputTests
         Assert.Contains("no parent", orphan.Apply(new StepCompleted("plan", "planned", Patch: InsertAfterKid(null), PatchToParent: true)).Errors.Single());
         var (selfOnly, _) = RunCore.Start(Lib.Libraries, Probe.Ref("retrying"), TicketRun(parent: "run-0"));
         var selfDriver = new Driver(selfOnly!);
-        selfDriver.Respond = (id, _) => id == "work" ? new StepFailed(id, ErrorClass.Work, "x") : new StepCompleted(id, "sent");
+        selfDriver.Respond = (id, _) => id == "work" ? new StepFailed(id, ErrorClass.Work, "x") : new StepCompleted(id, "composed");
         selfDriver.Run();
         Assert.True(selfOnly!.Apply(new InterventionAnswered(selfOnly.State.Waits.Single().Id, new Recovery(RecoveryKind.GoTo, "plan"))).Accepted);
         selfDriver.Advance();
@@ -247,7 +247,7 @@ public class ShellInputTests
         Assert.Contains("kid", parent.State.InFlight);
         Assert.Equal(2, parent.State.Revision);
 
-        driver.Respond = (id, _) => new StepCompleted(id, id.StartsWith("kid", StringComparison.Ordinal) ? "completed" : "sent");
+        driver.Respond = (id, _) => new StepCompleted(id, id.StartsWith("kid", StringComparison.Ordinal) ? "completed" : "composed");
         driver.Run();
         Assert.Equal(["kid", "kid_extra", "ship"], Driver.Path(parent));
         Assert.Equal(RunStatus.Completed, parent.State.Status);
@@ -259,7 +259,7 @@ public class ShellInputTests
         var parent = Lib.Start("parent");
         new Driver(parent).Advance();
         var patch = new PatchDocument(null, new Proposer("agent", "plan"), "skip the notice", 1, null,
-            [new PatchOp("set", "ship", new SourceLocation("p", 1, 1), Field: "routes.sent", Value: YamlWriter.Read("{\"end\": \"failed\"}"))],
+            [new PatchOp("set", "ship", new SourceLocation("p", 1, 1), Field: "routes.composed", Value: YamlWriter.Read("{\"end\": \"failed\"}"))],
             new SourceLocation("p", 1, 1));
         var result = parent.Apply(new ChildPatchProposed("kid", patch, "plan"));
         Assert.Equal(PatchStatus.Pending, result.Patch!.Status);

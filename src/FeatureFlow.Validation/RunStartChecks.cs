@@ -42,7 +42,6 @@ public static class RunStartChecks
         ["artifact.import"] = ["vcs"],
         ["artifact.publish"] = ["vcs", "code_host.pull_request"],
         ["tracker.update"] = ["tracker"],
-        ["notify.send"] = ["notifications"],
         ["delivery.report"] = ["code_host"],
     };
 

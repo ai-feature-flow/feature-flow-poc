@@ -31,7 +31,7 @@ public class PatchTests
             action: artifact.validate
             protected: true
           - id: ship
-            action: notify.send
+            action: artifact.compose
           - id: lanes
             parallel:
               branches: []
@@ -56,7 +56,7 @@ public class PatchTests
               on_other: report
               step: { action: test.run, with: { tier_tags: ["$.tier"] } }
           - id: done
-            action: notify.send
+            action: artifact.compose
           - id: report
             action: delivery.report
             routes: { complete: { end: completed }, partial: { end: partial } }
@@ -78,7 +78,7 @@ public class PatchTests
                 - { id: b, action: test.run }
             routes: { completed: done, any_failed: { escalate: true } }
           - id: done
-            action: notify.send
+            action: artifact.compose
         """;
 
     static readonly Probe Lib = new("patches", ("planned", Planned), ("expanding", Expanding), ("lanes", Lanes));
@@ -167,7 +167,7 @@ public class PatchTests
         new Driver(core) { Respond = (id, _) => new StepCompleted(id, core.StepById(id)!.Outcomes()[0].Name) }.Run();
         core.Apply(new StepCompleted("a", "passed"));
         core.Apply(new StepCompleted("b", "passed"));
-        new Driver(core) { Respond = (id, _) => new StepCompleted(id, "sent") }.Run();
+        new Driver(core) { Respond = (id, _) => new StepCompleted(id, "composed") }.Run();
         Assert.Equal(RunStatus.Completed, core.State.Status);
     }
 
@@ -338,7 +338,7 @@ public class PatchTests
         core.Advance();
         var result = core.Apply(Human(Patch(Doc(ByHuman, """
               - { op: insert, before: review, step: { id: gate, action: analysis.run } }
-              - { op: chain, target: ship, on_other: plan, step: { id: announce, action: notify.send } }
+              - { op: chain, target: ship, on_other: plan, step: { id: announce, action: artifact.compose } }
               - { op: set, target: build, field: routes.failed, value: build }
             """, resumeAt: "plan"))));
 
@@ -346,7 +346,7 @@ public class PatchTests
         Assert.Equal(new ResolvedStep("gate", false), Route(core, "build", "passed"));
         Assert.Equal(new ResolvedStep("build", false), Route(core, "build", "failed"));
         Assert.Equal(new ResolvedStep("review", false), Route(core, "gate", "passed"));
-        Assert.Equal(new ResolvedStep("announce", false), Route(core, "ship", "sent"));
+        Assert.Equal(new ResolvedStep("announce", false), Route(core, "ship", "composed"));
         Assert.Equal(new ResolvedStep("plan", false), Route(core, "ship", Actions.AttemptsExhausted));
     }
 
@@ -362,7 +362,7 @@ public class PatchTests
         var add = Patch(Doc(ByHuman, "  - { op: add_branch, target: lanes, step: { id: lane_a, action: test.run } }", resumeAt: "ship"));
 
         Assert.Equal(PatchStatus.Applied, core.Apply(Human(add)).Patch!.Status);
-        core.Apply(new StepCompleted("ship", "sent"));
+        core.Apply(new StepCompleted("ship", "composed"));
         core.Advance();
         var late = Patch(Doc(ByHuman, "  - { op: add_branch, target: lanes, step: { id: lane_b, action: test.run } }", revision: 2, resumeAt: "ship"));
 

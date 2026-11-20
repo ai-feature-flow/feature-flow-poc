@@ -17,6 +17,6 @@ steps:
         - { id: kid_b, action: run.child, with: { template: m7steer:templates/steer_gate, level: ticket, repositories: [acme/api], parameters: {} } }
     routes: { completed: ship, any_failed: { escalate: true } }
   - id: ship
-    action: notify.send
+    action: artifact.compose
     with: { audience: [team], message: shipped }
-    routes: { sent: { end: completed } }
+    routes: { composed: { end: completed } }

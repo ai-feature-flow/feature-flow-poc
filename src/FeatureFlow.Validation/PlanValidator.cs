@@ -690,7 +690,19 @@ public sealed class PlanValidator
                 d.Add(Checks.EvidenceType,
                     $"{(step.Form == StepForm.Agent ? "an agent step" : "a decision")} may not produce '{produced.Name}' of evidence type {type.Text}; only engine actions produce evidence (F7)",
                     produced.Location, step.Id);
+            // An import registers files someone else wrote: it may not forge evidence (L9).
+            if (step.Action == "artifact.import" && ArtifactType(typeRef)?.Evidence == true)
+                d.Add(Checks.EvidenceType,
+                    $"artifact.import may not produce '{produced.Name}' of evidence type {type.Text}; an imported file is not evidence the engine made (F7)",
+                    produced.Location, step.Id);
         }
+
+        foreach (var step in plan.AllSteps.Where(s => s.Action == "artifact.import"))
+            foreach (var file in (step.With?["files"] as YSeq)?.Items.OfType<YMap>() ?? [])
+                if (Literal(file["type"]) is { Reference: { } r } fileType && ArtifactType(r)?.Evidence == true)
+                    d.Add(Checks.EvidenceType,
+                        $"artifact.import may not import '{file["name"].ScalarText()}' as evidence type {fileType.Text}; an imported file is not evidence the engine made (F7)",
+                        fileType.Location, step.Id);
 
         foreach (var step in plan.AllSteps)
             foreach (var file in step.Decision?.Session?.Files ?? [])
