@@ -6,7 +6,7 @@ namespace FeatureFlow.Interpreter;
 /// <summary>
 /// The decision an engine action raises (docs/04 section 4.5; LOG 331): a decision-kind wait on an action step, of type
 /// <c>&lt;level&gt;.merge_action</c>, answered <see cref="Approve"/> or <see cref="Reject"/>. Approval lets the step ask a
-/// person to merge; rejection ends the step <see cref="Declined"/>, as closing the pull request does (LOG A1-2a).
+/// person to merge; rejection ends the step <see cref="Declined"/>, as closing the pull request does (LOG 349).
 /// <c>scm.merge</c> is the only action that raises an action decision: <c>RunCore.ActionDecisionOf</c> and
 /// <c>RunCore.IsActionDecision</c> take any decision wait on an action step to be this one, so an action that raises a
 /// decision of another type must change them.
@@ -75,7 +75,7 @@ public sealed partial class RunCore
 
     /// <summary>
     /// A person answered the action's decision. Approve: the running watch is stopped and the same execution started
-    /// again, now asking a person to merge. Reject: the step ends <c>declined</c> and its watch is cancelled (LOG A1-2a).
+    /// again, now asking a person to merge. Reject: the step ends <c>declined</c> and its watch is cancelled (LOG 349).
     /// </summary>
     ApplyResult AnswerActionDecision(Step step, OpenWait wait, DecisionAnswered a)
     {

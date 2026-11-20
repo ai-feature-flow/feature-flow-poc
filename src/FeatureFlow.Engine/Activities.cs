@@ -246,7 +246,7 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
     /// An engine action. One M5 builds (<see cref="EngineActions.Built"/>) runs against the providers when the
     /// installation configures real source control (<see cref="EngineActions.HasSourceControl"/>); with only fake
     /// providers, or in a dry run, it goes to the stand-in like every action not yet built (LOG 81, LOG 121), and with no
-    /// stand-in either it cannot answer, so the run raises an intervention (LOG A1-3a). An action
+    /// stand-in either it cannot answer, so the run raises an intervention (LOG 352). An action
     /// still waiting fails retryably with its poll interval as the next delay, so it holds no worker slot between reads.
     /// </summary>
     [Activity]

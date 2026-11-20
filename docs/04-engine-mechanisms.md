@@ -22,7 +22,7 @@ the standard library's templates set it.
 | Idempotency | Every step has a key: a hash of run id, step id, execution number and its stable inputs. A remote object the engine creates carries a hidden marker (a branch suffix, a pull request body comment, a commit trailer, a tracker label), so a retry finds and adopts it instead of creating a duplicate |
 | Repository manifest | A step that touches a repository reads `feature-flow.yaml` from the branch when it starts and records the hash (RW11). The `library` section is read from the default branch only (`docs/07` section 4) |
 | Errors | Provider errors are classified as infrastructure (retried with backoff, free) or work (routed by outcome) (`docs/06`). A step may reclassify because it knows the intent: an agent that ran out of time is a work result |
-| Cannot answer | When a step cannot produce a trustworthy outcome (no manifest, a checkout not at the expected commit, results it cannot parse, a missing capability), it raises an **intervention** instead of guessing an outcome (P11, from FF). An action no provider can serve is one: it runs against the installation's providers only when it is built, the run is not a dry run and a VCS and a code host provider are configured; otherwise only the action stand-in (`docs/06` section 3) serves it, and with none configured the step cannot answer rather than being retried for ever (LOG A1-3a) |
+| Cannot answer | When a step cannot produce a trustworthy outcome (no manifest, a checkout not at the expected commit, results it cannot parse, a missing capability), it raises an **intervention** instead of guessing an outcome (P11, from FF). An action no provider can serve is one: it runs against the installation's providers only when it is built, the run is not a dry run and a VCS and a code host provider are configured; otherwise only the action stand-in (`docs/06` section 3) serves it, and with none configured the step cannot answer rather than being retried for ever (LOG 352) |
 | Waiting | No step waits on human or external time inside a provider call. Human waits are durable workflow waits; external waits poll inside one long-running, heartbeating activity, or wake on an inbound event and then confirm by reading (`docs/02`) |
 | Cost | Every step records tokens, model and compute time |
 | Audit | Every step records its start, each attempt, each resume, and its outcome in the run timeline |
@@ -291,10 +291,10 @@ code host that refuses an allowed engine merge). It is a
 | Element | Detail |
 |---|---|
 | Form | A decision-kind wait on the running `scm.merge` step, not a step of its own. Choices `approve` and `reject`. It never auto-resolves: the step has no `auto` outcome |
-| Opening | The first read that finds the pull request open, in an execution that has raised none, returns to the run, which opens the decision and starts the same execution again at once: no attempt is used. One decision per execution |
-| While it is open | The step reads the pull request every poll interval; a pull request event wakes it to read at once (events wake, reads confirm, `docs/02` section 2.3). It does not yet ask anyone to merge (LOG A1-2b) |
+| Opening | The first read that finds the pull request open, in an execution that has raised none, returns to the run, which opens the decision and starts the same execution again at once: no attempt is used. One decision per execution. It opens whether or not an approval rule names `*.merge_action`; with none, the default rule applies (LOG 351) |
+| While it is open | The step reads the pull request every poll interval; a pull request event wakes it to read at once (events wake, reads confirm, `docs/02` section 2.3). It does not yet ask anyone to merge (LOG 350) |
 | `approve` | The watch is restarted at the same execution and asks a person to merge or close the pull request on the code host; it returns `merged` when it sees the merge, `declined` when it sees the pull request closed |
-| `reject` | The step ends `declined`, as closing the pull request does, and its watch is cancelled (LOG A1-2a) |
+| `reject` | The step ends `declined`, as closing the pull request does, and its watch is cancelled (LOG 349) |
 | Merged on the code host first | Accepted and the run continues: the step returns `merged`, the decision closes as answered on the code host, and the timeline records the code host login of whoever merged and that the decision was not given through Feature Flow. No intervention is raised. Branch protection on the code host governs merges made there; the approval rules govern merges requested through Feature Flow (LOG 341, the product owner's decision of 2026-11-21) |
 | Closed on the code host first | The step ends `declined`, and the decision closes the same way |
 | The step stops | A work failure or an intervention closes the decision without an answer |
@@ -499,7 +499,7 @@ one, and an `artifact.import` that declares one for what it imports or names
 one as a file's `type`: an imported file is not evidence the engine made (L9).
 A file's `type` set by an expression is known only when the step runs: there,
 `artifact.import` resolves it against the run's library lock and cannot answer
-if it is an evidence type.
+if it is an evidence type (LOG 353).
 
 ### 10.2 Validators
 

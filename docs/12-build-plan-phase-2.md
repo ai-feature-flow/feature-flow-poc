@@ -219,7 +219,7 @@ Every review finding and console gap, and the milestone that carries it.
 | Id | What | Milestone |
 |---|---|---|
 | F1 | Locked `require_checks` bypassed by expression or patch; races not checked at run start | A1 |
-| F2 | Merge action request is not a decision | A1 (with a code-host merge before the answer failing the step) |
+| F2 | Merge action request is not a decision | A1 (a code-host merge before the answer is accepted, LOG 341) |
 | F3 | Action stand-in on the production path | A1 (`notify.send` removed, unservable actions); A2 (stand-in and dry-run branches removed) |
 | F4 | Sandbox not built from the repository's environment | A5 |
 | F5 | Reasons and retry causes do not reach the next agent | A3 |

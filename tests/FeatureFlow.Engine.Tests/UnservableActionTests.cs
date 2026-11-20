@@ -8,7 +8,7 @@ using Temporalio.Testing;
 namespace FeatureFlow.Engine.Tests;
 
 /// <summary>
-/// F3 (LOG A1-3a): an action no provider can serve, neither run against the installation's providers nor by an action
+/// F3 (LOG 352): an action no provider can serve, neither run against the installation's providers nor by an action
 /// stand-in, cannot answer, so the workflow raises an intervention (<c>StepCannotAnswer</c>) instead of Temporal retrying
 /// the activity for ever.
 /// </summary>

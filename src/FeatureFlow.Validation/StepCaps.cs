@@ -22,7 +22,7 @@ public sealed record StepCaps(long? AttemptsPerStep, Cap<bool>? RequireChecks, C
     /// <summary>
     /// How <paramref name="step"/> asks beyond a locked cap, one message each; <paramref name="attempts"/> is its attempt
     /// allowance. A locked floor admits only its own value, written as a literal, or the input left unset (its default is
-    /// on): an expression cannot be shown at run start to give that value, so it is refused (LOG A1-1a).
+    /// on): an expression cannot be shown at run start to give that value, so it is refused (LOG 347).
     /// </summary>
     public IEnumerable<string> Breaches(Step step, long attempts)
     {
@@ -49,7 +49,7 @@ public sealed record StepCaps(long? AttemptsPerStep, Cap<bool>? RequireChecks, C
 
     /// <summary>
     /// A step's race allowance: what it asks for, else the installation's default held to the per-step ceiling, so the
-    /// ceiling bounds races on every path without refusing a step that asks for none (LOG A1-1b).
+    /// ceiling bounds races on every path without refusing a step that asks for none (LOG 348).
     /// </summary>
     public static long RaceAllowance(Step step, long defaultRaces, long? ceiling) =>
         RacesAsked(step) ?? (ceiling is { } c ? Math.Min(defaultRaces, c) : defaultRaces);

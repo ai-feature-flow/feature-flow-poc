@@ -3,7 +3,7 @@
 Status: design complete 2026-11-01. Version 1 built: milestones M0 to M8 of
 `docs/11-build-plan.md` done by 2026-11-05; the latest handover is
 `docs/build/handover-2026-11-05-v1.md`. Next phase: `docs/12-build-plan-phase-2.md`,
-drafted 2026-11-21 and awaiting the product owner's review. Started 2026-10-31. This file is the
+drafted 2026-11-21; A1 built 2026-11-21, A2 next. Started 2026-10-31. This file is the
 resume point: a new session reads it first, then the status table in section 6
 and the latest handover.
 
@@ -142,7 +142,9 @@ Paths in all design documents are relative to the repository root.
 | Next-phase plan: design review (findings F1 to F21, L1 to L11) and console design (gaps G1 to G14), product owner decisions NP1 to NP9 (answers to its open questions NP10 to NP12) | Drafted 2026-11-21 in `docs/12-build-plan-phase-2.md`: milestones A1 to A6 (alpha) and R1 to R5 (first full release); owning documents 00, 02, 04, 05, 06 and 07 updated, unbuilt items marked planned. Judgement calls LOG 328 to 346, unreviewed |
 | Next-phase plan review | Independent review done 2026-11-21: no blocking findings; its fourteen findings fixed in the plan and LOG |
 | Product owner answers to `docs/12` section 7 | Done 2026-11-21: all eight answered (NP10 to NP12); question 4 overridden (LOG 341). LOG 330, 333, 341 and 342 decided; LOG 328, 329, 331, 332 and 334 to 346 still unreviewed |
-| Push the `docs/12` branch, once the product owner approves the push; then start A1 | **Next** |
+| Push the `docs/12` branch, once the product owner approves the push; then start A1 | Done 2026-11-21 |
+| A1 (control gaps) | Done 2026-11-21: one cap function for locked merge floors and races at run start and on patches, `merge.require_tested`, the `<level>.merge_action` decision with a code-host merge before the answer accepted, `notify.send` removed, an unservable action raising an intervention, and toolset settings, the `scripted` runtime outside development and evidence types on `artifact.import` refused. Results in `docs/build/a1-results.md`; LOG 347 to 355, unreviewed (LOG 351 flagged for the product owner) |
+| A2 (engine simplification) | **Next** |
 
 ## 7. How to resume
 
