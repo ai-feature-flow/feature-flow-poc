@@ -32,14 +32,15 @@ public static class EffectivePolicy
                 rows.Add(WhoMerges(step, policy, merges?.Invoke(step)));
                 rows.Add(Floor(step, "checks before merging", "require_checks", "policy.merge.require_checks", policy.RequireChecks));
                 rows.Add(Floor(step, "tests before merging", "require_tested", "policy.merge.require_tested", policy.RequireTested));
+                // The <level>.merge_action decision the step raises before asking a person to merge (ActionDecisions.Type in the interpreter).
+                rows.Add(WhoAnswers(step, $"{plan.Document.Level ?? "run"}.merge_action", approval));
             }
 
             if (step is { Form: StepForm.Decision, Decision: { } decision })
             {
                 var type = decision.Type ?? $"{plan.Document.Level ?? "run"}.decision";
                 var (rule, source) = approval(type);
-                var chat = rule.FromChat ? "chat or console" : "console or CLI only";
-                rows.Add(new PolicyRow(step.Id, "who answers", type, "-", $"{string.Join(" or ", rule.Roles)}, {rule.MinCount} {(rule.MinCount == 1 ? "person" : "people")}, {chat}", source));
+                rows.Add(WhoAnswers(step, type, approval));
                 var cap = $"auto {(rule.Auto.Value ? "allowed" : "not allowed")}{(rule.Auto.Locked ? ", locked" : "")}";
                 var result = decision.Auto is null ? "a person answers"
                     : rule.Auto.Value ? $"resolves '{decision.Auto}' at once, actor policy (not a person's approval)"
@@ -49,6 +50,14 @@ public static class EffectivePolicy
         }
 
         return rows;
+    }
+
+    /// <summary>Who may answer a decision of a type: the roles, how many people, and whether from chat.</summary>
+    static PolicyRow WhoAnswers(Step step, string type, Func<string, EffectiveApproval> approval)
+    {
+        var (rule, source) = approval(type);
+        var chat = rule.FromChat ? "chat or console" : "console or CLI only";
+        return new PolicyRow(step.Id, "who answers", type, "-", $"{string.Join(" or ", rule.Roles)}, {rule.MinCount} {(rule.MinCount == 1 ? "person" : "people")}, {chat}", source);
     }
 
     static PolicyRow WhoMerges(Step step, PolicyConfig policy, (bool? EngineCanMerge, IReadOnlyList<MergeTarget> Targets)? known)
