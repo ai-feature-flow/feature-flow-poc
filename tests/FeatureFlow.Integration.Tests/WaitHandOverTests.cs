@@ -15,7 +15,6 @@ namespace FeatureFlow.Integration.Tests;
 public class WaitHandOverTests
 {
     const string Repo = "acme/api";
-    const string Script = """{ "wait_beside_work:*": { delay_from: wait_ms } }""";
 
     [Fact]
     public Task A_run_hands_over_while_a_wait_is_open_and_the_wait_ends_in_the_next_run_with_its_start_kept() => HandOverAsync(midAttempt: false);
@@ -31,14 +30,19 @@ public class WaitHandOverTests
     {
         var world = $"it-waits-{Guid.NewGuid():N}";
         var forge = InMemoryForge.Named(world);
-        var repo = forge.CreateRepository(Repo, new Dictionary<string, string> { ["src/App.cs"] = "class App {}\n" });
+        var repo = forge.CreateRepository(Repo, new Dictionary<string, string>
+        {
+            ["src/App.cs"] = "class App {}\n",
+            // The chain's repo.inspect reads it: each is quick and real, so sixty of them grow the history past the threshold.
+            ["feature-flow.yaml"] = "api_version: feature-flow/v1\nkind: repository\n",
+        });
         forge.Protect(repo, new BranchProtection("main", true, true, 1, [], false));
         var head = forge.Commit(repo, "refs/heads/ff/waits", new Dictionary<string, string?> { ["src/App.cs"] = "class App { }\n" });
         forge.ReportCheck(repo, head, new CheckRun("build", CheckStates.InProgress, null, "ci"));
         if (midAttempt)
             forge.HoldCheckReads();
 
-        await using var h = await Harness.StartAsync("waits", Script, omitTypes: ["vcs", "code_host", "ci"],
+        await using var h = await Harness.StartAsync("waits", "{}", omitTypes: ["vcs", "code_host", "ci"],
             libraries: [Path.Combine(Harness.TestLibraries, "m6")],
             providers: string.Join("\n", new[] { "vcs", "code_host", "ci" }.Select(t => $"  {t}: {{ instances: {{ memory: {{ world: {world} }} }} }}")));
         var work = "[" + string.Join(", ", Enumerable.Repeat(1_000, 60)) + "]";

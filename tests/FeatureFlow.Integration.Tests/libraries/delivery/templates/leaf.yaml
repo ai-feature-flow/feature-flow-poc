@@ -7,7 +7,7 @@ metadata:
 
 steps:
   - id: say
-    action: notify.send
+    action: artifact.compose
     with: { audience: team, message: done }
     routes:
-      sent: { end: completed }
+      composed: { end: completed }

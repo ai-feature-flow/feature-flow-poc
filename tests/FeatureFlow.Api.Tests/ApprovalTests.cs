@@ -87,6 +87,21 @@ public sealed class ApprovalTests
     }
 
     [Fact]
+    public async Task A_rule_on_merge_action_restricts_who_may_answer_the_merge_steps_decision()
+    {
+        // scm.merge's <level>.merge_action is a decision like any other: its rule, not the catch-all, says who answers (docs/04 section 4.5).
+        await using var world = await WorldAsync(Organisation(Rule("*.merge_action", roles: "steerer"), Rule("*")), type: "ticket.merge_action");
+        var (refused, text) = await AnswerAsync(world.As("ann", "approver"), "approve");
+        Assert.Equal(HttpStatusCode.Forbidden, refused);
+        Assert.Contains("steerer", text, StringComparison.Ordinal);
+        Assert.Empty(world.Temporal.Updates);
+
+        Assert.Equal(HttpStatusCode.OK, (await AnswerAsync(world.As("sam", "steerer"), "approve")).Status);
+        var delivered = (AnswerArgs)Assert.Single(world.Temporal.Updates).Argument!;
+        Assert.Equal(("approve", "sam"), (delivered.Outcome, delivered.Actor));
+    }
+
+    [Fact]
     public async Task The_first_matching_rule_wins_over_the_librarys_default_and_the_default_applies_where_none_matches()
     {
         // std declares *.escalation with default_approval steerer, and ticket.spec_approval with approver.

@@ -16,7 +16,7 @@ defaults:
 
 steps:
   - id: prepare
-    action: notify.send
+    action: artifact.compose
     with: { audience: [team], message: prepare, wait_ms: { expr: "params.wait_ms" } }
   - id: build
     agent: { role: std:roles/implementer, task: m7steer:tasks/build }
@@ -26,6 +26,6 @@ steps:
     agent: { role: std:roles/reviewer, task: m7steer:tasks/review }
     outcomes: { accepted: success, rejected: failure }
   - id: ship
-    action: notify.send
+    action: artifact.compose
     with: { audience: [team], message: shipped }
-    routes: { sent: { end: completed } }
+    routes: { composed: { end: completed } }

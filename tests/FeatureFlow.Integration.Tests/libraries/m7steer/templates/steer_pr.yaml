@@ -22,6 +22,7 @@ steps:
     outputs: { pull_request: { type: string } }     # an agent's output of that name names no pull request the run opened
     outcomes: { built: success }
   - id: hold
-    action: notify.send
-    with: { audience: [team], message: hold, wait_ms: { expr: "params.wait_ms" } }
-    routes: { sent: { end: completed } }
+    agent: { role: std:roles/reviewer, task: m7steer:tasks/review }     # the scripted runtime holds it for wait_ms
+    with: { wait_ms: { expr: "params.wait_ms" } }
+    outcomes: { held: success }
+    routes: { held: { end: completed } }

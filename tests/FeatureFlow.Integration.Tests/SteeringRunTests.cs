@@ -90,7 +90,7 @@ public class SteeringRunTests
         Assert.StartsWith("applied", (await SendAsync(h, id, Override("breakpoint", "build"))).Result);
         Assert.Contains("skip_protected", await RefusedAsync(h, id, Override("skip", "review", new() { ["outcome"] = "accepted" })));
         Assert.Contains("not an outcome", await RefusedAsync(h, id, Override("skip", "review", new() { ["outcome"] = "maybe" }, "ann", "skip_protected")));
-        Assert.Contains("is running", await RefusedAsync(h, id, Override("skip", "prepare", new() { ["outcome"] = "sent" })));
+        Assert.Contains("is running", await RefusedAsync(h, id, Override("skip", "prepare", new() { ["outcome"] = "composed" })));
         var skip = Override("skip", "review", new() { ["outcome"] = "accepted" }, "root", "skip_protected");
         Assert.Equal("applied: skipped when the run reaches it (protected: review)", (await SendAsync(h, id, skip)).Result);
         Assert.StartsWith("duplicate", (await SendAsync(h, id, skip)).Result);
@@ -128,7 +128,7 @@ public class SteeringRunTests
         (string Key, string? Step, string[] Change)[] sent =
         [
             ("breakpoint", "review", ["set=true"]),
-            ("skip", "ship", ["outcome=sent"]),
+            ("skip", "ship", ["outcome=composed"]),
             ("grant_attempts", "build", ["attempts=1"]),
             ("change_role", "build", ["role=std:roles/designer"]),
             ("amend", null, ["patch={ api_version: feature-flow/v1, kind: patch, base_revision: 2, changes: [{ op: set, target: ship, field: limits, value: { attempts: 2 } }] }"]),
@@ -320,7 +320,7 @@ public class SteeringRunTests
         // A run, or a parent whose child opened the pull request and has ended (R1 F6).
         async Task<PullRequestState> AbortAsync(bool close, string template = "steer_pr", bool childRunning = false)
         {
-            // The hold's activity sends no heartbeat, so the abort waits for it to end (M3 follow-up 9): keep it short.
+            // The hold is a scripted agent step that runs for wait_ms: keep it short.
             var id = template == "steer_pr"
                 ? h.Start($"m7steer:templates/{template}", "--param", "wait_ms=6000", "--repo", Repo)
                 : h.Start($"m7steer:templates/{template}", "--param", "wait_ms=6000", "--param", $"kid_wait_ms={(childRunning ? 6000 : 0)}", "--repo", Repo);

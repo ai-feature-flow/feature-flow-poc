@@ -28,7 +28,7 @@ floors have no setting at all.
 | F4 | **Attempt ceilings.** Allowances stay within the organisation's ceiling per step and per run, checked on every execution of a step, including when a loop re-enters it. A steerer's grants stay within the hard ceiling; an administrator may grant beyond it for one run, audited, so a long run is never stranded by its ceilings | Organisation |
 | F5 | **No push credential for agents.** Agents hold a read-only code host credential, per step. Only the engine pushes and merges. The engine's own identity cannot change branch protection | None |
 | F6 | **Model credentials stay out of the sandbox.** A proxy adds the key, or a per-run key with a spend limit and expiry is used (`docs/07` section 2, `model_access`) | Installation chooses the mode |
-| F7 | **Evidence integrity.** Evidence artifact types are produced only by engine actions (`docs/01` section 5.2) | None |
+| F7 | **Evidence integrity.** Evidence artifact types are produced only by engine actions (`docs/01` section 5.2), and not by `artifact.import`, which brings in files the engine did not make (`docs/04` section 10.1) | None |
 | F8 | **Record integrity.** Every decision and override records the actor from authentication, never from the request. An answer that requires a person cannot be given by policy, automation or an agent | None |
 | F9 | **Run status integrity.** A run reports `completed` only by reaching `{ end: completed }`. A run that stops without reaching any `end` route is `incomplete` | None |
 | F10 | **Privilege from role.** A step may tighten its role's write access, never widen it, and may not change its tools. A setting that governs safety is never read from a file an agent can edit | None |
@@ -49,8 +49,8 @@ may grant beyond the hard ceiling (section 5).
 | Where it is read | Organisation configuration only. Not from the repository's own file, so no agent commit and no repository maintainer can change it (P8) |
 | The workflow's part | A merge step's `engine_can_merge` is the workflow's request. Into the default branch, it may be `true` only where F1 allows |
 | Enforcement | At validation (start and every patch), and again by `scm.merge` at merge time, reading the target and the default branch from the code host, never from the plan |
-| When the engine may not merge | The step asks a person to merge on the code host and waits (an action request, `docs/04` section 4.5) |
-| A person merges on the code host before the request is answered | Accepted; the run continues and the timeline records the code host login and that the decision was not given through Feature Flow. Branch protection on the code host governs merges made there; approval rules on `*.merge_action` govern merges requested through Feature Flow (planned, `docs/12` A1; LOG 341) |
+| When the engine may not merge | The step opens a `<level>.merge_action` decision and, once it is approved, asks a person to merge on the code host and waits (an action request, `docs/04` section 4.5) |
+| A person merges on the code host before the decision is answered | Accepted; the run continues, the decision closes as answered on the code host, and the timeline records the code host login and that the decision was not given through Feature Flow. Branch protection on the code host governs merges made there; approval rules on `*.merge_action` govern merges requested through Feature Flow (`docs/04` section 4.5; LOG 341) |
 | When the code host refuses an allowed engine merge | The same: an action request |
 | Final fallback | Branch protection on the default branch, configured by an identity the engine does not hold. The engine checks it exists at run start and never holds a bypass |
 
@@ -72,18 +72,23 @@ limit. Validation reports where a request was capped.
 |---|---|---|
 | Auto-resolution of a decision | `auto: <outcome>` on the decision | Whether auto-resolution is allowed, per decision type pattern |
 | Engine merge into the default branch | `engine_can_merge: true` | F1 |
-| Checks before merging | `require_checks` on `scm.merge` | `merge.require_checks`: if set, a workflow cannot turn checks off |
-| Tests before merging | `require_tested` on `scm.merge` | None in version 1. Planned (`docs/12` A1, LOG 342): `merge.require_tested`, applied as `merge.require_checks` is |
+| Checks before merging | `require_checks` on `scm.merge` | `merge.require_checks`: locked true, a workflow cannot turn checks off. The step may leave `require_checks` unset or set it to a literal `true`; any other value, an expression included, is refused, since run start cannot show that an expression gives `true` (LOG 347) |
+| Tests before merging | `require_tested` on `scm.merge` | `merge.require_tested`, applied as `merge.require_checks` is (LOG 342) |
 | Attempts | `limits.attempts` | Ceilings per step form and per run (F4) |
-| Merge races | `limits.races` on `scm.merge` | None of its own: the per-step attempts ceiling. Version 1 checks races against it only when a patch changes them; planned (`docs/12` A1, LOG 340): at run start too |
+| Merge races | `limits.races` on `scm.merge` | None of its own: the per-step attempts ceiling (LOG 340). A `limits.races` above it is refused; a merge step that sets none, itself or in its document's `defaults.limits`, gets the installation's default held to the ceiling (LOG 348) |
 | Work items | `budget.max_work_items` on the root template | Ceiling (F11), always locked (LOG 187) |
 | Review of agent patches | `planning.review` | `planning.require_review`, per template name pattern |
 | Agent roles | The roles a template's steps name | `planning.allowed_roles` for steps an agent adds (section 6) |
-| Toolsets | The role's toolsets | None in version 1: no external toolsets are connected (LOG 270). Refusing the toolset settings at load is planned (`docs/06` section 3.9) |
+| Toolsets | The role's toolsets | None: toolsets are not in version 1, and their settings (`providers.toolset`, a role's `toolsets`, a library's `requires.toolsets`, `policy.toolsets`) are refused at load (`docs/06` section 3.9; LOG 270, 339) |
 
 A request that exceeds its cap is not silently lowered. Where the cap is an
 organisation **default** (`locked: false`), the request applies; where it is
 **locked**, a template that exceeds it fails validation with the setting's name.
+Run start checks every step against the locked caps, and a patch the steps it
+adds or changes, by the same function (check 22), so a patch cannot reach a
+value a template could not start with (F1). The caps are carried in the run's
+state for this (section 8); the step itself does not check them again, since
+no step can hold a value the two checks refused (LOG 347).
 
 ### 3.2 Who may decide: approval
 
@@ -147,7 +152,7 @@ decision_types:
 |---|---|
 | Unknown type | A decision type no library declares is a validation error at load |
 | Precedence | An organisation rule that matches wins over the library's default |
-| Engine-raised types | The engine raises decisions of type `<level>.escalation`, `<level>.question`, `<level>.patch_approval`, `<level>.breakpoint` and `<level>.merge_action`, with `<level>` the run's level. Every intervention, whatever raised it (an `escalate` route, a step that cannot answer, a timeout), has type `<level>.escalation`. The standard library declares them with patterns (`*.escalation` and so on). Version 1 does not yet raise `<level>.merge_action`, so a rule on it has no effect; raising it is planned (`docs/04` section 4.5; `docs/12` A1). A rule on it governs merges requested through Feature Flow, not a merge a person makes directly on the code host, which branch protection governs (LOG 341) |
+| Engine-raised types | The engine raises decisions of type `<level>.escalation`, `<level>.question`, `<level>.patch_approval`, `<level>.breakpoint` and `<level>.merge_action`, with `<level>` the run's level. Every intervention, whatever raised it (an `escalate` route, a step that cannot answer, a timeout), has type `<level>.escalation`. The standard library declares them with patterns (`*.escalation` and so on). `<level>.merge_action` is raised by `scm.merge` when a person must merge (`docs/04` section 4.5). A rule on it governs merges requested through Feature Flow, not a merge a person makes directly on the code host, which branch protection governs (LOG 341) |
 
 ---
 
@@ -208,6 +213,7 @@ result, and which setting decided it.
 |---|---|---|
 | Who merges | A person (action request) | F1: `acme/api` not in `engine_may_merge` |
 | Checks required | Yes | `merge.require_checks: true`, locked |
+| Tests required | Yes | `merge.require_tested: true`, locked |
 | Who may act on the merge request | `approver`, 2 people, console only | Approval rule `*.merge_action` |
 
 The view is part of the plan's readable form and of the run start record.

@@ -56,7 +56,6 @@ providers:                       # every type: named instances, one default
   tracker:        { default: jira, instances: { jira: { base_url: https://acme.atlassian.net, secret_ref: secrets/jira, project: ACME, status_map: { in_progress: "In Progress", code_review: "Code Review", done: "Done" } } } }
   findings_source: { instances: { copilot_review: {}, sonarcloud: { secret_ref: secrets/sonar } } }
   validator:      { instances: { std: {} } }
-  toolset:        { instances: { jira: { url: https://mcp.internal/jira }, confluence: { url: https://mcp.internal/confluence } } }
   notifications:
     default: slack
     instances:
@@ -90,8 +89,7 @@ The example shows an enterprise installation, including settings that are not
 built yet. Planned for the first full release (`docs/12` R3, review F7):
 `temporal.auth`, `temporal.tls` and `expected_retention` (version 1 connects with
 the address, namespace and payload codec only), the `teamcity` CI instance and
-the `sonarcloud` findings analyser. The `toolset` instances are not in version 1
-and are to be refused (`docs/06` section 3.9). Which other example settings are
+the `sonarcloud` findings analyser. Which other example settings are
 unbuilt is review F14, corrected in `docs/12` A6.
 
 | Key | Notes |
@@ -100,6 +98,7 @@ unbuilt is review F14, corrected in `docs/12` A6.
 | `agent_runtime.*.model_access` | `proxy` (a proxy adds the key to model requests) or `per_run_key` (a key with a spend limit and expiry). Required for every runtime (F6). With `proxy`, `upstream` is the model API (default the Anthropic API) and `auth` how the key is sent: `api_key` (default) or `oauth` (a subscription token). LOG 91 |
 | `agent_runtime.claude_code` | `model`, `executable`, and `engine_tools`: `false` offers the agent no engine tools, for SP3's file fall-back test, and is refused unless `development: true`. LOG 91 |
 | `agent_runtime.copilot_cli` | The same four settings as `claude_code`. Copilot reaches the model through the same model proxy, as a custom Anthropic provider with the step's token; one proxy, configured by the default runtime's `model_access`, serves every runtime instance (LOG 293) |
+| `agent_runtime.scripted` | A test double that runs no agent and reports what its `script` says. Refused unless `development: true` (L4), as are the `fake` and `memory` providers and the `action_stand_in` type (LOG 81) |
 | `sandbox.docker` | `image` (the sandbox image, `feature-flow-sandbox`), `user` (the agent's, default `node`), `docker` (the executable). Its network reaches only `agent_worker`'s `urls` and `model_base_url`, and the internet (LOG 291) |
 | `sandbox.kubernetes` | `image`, `user`, `namespace` (default `default`), `cpu` (default 2) and `memory` (default 4Gi) limits per pod, and `context` (a kubeconfig context; omitted, the cluster the worker runs in). Its network is `sandbox-network-policy.yaml`, which must be applied in `namespace` first; the agent worker's pods carry `app.kubernetes.io/name: feature-flow-agent-worker` (LOG 294) |
 | `agent_worker` | LOG 91: `listen` (the agent worker's endpoint), `urls` (its replicas as sandboxes reach them), `model_base_url` (the model proxy as sandboxes reach it; default the first of `urls` with `/model`), `token_key_ref` (the secret every replica signs step tokens with) and `sandbox_client` (the executable copied into each sandbox). How often commits are pushed (30 seconds), Claude Code's own model retries, the hook's hold (120 seconds) and the sandbox client's retry (10 minutes) are fixed defaults, not settings |
@@ -143,9 +142,10 @@ policy:                                     # meanings in docs/05
   merge:
     default_branch: { engine_may_merge: ["acme/poc-*"] }
     require_checks: { value: true, locked: true }
+    require_tested: { value: true, locked: true }
   attempts:
-    ceiling: { per_step: 5, per_run: 40 }
-    hard_ceiling: { per_step: 8, per_run: 60 }
+    ceiling: { per_step: 12, per_run: 40 }        # std's merge_into_parent asks 12 attempts
+    hard_ceiling: { per_step: 16, per_run: 60 }
   budgets:
     max_work_items: { ceiling: 30 }
   planning:
@@ -188,12 +188,15 @@ teams:
 |---|---|
 | `libraries` | Each a `name` and a `source`: `directory` with `path` (relative to this file), or `git` with `repository` (anything Git can clone, with the host's own Git credentials; a URL holding a credential is refused, LOG 289) `ref` (a branch or tag; default the repository's default branch) and `path` (the library's folder inside the repository; default its root, LOG 321), fetched at each read (LOG 286). `package` is not in version 1 (LOG 287). The first library is the base for references without a library name |
 | `policy.*` | Meanings in `docs/05`. A cap may be `{ value, locked }`; a bare value is an unlocked default. Which settings reach running runs is in `docs/05` section 8 |
+| `policy.merge.require_checks`, `policy.merge.require_tested` | Caps on `scm.merge`'s `require_checks` and `require_tested`: locked true, a workflow cannot turn them off (`docs/05` section 3.1) |
 | `policy.budgets.max_work_items.ceiling` | F11's ceiling, always locked: a root template asking more does not start; a root that sets no budget gets the ceiling (LOG 187) |
 | `roles`, `teams` | People roles to groups. A run is in the scope of the team whose `repositories` match its repositories; a run spanning two teams is refused. In its scope a team's groups add holders to a role, and its approval rules may only raise `min_count` (LOG 204, 217) |
 | `role_mapping` | Each library agent role's `agent_runtime` (an instance of the installation's) and `model` (default: that instance's own). `default` serves roles with no entry; with neither, the installation's default runtime runs the step with its own model. Fixed for a run when it starts (LOG 267, 295) |
 
 `library_overrides`, `library_inputs`, `policy.toolsets` (whose only key was `allowed`) and `timeouts` are not in
-version 1 and are refused at startup, whatever they hold (LOG 268 to 270, 273).
+version 1 and are refused at startup, whatever they hold (LOG 268 to 270, 273). So are the installation's
+`providers.toolset`, and a library role's `toolsets` and a library manifest's `requires.toolsets` when the library
+loads, each refusal naming its key (F19, LOG 339).
 
 ---
 

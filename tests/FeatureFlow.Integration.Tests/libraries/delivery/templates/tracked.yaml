@@ -13,7 +13,7 @@ defaults:
 
 steps:
   - id: begin
-    action: notify.send
+    action: artifact.compose
     with: { audience: team, message: starting }
     tracker: { on_start: in_progress }
 

@@ -10,6 +10,4 @@ metadata:
 
 write_access: none
 tools: [read, search, shell]
-toolsets:
-  - { name: tracker, tools: [get_issue] }
 requires: []

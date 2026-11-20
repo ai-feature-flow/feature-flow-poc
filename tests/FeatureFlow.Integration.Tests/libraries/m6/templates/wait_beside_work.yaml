@@ -4,12 +4,12 @@ metadata:
   name: wait_beside_work
   level: ticket
   description: >-
-    A long ci.checks beside a chain of short actions that grows the history past the
+    A long ci.checks beside a chain of quick repo.inspect actions that grows the history past the
     hand-over threshold, so the run hands over while the wait is open (LOG 139).
   branch_pattern: ff/waits
 
 parameters:
-  work: { type: array, required: true, description: "One action per item, which takes item milliseconds" }
+  work: { type: array, required: true, description: "One action per item" }
 
 defaults:
   routes:
@@ -28,7 +28,6 @@ steps:
             items: { expr: "params.work" }
             mode: chain
             step:
-              action: notify.send
-              with: { audience: [team], message: work, wait_ms: { expr: "item" } }
+              action: repo.inspect
     routes:
       completed: { end: completed }

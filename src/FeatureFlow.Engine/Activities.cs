@@ -245,7 +245,8 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
     /// <summary>
     /// An engine action. One M5 builds (<see cref="EngineActions.Built"/>) runs against the providers when the
     /// installation configures real source control (<see cref="EngineActions.HasSourceControl"/>); with only fake
-    /// providers, or in a dry run, it goes to the stand-in like every action not yet built (LOG 81, LOG 121). An action
+    /// providers, or in a dry run, it goes to the stand-in like every action not yet built (LOG 81, LOG 121), and with no
+    /// stand-in either it cannot answer, so the run raises an intervention (LOG 352). An action
     /// still waiting fails retryably with its poll interval as the next delay, so it holds no worker slot between reads.
     /// </summary>
     [Activity]
@@ -270,7 +271,10 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
             return result.ToOutcome() with { Inputs = CheckInputs.Digest(call, scope) };
         }
 
-        var standIn = services.Providers.Required<IActionStandIn>("action_stand_in", call.DryRun);
+        // Nothing else serves an action (F3): with no stand-in it stops for a person rather than being retried for ever.
+        if (services.Providers.ForRun("action_stand_in", call.DryRun) is not IActionStandIn standIn)
+            return new StepOutcome(StepOutcome.CannotAnswer, null,
+                $"no provider can serve {call.What}: it runs against the installation's providers only when built, outside a dry run, with a vcs and a code_host provider, and no action_stand_in is configured");
         var stood = await standIn.RunAsync(new ActionRequest(call.Step, call.What, call.Inputs, call.Contract), ct);
         return Classify(stood.Error) ?? new StepOutcome(StepOutcome.Reported, stood.Value, null) { Inputs = CheckInputs.Digest(call, scope) };
     }

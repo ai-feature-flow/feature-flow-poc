@@ -29,8 +29,8 @@ public class SteeringTests
             decision: { type: delivery.partial_recovery, prompt: std:prompts/partial_delivery }
             outcomes: { go: success, stop: failure }
           - id: ship
-            action: notify.send
-            routes: { sent: { end: completed } }
+            action: artifact.compose
+            routes: { composed: { end: completed } }
         """;
 
     const string Fan = """
@@ -46,8 +46,8 @@ public class SteeringTests
                 - { id: c, action: test.run }
             routes: { completed: ship, any_failed: { escalate: true } }
           - id: ship
-            action: notify.send
-            routes: { sent: { end: completed } }
+            action: artifact.compose
+            routes: { composed: { end: completed } }
         """;
 
     const string Chain = """
@@ -84,8 +84,8 @@ public class SteeringTests
             protected: true
             action: artifact.validate
           - id: ship
-            action: notify.send
-            routes: { sent: { end: completed } }
+            action: artifact.compose
+            routes: { composed: { end: completed } }
         """;
 
     static readonly Probe Lib = new("steering", ("line", Line), ("fan", Fan), ("chain", Chain), ("planned", Planned));
@@ -199,7 +199,7 @@ public class SteeringTests
         "gate" => null,
         "design" => new StepCompleted(id, "done"),
         "review" => new StepCompleted(id, "accepted"),
-        "ship" => new StepCompleted(id, "sent"),
+        "ship" => new StepCompleted(id, "composed"),
         _ => new StepCompleted(id, "passed"),
     };
 
@@ -523,7 +523,7 @@ public class SteeringTests
     {
         var (core, driver) = Line_core();
         Ok(core.Apply(new BreakpointSet("review", true, "ann")));
-        Ok(core.Apply(new StepSkipped("ship", "sent", "ann", "nothing to say", false)));
+        Ok(core.Apply(new StepSkipped("ship", "composed", "ann", "nothing to say", false)));
         core.State.Overrides.Add(new AppliedOverride("o-1", "breakpoint", "applied"));
         driver.Run();
         var paused = Assert.Single(core.State.Waits);
@@ -531,7 +531,7 @@ public class SteeringTests
         var carried = System.Text.Json.JsonSerializer.Deserialize<CarriedCore>(json)!;
         var resumed = RunCore.Resume(Lib.Libraries, Probe.Ref("line"), carried);
         Assert.Equal(["review"], resumed.State.Breakpoints);
-        Assert.Equal("sent", resumed.State.Skips["ship"]);
+        Assert.Equal("composed", resumed.State.Skips["ship"]);
         Assert.Equal("o-1", Assert.Single(resumed.State.Overrides).Id);
         Assert.Equal(WaitKind.Breakpoint, Assert.Single(resumed.State.Waits).Kind);
         Ok(resumed.Apply(new InterventionAnswered(paused.Id, new Recovery(RecoveryKind.Continue))));

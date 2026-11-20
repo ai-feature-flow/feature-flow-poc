@@ -6,6 +6,4 @@ metadata:
 
 write_access: branch
 tools: [read, search, edit, shell]
-toolsets:
-  - { name: tracker, tools: [get_issue] }
 requires: []

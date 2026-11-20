@@ -31,7 +31,7 @@ public class PatchTests
             action: artifact.validate
             protected: true
           - id: ship
-            action: notify.send
+            action: artifact.compose
           - id: lanes
             parallel:
               branches: []
@@ -56,7 +56,7 @@ public class PatchTests
               on_other: report
               step: { action: test.run, with: { tier_tags: ["$.tier"] } }
           - id: done
-            action: notify.send
+            action: artifact.compose
           - id: report
             action: delivery.report
             routes: { complete: { end: completed }, partial: { end: partial } }
@@ -78,7 +78,7 @@ public class PatchTests
                 - { id: b, action: test.run }
             routes: { completed: done, any_failed: { escalate: true } }
           - id: done
-            action: notify.send
+            action: artifact.compose
         """;
 
     static readonly Probe Lib = new("patches", ("planned", Planned), ("expanding", Expanding), ("lanes", Lanes));
@@ -167,7 +167,7 @@ public class PatchTests
         new Driver(core) { Respond = (id, _) => new StepCompleted(id, core.StepById(id)!.Outcomes()[0].Name) }.Run();
         core.Apply(new StepCompleted("a", "passed"));
         core.Apply(new StepCompleted("b", "passed"));
-        new Driver(core) { Respond = (id, _) => new StepCompleted(id, "sent") }.Run();
+        new Driver(core) { Respond = (id, _) => new StepCompleted(id, "composed") }.Run();
         Assert.Equal(RunStatus.Completed, core.State.Status);
     }
 
@@ -266,7 +266,45 @@ public class PatchTests
         Assert.Equal([30], widened.Patch!.BlockingChecks);
         Assert.Contains("check 13", widened.Patch.Diagnostics.Single().Message);
         Assert.Equal([22], ceiling.Patch!.BlockingChecks);
-        Assert.Contains("above the cap of 5", ceiling.Patch.Diagnostics.Single().Message);
+        Assert.Contains("above policy.attempts.ceiling.per_step 5", ceiling.Patch.Diagnostics.Single().Message);
+    }
+
+    static string InsertMerge(string with) =>
+        $"  - {{ op: insert, after: build, step: {{ id: land, action: scm.merge{with} }} }}";
+
+    static readonly RunOptions LockedFloors = new() { RequireChecks = new Cap<bool>(true, true), RequireTested = new Cap<bool>(true, true) };
+
+    [Theory]
+    [InlineData("require_checks", "false")]
+    [InlineData("require_checks", "{ expr: \"true\" }")]
+    [InlineData("require_tested", "false")]
+    [InlineData("require_tested", "{ expr: \"true\" }")]
+    public void Check_22_a_patch_cannot_loosen_a_locked_merge_floor_by_a_literal_or_an_expression(string input, string value)
+    {
+        var (_, refused) = Propose(ByPlanner, InsertMerge($", with: {{ {input}: {value} }}"), options: LockedFloors);
+        var (_, met) = Propose(ByPlanner, InsertMerge($", with: {{ {input}: true }}"), options: LockedFloors);
+        var (_, unlocked) = Propose(ByPlanner, InsertMerge($", with: {{ {input}: {value} }}"),
+            options: new RunOptions { RequireChecks = new Cap<bool>(true, false), RequireTested = new Cap<bool>(true, false) });
+
+        Assert.Equal([22], refused.Patch!.BlockingChecks);
+        Assert.Contains($"policy.merge.{input} is locked true", refused.Patch.Diagnostics.Single().Message, StringComparison.Ordinal);
+        Assert.Equal(PatchStatus.Applied, met.Patch!.Status);
+        Assert.Equal(PatchStatus.Applied, unlocked.Patch!.Status);
+    }
+
+    [Fact]
+    public void Check_22_a_patch_cannot_set_races_above_the_per_step_ceiling_and_a_merge_asking_none_is_held_to_it()
+    {
+        var ceiling = new RunOptions { StepCeiling = 5 };
+        var (_, refused) = Propose(ByPlanner, InsertMerge(", limits: { races: 6 }"), options: ceiling);
+        var (_, within) = Propose(ByPlanner, InsertMerge(", limits: { races: 5 }"), options: ceiling);
+        var (core, asksNone) = Propose(ByPlanner, InsertMerge(""), options: ceiling);
+
+        Assert.Equal([22], refused.Patch!.BlockingChecks);
+        Assert.Contains("allows 6 races, above policy.attempts.ceiling.per_step 5", refused.Patch.Diagnostics.Single().Message, StringComparison.Ordinal);
+        Assert.Equal(PatchStatus.Applied, within.Patch!.Status);
+        Assert.Equal(PatchStatus.Applied, asksNone.Patch!.Status);
+        Assert.Equal(5, core.RaceAllowance(core.StepById("land")!));
     }
 
     [Fact]
@@ -300,7 +338,7 @@ public class PatchTests
         core.Advance();
         var result = core.Apply(Human(Patch(Doc(ByHuman, """
               - { op: insert, before: review, step: { id: gate, action: analysis.run } }
-              - { op: chain, target: ship, on_other: plan, step: { id: announce, action: notify.send } }
+              - { op: chain, target: ship, on_other: plan, step: { id: announce, action: artifact.compose } }
               - { op: set, target: build, field: routes.failed, value: build }
             """, resumeAt: "plan"))));
 
@@ -308,7 +346,7 @@ public class PatchTests
         Assert.Equal(new ResolvedStep("gate", false), Route(core, "build", "passed"));
         Assert.Equal(new ResolvedStep("build", false), Route(core, "build", "failed"));
         Assert.Equal(new ResolvedStep("review", false), Route(core, "gate", "passed"));
-        Assert.Equal(new ResolvedStep("announce", false), Route(core, "ship", "sent"));
+        Assert.Equal(new ResolvedStep("announce", false), Route(core, "ship", "composed"));
         Assert.Equal(new ResolvedStep("plan", false), Route(core, "ship", Actions.AttemptsExhausted));
     }
 
@@ -324,7 +362,7 @@ public class PatchTests
         var add = Patch(Doc(ByHuman, "  - { op: add_branch, target: lanes, step: { id: lane_a, action: test.run } }", resumeAt: "ship"));
 
         Assert.Equal(PatchStatus.Applied, core.Apply(Human(add)).Patch!.Status);
-        core.Apply(new StepCompleted("ship", "sent"));
+        core.Apply(new StepCompleted("ship", "composed"));
         core.Advance();
         var late = Patch(Doc(ByHuman, "  - { op: add_branch, target: lanes, step: { id: lane_b, action: test.run } }", revision: 2, resumeAt: "ship"));
 

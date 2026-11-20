@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using FeatureFlow.Providers.Abstractions;
 
 namespace FeatureFlow.Engine.ActionSteps;
@@ -20,7 +21,8 @@ public sealed record ArtifactEntry(string StepId, string Name, string? Type, str
 /// (<c>run.tracker_issue</c>), if it has one; and the keys of every artifact the step declares it consumes, resolved or not
 /// (<see cref="Declared"/>), so an action can tell a declared optional artifact that does not exist from one the step never
 /// consumes (LOG 191, review F1); and the run's library lock, so <c>artifact.import</c> checks a typed file against the run's
-/// version of its type (null, as in <see cref="None"/>: not checked).
+/// version of its type (null, as in <see cref="None"/>: not checked); and the decision the step raised in this execution
+/// (<see cref="Decision"/>, <c>scm.merge</c>'s <c>&lt;level&gt;.merge_action</c>), null when it raised none.
 /// </summary>
 public sealed record ActionScope(
     IReadOnlyList<string> Repositories,
@@ -33,9 +35,19 @@ public sealed record ActionScope(
     IReadOnlyDictionary<string, string>? Consumed = null,
     string? TrackerIssue = null,
     IReadOnlyList<string>? Declared = null,
-    string? LockRef = null)
+    string? LockRef = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StepDecision? Decision = null)
 {
     public static readonly ActionScope None = new([], null, "", null, [], [], []);
+}
+
+/// <summary>
+/// The decision an action raised in its execution (docs/04 section 4.5): its type, and <see cref="State"/>,
+/// <c>open</c> while no one has answered it, else the answer (<c>approve</c>; a rejection ends the step).
+/// </summary>
+public sealed record StepDecision(string Type, string State)
+{
+    public const string Open = "open";
 }
 
 /// <summary>
@@ -68,6 +80,9 @@ public sealed record ActionResult(string Kind, StepReport? Report, string? Reaso
     public static ActionResult CannotAnswer(string reason, IReadOnlyList<string> events) => new(StepOutcome.CannotAnswer, null, reason, TimeSpan.Zero, events);
 
     public static ActionResult Waiting(string reason, TimeSpan delay, IReadOnlyList<string> events) => new(Wait, null, reason, delay, events);
+
+    /// <summary>The run must open the step's decision first (<see cref="StepOutcome.Decide"/>).</summary>
+    public static ActionResult Decide(string reason, IReadOnlyList<string> events) => new(StepOutcome.Decide, null, reason, TimeSpan.Zero, events);
 
     /// <summary>The <c>findings</c> namespace after a findings action (<see cref="StepOutcome.Findings"/>).</summary>
     public IReadOnlyDictionary<string, long>? Findings { get; init; }

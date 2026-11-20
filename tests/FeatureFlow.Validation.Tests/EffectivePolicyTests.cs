@@ -78,6 +78,11 @@ public class EffectivePolicyTests
         var checks = Row(rows, "deliver.merge", "checks before merging");
         Assert.Equal(("require_checks true, locked", "checks required", "scm.merge's default"), (checks.Cap, checks.Result, checks.From));
 
+        // Who may act on the merge request: the approval rule on its <level>.merge_action decision (docs/05 section 7).
+        var acting = Policy(new ApprovalRule("*.merge_action", ["approver"], 2, false, new Cap<bool>(false, false)));
+        var answers = Row(EffectivePolicy.For(plan, acting, t => Approval.For(t, acting, null, Declared)), "deliver.merge", "who answers");
+        Assert.Equal(("ticket.merge_action", "approver, 2 people, console or CLI only", "approval rule '*.merge_action'"), (answers.Request, answers.Result, answers.From));
+
         // ff show has no run: the request as the plan states it, traced to the template's parameter.
         var shown = Row(EffectivePolicy.For(plan, policy, t => Approval.For(t, policy, null, Declared)), "deliver.merge", "who merges");
         Assert.Equal("engine_can_merge = params.engine_can_merge (default false)", shown.Request);

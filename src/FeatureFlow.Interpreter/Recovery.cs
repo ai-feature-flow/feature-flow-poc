@@ -24,8 +24,10 @@ public sealed partial class RunCore
         switch (input)
         {
             case DecisionAnswered a:
-                if (State.Waits.FirstOrDefault(w => w.Kind == WaitKind.Decision && w.StepId == a.StepId) is null || StepById(a.StepId) is not { } step)
+                if (State.Waits.FirstOrDefault(w => w.Kind == WaitKind.Decision && w.StepId == a.StepId) is not { } open || StepById(a.StepId) is not { } step)
                     return $"no decision is open at {a.StepId}";
+                if (IsActionDecision(open))
+                    return ActionAnswerError(a);
                 return step.DeclaredOutcomes.Any(o => o.Name == a.Outcome)
                     ? SessionArtifactsError(step, a)
                     : $"{a.StepId}: '{a.Outcome}' is not a declared outcome ({string.Join(", ", step.DeclaredOutcomes.Select(o => o.Name))})";
@@ -138,6 +140,7 @@ public sealed partial class RunCore
         if (StepById(s.StepId) is null || !State.InFlight.Contains(s.StepId))
             return ApplyResult.Refused($"{s.StepId} is not running");
         State.InFlight.Remove(s.StepId);
+        CloseActionDecision(s.StepId, null);
         Intervene(s.StepId, null, s.Reason);
         return ApplyResult.Ok;
     }

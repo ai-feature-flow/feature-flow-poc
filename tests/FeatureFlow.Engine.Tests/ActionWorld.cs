@@ -89,7 +89,28 @@ public sealed class ActionWorld : IAsyncDisposable
     public string CommitMain(string path, string content) =>
         Forge.Commit(Repo, "main", new Dictionary<string, string?> { [path] = content }, $"someone changes {path}");
 
-    public ActionScope Scope => new([Repo.FullName], Repo.FullName, Branch, ParentBranch, Artifacts.ToList(), PullRequests.ToList(), EngineMayMerge.ToList(), TrackerIssue: TrackerIssue);
+    public ActionScope Scope => new([Repo.FullName], Repo.FullName, Branch, ParentBranch, Artifacts.ToList(), PullRequests.ToList(), EngineMayMerge.ToList(), TrackerIssue: TrackerIssue,
+        LockRef: LockRef, Decision: Decision);
+
+    /// <summary>The run's library lock in <see cref="Store"/>, for actions that check against it (<c>artifact.import</c>); null: none.</summary>
+    public string? LockRef { get; set; }
+
+    /// <summary>Pins std as the run's only library: its files and a lock naming them go into <see cref="Store"/>, and <see cref="LockRef"/> is set.</summary>
+    public async Task PinStdAsync()
+    {
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        while (!File.Exists(Path.Combine(root.FullName, "FeatureFlow.slnx")))
+            root = root.Parent!;
+        var std = Library.Library.Open(Path.Combine(root.FullName, "library", "std"), new DiagnosticBag())!;
+        foreach (var (_, text) in std.Files.All)
+            (await Store.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(text)), Ct)).Unwrap();
+        var lockText = System.Text.Json.JsonSerializer.Serialize(new Library.LibraryLock([Library.LibraryLock.Pin(std)]),
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        LockRef = (await Store.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(lockText)), Ct)).Unwrap().Id;
+    }
+
+    /// <summary>The decision the step raised in its execution, as the workflow gives it (<c>scm.merge</c>'s <c>merge_action</c>); null: none.</summary>
+    public StepDecision? Decision { get; set; }
 
     /// <summary>
     /// Runs one action step to its end: a wait is retried as Temporal would, up to <paramref name="waits"/> reads. The

@@ -12,7 +12,7 @@ public class ConfigurationTests
         temporal: { address: "localhost:7833", task_queue: ff-orchestration, continue_as_new_events: 400 }
         providers:
           record_store: { default: sqlite, instances: { sqlite: { path: records.db } } }
-          agent_runtime: { default: scripted, dry_run: recording, instances: { scripted: { script: s.yaml }, recording: { folder: rec } } }
+          agent_runtime: { default: claude, dry_run: recording, instances: { claude: { provider: claude_code, model: sonnet }, recording: { folder: rec } } }
         api:
           auth: { mode: local_token, token_ref: secrets/api_token, actor: dev, roles: [approver] }
         defaults:
@@ -27,8 +27,8 @@ public class ConfigurationTests
         Assert.Empty(d);
         Assert.Equal(("localhost:7833", "ff-orchestration", 400L, 4L), (config.TemporalAddress, config.TaskQueue, config.ContinueAsNewEvents, config.DefaultAttempts));
         var runtime = config.Providers["agent_runtime"];
-        Assert.Equal(("scripted", "recording"), (runtime.Default, runtime.DryRun));
-        Assert.Equal("s.yaml", runtime.Instances["scripted"].Settings["script"].ScalarText());
+        Assert.Equal(("claude", "recording"), (runtime.Default, runtime.DryRun));
+        Assert.Equal("sonnet", runtime.Instances["claude"].Settings["model"].ScalarText());
         Assert.Equal("dev", config.ApiAuth.Actor);
         Assert.Equal(["approver"], config.ApiAuth.Roles);
     }
@@ -90,7 +90,11 @@ public class ConfigurationTests
     [InlineData("defaults:", "agent_worker: { listen: \"http://0.0.0.0:8490\", token_key_ref: secrets/k }\ndefaults:", "agent_worker.urls must list")]
     [InlineData("defaults:", "agent_worker: { listen: \"http://0.0.0.0:8490\", urls: [\"http://h:1\"] }\ndefaults:", "agent_worker.token_key_ref must name")]
     [InlineData("defaults:", "agent_worker: { commit_interval: 10s }\ndefaults:", "unknown key 'commit_interval'")]
-    [InlineData("recording: { folder: rec } } }", "recording: { folder: rec }, claude: { provider: claude_code, engine_tools: false } } }", "engine_tools: false is for development only")]
+    [InlineData("recording: { folder: rec } } }", "recording: { folder: rec }, bare: { provider: claude_code, engine_tools: false } } }", "engine_tools: false is for development only")]
+    // L4: the scripted runtime is a test double.
+    [InlineData("recording: { folder: rec } } }", "recording: { folder: rec }, scripted: { script: s.yaml } } }", "providers.agent_runtime.instances.scripted: the scripted runtime is for development only")]
+    // F19 (LOG 339): toolsets are not in version 1.
+    [InlineData("  record_store: { default: sqlite,", "  toolset: { instances: { jira: {} } }\n  record_store: { default: sqlite,", "providers.toolset is not supported in version 1; remove it")]
     [InlineData("  record_store: { default: sqlite, instances: { sqlite: { path: records.db } } }", "  record_stor: { instances: { sqlite: {} } }", "unknown provider type 'record_stor'")]
     [InlineData("  record_store: { default: sqlite,", "  record_store: { default: postgres,", "names instance 'postgres'")]
     [InlineData("defaults:", "workers: { mode: local }\ndefaults:", "workers is not supported in version 1")]
@@ -109,6 +113,16 @@ public class ConfigurationTests
     }
 
     [Fact]
+    public void A_development_installation_may_use_the_scripted_runtime()
+    {
+        var d = new DiagnosticBag();
+        var config = ConfigurationReader.ReadInstallation(Installation.Replace("kind: installation\n", "kind: installation\ndevelopment: true\n", StringComparison.Ordinal)
+            .Replace("recording: { folder: rec } } }", "recording: { folder: rec }, scripted: { script: s.yaml } } }", StringComparison.Ordinal), "installation.yaml", d)!;
+        Assert.Empty(d);
+        Assert.Equal("scripted", config.Providers["agent_runtime"].Instances["scripted"].Kind);
+    }
+
+    [Fact]
     public void An_organisation_reads_libraries_caps_and_approval_rules()
     {
         var d = new DiagnosticBag();
@@ -123,7 +137,7 @@ public class ConfigurationTests
                 - { match: "*", roles: [approver], auto: true }
               attempts: { ceiling: { per_step: 5, per_run: 40 }, hard_ceiling: { per_step: 8, per_run: 60 } }
               planning: { allowed_roles: [planner] }
-              merge: { require_checks: { value: true, locked: true } }
+              merge: { require_checks: { value: true, locked: true }, require_tested: { value: true, locked: true } }
             """, "organisation.yaml", d)!;
         Assert.Empty(d);
         Assert.Equal((5L, 40L), (org.Policy.AttemptsPerStep, org.Policy.AttemptsPerRun));
@@ -131,6 +145,7 @@ public class ConfigurationTests
         Assert.Equal(new Cap<bool>(false, true), org.Policy.RuleFor("delivery.merge_action")!.Auto);
         Assert.Equal(new Cap<bool>(true, false), org.Policy.RuleFor("ticket.spec_approval")!.Auto);
         Assert.Equal(new Cap<bool>(true, true), org.Policy.RequireChecks);
+        Assert.Equal(new Cap<bool>(true, true), org.Policy.RequireTested);
         Assert.Equal(["planner"], org.Policy.AllowedRoles);
     }
 
@@ -194,7 +209,7 @@ public class ConfigurationTests
             changes:
               - { op: insert, after: plan, step: { id: extra, action: test.run, with: { tier_tags: [unit] } } }
               - { op: set, target: build, field: routes.passed, value: { end: completed } }
-              - { op: chain, target: build, on_other: report, step: { id: more, action: notify.send } }
+              - { op: chain, target: build, on_other: report, step: { id: more, action: artifact.compose } }
               - { op: remove_branch, target: lanes, branch: lanes_0 }
             """, "p", d)!, d)!;
         Assert.Empty(d);

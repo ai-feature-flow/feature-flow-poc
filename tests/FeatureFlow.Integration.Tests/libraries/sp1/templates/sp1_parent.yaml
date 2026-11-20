@@ -50,7 +50,7 @@ steps:
             mode: parallel
             max_concurrency: 4
             step:
-              action: notify.send
+              action: artifact.compose
               with: { audience: [team], message: work, wait_ms: { expr: "item" } }
     routes:
       completed: { end: completed }

@@ -40,7 +40,7 @@ other documents cite them.
 | 9 | Every step is reachable from the first | Load | Yes |
 | 10 | Every cycle has a route out | Load | Yes |
 | 11 | Each consumed artifact has a producer declaring a compatible type, or is `optional`, or comes from a parent, root or child; no artifact is named `parent`, `root` or `child`, which name other runs' artifacts in a step's inputs (`docs/04` section 3.1) | Load | Yes |
-| 12 | No agent step or decision produces an evidence type (F7) | Load | Yes |
+| 12 | No agent step, decision or `artifact.import` produces an evidence type (F7) | Load | Yes |
 | 13 | A step's `write_access` does not exceed its role's; no step sets tools (F10) | Load | Yes |
 | 14 | Fragments: parameters bound, every exit routed, nesting depth at most 3 | Load | Yes |
 | 15 | `parallel` branches have no routes | Load | Yes |
@@ -50,7 +50,7 @@ other documents cite them.
 | 19 | Every library reference resolves; library requirements met; the lock written | Run start | Yes |
 | 20 | A repository's library section adds only, never overrides | Run start | Yes |
 | 21 | Capability negotiation: every capability the plan needs is offered by a configured provider | Run start, Patch | Yes |
-| 22 | No request exceeds a locked organisation cap: attempts, auto-resolution, checks, budget, toolsets, agent roles (`docs/05` section 3.1) | Run start, Patch | Yes |
+| 22 | No request exceeds a locked organisation cap: attempts and merge races, auto-resolution, checks and tests before merging, budget, agent roles (`docs/05` section 3.1) | Run start, Patch | Yes |
 | 23 | **F1**: no merge step into a default branch has `engine_can_merge: true` unless the organisation allows it for that repository. The default branch is read from the code host | Run start, Patch | Yes |
 | 24 | Branch protection exists on each target repository's default branch; classic protection or rulesets both count (LOG 147) | Run start | Yes |
 | 25 | Patch: `base_revision` is current | Patch | Yes |

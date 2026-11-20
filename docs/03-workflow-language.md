@@ -102,7 +102,7 @@ its form (`docs/01` section 2.1). A list entry may instead be `parallel`,
 
 | Field | Meaning |
 |---|---|
-| `role` | Library role: write access, tools, toolsets, runtime capabilities (`docs/01` section 2.2) |
+| `role` | Library role: write access, tools, runtime capabilities (`docs/01` section 2.2) |
 | `task` | Library task, rendered with `with` (section 6.3) |
 | `skills` | Library skills, mounted for the agent to read on demand. Added to the role's |
 | `write_access` | `none`, `branch` or `repository`. Tightens only |

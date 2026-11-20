@@ -654,7 +654,8 @@ public partial class RunWorkflow
                 consumed.TryAdd(ConsumedKey(c), reference);
 
         return new ActionScope(input.Repositories, repository, core.WorkBranch(), input.ParentBranch, artifacts, pullRequests, policy?.EngineMayMerge ?? [],
-            Consumed: consumed, TrackerIssue: input.TrackerIssue, Declared: declared, LockRef: LockRef);
+            Consumed: consumed, TrackerIssue: input.TrackerIssue, Declared: declared, LockRef: LockRef,
+            Decision: core.ActionDecisionState(step.Id) is { } decided ? new StepDecision(core.ActionDecisionType, decided) : null);
     }
 
     /// <summary>
@@ -888,18 +889,29 @@ public partial class RunWorkflow
     bool Current(string stepId, int execution) =>
         core!.State.Status == RunStatus.Running && core.State.InFlight.Contains(stepId) && core.State.Steps.GetValueOrDefault(stepId)?.Executions == execution;
 
+    /// <summary>
+    /// The core input a step activity's outcome gives when it is not a report: cannot answer (the core raises an
+    /// intervention), a work failure, or an action's decision. Null: a report, which <see cref="Apply"/> checks itself.
+    /// </summary>
+    public static RunInput? Ending(string stepId, StepOutcome outcome) => outcome.Kind switch
+    {
+        StepOutcome.CannotAnswer => new StepCannotAnswer(stepId, outcome.Reason ?? "cannot answer"),
+        StepOutcome.WorkFailed => new StepFailed(stepId, ErrorClass.Work, outcome.Reason ?? "work failure"),
+        StepOutcome.Decide => new ActionDecisionRequested(stepId, outcome.Reason ?? "a person decides"),
+        _ => null,
+    };
+
     void Apply(Step step, StepOutcome outcome)
     {
         if (outcome.Findings is { } counts)
             core!.Apply(new FindingsChanged(counts, outcome.FindingsVersion));
-        switch (outcome.Kind)
+        if (Ending(step.Id, outcome) is { } ending)
         {
-            case StepOutcome.CannotAnswer:
-                core!.Apply(new StepCannotAnswer(step.Id, outcome.Reason ?? "cannot answer"));
-                return;
-            case StepOutcome.WorkFailed:
-                core!.Apply(new StepFailed(step.Id, ErrorClass.Work, outcome.Reason ?? "work failure"));
-                return;
+            if (ending is ActionDecisionRequested)
+                foreach (var e in outcome.Events ?? [])
+                    core!.State.Trace.Add(new TraceEntry("agent", step.Id, e));
+            core!.Apply(ending);
+            return;
         }
 
         foreach (var e in outcome.Events ?? [])
@@ -1308,6 +1320,7 @@ public partial class RunWorkflow
         var step = core.StepById(wait.StepId);
         var (type, choices) = wait.Kind switch
         {
+            WaitKind.Decision when step?.Form == StepForm.Action => (core.ActionDecisionType, ActionDecisions.Choices.ToList()),
             WaitKind.Decision => (step?.Decision?.Type ?? $"{level}.decision", step?.DeclaredOutcomes.Select(o => o.Name).ToList() ?? []),
             WaitKind.PatchApproval => ($"{level}.patch_approval", new List<string> { "approve", "reject" }),
             WaitKind.Breakpoint => ($"{level}.breakpoint", new List<string> { "continue", "retry", "go_to", "replan", "grant_attempts", "end" }),

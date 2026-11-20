@@ -310,8 +310,9 @@ sequenceDiagram
 ### 9.3 A project delivering to the default branch
 
 The project runs epics as children, the way an epic runs tickets. Its final
-merge into `main` is, by default, an action request: a person merges on the
-code host and the engine detects it (F1). `delivery.report` then states which
+merge into `main` is, by default, an action request: a person answers the
+`project.merge_action` decision and merges on the code host, and the engine
+detects it (F1; `docs/04` section 4.5). `delivery.report` then states which
 repositories merged.
 
 ---

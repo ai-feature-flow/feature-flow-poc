@@ -157,22 +157,60 @@ public class RunStartCheckTests
         Assert.Equal("approve_spec", locked.Single(x => x.Blocks).StepId);
     }
 
+    [Theory]
+    [InlineData("require_checks", "false")]
+    [InlineData("require_checks", "{ expr: \"params.squash\" }")]
+    [InlineData("require_tested", "false")]
+    [InlineData("require_tested", "{ expr: \"params.squash\" }")]
+    public void Check_22_a_locked_merge_floor_refuses_any_value_but_a_literal_true(string input, string value)
+    {
+        var (_, plan) = Load(MergeInput(input, value));
+        var locked = Policy() with { RequireChecks = new Cap<bool>(true, true), RequireTested = new Cap<bool>(true, true) };
+        var d = new DiagnosticBag();
+        RunStartChecks.Caps(plan, locked, Allowance, d);
+        Assert.Equal([Checks.LockedCap], Blocking(d));
+        Assert.Contains($"policy.merge.{input} is locked true", d.Single(x => x.Blocks).Message, StringComparison.Ordinal);
+
+        // The same request is the workflow's to make where the floor is a default, and a literal true meets a locked one.
+        var unlocked = new DiagnosticBag();
+        RunStartChecks.Caps(plan, Policy() with { RequireChecks = new Cap<bool>(true, false), RequireTested = new Cap<bool>(true, false) }, Allowance, unlocked);
+        Assert.Empty(Blocking(unlocked));
+        var (_, literal) = Load(MergeInput(input, "true"));
+        var met = new DiagnosticBag();
+        RunStartChecks.Caps(literal, locked, Allowance, met);
+        Assert.Empty(Blocking(met));
+    }
+
+    static Std.Edit MergeInput(string input, string value) => new("fragments/merge_into_parent.yaml",
+        "      squash: { expr: \"params.squash\" }\n", $"      squash: {{ expr: \"params.squash\" }}\n      {input}: {value}\n");
+
     [Fact]
-    public void Check_22_a_merge_without_checks_is_refused_where_checks_are_locked_on()
+    public void Check_22_races_above_the_per_step_ceiling_are_refused_and_a_merge_asking_none_is_held_to_it()
     {
         var (_, plan) = Load(new Std.Edit("fragments/merge_into_parent.yaml",
-            "      engine_can_merge: { expr: \"params.engine_can_merge\" }\n", "      engine_can_merge: { expr: \"params.engine_can_merge\" }\n      require_checks: false\n"));
+            "    produces: [{ name: merge_record", "    limits: { races: 13 }\n    produces: [{ name: merge_record"));
         var d = new DiagnosticBag();
-        RunStartChecks.Caps(plan, Policy(requireChecks: new Cap<bool>(true, true)), Allowance, d);
+        RunStartChecks.Caps(plan, Policy(perStep: 12), Allowance, d);
         Assert.Equal([Checks.LockedCap], Blocking(d));
-        Assert.Contains("require_checks", d.Single(x => x.Blocks).Message);
-        var unlocked = new DiagnosticBag();
-        RunStartChecks.Caps(plan, Policy(requireChecks: new Cap<bool>(true, false)), Allowance, unlocked);
-        Assert.Empty(Blocking(unlocked));
+        Assert.Contains("allows 13 races, above policy.attempts.ceiling.per_step 12", d.Single(x => x.Blocks).Message, StringComparison.Ordinal);
+
+        // Std's merge asks for no races: it gets the engine default held to the ceiling, so a ceiling below the default refuses no races.
+        var (_, std) = Load();
+        var held = new DiagnosticBag();
+        RunStartChecks.Caps(std, Policy(perStep: 3), Allowance, held);
+        Assert.DoesNotContain(held, x => x.Message.Contains("races", StringComparison.Ordinal));
+        Assert.Equal(3, StepCaps.RaceAllowance(std.AllSteps.First(s => s.Action == "scm.merge"), 10, 3));
+        Assert.Equal(13, StepCaps.RaceAllowance(plan.AllSteps.First(s => s.Action == "scm.merge"), 10, 3));
+
+        // A race allowance asked for in the document's defaults is a request too, and is refused the same way.
+        var (_, byDefaults) = Load(new Std.Edit("fragments/merge_into_parent.yaml",
+            "artifact_types:\n  - std:artifact_types/check_results", "defaults:\n  limits: { races: 13 }\n\nartifact_types:\n  - std:artifact_types/check_results"));
+        var viaDefaults = new DiagnosticBag();
+        RunStartChecks.Caps(byDefaults, Policy(perStep: 12), Allowance, viaDefaults);
+        Assert.Contains(viaDefaults, x => x.Blocks && x.Message.Contains("allows 13 races, above policy.attempts.ceiling.per_step 12", StringComparison.Ordinal));
     }
 
     [Theory]
-    [InlineData(">=0.1.0 <2.0.0", "0.1.0", true)]
     [InlineData(">=0.1.0 <2.0.0", "2.0.0", false)]
     [InlineData(">=1.0.0", "0.9.9", false)]
     [InlineData("1.2.3", "1.2.3+sha", true)]

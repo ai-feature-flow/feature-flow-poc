@@ -33,6 +33,8 @@ public sealed record CarriedRunInfo(
 public sealed record CarriedExecution(int Number, string? Outcome, IReadOnlyDictionary<string, string> Outputs, IReadOnlyDictionary<string, string> Artifacts)
 {
     public bool Skipped { get; init; }
+
+    public string? ActionAnswer { get; init; }
 }
 
 public sealed record CarriedStep(int Executions, int AttemptsUsed, int RacesUsed, long AttemptsGranted, CarriedExecution? Current, CarriedExecution? Previous);
@@ -101,7 +103,7 @@ public sealed partial class RunCore
             ? null
             : new CarriedExecution(e.Number, e.Outcome,
                 new SortedDictionary<string, string>(e.Outputs.ToDictionary(kv => kv.Key, kv => YamlWriter.WritePlain(kv.Value)), StringComparer.Ordinal),
-                new SortedDictionary<string, string>(e.Artifacts, StringComparer.Ordinal)) { Skipped = e.Skipped };
+                new SortedDictionary<string, string>(e.Artifacts, StringComparer.Ordinal)) { Skipped = e.Skipped, ActionAnswer = e.ActionAnswer };
         var s = State;
         return new CarriedCore(
             CarriedRunInfo.From(Run),
@@ -199,7 +201,7 @@ public sealed partial class RunCore
         {
             if (e is null)
                 return null;
-            var execution = new Execution { Number = e.Number, Outcome = e.Outcome, Skipped = e.Skipped };
+            var execution = new Execution { Number = e.Number, Outcome = e.Outcome, Skipped = e.Skipped, ActionAnswer = e.ActionAnswer };
             foreach (var (name, value) in e.Outputs)
                 execution.Outputs[name] = YamlWriter.ReadPlain(value);
             foreach (var (name, reference) in e.Artifacts)

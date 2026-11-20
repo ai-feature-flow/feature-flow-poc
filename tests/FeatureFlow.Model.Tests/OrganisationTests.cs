@@ -176,6 +176,32 @@ public class OrganisationTests
         Assert.Empty(Read(minimal + "role_mapping: { default: { agent_runtime: claude_code } }\n").Diagnostics);
     }
 
+    /// <summary>F19 (LOG 339): a library's toolset settings are refused at load, as policy.toolsets is, naming the key.</summary>
+    [Fact]
+    public void A_librarys_toolset_settings_are_refused_naming_the_key()
+    {
+        static IReadOnlyList<Diagnostic> Role(string extra)
+        {
+            var d = new DiagnosticBag();
+            LibraryItemReader.ReadRole(Yaml.YamlText.Parse($"api_version: feature-flow/v1\nkind: role\nmetadata: {{ name: r }}\nwrite_access: none\ntools: [read]\n{extra}",
+                "r.yaml", d)!, "r", d);
+            return d;
+        }
+
+        static IReadOnlyList<Diagnostic> Manifest(string requires)
+        {
+            var d = new DiagnosticBag();
+            LibraryItemReader.ReadManifest(Yaml.YamlText.Parse($"name: acme\nversion: 0.1.0\nrequires: {requires}\n", "library.yaml", d)!, d);
+            return d;
+        }
+
+        Assert.Empty(Role(""));
+        Assert.Equal("toolsets is not supported in version 1; remove it", Assert.Single(Role("toolsets: [{ name: tracker, tools: [get_issue] }]\n"), x => x.Blocks).Message);
+        Assert.Equal("toolsets is not supported in version 1; remove it", Assert.Single(Role("toolsets: []\n"), x => x.Blocks).Message);
+        Assert.Empty(Manifest("{ capabilities: [code_host.pull_request] }"));
+        Assert.Equal("requires.toolsets is not supported in version 1; remove it", Assert.Single(Manifest("{ toolsets: [tracker] }"), x => x.Blocks).Message);
+    }
+
     [Fact]
     public void Roles_nest_admin_over_steerer_over_viewer_and_approver_stands_apart()
     {

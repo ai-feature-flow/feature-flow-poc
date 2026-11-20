@@ -9,7 +9,7 @@ exits:
 
 steps:
   - id: say
-    action: notify.send
+    action: artifact.compose
     with: { audience: team, message: finishing }
     routes:
-      sent: { exit: finished }
+      composed: { exit: finished }

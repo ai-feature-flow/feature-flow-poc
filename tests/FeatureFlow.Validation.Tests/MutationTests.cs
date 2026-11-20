@@ -29,6 +29,10 @@ public class MutationTests
         ["unknown_action"] = new(2, "unknown action 'analysis.execute'", "verify_and_review's analysis step names an action that does not exist", [
             new(VerifyAndReview, "    action: analysis.run\n    with: { fail_on: new_issues }", "    action: analysis.execute\n    with: { fail_on: new_issues }")]),
 
+        // LOG 342: notify.send was never built and is not an action.
+        ["removed_action"] = new(2, "unknown action 'notify.send'", "a step names notify.send, removed from the actions", [
+            new(VerifyAndReview, "    action: analysis.run\n    with: { fail_on: new_issues }", "    action: notify.send\n    with: { audience: team, message: analysed }")]),
+
         ["unknown_construct"] = new(2, "unknown construct with keys id, sleep", "an entry with no step form", [
             new(Ticket,
                 "      reverify: verify\n",
@@ -82,7 +86,7 @@ public class MutationTests
         ["unreachable_step"] = new(9, "no route reaches this step", "a step after the last fragment, which every exit routes past", [
             new(Ticket,
                 "      reverify: verify\n",
-                "      reverify: verify\n\n  - id: announce\n    action: notify.send\n    with: { audience: team, message: merged }\n")]),
+                "      reverify: verify\n\n  - id: announce\n    action: artifact.compose\n    with: { members: [requirements] }\n")]),
 
         ["cycle_without_exit"] = new(10, "has no route out", "the fix loop's validated tests go back to the fixer instead of leaving", [
             new(FixLoop, "      valid: { exit: fixed }\n      invalid: fix", "      valid: fix\n      invalid: fix"),
@@ -103,6 +107,17 @@ public class MutationTests
             new(Ticket,
                 "      implemented: [{ name: implementation_claims, type: std:artifact_types/evidence_claims }]",
                 "      implemented: [{ name: implementation_claims, type: std:artifact_types/evidence_claims }, { name: own_results, type: std:artifact_types/test_results }]")]),
+
+        // L9: an import registers files someone else wrote, so it may not stand in for the engine's evidence.
+        ["import_produces_evidence"] = new(12, "artifact.import may not produce 'imported_results' of evidence type", "an import declares an evidence type for what it imports", [
+            new(Ticket, "  - id: implement\n",
+                "  - id: import\n    action: artifact.import\n    with: { commit: \"0000000000000000000000000000000000000000\", files: [{ path: r.trx, name: imported_results }] }\n" +
+                "    produces:\n      imported: [{ name: imported_results, type: std:artifact_types/test_results }]\n\n  - id: implement\n")]),
+
+        ["import_file_as_evidence"] = new(12, "artifact.import may not import 'notes' as evidence type", "an import checks a file as an evidence type", [
+            new(Ticket, "  - id: implement\n",
+                "  - id: import\n    action: artifact.import\n    with: { commit: \"0000000000000000000000000000000000000000\", files: [{ path: r.trx, name: notes, type: std:artifact_types/test_results }] }\n" +
+                "    produces:\n      imported: [{ name: notes, type: std:artifact_types/requirements }]\n\n  - id: implement\n")]),
 
         ["reviewer_write_access"] = new(13, "exceeds role std:roles/reviewer's 'none'", "the verifying reviewer is given write access (F10)", [
             new(FixLoop, "      context: none\n", "      context: none\n      write_access: branch\n")]),

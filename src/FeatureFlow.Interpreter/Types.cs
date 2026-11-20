@@ -83,6 +83,14 @@ public sealed record RunOptions
     /// becomes a patch approval, as a step's <c>planning.review: required</c> makes it.
     /// </summary>
     public bool RequireReview { get; init; }
+
+    /// <summary>The organisation's <c>merge.require_checks</c> and <c>merge.require_tested</c> caps (docs/05 section 3.1), which a patch must not loosen (F1). Null: none.</summary>
+    public Model.Cap<bool>? RequireChecks { get; init; }
+
+    public Model.Cap<bool>? RequireTested { get; init; }
+
+    /// <summary>The caps one step is checked against (check 22), as at run start.</summary>
+    public Validation.StepCaps StepCaps => new(StepCeiling, RequireChecks, RequireTested);
 }
 
 /// <summary>Something the core asks the shell to do. The Temporal workflow (M3) or the re-drive runner carries it out.</summary>
@@ -153,6 +161,13 @@ public sealed record StepInterrupted(string StepId, string Reason) : RunInput;
 /// step's, as a completed step's are. Null: the answer produces nothing.
 /// </summary>
 public sealed record DecisionAnswered(string StepId, string Outcome, IReadOnlyDictionary<string, string>? Artifacts = null) : RunInput;
+
+/// <summary>
+/// A running engine action needs a person's decision before it asks them to act (docs/04 section 4.5): <c>scm.merge</c>,
+/// when a person must merge, raises <c>&lt;level&gt;.merge_action</c>. The step keeps watching the code host while the
+/// decision is open (<see cref="ActionDecisions"/>).
+/// </summary>
+public sealed record ActionDecisionRequested(string StepId, string Reason) : RunInput;
 
 /// <summary>
 /// A patch from outside a step: a person through the API, or the engine. <see cref="By"/> is set by the shell

@@ -22,7 +22,7 @@ the standard library's templates set it.
 | Idempotency | Every step has a key: a hash of run id, step id, execution number and its stable inputs. A remote object the engine creates carries a hidden marker (a branch suffix, a pull request body comment, a commit trailer, a tracker label), so a retry finds and adopts it instead of creating a duplicate |
 | Repository manifest | A step that touches a repository reads `feature-flow.yaml` from the branch when it starts and records the hash (RW11). The `library` section is read from the default branch only (`docs/07` section 4) |
 | Errors | Provider errors are classified as infrastructure (retried with backoff, free) or work (routed by outcome) (`docs/06`). A step may reclassify because it knows the intent: an agent that ran out of time is a work result |
-| Cannot answer | When a step cannot produce a trustworthy outcome (no manifest, a checkout not at the expected commit, results it cannot parse, a missing capability), it raises an **intervention** instead of guessing an outcome (P11, from FF) |
+| Cannot answer | When a step cannot produce a trustworthy outcome (no manifest, a checkout not at the expected commit, results it cannot parse, a missing capability), it raises an **intervention** instead of guessing an outcome (P11, from FF). An action no provider can serve is one: it runs against the installation's providers only when it is built, the run is not a dry run and a VCS and a code host provider are configured; otherwise only the action stand-in (`docs/06` section 3) serves it, and with none configured the step cannot answer rather than being retried for ever (LOG 352) |
 | Waiting | No step waits on human or external time inside a provider call. Human waits are durable workflow waits; external waits poll inside one long-running, heartbeating activity, or wake on an inbound event and then confirm by reading (`docs/02`) |
 | Cost | Every step records tokens, model and compute time |
 | Audit | Every step records its start, each attempt, each resume, and its outcome in the run timeline |
@@ -53,11 +53,12 @@ the standard library's templates set it.
 | Artifacts | `artifact.compose` | `composed` (success) |
 | | `artifact.import` | `imported` (success) |
 | | `artifact.publish` | `published` (success), `conflict` (blocked) |
-| Tracker and notifications | `tracker.update` | `done` (success), `not_found` (failure) |
-| | `notify.send` | `sent` (success). Never built; planned removal (`docs/12` A1, LOG 342) |
+| Tracker | `tracker.update` | `done` (success), `not_found` (failure) |
 | Delivery | `delivery.report` | `complete` (success), `partial` (failure) |
 
-Twenty-one actions, down from forty step kinds in the first design. What went:
+Twenty actions, down from forty step kinds in the first design. A plan naming
+any other action, `notify.send` included (never built; removed, LOG 342), is
+refused at load as an unknown action. What went:
 
 | First design | Now |
 |---|---|
@@ -106,7 +107,7 @@ reports.
    `findings_ledger` is given the ledger's current view, every finding with its
    ledger id and state, in the shape of a findings report (LOG 63).
 2. **Start.** Render the task, prepend the library's reporting preamble, and
-   start the agent runtime in the sandbox with the role's tools and toolsets.
+   start the agent runtime in the sandbox with the role's tools.
 3. **Supervise.** Heartbeat. About every 30 seconds, ask the VCS provider
    whether the working copy has new commits; if so, push them to the hidden
    work-in-progress reference. Serve hook calls, the engine tools (section 3.3)
@@ -281,19 +282,22 @@ the prompt.
 A **breakpoint** is set by a person through the API on a step of a running run;
 the run pauses before that step and opens a breakpoint decision, each time it is
 about to start it, until the person clears it (LOG 206). An **action
-request** is opened by a step that needs a person to act outside the engine
-(`scm.merge` with `engine_can_merge: false`); the engine watches for the action
-and closes the decision when it sees it, or takes the `declined` path if the
-person declines. Version 1 watches without opening a decision record (section
-7). Planned (`docs/12` A1, review F2): the action request is a
+request** is how a step asks a person to act outside the engine: `scm.merge`
+when a person must merge (`engine_can_merge: false`, F1 at merge time, or a
+code host that refuses an allowed engine merge). It is a
 `<level>.merge_action` decision like any other, so approval rules on it
-(`docs/05` section 3.2) take effect. A pull request merged on the code host
-before that decision is answered is accepted and the run continues: the engine
-closes the decision as answered on the code host, records on the run timeline
-the code host login of whoever merged and that the decision was not given
-through Feature Flow, and raises no intervention. Branch protection on the code
-host governs merges made there; the approval rules govern merges requested
-through Feature Flow (LOG 341, the product owner's decision of 2026-11-21).
+(`docs/05` section 3.2) take effect (LOG 331; LOG 123 superseded):
+
+| Element | Detail |
+|---|---|
+| Form | A decision-kind wait on the running `scm.merge` step, not a step of its own. Choices `approve` and `reject`. It never auto-resolves: the step has no `auto` outcome |
+| Opening | The first read that finds the pull request open, in an execution that has raised none, returns to the run, which opens the decision and starts the same execution again at once: no attempt is used. One decision per execution. It opens whether or not an approval rule names `*.merge_action`; with none, the default rule applies (LOG 351) |
+| While it is open | The step reads the pull request every poll interval; a pull request event wakes it to read at once (events wake, reads confirm, `docs/02` section 2.3). It does not yet ask anyone to merge (LOG 350) |
+| `approve` | The watch is restarted at the same execution and asks a person to merge or close the pull request on the code host; it returns `merged` when it sees the merge, `declined` when it sees the pull request closed |
+| `reject` | The step ends `declined`, as closing the pull request does, and its watch is cancelled (LOG 349) |
+| Merged on the code host first | Accepted and the run continues: the step returns `merged`, the decision closes as answered on the code host, and the timeline records the code host login of whoever merged and that the decision was not given through Feature Flow. No intervention is raised. Branch protection on the code host governs merges made there; the approval rules govern merges requested through Feature Flow (LOG 341, the product owner's decision of 2026-11-21) |
+| Closed on the code host first | The step ends `declined`, and the decision closes the same way |
+| The step stops | A work failure or an intervention closes the decision without an answer |
 
 ---
 
@@ -329,7 +333,7 @@ sent as a signal (`docs/03` section 9.4).
 
 A planner with tracker tools in its toolset may create tickets for the child
 runs it proposes, marking each with the run's label so a later re-plan finds
-them (from FF).
+them (from FF). Toolsets are not in version 1 (`docs/06` section 3.9).
 
 ### 6.2 `plan.expand`
 
@@ -346,8 +350,7 @@ them (from FF).
 
 Sections 7 to 9 are as built in M5 (LOG 120 to 132, 138, 139). `test.integration` is `test.run` across
 repositories and starts no services yet (LOG 120). Waits are retried reads (LOG 122); while they wait they hold up a
-hand-over, which M6 must fix (LOG 139). An action request is watched on the code host, with no decision record yet
-(LOG 123); the `<level>.merge_action` decision is planned (section 4.5). `clean_up` resets by an expected-revision push (LOG 128). Evidence tiers come from the parent branch's
+hand-over, which M6 must fix (LOG 139). An action request is a `<level>.merge_action` decision (section 4.5; LOG 331). `clean_up` resets by an expected-revision push (LOG 128). Evidence tiers come from the parent branch's
 manifest (LOG 138). LOG 147 simplified them after M5: `ci.checks` waits for required checks, a CI run is recorded by
 the step, and a configuration fault stops for a person.
 
@@ -384,10 +387,10 @@ Merges the work branch into its parent branch.
 
 | Element | Detail |
 |---|---|
-| Inputs | `engine_can_merge` (default `true`), `squash` (default `false`), `require_checks` (default `true`: a passing `ci.checks` result for the exact head being merged must exist), `require_tested` (default `true`: a passing `test.run` result for the exact head being merged must exist). The organisation may lock `require_checks` (`docs/05` section 3.1); locking `require_tested` is planned (`docs/12` A1) |
-| Outcomes | `merged`; `base_moved` (the parent moved since catch-up); `checks_failed`; `declined` (a person asked to merge declined) |
+| Inputs | `engine_can_merge` (default `true`), `squash` (default `false`), `require_checks` (default `true`: a passing `ci.checks` result for the exact head being merged must exist), `require_tested` (default `true`: a passing `test.run` result for the exact head being merged must exist). The organisation may lock `require_checks` and `require_tested` on (`docs/05` section 3.1) |
+| Outcomes | `merged`; `base_moved` (the parent moved since catch-up); `checks_failed`; `declined` (the `<level>.merge_action` decision was rejected, or the pull request was closed without merging; section 4.5) |
 | Idempotency | If the parent already contains the merge, or a person's merge is on the code host, the merge happened: `merged` |
-| Limits | Attempts 3 by default, used by executions that end other than `base_moved`. A `base_moved` loop through catch-up re-enters this step and counts against `limits.races` instead (default 10), checked on every execution like any allowance (F4), so a work branch that keeps losing races is still bounded, then escalates. A refusal means a sibling merged, so the loop cannot spin without progress (SP4; LOG 61). `limits.races` is held under the per-step attempts ceiling when a patch changes it; checking it at run start too is planned (`docs/12` A1, LOG 340) |
+| Limits | Attempts 3 by default, used by executions that end other than `base_moved`. A `base_moved` loop through catch-up re-enters this step and counts against `limits.races` instead (default 10, held to the organisation's per-step attempts ceiling where that is lower), checked on every execution like any allowance (F4), so a work branch that keeps losing races is still bounded, then escalates. A refusal means a sibling merged, so the loop cannot spin without progress (SP4; LOG 61). A `limits.races` above the per-step attempts ceiling is refused at run start and in a patch (`docs/05` section 3.1, LOG 340) |
 
 When the engine merges: it builds the merge commit (or squash commit) from
 exactly the head the evidence was recorded for, and pushes it to the parent,
@@ -401,8 +404,10 @@ There is no merge lock: work merges the way a team of developers does
 link to the squash commit, because the code host does not show it as merged.
 
 When a person merges (`engine_can_merge: false`, or the code host refuses an
-allowed engine merge): the step opens an action request decision (section 4.5),
-and returns `merged` when the engine sees the merge on the code host.
+allowed engine merge): the step opens its `<level>.merge_action` decision
+(section 4.5); once it is approved it asks a person to merge, and returns
+`merged` when the engine sees the merge on the code host. A rejection is
+`declined`.
 
 Whether the engine may merge into the **default branch** is a safety floor
 (`docs/05`). The step re-checks it at merge time, reading the default branch
@@ -489,6 +494,12 @@ note.
 Artifact types marked `evidence: true` may be produced only by engine actions
 (`docs/01` section 5.2). The standard evidence types: test results, analysis
 results, check results, merge records, validation reports, trace reports.
+Load check 12 refuses an agent step, a decision or a session that produces
+one, and an `artifact.import` that declares one for what it imports or names
+one as a file's `type`: an imported file is not evidence the engine made (L9).
+A file's `type` set by an expression is known only when the step runs: there,
+`artifact.import` resolves it against the run's library lock and cannot answer
+if it is an evidence type (LOG 353).
 
 ### 10.2 Validators
 
@@ -565,7 +576,6 @@ run holds are ignored (LOG 169).
 | `artifact.import` | `from`: a session submission (M7), or a repository, folder, files and exact commit | Registers files as artifacts at that commit, validated against their types (as built: parsed, not yet schema-checked; LOG 181) |
 | `artifact.publish` | `repository`, `folder`, `files`, `previous` (an earlier publication to supersede) | Copies artifacts into a repository in one commit and opens a pull request. `conflict` if the destination changed in a way the earlier publication did not expect; nothing is written (from FF; branch, record and superseding, LOG 182) |
 | `tracker.update` | `op` (`create`, `update`, `transition`, `link`, `comment`), its fields (LOG 183) | One tracker operation. Field mapping is provider configuration. Agents have no tracker write identity; this action and declarative `tracker` on steps are the only write paths, apart from a planner's toolset where policy allows |
-| `notify.send` | `audience`, `message` | A notification that needs no answer. A failure retries and never fails the run. Never built; planned removal (`docs/12` A1, LOG 342) |
 | `delivery.report` | `repositories` | Reads the merge records and states, per repository, whether a merge actually happened: the merge is of the work branch's current head, the parent branch still contains it, and no revert the run opened of it is merged or open (LOG 180). `complete` only if every one merged, so a run redirected past a merge cannot report success (from FF) |
 
 ---
