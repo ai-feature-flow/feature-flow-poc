@@ -30,39 +30,48 @@ public sealed record ScriptVisit(
 /// <summary>
 /// A fake world's script (kind <c>fake_script</c>): visits per step, keyed <c>&lt;template&gt;:&lt;step id&gt;</c>
 /// or <c>&lt;step id&gt;</c> for any template, then <c>&lt;template&gt;:*</c> for any other step of a template. A list's last visit repeats.
+/// <c>defaults</c>, keyed the same way, holds the visits of steps <c>steps</c> does not name.
 /// </summary>
 public sealed class FakeScript
 {
     readonly Dictionary<string, List<ScriptVisit>> steps;
+    readonly Dictionary<string, List<ScriptVisit>> defaults;
 
-    FakeScript(Dictionary<string, List<ScriptVisit>> steps) => this.steps = steps;
+    FakeScript(Dictionary<string, List<ScriptVisit>> steps, Dictionary<string, List<ScriptVisit>> defaults) => (this.steps, this.defaults) = (steps, defaults);
 
-    public static readonly FakeScript Empty = new([]);
+    public static readonly FakeScript Empty = new([], []);
 
     public static FakeScript Read(string path)
     {
         var d = new DiagnosticBag();
         var r = MapReader.Of(YamlText.Parse(File.ReadAllText(path), path, d), d, "the fake script");
         var steps = new Dictionary<string, List<ScriptVisit>>(StringComparer.Ordinal);
+        var defaults = new Dictionary<string, List<ScriptVisit>>(StringComparer.Ordinal);
         if (r is not null)
         {
             r.String("api_version");
             if (r.String("kind") is { } kind && kind != "fake_script")
                 r.Error($"kind must be fake_script, not '{kind}'", r.Map.Location);
-            if (MapReader.Of(r.Node("steps"), d, "steps") is { } s)
-                foreach (var (key, value) in s.Map.Entries)
-                {
-                    s.Node(key.Text);
-                    var visits = value is YSeq seq ? seq.Items : [value];
-                    steps[key.Text] = visits.Select(v => ReadVisit(v, d)).ToList();
-                }
-
+            ReadSteps(r, "steps", steps, d);
+            ReadSteps(r, "defaults", defaults, d);
             r.Finish();
         }
 
         if (d.HasErrors)
             throw new InvalidOperationException("the fake script does not read: " + string.Join("; ", d.Where(x => x.Blocks)));
-        return new FakeScript(steps);
+        return new FakeScript(steps, defaults);
+    }
+
+    static void ReadSteps(MapReader r, string section, Dictionary<string, List<ScriptVisit>> into, DiagnosticBag d)
+    {
+        if (MapReader.Of(r.Node(section), d, section) is not { } s)
+            return;
+        foreach (var (key, value) in s.Map.Entries)
+        {
+            s.Node(key.Text);
+            var visits = value is YSeq seq ? seq.Items : [value];
+            into[key.Text] = visits.Select(v => ReadVisit(v, d)).ToList();
+        }
     }
 
     static ScriptVisit ReadVisit(YNode node, DiagnosticBag d)
@@ -89,15 +98,16 @@ public sealed class FakeScript
 
     public ScriptVisit? Visit(StepIdentity step)
     {
-        var visits = steps.GetValueOrDefault($"{step.Template}:{step.StepId}") ?? steps.GetValueOrDefault(step.StepId)
-                     ?? steps.GetValueOrDefault($"{step.Template}:*");
+        List<ScriptVisit>? Find(Dictionary<string, List<ScriptVisit>> visits) =>
+            visits.GetValueOrDefault($"{step.Template}:{step.StepId}") ?? visits.GetValueOrDefault(step.StepId) ?? visits.GetValueOrDefault($"{step.Template}:*");
+        var visits = Find(steps) ?? Find(defaults);
         return visits is null || visits.Count == 0 ? null : visits[Math.Min(step.Execution - 1, visits.Count - 1)];
     }
 }
 
 /// <summary>
 /// Builds a step's report from a visit, writing scripted artifact content to the artifact store. Shared by the
-/// scripted runtime and the scripted action stand-in.
+/// scripted and recording runtimes.
 /// </summary>
 sealed class Reporter(Func<IArtifactStoreProvider> store)
 {
@@ -165,27 +175,113 @@ sealed class Reporter(Func<IArtifactStoreProvider> store)
 }
 
 /// <summary>
+/// What the scripted and recording runtimes do in a <c>memory</c> sandbox of their world, so an agent step's real path
+/// (commit, push to the hidden reference, move the branch, copy artifacts out) runs on the in-memory world: a step with
+/// write access changes the checkout, one file per execution, as an agent's edit would (unless its step id is in
+/// <c>no_edits</c>, such as a fixer that commits no fix); the hook calls of an agent that reads every file of the checkout
+/// are recorded, as the hook endpoint would, so std's reviewers do not re-read for ever (<c>changed_files_unread</c>);
+/// and the artifacts the report names are written to the sandbox's output folder. A sandbox this world does not hold is
+/// left alone, and the report keeps its artifact store references.
+/// </summary>
+sealed class SandboxActing(InMemoryForge forge, MemorySandbox sandboxes, Func<IArtifactStoreProvider> store, Func<IRecordStoreProvider?> records,
+    IReadOnlySet<string> noEdits)
+{
+    public static SandboxActing Of(ProviderContext c, Func<IArtifactStoreProvider> store)
+    {
+        var world = c.Setting("world") ?? "default";
+        var noEdits = c.Instance.Settings["no_edits"] is YSeq steps ? steps.Items.Select(s => s.ScalarText() ?? "").ToHashSet(StringComparer.Ordinal) : [];
+        return new SandboxActing(InMemoryForge.Named(world), MemorySandbox.Named(world, store), store, () => c.Provider("record_store") as IRecordStoreProvider, noEdits);
+    }
+
+    bool Holds(SandboxHandle sandbox, AgentTask task) => task.Paths is not null && sandboxes.Holds(sandbox);
+
+    /// <summary>The agent's edit and reads, at the start of a session.</summary>
+    public async Task<ProviderError?> StartAsync(SandboxHandle sandbox, AgentTask task, CancellationToken cancellationToken)
+    {
+        if (!Holds(sandbox, task) || forge.WorkingFiles(new WorkingCopyRef(sandbox, task.Paths!.Checkout)) is not { } files)
+            return null;
+        List<string> read;
+        lock (files)
+        {
+            if (task.WriteAccess != "none" && !noEdits.Contains(task.Step.StepId))
+                files[$"work/{task.Step.StepId}.txt"] = $"{task.Step.StepId} execution {task.Step.Execution}, session {task.Session}\n";
+            read = files.Keys.ToList();
+        }
+
+        if (records() is not { } recordStore)
+            return null;
+        var at = DateTimeOffset.UtcNow;
+        var hooks = read.Select(p => new AgentEventRecord(task.Step.IdempotencyKey, "hook_post_tool_use", $"Read {task.Paths.Checkout}/{p}", at))
+            .Prepend(new AgentEventRecord(task.Step.IdempotencyKey, "hook_pre_tool_use", "Read", at)).ToList();
+        return (await recordStore.AppendAsync(new RecordBatch(AgentEvents: hooks), cancellationToken)).Error;
+    }
+
+    /// <summary>The report with its artifacts written to the sandbox's output folder, named by their paths there.</summary>
+    public async Task<ProviderResult<StepReport>> PlaceAsync(SandboxHandle sandbox, AgentTask task, StepReport report, CancellationToken cancellationToken)
+    {
+        if (!Holds(sandbox, task))
+            return ProviderResult<StepReport>.Success(report);
+        var paths = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (name, reference) in report.Artifacts)
+        {
+            var got = await store().GetAsync(new ArtifactRef(reference), cancellationToken);
+            if (!got.Ok)
+                return new ProviderResult<StepReport>(null, got.Error);
+            await using var stream = got.Value!;
+            var content = TriageEachOpen(sandbox, task, await new StreamReader(stream).ReadToEndAsync(cancellationToken));
+            sandboxes.WriteFile(sandbox, $"{task.Paths!.Output}/{name}.json", content);
+            paths[name] = $"{name}.json";
+        }
+
+        return ProviderResult<StepReport>.Success(report with { Artifacts = paths });
+    }
+
+    /// <summary>
+    /// A scripted artifact <c>{ triage_each_open: &lt;state&gt; }</c> becomes a triage of every open finding in the ledger
+    /// view the engine staged for the step (LOG 63), as a triager or verifying reviewer would write from it. With
+    /// <c>non_blocking: &lt;state&gt;</c> too, open findings that are not blocking get that state instead.
+    /// </summary>
+    string TriageEachOpen(SandboxHandle sandbox, AgentTask task, string content)
+    {
+        if (!content.Contains("triage_each_open", StringComparison.Ordinal))
+            return content;
+        var script = (IDictionary<string, object?>)YamlWriter.ReadPlain(content)!;
+        var state = (string)script["triage_each_open"]!;
+        var nonBlocking = script.TryGetValue("non_blocking", out var other) ? (string)other! : state;
+        var staged = sandboxes.ReadFile(sandbox, "/ff/inputs/artifacts/" + FindingsLedger.ViewName)
+                     ?? throw new InvalidOperationException($"{task.Step.StepId}: no ledger view was staged");
+        var view = ArtifactShapes.ReadLibrary<FindingsReport>(staged, "the staged ledger view");
+        return ArtifactShapes.WriteLibrary(new Triage(1, view.Findings.Where(f => f.State == FindingStates.Open)
+            .Select(f => new TriageEntry(f.LedgerId!, f.Blocking ? state : nonBlocking, $"scripted: {(f.Blocking ? state : nonBlocking)}")).ToList()));
+    }
+}
+
+/// <summary>
 /// A fake agent runtime driven by a script (M3: "the agent step backed by a scripted fake runtime"). A session
 /// finishes after the visit's delay; sessions are kept in memory, keyed by the step's idempotency key, so a
-/// retried start re-attaches.
+/// retried start re-attaches. In a <c>memory</c> sandbox of its <c>world</c> it acts as <see cref="SandboxActing"/> says.
 /// </summary>
 public sealed class ScriptedAgentRuntime(FakeScript script, Func<IArtifactStoreProvider> store) : IAgentRuntimeProvider
 {
     readonly Reporter reporter = new(store);
-    readonly ConcurrentDictionary<string, (AgentTask Task, DateTimeOffset Started, TimeSpan Delay, ScriptVisit? Visit)> sessions = new();
+    readonly ConcurrentDictionary<string, (AgentTask Task, DateTimeOffset Started, TimeSpan Delay, ScriptVisit? Visit, SandboxHandle Sandbox)> sessions = new();
+
+    internal SandboxActing? Acting { get; init; }
 
     public ProviderDescription Describe() => new("agent_runtime", "scripted", "0.1.0", CapabilityRecords.All("agent_runtime"));
 
     public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => Task.FromResult(ProviderResult<Unit>.Success(default));
 
-    public Task<ProviderResult<AgentSession>> StartAsync(SandboxHandle sandbox, AgentTask task, AgentLimits limits, CancellationToken cancellationToken)
+    public async Task<ProviderResult<AgentSession>> StartAsync(SandboxHandle sandbox, AgentTask task, AgentLimits limits, CancellationToken cancellationToken)
     {
         var visit = script.Visit(task.Step);
         if (reporter.ScriptedError(task.Step, visit) is { } error && error.Reason != "validation_failed")
-            return Task.FromResult(new ProviderResult<AgentSession>(null, error));
+            return new ProviderResult<AgentSession>(null, error);
+        if (Acting is not null && await Acting.StartAsync(sandbox, task, cancellationToken) is { } failed)
+            return new ProviderResult<AgentSession>(null, failed);
         var delay = Reporter.Delay(visit, task.Inputs);
-        sessions.TryAdd(task.Step.IdempotencyKey, (task, DateTimeOffset.UtcNow, delay, visit));
-        return Task.FromResult(ProviderResult<AgentSession>.Success(new AgentSession(task.Step.IdempotencyKey, "scripted")));
+        sessions.TryAdd(task.Step.IdempotencyKey, (task, DateTimeOffset.UtcNow, delay, visit, sandbox));
+        return ProviderResult<AgentSession>.Success(new AgentSession(task.Step.IdempotencyKey, "scripted"));
     }
 
     public Task<ProviderResult<AgentSession>> ResumeAsync(SandboxHandle sandbox, string sessionRef, CancellationToken cancellationToken) =>
@@ -205,6 +301,8 @@ public sealed class ScriptedAgentRuntime(FakeScript script, Func<IArtifactStoreP
         if (reporter.ScriptedError(s.Task.Step, s.Visit) is { Reason: "validation_failed" } work)
             return new ProviderResult<AgentResult>(null, work);
         var report = await reporter.ReportAsync(s.Task.Step, s.Task.Contract, s.Task.Inputs, s.Visit, cancellationToken);
+        if (report.Ok && Acting is not null)
+            report = await Acting.PlaceAsync(s.Sandbox, s.Task, report.Value!, cancellationToken);
         return report.Ok
             ? ProviderResult<AgentResult>.Success(new AgentResult(report.Value, SessionEnd.Completed))
             : new ProviderResult<AgentResult>(null, report.Error);
@@ -217,31 +315,12 @@ public sealed class ScriptedAgentRuntime(FakeScript script, Func<IArtifactStoreP
     }
 }
 
-/// <summary>The action stand-in driven by a script (LOG 81): what an action reports comes from the script, else its first success outcome.</summary>
-public sealed class ScriptedActionStandIn(FakeScript script, Func<IArtifactStoreProvider> store) : IActionStandIn
-{
-    readonly Reporter reporter = new(store);
-
-    public ProviderDescription Describe() => new("action_stand_in", "scripted", "0.1.0", new NoCapabilities());
-
-    public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => Task.FromResult(ProviderResult<Unit>.Success(default));
-
-    public async Task<ProviderResult<StepReport>> RunAsync(ActionRequest request, CancellationToken cancellationToken)
-    {
-        var visit = script.Visit(request.Step);
-        if (reporter.ScriptedError(request.Step, visit) is { } error)
-            return new ProviderResult<StepReport>(null, error);
-        if (Reporter.Delay(visit, request.Inputs) is var delay && delay > TimeSpan.Zero)
-            await Task.Delay(delay, cancellationToken);
-        return await reporter.ReportAsync(request.Step, request.Contract, request.Inputs, visit, cancellationToken);
-    }
-}
-
 /// <summary>
-/// The recording providers a <c>dry_run</c> run uses (docs/07 section 5): each call is written, with its inputs, to
-/// <c>&lt;folder&gt;/&lt;run id&gt;.jsonl</c> instead of acting, and reports the step's first success outcome.
+/// What the recording runtime a <c>dry_run</c> run uses writes (docs/07 section 5): each call, with its inputs, to
+/// <c>&lt;folder&gt;/&lt;run id&gt;.jsonl</c>. It reports what its <c>script</c> says for the step, else the step's first
+/// success outcome.
 /// </summary>
-public sealed class Recorder(string folder, Func<IArtifactStoreProvider> store)
+public sealed class Recorder(string folder, Func<IArtifactStoreProvider> store, FakeScript? script = null)
 {
     readonly Reporter reporter = new(store);
     static readonly object Gate = new();
@@ -255,15 +334,22 @@ public sealed class Recorder(string folder, Func<IArtifactStoreProvider> store)
         var line = JsonSerializer.Serialize(new { kind, run = step.RunId, template = step.Template, step = step.StepId, execution = step.Execution, what, inputs });
         lock (Gate)
             File.AppendAllText(Path.Combine(Folder, SafeName(step.RunId) + ".jsonl"), line + "\n");
-        return await reporter.ReportAsync(step, contract, inputs, null, cancellationToken);
+        return await reporter.ReportAsync(step, contract, inputs, script?.Visit(step), cancellationToken);
     }
 
     static string SafeName(string runId) => string.Concat(runId.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' or '.' ? c : '_'));
 }
 
+/// <summary>
+/// The agent runtime a <c>dry_run</c> run uses (docs/07 section 5): it records each step it is given, with its inputs, and
+/// reports as its <see cref="Recorder"/> says; in a <c>memory</c> sandbox of its <c>world</c> it acts as
+/// <see cref="SandboxActing"/> says, so the dry run's own steps run on its memory world.
+/// </summary>
 public sealed class RecordingAgentRuntime(Recorder recorder) : IAgentRuntimeProvider
 {
-    readonly ConcurrentDictionary<string, StepReport> results = new();
+    readonly ConcurrentDictionary<string, (StepReport Report, SandboxHandle Sandbox, AgentTask Task)> results = new();
+
+    internal SandboxActing? Acting { get; init; }
 
     public ProviderDescription Describe() => new("agent_runtime", "recording", "0.1.0", CapabilityRecords.All("agent_runtime"));
 
@@ -273,10 +359,12 @@ public sealed class RecordingAgentRuntime(Recorder recorder) : IAgentRuntimeProv
     {
         if (!results.ContainsKey(task.Step.IdempotencyKey))
         {
+            if (Acting is not null && await Acting.StartAsync(sandbox, task, cancellationToken) is { } failed)
+                return new ProviderResult<AgentSession>(null, failed);
             var report = await recorder.RecordAsync("agent", task.Step, task.Role, task.Inputs, task.Contract, cancellationToken);
             if (!report.Ok)
                 return new ProviderResult<AgentSession>(null, report.Error);
-            results[task.Step.IdempotencyKey] = report.Value!;
+            results[task.Step.IdempotencyKey] = (report.Value!, sandbox, task);
         }
 
         return ProviderResult<AgentSession>.Success(new AgentSession(task.Step.IdempotencyKey, "recording"));
@@ -288,22 +376,17 @@ public sealed class RecordingAgentRuntime(Recorder recorder) : IAgentRuntimeProv
     public Task<ProviderResult<AgentProgress>> GetProgressAsync(AgentSession session, CancellationToken cancellationToken) =>
         Task.FromResult(ProviderResult<AgentProgress>.Success(new AgentProgress(true, 0)));
 
-    public Task<ProviderResult<AgentResult>> GetResultAsync(AgentSession session, CancellationToken cancellationToken) =>
-        Task.FromResult(results.TryGetValue(session.Id, out var report)
-            ? ProviderResult<AgentResult>.Success(new AgentResult(report, SessionEnd.Completed))
-            : ProviderResult<AgentResult>.Failure("not_found", $"no session {session.Id}"));
+    public async Task<ProviderResult<AgentResult>> GetResultAsync(AgentSession session, CancellationToken cancellationToken)
+    {
+        if (!results.TryGetValue(session.Id, out var s))
+            return ProviderResult<AgentResult>.Failure("not_found", $"no session {session.Id}");
+        var report = Acting is null ? ProviderResult<StepReport>.Success(s.Report) : await Acting.PlaceAsync(s.Sandbox, s.Task, s.Report, cancellationToken);
+        return report.Ok
+            ? ProviderResult<AgentResult>.Success(new AgentResult(report.Value, SessionEnd.Completed))
+            : new ProviderResult<AgentResult>(null, report.Error);
+    }
 
     public Task<ProviderResult<Unit>> StopAsync(AgentSession session, CancellationToken cancellationToken) => Task.FromResult(ProviderResult<Unit>.Success(default));
-}
-
-public sealed class RecordingActionStandIn(Recorder recorder) : IActionStandIn
-{
-    public ProviderDescription Describe() => new("action_stand_in", "recording", "0.1.0", new NoCapabilities());
-
-    public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => Task.FromResult(ProviderResult<Unit>.Success(default));
-
-    public Task<ProviderResult<StepReport>> RunAsync(ActionRequest request, CancellationToken cancellationToken) =>
-        recorder.RecordAsync("action", request.Step, request.Action, request.Inputs, request.Contract, cancellationToken);
 }
 
 /// <summary>
@@ -334,10 +417,12 @@ public static class LocalProviders
             new("record_store", "sqlite", ["path"], c => new SqliteRecordStore(c.PathSetting("path") ?? c.RequiredSetting("path"))),
             new("secrets", "file", ["path", "from_environment"], c => new FileSecrets(c.PathSetting("path") ?? c.RequiredSetting("path"),
                 c.Instance.Settings["from_environment"] is YSeq names ? names.Items.Select(n => n.ScalarText() ?? "").ToList() : null)),
-            new("agent_runtime", "scripted", ["script"], c => new ScriptedAgentRuntime(Script(c), () => Store(c))),
-            new("action_stand_in", "scripted", ["script"], c => new ScriptedActionStandIn(Script(c), () => Store(c))),
-            new("agent_runtime", "recording", ["folder"], c => new RecordingAgentRuntime(new Recorder(c.PathSetting("folder") ?? c.RequiredSetting("folder"), () => Store(c)))),
-            new("action_stand_in", "recording", ["folder"], c => new RecordingActionStandIn(new Recorder(c.PathSetting("folder") ?? c.RequiredSetting("folder"), () => Store(c)))),
+            new("agent_runtime", "scripted", ["script", "world", "no_edits"], c => new ScriptedAgentRuntime(Script(c), () => Store(c)) { Acting = SandboxActing.Of(c, () => Store(c)) }),
+            new("agent_runtime", "recording", ["folder", "script", "world", "no_edits"], c => new RecordingAgentRuntime(
+                new Recorder(c.PathSetting("folder") ?? c.RequiredSetting("folder"), () => Store(c), Script(c)))
+            {
+                Acting = SandboxActing.Of(c, () => Store(c)),
+            }),
             // M5: in-memory source control for engine tests; providers with the same world share it.
             new("vcs", "memory", ["world"], c => new InMemoryVcs(InMemoryForge.Named(c.Setting("world") ?? "default"))),
             new("code_host", "memory", ["world"], c => new InMemoryCodeHost(InMemoryForge.Named(c.Setting("world") ?? "default"))),
@@ -353,7 +438,7 @@ public static class LocalProviders
             // M7: version 1's session surface, a hand-off to the person's own agent tool (RW18).
             new("session_surface", "local", [], _ => new LocalSessionSurface()),
         };
-        foreach (var type in ConfigurationReader.ProviderTypes.Where(t => t is not ("artifact_store" or "record_store" or "secrets" or "action_stand_in")))
+        foreach (var type in ConfigurationReader.ProviderTypes.Where(t => t is not ("artifact_store" or "record_store" or "secrets")))
             list.Add(new ProviderFactory(type, "fake", [], _ => new DescribedOnlyProvider(type)));
         return list;
     }

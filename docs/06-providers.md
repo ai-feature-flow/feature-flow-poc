@@ -91,13 +91,11 @@ section 1).
 
 Temporal and the worker platform are configuration only (`docs/07`).
 
-LOG 81: while later milestones build the engine actions, a
-temporary type `action_stand_in` runs them, scripted or recording, and a
-`fake` provider of any type only describes itself. Neither is configured in a
-production installation: an installation that configures one must set
-`development: true`, as must one that configures the `scripted` agent runtime
-(L4). An action that neither the providers nor a stand-in can serve stops for
-a person (`docs/04` section 1).
+A `fake` provider of any type only describes itself. Neither it nor a `memory`
+provider is configured in a production installation: an installation that
+configures one must set `development: true`, as must one that configures the
+`scripted` agent runtime (L4). An action that no handler or configured provider
+can serve stops for a person (`docs/04` section 1).
 
 The VCS, code host and CI interfaces as built in M5 differ from the signatures below: catch-up and merge take an
 expected revision and a key, the code host reads a file and has no merge method, and CI results are returned as

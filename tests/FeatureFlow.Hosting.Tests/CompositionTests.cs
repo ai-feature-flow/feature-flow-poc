@@ -39,6 +39,9 @@ public class CompositionTests
         Assert.Equal("recording", set.ForRun("agent_runtime", true)!.Describe().Name);
         Assert.Contains("code_host.pull_request", set.Offered(false));
         Assert.DoesNotContain("ci", set.Offered(false));
+        // A type with no dry-run instance is absent from a dry run, never served by its default (LOG A2-0f).
+        Assert.Null(set.ForRun("code_host", true));
+        Assert.DoesNotContain("code_host.pull_request", set.Offered(true));
     }
 
     [Theory]

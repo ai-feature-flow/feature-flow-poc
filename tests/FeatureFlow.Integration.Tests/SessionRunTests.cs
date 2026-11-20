@@ -260,21 +260,21 @@ public class SessionRunTests
         await PostAsync(http, $"runs/{id}/abort", new JsonObject { ["reason"] = "the test is done" });
     }
 
+    /// <summary>A dry run opens its session as any run does, on its dry-run providers: the dry world's VCS and memory session surface.</summary>
     [Fact]
-    public async Task A_dry_run_opens_no_session_and_its_decision_takes_a_plain_answer()
+    public async Task A_dry_run_opens_its_session_on_its_dry_run_providers()
     {
-        var (h, _, repo) = await ForgeTicketTests.StartAsync("session-dry", autoApprove: false);
+        var (h, forge, repo) = await ForgeTicketTests.StartAsync("session-dry", autoApprove: false);
         await using var _h = h;
         var id = h.Start("std:templates/project_delivery", "--param", "project_name=invoicing", "--repo", repo.FullName, "--dry-run");
         var http = await ClientAsync(h);
-        await WaitAtAsync(h, id, "define");
-        var wait = (await h.ShowAsync(id))["waits"]![0]!["waitId"]!.ToString();
 
-        var (exit, output, error) = h.Cli("answer", id, wait, "submitted");
-        Assert.True(exit == 0, output + error);
-        // As before sessions: the plain answer produces no files, so the next step that consumes them stops at check 32 (LOG 245).
-        await WaitAtAsync(h, id, "check_requirements");
-        Assert.Empty((await GetAsync(http, $"runs/{id}/sessions"))["sessions"]!.AsArray());
+        var opened = await OpenSessionAsync(h, http, id);
+        var sid = opened["session"]!["sessionId"]!.ToString();
+        var branch = opened["workspace"]!["branch"]!.ToString();
+        Assert.Equal(opened["workspace"]!["baseRevision"]!.ToString(), h.DryForge.Resolve(repo, "refs/heads/" + branch));
+        Assert.Null(forge.Resolve(repo, "refs/heads/" + branch));
+        Assert.NotNull(h.DrySessions.Workspace(sid));
         await PostAsync(http, $"runs/{id}/abort", new JsonObject { ["reason"] = "the test is done" });
     }
 

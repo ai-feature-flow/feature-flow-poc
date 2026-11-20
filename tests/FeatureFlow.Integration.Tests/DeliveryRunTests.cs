@@ -99,7 +99,7 @@ public class DeliveryRunTests
         var world = "tracked-" + Guid.NewGuid().ToString("N")[..8];
         var tracker = InMemoryTracker.Named(world);
         var issue = (await tracker.CreateAsync(new IssueSpec("The ticket"), "seed", Ct)).Unwrap();
-        await using var h = await Harness.StartAsync("tracked", autoApprove: true, libraries: Delivery, omitTypes: ["tracker"],
+        await using var h = await Harness.StartAsync("tracked", autoApprove: true, libraries: Delivery, without: ["tracker"],
             providers: $"  tracker: {{ instances: {{ memory: {{ world: {world} }} }} }}");
 
         var id = h.Start("delivery:templates/tracked", "--tracker-issue", issue.Key);
@@ -119,7 +119,7 @@ public class DeliveryRunTests
     public async Task A_tracker_update_that_fails_is_noted_and_the_run_carries_on()
     {
         var world = "tracked-" + Guid.NewGuid().ToString("N")[..8];
-        await using var h = await Harness.StartAsync("tracked-missing", autoApprove: true, libraries: Delivery, omitTypes: ["tracker"],
+        await using var h = await Harness.StartAsync("tracked-missing", autoApprove: true, libraries: Delivery, without: ["tracker"],
             providers: $"  tracker: {{ instances: {{ memory: {{ world: {world} }} }} }}");
 
         var id = h.Start("delivery:templates/tracked", "--tracker-issue", "MEM-404");
@@ -152,7 +152,7 @@ public class DeliveryRunTests
         var issue = (await tracker.CreateAsync(new IssueSpec("The ticket"), "seed", Ct)).Unwrap();
         // Every try of the first update fails as an outage would; the later updates go through.
         tracker.Fail("Transition", new ProviderError("unreachable", "the tracker is down"), times: 5);
-        await using var h = await Harness.StartAsync("tracked-outage", autoApprove: true, libraries: Delivery, omitTypes: ["tracker"],
+        await using var h = await Harness.StartAsync("tracked-outage", autoApprove: true, libraries: Delivery, without: ["tracker"],
             providers: $"  tracker: {{ instances: {{ memory: {{ world: {world} }} }} }}");
 
         var id = h.Start("delivery:templates/tracked", "--tracker-issue", issue.Key);

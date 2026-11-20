@@ -105,8 +105,8 @@ public sealed record AgentHarnessOptions
 
 /// <summary>
 /// An engine with the real agent worker: the Docker sandbox, the Claude Code runtime, the Git provider against a
-/// local bare repository standing for the code host, the model proxy in front of a <see cref="ScriptedModel"/>,
-/// and the scripted action stand-in. Nothing reaches GitHub or a real model.
+/// local bare repository standing for the code host, and the model proxy in front of a <see cref="ScriptedModel"/>.
+/// Nothing reaches GitHub or a real model.
 /// </summary>
 public sealed class AgentHarness : IAsyncDisposable
 {
@@ -215,7 +215,6 @@ public sealed class AgentHarness : IAsyncDisposable
             {{string.Join("\n", options.MoreRuntimes.Select(r => "      " + r.Replace("{model_access}", modelAccess)))}}
               vcs: {{vcs}}
             {{broker}}
-              action_stand_in: { default: scripted, instances: { scripted: { script: script.yaml } } }
             {{fakes}}
             api:
               auth: { mode: local_token, token_ref: secrets/api_token, actor: tester, roles: [viewer, approver, steerer, admin] }

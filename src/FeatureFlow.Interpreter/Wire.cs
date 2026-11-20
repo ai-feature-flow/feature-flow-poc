@@ -104,7 +104,6 @@ public sealed record RunPolicy(
     long? HardStepCeiling = null,
     long? HardRunCeiling = null,
     IReadOnlyList<string>? EngineMayMerge = null,
-    bool? BuiltActions = null,
     long? WorkItemCeiling = null,
     bool? RequireReview = null,
     IReadOnlyDictionary<string, Model.AgentRoleMapping>? RoleMapping = null,

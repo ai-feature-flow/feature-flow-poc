@@ -236,16 +236,3 @@ public interface IAgentRuntimeProvider : IProvider
 
     Task<ProviderResult<Unit>> StopAsync(AgentSession session, CancellationToken cancellationToken);
 }
-
-/// <summary>One engine action to run, with its evaluated inputs (JSON text) and its contract.</summary>
-public sealed record ActionRequest(StepIdentity Step, string Action, IReadOnlyDictionary<string, string> Inputs, StepContract Contract);
-
-/// <summary>
-/// The stand-in for the engine actions later milestones build (LOG 81). Every action except <c>run.child</c>
-/// and <c>plan.expand</c> is run through it in M3. A real action calls the providers of docs/06 instead; each
-/// milestone that builds one takes it off the stand-in. Never configured in a production installation.
-/// </summary>
-public interface IActionStandIn : IProvider
-{
-    Task<ProviderResult<StepReport>> RunAsync(ActionRequest request, CancellationToken cancellationToken);
-}

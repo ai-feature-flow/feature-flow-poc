@@ -10,6 +10,8 @@ public sealed class WaitingActionTests
 {
     static string Outcome(ActionResult r) => r.Report?.Outcome ?? $"{r.Kind}: {r.Reason}";
 
+    static CancellationToken Ct => TestContext.Current.CancellationToken;
+
     static async Task<ActionWorld> WithPullRequestAsync()
     {
         var w = new ActionWorld();
@@ -176,6 +178,24 @@ public sealed class WaitingActionTests
         Assert.Equal(ActionResult.Wait, (await w.RunAsync("wait.condition", "{ pull_request: merged }", "merged", waits: 2)).Kind);
         w.Forge.MergePullRequest(pr);
         Assert.Equal("met", Outcome(await w.RunAsync("wait.condition", "{ pull_request: merged }", "merged")));
+    }
+
+    [Fact]
+    public async Task Wait_condition_on_a_tracker_issue_is_met_or_unmet_as_its_status_says()
+    {
+        await using var w = new ActionWorld();
+        var issue = (await w.Tracker.CreateAsync(new IssueSpec("Ship it"), "k-1", Ct)).Unwrap();
+        var other = (await w.Tracker.CreateAsync(new IssueSpec("Abandon it"), "k-2", Ct)).Unwrap();
+        w.TrackerIssue = issue.Key;
+        const string Condition = "{ tracker: { statuses: [done], unmet: [code_review] } }";
+
+        Assert.Equal(ActionResult.Wait, (await w.RunAsync("wait.condition", Condition, "issue", waits: 2)).Kind);
+        (await w.Tracker.TransitionAsync(issue, "done", Ct)).Unwrap();
+        Assert.Equal("met", Outcome(await w.RunAsync("wait.condition", Condition, "issue")));
+
+        var named = $"{{ tracker: {{ issue: {other.Key}, statuses: [done], unmet: [code_review] }} }}";
+        (await w.Tracker.TransitionAsync(other, "code_review", Ct)).Unwrap();
+        Assert.Equal("unmet", Outcome(await w.RunAsync("wait.condition", named, "other")));
     }
 
     [Fact]

@@ -22,7 +22,7 @@ the standard library's templates set it.
 | Idempotency | Every step has a key: a hash of run id, step id, execution number and its stable inputs. A remote object the engine creates carries a hidden marker (a branch suffix, a pull request body comment, a commit trailer, a tracker label), so a retry finds and adopts it instead of creating a duplicate |
 | Repository manifest | A step that touches a repository reads `feature-flow.yaml` from the branch when it starts and records the hash (RW11). The `library` section is read from the default branch only (`docs/07` section 4) |
 | Errors | Provider errors are classified as infrastructure (retried with backoff, free) or work (routed by outcome) (`docs/06`). A step may reclassify because it knows the intent: an agent that ran out of time is a work result |
-| Cannot answer | When a step cannot produce a trustworthy outcome (no manifest, a checkout not at the expected commit, results it cannot parse, a missing capability), it raises an **intervention** instead of guessing an outcome (P11, from FF). An action no provider can serve is one: it runs against the installation's providers only when it is built, the run is not a dry run and a VCS and a code host provider are configured; otherwise only the action stand-in (`docs/06` section 3) serves it, and with none configured the step cannot answer rather than being retried for ever (LOG 352) |
+| Cannot answer | When a step cannot produce a trustworthy outcome (no manifest, a checkout not at the expected commit, results it cannot parse, a missing capability), it raises an **intervention** instead of guessing an outcome (P11, from FF). An action no handler or provider can serve is one: an action runs through its handler against the providers the run uses (a dry run's are its `dry_run` instances, `docs/07` section 5), and with no handler, or no configured provider of a type it needs, the step cannot answer rather than being retried for ever (LOG 352) |
 | Waiting | No step waits on human or external time inside a provider call. Human waits are durable workflow waits; external waits poll inside one long-running, heartbeating activity, or wake on an inbound event and then confirm by reading (`docs/02`) |
 | Cost | Every step records tokens, model and compute time |
 | Audit | Every step records its start, each attempt, each resume, and its outcome in the run timeline |
@@ -445,8 +445,8 @@ Waits for an external state, from FF's `awaitCondition`.
 
 | Element | Detail |
 |---|---|
-| Inputs | One condition: `pull_request` (`approved`, `merged` or `mergeable`), `checks` (judged as `ci.checks` judges them, with its default `grace`), or `tracker` (an issue reaching one of some statuses); `poll_every`; `timeout` (default 7 days) |
-| Outcomes | `met`; `unmet` (closed unmerged, changes requested, an issue in an `unmet` status) |
+| Inputs | One condition: `pull_request` (`approved`, `merged` or `mergeable`), `checks` (judged as `ci.checks` judges them, with its default `grace`), or `tracker` (`issue`, default the run's tracker issue; `statuses`, the library statuses that meet it; `unmet`, those that do not); `poll_every`; `timeout` (default 7 days) |
+| Outcomes | `met`; `unmet` (closed unmerged, changes requested, failed checks, an issue in an `unmet` status) |
 | Behaviour | Holds no worker slot. A durable timer polls; an inbound event wakes it early; a read confirms. A person may end the wait by hand with `met` or `unmet`, which is the "skip a step" override with a chosen outcome (`docs/05` section 5). The timeout raises an intervention |
 
 ---

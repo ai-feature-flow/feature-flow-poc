@@ -445,7 +445,7 @@ public partial class RunWorkflow
                 case CleanUp c:
                     await CleanUpAsync(c.StepId);
                     break;
-                case OpenDecision o when IsSession(o.StepId) && !input.DryRun:
+                case OpenDecision o when IsSession(o.StepId):
                     await OpenSessionAsync(o);
                     break;
                 case SendPatchToParent p when input.ParentWorkflowId is { } parent:
@@ -537,9 +537,7 @@ public partial class RunWorkflow
     (StepCall? Call, ActionScope? Scope, string? Error) CallOf(Step step, StepIdentity identity, Dictionary<string, object?> inputs)
     {
         ActionScope? scope = null;
-        // Only a run whose actions run against providers (fixed at its start) gets a scope; otherwise, and in a dry run,
-        // the stand-in serves the action.
-        if (step.Form == StepForm.Action && EngineActions.Built.Contains(step.Action!) && policy?.BuiltActions == true && !input.DryRun)
+        if (step.Form == StepForm.Action)
         {
             try
             {
@@ -641,7 +639,7 @@ public partial class RunWorkflow
         }
         catch (EvaluationException)
         {
-            // A run with no repositories (the stand-in serves its actions): the action says so if it needs one.
+            // A run with no repositories: the action says so if it needs one.
             repository = null;
         }
 
@@ -785,7 +783,7 @@ public partial class RunWorkflow
                     CancellationType = StepCancellation(),
                 });
             else
-                outcome = await Workflow.ExecuteActivityAsync((RunActivities a) => a.RunActionAsync(call, scope), new ActivityOptions
+                outcome = await Workflow.ExecuteActivityAsync((RunActivities a) => a.RunActionAsync(call, scope!), new ActivityOptions
                 {
                     // An action that polls (CI tiers, sandbox commands) heartbeats; a wait between reads is a retry, not a held slot.
                     StartToCloseTimeout = (call.Timeout ?? TimeSpan.FromHours(2)) + TimeSpan.FromMinutes(10),
