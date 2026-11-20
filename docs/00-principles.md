@@ -197,6 +197,25 @@ reference. It does not restate the rule.
 Why: the first design restated the same rules in up to 13 documents, and the
 copies came to disagree.
 
+### P13. From one developer to a corporate install
+
+The open-source base serves the whole range of section 1. One developer runs it
+locally with nothing to set up beyond Temporal, Docker and a code host, and the
+console needs no sign-in. An organisation runs it in its own cloud behind its own
+identity provider (for Xero, AWS and Okta). Authentication is pluggable or
+configurable: an installation chooses its authenticators by configuration, and
+an organisation whose identity provider needs bespoke handling may add a handler
+in a distribution or a fork of the engine. The other extension points
+(`docs/06` section 4) follow the same rule.
+
+Why: the product owner's decision of 2026-11-21 (`docs/PLAN.md` section 3). A
+product that needs an identity provider to try it is not tried; one that cannot
+use the organisation's identity provider is not adopted.
+
+Status: the no-sign-in console and authenticators chosen from a set the host
+registers are planned (`docs/12` milestones A4 and R2). Version 1 offers the
+local token and OIDC only (`docs/07` section 2, `api.auth`).
+
 ## 3. Who decides what
 
 | | Engine | Workflow (library and templates) | Organisation | Human at run time |

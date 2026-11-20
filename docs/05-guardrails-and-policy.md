@@ -76,7 +76,7 @@ limit. Validation reports where a request was capped.
 | Work items | `budget.max_work_items` on the root template | Ceiling (F11), always locked (LOG 187) |
 | Review of agent patches | `planning.review` | `planning.require_review`, per template name pattern |
 | Agent roles | The roles a template's steps name | `planning.allowed_roles` for steps an agent adds (section 6) |
-| Toolsets | The role's toolsets | None in version 1: no external toolsets are connected (LOG 270) |
+| Toolsets | The role's toolsets | None in version 1: no external toolsets are connected (LOG 270). Refusing the toolset settings at load is planned (`docs/06` section 3.9) |
 
 A request that exceeds its cap is not silently lowered. Where the cap is an
 organisation **default** (`locked: false`), the request applies; where it is
@@ -144,7 +144,7 @@ decision_types:
 |---|---|
 | Unknown type | A decision type no library declares is a validation error at load |
 | Precedence | An organisation rule that matches wins over the library's default |
-| Engine-raised types | The engine raises decisions of type `<level>.escalation`, `<level>.question`, `<level>.patch_approval`, `<level>.breakpoint` and `<level>.merge_action`, with `<level>` the run's level. Every intervention, whatever raised it (an `escalate` route, a step that cannot answer, a timeout), has type `<level>.escalation`. The standard library declares them with patterns (`*.escalation` and so on) |
+| Engine-raised types | The engine raises decisions of type `<level>.escalation`, `<level>.question`, `<level>.patch_approval`, `<level>.breakpoint` and `<level>.merge_action`, with `<level>` the run's level. Every intervention, whatever raised it (an `escalate` route, a step that cannot answer, a timeout), has type `<level>.escalation`. The standard library declares them with patterns (`*.escalation` and so on). Version 1 does not yet raise `<level>.merge_action`, so a rule on it has no effect; raising it is planned (`docs/04` section 4.5; `docs/12` A1) |
 
 ---
 

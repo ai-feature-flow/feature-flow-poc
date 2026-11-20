@@ -86,6 +86,14 @@ defaults:                        # engine defaults for limits; not floors
     scm.merge: { attempts: 3 }
 ```
 
+The example shows an enterprise installation, including settings that are not
+built yet. Planned for the first full release (`docs/12` R3, review F7):
+`temporal.auth`, `temporal.tls` and `expected_retention` (version 1 connects with
+the address, namespace and payload codec only), the `teamcity` CI instance and
+the `sonarcloud` findings analyser. The `toolset` instances are not in version 1
+and are to be refused (`docs/06` section 3.9). Which other example settings are
+unbuilt is review F14, corrected in `docs/12` A6.
+
 | Key | Notes |
 |---|---|
 | `providers.<type>.instances` | Several instances of one type may coexist (two CI systems, two agent runtimes). Other settings select one by name |
@@ -107,7 +115,7 @@ defaults:                        # engine defaults for limits; not floors
 | `temporal.payload_codec` | Encrypts every payload, and failure messages, the engine sends Temporal. `name: aes_gcm` (the only codec); `key_ref` names a secret of 32 random bytes in base64 (`openssl rand -base64 32`). Replaying an encrypted history needs the same key. LOG 284 |
 | `record_store.postgres` | `connection_ref` names the secret holding the connection string (`Host=...;Database=...;Username=...;Password=...`). The schema is created or migrated at first use. LOG 281 |
 | `artifact_store.s3` | `bucket` (required, created by the deployment), `region` (default `us-east-1`), `endpoint` for a store other than AWS such as MinIO (path-style), and `access_key_ref` with `secret_key_ref`, set together; without them the AWS SDK's credential chain applies, such as an EKS service account's role. LOG 283 |
-| `api.auth` | `local_token` (`token_ref`, `actor`, `roles`) or `oidc` (`issuer`, `audience`, `role_claim`, default `groups`, and `actor_claim`, default `sub`); with `oidc`, a `token_ref` keeps the local token working beside it. The actor `policy` is reserved for automatic answers (LOG 220, 222) |
+| `api.auth` | `local_token` (`token_ref`, `actor`, `roles`) or `oidc` (`issuer`, `audience`, `role_claim`, default `groups`, and `actor_claim`, default `sub`); with `oidc`, a `token_ref` keeps the local token working beside it. The actor `policy` is reserved for automatic answers (LOG 220, 222). Planned (`docs/02` section 7; `docs/12` A4, R2): a `none` mode accepted only when the API listens on loopback; a public console client (client id, and the scopes it asks for) served by `GET /console/config`; modes chosen from authenticators the host registers |
 
 Scaling (replica counts) is deployment configuration, not engine configuration. `workers` (a worker mode and agent
 pools by sandbox capability) is not in version 1 and is refused at startup; every agent worker serves the one agent
@@ -310,6 +318,12 @@ The same code runs in every profile; only configuration differs.
 The solo organisation file can be four lines: one approver (the developer), one
 library, and default caps. Every profile still keeps agents without push
 credentials (F5) and model keys (F6).
+
+The solo profile is the alpha release stage; the enterprise profile's Temporal
+Cloud connection, TeamCity and SonarCloud are first full release, not alpha
+(product owner, 2026-11-21; `docs/12` R3). Until R3, the enterprise column
+describes the design, not what version 1 can deploy. Console sign-in by OIDC is
+planned for the OIDC profiles (`docs/12` R2).
 
 ---
 

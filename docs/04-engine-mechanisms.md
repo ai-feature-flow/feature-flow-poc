@@ -284,7 +284,10 @@ about to start it, until the person clears it (LOG 206). An **action
 request** is opened by a step that needs a person to act outside the engine
 (`scm.merge` with `engine_can_merge: false`); the engine watches for the action
 and closes the decision when it sees it, or takes the `declined` path if the
-person declines.
+person declines. Version 1 watches without opening a decision record (section
+7). Planned (`docs/12` A1, review F2): the action request is a
+`<level>.merge_action` decision like any other, so approval rules on it
+(`docs/05` section 3.2) take effect.
 
 ---
 
@@ -338,7 +341,7 @@ them (from FF).
 Sections 7 to 9 are as built in M5 (LOG 120 to 132, 138, 139). `test.integration` is `test.run` across
 repositories and starts no services yet (LOG 120). Waits are retried reads (LOG 122); while they wait they hold up a
 hand-over, which M6 must fix (LOG 139). An action request is watched on the code host, with no decision record yet
-(LOG 123). `clean_up` resets by an expected-revision push (LOG 128). Evidence tiers come from the parent branch's
+(LOG 123); the `<level>.merge_action` decision is planned (section 4.5). `clean_up` resets by an expected-revision push (LOG 128). Evidence tiers come from the parent branch's
 manifest (LOG 138). LOG 147 simplified them after M5: `ci.checks` waits for required checks, a CI run is recorded by
 the step, and a configuration fault stops for a person.
 
