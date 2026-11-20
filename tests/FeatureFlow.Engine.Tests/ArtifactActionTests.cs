@@ -108,6 +108,28 @@ public sealed class ArtifactActionTests
         Assert.Contains("relative path inside the repository", escaping.Reason, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Import_refuses_at_run_time_a_file_whose_resolved_type_is_an_evidence_type()
+    {
+        // A literal evidence type is refused at load (check 12); a type set by an expression is known only when the step runs.
+        await using var w = new ActionWorld();
+        await w.PinStdAsync();
+        var commit = w.CommitMain("results.json", "{}");
+        var contract = w.CommitMain("contract.md", "---\nscope_kind: epic\nscope_id: E-1\n---\n# Scope\n\n# Components and responsibilities\n\n# Contracts\n\n# Data and control flow\n\n# Failure handling\n\n# Decisions\n");
+
+        var forged = await w.RunAsync("artifact.import",
+            $"{{ commit: {commit}, files: [{{ path: results.json, name: results, type: std:artifact_types/test_results }}] }}", "a",
+            produces: [new ArtifactSpec(null, "results")]);
+        Assert.Equal("cannot_answer", forged.Kind);
+        Assert.Contains("may not import results.json as evidence type std:artifact_types/test_results", forged.Reason, StringComparison.Ordinal);
+
+        // The same lock, a type that is not evidence: imported.
+        var allowed = await w.RunAsync("artifact.import",
+            $"{{ commit: {contract}, files: [{{ path: contract.md, name: contract, type: std:artifact_types/contract }}] }}", "b",
+            produces: [new ArtifactSpec(null, "contract")]);
+        Assert.Equal("imported", Outcome(allowed));
+    }
+
     // ---- artifact.publish ----
 
     // A step declares its record for the success outcome and, separately, for conflict (class blocked).

@@ -123,6 +123,9 @@ static class Artifacts
         var lockDocument = JsonSerializer.Deserialize<Library.LibraryLock>(await run.ReadTextAsync(lockRef), ActionRun.JsonOptions)!;
         var type = await lockDocument.ArtifactTypeAsync(declared, run.ReadTextAsync)
                    ?? throw ActionStop.CannotAnswer($"{path}'s type {declared} is not in the run's libraries, so it cannot be checked");
+        // A type set by an expression is known only now; a literal one was refused at load (check 12, L9).
+        if (type.Evidence)
+            throw ActionStop.CannotAnswer($"artifact.import may not import {path} as evidence type {declared}; an imported file is not evidence the engine made (F7)");
         try
         {
             return await ArtifactTypeCheck.CheckAsync(type, name, declared, path, text, reference, run.Providers, run.Ct);

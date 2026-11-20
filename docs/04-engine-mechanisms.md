@@ -497,6 +497,9 @@ results, check results, merge records, validation reports, trace reports.
 Load check 12 refuses an agent step, a decision or a session that produces
 one, and an `artifact.import` that declares one for what it imports or names
 one as a file's `type`: an imported file is not evidence the engine made (L9).
+A file's `type` set by an expression is known only when the step runs: there,
+`artifact.import` resolves it against the run's library lock and cannot answer
+if it is an evidence type.
 
 ### 10.2 Validators
 
