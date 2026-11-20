@@ -282,19 +282,22 @@ the prompt.
 A **breakpoint** is set by a person through the API on a step of a running run;
 the run pauses before that step and opens a breakpoint decision, each time it is
 about to start it, until the person clears it (LOG 206). An **action
-request** is opened by a step that needs a person to act outside the engine
-(`scm.merge` with `engine_can_merge: false`); the engine watches for the action
-and closes the decision when it sees it, or takes the `declined` path if the
-person declines. Version 1 watches without opening a decision record (section
-7). Planned (`docs/12` A1, review F2): the action request is a
+request** is how a step asks a person to act outside the engine: `scm.merge`
+when a person must merge (`engine_can_merge: false`, F1 at merge time, or a
+code host that refuses an allowed engine merge). It is a
 `<level>.merge_action` decision like any other, so approval rules on it
-(`docs/05` section 3.2) take effect. A pull request merged on the code host
-before that decision is answered is accepted and the run continues: the engine
-closes the decision as answered on the code host, records on the run timeline
-the code host login of whoever merged and that the decision was not given
-through Feature Flow, and raises no intervention. Branch protection on the code
-host governs merges made there; the approval rules govern merges requested
-through Feature Flow (LOG 341, the product owner's decision of 2026-11-21).
+(`docs/05` section 3.2) take effect (LOG 331; LOG 123 superseded):
+
+| Element | Detail |
+|---|---|
+| Form | A decision-kind wait on the running `scm.merge` step, not a step of its own. Choices `approve` and `reject`. It never auto-resolves: the step has no `auto` outcome |
+| Opening | The first read that finds the pull request open, in an execution that has raised none, returns to the run, which opens the decision and starts the same execution again at once: no attempt is used. One decision per execution |
+| While it is open | The step reads the pull request every poll interval; a pull request event wakes it to read at once (events wake, reads confirm, `docs/02` section 2.3). It does not yet ask anyone to merge (LOG A1-2b) |
+| `approve` | The watch is restarted at the same execution and asks a person to merge or close the pull request on the code host; it returns `merged` when it sees the merge, `declined` when it sees the pull request closed |
+| `reject` | The step ends `declined`, as closing the pull request does, and its watch is cancelled (LOG A1-2a) |
+| Merged on the code host first | Accepted and the run continues: the step returns `merged`, the decision closes as answered on the code host, and the timeline records the code host login of whoever merged and that the decision was not given through Feature Flow. No intervention is raised. Branch protection on the code host governs merges made there; the approval rules govern merges requested through Feature Flow (LOG 341, the product owner's decision of 2026-11-21) |
+| Closed on the code host first | The step ends `declined`, and the decision closes the same way |
+| The step stops | A work failure or an intervention closes the decision without an answer |
 
 ---
 
@@ -347,8 +350,7 @@ them (from FF).
 
 Sections 7 to 9 are as built in M5 (LOG 120 to 132, 138, 139). `test.integration` is `test.run` across
 repositories and starts no services yet (LOG 120). Waits are retried reads (LOG 122); while they wait they hold up a
-hand-over, which M6 must fix (LOG 139). An action request is watched on the code host, with no decision record yet
-(LOG 123); the `<level>.merge_action` decision is planned (section 4.5). `clean_up` resets by an expected-revision push (LOG 128). Evidence tiers come from the parent branch's
+hand-over, which M6 must fix (LOG 139). An action request is a `<level>.merge_action` decision (section 4.5; LOG 331). `clean_up` resets by an expected-revision push (LOG 128). Evidence tiers come from the parent branch's
 manifest (LOG 138). LOG 147 simplified them after M5: `ci.checks` waits for required checks, a CI run is recorded by
 the step, and a configuration fault stops for a person.
 
@@ -386,7 +388,7 @@ Merges the work branch into its parent branch.
 | Element | Detail |
 |---|---|
 | Inputs | `engine_can_merge` (default `true`), `squash` (default `false`), `require_checks` (default `true`: a passing `ci.checks` result for the exact head being merged must exist), `require_tested` (default `true`: a passing `test.run` result for the exact head being merged must exist). The organisation may lock `require_checks` and `require_tested` on (`docs/05` section 3.1) |
-| Outcomes | `merged`; `base_moved` (the parent moved since catch-up); `checks_failed`; `declined` (a person asked to merge declined) |
+| Outcomes | `merged`; `base_moved` (the parent moved since catch-up); `checks_failed`; `declined` (the `<level>.merge_action` decision was rejected, or the pull request was closed without merging; section 4.5) |
 | Idempotency | If the parent already contains the merge, or a person's merge is on the code host, the merge happened: `merged` |
 | Limits | Attempts 3 by default, used by executions that end other than `base_moved`. A `base_moved` loop through catch-up re-enters this step and counts against `limits.races` instead (default 10, held to the organisation's per-step attempts ceiling where that is lower), checked on every execution like any allowance (F4), so a work branch that keeps losing races is still bounded, then escalates. A refusal means a sibling merged, so the loop cannot spin without progress (SP4; LOG 61). A `limits.races` above the per-step attempts ceiling is refused at run start and in a patch (`docs/05` section 3.1, LOG 340) |
 
@@ -402,8 +404,10 @@ There is no merge lock: work merges the way a team of developers does
 link to the squash commit, because the code host does not show it as merged.
 
 When a person merges (`engine_can_merge: false`, or the code host refuses an
-allowed engine merge): the step opens an action request decision (section 4.5),
-and returns `merged` when the engine sees the merge on the code host.
+allowed engine merge): the step opens its `<level>.merge_action` decision
+(section 4.5); once it is approved it asks a person to merge, and returns
+`merged` when the engine sees the merge on the code host. A rejection is
+`declined`.
 
 Whether the engine may merge into the **default branch** is a safety floor
 (`docs/05`). The step re-checks it at merge time, reading the default branch

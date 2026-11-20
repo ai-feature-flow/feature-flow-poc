@@ -90,6 +90,13 @@ public sealed record StepOutcome(string Kind, StepReport? Report, string? Reason
     public const string CannotAnswer = "cannot_answer";
 
     /// <summary>
+    /// An engine action needs a person's decision before it asks them to act (<c>&lt;level&gt;.merge_action</c>, docs/04
+    /// section 4.5): the run opens it and starts the same execution again, which goes on watching. <see cref="Reason"/> is
+    /// what the person decides.
+    /// </summary>
+    public const string Decide = "decide";
+
+    /// <summary>
     /// The <c>findings</c> namespace as a findings action left the ledger (docs/03 section 5.3), which the workflow gives the
     /// core before the step's outcome, so its routes read the new counts. Null for every other step.
     /// </summary>

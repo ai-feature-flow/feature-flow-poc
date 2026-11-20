@@ -163,6 +163,32 @@ public sealed record StepInterrupted(string StepId, string Reason) : RunInput;
 public sealed record DecisionAnswered(string StepId, string Outcome, IReadOnlyDictionary<string, string>? Artifacts = null) : RunInput;
 
 /// <summary>
+/// A running engine action needs a person's decision before it asks them to act (docs/04 section 4.5): <c>scm.merge</c>,
+/// when a person must merge, raises <c>&lt;level&gt;.merge_action</c>. The step keeps watching the code host while the
+/// decision is open (<see cref="ActionDecisions"/>).
+/// </summary>
+public sealed record ActionDecisionRequested(string StepId, string Reason) : RunInput;
+
+/// <summary>
+/// The decision an engine action raises (docs/04 section 4.5; LOG 331): a decision-kind wait on an action step, of type
+/// <c>&lt;level&gt;.merge_action</c>, answered <see cref="Approve"/> or <see cref="Reject"/>. Approval lets the step ask a
+/// person to merge; rejection ends the step <see cref="Declined"/>, as closing the pull request does (LOG A1-2a).
+/// </summary>
+public static class ActionDecisions
+{
+    public const string Approve = "approve";
+    public const string Reject = "reject";
+
+    /// <summary>The step's outcome when the decision is rejected.</summary>
+    public const string Declined = "declined";
+
+    public static readonly IReadOnlyList<string> Choices = [Approve, Reject];
+
+    /// <summary>The decision type an action raises at a run's level.</summary>
+    public static string Type(string level) => $"{level}.merge_action";
+}
+
+/// <summary>
 /// A patch from outside a step: a person through the API, or the engine. <see cref="By"/> is set by the shell
 /// from the authenticated caller (F8); the document's own <c>proposed_by</c> is ignored. A person's patch (<c>amend</c>,
 /// docs/05 section 5) is not bound by F3, but touches protected content only when <see cref="MayTouchProtected"/>

@@ -89,7 +89,11 @@ public sealed class ActionWorld : IAsyncDisposable
     public string CommitMain(string path, string content) =>
         Forge.Commit(Repo, "main", new Dictionary<string, string?> { [path] = content }, $"someone changes {path}");
 
-    public ActionScope Scope => new([Repo.FullName], Repo.FullName, Branch, ParentBranch, Artifacts.ToList(), PullRequests.ToList(), EngineMayMerge.ToList(), TrackerIssue: TrackerIssue);
+    public ActionScope Scope => new([Repo.FullName], Repo.FullName, Branch, ParentBranch, Artifacts.ToList(), PullRequests.ToList(), EngineMayMerge.ToList(), TrackerIssue: TrackerIssue,
+        Decision: Decision);
+
+    /// <summary>The decision the step raised in its execution, as the workflow gives it (<c>scm.merge</c>'s <c>merge_action</c>); null: none.</summary>
+    public StepDecision? Decision { get; set; }
 
     /// <summary>
     /// Runs one action step to its end: a wait is retried as Temporal would, up to <paramref name="waits"/> reads. The

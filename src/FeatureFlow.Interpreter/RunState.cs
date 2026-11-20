@@ -9,6 +9,9 @@ public sealed class Execution
     /// <summary>A person skipped the step (docs/05 section 5): it ended with <see cref="Outcome"/> without running.</summary>
     public bool Skipped { get; set; }
 
+    /// <summary>An engine action's answered decision in this execution (<see cref="ActionDecisions.Approve"/>), or null.</summary>
+    public string? ActionAnswer { get; set; }
+
     public Dictionary<string, object?> Outputs { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, string> Artifacts { get; } = new(StringComparer.Ordinal);
 }

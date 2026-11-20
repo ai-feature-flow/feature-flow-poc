@@ -63,8 +63,9 @@ static class SourceControl
     /// F1 again, reading the default branch from the code host at merge time (docs/09 section 3). The engine merges
     /// exactly the tested head through the VCS's expected-revision path, so a parent that moved since the catch-up is
     /// <c>base_moved</c>; a change that already landed (DR18) or a person's merge on the code host is <c>merged</c>.
-    /// Where the engine may not merge, or the remote refuses it, the step is an action request: it waits for a person to
-    /// merge the pull request (<c>merged</c>) or close it (<c>declined</c>) (docs/04 section 4.5; LOG 123).
+    /// Where the engine may not merge, or the remote refuses it, the step is an action request: a person decides through its
+    /// <c>&lt;level&gt;.merge_action</c> decision, then merges the pull request (<c>merged</c>) or closes it (<c>declined</c>)
+    /// (docs/04 section 4.5; LOG 331, 341).
     /// </summary>
     public static async Task<ActionResult> MergeAsync(ActionRun run)
     {
@@ -79,8 +80,11 @@ static class SourceControl
 
         // Idempotency (section 7.3): a person's merge on the code host, or a merge this step already made, is merged.
         if (pr is not null && ActionRun.Must(await run.CodeHost.GetPullRequestAsync(pr, run.Ct), "read the pull request") is { State: PullRequestStates.Merged } merged)
+        {
+            NoteDecisionBypassed(run, pr, merged);
             return await RecordAsync(run, repo, target, method, merged.HeadRevision, null, merged.MergeRevision ?? "",
                 merged.MergedBy ?? "unknown", alreadyMerged: true, pr);
+        }
 
         if (await MissingEvidenceAsync(run, repo, head) is { } missing)
         {
@@ -151,26 +155,50 @@ static class SourceControl
     }
 
     /// <summary>
-    /// The action request (docs/04 section 4.5): a person merges or closes the pull request on the code host; the step
-    /// reads it every poll interval, holding no worker slot in between.
+    /// The action request (docs/04 section 4.5; LOG 331): a person decides first, through the step's
+    /// <c>&lt;level&gt;.merge_action</c> decision, which the run opens when this returns <see cref="ActionResult.Decide"/>; once
+    /// it is approved, a person merges or closes the pull request on the code host. The step reads the pull request every
+    /// poll interval throughout, holding no worker slot in between, so a merge or close on the code host while the decision
+    /// is open ends the step and closes the decision (LOG 341).
     /// </summary>
     static async Task<ActionResult> ActionRequestAsync(ActionRun run, RepoRef repo, string target, string method, string head, PullRequestRef? pr)
     {
         if (pr is null)
             throw ActionStop.CannotAnswer($"a person must merge {run.Scope.WorkBranch} into {target}, and this run has opened no pull request for it: open one with scm.pull_request first");
-        await run.RememberAsync("action_request", $"a person merges {ActionRun.Format(pr)} into {target}, or closes it to decline");
         var state = ActionRun.Must(await run.CodeHost.GetPullRequestAsync(pr, run.Ct), "read the pull request");
         switch (state.State)
         {
             case PullRequestStates.Merged:
+                NoteDecisionBypassed(run, pr, state);
                 run.Events.Add($"{state.MergedBy ?? "someone"} merged {ActionRun.Format(pr)}");
                 return await RecordAsync(run, repo, target, method, state.HeadRevision, null, state.MergeRevision ?? "", state.MergedBy ?? "unknown", false, pr);
             case PullRequestStates.Closed:
                 run.Events.Add($"{ActionRun.Format(pr)} was closed without merging: declined");
                 return run.Report("declined");
+        }
+
+        switch (run.Scope.Decision?.State)
+        {
+            case null:
+                return ActionResult.Decide($"may {ActionRun.Format(pr)} be merged into {target}? Approve to ask a person to merge it on the code host; reject to decline", run.Events);
+            case StepDecision.Open:
+                return ActionResult.Waiting($"waiting for {run.Scope.Decision.Type} on merging {ActionRun.Format(pr)} into {target}, or for a merge on the code host",
+                    run.Options.PollInterval, run.Events);
             default:
+                await run.RememberAsync("action_request", $"a person merges {ActionRun.Format(pr)} into {target}, or closes it to decline");
                 return ActionResult.Waiting($"waiting for a person to merge {ActionRun.Format(pr)} into {target}", run.Options.PollInterval, run.Events);
         }
+    }
+
+    /// <summary>
+    /// A merge on the code host while the step's decision was open (LOG 341): accepted, and the timeline says who merged and
+    /// that the decision was not given through Feature Flow. Branch protection on the code host governed that merge.
+    /// </summary>
+    static void NoteDecisionBypassed(ActionRun run, PullRequestRef pr, PullRequestState merged)
+    {
+        if (run.Scope.Decision is { State: StepDecision.Open } decision)
+            run.Events.Add($"{merged.MergedBy ?? "an unknown code host user"} merged {ActionRun.Format(pr)} on the code host before {decision.Type} was answered: " +
+                           "the decision was not given through Feature Flow");
     }
 
     static async Task<ActionResult> RecordAsync(ActionRun run, RepoRef repo, string target, string method, string head, string? before, string revision,
