@@ -82,7 +82,7 @@ static class Evidence
             return null;
         }
 
-        return (own, await ObservedAsync(c, c.EngineEvidence(Types.TestResults, Check.TestActions).Where(e => own.Contains(e.RunId))));
+        return (own, await ObservedAsync(c, c.EngineEvidence(Types.TestResults).Where(e => own.Contains(e.RunId))));
     }
 
     /// <summary><c>verification_satisfaction</c> (std's verification skill, "Satisfaction").</summary>
@@ -90,7 +90,7 @@ static class Evidence
     {
         var plans = await c.PlansAsync(Types.DeliveryPlan);
         var claimSubjects = c.Present(Types.EvidenceClaims);
-        var evidence = c.EngineEvidence(Types.TestResults, Check.TestActions).ToList();
+        var evidence = c.EngineEvidence(Types.TestResults).ToList();
         foreach (var subject in c.Present(Types.TestResults).Where(s => evidence.All(e => e.Ref != s.Artifact!.Id)))
             c.Error("not_evidence", $"{Check.Describe(subject)} was not produced by an engine test action, so it is not evidence (F7)", subject.Name);
         if (c.Present(Types.DeliveryPlan).Count == 0 && claimSubjects.Count == 0)
@@ -203,8 +203,8 @@ static class Evidence
                 c.Warn("malformed", $"{record.Name} of run {record.RunId} is left out of the trace: {e.Message}", record.Name);
             }
 
-        tree.Observed = await ObservedAsync(c, c.EngineEvidence(Types.TestResults, Check.TestActions));
-        foreach (var record in c.EngineEvidence(Types.MergeRecord, new HashSet<string> { "scm.merge" }))
+        tree.Observed = await ObservedAsync(c, c.EngineEvidence(Types.TestResults));
+        foreach (var record in c.EngineEvidence(Types.MergeRecord))
             if (await c.ReadEngineAsync<MergeEvidence>(record.Ref) is { } merge)
                 tree.Merges.Add(merge);
         return tree;

@@ -48,7 +48,7 @@ the standard library's templates set it.
 | | `analysis.run` | `passed` (success), `failed` (failure) |
 | Evidence | `artifact.validate` | `valid` (success), `invalid` (failure) |
 | Findings | `findings.record` | `recorded` (success), `unavailable` (blocked) |
-| | `findings.triage` | `applied` (success), `invalid` (failure; added in M6, so it escalates where a plan does not route it, LOG 161) |
+| | `findings.triage` | `applied` (success), `invalid` (failure) |
 | Repository | `repo.inspect` | `inspected` (success) |
 | Artifacts | `artifact.compose` | `composed` (success) |
 | | `artifact.import` | `imported` (success) |
@@ -58,7 +58,27 @@ the standard library's templates set it.
 
 Twenty actions, down from forty step kinds in the first design. A plan naming
 any other action, `notify.send` included (never built; removed, LOG 342), is
-refused at load as an unknown action. What went:
+refused at load as an unknown action.
+
+Each action is one entry of the action registry (`ActionRegistry.Default`,
+`src/FeatureFlow.Model/Actions.cs`), which every part of the engine reads; no
+other table is keyed by action name (F10). An entry holds:
+
+| Field | Holds | Read by |
+|---|---|---|
+| Outcomes | Each outcome and its class, as in the table above | Loading: route resolution and check 7 |
+| Outputs | The outputs the action publishes, with their types (`docs/03` section 5.4); none listed means any name, typed `dyn` | Check 5, the core's output check |
+| Inputs | The input schema: each input's kind (`string`, `boolean`, `array`, `map`, `duration`), allowed values, least duration, and the library item type of a reference input (`run.child`'s `template`, `scm.pull_request`'s `body`); a rule across inputs (`wait.condition` takes exactly one condition; `findings.triage`'s `states`) | Check 31: literals at load, evaluated values at step start (LOG A2-0c); reference resolution (check 19) |
+| Needs | The capabilities it needs (`docs/06` section 1) | Check 21 |
+| Handling | Who carries it out: the engine's handler, bound by name (LOG A2-0a); the run itself for `run.child` (a child workflow) and `plan.expand` (a patch) | Dispatch; a test that the handlers' names equal the engine-handled entries |
+| Evidence | The evidence type it makes, indexed when the step does not declare it (LOG 180) | The artifact index; std's validators |
+| Waits between reads | Whether it may wait on the outside world, so a hand-over interrupts it (LOG 139) | The hand-over |
+| Raises gate | The type suffix of the decision it raises while it runs: `scm.merge`'s `<level>.merge_action` (section 4.5) | Check 16, the effective policy view, the core |
+| Counts races | Whether a lost race counts against `limits.races` rather than attempts: `scm.merge` (LOG 61) | The core, check 22 |
+
+An outcome a plan leaves unrouted is refused at load whatever the action
+(check 7); none escalates by default but `attempts_exhausted` (L6, LOG 263).
+What went:
 
 | First design | Now |
 |---|---|
@@ -308,7 +328,7 @@ code host that refuses an allowed engine merge). It is a
 | Element | Detail |
 |---|---|
 | Form | Child workflow |
-| Inputs | `template`, `level`, `repositories`, `parameters`, `tracker_issue` (the child's own; it never inherits its parent's, LOG 185), `run_gate` (`auto` or `manual`, from FF). `manual` starts the child with a breakpoint before its first step, so a person starts it by answering the breakpoint decision |
+| Inputs | `template` (a library reference to a template), `repositories` (a list), `parameters` (a map), `tracker_issue` (the child's own; it never inherits its parent's, LOG 185). Any other key is refused at load (check 31; LOG 346): `run_gate` was dropped (LOG 264), and a child's level is its template's (LOG A2-0b) |
 | Outcomes | From the child's status (`docs/03` section 9.3) |
 | Idempotency | By run id and step key: a retry adopts the existing child |
 | Checks | The root's work-item budget before creating the child (F11; counted in the record store, LOG 187) |
@@ -340,7 +360,7 @@ them (from FF). Toolsets are not in version 1 (`docs/06` section 3.9).
 | Element | Detail |
 |---|---|
 | Form | Activity: reads the list artifact (at most 500 items), builds the patch, and returns it; the workflow applies it through the patch path. A list from a parameter is expanded locally |
-| Inputs | `from` (a list artifact, or a parameter), `shape` (`parallel` or `chain`), `target` (the `parallel` to fill, or the step to chain after), `on_other` (for a chain), `step` (the step to create per item, with `$.<field>` paths into the item) |
+| Inputs | `from` (a list artifact, or a parameter), `shape` (`parallel` or `chain`), `target` (the `parallel` to fill, or the step to chain after), `on_other` (for a chain), `step` (the step to create per item, with `$.<field>` paths into the item). The step's own inputs are checked against its action's schema at load, `$.` paths when the patch is validated (check 31) |
 | Outcomes | `expanded` |
 | Effect | A patch, applied like any other and recorded with `proposed_by: engine` |
 
@@ -556,7 +576,7 @@ workflow's (`docs/01` section 6, RW4).
 |---|---|
 | Inputs | `from`: a triage artifact (from a triage agent step, or a person's answer to a decision, LOG 248) listing, per finding, the new state (`fixed`, `declined`, `escalated`, `open`) and a reason; `states`: the states this step's producer may set (none given: all four; a non-empty list of them, LOG 168); `post_declines` (default `true`: post each decline reason on the pull request); `complete` (default `false`: with `true`, the triage must decide every escalated finding of the run and every declined blocking or demonstrated one, else it is `invalid`; for a person's triage, LOG 248) |
 | Outcomes | `applied`, with outputs `escalated` and `declined_blocking` (this triage's escalations, and its declines of blocking or demonstrated findings, counted by the engine); `invalid` (nothing applied) |
-| Behaviour | Applies each state change with its actor and reason. A triage entry naming an unknown finding or a state outside `states`, a move to `fixed` with nothing committed to the finding's repository since it was raised or reopened, or a triage that does not read, is `invalid`; the standard library routes it back to the triage's producer. A plan that does not route `invalid` escalates it (LOG 161). A decline is posted only where a pull request is open for the finding's repository (LOG 164); `scm.pull_request` posts earlier ones when it opens (LOG 249). A triage from a person's answer is recorded as the authenticated person who gave it, any other as its producing step (F8, LOG 248) |
+| Behaviour | Applies each state change with its actor and reason. A triage entry naming an unknown finding or a state outside `states`, a move to `fixed` with nothing committed to the finding's repository since it was raised or reopened, or a triage that does not read, is `invalid`; the standard library routes it back to the triage's producer. A decline is posted only where a pull request is open for the finding's repository (LOG 164); `scm.pull_request` posts earlier ones when it opens (LOG 249). A triage from a person's answer is recorded as the authenticated person who gave it, any other as its producing step (F8, LOG 248) |
 
 The standard library's fragments build review, triage, fix and verification
 from an agent reviewer, these two actions and route guards such as

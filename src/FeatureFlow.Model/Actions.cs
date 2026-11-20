@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace FeatureFlow.Model;
 
 /// <summary>The class of an outcome (docs/03 section 3). <see cref="None"/> is <c>~</c>: no default route.</summary>
@@ -31,68 +33,259 @@ public static class OutcomeClasses
 
 public sealed record Outcome(string Name, OutcomeClass Class);
 
-/// <summary>
-/// One engine action's fixed contract as far as loading needs it: outcomes with classes, the outputs it
-/// publishes (null when docs/04 does not list them), and the inputs that hold library references.
-/// <see cref="Escalates"/> are outcomes added after libraries were written: one a plan routes nowhere escalates, as
-/// <c>attempts_exhausted</c> does, so a library (or a run's locked library) from before the addition still loads (LOG 161).
-/// </summary>
-public sealed record ActionContract(string Name, IReadOnlyList<Outcome> Outcomes, IReadOnlyList<string>? Outputs, IReadOnlyList<string> ReferenceInputs,
-    IReadOnlyList<string>? Escalates = null);
+/// <summary>Who carries an action out: the engine's handler for it, or the run itself (a child run, or a patch it applies).</summary>
+public enum ActionHandling
+{
+    Engine,
+    ChildRun,
+    Expand,
+}
 
-/// <summary>The twenty engine actions of docs/04 section 2.</summary>
+/// <summary>
+/// One input of an action: its kind (<c>string</c>, <c>boolean</c>, <c>array</c>, <c>duration</c>, <c>map</c>), for a
+/// string the values allowed, for a duration the least it may be, and for a library reference the item type it names.
+/// </summary>
+public sealed record ActionInput(string Name, string Kind, IReadOnlyList<string>? Allowed = null, TimeSpan? Minimum = null)
+{
+    /// <summary>The library item type the input names (<c>templates</c>, <c>prompts</c>); null when it is not a reference.</summary>
+    public string? References { get; init; }
+}
+
+/// <summary>An output an action publishes, with its type (docs/03 section 5.4).</summary>
+public sealed record ActionOutput(string Name, string Type);
+
+/// <summary>
+/// Everything the engine knows about one action, in one place (docs/04 section 2): outcomes with classes, the outputs it
+/// publishes (null when docs/04 does not list them: any name, typed <c>dyn</c>), its input schema (check 31), the
+/// capabilities it needs (check 21) and who carries it out. A table keyed by action name anywhere else is a second copy.
+/// </summary>
+public sealed record ActionDescriptor(
+    string Name,
+    IReadOnlyList<Outcome> Outcomes,
+    IReadOnlyList<ActionOutput>? Outputs,
+    IReadOnlyList<ActionInput> Inputs,
+    IReadOnlyList<string> Needs,
+    ActionHandling Handling = ActionHandling.Engine)
+{
+    /// <summary>The evidence type the action makes, indexed when the step does not declare it (LOG 180); null for none.</summary>
+    public string? Evidence { get; init; }
+
+    /// <summary>Whether the action may wait on the outside world between reads, so a hand-over interrupts it (LOG 139).</summary>
+    public bool WaitsBetweenReads { get; init; }
+
+    /// <summary>The suffix of the gate type the action raises while it runs (<c>&lt;level&gt;.merge_action</c>, LOG 331); null for none.</summary>
+    public string? RaisesGate { get; init; }
+
+    /// <summary>Whether the action merges: a lost race (<c>base_moved</c>) counts against <c>limits.races</c>, not attempts (LOG 61).</summary>
+    public bool CountsRaces { get; init; }
+
+    /// <summary>A rule across the inputs, given the evaluated values; checked at step start, after each input's own kind.</summary>
+    public Func<IReadOnlyDictionary<string, object?>, IEnumerable<string>>? Rule { get; init; }
+
+    /// <summary>The inputs that name library items, rendered or resolved by the engine.</summary>
+    public IReadOnlyList<string> ReferenceInputs => Inputs.Where(i => i.References is not null).Select(i => i.Name).ToList();
+
+    /// <summary>The type of a published output: <c>dyn</c> when docs/04 lists none, null when the action does not publish it.</summary>
+    public string? OutputType(string name) => Outputs is null ? "dyn" : Outputs.FirstOrDefault(o => o.Name == name)?.Type;
+
+    /// <summary>The gate type the action raises at a run's level, or null.</summary>
+    public string? GateType(string level) => RaisesGate is null ? null : $"{level}.{RaisesGate}";
+
+    /// <summary>
+    /// Check 31: what is wrong with the action's inputs, as messages; empty when they satisfy its schema. A null value is not
+    /// checked (an unset input, or an expression not yet evaluated); <paramref name="rule"/> false leaves out <see cref="Rule"/>,
+    /// which needs every input evaluated.
+    /// </summary>
+    public IReadOnlyList<string> InputErrors(IReadOnlyDictionary<string, object?> inputs, bool rule = true)
+    {
+        var errors = new List<string>();
+        foreach (var (name, value) in inputs)
+        {
+            if (Inputs.FirstOrDefault(i => i.Name == name) is not { } input)
+            {
+                errors.Add($"{Name} has no input '{name}'; it takes {string.Join(", ", Inputs.Select(i => i.Name))}");
+                continue;
+            }
+
+            if (value is null)
+                continue;
+            var ok = input.Kind switch
+            {
+                "string" => value is string,
+                "boolean" => value is bool,
+                "array" => value is IList<object?>,
+                "map" => value is IDictionary<string, object?>,
+                "duration" => value is string d && Durations.Parse(d) is not null,
+                _ => true,
+            };
+            if (!ok)
+                errors.Add($"{Name} input '{name}' must be {input.Kind switch { "duration" => "a duration such as 30s, 5m or 2h", "boolean" => "true or false", "array" => "a list", _ => "a " + input.Kind }}, not {Describe(value)}");
+            else if (input.Allowed is { } allowed && value is string text && !allowed.Contains(text))
+                errors.Add($"{Name} input '{name}' must be one of {string.Join(", ", allowed)}, not '{text}'");
+            else if (input.Minimum is { } minimum && value is string d && Durations.Parse(d) < minimum)
+                errors.Add($"{Name} input '{name}' must be at least {minimum.TotalSeconds.ToString(CultureInfo.InvariantCulture)}s, not {d}");
+        }
+
+        if (rule && Rule is not null)
+            errors.AddRange(Rule(inputs));
+        return errors;
+    }
+
+    static string Describe(object value) => value switch
+    {
+        string s => $"'{s}'",
+        bool b => b ? "true" : "false",
+        IDictionary<string, object?> => "a map",
+        IList<object?> => "a list",
+        _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? "a value",
+    };
+}
+
+/// <summary>
+/// The actions a run may use: <see cref="Default"/>, the twenty of docs/04 section 2, or a test's own set for the duration of a
+/// <see cref="Use"/> scope (an <see cref="AsyncLocal{T}"/>, so it does not cross into Temporal's worker threads).
+/// </summary>
+public sealed class ActionRegistry
+{
+    static readonly AsyncLocal<ActionRegistry?> Scoped = new();
+
+    readonly Dictionary<string, ActionDescriptor> byName;
+
+    ActionRegistry(IEnumerable<ActionDescriptor> descriptors) => byName = descriptors.ToDictionary(d => d.Name, StringComparer.Ordinal);
+
+    public static ActionRegistry Default { get; } = new(Actions.Catalogue());
+
+    public static ActionRegistry Current => Scoped.Value ?? Default;
+
+    /// <summary>Makes <paramref name="registry"/> current until the scope is disposed. For tests.</summary>
+    public static IDisposable Use(ActionRegistry registry)
+    {
+        var previous = Scoped.Value;
+        Scoped.Value = registry;
+        return new Restore(() => Scoped.Value = previous);
+    }
+
+    public ActionDescriptor? Get(string name) => byName.GetValueOrDefault(name);
+
+    public IReadOnlyDictionary<string, ActionDescriptor> ByName => byName;
+
+    public IEnumerable<ActionDescriptor> All => byName.Values;
+
+    /// <summary>This registry with one more action, or one replaced.</summary>
+    public ActionRegistry With(ActionDescriptor extra) => new(byName.Values.Where(d => d.Name != extra.Name).Append(extra));
+
+    sealed class Restore(Action restore) : IDisposable
+    {
+        public void Dispose() => restore();
+    }
+}
+
+/// <summary>The engine actions of docs/04 section 2, and what the engine publishes for agent steps.</summary>
 public static class Actions
 {
     static Outcome S(string n) => new(n, OutcomeClass.Success);
     static Outcome F(string n) => new(n, OutcomeClass.Failure);
     static Outcome B(string n) => new(n, OutcomeClass.Blocked);
 
-    public static readonly IReadOnlyDictionary<string, ActionContract> All = new[]
+    static ActionInput Str(string name, params string[] allowed) => new(name, "string", allowed.Length == 0 ? null : allowed);
+    static ActionInput Bool(string name) => new(name, "boolean");
+    static ActionInput List(string name) => new(name, "array");
+    static ActionInput Map(string name) => new(name, "map");
+    static ActionInput Time(string name, TimeSpan? minimum = null) => new(name, "duration", Minimum: minimum);
+    static ActionOutput Number(string name) => new(name, "number");
+
+    /// <summary>The shortest poll interval a plan may ask for, so a wait cannot hammer a provider (it must not spin).</summary>
+    public static readonly TimeSpan MinimumPoll = TimeSpan.FromSeconds(5);
+
+    /// <summary>A finding's states (docs/01 section 6), which <c>findings.triage</c>'s <c>states</c> chooses from.</summary>
+    static readonly string[] FindingStates = ["open", "fixed", "declined", "escalated"];
+
+    /// <summary>The actions of docs/04 section 2: the contents of <see cref="ActionRegistry.Default"/>.</summary>
+    internal static IEnumerable<ActionDescriptor> Catalogue() =>
+    [
+        new("run.child", [S("completed"), F("partial"), F("rejected"), F("failed")], [],
+            [Str("template") with { References = "templates" }, Map("parameters"), List("repositories"), Str("tracker_issue")], [], ActionHandling.ChildRun),
+        new("plan.expand", [S("expanded")], [],
+            [Str("from"), Str("shape", "parallel", "chain"), Str("target"), Str("on_other"), Map("step")], [], ActionHandling.Expand),
+        new("scm.catch_up", [S("updated"), B("conflict")], [new("changed", "boolean")], [Str("repository")], ["vcs", "code_host"]),
+        new("scm.pull_request", [S("ready")], [new("pull_request", "string")],
+            [Str("title"), Str("body") with { References = "prompts" }, Bool("draft"), Bool("post_declines")], ["code_host.pull_request"]),
+        new("scm.merge", [S("merged"), B("base_moved"), F("checks_failed"), F("declined")], [],
+            [Bool("engine_can_merge"), Bool("squash"), Bool("require_checks"), Bool("require_tested")], ["vcs", "code_host"])
+        {
+            Evidence = "merge_record", WaitsBetweenReads = true, RaisesGate = "merge_action", CountsRaces = true,
+        },
+        new("scm.revert", [S("opened")], [], [Str("pull_request")], ["code_host.pull_request"]) { Evidence = "revert_record" },
+        new("ci.checks", [S("passed"), F("failed")], [Number("skipped")],
+            [List("expected"), Time("grace"), Time("timeout"), Time("poll_every", MinimumPoll)], ["code_host.check_status", "ci"])
+        {
+            Evidence = "check_results", WaitsBetweenReads = true,
+        },
+        new("wait.condition", [S("met"), F("unmet")], [],
+            [Str("pull_request", "approved", "merged", "mergeable"), Str("checks", "passed"), Map("tracker"), Time("poll_every", MinimumPoll), Time("timeout")],
+            ["code_host"])
+        {
+            WaitsBetweenReads = true, Rule = OneCondition,
+        },
+        new("test.run", [S("passed"), F("failed"), B("baseline_failed")], null, [List("tier_tags"), Bool("baseline")], ["sandbox", "vcs", "code_host"])
+        {
+            Evidence = "test_results",
+        },
+        new("test.integration", [S("passed"), F("failed")], null, [List("repositories"), List("tier_tags")], ["sandbox", "vcs", "code_host"])
+        {
+            Evidence = "test_results",
+        },
+        new("analysis.run", [S("passed"), F("failed")], null,
+            [Bool("baseline"), Str("fail_on", "new_issues", "any_issues", "never"), Str("min_level", "note", "warning", "error")], ["sandbox", "vcs", "code_host"])
+        {
+            Evidence = "analysis_results",
+        },
+        new("artifact.validate", [S("valid"), F("invalid")], null, [List("validation")], ["validator"]) { Evidence = "validation_report" },
+        new("findings.record", [S("recorded"), B("unavailable")], [Number("new"), Number("reraised"), Number("reopened"), Number("repeat_fixes")],
+            [Str("source"), Str("reopen_on", "code_change", "always", "never")], []),
+        new("findings.triage", [S("applied"), F("invalid")], [Number("escalated"), Number("declined_blocking")],
+            [Str("from"), Bool("post_declines"), List("states"), Bool("complete")], [])
+        {
+            Rule = TriageStates,
+        },
+        new("repo.inspect", [S("inspected")], null, [Str("repository")], ["vcs", "code_host"]),
+        new("artifact.compose", [S("composed")], null, [Str("name"), List("members")], []),
+        new("artifact.import", [S("imported")], null, [Str("repository"), Str("folder"), List("files"), Str("commit"), Str("record")], ["vcs"]),
+        new("artifact.publish", [S("published"), B("conflict")], null,
+            [Str("repository"), Str("folder"), List("files"), Str("previous"), Str("title"), Str("body")], ["vcs", "code_host.pull_request"]),
+        new("tracker.update", [S("done"), F("not_found")], null,
+            [Str("op", "create", "update", "transition", "link", "comment"), Str("issue"), Str("title"), Str("body"), List("labels"), Str("parent"),
+                Map("fields"), Str("project"), Str("status"), Str("to"), Str("link_type")], ["tracker"]),
+        new("delivery.report", [S("complete"), F("partial")], null, [List("repositories")], ["code_host"]),
+    ];
+
+    static IEnumerable<string> OneCondition(IReadOnlyDictionary<string, object?> inputs)
     {
-        new ActionContract("run.child", [S("completed"), F("partial"), F("rejected"), F("failed")], [], ["template"]),
-        new ActionContract("plan.expand", [S("expanded")], [], []),
-        new ActionContract("scm.catch_up", [S("updated"), B("conflict")], ["changed"], []),
-        new ActionContract("scm.pull_request", [S("ready")], ["pull_request"], ["body"]),
-        new ActionContract("scm.merge", [S("merged"), B("base_moved"), F("checks_failed"), F("declined")], [], []),
-        new ActionContract("scm.revert", [S("opened")], [], []),
-        new ActionContract("ci.checks", [S("passed"), F("failed")], ["skipped"], []),
-        new ActionContract("wait.condition", [S("met"), F("unmet")], [], []),
-        new ActionContract("test.run", [S("passed"), F("failed"), B("baseline_failed")], null, []),
-        new ActionContract("test.integration", [S("passed"), F("failed")], null, []),
-        new ActionContract("analysis.run", [S("passed"), F("failed")], null, []),
-        new ActionContract("artifact.validate", [S("valid"), F("invalid")], null, []),
-        new ActionContract("findings.record", [S("recorded"), B("unavailable")], ["new", "reraised", "reopened", "repeat_fixes"], []),
-        new ActionContract("findings.triage", [S("applied"), F("invalid")], ["escalated", "declined_blocking"], [], Escalates: ["invalid"]),
-        new ActionContract("repo.inspect", [S("inspected")], null, []),
-        new ActionContract("artifact.compose", [S("composed")], null, []),
-        new ActionContract("artifact.import", [S("imported")], null, []),
-        new ActionContract("artifact.publish", [S("published"), B("conflict")], null, []),
-        new ActionContract("tracker.update", [S("done"), F("not_found")], null, []),
-        new ActionContract("delivery.report", [S("complete"), F("partial")], null, []),
-    }.ToDictionary(a => a.Name);
+        var conditions = new[] { "pull_request", "checks", "tracker" }.Count(c => inputs.GetValueOrDefault(c) is not null);
+        if (conditions != 1)
+            yield return $"wait.condition takes exactly one condition of pull_request, checks or tracker, not {conditions.ToString(CultureInfo.InvariantCulture)}";
+    }
+
+    static IEnumerable<string> TriageStates(IReadOnlyDictionary<string, object?> inputs)
+    {
+        if (inputs.GetValueOrDefault("states") is IList<object?> states
+            && (states.Count == 0 || states.Any(x => x is not string state || !FindingStates.Contains(state))))
+            yield return $"findings.triage input 'states' must name one or more of {string.Join(", ", FindingStates)}";
+    }
+
+    /// <summary>The current registry's actions by name.</summary>
+    public static IReadOnlyDictionary<string, ActionDescriptor> All => ActionRegistry.Current.ByName;
+
+    /// <summary>An action of the current registry, or null.</summary>
+    public static ActionDescriptor? Get(string? name) => name is null ? null : ActionRegistry.Current.Get(name);
+
+    /// <summary>The actions that make evidence of a type (by its name, such as <c>test_results</c>).</summary>
+    public static IReadOnlySet<string> Producing(string evidence) =>
+        ActionRegistry.Current.All.Where(d => d.Evidence == evidence).Select(d => d.Name).ToHashSet(StringComparer.Ordinal);
 
     /// <summary>The outputs the engine publishes for every agent step (docs/04 section 3.6).</summary>
-    public static readonly IReadOnlyList<string> AgentEngineOutputs = ["coverage_known", "changed_files_unread", "commits"];
-
-    /// <summary>
-    /// The types of the outputs the engine publishes: for agent steps (docs/04 section 3.6) and for the
-    /// actions whose outputs docs/04 lists. Types are those of docs/03 section 5.4.
-    /// </summary>
-    public static readonly IReadOnlyDictionary<string, string> EngineOutputTypes = new Dictionary<string, string>
-    {
-        ["coverage_known"] = "boolean",
-        ["changed_files_unread"] = "number",
-        ["commits"] = "number",
-        ["changed"] = "boolean",
-        ["skipped"] = "number",
-        ["pull_request"] = "string",
-        ["new"] = "number",
-        ["reraised"] = "number",
-        ["reopened"] = "number",
-        ["repeat_fixes"] = "number",
-        ["escalated"] = "number",
-        ["declined_blocking"] = "number",
-    };
+    public static readonly IReadOnlyList<ActionOutput> AgentEngineOutputs =
+        [new("coverage_known", "boolean"), new("changed_files_unread", "number"), new("commits", "number")];
 
     /// <summary>Added to every step that consumes attempts; routed to escalate by default (docs/03 section 4.3).</summary>
     public const string AttemptsExhausted = "attempts_exhausted";

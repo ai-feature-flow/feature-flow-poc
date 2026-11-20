@@ -15,5 +15,5 @@ defaults:
 steps:
   - id: kid
     action: run.child
-    with: { template: m7steer:templates/steer_line, level: ticket, repositories: [acme/api], parameters: {} }
+    with: { template: m7steer:templates/steer_line, repositories: [acme/api], parameters: {} }
     routes: { completed: { end: completed } }

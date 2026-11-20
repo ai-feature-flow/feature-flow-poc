@@ -67,7 +67,7 @@ public sealed partial class RunCore
     /// </summary>
     ApplyResult ProposeFromChild(ChildPatchProposed input)
     {
-        if (StepById(input.ChildStepId) is not { Action: "run.child" })
+        if (StepById(input.ChildStepId) is not { Descriptor.Handling: ActionHandling.ChildRun })
             return ApplyResult.Refused($"{input.ChildStepId} is not a run.child step of plan revision {State.Revision}");
         var patch = input.Patch with { ProposedBy = new Proposer("agent", input.ProposerStepId) };
         var result = Propose(patch, null, fromChild: true, childStepId: input.ChildStepId);
@@ -371,7 +371,7 @@ public static class PlanExpansion
     /// <summary>Builds the patch for a <c>plan.expand</c> step from its list's items, against the core's current revision.</summary>
     public static (PatchDocument? Patch, string? Error) Build(RunCore core, string stepId, IReadOnlyList<YNode> items)
     {
-        if (core.StepById(stepId) is not { Action: "plan.expand", With: { } with } step)
+        if (core.StepById(stepId) is not { Descriptor.Handling: ActionHandling.Expand, With: { } with } step)
             return (null, $"{stepId} is not a plan.expand step with inputs");
         if (items.Count > MaxItems)
             return (null, $"the list has {items.Count} items; plan.expand takes at most {MaxItems}");

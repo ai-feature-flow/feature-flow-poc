@@ -10,6 +10,5 @@ exits:
 steps:
   - id: say
     action: artifact.compose
-    with: { audience: team, message: finishing }
     routes:
       composed: { exit: finished }

@@ -19,7 +19,6 @@ steps:
     action: run.child
     with:
       template: m6:templates/silent_child
-      level: ticket
       repositories: [acme/api]
     produces:
       completed: [{ name: claimed, type: m6:artifact_types/notes }]

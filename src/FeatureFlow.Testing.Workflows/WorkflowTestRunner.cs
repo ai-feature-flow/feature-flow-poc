@@ -189,7 +189,7 @@ public static class WorkflowTestRunner
                     patch = test.Patch;
                     patchPending = false;
                 }
-                else if (step.Action == "plan.expand")
+                else if (step.Descriptor?.Handling == ActionHandling.Expand)
                 {
                     var (built, error) = PlanExpansion.Build(core, stepId, test.Expand.GetValueOrDefault(stepId) ?? []);
                     if (error is not null)
@@ -333,9 +333,9 @@ public static class WorkflowTestRunner
         var outputs = new Dictionary<string, object?>(StringComparer.Ordinal);
         var names = step.Outputs.Select(o => o.Name).ToList();
         if (step.Form == StepForm.Agent)
-            names.AddRange(Actions.AgentEngineOutputs);
-        else if (step.Action is { } a && Actions.All.GetValueOrDefault(a)?.Outputs is { } fixedOutputs)
-            names.AddRange(fixedOutputs);
+            names.AddRange(Actions.AgentEngineOutputs.Select(o => o.Name));
+        else if (step.Descriptor?.Outputs is { } fixedOutputs)
+            names.AddRange(fixedOutputs.Select(o => o.Name));
         foreach (var name in names.Distinct())
             outputs[name] = Zero(RunCore.OutputType(step, name), name);
 

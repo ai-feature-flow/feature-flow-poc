@@ -31,7 +31,6 @@ steps:
               action: run.child
               with:
                 template: sp1:templates/sp1_child
-                level: ticket
                 repositories: [acme/api]
                 parameters: { wait_ms: { expr: "item.wait_ms" }, outcome: { expr: "item.outcome" } }
         - id: questions
@@ -51,7 +50,7 @@ steps:
             max_concurrency: 4
             step:
               action: artifact.compose
-              with: { audience: [team], message: work, wait_ms: { expr: "item" } }
+              with: { wait_ms: { expr: "item" } }
     routes:
       completed: { end: completed }
       any_failed: { end: partial }

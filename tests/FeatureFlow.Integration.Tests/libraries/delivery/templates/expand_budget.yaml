@@ -36,7 +36,6 @@ steps:
         action: run.child
         with:
           template: delivery:templates/leaf
-          level: ticket
           repositories: "$.repositories"
     consumes: [{ name: work_list }]
 

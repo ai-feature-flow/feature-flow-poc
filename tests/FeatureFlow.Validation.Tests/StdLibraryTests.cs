@@ -36,27 +36,20 @@ public class StdLibraryTests
         Assert.Single(result.Plans);
     }
 
+    /// <summary>No outcome escalates by default but <c>attempts_exhausted</c> (L6, LOG 263): a fix loop that leaves <c>findings.triage</c>'s <c>invalid</c> unrouted is refused like any other.</summary>
     [Fact]
-    public void A_fix_loop_written_before_findings_triage_could_be_invalid_still_loads_and_escalates_it()
+    public void A_fix_loop_that_leaves_findings_triage_invalid_unrouted_is_check_7()
     {
         var result = Std.Mutate(
             new Std.Edit("fragments/fix_loop.yaml", "      invalid: triage                             # names a finding the ledger does not hold: back to its producer\n", ""),
             new Std.Edit("fragments/fix_loop.yaml", "      invalid: verify_fix\n", ""));
 
-        Assert.True(result.Diagnostics.Count == 0, Std.Describe(result));
-        var plan = result.Plans["std:templates/ticket_delivery"];
-        foreach (var step in new[] { "verify.fix.apply_triage", "verify.fix.record_fixes" })
-        {
-            var route = plan.AllSteps.Single(s => s.Id == step).ResolvedRoutes.Single(r => r.Outcome == "invalid");
-            Assert.Equal((Model.Plans.RouteSource.EngineDefault, true), (route.Source, route.Target is Model.Plans.ResolvedEscalate));
-        }
+        Assert.Contains(result.Diagnostics, d => d.Blocks && d.Check == Checks.OutcomeRouted && d.Message.Contains("'invalid'", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void Only_an_outcome_added_later_escalates_by_default_and_another_unrouted_outcome_is_still_check_7()
+    public void An_unrouted_outcome_is_check_7()
     {
-        Assert.Equal(["findings.triage invalid"], Actions.All.Values.SelectMany(a => (a.Escalates ?? []).Select(o => $"{a.Name} {o}")));
-
         var result = Std.Mutate(new Std.Edit("fragments/verify_and_review.yaml", "      passed: review\n      failed: repair\n", "      passed: review\n"));
 
         Assert.Contains(result.Diagnostics, d => d.Blocks && d.Check == Checks.OutcomeRouted && d.Message.Contains("'failed'", StringComparison.Ordinal));

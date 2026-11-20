@@ -23,7 +23,6 @@ steps:
           action: run.child
           with:
             template: m6:templates/silent_child
-            level: ticket
             repositories: [acme/api]
         - id: work
           for_each:
@@ -31,7 +30,7 @@ steps:
             mode: chain
             step:
               action: artifact.compose
-              with: { audience: [team], message: work, wait_ms: { expr: "item" } }
+              with: { wait_ms: { expr: "item" } }
     routes:
       completed: { end: completed }
       any_failed: { end: failed }

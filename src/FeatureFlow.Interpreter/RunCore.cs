@@ -229,7 +229,7 @@ public sealed partial class RunCore
             record.Previous = record.Current;
             record.Executions++;
             record.Current = new Execution { Number = record.Executions };
-            if (!IsMerge(step))
+            if (!CountsRaces(step))
                 record.AttemptsUsed++;
             State.RunAttempts++;
             State.InFlight.Add(step.Id);
@@ -282,7 +282,8 @@ public sealed partial class RunCore
         outbox.Add(new CleanUp(step.Id));
     }
 
-    static bool IsMerge(Step step) => step.Form == StepForm.Action && step.Action == "scm.merge";
+    /// <summary>Whether the step merges (<see cref="ActionDescriptor.CountsRaces"/>): its executions count against races or attempts by how they ended (LOG 61).</summary>
+    static bool CountsRaces(Step step) => step.Descriptor?.CountsRaces == true;
 
     /// <summary>The attempt allowance: the step's limit, else its own document's <c>defaults.limits</c>, else the engine default (LOG 77).</summary>
     public long Allowance(Step step) =>
@@ -297,7 +298,7 @@ public sealed partial class RunCore
         if (record.AttemptsUsed >= allowance)
             return $"{record.AttemptsUsed} of {allowance} attempts used";
         var races = RaceAllowance(step) + record.AttemptsGranted;
-        if (IsMerge(step) && record.RacesUsed >= races)
+        if (CountsRaces(step) && record.RacesUsed >= races)
             return $"{record.RacesUsed} of {races} races lost (limits.races)";
         var ceiling = Options.RunCeiling + State.RunCeilingGranted;
         if (State.RunAttempts >= ceiling)
@@ -456,7 +457,7 @@ public sealed partial class RunCore
             record.Current!.Outputs[name] = value;
         foreach (var (name, reference) in c.Artifacts ?? new Dictionary<string, string>())
             record.Current!.Artifacts[name] = reference;
-        if (IsMerge(step))
+        if (CountsRaces(step))
         {
             // LOG 61: an execution that lost a race counts against limits.races, any other against attempts.
             if (c.Outcome == "base_moved")
@@ -529,7 +530,7 @@ public sealed partial class RunCore
             var promised = step.Produces.Where(p => p.Outcome == c.Outcome || (p.Outcome is null && outcome.Class == OutcomeClass.Success)).Select(p => p.Name).ToHashSet();
             var given = (c.Artifacts ?? new Dictionary<string, string>()).Keys.ToHashSet();
             // A run.child step holds its child's artifacts, which its own contract does not list (docs/03 section 9.3).
-            foreach (var name in given.Except(promised).Where(_ => step.Action != "run.child").Order(StringComparer.Ordinal))
+            foreach (var name in given.Except(promised).Where(_ => step.Descriptor?.Handling != ActionHandling.ChildRun).Order(StringComparer.Ordinal))
                 errors.Add($"{step.Id}: artifact '{name}' is not declared for outcome '{c.Outcome}'");
             foreach (var name in promised.Except(given).Order(StringComparer.Ordinal))
                 errors.Add($"{step.Id}: outcome '{c.Outcome}' promises artifact '{name}', which was not produced");
@@ -547,17 +548,12 @@ public sealed partial class RunCore
     {
         if (step.Outputs.FirstOrDefault(o => o.Name == name) is { } declared)
             return declared.Type;
-        switch (step.Form)
+        return step.Form switch
         {
-            case StepForm.Agent when Actions.AgentEngineOutputs.Contains(name):
-                return Actions.EngineOutputTypes[name];
-            case StepForm.Action when step.Action is { } a && Actions.All.GetValueOrDefault(a) is { } contract:
-                if (contract.Outputs is null)
-                    return "dyn";
-                return contract.Outputs.Contains(name) ? Actions.EngineOutputTypes.GetValueOrDefault(name, "dyn") : null;
-            default:
-                return null;
-        }
+            StepForm.Agent => Actions.AgentEngineOutputs.FirstOrDefault(o => o.Name == name)?.Type,
+            StepForm.Action => step.Descriptor?.OutputType(name),
+            _ => null,
+        };
     }
 
     ApplyResult Failed(StepFailed f)
@@ -575,7 +571,7 @@ public sealed partial class RunCore
 
         State.InFlight.Remove(step.Id);
         CloseActionDecision(step.Id, null);
-        if (IsMerge(step))
+        if (CountsRaces(step))
             record.AttemptsUsed++;
         Trace("attempt_failed", step.Id, f.Reason);
         State.Pending.Add(new Entry(step.Id, false));

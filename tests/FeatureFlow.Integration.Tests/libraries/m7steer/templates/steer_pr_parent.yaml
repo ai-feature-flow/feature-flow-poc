@@ -18,7 +18,7 @@ defaults:
 steps:
   - id: kid
     action: run.child
-    with: { template: m7steer:templates/steer_pr, level: ticket, repositories: [acme/api], parameters: { wait_ms: { expr: "params.kid_wait_ms" } } }
+    with: { template: m7steer:templates/steer_pr, repositories: [acme/api], parameters: { wait_ms: { expr: "params.kid_wait_ms" } } }
   - id: hold
     agent: { role: std:roles/reviewer, task: m7steer:tasks/review }     # the scripted runtime holds it for wait_ms
     with: { wait_ms: { expr: "params.wait_ms" } }

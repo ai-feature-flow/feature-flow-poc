@@ -56,30 +56,11 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
         if (StepStartChecks.ActionInputs(call.What, inputs) is { Count: > 0 } errors)
             return ActionResult.CannotAnswer($"check 31 ({Checks.Title(Checks.StepInputs)}): {string.Join("; ", errors)}", []);
         run.Inputs = inputs;
+        if (Handler(call.What) is not { } handler)
+            return ActionResult.CannotAnswer($"{call.What} has no handler in this engine", []);
         try
         {
-            var result = call.What switch
-            {
-                "scm.catch_up" => await SourceControl.CatchUpAsync(run),
-                "scm.pull_request" => await SourceControl.PullRequestAsync(run),
-                "scm.merge" => await SourceControl.MergeAsync(run),
-                "scm.revert" => await SourceControl.RevertAsync(run),
-                "ci.checks" => await Waiting.ChecksAsync(run),
-                "wait.condition" => await Waiting.ConditionAsync(run),
-                "test.run" => await Testing.TestRunAsync(run),
-                "test.integration" => await Testing.IntegrationAsync(run),
-                "analysis.run" => await Testing.AnalysisAsync(run),
-                "repo.inspect" => await Testing.InspectAsync(run),
-                "artifact.validate" => await Validating.ValidateAsync(run, Providers),
-                "findings.record" => await FindingsActions.RecordAsync(run),
-                "findings.triage" => await FindingsActions.TriageAsync(run),
-                "delivery.report" => await Delivery.ReportAsync(run),
-                "artifact.compose" => await Artifacts.ComposeAsync(run),
-                "artifact.import" => await Artifacts.ImportAsync(run),
-                "artifact.publish" => await Artifacts.PublishAsync(run),
-                "tracker.update" => await Tracker.UpdateAsync(run),
-                _ => throw new InvalidOperationException($"{call.What} is not an engine action of this milestone"),
-            };
+            var result = await handler(run);
             await run.IndexEvidenceAsync();
             return result;
         }
@@ -98,6 +79,56 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
             // A fault the action did not expect is not retried for ever: a person looks (docs/04 section 1, "cannot answer").
             return ActionResult.CannotAnswer($"{call.What} failed unexpectedly: {e.GetType().Name}: {e.Message}", run.Events);
         }
+    }
+
+    /// <summary>
+    /// The handler of each action the engine carries out (<see cref="ActionHandling.Engine"/>), bound by the descriptor's name
+    /// (LOG A2-0a). <c>test.integration</c> is <c>test.run</c> across repositories (LOG 120).
+    /// </summary>
+    static readonly IReadOnlyDictionary<string, Func<ActionRun, Task<ActionResult>>> Handlers = new Dictionary<string, Func<ActionRun, Task<ActionResult>>>(StringComparer.Ordinal)
+    {
+        ["scm.catch_up"] = SourceControl.CatchUpAsync,
+        ["scm.pull_request"] = SourceControl.PullRequestAsync,
+        ["scm.merge"] = SourceControl.MergeAsync,
+        ["scm.revert"] = SourceControl.RevertAsync,
+        ["ci.checks"] = Waiting.ChecksAsync,
+        ["wait.condition"] = Waiting.ConditionAsync,
+        ["test.run"] = Testing.TestRunAsync,
+        ["test.integration"] = Testing.IntegrationAsync,
+        ["analysis.run"] = Testing.AnalysisAsync,
+        ["repo.inspect"] = Testing.InspectAsync,
+        ["artifact.validate"] = Validating.ValidateAsync,
+        ["findings.record"] = FindingsActions.RecordAsync,
+        ["findings.triage"] = FindingsActions.TriageAsync,
+        ["delivery.report"] = Delivery.ReportAsync,
+        ["artifact.compose"] = Artifacts.ComposeAsync,
+        ["artifact.import"] = Artifacts.ImportAsync,
+        ["artifact.publish"] = Artifacts.PublishAsync,
+        ["tracker.update"] = Tracker.UpdateAsync,
+    };
+
+    static readonly AsyncLocal<IReadOnlyDictionary<string, Func<ActionRun, Task<ActionResult>>>?> Extra = new();
+
+    /// <summary>The actions this engine has a handler for.</summary>
+    internal static IReadOnlyCollection<string> Handled => Handlers.Keys.Concat(Extra.Value?.Keys ?? []).ToHashSet(StringComparer.Ordinal);
+
+    static Func<ActionRun, Task<ActionResult>>? Handler(string action) => Extra.Value?.GetValueOrDefault(action) ?? Handlers.GetValueOrDefault(action);
+
+    /// <summary>Adds or replaces the handler of <paramref name="action"/> until the scope is disposed (an <see cref="AsyncLocal{T}"/>). For tests.</summary>
+    internal static IDisposable Use(string action, Func<ActionRun, Task<ActionResult>> handler)
+    {
+        var previous = Extra.Value;
+        var extra = new Dictionary<string, Func<ActionRun, Task<ActionResult>>>(previous ?? new Dictionary<string, Func<ActionRun, Task<ActionResult>>>(), StringComparer.Ordinal)
+        {
+            [action] = handler,
+        };
+        Extra.Value = extra;
+        return new Restore(() => Extra.Value = previous);
+    }
+
+    sealed class Restore(Action restore) : IDisposable
+    {
+        public void Dispose() => restore();
     }
 
     /// <summary>
@@ -419,26 +450,14 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
 
     static string? TypeName(string? type) => type is null ? null : LibraryReference.TryParse(type)?.Name ?? type;
 
-    /// <summary>
-    /// The evidence type each engine action that makes evidence makes. Evidence a step declares is indexed by the workflow
-    /// with the step's artifacts; evidence it does not declare is indexed here, under <see cref="EngineActions.IndexName"/>, so a
-    /// check that reads evidence, such as <c>delivery.report</c> reading reverts, does not depend on how the template was
-    /// written, and no evidence is indexed twice (LOG 180).
-    /// </summary>
-    public static readonly IReadOnlyDictionary<string, string> EvidenceTypes = new Dictionary<string, string>(StringComparer.Ordinal)
-    {
-        ["scm.merge"] = "merge_record",
-        ["scm.revert"] = "revert_record",
-        ["test.run"] = "test_results",
-        ["test.integration"] = "test_results",
-        ["ci.checks"] = "check_results",
-        ["analysis.run"] = "analysis_results",
-        ["artifact.validate"] = "validation_report",
-    };
-
     string? reportedEvidence;
 
-    /// <summary>Marks the action's evidence for the artifact index when the step declares no artifact for the outcome (an action that builds its own report calls this).</summary>
+    /// <summary>
+    /// Marks the action's evidence for the artifact index when the step declares no artifact for the outcome (an action that
+    /// builds its own report calls this). It is indexed as the action's evidence type (<see cref="ActionDescriptor.Evidence"/>)
+    /// under <see cref="EngineActions.IndexName"/>, so a check that reads evidence, such as <c>delivery.report</c> reading
+    /// reverts, does not depend on how the template was written, and no evidence is indexed twice (LOG 180).
+    /// </summary>
     public void IndexIfUndeclared(string outcome, string? evidence) =>
         reportedEvidence = evidence is not null && !call.Contract.ArtifactsFor(outcome).Any() ? evidence : null;
 
@@ -446,7 +465,7 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
     public async Task IndexEvidenceAsync()
     {
         // A session's pre-submit check is not a step's execution: its evidence is not the run's (LOG 238).
-        if (reportedEvidence is not { } reference || !EvidenceTypes.TryGetValue(call.What, out var type) || SessionNames.IsCheckKey(call.Step.IdempotencyKey))
+        if (reportedEvidence is not { } reference || Model.Actions.Get(call.What)?.Evidence is not { } type || SessionNames.IsCheckKey(call.Step.IdempotencyKey))
             return;
         var record = new ArtifactRecord(call.Step.RunId, call.Step.StepId, call.Step.Execution, EngineActions.IndexName(type), type, reference, call.What, true, DateTimeOffset.UtcNow);
         Must(await Records.AppendAsync(new RecordBatch(Artifacts: [record]), ct), "index the evidence");

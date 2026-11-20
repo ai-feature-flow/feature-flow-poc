@@ -28,6 +28,5 @@ steps:
     action: run.child
     with:
       template: m6:templates/validated_child
-      level: ticket
       repositories: [acme/api]
     routes: { completed: { end: completed } }

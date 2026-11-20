@@ -26,7 +26,7 @@ public class ShellInputTests
         steps:
           - id: prepare
             action: artifact.compose
-            with: { message: { expr: "'ticket ' + params.ticket_id" }, audience: [team] }
+            with: { name: { expr: "'ticket ' + params.ticket_id" }, members: [team] }
           - id: work
             action: test.run
             routes: { passed: { end: completed }, baseline_failed: plan }
@@ -68,7 +68,7 @@ public class ShellInputTests
         steps:
           - id: kid
             action: run.child
-            with: { template: probe:templates/child, level: ticket, repositories: [acme/api], parameters: {} }
+            with: { template: probe:templates/child, repositories: [acme/api], parameters: {} }
           - id: ship
             action: artifact.compose
             protected: true
@@ -94,8 +94,8 @@ public class ShellInputTests
         var core = Retrying_core(out var driver);
         driver.Advance();
         var inputs = core.ResolveInputs("prepare");
-        Assert.Equal("ticket FF-7", inputs["message"]);
-        Assert.Equal(new List<object?> { "team" }, inputs["audience"]);
+        Assert.Equal("ticket FF-7", inputs["name"]);
+        Assert.Equal(new List<object?> { "team" }, inputs["members"]);
     }
 
     [Fact]
@@ -208,7 +208,7 @@ public class ShellInputTests
 
     static PatchDocument InsertAfterKid(string? resumeAt) => new(null, new Proposer("agent", "plan"), "another ticket", 1, resumeAt,
         [new PatchOp("insert", "kid", new SourceLocation("p", 1, 1), Position: "after",
-            Step: (YMap)YamlWriter.Read("{\"id\": \"kid_extra\", \"action\": \"run.child\", \"with\": {\"template\": \"probe:templates/child\", \"level\": \"ticket\", \"repositories\": [\"acme/api\"], \"parameters\": {}}}"))],
+            Step: (YMap)YamlWriter.Read("{\"id\": \"kid_extra\", \"action\": \"run.child\", \"with\": {\"template\": \"probe:templates/child\", \"repositories\": [\"acme/api\"], \"parameters\": {}}}"))],
         new SourceLocation("p", 1, 1));
 
     [Fact]

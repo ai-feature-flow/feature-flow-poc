@@ -8,6 +8,5 @@ metadata:
 steps:
   - id: say
     action: artifact.compose
-    with: { audience: team, message: done }
     routes:
       composed: { end: completed }

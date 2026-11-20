@@ -128,19 +128,28 @@ public sealed class PlanValidator
         _ => [],
     };
 
-    /// <summary>Action inputs that hold library references: <c>run.child</c>'s template (also inside <c>plan.expand</c>'s step) and <c>scm.pull_request</c>'s body.</summary>
-    static IEnumerable<(ItemRef Ref, string Type)> ReferenceInputs(Step step)
+    /// <summary>
+    /// Action inputs that hold library references (<see cref="ActionInput.References"/>), with the item type each names; for
+    /// <c>plan.expand</c>, also those of the step it creates per item, by that step's own action.
+    /// </summary>
+    static IEnumerable<(ItemRef Ref, string Type)> ReferenceInputs(Step step) =>
+        step.Descriptor is { } descriptor ? ReferenceInputs(descriptor, step.With) : [];
+
+    static IEnumerable<(ItemRef Ref, string Type)> ReferenceInputs(ActionDescriptor descriptor, YMap? with)
     {
-        if (step.With is null || step.Action is null)
+        if (with is null)
             yield break;
-        if (step.Action == "run.child" && Literal(step.With["template"]) is { } t)
-            yield return (t, "templates");
-        if (step.Action == "scm.pull_request" && Literal(step.With["body"]) is { } b)
-            yield return (b, "prompts");
-        if (step.Action == "plan.expand" && step.With["step"] is YMap inner && inner["action"].ScalarText() == "run.child"
-            && inner["with"] is YMap innerWith && Literal(innerWith["template"]) is { } it)
-            yield return (it, "templates");
+        foreach (var input in descriptor.Inputs.Where(i => i.References is not null))
+            if (Literal(with[input.Name]) is { } reference)
+                yield return (reference, input.References!);
+        if (descriptor.Handling == ActionHandling.Expand && ExpandedStep(with) is { } inner)
+            foreach (var reference in ReferenceInputs(inner.Descriptor, inner.With))
+                yield return reference;
     }
+
+    /// <summary><c>plan.expand</c>'s step, with its action's descriptor, when the step names a known action.</summary>
+    static (ActionDescriptor Descriptor, YMap? With)? ExpandedStep(YMap with) =>
+        with["step"] is YMap inner && Actions.Get(inner["action"].ScalarText()) is { } descriptor ? (descriptor, inner["with"] as YMap) : null;
 
     static ItemRef? Literal(YNode? node) => node switch
     {
@@ -183,21 +192,49 @@ public sealed class PlanValidator
         return library;
     }
 
+    // ---- Check 31 on what the plan writes ------------------------------------------------------
+
+    /// <summary>
+    /// Check 31 at load (LOG A2-0c): every <c>with</c> key is an input of the action, and a literal has its input's kind and
+    /// allowed value. Expressions, artifacts and unbound parameters are left to step start, as is the action's rule across
+    /// inputs. Inside <c>plan.expand</c>'s step (<paramref name="items"/>) a <c>$.</c> path is the item's value, checked when
+    /// the patch that adds the step is validated.
+    /// </summary>
+    void CheckInputs(ActionDescriptor descriptor, YMap? with, Step step, bool items)
+    {
+        if (with is null)
+            return;
+        foreach (var (key, value) in with.Entries)
+            foreach (var error in descriptor.InputErrors(new Dictionary<string, object?> { [key.Text] = Plain(value, items) }, rule: false))
+                d.Add(Checks.StepInputs, error, key.Location, step.Id);
+        if (descriptor.Handling == ActionHandling.Expand && ExpandedStep(with) is { } inner)
+            CheckInputs(inner.Descriptor, inner.With, step, items: true);
+    }
+
+    /// <summary>A literal's plain value; null for what is known only at step start.</summary>
+    static object? Plain(YNode node, bool items) => node switch
+    {
+        YUnbound => null,
+        YMap m when m.IsSingleKeyMap("expr", out _) || m.IsSingleKeyMap("from_artifact", out _) => null,
+        YScalar { IsNull: false } s when items && s.Text.StartsWith("$.", StringComparison.Ordinal) => null,
+        _ => node.ToPlain(),
+    };
+
     // ---- Checks 2 and 6, and outcome names (check 1) ------------------------------------------
 
     void CheckActionsAndOutcomes()
     {
         foreach (var step in plan.AllSteps)
         {
-            ActionContract? contract = null;
             if (step.Form == StepForm.Action && step.Action is { } action)
             {
-                contract = Actions.All.GetValueOrDefault(action);
-                if (contract is null)
+                if (step.Descriptor is not { } descriptor)
                 {
                     d.Add(Checks.UnknownAction, $"unknown action '{action}'", step.Location, step.Id);
                     continue;
                 }
+
+                CheckInputs(descriptor, step.With, step, items: false);
             }
 
             if (step.Form is StepForm.Agent or StepForm.Decision)
@@ -215,7 +252,7 @@ public sealed class PlanValidator
                 }
             }
 
-            var names = step.Outcomes(contract).Select(o => o.Name).ToHashSet();
+            var names = step.Outcomes().Select(o => o.Name).ToHashSet();
             void Known(string name, string what, SourceLocation location)
             {
                 if (!names.Contains(name))
@@ -370,8 +407,7 @@ public sealed class PlanValidator
                     break;
                 case "outputs" when at + 1 < path.Count:
                     var name = path[at + 1];
-                    var type = step.Outputs.FirstOrDefault(o => o.Name == name)?.Type
-                               ?? (Outputs(step)?.Contains(name) == true ? Actions.EngineOutputTypes.GetValueOrDefault(name) : null);
+                    var type = step.Outputs.FirstOrDefault(o => o.Name == name)?.Type ?? Outputs(step)?.GetValueOrDefault(name);
                     if (type is not null)
                         typed[$"{prefix}.{name}"] = type;
                     break;
@@ -424,28 +460,28 @@ public sealed class PlanValidator
         if (at + 1 >= path.Count)
             return;
         var name = path[at + 1];
-        if (field == "outputs" && Outputs(target) is { } outputs && !outputs.Contains(name))
-            d.Add(Checks.Expression, $"{e.Where}: step {target.Id} has no output '{name}' ({string.Join(", ", outputs.Order())})", e.Location, e.StepId);
+        if (field == "outputs" && Outputs(target) is { } outputs && !outputs.ContainsKey(name))
+            d.Add(Checks.Expression, $"{e.Where}: step {target.Id} has no output '{name}' ({string.Join(", ", outputs.Keys.Order())})", e.Location, e.StepId);
         if (field == "artifacts" && !target.Produces.Any(p => p.Name == name))
             d.Add(Checks.Expression, $"{e.Where}: step {target.Id} produces no artifact '{name}'", e.Location, e.StepId);
     }
 
-    static HashSet<string>? Outputs(Step step)
+    /// <summary>The outputs a step publishes, by name, with their types: declared, then the engine's; null when any name may be published.</summary>
+    static Dictionary<string, string>? Outputs(Step step)
     {
-        var declared = step.Outputs.Select(o => o.Name).ToHashSet();
-        switch (step.Form)
+        IEnumerable<ActionOutput>? engine = step.Form switch
         {
-            case StepForm.Agent:
-                declared.UnionWith(Actions.AgentEngineOutputs);
-                return declared;
-            case StepForm.Decision:
-                return declared;
-            case StepForm.Action when step.Action is { } a && Actions.All.GetValueOrDefault(a)?.Outputs is { } fixedOutputs:
-                declared.UnionWith(fixedOutputs);
-                return declared;
-            default:
-                return null;
-        }
+            StepForm.Agent => Actions.AgentEngineOutputs,
+            StepForm.Decision => [],
+            StepForm.Action => step.Descriptor?.Outputs,
+            _ => null,
+        };
+        if (engine is null)
+            return null;
+        var outputs = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (name, type) in step.Outputs.Select(o => (o.Name, o.Type)).Concat(engine.Select(o => (o.Name, o.Type))))
+            outputs.TryAdd(name, type);
+        return outputs;
     }
 
     static string Short(string text) => text.Length > 80 ? text[..77] + "..." : text;
@@ -502,7 +538,7 @@ public sealed class PlanValidator
                     g.Edges[from].Add(to);
 
             // A step reachable only through plan.expand's target or on_other counts as reachable (docs/09 section 2.2).
-            if (step.Action == "plan.expand" && step.With is { } with)
+            if (step.Descriptor?.Handling == ActionHandling.Expand && step.With is { } with)
                 foreach (var key in new[] { "target", "on_other" })
                     if (with[key].ScalarText() is { } local && plan.FindStep(local, step.Scope) is { } target)
                         g.Edges[g.Index[step.Id]].Add(g.Index[target.Id]);
@@ -831,8 +867,8 @@ public sealed class PlanValidator
             raised.Add(("escalation", "an escalate route"));
         if (plan.AllSteps.Any(s => s.Limits?.QuestionsMax is not null || s.Limits?.QuestionsTimeout is not null))
             raised.Add(("question", "an agent step with limits.questions"));
-        if (plan.AllSteps.Any(s => s.Action == "scm.merge"))
-            raised.Add(("merge_action", "an scm.merge step"));
+        foreach (var step in plan.AllSteps.Where(s => s.Descriptor?.RaisesGate is not null).DistinctBy(s => s.Descriptor!.RaisesGate))
+            raised.Add((step.Descriptor!.RaisesGate!, $"an {step.Action} step"));
         if (plan.AllSteps.Any(s => s.Agent?.Planning is not null))
             raised.Add(("patch_approval", "an agent step with planning"));
         foreach (var (suffix, why) in raised)

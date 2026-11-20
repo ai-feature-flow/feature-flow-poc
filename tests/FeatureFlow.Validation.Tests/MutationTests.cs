@@ -160,6 +160,20 @@ public class MutationTests
 
         ["unresolved_reference"] = new(19, "std:roles/implementor does not resolve", "implement names a role that does not exist", [
             new(Ticket, "      role: std:roles/implementer\n", "      role: std:roles/implementor\n")]),
+
+        // Check 31 on what the plan writes (LOG 346, A2-0b, A2-0c): every action's with is checked against its input schema at load.
+        ["run_child_run_gate"] = new(31, "run.child has no input 'run_gate'", "a run.child step asks for run_gate, dropped by LOG 264", [
+            new(Ticket, "  - id: implement\n",
+                "  - id: spawn\n    action: run.child\n    with: { template: std:templates/ticket_delivery, run_gate: manual }\n\n  - id: implement\n")]),
+
+        ["run_child_level"] = new(31, "run.child has no input 'level'", "plan_children's child step sets level, which is its template's", [
+            new("fragments/plan_children.yaml", "          template: { param: child_template }\n", "          template: { param: child_template }\n          level: ticket\n")]),
+
+        ["unknown_input"] = new(31, "scm.merge has no input 'force'", "the merge step asks for an input scm.merge does not take", [
+            new(Merge, "      squash: { expr: \"params.squash\" }\n", "      squash: { expr: \"params.squash\" }\n      force: true\n")]),
+
+        ["input_literal_value"] = new(31, "analysis.run input 'fail_on' must be one of new_issues, any_issues, never, not 'sometimes'", "the analysis step names a fail_on that does not exist", [
+            new(VerifyAndReview, "    with: { fail_on: new_issues }", "    with: { fail_on: sometimes }")]),
     };
 
     public static TheoryData<string> Blocking() => new(All.Keys.Order(StringComparer.Ordinal));

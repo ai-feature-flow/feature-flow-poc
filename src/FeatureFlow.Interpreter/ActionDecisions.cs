@@ -20,9 +20,6 @@ public static class ActionDecisions
     public const string Declined = "declined";
 
     public static readonly IReadOnlyList<string> Choices = [Approve, Reject];
-
-    /// <summary>The decision type an action raises at a run's level.</summary>
-    public static string Type(string level) => $"{level}.merge_action";
 }
 
 /// <summary>
@@ -41,8 +38,14 @@ public sealed partial class RunCore
     /// <summary>Whether a wait is a decision an action raised: its step goes on running while it is open.</summary>
     bool IsActionDecision(OpenWait wait) => wait.Kind == WaitKind.Decision && StepById(wait.StepId)?.Form == StepForm.Action;
 
-    /// <summary>The type of the decision the run's actions raise, at the run's level.</summary>
-    public string ActionDecisionType => ActionDecisions.Type(Plan.Document.Level ?? "run");
+    /// <summary>The type of the decision a step's action raises, at the run's level: its descriptor's <see cref="ActionDescriptor.GateType"/>.</summary>
+    public string? ActionDecisionTypeOf(string stepId) => StepById(stepId)?.Descriptor?.GateType(Plan.Document.Level ?? "run");
+
+    /// <summary>
+    /// The type of the decision the run's actions raise, for a reader that has no step: the one action that raises one
+    /// (<c>scm.merge</c>). The shell reads it until its wait records and action scopes move into the core (<c>docs/12</c> A2, F8).
+    /// </summary>
+    public string ActionDecisionType => ActionRegistry.Current.All.Single(d => d.RaisesGate is not null).GateType(Plan.Document.Level ?? "run")!;
 
     /// <summary>The state of the decision a step's execution raised: null when none, <c>open</c>, or the answer given.</summary>
     public string? ActionDecisionState(string stepId) =>
@@ -62,7 +65,7 @@ public sealed partial class RunCore
         State.Waits.Add(wait);
         State.InFlight.Remove(step.Id);
         State.Pending.Insert(0, new Entry(step.Id, false, Resumes: true));
-        Trace("decision_opened", step.Id, $"{wait.Id} ({ActionDecisionType}): {r.Reason}");
+        Trace("decision_opened", step.Id, $"{wait.Id} ({ActionDecisionTypeOf(step.Id)}): {r.Reason}");
         Progressed();
         return ApplyResult.Ok;
     }
@@ -94,7 +97,7 @@ public sealed partial class RunCore
             return ApplyResult.Ok;
         }
 
-        if (IsMerge(step))
+        if (CountsRaces(step))
             record.AttemptsUsed++;
         Finish(step, record, ActionDecisions.Declined);
         return ApplyResult.Ok;
@@ -109,7 +112,7 @@ public sealed partial class RunCore
         if (ActionDecisionOf(stepId) is not { } wait)
             return;
         if (outcome is not null)
-            Trace("answered", wait.Id, $"on the code host, not through Feature Flow: {stepId} ended {outcome} before {ActionDecisionType} was answered");
+            Trace("answered", wait.Id, $"on the code host, not through Feature Flow: {stepId} ended {outcome} before {ActionDecisionTypeOf(stepId)} was answered");
         CloseWaitFor(wait);
     }
 }

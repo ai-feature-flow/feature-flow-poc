@@ -17,7 +17,7 @@ defaults:
 steps:
   - id: prepare
     action: artifact.compose
-    with: { audience: [team], message: prepare, wait_ms: { expr: "params.wait_ms" } }
+    with: { wait_ms: { expr: "params.wait_ms" } }
   - id: build
     agent: { role: std:roles/implementer, task: m7steer:tasks/build }
     outcomes: { built: success, stuck: blocked }
@@ -27,5 +27,4 @@ steps:
     outcomes: { accepted: success, rejected: failure }
   - id: ship
     action: artifact.compose
-    with: { audience: [team], message: shipped }
     routes: { composed: { end: completed } }

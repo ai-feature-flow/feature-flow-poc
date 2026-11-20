@@ -154,9 +154,9 @@ public sealed partial class RunCore
     {
         var names = step.Outputs.Select(o => o.Name).ToList();
         if (step.Form == StepForm.Agent)
-            names.AddRange(Model.Actions.AgentEngineOutputs);
-        else if (step.Action is { } a && Model.Actions.All.GetValueOrDefault(a)?.Outputs is { } fixedOutputs)
-            names.AddRange(fixedOutputs);
+            names.AddRange(Model.Actions.AgentEngineOutputs.Select(o => o.Name));
+        else if (step.Descriptor?.Outputs is { } fixedOutputs)
+            names.AddRange(fixedOutputs.Select(o => o.Name));
         var outputs = new Dictionary<string, object?>(StringComparer.Ordinal);
         foreach (var name in names.Distinct())
             outputs[name] = name == "coverage_known" ? true : OutputType(step, name) switch

@@ -18,8 +18,8 @@ steps:
   - id: both
     parallel:
       branches:
-        - { id: one, action: run.child, with: { template: delivery:templates/leaf, level: ticket } }
-        - { id: two, action: run.child, with: { template: delivery:templates/leaf, level: ticket } }
+        - { id: one, action: run.child, with: { template: delivery:templates/leaf } }
+        - { id: two, action: run.child, with: { template: delivery:templates/leaf } }
       join: all
     routes:
       completed: { end: completed }

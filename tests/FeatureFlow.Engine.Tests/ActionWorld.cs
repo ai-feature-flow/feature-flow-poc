@@ -146,7 +146,7 @@ public sealed class ActionWorld : IAsyncDisposable
     {
         var contract = Model.Actions.All[action];
         var plain = inputs is null ? new Dictionary<string, object?>() : (Dictionary<string, object?>)YamlWriter.ReadPlain(inputs)!;
-        var outputs = (contract.Outputs ?? []).ToDictionary(n => n, n => Model.Actions.EngineOutputTypes.GetValueOrDefault(n, "dyn"));
+        var outputs = (contract.Outputs ?? []).ToDictionary(o => o.Name, o => o.Type);
         var zero = outputs.ToDictionary(kv => kv.Key, kv => kv.Value switch { "boolean" => "false", "number" => "0", _ => "\"\"" });
         var stepContract = new StepContract(contract.Outcomes.Select(o => new OutcomeSpec(o.Name, o.Class.Name())).ToList(), outputs,
             produces ?? (EvidenceType(action) is null ? [] : contract.Outcomes.Select(o => new ArtifactSpec(o.Name, "evidence")).ToList()), zero);

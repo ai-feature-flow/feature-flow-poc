@@ -59,7 +59,7 @@ other documents cite them.
 | 28 | Patch: the result passes every load check | Patch | Yes |
 | 29 | Patch: protected content touched, or a role outside the allowed list | Patch | **Pending decision** (`docs/05` section 6) |
 | 30 | Patch: relaxes a safety floor | Patch | **Rejected** |
-| 31 | Step inputs satisfy the action's contract | Step start | Yes |
+| 31 | Step inputs satisfy the action's input schema (`docs/04` section 2): every `with` key is an input of the action, and a value has the input's kind and allowed values. Literals are checked at load, expressions when evaluated at step start (LOG A2-0c) | Load, Step start | Yes |
 | 32 | Consumed artifacts exist and validate | Step start | Yes |
 | 33 | Every `tier_tags` tag matches a tier in the manifest read at this step | Step start | Yes |
 | 34 | Unused parameter | Load | No |

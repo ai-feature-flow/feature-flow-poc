@@ -118,9 +118,6 @@ public static class Types
 /// <summary>One validator call: its request, the issues and reports it collects, and reads through the providers, each cached.</summary>
 public sealed class Check(ValidationRequest request, IArtifactStoreProvider store, ICodeHostProvider? codeHost, IVcsProvider? vcs, CancellationToken ct)
 {
-    /// <summary>The actions whose artifacts are test evidence (docs/04 section 9).</summary>
-    public static readonly IReadOnlySet<string> TestActions = new HashSet<string>(StringComparer.Ordinal) { "test.run", "test.integration" };
-
     readonly Dictionary<string, string> texts = new(StringComparer.Ordinal);
     readonly Dictionary<(string, string, string), RepoFile?> files = [];
     readonly Dictionary<(string, string, string), bool> ancestry = [];
@@ -254,9 +251,12 @@ public sealed class Check(ValidationRequest request, IArtifactStoreProvider stor
         return request.Artifacts.Where(a => own.Contains(a.Ref)).Select(a => a.RunId).ToHashSet(StringComparer.Ordinal);
     }
 
-    /// <summary>Index entries an engine action produced as evidence of a type (F7): never an agent's or a decision's.</summary>
-    public IEnumerable<ArtifactRecord> EngineEvidence(string type, IReadOnlySet<string> actions) =>
-        request.Artifacts.Where(a => a.Evidence && a.Action is { } action && actions.Contains(action) && ValidatorDescriptor.TypeName(a.Type) == type);
+    /// <summary>Index entries an engine action produced as evidence of a type (F7): never an agent's or a decision's. The producers are the actions whose descriptor makes that evidence.</summary>
+    public IEnumerable<ArtifactRecord> EngineEvidence(string type)
+    {
+        var actions = Model.Actions.Producing(type);
+        return request.Artifacts.Where(a => a.Evidence && a.Action is { } action && actions.Contains(action) && ValidatorDescriptor.TypeName(a.Type) == type);
+    }
 
     public async Task<RepoFile?> FileAsync(string repository, string path, string revision)
     {

@@ -20,7 +20,7 @@ static class Validating
 
     static ActionStop Inputs(string message) => ActionStop.CannotAnswer($"check 31 ({Checks.Title(Checks.StepInputs)}): {message}");
 
-    public static async Task<ActionResult> ValidateAsync(ActionRun run, ProviderSet providers)
+    public static async Task<ActionResult> ValidateAsync(ActionRun run)
     {
         var entries = Entries(run.Inputs.GetValueOrDefault("validation"));
         var runId = run.Call.Step.RunId;
@@ -33,7 +33,7 @@ static class Validating
         var offered = new List<OfferedReport>();
         foreach (var entry in entries)
         {
-            var (name, provider) = Find(providers, entry.Validator);
+            var (name, provider) = Find(run.Providers, entry.Validator);
             var subjects = new List<ValidationSubject>();
             foreach (var spec in entry.Subjects)
                 subjects.Add(await SubjectAsync(run, spec, types));

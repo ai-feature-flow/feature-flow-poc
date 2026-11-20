@@ -153,7 +153,7 @@ public sealed class EngineMergeRaceTests(ITestOutputHelper output) : IDisposable
     {
         var execution = t.Executions[stepId] = t.Executions.GetValueOrDefault(stepId) + 1;
         var contract = Actions.All[action];
-        var outputs = (contract.Outputs ?? []).ToDictionary(n => n, n => Actions.EngineOutputTypes.GetValueOrDefault(n, "dyn"));
+        var outputs = (contract.Outputs ?? []).ToDictionary(o => o.Name, o => o.Type);
         var zero = outputs.ToDictionary(kv => kv.Key, kv => kv.Value == "boolean" ? "false" : "\"\"");
         var artifacts = action == "scm.merge" ? contract.Outcomes.Select(o => new ArtifactSpec(o.Name, "evidence")).ToList() : [];
         var call = new StepCall(new StepIdentity(t.RunId, "ticket_delivery", stepId, execution, $"{t.RunId}/{stepId}/{execution}"), "action", action,
