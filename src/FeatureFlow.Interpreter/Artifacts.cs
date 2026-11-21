@@ -106,11 +106,14 @@ public sealed partial class RunCore
         return artifacts;
     }
 
-    /// <summary>The list a <c>plan.expand</c> step reads: the name its <c>from</c> gives, and the latest artifact of it nearest the step, or null.</summary>
+    /// <summary>
+    /// The list a <c>plan.expand</c> step reads: the name its <c>from</c> evaluates to, and the latest artifact of it nearest
+    /// the step, or null. Its inputs were evaluated and checked when the step started (<see cref="StepSpec"/>).
+    /// </summary>
     public (string? Name, string? Reference) ExpandList(string stepId)
     {
         var step = StepById(stepId);
-        var name = step?.With?["from"].ScalarText();
+        var name = step is null ? null : ResolveInputs(stepId).GetValueOrDefault("from") as string;
         return (name, name is null ? null : LatestArtifact(step, name));
     }
 

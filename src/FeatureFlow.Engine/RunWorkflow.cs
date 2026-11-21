@@ -675,7 +675,15 @@ public partial class RunWorkflow
         ChildSpec spec;
         try
         {
-            spec = core!.ChildSpec(s.StepId, s.Execution);
+            var (childSpec, refusal) = core!.ChildSpec(s.StepId, s.Execution);
+            if (refusal is not null)
+            {
+                core.Apply(new StepCannotAnswer(s.StepId, refusal));
+                dirty = true;
+                return;
+            }
+
+            spec = childSpec!;
         }
         catch (EvaluationException e)
         {

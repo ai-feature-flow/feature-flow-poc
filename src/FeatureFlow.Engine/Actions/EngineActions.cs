@@ -23,17 +23,17 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
     internal ActionOptions Options => options;
 
     /// <summary>
-    /// Runs one action. Step-start check 31 comes first: inputs that do not satisfy the action's contract stop the step
-    /// for a person. <paramref name="heartbeat"/> is called while the action polls. A configuration fault stops the step
-    /// for a person (<see cref="Must{T}"/>); every other infrastructure error is thrown for Temporal to retry.
+    /// Runs one action. Its inputs were checked against the action's contract (check 31) by the core before the call was
+    /// made (<c>RunCore.StepSpec</c>; LOG AFb-1). <paramref name="heartbeat"/> is called while the action polls. A
+    /// configuration fault stops the step for a person (<see cref="Must{T}"/>); every other infrastructure error is thrown for
+    /// Temporal to retry.
     /// </summary>
     public async Task<ActionResult> RunAsync(StepCall call, ActionScope scope, Action heartbeat, CancellationToken cancellationToken)
     {
-        var run = new ActionRun(this, call, scope, heartbeat, cancellationToken);
-        var inputs = call.Inputs.ToDictionary(kv => kv.Key, kv => YamlWriter.ReadPlain(kv.Value), StringComparer.Ordinal);
-        if (StepStartChecks.ActionInputs(call.What, inputs) is { Count: > 0 } errors)
-            return ActionResult.CannotAnswer($"check 31 ({Checks.Title(Checks.StepInputs)}): {string.Join("; ", errors)}", []);
-        run.Inputs = inputs;
+        var run = new ActionRun(this, call, scope, heartbeat, cancellationToken)
+        {
+            Inputs = call.Inputs.ToDictionary(kv => kv.Key, kv => YamlWriter.ReadPlain(kv.Value), StringComparer.Ordinal),
+        };
         if (Handler(call.What) is not { } handler)
             return ActionResult.CannotAnswer($"{call.What} has no handler in this engine", []);
         try

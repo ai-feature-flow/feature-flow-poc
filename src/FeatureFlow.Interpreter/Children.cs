@@ -26,12 +26,15 @@ public sealed record ChildSpec(
 public sealed partial class RunCore
 {
     /// <summary>
-    /// What the child of a <c>run.child</c> step's execution starts with, evaluated now. Throws <see cref="EvaluationException"/>
-    /// when the step's inputs cannot be evaluated.
+    /// What the child of a <c>run.child</c> step's execution starts with, evaluated now, or why it cannot start: the step's
+    /// inputs cannot be evaluated or do not satisfy <c>run.child</c>'s contract (check 31, as for every action).
     /// </summary>
-    public ChildSpec ChildSpec(string stepId, int execution)
+    public (ChildSpec? Spec, string? Error) ChildSpec(string stepId, int execution)
     {
-        var inputs = ResolveInputs(stepId);
+        var step = StepById(stepId) ?? throw new EvaluationException($"{stepId} is not a step of plan revision {State.Revision}");
+        var (inputs, error) = StartInputs(step);
+        if (inputs is null)
+            return (null, error);
         var template = inputs.GetValueOrDefault("template") as string ?? "";
         var given = inputs.GetValueOrDefault("parameters") as IReadOnlyDictionary<string, object?> ?? new Dictionary<string, object?>();
         // docs/03 section 9.2: the parent's resolved parameters for names the child declares, and its artifacts as they are now.
@@ -41,8 +44,8 @@ public sealed partial class RunCore
         var artifacts = RunArtifacts(stepId);
         var repositories = (inputs.GetValueOrDefault("repositories") as IEnumerable<object?> ?? Run.Repositories)
             .Select(r => RepositoryNames.As(r?.ToString() ?? "", Run.Repositories)).ToList();
-        return new ChildSpec($"{Run.Id}.{stepId}.{execution}", template, parameters, repositories, inputs.GetValueOrDefault("tracker_issue") as string,
-            artifacts, Run.ParentId is null ? artifacts : Run.RootArtifacts, RunContext());
+        return (new ChildSpec($"{Run.Id}.{stepId}.{execution}", template, parameters, repositories, inputs.GetValueOrDefault("tracker_issue") as string,
+            artifacts, Run.ParentId is null ? artifacts : Run.RootArtifacts, RunContext()), null);
     }
 
     /// <summary>The <c>run.child</c> step that started a running child, or null when no running child has that workflow id.</summary>

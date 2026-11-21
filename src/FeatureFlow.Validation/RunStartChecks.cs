@@ -25,7 +25,7 @@ public static class RunStartChecks
 
     /// <summary>
     /// The capabilities a plan needs, with the first step that needs each (null for the run or a library). An action's are
-    /// its descriptor's <see cref="ActionDescriptor.Needs"/>: a bare provider type means a provider of that type must be
+    /// its descriptor's, given the inputs the step sets (<see cref="ActionDescriptor.NeedsFor"/>): a bare provider type means a provider of that type must be
     /// configured; <c>type.flag</c> means its capability record must have that flag (docs/06 section 1).
     /// </summary>
     public static IReadOnlyDictionary<string, string> Needs(Plan plan, LibrarySet libraries)
@@ -41,7 +41,7 @@ public static class RunStartChecks
             IEnumerable<string> stepNeeds = step.Form switch
             {
                 StepForm.Agent => AgentNeeds,
-                StepForm.Action => step.Descriptor?.Needs ?? [],
+                StepForm.Action => step.Descriptor?.NeedsFor(step.With?.Entries.Where(e => e.Value is not YScalar { IsNull: true }).Select(e => e.Key.Text) ?? []) ?? [],
                 _ => [],
             };
             if (step.Tracker is not null)

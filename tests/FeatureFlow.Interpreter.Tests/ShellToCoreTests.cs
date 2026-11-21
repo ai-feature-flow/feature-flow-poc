@@ -59,7 +59,112 @@ public class ShellToCoreTests
             routes: { completed: { end: completed } }
         """;
 
-    static readonly Probe Lib = new("shell-to-core", ("artifacts", Artifacts), ("child", Child), ("parent", Parent), ("pulls", Pulls));
+    static readonly Probe Lib = new("shell-to-core", ("artifacts", Artifacts), ("child", Child), ("parent", Parent), ("pulls", Pulls),
+        ("bad_child", BadChild), ("bad_expand", BadExpand));
+
+    // Inputs that load (an expression is checked when it is evaluated) and that evaluate, at step start, to values outside
+    // the action's contract: a list for run.child's tracker_issue, a run id for plan.expand's shape (LOG AFb-1).
+    const string BadChild = """
+        api_version: feature-flow/v1
+        kind: template
+        metadata: { name: bad_child, level: epic }
+        defaults:
+          routes:
+            by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+        steps:
+          - id: kid
+            action: run.child
+            with: { template: probe:templates/child, tracker_issue: { expr: "run.repositories" } }
+            routes: { completed: { end: completed } }
+        """;
+
+    const string BadExpand = """
+        api_version: feature-flow/v1
+        kind: template
+        metadata: { name: bad_expand, level: ticket }
+        defaults:
+          routes:
+            by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+        steps:
+          - id: expand
+            action: plan.expand
+            with:
+              from: tiers
+              shape: { expr: "run.id" }
+              target: expand
+              on_other: done
+              step: { action: test.run, with: { tier_tags: ["$.tier"] } }
+          - id: done
+            action: artifact.compose
+            with: { name: x, members: [team] }
+            routes: { composed: { end: completed } }
+        """;
+
+    [Fact]
+    public void A_run_child_step_whose_inputs_evaluate_outside_its_contract_cannot_start_its_child()
+    {
+        var core = Lib.Start("bad_child");
+        Assert.Equal([new StartChild("kid", 1)], core.Advance());
+
+        var (spec, error) = core.ChildSpec("kid", 1);
+
+        Assert.Null(spec);
+        Assert.Contains("check 31", error, StringComparison.Ordinal);
+        Assert.Contains("run.child input 'tracker_issue' must be a string, not a list", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_plan_expand_step_whose_inputs_evaluate_outside_its_contract_cannot_start()
+    {
+        var core = Lib.Start("bad_expand");
+        Assert.Equal([new StartStep("expand", 1)], core.Advance());
+
+        var (spec, error) = core.StepSpec("expand");
+
+        Assert.Null(spec);
+        Assert.Contains("check 31", error, StringComparison.Ordinal);
+        Assert.Contains("plan.expand input 'shape' must be one of parallel, chain, not 'run-1'", error, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Check 31 at step start, the one place it is applied to an engine action's inputs (LOG AFb-1): values that load (an
+    /// expression, or a literal only the action's rule across inputs refuses) and that do not satisfy the action's contract
+    /// once evaluated stop the step before any activity runs.
+    /// </summary>
+    [Theory]
+    [InlineData("wait.condition", "{ pull_request: approved, poll_every: { expr: \"'1ms'\" } }", "met", "wait.condition input 'poll_every' must be at least 5s")]
+    [InlineData("ci.checks", "{ poll_every: { expr: \"'0s'\" } }", "passed", "ci.checks input 'poll_every' must be at least 5s")]
+    [InlineData("ci.checks", "{ poll_every: { expr: \"'4900ms'\" } }", "passed", "ci.checks input 'poll_every' must be at least 5s")]
+    [InlineData("wait.condition", "{ pull_request: approved, checks: passed }", "met", "wait.condition takes exactly one condition of pull_request, checks or tracker, not 2")]
+    [InlineData("test.run", "{ tier_tags: { expr: \"'unit'\" } }", "passed", "test.run input 'tier_tags' must be a list, not 'unit'")]
+    [InlineData("analysis.run", "{ fail_on: { expr: \"'sometimes'\" } }", "passed", "analysis.run input 'fail_on' must be one of new_issues, any_issues, never, not 'sometimes'")]
+    [InlineData("findings.record", "{ reopen_on: { expr: \"'sometimes'\" } }", "recorded", "findings.record input 'reopen_on' must be one of code_change, always, never, not 'sometimes'")]
+    [InlineData("findings.triage", "{ states: [] }", "applied", "findings.triage input 'states' must name one or more of open, fixed, declined, escalated")]
+    [InlineData("findings.triage", "{ states: [open, resolved] }", "applied", "findings.triage input 'states' must name one or more of open, fixed, declined, escalated")]
+    [InlineData("tracker.update", "{ op: { expr: \"'delete'\" }, issue: MEM-1 }", "done", "tracker.update input 'op' must be one of create, update, transition, link, comment, not 'delete'")]
+    public void An_engine_actions_inputs_outside_its_contract_at_step_start_stop_the_step_before_it_runs(string action, string with, string success, string message)
+    {
+        var lib = new Probe("check-31-" + action.Replace('.', '-') + "-" + Math.Abs(with.GetHashCode(StringComparison.Ordinal)), ("act", $$"""
+            api_version: feature-flow/v1
+            kind: template
+            metadata: { name: act, level: ticket }
+            defaults:
+              routes:
+                by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+            steps:
+              - id: act
+                action: {{action}}
+                with: {{with}}
+                routes: { {{success}}: { end: completed } }
+            """));
+        var core = lib.Start("act");
+        Assert.Equal([new StartStep("act", 1)], core.Advance());
+
+        var (spec, error) = core.StepSpec("act");
+
+        Assert.Null(spec);
+        Assert.Contains($"check 31 (step inputs satisfy the action's contract): {message}", error, StringComparison.Ordinal);
+    }
 
     const string Pulls = """
         api_version: feature-flow/v1
@@ -187,8 +292,9 @@ public class ShellToCoreTests
     {
         var core = Lib.Start("parent");
         Assert.Equal([new StartChild("kid", 1)], core.Advance());
-        var spec = core.ChildSpec("kid", 1);
-        Assert.Equal(("run-1.kid.1", "probe:templates/child", "acme/api"), (spec.WorkflowId, spec.Template, Assert.Single(spec.Repositories)));
+        var (spec, error) = core.ChildSpec("kid", 1);
+        Assert.Null(error);
+        Assert.Equal(("run-1.kid.1", "probe:templates/child", "acme/api"), (spec!.WorkflowId, spec.Template, Assert.Single(spec.Repositories)));
         Assert.True(core.Apply(new ChildStarted("kid", 1, spec.WorkflowId)).Accepted);
         Assert.Equal("kid", core.ChildStep("run-1.kid.1"));
 

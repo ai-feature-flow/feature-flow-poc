@@ -76,6 +76,46 @@ public class RunStartCheckTests
         Assert.Contains(d, x => x.Message.Contains("no ci provider is configured", StringComparison.Ordinal));
     }
 
+    /// <summary>A template whose only step is <c>wait.condition</c> with <paramref name="condition"/>.</summary>
+    static (LibrarySet Libraries, Plan Plan) Waiting(string condition)
+    {
+        var (libraries, plan, d) = Std.Probe($$"""
+            api_version: feature-flow/v1
+            kind: template
+            metadata: { name: probe, level: ticket }
+            steps:
+              - id: wait
+                action: wait.condition
+                with: { {{condition}} }
+                routes: { met: { end: completed }, unmet: { end: failed } }
+            """);
+        Assert.False(d.HasErrors, string.Join("\n", d));
+        return (libraries, plan);
+    }
+
+    [Theory]
+    [InlineData("pull_request: approved", "code_host", "tracker", "no code_host provider is configured")]
+    [InlineData("checks: passed", "code_host.check_status", "tracker", "capability code_host.check_status is not offered")]
+    [InlineData("tracker: { statuses: [done] }", "tracker", "code_host", "no tracker provider is configured")]
+    public void Check_21_wait_condition_needs_the_provider_its_condition_reads_and_no_other(string condition, string need, string other, string message)
+    {
+        var (libraries, plan) = Waiting(condition);
+        var needs = RunStartChecks.Needs(plan, libraries);
+        Assert.Equal("step wait", needs.GetValueOrDefault(need));
+        Assert.DoesNotContain(needs, kv => kv.Value == "step wait" && (kv.Key == other || kv.Key.StartsWith(other + ".", StringComparison.Ordinal)));
+
+        // Accepted with the provider its condition needs besides what the run and std need: the other is not asked for.
+        var rest = needs.Where(kv => kv.Value != "step wait").Select(kv => kv.Key).ToList();
+        var accepted = new DiagnosticBag();
+        RunStartChecks.Capabilities(plan, libraries, rest.Append(need).ToHashSet(), accepted);
+        Assert.Empty(accepted);
+
+        var refused = new DiagnosticBag();
+        RunStartChecks.Capabilities(plan, libraries, rest.Append(other).ToHashSet(), refused);
+        Assert.Equal([Checks.Capabilities], Blocking(refused));
+        Assert.Contains(message, refused.Single().Message, StringComparison.Ordinal);
+    }
+
     static PolicyConfig Policy(long? perStep = null, ApprovalRule? rule = null, Cap<bool>? requireChecks = null) =>
         new(rule is null ? [] : [rule], perStep, null, null, requireChecks);
 
