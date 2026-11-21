@@ -4,6 +4,8 @@ using FeatureFlow.Model;
 using FeatureFlow.Providers.Abstractions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Http;
@@ -55,8 +57,10 @@ public static partial class ApiApp
 
     public static WebApplication Build(ApiServices services, params string[] urls)
     {
+        urls = urls.Length == 0 ? ["http://127.0.0.1:8480"] : urls;
+        RefuseUnlessLoopback(services.Installation.ApiAuth, urls);
         var builder = WebApplication.CreateSlimBuilder();
-        builder.WebHost.UseUrls(urls.Length == 0 ? ["http://127.0.0.1:8480"] : urls);
+        builder.WebHost.UseUrls(urls);
         builder.Logging.ClearProviders();
         builder.Logging.AddSimpleConsole();
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
@@ -99,6 +103,67 @@ public static partial class ApiApp
         MapEvents(app, api);
         MapTemplates(app, api);
         return app;
+    }
+
+    /// <summary>
+    /// Starts the API and returns the addresses it listens on. Under <c>api.auth.mode: none</c> every bound address must be
+    /// loopback, not only the configured ones: Kestrel's own configuration (<c>Kestrel__Endpoints__…</c>,
+    /// <c>ASPNETCORE_URLS</c>) can bind others. If one is not, the API is stopped and this throws (LOG 457).
+    /// </summary>
+    public static async Task<IReadOnlyList<string>> StartCheckedAsync(WebApplication app, ApiAuthConfig auth)
+    {
+        await app.StartAsync();
+        var bound = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.ToList();
+        try
+        {
+            RefuseUnlessLoopback(auth, bound);
+        }
+        catch (InvalidOperationException)
+        {
+            await app.StopAsync();
+            throw;
+        }
+
+        return bound;
+    }
+
+    /// <summary>Under <c>api.auth.mode: none</c>, refuses an API address that is not loopback (<see cref="LoopbackOnly"/>; LOG 457).</summary>
+    public static void RefuseUnlessLoopback(ApiAuthConfig auth, IEnumerable<string> urls)
+    {
+        if (auth.Mode == "none" && LoopbackOnly(urls) is { } refused)
+            throw new InvalidOperationException($"api.auth.mode is none, so the API must listen only on loopback (localhost, 127.0.0.1 or [::1]), " +
+                                                $"but it would listen on '{refused}'. Set FF_API_LISTEN to a loopback address, or use api.auth.mode local_token or oidc.");
+    }
+
+    /// <summary>
+    /// The first address that is not loopback, or null: loopback is a host of <c>localhost</c> (any case), an IPv4 address
+    /// in 127.0.0.0/8 or <c>::1</c>. Everything else is refused, including every-interface forms (<c>0.0.0.0</c>,
+    /// <c>[::]</c>, <c>*</c>, <c>+</c>), IPv4-mapped forms such as <c>::ffff:127.0.0.1</c>, Unix sockets and other names.
+    /// </summary>
+    public static string? LoopbackOnly(IEnumerable<string> urls) => urls.FirstOrDefault(url => !IsLoopback(url));
+
+    static bool IsLoopback(string url)
+    {
+        string host;
+        try
+        {
+            var address = BindingAddress.Parse(url);
+            if (address.IsUnixPipe)
+                return false;
+            host = address.Host;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+
+        if (host.Equals("localhost", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (!System.Net.IPAddress.TryParse(host.StartsWith('[') && host.EndsWith(']') ? host[1..^1] : host, out var ip))
+            return false;
+        return ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
+            ? ip.GetAddressBytes()[0] == 127
+            : ip.Equals(System.Net.IPAddress.IPv6Loopback);
     }
 
     /// <summary>

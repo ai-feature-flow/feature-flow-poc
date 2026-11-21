@@ -103,6 +103,9 @@ public sealed class FeatureFlowHost : IAsyncDisposable
     public static async Task<FeatureFlowHost> StartAsync(FeatureFlowConfiguration configuration, IEnumerable<ProviderFactory> factories,
         bool orchestrationWorker, bool agentWorker, string? apiUrl)
     {
+        // Before providers or Temporal, so a refused address does not wait on them (LOG 457).
+        if (apiUrl is not null)
+            ApiApp.RefuseUnlessLoopback(configuration.Installation.ApiAuth, [apiUrl]);
         var providers = ProviderComposer.Compose(configuration.Installation, factories);
         foreach (var type in providers.Types)
             if (providers.ForRun(type, false) is { } provider && await provider.CheckAsync(CancellationToken.None) is { Ok: false } failed)
@@ -128,8 +131,15 @@ public sealed class FeatureFlowHost : IAsyncDisposable
                 Authenticators = ApiAuthentication.For(configuration.Installation.ApiAuth),
                 PeopleRoles = new OrganisationRoles(configuration.Organisation),
             }, apiUrl);
-            await host.api.StartAsync();
-            host.ApiAddress = host.api.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
+            try
+            {
+                host.ApiAddress = (await ApiApp.StartCheckedAsync(host.api, configuration.Installation.ApiAuth))[0];
+            }
+            catch (InvalidOperationException)
+            {
+                await host.DisposeAsync();
+                throw;
+            }
         }
 
         return host;

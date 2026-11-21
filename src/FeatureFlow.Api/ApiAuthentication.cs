@@ -10,10 +10,24 @@ namespace FeatureFlow.Api;
 /// <summary>The authenticators and people roles an installation configures (docs/07 section 2, <c>api.auth</c>).</summary>
 public static class ApiAuthentication
 {
-    /// <summary>OIDC first, then the local token where it has a secret; the local token alone otherwise.</summary>
-    public static IReadOnlyList<IAuthenticator> For(ApiAuthConfig auth, HttpClient? http = null) => auth.Mode == "oidc"
-        ? auth.TokenRef is null ? [new OidcAuthenticator(auth, http)] : [new OidcAuthenticator(auth, http), new LocalTokenAuthenticator()]
-        : [new LocalTokenAuthenticator()];
+    /// <summary>No sign-in under mode <c>none</c>; OIDC first, then the local token where it has a secret; the local token alone otherwise.</summary>
+    public static IReadOnlyList<IAuthenticator> For(ApiAuthConfig auth, HttpClient? http = null) => auth.Mode switch
+    {
+        "none" => [new NoSignInAuthenticator()],
+        "oidc" => auth.TokenRef is null ? [new OidcAuthenticator(auth, http)] : [new OidcAuthenticator(auth, http), new LocalTokenAuthenticator()],
+        _ => [new LocalTokenAuthenticator()],
+    };
+}
+
+/// <summary>
+/// Mode <c>none</c> (docs/02 section 7, LOG 457): every request is the installation's <c>api.auth</c> actor with its roles,
+/// whatever its <c>Authorization</c> header says. Safe only because the API then listens on loopback alone
+/// (<see cref="ApiApp.RefuseUnlessLoopback"/>).
+/// </summary>
+public sealed class NoSignInAuthenticator : IAuthenticator
+{
+    public Task<Caller?> AuthenticateAsync(HttpContext context, ApiServices services) =>
+        Task.FromResult<Caller?>(new Caller(services.Installation.ApiAuth.Actor, services.Installation.ApiAuth.Roles));
 }
 
 /// <summary>
