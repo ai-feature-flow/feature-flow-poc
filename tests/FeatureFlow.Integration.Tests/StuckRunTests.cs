@@ -69,8 +69,11 @@ public class StuckRunTests
         h.Forge.Fail("vcs.Push", new ProviderError("unreachable", "scripted: the forge cannot be reached"), times: 4);
         var id = h.Start("std:templates/ticket_delivery", ["--param", "ticket_id=FF-12", .. Ticket]);
         var check = Check(h, TimeSpan.FromHours(1));
-        await UntilAsync(async () => (await PendingAsync(h, id)).Any(a => a.Attempt >= 2 && a.LastFailure?.ApplicationFailureInfo?.Type == "infrastructure"),
-            "the tests action to fail twice");
+        // The action is scheduled with the run's first record write, and can fail before that write lands: a check then sees
+        // a run with no timeline yet, and the write, when it lands, is progress (a CI race). The stretch is fixed once the
+        // tests action's start is recorded; nothing is recorded again until it ends.
+        await UntilAsync(async () => (await PendingAsync(h, id)).Any(a => a.Attempt >= 2 && a.LastFailure?.ApplicationFailureInfo?.Type == "infrastructure")
+            && Harness.StartedSteps(await h.ShowAsync(id)).Contains("baseline.tests"), "the tests action to fail, its start recorded");
 
         await check.CheckAsync(Ct);
         await check.CheckAsync(Ct);
