@@ -40,7 +40,7 @@ public class WaitHandOverTests
         var head = forge.Commit(repo, "refs/heads/ff/waits", new Dictionary<string, string?> { ["src/App.cs"] = "class App { }\n" });
         forge.ReportCheck(repo, head, new CheckRun("build", CheckStates.InProgress, null, "ci"));
         if (midAttempt)
-            forge.HoldCheckReads();
+            forge.HoldReads(InMemoryForge.CheckReads);
 
         await using var h = await Harness.StartAsync("waits", "{}", without: ["vcs", "code_host", "ci"],
             libraries: [Path.Combine(Harness.TestLibraries, "m6")],
@@ -107,9 +107,9 @@ public class WaitHandOverTests
     static async Task CancelMidReadAsync(InMemoryForge forge, Temporalio.Client.WorkflowHandle handle)
     {
         var until = DateTime.UtcNow.AddSeconds(90);
-        while (forge.HeldCheckReads == 0 && DateTime.UtcNow < until)
+        while (forge.HeldReads == 0 && DateTime.UtcNow < until)
             await Task.Delay(100, TestContext.Current.CancellationToken);
-        Assert.True(forge.HeldCheckReads > 0, "no check read was held");
+        Assert.True(forge.HeldReads > 0, "no check read was held");
         var requested = false;
         while (!requested && DateTime.UtcNow < until)
         {
@@ -118,6 +118,6 @@ public class WaitHandOverTests
         }
 
         Assert.True(requested, "the drain did not ask to cancel the wait while its read was held");
-        forge.ReleaseCheckReads();
+        forge.ReleaseReads();
     }
 }

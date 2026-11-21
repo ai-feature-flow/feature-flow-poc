@@ -250,44 +250,52 @@ public sealed class InMemoryForge
         }
     }
 
-    TaskCompletionSource? checkGate;
-    int heldCheckReads;
+    /// <summary>The reads that may be held (<see cref="HoldReads"/>): a check read and a pull request read.</summary>
+    public const string CheckReads = "code_host.GetCheckStatus", PullRequestReads = "code_host.GetPullRequest";
+
+    string? heldOperation;
+    TaskCompletionSource? readGate;
+    int heldReads;
 
     /// <summary>
-    /// Holds every check read (<c>code_host.GetCheckStatus</c>) until <see cref="ReleaseCheckReads"/>: a read in progress,
-    /// for a test where something must happen while it runs. <see cref="HeldCheckReads"/> counts the reads waiting.
+    /// Holds every read of <paramref name="operation"/> (<see cref="CheckReads"/> or <see cref="PullRequestReads"/>) until
+    /// <see cref="ReleaseReads"/>: a read in progress, for a test where something must happen while it runs.
+    /// <see cref="HeldReads"/> counts the reads waiting.
     /// </summary>
-    public void HoldCheckReads()
+    public void HoldReads(string operation)
     {
         lock (Gate)
-            checkGate ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        {
+            heldOperation = operation;
+            readGate ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
     }
 
-    public void ReleaseCheckReads()
+    public void ReleaseReads()
     {
         TaskCompletionSource? gate;
         lock (Gate)
-            (gate, checkGate) = (checkGate, null);
+            (gate, readGate, heldOperation) = (readGate, null, null);
         gate?.TrySetResult();
     }
 
-    public int HeldCheckReads => Volatile.Read(ref heldCheckReads);
+    public int HeldReads => Volatile.Read(ref heldReads);
 
-    internal async Task CheckGateAsync()
+    internal async Task ReadGateAsync(string operation)
     {
         TaskCompletionSource? gate;
         lock (Gate)
-            gate = checkGate;
+            gate = heldOperation == operation ? readGate : null;
         if (gate is null)
             return;
-        Interlocked.Increment(ref heldCheckReads);
+        Interlocked.Increment(ref heldReads);
         try
         {
             await gate.Task;
         }
         finally
         {
-            Interlocked.Decrement(ref heldCheckReads);
+            Interlocked.Decrement(ref heldReads);
         }
     }
 
@@ -628,8 +636,10 @@ public sealed class InMemoryCodeHost(InMemoryForge forge) : ICodeHostProvider
             return ProviderResult<PullRequestRef>.Success(pullRequest);
         });
 
-    public Task<ProviderResult<PullRequestState>> GetPullRequestAsync(PullRequestRef pullRequest, CancellationToken cancellationToken) =>
-        WithPr("GetPullRequest", pullRequest, (r, pr) =>
+    public async Task<ProviderResult<PullRequestState>> GetPullRequestAsync(PullRequestRef pullRequest, CancellationToken cancellationToken)
+    {
+        await forge.ReadGateAsync(InMemoryForge.PullRequestReads);
+        return await WithPr("GetPullRequest", pullRequest, (r, pr) =>
         {
             InMemoryForge.Refresh(r, pr);
             bool? mergeable = pr.State == PullRequestStates.Open && InMemoryForge.Lookup(r, InMemoryForge.Branch(pr.Spec.Base)) is { } target
@@ -641,6 +651,7 @@ public sealed class InMemoryCodeHost(InMemoryForge forge) : ICodeHostProvider
                 pr.Reviews.Where(kv => !kv.Value).Select(kv => kv.Key).Order(StringComparer.Ordinal).ToList(),
                 pr.MergedBy, pr.MergeRevision, $"memory://{pullRequest.Repo.FullName}/pull/{pr.Number}"));
         });
+    }
 
     public Task<ProviderResult<Unit>> ClosePullRequestAsync(PullRequestRef pullRequest, string? comment, CancellationToken cancellationToken) =>
         WithPr("ClosePullRequest", pullRequest, (r, pr) =>
@@ -682,7 +693,7 @@ public sealed class InMemoryCodeHost(InMemoryForge forge) : ICodeHostProvider
 
     public async Task<ProviderResult<CheckStatus>> GetCheckStatusAsync(RepoRef repo, string revision, CancellationToken cancellationToken)
     {
-        await forge.CheckGateAsync();
+        await forge.ReadGateAsync(InMemoryForge.CheckReads);
         return await Run("GetCheckStatus", repo, r => ProviderResult<CheckStatus>.Success(new CheckStatus(revision, InMemoryForge.Checks(r, revision).ToList())));
     }
 
