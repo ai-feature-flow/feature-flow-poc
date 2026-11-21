@@ -63,6 +63,8 @@ public class MergeActionDecisionTests
         Assert.Contains(timeline, t => t.Kind == "agent" && t.Detail.StartsWith("merged ", StringComparison.Ordinal) && t.Detail.Contains("by alice", StringComparison.Ordinal));
         Assert.DoesNotContain(timeline, t => t.Detail.Contains("not through Feature Flow", StringComparison.Ordinal) || t.Detail.Contains("not given through Feature Flow", StringComparison.Ordinal));
         Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
+        // A1 follow-up 3: the merge_action gate's path, opened by an action, answered, then watched to the person's merge.
+        await h.RecordHistoryAsync(id, "merge_action");
     }
 
     [Fact]

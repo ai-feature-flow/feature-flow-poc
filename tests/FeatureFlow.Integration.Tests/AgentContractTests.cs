@@ -124,6 +124,31 @@ public sealed class AgentContractTests
     }
 
     /// <summary>
+    /// A question no one answers times out at its step's <c>questions.timeout</c>: the core closes it when its timer fires, the
+    /// agent is told no answer came and carries on (docs/04 section 3.4; LOG 18), and the record shows it timed out.
+    /// </summary>
+    [Fact]
+    public async Task A_question_no_one_answers_times_out_and_the_agent_carries_on()
+    {
+        await using var model = new ScriptedModel("model-key-" + Guid.NewGuid().ToString("N"));
+        model.ThenTool("mcp__engine__ask_human", new JsonObject { ["question"] = "Which colour?", ["options"] = new JsonArray("red", "blue") })
+            .Then(c => ScriptedModel.ToolUse("Write", AgentScripts.Write("/ff/out/notes.md", c.LastToolResult + "\n")))
+            .Then(c => ScriptedModel.ToolUse("mcp__engine__report", AgentScripts.Report(answer: "none")))
+            .ThenText("Done.");
+        await model.StartAsync();
+        await using var h = await AgentHarness.StartAsync("question-timeout", model);
+        var runId = h.Start("T-5", "Ask which colour, then report.", "m4:templates/question_timeout");
+        var status = await h.WaitForEndAsync(runId, RunTimeout);
+
+        var timeline = await h.TimelineAsync(runId);
+        Assert.True(status == "completed", $"the run ended {status}:\n{timeline}");
+        var question = Assert.Single(await h.RecordsAsync<QuestionRecord>(Queries.Questions, Key(runId)));
+        Assert.Equal(QuestionRecord.TimedOut, question.Status);
+        Assert.Contains("question_timed_out", timeline);
+        await h.RecordHistoryAsync(runId, "question_timeout", model.Credential);
+    }
+
+    /// <summary>
     /// SP3 N2 and the stop rule: every report rejected. After the correction turns the engine says the attempt has
     /// failed, the agent stops, and the attempt fails as a work failure (docs/04 section 3.1, step 5).
     /// </summary>

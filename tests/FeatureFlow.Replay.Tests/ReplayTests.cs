@@ -23,8 +23,9 @@ public class ReplayTests
     public void The_recorded_histories_are_there()
     {
         // Without this, a missing folder would leave the theory with no cases and nothing replayed.
-        Assert.Equal(["agent_question", "budget_middle", "decision_prompt", "delivery_tracked", "epic_delivery", "epic_delivery_child", "family_child", "family_parent", "project_session",
-                "silent_parent_resumed", "sp1_parent", "sp1_parent_resumed", "steering_line", "steering_rerun_branch", "ticket_clean_up", "ticket_delivery", "wait_hand_over", "wait_hand_over_resumed", "wake"],
+        Assert.Equal(["agent_question", "budget_middle", "decision_prompt", "delivery_tracked", "epic_delivery", "epic_delivery_child", "family_child", "family_parent", "merge_action",
+                "project_session", "question_timeout", "silent_parent_resumed", "sp1_parent", "sp1_parent_resumed", "steering_line", "steering_rerun_branch", "ticket_clean_up", "ticket_delivery",
+                "wait_hand_over", "wait_hand_over_resumed", "wake"],
             Names());
     }
 
@@ -49,6 +50,11 @@ public class ReplayTests
     [InlineData("project_session", "activity OpenSession")]
     [InlineData("project_session", "update session_check")]
     [InlineData("agent_question", "signal question_opened")]
+    [InlineData("question_timeout", "signal question_opened")]
+    [InlineData("question_timeout", "text \"Kind\":\"question_timed_out\"")]
+    [InlineData("merge_action", "update answer")]
+    [InlineData("merge_action", "text merge_action")]
+    [InlineData("merge_action", "signal wake")]
     public void A_history_takes_the_path_it_covers(string name, string evidence)
     {
         var (kind, value) = (evidence[..evidence.IndexOf(' ')], evidence[(evidence.IndexOf(' ') + 1)..]);
@@ -100,24 +106,10 @@ public class ReplayTests
         return found;
     }
 
-    /// <summary>Histories whose recorded libraries carry action inputs check 31 now refuses at load; T5 re-records them and removes this.</summary>
-    static readonly IReadOnlyDictionary<string, string> AwaitingRerecord = new Dictionary<string, string>(StringComparer.Ordinal)
-    {
-        ["budget_middle"] = RefusedAtLoad, ["delivery_tracked"] = RefusedAtLoad, ["epic_delivery"] = RefusedAtLoad, ["family_parent"] = RefusedAtLoad,
-        ["project_session"] = RefusedAtLoad, ["silent_parent_resumed"] = RefusedAtLoad, ["sp1_parent"] = RefusedAtLoad, ["sp1_parent_resumed"] = RefusedAtLoad,
-        ["steering_line"] = RefusedAtLoad, ["steering_rerun_branch"] = RefusedAtLoad,
-        ["decision_prompt"] = GateIds, ["ticket_clean_up"] = GateIds, ["ticket_delivery"] = GateIds,
-    };
-
-    const string RefusedAtLoad = "A2: re-recorded in T5 (LOG A2-0g); refused at load by check 31 after T2";
-
-    const string GateIds = "A2: re-recorded in T5 (LOG A2-0g); its answers name decision-N waits, which are gate-N after T4 (LOG A2-0d)";
-
     [Theory]
     [MemberData(nameof(Histories))]
     public async Task A_recorded_history_replays_against_the_current_workflow(string name)
     {
-        Assert.SkipWhen(AwaitingRerecord.ContainsKey(name), AwaitingRerecord.GetValueOrDefault(name) ?? "");
         var json = await File.ReadAllTextAsync(Path.Combine(HistoryFolder, name + ".json"), TestContext.Current.CancellationToken);
         // Replay checks determinism, not timing: debug mode turns off the 2 s deadlock detector, which fired on a
         // loaded CI runner (docs/build/m4-results.md follow-up 14).
