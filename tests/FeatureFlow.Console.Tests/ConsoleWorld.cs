@@ -43,7 +43,8 @@ public sealed class ConsoleWorld : IAsyncDisposable
     /// The organisation's approval rules. By default approvers answer <c>m7s.*</c>: the m7s library declares no roles for its
     /// decision types, so without a rule no one may answer them.
     /// </param>
-    public ConsoleWorld(string authMode = "none", IReadOnlyList<ApprovalRule>? approval = null)
+    /// <param name="roles">The roles the caller holds; by default every role (viewer, approver, steerer, admin).</param>
+    public ConsoleWorld(string authMode = "none", IReadOnlyList<ApprovalRule>? approval = null, IReadOnlyList<string>? roles = null)
     {
         Directory.CreateDirectory(folder);
         File.WriteAllText(Path.Combine(folder, "secrets.json"), $$"""{ "api_token": "{{Token}}" }""");
@@ -59,7 +60,7 @@ public sealed class ConsoleWorld : IAsyncDisposable
             },
             new Dictionary<string, string> { ["record_store"] = "sqlite", ["artifact_store"] = "fs", ["secrets"] = "file" },
             new Dictionary<string, string>());
-        string[] roles = ["viewer", "approver", "steerer", "admin"];
+        roles ??= ["viewer", "approver", "steerer", "admin"];
         Auth = authMode switch
         {
             "none" => new ApiAuthConfig("none", null, Actor, roles),
