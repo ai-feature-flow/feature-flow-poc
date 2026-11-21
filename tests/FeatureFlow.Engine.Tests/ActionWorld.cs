@@ -1,6 +1,6 @@
 using FeatureFlow.Hosting;
 using System.Text;
-using FeatureFlow.Engine.ActionSteps;
+using FeatureFlow.Engine.Actions;
 using FeatureFlow.Model;
 using FeatureFlow.Model.Yaml;
 using FeatureFlow.Providers.Abstractions;
@@ -98,10 +98,7 @@ public sealed class ActionWorld : IAsyncDisposable
     /// <summary>Pins std as the run's only library: its files and a lock naming them go into <see cref="Store"/>, and <see cref="LockRef"/> is set.</summary>
     public async Task PinStdAsync()
     {
-        var root = new DirectoryInfo(AppContext.BaseDirectory);
-        while (!File.Exists(Path.Combine(root.FullName, "FeatureFlow.slnx")))
-            root = root.Parent!;
-        var std = Library.Library.Open(Path.Combine(root.FullName, "library", "std"), new DiagnosticBag())!;
+        var std = Library.Library.Open(Path.Combine(Repository.Root, "library", "std"), new DiagnosticBag())!;
         foreach (var (_, text) in std.Files.All)
             (await Store.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(text)), Ct)).Unwrap();
         var lockText = System.Text.Json.JsonSerializer.Serialize(new Library.LibraryLock([Library.LibraryLock.Pin(std)]),
@@ -149,7 +146,7 @@ public sealed class ActionWorld : IAsyncDisposable
     {
         var contract = Model.Actions.All[action];
         var plain = inputs is null ? new Dictionary<string, object?>() : (Dictionary<string, object?>)YamlWriter.ReadPlain(inputs)!;
-        var outputs = (contract.Outputs ?? []).ToDictionary(n => n, n => Model.Actions.EngineOutputTypes.GetValueOrDefault(n, "dyn"));
+        var outputs = (contract.Outputs ?? []).ToDictionary(o => o.Name, o => o.Type);
         var zero = outputs.ToDictionary(kv => kv.Key, kv => kv.Value switch { "boolean" => "false", "number" => "0", _ => "\"\"" });
         var stepContract = new StepContract(contract.Outcomes.Select(o => new OutcomeSpec(o.Name, o.Class.Name())).ToList(), outputs,
             produces ?? (EvidenceType(action) is null ? [] : contract.Outcomes.Select(o => new ArtifactSpec(o.Name, "evidence")).ToList()), zero);

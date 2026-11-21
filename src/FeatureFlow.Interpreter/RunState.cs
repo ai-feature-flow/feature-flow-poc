@@ -81,6 +81,18 @@ public sealed class RunState
     public List<string> InFlight { get; } = [];
     public List<OpenWait> Waits { get; } = [];
 
+    /// <summary>Waits that have closed, and how; carried, so an answer repeated after a hand-over is still a duplicate.</summary>
+    public List<ClosedWait> Closed { get; } = [];
+
+    /// <summary>Waits opened and closed since the shell last recorded them, in order; the shell drains it (not carried).</summary>
+    public List<WaitChange> WaitChanges { get; } = [];
+
+    /// <summary>The child runs this run's <c>run.child</c> steps started and that have not ended, in start order.</summary>
+    public List<ChildRun> Children { get; } = [];
+
+    /// <summary>Artifacts steps produced since the shell last recorded them, for the artifact index; the shell drains it (not carried).</summary>
+    public List<ProducedArtifact> Produced { get; } = [];
+
     /// <summary>Attempts used by every step of the run, against the run ceiling (F4).</summary>
     public long RunAttempts { get; set; }
 

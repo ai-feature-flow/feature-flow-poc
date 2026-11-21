@@ -27,7 +27,7 @@ public sealed partial class RunCore
         if (wait is { LibraryItem: { } item })
         {
             // An agent's library override (docs/05 section 6): approved, the shell carries it out with the approver as the actor.
-            State.Waits.Remove(wait);
+            RemoveWait(wait, WaitEnds.Answered);
             Trace(answer.Approve ? "library_override_approved" : "library_override_rejected", wait.StepId, $"{item} by {answer.Actor}");
             if (answer.Approve)
                 outbox.Add(new OverrideLibrary(wait.Id, item, wait.LibraryContent ?? "", answer.Actor, $"approved proposal of {wait.StepId}"));
@@ -36,7 +36,7 @@ public sealed partial class RunCore
 
         if (wait?.Patch is not { } patch)
             return ApplyResult.Refused($"no patch approval is open as {answer.WaitId}");
-        State.Waits.Remove(wait);
+        RemoveWait(wait, WaitEnds.Answered);
         if (!answer.Approve)
         {
             Trace("patch_rejected", wait.StepId, "a person rejected it");
@@ -67,7 +67,7 @@ public sealed partial class RunCore
     /// </summary>
     ApplyResult ProposeFromChild(ChildPatchProposed input)
     {
-        if (StepById(input.ChildStepId) is not { Action: "run.child" })
+        if (StepById(input.ChildStepId) is not { Descriptor.Handling: ActionHandling.ChildRun })
             return ApplyResult.Refused($"{input.ChildStepId} is not a run.child step of plan revision {State.Revision}");
         var patch = input.Patch with { ProposedBy = new Proposer("agent", input.ProposerStepId) };
         var result = Propose(patch, null, fromChild: true, childStepId: input.ChildStepId);
@@ -163,8 +163,7 @@ public sealed partial class RunCore
             foreach (var reason in reasons)
                 d.Add(Checks.PatchProtected, reason, patch.Location, proposer?.Id);
             var waitStep = fromChild ? childStepId ?? "" : proposer?.Id ?? "";
-            var wait = new OpenWait(NewWaitId("patch_approval"), WaitKind.PatchApproval, waitStep, null, string.Join("; ", reasons), patch, fromChild);
-            State.Waits.Add(wait);
+            var wait = AddWait(new OpenWait(NewWaitId("patch_approval"), WaitKind.PatchApproval, waitStep, null, string.Join("; ", reasons), patch, fromChild));
             Trace("patch_pending", waitStep, string.Join("; ", reasons));
             outbox.Add(new RequestPatchApproval(wait.Id, patch));
             return new PatchResult(PatchStatus.Pending, d);
@@ -371,7 +370,7 @@ public static class PlanExpansion
     /// <summary>Builds the patch for a <c>plan.expand</c> step from its list's items, against the core's current revision.</summary>
     public static (PatchDocument? Patch, string? Error) Build(RunCore core, string stepId, IReadOnlyList<YNode> items)
     {
-        if (core.StepById(stepId) is not { Action: "plan.expand", With: { } with } step)
+        if (core.StepById(stepId) is not { Descriptor.Handling: ActionHandling.Expand, With: { } with } step)
             return (null, $"{stepId} is not a plan.expand step with inputs");
         if (items.Count > MaxItems)
             return (null, $"the list has {items.Count} items; plan.expand takes at most {MaxItems}");
@@ -380,7 +379,7 @@ public static class PlanExpansion
         var stepTemplate = with["step"] as YMap;
         if (targetText is null || stepTemplate is null)
             return (null, $"{stepId}: plan.expand needs target and step");
-        if (core.FindStep(targetText, step.Scope) is not { } target)
+        if (core.Plan.FindStep(targetText, step.Scope) is not { } target)
             return (null, $"{stepId}: target '{targetText}' is not a step");
         var onOther = with["on_other"].ScalarText();
         if (shape == "chain" && onOther is null)

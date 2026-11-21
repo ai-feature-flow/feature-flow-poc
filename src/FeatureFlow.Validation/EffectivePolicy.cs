@@ -27,14 +27,16 @@ public static class EffectivePolicy
         var rows = new List<PolicyRow>();
         foreach (var step in plan.AllSteps)
         {
-            if (step.Action == "scm.merge")
+            if (step.Descriptor is { CountsRaces: true })
             {
                 rows.Add(WhoMerges(step, policy, merges?.Invoke(step)));
                 rows.Add(Floor(step, "checks before merging", "require_checks", "policy.merge.require_checks", policy.RequireChecks));
                 rows.Add(Floor(step, "tests before merging", "require_tested", "policy.merge.require_tested", policy.RequireTested));
-                // The <level>.merge_action decision the step raises before asking a person to merge (ActionDecisions.Type in the interpreter).
-                rows.Add(WhoAnswers(step, $"{plan.Document.Level ?? "run"}.merge_action", approval));
             }
+
+            // The gate an action raises while it runs, such as scm.merge's <level>.merge_action before asking a person to merge.
+            if (step.Descriptor?.GateType(plan.Document.Level ?? "run") is { } gate)
+                rows.Add(WhoAnswers(step, gate, approval));
 
             if (step is { Form: StepForm.Decision, Decision: { } decision })
             {

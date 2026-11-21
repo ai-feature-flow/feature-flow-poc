@@ -7,40 +7,18 @@ using FeatureFlow.Model.Yaml;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Validation;
 
-namespace FeatureFlow.Engine.ActionSteps;
+namespace FeatureFlow.Engine.Actions;
 
 /// <summary>
-/// The engine actions M5 builds (docs/04 sections 7 to 9 and 12), called by <c>RunActionAsync</c>. Other actions stay
-/// on the stand-in (LOG 81) until their milestone. Each call runs against the providers of docs/06 and records what it
-/// did; an action that cannot produce a trustworthy outcome raises an intervention instead of guessing (docs/04 section 1).
+/// The engine actions (docs/04 sections 7 to 9 and 12), called by <c>RunActionAsync</c>. Each call runs against the
+/// providers the run uses (docs/06) and records what it did; an action that cannot produce a trustworthy outcome raises
+/// an intervention instead of guessing (docs/04 section 1).
 /// </summary>
 public sealed class EngineActions(ProviderSet providers, ActionOptions? options = null)
 {
     readonly ActionOptions options = options ?? ActionOptions.Default;
 
-    /// <summary>The actions built here. <c>test.integration</c> is <c>test.run</c> across repositories (LOG 120).</summary>
-    public static readonly IReadOnlySet<string> Built = new HashSet<string>(StringComparer.Ordinal)
-    {
-        "scm.catch_up", "scm.pull_request", "scm.merge", "scm.revert", "ci.checks", "wait.condition", "test.run", "test.integration", "analysis.run",
-        "repo.inspect",
-        "artifact.validate",
-        "findings.record", "findings.triage",
-        "delivery.report", "artifact.compose", "artifact.import", "artifact.publish", "tracker.update",
-    };
-
-    /// <summary>
-    /// The actions that may wait on the outside world between reads (<see cref="ActionResult.Wait"/>): a person, CI or a
-    /// pull request. Their activity is interrupted at a hand-over and resumed at the same execution (LOG 139).
-    /// </summary>
-    public static readonly IReadOnlySet<string> Waits = new HashSet<string>(StringComparer.Ordinal) { "ci.checks", "wait.condition", "scm.merge" };
-
     internal ProviderSet Providers => providers;
-
-    /// <summary>
-    /// Whether the installation configures real source control: a VCS and a code host provider that implement their
-    /// interfaces. Without them (the <c>fake</c> providers of M3's tests) built actions go to the stand-in (LOG 121).
-    /// </summary>
-    public bool HasSourceControl => providers.ForRun("vcs", false) is IVcsProvider && providers.ForRun("code_host", false) is ICodeHostProvider;
 
     internal ActionOptions Options => options;
 
@@ -56,30 +34,11 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
         if (StepStartChecks.ActionInputs(call.What, inputs) is { Count: > 0 } errors)
             return ActionResult.CannotAnswer($"check 31 ({Checks.Title(Checks.StepInputs)}): {string.Join("; ", errors)}", []);
         run.Inputs = inputs;
+        if (Handler(call.What) is not { } handler)
+            return ActionResult.CannotAnswer($"{call.What} has no handler in this engine", []);
         try
         {
-            var result = call.What switch
-            {
-                "scm.catch_up" => await SourceControl.CatchUpAsync(run),
-                "scm.pull_request" => await SourceControl.PullRequestAsync(run),
-                "scm.merge" => await SourceControl.MergeAsync(run),
-                "scm.revert" => await SourceControl.RevertAsync(run),
-                "ci.checks" => await Waiting.ChecksAsync(run),
-                "wait.condition" => await Waiting.ConditionAsync(run),
-                "test.run" => await Testing.TestRunAsync(run),
-                "test.integration" => await Testing.IntegrationAsync(run),
-                "analysis.run" => await Testing.AnalysisAsync(run),
-                "repo.inspect" => await Testing.InspectAsync(run),
-                "artifact.validate" => await Validating.ValidateAsync(run, Providers),
-                "findings.record" => await FindingsActions.RecordAsync(run),
-                "findings.triage" => await FindingsActions.TriageAsync(run),
-                "delivery.report" => await Delivery.ReportAsync(run),
-                "artifact.compose" => await Artifacts.ComposeAsync(run),
-                "artifact.import" => await Artifacts.ImportAsync(run),
-                "artifact.publish" => await Artifacts.PublishAsync(run),
-                "tracker.update" => await Tracker.UpdateAsync(run),
-                _ => throw new InvalidOperationException($"{call.What} is not an engine action of this milestone"),
-            };
+            var result = await handler(run);
             await run.IndexEvidenceAsync();
             return result;
         }
@@ -101,20 +60,77 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
     }
 
     /// <summary>
+    /// The handler of each action the engine carries out (<see cref="ActionHandling.Engine"/>), bound by the descriptor's name
+    /// (LOG 357). <c>test.integration</c> is <c>test.run</c> across repositories (LOG 120).
+    /// </summary>
+    static readonly IReadOnlyDictionary<string, Func<ActionRun, Task<ActionResult>>> Handlers = new Dictionary<string, Func<ActionRun, Task<ActionResult>>>(StringComparer.Ordinal)
+    {
+        ["scm.catch_up"] = SourceControl.CatchUpAsync,
+        ["scm.pull_request"] = SourceControl.PullRequestAsync,
+        ["scm.merge"] = SourceControl.MergeAsync,
+        ["scm.revert"] = SourceControl.RevertAsync,
+        ["ci.checks"] = Waiting.ChecksAsync,
+        ["wait.condition"] = Waiting.ConditionAsync,
+        ["test.run"] = Testing.TestRunAsync,
+        ["test.integration"] = Testing.IntegrationAsync,
+        ["analysis.run"] = Testing.AnalysisAsync,
+        ["repo.inspect"] = Testing.InspectAsync,
+        ["artifact.validate"] = Validating.ValidateAsync,
+        ["findings.record"] = FindingsActions.RecordAsync,
+        ["findings.triage"] = FindingsActions.TriageAsync,
+        ["delivery.report"] = Delivery.ReportAsync,
+        ["artifact.compose"] = Artifacts.ComposeAsync,
+        ["artifact.import"] = Artifacts.ImportAsync,
+        ["artifact.publish"] = Artifacts.PublishAsync,
+        ["tracker.update"] = Tracker.UpdateAsync,
+    };
+
+    static readonly AsyncLocal<IReadOnlyDictionary<string, Func<ActionRun, Task<ActionResult>>>?> Extra = new();
+
+    /// <summary>The actions this engine has a handler for.</summary>
+    internal static IReadOnlyCollection<string> Handled => Handlers.Keys.Concat(Extra.Value?.Keys ?? []).ToHashSet(StringComparer.Ordinal);
+
+    static Func<ActionRun, Task<ActionResult>>? Handler(string action) => Extra.Value?.GetValueOrDefault(action) ?? Handlers.GetValueOrDefault(action);
+
+    /// <summary>
+    /// Adds an action as one entry, its descriptor and its handler together, until the scope is disposed (both are
+    /// <see cref="AsyncLocal{T}"/>s, so they do not cross into Temporal's worker threads). For tests (LOG 357).
+    /// </summary>
+    internal static IDisposable Register(ActionDescriptor descriptor, Func<ActionRun, Task<ActionResult>> handler)
+    {
+        var previous = Extra.Value;
+        var registry = ActionRegistry.Use(ActionRegistry.Current.With(descriptor));
+        Extra.Value = new Dictionary<string, Func<ActionRun, Task<ActionResult>>>(previous ?? new Dictionary<string, Func<ActionRun, Task<ActionResult>>>(), StringComparer.Ordinal)
+        {
+            [descriptor.Name] = handler,
+        };
+        return new Restore(() =>
+        {
+            Extra.Value = previous;
+            registry.Dispose();
+        });
+    }
+
+    sealed class Restore(Action restore) : IDisposable
+    {
+        public void Dispose() => restore();
+    }
+
+    /// <summary>
     /// A <c>clean_up</c> route (docs/03 section 4.1): resets the work branch in each repository to the revision the step
     /// started from, recorded when it last touched the repository, by an expected-revision push (M3 follow-up 5). What
     /// the reset removes is kept under <c>refs/feature-flow/superseded/...</c>, and the hidden references of the run's
     /// agent steps that build beyond that revision are moved back to it, so a re-run step does not pick up discarded
     /// commits (LOG 96). A step that never touched a repository resets nothing. A work error (a refused push) is
-    /// returned, so the run asks a person; only infrastructure errors are thrown, to be retried.
+    /// returned, so the run asks a person; only infrastructure errors are thrown, to be retried. A dry run resets on its dry-run VCS.
     /// </summary>
     public async Task<CleanUpResult> CleanUpAsync(string runId, string stepId, int executions, IReadOnlyList<string> repositories, string workBranch,
-        IReadOnlyList<string> stepIds, CancellationToken ct)
+        IReadOnlyList<string> stepIds, CancellationToken ct, bool dryRun = false)
     {
         var events = new List<string>();
         try
         {
-            return new CleanUpResult(await ResetAsync(runId, stepId, executions, repositories, workBranch, stepIds, events, ct), null);
+            return new CleanUpResult(await ResetAsync(runId, stepId, executions, repositories, workBranch, stepIds, events, dryRun, ct), null);
         }
         catch (ActionStop stop)
         {
@@ -124,9 +140,9 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
     }
 
     async Task<IReadOnlyList<string>> ResetAsync(string runId, string stepId, int executions, IReadOnlyList<string> repositories, string workBranch,
-        IReadOnlyList<string> stepIds, List<string> events, CancellationToken ct)
+        IReadOnlyList<string> stepIds, List<string> events, bool dryRun, CancellationToken ct)
     {
-        if (providers.ForRun("vcs", false) is not IVcsProvider vcs)
+        if (providers.ForRun("vcs", dryRun) is not IVcsProvider vcs)
             return ["clean_up: no VCS provider is configured; nothing to reset"];
         var starts = new Dictionary<string, string>(StringComparer.Ordinal);
         for (var n = executions; n >= 1 && starts.Count == 0; n--)
@@ -145,20 +161,20 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
             var current = Must(await vcs.ResolveAsync(repo, reference, ct), "read the work branch");
             if (current is not null && current != start)
             {
-                await KeepAsync(vcs, repo, $"refs/feature-flow/superseded/{Safe(runId)}/{Safe(stepId)}/{Short(current)}", current, ct);
+                await KeepAsync(vcs, repo, WorkRefs.Superseded(runId, stepId, current), current, ct);
                 Must(await vcs.PushAsync(repo, reference, start, null, current, ct), "reset the work branch");
-                events.Add($"clean_up: reset {name} {workBranch} from {Short(current)} to {Short(start)}, where {stepId} started");
+                events.Add($"clean_up: reset {name} {workBranch} from {Revisions.Short(current)} to {Revisions.Short(start)}, where {stepId} started");
             }
 
             foreach (var step in stepIds)
             {
-                var hidden = $"refs/feature-flow/wip/{Safe(runId)}/{Safe(step)}";
+                var hidden = WorkRefs.Hidden(runId, step);
                 if (Must(await vcs.ResolveAsync(repo, hidden, ct), "read a hidden reference") is not { } at || at == start
                     || Must(await vcs.DescendsFromAsync(repo, start, at, ct), "compare a hidden reference"))
                     continue;
-                await KeepAsync(vcs, repo, $"refs/feature-flow/superseded/{Safe(runId)}/{Safe(step)}/{Short(at)}", at, ct);
+                await KeepAsync(vcs, repo, WorkRefs.Superseded(runId, step, at), at, ct);
                 Must(await vcs.PushAsync(repo, hidden, start, null, at, ct), "move a hidden reference back");
-                events.Add($"clean_up: moved {name} {hidden} back from {Short(at)} to {Short(start)}");
+                events.Add($"clean_up: moved {name} {hidden} back from {Revisions.Short(at)} to {Revisions.Short(start)}");
             }
         }
 
@@ -193,10 +209,6 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
 
     /// <summary>The name an action's own evidence has in the artifact index, apart from any artifact the step declares (LOG 180).</summary>
     public static string IndexName(string type) => "evidence:" + type;
-
-    public static string Safe(string text) => string.Concat(text.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' or '.' ? c : '_'));
-
-    public static string Short(string revision) => revision.Length > 10 ? revision[..10] : revision;
 }
 
 /// <summary>What a <c>clean_up</c> reset did, and the work error that stopped it, if one did.</summary>
@@ -250,7 +262,7 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
     public IReadOnlyList<string> Strings(string name) =>
         (Inputs.GetValueOrDefault(name) as IEnumerable<object?> ?? []).Select(x => Convert.ToString(x, CultureInfo.InvariantCulture) ?? "").ToList();
 
-    public TimeSpan Duration(string name, TimeSpan fallback) => String(name) is { } text && StepStartChecks.Duration(text) is { } d ? d : fallback;
+    public TimeSpan Duration(string name, TimeSpan fallback) => String(name) is { } text && Durations.Parse(text) is { } d ? d : fallback;
 
     // ---- Providers ----
 
@@ -312,7 +324,7 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
                 if (pushed is { Ok: false, Error.Reason: "base_moved" } && tries < 3)
                     continue;
                 Must(pushed, "create the work branch");
-                Events.Add($"created branch {scope.WorkBranch} in {repo.FullName} at {EngineActions.Short(start)} from {parent}");
+                Events.Add($"created branch {scope.WorkBranch} in {repo.FullName} at {Revisions.Short(start)} from {parent}");
                 head = start;
             }
 
@@ -333,7 +345,7 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
         RepositoryManifest manifest;
         try
         {
-            manifest = RepositoryManifest.Parse(file.Content, file.Hash, $"{repo.FullName}:{RepositoryManifest.FileName} at {EngineActions.Short(revision)}");
+            manifest = RepositoryManifest.Parse(file.Content, file.Hash, $"{repo.FullName}:{RepositoryManifest.FileName} at {Revisions.Short(revision)}");
         }
         catch (FormatException e)
         {
@@ -341,7 +353,7 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
         }
 
         await EventAsync("manifest", $"{repo.FullName} {file.Hash} at {revision}");
-        Events.Add($"manifest of {repo.FullName} at {EngineActions.Short(revision)}: {file.Hash}");
+        Events.Add($"manifest of {repo.FullName} at {Revisions.Short(revision)}: {file.Hash}");
         return manifest;
     }
 
@@ -423,26 +435,14 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
 
     static string? TypeName(string? type) => type is null ? null : LibraryReference.TryParse(type)?.Name ?? type;
 
-    /// <summary>
-    /// The evidence type each engine action that makes evidence makes. Evidence a step declares is indexed by the workflow
-    /// with the step's artifacts; evidence it does not declare is indexed here, under <see cref="EngineActions.IndexName"/>, so a
-    /// check that reads evidence, such as <c>delivery.report</c> reading reverts, does not depend on how the template was
-    /// written, and no evidence is indexed twice (LOG 180).
-    /// </summary>
-    public static readonly IReadOnlyDictionary<string, string> EvidenceTypes = new Dictionary<string, string>(StringComparer.Ordinal)
-    {
-        ["scm.merge"] = "merge_record",
-        ["scm.revert"] = "revert_record",
-        ["test.run"] = "test_results",
-        ["test.integration"] = "test_results",
-        ["ci.checks"] = "check_results",
-        ["analysis.run"] = "analysis_results",
-        ["artifact.validate"] = "validation_report",
-    };
-
     string? reportedEvidence;
 
-    /// <summary>Marks the action's evidence for the artifact index when the step declares no artifact for the outcome (an action that builds its own report calls this).</summary>
+    /// <summary>
+    /// Marks the action's evidence for the artifact index when the step declares no artifact for the outcome (an action that
+    /// builds its own report calls this). It is indexed as the action's evidence type (<see cref="ActionDescriptor.Evidence"/>)
+    /// under <see cref="EngineActions.IndexName"/>, so a check that reads evidence, such as <c>delivery.report</c> reading
+    /// reverts, does not depend on how the template was written, and no evidence is indexed twice (LOG 180).
+    /// </summary>
     public void IndexIfUndeclared(string outcome, string? evidence) =>
         reportedEvidence = evidence is not null && !call.Contract.ArtifactsFor(outcome).Any() ? evidence : null;
 
@@ -450,7 +450,7 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
     public async Task IndexEvidenceAsync()
     {
         // A session's pre-submit check is not a step's execution: its evidence is not the run's (LOG 238).
-        if (reportedEvidence is not { } reference || !EvidenceTypes.TryGetValue(call.What, out var type) || SessionNames.IsCheckKey(call.Step.IdempotencyKey))
+        if (reportedEvidence is not { } reference || Model.Actions.Get(call.What)?.Evidence is not { } type || SessionNames.IsCheckKey(call.Step.IdempotencyKey))
             return;
         var record = new ArtifactRecord(call.Step.RunId, call.Step.StepId, call.Step.Execution, EngineActions.IndexName(type), type, reference, call.What, true, DateTimeOffset.UtcNow);
         Must(await Records.AppendAsync(new RecordBatch(Artifacts: [record]), ct), "index the evidence");

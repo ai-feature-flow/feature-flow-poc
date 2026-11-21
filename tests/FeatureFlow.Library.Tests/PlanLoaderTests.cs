@@ -6,15 +6,7 @@ namespace FeatureFlow.Library.Tests;
 
 public class PlanLoaderTests
 {
-    static readonly string StdRoot = FindStd();
-
-    static string FindStd()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "FeatureFlow.slnx")))
-                return Path.Combine(dir.FullName, "library", "std");
-        throw new InvalidOperationException("FeatureFlow.slnx not found");
-    }
+    static readonly string StdRoot = Path.Combine(Repository.Root, "library", "std");
 
     static (Plan Plan, DiagnosticBag Diagnostics) Load(string template, LoadOptions? options = null)
     {

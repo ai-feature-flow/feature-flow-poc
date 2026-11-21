@@ -19,10 +19,10 @@ public sealed class OverrideAuthorisationTests
     {
         var world = new ApiWorld(organisation);
         await world.RunAsync(Run, "acme/api");
-        await world.WaitAsync(Run, "decision-1", "decision", "ticket.spec_approval");
+        await world.WaitAsync(Run, "gate-1", "gate", "ticket.spec_approval");
         await world.WaitAsync(Run, "question-1", "question", "ticket.question");
         await world.WaitAsync(Run, "intervention-1", "intervention", "ticket.escalation");
-        await world.WaitAsync(Run, "patch-1", "patchapproval", "ticket.patch_approval");
+        await world.WaitAsync(Run, "patch-1", "patch_approval", "ticket.patch_approval");
         await world.WaitAsync(Run, "breakpoint-1", "breakpoint", "ticket.breakpoint");
         return world;
     }
@@ -30,7 +30,7 @@ public sealed class OverrideAuthorisationTests
     /// <summary>How each override key is asked for: its route and a body claiming the actor <c>mallory</c>.</summary>
     static (string Path, string Body) Request(string key) => key switch
     {
-        Overrides.Answer => ($"runs/{Run}/answers", """{ "wait_id": "decision-1", "outcome": "approved", "actor": "mallory" }"""),
+        Overrides.Answer => ($"runs/{Run}/answers", """{ "wait_id": "gate-1", "outcome": "approved", "actor": "mallory" }"""),
         Overrides.AnswerQuestion => ($"runs/{Run}/answers", """{ "wait_id": "question-1", "outcome": "yes", "actor": "mallory" }"""),
         Overrides.Recover => ($"runs/{Run}/answers", """{ "wait_id": "intervention-1", "action": "retry", "actor": "mallory" }"""),
         Overrides.Abort => ($"runs/{Run}/abort", """{ "reason": "stop", "actor": "mallory" }"""),

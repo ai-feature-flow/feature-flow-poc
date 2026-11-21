@@ -1,4 +1,4 @@
-using FeatureFlow.Engine.ActionSteps;
+using FeatureFlow.Engine.Actions;
 using FeatureFlow.Interpreter;
 using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Library;
@@ -15,15 +15,7 @@ namespace FeatureFlow.Engine.Tests;
 /// </summary>
 public sealed class RunStartCheckTests
 {
-    static readonly string StdRoot = Path.Combine(FindRoot(), "library", "std");
-
-    static string FindRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "FeatureFlow.slnx")))
-                return dir.FullName;
-        throw new InvalidOperationException("FeatureFlow.slnx not found");
-    }
+    static readonly string StdRoot = Path.Combine(Repository.Root, "library", "std");
 
     sealed record Setup(InMemoryForge Forge, RepoRef Repo)
     {
@@ -42,7 +34,7 @@ public sealed class RunStartCheckTests
         repositories ??= [s.Repo.FullName];
         var d = new DiagnosticBag();
         var libraries = new LibrarySet(Library.Library.Open(StdRoot, d)!,
-            Library.Library.Open(Path.Combine(FindRoot(), "tests", "FeatureFlow.Integration.Tests", "libraries", "m5"), d)!);
+            Library.Library.Open(Path.Combine(Repository.Root, "tests", "FeatureFlow.Integration.Tests", "libraries", "m5"), d)!);
         var parameters = new Dictionary<string, YNode> { ["ticket_id"] = YamlWriter.Read("T-1") };
         if (engineCanMerge is { } ecm)
             parameters["engine_can_merge"] = YamlWriter.Read(ecm ? "true" : "false");

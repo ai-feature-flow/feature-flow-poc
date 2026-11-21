@@ -1,4 +1,5 @@
 using FeatureFlow.Interpreter;
+using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Library;
 using FeatureFlow.Model;
 using FeatureFlow.Model.Plans;
@@ -109,7 +110,8 @@ public static class WorkflowTestRunner
         }
 
         var answered = new Dictionary<string, int>(StringComparer.Ordinal);
-        var queue = new List<(string StepId, int Execution, bool Decision)>();
+        var asked = new HashSet<string>(StringComparer.Ordinal);
+        var queue = new List<(string StepId, int Execution, string? Gate)>();
         var cleanUps = new List<string>();
         var tries = new Dictionary<(string, int), int>();
         var inputs = 0;
@@ -120,10 +122,14 @@ public static class WorkflowTestRunner
                 switch (command)
                 {
                     case StartStep s:
-                        queue.Add((s.StepId, s.Execution, false));
+                        queue.Add((s.StepId, s.Execution, null));
                         break;
-                    case OpenDecision o:
-                        queue.Add((o.StepId, o.Execution, true));
+                    case StartChild s:
+                        // A child run is not started here: the script gives its run.child step's outcome as for any step.
+                        queue.Add((s.StepId, s.Execution, null));
+                        break;
+                    case OpenGate o:
+                        queue.Add((o.StepId, o.Execution, o.WaitId));
                         break;
                     case CancelStep c:
                         queue.RemoveAll(q => q.StepId == c.StepId);
@@ -136,8 +142,8 @@ public static class WorkflowTestRunner
 
             if (queue.Count == 0 && core.State.Status == RunStatus.Running && NextAnswer(test, core, answered) is { } answer)
             {
-                // Settled at a breakpoint or intervention the file answers: a person answers it, and the run goes on.
-                var given = core.Apply(answer);
+                // Settled at a breakpoint or intervention the file answers: a person answers it, through the shell's routing, and the run goes on.
+                var given = core.Answer(answer);
                 if (!given.Accepted)
                 {
                     failures.Add("the answer was refused: " + string.Join("; ", given.Errors));
@@ -155,7 +161,7 @@ public static class WorkflowTestRunner
                 break;
             }
 
-            var (stepId, execution, decision) = queue[0];
+            var (stepId, execution, gate) = queue[0];
             queue.RemoveAt(0);
             var step = core.StepById(stepId)!;
             var visits = test.Script.GetValueOrDefault(stepId);
@@ -168,13 +174,27 @@ public static class WorkflowTestRunner
             }
 
             RunInput input;
-            if (decision)
+            if (gate is not null)
             {
-                // A session's submission produces the artifacts its outcome promises (docs/04 section 4.4); any other answer none.
+                // A person answers the gate as the shell routes it. A session's submission produces the artifacts its outcome
+                // promises (docs/04 section 4.4); any other answer none.
                 var submitted = Promised(step, outcome).ToDictionary(n => n, n => $"artifact:{stepId}/{n}/{execution}");
-                input = new DecisionAnswered(stepId, outcome, submitted.Count == 0 ? null : submitted);
+                var gateAnswer = core.Answer(new AnswerArgs(gate, "test", outcome, Artifacts: submitted.Count == 0 ? null : submitted));
+                if (!gateAnswer.Accepted)
+                {
+                    failures.Add("the script was refused: " + string.Join("; ", gateAnswer.Errors));
+                    break;
+                }
+
+                continue;
             }
-            else if (visit.Error == "infrastructure" && tries.GetValueOrDefault((stepId, execution)) < visit.Times)
+
+            // The agent asks this visit's questions while its step runs; each is answered, times out, or is left to the step's end.
+            foreach (var q in test.Questions.GetValueOrDefault(stepId)?.Where(q => q.Visit == execution && asked.Add(q.Id)) ?? [])
+                if (Ask(core, stepId, execution, q) is { } refused)
+                    failures.Add(refused);
+
+            if (visit.Error == "infrastructure" && tries.GetValueOrDefault((stepId, execution)) < visit.Times)
             {
                 tries[(stepId, execution)] = tries.GetValueOrDefault((stepId, execution)) + 1;
                 input = new StepFailed(stepId, ErrorClass.Infrastructure, "scripted infrastructure failure");
@@ -189,7 +209,7 @@ public static class WorkflowTestRunner
                     patch = test.Patch;
                     patchPending = false;
                 }
-                else if (step.Action == "plan.expand")
+                else if (step.Descriptor?.Handling == ActionHandling.Expand)
                 {
                     var (built, error) = PlanExpansion.Build(core, stepId, test.Expand.GetValueOrDefault(stepId) ?? []);
                     if (error is not null)
@@ -226,7 +246,7 @@ public static class WorkflowTestRunner
 
         // Names are checked against every revision, since a patch may add steps.
         foreach (var id in test.Script.Keys.Concat(test.Outputs.Keys).Concat(test.Expand.Keys).Concat(test.ExpectExecutions.Keys)
-                     .Concat(test.Answers.Keys).Concat(test.Overrides.Select(o => o.StepId)).Distinct())
+                     .Concat(test.Answers.Keys).Concat(test.Questions.Keys).Concat(test.Overrides.Select(o => o.StepId)).Distinct())
             if (!core.State.IdHistory.Contains(id))
                 failures.Add($"'{id}' is not a step of {test.Template} in any revision of the run");
 
@@ -240,7 +260,12 @@ public static class WorkflowTestRunner
         if (test.ExpectSkipped is { } expectSkipped && !expectSkipped.SequenceEqual(skipped))
             failures.Add($"skipped steps were [{string.Join(", ", skipped)}], expected [{string.Join(", ", expectSkipped)}]");
         foreach (var (id, list) in test.Answers.Where(a => answered.GetValueOrDefault(a.Key) < a.Value.Count))
-            failures.Add($"{id}: {list.Count - answered.GetValueOrDefault(id)} answer(s) were not used: no breakpoint or intervention opened there for them");
+            failures.Add($"{id}: {list.Count - answered.GetValueOrDefault(id)} answer(s) were not used: no breakpoint, intervention or patch approval opened there for them");
+        foreach (var q in test.Questions.Values.SelectMany(l => l).Where(q => !asked.Contains(q.Id)))
+            failures.Add($"question {q.Id} was not asked: its step had no visit {q.Visit}");
+        foreach (var (id, how) in test.ExpectQuestions)
+            if (core.State.Closed.LastOrDefault(c => c.Id == id)?.How is var closed && closed != how)
+                failures.Add($"question {id} {(closed is null ? "did not close" : "closed " + closed)}, expected {how}");
 
         CompareChecks(test, observedChecks, failures, patchDiagnostics);
         if (test.ExpectStatus is { } expected && expected != status)
@@ -299,29 +324,41 @@ public static class WorkflowTestRunner
         return null;
     }
 
-    /// <summary>The file's next answer to a breakpoint or intervention open now, in the order they opened; null when it gives none.</summary>
-    static InterventionAnswered? NextAnswer(WorkflowTest test, RunCore core, Dictionary<string, int> answered)
+    /// <summary>The file's next answer to a breakpoint, intervention or patch approval open now, in the order they opened, as a person gives it; null when it gives none.</summary>
+    static Interpreter.Wire.AnswerArgs? NextAnswer(WorkflowTest test, RunCore core, Dictionary<string, int> answered)
     {
-        foreach (var wait in core.State.Waits.Where(w => w.Kind is WaitKind.Breakpoint or WaitKind.Intervention))
+        foreach (var wait in core.State.Waits.Where(w => w.Kind is WaitKind.Breakpoint or WaitKind.Intervention or WaitKind.PatchApproval))
         {
             var used = answered.GetValueOrDefault(wait.StepId);
             if (test.Answers.GetValueOrDefault(wait.StepId) is not { } list || used >= list.Count)
                 continue;
             answered[wait.StepId] = used + 1;
             var a = list[used];
-            var kind = a.Action switch
-            {
-                "continue" => RecoveryKind.Continue,
-                "go_to" => RecoveryKind.GoTo,
-                "replan" => RecoveryKind.Replan,
-                "grant_attempts" => RecoveryKind.GrantAttempts,
-                "end" => RecoveryKind.End,
-                _ => RecoveryKind.Retry,
-            };
-            return new InterventionAnswered(wait.Id, new Recovery(kind, a.StepId, a.CleanUp, a.Attempts, a.Status is null ? null : RunStatuses.Parse(a.Status), BeyondHardCeiling: true));
+            return new Interpreter.Wire.AnswerArgs(wait.Id, "test", Action: a.Action, StepId: a.StepId, CleanUp: a.CleanUp, Attempts: a.Attempts,
+                Status: a.Status, BeyondHardCeiling: true);
         }
 
         return null;
+    }
+
+    /// <summary>When a scripted question is asked; its deadline is this plus <see cref="QuestionTimeout"/>.</summary>
+    static readonly DateTimeOffset Asked = DateTimeOffset.UnixEpoch;
+
+    static readonly TimeSpan QuestionTimeout = TimeSpan.FromMinutes(30);
+
+    /// <summary>
+    /// An agent's question, held by the core as the agent worker's report of it is, then a person's answer through the core's
+    /// routing (<c>RunCore.Answer</c>, as the shell's <c>answer</c> update) or its deadline passing (docs/04 section 3.4).
+    /// </summary>
+    static string? Ask(RunCore core, string stepId, int execution, TestQuestion q)
+    {
+        var opened = core.Apply(new QuestionOpened(q.Id, stepId, core.StepKey(stepId, execution), q.Ask, q.Options, QuestionTimeout, Asked));
+        if (!opened.Accepted)
+            return $"question {q.Id} was not held: {string.Join("; ", opened.Errors)}";
+        var closed = q.Answer is not null ? core.Answer(new Interpreter.Wire.AnswerArgs(q.Id, "test", q.Answer))
+            : q.TimesOut ? core.Apply(new WaitTimerFired(q.Id, Asked + QuestionTimeout))
+            : ApplyResult.Ok;
+        return closed.Accepted ? null : $"the answer to question {q.Id} was refused: {string.Join("; ", closed.Errors)}";
     }
 
     static string? FirstSuccess(Step step) =>
@@ -333,9 +370,9 @@ public static class WorkflowTestRunner
         var outputs = new Dictionary<string, object?>(StringComparer.Ordinal);
         var names = step.Outputs.Select(o => o.Name).ToList();
         if (step.Form == StepForm.Agent)
-            names.AddRange(Actions.AgentEngineOutputs);
-        else if (step.Action is { } a && Actions.All.GetValueOrDefault(a)?.Outputs is { } fixedOutputs)
-            names.AddRange(fixedOutputs);
+            names.AddRange(Actions.AgentEngineOutputs.Select(o => o.Name));
+        else if (step.Descriptor?.Outputs is { } fixedOutputs)
+            names.AddRange(fixedOutputs.Select(o => o.Name));
         foreach (var name in names.Distinct())
             outputs[name] = Zero(RunCore.OutputType(step, name), name);
 
@@ -376,8 +413,5 @@ public static class WorkflowTestRunner
         }
     }
 
-    /// <summary>The artifacts a step's outcome promises: those declared for it, and those declared for every success.</summary>
-    static IEnumerable<string> Promised(Step step, string outcome) => step.Produces
-        .Where(p => p.Outcome == outcome || (p.Outcome is null && step.Outcomes().Any(o => o.Name == outcome && o.Class == OutcomeClass.Success)))
-        .Select(p => p.Name).Distinct();
+    static IReadOnlyList<string> Promised(Step step, string outcome) => RunCore.Promised(step, outcome);
 }

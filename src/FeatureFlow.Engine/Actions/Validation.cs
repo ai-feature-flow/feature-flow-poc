@@ -3,7 +3,7 @@ using FeatureFlow.Model.Yaml;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Validation;
 
-namespace FeatureFlow.Engine.ActionSteps;
+namespace FeatureFlow.Engine.Actions;
 
 /// <summary>
 /// <c>artifact.validate</c> (docs/04 section 10.3): each validator over its subjects, against the run's repositories
@@ -20,7 +20,7 @@ static class Validating
 
     static ActionStop Inputs(string message) => ActionStop.CannotAnswer($"check 31 ({Checks.Title(Checks.StepInputs)}): {message}");
 
-    public static async Task<ActionResult> ValidateAsync(ActionRun run, ProviderSet providers)
+    public static async Task<ActionResult> ValidateAsync(ActionRun run)
     {
         var entries = Entries(run.Inputs.GetValueOrDefault("validation"));
         var runId = run.Call.Step.RunId;
@@ -33,7 +33,7 @@ static class Validating
         var offered = new List<OfferedReport>();
         foreach (var entry in entries)
         {
-            var (name, provider) = Find(providers, entry.Validator);
+            var (name, provider) = Find(run.Providers, entry.Validator);
             var subjects = new List<ValidationSubject>();
             foreach (var spec in entry.Subjects)
                 subjects.Add(await SubjectAsync(run, spec, types));
@@ -125,7 +125,7 @@ static class Validating
                 frozen[name] = head;
         run.Events.Add(frozen.Count == 0
             ? "no repository has a work branch yet; validators see no frozen revision"
-            : "frozen: " + string.Join(", ", frozen.Select(kv => $"{kv.Key} at {EngineActions.Short(kv.Value)}")));
+            : "frozen: " + string.Join(", ", frozen.Select(kv => $"{kv.Key} at {Revisions.Short(kv.Value)}")));
         return frozen;
     }
 
@@ -186,7 +186,7 @@ static class Validating
         }
 
         var record = types.GetValueOrDefault(reference);
-        if (record?.Action != "artifact.compose")
+        if (record?.Action is not { } producer || ActionRegistry.Current.Get(producer)?.MakesSet != true)
             return new ValidationSubject(spec.Name, record?.Type, new ArtifactRef(reference), spec.From);
         var set = System.Text.Json.JsonSerializer.Deserialize<ArtifactSet>(text, ArtifactShapes.Engine)
                   ?? throw ActionStop.CannotAnswer($"subject {key} is not an artifact set");

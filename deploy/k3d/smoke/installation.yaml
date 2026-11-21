@@ -1,13 +1,17 @@
-# A trial installation for the k3d cluster: the real stores, Temporal and sandbox provider in the cluster, payloads
-# encrypted, with fake providers for everything outside it and a scripted agent (which makes no sandbox), so a std
-# ticket run completes with no GitHub, tracker or model:
+# A trial installation for the k3d cluster: the real stores, Temporal, Kubernetes sandbox and Git provider in the
+# cluster, payloads encrypted, the scripted agent in place of a model, and the trial Git server up.sh makes from
+# repositories/ in place of GitHub, so a run of smoke:templates/change on trial/app completes with no GitHub, tracker
+# or model:
 #
 #   deploy/k3d/up.sh deploy/k3d/smoke
 #
+# The scripted agent acts in each step's sandbox through the sandbox provider: it changes the checkout and writes its
+# artifacts to the output folder, and the engine commits, pushes and copies them out as it would a real agent's.
+# There is no code host, CI or tracker, so std's templates, which open pull requests, do not run here.
 # The cluster tests run against it. A team's installation is in deploy/distribution-template.
 api_version: feature-flow/v1
 kind: installation
-development: true               # fake providers are for development only
+development: true               # the scripted runtime is for development only
 temporal:
   address: "temporal.feature-flow.svc:7233"
   namespace: default
@@ -25,14 +29,11 @@ providers:
         secret_key_ref: secrets/object_store_secret_key
   secrets: { default: file, instances: { file: { path: /var/run/secrets/feature-flow/secrets.json } } }
   agent_runtime: { default: scripted, instances: { scripted: { script: script.yaml } } }
-  action_stand_in: { default: scripted, instances: { scripted: { script: script.yaml } } }
   sandbox: { default: kubernetes, instances: { kubernetes: { namespace: feature-flow-sandboxes, image: feature-flow-sandbox:dev } } }
-  vcs: { instances: { fake: {} } }
+  vcs: { default: git, instances: { git: { remote: "git://git.feature-flow.svc/{repo}.git" } } }
+  # std, which the smoke library depends on, requires code_host.pull_request; this one only describes itself and is
+  # never called, so an agent step takes main as the parent branch.
   code_host: { instances: { fake: {} } }
-  ci: { instances: { fake: {} } }
-  tracker: { instances: { fake: {} } }
-  validator: { instances: { fake: {} } }
-  notifications: { instances: { fake: {} } }
 agent_worker:
   listen: "http://0.0.0.0:8481"
   urls: ["http://agent-worker.feature-flow.svc:8481"]

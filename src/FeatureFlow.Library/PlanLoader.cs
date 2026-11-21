@@ -657,8 +657,7 @@ public sealed partial class PlanLoader
     {
         foreach (var step in plan.AllSteps)
         {
-            var contract = step.Action is null ? null : Actions.All.GetValueOrDefault(step.Action);
-            var unknown = (step.Form == StepForm.Action && contract is null)
+            var unknown = (step.Form == StepForm.Action && step.Descriptor is null)
                           || (step.Form is StepForm.Agent or StepForm.Decision && step.DeclaredOutcomes.Count == 0);
             if (unknown)
             {
@@ -668,7 +667,7 @@ public sealed partial class PlanLoader
                         step.ResolvedRoutes.Add(new ResolvedRoute(route.Outcome, OutcomeClass.None, t, RouteSource.Step));
                 continue;
             }
-            foreach (var outcome in step.Outcomes(contract))
+            foreach (var outcome in step.Outcomes())
                 if (Resolve(step, outcome) is { } resolved)
                     step.ResolvedRoutes.Add(resolved);
         }
@@ -682,8 +681,6 @@ public sealed partial class PlanLoader
 
         if (Fallback(step.Scope, outcome, step.Lane, step.LaneIndex + 1) is { } fallback)
             return fallback;
-        if (step.Action is { } action && Actions.All.GetValueOrDefault(action)?.Escalates?.Contains(outcome.Name) == true)
-            return new ResolvedRoute(outcome.Name, outcome.Class, new ResolvedEscalate(null, null), RouteSource.EngineDefault);
 
         d.Add(Checks.OutcomeRouted,
             $"outcome '{outcome.Name}' (class {outcome.Class.Name()}) has no route after defaults are applied",

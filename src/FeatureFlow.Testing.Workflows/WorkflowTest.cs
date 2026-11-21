@@ -13,8 +13,14 @@ public sealed record Visit(string? Outcome, string? Error = null, int Times = 1)
 /// </summary>
 public sealed record TestOverride(string Key, string StepId, string? Outcome = null, long Attempts = 0);
 
-/// <summary>A person's answer to a breakpoint or intervention in a test: a recovery action (docs/01 section 7.2).</summary>
+/// <summary>A person's answer to a breakpoint, intervention or patch approval in a test: a recovery action (docs/01 section 7.2), or <c>approve</c> or <c>reject</c>.</summary>
 public sealed record TestAnswer(string Action, string? StepId = null, bool CleanUp = false, long Attempts = 0, string? Status = null);
+
+/// <summary>
+/// An agent's question while its step runs, in a test (docs/04 section 3.4): asked on a <see cref="Visit"/> of the step, then
+/// answered with <see cref="Answer"/>, timed out (<see cref="TimesOut"/>), or with neither left open until the step ends.
+/// </summary>
+public sealed record TestQuestion(string Id, int Visit, string Ask, IReadOnlyList<string> Options, string? Answer, bool TimesOut);
 
 /// <summary>A workflow test file (docs/09 section 4.3; LOG 75).</summary>
 public sealed class WorkflowTest
@@ -53,8 +59,14 @@ public sealed class WorkflowTest
     /// <summary>A person's overrides, applied in order when the run starts.</summary>
     public List<TestOverride> Overrides { get; } = [];
 
-    /// <summary>A person's answers to the breakpoints and interventions opened at a step, in the order they open.</summary>
+    /// <summary>A person's answers to the breakpoints, interventions and patch approvals opened at a step, in the order they open.</summary>
     public Dictionary<string, List<TestAnswer>> Answers { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Step id to the questions its agent asks, in order, each on its visit.</summary>
+    public Dictionary<string, List<TestQuestion>> Questions { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Question id to how it closed: <c>answered</c>, <c>timed_out</c> or <c>step_ended</c>.</summary>
+    public Dictionary<string, string> ExpectQuestions { get; } = new(StringComparer.Ordinal);
 
     /// <summary>The steps a person's skip ended without running, in order.</summary>
     public List<string>? ExpectSkipped { get; init; }
@@ -112,6 +124,15 @@ public static class WorkflowTestReader
                 var list = (value is YSeq seq ? seq.Items : [value]).Select(v => ReadAnswer(v, d)).OfType<TestAnswer>().ToList();
                 if (list.Count > 0)
                     test.Answers[key.Text] = list;
+            }
+
+        if (MapReader.Of(r.Node("questions"), d, "questions") is { } questions)
+            foreach (var (key, value) in questions.Map.Entries)
+            {
+                questions.Node(key.Text);
+                var list = (value is YSeq seq ? seq.Items : [value]).Select((v, i) => ReadQuestion(v, key.Text, i + 1, d)).OfType<TestQuestion>().ToList();
+                if (list.Count > 0)
+                    test.Questions[key.Text] = list;
             }
 
         if (MapReader.Of(r.Node("parameters"), d, "parameters") is { } ps)
@@ -181,6 +202,10 @@ public static class WorkflowTestReader
                 foreach (var (key, _) in ex.Map.Entries)
                     if (ex.Int(key.Text) is { } count)
                         test.ExpectExecutions[key.Text] = count;
+            if (MapReader.Of(expect.Node("questions"), d, "expect.questions") is { } eq)
+                foreach (var (key, _) in eq.Map.Entries)
+                    if (eq.Enum(key.Text, QuestionEnds, required: true) is { } how)
+                        test.ExpectQuestions[key.Text] = how;
             expect.Finish();
         }
 
@@ -208,15 +233,32 @@ public static class WorkflowTestReader
         return o;
     }
 
-    public static readonly IReadOnlyList<string> AnswerActions = ["continue", "retry", "go_to", "replan", "grant_attempts", "end"];
+    public static readonly IReadOnlyList<string> AnswerActions = Interpreter.Recoveries.For(Interpreter.WaitKind.Breakpoint);
+
+    /// <summary>How a question closes (<c>Interpreter.WaitEnds</c>).</summary>
+    public static readonly IReadOnlyList<string> QuestionEnds = [Interpreter.WaitEnds.Answered, Interpreter.WaitEnds.TimedOut, Interpreter.WaitEnds.StepEnded];
+
+    static TestQuestion? ReadQuestion(YNode node, string stepId, int index, DiagnosticBag d)
+    {
+        if (MapReader.Of(node, d, "a question") is not { } m)
+            return null;
+        var q = new TestQuestion(m.String("id") ?? $"{stepId}-q{index}", (int)(m.Int("visit") ?? 1), m.String("ask", required: true) ?? "",
+            m.Has("options") ? m.StringList("options").ToList() : [], m.String("answer"), m.Bool("timeout") ?? false);
+        if (q.Answer is not null && q.TimesOut)
+            m.Error("a question is answered or times out, not both", m.Map.Location);
+        if (q.Visit < 1)
+            m.Error("visit counts from 1", m.Map.Location);
+        m.Finish();
+        return q;
+    }
 
     static TestAnswer? ReadAnswer(YNode node, DiagnosticBag d)
     {
         if (node is YScalar { IsNull: false } s)
         {
-            if (s.Text is "continue" or "retry")
+            if (s.Text is "continue" or "retry" or "approve" or "reject")
                 return new TestAnswer(s.Text);
-            d.Add(Checks.Schema, $"an answer is continue, retry, or a map such as {{ go_to: <step> }}, not '{s.Text}'", s.Location);
+            d.Add(Checks.Schema, $"an answer is continue, retry, approve, reject, or a map such as {{ go_to: <step> }}, not '{s.Text}'", s.Location);
             return null;
         }
 

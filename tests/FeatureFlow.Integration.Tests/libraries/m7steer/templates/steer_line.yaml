@@ -4,8 +4,8 @@ metadata:
   name: steer_line
   level: ticket
   description: >-
-    A preparation that takes wait_ms, a build, a protected review and a notice: a line a
-    person steers while it runs.
+    A preparation that takes wait_ms (a scripted agent step held for it), a build, a protected
+    review and a notice: a line a person steers while it runs.
 
 parameters:
   wait_ms: { type: number, default: 0, description: "How long the preparation takes" }
@@ -16,8 +16,9 @@ defaults:
 
 steps:
   - id: prepare
-    action: artifact.compose
-    with: { audience: [team], message: prepare, wait_ms: { expr: "params.wait_ms" } }
+    agent: { role: std:roles/reviewer, task: m7steer:tasks/prepare }     # the scripted runtime holds it for wait_ms
+    with: { wait_ms: { expr: "params.wait_ms" } }
+    outcomes: { prepared: success }
   - id: build
     agent: { role: std:roles/implementer, task: m7steer:tasks/build }
     outcomes: { built: success, stuck: blocked }
@@ -26,6 +27,5 @@ steps:
     agent: { role: std:roles/reviewer, task: m7steer:tasks/review }
     outcomes: { accepted: success, rejected: failure }
   - id: ship
-    action: artifact.compose
-    with: { audience: [team], message: shipped }
-    routes: { composed: { end: completed } }
+    action: repo.inspect
+    routes: { inspected: { end: completed } }

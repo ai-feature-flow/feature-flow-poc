@@ -2,7 +2,9 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using FeatureFlow.Cli;
 using FeatureFlow.Hosting;
+using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Providers.Local;
+using FeatureFlow.Providers.StdValidators;
 using Temporalio.Api.Enums.V1;
 using Temporalio.Client;
 using IOPath = System.IO.Path;
@@ -11,21 +13,71 @@ namespace FeatureFlow.Integration.Tests;
 
 /// <summary>
 /// A whole engine in this process against the Temporal dev server named by <c>FF_TEMPORAL_ADDRESS</c>: the
-/// orchestration worker, the agent worker and the API, with the local providers, a scripted fake runtime and the
-/// scripted action stand-in. Each harness has its own folder, task queue and record store, so tests do not share
-/// a worker (CONTRIBUTING.md, "Working with helper agents").
+/// orchestration worker, the agent worker and the API, on the <c>memory</c> providers of a fresh world holding the fixture
+/// repository <see cref="RepoName"/>, the standard validators, and the scripted runtime acting in the memory sandbox. Its
+/// dry-run instances are the memory providers of a second world holding the same fixture, and the recording runtime. Each
+/// harness has its own folder, task queue, record store and worlds, so tests do not share a worker (CONTRIBUTING.md,
+/// "Working with helper agents").
 /// </summary>
 public sealed class Harness : IAsyncDisposable
 {
     public static string TemporalAddress =>
         Environment.GetEnvironmentVariable("FF_TEMPORAL_ADDRESS") is { Length: > 0 } address ? address : "localhost:7233";
 
-    public static string RepositoryRoot { get; } = FindRoot();
+    public static string TestLibraries => IOPath.Combine(Repository.Root, "tests", "FeatureFlow.Integration.Tests", "libraries");
 
-    public static string TestLibraries => IOPath.Combine(RepositoryRoot, "tests", "FeatureFlow.Integration.Tests", "libraries");
+    /// <summary>
+    /// The provider types the harness configures on its worlds, besides <c>validator</c> (std) and <c>session_surface</c> (the
+    /// local hand-off, and in a dry run the dry world's memory surface); <c>without:</c> leaves any of them out.
+    /// </summary>
+    public static readonly string[] MemoryTypes = ["vcs", "code_host", "ci", "sandbox", "tracker", "notifications"];
 
-    /// <summary>The types the stand-in and fake providers fill, so capability negotiation passes for std (check 21).</summary>
-    public static readonly string[] FakeTypes = ["sandbox", "vcs", "code_host", "ci", "tracker", "validator", "notifications"];
+    /// <summary>The fixture repository, in both worlds, protected on <c>main</c>.</summary>
+    public const string RepoName = "acme/api";
+
+    /// <summary>The fixture repository's manifest: a unit tier read from TRX and SARIF analysis, which the worlds' sandboxes produce.</summary>
+    public const string Manifest = """
+        api_version: feature-flow/v1
+        kind: repository
+        setup: { commands: ["dotnet tool restore"] }
+        test_tiers:
+          - name: unit
+            tags: [unit]
+            command: dotnet test tests/Unit
+            result: { format: trx, path: tests/Unit/unit.trx }
+        static_analysis: { analyser: sarif, command: dotnet build, sarif_path: analysis.sarif }
+        """;
+
+    /// <summary>What <c>dotnet test</c> writes in the worlds' sandboxes: three passing tests.</summary>
+    public const string Trx = """
+        <TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><Results>
+          <UnitTestResult testName="Adds" outcome="Passed" /><UnitTestResult testName="Lists" outcome="Passed" />
+          <UnitTestResult testName="Regression.fix" outcome="Passed" />
+        </Results></TestRun>
+        """;
+
+    const string Sarif = """{ "version": "2.1.0", "runs": [ { "tool": { "driver": { "name": "csc" } }, "results": [] } ] }""";
+
+    /// <summary>The implementer's claim of a test the TRX above reports passing, for a script that gives <c>implement</c> its own visit.</summary>
+    public const string ImplementationClaims =
+        "implementation_claims: { schema: 1, claims: [{ criterion: AC-1, verification: unit, tests: [{ repository: acme/api, tier: unit, id: Adds, change: new }] }] }";
+
+    /// <summary>
+    /// The fake script's <c>defaults</c>, the visits of steps a test's script does not name (M6): a plan the standard
+    /// validators accept, a claim of a test the TRX reports passing, and std's five reviewers each reporting no findings.
+    /// </summary>
+    static readonly string DefaultVisits = $$"""
+        {
+          "plan.plan": { artifacts: {
+            requirements: { schema: 1, scope: { kind: ticket, id: T-1 }, requirements: [
+              { id: R-1, title: Widgets are added, behaviour: An added widget is listed., supports_reason: The ticket's own behaviour } ] },
+            delivery_plan: { schema: 1, scope: { kind: ticket, id: T-1 }, acceptance_criteria: [
+              { id: AC-1, title: Added widgets are listed, behaviour: Adding a widget then listing shows it., supports: [{ artifact: requirements, requirement: R-1 }],
+                verification: [{ id: unit, kind: parsed_test, repository: acme/api, tier: unit, semantic_review: required }] } ] } } },
+          implement: { artifacts: { {{ImplementationClaims}} } },
+          {{string.Join(",\n  ", Enumerable.Range(0, 5).Select(i => $"verify.review.review_{i}.assess: {{ artifacts: {{ findings_report: {{ schema: 1, findings: [] }} }} }}"))}}
+        }
+        """;
 
     public string Folder { get; }
     public string TokenFile { get; }
@@ -33,43 +85,73 @@ public sealed class Harness : IAsyncDisposable
     public ITemporalClient Client => Host.Client;
     public string Api => Host.ApiAddress!;
 
-    Harness(string folder)
+    /// <summary>The world the run's providers act on, and the one its dry runs act on.</summary>
+    public string World { get; }
+    public string DryWorld { get; }
+    public InMemoryForge Forge => InMemoryForge.Named(World);
+    public InMemoryForge DryForge => InMemoryForge.Named(DryWorld);
+    public RepoRef Repo { get; } = new(RepoName);
+
+    /// <summary>The world's sandbox provider, for a test to add command rules (<see cref="MemorySandbox.On"/>).</summary>
+    public MemorySandbox Sandbox => MemorySandbox.Named(World, () => throw new InvalidOperationException("created by the host"));
+    public InMemoryTracker Tracker => InMemoryTracker.Named(World);
+
+    /// <summary>The dry world's session surface, where a dry run's sessions are prepared.</summary>
+    public InMemorySessionSurface DrySessions => InMemorySessionSurface.Named(DryWorld);
+
+    Harness(string folder, string world)
     {
         Folder = folder;
         TokenFile = IOPath.Combine(folder, "token");
+        World = world;
+        DryWorld = world + "-dry";
     }
 
     /// <summary>
-    /// Starts an engine. <paramref name="script"/> is the fake script's <c>steps</c> section in YAML;
-    /// <paramref name="autoApprove"/> sets the organisation's approval rule for every decision type;
-    /// <paramref name="omitTypes"/> leaves provider types unconfigured.
+    /// Starts an engine. <paramref name="script"/> is the fake script's <c>steps</c> section in YAML, beside its defaults
+    /// (<see cref="DefaultVisits"/>); <paramref name="autoApprove"/> sets the organisation's approval rule for every decision type;
+    /// <paramref name="without"/> leaves provider types of <see cref="MemoryTypes"/>, or <c>validator</c>, unconfigured, so a
+    /// test can configure its own in <paramref name="providers"/> or run without one; <paramref name="noEdits"/> names steps
+    /// whose agent changes nothing although it may write.
     /// </summary>
     /// <para>
-    /// For M5's real actions: <paramref name="providers"/> are further lines of the installation's <c>providers</c>
-    /// section, whose types should be in <paramref name="omitTypes"/>; <paramref name="policy"/> further lines of the
-    /// organisation's <c>policy</c>; <paramref name="installation"/> further top-level installation lines; and
-    /// <paramref name="factories"/> provider factories beside the local ones; <paramref name="organisation"/> further top-level organisation
+    /// <paramref name="providers"/> are further lines of the installation's <c>providers</c> section; <paramref name="policy"/>
+    /// further lines of the organisation's <c>policy</c>; <paramref name="installation"/> further top-level installation lines; and
+    /// <paramref name="factories"/> provider factories beside the local and standard validator ones; <paramref name="agentRuntime"/>
+    /// replaces the <c>agent_runtime</c> type's configuration; <paramref name="organisation"/> further top-level organisation
     /// lines; <paramref name="fromChat"/> the approval rule's <c>from_chat</c>; <paramref name="temporal"/> further keys of the
     /// installation's <c>temporal</c> map, after a comma; <paramref name="secrets"/> further secrets beside the API token;
     /// <paramref name="librarySources"/> further entries of the organisation's <c>libraries</c>, as YAML maps;
     /// <paramref name="agentWorker"/> false starts no agent worker; <paramref name="temporalAddress"/> another Temporal than
     /// <see cref="TemporalAddress"/>.
     /// </para>
-    public static async Task<Harness> StartAsync(string name, string script = "{}", bool autoApprove = false, string[]? omitTypes = null,
+    public static async Task<Harness> StartAsync(string name, string script = "{}", bool autoApprove = false, string[]? without = null,
         string[]? libraries = null, string providers = "", string policy = "", string installation = "", IEnumerable<FeatureFlow.Providers.Abstractions.ProviderFactory>? factories = null,
-        string agentRuntime = "{ default: scripted, dry_run: recording, instances: { scripted: { script: script.yaml }, recording: { folder: recorded } } }",
-        string organisation = "", bool fromChat = false, string temporal = "", IReadOnlyDictionary<string, string>? secrets = null, string[]? librarySources = null,
-        bool agentWorker = true, string? temporalAddress = null)
+        string? agentRuntime = null, string organisation = "", bool fromChat = false, string temporal = "", IReadOnlyDictionary<string, string>? secrets = null,
+        string[]? librarySources = null, bool agentWorker = true, string? temporalAddress = null, string[]? noEdits = null)
     {
         var folder = IOPath.Combine(IOPath.GetTempPath(), $"ff-it-{name}-{Guid.NewGuid():N}"[..40]);
         Directory.CreateDirectory(folder);
-        var harness = new Harness(folder);
+        var harness = new Harness(folder, $"it-{name}-{Guid.NewGuid():N}");
         var token = Guid.NewGuid().ToString("N");
         await File.WriteAllTextAsync(harness.TokenFile, token);
         await File.WriteAllTextAsync(IOPath.Combine(folder, "secrets.json"), JsonSerializer.Serialize(
             new Dictionary<string, string>(secrets ?? new Dictionary<string, string>()) { ["api_token"] = token }));
-        await File.WriteAllTextAsync(IOPath.Combine(folder, "script.yaml"), $"api_version: feature-flow/v1\nkind: fake_script\nsteps: {script}\n");
-        var fakes = string.Join("\n", FakeTypes.Except(omitTypes ?? []).Select(t => $"  {t}: {{ instances: {{ fake: {{}} }} }}"));
+        await File.WriteAllTextAsync(IOPath.Combine(folder, "script.yaml"), $"api_version: feature-flow/v1\nkind: fake_script\nsteps: {script}\ndefaults: {DefaultVisits}\n");
+        var client = IOPath.Combine(folder, "ff-sandbox");
+        await File.WriteAllTextAsync(client, "not run in a memory sandbox");
+        foreach (var world in new[] { harness.World, harness.DryWorld })
+            Seed(world);
+
+        var left = without ?? [];
+        var memory = string.Join("\n", MemoryTypes.Except(left).Select(t =>
+            $"  {t}: {{ default: memory, dry_run: dry, instances: {{ memory: {{ world: {harness.World} }}, dry: {{ provider: memory, world: {harness.DryWorld} }} }} }}"));
+        var validator = left.Contains("validator") ? "" : "  validator: { default: std, dry_run: std, instances: { std: {} } }";
+        var sessions = left.Contains("session_surface") ? ""
+            : $"  session_surface: {{ default: local, dry_run: dry, instances: {{ local: {{}}, dry: {{ provider: memory, world: {harness.DryWorld} }} }} }}";
+        var edits = $"[{string.Join(", ", noEdits ?? [])}]";
+        agentRuntime ??= $"{{ default: scripted, dry_run: recording, instances: {{ scripted: {{ script: script.yaml, world: {harness.World}, no_edits: {edits} }}, "
+                         + $"recording: {{ folder: recorded, script: script.yaml, world: {harness.DryWorld}, no_edits: {edits} }} }} }}";
         var queue = $"ff-{name}-{Guid.NewGuid():N}"[..30] + "-orchestration";
         await File.WriteAllTextAsync(IOPath.Combine(folder, "installation.yaml"), $$"""
             api_version: feature-flow/v1
@@ -81,14 +163,16 @@ public sealed class Harness : IAsyncDisposable
               record_store: { default: sqlite, instances: { sqlite: { path: records.db } } }
               secrets: { default: file, instances: { file: { path: secrets.json } } }
               agent_runtime: {{agentRuntime}}
-              action_stand_in: { default: scripted, dry_run: recording, instances: { scripted: { script: script.yaml }, recording: { folder: recorded } } }
-            {{fakes}}
+            {{memory}}
+            {{validator}}
+            {{sessions}}
             {{providers}}
+            agent_worker: { sandbox_client: "{{client}}" }
             {{installation}}
             api:
               auth: { mode: local_token, token_ref: secrets/api_token, actor: tester, roles: [viewer, approver, steerer, admin] }
             """);
-        var sources = string.Join("\n", (libraries ?? []).Prepend(IOPath.Combine(RepositoryRoot, "library", "std"))
+        var sources = string.Join("\n", (libraries ?? []).Prepend(IOPath.Combine(Repository.Root, "library", "std"))
             .Select(p => $"  - {{ name: {IOPath.GetFileName(p)}, source: directory, path: \"{p}\" }}").Concat((librarySources ?? []).Select(l => "  - " + l)));
         await File.WriteAllTextAsync(IOPath.Combine(folder, "organisation.yaml"), $$"""
             api_version: feature-flow/v1
@@ -103,8 +187,22 @@ public sealed class Harness : IAsyncDisposable
             {{organisation}}
             """);
         var configuration = FeatureFlowConfiguration.Load(IOPath.Combine(folder, "installation.yaml"), IOPath.Combine(folder, "organisation.yaml"));
-        harness.Host = await FeatureFlowHost.StartAsync(configuration, LocalProviders.Factories.Concat(factories ?? []), true, agentWorker, "http://127.0.0.1:0");
+        harness.Host = await FeatureFlowHost.StartAsync(configuration, LocalProviders.Factories.Concat(StdValidatorProviders.Factories).Concat(factories ?? []),
+            true, agentWorker, "http://127.0.0.1:0");
+        // The sandboxes the host composed: tests pass with a TRX, analysis is clean.
+        foreach (var world in new[] { harness.World, harness.DryWorld })
+            MemorySandbox.Named(world, () => throw new InvalidOperationException("created by the host"))
+                .On(new SandboxRule("dotnet test", Files: new Dictionary<string, string> { ["tests/Unit/unit.trx"] = Trx }))
+                .On(new SandboxRule("dotnet build", Files: new Dictionary<string, string> { ["analysis.sarif"] = Sarif }));
         return harness;
+    }
+
+    /// <summary>A world's fixture repository, with its manifest, protected on <c>main</c>.</summary>
+    static void Seed(string world)
+    {
+        var forge = InMemoryForge.Named(world);
+        var repo = forge.CreateRepository(RepoName, new Dictionary<string, string> { ["feature-flow.yaml"] = Manifest, ["src/App.cs"] = "class App {}\n" });
+        forge.Protect(repo, new BranchProtection("main", true, true, 1, [], false));
     }
 
     /// <summary>Runs <c>ff run ...</c> in this process against this engine's API.</summary>
@@ -219,7 +317,7 @@ public sealed class Harness : IAsyncDisposable
             var history = await Client.GetWorkflowHandle(workflowId, run.RunId).FetchHistoryAsync();
             var input = history.Events.First().WorkflowExecutionStartedEventAttributes.Input.Payloads_[0].Data.ToStringUtf8();
             var start = JsonSerializer.Deserialize<FeatureFlow.Interpreter.Wire.RunStart>(input)!;
-            if (start.Carried is not { PendingChildEnds.Count: > 0, Children.Count: > 0 })
+            if (start.Carried is not { PendingChildEnds.Count: > 0, Core.Children.Count: > 0 })
                 continue;
             if (Environment.GetEnvironmentVariable("FF_RECORD_HISTORIES") is { Length: > 0 } folder)
             {
@@ -244,13 +342,5 @@ public sealed class Harness : IAsyncDisposable
         catch (IOException)
         {
         }
-    }
-
-    static string FindRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            if (File.Exists(IOPath.Combine(dir.FullName, "FeatureFlow.slnx")))
-                return dir.FullName;
-        throw new InvalidOperationException("FeatureFlow.slnx not found above the test output folder");
     }
 }

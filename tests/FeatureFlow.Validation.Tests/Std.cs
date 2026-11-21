@@ -3,19 +3,9 @@ namespace FeatureFlow.Validation.Tests;
 /// <summary>Locates <c>library/std</c> and makes mutated copies of it (LOG 70).</summary>
 public static class Std
 {
-    public static string RepositoryRoot { get; } = FindRoot();
+    public static string Root => Path.Combine(Repository.Root, "library", "std");
 
-    public static string Root => Path.Combine(RepositoryRoot, "library", "std");
-
-    public static string GoldenFolder => Path.Combine(RepositoryRoot, "tests", "FeatureFlow.Validation.Tests", "Golden");
-
-    static string FindRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "FeatureFlow.slnx")))
-                return dir.FullName;
-        throw new InvalidOperationException("FeatureFlow.slnx not found above the test output folder");
-    }
+    public static string GoldenFolder => Path.Combine(Repository.Root, "tests", "FeatureFlow.Validation.Tests", "Golden");
 
     /// <summary>One text replacement in one std file. <see cref="Old"/> must occur exactly once.</summary>
     public sealed record Edit(string File, string Old, string New);

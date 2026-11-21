@@ -9,4 +9,8 @@
     <PackageReference Include="Temporalio" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="FeatureFlow.Engine.Tests" />
+  </ItemGroup>
+
 </Project>

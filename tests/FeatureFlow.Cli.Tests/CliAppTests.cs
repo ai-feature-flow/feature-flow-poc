@@ -4,15 +4,7 @@ namespace FeatureFlow.Cli.Tests;
 
 public class CliAppTests
 {
-    static readonly string StdRoot = FindStd();
-
-    static string FindStd()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "FeatureFlow.slnx")))
-                return Path.Combine(dir.FullName, "library", "std");
-        throw new InvalidOperationException("FeatureFlow.slnx not found");
-    }
+    static readonly string StdRoot = Path.Combine(Repository.Root, "library", "std");
 
     static (int Code, string Output, string Error) Run(params string[] args)
     {

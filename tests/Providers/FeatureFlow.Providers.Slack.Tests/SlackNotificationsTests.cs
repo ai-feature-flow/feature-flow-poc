@@ -81,14 +81,14 @@ public sealed class SlackNotificationsTests
         var fake = new FakeSlack();
         var slack = Slack.Provider(fake, consoleUrl: "https://ff.example/console/");
 
-        var posted = await slack.PostDecisionAsync("#ff", new DecisionRequest("run-1", "decision-3", "decision", "ticket.spec_approval", "Approve the spec?",
+        var posted = await slack.PostDecisionAsync("#ff", new DecisionRequest("run-1", "gate-3", "gate", "ticket.spec_approval", "Approve the spec?",
             ["approved", "rejected"], "approve_spec"), null, Ct);
 
         Assert.True(posted.Ok, posted.Error?.Message);
         var buttons = Assert.Single(fake.Messages).Blocks!.OfType<JsonObject>().Single(b => b["type"]!.GetValue<string>() == "actions")["elements"]!.AsArray();
         var answers = buttons.Where(b => b!["value"] is not null).Select(b => JsonNode.Parse(b!["value"]!.GetValue<string>())!).ToList();
         Assert.Equal(["approved", "rejected"], answers.Select(a => a["c"]!.GetValue<string>()));
-        Assert.All(answers, a => Assert.Equal(("run-1", "decision-3"), (a["r"]!.GetValue<string>(), a["w"]!.GetValue<string>())));
+        Assert.All(answers, a => Assert.Equal(("run-1", "gate-3"), (a["r"]!.GetValue<string>(), a["w"]!.GetValue<string>())));
         Assert.All(buttons.Where(b => b!["value"] is not null), b => Assert.StartsWith(SlackNotifications.AnswerAction, b!["action_id"]!.GetValue<string>()));
         Assert.Equal("https://ff.example/console/#/runs/run-1", buttons.Single(b => b!["url"] is not null)!["url"]!.GetValue<string>());
     }
@@ -187,16 +187,16 @@ public sealed class SlackNotificationsTests
     {
         var slack = Slack.Provider(new FakeSlack());
 
-        var answer = await slack.ReadAnswerAsync(Slack.Signed(Slack.Press("U-ALICE", "run-1", "decision-3", "approved")), Ct);
+        var answer = await slack.ReadAnswerAsync(Slack.Signed(Slack.Press("U-ALICE", "run-1", "gate-3", "approved")), Ct);
 
         Assert.True(answer.Ok, answer.Error?.Message);
-        Assert.Equal(new ChatAnswer("U-ALICE", Slack.Users["U-ALICE"], "run-1", "decision-3", "approved"), answer.Value);
+        Assert.Equal(new ChatAnswer("U-ALICE", Slack.Users["U-ALICE"], "run-1", "gate-3", "approved"), answer.Value);
     }
 
     [Fact]
     public async Task A_press_by_a_user_with_no_mapping_has_no_person()
     {
-        var answer = await Slack.Provider(new FakeSlack()).ReadAnswerAsync(Slack.Signed(Slack.Press("U-STRANGER", "run-1", "decision-3", "approved")), Ct);
+        var answer = await Slack.Provider(new FakeSlack()).ReadAnswerAsync(Slack.Signed(Slack.Press("U-STRANGER", "run-1", "gate-3", "approved")), Ct);
 
         Assert.True(answer.Ok);
         Assert.Null(answer.Value!.Person);
@@ -206,12 +206,12 @@ public sealed class SlackNotificationsTests
     public async Task A_request_not_signed_by_the_apps_secret_or_changed_after_signing_or_too_old_is_unauthenticated()
     {
         var slack = Slack.Provider(new FakeSlack());
-        var body = Slack.Press("U-ALICE", "run-1", "decision-3", "approved");
+        var body = Slack.Press("U-ALICE", "run-1", "gate-3", "approved");
 
         // Another secret; the body changed after signing (the choice); six minutes old; six minutes ahead; no headers.
         var forged = Slack.Signed(body, secret: "someone-elses");
         var signed = Slack.Signed(body);
-        var tampered = signed with { Body = Slack.Press("U-ALICE", "run-1", "decision-3", "rejected") };
+        var tampered = signed with { Body = Slack.Press("U-ALICE", "run-1", "gate-3", "rejected") };
         var old = Slack.Signed(body, at: Slack.Now.AddMinutes(-6));
         var ahead = Slack.Signed(body, at: Slack.Now.AddMinutes(6));
         var unsigned = new InboundRequest(new Dictionary<string, string>(), body, Slack.Now);
@@ -232,9 +232,9 @@ public sealed class SlackNotificationsTests
 
         foreach (var body in new[]
                  {
-                     Slack.Press("U-ALICE", "run-1", "decision-3", "approved", type: "view_submission"),
-                     Slack.Press("U-ALICE", "run-1", "decision-3", "approved", actionId: "ff_open"),
-                     Slack.Press("U-ALICE", "", "decision-3", "approved"),
+                     Slack.Press("U-ALICE", "run-1", "gate-3", "approved", type: "view_submission"),
+                     Slack.Press("U-ALICE", "run-1", "gate-3", "approved", actionId: "ff_open"),
+                     Slack.Press("U-ALICE", "", "gate-3", "approved"),
                      "payload=not-json",
                      "nothing=here",
                  })

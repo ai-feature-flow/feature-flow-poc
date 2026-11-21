@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Helpers every test project shares (tests/Directory.Build.props references this project). No product references. -->
+
+</Project>

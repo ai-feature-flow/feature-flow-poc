@@ -4,14 +4,15 @@ metadata:
   name: sp1_parent
   level: epic
   description: >-
-    SP1's parent: child runs, decisions opened at start and short actions
+    SP1's parent: child runs, decisions opened at start and short agent steps
     four at a time, all in one parallel, so the run continues-as-new with children
-    running and decisions open.
+    running and decisions open. Each work step takes its item's milliseconds (the
+    fake script's delay_from).
 
 parameters:
   children: { type: array, required: true, description: "One child per item: { wait_ms, outcome }" }
   questions: { type: array, required: true, description: "One decision per item" }
-  work: { type: array, required: true, description: "One action per item, which takes item milliseconds" }
+  work: { type: array, required: true, description: "One agent step per item, which takes item milliseconds" }
 
 defaults:
   routes:
@@ -31,7 +32,6 @@ steps:
               action: run.child
               with:
                 template: sp1:templates/sp1_child
-                level: ticket
                 repositories: [acme/api]
                 parameters: { wait_ms: { expr: "item.wait_ms" }, outcome: { expr: "item.outcome" } }
         - id: questions
@@ -50,8 +50,11 @@ steps:
             mode: parallel
             max_concurrency: 4
             step:
-              action: artifact.compose
-              with: { audience: [team], message: work, wait_ms: { expr: "item" } }
+              agent:
+                role: std:roles/reviewer
+                task: sp1:tasks/work
+              with: { wait_ms: { expr: "item" } }
+              outcomes: { done: success }
     routes:
       completed: { end: completed }
       any_failed: { end: partial }

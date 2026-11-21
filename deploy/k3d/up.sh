@@ -5,7 +5,8 @@
 #   deploy/k3d/up.sh <config folder>
 #
 # The folder holds installation.yaml, organisation.yaml, any file they name (all mounted in /etc/feature-flow), and
-# optionally secrets.json (mounted as /var/run/secrets/feature-flow/secrets.json). Running it again rebuilds the images,
+# optionally secrets.json (mounted as /var/run/secrets/feature-flow/secrets.json) and repositories/ (served by a trial
+# Git server, git.yaml). Running it again rebuilds the images,
 # applies changed configuration and restarts the hosts; the cluster, its data and its generated passwords are kept.
 #
 # The cluster's kubeconfig is written to its own file (FF_KUBECONFIG); your default kubeconfig and context are not
@@ -100,6 +101,18 @@ for file in "$config"/*; do
   case "$(basename "$file")" in secrets*.json) ;; *) [ -f "$file" ] && files+=("--from-file=$file") ;; esac
 done
 kubectl -n feature-flow create configmap feature-flow-config "${files[@]}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+
+# The trial Git server (git.yaml), when the folder has a repositories/ folder: each repositories/<owner>/<name> is
+# served as git://git.feature-flow.svc/<owner>/<name>.git, made afresh from the folder on every run of up.sh.
+if [ -d "$config/repositories" ]; then
+  echo "Starting the trial Git server"
+  COPYFILE_DISABLE=1 tar -czf - --exclude .DS_Store -C "$config/repositories" . |
+    kubectl -n feature-flow create configmap feature-flow-repositories --from-file=repositories.tar.gz=/dev/stdin --dry-run=client -o yaml |
+    kubectl apply -f - >/dev/null
+  kubectl apply -f "$root/deploy/k3d/git.yaml" >/dev/null
+  [ -z "$rerun" ] || kubectl -n feature-flow rollout restart deployment/git >/dev/null
+  kubectl -n feature-flow rollout status deployment/git --timeout 300s >/dev/null
+fi
 
 echo "Waiting for the services and the hosts"
 [ -z "$rerun" ] || kubectl -n feature-flow rollout restart deployment/api deployment/orchestration-worker deployment/agent-worker >/dev/null

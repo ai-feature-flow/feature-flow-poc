@@ -75,7 +75,7 @@ public sealed class InboundTests : IAsyncDisposable
         return new HttpClient { BaseAddress = new Uri(app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First()) };
     }
 
-    static string Press(string user, string choice = "approved", string wait = "decision-1") =>
+    static string Press(string user, string choice = "approved", string wait = "gate-1") =>
         "payload=" + Uri.EscapeDataString(new JsonObject
         {
             ["type"] = "block_actions",
@@ -113,7 +113,7 @@ public sealed class InboundTests : IAsyncDisposable
         var now = DateTimeOffset.UtcNow;
         await records.AppendAsync(new RecordBatch(
             [new RunRecord("r1", null, "m7s:templates/decide", "running", "x", ["o/r"], false, now, null)],
-            [new WaitRecord("r1", "decision-1", "decision", "go_ahead", "m7s.go_ahead", "Go ahead?", ["approved", "rejected"], true, now)]), Ct);
+            [new WaitRecord("r1", "gate-1", "gate", "go_ahead", "m7s.go_ahead", "Go ahead?", ["approved", "rejected"], true, now)]), Ct);
     }
 
     async Task<IReadOnlyList<AnswerRecord>> AnswersAsync() =>
@@ -151,7 +151,7 @@ public sealed class InboundTests : IAsyncDisposable
         // Temporal, so delivery itself fails; the integration test delivers it.
         await SendAsync(http, SlackRequest("inbound/chat/slack", Press("U-ALICE")));
         var sent = Assert.Single(await AnswersAsync(), a => a.Result == "sent");
-        Assert.Equal(("alice", "decision-1"), (sent.Actor, sent.WaitId));
+        Assert.Equal(("alice", "gate-1"), (sent.Actor, sent.WaitId));
         Assert.Contains("\"outcome\":\"approved\"", sent.Answer);
     }
 

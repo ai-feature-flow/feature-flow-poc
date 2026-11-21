@@ -15,19 +15,23 @@ public sealed record CarriedRunInfo(
     IReadOnlyDictionary<string, string> Parameters,
     string? ParentId,
     string? TrackerIssue,
-    string? ParentBranch = null,
-    IReadOnlyDictionary<string, string>? DefaultBranches = null)
+    string? ParentBranch,
+    IReadOnlyDictionary<string, string>? DefaultBranches,
+    IReadOnlyDictionary<string, string>? ParentArtifacts,
+    IReadOnlyDictionary<string, string>? RootArtifacts)
 {
     public static CarriedRunInfo From(RunInfo run) =>
         new(run.Id, run.Repositories.ToList(),
             new SortedDictionary<string, string>(run.Parameters.ToDictionary(kv => kv.Key, kv => YamlWriter.Write(kv.Value)), StringComparer.Ordinal),
-            run.ParentId, run.TrackerIssue, run.ParentBranch,
-            run.DefaultBranches is null ? null : new SortedDictionary<string, string>(run.DefaultBranches.ToDictionary(), StringComparer.Ordinal));
+            run.ParentId, run.TrackerIssue, run.ParentBranch, Sorted(run.DefaultBranches), Sorted(run.ParentArtifacts), Sorted(run.RootArtifacts));
 
     public RunInfo ToRunInfo() =>
         new(Id, Repositories.ToList(),
             Parameters.ToDictionary(kv => kv.Key, kv => YamlWriter.Read(kv.Value, $"params.{kv.Key}")),
-            ParentId, TrackerIssue, ParentBranch, DefaultBranches);
+            ParentId, TrackerIssue, ParentBranch, DefaultBranches, ParentArtifacts, RootArtifacts);
+
+    static SortedDictionary<string, string>? Sorted(IReadOnlyDictionary<string, string>? map) =>
+        map is null ? null : new SortedDictionary<string, string>(map.ToDictionary(), StringComparer.Ordinal);
 }
 
 public sealed record CarriedExecution(int Number, string? Outcome, IReadOnlyDictionary<string, string> Outputs, IReadOnlyDictionary<string, string> Artifacts)
@@ -46,6 +50,10 @@ public sealed record CarriedWait(string Id, string Kind, string StepId, string? 
     public bool CleanUp { get; init; }
     public string? LibraryItem { get; init; }
     public string? LibraryContent { get; init; }
+    public string? StepKey { get; init; }
+    public IReadOnlyList<string>? Options { get; init; }
+    public DateTimeOffset? Deadline { get; init; }
+    public bool Session { get; init; }
 }
 
 public sealed record CarriedEntry(string StepId, bool CleanUp, bool Resumes = false)
@@ -87,6 +95,12 @@ public sealed record CarriedCore(
     public IReadOnlyList<AppliedOverride>? Overrides { get; init; }
 
     public IReadOnlyList<LibraryOverrideEntry>? LibraryOverrides { get; init; }
+
+    /// <summary>The waits that have closed, and how (<see cref="RunState.Closed"/>). Null when none has.</summary>
+    public IReadOnlyList<ClosedWait>? Closed { get; init; }
+
+    /// <summary>The child runs still running (<see cref="RunState.Children"/>). Null when there are none.</summary>
+    public IReadOnlyList<ChildRun>? Children { get; init; }
 }
 
 public sealed partial class RunCore
@@ -121,6 +135,10 @@ public sealed partial class RunCore
                 CleanUp = w.CleanUp,
                 LibraryItem = w.LibraryItem,
                 LibraryContent = w.LibraryContent,
+                StepKey = w.StepKey,
+                Options = w.Options?.ToList(),
+                Deadline = w.Deadline,
+                Session = w.Session,
             }).ToList(),
             s.RunAttempts,
             s.RunCeilingGranted,
@@ -133,6 +151,8 @@ public sealed partial class RunCore
             Skips = s.Skips.Count == 0 ? null : new SortedDictionary<string, string>(s.Skips, StringComparer.Ordinal),
             Overrides = s.Overrides.Count == 0 ? null : s.Overrides.ToList(),
             LibraryOverrides = s.LibraryOverrides.Count == 0 ? null : s.LibraryOverrides.ToList(),
+            Closed = s.Closed.Count == 0 ? null : s.Closed.ToList(),
+            Children = s.Children.Count == 0 ? null : s.Children.ToList(),
         };
     }
 
@@ -181,6 +201,10 @@ public sealed partial class RunCore
             CleanUp = w.CleanUp,
             LibraryItem = w.LibraryItem,
             LibraryContent = w.LibraryContent,
+            StepKey = w.StepKey,
+            Options = w.Options,
+            Deadline = w.Deadline,
+            Session = w.Session,
         }));
         s.RunAttempts = carried.RunAttempts;
         s.RunCeilingGranted = carried.RunCeilingGranted;
@@ -195,6 +219,8 @@ public sealed partial class RunCore
             s.Skips[id] = outcome;
         s.Overrides.AddRange(carried.Overrides ?? []);
         s.LibraryOverrides.AddRange(carried.LibraryOverrides ?? []);
+        s.Closed.AddRange(carried.Closed ?? []);
+        s.Children.AddRange(carried.Children ?? []);
         return core;
 
         static Execution? Exec(CarriedExecution? e)

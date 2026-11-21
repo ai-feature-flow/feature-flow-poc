@@ -1,6 +1,7 @@
 using FeatureFlow.Hosting;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Providers.Local;
+using FeatureFlow.Providers.StdValidators;
 using Microsoft.Data.Sqlite;
 
 namespace FeatureFlow.Integration.Tests;
@@ -18,13 +19,16 @@ public class ReconcileTests
     [Fact]
     public async Task Deleted_run_records_are_rebuilt_from_temporal_and_a_second_pass_writes_nothing()
     {
-        await using var h = await Harness.StartAsync("reconcile");
-        var completed = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=FF-1", "--repo", "acme/api");
+        await using var h = await Harness.StartAsync("reconcile", policy: "  merge: { default_branch: { engine_may_merge: [acme/api] } }");
+        var completed = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=FF-1", "--repo", "acme/api", "--param", "engine_can_merge=true");
         var approval = await h.WaitForWaitAsync(completed, Timeout);
         Assert.True(h.Cli("answer", completed, approval!, "approved").Exit == 0);
-        Assert.True(h.Cli("wait", completed, "--timeout", "120").Exit == 0);
+        var (endExit, end, endError) = h.Cli("wait", completed, "--timeout", "120");
+        Assert.True(endExit == 0, end + endError + (await h.ShowAsync(completed)).ToJsonString());
+        var web = h.Forge.CreateRepository("acme/web", new Dictionary<string, string> { ["feature-flow.yaml"] = Harness.Manifest });
+        h.Forge.Protect(web, new BranchProtection("main", true, true, 1, [], false));
         var open = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=FF-2", "--repo", "acme/web");
-        Assert.NotNull(await h.WaitForWaitAsync(open, Timeout));
+        Assert.True(await h.WaitForWaitAsync(open, Timeout) is not null, (await h.ShowAsync(open)).ToJsonString());
         var terminated = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=FF-3");
         Assert.NotNull(await h.WaitForWaitAsync(terminated, Timeout));
         await h.Client.GetWorkflowHandle(terminated).TerminateAsync("an operator ended it outside the engine");
@@ -38,7 +42,7 @@ public class ReconcileTests
         Assert.Null(await RecordAsync(h, completed));
 
         var output = new StringWriter();
-        Assert.Equal(0, await HostArguments.ReconcileAsync(h.Host.Configuration, LocalProviders.Factories, output));
+        Assert.Equal(0, await HostArguments.ReconcileAsync(h.Host.Configuration, LocalProviders.Factories.Concat(StdValidatorProviders.Factories), output));
 
         // Only this installation's task queue is read: the suite's other harnesses share the server.
         Assert.StartsWith($"reconcile: 3 runs in Temporal on {h.Host.Configuration.Installation.TaskQueue}, 3 records rebuilt", output.ToString());
@@ -50,7 +54,7 @@ public class ReconcileTests
         }
 
         var again = new StringWriter();
-        await HostArguments.ReconcileAsync(h.Host.Configuration, LocalProviders.Factories, again);
+        await HostArguments.ReconcileAsync(h.Host.Configuration, LocalProviders.Factories.Concat(StdValidatorProviders.Factories), again);
         Assert.StartsWith($"reconcile: 3 runs in Temporal on {h.Host.Configuration.Installation.TaskQueue}, 0 records rebuilt", again.ToString());
     }
 

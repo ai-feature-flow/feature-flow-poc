@@ -67,7 +67,7 @@ public class SurfacesTests
             _ => Task.FromResult(ProviderResult<string>.Success(SlackSecret)),
             new Dictionary<string, ChatPerson> { ["U-ALICE"] = new("alice", ["approver"], null) },
             "http://console.example", slack, "https://slack.example/api"));
-        await using var h = await Harness.StartAsync("chat", omitTypes: ["notifications"], libraries: [Library],
+        await using var h = await Harness.StartAsync("chat", without: ["notifications"], libraries: [Library],
             providers: "  notifications: { instances: { test_slack: {} } }", factories: [factory],
             organisation: NotifyEverything, fromChat: true);
 
@@ -159,7 +159,7 @@ public class SurfacesTests
         {
             WebhookSecret = _ => Task.FromResult(ProviderResult<string>.Success(HookSecret)),
         });
-        await using var h = await Harness.StartAsync("wake", omitTypes: ["vcs", "code_host", "ci"], libraries: [Library], factories: [hooks],
+        await using var h = await Harness.StartAsync("wake", without: ["vcs", "code_host", "ci"], libraries: [Library], factories: [hooks],
             providers: $$"""
               vcs: { instances: { memory: { world: {{world}} } } }
               code_host: { default: memory, instances: { memory: { world: {{world}} }, test_github: {} } }

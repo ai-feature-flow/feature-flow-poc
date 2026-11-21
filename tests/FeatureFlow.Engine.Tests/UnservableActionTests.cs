@@ -1,42 +1,63 @@
+using FeatureFlow.Engine.Actions;
 using FeatureFlow.Interpreter;
 using FeatureFlow.Library;
 using FeatureFlow.Model;
 using FeatureFlow.Model.Yaml;
 using FeatureFlow.Providers.Abstractions;
+using FeatureFlow.Providers.Local;
 using Temporalio.Testing;
 
 namespace FeatureFlow.Engine.Tests;
 
 /// <summary>
-/// F3 (LOG 352): an action no provider can serve, neither run against the installation's providers nor by an action
-/// stand-in, cannot answer, so the workflow raises an intervention (<c>StepCannotAnswer</c>) instead of Temporal retrying
-/// the activity for ever.
+/// F3 (LOG 352): an action no handler or provider can serve cannot answer, so the workflow raises an intervention
+/// (<c>StepCannotAnswer</c>) instead of Temporal retrying the activity for ever. A dry run takes no provider from the
+/// default instance of a type with no <c>dry_run</c> instance (docs/07 section 5).
 /// </summary>
 public sealed class UnservableActionTests
 {
+    /// <summary>The activities with a <c>memory</c> tracker as the default instance, and no dry-run instance of it.</summary>
     static RunActivities Activities()
     {
-        var providers = new ProviderSet(new Dictionary<string, IReadOnlyDictionary<string, IProvider>>(), new Dictionary<string, string>(), new Dictionary<string, string>());
+        IReadOnlyDictionary<string, IProvider> One(IProvider provider) => new Dictionary<string, IProvider> { ["one"] = provider };
+        var instances = new Dictionary<string, IReadOnlyDictionary<string, IProvider>>
+        {
+            ["tracker"] = One(new InMemoryTracker()),
+            ["record_store"] = One(new InMemoryRecordStore()),
+            ["artifact_store"] = One(new FileSystemArtifactStore(Path.Combine(Path.GetTempPath(), "ff-unservable-" + Guid.NewGuid().ToString("N")))),
+        };
+        var providers = new ProviderSet(instances, instances.Keys.ToDictionary(k => k, _ => "one"), new Dictionary<string, string>());
         var installation = new InstallationConfig("localhost:7233", "default", "q", 5120, new Dictionary<string, ProviderTypeConfig>(),
             new ApiAuthConfig("local_token", null, "tester", []), 3, 10, "installation.yaml");
         var organisation = new OrganisationConfig("acme", [], new PolicyConfig([], null, null, null, null), "organisation.yaml");
         return new RunActivities(new EngineServices(providers, installation, organisation), null);
     }
 
-    static StepCall Call(string action, bool dryRun) =>
-        new(new StepIdentity("run-1", "t", "step", 1, "run-1/step/1"), "action", action, new Dictionary<string, string>(),
-            new StepContract(Actions.All[action].Outcomes.Select(o => new OutcomeSpec(o.Name, o.Class.Name())).ToList(), new Dictionary<string, string>(), [],
-                new Dictionary<string, string>()), dryRun, null);
+    static readonly ActionScope Scope = new(["acme/api"], "acme/api", "ff/ticket/T-1", null, [], [], []);
+
+    static StepCall Call(string action, bool dryRun, string inputs = "{}") =>
+        new(new StepIdentity("run-1", "t", "step", 1, "run-1/step/1"), "action", action,
+            ((YMap)YamlWriter.Read(inputs)).Entries.ToDictionary(e => e.Key.Text, e => YamlWriter.Write(e.Value)),
+            new StepContract([new OutcomeSpec("done", "success")], new Dictionary<string, string>(), [], new Dictionary<string, string>()), dryRun, null);
 
     [Theory]
-    [InlineData("tracker.update", false)]
-    [InlineData("artifact.compose", true)]
-    public async Task An_action_no_provider_can_serve_cannot_answer(string action, bool dryRun)
+    [InlineData("repo.inspect", false, "{}", "provider, and none that can serve it is configured")]
+    [InlineData("tracker.update", true, "{ op: comment, issue: T-1, body: started }", "needs a tracker provider")]
+    [InlineData("no.such_action", false, "{}", "no.such_action")]
+    public async Task An_action_no_handler_or_provider_can_serve_cannot_answer(string action, bool dryRun, string inputs, string reason)
     {
-        var outcome = await new ActivityEnvironment().RunAsync(() => Activities().RunActionAsync(Call(action, dryRun)));
+        var outcome = await new ActivityEnvironment().RunAsync(() => Activities().RunActionAsync(Call(action, dryRun, inputs), Scope));
 
         Assert.Equal(StepOutcome.CannotAnswer, outcome.Kind);
-        Assert.Contains($"no provider can serve {action}", outcome.Reason, StringComparison.Ordinal);
+        Assert.Contains(reason, outcome.Reason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Outside_a_dry_run_the_default_instance_serves_the_action()
+    {
+        var outcome = await new ActivityEnvironment().RunAsync(() => Activities().RunActionAsync(Call("tracker.update", false, "{ op: comment, issue: T-1, body: started }"), Scope));
+
+        Assert.True((outcome.Kind, outcome.Report?.Outcome) == (StepOutcome.Reported, "not_found"), outcome.Reason);
     }
 
     const string Commenting = """
@@ -66,22 +87,19 @@ public sealed class UnservableActionTests
         File.WriteAllText(Path.Combine(root, "library.yaml"), "name: probe\nversion: 0.1.0\n");
         File.WriteAllText(Path.Combine(root, "templates", "commenting.yaml"), Commenting);
         var d = new DiagnosticBag();
-        var repository = new DirectoryInfo(AppContext.BaseDirectory);
-        while (!File.Exists(Path.Combine(repository.FullName, "FeatureFlow.slnx")))
-            repository = repository.Parent!;
-        var std = Path.Combine(repository.FullName, "library", "std");
+        var std = Path.Combine(Repository.Root, "library", "std");
         var libraries = new LibrarySet(Library.Library.Open(std, d)!, Library.Library.Open(root, d)!);
         var (core, loaded) = RunCore.Start(libraries, new LibraryReference("probe", null, "templates", "commenting"),
             new RunInfo("run-1", ["acme/api"], new Dictionary<string, YNode>()));
         Assert.True(core is not null, string.Join("\n", loaded.Concat(d)));
         Assert.Equal([new StartStep("comment", 1)], core.Advance());
 
-        var outcome = await new ActivityEnvironment().RunAsync(() => Activities().RunActionAsync(Call("tracker.update", false)));
+        var outcome = await new ActivityEnvironment().RunAsync(() => Activities().RunActionAsync(Call("tracker.update", true, "{ op: comment, issue: T-1, body: started }"), Scope));
         Assert.True(core.Apply(RunWorkflow.Ending("comment", outcome)!).Accepted);
 
         var wait = Assert.Single(core.State.Waits);
         Assert.Equal((WaitKind.Intervention, "comment"), (wait.Kind, wait.StepId));
-        Assert.Contains("no provider can serve tracker.update", wait.Reason, StringComparison.Ordinal);
+        Assert.Contains("tracker.update needs a tracker provider", wait.Reason, StringComparison.Ordinal);
         Assert.Equal(RunStatus.Running, core.State.Status);
         Assert.Contains(core.Advance(), c => c is RaiseIntervention { StepId: "comment" });
     }

@@ -22,9 +22,6 @@ public static partial class StepReader
     [GeneratedRegex("^[A-Za-z][A-Za-z0-9_]*$")]
     private static partial Regex OutcomeName();
 
-    [GeneratedRegex(@"^[0-9]+[smhd]$")]
-    private static partial Regex Duration();
-
     /// <summary>Reads the fields shared by every form. The caller has read <c>id</c> and the form key.</summary>
     public static Step Read(MapReader r, string fullId, string localId, StepForm form, Scope scope, DiagnosticBag d)
     {
@@ -471,10 +468,11 @@ public static partial class StepReader
         return new Limits(attempts, timeout, turns, qMax, qTimeout, races);
     }
 
+    /// <summary>A plan limit's duration: a whole number of seconds, minutes, hours or days (<see cref="Durations.Parse"/>, without decimals or <c>ms</c>).</summary>
     static string? DurationValue(MapReader r, string key)
     {
         var value = r.String(key);
-        if (value is not null && !Duration().IsMatch(value))
+        if (value is not null && (Durations.Parse(value) is null || !value[..^1].All(char.IsAsciiDigit)))
             r.Error($"{key} must be a duration such as 30m or 4h, not '{value}'", r.Map[key]!.Location);
         return value;
     }

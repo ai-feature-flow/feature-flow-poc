@@ -9,7 +9,6 @@ exits:
 
 steps:
   - id: say
-    action: artifact.compose
-    with: { audience: team, message: finishing }
+    action: repo.inspect
     routes:
-      composed: { exit: finished }
+      inspected: { exit: finished }

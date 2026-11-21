@@ -28,7 +28,7 @@ public class PolicyRunTests
             """);
         var id = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=FF-1", "--repo", "acme/api");
         var (waitExit, wait, _) = h.Cli("wait", id, "--for", "wait", "--timeout", "60");
-        Assert.True(waitExit == 0 && wait.Contains("decision at approve_spec", StringComparison.Ordinal), wait);
+        Assert.True(waitExit == 0 && wait.Contains("gate at approve_spec", StringComparison.Ordinal), wait);
 
         var policy = (await h.ShowAsync(id))["timeline"]!.AsArray().Where(e => e!["kind"]!.ToString() == "policy").Select(e => e!["detail"]!.ToString()).ToList();
         Assert.Contains(policy, l => l.StartsWith("approve_spec who answers: approver, 2 people", StringComparison.Ordinal)

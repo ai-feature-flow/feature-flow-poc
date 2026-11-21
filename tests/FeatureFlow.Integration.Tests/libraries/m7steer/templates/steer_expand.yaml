@@ -24,7 +24,7 @@ steps:
       from: work_list
       shape: parallel
       target: children
-      step: { action: run.child, with: { template: m7steer:templates/steer_line, level: ticket, repositories: "$.repositories" } }
+      step: { action: run.child, with: { template: m7steer:templates/steer_line, repositories: "$.repositories" } }
     consumes: [{ name: work_list }]
   - id: children
     parallel: { branches: [], join: all }

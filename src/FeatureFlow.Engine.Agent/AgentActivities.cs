@@ -63,14 +63,14 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
     public async Task<StepOutcome> RunAgentStepAsync(StepCall call)
     {
         var context = ActivityExecutionContext.Current;
-        // A dry run keeps its dry-run runtime; otherwise the step's role picks the instance (LOG 267), else the default.
-        var runtime = call.Agent?.Runtime is { } name && !call.DryRun
-            ? providers.Instance("agent_runtime", name) as IAgentRuntimeProvider
-              ?? throw new InvalidOperationException($"role_mapping names the agent runtime '{name}', which this agent worker does not configure")
-            : providers.Required<IAgentRuntimeProvider>("agent_runtime", call.DryRun);
-        if (call.Agent is null || call.DryRun || providers.ForRun("sandbox", false) is not ISandboxProvider sandboxes
-            || providers.ForRun("vcs", false) is not IVcsProvider vcs)
-            return await WithoutSandboxAsync(runtime, call, context);
+        // The step's role picks the runtime instance (LOG 267), else the run's default; in a dry run the dry_run instance stands in (LOG 384).
+        var runtime = (call.Agent?.Runtime is { } name ? providers.ForRun("agent_runtime", name, call.DryRun) : providers.ForRun("agent_runtime", call.DryRun)) as IAgentRuntimeProvider;
+        if (runtime is null)
+            return new StepOutcome(StepOutcome.CannotAnswer, null, call.Agent?.Runtime is { } mapped && !call.DryRun
+                ? $"role_mapping names the agent runtime '{mapped}', which this agent worker does not configure"
+                : $"an agent step needs an agent runtime{(call.DryRun ? " for a dry run" : "")}, and one is not configured");
+        if (providers.ForRun("sandbox", call.DryRun) is not ISandboxProvider sandboxes || providers.ForRun("vcs", call.DryRun) is not IVcsProvider vcs)
+            return new StepOutcome(StepOutcome.CannotAnswer, null, $"an agent step needs a sandbox and a vcs provider{(call.DryRun ? " for a dry run" : "")}, and one is not configured");
         try
         {
             return await new Run(this, call, runtime, sandboxes, vcs, context).ExecuteAsync();
@@ -83,57 +83,6 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
         {
             return new StepOutcome(StepOutcome.CannotAnswer, null, e.Message);
         }
-    }
-
-    /// <summary>M3's path, kept for the scripted and recording runtimes: no sandbox, the runtime's own report.</summary>
-    static async Task<StepOutcome> WithoutSandboxAsync(IAgentRuntimeProvider runtime, StepCall call, ActivityExecutionContext context)
-    {
-        var ct = context.CancellationToken;
-        var task = new AgentTask(call.Step, call.What, null, call.Inputs, call.Contract);
-        var started = await runtime.StartAsync(SandboxHandle.None, task, new AgentLimits(call.Timeout, call.Agent?.CorrectionTurns ?? 2), ct);
-        if (Classify(started.Error) is { } early)
-            return early;
-        var session = started.Value!;
-        try
-        {
-            while (true)
-            {
-                context.Heartbeat();
-                var progress = await runtime.GetProgressAsync(session, ct);
-                if (Classify(progress.Error) is { } failed)
-                    return failed;
-                if (progress.Value!.Finished)
-                    break;
-                await Task.Delay(TimeSpan.FromMilliseconds(250), ct);
-            }
-
-            var result = await runtime.GetResultAsync(session, ct);
-            return Classify(result.Error) ?? (result.Value!.Report is { } report
-                ? new StepOutcome(StepOutcome.Reported, report, null)
-                : new StepOutcome(StepOutcome.WorkFailed, null, "the agent ended without reporting"));
-        }
-        catch (OperationCanceledException)
-        {
-            await runtime.StopAsync(session, CancellationToken.None);
-            throw;
-        }
-    }
-
-    /// <summary>
-    /// An infrastructure error is thrown, so Temporal retries and no attempt is used, except a configuration fault, which
-    /// stops the step for a person (docs/06 section 1.1); a work error is returned.
-    /// </summary>
-    static StepOutcome? Classify(ProviderError? error)
-    {
-        if (error is null)
-            return null;
-        if (error.Reason == "cannot_answer")
-            return new StepOutcome(StepOutcome.CannotAnswer, null, error.Message);
-        if (error.IsConfigurationFault)
-            return new StepOutcome(StepOutcome.CannotAnswer, null, error.DescribeFault());
-        if (error.Class == ProviderErrorClass.Infrastructure)
-            throw new ApplicationFailureException($"{error.Reason}: {error.Message}", errorType: "infrastructure");
-        return new StepOutcome(StepOutcome.WorkFailed, null, $"{error.Reason}: {error.Message}");
     }
 
     /// <summary>The sandbox client, put in the artifact store once per worker, then copied into each sandbox.</summary>
@@ -208,7 +157,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                 throw new StepCannotAnswerException("the agent step names no repository");
             repo = new RepoRef(spec.Branches.Keys.First());
             workBranch = spec.Branches[repo.FullName];
-            hiddenRef = HiddenReference(call.Step);
+            hiddenRef = WorkRefs.Hidden(call.Step.RunId, call.Step.StepId);
             await RecordAsync(new RecordBatch(AgentSteps:
             [
                 new AgentStepRecord(key, call.Step.RunId, spec.WorkflowId, call.Step.StepId, spec.Level, call.Contract, spec.CorrectionTurns, spec.QuestionsMax,
@@ -318,14 +267,6 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             throw new StepWorkException($"the step ran out of time: its limit of {(call.Timeout ?? AgentLimits.DefaultTimeout).TotalMinutes:F0} minutes from {deadline - (call.Timeout ?? AgentLimits.DefaultTimeout):O}, not counting time its questions were open, has passed");
         }
 
-        static string HiddenReference(StepIdentity step) => $"refs/feature-flow/wip/{Safe(step.RunId)}/{Safe(step.StepId)}";
-
-        /// <summary>Where a hidden reference's commits are kept when a later attempt does not build on them.</summary>
-        public static string SupersededReference(StepIdentity step, string revision) =>
-            $"refs/feature-flow/superseded/{Safe(step.RunId)}/{Safe(step.StepId)}/{revision[..Math.Min(12, revision.Length)]}";
-
-        static string Safe(string text) => string.Concat(text.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' or '.' ? c : '_'));
-
         /// <summary>Creates or re-attaches to the sandbox. Returns whether an earlier attempt's commits were checked out.</summary>
         async Task<bool> PrepareAsync()
         {
@@ -337,7 +278,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             {
                 // The engine creates the run's work branch the first time a step touches the repository (docs/04 section 2).
                 Must(await vcs.PushAsync(repo, $"refs/heads/{workBranch}", parentHead, null, null, ct), "create the work branch");
-                events.Add($"created branch {workBranch} at {Short(parentHead)}");
+                events.Add($"created branch {workBranch} at {Revisions.Short(parentHead)}");
                 branchRevision = parentHead;
             }
 
@@ -359,10 +300,10 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             {
                 // The earlier attempt's commits are kept for a person (docs/04 section 3.7) under a reference of their own
                 // before this attempt's pushes replace the hidden reference (LOG 96).
-                var kept = SupersededReference(call.Step, hiddenRevision);
+                var kept = WorkRefs.Superseded(call.Step.RunId, call.Step.StepId, hiddenRevision);
                 if (Must(await vcs.ResolveAsync(repo, kept, ct), "read the superseded reference") is null)
                     Must(await vcs.PushAsync(repo, kept, hiddenRevision, null, null, ct), "keep the superseded commits");
-                events.Add($"hidden reference at {Short(hiddenRevision)} does not build on {workBranch} at {Short(startRevision)}: not used; kept as {kept}");
+                events.Add($"hidden reference at {Revisions.Short(hiddenRevision)} does not build on {workBranch} at {Revisions.Short(startRevision)}: not used; kept as {kept}");
                 await EventAsync("superseded", $"{hiddenRevision} as {kept}");
             }
             lastPushed = useHidden ? hiddenRevision! : startRevision;
@@ -409,7 +350,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             await StageInputsAsync();
             if (spec.WriteAccess == "none")
                 Must(await sandboxes.MakeReadOnlyAsync(sandbox, paths.Checkout, ct), "make the checkout read-only");
-            events.Add($"sandbox created; checkout of {workBranch} at {Short(source)}" + (useHidden ? " from the hidden reference" : ""));
+            events.Add($"sandbox created; checkout of {workBranch} at {Revisions.Short(source)}" + (useHidden ? " from the hidden reference" : ""));
             await EventAsync("sandbox", "created " + sandbox.Id);
             return useHidden;
         }
@@ -803,7 +744,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             var bundle = Must(await vcs.FetchCommitsAsync(copy, lastPushed, ct), "take the commits out of the sandbox");
             Must(await vcs.PushAsync(repo, hiddenRef, bundle.Head, bundle, hiddenRevision, ct), "push to the hidden reference");
             hiddenRevision = lastPushed = bundle.Head;
-            events.Add($"pushed {Short(bundle.Head)} to {hiddenRef}");
+            events.Add($"pushed {Revisions.Short(bundle.Head)} to {hiddenRef}");
             await EventAsync("pushed", $"{bundle.Head} to {hiddenRef}");
         }
 
@@ -843,7 +784,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                     if (spec.OnUncommitted == "fail")
                         throw new StepWorkException("the agent left uncommitted changes and the step has on_uncommitted: fail");
                     var committed = Must(await vcs.CommitAllAsync(copy, $"Uncommitted changes left by {call.Step.StepId}", ct), "commit leftovers");
-                    events.Add($"committed leftovers as {Short(committed ?? "")}");
+                    events.Add($"committed leftovers as {Revisions.Short(committed ?? "")}");
                 }
             }
 
@@ -855,7 +796,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                 await ManifestCommandsAsync(manifest.AfterChanges, "after_changes");
                 if (Must(await vcs.CommitAllAsync(copy, $"Changes by after_changes for {call.Step.StepId}", ct), "commit after_changes") is { } formatted)
                 {
-                    events.Add($"committed after_changes as {Short(formatted)}");
+                    events.Add($"committed after_changes as {Revisions.Short(formatted)}");
                     head = formatted;
                 }
             }
@@ -889,9 +830,9 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                 // The work branch moves once, to the final commit (docs/04 section 3.1, step 7), and only forward: the
                 // final commit must build on the branch as the step found it (LOG 96).
                 if (!Must(await vcs.DescendsFromAsync(repo, head, startRevision, ct), "compare the final commit with the work branch"))
-                    throw new StepWorkException($"the final commit {Short(head)} does not build on {workBranch} at {Short(startRevision)}; the branch is not moved");
+                    throw new StepWorkException($"the final commit {Revisions.Short(head)} does not build on {workBranch} at {Revisions.Short(startRevision)}; the branch is not moved");
                 Must(await vcs.PushAsync(repo, $"refs/heads/{workBranch}", head, null, startRevision, ct), "move the work branch");
-                events.Add($"moved {workBranch} to {Short(head)}");
+                events.Add($"moved {workBranch} to {Revisions.Short(head)}");
                 await EventAsync("moved", $"{workBranch} to {head}");
             }
 
@@ -945,7 +886,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
         /// </summary>
         async Task<string> DefaultBranchAsync()
         {
-            if (owner.Providers.ForRun("code_host", false) is not ICodeHostProvider host)
+            if (owner.Providers.ForRun("code_host", call.DryRun) is not ICodeHostProvider host)
             {
                 events.Add("no code host is configured: the parent branch is taken to be main");
                 return "main";
@@ -957,14 +898,14 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
         /// <summary>The repository manifest at the work branch as the step found it, read through the code host and recorded by hash (RW11).</summary>
         async Task<RepositoryManifest?> ManifestAsync()
         {
-            if (owner.Providers.ForRun("code_host", false) is not ICodeHostProvider host)
+            if (owner.Providers.ForRun("code_host", call.DryRun) is not ICodeHostProvider host)
                 return null;
             if (Must(await host.ReadFileAsync(repo, RepositoryManifest.FileName, startRevision, ct), "read the repository manifest") is not { } file)
                 return null;
             RepositoryManifest read;
             try
             {
-                read = RepositoryManifest.Parse(file.Content, file.Hash, $"{repo.FullName}:{RepositoryManifest.FileName} at {Short(startRevision)}");
+                read = RepositoryManifest.Parse(file.Content, file.Hash, $"{repo.FullName}:{RepositoryManifest.FileName} at {Revisions.Short(startRevision)}");
             }
             catch (FormatException e)
             {
@@ -994,7 +935,5 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             if (run.Exit != 0)
                 throw new ApplicationFailureException($"could not {what} in the sandbox: {run.Output.Trim()}", errorType: "infrastructure");
         }
-
-        static string Short(string revision) => revision.Length > 10 ? revision[..10] : revision;
     }
 }

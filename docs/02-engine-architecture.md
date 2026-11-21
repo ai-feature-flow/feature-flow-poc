@@ -52,7 +52,7 @@ their plan.
 ### 2.1 The loop
 
 ```
-state = { plan_revision, positions[], step_runs[], findings_summary, attempts, in_flight[], open_decisions[], children[] }
+state = { plan_revision, positions[], step_runs[], findings_summary, attempts, in_flight[], waits[] (open and closed), children[] }
 
 loop:
   ready = plan.ready(positions, state)              # pure
@@ -64,7 +64,7 @@ loop:
     elif step is a decision: open_decision(step) or auto_resolve(step)     # pure
     else: in_flight.add(start(step))               # activity, local, or child workflow
 
-  event = await first(in_flight, decisions answered, child signals, patches, overrides)
+  event = await first(in_flight, waits answered or timed out, child signals, patches, overrides)
   state = apply(state, event)                       # pure
   positions = route(event, state)                   # pure
 
@@ -75,6 +75,28 @@ Everything outside `await` is a pure function of the plan and state: the
 determinism boundary. No I/O, clock, randomness or unordered iteration in
 workflow code; recorded histories are replayed in CI against every interpreter
 change (`docs/09`).
+
+The pure function is the interpreter's core (`FeatureFlow.Interpreter`, LOG 66),
+and the state above is its state: every wait, open and closed; the child runs
+its `run.child` steps started and that have not ended; and the artifacts steps
+produced since the last record. What a step's activity is given (its inputs,
+contract, timeout, an agent step's settings and the artifacts it consumes), what
+an engine action knows of the run, what a child starts with and what a session
+opens with are functions of the core too. The Temporal workflow (`RunWorkflow`)
+is the loop around it: it carries out the core's commands (start a step's
+activity, start or cancel a child workflow, arm a timer, open a session), awaits
+the first thing to happen, gives it back to the core, and records what changed.
+It holds only what is Temporal's (section 3). It reads the core only through a
+listed set of the core's members and never touches the core's state: what it
+saw happen outside the core (an activity's warning, a session's or a tracker's
+result, a hand-over) it gives the core as a timeline note. A person's answers and
+overrides are both routed by the core, each by one function that the update's
+validator and handler call (`docs/04` section 4, `docs/05` section 5). An
+architecture test (`ShellRuleTests`) fails if the shell uses a core
+member not on the list, touches the core's state, names an action, recovery or
+wait kind, spells out a wait id's prefix or reads a wait id's spelling, or gains
+a field no one has said the core cannot hold. It checks names, so it does not
+prove the shell holds no routing decision (LOG 382).
 
 | Rule | Detail |
 |---|---|
@@ -125,9 +147,17 @@ that point. The new rule:
 |---|---|
 | Activities | **Drain**: stop starting new activities, let in-flight ones finish, then continue-as-new. Activities are at most hours long, and their heartbeats add no history |
 | Waits (`ci.checks`, `wait.condition`, a merge's action request) | **Do not block.** A wait may last days, so its activity is cancelled and the step returns to pending at the same execution, using no attempt. The new run starts that execution again with the same identity, so what it recorded (when it began waiting, the head it waits on) still applies, and its `timeout` and `grace` run from its first start (LOG 139, LOG 152) |
-| Child runs | **Do not block.** Children are started with a parent-close policy that leaves them running. A child reports its end to the parent's workflow id by signal, which reaches whichever run of the parent is current; the parent then reads the child's result to confirm. A child that ends without signalling (terminated, or failed before it could) is noticed all the same: the run that started it is told by Temporal when it closes, and a later run watches the children it carried over with one activity, which a hand-over interrupts like a wait (LOG 154). The parent reads a child's artifacts from the record store's artifact index (LOG 155) |
-| Open decisions | **Do not block.** They are state, carried over. Answers are Temporal Updates addressed by workflow id, which Temporal delivers to the current run. They are **accepted during the drain**: the handler only records the answer, and the hand-over waits for running handlers to finish, so the answer is in the carried state (LOG 58). The validator rejects unknown and conflicting answers only |
+| Child runs | **Do not block.** Children are started with a parent-close policy that leaves them running; the core holds the running ones, so they are carried with its state. A child reports its end to the parent's workflow id by signal, which reaches whichever run of the parent is current; the parent then reads the child's result to confirm. A child that ends without signalling (terminated, or failed before it could) is noticed all the same: the run that started it is told by Temporal when it closes, and a later run watches the children it carried over with one activity, which a hand-over interrupts like a wait (LOG 154). The parent reads a child's artifacts from the record store's artifact index (LOG 155) |
+| Open decisions | **Do not block.** Every wait, open and closed, is the core's state, carried over; a question's timer is armed again from it. Answers are Temporal Updates addressed by workflow id, which Temporal delivers to the current run. They are **accepted during the drain**: the handler only records the answer, and the hand-over waits for running handlers to finish, so the answer is in the carried state (LOG 58). The validator and the handler route an answer with the core's one routing function, so they refuse the same answers (`docs/04` section 4); an override is routed the same way, by the core's override routing (LOG 383) |
 | Timers | Re-created from state in the new run |
+
+What is carried has one path: the core's snapshot, which holds everything that
+routes (the plan's patches, positions, step records, waits open and closed,
+children running, steering), and what is Temporal's: child-ended and
+parent-patch signals not yet given to the core, the parent's cancellation, the
+timeline's record number, and the hand-over records. Each hand-over record
+counts what the drain interrupted, and what started or arrived while it drained
+(LOG 365); none of it is carried as state.
 
 Spiked in SP1 (`docs/spikes/sp1-results.md`): in 39 hand-overs, 24 with
 children running and decisions open, no child's end, answer or activity was

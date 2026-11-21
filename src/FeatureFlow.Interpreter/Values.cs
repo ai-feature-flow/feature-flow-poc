@@ -243,16 +243,7 @@ internal sealed class Evaluator(RunCore core)
     /// </summary>
     void StepValue(IReadOnlyList<string> path, Scope scope, Dictionary<string, object?> variables, Dictionary<string, string> typed)
     {
-        Step? step = null;
-        var at = 0;
-        for (var k = path.Count - 1; k >= 1 && step is null; k--)
-            if (core.FindStep(string.Join(".", path.Skip(1).Take(k)), scope) is { } found)
-            {
-                step = found;
-                at = k + 1;
-            }
-
-        if (step is null)
+        if (core.Plan.LongestStepPrefix(path, scope) is not ({ } step, var at))
             throw new EvaluationException($"steps.{string.Join(".", path.Skip(1))} names no step");
         var record = core.State.Steps.GetValueOrDefault(step.Id);
         var stepPath = string.Join(".", path.Take(at));

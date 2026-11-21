@@ -1,6 +1,6 @@
 using System.Text;
 using System.Text.Json;
-using FeatureFlow.Engine.ActionSteps;
+using FeatureFlow.Engine.Actions;
 using FeatureFlow.Interpreter;
 using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Library;
@@ -152,7 +152,8 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
             }
         }
 
-        foreach (var step in core.Plan.AllSteps.Where(s => s is { Form: Model.Plans.StepForm.Action, Action: "scm.merge" }))
+        // F1 governs the step that merges (the action that counts races, LOG 61): who may merge into the default branch.
+        foreach (var step in core.Plan.AllSteps.Where(s => s.Descriptor is { CountsRaces: true }))
         {
             IReadOnlyList<string> targets;
             bool? engineCanMerge;
@@ -238,80 +239,49 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
     public static RunInfo RunInfoOf(RunStart start) =>
         new(start.RunId, start.Repositories,
             start.Parameters.ToDictionary(kv => kv.Key, kv => YamlWriter.Read(kv.Value, $"params.{kv.Key}")),
-            start.ParentWorkflowId, start.TrackerIssue, start.ParentBranch);
+            start.ParentWorkflowId, start.TrackerIssue, start.ParentBranch, ParentArtifacts: start.ParentArtifacts, RootArtifacts: start.RootArtifacts);
 
     // The agent step's activity, RunAgentStep, is the agent worker's: Engine.Agent's AgentActivities (M4).
 
     /// <summary>
-    /// An engine action. One M5 builds (<see cref="EngineActions.Built"/>) runs against the providers when the
-    /// installation configures real source control (<see cref="EngineActions.HasSourceControl"/>); with only fake
-    /// providers, or in a dry run, it goes to the stand-in like every action not yet built (LOG 81, LOG 121), and with no
-    /// stand-in either it cannot answer, so the run raises an intervention (LOG 352). An action
+    /// An engine action, run by its handler against the providers the run uses: a dry run's are its <c>dry_run</c>
+    /// instances (docs/07 section 5). An action with no handler, or whose provider is not configured, cannot answer, so
+    /// the run raises an intervention rather than Temporal retrying it for ever (LOG 352). An action
     /// still waiting fails retryably with its poll interval as the next delay, so it holds no worker slot between reads.
     /// </summary>
     [Activity]
-    public async Task<StepOutcome> RunActionAsync(StepCall call, ActionScope? scope = null)
+    public async Task<StepOutcome> RunActionAsync(StepCall call, ActionScope scope)
     {
         var context = ActivityExecutionContext.Current;
-        var ct = context.CancellationToken;
-        if (EngineActions.Built.Contains(call.What) && !call.DryRun && scope is not null && actions.HasSourceControl)
+        ActionResult result;
+        try
         {
-            ActionResult result;
-            try
-            {
-                result = await actions.RunAsync(call, scope, () => context.Heartbeat(), ct);
-            }
-            catch (ActionInfrastructureException e)
-            {
-                throw new ApplicationFailureException(e.Message, errorType: "infrastructure");
-            }
-
-            if (result.Kind == ActionResult.Wait)
-                throw new ApplicationFailureException($"waiting: {result.Reason}", errorType: "waiting", nextRetryDelay: result.Delay);
-            return result.ToOutcome() with { Inputs = CheckInputs.Digest(call, scope) };
+            result = await actions.RunAsync(call, scope, () => context.Heartbeat(), context.CancellationToken);
+        }
+        catch (ActionInfrastructureException e)
+        {
+            throw new ApplicationFailureException(e.Message, errorType: "infrastructure");
         }
 
-        // Nothing else serves an action (F3): with no stand-in it stops for a person rather than being retried for ever.
-        if (services.Providers.ForRun("action_stand_in", call.DryRun) is not IActionStandIn standIn)
-            return new StepOutcome(StepOutcome.CannotAnswer, null,
-                $"no provider can serve {call.What}: it runs against the installation's providers only when built, outside a dry run, with a vcs and a code_host provider, and no action_stand_in is configured");
-        var stood = await standIn.RunAsync(new ActionRequest(call.Step, call.What, call.Inputs, call.Contract), ct);
-        return Classify(stood.Error) ?? new StepOutcome(StepOutcome.Reported, stood.Value, null) { Inputs = CheckInputs.Digest(call, scope) };
+        if (result.Kind == ActionResult.Wait)
+            throw new ApplicationFailureException($"waiting: {result.Reason}", errorType: "waiting", nextRetryDelay: result.Delay);
+        return result.ToOutcome() with { Inputs = CheckInputs.Digest(call, scope) };
     }
 
     /// <summary>A <c>clean_up</c> route's branch reset before its target step runs again (docs/03 section 4.1; M3 follow-up 5).</summary>
     [Activity]
     public async Task<CleanUpResult> CleanUpAsync(CleanUpCall call)
     {
-        if (call.DryRun)
-            return new CleanUpResult([$"clean_up: {call.StepId} (dry run: nothing is reset)"], null);
         try
         {
             return await actions.CleanUpAsync(call.RunId, call.StepId, call.Executions, call.Repositories, call.WorkBranch, call.StepIds,
-                ActivityExecutionContext.Current.CancellationToken);
+                ActivityExecutionContext.Current.CancellationToken, call.DryRun);
         }
         catch (ActionInfrastructureException e)
         {
             // Only infrastructure is retried; a work error comes back in the result and the run asks a person.
             throw new ApplicationFailureException(e.Message, errorType: "infrastructure");
         }
-    }
-
-    /// <summary>
-    /// An infrastructure error is thrown, so Temporal retries the activity and no attempt is used (docs/01
-    /// section 4); a work error is returned for the core to count.
-    /// </summary>
-    static StepOutcome? Classify(ProviderError? error)
-    {
-        if (error is null)
-            return null;
-        if (error.Reason == "cannot_answer")
-            return new StepOutcome(StepOutcome.CannotAnswer, null, error.Message);
-        if (error.IsConfigurationFault)
-            return new StepOutcome(StepOutcome.CannotAnswer, null, error.DescribeFault());
-        if (error.Class == ProviderErrorClass.Infrastructure)
-            throw new ApplicationFailureException($"{error.Reason}: {error.Message}", errorType: "infrastructure");
-        return new StepOutcome(StepOutcome.WorkFailed, null, $"{error.Reason}: {error.Message}");
     }
 
     /// <summary><c>plan.expand</c>'s read (docs/04 section 6.2): the list artifact's items, as JSON text, at most 500.</summary>

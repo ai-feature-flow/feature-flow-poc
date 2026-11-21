@@ -33,7 +33,7 @@ public sealed record Notification(string Event, string RunId, string Title, stri
 
 /// <summary>
 /// A person is needed: the wait to answer (<see cref="RunId"/>, <see cref="WaitId"/>), its kind (<c>decision</c>,
-/// <c>intervention</c>, <c>patchapproval</c>, <c>question</c>, a breakpoint or an action request), its decision type, the
+/// <c>intervention</c>, <c>patch_approval</c>, <c>question</c>, a breakpoint or an action request), its decision type, the
 /// prompt and the choices. An interactive provider offers the choices as buttons; the answer reaches the inbound gateway,
 /// which makes it an API decision call as the mapped person, where approval rules (<c>from_chat</c>) are checked.
 /// </summary>

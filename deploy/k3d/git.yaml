@@ -1,0 +1,83 @@
+# The trial Git server (deploy/README.md, k3d): up.sh applies it when the configuration folder has a repositories/
+# folder, after putting that folder in the ConfigMap feature-flow-repositories (repositories.tar.gz). Each
+# repositories/<owner>/<name> folder becomes a bare repository with one commit on main, served read-write with no
+# credential as git://git.feature-flow.svc/<owner>/<name>.git, for a run's repository (the `git` VCS provider) and a
+# `git` library source. The repositories are made afresh each time the pod starts: it is for trials and the cluster
+# tests, not for work to keep. Like Temporal and the stores, only the hosts reach it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: git
+  namespace: feature-flow
+  labels: { app.kubernetes.io/name: git }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/name: git }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: git }
+    spec:
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: git
+          # The sandbox image up.sh builds and imports: it has git, and no other image is pulled for this.
+          image: feature-flow-sandbox:dev
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              mkdir -p /tmp/seed
+              tar -xzf /seed/repositories.tar.gz -C /tmp/seed
+              cd /tmp/seed
+              for folder in */*/; do
+                name=${folder%/}
+                git init -q -b main "$name"
+                git -C "$name" add -A
+                git -C "$name" -c user.name="Feature Flow trial" -c user.email=trial@feature-flow.invalid commit -q -m "The trial repository $name"
+                git init -q --bare -b main "/srv/git/$name.git"
+                git -C "$name" push -q "/srv/git/$name.git" main
+                echo "serving $name"
+              done
+              exec git daemon --reuseaddr --export-all --enable=receive-pack --informative-errors --base-path=/srv/git /srv/git
+          env:
+            - { name: HOME, value: /tmp }
+          ports: [{ name: git, containerPort: 9418 }]
+          readinessProbe: { tcpSocket: { port: git }, periodSeconds: 2 }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          volumeMounts:
+            - { name: seed, mountPath: /seed, readOnly: true }
+            - { name: repositories, mountPath: /srv/git }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: seed, configMap: { name: feature-flow-repositories } }
+        - { name: repositories, emptyDir: {} }
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: git
+  namespace: feature-flow
+spec:
+  selector: { app.kubernetes.io/name: git }
+  ports: [{ name: git, port: 9418, targetPort: git }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: git
+  namespace: feature-flow
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: git }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { feature-flow/host: "true" }
+      ports: [{ port: 9418 }]

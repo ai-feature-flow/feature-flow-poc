@@ -1,0 +1,10 @@
+# The smoke configuration's library (deploy/k3d/smoke): one agent step, which the scripted runtime serves in a
+# Kubernetes sandbox and the engine commits and pushes to the trial Git server. Served as
+# git://git.feature-flow.svc/trial/smoke.git.
+name: smoke
+version: 0.1.0
+description: A run the k3d smoke configuration completes with no GitHub, tracker, CI or model
+requires:
+  plan_schema: 1
+dependencies:
+  - { name: std, version: ">=0.1.0" }

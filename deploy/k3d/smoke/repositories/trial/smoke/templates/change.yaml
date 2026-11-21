@@ -1,0 +1,34 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: change
+  level: ticket
+  description: >-
+    One implementer step on the run's repository, in a sandbox: the agent changes the checkout and writes notes, and
+    the engine commits and pushes the change to the work branch. It ends the run completed when the agent reports
+    implemented.
+  branch_pattern: "ff/smoke/{{ params.ticket_id }}"
+
+artifact_types:
+  - smoke:artifact_types/notes
+
+parameters:
+  ticket_id: { type: string, required: true }
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: implement
+    agent:
+      role: std:roles/implementer
+      task: smoke:tasks/change
+    with:
+      ticket_id: { expr: "params.ticket_id" }
+    produces:
+      implemented: [{ name: notes, type: smoke:artifact_types/notes }]
+    outcomes: { implemented: success, blocked: blocked }
+    limits: { attempts: 1 }
+    routes:
+      implemented: { end: completed }

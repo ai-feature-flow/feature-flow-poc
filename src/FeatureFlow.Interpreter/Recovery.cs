@@ -13,37 +13,6 @@ public sealed partial class RunCore
     /// <summary>Statuses a person may end a run with. <c>completed</c> is not one: only an end route completes a run (F9).</summary>
     public static readonly IReadOnlyList<RunStatus> EndableStatuses = [RunStatus.Failed, RunStatus.Rejected, RunStatus.Partial, RunStatus.Aborted];
 
-    /// <summary>
-    /// Whether an answer from outside the run would be accepted now, without applying it: the update validator's
-    /// check. Returns null when it would be accepted, else the reason.
-    /// </summary>
-    public string? Check(RunInput input)
-    {
-        if (State.Status != RunStatus.Running)
-            return $"the run has ended ({State.Status.Name()})";
-        switch (input)
-        {
-            case DecisionAnswered a:
-                if (State.Waits.FirstOrDefault(w => w.Kind == WaitKind.Decision && w.StepId == a.StepId) is not { } open || StepById(a.StepId) is not { } step)
-                    return $"no decision is open at {a.StepId}";
-                if (IsActionDecision(open))
-                    return ActionAnswerError(a);
-                return step.DeclaredOutcomes.Any(o => o.Name == a.Outcome)
-                    ? SessionArtifactsError(step, a)
-                    : $"{a.StepId}: '{a.Outcome}' is not a declared outcome ({string.Join(", ", step.DeclaredOutcomes.Select(o => o.Name))})";
-            case InterventionAnswered i:
-                return RecoveryError(i, out _);
-            case PatchAnswered p:
-                return State.Waits.Any(w => w.Id == p.WaitId && w.Kind == WaitKind.PatchApproval) ? null : $"no patch approval is open as {p.WaitId}";
-            case RunAborted:
-                return null;
-            case BreakpointSet or StepSkipped or AttemptsGranted or RoleChanged or LibraryOverridden or LibraryOverrideProposed:
-                return SteeringError(input);
-            default:
-                return $"{input.GetType().Name} is not an answer";
-        }
-    }
-
     string? RecoveryError(InterventionAnswered i, out OpenWait? wait)
     {
         wait = State.Waits.FirstOrDefault(w => w.Id == i.WaitId && w.Kind is WaitKind.Intervention or WaitKind.Breakpoint);
@@ -97,7 +66,7 @@ public sealed partial class RunCore
     {
         if (RecoveryError(i, out var wait) is { } error)
             return ApplyResult.Refused(error);
-        State.Waits.Remove(wait!);
+        RemoveWait(wait!, WaitEnds.Answered);
         var action = i.Action;
         Trace("recovered", wait!.StepId, action.Kind switch
         {
@@ -139,7 +108,7 @@ public sealed partial class RunCore
     {
         if (StepById(s.StepId) is null || !State.InFlight.Contains(s.StepId))
             return ApplyResult.Refused($"{s.StepId} is not running");
-        State.InFlight.Remove(s.StepId);
+        LeaveInFlight(s.StepId);
         CloseActionDecision(s.StepId, null);
         Intervene(s.StepId, null, s.Reason);
         return ApplyResult.Ok;
@@ -154,9 +123,9 @@ public sealed partial class RunCore
     {
         var names = step.Outputs.Select(o => o.Name).ToList();
         if (step.Form == StepForm.Agent)
-            names.AddRange(Model.Actions.AgentEngineOutputs);
-        else if (step.Action is { } a && Model.Actions.All.GetValueOrDefault(a)?.Outputs is { } fixedOutputs)
-            names.AddRange(fixedOutputs);
+            names.AddRange(Model.Actions.AgentEngineOutputs.Select(o => o.Name));
+        else if (step.Descriptor?.Outputs is { } fixedOutputs)
+            names.AddRange(fixedOutputs.Select(o => o.Name));
         var outputs = new Dictionary<string, object?>(StringComparer.Ordinal);
         foreach (var name in names.Distinct())
             outputs[name] = name == "coverage_known" ? true : OutputType(step, name) switch

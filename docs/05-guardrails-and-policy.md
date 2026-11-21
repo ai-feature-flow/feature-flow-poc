@@ -178,6 +178,14 @@ recorded with the actor, reason and the change.
 **Never overridable:** the floors in section 1. A patch or override that would
 relax one is rejected outright and recorded.
 
+The API delivers every override but answers and recoveries (which go as answers,
+`docs/04` section 4) to the run as one update, which the run's core routes: an
+override is idempotent by the id the API gave it, so the same override again
+succeeds with its first result and the same id with another key is refused as a
+conflict; then the key's arguments, the protected-content variants and the run's
+own checks decide whether it applies. The update's validator and handler route
+it with the same function, so they refuse the same overrides (LOG 383).
+
 The organisation may change the default role for any override by key, in
 `policy.overrides` (`docs/07` section 3). A `_protected` suffix (`skip_protected`,
 `amend_protected`) sets the role for the same override on protected content.

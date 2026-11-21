@@ -1,8 +1,9 @@
 using FeatureFlow.Interpreter.Wire;
+using FeatureFlow.Model;
 using FeatureFlow.Model.Plans;
 using FeatureFlow.Model.Yaml;
 
-namespace FeatureFlow.Engine;
+namespace FeatureFlow.Interpreter;
 
 /// <summary>The work-item budget (F11; docs/05 section 3.1): how a run tree's budget is fixed and what a patch would add to it.</summary>
 public static class WorkItems
@@ -21,7 +22,7 @@ public static class WorkItems
             _ => null,
         };
 
-    /// <summary>How many child runs a patch adds: its <c>run.child</c> steps.</summary>
+    /// <summary>How many child runs a patch adds: its steps whose action starts a child run.</summary>
     public static int ChildSteps(PatchDocument patch) =>
-        patch.Changes.Count(op => op.Step?["action"]?.ScalarText() == "run.child");
+        patch.Changes.Count(op => Actions.Get(op.Step?["action"]?.ScalarText())?.Handling == ActionHandling.ChildRun);
 }

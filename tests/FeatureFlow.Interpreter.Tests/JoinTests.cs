@@ -152,7 +152,7 @@ public class JoinTests
     {
         var core = Lib.Start("mixed");
         var first = core.Advance();
-        Assert.Contains(new OpenDecision("ask", 1), first);
+        Assert.Contains(first, c => c is OpenGate { StepId: "ask", Execution: 1 });
         Assert.Contains(new StartStep("work", 1), first);
 
         Assert.True(core.Apply(new StepCompleted("work", "passed")).Accepted);

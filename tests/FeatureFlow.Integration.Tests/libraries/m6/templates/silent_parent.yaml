@@ -4,11 +4,12 @@ metadata:
   name: silent_parent
   level: epic
   description: >-
-    A child beside a chain of short actions. The tests end the child without letting it
+    A child beside a chain of short agent steps, each taking its item's
+    milliseconds (the fake script's delay_from). The tests end the child without letting it
     signal, before or after a hand-over (M3 follow-up 10).
 
 parameters:
-  work: { type: array, required: true, description: "One action per item, which takes item milliseconds" }
+  work: { type: array, required: true, description: "One agent step per item, which takes item milliseconds" }
 
 defaults:
   routes:
@@ -23,15 +24,17 @@ steps:
           action: run.child
           with:
             template: m6:templates/silent_child
-            level: ticket
             repositories: [acme/api]
         - id: work
           for_each:
             items: { expr: "params.work" }
             mode: chain
             step:
-              action: artifact.compose
-              with: { audience: [team], message: work, wait_ms: { expr: "item" } }
+              agent:
+                role: std:roles/reviewer
+                task: m6:tasks/note
+              with: { wait_ms: { expr: "item" } }
+              outcomes: { done: success }
     routes:
       completed: { end: completed }
       any_failed: { end: failed }

@@ -18,8 +18,6 @@ public sealed class ConsoleTests : IAsyncDisposable
 {
     static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    static string Root { get; } = FindRoot();
-
     readonly string folder = Path.Combine(Path.GetTempPath(), "ff-console-" + Guid.NewGuid().ToString("N"));
     readonly SqliteRecordStore records;
     Microsoft.AspNetCore.Builder.WebApplication? app;
@@ -38,14 +36,6 @@ public sealed class ConsoleTests : IAsyncDisposable
         Directory.Delete(folder, recursive: true);
     }
 
-    static string FindRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "FeatureFlow.slnx")))
-            dir = dir.Parent;
-        return dir?.FullName ?? throw new InvalidOperationException("no repository root above the test");
-    }
-
     HttpClient Start()
     {
         var providers = new ProviderSet(
@@ -61,8 +51,8 @@ public sealed class ConsoleTests : IAsyncDisposable
             new ApiAuthConfig("local_token", "secrets/api_token", "tester", ["viewer", "approver", "steerer", "admin"]), 3, 10, Path.Combine(folder, "installation.yaml"));
         var organisation = new OrganisationConfig("t",
             [
-                new LibrarySourceConfig("std", "directory", Path.Combine(Root, "library", "std")),
-                new LibrarySourceConfig("m7s", "directory", Path.Combine(Root, "tests", "FeatureFlow.Integration.Tests", "libraries", "m7s")),
+                new LibrarySourceConfig("std", "directory", Path.Combine(Repository.Root, "library", "std")),
+                new LibrarySourceConfig("m7s", "directory", Path.Combine(Repository.Root, "tests", "FeatureFlow.Integration.Tests", "libraries", "m7s")),
             ],
             new PolicyConfig([], null, null, null, null), Path.Combine(folder, "organisation.yaml"));
         app = ApiApp.Build(new ApiServices(providers, installation, organisation, null!), "http://127.0.0.1:0");
@@ -101,7 +91,7 @@ public sealed class ConsoleTests : IAsyncDisposable
         var run = Assert.Single((await records.QueryAsync<RunRecord>(Queries.Runs, new Dictionary<string, string>(), Ct)).Unwrap());
         var now = DateTimeOffset.UtcNow;
         await records.AppendAsync(new RecordBatch(
-            Waits: [new WaitRecord(run.RunId, "decision-1", "decision", "go_ahead", "m7s.go_ahead", "Go ahead?", ["approved", "rejected"], true, now)],
+            Waits: [new WaitRecord(run.RunId, "gate-1", "gate", "go_ahead", "m7s.go_ahead", "Go ahead?", ["approved", "rejected"], true, now)],
             Timeline: [new TimelineRecord(run.RunId, 1, "started", "go_ahead", "execution 1", now)]), Ct);
 
         using var anonymous = new HttpClient { BaseAddress = http.BaseAddress };
@@ -112,6 +102,6 @@ public sealed class ConsoleTests : IAsyncDisposable
         Assert.Contains("Template decide (level ticket)", form);
         var row = Assert.Single(form.Split('\n'), l => l.Contains("go_ahead", StringComparison.Ordinal));
         Assert.Contains("m7s.go_ahead", row);
-        Assert.Contains("waiting(decision)", row);
+        Assert.Contains("waiting(gate)", row);
     }
 }

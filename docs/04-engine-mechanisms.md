@@ -22,7 +22,7 @@ the standard library's templates set it.
 | Idempotency | Every step has a key: a hash of run id, step id, execution number and its stable inputs. A remote object the engine creates carries a hidden marker (a branch suffix, a pull request body comment, a commit trailer, a tracker label), so a retry finds and adopts it instead of creating a duplicate |
 | Repository manifest | A step that touches a repository reads `feature-flow.yaml` from the branch when it starts and records the hash (RW11). The `library` section is read from the default branch only (`docs/07` section 4) |
 | Errors | Provider errors are classified as infrastructure (retried with backoff, free) or work (routed by outcome) (`docs/06`). A step may reclassify because it knows the intent: an agent that ran out of time is a work result |
-| Cannot answer | When a step cannot produce a trustworthy outcome (no manifest, a checkout not at the expected commit, results it cannot parse, a missing capability), it raises an **intervention** instead of guessing an outcome (P11, from FF). An action no provider can serve is one: it runs against the installation's providers only when it is built, the run is not a dry run and a VCS and a code host provider are configured; otherwise only the action stand-in (`docs/06` section 3) serves it, and with none configured the step cannot answer rather than being retried for ever (LOG 352) |
+| Cannot answer | When a step cannot produce a trustworthy outcome (no manifest, a checkout not at the expected commit, results it cannot parse, a missing capability), it raises an **intervention** instead of guessing an outcome (P11, from FF). An action no handler or provider can serve is one: an action runs through its handler against the providers the run uses (a dry run's are its `dry_run` instances, `docs/07` section 5), and with no handler, or no configured provider of a type it needs, the step cannot answer rather than being retried for ever (LOG 352) |
 | Waiting | No step waits on human or external time inside a provider call. Human waits are durable workflow waits; external waits poll inside one long-running, heartbeating activity, or wake on an inbound event and then confirm by reading (`docs/02`) |
 | Cost | Every step records tokens, model and compute time |
 | Audit | Every step records its start, each attempt, each resume, and its outcome in the run timeline |
@@ -48,7 +48,7 @@ the standard library's templates set it.
 | | `analysis.run` | `passed` (success), `failed` (failure) |
 | Evidence | `artifact.validate` | `valid` (success), `invalid` (failure) |
 | Findings | `findings.record` | `recorded` (success), `unavailable` (blocked) |
-| | `findings.triage` | `applied` (success), `invalid` (failure; added in M6, so it escalates where a plan does not route it, LOG 161) |
+| | `findings.triage` | `applied` (success), `invalid` (failure) |
 | Repository | `repo.inspect` | `inspected` (success) |
 | Artifacts | `artifact.compose` | `composed` (success) |
 | | `artifact.import` | `imported` (success) |
@@ -58,7 +58,29 @@ the standard library's templates set it.
 
 Twenty actions, down from forty step kinds in the first design. A plan naming
 any other action, `notify.send` included (never built; removed, LOG 342), is
-refused at load as an unknown action. What went:
+refused at load as an unknown action.
+
+Each action is one entry of the action registry (`ActionRegistry.Default`,
+`src/FeatureFlow.Model/Actions.cs`), which every part of the engine reads; no
+other table is keyed by action name (F10). An entry holds:
+
+| Field | Holds | Read by |
+|---|---|---|
+| Outcomes | Each outcome and its class, as in the table above | Loading: route resolution and check 7 |
+| Outputs | The outputs the action publishes, with their types (`docs/03` section 5.4); none listed means any name, typed `dyn` | Check 5, the core's output check |
+| Inputs | The input schema: each input's kind (`string`, `boolean`, `array`, `map`, `duration`), allowed values, least duration, and the library item type of a reference input (`run.child`'s `template`, `scm.pull_request`'s `body`); a rule across inputs (`wait.condition` takes exactly one condition; `findings.triage`'s `states`) | Check 31: literals at load, evaluated values at step start (LOG 359); reference resolution (check 19) |
+| Needs | The capabilities it needs (`docs/06` section 1) | Check 21 |
+| Handling | Who carries it out: the engine's handler, bound by name (LOG 357), so the descriptor stays data in `Model` and the handler lives in the engine; a test adds an action as one entry, both together (`EngineActions.Register`, LOG 357); the run itself for `run.child` (a child workflow) and `plan.expand` (a patch) | Dispatch; a test that the handlers' names equal the engine-handled entries |
+| Evidence | The evidence type it makes, indexed when the step does not declare it (LOG 180) | The artifact index; std's validators |
+| Waits between reads | Whether it may wait on the outside world, so a hand-over interrupts it (LOG 139) | The hand-over |
+| Raises gate | The type suffix of the decision it raises while it runs: `scm.merge`'s `<level>.merge_action` (section 4.5) | Check 16, the effective policy view, the core |
+| Counts races | Whether a lost race counts against `limits.races` rather than attempts: `scm.merge` (LOG 61) | The core, check 22 |
+| Opens pull request | The pull request it opens, as its `pull_request` output: the run's work in a repository (`scm.pull_request`), which later actions there act on, or a publication (`artifact.publish`) (LOG 385) | An action's scope (work only); closing the run's pull requests on abort (both) |
+| Makes set | Whether the artifact it makes is an artifact set: `artifact.compose` (LOG 385) | `artifact.validate`, which passes a set's members to validators |
+
+An outcome a plan leaves unrouted is refused at load whatever the action
+(check 7); none escalates by default but `attempts_exhausted` (L6, LOG 263).
+What went:
 
 | First design | Now |
 |---|---|
@@ -167,7 +189,7 @@ A `report` with a `success` outcome must give every output the step declares,
 each of its declared type (a `number` is whole). A missing or mistyped output
 is an output contract error: the errors go back to the agent for correction
 turns, like an invalid patch (LOG 76, 79). The interpreter's core refuses such
-a report from M2; correction turns arrive with the agent step in M4.
+a report too, so one that reaches the workflow fails the attempt as a work error.
 
 The agent worker checks a report when the `report` tool is called, so
 correction turns happen inside the session: up to `correction_turns` rejections
@@ -187,9 +209,14 @@ and duration limits paused.
 | Who answers | A human allowed by policy for the step's question decision type. Auto-resolution never answers a question |
 | Durability | The open question lives in workflow state and the record store, not in worker memory. If the worker restarts, the sandbox and the waiting agent survive; the new worker re-attaches and serves the answer when it arrives. Spiked in SP2 (`docs/spikes/sp2-results.md`), except the re-attach, which the spike's harness did not exercise |
 
-The run's workflow shell, not the interpreter's core, holds an open question,
-as a wait of kind `question` answered through the API with free text; an answer
-after the timeout is refused (LOG 93).
+The run's core holds an open question as a wait of kind `question` on the running
+step, answered through the API with free text like any other wait (section 4).
+It is idempotent by the question's id; it is held only for the execution that
+asked it; its timer is armed by the core and fired back to it, so a hand-over
+re-arms it from the carried state; and it closes when its step stops running,
+however the step ends (LOG 361). An answer after the timeout, or after the step
+ended, is refused. A question never routes the plan: the agent reads the answer
+(LOG 93 as amended by LOG 364).
 
 ### 3.5 Run context
 
@@ -233,11 +260,35 @@ One mechanism for every human wait (`docs/01` section 7).
 
 | Element | Detail |
 |---|---|
-| Form | A durable wait in the workflow. No timeout. Reminders on a timer, through notifications |
+| Form | A durable wait in the workflow. No timeout, except a question's (section 3.4); reminders on an open wait are A3 (`docs/12`) |
 | Inputs | `type`, `prompt`, `with`, optional `auto`, optional `session` (`docs/03` section 2.3) |
 | Outcomes | Declared |
-| Idempotency | By decision id. A recorded answer is never asked again |
-| Audit | Opened, reminded, answered: with the authenticated actor, the choice and the reason |
+| Idempotency | By wait id. A recorded answer is never asked again: the same answer again succeeds and changes nothing, a different one is refused as a conflict |
+| Audit | Opened and answered, with the authenticated actor and the choice; reminders and a required reason are A3 (`docs/12`) |
+
+Every wait is held in the interpreter's core, and every answer goes through one
+routing function (LOG 364). The update's validator asks it whether an answer
+would be refused; the handler routes and applies with the same function, so the
+two cannot disagree. It decides, in order:
+
+| Question | Result |
+|---|---|
+| Was the wait answered? | The same answer: a duplicate. Another: refused as a conflict (LOG 58) |
+| Did the wait close otherwise? | A question that timed out: refused as timed out, the agent has carried on. A question whose step ended: refused as its step ended, no agent is left to read the answer. Any other: refused, no wait is open |
+| What kind of wait is it? | A **gate** (a decision step's, or the `merge_action` gate an action raises, section 4.5) takes an outcome; a **question** text; a **patch approval** `approve` or `reject`; an **intervention** a recovery action, a **breakpoint** `continue` or a recovery action (`docs/01` section 7.2) |
+| Is it a session's gate? | The session's rules (section 4.4); a submission is imported by the run, then answered |
+| Would the run apply it? | The core's own checks: a declared outcome, the artifacts the outcome promises, a recovery's target and ceilings |
+
+A wait closes one way: answered; timed out (a question); its step ended (a
+question, or an action's gate when the step fails or cannot answer); answered on
+the code host (the `merge_action` gate, section 4.5); or withdrawn (its join
+decided, its step was skipped, or the run ended). The closed waits are carried
+across a hand-over with the rest of the core's state, so a repeated answer is
+still a duplicate in the next run. The record store's wait record has kind
+`gate`, `question`, `intervention`, `patch_approval` or `breakpoint`, the decision
+type, the choices that answer it and the text to show; wait ids are `gate-N`,
+`intervention-N`, `breakpoint-N` and `patch_approval-N`, and a question's is the
+id its agent's client gave it (LOG 360).
 
 ### 4.1 Answering
 
@@ -290,7 +341,7 @@ code host that refuses an allowed engine merge). It is a
 
 | Element | Detail |
 |---|---|
-| Form | A decision-kind wait on the running `scm.merge` step, not a step of its own. Choices `approve` and `reject`. It never auto-resolves: the step has no `auto` outcome |
+| Form | A gate on the running `scm.merge` step, not a step of its own. Choices `approve` and `reject`. It never auto-resolves: the step has no `auto` outcome |
 | Opening | The first read that finds the pull request open, in an execution that has raised none, returns to the run, which opens the decision and starts the same execution again at once: no attempt is used. One decision per execution. It opens whether or not an approval rule names `*.merge_action`; with none, the default rule applies (LOG 351) |
 | While it is open | The step reads the pull request every poll interval; a pull request event wakes it to read at once (events wake, reads confirm, `docs/02` section 2.3). It does not yet ask anyone to merge (LOG 350) |
 | `approve` | The watch is restarted at the same execution and asks a person to merge or close the pull request on the code host; it returns `merged` when it sees the merge, `declined` when it sees the pull request closed |
@@ -308,7 +359,7 @@ code host that refuses an allowed engine merge). It is a
 | Element | Detail |
 |---|---|
 | Form | Child workflow |
-| Inputs | `template`, `level`, `repositories`, `parameters`, `tracker_issue` (the child's own; it never inherits its parent's, LOG 185), `run_gate` (`auto` or `manual`, from FF). `manual` starts the child with a breakpoint before its first step, so a person starts it by answering the breakpoint decision |
+| Inputs | `template` (a library reference to a template), `repositories` (a list), `parameters` (a map), `tracker_issue` (the child's own; it never inherits its parent's, LOG 185). Any other key is refused at load (check 31; LOG 346): `run_gate` was dropped (LOG 264), and a child's level is its template's (LOG 358) |
 | Outcomes | From the child's status (`docs/03` section 9.3) |
 | Idempotency | By run id and step key: a retry adopts the existing child |
 | Checks | The root's work-item budget before creating the child (F11; counted in the record store, LOG 187) |
@@ -340,7 +391,7 @@ them (from FF). Toolsets are not in version 1 (`docs/06` section 3.9).
 | Element | Detail |
 |---|---|
 | Form | Activity: reads the list artifact (at most 500 items), builds the patch, and returns it; the workflow applies it through the patch path. A list from a parameter is expanded locally |
-| Inputs | `from` (a list artifact, or a parameter), `shape` (`parallel` or `chain`), `target` (the `parallel` to fill, or the step to chain after), `on_other` (for a chain), `step` (the step to create per item, with `$.<field>` paths into the item) |
+| Inputs | `from` (a list artifact, or a parameter), `shape` (`parallel` or `chain`), `target` (the `parallel` to fill, or the step to chain after), `on_other` (for a chain), `step` (the step to create per item, with `$.<field>` paths into the item). The step's own inputs are checked against its action's schema at load, `$.` paths when the patch is validated (check 31) |
 | Outcomes | `expanded` |
 | Effect | A patch, applied like any other and recorded with `proposed_by: engine` |
 
@@ -445,8 +496,8 @@ Waits for an external state, from FF's `awaitCondition`.
 
 | Element | Detail |
 |---|---|
-| Inputs | One condition: `pull_request` (`approved`, `merged` or `mergeable`), `checks` (judged as `ci.checks` judges them, with its default `grace`), or `tracker` (an issue reaching one of some statuses); `poll_every`; `timeout` (default 7 days) |
-| Outcomes | `met`; `unmet` (closed unmerged, changes requested, an issue in an `unmet` status) |
+| Inputs | One condition: `pull_request` (`approved`, `merged` or `mergeable`), `checks` (judged as `ci.checks` judges them, with its default `grace`), or `tracker` (`issue`, default the run's tracker issue; `statuses`, the library statuses that meet it; `unmet`, those that do not); `poll_every`; `timeout` (default 7 days) |
+| Outcomes | `met`; `unmet` (closed unmerged, changes requested, failed checks, an issue in an `unmet` status) |
 | Behaviour | Holds no worker slot. A durable timer polls; an inbound event wakes it early; a read confirms. A person may end the wait by hand with `met` or `unmet`, which is the "skip a step" override with a chosen outcome (`docs/05` section 5). The timeout raises an intervention |
 
 ---
@@ -556,7 +607,7 @@ workflow's (`docs/01` section 6, RW4).
 |---|---|
 | Inputs | `from`: a triage artifact (from a triage agent step, or a person's answer to a decision, LOG 248) listing, per finding, the new state (`fixed`, `declined`, `escalated`, `open`) and a reason; `states`: the states this step's producer may set (none given: all four; a non-empty list of them, LOG 168); `post_declines` (default `true`: post each decline reason on the pull request); `complete` (default `false`: with `true`, the triage must decide every escalated finding of the run and every declined blocking or demonstrated one, else it is `invalid`; for a person's triage, LOG 248) |
 | Outcomes | `applied`, with outputs `escalated` and `declined_blocking` (this triage's escalations, and its declines of blocking or demonstrated findings, counted by the engine); `invalid` (nothing applied) |
-| Behaviour | Applies each state change with its actor and reason. A triage entry naming an unknown finding or a state outside `states`, a move to `fixed` with nothing committed to the finding's repository since it was raised or reopened, or a triage that does not read, is `invalid`; the standard library routes it back to the triage's producer. A plan that does not route `invalid` escalates it (LOG 161). A decline is posted only where a pull request is open for the finding's repository (LOG 164); `scm.pull_request` posts earlier ones when it opens (LOG 249). A triage from a person's answer is recorded as the authenticated person who gave it, any other as its producing step (F8, LOG 248) |
+| Behaviour | Applies each state change with its actor and reason. A triage entry naming an unknown finding or a state outside `states`, a move to `fixed` with nothing committed to the finding's repository since it was raised or reopened, or a triage that does not read, is `invalid`; the standard library routes it back to the triage's producer. A decline is posted only where a pull request is open for the finding's repository (LOG 164); `scm.pull_request` posts earlier ones when it opens (LOG 249). A triage from a person's answer is recorded as the authenticated person who gave it, any other as its producing step (F8, LOG 248) |
 
 The standard library's fragments build review, triage, fix and verification
 from an agent reviewer, these two actions and route guards such as

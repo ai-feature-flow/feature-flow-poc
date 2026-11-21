@@ -288,10 +288,7 @@ public sealed class StdValidatorsContract : ValidatorContract, IDisposable
     {
         get
         {
-            var dir = new DirectoryInfo(AppContext.BaseDirectory);
-            while (!File.Exists(Path.Combine(dir.FullName, "FeatureFlow.slnx")))
-                dir = dir.Parent!;
-            var file = Path.Combine(dir.FullName, "library", "std", "fragments", "fix_loop.yaml");
+            var file = Path.Combine(Repository.Root, "library", "std", "fragments", "fix_loop.yaml");
             var root = (Model.Yaml.YMap)Model.Yaml.YamlText.Parse(File.ReadAllText(file), file, new Model.DiagnosticBag())!;
             var step = ((Model.Yaml.YSeq)root["steps"]!).Items.OfType<Model.Yaml.YMap>().Single(m => (m["id"] as Model.Yaml.YScalar)?.Text == "tests_added");
             var entry = (Model.Yaml.YMap)((Model.Yaml.YSeq)((Model.Yaml.YMap)step["with"]!)["validation"]!).Items[0];

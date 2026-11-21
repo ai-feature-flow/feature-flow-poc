@@ -3,11 +3,10 @@ kind: template
 metadata:
   name: leaf
   level: ticket
-  description: A child run that only sends a notification and completes.
+  description: A child run that only reads its repository's manifest and completes.
 
 steps:
   - id: say
-    action: artifact.compose
-    with: { audience: team, message: done }
+    action: repo.inspect
     routes:
-      composed: { end: completed }
+      inspected: { end: completed }

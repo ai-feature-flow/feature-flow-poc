@@ -1,7 +1,6 @@
-using FeatureFlow.Interpreter;
 using FeatureFlow.Model.Plans;
 
-namespace FeatureFlow.Engine;
+namespace FeatureFlow.Interpreter;
 
 /// <summary>One declarative tracker update that is due: the step (or fragment use) that declared it, and the library status to move to.</summary>
 public sealed record TrackerUpdate(string StepId, string Status, string Why);

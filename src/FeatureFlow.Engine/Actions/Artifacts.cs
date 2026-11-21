@@ -6,7 +6,7 @@ using FeatureFlow.Model;
 using FeatureFlow.Model.Yaml;
 using FeatureFlow.Providers.Abstractions;
 
-namespace FeatureFlow.Engine.ActionSteps;
+namespace FeatureFlow.Engine.Actions;
 
 /// <summary>An <c>artifact.import</c>'s provenance (LOG 151): the repository and exact commit, and each file with the artifact it became.</summary>
 public sealed record ImportRecord(string Repository, string Commit, string Folder, IReadOnlyList<ImportedFile> Files);
@@ -89,12 +89,12 @@ static class Artifacts
                 throw ActionStop.CannotAnswer($"artifact.import: '{name}' is not an artifact the step declares for imported");
             if (artifacts.ContainsKey(name))
                 throw ActionStop.CannotAnswer($"artifact.import names '{name}' twice");
-            var read = ActionRun.Must(await run.CodeHost.ReadFileAsync(repo, path, commit, run.Ct), $"read {path} at {EngineActions.Short(commit)}")
+            var read = ActionRun.Must(await run.CodeHost.ReadFileAsync(repo, path, commit, run.Ct), $"read {path} at {Revisions.Short(commit)}")
                        ?? throw ActionStop.CannotAnswer($"{repo.FullName} has no file {path} at {commit}");
             if (Encoding.UTF8.GetByteCount(read.Content) > MaxFileBytes)
                 throw ActionStop.CannotAnswer($"{path} is larger than {MaxFileBytes} bytes");
             if (ParseError(path, read.Content) is { } error)
-                throw ActionStop.CannotAnswer($"{path} at {EngineActions.Short(commit)} does not parse: {error}");
+                throw ActionStop.CannotAnswer($"{path} at {Revisions.Short(commit)} does not parse: {error}");
             var reference = await PutTextAsync(run, read.Content);
             artifacts[name] = reference;
             imported.Add(new ImportedFile(path, name, Value(file, "type") as string, reference, Hash(read.Content)));
@@ -102,12 +102,12 @@ static class Artifacts
         }
 
         if (errors.Count > 0)
-            throw ActionStop.CannotAnswer($"the files at {EngineActions.Short(commit)} do not fit their types:\n{string.Join("\n", errors)}");
+            throw ActionStop.CannotAnswer($"the files at {Revisions.Short(commit)} do not fit their types:\n{string.Join("\n", errors)}");
 
         var record = await run.PutJsonAsync(new ImportRecord(repo.FullName, commit, folder, imported));
         foreach (var name in declared.Where(n => !artifacts.ContainsKey(n)))
             artifacts[name] = record;
-        run.Events.Add($"imported {string.Join(", ", imported.Select(f => $"{f.Path} as {f.Name}"))} from {repo.FullName} at {EngineActions.Short(commit)}");
+        run.Events.Add($"imported {string.Join(", ", imported.Select(f => $"{f.Path} as {f.Name}"))} from {repo.FullName} at {Revisions.Short(commit)}");
         var values = new Dictionary<string, string>(run.Call.Contract.ZeroOutputs, StringComparer.Ordinal);
         return ActionResult.Reported(new StepReport("imported", values, artifacts, $"{run.Call.Step.StepId}: imported"), run.Events);
     }
@@ -184,12 +184,12 @@ static class Artifacts
         var supersede = previous is not null && previousPr?.State == PullRequestStates.Open;
         var branch = supersede
             ? previous!.Branch
-            : $"ff/publish/{EngineActions.Safe(run.Call.Step.RunId)}/{EngineActions.Safe(run.Call.Step.StepId)}/{run.Call.Step.Execution.ToString(CultureInfo.InvariantCulture)}";
+            : $"ff/publish/{WorkRefs.Safe(run.Call.Step.RunId)}/{WorkRefs.Safe(run.Call.Step.StepId)}/{run.Call.Step.Execution.ToString(CultureInfo.InvariantCulture)}";
         var branchHead = ActionRun.Must(await run.Vcs.ResolveAsync(repo, "refs/heads/" + branch, run.Ct), $"read {branch}");
         var mine = (await run.EventsAsync()).LastOrDefault(e => e.Kind == CommitEvent)?.Detail;
         var expectedHead = supersede ? previous!.Commit : null;
         if (branchHead is not null && branchHead != expectedHead && branchHead != mine)
-            conflicts.Add($"{branch} is at {EngineActions.Short(branchHead)}, a commit neither this step nor the earlier publication made");
+            conflicts.Add($"{branch} is at {Revisions.Short(branchHead)}, a commit neither this step nor the earlier publication made");
 
         var befores = new Dictionary<string, string?>(StringComparer.Ordinal);
         foreach (var source in sources)
@@ -242,7 +242,7 @@ static class Artifacts
         var pr = supersede
             ? ActionRun.Must(await run.CodeHost.UpdatePullRequestAsync(ActionRun.ParsePullRequest(previous!.PullRequest)!, spec, run.Ct), "update the pull request")
             : ActionRun.Must(await run.CodeHost.OpenPullRequestAsync(repo, spec, $"{run.Call.Step.RunId}/{branch}", run.Ct), "open the pull request");
-        run.Events.Add($"published {sources.Count} file(s) to {repo.FullName} {branch} at {EngineActions.Short(commit)}, pull request {ActionRun.Format(pr)}" +
+        run.Events.Add($"published {sources.Count} file(s) to {repo.FullName} {branch} at {Revisions.Short(commit)}, pull request {ActionRun.Format(pr)}" +
                        (supersede ? " (superseding the earlier publication in place)" : ""));
         var record = new Publication(repo.FullName, baseBranch, branch, commit, ActionRun.Format(pr), Published(), previous?.PullRequest, []);
         return run.Report("published", new Dictionary<string, object?> { ["pull_request"] = ActionRun.Format(pr), ["commit"] = commit },

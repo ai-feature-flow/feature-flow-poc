@@ -44,18 +44,18 @@ public sealed class LocalProviderTests : IDisposable
         await store.AppendAsync(new RecordBatch(
             [new RunRecord("r1", null, "std:templates/ticket_delivery", "starting", "me", ["acme/api"], false, now, null),
              new RunRecord("r1.kid.1", "r1", "std:templates/ticket_delivery", "running", "me", [], false, now, null)],
-            [new WaitRecord("r1", "decision-1", "decision", "approve_spec", "ticket.spec_approval", "decision", ["approved", "rejected"], true, now)],
+            [new WaitRecord("r1", "gate-1", "gate", "approve_spec", "ticket.spec_approval", "gate", ["approved", "rejected"], true, now)],
             [new TimelineRecord("r1", 1, "started", "plan", null, now), new TimelineRecord("r1", 2, "completed", "plan", "planned", now)]), Ct);
         await store.AppendAsync(new RecordBatch(
             [new RunRecord("r1", null, "std:templates/ticket_delivery", "completed", "me", ["acme/api"], false, now.AddMinutes(1), null)],
-            [new WaitRecord("r1", "decision-1", "", "", "", "", [], false, now.AddMinutes(1))],
+            [new WaitRecord("r1", "gate-1", "", "", "", "", [], false, now.AddMinutes(1))],
             [new TimelineRecord("r1", 2, "completed", "plan", "a retried append adds nothing", now)]), Ct);
 
         var p = new Dictionary<string, string> { ["run_id"] = "r1" };
         Assert.Equal("completed", (await store.QueryAsync<RunRecord>(Queries.Run, p, Ct)).Unwrap().Single().Status);
         Assert.Equal("r1.kid.1", (await store.QueryAsync<RunRecord>(Queries.Runs, new Dictionary<string, string> { ["parent_run_id"] = "r1" }, Ct)).Unwrap().Single().RunId);
         var wait = (await store.QueryAsync<WaitRecord>(Queries.Waits, p, Ct)).Unwrap().Single();
-        Assert.Equal((false, "decision", "ticket.spec_approval"), (wait.Open, wait.Kind, wait.DecisionType));
+        Assert.Equal((false, "gate", "ticket.spec_approval"), (wait.Open, wait.Kind, wait.DecisionType));
         Assert.Empty((await store.QueryAsync<WaitRecord>(Queries.Waits, new Dictionary<string, string>(p) { ["open"] = "true" }, Ct)).Unwrap());
         var timeline = (await store.QueryAsync<TimelineRecord>(Queries.Timeline, p, Ct)).Unwrap();
         Assert.Equal(["started", "completed"], timeline.Select(t => t.Kind));
@@ -115,33 +115,90 @@ public sealed class LocalProviderTests : IDisposable
     }
 
     [Fact]
+    public async Task A_scripted_artifact_names_the_steps_inputs_and_reports_their_values()
+    {
+        var script = Path.Combine(folder, "script.yaml");
+        await File.WriteAllTextAsync(script, """
+            api_version: feature-flow/v1
+            kind: fake_script
+            steps: { implement: { artifacts: { claims: { criterion: "AC-${ticket}", size: "${size}", other: "${unknown}", file: "work/${run_id}/${step_id}.txt" } } } }
+            """, Ct);
+        var store = new FileSystemArtifactStore(Path.Combine(folder, "artifacts"));
+        var runtime = new ScriptedAgentRuntime(FakeScript.Read(script), () => store);
+        var task = new AgentTask(Step(1), "implementer", null, new Dictionary<string, string> { ["ticket"] = "\"T-1\"", ["size"] = "3" }, Contract);
+
+        var session = (await runtime.StartAsync(SandboxHandle.None, task, new AgentLimits(null, 2), Ct)).Unwrap();
+        var report = (await runtime.GetResultAsync(session, Ct)).Unwrap().Report!;
+
+        var text = await Text(store, new ArtifactRef(report.Artifacts["claims"]));
+        Assert.Contains("AC-T-1", text);
+        Assert.Contains("\"size\": \"3\"", text);
+        Assert.Contains("${unknown}", text);
+        Assert.Contains("work/run-1/implement.txt", text);
+    }
+
+    [Fact]
     public async Task A_scripted_infrastructure_error_fails_the_call_the_given_number_of_times_then_goes_on()
     {
         var script = Path.Combine(folder, "script.yaml");
         await File.WriteAllTextAsync(script, """
             api_version: feature-flow/v1
             kind: fake_script
-            steps: { "test.run_step": { error: infrastructure, times: 2 } }
+            steps: { implement: { error: infrastructure, times: 2 } }
             """, Ct);
         var store = new FileSystemArtifactStore(Path.Combine(folder, "artifacts"));
-        var standIn = new ScriptedActionStandIn(FakeScript.Read(script), () => store);
-        var request = new ActionRequest(Step(1, "test.run_step"), "test.run", new Dictionary<string, string>(), Contract);
-        Assert.Equal(ProviderErrorClass.Infrastructure, (await standIn.RunAsync(request, Ct)).Error!.Class);
-        Assert.Equal(ProviderErrorClass.Infrastructure, (await standIn.RunAsync(request, Ct)).Error!.Class);
-        Assert.Equal("implemented", (await standIn.RunAsync(request, Ct)).Unwrap().Outcome);
+        var runtime = new ScriptedAgentRuntime(FakeScript.Read(script), () => store);
+        var task = new AgentTask(Step(1), "implementer", null, new Dictionary<string, string>(), Contract);
+        Assert.Equal(ProviderErrorClass.Infrastructure, (await runtime.StartAsync(SandboxHandle.None, task, new AgentLimits(null, 2), Ct)).Error!.Class);
+        Assert.Equal(ProviderErrorClass.Infrastructure, (await runtime.StartAsync(SandboxHandle.None, task, new AgentLimits(null, 2), Ct)).Error!.Class);
+        Assert.Equal("implemented", (await RunAgentAsync(runtime, Step(1))).Outcome);
     }
 
     [Fact]
-    public async Task A_recording_provider_writes_each_call_and_does_not_act()
+    public async Task The_recording_runtime_writes_each_step_it_is_given_and_reports_the_first_success()
     {
         var store = new FileSystemArtifactStore(Path.Combine(folder, "artifacts"));
-        var recorder = new Recorder(Path.Combine(folder, "recorded"), () => store);
-        var standIn = new RecordingActionStandIn(recorder);
-        var report = (await standIn.RunAsync(new ActionRequest(Step(1, "merge"), "scm.merge", new Dictionary<string, string> { ["squash"] = "true" }, Contract), Ct)).Unwrap();
-        Assert.Equal("implemented", report.Outcome);
+        var runtime = new RecordingAgentRuntime(new Recorder(Path.Combine(folder, "recorded"), () => store));
+        var session = (await runtime.StartAsync(SandboxHandle.None, new AgentTask(Step(1), "implementer", null, new Dictionary<string, string> { ["ticket"] = "\"T-1\"" }, Contract),
+            new AgentLimits(null, 2), Ct)).Unwrap();
+        Assert.Equal("implemented", (await runtime.GetResultAsync(session, Ct)).Unwrap().Report!.Outcome);
         var line = Assert.Single(await File.ReadAllLinesAsync(Path.Combine(folder, "recorded", "run-1.jsonl"), Ct));
-        Assert.Contains("\"what\":\"scm.merge\"", line);
-        Assert.Contains("\"squash\":\"true\"", line);
+        Assert.Contains("\"what\":\"implementer\"", line);
+        Assert.Contains("\"ticket\":", line);
+    }
+
+    [Fact]
+    public async Task The_scripted_runtime_acts_through_the_sandbox_provider_of_a_sandbox_its_world_does_not_hold()
+    {
+        // A sandbox provider the runtime's world does not hold stands for the Kubernetes or Docker one: the edit, the
+        // listing of the checkout and the artifacts go through its calls (LOG 371).
+        var store = new FileSystemArtifactStore(Path.Combine(folder, "artifacts"));
+        var records = new SqliteRecordStore(Path.Combine(folder, "records.db"));
+        var sandboxes = new MemorySandbox(() => store).On(new SandboxRule("^git ls-files", Output: "README.md\nwork/run-1/implement.txt\n"));
+        var d = new Model.DiagnosticBag();
+        var config = Model.ConfigurationReader.ReadInstallation($$"""
+            api_version: feature-flow/v1
+            kind: installation
+            development: true
+            temporal: { address: "localhost:7233", namespace: default, task_queue: q }
+            providers:
+              agent_runtime: { instances: { scripted: { world: test-{{Guid.NewGuid():N}} } } }
+            """, "installation.yaml", d)!;
+        Assert.DoesNotContain(d, x => x.Blocks);
+        var runtime = (IAgentRuntimeProvider)LocalProviders.Factories.Single(f => f is { Type: "agent_runtime", Kind: "scripted" })
+            .Create(new ProviderContext(config.Providers["agent_runtime"].Instances["scripted"], folder,
+                type => type switch { "artifact_store" => store, "record_store" => records, "sandbox" => sandboxes, _ => null }));
+        var sandbox = (await sandboxes.CreateAsync(new SandboxSpec("run-1/implement/1", "/ff/home", new Dictionary<string, string>(), []), Ct)).Unwrap();
+        var task = new AgentTask(Step(1), "implementer", null, new Dictionary<string, string>(), Contract) { Paths = AgentPaths.Default, WriteAccess = "branch" };
+
+        var session = (await runtime.StartAsync(sandbox, task, new AgentLimits(null, 2), Ct)).Unwrap();
+        var report = (await runtime.GetResultAsync(session, Ct)).Unwrap().Report!;
+
+        Assert.Equal("implement execution 1, session 1\n", sandboxes.ReadFile(sandbox, "/ff/work/work/run-1/implement.txt"));
+        Assert.Equal("claims.json", report.Artifacts["claims"]);
+        Assert.Contains("run-1/implement/1/claims", sandboxes.ReadFile(sandbox, "/ff/out/claims.json"));
+        var hooks = (await records.QueryAsync<AgentEventRecord>(Queries.AgentEvents, new Dictionary<string, string> { ["step_key"] = "run-1/implement/1" }, Ct)).Unwrap();
+        Assert.Equal(["Read", "Read /ff/work/README.md", "Read /ff/work/work/run-1/implement.txt"], hooks.Select(h => h.Detail));
     }
 
     [Fact]

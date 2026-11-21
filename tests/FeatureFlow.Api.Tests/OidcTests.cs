@@ -67,7 +67,7 @@ public sealed class OidcTests : IAsyncDisposable
         };
         world = new ApiWorld(organisation, ApiAuthentication.For(auth), auth);
         await world.RunAsync("r1", "acme/api");
-        await world.WaitAsync("r1", "w1", "decision", "ticket.spec_approval");
+        await world.WaitAsync("r1", "w1", "gate", "ticket.spec_approval");
         return world;
     }
 

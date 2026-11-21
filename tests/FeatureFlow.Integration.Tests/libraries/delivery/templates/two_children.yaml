@@ -14,10 +14,10 @@ defaults:
 steps:
   - id: first
     action: run.child
-    with: { template: delivery:templates/leaf, level: ticket }
+    with: { template: delivery:templates/leaf }
 
   - id: second
     action: run.child
-    with: { template: delivery:templates/leaf, level: ticket }
+    with: { template: delivery:templates/leaf }
     routes:
       completed: { end: completed }

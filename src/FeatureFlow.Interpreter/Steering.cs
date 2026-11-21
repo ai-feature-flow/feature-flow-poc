@@ -1,3 +1,4 @@
+using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Model;
 using FeatureFlow.Model.Plans;
 using FeatureFlow.Model.Yaml;
@@ -15,6 +16,158 @@ public sealed partial class RunCore
     /// <summary>The library content types a mid-run override may replace: what steps resolve, never the plan's structure or a role (F10).</summary>
     public static readonly IReadOnlyList<string> OverridableTypes = ["tasks", "prompts", "skills", "artifact_types"];
 
+    /// <summary>Why a steering input would be refused now, or null: the check <see cref="RouteOverride"/> makes of an override's input.</summary>
+    public string? SteeringCheck(RunInput input) =>
+        State.Status != RunStatus.Running ? $"the run has ended ({State.Status.Name()})" : SteeringError(input);
+
+    // ---- The override update (docs/05 section 5) ------------------------------------------------------
+
+    /// <summary>The keys the <c>override</c> update carries out: answers keep the <c>answer</c> update (LOG 203).</summary>
+    static readonly IReadOnlyList<string> UpdateKeys =
+        [Overrides.Breakpoint, Overrides.Skip, Overrides.Amend, Overrides.ChangeRole, Overrides.GrantAttempts, Overrides.OverrideLibrary, Overrides.Abort];
+
+    /// <summary>
+    /// Where an override goes, without changing anything: a duplicate of the one applied with its id (with its first result),
+    /// refused with the reason, the input to apply, or a library override whose content the shell stores first. The update
+    /// validator calls this alone; <see cref="Override"/> routes the same way, so the two cannot disagree.
+    /// </summary>
+    public AnswerRoute RouteOverride(OverrideArgs o)
+    {
+        if (State.Overrides.FirstOrDefault(a => a.Id == o.OverrideId) is { } previous)
+            return previous.Key == o.Key ? new Duplicate(previous.Result) : new Refused($"conflict: override {o.OverrideId} was already applied as {previous.Key}");
+        if (OverrideError(o) is { } error)
+            return new Refused(error);
+        return o.Key switch
+        {
+            Overrides.OverrideLibrary => new StoresLibrary(o.Change["item"], o.Change["with"]),
+            Overrides.Abort => new Applies(new RunAborted($"{o.Reason} (by {o.Actor})")),
+            _ => new Applies(SteeringInput(o)!),
+        };
+    }
+
+    /// <summary>
+    /// Routes an override and applies it, then records it by its id with its result and notes it on the timeline. A library
+    /// override (<see cref="StoresLibrary"/>) was applied by <see cref="LibraryOverridden"/> once the shell stored its content;
+    /// its result is given as <paramref name="stored"/> and recorded without routing again. A duplicate changes nothing.
+    /// </summary>
+    public OverrideOutcome Override(OverrideArgs o, string? stored = null)
+    {
+        string result;
+        var close = false;
+        if (stored is not null)
+            result = stored;
+        else
+            switch (RouteOverride(o))
+            {
+                case Duplicate d:
+                    return new(null, "duplicate: " + d.Result);
+                case Refused r:
+                    return new(r.Error);
+                case StoresLibrary:
+                    return new($"{o.OverrideId}: a library override's content is stored by the run before it is applied");
+                case Applies { Input: RunAborted aborted }:
+                    close = Bool(o.Change, "close_pull_requests") == true;
+                    Apply(aborted);
+                    result = close ? "aborted; its open pull requests will be closed" : "aborted";
+                    break;
+                case Applies p:
+                    var applied = Apply(p.Input);
+                    if (!applied.Accepted || applied.Patch is { Status: not PatchStatus.Applied })
+                        return new(string.Join("; ", applied.Errors.Concat(applied.Patch?.Diagnostics.Where(d => d.Blocks).Select(d => $"check {d.Check}: {d.Message}") ?? [])));
+                    result = o.Key switch
+                    {
+                        Overrides.Amend or Overrides.ChangeRole => $"applied: plan revision {State.Revision}",
+                        Overrides.Skip when State.Skips.ContainsKey(o.StepId!) => "applied: skipped when the run reaches it",
+                        Overrides.Skip => "applied: skipped",
+                        _ => "applied",
+                    };
+                    break;
+                default:
+                    throw new InvalidOperationException("unknown route");
+            }
+
+        if (ProtectedTouched(o) is { Count: > 0 } guarded)
+            result += $" (protected: {string.Join(", ", guarded)})";
+        State.Overrides.Add(new AppliedOverride(o.OverrideId, o.Key, result));
+        Trace("override", o.StepId ?? "", $"{o.Key} by {o.Actor}: {o.Reason} -> {result}");
+        return new(null, result, close);
+    }
+
+    /// <summary>Why an override would be refused now, or null: its key and arguments, then the core's own check.</summary>
+    string? OverrideError(OverrideArgs o)
+    {
+        if (!UpdateKeys.Contains(o.Key))
+            return Overrides.IsKey(o.Key)
+                ? $"{o.Key} is not delivered as an override: answers, recoveries and answers to agents go through the answer update"
+                : $"'{o.Key}' is not a run-time override key";
+        if (State.Status != RunStatus.Running)
+            return $"the run has ended ({State.Status.Name()})";
+        string? Missing(params string[] names) => names.FirstOrDefault(n => !o.Change.TryGetValue(n, out var v) || string.IsNullOrWhiteSpace(v)) is { } name
+            ? $"{o.Key} needs change.{name}"
+            : null;
+        switch (o.Key)
+        {
+            case Overrides.Breakpoint or Overrides.Skip or Overrides.ChangeRole when o.StepId is null:
+                return $"{o.Key} needs a step";
+            case Overrides.Skip when Missing("outcome") is { } missing:
+                return missing;
+            case Overrides.ChangeRole when Missing("role") is { } missing:
+                return missing;
+            case Overrides.Amend when Missing("patch") is { } missing:
+                return missing;
+            case Overrides.GrantAttempts when !long.TryParse(o.Change.GetValueOrDefault("attempts"), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out _):
+                return "grant_attempts needs change.attempts, a whole number";
+            case Overrides.Breakpoint when o.Change.ContainsKey("set") && Bool(o.Change, "set") is null:
+                return "breakpoint's change.set is true or false";
+            case Overrides.OverrideLibrary:
+                if (Missing("item", "with") is { } absent)
+                    return absent;
+                if (LibraryItemError(o.Change["item"]) is { } itemError)
+                    return itemError;
+                return ProtectedTouched(o) is { Count: > 0 } guarded && !Holds(o, Overrides.OverrideLibraryProtected)
+                    ? $"{string.Join(", ", guarded)} may resolve {o.Change["item"]}: overriding it needs {Overrides.OverrideLibraryProtected}"
+                    : null;
+            case Overrides.Abort:
+                return null;
+        }
+
+        if (o.Key == Overrides.Amend)
+            return ReadPatch(o.Change["patch"], out var d) is not { } patch ? "the patch does not read: " + string.Join("; ", d.Where(x => x.Blocks).Select(x => x.Message))
+                : patch.ResumeAt is not null ? "an amend changes the plan, not where the run is: omit resume_at, then answer a breakpoint or intervention with go_to (LOG 209)"
+                : null;
+        return SteeringCheck(SteeringInput(o)!);
+    }
+
+    /// <summary>The core input an override stands for; the actor is the authenticated one the API named (F8).</summary>
+    static RunInput? SteeringInput(OverrideArgs o) => o.Key switch
+    {
+        Overrides.Breakpoint => new BreakpointSet(o.StepId!, Bool(o.Change, "set") ?? true, o.Actor),
+        Overrides.Skip => new StepSkipped(o.StepId!, o.Change["outcome"], o.Actor, o.Reason, Holds(o, Overrides.SkipProtected)),
+        Overrides.GrantAttempts => new AttemptsGranted(o.StepId, long.Parse(o.Change["attempts"], System.Globalization.CultureInfo.InvariantCulture),
+            Holds(o, Overrides.GrantAttemptsBeyond), o.Actor),
+        Overrides.ChangeRole => new RoleChanged(o.StepId!, o.Change["role"], o.Actor, o.Reason),
+        Overrides.Amend when ReadPatch(o.Change["patch"], out _) is { } patch =>
+            new PatchProposed(patch with { Reason = $"amend by {o.Actor}: {o.Reason}" }, new Proposer("human", null), Holds(o, Overrides.AmendProtected)),
+        _ => null,
+    };
+
+    static bool Holds(OverrideArgs o, string variant) => o.Variants?.Contains(variant) == true;
+
+    static bool? Bool(IReadOnlyDictionary<string, string> change, string name) => change.GetValueOrDefault(name) switch
+    {
+        "true" => true,
+        "false" => false,
+        _ => null,
+    };
+
+    static PatchDocument? ReadPatch(string text, out DiagnosticBag d)
+    {
+        d = new DiagnosticBag();
+        var node = YamlText.Parse(text, "patch", d);
+        var patch = node is null || d.HasErrors ? null : PatchReader.Read(node, d);
+        return d.HasErrors ? null : patch;
+    }
+
     /// <summary>Why a steering input would be refused now, or null; the update validator's check as well as the handler's.</summary>
     string? SteeringError(RunInput input) => input switch
     {
@@ -23,7 +176,10 @@ public sealed partial class RunCore
         AttemptsGranted g => GrantError(g.StepId, g.Attempts, g.BeyondHardCeiling),
         RoleChanged r => RoleError(r),
         LibraryOverridden o => LibraryOverrideError(o.Entry.Item, o.Libraries),
-        LibraryOverrideProposed p => StepById(p.StepId) is null ? $"{p.StepId} is not a step of plan revision {State.Revision}" : LibraryItemError(p.Item),
+        LibraryOverrideProposed p => StepById(p.StepId) is not { } proposer ? $"{p.StepId} is not a step of plan revision {State.Revision}"
+            : proposer.Agent?.Planning is null ? $"{p.StepId} has no planning authority, so it may not propose a library override"
+            : p.Content is null ? "a library override proposal needs with, the new content"
+            : LibraryItemError(p.Item),
         _ => null,
     };
 
@@ -54,14 +210,13 @@ public sealed partial class RunCore
                                               + (o.Entry.ProtectedSteps.Count > 0 ? $"; protected steps affected: {string.Join(", ", o.Entry.ProtectedSteps)}" : ""));
                 return ApplyResult.Ok;
             case LibraryOverrideProposed p:
-                var wait = new OpenWait(NewWaitId("patch_approval"), WaitKind.PatchApproval, p.StepId, null,
+                var wait = AddWait(new OpenWait(NewWaitId("patch_approval"), WaitKind.PatchApproval, p.StepId, null,
                     $"{p.StepId} proposes a library override of {p.Item}; a person decides (docs/05 section 6)"
                     + (ProtectedResolving(p.Item) is { Count: > 0 } guarded ? $"; protected steps resolve it: {string.Join(", ", guarded)}" : ""))
                 {
                     LibraryItem = p.Item,
                     LibraryContent = p.Content,
-                };
-                State.Waits.Add(wait);
+                });
                 Trace("library_override_proposed", p.StepId, $"{p.Item}, {wait.Id}");
                 return ApplyResult.Ok;
             default:
@@ -90,8 +245,7 @@ public sealed partial class RunCore
     {
         if (entry.PastBreakpoint || !State.Breakpoints.Contains(step.Id))
             return false;
-        var wait = new OpenWait(NewWaitId("breakpoint"), WaitKind.Breakpoint, step.Id, null, $"a person set a breakpoint before {step.Id}") { CleanUp = entry.CleanUp };
-        State.Waits.Add(wait);
+        var wait = AddWait(new OpenWait(NewWaitId("breakpoint"), WaitKind.Breakpoint, step.Id, null, $"a person set a breakpoint before {step.Id}") { CleanUp = entry.CleanUp });
         Trace("paused", step.Id, wait.Id);
         Progressed();
         return true;
@@ -125,11 +279,11 @@ public sealed partial class RunCore
     {
         Trace("skip_set", s.StepId, $"{s.Outcome} by {s.Actor}: {s.Reason}");
         State.Skips[s.StepId] = s.Outcome;
-        var waits = State.Waits.Where(w => w.StepId == s.StepId && w.Kind is WaitKind.Decision or WaitKind.Breakpoint or WaitKind.Intervention).ToList();
+        var waits = State.Waits.Where(w => w.StepId == s.StepId && w.Kind is WaitKind.Gate or WaitKind.Breakpoint or WaitKind.Intervention).ToList();
         if (waits.Count == 0)
             return;
         foreach (var wait in waits)
-            CloseWaitFor(wait);
+            CloseWaitFor(wait, WaitEnds.Withdrawn);
         State.Pending.Add(new Entry(s.StepId, false));
     }
 
@@ -269,6 +423,20 @@ public sealed partial class RunCore
                                         || s.Produces.Any(p => Is(p.Type)) || s.Consumes.Any(c => Is(c.Type))))
             .Select(s => s.Id).Distinct().ToList();
     }
+
+    /// <summary>
+    /// The protected content an override touches, for its reply and record, so a reader sees the <c>_protected</c> variant was
+    /// needed: a protected step skipped or given another role, or the protected steps that resolve an overridden library item.
+    /// A run that starts children, or may once <c>plan.expand</c> adds them, passes a library override down, where protected
+    /// steps it cannot see may resolve it (LOG 212).
+    /// </summary>
+    IReadOnlyList<string> ProtectedTouched(OverrideArgs o) => o.Key switch
+    {
+        Overrides.Skip or Overrides.ChangeRole when o.StepId is not null && StepById(o.StepId) is { Protected: true } => [o.StepId],
+        Overrides.OverrideLibrary when o.Change.GetValueOrDefault("item") is { } item => ProtectedResolving(item)
+            .Concat(Plan.AllSteps.Any(x => x.Descriptor?.Handling is ActionHandling.ChildRun or ActionHandling.Expand) ? ["its child runs"] : []).ToList(),
+        _ => [],
+    };
 
     // ---- Re-running a branch of a decided join -----------------------------------------------------
 

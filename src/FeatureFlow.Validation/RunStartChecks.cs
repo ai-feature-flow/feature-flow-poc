@@ -17,41 +17,17 @@ public static class RunStartChecks
     /// <summary>The plan schema this engine reads (docs/08 section 2, <c>requires.plan_schema</c>).</summary>
     public const long PlanSchema = 1;
 
-    /// <summary>
-    /// Capability names a plan needs, by step form and action. A bare provider type means a provider of that type
-    /// must be configured; <c>type.flag</c> means its capability record must have that flag (docs/06 section 1).
-    /// </summary>
-    public static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> ActionNeeds = new Dictionary<string, IReadOnlyList<string>>
-    {
-        ["run.child"] = [],
-        ["plan.expand"] = [],
-        ["scm.catch_up"] = ["vcs", "code_host"],
-        ["scm.pull_request"] = ["code_host.pull_request"],
-        ["scm.merge"] = ["vcs", "code_host"],
-        ["scm.revert"] = ["code_host.pull_request"],
-        ["ci.checks"] = ["code_host.check_status", "ci"],
-        ["wait.condition"] = ["code_host"],
-        ["test.run"] = ["sandbox", "vcs", "code_host"],
-        ["test.integration"] = ["sandbox", "vcs", "code_host"],
-        ["analysis.run"] = ["sandbox", "vcs", "code_host"],
-        ["artifact.validate"] = ["validator"],
-        ["findings.record"] = [],
-        ["findings.triage"] = [],
-        ["repo.inspect"] = ["vcs", "code_host"],
-        ["artifact.compose"] = [],
-        ["artifact.import"] = ["vcs"],
-        ["artifact.publish"] = ["vcs", "code_host.pull_request"],
-        ["tracker.update"] = ["tracker"],
-        ["delivery.report"] = ["code_host"],
-    };
-
     /// <summary>What an agent step needs (docs/04 section 3): a sandbox, an agent runtime and a VCS provider.</summary>
     public static readonly IReadOnlyList<string> AgentNeeds = ["sandbox", "agent_runtime", "vcs"];
 
     /// <summary>What every run needs: the stores (docs/02 section 5).</summary>
     public static readonly IReadOnlyList<string> RunNeeds = ["artifact_store", "record_store"];
 
-    /// <summary>The capabilities a plan needs, with the first step that needs each (null for the run or a library).</summary>
+    /// <summary>
+    /// The capabilities a plan needs, with the first step that needs each (null for the run or a library). An action's are
+    /// its descriptor's <see cref="ActionDescriptor.Needs"/>: a bare provider type means a provider of that type must be
+    /// configured; <c>type.flag</c> means its capability record must have that flag (docs/06 section 1).
+    /// </summary>
     public static IReadOnlyDictionary<string, string> Needs(Plan plan, LibrarySet libraries)
     {
         var needs = new SortedDictionary<string, string>(StringComparer.Ordinal);
@@ -65,7 +41,7 @@ public static class RunStartChecks
             IEnumerable<string> stepNeeds = step.Form switch
             {
                 StepForm.Agent => AgentNeeds,
-                StepForm.Action when step.Action is { } a => ActionNeeds.GetValueOrDefault(a, []),
+                StepForm.Action => step.Descriptor?.Needs ?? [],
                 _ => [],
             };
             if (step.Tracker is not null)

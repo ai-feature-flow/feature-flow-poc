@@ -25,6 +25,5 @@ steps:
       mode: chain
       step:
         action: artifact.compose
-        with: { audience: team, message: { expr: "item" } }
     routes:
       completed: { end: completed }

@@ -8,17 +8,6 @@ namespace FeatureFlow.Model.Tests;
 /// </summary>
 public class ArtifactContentTests
 {
-    static string Root
-    {
-        get
-        {
-            for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-                if (File.Exists(Path.Combine(dir.FullName, "FeatureFlow.slnx")))
-                    return dir.FullName;
-            throw new InvalidOperationException("FeatureFlow.slnx not found");
-        }
-    }
-
     static (ArtifactTypeItem? Type, DiagnosticBag Diagnostics) Read(string yaml, string name = "t")
     {
         var d = new DiagnosticBag();
@@ -27,16 +16,16 @@ public class ArtifactContentTests
     }
 
     static ArtifactTypeItem Std(string name) =>
-        Read(File.ReadAllText(Path.Combine(Root, "library", "std", "artifact_types", name + ".yaml")), name).Type!;
+        Read(File.ReadAllText(Path.Combine(Repository.Root, "library", "std", "artifact_types", name + ".yaml")), name).Type!;
 
     public static TheoryData<string> StdTypes() =>
-        new(Directory.GetFiles(Path.Combine(Root, "library", "std", "artifact_types"), "*.yaml").Select(Path.GetFileNameWithoutExtension).Order()!);
+        new(Directory.GetFiles(Path.Combine(Repository.Root, "library", "std", "artifact_types"), "*.yaml").Select(Path.GetFileNameWithoutExtension).Order()!);
 
     [Theory]
     [MemberData(nameof(StdTypes))]
     public void Every_std_type_reads_and_uses_only_the_supported_schema_keywords(string name)
     {
-        var (type, d) = Read(File.ReadAllText(Path.Combine(Root, "library", "std", "artifact_types", name + ".yaml")), name);
+        var (type, d) = Read(File.ReadAllText(Path.Combine(Repository.Root, "library", "std", "artifact_types", name + ".yaml")), name);
         Assert.Empty(d);
         Assert.NotNull(type);
     }

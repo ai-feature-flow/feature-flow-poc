@@ -51,6 +51,7 @@
     <Project Path="tests/FeatureFlow.Providers.Contracts.Tests/FeatureFlow.Providers.Contracts.Tests.csproj" />
     <Project Path="tests/FeatureFlow.Replay.Tests/FeatureFlow.Replay.Tests.csproj" />
     <Project Path="tests/FeatureFlow.SandboxClient.Tests/FeatureFlow.SandboxClient.Tests.csproj" />
+    <Project Path="tests/FeatureFlow.Testing.Support/FeatureFlow.Testing.Support.csproj" />
     <Project Path="tests/FeatureFlow.Testing.Workflows.Tests/FeatureFlow.Testing.Workflows.Tests.csproj" />
     <Project Path="tests/FeatureFlow.Validation.Tests/FeatureFlow.Validation.Tests.csproj" />
   </Folder>

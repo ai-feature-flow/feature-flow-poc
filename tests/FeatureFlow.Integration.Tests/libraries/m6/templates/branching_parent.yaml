@@ -17,6 +17,5 @@ steps:
     action: run.child
     with:
       template: m6:templates/branching_child
-      level: ticket
       repositories: [client]           # as a planner might write it: the run calls it acme/client (LOG 198)
     routes: { completed: { end: completed } }

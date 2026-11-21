@@ -13,7 +13,7 @@ namespace FeatureFlow.Replay.Tests;
 /// </summary>
 public class ReplayTests
 {
-    static string HistoryFolder { get; } = Path.Combine(FindRoot(), "tests", "histories");
+    static string HistoryFolder { get; } = Path.Combine(Repository.Root, "tests", "histories");
 
     static string[] Names() => Directory.GetFiles(HistoryFolder, "*.json").Select(f => Path.GetFileNameWithoutExtension(f)).Order(StringComparer.Ordinal).ToArray();
 
@@ -23,8 +23,9 @@ public class ReplayTests
     public void The_recorded_histories_are_there()
     {
         // Without this, a missing folder would leave the theory with no cases and nothing replayed.
-        Assert.Equal(["agent_question", "budget_middle", "decision_prompt", "delivery_tracked", "epic_delivery", "epic_delivery_child", "family_child", "family_parent", "project_session",
-                "silent_parent_resumed", "sp1_parent", "sp1_parent_resumed", "steering_line", "steering_rerun_branch", "ticket_clean_up", "ticket_delivery", "wait_hand_over", "wait_hand_over_resumed", "wake"],
+        Assert.Equal(["agent_question", "budget_middle", "decision_prompt", "delivery_tracked", "epic_delivery", "epic_delivery_child", "family_child", "family_parent", "merge_action",
+                "project_session", "question_timeout", "silent_parent_resumed", "sp1_parent", "sp1_parent_resumed", "steering_line", "steering_rerun_branch", "ticket_clean_up", "ticket_delivery",
+                "wait_hand_over", "wait_hand_over_resumed", "wake"],
             Names());
     }
 
@@ -49,6 +50,11 @@ public class ReplayTests
     [InlineData("project_session", "activity OpenSession")]
     [InlineData("project_session", "update session_check")]
     [InlineData("agent_question", "signal question_opened")]
+    [InlineData("question_timeout", "signal question_opened")]
+    [InlineData("question_timeout", "text \"Kind\":\"question_timed_out\"")]
+    [InlineData("merge_action", "update answer")]
+    [InlineData("merge_action", "text merge_action")]
+    [InlineData("merge_action", "signal wake")]
     public void A_history_takes_the_path_it_covers(string name, string evidence)
     {
         var (kind, value) = (evidence[..evidence.IndexOf(' ')], evidence[(evidence.IndexOf(' ') + 1)..]);
@@ -125,13 +131,5 @@ public class ReplayTests
             .GetProperty("input").GetProperty("payloads")[0].GetProperty("data").GetString()!;
         using var input = System.Text.Json.JsonDocument.Parse(Convert.FromBase64String(data));
         return input.RootElement.GetProperty("RunId").GetString()!;
-    }
-
-    static string FindRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "FeatureFlow.slnx")))
-                return dir.FullName;
-        throw new InvalidOperationException("FeatureFlow.slnx not found above the test output folder");
     }
 }

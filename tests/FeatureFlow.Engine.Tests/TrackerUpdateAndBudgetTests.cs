@@ -13,17 +13,9 @@ namespace FeatureFlow.Engine.Tests;
 /// <summary>Which declarative tracker updates a run's timeline makes due (docs/03 section 2.5), and the root's work-item budget (F11).</summary>
 public sealed class TrackerUpdateAndBudgetTests
 {
-    static string Root()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "FeatureFlow.slnx")))
-                return dir.FullName;
-        throw new InvalidOperationException("FeatureFlow.slnx not found");
-    }
-
     static LibrarySet Libraries(DiagnosticBag d) =>
-        new(Library.Library.Open(Path.Combine(Root(), "library", "std"), d)!,
-            Library.Library.Open(Path.Combine(Root(), "tests", "FeatureFlow.Integration.Tests", "libraries", "delivery"), d)!);
+        new(Library.Library.Open(Path.Combine(Repository.Root, "library", "std"), d)!,
+            Library.Library.Open(Path.Combine(Repository.Root, "tests", "FeatureFlow.Integration.Tests", "libraries", "delivery"), d)!);
 
     static (RunCore? Core, IReadOnlyList<Diagnostic> Diagnostics) Start(string template, params (string Name, string Value)[] parameters) =>
         RunCore.Start(Libraries(new DiagnosticBag()), LibraryReference.TryParse(template)!,
@@ -45,8 +37,8 @@ public sealed class TrackerUpdateAndBudgetTests
 
         Assert.Equal(["begin:in_progress"], Due(plan, new TraceEntry("started", "begin", "execution 1")));
         Assert.Equal(["deliver:code_review"], Due(plan, new TraceEntry("started", "deliver.say", "execution 1")));
-        Assert.Equal(["deliver:done"], Due(plan, new TraceEntry("completed", "deliver.say", "composed")));
-        Assert.Empty(Due(plan, new TraceEntry("completed", "begin", "composed"), new TraceEntry("escalated", "deliver.say")));
+        Assert.Equal(["deliver:done"], Due(plan, new TraceEntry("completed", "deliver.say", "inspected")));
+        Assert.Empty(Due(plan, new TraceEntry("completed", "begin", "inspected"), new TraceEntry("escalated", "deliver.say")));
     }
 
     [Fact]

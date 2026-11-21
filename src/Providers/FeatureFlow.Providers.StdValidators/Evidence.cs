@@ -14,8 +14,6 @@ static class Evidence
     /// <summary>One tier's results, by repository and revision, from a test evidence artifact of a run.</summary>
     sealed record Observed(string RunId, string Repository, string Revision, string Tier, TestResults Results);
 
-    static string Short(string revision) => revision.Length > 10 ? revision[..10] : revision;
-
     static async Task<List<Observed>> ObservedAsync(Check c, IEnumerable<ArtifactRecord> records)
     {
         var observed = new List<Observed>();
@@ -84,7 +82,7 @@ static class Evidence
             return null;
         }
 
-        return (own, await ObservedAsync(c, c.EngineEvidence(Types.TestResults, Check.TestActions).Where(e => own.Contains(e.RunId))));
+        return (own, await ObservedAsync(c, c.EngineEvidence(Types.TestResults).Where(e => own.Contains(e.RunId))));
     }
 
     /// <summary><c>verification_satisfaction</c> (std's verification skill, "Satisfaction").</summary>
@@ -92,7 +90,7 @@ static class Evidence
     {
         var plans = await c.PlansAsync(Types.DeliveryPlan);
         var claimSubjects = c.Present(Types.EvidenceClaims);
-        var evidence = c.EngineEvidence(Types.TestResults, Check.TestActions).ToList();
+        var evidence = c.EngineEvidence(Types.TestResults).ToList();
         foreach (var subject in c.Present(Types.TestResults).Where(s => evidence.All(e => e.Ref != s.Artifact!.Id)))
             c.Error("not_evidence", $"{Check.Describe(subject)} was not produced by an engine test action, so it is not evidence (F7)", subject.Name);
         if (c.Present(Types.DeliveryPlan).Count == 0 && claimSubjects.Count == 0)
@@ -154,9 +152,9 @@ static class Evidence
 
                         var tiers = Tiers(observed, repository, revision, method.Tier);
                         if (tiers.Count == 0)
-                            c.Error("not_tested", $"{where}: the engine has no test results for {repository} at {Short(revision)}, the revision checked", plan.Subject.Name, criterion.Id);
+                            c.Error("not_tested", $"{where}: the engine has no test results for {repository} at {Revisions.Short(revision)}, the revision checked", plan.Subject.Name, criterion.Id);
                         else if (NotPassed(test.Id ?? "", tiers) is { } why)
-                            c.Error("test_not_passed", $"{where} claims {Name(test)}, which did not pass at {Short(revision)}: {why}", plan.Subject.Name, criterion.Id);
+                            c.Error("test_not_passed", $"{where} claims {Name(test)}, which did not pass at {Revisions.Short(revision)}: {why}", plan.Subject.Name, criterion.Id);
                     }
                 }
             }
@@ -205,8 +203,8 @@ static class Evidence
                 c.Warn("malformed", $"{record.Name} of run {record.RunId} is left out of the trace: {e.Message}", record.Name);
             }
 
-        tree.Observed = await ObservedAsync(c, c.EngineEvidence(Types.TestResults, Check.TestActions));
-        foreach (var record in c.EngineEvidence(Types.MergeRecord, new HashSet<string> { "scm.merge" }))
+        tree.Observed = await ObservedAsync(c, c.EngineEvidence(Types.TestResults));
+        foreach (var record in c.EngineEvidence(Types.MergeRecord))
             if (await c.ReadEngineAsync<MergeEvidence>(record.Ref) is { } merge)
                 tree.Merges.Add(merge);
         return tree;
@@ -290,13 +288,13 @@ static class Evidence
                     foreach (var revision in runs.Where(o => Check.SameRepository(o.Repository, repository)).Select(o => o.Revision).Distinct())
                         if (NotPassed(test.Id ?? "", Tiers(runs, repository, revision, method.Tier)) is null && await ContainedAsync(c, tree, repository, head, revision))
                         {
-                            tests.Add($"{repository} {method.Tier} {Name(test)} at {Short(revision)}");
+                            tests.Add($"{repository} {method.Tier} {Name(test)} at {Revisions.Short(revision)}");
                             proved = true;
                             break;
                         }
 
                     if (!proved)
-                        gaps.Add($"{where}: {Name(test)} did not pass at a commit {repository} at {Short(head)} contains");
+                        gaps.Add($"{where}: {Name(test)} did not pass at a commit {repository} at {Revisions.Short(head)} contains");
                 }
             }
 
@@ -400,14 +398,14 @@ static class Evidence
 
                 if (NotPassed(test.Id!, observed.Where(o => Check.SameRepository(o.Repository, repository) && o.Revision == head).ToList()) is { } failed)
                 {
-                    why.Add($"{Name(test)} did not pass in this run's test results at {Short(head)}: {failed}");
+                    why.Add($"{Name(test)} did not pass in this run's test results at {Revisions.Short(head)}: {failed}");
                     continue;
                 }
 
                 // A test the engine already saw pass when the finding was raised is not new (review N3).
                 if (test.Change == "new" && NotPassed(test.Id!, observed.Where(o => Check.SameRepository(o.Repository, repository) && o.Revision == raised).ToList()) is null)
                 {
-                    why.Add($"{Name(test)} is claimed as new, but it already passed at {Short(raised)}, where the finding was raised");
+                    why.Add($"{Name(test)} is claimed as new, but it already passed at {Revisions.Short(raised)}, where the finding was raised");
                     continue;
                 }
 
@@ -425,7 +423,7 @@ static class Evidence
 
                 if (await c.FileAsync(repository, file, head) is not { } after)
                 {
-                    why.Add($"{file} does not exist at {Short(head)}");
+                    why.Add($"{file} does not exist at {Revisions.Short(head)}");
                     continue;
                 }
 
@@ -437,7 +435,7 @@ static class Evidence
 
                 if (await c.FileAsync(repository, file, raised) is { } before && before.Hash == after.Hash)
                 {
-                    why.Add($"{file} is unchanged since {Short(raised)}");
+                    why.Add($"{file} is unchanged since {Revisions.Short(raised)}");
                     continue;
                 }
 
@@ -447,7 +445,7 @@ static class Evidence
 
             if (!added)
                 c.Error("no_test_added",
-                    $"{entry.Finding} was raised at {Short(raised)}; the fix claims no test in {repository} that is new or changed since then" + (why.Count > 0 ? ": " + string.Join("; ", why) : ""),
+                    $"{entry.Finding} was raised at {Revisions.Short(raised)}; the fix claims no test in {repository} that is new or changed since then" + (why.Count > 0 ? ": " + string.Join("; ", why) : ""),
                     item: entry.Finding);
         }
     }

@@ -96,6 +96,8 @@ public class ConfigurationTests
     // F19 (LOG 339): toolsets are not in version 1.
     [InlineData("  record_store: { default: sqlite,", "  toolset: { instances: { jira: {} } }\n  record_store: { default: sqlite,", "providers.toolset is not supported in version 1; remove it")]
     [InlineData("  record_store: { default: sqlite, instances: { sqlite: { path: records.db } } }", "  record_stor: { instances: { sqlite: {} } }", "unknown provider type 'record_stor'")]
+    // F3: the action stand-in (LOG 81) is gone; every action runs through its handler.
+    [InlineData("  record_store: { default: sqlite,", "  action_stand_in: { instances: { scripted: { script: s.yaml } } }\n  record_store: { default: sqlite,", "unknown provider type 'action_stand_in'")]
     [InlineData("  record_store: { default: sqlite,", "  record_store: { default: postgres,", "names instance 'postgres'")]
     [InlineData("defaults:", "workers: { mode: local }\ndefaults:", "workers is not supported in version 1")]
     [InlineData("defaults:", "observability: { otlp_endpoint: \"otel:4317\" }\ndefaults:", "observability.otlp_endpoint must be an http or https URL")]

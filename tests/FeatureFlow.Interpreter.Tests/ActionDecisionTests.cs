@@ -45,8 +45,8 @@ public class ActionDecisionTests
         var core = AtDecision();
 
         var wait = Assert.Single(core.State.Waits);
-        Assert.Equal((WaitKind.Decision, "merge"), (wait.Kind, wait.StepId));
-        Assert.Equal("ticket.merge_action", core.ActionDecisionType);
+        Assert.Equal((WaitKind.Gate, "merge"), (wait.Kind, wait.StepId));
+        Assert.Equal("ticket.merge_action", core.ActionDecisionTypeOf("merge"));
         Assert.Equal("open", core.ActionDecisionState("merge"));
         // The watch starts again at once, with the same execution: the decision does not hold the step, and no attempt is used.
         Assert.Equal([new StartStep("merge", 1)], core.Advance());

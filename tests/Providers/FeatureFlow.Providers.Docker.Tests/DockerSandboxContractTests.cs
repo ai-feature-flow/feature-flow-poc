@@ -116,7 +116,7 @@ public static class DockerImage
             var cli = new DockerCli();
             if ((await cli.RunAsync(["image", "inspect", image], CancellationToken.None)).Unwrap().Exit == 0)
                 return;
-            var folder = Path.Combine(Root(), "src", "Providers", "FeatureFlow.Providers.Docker");
+            var folder = Path.Combine(Repository.Root, "src", "Providers", "FeatureFlow.Providers.Docker");
             var built = (await cli.RunAsync(["build", "-q", "-t", image, "-f", Path.Combine(folder, "sandbox.Dockerfile"), folder], CancellationToken.None,
                 timeout: TimeSpan.FromMinutes(20))).Unwrap();
             Assert.True(built.Exit == 0, "the sandbox image did not build: " + built.Error);
@@ -125,13 +125,5 @@ public static class DockerImage
         {
             Gate.Release();
         }
-    }
-
-    static string Root()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "FeatureFlow.slnx")))
-            dir = dir.Parent;
-        return dir?.FullName ?? throw new InvalidOperationException("the repository root was not found");
     }
 }

@@ -11,7 +11,6 @@ metadata:
 parameters:
   planner_task: { type: reference, required: true }
   child_template: { type: reference, required: true }
-  child_level: { type: string, required: true }
   child_requirements_type: { type: reference, required: true, description: "requirements (project to epic) or delivery_plan (epic to ticket)" }
   approval_type: { type: string, required: true, description: "The approval decision's type" }
   child_parameters:
@@ -89,7 +88,6 @@ steps:
         action: run.child
         with:
           template: { param: child_template }
-          level: { param: child_level }
           repositories: "$.repositories"
           tracker_issue: "$.tracker_issue?"     # the child's own issue, when the planner names one
           parameters: { param: child_parameters }

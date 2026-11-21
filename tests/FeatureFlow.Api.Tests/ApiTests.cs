@@ -118,11 +118,11 @@ public sealed class ApiTests : IAsyncDisposable
     public async Task An_answer_from_an_actor_without_the_rules_role_is_refused_and_nothing_is_recorded()
     {
         var http = Start("viewer");
-        await OpenWaitAsync("decision-1", "decision", "ticket.spec_approval");
+        await OpenWaitAsync("gate-1", "gate", "ticket.spec_approval");
 
         // The body claims an approver; the token's actor is a viewer.
         Assert.Equal(HttpStatusCode.Forbidden, (await PostAsync(http, "runs/r1/answers",
-            """{ "wait_id": "decision-1", "outcome": "approved", "actor": "lead", "roles": ["approver"] }""")).Status);
+            """{ "wait_id": "gate-1", "outcome": "approved", "actor": "lead", "roles": ["approver"] }""")).Status);
         Assert.Equal(HttpStatusCode.Forbidden, (await PostAsync(http, "runs/r1/abort", "{}")).Status);
         var answers = (await records.QueryAsync<AnswerRecord>(Queries.Answers, new Dictionary<string, string> { ["run_id"] = "r1" }, TestContext.Current.CancellationToken)).Unwrap();
         Assert.Empty(answers);
@@ -197,13 +197,13 @@ public sealed class ApiTests : IAsyncDisposable
     public void Who_may_answer_is_the_organisation_rule_then_the_library_default_then_the_fallback()
     {
         // A library default applies where no organisation rule matches (docs/05 section 4).
-        Assert.Equal(["auditor"], ApiApp.RolesToAnswer(NoRules, Declared, Wait("decision", "x.audit")));
+        Assert.Equal(["auditor"], ApiApp.RolesToAnswer(NoRules, Declared, Wait("gate", "x.audit")));
         // An organisation rule comes first.
         var rule = new PolicyConfig([new ApprovalRule("x.*", ["lead"], 1, false, new Cap<bool>(false, false))], null, null, null, null);
-        Assert.Equal(["lead"], ApiApp.RolesToAnswer(rule, Declared, Wait("decision", "x.audit")));
+        Assert.Equal(["lead"], ApiApp.RolesToAnswer(rule, Declared, Wait("gate", "x.audit")));
         // Neither: approver for a decision, steerer for the rest.
-        Assert.Equal(["approver"], ApiApp.RolesToAnswer(NoRules, [], Wait("decision", "y.other")));
-        Assert.Equal(["steerer", "admin"], ApiApp.RolesToAnswer(NoRules, [], Wait("patchapproval", "ticket.patch_approval")));
+        Assert.Equal(["approver"], ApiApp.RolesToAnswer(NoRules, [], Wait("gate", "y.other")));
+        Assert.Equal(["steerer", "admin"], ApiApp.RolesToAnswer(NoRules, [], Wait("patch_approval", "ticket.patch_approval")));
     }
 
     [Fact]
@@ -211,7 +211,7 @@ public sealed class ApiTests : IAsyncDisposable
     {
         Assert.Contains("admin", ApiApp.RolesToAnswer(NoRules, Declared, Wait("intervention", "ticket.escalation")));
         Assert.Contains("admin", ApiApp.RolesToAnswer(NoRules, [], Wait("intervention", "ticket.escalation")));
-        Assert.DoesNotContain("admin", ApiApp.RolesToAnswer(NoRules, Declared, Wait("decision", "ticket.spec_approval")));
+        Assert.DoesNotContain("admin", ApiApp.RolesToAnswer(NoRules, Declared, Wait("gate", "ticket.spec_approval")));
     }
 
     // ---- a person's triage on a decision's answer (LOG 202, 248) ----
@@ -220,12 +220,12 @@ public sealed class ApiTests : IAsyncDisposable
     public async Task An_answer_s_artifacts_are_stored_and_sent_by_reference_as_the_authenticated_person()
     {
         var approver = Start("approver");
-        await OpenWaitAsync("decision-1", "decision", "ticket.spec_approval");
+        await OpenWaitAsync("gate-1", "gate", "ticket.spec_approval");
         const string Triage = "schema: 1\nentries:\n  - { finding: F-1, state: declined, reason: accepted }\n";
 
         // No Temporal client here: delivery fails after the answer is recorded as sent, which is what findings.triage reads.
         await PostAsync(approver, "runs/r1/answers", $$"""
-            { "wait_id": "decision-1", "outcome": "triaged", "actor": "someone-else", "artifacts": { "person_triage": {{System.Text.Json.JsonSerializer.Serialize(Triage)}} } }
+            { "wait_id": "gate-1", "outcome": "triaged", "actor": "someone-else", "artifacts": { "person_triage": {{System.Text.Json.JsonSerializer.Serialize(Triage)}} } }
             """);
 
         var sent = Assert.Single((await records.QueryAsync<AnswerRecord>(Queries.Answers, new Dictionary<string, string> { ["run_id"] = "r1" },
@@ -245,9 +245,9 @@ public sealed class ApiTests : IAsyncDisposable
     public async Task Artifacts_that_are_not_documents_are_refused_before_anything_is_recorded(string artifacts, string error)
     {
         var approver = Start("approver");
-        await OpenWaitAsync("decision-1", "decision", "ticket.spec_approval");
+        await OpenWaitAsync("gate-1", "gate", "ticket.spec_approval");
 
-        var (status, text) = await PostAsync(approver, "runs/r1/answers", $$"""{ "wait_id": "decision-1", "outcome": "triaged", "artifacts": {{artifacts}} }""");
+        var (status, text) = await PostAsync(approver, "runs/r1/answers", $$"""{ "wait_id": "gate-1", "outcome": "triaged", "artifacts": {{artifacts}} }""");
 
         Assert.Equal(HttpStatusCode.BadRequest, status);
         Assert.Contains(error, text);

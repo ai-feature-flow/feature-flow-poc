@@ -185,7 +185,7 @@ public sealed class Step
     public string? EffectiveWriteAccess { get; set; }
 
     /// <summary>The outcomes the step can end with: declared, fixed by its action, or a join's.</summary>
-    public IReadOnlyList<Outcome> Outcomes(ActionContract? contract = null)
+    public IReadOnlyList<Outcome> Outcomes()
     {
         var list = new List<Outcome>();
         switch (Form)
@@ -194,7 +194,7 @@ public sealed class Step
                 list.AddRange(DeclaredOutcomes);
                 break;
             case StepForm.Action:
-                if ((contract ?? (Action is null ? null : Actions.All.GetValueOrDefault(Action))) is { } c)
+                if (Descriptor is { } c)
                     list.AddRange(c.Outcomes);
                 break;
             default:
@@ -206,6 +206,9 @@ public sealed class Step
             list.Add(new Outcome(Actions.AttemptsExhausted, OutcomeClass.Failure));
         return list;
     }
+
+    /// <summary>An action step's descriptor in the current registry; null for any other step, or an unknown action.</summary>
+    public ActionDescriptor? Descriptor => Form == StepForm.Action ? Actions.Get(Action) : null;
 
     /// <summary>Agent steps and actions use attempts; decisions and joins do not (docs/01 section 3.2).</summary>
     public bool ConsumesAttempts => Form is StepForm.Agent or StepForm.Action;
@@ -223,7 +226,7 @@ public sealed record FragmentInstance(string Id, ItemRef Fragment, Scope Scope, 
 }
 
 /// <summary>A template after fragment and <c>for_each</c> expansion, with routes resolved.</summary>
-public sealed class Plan
+public sealed partial class Plan
 {
     public required DocumentInfo Document { get; init; }
     public required Scope Root { get; init; }

@@ -229,7 +229,7 @@ public class SteeringTests
         driver.Run();
         // The gate is a person's decision: the run waits there, past the breakpoint.
         Assert.Equal(["design", "review", "gate"], Driver.Path(core));
-        Assert.Equal(WaitKind.Decision, Assert.Single(core.State.Waits).Kind);
+        Assert.Equal(WaitKind.Gate, Assert.Single(core.State.Waits).Kind);
     }
 
     [Fact]
@@ -245,7 +245,9 @@ public class SteeringTests
         // stuck escalates; a retry re-enters design, which pauses again at its breakpoint.
         var escalation = Assert.Single(core.State.Waits);
         Assert.Equal(WaitKind.Intervention, escalation.Kind);
-        Assert.Contains("continue answers a breakpoint", core.Check(new InterventionAnswered(escalation.Id, new Recovery(RecoveryKind.Continue))));
+        // continue answers a breakpoint only: the routing refuses it at an intervention, and so does the core.
+        Assert.Contains("is an intervention: answer retry, go_to, replan, grant_attempts or end", core.Check(new InterventionAnswered(escalation.Id, new Recovery(RecoveryKind.Continue))));
+        Assert.Contains("continue answers a breakpoint", core.Apply(new InterventionAnswered(escalation.Id, new Recovery(RecoveryKind.Continue))).Errors[0]);
         Ok(core.Apply(new InterventionAnswered(escalation.Id, new Recovery(RecoveryKind.Retry))));
         driver.Run();
         Assert.Equal(WaitKind.Breakpoint, Assert.Single(core.State.Waits).Kind);
@@ -340,7 +342,7 @@ public class SteeringTests
         Assert.Contains("is running", core.Check(new StepSkipped("design", "done", "ann", "r", false)));
         driver.Run();
         var gate = Assert.Single(core.State.Waits);
-        Assert.Equal((WaitKind.Decision, "gate"), (gate.Kind, gate.StepId));
+        Assert.Equal((WaitKind.Gate, "gate"), (gate.Kind, gate.StepId));
         Ok(core.Apply(new StepSkipped("gate", "go", "ann", "approved in the meeting", false)));
         var commands = driver.Advance();
         Assert.Contains(commands, c => c is CloseWait { StepId: "gate" });
@@ -541,7 +543,7 @@ public class SteeringTests
         Assert.Contains(again.State.Pending, e => e is { StepId: "review", PastBreakpoint: true });
         var d2 = new Driver(resumed) { Respond = (id, _) => Succeed(id) };
         d2.Run();
-        Assert.Equal(WaitKind.Decision, Assert.Single(resumed.State.Waits).Kind);
+        Assert.Equal(WaitKind.Gate, Assert.Single(resumed.State.Waits).Kind);
         Ok(resumed.Apply(new DecisionAnswered("gate", "go")));
         d2.Run();
         Assert.Equal(RunStatus.Completed, resumed.State.Status);

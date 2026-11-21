@@ -30,11 +30,11 @@ public sealed record StepCaps(long? AttemptsPerStep, Cap<bool>? RequireChecks, C
         {
             if (step.ConsumesAttempts && attempts > ceiling)
                 yield return $"{step.Id} allows {N(attempts)} attempts, above policy.attempts.ceiling.per_step {N(ceiling)} (F4)";
-            if (step.Action == "scm.merge" && RacesAsked(step) is { } races && races > ceiling)
+            if (step.Descriptor?.CountsRaces == true && RacesAsked(step) is { } races && races > ceiling)
                 yield return $"{step.Id} allows {N(races)} races, above policy.attempts.ceiling.per_step {N(ceiling)} (F4)";
         }
 
-        if (step.Action != "scm.merge")
+        if (step.Descriptor?.CountsRaces != true)
             yield break;
         foreach (var (input, key, cap) in Floors)
             if (cap is { Value: true, Locked: true } && step.With?[input] is { } value && (value as YScalar)?.AsBool() != true)

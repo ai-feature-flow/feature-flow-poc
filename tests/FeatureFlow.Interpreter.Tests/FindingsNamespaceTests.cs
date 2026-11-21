@@ -26,7 +26,7 @@ public class FindingsNamespaceTests
             foreach (var command in core!.Advance())
                 if (command is StartStep s)
                     queue.Add(s.StepId);
-                else if (command is OpenDecision o)
+                else if (command is OpenGate o)
                     queue.Add(o.StepId);
             if (queue.FirstOrDefault(s => !s.StartsWith("verify.review", StringComparison.Ordinal) && s.StartsWith("verify.", StringComparison.Ordinal) && s != "verify.tests" && s != "verify.analysis") is { } after)
                 return (core, after);

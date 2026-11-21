@@ -5,7 +5,7 @@ namespace FeatureFlow.Architecture.Tests;
 /// <summary>Enforces docs/11 section 2.3 on the project files as they are on disk.</summary>
 public class ReferenceRuleTests
 {
-    static readonly string Root = FindRoot();
+    static readonly string Root = Repository.Root;
 
     [Fact]
     public void Every_project_under_src_and_hosts_obeys_the_reference_rules()
@@ -53,6 +53,18 @@ public class ReferenceRuleTests
         Assert.Empty(offending);
     }
 
+    /// <summary>
+    /// The test support project, which tests/Directory.Build.props gives every test project, references nothing, so no
+    /// test reaches a product project through it.
+    /// </summary>
+    [Fact]
+    public void Test_support_references_no_project_or_package()
+    {
+        var support = Path.Combine(Root, "tests", "FeatureFlow.Testing.Support", "FeatureFlow.Testing.Support.csproj");
+
+        Assert.Empty(References(support, "ProjectReference").Concat(References(support, "PackageReference")));
+    }
+
     [Theory]
     [InlineData("FeatureFlow.Validation", "FeatureFlow.Model", null)]
     [InlineData("FeatureFlow.Interpreter", "FeatureFlow.Validation", null)]
@@ -95,12 +107,4 @@ public class ReferenceRuleTests
 
     static bool IsUnder(string path, string topDirectory) =>
         Path.GetRelativePath(Root, path).Replace('\\', '/').StartsWith(topDirectory + "/", StringComparison.Ordinal);
-
-    static string FindRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "FeatureFlow.slnx")))
-                return dir.FullName;
-        throw new InvalidOperationException("FeatureFlow.slnx not found above " + AppContext.BaseDirectory);
-    }
 }

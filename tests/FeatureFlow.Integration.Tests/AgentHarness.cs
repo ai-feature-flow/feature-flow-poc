@@ -27,7 +27,7 @@ public static class AgentWorld
 
     static async Task<string> PrepareAsync()
     {
-        var root = Harness.RepositoryRoot;
+        var root = Repository.Root;
         var (exit, _) = await RunAsync("docker", ["image", "inspect", Image]);
         if (exit != 0)
         {
@@ -105,8 +105,8 @@ public sealed record AgentHarnessOptions
 
 /// <summary>
 /// An engine with the real agent worker: the Docker sandbox, the Claude Code runtime, the Git provider against a
-/// local bare repository standing for the code host, the model proxy in front of a <see cref="ScriptedModel"/>,
-/// and the scripted action stand-in. Nothing reaches GitHub or a real model.
+/// local bare repository standing for the code host, and the model proxy in front of a <see cref="ScriptedModel"/>.
+/// Nothing reaches GitHub or a real model.
 /// </summary>
 public sealed class AgentHarness : IAsyncDisposable
 {
@@ -215,7 +215,6 @@ public sealed class AgentHarness : IAsyncDisposable
             {{string.Join("\n", options.MoreRuntimes.Select(r => "      " + r.Replace("{model_access}", modelAccess)))}}
               vcs: {{vcs}}
             {{broker}}
-              action_stand_in: { default: scripted, instances: { scripted: { script: script.yaml } } }
             {{fakes}}
             api:
               auth: { mode: local_token, token_ref: secrets/api_token, actor: tester, roles: [viewer, approver, steerer, admin] }
@@ -225,7 +224,7 @@ public sealed class AgentHarness : IAsyncDisposable
             kind: organisation
             name: integration
             libraries:
-              - { name: std, source: directory, path: "{{IOPath.Combine(Harness.RepositoryRoot, "library", "std")}}" }
+              - { name: std, source: directory, path: "{{IOPath.Combine(Testing.Support.Repository.Root, "library", "std")}}" }
               - { name: m4, source: directory, path: "{{IOPath.Combine(Harness.TestLibraries, "m4")}}" }
             policy:
               approval:
@@ -259,7 +258,7 @@ public sealed class AgentHarness : IAsyncDisposable
     async Task CreateRemoteAsync()
     {
         Directory.CreateDirectory(Remote);
-        await GitAsync(Remote, "init", "-q", "--bare", "-b", "main");
+        await GitAsync(Folder, "init", "-q", "--bare", "-b", "main", Remote);
         var work = IOPath.Combine(Folder, "seed");
         await GitAsync(Folder, "init", "-q", "-b", "main", work);
         await File.WriteAllTextAsync(IOPath.Combine(work, "README.md"), "# app\n\nA fixture for the M4 tests.\n");
@@ -332,11 +331,14 @@ public sealed class AgentHarness : IAsyncDisposable
         return (await GitAsync(work, "rev-parse", "HEAD")).Trim();
     }
 
-    /// <summary>The branch's commit messages, newest first.</summary>
+    /// <summary>
+    /// The branch's commit messages, newest first. Git calls on the bare remote name it with <c>--git-dir</c>, so they work
+    /// where <c>safe.bareRepository</c> is <c>explicit</c>.
+    /// </summary>
     public async Task<List<string>> RemoteLogAsync(string reference, int count) =>
-        (await GitAsync(Remote, "log", $"-{count}", "--format=%s", reference)).Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList();
+        (await GitAsync(Folder, "--git-dir", Remote, "log", $"-{count}", "--format=%s", reference)).Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList();
 
-    public async Task<string> RemoteMessageAsync(string revision) => (await GitAsync(Remote, "log", "-1", "--format=%s", revision)).Trim();
+    public async Task<string> RemoteMessageAsync(string revision) => (await GitAsync(Folder, "--git-dir", Remote, "log", "-1", "--format=%s", revision)).Trim();
 
     public static string HiddenReference(string runId, string stepId) =>
         $"refs/feature-flow/wip/{Safe(runId)}/{Safe(stepId)}";

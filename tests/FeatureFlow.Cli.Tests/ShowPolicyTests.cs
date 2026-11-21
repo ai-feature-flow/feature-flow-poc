@@ -11,15 +11,7 @@ public sealed class ShowPolicyTests : IDisposable
 
     public void Dispose() => Directory.Delete(folder, recursive: true);
 
-    static readonly string Template = Path.Combine(FindRoot(), "library", "std", "templates", "ticket_delivery.yaml");
-
-    static string FindRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "FeatureFlow.slnx")))
-                return dir.FullName;
-        throw new InvalidOperationException("FeatureFlow.slnx not found");
-    }
+    static readonly string Template = Path.Combine(Repository.Root, "library", "std", "templates", "ticket_delivery.yaml");
 
     static (int Code, string Output, string Error) Run(params string[] args)
     {

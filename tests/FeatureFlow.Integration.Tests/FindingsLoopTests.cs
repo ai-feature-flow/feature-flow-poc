@@ -23,7 +23,7 @@ public class FindingsLoopTests
     /// the engine checks its claims against their type when it reports (LOG 246).
     /// </summary>
     const string FixClaims = "verify.fix.fix: { artifacts: { fix_claims: { schema: 1, claims: [{ criterion: AC-1, verification: unit, tests: "
-        + "[{ repository: acme/api, tier: unit, id: Regression.fix, change: modified, source: { file: work/verify.fix.fix.txt } }] }] }, "
+        + "[{ repository: acme/api, tier: unit, id: Regression.fix, change: modified, source: { file: \"work/${run_id}/verify.fix.fix.txt\" } }] }] }, "
         + "implementation_claims: { schema: 1, claims: [{ criterion: AC-1, verification: unit, tests: [{ repository: acme/api, tier: unit, id: Adds, change: new }] }] } } }";
 
     static string Report(string findings) => $"{{ artifacts: {{ findings_report: {{ schema: 1, findings: [{findings}] }} }} }}";
@@ -82,8 +82,8 @@ public class FindingsLoopTests
     /// </summary>
     [Theory]
     [InlineData("fixed", "intervention", "verify.fix.triage")]
-    [InlineData("escalated", "decision", "verify.fix.person_triage")]
-    [InlineData("declined", "decision", "verify.fix.person_triage")]
+    [InlineData("escalated", "gate", "verify.fix.person_triage")]
+    [InlineData("declined", "gate", "verify.fix.person_triage")]
     public async Task The_triager_alone_cannot_clear_a_demonstrated_blocking_finding(string state, string kind, string stopsAt)
     {
         var demonstrated = Blocking.Replace("basis: reasoned", "basis: demonstrated, proof: AppTests.Null fails", StringComparison.Ordinal);
@@ -226,7 +226,7 @@ public class FindingsLoopTests
 
         var id = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=T-1", "--param", "engine_can_merge=true", "--repo", "acme/api");
         var wait = await h.WaitForWaitAsync(id, TimeSpan.FromSeconds(240));
-        Assert.Equal(("decision", "verify.fix.person_triage"), ((await h.ShowAsync(id))["waits"]![0]!["kind"]!.ToString(), (await h.ShowAsync(id))["waits"]![0]!["stepId"]!.ToString()));
+        Assert.Equal(("gate", "verify.fix.person_triage"), ((await h.ShowAsync(id))["waits"]![0]!["kind"]!.ToString(), (await h.ShowAsync(id))["waits"]![0]!["stepId"]!.ToString()));
 
         var (refused, _, refusal) = h.Cli("answer", id, wait!, "triaged");
         Assert.NotEqual(0, refused);

@@ -3,6 +3,8 @@ kind: organisation
 name: trial
 libraries:
   - { name: std, source: directory, path: /opt/feature-flow/library/std }
+  # repositories/trial/smoke, served by the trial Git server up.sh makes.
+  - { name: smoke, source: git, repository: "git://git.feature-flow.svc/trial/smoke.git" }
 policy:
   approval:
     - { match: "*", roles: [approver], auto: true }

@@ -21,13 +21,7 @@ public sealed class OneTeamRunStartTests : IDisposable
 
     public void Dispose() => Directory.Delete(folder, recursive: true);
 
-    static string StdRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "FeatureFlow.slnx")))
-                return Path.Combine(dir.FullName, "library", "std");
-        throw new InvalidOperationException("FeatureFlow.slnx not found");
-    }
+    static string StdRoot() => Path.Combine(Repository.Root, "library", "std");
 
     async Task<Prepared> PrepareAsync(params string[] repositories)
     {

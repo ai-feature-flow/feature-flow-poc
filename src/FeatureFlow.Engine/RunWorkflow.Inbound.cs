@@ -1,6 +1,4 @@
-using FeatureFlow.Engine.ActionSteps;
 using FeatureFlow.Interpreter.Wire;
-using FeatureFlow.Model.Plans;
 using Temporalio.Workflows;
 
 namespace FeatureFlow.Engine;
@@ -12,7 +10,7 @@ public partial class RunWorkflow
     readonly Dictionary<string, (CancellationTokenSource Token, string Reason)> woken = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// docs/02 section 2.3, events wake and reads confirm: a wait (<see cref="EngineActions.Waits"/>) sits between reads in
+    /// docs/02 section 2.3, events wake and reads confirm: a wait (<see cref="Interpreter.RunCore.WaitsBetweenReads"/>) sits between reads in
     /// its activity's retry delay, which only a new attempt ends. A wake cancels the wait's activity, as a hand-over does
     /// (LOG 139), and the core restarts the same execution at once (<c>StepInterrupted</c>): no attempt is used, the
     /// records the execution keeps carry over, and the restarted activity reads again. The event itself decides nothing,
@@ -27,8 +25,7 @@ public partial class RunWorkflow
             return Task.CompletedTask;
         foreach (var (stepId, token) in stepTokens.OrderBy(kv => kv.Key, StringComparer.Ordinal).ToList())
         {
-            if ((wake.StepId is not null && wake.StepId != stepId) || interrupted.Contains(stepId)
-                || core.StepById(stepId) is not { Form: StepForm.Action, Action: { } action } || !EngineActions.Waits.Contains(action))
+            if ((wake.StepId is not null && wake.StepId != stepId) || interrupted.Contains(stepId) || !core.WaitsBetweenReads(stepId))
                 continue;
             interrupted.Add(stepId);
             woken[stepId] = (token, $"woken by {wake.Source} {wake.Event}: it reads again now (events wake, reads confirm)");

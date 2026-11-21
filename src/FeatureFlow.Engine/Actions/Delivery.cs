@@ -1,6 +1,6 @@
 using FeatureFlow.Providers.Abstractions;
 
-namespace FeatureFlow.Engine.ActionSteps;
+namespace FeatureFlow.Engine.Actions;
 
 /// <summary>
 /// <c>delivery.report</c>'s record (docs/04 section 12): per repository, whether a merge actually happened, and the merge
@@ -49,7 +49,7 @@ static class Delivery
         var complete = delivered.All(d => d.Merged);
         foreach (var d in delivered)
             run.Events.Add(d.Merged
-                ? $"{d.Repository}: merged into {d.Target} as {EngineActions.Short(d.Revision!)} by {d.MergedBy}"
+                ? $"{d.Repository}: merged into {d.Target} as {Revisions.Short(d.Revision!)} by {d.MergedBy}"
                 : $"{d.Repository}: not merged into {d.Target}: {d.Reason}");
         var outcome = complete ? "complete" : "partial";
         var report = new DeliveryReport(complete, delivered);
@@ -74,7 +74,7 @@ static class Delivery
         if (current.Count == 0 && work is null)
             return Not("the run holds no merge record with a merged revision for it");
         if (current.Count == 0)
-            return Not($"no merge record is for the work branch's head {EngineActions.Short(work!)} (merged: {string.Join(", ", records.Select(r => EngineActions.Short(r.Head)))}): work came after the merge");
+            return Not($"no merge record is for the work branch's head {Revisions.Short(work!)} (merged: {string.Join(", ", records.Select(r => Revisions.Short(r.Head)))}): work came after the merge");
         var head = ActionRun.Must(await run.Vcs.ResolveAsync(repo, "refs/heads/" + target, run.Ct), $"read {target}");
         if (head is null)
             return Not($"{target} does not exist");
@@ -90,7 +90,7 @@ static class Delivery
             return new DeliveredRepository(repo.FullName, true, target, record.Revision, record.MergedBy, null);
         }
 
-        return Not($"{target} at {EngineActions.Short(head)} does not contain the recorded merge ({string.Join(", ", current.Select(r => EngineActions.Short(r.Revision)))})");
+        return Not($"{target} at {Revisions.Short(head)} does not contain the recorded merge ({string.Join(", ", current.Select(r => Revisions.Short(r.Revision)))})");
     }
 
     /// <summary>Why a merge counts as undone: a revert the run opened of its pull request has merged, or is still open. Null otherwise.</summary>

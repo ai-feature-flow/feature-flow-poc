@@ -98,7 +98,8 @@ unbuilt is review F14, corrected in `docs/12` A6.
 | `agent_runtime.*.model_access` | `proxy` (a proxy adds the key to model requests) or `per_run_key` (a key with a spend limit and expiry). Required for every runtime (F6). With `proxy`, `upstream` is the model API (default the Anthropic API) and `auth` how the key is sent: `api_key` (default) or `oauth` (a subscription token). LOG 91 |
 | `agent_runtime.claude_code` | `model`, `executable`, and `engine_tools`: `false` offers the agent no engine tools, for SP3's file fall-back test, and is refused unless `development: true`. LOG 91 |
 | `agent_runtime.copilot_cli` | The same four settings as `claude_code`. Copilot reaches the model through the same model proxy, as a custom Anthropic provider with the step's token; one proxy, configured by the default runtime's `model_access`, serves every runtime instance (LOG 293) |
-| `agent_runtime.scripted` | A test double that runs no agent and reports what its `script` says. Refused unless `development: true` (L4), as are the `fake` and `memory` providers and the `action_stand_in` type (LOG 81) |
+| `agent_runtime.scripted` | A test double that runs no agent and reports what its `script` says (its `defaults` serve steps its `steps` do not name; a scripted artifact's `${name}` is the step's input `name`, LOG 368). In the step's sandbox it acts as an agent would, through the sandbox provider's calls: a step with write access changes the checkout (`work/<run id>/<step id>.txt`, LOG 368), unless its step id is in `no_edits`, and the reported artifacts are copied into the output folder. The sandbox is the `memory` one of its `world` when that holds it, else the installation's default sandbox (the Kubernetes one in `deploy/k3d/smoke`; LOG 371). Refused unless `development: true` (L4), as are the `fake` and `memory` providers |
+| `agent_runtime.recording` | The dry-run runtime (section 5): `folder` receives a line per step it is given, with its inputs; it reports what its `script` says, else each step's first success outcome, and acts in the step's sandbox as `scripted` does |
 | `sandbox.docker` | `image` (the sandbox image, `feature-flow-sandbox`), `user` (the agent's, default `node`), `docker` (the executable). Its network reaches only `agent_worker`'s `urls` and `model_base_url`, and the internet (LOG 291) |
 | `sandbox.kubernetes` | `image`, `user`, `namespace` (default `default`), `cpu` (default 2) and `memory` (default 4Gi) limits per pod, and `context` (a kubeconfig context; omitted, the cluster the worker runs in). Its network is `sandbox-network-policy.yaml`, which must be applied in `namespace` first; the agent worker's pods carry `app.kubernetes.io/name: feature-flow-agent-worker` (LOG 294) |
 | `agent_worker` | LOG 91: `listen` (the agent worker's endpoint), `urls` (its replicas as sandboxes reach them), `model_base_url` (the model proxy as sandboxes reach it; default the first of `urls` with `/model`), `token_key_ref` (the secret every replica signs step tokens with) and `sandbox_client` (the executable copied into each sandbox). How often commits are pushed (30 seconds), Claude Code's own model retries, the hook's hold (120 seconds) and the sandbox client's retry (10 minutes) are fixed defaults, not settings |
@@ -291,8 +292,16 @@ repository of the run; it must exist. F1 still governs it when it is the default
 `tracker_issue` names the run's tracker issue (`run.tracker_issue`): agent steps read it as their ticket, and
 declarative `tracker` updates move it (LOG 185, 186).
 
-`dry_run: true` selects recording providers that record instead of act, chosen
-by configuration. Workflow tests use the same mechanism (`docs/09`).
+`dry_run: true` runs on each provider type's `dry_run` instance, on the same code paths as any run: agent steps
+in a sandbox, actions through their handlers. `dry_run` only selects providers; no step behaves differently in a dry
+run. A type with no `dry_run` instance is absent from a dry run, never served by its default instance, except the
+artifact store, record store, secrets and credential broker, which are the engine's own; so a dry run that needs a
+type with none is refused at run start by check 21 (LOG 362). An agent step's role picks its runtime through
+`role_mapping` (section 3); in a dry run the agent runtime's `dry_run` instance stands in for the mapped one, as for
+any other choice of provider (LOG 384). The dry-run instances are normally the `memory`
+providers of a world of their own and the `recording` agent runtime (section 2), which are development-only, so dry
+run works in a development installation. A dry run whose memory world holds nothing to act on (no repository) stops
+at an intervention as any run would.
 
 LOG 87: `continue_as_new_events` sets the hand-over threshold
 for the run tree, so tests can hand over often. Only an administrator may set it, and

@@ -1,5 +1,5 @@
 using System.Text.Json;
-using FeatureFlow.Engine.ActionSteps;
+using FeatureFlow.Engine.Actions;
 using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Providers.Abstractions;
 using Temporalio.Activities;
@@ -10,7 +10,7 @@ namespace FeatureFlow.Engine;
 /// <summary>
 /// A session to open (docs/04 section 4.4), as the workflow resolved it from the plan: the decision's run, step,
 /// execution and wait, the session's repository and branch, the run's work branch and any parent branch (where the
-/// session's branch starts), and what goes into its workspace document.
+/// session's branch starts), and what goes into its workspace document. A dry run's session opens on its dry-run providers.
 /// </summary>
 public sealed record SessionOpen(
     string RunId,
@@ -28,7 +28,8 @@ public sealed record SessionOpen(
     IReadOnlyDictionary<string, string> Context,
     IReadOnlyList<string> ChecksFrom,
     string SubmitOutcome,
-    string? AbandonOutcome);
+    string? AbandonOutcome,
+    bool DryRun = false);
 
 /// <summary>A session opened: the revision its branch started at, and how the person reaches it.</summary>
 public sealed record SessionOpened(string BaseRevision, string Instructions);
@@ -48,7 +49,7 @@ public sealed partial class RunActivities
         var ct = ActivityExecutionContext.Current.CancellationToken;
         return await SessionStepAsync(async () =>
         {
-            var vcs = services.Providers.ForRun("vcs", false) as IVcsProvider
+            var vcs = services.Providers.ForRun("vcs", open.DryRun) as IVcsProvider
                       ?? throw ActionStop.CannotAnswer("a session needs a VCS provider to make its branch, and none is configured");
             var repo = new RepoRef(open.Repository);
             var reference = "refs/heads/" + open.Branch;
@@ -62,7 +63,7 @@ public sealed partial class RunActivities
                 }
 
                 var start = EngineActions.Must(await vcs.ResolveAsync(repo, "refs/heads/" + open.WorkBranch, ct), "read the work branch")
-                            ?? await ParentHeadAsync(repo, open.ParentBranch, vcs, ct);
+                            ?? await ParentHeadAsync(repo, open.ParentBranch, vcs, open.DryRun, ct);
                 var pushed = await vcs.PushAsync(repo, reference, start, null, null, ct);
                 if (pushed is { Ok: false, Error.Reason: "base_moved" } && tries < 3)
                     continue;
@@ -74,7 +75,7 @@ public sealed partial class RunActivities
             var context = await PutJsonAsync(store, open.Context, ct);
             var workspace = new SessionWorkspace(open.SessionId, open.RunId, open.WaitId, "", repo, open.Branch, baseRevision, open.Folder,
                 open.Files.Select(f => new SessionFile(f.Path, f.Artifact, f.Type, f.SeedRef)).ToList(), open.Prompt, context, open.ChecksFrom);
-            var handle = services.Providers.ForRun("session_surface", false) is ISessionSurfaceProvider surface
+            var handle = services.Providers.ForRun("session_surface", open.DryRun) is ISessionSurfaceProvider surface
                 ? EngineActions.Must(await surface.PrepareAsync(workspace, ct), "prepare the session")
                 : new SessionHandle(open.SessionId, SessionHandOff.Instructions(workspace));
 
@@ -107,12 +108,12 @@ public sealed partial class RunActivities
         (await store.AppendAsync(new RecordBatch(Sessions: [record]), ct)).Unwrap();
     }
 
-    async Task<string> ParentHeadAsync(RepoRef repo, string? parentBranch, IVcsProvider vcs, CancellationToken ct)
+    async Task<string> ParentHeadAsync(RepoRef repo, string? parentBranch, IVcsProvider vcs, bool dryRun, CancellationToken ct)
     {
         var parent = parentBranch;
         if (parent is null)
         {
-            var host = services.Providers.ForRun("code_host", false) as ICodeHostProvider
+            var host = services.Providers.ForRun("code_host", dryRun) as ICodeHostProvider
                        ?? throw ActionStop.CannotAnswer("a session needs a code host provider to read the default branch, and none is configured");
             parent = EngineActions.Must(await host.GetDefaultBranchAsync(repo, ct), "read the default branch");
         }

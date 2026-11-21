@@ -93,7 +93,7 @@ jobs:
       - name: Install k3d
         run: curl -sSf https://raw.githubusercontent.com/k3d-io/k3d/v5.9.0/install.sh | TAG=v5.9.0 bash
       # The k3d profile with the smoke configuration: Temporal, Postgres and MinIO in the cluster, the three host images
-      # built here, fake providers outside the cluster (deploy/README.md).
+      # built here, and a trial Git server serving the smoke repository and library (deploy/README.md).
       - name: Bring up the k3d deployment
         run: |
           echo "FF_KUBECONFIG=$RUNNER_TEMP/ff-ci.kubeconfig" >> "$GITHUB_ENV"

@@ -1,2 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- ShellRuleTests: the Temporal shell (RunWorkflow) is read as syntax, and its fields by reflection (docs/02 section 3). -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\FeatureFlow.Engine\FeatureFlow.Engine.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+  </ItemGroup>
+
 </Project>

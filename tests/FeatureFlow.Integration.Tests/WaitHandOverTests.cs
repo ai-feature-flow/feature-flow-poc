@@ -42,7 +42,7 @@ public class WaitHandOverTests
         if (midAttempt)
             forge.HoldCheckReads();
 
-        await using var h = await Harness.StartAsync("waits", "{}", omitTypes: ["vcs", "code_host", "ci"],
+        await using var h = await Harness.StartAsync("waits", "{}", without: ["vcs", "code_host", "ci"],
             libraries: [Path.Combine(Harness.TestLibraries, "m6")],
             providers: string.Join("\n", new[] { "vcs", "code_host", "ci" }.Select(t => $"  {t}: {{ instances: {{ memory: {{ world: {world} }} }} }}")));
         var work = "[" + string.Join(", ", Enumerable.Repeat(1_000, 60)) + "]";
@@ -94,7 +94,7 @@ public class WaitHandOverTests
 
         var final = await handle.QueryAsync<RunView>(RunWorkflowNames.View, []);
         Assert.All(final.HandOvers, o => Assert.Equal(0, o.InFlightActivities));
-        Assert.Equal(0, final.ActivitiesStartedWhileDraining);
+        Assert.All(final.HandOvers, o => Assert.Equal(0, o.ActivitiesStartedWhileDraining));
         Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
         if (!midAttempt)
         {

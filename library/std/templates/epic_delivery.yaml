@@ -76,7 +76,6 @@ steps:
     with:
       planner_task: std:tasks/plan_epic_tickets
       child_template: std:templates/ticket_delivery
-      child_level: ticket
       child_requirements_type: std:artifact_types/delivery_plan
       approval_type: epic.ticket_plan_approval
       child_parameters: { ticket_id: "$.name", engine_can_merge: true }

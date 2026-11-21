@@ -36,7 +36,6 @@ steps:
     action: run.child
     with:
       template: m6:templates/family_child
-      level: ticket
       repositories: [acme/api]
       parameters: { size: 3 }
     routes: { completed: again }
@@ -45,7 +44,6 @@ steps:
     action: run.child
     with:
       template: m6:templates/family_child
-      level: ticket
       repositories: [acme/api]
       parameters: { size: 3 }
     routes: { completed: read }

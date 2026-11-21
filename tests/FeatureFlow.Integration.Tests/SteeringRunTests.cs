@@ -90,7 +90,7 @@ public class SteeringRunTests
         Assert.StartsWith("applied", (await SendAsync(h, id, Override("breakpoint", "build"))).Result);
         Assert.Contains("skip_protected", await RefusedAsync(h, id, Override("skip", "review", new() { ["outcome"] = "accepted" })));
         Assert.Contains("not an outcome", await RefusedAsync(h, id, Override("skip", "review", new() { ["outcome"] = "maybe" }, "ann", "skip_protected")));
-        Assert.Contains("is running", await RefusedAsync(h, id, Override("skip", "prepare", new() { ["outcome"] = "composed" })));
+        Assert.Contains("is running", await RefusedAsync(h, id, Override("skip", "prepare", new() { ["outcome"] = "prepared" })));
         var skip = Override("skip", "review", new() { ["outcome"] = "accepted" }, "root", "skip_protected");
         Assert.Equal("applied: skipped when the run reaches it (protected: review)", (await SendAsync(h, id, skip)).Result);
         Assert.StartsWith("duplicate", (await SendAsync(h, id, skip)).Result);
@@ -128,7 +128,7 @@ public class SteeringRunTests
         (string Key, string? Step, string[] Change)[] sent =
         [
             ("breakpoint", "review", ["set=true"]),
-            ("skip", "ship", ["outcome=composed"]),
+            ("skip", "ship", ["outcome=inspected"]),
             ("grant_attempts", "build", ["attempts=1"]),
             ("change_role", "build", ["role=std:roles/designer"]),
             ("amend", null, ["patch={ api_version: feature-flow/v1, kind: patch, base_revision: 2, changes: [{ op: set, target: ship, field: limits, value: { attempts: 2 } }] }"]),
@@ -256,7 +256,7 @@ public class SteeringRunTests
         var id = h.Start("m7steer:templates/steer_planner", "--repo", Repo);
         await SendAsync(h, id, Override("breakpoint", "build"));
 
-        var approval = await OpenWaitAsync(h, id, "patchapproval");
+        var approval = await OpenWaitAsync(h, id, "patch_approval");
         Assert.Equal(("plan", "ticket.patch_approval"), (approval["stepId"]!.ToString(), approval["decisionType"]!.ToString()));
         Assert.Contains("m7steer:tasks/build", approval["reason"]!.ToString());
         var (answered, output, error) = h.Cli("answer", id, approval["waitId"]!.ToString(), "approve");
@@ -281,8 +281,8 @@ public class SteeringRunTests
     {
         await using var h = await Harness.StartAsync("steerfan", "{}", libraries: Library);
         var id = h.Start("m7steer:templates/steer_fan", "--repo", Repo);
-        var a = await OpenWaitAsync(h, $"{id}.kid_a.1", "decision");
-        var b = await OpenWaitAsync(h, $"{id}.kid_b.1", "decision");
+        var a = await OpenWaitAsync(h, $"{id}.kid_a.1", "gate");
+        var b = await OpenWaitAsync(h, $"{id}.kid_b.1", "gate");
         Assert.Equal(0, h.Cli("answer", $"{id}.kid_a.1", a["waitId"]!.ToString(), "go").Exit);
         Assert.Equal(0, h.Cli("answer", $"{id}.kid_b.1", b["waitId"]!.ToString(), "stop").Exit);
 
@@ -290,7 +290,7 @@ public class SteeringRunTests
         Assert.Equal("fan", escalation["stepId"]!.ToString());
         var (recovered, output, error) = h.Cli("recover", id, escalation["waitId"]!.ToString(), "go_to", "kid_b");
         Assert.True(recovered == 0, output + error);
-        var again = await OpenWaitAsync(h, $"{id}.kid_b.2", "decision");
+        var again = await OpenWaitAsync(h, $"{id}.kid_b.2", "gate");
         Assert.Equal(0, h.Cli("answer", $"{id}.kid_b.2", again["waitId"]!.ToString(), "go").Exit);
 
         var (_, end, _) = h.Cli("wait", id, "--timeout", "60");
@@ -313,7 +313,7 @@ public class SteeringRunTests
         forge.Protect(repo, new BranchProtection("main", true, true, 1, [], false));
         forge.Commit(repo, "refs/heads/ff/steer-pr", new Dictionary<string, string?> { ["src/App.cs"] = "class App { }\n" });
         await using var h = await Harness.StartAsync("steerpr",
-            """{ "steer_pr:hold": { delay_from: wait_ms }, "steer_pr_parent:hold": { delay_from: wait_ms }, "steer_pr:note": { outputs: { pull_request: "acme/api#99" } } }""", omitTypes: ["vcs", "code_host", "ci"], libraries: Library,
+            """{ "steer_pr:hold": { delay_from: wait_ms }, "steer_pr_parent:hold": { delay_from: wait_ms }, "steer_pr:note": { outputs: { pull_request: "acme/api#99" } } }""", without: ["vcs", "code_host", "ci"], libraries: Library,
             providers: string.Join("\n", new[] { "vcs", "code_host", "ci" }.Select(t => $"  {t}: {{ instances: {{ memory: {{ world: {world} }} }} }}")));
         var host = h.Host.Providers.Required<ICodeHostProvider>("code_host");
 
@@ -352,32 +352,21 @@ public class SteeringRunTests
     public async Task An_override_arriving_while_the_run_hands_over_is_carried_into_the_next_run()
     {
         await using var h = await Harness.StartAsync("steerdrain", """{ "steer_long:*": { delay_from: wait_ms } }""", libraries: Library);
-        var work = "[" + string.Join(", ", Enumerable.Repeat(600, 40)) + "]";
+        // Sixteen short steps, finishing a quarter-second apart, pass the 100-event threshold while the long one runs; the run
+        // then drains until the long one ends, so the override below reaches the drain however slowly the test runs.
+        var work = "[30000, " + string.Join(", ", Enumerable.Range(1, 16).Select(i => i * 250)) + "]";
         var id = h.Start("m7steer:templates/steer_long", "--param", $"work={work}", "--repo", Repo, "--continue-as-new-events", "100");
         var handle = h.Client.GetWorkflowHandle(id);
         // A library override made before the hand-over must still be what the final step resolves after it (R1 I1).
         await SendAsync(h, id, Override("override_library", null, new() { ["item"] = "m7steer:tasks/build", ["with"] = "Build the change. BUILD-V5\n" }));
 
-        // Sent the moment the run reports it is draining, as SP1's answers were; the handler applies it during the drain.
-        var sent = false;
-        var until = DateTime.UtcNow.AddSeconds(90);
-        while (!sent && DateTime.UtcNow < until)
-        {
-            var view = await handle.QueryAsync<RunView>(RunWorkflowNames.View, []);
-            if (view.Status is not ("starting" or "running"))
-                break;
-            if (view.Draining)
-            {
-                await SendAsync(h, id, Override("breakpoint", "final"));
-                sent = (await handle.QueryAsync<RunView>(RunWorkflowNames.View, [])).AnswersWhileDraining > 0;
-                if (!sent)
-                    await SendAsync(h, id, Override("breakpoint", "final", new() { ["set"] = "false" }));
-            }
-
-            await Task.Delay(20, TestContext.Current.CancellationToken);
-        }
-
-        Assert.True(sent, "no override reached the run while it drained");
+        RunView? draining = null;
+        await UntilAsync(async () => (draining = await handle.QueryAsync<RunView>(RunWorkflowNames.View, [])) is { Draining: true } or { Status: not ("starting" or "running") },
+            $"{id} did not drain");
+        Assert.True(draining!.Draining, $"{id} ended without draining: {draining.Status}");
+        Assert.Contains("work_0", draining.InFlight);
+        await SendAsync(h, id, Override("breakpoint", "final"));
+        Assert.True(await ReceivedWhileDrainingAsync(handle, draining.HandOvers.Count), "the override did not reach the run while it drained");
         var paused = await OpenWaitAsync(h, id, "breakpoint");
         Assert.Equal("final", paused["stepId"]!.ToString());
         var after = await handle.QueryAsync<RunView>(RunWorkflowNames.View, []);
@@ -387,6 +376,26 @@ public class SteeringRunTests
         Assert.True(end.Trim() == $"run {id} completed", end + (await h.ShowAsync(id)).ToJsonString());
         Assert.Contains("BUILD-V5", (await TasksAsync(h, id)).Single(t => t.Step == "final").Task);
         Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
+    }
+
+    /// <summary>
+    /// Whether the drain under way when an override was sent received it: that run's hand-over record, once written, counts what
+    /// arrived while it drained (LOG 365). False when the override reached the next run instead.
+    /// </summary>
+    static async Task<bool> ReceivedWhileDrainingAsync(Temporalio.Client.WorkflowHandle handle, int handOvers)
+    {
+        var until = DateTime.UtcNow.AddSeconds(60);
+        while (DateTime.UtcNow < until)
+        {
+            var view = await handle.QueryAsync<RunView>(RunWorkflowNames.View, []);
+            if (view.HandOvers.Count > handOvers)
+                return view.HandOvers[handOvers].AnswersWhileDraining > 0;
+            if (view.Status is not ("starting" or "running"))
+                return false;
+            await Task.Delay(50, TestContext.Current.CancellationToken);
+        }
+
+        return false;
     }
 
     static async Task<string> ReadAsync(Harness h, string reference)

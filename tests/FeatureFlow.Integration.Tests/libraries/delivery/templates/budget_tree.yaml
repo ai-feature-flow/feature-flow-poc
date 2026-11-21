@@ -17,6 +17,6 @@ defaults:
 steps:
   - id: middle
     action: run.child
-    with: { template: delivery:templates/budget_middle, level: epic }
+    with: { template: delivery:templates/budget_middle }
     routes:
       completed: { end: completed }
