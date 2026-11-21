@@ -81,13 +81,15 @@ limit. Validation reports where a request was capped.
 | Agent roles | The roles a template's steps name | `planning.allowed_roles` for steps an agent adds. No agent patch in version 1 (section 6) |
 | Toolsets | The role's toolsets | None: toolsets are not in version 1 (`docs/06` section 3.9) |
 
-A request that exceeds its cap is not silently lowered. The merge floors may be
-an organisation **default** (`locked: false`), which the step's request
-overrides, or **locked**, when a step that asks otherwise fails validation with
-the setting's name. An approval rule's `auto: false` stops auto-resolution
-whether locked or not: unlocked, a template's `auto` has no effect, a person
-answers, and run start warns; locked, the template is refused (check 22; LOG
-88). The attempt and work-item ceilings are always enforced, and `planning.require_review` takes its `value`; its `locked` is read nowhere.
+A request that exceeds its cap is not silently lowered:
+
+| Cap | Unlocked (`locked: false`) | Locked |
+|---|---|---|
+| Merge floors (`merge.require_checks`, `merge.require_tested`) | The step's request overrides the default | A step that asks otherwise fails validation with the setting's name |
+| An approval rule's `auto: false` | A template's `auto` has no effect: a person answers, and run start warns | The template is refused (check 22; LOG 88) |
+| Attempt and work-item ceilings | Always enforced | Always enforced |
+| `planning.require_review` | Its `value` applies; its `locked` is read nowhere | As unlocked |
+
 Run start checks every step against the per-step caps (`StepCaps`), and a patch
 the steps it adds or changes, by the same function (check 22), so a patch cannot
 reach an attempt, race or merge-floor value a template could not start with
