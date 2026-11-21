@@ -3,6 +3,7 @@ using FeatureFlow.Hosting;
 using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Providers.Local;
+using Temporalio.Api.Enums.V1;
 
 namespace FeatureFlow.Integration.Tests;
 
@@ -88,6 +89,47 @@ public class MergeActionDecisionTests
         Assert.DoesNotContain(timeline, t => t.Kind == "escalated");
         // The decision is closed: answering it now is refused.
         Assert.NotEqual(0, h.Cli("answer", id, wait, "approve").Exit);
+        Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
+    }
+
+    [Fact]
+    public async Task An_approval_while_the_watch_reads_the_pull_request_lets_the_same_execution_ask_a_person_to_merge()
+    {
+        // The CI race (LOG AFc-1): the watch's read is in progress when the approval cancels it, and its "not yet" ends that
+        // attempt after the cancel was asked. That result is the cancelled watch's, not the restarted execution's.
+        var (h, forge, repo) = await ForgeTicketTests.StartAsync("merge-action-race", policy: Policy);
+        await using var _ = h;
+        var (id, wait) = await AtMergeDecisionAsync(h, forge, repo, "T-3");
+        var handle = h.Client.GetWorkflowHandle(id);
+        var records = new SqliteRecordStore(Path.Combine(h.Folder, "records.db"));
+
+        // Once the watch's first read has found the pull request open, a wake makes it read again now; that read is held.
+        await UntilAsync(async () => (await h.Client.WorkflowService.DescribeWorkflowExecutionAsync(new Temporalio.Api.WorkflowService.V1.DescribeWorkflowExecutionRequest
+            {
+                Namespace = h.Client.Options.Namespace,
+                Execution = new Temporalio.Api.Common.V1.WorkflowExecution { WorkflowId = id },
+            })).PendingActivities
+            .Any(a => a.ActivityType.Name == "RunAction" && a.LastFailure?.Message.StartsWith("waiting", StringComparison.Ordinal) == true) ? (object)true : null);
+        forge.HoldReads(InMemoryForge.PullRequestReads);
+        await WakeAsync(h, id);
+        await UntilAsync(() => Task.FromResult(forge.HeldReads > 0 ? (object)true : null));
+        var cancels = (await handle.FetchHistoryAsync()).Events.Count(e => e.EventType == EventType.ActivityTaskCancelRequested);
+        Assert.Equal(0, h.Cli("answer", id, wait, "approve").Exit);
+        await UntilAsync(async () => (await handle.FetchHistoryAsync()).Events.Count(e => e.EventType == EventType.ActivityTaskCancelRequested) > cancels ? (object)true : null);
+        forge.ReleaseReads();
+        await UntilAsync(async () => (await EventsAsync(records, id)).FirstOrDefault(e => e.Kind == "action_request"));
+
+        forge.MergePullRequest(new PullRequestRef(repo, 1), "alice");
+        await WakeAsync(h, id);
+        var (exit, end, error) = h.Cli("wait", id, "--timeout", "120");
+
+        var view = await h.ShowAsync(id);
+        Assert.True(exit == 0, end + error + view.ToJsonString());
+        var timeline = Timeline(view);
+        Assert.Single(timeline, t => t.Kind == "decision_opened" && t.StepId == "deliver.merge");
+        Assert.DoesNotContain(timeline, t => t.Kind == "attempt_failed");
+        Assert.Contains(timeline, t => t.Kind == "agent" && t.Detail.StartsWith("merged ", StringComparison.Ordinal) && t.Detail.Contains("by alice", StringComparison.Ordinal));
+        Assert.DoesNotContain(timeline, t => t.Detail.Contains("not through Feature Flow", StringComparison.Ordinal) || t.Detail.Contains("not given through Feature Flow", StringComparison.Ordinal));
         Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
     }
 

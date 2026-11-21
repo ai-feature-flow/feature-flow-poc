@@ -319,8 +319,11 @@ public partial class RunWorkflow
                     await StartChildAsync(s);
                     break;
                 case CancelStep c:
+                    // The core no longer wants this activity's result (LOG AFc-1): a wake that also cancelled it is void.
                     if (stepTokens.Remove(c.StepId, out var token))
                         token.Cancel();
+                    interrupted.Remove(c.StepId);
+                    woken.Remove(c.StepId);
                     break;
                 case CancelChild c:
                     await SignalQuietlyAsync(c.WorkflowId, RunWorkflowNames.ParentCancelled, []);
@@ -497,6 +500,7 @@ public partial class RunWorkflow
         BeginActivity();
         StepOutcome? outcome = null;
         string? expandItems = null;
+        bool cancelled = false, current = false, wasInterrupted = false;
         try
         {
             switch (activity)
@@ -532,17 +536,13 @@ public partial class RunWorkflow
         }
         catch (Exception e) when (TemporalException.IsCanceledException(e))
         {
-            if (interrupted.Remove(stepId) && core!.IsCurrent(stepId, execution))
-                core.Apply(new StepInterrupted(stepId, InterruptionReason(stepId)));
-            return;
+            cancelled = true;
         }
-        catch (ActivityFailureException e) when (interrupted.Contains(stepId) && e.RetryState == Temporalio.Api.Enums.V1.RetryState.CancelRequested)
+        catch (ActivityFailureException e) when (token.IsCancellationRequested && e.RetryState == Temporalio.Api.Enums.V1.RetryState.CancelRequested)
         {
             // The cancel landed while an attempt ran: the attempt's failure (a wait's "not yet", or an infrastructure error)
             // is not retried once a cancel is requested, and acknowledges the cancel as surely as a cancellation does.
-            if (interrupted.Remove(stepId) && core!.IsCurrent(stepId, execution))
-                core.Apply(new StepInterrupted(stepId, InterruptionReason(stepId)));
-            return;
+            cancelled = true;
         }
         catch (ActivityFailureException e)
         {
@@ -553,11 +553,24 @@ public partial class RunWorkflow
         finally
         {
             EndActivity();
-            if (stepTokens.GetValueOrDefault(stepId) == token)
+            current = stepTokens.GetValueOrDefault(stepId) == token;
+            if (current)
             {
                 stepTokens.Remove(stepId);
-                interrupted.Remove(stepId);
+                wasInterrupted = interrupted.Remove(stepId);
             }
+        }
+
+        // LOG AFc-1: only the step's current activity speaks for it. One the core cancelled (CancelStep) is no longer the
+        // step's, whatever it ended with: the core may have restarted the same execution since, as an approved action
+        // decision does, so IsCurrent cannot tell its result from the restarted activity's.
+        if (!current)
+            return;
+        if (cancelled)
+        {
+            if (wasInterrupted && core!.IsCurrent(stepId, execution))
+                core.Apply(new StepInterrupted(stepId, InterruptionReason(stepId, token)));
+            return;
         }
 
         if (!core!.IsCurrent(stepId, execution))
