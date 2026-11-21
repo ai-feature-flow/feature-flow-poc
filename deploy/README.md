@@ -8,7 +8,7 @@ the orchestration worker and the agent worker, with Temporal, a record store and
 |---|---|
 | `images/` | `host.Dockerfile`, the image of each of the three hosts |
 | `kubernetes/` | The engine on any Kubernetes cluster: the hosts, their account, network policies |
-| `k3d/` | A local cluster with Temporal, Postgres and MinIO in it: `up.sh`, `down.sh`, and `smoke/`, a trial configuration |
+| `k3d/` | A local cluster with Temporal, Postgres and MinIO in it: `up.sh`, `down.sh`, `git.yaml` (a trial Git server), and `smoke/`, a trial configuration |
 | `distribution-template/` | What a team copies to run Feature Flow: its configuration, deployment values and a README |
 
 ## Images
@@ -51,19 +51,23 @@ each other's images.
 
 | Config folder | Runs |
 |---|---|
-| `deploy/k3d/smoke` | Fake GitHub, tracker and CI, and a scripted agent: a std ticket run completes with no credentials. The `Cluster` tests use it |
+| `deploy/k3d/smoke` | The trial Git server in place of GitHub, the Kubernetes sandbox and the scripted agent: a run of `smoke:templates/change` on `trial/app` (one agent step in a sandbox pod, its change committed and pushed) completes with no credentials. It has no code host, CI or tracker, so std's templates do not run on it. The `Cluster` tests use it |
 | A copy of `distribution-template/config` | The small-company profile: Jira, GitHub, GitHub Actions, the Kubernetes sandbox, a real agent |
 
 The folder's files become the ConfigMap `feature-flow-config`; its `secrets.json`, with the generated database and
 MinIO passwords, API token, step-token key and payload key (`temporal.payload_codec`, which encrypts what Temporal
 stores) added, becomes the Secret `feature-flow-secrets`, which the installation's
-`file` secrets provider reads. Nothing secret is printed. To use the API:
+`file` secrets provider reads. Nothing secret is printed. A `repositories/` folder in it starts the trial Git server
+(`git.yaml`): each `repositories/<owner>/<name>` becomes a repository with one commit on `main`, served with no
+credential as `git://git.feature-flow.svc/<owner>/<name>.git` to the hosts only, for the `git` VCS provider
+(`remote: "git://git.feature-flow.svc/{repo}.git"`) and `git` library sources. The repositories are made afresh each
+time `up.sh` runs or the pod restarts, so nothing pushed to them is kept. To use the API:
 
 ```sh
 export KUBECONFIG=~/.config/feature-flow/feature-flow.kubeconfig
 kubectl -n feature-flow port-forward svc/api 8480 &
 kubectl -n feature-flow get secret feature-flow-infrastructure -o jsonpath='{.data.api-token}' | base64 -d > token
-ff run start std:templates/ticket_delivery --param ticket_id=T-1 --api http://localhost:8480 --token-file token
+ff run start smoke:templates/change --repo trial/app --param ticket_id=T-1 --api http://localhost:8480 --token-file token
 ```
 
 After restoring the database from a backup, rebuild the run index from Temporal with the hosts' `reconcile` command
@@ -73,7 +77,7 @@ After restoring the database from a backup, rebuild the run index from Temporal 
 kubectl -n feature-flow exec deploy/orchestration-worker -- /app/feature-flow-host reconcile
 ```
 
-Network policies (k3s enforces them): Temporal, Postgres and MinIO accept only the hosts; the agent worker's endpoint
+Network policies (k3s enforces them): Temporal, Postgres, MinIO and the trial Git server accept only the hosts; the agent worker's endpoint
 accepts only sandboxes and hosts; sandboxes, in namespace `feature-flow-sandboxes`, reach only DNS, the agent worker and
 the public internet. The hosts' account may manage pods only in the sandboxes' namespace, where Pod Security's
 `baseline` level refuses host networking, privileged containers and host paths.

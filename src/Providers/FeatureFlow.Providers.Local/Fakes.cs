@@ -175,61 +175,102 @@ sealed class Reporter(Func<IArtifactStoreProvider> store)
 }
 
 /// <summary>
-/// What the scripted and recording runtimes do in a <c>memory</c> sandbox of their world, so an agent step's real path
-/// (commit, push to the hidden reference, move the branch, copy artifacts out) runs on the in-memory world: a step with
-/// write access changes the checkout, one file per execution, as an agent's edit would (unless its step id is in
-/// <c>no_edits</c>, such as a fixer that commits no fix); the hook calls of an agent that reads every file of the checkout
-/// are recorded, as the hook endpoint would, so std's reviewers do not re-read for ever (<c>changed_files_unread</c>);
-/// and the artifacts the report names are written to the sandbox's output folder. A sandbox this world does not hold is
-/// left alone, and the report keeps its artifact store references.
+/// What the scripted and recording runtimes do in the sandbox an agent step runs in, through the sandbox provider's own
+/// calls, so the step's real path (commit, push to the hidden reference, move the branch, copy artifacts out) runs as with
+/// a real agent in any sandbox: a step with write access changes the checkout, one file per execution, as an agent's edit
+/// would (unless its step id is in <c>no_edits</c>, such as a fixer that commits no fix); the hook calls of an agent that
+/// reads every file of the checkout are recorded, as the hook endpoint would, so std's reviewers do not re-read for ever
+/// (<c>changed_files_unread</c>); and the artifacts the report names are copied into the sandbox's output folder. The
+/// sandbox is the <c>memory</c> one of the runtime's <c>world</c> when that holds it, else the installation's default
+/// sandbox provider's (LOG A2-3b3a). With no sandbox (no step paths) the report keeps its artifact store references.
 /// </summary>
-sealed class SandboxActing(InMemoryForge forge, MemorySandbox sandboxes, Func<IArtifactStoreProvider> store, Func<IRecordStoreProvider?> records,
-    IReadOnlySet<string> noEdits)
+sealed class SandboxActing(InMemoryForge forge, MemorySandbox memory, Func<ISandboxProvider?> installed, Func<IArtifactStoreProvider> store,
+    Func<IRecordStoreProvider?> records, IReadOnlySet<string> noEdits)
 {
     public static SandboxActing Of(ProviderContext c, Func<IArtifactStoreProvider> store)
     {
         var world = c.Setting("world") ?? "default";
         var noEdits = c.Instance.Settings["no_edits"] is YSeq steps ? steps.Items.Select(s => s.ScalarText() ?? "").ToHashSet(StringComparer.Ordinal) : [];
-        return new SandboxActing(InMemoryForge.Named(world), MemorySandbox.Named(world, store), store, () => c.Provider("record_store") as IRecordStoreProvider, noEdits);
+        return new SandboxActing(InMemoryForge.Named(world), MemorySandbox.Named(world, store), () => c.Provider("sandbox") as ISandboxProvider, store,
+            () => c.Provider("record_store") as IRecordStoreProvider, noEdits);
     }
 
-    bool Holds(SandboxHandle sandbox, AgentTask task) => task.Paths is not null && sandboxes.Holds(sandbox);
+    ISandboxProvider? SandboxOf(SandboxHandle sandbox, AgentTask task) =>
+        task.Paths is null || sandbox == SandboxHandle.None ? null : memory.Holds(sandbox) ? memory : installed();
 
     /// <summary>The agent's edit and reads, at the start of a session.</summary>
     public async Task<ProviderError?> StartAsync(SandboxHandle sandbox, AgentTask task, CancellationToken cancellationToken)
     {
-        if (!Holds(sandbox, task) || forge.WorkingFiles(new WorkingCopyRef(sandbox, task.Paths!.Checkout)) is not { } files)
+        if (SandboxOf(sandbox, task) is not { } sandboxes)
             return null;
-        List<string> read;
-        lock (files)
+        var checkout = task.Paths!.Checkout;
+        if (task.WriteAccess != "none" && !noEdits.Contains(task.Step.StepId))
         {
-            if (task.WriteAccess != "none" && !noEdits.Contains(task.Step.StepId))
-                files[$"work/{task.Step.StepId}.txt"] = $"{task.Step.StepId} execution {task.Step.Execution}, session {task.Session}\n";
-            read = files.Keys.ToList();
+            var edit = await store().PutAsync(new MemoryStream(Encoding.UTF8.GetBytes($"{task.Step.StepId} execution {task.Step.Execution}, session {task.Session}\n")),
+                cancellationToken);
+            if (!edit.Ok)
+                return edit.Error;
+            if ((await sandboxes.CopyInAsync(sandbox, edit.Value!, $"{checkout}/work/{task.Step.StepId}.txt", readOnly: false, cancellationToken)).Error is { } failed)
+                return failed;
         }
 
+        var read = await FilesAsync(sandboxes, sandbox, task, cancellationToken);
+        if (!read.Ok)
+            return read.Error;
         if (records() is not { } recordStore)
             return null;
         var at = DateTimeOffset.UtcNow;
-        var hooks = read.Select(p => new AgentEventRecord(task.Step.IdempotencyKey, "hook_post_tool_use", $"Read {task.Paths.Checkout}/{p}", at))
+        var hooks = read.Value!.Select(p => new AgentEventRecord(task.Step.IdempotencyKey, "hook_post_tool_use", $"Read {checkout}/{p}", at))
             .Prepend(new AgentEventRecord(task.Step.IdempotencyKey, "hook_pre_tool_use", "Read", at)).ToList();
         return (await recordStore.AppendAsync(new RecordBatch(AgentEvents: hooks), cancellationToken)).Error;
     }
 
-    /// <summary>The report with its artifacts written to the sandbox's output folder, named by their paths there.</summary>
+    /// <summary>The checkout's files: the in-memory working copy's, else what git lists in the sandbox (tracked and new).</summary>
+    async Task<ProviderResult<IReadOnlyList<string>>> FilesAsync(ISandboxProvider sandboxes, SandboxHandle sandbox, AgentTask task, CancellationToken cancellationToken)
+    {
+        if (sandboxes == memory)
+        {
+            if (forge.WorkingFiles(new WorkingCopyRef(sandbox, task.Paths!.Checkout)) is not { } files)
+                return ProviderResult<IReadOnlyList<string>>.Success([]);
+            lock (forge.Gate)
+                return ProviderResult<IReadOnlyList<string>>.Success(files.Keys.ToList());
+        }
+
+        var listed = await sandboxes.RunAsync(sandbox, new SandboxCommand(["git", "ls-files", "--cached", "--others", "--exclude-standard"], WorkingDirectory: task.Paths!.Checkout),
+            $"scripted-files/{Guid.NewGuid():N}", cancellationToken);
+        if (!listed.Ok)
+            return new ProviderResult<IReadOnlyList<string>>(null, listed.Error);
+        return listed.Value.Exit == 0
+            ? ProviderResult<IReadOnlyList<string>>.Success(listed.Value.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            : ProviderResult<IReadOnlyList<string>>.Failure("internal_error", $"git ls-files in {task.Paths.Checkout} exited {listed.Value.Exit}: {listed.Value.Output}");
+    }
+
+    /// <summary>The report with its artifacts copied into the sandbox's output folder, named by their paths there.</summary>
     public async Task<ProviderResult<StepReport>> PlaceAsync(SandboxHandle sandbox, AgentTask task, StepReport report, CancellationToken cancellationToken)
     {
-        if (!Holds(sandbox, task))
+        if (SandboxOf(sandbox, task) is not { } sandboxes)
             return ProviderResult<StepReport>.Success(report);
         var paths = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var (name, reference) in report.Artifacts)
         {
-            var got = await store().GetAsync(new ArtifactRef(reference), cancellationToken);
+            var source = new ArtifactRef(reference);
+            var got = await store().GetAsync(source, cancellationToken);
             if (!got.Ok)
                 return new ProviderResult<StepReport>(null, got.Error);
-            await using var stream = got.Value!;
-            var content = TriageEachOpen(sandbox, task, await new StreamReader(stream).ReadToEndAsync(cancellationToken));
-            sandboxes.WriteFile(sandbox, $"{task.Paths!.Output}/{name}.json", content);
+            string content;
+            await using (var stream = got.Value!)
+                content = await new StreamReader(stream).ReadToEndAsync(cancellationToken);
+            var triaged = await TriageEachOpenAsync(sandboxes, sandbox, task, content, cancellationToken);
+            if (triaged != content)
+            {
+                var put = await store().PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(triaged)), cancellationToken);
+                if (!put.Ok)
+                    return new ProviderResult<StepReport>(null, put.Error);
+                source = put.Value!;
+            }
+
+            if ((await sandboxes.CopyInAsync(sandbox, source, $"{task.Paths!.Output}/{name}.json", readOnly: false, cancellationToken)).Error is { } failed)
+                return new ProviderResult<StepReport>(null, failed);
             paths[name] = $"{name}.json";
         }
 
@@ -241,15 +282,19 @@ sealed class SandboxActing(InMemoryForge forge, MemorySandbox sandboxes, Func<IA
     /// view the engine staged for the step (LOG 63), as a triager or verifying reviewer would write from it. With
     /// <c>non_blocking: &lt;state&gt;</c> too, open findings that are not blocking get that state instead.
     /// </summary>
-    string TriageEachOpen(SandboxHandle sandbox, AgentTask task, string content)
+    async Task<string> TriageEachOpenAsync(ISandboxProvider sandboxes, SandboxHandle sandbox, AgentTask task, string content, CancellationToken cancellationToken)
     {
         if (!content.Contains("triage_each_open", StringComparison.Ordinal))
             return content;
         var script = (IDictionary<string, object?>)YamlWriter.ReadPlain(content)!;
         var state = (string)script["triage_each_open"]!;
         var nonBlocking = script.TryGetValue("non_blocking", out var other) ? (string)other! : state;
-        var staged = sandboxes.ReadFile(sandbox, "/ff/inputs/artifacts/" + FindingsLedger.ViewName)
-                     ?? throw new InvalidOperationException($"{task.Step.StepId}: no ledger view was staged");
+        var copied = await sandboxes.CopyOutAsync(sandbox, "/ff/inputs/artifacts/" + FindingsLedger.ViewName, cancellationToken);
+        if (!copied.Ok)
+            throw new InvalidOperationException($"{task.Step.StepId}: no ledger view was staged: {copied.Error!.Message}");
+        string staged;
+        await using (var stream = (await store().GetAsync(copied.Value!, cancellationToken)).Value!)
+            staged = await new StreamReader(stream).ReadToEndAsync(cancellationToken);
         var view = ArtifactShapes.ReadLibrary<FindingsReport>(staged, "the staged ledger view");
         return ArtifactShapes.WriteLibrary(new Triage(1, view.Findings.Where(f => f.State == FindingStates.Open)
             .Select(f => new TriageEntry(f.LedgerId!, f.Blocking ? state : nonBlocking, $"scripted: {(f.Blocking ? state : nonBlocking)}")).ToList()));

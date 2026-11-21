@@ -20,6 +20,7 @@ public class DeploymentTests
         ["minio"] = "minio.feature-flow.svc:9000",
         ["api"] = "api.feature-flow.svc:8480",
         ["agent-worker"] = "agent-worker.feature-flow.svc:8481",
+        ["git"] = "git.feature-flow.svc:9418",
         ["internet"] = "https://github.com",
     };
 
@@ -31,7 +32,7 @@ public class DeploymentTests
     }
 
     [Fact]
-    public async Task Only_the_hosts_reach_temporal_and_the_stores()
+    public async Task Only_the_hosts_reach_temporal_the_stores_and_the_trial_git_server()
     {
         // The same probe as a host shows the method sees what is open: it reaches everything.
         var all = Targets.Keys.Order().ToArray();

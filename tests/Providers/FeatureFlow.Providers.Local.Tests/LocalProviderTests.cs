@@ -145,6 +145,40 @@ public sealed class LocalProviderTests : IDisposable
     }
 
     [Fact]
+    public async Task The_scripted_runtime_acts_through_the_sandbox_provider_of_a_sandbox_its_world_does_not_hold()
+    {
+        // A sandbox provider the runtime's world does not hold stands for the Kubernetes or Docker one: the edit, the
+        // listing of the checkout and the artifacts go through its calls (LOG A2-3b3a).
+        var store = new FileSystemArtifactStore(Path.Combine(folder, "artifacts"));
+        var records = new SqliteRecordStore(Path.Combine(folder, "records.db"));
+        var sandboxes = new MemorySandbox(() => store).On(new SandboxRule("^git ls-files", Output: "README.md\nwork/implement.txt\n"));
+        var d = new Model.DiagnosticBag();
+        var config = Model.ConfigurationReader.ReadInstallation($$"""
+            api_version: feature-flow/v1
+            kind: installation
+            development: true
+            temporal: { address: "localhost:7233", namespace: default, task_queue: q }
+            providers:
+              agent_runtime: { instances: { scripted: { world: test-{{Guid.NewGuid():N}} } } }
+            """, "installation.yaml", d)!;
+        Assert.DoesNotContain(d, x => x.Blocks);
+        var runtime = (IAgentRuntimeProvider)LocalProviders.Factories.Single(f => f is { Type: "agent_runtime", Kind: "scripted" })
+            .Create(new ProviderContext(config.Providers["agent_runtime"].Instances["scripted"], folder,
+                type => type switch { "artifact_store" => store, "record_store" => records, "sandbox" => sandboxes, _ => null }));
+        var sandbox = (await sandboxes.CreateAsync(new SandboxSpec("run-1/implement/1", "/ff/home", new Dictionary<string, string>(), []), Ct)).Unwrap();
+        var task = new AgentTask(Step(1), "implementer", null, new Dictionary<string, string>(), Contract) { Paths = AgentPaths.Default, WriteAccess = "branch" };
+
+        var session = (await runtime.StartAsync(sandbox, task, new AgentLimits(null, 2), Ct)).Unwrap();
+        var report = (await runtime.GetResultAsync(session, Ct)).Unwrap().Report!;
+
+        Assert.Equal("implement execution 1, session 1\n", sandboxes.ReadFile(sandbox, "/ff/work/work/implement.txt"));
+        Assert.Equal("claims.json", report.Artifacts["claims"]);
+        Assert.Contains("run-1/implement/1/claims", sandboxes.ReadFile(sandbox, "/ff/out/claims.json"));
+        var hooks = (await records.QueryAsync<AgentEventRecord>(Queries.AgentEvents, new Dictionary<string, string> { ["step_key"] = "run-1/implement/1" }, Ct)).Unwrap();
+        Assert.Equal(["Read", "Read /ff/work/README.md", "Read /ff/work/work/implement.txt"], hooks.Select(h => h.Detail));
+    }
+
+    [Fact]
     public void A_described_only_provider_offers_every_capability_of_its_type()
     {
         var names = new DescribedOnlyProvider("code_host").Describe().CapabilityNames().ToList();
