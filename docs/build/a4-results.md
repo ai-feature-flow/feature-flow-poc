@@ -165,14 +165,17 @@ The same run on Copilot quota instead of the Anthropic subscription: Copilot CLI
 proxy with `auth: github` (LOG 496 to 498; `docs/07` section 6.1). It shares `~/ff-live`, Temporal and the ports with
 the run above; only the configuration and the secret differ. Steps marked *(checked)* were run on 2026-11-22 before
 the Copilot changes merged, with a dummy token, the real GitHub App and a copy of the files below (ports 7661, 8680 and
-8681); "after merge" marks what needs the merged engine; the rest needs the token.
+8681); "after merge" marks what needs the merged engine; the rest needs the token. On 2026-11-22, after the merge and
+with the product owner's token: steps 1.2 and 1.5 were run, the three hosts of step 4 started with `auth: github` and the
+real upstream (a dummy token), and Live test C1 passed (`docs/build/copilot-results.md`), all *(checked after merge)*.
+Steps 5 to 7, the console run itself, are the product owner's.
 
 1. **Prerequisites**, as for the run above, except Claude Code and its token, and:
    1. The merged branch built: `dotnet build FeatureFlow.slnx -c Release`.
    2. The sandbox image rebuilt with Copilot CLI 1.0.107 (the Dockerfile pins it):
       `docker build -t feature-flow-sandbox:m8 -f src/Providers/FeatureFlow.Providers.Docker/sandbox.Dockerfile src/Providers/FeatureFlow.Providers.Docker`,
-      then `docker run --rm --entrypoint copilot feature-flow-sandbox:m8 --version` says 1.0.107 (after merge; the
-      check command *(checked)*).
+      then `docker run --rm --entrypoint copilot feature-flow-sandbox:m8 --version` says 1.0.107 *(checked after
+      merge)*.
    3. The sandbox client published *(checked)*:
       `dotnet publish src/FeatureFlow.SandboxClient -c Release -r linux-arm64 --self-contained -p:PublishSingleFile=true -o ~/ff-live/sandbox-client`.
    4. The token, which the product owner creates and places himself: a fine-grained personal access token owned by
@@ -188,13 +191,16 @@ the Copilot changes merged, with a dummy token, the real GitHub App and a copy o
         | curl -sf -H @- https://api.github.com/copilot_internal/user | jq -r .endpoints.api
       ```
 
-      Expect `https://api.business.githubcopilot.com` or `https://api.enterprise.githubcopilot.com`. The same header
-      on `GET <upstream>/models` lists the models; `claude-haiku-4.5` must be among them, with `/v1/messages` in its
-      `supported_endpoints`. (With a dummy token the first command answers 401 and prints nothing of the token
-      *(checked)*.)
+      Expect `https://api.business.githubcopilot.com` or `https://api.enterprise.githubcopilot.com`; for the product
+      owner's Xero account it is `https://api.enterprise.githubcopilot.com` (plan `enterprise`) *(checked after merge)*.
+      The same header on `GET <upstream>/models` lists the models; `claude-haiku-4.5` must be among them, with
+      `/v1/messages` in its `supported_endpoints` (it is, as are `claude-haiku-5.5`, `claude-sonnet-5.5` and
+      `claude-opus-5.5`) *(checked after merge)*. (With a dummy token the first command answers 401 and prints nothing
+      of the token *(checked)*.)
 2. **Configuration**, in `~/ff-live` beside the Claude Code files (`<…>` marks your values). All three hosts started
-   with a copy and dummy values *(checked)*; that `auth: github` is refused for `claude_code` and sent as `Bearer`
-   is after merge.
+   with a copy and dummy values *(checked)*, and again after the merge with `auth: github` and the real upstream
+   *(checked after merge)*; that `auth: github` is refused for `claude_code` and sent as `Bearer` is covered by the
+   default tests.
 
    `installation-copilot.yaml`: `installation.yaml` from the run above, with this `secrets` and `agent_runtime`, and
    `task_queue: ff-a4-copilot`:
