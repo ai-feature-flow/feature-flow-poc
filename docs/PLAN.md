@@ -3,7 +3,7 @@
 Status: design complete 2026-11-01. Version 1 built: milestones M0 to M8 of
 `docs/11-build-plan.md` done by 2026-11-05; the latest handover is
 `docs/build/handover-2026-11-05-v1.md`. Next phase: `docs/12-build-plan-phase-2.md`,
-drafted 2026-11-21; A1 built 2026-11-21, A2 next. Started 2026-10-31. This file is the
+drafted 2026-11-21; A1 and A2 built 2026-11-21, A3 and A5 next. Started 2026-10-31. This file is the
 resume point: a new session reads it first, then the status table in section 6
 and the latest handover.
 
@@ -144,7 +144,8 @@ Paths in all design documents are relative to the repository root.
 | Product owner answers to `docs/12` section 7 | Done 2026-11-21: all eight answered (NP10 to NP12); question 4 overridden (LOG 341). LOG 330, 333, 341 and 342 decided; LOG 328, 329, 331, 332 and 334 to 346 still unreviewed |
 | Push the `docs/12` branch, once the product owner approves the push; then start A1 | Done 2026-11-21 |
 | A1 (control gaps) | Done 2026-11-21: one cap function for locked merge floors and races at run start and on patches, `merge.require_tested`, the `<level>.merge_action` decision with a code-host merge before the answer accepted, `notify.send` removed, an unservable action raising an intervention, and toolset settings, the `scripted` runtime outside development and evidence types on `artifact.import` refused. Results in `docs/build/a1-results.md`; LOG 347 to 355, unreviewed (LOG 351 flagged for the product owner) |
-| A2 (engine simplification) | **Next** |
+| A2 (engine simplification) | Done 2026-11-21: the action stand-in deleted and dry run served by the memory and recording providers on the real paths; one action descriptor registry with an input schema for every action (`run_gate` refused at load); one routing function for every human wait, with agent questions held by the core and `Decision` renamed `Gate`; overrides routed by the core; the shell's logic and state moved into the interpreter core, held there by an architecture test; shared rules, compatibility leftovers and the test root helper consolidated. Results in `docs/build/a2-results.md`; LOG 357 to 387, unreviewed (LOG 362 and 370 flagged for the product owner) |
+| A3 (oversight API) and A5 (sandboxes and runtimes) | **Next**; A5 may run alongside A3 and A4 |
 
 ## 7. How to resume
 
