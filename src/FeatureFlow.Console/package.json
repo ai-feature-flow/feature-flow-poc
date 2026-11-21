@@ -1,0 +1,22 @@
+{
+  "name": "feature-flow-console",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "generate": "openapi-typescript ../FeatureFlow.Api/openapi.json -o src/api/schema.gen.d.ts --default-non-nullable false",
+    "build": "npm run generate && tsc --noEmit -p . && node scripts/text-only.mjs && vite build",
+    "dev": "npm run generate && vite"
+  },
+  "dependencies": {
+    "openapi-fetch": "0.17.0",
+    "preact": "11.2.0"
+  },
+  "devDependencies": {
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.8"
+  }
+}

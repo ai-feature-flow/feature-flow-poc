@@ -405,6 +405,9 @@ public sealed class ApiTests : IAsyncDisposable
             list.Artifacts.Select(a => a.Kind));
         foreach (var (reference, text) in new[] { (requirements, "# requirements\n"), (transcript, "transcript text"), (prompt, "the task"), (revision, "{\"revision\": 1}") })
             Assert.Equal(text, await viewer.GetStringAsync($"runs/r1/artifacts/{Uri.EscapeDataString(reference)}", ct));
+        // Saved, never rendered or sniffed, should a browser navigate to it (review R1).
+        using var read = await viewer.GetAsync($"runs/r1/artifacts/{Uri.EscapeDataString(requirements)}", ct);
+        Assert.Equal(("nosniff", "attachment"), (read.Headers.GetValues("X-Content-Type-Options").Single(), read.Content.Headers.ContentDisposition?.DispositionType));
         using var child = await viewer.GetAsync("runs/r1.c/artifacts", ct);
         Assert.Equal(childs, Assert.Single(JsonSerializer.Deserialize<ArtifactList>(await child.Content.ReadAsStringAsync(ct), ApiJson.Options)!.Artifacts).Ref);
         using var refused = await Start().GetAsync("runs/r1/artifacts", ct);

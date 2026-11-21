@@ -214,7 +214,12 @@ public static partial class ApiApp
                 && !(await Records.QueryAsync<WaitRecord>(Queries.Waits, p, ct)).Unwrap().Any(w => w.Consumed?.Any(c => c.Ref == reference) == true))
                 return Error(404, $"no artifact {reference} in run {id}");
             var read = await Artifacts.GetAsync(new ArtifactRef(reference), ct);
-            return read.Ok ? Results.Stream(read.Value!, "application/octet-stream") : Error(404, $"artifact {reference} cannot be read: {read.Error!.Message}");
+            if (!read.Ok)
+                return Error(404, $"artifact {reference} cannot be read: {read.Error!.Message}");
+            // Saved, never shown: a browser that navigates to an artifact neither renders nor sniffs it (review R1).
+            context.Response.Headers.XContentTypeOptions = "nosniff";
+            context.Response.Headers.ContentDisposition = "attachment";
+            return Results.Stream(read.Value!, "application/octet-stream");
         }
     }
 

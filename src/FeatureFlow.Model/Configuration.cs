@@ -15,7 +15,8 @@ public sealed record ProviderTypeConfig(string Type, string? Default, string? Dr
 /// API authentication (docs/02 section 7, docs/07 section 2): the local token, whose actor and roles are fixed here, and with
 /// mode <c>oidc</c> bearer tokens from <see cref="Issuer"/> for <see cref="Audience"/>, the actor from the
 /// <see cref="ActorClaim"/> claim and the identity-provider groups from <see cref="GroupsClaim"/> (<c>role_claim</c>). With
-/// OIDC, a <see cref="TokenRef"/> keeps the local token working beside it.
+/// OIDC, a <see cref="TokenRef"/> keeps the local token working beside it. Mode <c>none</c> signs nobody in: every request
+/// is the actor with the roles here, and the API must listen only on loopback (LOG 457).
 /// </summary>
 public sealed record ApiAuthConfig(string Mode, string? TokenRef, string Actor, IReadOnlyList<string> Roles)
 {
@@ -278,8 +279,13 @@ public static class ConfigurationReader
         {
             if (MapReader.Of(api.Node("auth"), d, "api.auth") is { } a)
             {
-                var mode = a.Enum("mode", ["local_token", "oidc"], required: true) ?? "local_token";
+                var mode = a.Enum("mode", ["local_token", "oidc", "none"], required: true) ?? "local_token";
                 var oidc = mode == "oidc";
+                // No sign-in has no token and no identity provider: a key for either would have no effect, so it is refused (LOG 457).
+                if (mode == "none")
+                    foreach (var key in new[] { "token_ref", "issuer", "audience", "role_claim", "actor_claim" })
+                        if (a.Node(key) is { } unused)
+                            a.Error($"api.auth.{key} has no use with mode none", unused.Location);
                 var roles = a.StringList("roles");
                 foreach (var role in roles.Where(x => !PeopleRoleNames.Contains(x)))
                     a.Error($"api.auth.roles: '{role}' is not a people role; the roles are {string.Join(", ", PeopleRoleNames)}", a.Map.Location);
@@ -287,7 +293,7 @@ public static class ConfigurationReader
                 // F8: actor policy is an automatic answer's, never a person's (docs/04 section 4.2).
                 if (actor == PeopleRoles.PolicyActor)
                     a.Error($"api.auth.actor: '{PeopleRoles.PolicyActor}' is the actor of automatic answers and cannot be a person", a.Map.Location);
-                auth = new ApiAuthConfig(mode, a.String("token_ref", required: !oidc), actor, roles.Count == 0 ? auth.Roles : roles)
+                auth = new ApiAuthConfig(mode, mode == "none" ? null : a.String("token_ref", required: !oidc), actor, roles.Count == 0 ? auth.Roles : roles)
                 {
                     Issuer = oidc ? a.String("issuer", required: true) : null,
                     Audience = oidc ? a.String("audience", required: true) : null,

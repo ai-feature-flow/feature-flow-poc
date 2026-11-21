@@ -1,0 +1,22 @@
+.ff-start form > label,
+.ff-start-parameter label {
+  display: block;
+  margin: 0.6em 0 0.2em;
+}
+
+.ff-start fieldset {
+  margin: 0.8em 0;
+  max-width: 40em;
+}
+
+.ff-start-about,
+.ff-start-when {
+  margin-top: 0;
+  color: #555;
+  font-size: 0.9em;
+  white-space: pre-wrap;
+}
+
+.ff-start-unreadable {
+  color: #8a4b00;
+}

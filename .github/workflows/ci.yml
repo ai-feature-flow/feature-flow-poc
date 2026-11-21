@@ -18,6 +18,11 @@
 #   merge race, agent reporting, pre-submit parity   integration (MergeRaceTests, EngineMergeRaceTests, AgentContractTests,
 #                                                    SessionRunTests)
 #   the deployment: images, network policies, stop  cluster (Cluster/DeploymentTests) and integration (HostProcessTests)
+#   console: serving and the text-only source rule  default (Api.Tests ConsoleTests)
+#   console (Playwright)                            default (FeatureFlow.Console.Tests)
+#
+# Every job builds the console (src/FeatureFlow.Console) with Node inside dotnet build (LOG 453, 462), so each sets up
+# Node first. The default job also installs Playwright's Chromium for the browser tests.
 name: CI
 
 on:
@@ -43,7 +48,19 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: src/FeatureFlow.Console/package-lock.json
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('Directory.Packages.props') }}
       - run: dotnet build FeatureFlow.slnx -c Release
+      # --with-deps installs the libraries Chromium needs on Linux. The script is built with FeatureFlow.Console.Tests.
+      - name: Install Playwright's Chromium
+        run: pwsh tests/FeatureFlow.Console.Tests/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
       - run: dotnet test FeatureFlow.slnx -c Release --no-build --filter "Category!=Integration&Category!=Live&Category!=Cluster" --logger "console;verbosity=normal"
 
   integration:
@@ -57,6 +74,11 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: src/FeatureFlow.Console/package-lock.json
       - name: Install the Temporal CLI
         run: |
           curl -sSf https://temporal.download/cli.sh | sh
@@ -90,6 +112,11 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: src/FeatureFlow.Console/package-lock.json
       - name: Install k3d
         run: curl -sSf https://raw.githubusercontent.com/k3d-io/k3d/v5.9.0/install.sh | TAG=v5.9.0 bash
       # The k3d profile with the smoke configuration: Temporal, Postgres and MinIO in the cluster, the three host images

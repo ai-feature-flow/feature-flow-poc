@@ -10,10 +10,53 @@ namespace FeatureFlow.Api;
 /// <summary>The authenticators and people roles an installation configures (docs/07 section 2, <c>api.auth</c>).</summary>
 public static class ApiAuthentication
 {
-    /// <summary>OIDC first, then the local token where it has a secret; the local token alone otherwise.</summary>
-    public static IReadOnlyList<IAuthenticator> For(ApiAuthConfig auth, HttpClient? http = null) => auth.Mode == "oidc"
-        ? auth.TokenRef is null ? [new OidcAuthenticator(auth, http)] : [new OidcAuthenticator(auth, http), new LocalTokenAuthenticator()]
-        : [new LocalTokenAuthenticator()];
+    /// <summary>No sign-in under mode <c>none</c>; OIDC first, then the local token where it has a secret; the local token alone otherwise.</summary>
+    public static IReadOnlyList<IAuthenticator> For(ApiAuthConfig auth, HttpClient? http = null) => auth.Mode switch
+    {
+        "none" => [new NoSignInAuthenticator()],
+        "oidc" => auth.TokenRef is null ? [new OidcAuthenticator(auth, http)] : [new OidcAuthenticator(auth, http), new LocalTokenAuthenticator()],
+        _ => [new LocalTokenAuthenticator()],
+    };
+}
+
+/// <summary>
+/// Mode <c>none</c> (docs/02 section 7, LOG 457): every request is the installation's <c>api.auth</c> actor with its roles,
+/// whatever its <c>Authorization</c> header says. Safe only because the API then listens on loopback alone
+/// (<see cref="ApiApp.RefuseUnlessLoopback"/>) and answers only requests that a page of another site cannot make
+/// (<see cref="Refusal"/>, LOG 469).
+/// </summary>
+public sealed class NoSignInAuthenticator : IAuthenticator
+{
+    public Task<Caller?> AuthenticateAsync(HttpContext context, ApiServices services) =>
+        Task.FromResult<Caller?>(new Caller(services.Installation.ApiAuth.Actor, services.Installation.ApiAuth.Roles));
+
+    /// <summary>
+    /// Why a request is refused under mode <c>none</c>, or null (LOG 469). With no credential to check, the API answers only
+    /// what a program on this machine or the console's own pages send, never what a page of another site makes a browser send:
+    /// <list type="bullet">
+    /// <item>the connection reached a loopback address, whatever Kestrel bound (review R7);</item>
+    /// <item><c>Host</c> names loopback, on any port (a browser sends the host it was asked for, so DNS rebinding
+    /// names the attacker's; a port forward may change the port);</item>
+    /// <item><c>Sec-Fetch-Site</c>, where sent, is <c>same-origin</c> or <c>none</c> (the console is same-origin; a
+    /// <c>same-site</c> page is another local server);</item>
+    /// <item>a request other than <c>GET</c> or <c>HEAD</c> says its body is JSON, which a browser sends to another origin
+    /// only after a CORS preflight the API never grants. Every such route takes a JSON body.</item>
+    /// </list>
+    /// </summary>
+    public static string? Refusal(HttpContext context)
+    {
+        const string Prefix = "api.auth.mode is none, so the API answers only requests from this machine: ";
+        var request = context.Request;
+        if (context.Connection.LocalIpAddress is not { } local || !System.Net.IPAddress.IsLoopback(local))
+            return Prefix + $"the request reached '{context.Connection.LocalIpAddress}', which is not a loopback address";
+        if (!ApiApp.IsLoopbackHost(request.Host.Host))
+            return Prefix + $"its Host '{request.Host}' is not localhost, 127.0.0.0/8 or [::1]";
+        if (request.Headers["Sec-Fetch-Site"].ToString() is { Length: > 0 } site && site is not ("same-origin" or "none"))
+            return Prefix + $"Sec-Fetch-Site is '{site}'; only the console's own pages may call it";
+        if (!HttpMethods.IsGet(request.Method) && !HttpMethods.IsHead(request.Method) && !request.HasJsonContentType())
+            return Prefix + $"a {request.Method} must have Content-Type application/json, not '{request.ContentType}'";
+        return null;
+    }
 }
 
 /// <summary>

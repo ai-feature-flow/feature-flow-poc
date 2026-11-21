@@ -6,3 +6,7 @@ requires:
   plan_schema: 1
 dependencies:
   - { name: std, version: ">=0.1.0" }
+
+# For the console's start form (GET /templates lists entrypoints only).
+entrypoints:
+  - { template: decide, when: "One decision a person answers, then the end" }

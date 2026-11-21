@@ -1,0 +1,6 @@
+.ff-error {
+  padding: 0.5em 0.75em;
+  border-left: 0.25em solid #b91c1c;
+  background: #fef2f2;
+  white-space: pre-wrap;
+}

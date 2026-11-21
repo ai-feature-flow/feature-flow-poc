@@ -18,8 +18,8 @@ using StepForm = FeatureFlow.Api.Contracts.StepForm;
 namespace FeatureFlow.Api.Tests;
 
 /// <summary>
-/// The minimal console (M7): a static page that holds no data and reads everything through the API with the person's
-/// token, and the readable form it shows, from the libraries the run locked, with each step's status.
+/// The console (A4): the single-page application served as hashed assets with its policy, the text-only rule in its
+/// sources, and the readable form it shows, from the libraries the run locked, with each step's status.
 /// </summary>
 public sealed class ConsoleTests : IAsyncDisposable
 {
@@ -68,26 +68,129 @@ public sealed class ConsoleTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task The_page_and_its_script_are_served_with_no_data_and_kept_to_their_own_origin()
+    public async Task The_console_is_served_as_hashed_assets_with_its_policy()
     {
         using var http = Start();
 
-        using var page = await http.GetAsync("console", Ct);
-        using var script = await http.GetAsync("console/console.js", Ct);
+        using var index = await http.GetAsync("console", Ct);
+        using var slash = await http.GetAsync("console/", Ct);
+        var html = await index.Content.ReadAsStringAsync(Ct);
 
-        Assert.Equal((HttpStatusCode.OK, HttpStatusCode.OK), (page.StatusCode, script.StatusCode));
-        Assert.Contains("text/html", page.Content.Headers.ContentType!.ToString());
-        Assert.Contains("<script src=\"/console/console.js\"", await page.Content.ReadAsStringAsync(Ct));
-        Assert.Contains("default-src 'self'", page.Headers.GetValues("Content-Security-Policy").Single());
-        Assert.Contains("frame-ancestors 'none'", page.Headers.GetValues("Content-Security-Policy").Single());
-        // Run data reaches the page only as text: the script never parses it as markup.
-        var js = await script.Content.ReadAsStringAsync(Ct);
-        Assert.DoesNotContain("innerHTML", js);
-        Assert.DoesNotContain("insertAdjacentHTML", js);
-        Assert.Contains("\"/runs/\"", js.Replace('`', '"'));
-        // It reads the API's snake_case fields (docs/02 section 7), never a record's C# name.
-        Assert.Contains("wait.wait_id", js);
-        Assert.Empty(System.Text.RegularExpressions.Regex.Matches(js, @"\.(runId|waitId|stepId|decisionType|parentRunId|updatedAt|reason)\b"));
+        Assert.Equal((HttpStatusCode.OK, HttpStatusCode.OK), (index.StatusCode, slash.StatusCode));
+        Assert.Equal(html, await slash.Content.ReadAsStringAsync(Ct));
+        Assert.Equal("text/html", index.Content.Headers.ContentType!.MediaType);
+        Assert.True(index.Headers.CacheControl!.NoCache);
+        AssertKeptToItsOrigin(index);
+        // Every script and style the index loads is a hashed asset under /console/assets/, kept for a year.
+        var assets = System.Text.RegularExpressions.Regex.Matches(html, @"<(script|link)\b[^>]*\b(src|href)=""([^""]+)""").Select(m => (m.Groups[1].Value, m.Groups[3].Value)).ToList();
+        Assert.Contains(assets, a => a.Item1 == "script");
+        Assert.Contains(assets, a => a.Item1 == "link");
+        Assert.DoesNotContain("<style", html);
+        foreach (var (tag, path) in assets)
+        {
+            Assert.Matches(@"^/console/assets/[\w.-]+-[\w-]{8}\.(js|css)$", path);
+            using var asset = await http.GetAsync(path.TrimStart('/'), Ct);
+            Assert.Equal(HttpStatusCode.OK, asset.StatusCode);
+            Assert.Equal(tag == "script" ? "text/javascript" : "text/css", asset.Content.Headers.ContentType!.MediaType);
+            Assert.Equal("public, max-age=31536000, immutable", asset.Headers.CacheControl!.ToString());
+            AssertKeptToItsOrigin(asset);
+        }
+
+        Assert.Equal(HttpStatusCode.NotFound, (await http.GetAsync("console/assets/index-00000000.js", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await http.GetAsync("console/console.js", Ct)).StatusCode);
+    }
+
+    static void AssertKeptToItsOrigin(HttpResponseMessage response)
+    {
+        var policy = response.Headers.GetValues("Content-Security-Policy").Single();
+        foreach (var directive in (string[])["default-src 'self'", "object-src 'none'", "frame-ancestors 'none'", "base-uri 'none'", "form-action 'none'",
+                     "require-trusted-types-for 'script'", "trusted-types 'none'"])
+            Assert.Contains(directive, policy);
+        Assert.DoesNotContain("unsafe-", policy);
+        Assert.Equal("nosniff", response.Headers.GetValues("X-Content-Type-Options").Single());
+    }
+
+    /// <summary>
+    /// The text-only rule in the console's sources (LOG 455; the design's section 7): API data reaches the page only as text.
+    /// No source uses a markup sink or evaluates text as code, every URL attribute comes from app/links.ts (Preact does not
+    /// refuse a <c>javascript:</c> URL), and no props are spread onto an element. The check is the console's own
+    /// <c>scripts/text-only.mjs</c>, over the TypeScript syntax tree; <c>npm run build</c> runs it too. The bundle is not
+    /// scanned: Preact itself holds a markup sink.
+    /// </summary>
+    [Fact]
+    public void The_console_sources_never_build_markup_or_links_from_data()
+    {
+        var (exit, output) = TextOnly(Path.Combine(ConsoleDir, "src"));
+        Assert.True(exit == 0, output);
+    }
+
+    /// <summary>The check refuses each way of building a link or markup from data it knows, and passes what links.ts builds.</summary>
+    [Fact]
+    public void The_text_only_check_refuses_links_spreads_and_sinks_however_written()
+    {
+        var root = Path.Combine(folder, "text-only");
+        var refused = new Dictionary<string, string>
+        {
+            // The review's bypass: spaces around '=', as JSX allows.
+            ["spaced.tsx"] = "export const A = () => <a href = {w.prompt}>x</a>;",
+            ["over-lines.tsx"] = "export const A = () => <a\n  href=\n  {w.prompt}>x</a>;",
+            ["upper-case.tsx"] = "export const A = () => <a HREF={w.url}>x</a>;",
+            ["form-action.tsx"] = "export const A = () => <button formAction={w.url}>x</button>;",
+            ["poster.tsx"] = "export const A = () => <video poster={w.url} />;",
+            ["src-set.tsx"] = "export const A = () => <img srcSet={w.url} />;",
+            ["xlink.tsx"] = "export const A = () => <svg><use xlinkHref={w.url} /></svg>;",
+            ["xlink-namespaced.tsx"] = "export const A = () => <svg><use xlink:href={w.url} /></svg>;",
+            ["a-literal.tsx"] = "export const A = () => <a href=\"https://elsewhere.example\">x</a>;",
+            ["added-to.tsx"] = "import * as links from \"../app/links\";\nexport const A = () => <a href={links.run(w.id) + w.more}>x</a>;",
+            ["spread.tsx"] = "export const A = () => <a {...w.props}>x</a>;",
+            ["h-props.ts"] = "h(\"a\", { href: w.url });",
+            ["h-spread.ts"] = "createElement(\"a\", { ...w.props });",
+            ["h-unread.ts"] = "h(\"a\", w.props);",
+            ["property.ts"] = "element.href = w.url;",
+            ["element-access.ts"] = "element[\"src\"] = w.url;",
+            ["set-attribute.ts"] = "element.setAttribute(\"href\", w.url);",
+            ["computed-name.ts"] = "element.setAttribute(w.name, w.value);",
+            ["inner-html.ts"] = "element.innerHTML = w.text;",
+            ["set-inner-html.tsx"] = "export const A = () => <div dangerouslySetInnerHTML={{ __html: w.text }} />;",
+            ["document-write.ts"] = "document.write(w.text);",
+            ["new-function.ts"] = "new Function(w.text)();",
+        };
+        var passed = new Dictionary<string, string>
+        {
+            ["links.tsx"] = """
+                import * as links from "../app/links";
+                import { run } from "../app/links";
+                export const A = () => <a href = {links.run(w.id)} title={w.title}>{w.text}</a>;
+                export const B = () => <a href={run(w.id)}>{w.text}</a>;
+                element.href = links.download(w.blob);
+                element.setAttribute("title", w.title);
+                h("a", null, w.text);
+                """,
+        };
+        Directory.CreateDirectory(root);
+        foreach (var (name, text) in refused.Concat(passed))
+            File.WriteAllText(Path.Combine(root, name), text);
+
+        var (exit, output) = TextOnly(root);
+
+        Assert.Equal(1, exit);
+        var flagged = output.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => l.Split(':')[0]).ToHashSet();
+        Assert.Equal(refused.Keys.Order(), flagged.Order());
+    }
+
+    static string ConsoleDir => Path.Combine(Repository.Root, "src", "FeatureFlow.Console");
+
+    /// <summary>Runs the console's text-only check over <paramref name="sources"/>: its exit code and what it printed.</summary>
+    static (int Exit, string Output) TextOnly(string sources)
+    {
+        var start = new System.Diagnostics.ProcessStartInfo("node") { WorkingDirectory = ConsoleDir, RedirectStandardOutput = true, RedirectStandardError = true };
+        start.ArgumentList.Add(Path.Combine("scripts", "text-only.mjs"));
+        start.ArgumentList.Add(sources);
+        using var node = System.Diagnostics.Process.Start(start)!;
+        var output = node.StandardOutput.ReadToEndAsync(Ct);
+        var errors = node.StandardError.ReadToEnd();
+        node.WaitForExit();
+        return (node.ExitCode, output.Result + errors);
     }
 
     /// <summary>Starts a run through the API, which writes its lock and record before it reaches Temporal (absent here: a 500).</summary>

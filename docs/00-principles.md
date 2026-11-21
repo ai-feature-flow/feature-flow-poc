@@ -212,9 +212,10 @@ Why: the product owner's decision of 2026-11-21 (`docs/PLAN.md` section 3). A
 product that needs an identity provider to try it is not tried; one that cannot
 use the organisation's identity provider is not adopted.
 
-Status: the no-sign-in console and authenticators chosen from a set the host
-registers are planned (`docs/12` milestones A4 and R2). Version 1 offers the
-local token and OIDC only (`docs/07` section 2, `api.auth`).
+Status: the no-sign-in console is built (`api.auth.mode: none`, on loopback
+only; `docs/12` A4). Authenticators chosen from a set the host registers are
+planned (`docs/12` R2). Today the API offers no sign-in, the local token and
+OIDC (`docs/07` section 2, `api.auth`).
 
 ## 3. Who decides what
 

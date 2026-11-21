@@ -7,3 +7,8 @@
 !library/std/
 **/bin/
 **/obj/
+# The console is built in its own stage of host.Dockerfile (LOG 462): never copy a local install or build. This file, not
+# a .dockerignore at the root, is what Docker reads for this Dockerfile.
+src/FeatureFlow.Console/node_modules/
+src/FeatureFlow.Console/dist/
+src/FeatureFlow.Console/src/api/schema.gen.d.ts

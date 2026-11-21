@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using FeatureFlow.Api.Contracts;
@@ -17,46 +16,76 @@ namespace FeatureFlow.Api;
 public static partial class ApiApp
 {
     /// <summary>
-    /// The minimal web console (docs/11 section 4, M7; open question 5): runs, a run's readable form and timeline, and
-    /// decisions to answer. One static page and its script, with no build chain; it holds no data and reads everything
-    /// through the API with the person's own credential, and answers through the same answer call, so authentication and
-    /// authorisation are the API's (LOG 229). The run's plan route, which the page reads, is mapped here too.
+    /// The console (docs/12 section 4, A4): the single-page application built from src/FeatureFlow.Console and embedded as
+    /// <c>console/&lt;path&gt;</c> (LOG 453). It holds no data and reads everything through the API with the person's own
+    /// credential, so authentication and authorisation are the API's (LOG 229). Its index is always revalidated, so a deploy
+    /// is picked up at once; its assets are named by their hash, so they are kept for a year (LOG 454). The run's plan
+    /// route, which the console reads, is mapped here too.
     /// </summary>
     static void MapConsole(WebApplication app, Handlers api)
     {
-        app.MapGet("/console", () => Page("console.html", "text/html; charset=utf-8")).ExcludeFromDescription();
-        app.MapGet("/console/console.js", () => Page("console.js", "text/javascript; charset=utf-8")).ExcludeFromDescription();
+        app.MapGet("/console", () => ConsoleFile("index.html", "no-cache")).ExcludeFromDescription();
+        app.MapGet("/console/assets/{**file}", (string file) => ConsoleFile($"assets/{file}", "public, max-age=31536000, immutable"))
+            .ExcludeFromDescription();
         app.MapGet("/runs/{id}/plan", (HttpContext c, string id) => api.Guard(c, caller => api.PlanAsync(c, caller, id)))
             .Described<PlanView>("getRunPlan", 200, 404, 409);
     }
 
-    static readonly Dictionary<string, string> Pages = new(StringComparer.Ordinal);
-
-    static IResult Page(string name, string contentType)
+    /// <summary>
+    /// The console's files by path under /console/, read once from the assembly. MSBuild names a resource in a folder with the
+    /// build machine's separator, so a name is read with either.
+    /// </summary>
+    static readonly Lazy<Dictionary<string, byte[]>> ConsoleFiles = new(() =>
     {
-        string text;
-        lock (Pages)
-            if (!Pages.TryGetValue(name, out text!))
-            {
-                using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"FeatureFlow.Api.Console.{name}")
-                                   ?? throw new InvalidOperationException($"the console's {name} is not embedded");
-                using var reader = new StreamReader(stream, Encoding.UTF8);
-                Pages[name] = text = reader.ReadToEnd();
-            }
+        var assembly = typeof(ApiApp).Assembly;
+        var files = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        foreach (var name in assembly.GetManifestResourceNames().Where(n => n.StartsWith("console/", StringComparison.Ordinal)))
+        {
+            using var stream = assembly.GetManifestResourceStream(name)!;
+            using var bytes = new MemoryStream();
+            stream.CopyTo(bytes);
+            files[name["console/".Length..].Replace('\\', '/')] = bytes.ToArray();
+        }
 
-        return new PageResult(text, contentType);
+        return files;
+    });
+
+    static IResult ConsoleFile(string path, string cacheControl)
+    {
+        if (ConsoleFiles.Value.Count == 0)
+            return Results.Json(new ErrorResponse("this build has no console"), Json, statusCode: StatusCodes.Status404NotFound);
+        return ConsoleFiles.Value.TryGetValue(path, out var content)
+            ? new ConsoleResult(content, ContentTypeOf(path), cacheControl)
+            : Results.Json(new ErrorResponse($"the console has no file {path}"), Json, statusCode: StatusCodes.Status404NotFound);
     }
 
-    /// <summary>A console file, with headers that keep it to its own origin: no framing, scripts only from the API itself.</summary>
-    sealed class PageResult(string text, string contentType) : IResult
+    static string ContentTypeOf(string path) => Path.GetExtension(path) switch
     {
+        ".html" => "text/html; charset=utf-8",
+        ".js" => "text/javascript; charset=utf-8",
+        ".css" => "text/css; charset=utf-8",
+        ".svg" => "image/svg+xml",
+        ".woff2" => "font/woff2",
+        _ => "application/octet-stream",
+    };
+
+    /// <summary>
+    /// A console file, with headers that keep it to its own origin: no framing, no inline script or style, nothing loaded
+    /// from elsewhere, and Trusted Types, so a string assigned to a markup sink such as <c>innerHTML</c> throws (LOG 455).
+    /// </summary>
+    sealed class ConsoleResult(byte[] content, string contentType, string cacheControl) : IResult
+    {
+        public const string Policy = "default-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; " +
+                                     "require-trusted-types-for 'script'; trusted-types 'none'";
+
         public async Task ExecuteAsync(HttpContext context)
         {
             context.Response.ContentType = contentType;
-            context.Response.Headers.ContentSecurityPolicy = "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+            context.Response.ContentLength = content.Length;
+            context.Response.Headers.ContentSecurityPolicy = Policy;
             context.Response.Headers.XContentTypeOptions = "nosniff";
-            context.Response.Headers.CacheControl = "no-store";
-            await context.Response.WriteAsync(text, context.RequestAborted);
+            context.Response.Headers.CacheControl = cacheControl;
+            await context.Response.Body.WriteAsync(content, context.RequestAborted);
         }
     }
 

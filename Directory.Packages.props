@@ -29,5 +29,7 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
     <!-- A3: tests drive GET /events' heartbeat with a fake clock (docs/02 section 7). -->
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.0.0" />
+    <!-- A4: the console's browser tests (FeatureFlow.Console.Tests, LOG 461). -->
+    <PackageVersion Include="Microsoft.Playwright" Version="1.65.1" />
   </ItemGroup>
 </Project>
