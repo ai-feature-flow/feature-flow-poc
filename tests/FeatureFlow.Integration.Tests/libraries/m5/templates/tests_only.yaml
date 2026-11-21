@@ -1,0 +1,14 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: tests_only
+  level: ticket
+  description: The repository's test tiers and nothing else, for the sandbox image tests (F4).
+
+steps:
+  - id: tests
+    action: test.run
+    routes:
+      passed: { end: completed }
+      failed: { end: failed }
+      baseline_failed: { end: failed }

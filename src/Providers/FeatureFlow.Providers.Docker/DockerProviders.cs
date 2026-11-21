@@ -7,11 +7,12 @@ public static class DockerProviders
 {
     public static IReadOnlyList<ProviderFactory> Factories { get; } =
     [
-        new("sandbox", "docker", ["image", "user", "docker"], c => new DockerSandbox(
+        new("sandbox", "docker", ["image", "allowed_images", "user", "docker"], c => new DockerSandbox(
             c.RequiredSetting("image"),
             c.Setting("user") ?? "node",
             () => c.Provider("artifact_store") as IArtifactStoreProvider ?? throw new InvalidOperationException("the Docker sandbox needs an artifact store"),
             new DockerCli(c.Setting("docker") ?? "docker"),
-            c.SandboxReach)),
+            c.SandboxReach,
+            c.SettingList("allowed_images"))),
     ];
 }

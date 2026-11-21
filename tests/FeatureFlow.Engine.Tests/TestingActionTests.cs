@@ -60,6 +60,24 @@ public sealed class TestingActionTests
         Assert.DoesNotContain(w.Sandbox.Commands, c => c.Command.Contains("--head", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// F4: the tests and the analyser run in a sandbox made from the parent branch's <c>environment.image</c>, which shapes
+    /// the evidence as setup does; an image the agent names on the work branch is not used (LOG A5a-1).
+    /// </summary>
+    [Fact]
+    public async Task Test_and_analysis_sandboxes_are_made_from_the_parent_branchs_environment_image()
+    {
+        await using var w = WithManifest("environment: { image: acme/api-sandbox:1 }");
+        w.Sandbox.On(new SandboxRule("dotnet test tests/Unit", Files: new Dictionary<string, string> { [ActionWorld.UnitTrx] = ActionWorld.Trx(3) }));
+        w.Sandbox.On(new SandboxRule("dotnet build", Files: new Dictionary<string, string> { ["analysis.sarif"] = ActionWorld.Sarif() }));
+        w.CommitWork("feature-flow.yaml", ActionWorld.Manifest("environment: { image: agent/chosen:1 }"));
+
+        Assert.Equal("passed", Outcome(await w.RunAsync("test.run", "{ tier_tags: [unit] }")));
+        Assert.Equal("passed", Outcome(await w.RunAsync("analysis.run", "{ baseline: true }", "baseline_analysis")));
+
+        Assert.Equal(["acme/api-sandbox:1", "acme/api-sandbox:1"], w.Sandbox.Specs.Select(s => s.Image));
+    }
+
     [Fact]
     public async Task A_result_file_already_in_the_checkout_that_cannot_be_removed_raises_an_intervention()
     {

@@ -50,7 +50,7 @@ static class Testing
     static async Task<(TestEvidence Evidence, string? Adopted)> RunTiersAsync(ActionRun run, RepoRef repo, IReadOnlyList<string> tags, bool baseline, bool adopt = true)
     {
         var head = await run.WorkHeadAsync(repo);
-        var (manifest, setup) = await ManifestsAsync(run, repo, head, "test");
+        var manifest = await ManifestAsync(run, repo, "test");
         var d = new DiagnosticBag();
         StepStartChecks.TierTags(repo.FullName, manifest, tags, d);
         if (d.HasErrors)
@@ -86,7 +86,7 @@ static class Testing
         var results = new List<TestResults>();
         if (inSandbox.Count > 0)
         {
-            await using var session = await SandboxSession.OpenAsync(run, repo, head, setup, "test");
+            await using var session = await SandboxSession.OpenAsync(run, repo, head, manifest, "test");
             foreach (var tier in inSandbox)
                 results.Add(await SandboxTierAsync(run, session, tier, head));
         }
@@ -101,18 +101,17 @@ static class Testing
     }
 
     /// <summary>
-    /// The manifest whose tiers, analyser and setup make evidence: the parent branch's, never the head's (LOG 138; setup
-    /// shapes the environment the evidence is produced in, re-check R4). With no manifest on the parent branch the engine
-    /// cannot tell how to test: an intervention.
+    /// The manifest whose tiers, analyser, setup and image make evidence: the parent branch's, never the head's (LOG 138;
+    /// setup and image shape the environment the evidence is produced in, re-check R4, LOG A5a-1). With no manifest on the
+    /// parent branch the engine cannot tell how to test: an intervention.
     /// </summary>
-    static async Task<(RepositoryManifest Evidence, IReadOnlyList<string> Setup)> ManifestsAsync(ActionRun run, RepoRef repo, string head, string what)
+    static async Task<RepositoryManifest> ManifestAsync(ActionRun run, RepoRef repo, string what)
     {
         var parent = await run.ParentBranchAsync(repo);
         var at = ActionRun.Must(await run.Vcs.ResolveAsync(repo, "refs/heads/" + parent, run.Ct), "read the parent branch")
                  ?? throw ActionStop.CannotAnswer($"{repo.FullName} has no parent branch {parent}");
-        var evidence = await run.ManifestAsync(repo, at)
-                       ?? throw ActionStop.CannotAnswer($"{repo.FullName} has no {RepositoryManifest.FileName} on {parent} at {Revisions.Short(at)}: the engine cannot tell how to {what} it");
-        return (evidence, evidence.Setup);
+        return await run.ManifestAsync(repo, at)
+               ?? throw ActionStop.CannotAnswer($"{repo.FullName} has no {RepositoryManifest.FileName} on {parent} at {Revisions.Short(at)}: the engine cannot tell how to {what} it");
     }
 
     static async Task<TestResults> SandboxTierAsync(ActionRun run, SandboxSession session, TestTier tier, string head)
@@ -203,7 +202,7 @@ static class Testing
         var repo = run.Repository();
         var baseline = run.Bool("baseline", false);
         var head = await run.WorkHeadAsync(repo);
-        var (manifest, setup) = await ManifestsAsync(run, repo, head, "analyse");
+        var manifest = await ManifestAsync(run, repo, "analyse");
         var analysis = manifest.Analysis;
         if (analysis is null || analysis.Analyser == "none")
         {
@@ -217,7 +216,7 @@ static class Testing
         string? sarif;
         int exit;
         string output;
-        await using (var session = await SandboxSession.OpenAsync(run, repo, head, setup, "analysis"))
+        await using (var session = await SandboxSession.OpenAsync(run, repo, head, manifest, "analysis"))
         {
             await session.ClearAsync(analysis.SarifPath!, "the analyser's SARIF");
             (exit, output) = await session.RunAsync(analysis.Command!, run.Options.CommandTimeout, "the analyser");
@@ -293,8 +292,9 @@ static class Testing
 }
 
 /// <summary>
-/// A sandbox for the engine's own commands (tests, analysis): created fresh for the step, with the work branch checked
-/// out at the head under test and the manifest's <c>setup</c> commands run. Removed when disposed.
+/// A sandbox for the engine's own commands (tests, analysis): created fresh for the step from the manifest's image, with
+/// the work branch checked out at the head under test and the manifest's <c>setup</c> commands run. Without a manifest
+/// (a publication), the installation's image and no setup. Removed when disposed.
 /// </summary>
 sealed class SandboxSession : IAsyncDisposable
 {
@@ -306,11 +306,11 @@ sealed class SandboxSession : IAsyncDisposable
 
     SandboxSession(ActionRun run, ISandboxProvider sandboxes, SandboxHandle handle) => (this.run, this.sandboxes, this.handle) = (run, sandboxes, handle);
 
-    public static Task<SandboxSession> OpenAsync(ActionRun run, RepoRef repo, string head, IReadOnlyList<string> setup, string purpose) =>
-        OpenAsync(run, repo, run.WorkReference, head, run.Scope.WorkBranch, setup, purpose);
+    public static Task<SandboxSession> OpenAsync(ActionRun run, RepoRef repo, string head, RepositoryManifest? manifest, string purpose) =>
+        OpenAsync(run, repo, run.WorkReference, head, run.Scope.WorkBranch, manifest, purpose);
 
     /// <summary>As above, with <paramref name="head"/> read from <paramref name="sourceReference"/> and checked out as <paramref name="branch"/>.</summary>
-    public static async Task<SandboxSession> OpenAsync(ActionRun run, RepoRef repo, string sourceReference, string head, string branch, IReadOnlyList<string> setup,
+    public static async Task<SandboxSession> OpenAsync(ActionRun run, RepoRef repo, string sourceReference, string head, string branch, RepositoryManifest? manifest,
         string purpose)
     {
         var sandboxes = run.Provider<ISandboxProvider>("sandbox");
@@ -318,9 +318,10 @@ sealed class SandboxSession : IAsyncDisposable
         // An earlier attempt's sandbox may be half-used: start clean.
         if (await sandboxes.AttachAsync(key, run.Ct) is { Ok: true } earlier)
             await sandboxes.DisposeAsync(earlier.Value!, CancellationToken.None);
-        var handle = ActionRun.Must(await sandboxes.CreateAsync(new SandboxSpec(key, "/ff/home", new Dictionary<string, string>(), [Checkout, "/ff/home", "/ff/tmp"]), run.Ct),
-            "create the sandbox");
+        var handle = ActionRun.Must(await sandboxes.CreateAsync(new SandboxSpec(key, "/ff/home", new Dictionary<string, string>(), [Checkout, "/ff/home", "/ff/tmp"],
+            manifest?.Image), run.Ct), "create the sandbox");
         var session = new SandboxSession(run, sandboxes, handle);
+        var setup = manifest?.Setup ?? [];
         try
         {
             ActionRun.Must(await run.Vcs.CheckOutAsync(repo, sourceReference, head, branch, new WorkingCopyRef(handle, Checkout), run.Ct),

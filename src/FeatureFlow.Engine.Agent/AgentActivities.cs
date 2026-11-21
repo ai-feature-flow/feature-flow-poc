@@ -331,7 +331,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             if (attached.Error!.Reason != "not_found")
                 Must(attached, "attach to the sandbox");
             sandbox = Must(await sandboxes.CreateAsync(new SandboxSpec(key, paths.Home, new Dictionary<string, string>(),
-                [paths.Checkout, paths.Output, "/ff/inputs", "/ff/state", "/ff/tmp"]), ct), "create the sandbox");
+                [paths.Checkout, paths.Output, "/ff/inputs", "/ff/state", "/ff/tmp"], manifest?.Image), ct), "create the sandbox");
             hasSandbox = true;
             copy = copy with { Sandbox = sandbox };
             // Root-owned and read-only. It runs as the agent's user, so its marker and log in /ff/state are hints the
