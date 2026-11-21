@@ -53,6 +53,8 @@ commit. The repository can be renamed later without losing history.
 | Tests | xUnit v3. Tests that need Temporal, Docker, a real agent or GitHub are tagged by category, so the default run needs none of them |
 | Package versions | Central package management (`Directory.Packages.props`) |
 | Build settings | `Directory.Build.props`: nullable enabled, warnings as errors, deterministic builds |
+| Console | Node 22.12 or later (26 in CI and the host image), npm with a committed lockfile and exact versions; TypeScript, Vite and Preact; client types generated from the OpenAPI document in every build. `dotnet build` runs the console's build; `-p:ConsoleBuild=false` skips it (LOG 453, 456) |
+| Browser tests | `Microsoft.Playwright`, Chromium installed on first use (LOG 461) |
 
 ### 2.3 Solution layout
 
@@ -75,6 +77,7 @@ src/
   FeatureFlow.Api.Contracts/            The API's request and response records, shared with the CLI (LOG 388)
   FeatureFlow.Hosting/                  Composition: selects and registers providers from installation configuration
   FeatureFlow.Cli/                      `ff`
+  FeatureFlow.Console/                  The console: TypeScript, built by FeatureFlow.Api's build and embedded in it. Not a .NET project (LOG 453)
   Providers/
     FeatureFlow.Providers.Local/        Filesystem artifact store, SQLite record store, file secrets, local hand-off session surface, recording providers
     FeatureFlow.Providers.Git/          VCS provider and the engine's clone cache (docs/02 section 6)
@@ -90,6 +93,7 @@ tests/
   <Project>.Tests/                      One per src project
   FeatureFlow.Replay.Tests/             Recorded Temporal histories, in tests/histories/
   FeatureFlow.Integration.Tests/        Temporal dev server and Docker; failure injection
+  FeatureFlow.Console.Tests/            The console in a browser (Playwright), default category
   FeatureFlow.Live.Tests/               A real agent runtime and the GitHub fixture repository
 library/std/                            Unchanged; its workflow tests in library/std/tests/
 ```
@@ -229,7 +233,7 @@ Version 1 is complete when M8 is done.
 
 | Category | Needs | Runs |
 |---|---|---|
-| Default | Nothing | Every pull request, required |
+| Default | Node and npm (the console's build) and Playwright's Chromium, installed by the first run (LOG 461, 462) | Every pull request, required |
 | Integration | Temporal CLI dev server, Docker | Every pull request, required |
 | Cluster | A k3d cluster with the deployment (`deploy/k3d`), Docker | Every pull request, in its own job (LOG 316) |
 

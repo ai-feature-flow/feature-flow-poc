@@ -140,6 +140,7 @@ secret (LOG 83). They pass a secret scan before they are committed.
 | Merge race | Two work branches catch up from the same parent head; the second merge gets `base_moved` and loops; repeated refusals exhaust the allowance and escalate | Engine CI |
 | Agent reporting | `report`, `ask_human` (including across a worker restart), `checkpoint`, `propose_patch` | Engine CI |
 | Pre-submit parity | A session's check and the later step receive the same task, tools, model and commit | Engine CI |
+| Console (browser) | The console in Chromium (Playwright) against the API in process over the local stores, with a scripted engine writing the records a run would: find a wait in "Needs me" and answer it with a reason, start a run, set a breakpoint and continue, a change arriving over `/events`, the notification link, sign-in, and markup in API data shown as text (LOG 461) | Engine CI, default category |
 
 ### 4.3 Workflow test file
 
