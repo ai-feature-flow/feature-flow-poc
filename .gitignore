@@ -6,6 +6,11 @@
 bin/
 obj/
 
+# The console's packages, build output and client types, generated in every build (LOG 453, 456)
+src/FeatureFlow.Console/node_modules/
+src/FeatureFlow.Console/dist/
+src/FeatureFlow.Console/src/api/schema.gen.d.ts
+
 # Local run state
 .feature-flow/
 

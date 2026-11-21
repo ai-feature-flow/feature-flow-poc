@@ -17,9 +17,44 @@
     <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" />
   </ItemGroup>
 
+  <!-- The console (src/FeatureFlow.Console, LOG 453): built with Node and Vite by npm, then embedded as console/<path>
+       and served at /console (ApiApp.Console.cs, LOG 454). Each step runs only when its inputs changed. Node is required;
+       -p:ConsoleBuild=false skips npm and embeds whatever dist/ already holds, which the image build uses (LOG 462). -->
+  <PropertyGroup>
+    <ConsoleDir>$(MSBuildThisFileDirectory)..\FeatureFlow.Console\</ConsoleDir>
+    <ConsoleBuild Condition="'$(ConsoleBuild)' == ''">true</ConsoleBuild>
+  </PropertyGroup>
+
   <ItemGroup>
-    <EmbeddedResource Include="Console\console.html" LogicalName="FeatureFlow.Api.Console.console.html" />
-    <EmbeddedResource Include="Console\console.js" LogicalName="FeatureFlow.Api.Console.console.js" />
+    <ConsoleInput Include="$(ConsoleDir)src\**\*;$(ConsoleDir)index.html;$(ConsoleDir)vite.config.ts;$(ConsoleDir)tsconfig.json;$(ConsoleDir)package.json;$(ConsoleDir)package-lock.json;$(MSBuildThisFileDirectory)openapi.json"
+                  Exclude="$(ConsoleDir)src\api\schema.gen.d.ts" />
   </ItemGroup>
+
+  <Target Name="ConsoleNode" Condition="'$(ConsoleBuild)' == 'true'">
+    <Exec Command="node --version" IgnoreExitCode="true" StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ExitCode" PropertyName="ConsoleNodeExit" />
+    </Exec>
+    <Error Condition="'$(ConsoleNodeExit)' != '0'"
+           Text="The console (src/FeatureFlow.Console) needs Node 22.12 or later and npm on PATH. Install Node, or build without the console: dotnet build -p:ConsoleBuild=false" />
+  </Target>
+
+  <Target Name="ConsoleInstall" DependsOnTargets="ConsoleNode" Condition="'$(ConsoleBuild)' == 'true'"
+          Inputs="$(ConsoleDir)package.json;$(ConsoleDir)package-lock.json" Outputs="$(ConsoleDir)node_modules\.package-lock.json">
+    <Exec Command="npm ci --no-audit --no-fund" WorkingDirectory="$(ConsoleDir)" />
+  </Target>
+
+  <Target Name="ConsoleCompile" DependsOnTargets="ConsoleInstall" Condition="'$(ConsoleBuild)' == 'true'"
+          Inputs="@(ConsoleInput)" Outputs="$(ConsoleDir)dist\index.html">
+    <Exec Command="npm run build" WorkingDirectory="$(ConsoleDir)" />
+  </Target>
+
+  <!-- A target, not a static item: dist/ is globbed after it is built. -->
+  <Target Name="ConsoleEmbed" DependsOnTargets="ConsoleCompile" BeforeTargets="AssignTargetPaths">
+    <ItemGroup>
+      <ConsoleFile Include="$(ConsoleDir)dist\**\*" />
+      <EmbeddedResource Include="@(ConsoleFile)" LogicalName="console/%(ConsoleFile.RecursiveDir)%(ConsoleFile.Filename)%(ConsoleFile.Extension)"
+                        WithCulture="false" Type="Non-Resx" />
+    </ItemGroup>
+  </Target>
 
 </Project>
