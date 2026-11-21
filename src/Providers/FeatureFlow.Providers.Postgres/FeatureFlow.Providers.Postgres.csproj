@@ -9,4 +9,9 @@
     <PackageReference Include="Npgsql" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- PostgresRecordStore.AppendChangesAsync, so a test can hold one transaction's changes open while another commits. -->
+    <InternalsVisibleTo Include="FeatureFlow.Providers.Postgres.Tests" />
+  </ItemGroup>
+
 </Project>

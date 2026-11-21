@@ -27,5 +27,7 @@
     <PackageVersion Include="Castle.Core" Version="5.2.1" />
     <!-- The architecture test reads the Temporal shell's syntax (A2, ShellRuleTests). -->
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
+    <!-- A3: tests drive GET /events' heartbeat with a fake clock (docs/02 section 7). -->
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.0.0" />
   </ItemGroup>
 </Project>
