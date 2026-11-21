@@ -159,6 +159,87 @@ credentials; the rest need model tokens or the GitHub App.
    id, its final status, the pull request and merge commit on the fixture; the browser's developer console (expect one
    404 for `/runs/{id}/plan` just after start, follow-up 2); each host's output. Stop each host and Temporal with Ctrl+C.
 
+## Live run with Copilot CLI
+
+The same run on Copilot quota instead of the Anthropic subscription: Copilot CLI in its native mode, behind the model
+proxy with `auth: github` (LOG 496 to 498; `docs/07` section 6.1). It shares `~/ff-live`, Temporal and the ports with
+the run above; only the configuration and the secret differ. Steps marked *(checked)* were run on 2026-11-22 before
+the Copilot changes merged, with a dummy token, the real GitHub App and a copy of the files below (ports 7661, 8680 and
+8681); "after merge" marks what needs the merged engine; the rest needs the token.
+
+1. **Prerequisites**, as for the run above, except Claude Code and its token, and:
+   1. The merged branch built: `dotnet build FeatureFlow.slnx -c Release`.
+   2. The sandbox image rebuilt with Copilot CLI 1.0.107 (the Dockerfile pins it):
+      `docker build -t feature-flow-sandbox:m8 -f src/Providers/FeatureFlow.Providers.Docker/sandbox.Dockerfile src/Providers/FeatureFlow.Providers.Docker`,
+      then `docker run --rm --entrypoint copilot feature-flow-sandbox:m8 --version` says 1.0.107 (after merge; the
+      check command *(checked)*).
+   3. The sandbox client published *(checked)*:
+      `dotnet publish src/FeatureFlow.SandboxClient -c Release -r linux-arm64 --self-contained -p:PublishSingleFile=true -o ~/ff-live/sandbox-client`.
+   4. The token, which the product owner creates and places himself: a fine-grained personal access token owned by
+      his Xero GitHub account (an Enterprise Managed User), at github.com/settings/personal-access-tokens: resource
+      owner the account itself, repository access "Public repositories", account permission **Copilot Requests**
+      only, a short expiry. He adds it to `~/ff-live/secrets.json`, outside the repository, as
+      `"copilot_github_token"`. It is never typed on a command line or printed.
+   5. The upstream, the account's Copilot API, read with the token from the file and without printing it (no quota
+      spent):
+
+      ```sh
+      jq -r '"Authorization: Bearer " + .copilot_github_token' ~/ff-live/secrets.json \
+        | curl -sf -H @- https://api.github.com/copilot_internal/user | jq -r .endpoints.api
+      ```
+
+      Expect `https://api.business.githubcopilot.com` or `https://api.enterprise.githubcopilot.com`. The same header
+      on `GET <upstream>/models` lists the models; `claude-haiku-4.5` must be among them, with `/v1/messages` in its
+      `supported_endpoints`. (With a dummy token the first command answers 401 and prints nothing of the token
+      *(checked)*.)
+2. **Configuration**, in `~/ff-live` beside the Claude Code files (`<…>` marks your values). All three hosts started
+   with a copy and dummy values *(checked)*; that `auth: github` is refused for `claude_code` and sent as `Bearer`
+   is after merge.
+
+   `installation-copilot.yaml`: `installation.yaml` from the run above, with this `secrets` and `agent_runtime`, and
+   `task_queue: ff-a4-copilot`:
+
+   ```yaml
+     secrets: { default: file, instances: { file: { path: secrets.json } } }
+     agent_runtime:
+       default: copilot_cli
+       instances:
+         copilot_cli:
+           model: claude-haiku-4.5
+           model_access: { mode: proxy, key_ref: secrets/copilot_github_token, upstream: "<the upstream from step 1.5>", auth: github }
+   ```
+
+   `organisation-copilot.yaml`: `organisation.yaml` from the run above, with
+   `role_mapping: { default: { agent_runtime: copilot_cli, model: claude-haiku-4.5 } }`.
+
+   `secrets.json`: `{ "step_token_key": "<as before>", "copilot_github_token": "<placed by the product owner>" }`.
+3. **Temporal**, as in the run above *(checked)*:
+   `~/.temporalio/bin/temporal server start-dev --headless --port 7833 --http-port 7834 --metrics-port 7835 --ui-port 8833 --db-filename data/temporal.db`.
+4. **The three hosts**, one terminal each in `~/ff-live`; no token in any environment *(checked: each started and
+   listened)*:
+
+   ```sh
+   dotnet <checkout>/hosts/FeatureFlow.Host.OrchestrationWorker/bin/Release/net10.0/FeatureFlow.Host.OrchestrationWorker.dll --installation installation-copilot.yaml --organisation organisation-copilot.yaml
+   dotnet <checkout>/hosts/FeatureFlow.Host.AgentWorker/bin/Release/net10.0/FeatureFlow.Host.AgentWorker.dll --installation installation-copilot.yaml --organisation organisation-copilot.yaml
+   FF_API_LISTEN=http://127.0.0.1:8580 dotnet <checkout>/hosts/FeatureFlow.Host.Api/bin/Release/net10.0/FeatureFlow.Host.Api.dll --installation installation-copilot.yaml --organisation organisation-copilot.yaml
+   ```
+
+   The API lists `std:templates/ticket_delivery` *(checked)*.
+5. **Open** `http://127.0.0.1:8580/console`, as in the run above (checked there; the Copilot check built without the
+   console).
+6. **The run, from the console only**, as step 6 of the run above: "Start a run", `std:templates/ticket_delivery`,
+   `ticket_id` an open fixture issue, `engine_can_merge` off, Repositories `ai-feature-flow/feature-flow-example`;
+   Start; answer every wait from the console. The run page's timeline shows `session 1 started on runtime copilot_cli
+   with model claude-haiku-4.5`.
+7. **Evidence to record**: as for the run above, and the agent worker's model requests (the step's agent events,
+   `GET meta`, `GET models`, `POST v1/messages` with status 200) and the account's premium requests for the day
+   (github.com, Settings, Billing and licensing, or `/usage` in a local `copilot`), to compare with a normal session
+   (spike 0, open question 5).
+
+Before the console run, the Copilot Live test C1 checks the same arrangement on its own: one real step that commits,
+with the token's value in none of its sandbox's environment, homes, transcript or commits (`CONTRIBUTING.md`, Live
+tests).
+
 ## Size
 
 `src` +4,100 / −230 lines against `main` after A3 (70 files), of which 1,334 are the npm lockfile; tests +2,360. The
