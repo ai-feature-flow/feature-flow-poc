@@ -119,6 +119,8 @@ public static partial class ApiApp
             var revision = body.Revision;
             if (!SessionNames.IsCommit(revision))
                 return Error(400, "a submission needs revision: the full id of the commit to submit, pushed to the session's branch");
+            if (ReasonRefused(body.Reason, required: false) is { } refusedReason)
+                return refusedReason;
             var (session, run, wait, refused) = await ActableAsync(caller, sid, context.RequestAborted);
             if (refused is not null)
                 return refused;
@@ -135,8 +137,8 @@ public static partial class ApiApp
             var (body, malformed) = await BodyAsync<SessionAbandonRequest>(context);
             if (body is null)
                 return malformed!;
-            if (ReasonMissing(body.Reason) is { } missing)
-                return missing;
+            if (ReasonRefused(body.Reason) is { } refusedReason)
+                return refusedReason;
             var (session, run, wait, refused) = await ActableAsync(caller, sid, context.RequestAborted);
             if (refused is not null)
                 return refused;

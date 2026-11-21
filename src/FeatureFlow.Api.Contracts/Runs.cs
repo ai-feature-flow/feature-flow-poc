@@ -71,8 +71,9 @@ public enum WaitKind
 
 /// <summary>
 /// A wait: its kind, step and decision type, the text to show (<see cref="Prompt"/>) and the choices that answer it; what
-/// its step consumed, by reference; whether the caller may answer it now; for a decision several people must answer,
-/// who has answered each way; and once closed, the answer that closed it.
+/// its step consumed, by reference; whether the caller may answer it now; how many people must answer it the same way
+/// (<see cref="MinCount"/>: 1 where the approval rule sets none, and for a closed wait or one whose rule cannot be read
+/// now); for a decision several people must answer, who has answered each way; and once closed, the answer that closed it.
 /// </summary>
 public sealed record WaitView(
     string WaitId,
@@ -85,6 +86,7 @@ public sealed record WaitView(
     DateTimeOffset UpdatedAt,
     IReadOnlyList<ConsumedArtifactView> Consumed,
     bool CanAnswer,
+    int MinCount,
     IReadOnlyList<AnswerProgress>? Progress,
     ClosedAnswer? Answer);
 

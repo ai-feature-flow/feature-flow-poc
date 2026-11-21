@@ -533,10 +533,13 @@ interface ISecretsProvider : IProvider {
   `running` run, with its run, oldest first, at most 500, for `GET /attention`
   (`docs/02` section 7). It joins waits to runs on the run's status, so a run
   that ended without closing its waits (a terminated workflow, set by
-  `reconcile`) shows none. SQLite and Postgres index the waits by organisation
-  and `open` (`waits_open`; Postgres schema script 2); the in-memory store keeps
-  no waits and answers with none. A wait that opened and closed between two
-  records is never written (LOG 374), so it never appears.
+  `  reconcile`) shows none. SQLite and Postgres index the open waits by
+  organisation (`waits_open`, a partial index on `open`; Postgres schema script
+  2); the in-memory store keeps no waits and answers with none. A wait that
+  opened and closed between two records is never written (LOG 374), so it never
+  appears. Known limit: the 500 are the organisation's oldest open waits, taken
+  before `GET /attention` filters them by caller, so with more than 500 open a
+  caller's newer waits drop out of its list; R4 can page by the caller's scope.
 - Secret values are scrubbed at the logging layer.
 
 ### 3.13 Credential broker

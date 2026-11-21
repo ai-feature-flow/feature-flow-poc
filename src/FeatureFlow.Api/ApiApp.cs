@@ -50,6 +50,9 @@ public static partial class ApiApp
     /// <summary>Where the OpenAPI document is served, unauthenticated (docs/02 section 7).</summary>
     public const string OpenApiPath = "/openapi.json";
 
+    /// <summary>The OpenAPI security scheme every described route takes: <c>Authorization: Bearer &lt;token&gt;</c>.</summary>
+    const string BearerScheme = "bearer";
+
     public static WebApplication Build(ApiServices services, params string[] urls)
     {
         var builder = WebApplication.CreateSlimBuilder();
@@ -65,6 +68,19 @@ public static partial class ApiApp
             {
                 document.Info = new() { Title = "Feature Flow API", Version = "1", Description = "The engine's API (docs/02 section 7). Generated; see OpenApiTests." };
                 document.Servers = [];
+                // Every route the document describes takes the bearer token (docs/02 section 7); the document itself, which it
+                // does not describe, is served without one.
+                document.Components ??= new();
+                document.Components.SecuritySchemes = new Dictionary<string, Microsoft.OpenApi.IOpenApiSecurityScheme>
+                {
+                    [BearerScheme] = new Microsoft.OpenApi.OpenApiSecurityScheme
+                    {
+                        Type = Microsoft.OpenApi.SecuritySchemeType.Http,
+                        Scheme = "bearer",
+                        Description = "The installation's API token, or an identity provider's token where the API uses OIDC",
+                    },
+                };
+                document.Security = [new() { [new Microsoft.OpenApi.OpenApiSecuritySchemeReference(BearerScheme, document)] = [] }];
                 return Task.CompletedTask;
             });
         });

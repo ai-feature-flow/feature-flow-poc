@@ -80,4 +80,4 @@ public sealed record SessionCheckResponse(string CheckId, string Result);
 public sealed record SessionSubmitRequest(string Revision, string? Reason = null);
 
 /// <summary><c>POST /sessions/{sid}/abandon</c>: answer the session's decision with its abandon outcome.</summary>
-public sealed record SessionAbandonRequest(string? Reason = null);
+public sealed record SessionAbandonRequest(string Reason);

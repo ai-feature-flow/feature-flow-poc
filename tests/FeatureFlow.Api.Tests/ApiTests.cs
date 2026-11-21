@@ -141,7 +141,8 @@ public sealed class ApiTests : IAsyncDisposable
         Assert.Equal(HttpStatusCode.OK, (await http.GetAsync("runs", TestContext.Current.CancellationToken)).StatusCode);
 
         // The header authenticator comes first: its viewer, not the token's steerer, is refused the abort.
-        using var request = new HttpRequestMessage(HttpMethod.Post, "runs/r1/abort") { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+        await OpenWaitAsync("gate-1", "gate", "ticket.spec_approval");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "runs/r1/abort") { Content = new StringContent("""{ "reason": "stop" }""", Encoding.UTF8, "application/json") };
         request.Headers.Add("X-Test-Person", "pat");
         using var response = await http.SendAsync(request, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);

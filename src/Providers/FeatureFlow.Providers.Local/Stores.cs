@@ -368,7 +368,7 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
     // ---- Oversight (A3): the open waits of runs still going, for GET /attention ----
 
     static void CreateOpenWaits(SqliteConnection connection) =>
-        Execute(connection, "CREATE INDEX IF NOT EXISTS waits_open ON waits (org_id, open)");
+        Execute(connection, "CREATE INDEX IF NOT EXISTS waits_open ON waits (org_id) WHERE open = 1");
 
     /// <summary>Every open wait of a <c>starting</c> or <c>running</c> run, with the run, oldest first, at most 500 (<see cref="Queries.OpenWaits"/>).</summary>
     const string OpenWaitsSql = """

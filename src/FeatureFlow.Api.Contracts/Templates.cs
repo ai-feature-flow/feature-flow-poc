@@ -10,10 +10,11 @@ public sealed record TemplateList(IReadOnlyList<TemplateView> Templates, IReadOn
 public sealed record TemplateView(string Reference, string Library, string Name, string? When, IReadOnlyList<TemplateParameter> Parameters);
 
 /// <summary>
-/// A template's parameter: its name, type, whether it is required, its default as JSON text, its description, and whether
-/// the library's <c>inputs</c> supply it, so a form need not ask for it.
+/// A template's parameter: its name, type, whether it is required, its literal default as JSON text (the form
+/// <c>StartRunRequest.parameters</c> takes), its default expression when the default is <c>{ expr: ... }</c>
+/// (evaluated at run start, so <c>default</c> is null), and its description.
 /// </summary>
-public sealed record TemplateParameter(string Name, string Type, bool Required, string? Default, string? Description, bool FromLibrary);
+public sealed record TemplateParameter(string Name, string Type, bool Required, string? Default, string? DefaultExpression, string? Description);
 
 /// <summary>A library that could not be read, and why.</summary>
 public sealed record UnreadableLibrary(string Library, string Error);

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FeatureFlow.Api.Contracts;
 using FeatureFlow.Model;
 using FeatureFlow.Model.Plans;
@@ -43,7 +44,7 @@ public static partial class ApiApp
         }
     }
 
-    /// <summary>An entrypoint with its template's declared parameters, each marked when the library's <c>inputs</c> supply it.</summary>
+    /// <summary>An entrypoint with its template's declared parameters.</summary>
     static TemplateView TemplateOf(Library.Library library, Entrypoint entrypoint)
     {
         var reference = new LibraryReference(library.Name, null, "templates", entrypoint.Template);
@@ -53,7 +54,14 @@ public static partial class ApiApp
             ? read.Info.Parameters
             : [];
         return new TemplateView(reference.ToString(), library.Name, entrypoint.Template, entrypoint.When,
-            parameters.Select(p => new TemplateParameter(p.Name, p.Type, p.Required, p.Default is null ? null : YamlWriter.Write(p.Default), p.Description,
-                library.Manifest.Inputs?.Has(p.Name) == true)).ToList());
+            parameters.Select(ParameterOf).ToList());
     }
+
+    /// <summary>A literal default as JSON text; an <c>{ expr: ... }</c> default is evaluated at run start, so it is given as its expression.</summary>
+    static TemplateParameter ParameterOf(ParameterDecl p) => p.Default switch
+    {
+        null => new(p.Name, p.Type, p.Required, null, null, p.Description),
+        var d when d.IsSingleKeyMap("expr", out var e) => new(p.Name, p.Type, p.Required, null, e.ScalarText(), p.Description),
+        var d => new(p.Name, p.Type, p.Required, JsonSerializer.Serialize(d.ToPlain(), Json), null, p.Description),
+    };
 }

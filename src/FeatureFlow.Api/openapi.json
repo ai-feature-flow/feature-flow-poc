@@ -1251,13 +1251,13 @@
   "components": {
     "schemas": {
       "AbortRequest": {
+        "required": [
+          "reason"
+        ],
         "type": "object",
         "properties": {
           "reason": {
-            "type": [
-              "null",
-              "string"
-            ]
+            "type": "string"
           },
           "close_pull_requests": {
             "type": "boolean",
@@ -1532,7 +1532,8 @@
         "enum": [
           "run_changed",
           "wait_opened",
-          "wait_closed"
+          "wait_closed",
+          "reset"
         ]
       },
       "ClosedAnswer": {
@@ -2109,13 +2110,13 @@
         }
       },
       "SessionAbandonRequest": {
+        "required": [
+          "reason"
+        ],
         "type": "object",
         "properties": {
           "reason": {
-            "type": [
-              "null",
-              "string"
-            ]
+            "type": "string"
           }
         }
       },
@@ -2445,8 +2446,8 @@
           "type",
           "required",
           "default",
-          "description",
-          "from_library"
+          "default_expression",
+          "description"
         ],
         "type": "object",
         "properties": {
@@ -2465,14 +2466,17 @@
               "string"
             ]
           },
-          "description": {
+          "default_expression": {
             "type": [
               "null",
               "string"
             ]
           },
-          "from_library": {
-            "type": "boolean"
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -2579,6 +2583,7 @@
           "updated_at",
           "consumed",
           "can_answer",
+          "min_count",
           "progress",
           "answer"
         ],
@@ -2620,6 +2625,10 @@
           },
           "can_answer": {
             "type": "boolean"
+          },
+          "min_count": {
+            "type": "integer",
+            "format": "int32"
           },
           "progress": {
             "type": [
@@ -2750,8 +2759,20 @@
           }
         }
       }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "description": "The installation\u0027s API token, or an identity provider\u0027s token where the API uses OIDC",
+        "scheme": "bearer"
+      }
     }
   },
+  "security": [
+    {
+      "bearer": []
+    }
+  ],
   "tags": [
     {
       "name": "FeatureFlow.Api.Tests"
