@@ -65,8 +65,9 @@ public sealed class ArtifactTests(BrowserFixture browser) : BrowserTest(browser)
     {
         UseWorld("local_token");
         await Engine.RunAsync("run-1");
-        // Larger than the viewer shows, so the download is the only way to the end of it.
-        var content = new string('x', Shown) + "\nthe end";
+        // Larger than the viewer shows, so the download is the only way to the end of it; the cut falls inside the two bytes of é.
+        var content = new string('x', Shown - 1) + "é\nthe end";
+        var size = System.Text.Encoding.UTF8.GetByteCount(content);
         var reference = await Engine.ProduceAsync("run-1", "build", "log", content);
         var page = await OpenAsync();
         await page.GetByLabel("API token").FillAsync(ConsoleWorld.Token);
@@ -74,8 +75,9 @@ public sealed class ArtifactTests(BrowserFixture browser) : BrowserTest(browser)
         await Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Needs me" })).ToBeVisibleAsync();
 
         await page.EvaluateAsync("hash => { location.hash = hash; }", "#/runs/run-1/artifacts/" + Uri.EscapeDataString(reference));
-        await Expect(page.GetByText($"This shows the first 1 MB of {content.Length} bytes. Download the rest.")).ToBeVisibleAsync();
-        Assert.Equal(Shown, (await page.Locator("pre").TextContentAsync())!.Length);
+        await Expect(page.GetByText($"This shows the first 1 MB of {size} bytes. Download the rest.")).ToBeVisibleAsync();
+        // The character the cut splits is left out, not shown as a replacement character.
+        Assert.Equal(new string('x', Shown - 1), await page.Locator("pre").TextContentAsync());
         // The file is named from the run's index, read beside the content.
         await Expect(page.Locator(".ff-viewer-name")).ToHaveTextAsync("log");
 

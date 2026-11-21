@@ -77,6 +77,8 @@ export function StartRun() {
     if (template === undefined) return;
     const parameters: Record<string, string> = {};
     for (const p of template.parameters) {
+      // A boolean the person left alone with no literal default is the template's to decide: its default may be an expression.
+      if (p.type === "boolean" && values[p.name] === undefined && p.default === null) continue;
       const value = json(p, values[p.name] ?? initial(p));
       if (value !== undefined) parameters[p.name] = value;
     }
