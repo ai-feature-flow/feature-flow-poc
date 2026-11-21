@@ -202,9 +202,11 @@ public class ForgeTicketTests
         var planned = forge.Resolve(repo, "ff/ticket/T-5")!;          // the planner is read-only: where it started
         var stray = forge.Commit(repo, "refs/heads/ff/ticket/T-5", new Dictionary<string, string?> { ["stray.txt"] = "not wanted\n" });
 
-        Assert.Equal(0, h.Cli("answer", id, approval!, "rejected").Exit);
+        Assert.Equal(0, h.Cli("answer", id, approval!, "rejected", "--reason", "the specification omits the audit log").Exit);
         var again = await WaitForAnotherWaitAsync(h, id, approval!);
 
+        // F5: the planner's second execution is told why, in the prompt a viewer reads through the artifact routes (review R1).
+        Assert.Contains(await h.PromptsAsync(id, "plan.plan", 2), p => p.Contains("the specification omits the audit log", StringComparison.Ordinal));
         Assert.Equal(planned, forge.Resolve(repo, "ff/ticket/T-5"));
         Assert.Equal(stray, forge.Resolve(repo, $"refs/feature-flow/superseded/{id}/plan.plan/{stray[..12]}"));
         var trace = Trace(await h.ShowAsync(id));

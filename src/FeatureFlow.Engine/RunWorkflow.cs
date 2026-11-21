@@ -948,8 +948,8 @@ public partial class RunWorkflow
         lastRecordedStatus = status;
         if (timeline.Count == 0 && waits.Count == 0 && runs.Count == 0 && questions.Count == 0 && artifacts.Count == 0 && locks.Count == 0)
             return false;
-        // Revisions ride with a record that is written anyway (a patch is traced), never cause one: a hand-over takes them all
-        // again, and an extra record activity would change recorded histories.
+        // Revisions ride with a record that is written anyway (a patch is traced), never cause one: an extra record activity
+        // would change recorded histories. The count taken is carried, so a hand-over takes only those not yet taken.
         var revisions = core.TakeRevisions();
         var batch = new RecordBatch(runs, waits, timeline, Locks: locks.Count == 0 ? null : locks, Questions: questions.Count == 0 ? null : questions,
             Artifacts: artifacts.Count == 0 ? null : artifacts);

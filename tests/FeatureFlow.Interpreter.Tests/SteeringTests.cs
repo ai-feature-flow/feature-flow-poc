@@ -404,7 +404,7 @@ public class SteeringTests
     }
 
     [Fact]
-    public void Each_accepted_revision_is_taken_once_and_all_again_after_a_hand_over()
+    public void Each_accepted_revision_is_taken_once_even_across_a_hand_over()
     {
         var core = Lib.Start("line");
         Assert.Equal([1], core.TakeRevisions().Select(r => r.Revision));
@@ -420,7 +420,12 @@ public class SteeringTests
         Assert.DoesNotContain((second with { Revision = 1, Patches = [] }).Load(Lib.Libraries, d)!.AllSteps, s => s.Id == "sketch");
 
         var resumed = RunCore.Resume(Lib.Libraries, Probe.Ref("line"), System.Text.Json.JsonSerializer.Deserialize<CarriedCore>(System.Text.Json.JsonSerializer.Serialize(core.Snapshot()))!);
-        Assert.Equal([1, 2], resumed.TakeRevisions().Select(r => r.Revision));
+        // The count taken is carried: a hand-over does not take the revisions again, and a later one is taken alone.
+        Assert.Empty(resumed.TakeRevisions());
+        var again = Amend(resumed, """{ op: insert, after: sketch, step: { id: outline, agent: { role: std:roles/planner, task: std:tasks/repair_failures }, outcomes: { done: success } } }""");
+        Assert.Equal(PatchStatus.Applied, resumed.Apply(new PatchProposed(again, new Proposer("human", null))).Patch!.Status);
+        var third = Assert.Single(resumed.TakeRevisions());
+        Assert.Equal((3, 2), (third.Revision, third.Patches.Count));
     }
 
     [Fact]

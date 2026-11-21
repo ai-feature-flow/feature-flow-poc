@@ -237,6 +237,21 @@ public sealed class Harness : IAsyncDisposable
         return OpenWaitsOnly(JsonNode.Parse(await http.GetStringAsync($"{Api}/runs/{runId}"))!);
     }
 
+    /// <summary>
+    /// The prompts of a step's execution as a viewer reads them: listed by <c>GET /runs/{id}/artifacts</c> as kind
+    /// <c>prompt</c>, each read through <c>GET /runs/{id}/artifacts/{reference}</c>.
+    /// </summary>
+    public async Task<List<string>> PromptsAsync(string runId, string stepId, int execution)
+    {
+        using var http = new HttpClient();
+        http.DefaultRequestHeaders.Authorization = new("Bearer", await File.ReadAllTextAsync(TokenFile));
+        var listed = JsonNode.Parse(await http.GetStringAsync($"{Api}/runs/{runId}/artifacts"))!["artifacts"]!.AsArray();
+        var prompts = new List<string>();
+        foreach (var a in listed.Where(a => a!["kind"]!.ToString() == "prompt" && a["step_id"]!.ToString() == stepId && a["execution"]!.GetValue<int>() == execution))
+            prompts.Add(await http.GetStringAsync($"{Api}/runs/{runId}/artifacts/{Uri.EscapeDataString(a!["ref"]!.ToString())}"));
+        return prompts;
+    }
+
     /// <summary>The run page lists closed waits too (docs/02 section 7); these tests read its open ones as <c>waits</c>.</summary>
     public static JsonNode OpenWaitsOnly(JsonNode view)
     {
