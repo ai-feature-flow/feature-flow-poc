@@ -21,12 +21,13 @@ public static class RunCommands
                ff run wait <run id> [--for end | wait] [--timeout <seconds>]
                ff run answer <run id> <wait id> <outcome | approve | reject> --reason <text> [--artifact <name>=<file>]...
                ff run findings <run id>
+               ff run plan <run id>
                ff run artifact <run id> <reference>
                ff run recover <run id> <wait id> retry | go_to <step> [--clean-up] | replan <step> | grant_attempts <n> | end <status> --reason <text>
                ff run abort <run id> --reason <text> [--close-pull-requests]
-               ff run override <run id> <key> --reason <text> [--step <step id>] [--change <name>=<value>]...
+               ff run override <run id> <key> --reason <text> [--step <step id>] [--change <name>=<value> | <name>=@<file>]...
                  (key: breakpoint, skip, amend, change_role, grant_attempts or override_library; the run applies a
-                 protected or beyond-ceiling variant where your roles hold it)
+                 protected or beyond-ceiling variant where your roles hold it; @<file> sends the file's text, @@ a literal @)
                (every ff run command takes [--api <url>] [--token-file <file>])
         """;
 
@@ -76,6 +77,8 @@ public static class RunCommands
                     return await client.AnswerAsync(id, Answer(wait, outcome, reason, options.GetValueOrDefault("--artifact") ?? []));
                 case ["findings", var id]:
                     return await client.PrintAsync($"runs/{id}/findings");
+                case ["plan", var id]:
+                    return await client.PlanAsync(id);
                 case ["artifact", var id, var reference]:
                     return await client.PrintTextAsync($"runs/{id}/artifacts/{Uri.EscapeDataString(reference)}");
                 case ["recover", var id, var wait, "retry"] when Option("--reason") is { } reason:
@@ -234,13 +237,38 @@ public static class RunCommands
                     return 2;
                 }
 
-                change[c[..eq]] = c[(eq + 1)..];
+                change[c[..eq]] = ChangeValue(c[..eq], c[(eq + 1)..]);
             }
 
             var reply = await PostAsync<OverrideRequest, OverrideResponse>($"runs/{id}/overrides", new OverrideRequest(key, reason, step, change));
             if (reply is null)
                 return 1;
             output.WriteLine(reply.Result);
+            return 0;
+        }
+
+        /// <summary>
+        /// An override argument's value: <c>@file</c> is the file's text, such as an <c>amend</c> patch or an
+        /// <c>override_library</c> replacement, and <c>@@</c> a value that starts with a literal <c>@</c> (LOG A3-0s).
+        /// </summary>
+        static string ChangeValue(string name, string value)
+        {
+            if (value.StartsWith("@@", StringComparison.Ordinal))
+                return value[1..];
+            if (!value.StartsWith('@'))
+                return value;
+            var file = value[1..];
+            return File.Exists(file) ? File.ReadAllText(file) : throw new ArgumentException($"--change {name}=@{file}: there is no file {file}");
+        }
+
+        /// <summary>The run's current plan revision: its number and its readable form.</summary>
+        public async Task<int> PlanAsync(string id)
+        {
+            var plan = await GetAsync<PlanView>($"runs/{id}/plan");
+            if (plan is null)
+                return 1;
+            output.WriteLine($"revision {plan.Revision} of {plan.Template}");
+            output.Write(plan.Readable);
             return 0;
         }
 

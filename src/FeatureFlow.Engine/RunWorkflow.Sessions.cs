@@ -246,7 +246,7 @@ public partial class RunWorkflow
     Task RecordCheckAsync(SessionCheckArgs check, string target, string digest, string status, string? result)
     {
         var batch = new RecordBatch(SessionChecks: [new SessionCheckRecord(check.SessionId, check.CheckId, target, check.Revision, digest, status, result, Workflow.UtcNow)]);
-        return Workflow.ExecuteActivityAsync((RunActivities a) => a.RecordAsync(batch), Light);
+        return Workflow.ExecuteActivityAsync((RunActivities a) => a.RecordAsync(batch, null), Light);
     }
 
     async Task EndCheckAsync(SessionCheckArgs check, string target, string digest, string status, string? result, string detail)

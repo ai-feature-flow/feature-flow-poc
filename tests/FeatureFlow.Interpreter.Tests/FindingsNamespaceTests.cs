@@ -92,4 +92,24 @@ public class FindingsNamespaceTests
         core.Apply(new FindingsChanged(new Dictionary<string, long> { ["open_blocking"] = 0 }, Version: 9));
         Assert.Equal((0L, 9L), (core.State.Findings["open_blocking"], core.State.FindingsVersion));
     }
+
+    [Fact]
+    public void A_gate_records_what_its_step_consumed_as_it_opens()
+    {
+        var (core, _) = RunCore.Start(Std, Ticket, Run);
+        for (var i = 0; i < 20 && core!.State.Waits.Count == 0; i++)
+            foreach (var start in core.Advance().OfType<StartStep>())
+            {
+                var step = core.StepById(start.StepId)!;
+                var outcome = step.Outcomes().First(o => o.Class == OutcomeClass.Success).Name;
+                core.Apply(new StepCompleted(start.StepId, outcome, RunCore.ZeroOutputs(step),
+                    step.Produces.Where(p => p.Outcome is null || p.Outcome == outcome).ToDictionary(p => p.Name, p => $"sha256:{start.StepId}/{p.Name}")));
+            }
+
+        var gate = Assert.Single(core!.TakeWaitChanges().Waits, w => w.Opened is { Kind: "gate" });
+        Assert.Equal("approve_spec", gate.StepId);
+        // The exact revisions the person ratifies (LOG A3-0g).
+        Assert.Equal([("requirements", "sha256:plan.plan/requirements"), ("delivery_plan", "sha256:plan.plan/delivery_plan")],
+            gate.Opened!.Consumed!.Select(c => (c.Key, c.Reference)));
+    }
 }

@@ -80,6 +80,7 @@ public static partial class ApiApp
         MapInbound(app, api);
         MapConsole(app, api);
         MapEvents(app, api);
+        MapTemplates(app, api);
         return app;
     }
 

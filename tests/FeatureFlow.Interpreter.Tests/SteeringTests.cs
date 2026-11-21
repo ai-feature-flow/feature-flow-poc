@@ -404,6 +404,26 @@ public class SteeringTests
     }
 
     [Fact]
+    public void Each_accepted_revision_is_taken_once_and_all_again_after_a_hand_over()
+    {
+        var core = Lib.Start("line");
+        Assert.Equal([1], core.TakeRevisions().Select(r => r.Revision));
+        Assert.Empty(core.TakeRevisions());
+
+        var amend = Amend(core, """{ op: insert, after: design, step: { id: sketch, agent: { role: std:roles/planner, task: std:tasks/repair_failures }, outcomes: { done: success } } }""");
+        Assert.Equal(PatchStatus.Applied, core.Apply(new PatchProposed(amend, new Proposer("human", null))).Patch!.Status);
+        var second = Assert.Single(core.TakeRevisions());
+        Assert.Equal((2, 1), (second.Revision, second.Patches.Count));
+        // The source rebuilds the revision it names: the inserted step is in it, and not in revision 1.
+        var d = new Model.DiagnosticBag();
+        Assert.Contains(second.Load(Lib.Libraries, d)!.AllSteps, s => s.Id == "sketch");
+        Assert.DoesNotContain((second with { Revision = 1, Patches = [] }).Load(Lib.Libraries, d)!.AllSteps, s => s.Id == "sketch");
+
+        var resumed = RunCore.Resume(Lib.Libraries, Probe.Ref("line"), System.Text.Json.JsonSerializer.Deserialize<CarriedCore>(System.Text.Json.JsonSerializer.Serialize(core.Snapshot()))!);
+        Assert.Equal([1, 2], resumed.TakeRevisions().Select(r => r.Revision));
+    }
+
+    [Fact]
     public void A_persons_amend_of_protected_content_needs_amend_protected_and_may_omit_resume_at()
     {
         var (core, _) = Line_core();

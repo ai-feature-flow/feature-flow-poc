@@ -923,7 +923,8 @@ public partial class RunWorkflow
 
         var (shown, closedQuestions) = core.TakeWaitChanges();
         var waits = shown.Select(w => w.Opened is { } d
-            ? new WaitRecord(input.RunId, w.WaitId, d.Kind, w.StepId, d.Type, d.Prompt, d.Choices, true, now)
+            ? new WaitRecord(input.RunId, w.WaitId, d.Kind, w.StepId, d.Type, d.Prompt, d.Choices, true, now,
+                d.Consumed?.Select(c => new ConsumedRef(c.Key, c.Name, c.Reference)).ToList())
             : new WaitRecord(input.RunId, w.WaitId, "", "", "", "", [], false, now)).ToList();
         // The agent endpoint long-polls a question's record for its answer or timeout (docs/04 section 3.4).
         var questions = closedQuestions.Select(q => new QuestionRecord(q.StepKey, input.RunId, q.WaitId, q.Text, q.Options,
@@ -937,9 +938,12 @@ public partial class RunWorkflow
         lastRecordedStatus = status;
         if (timeline.Count == 0 && waits.Count == 0 && runs.Count == 0 && questions.Count == 0 && artifacts.Count == 0 && locks.Count == 0)
             return false;
+        // Revisions ride with a record that is written anyway (a patch is traced), never cause one: a hand-over takes them all
+        // again, and an extra record activity would change recorded histories.
+        var revisions = core.TakeRevisions();
         var batch = new RecordBatch(runs, waits, timeline, Locks: locks.Count == 0 ? null : locks, Questions: questions.Count == 0 ? null : questions,
             Artifacts: artifacts.Count == 0 ? null : artifacts);
-        await Workflow.ExecuteActivityAsync((RunActivities a) => a.RecordAsync(batch), Light);
+        await Workflow.ExecuteActivityAsync((RunActivities a) => a.RecordAsync(batch, revisions.Count == 0 ? null : revisions), Light);
         return true;
     }
 
@@ -951,7 +955,7 @@ public partial class RunWorkflow
         var now = Workflow.UtcNow;
         var timeline = errors.Select(e => new TimelineRecord(input.RunId, ++timelineSequence, "refused", "", e, now)).ToList();
         var batch = new RecordBatch([RunRecordOf("failed", "refused at run start: " + string.Join("; ", errors.Take(3)), now)], null, timeline);
-        await Workflow.ExecuteActivityAsync((RunActivities a) => a.RecordAsync(batch), Light);
+        await Workflow.ExecuteActivityAsync((RunActivities a) => a.RecordAsync(batch, null), Light);
         await TellParentAsync();
         return "failed";
     }

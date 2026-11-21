@@ -10,7 +10,10 @@ using Temporalio.Testing;
 
 namespace FeatureFlow.Engine.Tests;
 
-/// <summary>Which declarative tracker updates a run's timeline makes due (docs/03 section 2.5), and the root's work-item budget (F11).</summary>
+/// <summary>
+/// Which declarative tracker updates a run's timeline makes due (docs/03 section 2.5), the root's work-item budget (F11),
+/// and what a parent reads of a child's artifact index.
+/// </summary>
 public sealed class TrackerUpdateAndBudgetTests
 {
     static LibrarySet Libraries(DiagnosticBag d) =>
@@ -133,5 +136,24 @@ public sealed class TrackerUpdateAndBudgetTests
         Assert.Equal(5, WorkItems.Root("r", project, Ceiling(5))!.Limit);
         Assert.Equal(30, WorkItems.Root("r", ticket, Ceiling(30))!.Limit);
         Assert.Null(WorkItems.Root("r", ticket, Ceiling(null)));
+    }
+
+    [Fact]
+    public void A_parent_consumes_its_childs_declared_artifacts_and_not_what_is_indexed_for_people()
+    {
+        static ArtifactRecord Indexed(string run, string step, int execution, string name, string reference) =>
+            new(run, step, execution, name, null, reference, null, false, DateTimeOffset.UnixEpoch);
+
+        var artifacts = RunActivities.ChildArtifacts("child",
+        [
+            Indexed("child", "plan", 1, "requirements", "sha256:old"),
+            Indexed("child", "plan", 2, "requirements", "sha256:new"),
+            Indexed("child", "implement", 1, ArtifactNames.Transcript(1), "sha256:transcript"),
+            Indexed("child", "implement", 1, ArtifactNames.Prompt(1), "sha256:prompt"),
+            Indexed("child", "", 1, ArtifactNames.PlanRevision, "sha256:revision"),
+            Indexed("child.grandchild", "plan", 1, "contract", "sha256:grandchild"),
+        ]);
+
+        Assert.Equal(new Dictionary<string, string> { ["requirements"] = "sha256:new" }, artifacts);
     }
 }

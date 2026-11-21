@@ -1,13 +1,14 @@
 namespace FeatureFlow.Api.Contracts;
 
-/// <summary>A step's form (docs/03).</summary>
+/// <summary>A step's form (docs/03), as the readable form names it: a <c>run.child</c> step is an action, and a fragment's steps are in the plan in its place.</summary>
 public enum StepForm
 {
     Agent,
-    Action,
     Decision,
-    Child,
-    Use,
+    Action,
+    Chain,
+    Parallel,
+    ForEach,
 }
 
 /// <summary>

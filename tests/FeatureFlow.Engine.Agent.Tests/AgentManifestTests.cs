@@ -36,7 +36,8 @@ public sealed class AgentManifestTests : IAsyncDisposable
     }
 
     /// <summary>A scripted runtime that edits the checkout as an agent would, when it is given <paramref name="edits"/>.</summary>
-    sealed class EditingRuntime(InMemoryForge forge, IAgentRuntimeProvider inner, IReadOnlyDictionary<string, string> edits, Action<SandboxHandle>? atStart = null)
+    sealed class EditingRuntime(InMemoryForge forge, IAgentRuntimeProvider inner, IReadOnlyDictionary<string, string> edits, Action<SandboxHandle>? atStart = null,
+        Func<AgentResult, AgentResult>? ending = null)
         : IAgentRuntimeProvider
     {
         public ProviderDescription Describe() => inner.Describe();
@@ -57,19 +58,23 @@ public sealed class AgentManifestTests : IAsyncDisposable
 
         public Task<ProviderResult<AgentProgress>> GetProgressAsync(AgentSession session, CancellationToken cancellationToken) => inner.GetProgressAsync(session, cancellationToken);
 
-        public Task<ProviderResult<AgentResult>> GetResultAsync(AgentSession session, CancellationToken cancellationToken) => inner.GetResultAsync(session, cancellationToken);
+        public async Task<ProviderResult<AgentResult>> GetResultAsync(AgentSession session, CancellationToken cancellationToken)
+        {
+            var result = await inner.GetResultAsync(session, cancellationToken);
+            return ending is null || !result.Ok ? result : ProviderResult<AgentResult>.Success(ending(result.Value!));
+        }
 
         public Task<ProviderResult<Unit>> StopAsync(AgentSession session, CancellationToken cancellationToken) => inner.StopAsync(session, cancellationToken);
     }
 
     async Task<StepOutcome> RunAsync(IReadOnlyDictionary<string, string> edits, bool codeHost = true, string step = "implement", string branch = Branch,
         ITrackerProvider? tracker = null, string? trackerIssue = null, Action<SandboxHandle>? atStart = null, bool dryRun = false, string? roleRuntime = null,
-        string? runContext = null)
+        string? runContext = null, Func<AgentResult, AgentResult>? ending = null)
     {
         var client = Path.Combine(folder, "ff-sandbox");
         await File.WriteAllTextAsync(client, "a stand-in for the sandbox client", TestContext.Current.CancellationToken);
         var records = new SqliteRecordStore(Path.Combine(folder, "records.db"));
-        var runtime = new EditingRuntime(forge, new ScriptedAgentRuntime(FakeScript.Empty, () => store), edits, atStart);
+        var runtime = new EditingRuntime(forge, new ScriptedAgentRuntime(FakeScript.Empty, () => store), edits, atStart, ending);
         var instances = new Dictionary<string, IReadOnlyDictionary<string, IProvider>>
         {
             ["vcs"] = One(new InMemoryVcs(forge)),
@@ -103,6 +108,24 @@ public sealed class AgentManifestTests : IAsyncDisposable
     static IReadOnlyDictionary<string, IProvider> One(IProvider provider) => new Dictionary<string, IProvider> { ["one"] = provider };
 
     string? Work => forge.Resolve(repo, "refs/heads/" + Branch);
+
+    [Fact]
+    public async Task A_failed_attempts_prompt_and_transcript_are_indexed_for_people_to_read()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var transcript = (await store.PutAsync(new MemoryStream("the session's transcript"u8.ToArray()), ct)).Unwrap().Id;
+
+        // The session ends without a report: the attempt fails, and its transcript is the one a person most needs (LOG A3-0f).
+        var outcome = await RunAsync(new Dictionary<string, string>(),
+            ending: r => r with { Report = null, End = SessionEnd.Failed, Detail = "gave up", Transcript = transcript });
+
+        Assert.Equal(StepOutcome.WorkFailed, outcome.Kind);
+        var indexed = (await new SqliteRecordStore(Path.Combine(folder, "records.db"))
+            .QueryAsync<ArtifactRecord>(Queries.Artifacts, new Dictionary<string, string> { ["run_id"] = "run-1" }, ct)).Unwrap();
+        Assert.Equal([("prompt:1", "prompt", "implement", 1), ("transcript:1", "transcript", "implement", 1)],
+            indexed.Select(a => (a.Name, a.Type!, a.StepId, a.Execution)).Order());
+        Assert.Equal(transcript, indexed.Single(a => a.Name == "transcript:1").Ref);
+    }
 
     [Fact]
     public async Task Setup_runs_before_the_agent_and_after_changes_runs_after_it_committed_and_is_committed_with_the_step()

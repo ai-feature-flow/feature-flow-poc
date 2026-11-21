@@ -51,6 +51,7 @@ public class ShellRuleTests
         ["Timeline"] = "the timeline not yet recorded, read for tracker updates",
         ["TakeTimeline"] = "drains the timeline into records",
         ["TakeProduced"] = "drains produced artifacts into the artifact index",
+        ["TakeRevisions"] = "drains accepted plan revisions into the artifact index",
         ["TakeWaitChanges"] = "drains opened and closed waits into records",
         ["WaitViews"] = "the open waits, for the query and the hand-over record",
         ["Timers"] = "the timers to arm again after a hand-over",

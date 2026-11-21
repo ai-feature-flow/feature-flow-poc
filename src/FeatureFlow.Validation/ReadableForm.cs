@@ -98,7 +98,8 @@ public static partial class ReadableForm
         return sb.ToString();
     }
 
-    static string Form(Step step) => step.Form switch
+    /// <summary>A step's form as the readable form names it: agent, decision, action, chain, parallel or for_each.</summary>
+    public static string Form(Step step) => step.Form switch
     {
         StepForm.Agent => "agent",
         StepForm.Decision => "decision",
@@ -107,7 +108,8 @@ public static partial class ReadableForm
         _ => step.Container?.FromForEach == true ? "for_each" : "parallel",
     };
 
-    static string RoleOrAction(Step step) => step.Form switch
+    /// <summary>What a step does: an agent step's role, a decision's type, an action's name, or a container's join.</summary>
+    public static string RoleOrAction(Step step) => step.Form switch
     {
         StepForm.Agent => step.Agent?.Role?.Reference?.Name ?? step.Agent?.Role?.ToString() ?? "?",
         StepForm.Decision => step.Decision?.Type ?? "?",
@@ -154,7 +156,8 @@ public static partial class ReadableForm
         return expected is not null && expected.Equals(target);
     }
 
-    static string Show(Resolved target) => target switch
+    /// <summary>Where a route goes, as the readable form writes it: a step id, <c>end(status)</c>, <c>escalate</c>, <c>join</c>, ...</summary>
+    public static string Show(Resolved target) => target switch
     {
         ResolvedStep s => s.CleanUp ? $"{s.StepId} (clean_up)" : s.StepId,
         ResolvedEnd e => $"end({e.Status})",

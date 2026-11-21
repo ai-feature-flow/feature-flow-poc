@@ -188,6 +188,14 @@ conflict; then the key's arguments, the protected-content variants and the run's
 own checks decide whether it applies. The update's validator and handler route
 it with the same function, so they refuse the same overrides (LOG 383).
 
+A patch names the revision it applies to (`base_revision`). Each accepted
+revision is recorded as a `plan_revision` artifact (LOG A3-0q), and
+`GET /runs/{id}/plan` (`ff run plan <run>`) shows the current one: its number,
+its readable form and each step with its status. The CLI sends an argument's
+value from a file with `--change <name>=@<file>`, for `amend`'s `patch` and
+`override_library`'s `with`; `@@` at the start sends a value that begins with a
+literal `@` (LOG A3-0s).
+
 The organisation may change the default role for any override by key, in
 `policy.overrides` (`docs/07` section 3). A `_protected` suffix (`skip_protected`,
 `amend_protected`) sets the role for the same override on protected content.

@@ -2,12 +2,15 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using FeatureFlow.Api.Contracts;
+using FeatureFlow.Interpreter;
 using FeatureFlow.Library;
 using FeatureFlow.Model;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Validation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Step = FeatureFlow.Model.Plans.Step;
+using StepForm = FeatureFlow.Api.Contracts.StepForm;
 
 namespace FeatureFlow.Api;
 
@@ -17,14 +20,14 @@ public static partial class ApiApp
     /// The minimal web console (docs/11 section 4, M7; open question 5): runs, a run's readable form and timeline, and
     /// decisions to answer. One static page and its script, with no build chain; it holds no data and reads everything
     /// through the API with the person's own credential, and answers through the same answer call, so authentication and
-    /// authorisation are the API's (LOG 229). The readable form is served here too, as text.
+    /// authorisation are the API's (LOG 229). The run's plan route, which the page reads, is mapped here too.
     /// </summary>
     static void MapConsole(WebApplication app, Handlers api)
     {
         app.MapGet("/console", () => Page("console.html", "text/html; charset=utf-8")).ExcludeFromDescription();
         app.MapGet("/console/console.js", () => Page("console.js", "text/javascript; charset=utf-8")).ExcludeFromDescription();
-        app.MapGet("/runs/{id}/plan", (HttpContext c, string id) => api.Guard(c, caller => api.ReadableFormAsync(c, caller, id)))
-            .WithName("getRunPlan").Produces<string>(200, "text/plain").Produces<ErrorResponse>(401).Produces<ErrorResponse>(404).Produces<ErrorResponse>(409);
+        app.MapGet("/runs/{id}/plan", (HttpContext c, string id) => api.Guard(c, caller => api.PlanAsync(c, caller, id)))
+            .Described<PlanView>("getRunPlan", 200, 404, 409);
     }
 
     static readonly Dictionary<string, string> Pages = new(StringComparer.Ordinal);
@@ -60,17 +63,21 @@ public static partial class ApiApp
     sealed partial class Handlers
     {
         /// <summary>
-        /// A run's plan in its readable form (docs/09 section 4.4), from the libraries locked when its root run started, with
-        /// each step's status from the run's timeline and open waits. It is the plan as the run started: changes made while
-        /// it runs (expansions, accepted patches) are in its timeline.
+        /// A run's current plan revision (G11; LOG A3-0q): the latest revision the run indexed, rebuilt with the libraries
+        /// locked when its root run started, as its readable form (docs/09 section 4.4) and as data, each step with its status
+        /// from the run's timeline and open waits, whether a breakpoint is set on it, and the outcome it is skipped with.
         /// </summary>
-        public async Task<IResult> ReadableFormAsync(HttpContext context, Caller caller, string id)
+        public async Task<IResult> PlanAsync(HttpContext context, Caller caller, string id)
         {
             var ct = context.RequestAborted;
             var p = new Dictionary<string, string> { ["run_id"] = id };
             if (await VisibleRunAsync(caller, id, ct) is not { } run)
                 return Error(404, $"no run {id}");
-            if (await LockOfAsync(run, ct) is not { } lockRef || LibraryReference.TryParse(run.Template) is not { } template)
+            var latest = (await Records.QueryAsync<ArtifactRecord>(Queries.Artifacts, p, ct)).Unwrap()
+                .Where(a => a.RunId == id && a is { StepId: "", Name: ArtifactNames.PlanRevision }).MaxBy(a => a.Execution);
+            if (latest is null)
+                return Error(404, $"run {id} has recorded no plan revision yet");
+            if (await LockOfAsync(run, ct) is not { } lockRef)
                 return Error(404, $"run {id} has no library lock to show its plan from");
             var d = new DiagnosticBag();
             var lockDocument = JsonSerializer.Deserialize<LibraryLock>(await ReadTextAsync(lockRef, ct), Stored)!;
@@ -84,11 +91,53 @@ public static partial class ApiApp
                     libraries.Add(library);
             }
 
-            if (PlanLoader.LoadTemplate(new LibrarySet(libraries), template, d) is not { } plan)
-                return Error(409, $"the plan of run {id} does not load: {string.Join("; ", d.Where(x => x.Blocks).Take(3).Select(x => x.Message))}");
+            var source = PlanSource.Read(await ReadTextAsync(latest.Ref, ct));
+            if (source.Load(new LibrarySet(libraries), d) is not { } plan)
+                return Error(409, $"revision {source.Revision} of run {id} does not load: {string.Join("; ", d.Where(x => x.Blocks).Take(3).Select(x => x.Message))}");
             var timeline = (await Records.QueryAsync<TimelineRecord>(Queries.Timeline, new Dictionary<string, string>(p) { ["after"] = "0" }, ct)).Unwrap();
             var waits = (await Records.QueryAsync<WaitRecord>(Queries.Waits, new Dictionary<string, string>(p) { ["open"] = "true" }, ct)).Unwrap();
-            return Results.Text(ReadableForm.Render(plan, Statuses(timeline, waits)), "text/plain; charset=utf-8");
+            var statuses = Statuses(timeline, waits);
+            var (breakpoints, skips) = Steering(timeline);
+            var steps = plan.AllSteps.Select(s => new PlanStepView(s.Id, s.Scope.ContainerId, FormOf(s), ReadableForm.RoleOrAction(s),
+                s.Outcomes().Select(o => new PlanOutcomeView(o.Name, o.Class.Name(),
+                    s.ResolvedRoutes.FirstOrDefault(r => r.Outcome == o.Name) is { } route ? ReadableForm.Show(route.Target) : null)).ToList(),
+                s.Protected, statuses.GetValueOrDefault(s.Id) ?? "pending", breakpoints.Contains(s.Id), skips.GetValueOrDefault(s.Id))).ToList();
+            return Results.Json(new PlanView(id, source.Revision, source.Template, ReadableForm.Render(plan, statuses), steps), Json);
+        }
+
+        static StepForm FormOf(Step step) => ReadableForm.Form(step) switch
+        {
+            "agent" => StepForm.Agent,
+            "decision" => StepForm.Decision,
+            "action" => StepForm.Action,
+            "chain" => StepForm.Chain,
+            "for_each" => StepForm.ForEach,
+            _ => StepForm.Parallel,
+        };
+
+        /// <summary>
+        /// The breakpoints set on steps, and the outcome each step is skipped with, from the run's timeline: what the core
+        /// accepted, not what was asked (a refused override changes nothing).
+        /// </summary>
+        static (HashSet<string> Breakpoints, Dictionary<string, string> Skips) Steering(IEnumerable<TimelineRecord> timeline)
+        {
+            var breakpoints = new HashSet<string>(StringComparer.Ordinal);
+            var skips = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var t in timeline.Where(t => t.StepId.Length > 0))
+                switch (t.Kind)
+                {
+                    case "breakpoint_set":
+                        breakpoints.Add(t.StepId);
+                        break;
+                    case "breakpoint_cleared":
+                        breakpoints.Remove(t.StepId);
+                        break;
+                    case "skip_set" or "skipped" when t.Detail is { Length: > 0 } detail:
+                        skips[t.StepId] = detail.Split(' ')[0];
+                        break;
+                }
+
+            return (breakpoints, skips);
         }
 
         /// <summary>The lock of the run's tree: children run on their root's lock.</summary>

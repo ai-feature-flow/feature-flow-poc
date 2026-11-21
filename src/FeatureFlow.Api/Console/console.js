@@ -16,7 +16,7 @@ async function api(method, path, body) {
   });
   const text = await response.text();
   let json = null;
-  try { json = JSON.parse(text); } catch { /* the readable form is text */ }
+  try { json = JSON.parse(text); } catch { /* an error page may not be JSON */ }
   if (!response.ok) throw new Error((json && json.error) || `${response.status} ${response.statusText}`);
   return json ?? text;
 }
@@ -105,7 +105,9 @@ function waitForm(runId, wait) {
 async function showRun(id) {
   const [view, plan] = await Promise.all([
     api("GET", "/runs/" + encodeURIComponent(id)),
-    api("GET", `/runs/${encodeURIComponent(id)}/plan`).catch(e => "The readable form is not available: " + e.message),
+    api("GET", `/runs/${encodeURIComponent(id)}/plan`)
+      .then(p => `Revision ${p.revision}\n\n${p.readable}`)
+      .catch(e => "The readable form is not available: " + e.message),
   ]);
   const r = view.run;
   show(
@@ -123,7 +125,7 @@ async function showRun(id) {
     view.children.length === 0 ? null : [el("h2", { text: "Child runs" }),
       table(["Run", "Template", "Status"], view.children.map(c => [runLink(c.run_id), c.template, status(c.status)]))],
     el("h2", { text: "Plan" }),
-    el("p", { class: "note", text: "As the run started; changes made while it runs are in the timeline." }),
+    el("p", { class: "note", text: "The current revision, with each step's status." }),
     el("pre", { text: plan }),
     el("h2", { text: "Timeline" }),
     table(["#", "At", "Kind", "Step", "Detail"], view.timeline.map(t => [String(t.sequence), new Date(t.at).toLocaleTimeString(), t.kind, t.step_id, t.detail || ""])));
