@@ -1,3 +1,6 @@
+using System.Text;
+using System.Text.Json;
+using FeatureFlow.Api.Contracts;
 using static Microsoft.Playwright.Assertions;
 
 namespace FeatureFlow.Console.Tests;
@@ -28,7 +31,25 @@ public sealed class TextOnlyTests(BrowserFixture browser) : BrowserTest(browser)
         ["needs me"] = new(t => t.OpenAsync(), 3),
         // The run's template.
         ["run heading"] = new(t => t.OpenAsync("#/runs/" + RunId), 1),
+        // The run's template and requester.
+        ["run list"] = new(t => t.OpenAsync("#/runs"), 2),
+        // The template, requester and detail; a status wait's prompt; a closed wait's choice and reason; history (an answer's
+        // choice and reason, an override's actor, change and reason); a child's template; timeline details.
+        ["run page"] = new(async t => { await t.SeedRunPageAsync(); await t.OpenAsync("#/runs/" + RunId); }, 16),
     };
+
+    /// <summary>The markup in the run page's other fields: its detail, a status wait, an answer, an override and a child.</summary>
+    async Task SeedRunPageAsync()
+    {
+        await Engine.RunAsync(RunId, Markup, requester: Markup, detail: Markup);
+        await Engine.OpenWaitAsync(RunId, "stalled", "go_ahead", "ticket.stalled", Markup);
+        using var http = World.Http();
+        using var answered = await http.PostAsync($"runs/{RunId}/answers",
+            new StringContent(JsonSerializer.Serialize(new AnswerRequest("gate-1", Outcome: Markup, Reason: Markup), ApiJson.Options), Encoding.UTF8, "application/json"), Ct);
+        Assert.True(answered.IsSuccessStatusCode, await answered.Content.ReadAsStringAsync(Ct));
+        await Engine.AppendAsync(new(Overrides: [new(RunId, "o1", "skip", Markup, Markup, "go_ahead", new Dictionary<string, string> { ["outcome"] = Markup }, "applied", Engine.Now())]));
+        await Engine.RunAsync("run-markup-child", Markup, parentRunId: RunId);
+    }
 
     public static TheoryData<string> Names => [.. Screens.Keys];
 

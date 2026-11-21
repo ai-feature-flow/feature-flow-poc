@@ -4,12 +4,17 @@ import { Busy } from "../../ui/Busy";
 import { ErrorBox } from "../../ui/ErrorBox";
 import { Status } from "../../ui/Status";
 import { ArtifactList } from "../artifacts/ArtifactList";
-import { WaitForm } from "../decision/WaitForm";
 import { PlanPanel } from "../plan/PlanPanel";
+import { Abort } from "./Abort";
+import { Children } from "./Children";
+import { History } from "./History";
+import { Summary } from "./Summary";
+import { Timeline } from "./Timeline";
+import { ClosedWaits, OpenWaits } from "./Waits";
 import "./RunPage.css";
 
-/** The engine's status waits: shown as a status, never answered with a form (M8 follow-up 11). */
-const statusWaits: readonly string[] = ["stalled", "stuck"];
+/** Statuses after which a run does nothing more, so there is nothing to abort. */
+const finished: readonly string[] = ["completed", "failed", "aborted", "cancelled"];
 
 /** The run's plan, or why there is none to show (404: not indexed yet; 409: it does not load). */
 async function planOf(runId: string): Promise<{ plan: Schema<"PlanView"> | null; note?: string }> {
@@ -22,15 +27,15 @@ async function planOf(runId: string): Promise<{ plan: Schema<"PlanView"> | null;
 }
 
 /**
- * A run's page (#/runs/{id}). Task T3 gives the heading and places the other tasks' parts: each open wait's form, the
- * plan panel and the artifact list. Task T4 fills the rest (summary, status banner, closed waits, history, children,
- * timeline, abort).
+ * A run's page (#/runs/{id}): its summary, open waits (a form for each decision, a banner for each status wait), closed
+ * waits with their answers, the plan, child runs, history, timeline and artifacts. Abort is offered when the caller may.
  */
 export function RunPage({ runId }: { runId: string }) {
   const detail = useLive([runKey(runId)], () => read(api.GET("/runs/{id}", { params: { path: { id: runId } } })));
   const plan = useLive([runKey(runId)], () => planOf(runId));
   if (detail.data === undefined) return detail.error ? <ErrorBox error={detail.error} /> : <Busy />;
-  const { run, waits, overrides_allowed } = detail.data;
+  const { run, waits, timeline, children, answers, overrides, overrides_allowed } = detail.data;
+  const planView = plan.data?.plan ?? null;
 
   return (
     <article class="ff-run">
@@ -39,12 +44,14 @@ export function RunPage({ runId }: { runId: string }) {
       </h1>
       <p class="ff-run-template">{run.template}</p>
       {detail.error && <ErrorBox error={detail.error} />}
-      {waits
-        .filter(w => w.open && !statusWaits.includes(w.kind))
-        .map(w => (
-          <WaitForm key={w.wait_id} runId={run.run_id} wait={w} plan={plan.data?.plan ?? null} canAnswer={w.can_answer} />
-        ))}
-      <PlanPanel runId={run.run_id} plan={plan.data?.plan ?? null} note={plan.data?.note ?? plan.error?.message} overridesAllowed={overrides_allowed} />
+      <Summary run={run} />
+      {overrides_allowed.includes("abort") && !finished.includes(run.status) && <Abort runId={run.run_id} />}
+      <OpenWaits runId={run.run_id} waits={waits} plan={planView} />
+      <ClosedWaits waits={waits} />
+      <PlanPanel runId={run.run_id} plan={planView} note={plan.data?.note ?? plan.error?.message} overridesAllowed={overrides_allowed} />
+      {children.length > 0 && <Children children={children} />}
+      <History answers={answers} overrides={overrides} />
+      <Timeline entries={timeline} />
       <ArtifactList runId={run.run_id} />
     </article>
   );
