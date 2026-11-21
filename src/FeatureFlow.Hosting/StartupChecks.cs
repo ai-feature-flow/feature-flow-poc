@@ -93,6 +93,6 @@ public static class StartupChecks
         }
 
         if (failures.Count > 0)
-            throw new InvalidOperationException("the installation's secret references do not resolve:\n" + string.Join("\n", failures));
+            throw new StartupRefusal("the installation's secret references do not resolve:\n" + string.Join("\n", failures));
     }
 }

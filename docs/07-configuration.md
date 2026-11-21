@@ -356,7 +356,10 @@ planned for the OIDC profiles (`docs/12` R2).
 | Each step | The manifest read from the branch and its hash recorded |
 
 A validation failure names the layer, the key and the reason. A run fails in
-its first minute, not at step 40.
+its first minute, not at step 40. A host that refuses to start, whether for
+its arguments, a configuration file, a startup check or Temporal being out of
+reach, writes the refusal to standard error with no stack trace and exits 2
+(LOG AFd-2).
 
 ---
 

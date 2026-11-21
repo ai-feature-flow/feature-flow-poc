@@ -86,7 +86,7 @@ public sealed class SecretCheckTests
         some.Remove("secrets/api_token");
         some["secrets/jira"] = "";
 
-        var e = await Assert.ThrowsAsync<InvalidOperationException>(() => StartupChecks.CheckSecretsAsync(Installation(), With(new Secrets(some)), Ct));
+        var e = await Assert.ThrowsAsync<StartupRefusal>(() => StartupChecks.CheckSecretsAsync(Installation(), With(new Secrets(some)), Ct));
 
         Assert.Contains("api.auth.token_ref: the secret 'secrets/api_token' does not resolve (not_found", e.Message);
         Assert.Contains("providers.tracker.instances.jira.secret_ref: the secret 'secrets/jira' is empty", e.Message);
@@ -97,7 +97,7 @@ public sealed class SecretCheckTests
     [Fact]
     public async Task A_reference_with_no_secrets_provider_stops_startup()
     {
-        var e = await Assert.ThrowsAsync<InvalidOperationException>(() => StartupChecks.CheckSecretsAsync(Installation(), With(null), Ct));
+        var e = await Assert.ThrowsAsync<StartupRefusal>(() => StartupChecks.CheckSecretsAsync(Installation(), With(null), Ct));
 
         Assert.Contains("api.auth.token_ref names the secret 'secrets/api_token', and no secrets provider is configured", e.Message);
     }
@@ -119,7 +119,7 @@ public sealed class SecretCheckTests
         var organisation = new OrganisationConfig("t", [], new PolicyConfig([], null, null, null, null), "/tmp/organisation.yaml");
         ProviderFactory[] factories = [new("secrets", "test", [], _ => new Secrets([]))];
 
-        var e = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var e = await Assert.ThrowsAsync<StartupRefusal>(() =>
             FeatureFlowHost.StartAsync(new FeatureFlowConfiguration(installation, organisation), factories, false, false, "http://127.0.0.1:0"));
 
         Assert.Contains("api.auth.token_ref: the secret 'secrets/api_token' does not resolve", e.Message);

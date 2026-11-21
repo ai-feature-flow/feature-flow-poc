@@ -37,7 +37,7 @@ public sealed class NoSignInTests : IDisposable
     [InlineData("http://example.com:0")]
     public async Task A_host_with_no_sign_in_refuses_to_start_on_an_address_other_than_loopback(string url)
     {
-        var e = await Assert.ThrowsAsync<InvalidOperationException>(() => FeatureFlowHost.StartAsync(Configuration(), [], false, false, url));
+        var e = await Assert.ThrowsAsync<StartupRefusal>(() => FeatureFlowHost.StartAsync(Configuration(), [], false, false, url));
 
         Assert.Contains("api.auth.mode is none", e.Message, StringComparison.Ordinal);
         Assert.Contains($"'{url}'", e.Message, StringComparison.Ordinal);
@@ -58,6 +58,27 @@ public sealed class NoSignInTests : IDisposable
     [Fact]
     public async Task A_host_with_no_sign_in_refuses_to_start_when_FF_API_LISTEN_is_not_loopback()
     {
+        var before = Environment.GetEnvironmentVariable("FF_API_LISTEN");
+        Environment.SetEnvironmentVariable("FF_API_LISTEN", "http://0.0.0.0:8480");
+        try
+        {
+            var error = new StringWriter();
+
+            // A refusal is the message alone on standard error and exit 2, not an unhandled exception (LOG AFd-2).
+            Assert.Equal(2, await HostArguments.RunAsync(Arguments(), [], false, false, true, error));
+            var line = Assert.Single(error.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries));
+            Assert.StartsWith("api.auth.mode is none, so the API must listen only on loopback", line, StringComparison.Ordinal);
+            Assert.Contains("'http://0.0.0.0:8480'", line, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("FF_API_LISTEN", before);
+        }
+    }
+
+    /// <summary>The installation and organisation files, written to the test's folder, as a host's arguments.</summary>
+    string[] Arguments()
+    {
         File.WriteAllText(Path.Combine(folder, "installation.yaml"), Installation);
         File.WriteAllText(Path.Combine(folder, "organisation.yaml"), $$"""
             api_version: feature-flow/v1
@@ -65,20 +86,7 @@ public sealed class NoSignInTests : IDisposable
             name: acme
             libraries: [{ name: std, source: directory, path: "{{Path.Combine(Repository.Root, "library", "std")}}" }]
             """);
-        string[] args = ["--installation", Path.Combine(folder, "installation.yaml"), "--organisation", Path.Combine(folder, "organisation.yaml")];
-        var before = Environment.GetEnvironmentVariable("FF_API_LISTEN");
-        Environment.SetEnvironmentVariable("FF_API_LISTEN", "http://0.0.0.0:8480");
-        try
-        {
-            var e = await Assert.ThrowsAsync<InvalidOperationException>(() => HostArguments.RunAsync(args, [], false, false, true));
-
-            Assert.Contains("api.auth.mode is none, so the API must listen only on loopback", e.Message, StringComparison.Ordinal);
-            Assert.Contains("'http://0.0.0.0:8480'", e.Message, StringComparison.Ordinal);
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("FF_API_LISTEN", before);
-        }
+        return ["--installation", Path.Combine(folder, "installation.yaml"), "--organisation", Path.Combine(folder, "organisation.yaml")];
     }
 
     [Theory]
@@ -106,6 +114,6 @@ public sealed class NoSignInTests : IDisposable
         var token = new ApiAuthConfig("local_token", "secrets/t", "local", ["admin"]);
 
         ApiApp.RefuseUnlessLoopback(token, ["http://0.0.0.0:8480"]);
-        Assert.Throws<InvalidOperationException>(() => ApiApp.RefuseUnlessLoopback(token with { Mode = "none", TokenRef = null }, ["http://0.0.0.0:8480"]));
+        Assert.Throws<StartupRefusal>(() => ApiApp.RefuseUnlessLoopback(token with { Mode = "none", TokenRef = null }, ["http://0.0.0.0:8480"]));
     }
 }
