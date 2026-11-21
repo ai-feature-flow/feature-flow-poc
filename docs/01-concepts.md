@@ -39,6 +39,7 @@ organisation ceiling.
 
 | Status | Meaning | Set by |
 |---|---|---|
+| `starting` | Written before the plan is loaded; never a final status | Engine |
 | `running` | Started and not finished. A run waiting for a human is still `running` | Engine |
 | `completed` | The run reached `{ end: completed }` | A route |
 | `failed` | The run reached `{ end: failed }` | A route |
@@ -53,14 +54,15 @@ A parent sees a child's status as the outcome of the step that started it
 ### 1.2 Run position
 
 A run's **position** says what it is doing now. Because steps run in parallel,
-a position is a set of entries, one per active step or wait.
+a position is a set of entries, one per active step or wait. Entries are not
+named in the code: the run page (`docs/02` section 7) shows them as running
+steps, open waits by kind, and children.
 
 | Entry | Meaning |
 |---|---|
-| `executing` | A step is running |
-| `awaiting_decision` | A decision is open (section 7), with its kind |
-| `awaiting_child` | A child run is in progress |
-| `awaiting_condition` | A wait for an external state (a pull request merged, a tracker status) |
+| A step running | A step's activity, local work or child workflow is in flight. A condition (`ci.checks`, `wait.condition`) is a running action |
+| A wait open | A decision is open (section 7), with its kind |
+| A child running | A child run is in progress |
 | `stalled` | A provider has been unreachable for longer than a fixed threshold (LOG 270). The run alerts and waits; it never fails on its own (P5). Shown as an open wait of this kind (LOG 307) |
 | `stuck` | Nothing has moved for longer than a fixed threshold, nothing is in flight and nobody is awaited: a worker is down or the workflow cannot advance. A person must look (LOG 306, 307) |
 
@@ -97,8 +99,8 @@ from the library, expanded when the template loads). Both are defined in
 
 An agent step names a **role**: library content that says what the agent may
 do. The role sets the agent's write access (none, its own branch, or the whole
-repository), its tools, and which runtime capabilities it needs (toolsets are
-not in version 1, `docs/06` section 3.9). A
+repository) and its tools (toolsets are not in version 1, `docs/06` section
+3.9; a role's `requires` loads but is not read). A
 step may tighten its role's write access but never widen it, and may not change
 its tools (P8). Which runtime and model a role runs on is organisation
 configuration.
@@ -107,7 +109,7 @@ configuration.
 
 A step marked **protected** cannot be removed, changed or made unreachable by a
 patch an agent proposes. Such a patch becomes a decision for a human (section
-7). A human with the right role may change or bypass a protected step; the
+7); in version 1 an agent cannot propose one (`docs/04` section 6.1). A human with the right role may change or bypass a protected step; the
 override is audited (P3, RW8).
 
 ---
@@ -144,7 +146,7 @@ their contracts (`docs/04`).
 | `attempts_exhausted` | The step is about to start but its attempt allowance is spent (section 4) | `failure` |
 
 No other outcome is added by the engine. In particular, an agent step that
-produces malformed output, or proposes an invalid patch, does not get a special
+produces malformed output does not get a special
 outcome: the engine returns the errors to the agent for correction (section
 5.4), and if the output is still invalid the attempt fails and the step is
 retried within its allowance.
@@ -215,7 +217,7 @@ report. Artifacts are what later steps rely on.
 | Type | A library-declared artifact type: a schema, and the validators that check it |
 | Revision | Each time a step produces the same name again, a new revision is created. Earlier revisions are kept |
 | Producer | The step and attempt that produced it |
-| Kind | A **document** (bytes in the artifact store), or a **reference** to something outside: a commit, a branch, a pull request, a tracker issue, a child run |
+| Content | Bytes in the artifact store. Commits, branches, pull requests, tracker issues and child runs are not artifacts: steps see them as outputs and run state (`docs/03` section 5.3) |
 
 A step declares what it **produces**, per outcome, and what it **consumes**. A
 consumed artifact is pinned at the revision current when the attempt starts. It
@@ -260,8 +262,7 @@ from FF; the first Feature Flow design did not have it.
 When an agent step finishes, the engine checks every artifact it produced
 against its type's schema and validators. Errors are named by field and rule,
 and go back to the agent **in the same session** for a bounded number of
-correction turns. Only if the artifact still fails does the attempt fail. The
-same applies to a patch an agent proposes (section 10).
+correction turns. Only if the artifact still fails does the attempt fail.
 
 ---
 
@@ -315,7 +316,10 @@ instead. It is the one mechanism for every kind of human wait (P4).
 | Auto-resolution | The answer policy gives without a human, where the template asks for it and the organisation allows it |
 | Answer | The choice, the authenticated actor, a reason, and the time |
 
-A decision is a durable wait. It has no timeout; reminders are sent on a timer.
+A decision is a durable wait. A question ends when its step's
+`limits.questions.timeout` passes (`docs/04` section 3.4); other decisions have
+no timeout. Reminders are sent at the organisation's
+`notifications.reminder_interval` (`docs/07` section 3).
 Other steps keep running while it is open.
 
 ### 7.1 Kinds of decision
@@ -325,7 +329,7 @@ Other steps keep running while it is open.
 | **Gate** | A decision step in the plan. It may open an **interactive session**: a workspace where the person works in their own agent tool, runs the later steps' checks on demand, and submits files that become artifacts (RW18) | One of the step's declared outcomes |
 | **Intervention** | The engine, when a route escalates or something unexpected stops a step | A recovery action (section 7.2) |
 | **Question** | An agent, through the `ask_human` tool, during its step (RW14) | Free text, or one of the options the agent offered. The agent waits with its session intact |
-| **Patch approval** | An agent's patch that touches protected content, or uses a role outside the organisation's allowed list | Apply or reject |
+| **Patch approval** | An agent's patch that touches protected content, or uses a role outside the organisation's allowed list. Not raised in version 1: an agent cannot propose a patch (`docs/04` section 6.1) | Apply or reject |
 | **Action request** | A step that needs a human to act outside the engine, such as merging into the default branch on the code host | Observed: the engine detects that the action happened. A human may also decline |
 | **Breakpoint** | A human, asking the run to pause before a named step | Continue, or any recovery action |
 
@@ -337,7 +341,7 @@ The answers to an intervention or a breakpoint:
 |---|---|
 | Retry | Run the stopped step again |
 | Go to | Run a named step next, optionally with `clean_up` |
-| Re-plan | Run a named planning step next, which may propose a patch |
+| Re-plan | Run a named agent step that has `planning` next (in version 1 it cannot propose a patch: `docs/04` section 6.1) |
 | Grant attempts | Add attempts to the step's allowance, then retry |
 | End | End the run with a chosen status |
 | Continue | Breakpoints only: start the step that was paused before |
@@ -398,17 +402,12 @@ Three ways, each with one path (P4).
 
 | Change | What it changes | Proposed by | Applied by | Owned by |
 |---|---|---|---|---|
-| **Patch** | The plan's structure: steps, routes, inputs, limits | An agent step with planning authority, a child run, the engine's deterministic expansion of a list, or a human | One function, which validates it against the plan's rules and protected steps. An applied patch names the step the run continues at | `docs/03` |
-| **Library override** | The content future steps resolve: a task, a prompt, a schema | A human, or an agent (as a proposal) | The engine, as an entry in the run's library lock | `docs/08` |
+| **Patch** | The plan's structure: steps, routes, inputs, limits | A human, or the engine's deterministic expansion of a list (`plan.expand`). An agent cannot propose one in version 1 (`docs/04` section 6.1) | One function, which validates it against the plan's rules and protected steps. An applied patch names the step the run continues at | `docs/03` |
+| **Library override** | The content future steps resolve: a task, a prompt, a schema | A human | The engine, as an entry in the run's library lock | `docs/08` |
 | **Human override** | Anything else about the run: answer a decision, skip or bypass a step, grant attempts, abort | A human, through the API | The engine, after authorisation by role | `docs/05` |
 
-Every change is recorded with its actor, reason and the difference it made. An
-agent's proposal that touches protected content becomes a patch approval
-decision (section 7.1). No change of any kind relaxes a safety floor.
-
-A child run's request to change its parent's plan is a patch it sends while it
-keeps running or waits. The parent applies it like any other; the child's
-branch of the parent's join is counted only when the child ends (RW6).
+Every change is recorded with its actor, reason and the difference it made. No
+change of any kind relaxes a safety floor.
 
 ---
 

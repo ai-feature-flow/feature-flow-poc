@@ -21,8 +21,7 @@ author may change.
 | Fragments | `fragments/` | Reusable step groups (`docs/03` section 11) |
 | Tasks | `tasks/` | Markdown instructions for one agent step: objective, procedure, what each outcome means |
 | Skills | `skills/` | Reusable guidance an agent reads on demand: one folder per skill with a `SKILL.md` |
-| Resources | Named in the manifest | Folders of shared reference material, mounted read-only beside the skills so a skill can link to them (from FF) |
-| Roles | `roles/` | Agent roles: write access, tools, required runtime capabilities (`docs/01` section 2.2). Toolsets are not in version 1: a role's `toolsets` is refused at load (LOG 339) |
+| Roles | `roles/` | Agent roles: write access and tools (`docs/01` section 2.2). A role's `requires` is read but not used in version 1. Toolsets are not in version 1: a role's `toolsets` is refused at load (LOG 339) |
 | Artifact types | `artifact_types/` | Schema (JSON Schema for data; required headings, front matter and identifier patterns for Markdown), the validators to run on production, `evidence: true` for engine-only types, `compatible_with` |
 | Decision types | `decision_types/` | Names and default approval rules (`docs/05` section 4) |
 | Prompts | `prompts/` | Markdown for decisions, pull request bodies, the agent reporting preamble |
@@ -44,6 +43,9 @@ For example `std:roles/implementer`, `acme@>=2.0.0:tasks/implement_ticket`.
 path; the manifest maps names to paths, so a library can reorganise its files
 without breaking a plan.
 
+In version 1 a version constraint, in a reference or a dependency, is read but
+not checked: each library is loaded at the one version its source gives.
+
 ---
 
 ## 2. The manifest
@@ -63,27 +65,17 @@ requires:
 dependencies:
   - { name: std, version: ">=1.0.0 <2.0.0" }
 
-inputs:                       # values for parameters templates declare (docs/03 section 6.2)
-  planning_repository: acme/plans
-
-resources: [references]
-
 entrypoints:                  # templates a person starts from, listed first in the console
   - { template: ticket_delivery, when: "One ticket" }
   - { template: project_delivery, when: "A project spanning several epics" }
-
-notifications:
-  events: [decision_needed, failed, completed]
 ```
 
 | Key | Effect |
 |---|---|
 | `requires` | Checked when a root run is created. An unmet requirement refuses the run and names what is missing |
 | `dependencies` | Other libraries this one references |
-| `inputs` | Library-wide parameter values |
-| `resources` | Folders mounted for every agent step that has skills, unless it opts out |
-| `entrypoints` | Templates people start; others (child templates) are not offered. Each is listed through the API (`GET /templates`, `docs/02` section 7) with its `when` and its template's parameters, each marked when the library's `inputs` give it, so a start form asks only for the rest |
-| `notifications` | Default events to notify on. Organisation configuration wins; a library cannot name a channel |
+| `entrypoints` | Templates people start; others (child templates) are not offered. Each is listed through the API (`GET /templates`, `docs/02` section 7) with its `when` and its template's declared parameters and defaults |
+| `inputs`, `resources`, `notifications` | Read but not used in version 1 |
 
 An unknown key or a malformed manifest makes the library invalid: new runs
 using it are refused with the reason; runs already started are unaffected.
@@ -107,9 +99,6 @@ needs, stores each in the artifact store by content hash, and writes the run's
 library edit never changes a run already under way, and no worker needs access
 to the source.
 
-`ff library init <folder>` copies the standard library into a folder to start
-from (from FF).
-
 ---
 
 ## 4. Layers
@@ -118,7 +107,7 @@ from (from FF).
 |---|---|
 | Base: `std` | Define everything |
 | Organisation: libraries named in organisation configuration | Add content: its own templates, tasks and roles under its own name. Overriding a base item by name is not in version 1 (LOG 268) |
-| Repository: the `library` section of `feature-flow.yaml` | Name a default template; **add** skills, resources and tasks under its own name. Not override. Read from the default branch, so an agent cannot change what it is given |
+| Repository: the `library` section of `feature-flow.yaml` | A `library` section is checked (check 20: it may only name a default template and add skills, resources and tasks, never override), but version 1 does not apply it |
 | Run: a library override | Replace content for this run's future steps (section 5.2) |
 
 A template refers to content by library name, so an organisation that wants its own
@@ -162,7 +151,7 @@ left open are LOG 62 to 65, approved 2026-11-01.
 
 | Role | Write access | Notes |
 |---|---|---|
-| `planner` | none | May hold planning authority; tracker toolset where allowed (toolsets are not in version 1, `docs/06` section 3.9) |
+| `planner` | none | An agent cannot propose a patch in version 1 (`docs/04` section 6.1). A tracker toolset is not in version 1 (`docs/06` section 3.9) |
 | `designer` | none | — |
 | `implementer` | branch | `ask_human` enabled by its standard steps |
 | `fixer` | branch | — |
@@ -184,29 +173,29 @@ and permission.
 | `findings_report` | No | Findings from a reviewer, with fingerprint fields, severity, blocking and basis |
 | `triage` | No | Per finding: new state, reason, and "regression test not applicable" with a reason where claimed |
 | `contract` | No | A parent's interface or behaviour contract for its children |
-| `test_results`, `analysis_results`, `check_results`, `merge_record`, `validation_report`, `trace_report` | Yes | Produced only by engine actions |
+| `test_results`, `analysis_results`, `check_results`, `merge_record`, `revert_record`, `validation_report`, `trace_report` | Yes | Produced only by engine actions |
 
 ### 6.3 Fragments
 
 | Fragment | Steps | Parameters | Exits |
 |---|---|---|---|
 | `baseline` | `test.run` and `analysis.run` with `baseline: true` | `tier_tags` (default all) | `done` |
-| `plan_and_validate` | Planner agent producing `requirements` and `delivery_plan`; `artifact.validate` with `requirement_support`, `requirement_ownership` or `requirement_inheritance` (by level), `verification_method_support`; on `invalid` back to the planner | `planner_task`, `level_validators` | `planned` |
+| `plan_and_validate` | Planner agent producing `requirements` and `delivery_plan`; `artifact.validate` with `requirement_support`, `requirement_ownership` or `requirement_inheritance` (by level), `verification_method_support`; on `invalid` back to the planner | `planner_task`, `subject_id`, `level_validators` | `planned` |
 | `standard_review` | `for_each` over `angles` (default: correctness, design, tests, security, specification) of a reviewer agent step, each producing a `findings_report`; `findings.record` for each; a reviewer with `changed_files_unread > 0` re-runs | `spec_refs`, `angles`, `reviewer_task`, `reopen_on` (set to `code_change`) | `reviewed` |
-| `fix_loop` | Triager agent producing `triage`; `findings.triage`, allowing the triager only `open`, `declined` and `escalated`, with an `invalid` triage back to its producer, and an escalation or a declined blocking or demonstrated finding to a person's triage decision (`findings.triage`), applied as that person (LOG 248); out by `fixed` only when no finding is open; fixer agent; a verifying reviewer checking the fix against the original finding on the full diff, the only step that may set `fixed`; `artifact.validate` with `tests_added`; back to tests | `fixer_task`, `triager_task`, `tier_tags` | `fixed`, `escalated` |
-| `verify_and_review` | `test.run`; `analysis.run`; failures to a repair agent and back; `standard_review`; then the merge bar: `findings.repeat_fixes > 0` escalates, `findings.open_blocking > 0` goes to `fix_loop` and back to the tests; then `artifact.validate` with `verification_satisfaction`, after the review because satisfaction needs the reviewer's verdict on the claims (LOG 64) | `tier_tags`, `spec_refs`, `angles`, `fixer_task`, `check_satisfaction` (an epic sets `false`) | `ready`, `escalated` |
+| `fix_loop` | Triager agent producing `triage`; `findings.triage`, allowing the triager only `open`, `declined` and `escalated`, with an `invalid` triage back to its producer, and an escalation or a declined blocking or demonstrated finding to a person's triage decision (`findings.triage`), applied as that person (LOG 248); out by `fixed` only when no finding is open; fixer agent; a verifying reviewer checking the fix against the original finding on the full diff, the only step that may set `fixed`; `test.run` on the fix; `artifact.validate` with `tests_added` | `fixer_task`, `triager_task`, `tier_tags` | `fixed`, `escalated` |
+| `verify_and_review` | `test.run`; `analysis.run`; failures to a repair agent and back; `standard_review`; then the merge bar: `findings.repeat_fixes > 0` escalates, `findings.open_blocking > 0` goes to `fix_loop` and back to the tests; then `artifact.validate` with `verification_satisfaction`, after the review because satisfaction needs the reviewer's verdict on the claims (LOG 64) | `tier_tags`, `spec_refs`, `angles`, `reviewer_task`, `fixer_task`, `triager_task`, `check_satisfaction` (an epic sets `false`) | `ready`, `escalated` |
 | `merge_into_parent` | `scm.pull_request`; optionally `findings.record` from an external source; `ci.checks`; `scm.catch_up`; re-test and re-check if `changed`; `scm.merge`; `base_moved` back to catch-up, with catch-up, re-test and checks allowed 12 attempts so races are bounded by `limits.races` (LOG 61); `conflict` to a conflict-resolver agent. Anything needing verification again leaves by `reverify` | `repository`, `squash`, `engine_can_merge`, `tier_tags`, `external_findings` (optional) | `merged`, `declined`, `reverify` (no class: the caller routes it to its verification) |
 | `plan_children` | Planner producing a `work_list` and child-level requirements; validation; an approval decision that ratifies them; `plan.expand` into a `parallel` of `run.child`, which runs the children | `planner_task`, `child_template`, `child_requirements_type`, `approval_type`, `child_parameters`, `max_concurrency` | `completed`, `any_failed` |
 | `trace` | `artifact.validate` with `requirement_trace`, producing a `trace_report` | `requirements` (the artifact to trace) | `traced` |
-| `deliver_in_order` | A `for_each` chain of `merge_into_parent` per repository; `delivery.report`; on `partial`, a decision offering retry, fix forward or revert | `repositories`, `squash`, `engine_can_merge` | `delivered`, `partial` |
+| `deliver_in_order` | A `for_each` chain of `merge_into_parent` per repository; `delivery.report`; on `partial`, a decision offering retry, fix forward or revert | `repositories`, `squash`, `engine_can_merge`, `tier_tags` | `delivered`, `partial` |
 
 ### 6.4 Templates
 
 | Template | Level | Shape |
 |---|---|---|
 | `ticket_delivery` | ticket | `baseline`; `plan_and_validate`; spec approval (auto-resolvable); implement; `verify_and_review`; `merge_into_parent`. Works standalone (parent branch is the default branch) or as a child. Parameter `engine_can_merge`, default `false`, so a standalone ticket passes F1 in a default organisation; `epic_delivery` passes `true` to its tickets |
-| `epic_delivery` | epic | Design and contract; `plan_children` (tickets); the epic's own `verify_and_review` over the combined branch with the tickets' ledgers as prior findings; `trace`; `merge_into_parent` (an epic in several repositories would use `deliver_in_order` instead) |
-| `project_delivery` | project | An interactive session for the project's requirements and architecture; approval that ratifies them; `plan_children` (epics); integration tests where the project owns requirements itself; `trace`; `deliver_in_order` into the default branch, where by default a person merges (F1) |
+| `epic_delivery` | epic | `baseline`; design and contract, validated; `plan_children` (tickets); the epic's own `verify_and_review` over the combined branch with the tickets' ledgers as prior findings; `trace`; `merge_into_parent` (an epic in several repositories would use `deliver_in_order` instead). Parameter `engine_can_merge`, default `false`; `project_delivery` passes `true` |
+| `project_delivery` | project | An interactive session for the project's requirements and architecture; approval that ratifies them; `plan_children` (epics); integration tests when the epic plan says they are needed; tests on each repository's project head; `trace`; `deliver_in_order` into the default branch, where by default a person merges (F1) |
 
 Budget: `project_delivery` sets `budget.max_work_items: 20`, within the organisation's
 ceiling.

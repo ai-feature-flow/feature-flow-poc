@@ -68,7 +68,7 @@ other table is keyed by action name (F10). An entry holds:
 |---|---|---|
 | Outcomes | Each outcome and its class, as in the table above | Loading: route resolution and check 7 |
 | Outputs | The outputs the action publishes, with their types (`docs/03` section 5.4); none listed means any name, typed `dyn` | Check 5, the core's output check |
-| Inputs | The input schema: each input's kind (`string`, `boolean`, `array`, `map`, `duration`), allowed values, least duration, and the library item type of a reference input (`run.child`'s `template`, `scm.pull_request`'s `body`); a rule across inputs (`wait.condition` takes exactly one condition; `findings.triage`'s `states`) | Check 31: literals at load, evaluated values at step start (LOG 359); reference resolution (check 19) |
+| Inputs | The input schema: each input's kind (`string`, `boolean`, `array`, `map`, `duration`), allowed values, least duration, and the library item type of a reference input (`run.child`'s `template`, `scm.pull_request`'s `body`); a rule across inputs (`wait.condition` takes exactly one condition; `findings.triage`'s `states`) | Check 31: literals at load, evaluated values at step start for the engine-handled actions (not yet `run.child` or `plan.expand`; LOG 359); reference resolution (check 19) |
 | Needs | The capabilities it needs (`docs/06` section 1) | Check 21 |
 | Handling | Who carries it out: the engine's handler, bound by name (LOG 357), so the descriptor stays data in `Model` and the handler lives in the engine; a test adds an action as one entry, both together (`EngineActions.Register`, LOG 357); the run itself for `run.child` (a child workflow) and `plan.expand` (a patch) | Dispatch; a test that the handlers' names equal the engine-handled entries |
 | Evidence | The evidence type it makes, indexed when the step does not declare it (LOG 180) | The artifact index; std's validators |
@@ -182,9 +182,6 @@ agent how to use them.
 | `report` | Always | The agent's result: one declared outcome, a short summary (at most 2 KB, used for the run context), outputs, and the paths of the artifacts it produced. May be called again to correct; the last call counts |
 | `ask_human` | `limits.questions` is set | A question, with up to 4 suggested answers and optional context. Blocks until answered or timed out (section 3.4) |
 | `checkpoint` | The role has write access | Commit now and have the engine push. A convenience; commit detection is the backstop |
-| `inspect_plan` | `planning` is set | The current plan in its readable form |
-| `propose_patch` | `planning` is set | A patch to this plan or the parent's, validated at once; errors come back to the agent |
-| `run_check` | Interactive sessions only | Run a named later step's checks now (section 4.4) |
 
 Every built-in runtime calls MCP tools, so the `report` tool is the only way to
 report; the file fall-back for a runtime without MCP is removed (L5, LOG 448).
@@ -376,7 +373,7 @@ the prompt.
 
 | Rule | Detail |
 |---|---|
-| Reaching it | A CLI and an engine MCP server for the person's agent: fetch the workspace, run checks, submit. Authenticated as the person |
+| Reaching it | A CLI (`ff session fetch`, `check`, `submit`) and the same as MCP tools for the person's agent (`session_fetch`, `session_check`, `session_submit`, through `ff session mcp`): fetch the workspace, run checks, submit. Authenticated as the person |
 | Pre-submit checks | `checks_from` names later steps; the session may run their checks on demand, with the same task, tools, model and commit as the later step will use. A check never appears for the first time after submission (the prototype's specification session took 8 rounds without this) |
 | Submission | The person submits; the engine imports the committed files at that exact commit as the declared artifacts, validates them, and the decision takes the submitted outcome |
 | Trust boundary | Hooks and policy do not apply on the person's machine. The engine validates what is submitted, and the person is the accountable actor |
@@ -427,36 +424,25 @@ section 8).
 
 ### 6.1 Planning authority
 
-An agent step with `planning` may call `inspect_plan` and `propose_patch`
-(section 3.3). A proposed patch is validated at once and errors go back to the
-agent. A valid patch is applied when the step ends with a declared outcome,
-unless the step's policy requires review (`planning.review: required`, or the
-organisation requires it), in which case it becomes a patch approval decision.
-The run then continues at the patch's `resume_at`. A patch to the parent is
-sent as a signal (`docs/03` section 9.4).
-
-A planner with tracker tools in its toolset may create tickets for the child
-runs it proposes, marking each with the run's label so a later re-plan finds
-them (from FF). Toolsets are not in version 1 (`docs/06` section 3.9).
+An agent cannot propose a patch in version 1: the engine serves no
+`inspect_plan` or `propose_patch` tool (LOG 264). The core's patch path
+(`docs/03` section 10) takes `plan.expand`'s patches and a person's `amend`;
+`planning` on an agent step loads but gives the agent nothing. Only the
+`scripted` and `recording` test runtimes send an agent's patch or library
+override, so workflow tests can exercise the core's path.
 
 ### 6.2 `plan.expand`
 
 | Element | Detail |
 |---|---|
-| Form | Activity: reads the list artifact (at most 500 items), builds the patch, and returns it; the workflow applies it through the patch path. A list from a parameter is expanded locally |
-| Inputs | `from` (a list artifact, or a parameter), `shape` (`parallel` or `chain`), `target` (the `parallel` to fill, or the step to chain after), `on_other` (for a chain), `step` (the step to create per item, with `$.<field>` paths into the item). The step's own inputs are checked against its action's schema at load, `$.` paths when the patch is validated (check 31) |
+| Form | An activity reads the list artifact; the core builds the patch from at most 500 items and applies it through the patch path |
+| Inputs | `from` (a list artifact), `shape` (`parallel` or `chain`), `target` (the `parallel` to fill, or the step to chain after), `on_other` (for a chain), `step` (the step to create per item, with `$.<field>` paths into the item). The step's own inputs are checked against its action's schema at load, `$.` paths when the patch is validated (check 31) |
 | Outcomes | `expanded` |
 | Effect | A patch, applied like any other and recorded with `proposed_by: engine` |
 
 ---
 
 ## 7. Source control
-
-Sections 7 to 9 are as built in M5 (LOG 120 to 132, 138, 139). `test.integration` is `test.run` across
-repositories and starts no services yet (LOG 120). Waits are retried reads (LOG 122); while they wait they hold up a
-hand-over, which M6 must fix (LOG 139). An action request is a `<level>.merge_action` decision (section 4.5; LOG 331). `clean_up` resets by an expected-revision push (LOG 128). Evidence tiers come from the parent branch's
-manifest (LOG 138). LOG 147 simplified them after M5: `ci.checks` waits for required checks, a CI run is recorded by
-the step, and a configuration fault stops for a person.
 
 The engine creates a run's work branch in a repository the first time a step
 touches that repository, from the run's parent branch, and records the
@@ -518,12 +504,10 @@ Whether the engine may merge into the **default branch** is a safety floor
 from the code host. The step records who merged, the method, and the head it
 replaced, so later evidence on the squashed branch still counts (from FF).
 
-Where the target requires a code host merge queue, the step enqueues and waits
-for the queue's result.
-
 ### 7.4 `scm.revert`
 
-Opens a revert pull request for a merge this run tree made. Outcome `opened`.
+Input `pull_request` (default: the run's pull request in the step's
+repository). Opens a revert pull request for it. Outcome `opened`.
 Merging the revert is a separate `scm.merge`. Its evidence, `revert_record`, names both pull
 requests, so `delivery.report` does not count a reverted merge (LOG 180).
 
@@ -538,7 +522,7 @@ register late.
 
 | Element | Detail |
 |---|---|
-| Inputs | `expected` (check names that must appear), `grace` (when CI is configured, how long to wait for checks to appear before judging those seen; default 2 minutes), `timeout` |
+| Inputs | `expected` (check names that must appear), `grace` (when CI is configured, how long to wait for checks to appear before judging those seen; default 2 minutes), `poll_every` (at least 5 s), `timeout` (default 2 hours) |
 | Outcomes | `passed` (with output `skipped`, the number of skipped checks); `failed` |
 | Behaviour | Does not pass while a check the target branch requires (its protection: the pull request's base, else the parent branch) or an `expected` name has not appeared, so an early third-party check does not read as "all passed". When the CI provider says CI is configured, it does not pass within `grace` of starting to wait, so any check that appears in that window is waited for too; it does not predict which workflows will run (LOG 147). A head commit that changes while waiting, or the timeout, raises an intervention |
 | Evidence | Check results, which `scm.merge` reads |
@@ -549,9 +533,9 @@ Waits for an external state, from FF's `awaitCondition`.
 
 | Element | Detail |
 |---|---|
-| Inputs | One condition: `pull_request` (`approved`, `merged` or `mergeable`), `checks` (judged as `ci.checks` judges them, with its default `grace`), or `tracker` (`issue`, default the run's tracker issue; `statuses`, the library statuses that meet it; `unmet`, those that do not); `poll_every`; `timeout` (default 7 days) |
+| Inputs | One condition: `pull_request` (`approved`, `merged` or `mergeable`), `checks: passed` (judged as `ci.checks` judges them, with its default `grace`), or `tracker` (`issue`, default the run's tracker issue; `statuses`, the library statuses that meet it; `unmet`, those that do not); `poll_every`; `timeout` (default 7 days) |
 | Outcomes | `met`; `unmet` (closed unmerged, changes requested, failed checks, an issue in an `unmet` status) |
-| Behaviour | Holds no worker slot. A durable timer polls; an inbound event wakes it early; a read confirms. A person may end the wait by hand with `met` or `unmet`, which is the "skip a step" override with a chosen outcome (`docs/05` section 5). The timeout raises an intervention |
+| Behaviour | Holds no worker slot between reads: the activity reads, then is retried after `poll_every`; an inbound event wakes it to read at once (`docs/02` section 2.3). The timeout raises an intervention |
 
 ---
 
@@ -565,24 +549,23 @@ Runs a repository's declared test tiers.
 |---|---|
 | Inputs | `tier_tags` (select tiers by tag; the tiers themselves are repository facts), `baseline` (true: this run records the baseline) |
 | Outcomes | `passed`, `failed`, `baseline_failed` |
-| Behaviour | Tiers run where the manifest says: in a sandbox, or delegated to CI through the CI provider inside the same step (the default for tiers that need Docker or Windows). Results are parsed from the declared format (TRX, JUnit) into **test results evidence** |
+| Behaviour | Tiers run where the manifest says: in a sandbox, or delegated to CI through the CI provider inside the same step (a tier that needs Docker or Windows must target CI). Results are parsed from the declared format (TRX, JUnit) into **test results evidence** |
 | Baseline | The first `test.run` with `baseline: true` records the baseline. A baseline that is not clean returns `baseline_failed`, because later failures could not be attributed; the standard `baseline` fragment escalates it (from FF) |
-| Carried result | If a catch-up left the tree identical to one already tested, the earlier result is adopted and nothing runs (from FF) |
+| Carried result | If the head was already tested with the same tiers (for example after a catch-up that changed nothing), the earlier result is adopted and nothing runs (from FF) |
 | Cannot answer | No manifest, a tag with no tier, a checkout not at the expected commit, unparseable results: an intervention |
 
 ### 9.2 `test.integration`
 
-Starts several repositories as services in a fresh environment, each from its
-own manifest's `integration_environment`, and runs their integration tier.
-Outcomes `passed`, `failed`. A service that fails to start on two tries in a row
-is `failed` (its start command is part of the delivered work); a Docker or
-platform failure is infrastructure (from FF).
+`test.run` across repositories: the tiers tagged `tier_tags` (default
+`integration`) in each of `repositories` (default the run's), as one test
+results evidence. It starts no services; a tier that needs them runs in CI
+(LOG 120). Outcomes `passed`, `failed`.
 
 ### 9.3 `analysis.run`
 
 Runs the static analyser the manifest declares (`static_analysis`: `analyser`
 of `sarif`, `sonarcloud` or `none`; for `sarif`, the `command` and
-`sarif_path`), or reads it from CI (SonarCloud), and compares with the baseline.
+`sarif_path`), or, planned (`docs/12` R3), reads SonarCloud's from CI, and compares with the baseline.
 Inputs: `baseline`; `fail_on` (`new_issues`, the default, `any_issues`, or
 `never`); `min_level` (the lowest severity that counts, default `warning`).
 Outcomes `passed`, `failed`.
@@ -650,7 +633,7 @@ workflow's (`docs/01` section 6, RW4).
 
 | Element | Detail |
 |---|---|
-| Inputs | `source`: an artifact of type findings report (from a reviewer agent step), or a findings source provider by name (an external AI review on the pull request, SonarCloud, a SARIF file). `reopen_on`: when a re-raise of a `fixed` or `declined` finding reopens it: `code_change`, `always` or `never`. The engine default, `code_change`, is a fallback; the standard library sets it explicitly |
+| Inputs | `source`: an artifact of type findings report (from a reviewer agent step), or a findings source provider by name (`copilot_review`, the Copilot review on the pull request). `reopen_on`: when a re-raise of a `fixed` or `declined` finding reopens it: `code_change`, `always` or `never`. The engine default, `code_change`, is a fallback; the standard library sets it explicitly |
 | Outcomes | `recorded`, with outputs `new`, `reraised`, `reopened`, `repeat_fixes` (findings reopened after being fixed at least twice); `unavailable` (the external source could not review, for example Copilot review not enabled, or it stayed pending for 30 minutes) |
 | Behaviour | Fingerprints each finding, matches it against the ledger (including children's), and records it as new or as a re-raise, with whether the code at the fingerprint changed since the finding last changed state: whether the finding's file differs between that revision and the work branch head (LOG 162). A re-raise never weakens the finding: blocking, demonstrated and the higher severity are kept (LOG 169). Applies `reopen_on`. A report that does not read as a findings report raises an intervention |
 
@@ -671,16 +654,16 @@ run holds are ignored (LOG 169).
 
 ---
 
-## 12. Repository, artifacts, tracker, notifications, delivery
+## 12. Repository, artifacts, tracker, delivery
 
 | Action | Inputs | Behaviour |
 |---|---|---|
-| `repo.inspect` | `repository` | Reads the manifest and publishes facts as outputs: tier names and tags, whether CI is configured, the analyser, whether an integration environment is declared, the manifest hash |
+| `repo.inspect` | `repository` | Reads the manifest and publishes facts as outputs: `tiers`, `tags`, `ci` (a tier targets CI), `analyser`, `integration_environment`, `manifest_hash` |
 | `artifact.compose` | `name`, `members` | Groups artifacts into a set. Copies and approves nothing |
-| `artifact.import` | `from`: a session submission (M7), or a repository, folder, files and exact commit | Registers files as artifacts at that commit, validated against their types (as built: parsed, not yet schema-checked; LOG 181) |
-| `artifact.publish` | `repository`, `folder`, `files`, `previous` (an earlier publication to supersede) | Copies artifacts into a repository in one commit and opens a pull request. `conflict` if the destination changed in a way the earlier publication did not expect; nothing is written (from FF; branch, record and superseding, LOG 182) |
-| `tracker.update` | `op` (`create`, `update`, `transition`, `link`, `comment`), its fields (LOG 183) | One tracker operation. Field mapping is provider configuration. Agents have no tracker write identity; this action and declarative `tracker` on steps are the only write paths, apart from a planner's toolset where policy allows |
-| `delivery.report` | `repositories` | Reads the merge records and states, per repository, whether a merge actually happened: the merge is of the work branch's current head, the parent branch still contains it, and no revert the run opened of it is merged or open (LOG 180). `complete` only if every one merged, so a run redirected past a merge cannot report success (from FF) |
+| `artifact.import` | `repository`, `folder`, `files` (each `{ path, name, type }`), `commit` (a full commit id) | Registers files as artifacts at that commit, validated against their types like an agent's artifacts (LOG 246); an evidence type is refused (section 10.1) |
+| `artifact.publish` | `repository`, `folder`, `files`, `previous` (an earlier publication to supersede), `title`, `body` | Copies artifacts into a repository in one commit and opens a pull request. `conflict` if the destination changed in a way the earlier publication did not expect; nothing is written (from FF; branch, record and superseding, LOG 182) |
+| `tracker.update` | `op` (`create`, `update`, `transition`, `link`, `comment`), its fields (LOG 183) | One tracker operation, publishing `issue`. Field mapping is provider configuration. Agents have no tracker write identity; this action and declarative `tracker` on steps are the only write paths |
+| `delivery.report` | `repositories` | Reads the merge records and states, per repository, whether a merge actually happened: the merge is of the work branch's current head, the parent branch still contains it, and no revert the run opened of it is merged or open (LOG 180). Publishes `merged` and `not_merged`. `complete` only if every one merged, so a run redirected past a merge cannot report success (from FF) |
 
 ---
 
@@ -690,4 +673,4 @@ run holds are ignored (LOG 169).
 |---|---|---|
 | 1 | Should `ci.checks` keep FF's reading of `.github/workflows` to tell "no CI" from "not started"? It is GitHub-specific | Yes, inside the GitHub CI provider, behind a provider method; since LOG 147 it answers only "is CI configured for this head" (`HasCiAsync`), and the target branch's required checks say what must pass. Other providers answer it their own way |
 
-Judgement calls made in this document are in `docs/LOG.md`, entries 16 to 24.
+Judgement calls made in this document are in `docs/LOG.md`, under the entries that name `04`.

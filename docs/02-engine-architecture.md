@@ -18,8 +18,8 @@ Implementation language: .NET (`archive/docs/03` Q1).
 | Component | Runs as | Responsibility | State |
 |---|---|---|---|
 | API service | Long-lived service | Start, query, steer and abort runs; answer decisions; authenticate and authorise; write the audit record; the inbound gateway for webhooks and chat | None of its own (uses the record store) |
-| Orchestration worker | Long-lived, N replicas | Hosts the interpreter workflow and light activities: provider calls that need no sandbox, validation, version control operations on the engine's own clones (section 6) | A cache of repository clones, rebuildable |
-| Agent worker | Long-lived, N replicas, one pool per sandbox capability | Hosts agent step and test activities: creates and re-attaches sandboxes, starts and supervises agent runtimes, detects and pushes commits. **Serves the hook endpoint and the engine MCP server** for agents (RW17) | None. A sandbox outlives a worker restart |
+| Orchestration worker | Long-lived, N replicas | Hosts the interpreter workflow and every engine action: provider calls, validation, `test.run` in a sandbox of its own, interactive sessions, version control operations on the engine's own clones (section 6) | A cache of repository clones, rebuildable |
+| Agent worker | Long-lived, N replicas | Hosts the agent step's activity: creates and re-attaches its sandbox, starts and supervises agent runtimes, detects and pushes commits. **Serves the hook endpoint and the engine MCP server** for agents (RW17) | None. A sandbox outlives a worker restart |
 | Sandbox | Created per step by the sandbox provider | Runs the agent runtime and its tools, or test commands, against a checkout | For the life of the step |
 | Artifact store | External | Immutable, content-addressed blobs | Yes |
 | Record store | External | Queryable records: runs, steps, decisions, overrides, findings ledger, evidence index, timeline, cost | Yes |
@@ -33,13 +33,11 @@ share no process state.
 
 | Queue | Served by |
 |---|---|
-| `feature-flow-orchestration` | Orchestration workers |
-| `feature-flow-agent` | Agent workers, default sandbox capabilities |
-| `feature-flow-agent:<capability>` | Agent workers whose sandboxes offer a capability, for example `os_windows`, `docker`, `gpu` |
+| `temporal.task_queue` (default `feature-flow-orchestration`) | Orchestration workers: the interpreter and every engine action |
+| The same name with `-orchestration` replaced by `-agent` (default `feature-flow-agent`) | Agent workers: agent steps |
 
-A step's queue follows from the capabilities its role (or its action) needs.
-Windows-only repositories, Docker-dependent tiers and restricted networks need
-no special case in the interpreter. Pool sizing: at least one activity slot per
+There is one agent queue (LOG 318); pools by sandbox capability are not in
+version 1 (`docs/07` section 2). Pool sizing: at least one activity slot per
 concurrent long step, plus headroom (`archive/docs/15` section 6.3).
 
 ---
@@ -52,7 +50,7 @@ their plan.
 ### 2.1 The loop
 
 ```
-state = { plan_revision, positions[], step_runs[], findings_summary, attempts, in_flight[], waits[] (open and closed), children[] }
+state = { plan_revision, positions[], step_runs[], findings counts, attempts, in_flight[], waits[] (open and closed), children[] }
 
 loop:
   ready = plan.ready(positions, state)              # pure
@@ -116,13 +114,11 @@ prove the shell holds no routing decision (LOG 382).
 
 ### 2.3 Polling and events
 
-A wait on something actively progressing (CI, a merge queue) polls inside one
-long-running, heartbeating activity: Spike 1 measured 11 history events for a
-60-second polled step (`archive/docs/15` section 6.2). A wait on something idle
-until a person acts (a tracker status, a review approval) reads between delays
-(its activity's retry delay), and an inbound event ends the delay early: the wait
-reads again at once (LOG 229). In both cases **events wake, reads confirm**:
-an event is a hint; a read of the remote system decides.
+A wait (`ci.checks`, `wait.condition`, `scm.merge` waiting for its merge) reads once per
+activity attempt; while its condition is open, the activity is retried after its
+delay, so a wait holds no worker slot, and an inbound event ends the delay early:
+the wait reads again at once (LOG 229). In every case **events wake, reads
+confirm**: an event is a hint; a read of the remote system decides.
 
 ---
 
@@ -188,7 +184,7 @@ The runtime calls back to the engine:
 | Channel | Used for |
 |---|---|
 | Hooks (session start, before and after each tool call, stop) | Policy on each tool call (deny writes for a read-only role, deny `git push`, deny edits to `.git/config`); events for the timeline; token and cost accounting; liveness |
-| The engine MCP server | The agent reporting contract: `report`, `ask_human`, `checkpoint`, `inspect_plan`, `propose_patch`, `run_check` (`docs/04` section 3.3) |
+| The engine MCP server | The agent reporting contract (`docs/04` section 3.3) |
 
 Nothing essential depends on hooks. A runtime without them gets sandbox-enforced
 write access, a post-step check of what changed, and cost from its own usage
@@ -227,10 +223,8 @@ Not inside the sandbox, where the agent could reach and alter it.
 ### 4.4 Windows
 
 The engine itself runs on Windows, macOS or Linux containers. Windows-only
-repositories need a Windows sandbox provider, which is not in version 1: a
-Windows tier can be delegated to CI, and a run that needs a Windows sandbox
-fails at run start with a clear message. A Windows VM sandbox provider is the
-planned approach (`archive/docs/01` section 4.7).
+repositories need a Windows sandbox provider, which is not in version 1; a
+Windows tier can be delegated to CI.
 
 ---
 
@@ -238,8 +232,8 @@ planned approach (`archive/docs/01` section 4.7).
 
 | Store | Holds | Technology by profile |
 |---|---|---|
-| Temporal state | References and small summaries only: plan revision, positions, step outcomes and outputs, a capped findings summary, attempts. The run's library snapshot is read into history once per history, at run start and after each continue-as-new (LOG 83) | Temporal |
-| Artifact store | Every artifact, every plan revision, rendered tasks, transcripts, logs, library content | Local filesystem; S3 or Azure Blob |
+| Temporal state | References and small summaries only: plan revision, positions, step outcomes and outputs, the `findings` counts (`docs/03` section 5.3), attempts. The run's library snapshot is read into history once per history, at run start and after each continue-as-new (LOG 83) | Temporal |
+| Artifact store | Every artifact, every plan revision, rendered tasks, transcripts, logs, library content | Local filesystem; S3 or an S3 API store such as MinIO |
 | Record store | Runs, step runs, decisions, overrides, the findings ledger, the artifact index, the timeline, cost | SQLite; Postgres |
 
 The **artifact index** in the record store lists what a run stored, one record per
@@ -256,7 +250,6 @@ child's is read through the child (LOG 325 as amended).
 |---|---|
 | Reads | The console and API read the record store, never Temporal queries |
 | Payloads | Never transcripts, diffs, code or secrets in workflow state; a pluggable payload codec for organisations that encrypt payloads (`aes_gcm`, LOG 284) |
-| Findings summary | Capped in state; over the cap, only blocking findings are kept in state and the rest referenced |
 | Git is not a store | Publishing artifacts to a repository for people to read is an action (`artifact.publish`) |
 | Tenancy | One organisation per installation; `org_id` in record store keys from the start |
 | Recovery | Database backups and object store versioning; a reconcile job rebuilds the run index from Temporal (the hosts' `reconcile` command, run after a restore, LOG 285) |
@@ -265,15 +258,14 @@ child's is read through the child (LOG 325 as amended).
 
 ## 6. Engine-side version control
 
-**New (review finding 6.8).** `scm.catch_up` and `scm.merge` need a working
-tree that is not an agent's sandbox.
+**New (review finding 6.8).** `scm.catch_up` and `scm.merge` need a clone
+that is not an agent's sandbox.
 
 | Rule | Detail |
 |---|---|
 | Where | Each orchestration worker process keeps its own cache of clones per repository on local disk, in a folder of its own under the configured root, so processes never share a clone and need no lock between them (LOG 147). The remote is the truth; a lost cache is re-cloned |
-| How | Each operation fetches, works in a temporary worktree, and pushes with an expected old revision, so the remote refuses it if anything moved. Operations are idempotent: a retry finds the merge already present |
+| How | Each operation fetches into the process's bare clone, builds any merge there without a working tree (`git merge-tree`), and pushes with an expected old revision, so the remote refuses it if anything moved. Operations are idempotent: a retry finds the merge already present |
 | Credentials | The engine's identity, from the credential broker, for the duration of the operation |
-| Large repositories | Partial clones where the VCS provider supports them |
 
 ---
 
@@ -284,11 +276,12 @@ tree that is not an agent's sandbox.
 | Transport | Decisions, overrides and patches from people arrive as Temporal **Updates**, each carrying the decision or step id and the plan revision it applies to; the update validator rejects stale or invalid requests. Child reports and inbound events arrive as **Signals**, which only wake the run |
 | API records | Every request and response body is a record of `FeatureFlow.Api.Contracts`, a project that references nothing, so the CLI sends and reads the same records (LOG 388). JSON is snake_case, enum values included (`patch_approval`); required properties, nullability and number types are enforced. A body is read after authentication: one that is not JSON, lacks a required property, has a value of the wrong type or names a property the record does not have (an `actor` among them, F8) is refused 400 (LOG 407). Store records are never responses: each is mapped to a view record. Every refusal is `{ "error": "<message>" }`. A person's reason (answers, aborts, overrides, a session's submission and abandonment) is at most 4,096 bytes of UTF-8 and a longer one is refused 400, since it is carried in the run's state and its context (LOG 432) |
 | OpenAPI | The OpenAPI 3.1 document is generated by ASP.NET Core from each route's metadata (operation id, body, responses and refusals), served unauthenticated at `GET /openapi.json`, and committed at `src/FeatureFlow.Api/openapi.json` for generated clients. Every operation it describes requires the `bearer` security scheme (HTTP, `Authorization: Bearer <token>`), added by a document transformer. A default-suite test (`OpenApiTests`) holds the committed file to the generated document (`FF_WRITE_OPENAPI=1` rewrites it; a merge conflict in it is resolved by regenerating) and every mapped route to a description (LOG 390). The inbound and console routes are not described |
+| Routes | Runs: `POST /runs`, `GET /runs`, `GET /runs/{id}` (`after`: the timeline after a record number), `POST /runs/{id}/answers`, `/abort` and `/overrides` (`docs/05` section 5), `GET /runs/{id}/findings`. Sessions (`docs/04` section 4.4): `GET /runs/{id}/sessions`, `GET /sessions/{sid}`, `GET` and `POST /sessions/{sid}/checks`, `POST /sessions/{sid}/submit` and `/abandon`. The rows below describe the rest; `src/FeatureFlow.Api/openapi.json` gives every body. Unauthenticated: `/openapi.json`, `/inbound/events/{source}` and `/inbound/chat/{source}` (the inbound gateway, section 1), and `/console` |
 | Events | `GET /events` streams change notifications as server-sent events (`text/event-stream`; G8) to any authenticated caller, each frame only for a run the caller views (LOG 399). A frame is `id: <sequence>`, `event: run_changed`, `wait_opened` or `wait_closed`, and `data:` a `ChangeEvent` (`sequence`, `run_id`, `kind`, `wait_id`, `updated_at`): ids, not content, so the client re-reads the run or its attention list. One `ChangeFeed` per API process reads the record store's changes (`docs/06` section 3.12) every `ApiServices.EventPoll` (1 s), never memory shared with the workers, and gives each to every subscriber's channel of 256 frames; a subscriber whose channel is full is closed, and its client reconnects (LOG 398). The feed keeps the repositories of the 4,096 runs it most recently filtered. The stream starts with `retry: 3000`; a reconnection's `Last-Event-ID` is answered from the feed's last 1,024 changes, or, if older (or unreadable), with one `event: reset` frame (`ChangeKind` `reset`, `data: {}`) whose id is the latest change, after which the client re-reads everything. A comment line `: ping` is sent every `ApiServices.EventHeartbeat` (15 s). Responses carry `Cache-Control: no-store` and `X-Accel-Buffering: no` so proxies do not buffer them. `EventSource` cannot send an `Authorization` header, so a browser client reads the stream with `fetch` and parses the frames itself (the document describes the frame's data, not the stream); no token goes in the query string. The poll interval, heartbeat and clock (`ApiServices.Time`) are set by the host, not by configuration files |
 | Artifacts | For a viewer of the run: `GET /runs/{id}/artifacts` lists the run's own artifact index (section 5), each with its kind (`artifact`, `evidence`, `transcript`, `prompt`, `plan_revision`); `GET /runs/{id}/artifacts/{reference}` reads one the index holds, or one a wait of the run names as consumed, such as the parent's contract a child's gate ratifies (LOG 394). Anything else, a child's own included, is 404 |
 | Plan | `GET /runs/{id}/plan`, for a viewer of the run: the run's latest `plan_revision` rebuilt with its tree's library lock, as its readable form (`docs/09` section 4.4) and as steps with their form, outcomes and routes, status from the timeline and open waits, breakpoint and skip (LOG 404) |
-| Templates | `GET /templates`, for any authenticated caller (LOG 400): each organisation library's entrypoints (`docs/08` section 2) with the template's parameters, and the libraries that could not be read with why. A literal default is given as JSON text (`default`), the form `POST /runs` takes; an `{ expr: ... }` default is evaluated at run start, so it is given as `default_expression` with `default` null. Library `inputs` are not applied by the engine, so no parameter is marked as supplied by them (LOG 434) |
-| Authentication | People: OIDC against the organisation's identity provider; a local token in the solo profile, or no sign-in at all there (`api.auth.mode: none`, every request the configured actor), accepted only when the API listens on loopback alone: the host checks `FF_API_LISTEN` before it starts anything and every address the API has bound once it has, and refuses to start otherwise (LOG 333, 457). Under `none` a guarded route refuses with 403 a request a page of another site could make the browser send: one that reached an address other than loopback, names a `Host` other than loopback, says `Sec-Fetch-Site` other than `same-origin` or `none`, or is not `GET` or `HEAD` and not `application/json` (`NoSignInAuthenticator.Refusal`, LOG 469). Automation: service-account tokens. Agents: the signed per-step token (section 4.2). Planned (`docs/12` R2): authenticators chosen from a set the host registers, so a distribution or fork may add its own (`docs/00` P13); browser sign-in for the console with authorisation code and PKCE against a public client, its settings read from an unauthenticated `GET /console/config` |
+| Templates | `GET /templates`, for any authenticated caller (LOG 400): each organisation library's entrypoints (`docs/08` section 2) with the template's parameters, and the libraries that could not be read with why. A literal default is given as JSON text (`default`), the form `POST /runs` takes; an `{ expr: ... }` default is evaluated at run start, so it is given as `default_expression` with `default` null |
+| Authentication | People: OIDC against the organisation's identity provider; a local token in the solo profile, or no sign-in at all there (`api.auth.mode: none`, every request the configured actor, on loopback only, with requests a page of another site could make refused 403: `docs/07` section 2, LOG 333, 457, 469). Automation: an identity-provider token (`oidc`), or the local token. Agents: the signed per-step token (section 4.2). Planned (`docs/12` R2): authenticators chosen from a set the host registers, so a distribution or fork may add its own (`docs/00` P13); browser sign-in for the console with authorisation code and PKCE against a public client, its settings read from an unauthenticated `GET /console/config` |
 | Console | A TypeScript single-page application (Preact, built with Vite; sources in `src/FeatureFlow.Console`), built by `dotnet build` and embedded in the API host as hashed assets, served at `/console` from the same origin: the page revalidated on every load, the assets cached for a year; a content security policy with Trusted Types (LOG 452 to 456). Routes: `#/` "Needs me" (`GET /attention`), `#/runs`, `#/runs/{id}` (the form notification links use), an artifact viewer and `#/start` (LOG 463). The run page shows open and closed waits, history, child runs, the timeline and the current plan revision; a person answers a wait with a required reason (every recovery the wait offers, a step picker for `go_to` and `replan`, `min_count` progress), aborts with a reason, reads artifacts and transcripts as text, starts a run from a template and steers the current plan (breakpoint, skip, attempt grants, amend). `stalled` and `stuck` are shown as status, not as decisions. API data reaches the page only as text (LOG 460). Change notifications come over `GET /events`, read with `fetch` so the bearer token is sent, and are followed by re-reads (LOG 459). With `api.auth.mode: none` there is no sign-in; otherwise the person pastes a token (LOG 458). It uses the API only (section 1) |
 | Authorisation | The API evaluates organisation policy (`docs/05`) and writes the record before sending the update; the workflow trusts the API. A caller who does not view a run is answered 404 on every route of the run, reads and writes (answers, abort, overrides, sessions) alike, so a route does not reveal that the run exists. Only the API and workers can reach the Temporal namespace |
 | What needs a person | `GET /attention` lists, oldest first, every open wait the caller may answer now, across runs: the record store's open waits of `starting` and `running` runs (`open_waits`, `docs/06` section 3.12), less the engine's status waits (`stalled`, `stuck`), those of runs the caller does not view, those the answer rule (`docs/05` section 3.2) refuses the caller, and a `min_count` decision the caller has already answered while it waits for others. `GET /me` names the caller: actor, channel (`api`, `chat`), identity-provider groups (none for the local token), its organisation-wide roles, and its roles in each team where it holds any |
@@ -296,7 +289,7 @@ tree that is not an agent's sandbox.
 | Library reads | Read routes (`/attention`, `can_answer`) read the organisation's libraries' decision types at most once a minute per API process (LOG 395); the answer path reads them at the moment of use (`docs/05` section 8) |
 | Actor | Always from the authenticated identity, never the request body (F8) |
 | Chat | A chat client is an API client. Its user is mapped to an identity-provider identity; approval rules say which decision types may be answered from chat |
-| Temporal unavailable | Workers retry the connection; the API reports platform status separately from run status; runs are never failed because the platform is down |
+| Temporal unavailable | Runs are never failed because the platform is down. Planned (`docs/12` R4): hosts that retry at startup until Temporal and the stores are ready, and a platform status route |
 
 ---
 
@@ -348,18 +341,13 @@ sequenceDiagram
     W->>A: run ends (end route reached)
 ```
 
-### 9.2 An epic, with a child's change to its plan
+### 9.2 An epic
 
 1. The epic's planner writes a ticket list; `plan.expand` adds one `run.child`
    per ticket to a `parallel`.
 2. Tickets run, at most `max_concurrency` at once, each on its own branch from
    the epic branch.
-3. A ticket's agent finds it needs a change in another repository and proposes
-   a patch to the epic: add a ticket. The patch is a signal; the ticket keeps
-   running or waits (RW6).
-4. The epic applies the patch (or asks a person, if it touches protected
-   content); the new ticket starts when a slot frees.
-5. When every ticket has ended, the epic reviews its branch against its parent,
+3. When every ticket has ended, the epic reviews its branch against its parent,
    with the tickets' ledgers as prior findings, then traces its requirements and
    merges as its workflow says.
 

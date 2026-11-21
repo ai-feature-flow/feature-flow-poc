@@ -27,21 +27,21 @@ with a change, and by what), or **superseded** (replaced).
 | Id | Decision | Status | Where now |
 |---|---|---|---|
 | Q1 | .NET, not Python | Kept | `docs/02` |
-| Q2 | Tiers that need Docker are delegated to CI by default; a privileged container only in the solo profile | Kept | `docs/07` section 6 |
+| Q2 | Tiers that need Docker are delegated to CI by default; a privileged container only in the solo profile | Kept for CI delegation; the solo profile's privileged container is not built | `docs/07` section 6 |
 | Q3 | One repository file, `feature-flow.yaml`, which may reference a `devcontainer.json` | Changed by LOG 44 and 46: FF's test manifest keys merged in; `branches` and `merge` sections removed. Changed by LOG 442: no `devcontainer.json` reference; the environment is an image | `docs/07` section 4 |
 | Q4 | Artifact store plus record store; Git is not a store | Kept | `docs/02` section 5 |
 | Q5 | People's decisions arrive as Temporal Updates through the API, which authorises them | Kept | `docs/02` section 7 |
 | Q6 | Plan as data in workflow state, continue-as-new at a measured threshold | Changed by LOG 31: new safe-point rule | `docs/02` section 3 |
-| Q7 | In-process provider packages; a distribution repository instead of a fork | Kept | `docs/06` section 4 |
-| Q8 | The engine uses a GitHub App (or equivalent) identity; agents get per-step read-only tokens | Kept, strengthened by DR13 | `docs/06` section 3.13 |
-| Q9 | Windows sandboxes later; capability routing and CI delegation in version 1 | Kept | `docs/02` section 4.4 |
+| Q7 | In-process provider packages; a distribution repository instead of a fork | Kept; a distribution adds providers without a fork from `docs/12` R1 (F6) | `docs/06` section 4 |
+| Q8 | The engine uses a GitHub App (or equivalent) identity; agents get per-step read-only tokens | Changed by LOG 95: an agent step gets no code-host credential, only its per-step engine token | `docs/06` section 3.13 |
+| Q9 | Windows sandboxes later; capability routing and CI delegation in version 1 | Kept for CI delegation; capability routing is not in version 1 (LOG 318) | `docs/02` section 4.4 |
 | DP3 | Child workflows only where a step has its own lifecycle (now: `run.child`) | Kept | `docs/02` section 2.2 |
 | DP6 | Most specific layer wins, except safety floors | Kept | `docs/00` section 3, `docs/05` |
 | DP8 | The API authorises; the workflow trusts the API | Kept | `docs/02` section 7 |
 | DP9 | Temporal is required; no second execution backend | Kept | `docs/02` |
 | DP10 | Each level's review covers its whole branch against its parent | Kept | `docs/08` section 6.3 |
 | DP11 | The agent runtime runs inside the sandbox (pattern C) | Kept | `docs/02` section 4.1 |
-| S1 | Task queues by capability | Kept | `docs/02` section 1.1 |
+| S1 | Task queues by capability | Changed by LOG 318: one agent queue in version 1; queues by capability are not built | `docs/02` section 1.1 |
 | S2 | One patch path | Kept | `docs/03` section 10 |
 | S3 | Capability negotiation at run start | Kept | `docs/09` check 21 |
 | S4 | Idempotency keys and hidden markers | Kept | `docs/04` section 1 |
@@ -117,12 +117,12 @@ loops), were approved the same day. They stay in
 | R1 | History limits on long runs | References only; capped summaries; continue-as-new at a measured threshold; plan size check | Mitigated, measured (Spike 1) |
 | R2 | Non-determinism in the interpreter | Pure-function discipline; replay tests | Mitigated (Spikes 1 and 3) |
 | R3 | A decision lost during continue-as-new | Answers recorded by the handler; the hand-over waits for running handlers (LOG 58) | Mitigated (SP1) |
-| R4 | Unstable review verdicts | Ledger; evidence-backed findings; separate review angles | Handled by design; the new reviewer not yet run |
+| R4 | Unstable review verdicts | Ledger; evidence-backed findings; separate review angles | Handled by design; std's reviewer run on real changes in M8's live run (`docs/build/m8-results.md`) |
 | R5 | Sandbox does not match CI | Tiers declared per repository; CI delegation | Mitigated (Spike 2) |
-| R6 | Credential exposure | Floors F2, F5, F6; per-step tokens; the sandbox's own home (DR19) | Partly mitigated: F6 `proxy` mode evidenced for Claude Code (SP5); F5, Copilot CLI and `per_run_key` not yet |
+| R6 | Credential exposure | Floors F2, F5, F6; per-step tokens; the sandbox's own home (DR19) | Partly mitigated: F6 `proxy` mode evidenced for Claude Code (SP5) and Copilot CLI (M8); F5 by no code-host credential in the sandbox (LOG 95); `per_run_key` is not built |
 | R7 | An agent weakens protected steps | F3 in the patch path | Mitigated (Spike 1) |
 | R8 | Runs stall on people | Unbounded durable waits, every kind reminded once per the organisation's `notifications.reminder_interval` while open (`docs/04` section 4; none unless set, LOG 401); stuck-run notifications | Mitigated in mechanism; reminders tested on a dev server |
-| R9 | An organisation's distribution drifts from upstream | Configuration, providers and library overrides; contract and library tests | Residual |
+| R9 | An organisation's distribution drifts from upstream | Configuration and the organisation's own libraries; providers without a fork (planned, `docs/12` R1); contract and library tests | Residual |
 | R10 | Concurrent work in one repository conflicts | Catch up, re-test if changed, merge refused if the parent moved; race allowance (LOG 61) | Mitigated for the lock-free form (SP4) |
 | R11 | A long agent step restarts from scratch | Sandbox outlives the worker; durable resume state; hidden reference | Mitigated, with the Spike 3 gap fixed in design |
 | R13 | Run cost unknown | Cost recorded per step | Mitigated (Spike 2) |

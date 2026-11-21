@@ -3,7 +3,7 @@
 Status: design complete 2026-11-01. Version 1 built: milestones M0 to M8 of
 `docs/11-build-plan.md` done by 2026-11-05; the latest handover is
 `docs/build/handover-2026-11-05-v1.md`. Next phase: `docs/12-build-plan-phase-2.md`,
-drafted 2026-11-21; A1, A2, A3, A4 and A5 built 2026-11-21 (A4 awaiting the product owner's live run), A6 next. Started 2026-10-31. This file is the
+drafted 2026-11-21; A1 to A5 built 2026-11-21 and A6 2026-11-22, so alpha is complete apart from the product owner's A4 live run; R1 next. Started 2026-10-31. This file is the
 resume point: a new session reads it first, then the status table in section 6
 and the latest handover.
 
@@ -148,7 +148,8 @@ Paths in all design documents are relative to the repository root.
 | A3 (oversight API) | Done 2026-11-21: typed request and response records shared by the API and the CLI, with a generated and checked OpenAPI document; a required reason on answers and aborts, carried with retry causes and summaries to the next agent in a run context; prompts and transcripts indexed, a run's artifacts listed, and each gate linked to what its step consumed; `GET /attention`, `GET /me` and `can_answer` from one answer rule; history on the run page; server-sent change notifications over a `changes` table; templates read; each plan revision recorded and the current one served as data, with `ff run override --change name=@file`; reminders on open waits. Results in `docs/build/a3-results.md`; LOG 388 to 436, unreviewed (LOG 391, 400, 401 and 434 flagged for the product owner) |
 | A4 (console first slice) | Built 2026-11-21, **awaiting the product owner's live run** (`docs/build/a4-results.md`, "Live run"): a TypeScript console (Preact, Vite) built by `dotnet build`, embedded in the API host as hashed assets with a Trusted Types policy, replacing the M7 page; client types generated from the OpenAPI document; Node in CI and the host image; `api.auth.mode: none` on loopback only, refusing cross-site requests, or the pasted token; Needs me, the run page (open and closed waits, history, children, timeline, current plan), the decision form with a required reason and every recovery, steering, artifacts and transcripts, abort, start a run; live updates over `/events`; Playwright browser tests in the default category against the API over local stores and a scripted engine. Results in `docs/build/a4-results.md`; LOG 452 to 471, unreviewed (LOG 453, 461 and 470 flagged for the product owner) |
 | A5 (sandboxes and runtimes) | Done 2026-11-21: sandboxes made from the repository's `environment.image`, bounded by the sandbox's `allowed_images`, with the base sandbox image's contract in `docs/06`; an agent runtime base class with hooks read by the step's runtime, a runtime contract suite both built-in runtimes pass, and `model_access` per runtime instance; `engine_tools` and `api.base_url` removed and refused; a configuration fault's hint supplied by the failing provider. Results in `docs/build/a5-results.md`; LOG 440 to 451, unreviewed (LOG 441, 442 and 444 flagged for the product owner) |
-| A6 (documents match the code) | **Next** |
+| A6 (documents match the code) | Done 2026-11-22: every owning document read against the code by four audits; about 120 mismatches fixed, each unbuilt mechanism marked planned with its milestone or removed and listed as a follow-up; library `inputs` removed from `docs/03` (LOG 434); `artifact.import`'s unread `record` input dropped and its needs corrected. Results in `docs/build/a6-results.md`; LOG 472 to 486, unreviewed (LOG 472, 473, 474 and 483 flagged for the product owner). **Alpha is complete** apart from the product owner's A4 live run |
+| R1 (extension points) | **Next** |
 
 ## 7. How to resume
 

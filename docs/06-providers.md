@@ -17,23 +17,23 @@ Signatures are C#, abbreviated: every method is async, takes a
 
 | Rule | Detail |
 |---|---|
-| Base interface | `Describe()` returns name, version, typed capability records, capabilities required from other providers, and a configuration schema. `CheckAsync()` is called at startup and run start |
-| Capabilities | Typed records, never strings. A caller checks before use and fails with a named missing capability. A run checks every capability its plan needs when it starts (P9) |
+| Base interface | `Describe()` returns type, name, version and the typed capability record. Each provider's factory lists the settings it accepts; any other key is refused when the providers are composed. `CheckAsync()` is called at startup and run start |
+| Capabilities | Typed records, never strings. A run checks every capability its plan needs when it starts (P9). Flags are otherwise not read before a call: planned (`docs/12` R1, F16) |
 | Short and bounded | No method waits on human or external time. Long work is started and polled; waiting is the engine's (`docs/02` section 2.3) |
 | Classified results | Expected failures are `ProviderError` values with a class and a reason (section 1.1). Exceptions are programming errors. The engine's decorator records one on the call's span and re-throws it, so the caller decides: an engine action stops for a person (an intervention), and only network faults are retried (LOG 303) |
 | Every success mapped | Every documented success response of the remote system maps to a result, including empty ones such as GitHub's 204 for a merge with nothing to merge. An unmapped success is `unexpected_response`, a **work** error, so it is never retried forever (Spike 3, `archive/docs/18` section 4) |
-| Idempotent creates | A create method takes an idempotency key and writes a hidden marker into the object. On `timeout` the caller finds by marker and adopts before retrying, because the object may already exist |
-| Credentials | Only from the credential broker (section 3.13). No provider reads a credential from configuration |
+| Idempotent creates | A create method takes an idempotency key and writes a hidden marker into the object. On a retry the provider finds an object carrying the key's marker and adopts it rather than create another, because a timed-out create may already have happened |
+| Credentials | From the credential broker (section 3.13) where one serves the system (GitHub), else from the secrets provider by a `*_ref` setting. No configuration holds a credential's value (F2) |
 | Transport-neutral | Plain serialisable records only; no third-party SDK types. A remote provider adapter (gRPC or HTTP, for providers in other languages) stays possible; it is not built in version 1 |
 | Observability | The engine's decorator adds spans, timeouts and classification; providers add attributes only |
-| Contract tests | One suite per interface, shipped with the engine. It includes every documented success response. A provider conforms only if it passes |
+| Contract tests | One suite per interface, except secrets and the credential broker, shipped with the engine. It includes every documented success response. A provider conforms only if it passes |
 
 ### 1.1 Error classification
 
 | Reason | Class | Retry | Meaning |
 |---|---|---|---|
 | `unreachable`, `server_error`, `internal_error` | Infrastructure | Yes, with backoff | The remote or the network failed; the work did not happen |
-| `timeout` | Infrastructure | Yes | The work **may** have happened: creates find by marker first |
+| `timeout` | Infrastructure | Yes | The work **may** have happened: a create adopts the object carrying its marker |
 | `rate_limited` | Infrastructure | Yes, honouring `retry_after` | — |
 | `unauthenticated`, `forbidden` | Infrastructure | Once, by the provider, after about 2 s, with a freshly issued credential; then the engine stops for a person: an action, a `clean_up` or the agent step raises an intervention naming the configuration fault, and run start refuses the start (LOG 147). What the person is told to check comes from the provider that failed: the GitHub providers name the App's key, installation and permissions, Jira its secret, Slack its bot token; a provider that gives no hint gets a neutral one naming no system (L10, LOG 451) | Almost always configuration |
 | `not_found`, `conflict`, `validation_failed`, `rejected` | Work | No | The remote answered; the step maps it to an outcome or an intervention. A permission the provider's identity lacks (GitHub's 403 "Resource not accessible by integration") is `rejected`, named a configuration fault: it does not heal, so it stops for a person at once (LOG 119) |
@@ -48,13 +48,13 @@ section 1).
 
 ### 1.2 Default timeouts
 
-| Call | Default | Heartbeat |
-|---|---|---|
-| Metadata read | 15 s | No |
-| Write | 30 s | No |
-| Sandbox create or dispose | 5 min | Yes |
-| Command in a sandbox | Set by the step | Yes |
-| Artifact put or get | 5 min | Yes, for large payloads |
+The engine's decorator sets a timeout per call by provider type (LOG 304):
+
+| Provider types | Timeout |
+|---|---|
+| Tracker, code host, notifications, findings source, secrets, credential broker, record store | 30 s |
+| VCS, CI, artifact store | 5 min |
+| Sandbox, agent runtime, session surface, validator | None: the step or heartbeats bound them |
 
 ---
 
@@ -62,9 +62,9 @@ section 1).
 
 | Change | Why |
 |---|---|
-| The review provider is replaced by a **findings source** provider: an external reviewer that returns findings (an AI review on a pull request, SonarCloud, a SARIF file). The standard reviewer is an agent step (RW5) | One way to run an agent |
+| The review provider is replaced by a **findings source** provider: an external reviewer that returns findings (an AI review on a pull request). The standard reviewer is an agent step (RW5) | One way to run an agent |
 | New **validator** provider | The plug point for deterministic cross-artifact checks (RW7) |
-| New **toolset** provider | External MCP servers for agents, proxied by the engine (from FF) |
+| New **toolset** provider | External MCP servers for agents, proxied by the engine (from FF). Not in version 1 (section 5) |
 | CI provider gains `HasCiAsync` | `ci.checks` must tell "no CI" from "not started" without GitHub-specific logic in the step (`docs/04` section 13). It replaced `GetExpectedRunsAsync`, which predicted the runs from workflow triggers (LOG 147) |
 | Code host loses `CreateBranchAsync` | Work branches are created by a VCS push (`docs/04` section 7) |
 | Tracker statuses are mapped from the library's status names in provider configuration | Templates name statuses abstractly (`docs/03` section 2.5) |
@@ -78,9 +78,9 @@ section 1).
 | 3.1 | Sandbox | Agent steps, `test.run`, `test.integration`, `analysis.run` |
 | 3.2 | Agent runtime | Agent steps |
 | 3.3 | VCS | The engine's pushes, catch-up and merges |
-| 3.4 | Code host | Pull requests, checks, protection, merge queue, comments |
+| 3.4 | Code host | Pull requests, checks, protection, comments |
 | 3.5 | CI | Tiers delegated to CI, `ci.checks` |
-| 3.6 | Tracker | `tracker.update`, declarative tracker updates, planners' toolsets |
+| 3.6 | Tracker | `tracker.update`, declarative tracker updates |
 | 3.7 | Findings source | `findings.record` |
 | 3.8 | Validator | `artifact.validate` |
 | 3.9 | Toolset | Agent steps, through the engine MCP server |
@@ -91,7 +91,7 @@ section 1).
 
 Temporal and the worker platform are configuration only (`docs/07`).
 
-A `fake` provider of any type only describes itself. Neither it nor a `memory`
+A `fake` provider of any type but the stores and secrets only describes itself. Neither it nor a `memory`
 provider is configured in a production installation: an installation that
 configures one must set `development: true`, as must one that configures the
 `scripted` agent runtime (L4). An action that no handler or configured provider
@@ -281,10 +281,12 @@ interface IVcsProvider : IProvider {
     // The remote, through the engine's own clones (docs/02 section 6)
     Task<..string?>      ResolveAsync(RepoRef repo, string reference);   // null when absent
     Task<..bool>         DescendsFromAsync(RepoRef repo, string revision, string ancestor);
+    Task<..string?>      MergeBaseAsync(RepoRef repo, string a, string b);
     Task<..PushResult>   PushAsync(RepoRef repo, string reference, string revision,
                                    CommitBundle? commits, string? expectedOldRevision);
     // M5
-    Task<..CatchUpResult> CatchUpAsync(RepoRef repo, string parent, string work);
+    Task<..CatchUpResult> CatchUpAsync(RepoRef repo, string parent, string work,
+                                       string expectedWorkRevision, string message);
     Task<..MergeResult>  MergeAsync(RepoRef repo, string testedRevision, string target,
                                     string expectedTargetRevision, bool squash, string message);
 }
@@ -300,22 +302,19 @@ interface IVcsProvider : IProvider {
 
 ```csharp
 record CodeHostCapabilities(bool PullRequest, bool ReviewComments, bool CheckStatus, bool BranchProtection,
-                            bool MergeQueue, bool InboundEvents);
+                            bool MergeQueue, bool InboundEvents);   // MergeQueue not read (docs/12 R1, F16)
 
 interface ICodeHostProvider : IProvider {
+    Task<..string>           GetDefaultBranchAsync(RepoRef repo);
+    Task<..BranchProtection> GetBranchProtectionAsync(RepoRef repo, string branch);
+    Task<..RepoFile?>        ReadFileAsync(RepoRef repo, string path, string reference);
     Task<..PullRequestRef>   OpenPullRequestAsync(RepoRef repo, PullRequestSpec spec, string key);
     Task<..PullRequestRef>   UpdatePullRequestAsync(PullRequestRef pr, PullRequestSpec spec);
     Task<..PullRequestState> GetPullRequestAsync(PullRequestRef pr);   // state, head, approvals, merged by whom
     Task<..Unit>             ClosePullRequestAsync(PullRequestRef pr, string? comment);
     Task<..PullRequestRef>   CreateRevertPullRequestAsync(PullRequestRef pr, string key);
-    Task<..MergeResult>      EnqueueMergeAsync(PullRequestRef pr);
-    Task<..BranchProtection> GetBranchProtectionAsync(RepoRef repo, string branch);
-    Task<..string>           GetDefaultBranchAsync(RepoRef repo);
-    Task<..CheckStatus>      GetCheckStatusAsync(RepoRef repo, string commit);
-    Task<..IReadOnlyList<ReviewThread>> ListReviewThreadsAsync(PullRequestRef pr);
-    Task<..CommentRef>       AddCommentAsync(PullRequestRef pr, ReviewComment comment);
-    Task<..Unit>             ResolveThreadAsync(ReviewThread thread);
-    Task<..FoundObjects>     FindByMarkerAsync(RepoRef repo, string marker);
+    Task<..CheckStatus>      GetCheckStatusAsync(RepoRef repo, string revision);
+    Task<..CommentRef>       AddCommentAsync(PullRequestRef pr, string body, string key);
 }
 ```
 
@@ -329,7 +328,8 @@ interface ICodeHostProvider : IProvider {
 ### 3.5 CI
 
 ```csharp
-record CiCapabilities(bool Trigger, bool ReadLogs, bool Artifacts, bool InboundEvents, bool QueueBuilds);
+record CiCapabilities(bool Trigger, bool ReadLogs, bool Artifacts, bool InboundEvents,
+                      bool QueueBuilds);   // QueueBuilds not read (docs/12 R1, F16)
 
 interface ICiProvider : IProvider {
     Task<..CiRunRef>    TriggerAsync(RepoRef repo, CiJobRef job, string commit);
@@ -351,7 +351,6 @@ interface ICiProvider : IProvider {
   Actions, a workflow file exists), so `ci.checks` knows to wait a while for a
   first check. Which runs must pass comes from the target branch's required
   checks, not from evaluating workflow triggers (LOG 147).
-- `QueueBuilds`: reports results for merge queue builds.
 
 **The CI workflow contract (GitHub Actions; LOG 112, 119).** The provider dispatches a tier's job (its workflow file, from
 the manifest's `ci.job`) on the repository's **default branch**, so the workflow definition and what it does with the
@@ -388,9 +387,6 @@ interface ITrackerProvider : IProvider {
 - Field and status mapping are provider configuration: a library status such as
   `code_review` maps to the tracker's own status name.
 - Transitioning to the current status succeeds.
-- The provider also backs the tracker tools offered to planners through a
-  toolset (section 3.9), with the same identity and a run label on everything
-  created.
 
 ### 3.7 Findings source
 
@@ -404,8 +400,8 @@ interface IFindingsSourceProvider : IProvider {
 }
 ```
 
-- Examples: Copilot review on a pull request (composed with the code host
-  provider), SonarCloud, a SARIF file from CI.
+- Version 1 has one: Copilot review on a pull request (composed with the code
+  host provider).
 - The result is a findings report in the same type an agent reviewer produces,
   so `findings.record` treats both alike.
 - A source that cannot review (not enabled, ignored the request) reports
@@ -527,8 +523,7 @@ interface ISecretsProvider : IProvider {
   (`docs/02` section 7). The numbers are in commit order, so a reader that keeps
   its place misses nothing: SQLite has one writer; Postgres takes a
   transaction-scoped advisory lock before writing the changes, held to the
-  commit, since identity order alone is not commit order. Rows are not pruned
-  until R4.
+  commit, since identity order alone is not commit order. Rows are not pruned.
 - `open_waits` answers across runs: every open wait of a `starting` or
   `running` run, with its run, oldest first, at most 500, for `GET /attention`
   (`docs/02` section 7). It joins waits to runs on the run's status, so a run
@@ -539,7 +534,8 @@ interface ISecretsProvider : IProvider {
   opened and closed between two records is never written (LOG 374), so it never
   appears. Known limit: the 500 are the organisation's oldest open waits, taken
   before `GET /attention` filters them by caller, so with more than 500 open a
-  caller's newer waits drop out of its list; R4 can page by the caller's scope.
+  caller's newer waits drop out of its list; paging by the caller's scope is
+  not in version 1.
 - Secret values are scrubbed at the logging layer.
 
 ### 3.13 Credential broker
@@ -555,8 +551,8 @@ interface ICredentialBroker : IProvider {
 
 | Actor | Gets |
 |---|---|
-| The engine | Push and merge on the code host; tracker writes; CI triggers. Never permission to change branch protection |
-| An agent step | No code host credential (LOG 95): its checkout arrives as a Git bundle with no remote. An agent that must read another repository will need a read-only credential, scoped to it and the run's repositories, for the step's lifetime (F5), in a later milestone. No tracker identity |
+| The engine | Push and merge on the code host; GitHub Issues writes; CI triggers. Never permission to change branch protection |
+| An agent step | No code host credential (LOG 95): its checkout arrives as a Git bundle with no remote. An agent that must read another repository will need a read-only credential, scoped to it and the run's repositories, for the step's lifetime (F5); not in version 1. No tracker identity |
 | A model proxy | The model key. Never the agent (F6). Each agent runtime instance has its own, from its `model_access`, and a step's token selects its instance's (LOG 446). It forwards only `POST v1/messages` and `v1/messages/count_tokens` to its upstream's own scheme, host and port, and refuses anything else before reading the key (LOG 104) |
 
 The broker refuses a request wider than it may grant; it never silently narrows

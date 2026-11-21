@@ -121,4 +121,4 @@ engine needs no change. Start from a copy of `distribution-template`.
 Temporal's frontend in the cluster should accept only the hosts (their pods carry `feature-flow/host: "true"`), as
 `deploy/k3d/services.yaml` does for its services; RDS's security group should accept only the cluster. Sandboxes reach
 neither: their policy excludes every private range. Temporal Cloud is not yet possible: the installation has no keys
-for Temporal's TLS and API key.
+for Temporal's TLS and API key (planned, `docs/12` R3).

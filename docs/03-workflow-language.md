@@ -15,11 +15,12 @@ All keys, and the names of steps, artifacts and library content, are snake_case 
 ## 1. Document shape
 
 A template and a plan are the same document; a plan has its parameters bound
-(`docs/01` section 2).
+(`docs/01` section 2). A plan is never written out: each revision is the
+template loaded again with the run's patches.
 
 ```yaml
 api_version: feature-flow/v1
-kind: template                  # template | plan
+kind: template                  # template | fragment (section 11)
 metadata:
   name: ticket_delivery
   level: ticket                 # the workflow's name for this level
@@ -43,7 +44,7 @@ steps:                          # an ordered list (section 2)
 | Key | Required | Meaning |
 |---|---|---|
 | `api_version` | Yes | The plan schema version. The interpreter and the library are versioned separately |
-| `kind` | Yes | `template` or `plan` |
+| `kind` | Yes | `template`, or `fragment` (section 11) |
 | `metadata.level` | Yes | The level a run of this template is at. Free name |
 | `metadata.branch_pattern` | No | How this run's work branches are named, for example `ff/{{ run.level }}/{{ params.ticket_id }}`. Default `ff/<level>/<run id>` |
 | `parameters` | No | Section 6 |
@@ -71,7 +72,8 @@ its form (`docs/01` section 2.1). A list entry may instead be `parallel`,
 | `outcomes` | Agent, decision | Declared outcomes and their classes (section 3). Actions have fixed outcomes |
 | `routes` | All | Section 4 |
 | `produces`, `consumes` | All | Section 7. A decision produces artifacts only through an interactive session |
-| `verdicts`, `ratifies` | Agent, decision | Section 7.4 |
+| `verdicts` | Agent, decision | Section 7.4 |
+| `ratifies` | Decision | Section 7.4 |
 | `outputs` | All | Small typed values the step publishes for routing (section 5.4) |
 | `limits` | All | `attempts`, `timeout`, `correction_turns`, for agents `questions` (section 2.2), and for `scm.merge` `races` (`docs/04` section 7.3; LOG 61). Each has an engine default, overridable by `defaults.limits` and the step, within organisation ceilings |
 | `repository` | All | The repository the step works on, when the run has several. An expression or a name from the run's repositories. Default: the run's first repository |
@@ -88,9 +90,6 @@ its form (`docs/01` section 2.1). A list entry may instead be `parallel`,
     skills: [std:skills/dotnet_conventions]
     write_access: branch          # optional; may only tighten the role's value
     context: full                 # full | none: whether earlier steps' summaries are shown
-    planning:                     # optional: authority to propose patches (section 10)
-      targets: [self]             # self | parent
-      templates: [std:templates/ticket_delivery]
   with:
     plan_path: { from_artifact: plan }
   outcomes: { done: success, blocked: blocked, needs_replan: blocked }
@@ -102,12 +101,12 @@ its form (`docs/01` section 2.1). A list entry may instead be `parallel`,
 
 | Field | Meaning |
 |---|---|
-| `role` | Library role: write access, tools, runtime capabilities (`docs/01` section 2.2) |
+| `role` | Library role: write access and tools (`docs/01` section 2.2) |
 | `task` | Library task, rendered with `with` (section 6.3) |
 | `skills` | Library skills, mounted for the agent to read on demand. Added to the role's |
 | `write_access` | `none`, `branch` or `repository`. Tightens only |
 | `context` | `full` (default): the agent is given the run's step summaries. `none`: it is not, so a reviewer judges independently (from FF) |
-| `planning` | Lets the agent propose patches to this plan (`self`) or the parent's (`parent`), and names the templates it may start child runs from. `review: required` makes every proposal a patch approval decision; default `auto` (`docs/05` section 6) |
+| `planning` | Loads (`targets`, `templates`, `review`), but gives the agent nothing in version 1: an agent cannot propose a patch (`docs/04` section 6.1). A recovery's re-plan names a step that has it (`docs/01` section 7.2) |
 | `push` | Default `true`. `false`: the agent's commits are not pushed (scratch work) |
 | `on_uncommitted` | `commit` (default) or `fail`: what to do with changes left uncommitted at the end |
 
@@ -321,8 +320,9 @@ parameters:
   epic_contract: { type: artifact, required: false }
 ```
 
-Types: `string`, `number`, `boolean`, `array`, `object`, and `artifact` (a
-reference to an artifact, resolved when consumed).
+Types: `string`, `number`, `boolean`, `array`, `object`, `artifact` (a
+reference to an artifact, resolved when consumed), and `reference` (a library
+reference, section 11).
 
 ### 6.2 Where a value comes from
 
@@ -330,10 +330,9 @@ Lowest precedence first, from FF's input precedence
 (`../feature-factory/docs/design/engine-flexibility.md` item 1):
 
 1. The template's default.
-2. The library manifest's `inputs`, then the organisation's library inputs.
-3. For a child run: the parent's resolved parameters, **for names the child
+2. For a child run: the parent's resolved parameters, **for names the child
    declares**.
-4. The run request, or the `with.parameters` of the `run.child` step that
+3. The run request, or the `with.parameters` of the `run.child` step that
    started the child.
 
 Engine values (`run.*`) cannot be declared as parameters. A reference to an
@@ -384,6 +383,7 @@ consumes:
 |---|---|
 | `name` | The artifact's logical name |
 | `from` | `current` (default), `parent`, `root`, or `{ child: <step id> }` |
+| `type` | Optional: the type the step expects; a producer in this run must declare it or a type `compatible_with` it (section 7.3) |
 | `optional` | The step runs even if the artifact does not exist yet |
 
 Each consumed artifact is pinned at its revision current when the attempt
@@ -476,7 +476,6 @@ repository per ticket).
   action: run.child
   with:
     template: std:templates/ticket_delivery
-    level: ticket
     repositories: ["acme/api"]
     parameters: { ticket_id: "EPIC-101", epic_contract: { expr: "steps.design.artifacts.contract" } }
 ```
@@ -510,20 +509,17 @@ The parent may also consume the child's artifacts (`from: { child: <id> }`).
 
 ### 9.4 A child proposing a change to its parent
 
-A child agent step with `planning.targets: [parent]` may propose a patch to the
-parent's plan, for example "add a ticket for the platform repository". It is
-sent to the parent as a signal while the child **keeps running, or waits** (RW6).
-The parent applies it through the same path as any patch (section 10). Sibling
-branches are untouched. In a `parallel`, the child's branch counts towards the
-join only when the child ends. If the child must wait for the new work, its own
-plan routes to a decision or a `wait.condition` step.
+Not in version 1: an agent cannot propose a patch (`docs/04` section 6.1), so a
+child cannot change its parent's plan. The core would apply a patch a child
+sends through the same path as any patch (section 10), but nothing sends one.
 
 ---
 
 ## 10. Patches
 
 A patch changes a running plan's structure (`docs/01` section 10). Every patch,
-from any source, goes through one function that validates and applies it.
+from any source (in version 1 a person's override, `docs/05` section 5, and
+`plan.expand`), goes through one function that validates and applies it.
 
 ### 10.1 The patch document
 
@@ -532,8 +528,8 @@ api_version: feature-flow/v1
 kind: patch
 metadata:
   run_id: run-1234
-  proposed_by: { type: agent, step_id: plan_tickets }
-  reason: "implementation found a second repository"
+  proposed_by: { type: human }    # agent | human | engine
+  reason: "the platform repository needs a ticket too"
 base_revision: 4
 resume_at: tickets
 changes:
@@ -566,8 +562,8 @@ There is no operation to change a step's role: privilege comes from the role
 | Result | When |
 |---|---|
 | Applied | Valid, and touches nothing protected, or comes from a human with the right role |
-| Pending decision | An agent's patch that touches a protected step (removes it, changes it, changes a route out of it, or leaves it unrun where the run would have run it), or adds a step whose role is outside the organisation's allowed list. A human approves or rejects it (`docs/01` section 7.1). A patch that makes any step unreachable fails check 9, whoever proposes it (LOG 210) |
-| Rejected | Invalid, stale, or it would relax a safety floor. Recorded, never silently dropped. An agent's invalid patch goes back to it for correction turns first |
+| Pending decision | Only an agent's patch is held for a person's approval, and an agent cannot propose one in version 1 (`docs/04` section 6.1). A patch that makes any step unreachable fails check 9, whoever proposes it (LOG 210) |
+| Rejected | Invalid, stale, or it would relax a safety floor. Recorded, never silently dropped |
 
 Validation of a patch runs every load check on the plan as it will be after the
 patch, plus the protection checks above.

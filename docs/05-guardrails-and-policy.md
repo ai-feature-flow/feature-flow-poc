@@ -26,8 +26,8 @@ floors have no setting at all.
 | F2 | **Secrets by reference.** No configuration, template or input may hold a secret value, only a reference to the secrets provider | None |
 | F3 | **Protected content.** An agent cannot change, remove or bypass a protected step, or make it unreachable; such a change becomes a decision for a person (section 6) | None |
 | F4 | **Attempt ceilings.** Allowances stay within the organisation's ceiling per step and per run, checked on every execution of a step, including when a loop re-enters it. A steerer's grants stay within the hard ceiling; an administrator may grant beyond it for one run, audited, so a long run is never stranded by its ceilings | Organisation |
-| F5 | **No push credential for agents.** Agents hold a read-only code host credential, per step. Only the engine pushes and merges. The engine's own identity cannot change branch protection | None |
-| F6 | **Model credentials stay out of the sandbox.** A proxy adds the key, or a per-run key with a spend limit and expiry is used (`docs/07` section 2, `model_access`) | Installation chooses the mode |
+| F5 | **No push credential for agents.** Agents hold no code host credential: the checkout arrives as a bundle with no remote (LOG 95). Only the engine pushes and merges. The engine's own identity cannot change branch protection | None |
+| F6 | **Model credentials stay out of the sandbox.** A model proxy adds the key; the agent never holds it (`docs/07` section 2, `model_access`) | Installation configures the proxy |
 | F7 | **Evidence integrity.** Evidence artifact types are produced only by engine actions (`docs/01` section 5.2), and not by `artifact.import`, which brings in files the engine did not make (`docs/04` section 10.1) | None |
 | F8 | **Record integrity.** Every decision and override records the actor from authentication, never from the request. An answer that requires a person cannot be given by policy, automation or an agent | None |
 | F9 | **Run status integrity.** A run reports `completed` only by reaching `{ end: completed }`. A run that stops without reaching any `end` route is `incomplete` | None |
@@ -77,16 +77,23 @@ limit. Validation reports where a request was capped.
 | Attempts | `limits.attempts` | Ceilings per step form and per run (F4) |
 | Merge races | `limits.races` on `scm.merge` | None of its own: the per-step attempts ceiling (LOG 340). A `limits.races` above it is refused; a merge step that sets none, itself or in its document's `defaults.limits`, gets the installation's default held to the ceiling (LOG 348) |
 | Work items | `budget.max_work_items` on the root template | Ceiling (F11), always locked (LOG 187) |
-| Review of agent patches | `planning.review` | `planning.require_review`, per template name pattern |
-| Agent roles | The roles a template's steps name | `planning.allowed_roles` for steps an agent adds (section 6) |
-| Toolsets | The role's toolsets | None: toolsets are not in version 1, and their settings (`providers.toolset`, a role's `toolsets`, a library's `requires.toolsets`, `policy.toolsets`) are refused at load (`docs/06` section 3.9; LOG 270, 339) |
+| Review of agent patches | `planning.review` | `planning.require_review`, per template name pattern. No agent patch in version 1 (section 6) |
+| Agent roles | The roles a template's steps name | `planning.allowed_roles` for steps an agent adds. No agent patch in version 1 (section 6) |
+| Toolsets | The role's toolsets | None: toolsets are not in version 1 (`docs/06` section 3.9) |
 
-A request that exceeds its cap is not silently lowered. Where the cap is an
-organisation **default** (`locked: false`), the request applies; where it is
-**locked**, a template that exceeds it fails validation with the setting's name.
-Run start checks every step against the locked caps, and a patch the steps it
-adds or changes, by the same function (check 22), so a patch cannot reach a
-value a template could not start with (F1). The caps are carried in the run's
+A request that exceeds its cap is not silently lowered:
+
+| Cap | Unlocked (`locked: false`) | Locked |
+|---|---|---|
+| Merge floors (`merge.require_checks`, `merge.require_tested`) | The step's request overrides the default | A step that asks otherwise fails validation with the setting's name |
+| An approval rule's `auto: false` | A template's `auto` has no effect: a person answers, and run start warns | The template is refused (check 22; LOG 88) |
+| Attempt and work-item ceilings | Always enforced | Always enforced |
+| `planning.require_review` | Its `value` applies; its `locked` is read nowhere | As unlocked |
+
+Run start checks every step against the per-step caps (`StepCaps`), and a patch
+the steps it adds or changes, by the same function (check 22), so a patch cannot
+reach an attempt, race or merge-floor value a template could not start with
+(F1). A patch's `auto` under a rule that disallows it has no effect. The caps are carried in the run's
 state for this (section 8); the step itself does not check them again, since
 no step can hold a value the two checks refused (LOG 347).
 
@@ -177,7 +184,7 @@ decision_types:
 A person may change a running run in any way the organisation's roles allow
 (P3). Every override goes through the API, is authorised by role, and is
 recorded with the actor, reason and the change. An answer (but an agent's
-question's) and an abort are refused without a reason too (F5), and the answer
+question's) and an abort are refused without a reason too, and the answer
 record keeps it beside the choice (`docs/04` section 4.1).
 
 | Override | Key | Effect | Default role |
@@ -214,15 +221,19 @@ literal `@` (LOG 406).
 
 The organisation may change the default role for any override by key, in
 `policy.overrides` (`docs/07` section 3). A `_protected` suffix (`skip_protected`,
-`amend_protected`) sets the role for the same override on protected content.
+`amend_protected`, `override_library_protected`) sets the role for the same
+override on protected content; `grant_attempts_beyond` sets who may grant beyond
+the hard ceiling.
 
 ---
 
 ## 6. Agent proposals
 
-An agent may propose a patch (planning authority, `docs/04` section 6.1) or a
-library override. The proposal becomes a **patch approval** decision, rather
-than being applied, when any of these hold:
+An agent cannot propose a patch or a library override in version 1: it has no
+tool to do so (`docs/04` section 6.1). The engine holds the rule for when it
+can (check 29). An agent's proposal would become a **patch approval** decision,
+rather than being applied, when any of these hold; a library override always
+would:
 
 | Condition | Why |
 |---|---|
