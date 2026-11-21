@@ -62,7 +62,7 @@ public class CliAppTests
     {
         var token = Path.GetTempFileName();
         // Nothing listens at this address: a request sent would fail with exit 3, not 2.
-        var (code, _, error) = Run("session", command, "../runs/run-1/abort", "--revision", new string('a', 40), "--api", "http://127.0.0.1:9", "--token-file", token);
+        var (code, _, error) = Run("session", command, "../runs/run-1/abort", "--revision", new string('a', 40), "--reason", "r", "--api", "http://127.0.0.1:9", "--token-file", token);
         File.Delete(token);
 
         Assert.Equal(2, code);

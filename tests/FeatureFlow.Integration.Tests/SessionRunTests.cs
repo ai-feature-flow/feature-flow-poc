@@ -175,7 +175,7 @@ public class SessionRunTests
             Assert.Contains(error_, refusal.InnerException?.Message ?? refusal.Message);
         }
 
-        Assert.Equal("recorded", (await PostAsync(http, $"sessions/{sid}/abandon", new JsonObject()))["result"]!.ToString());
+        Assert.Equal("recorded", (await PostAsync(http, $"sessions/{sid}/abandon", new JsonObject { ["reason"] = "not needed after all" }))["result"]!.ToString());
         var (_, end, _) = h.Cli("wait", id, "--timeout", "60");
         Assert.Equal($"run {id} rejected", end.Trim());
         var record = await GetAsync(http, $"sessions/{sid}");

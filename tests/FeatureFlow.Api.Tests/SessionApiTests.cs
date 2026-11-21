@@ -105,7 +105,7 @@ public sealed class SessionApiTests : IAsyncDisposable
                  {
                      ($"sessions/{Sid}/submit", $$"""{ "revision": "{{Commit}}" }"""),
                      ($"sessions/{Sid}/checks", $$"""{ "step": "check_requirements", "revision": "{{Commit}}" }"""),
-                     ($"sessions/{Sid}/abandon", "{}"),
+                     ($"sessions/{Sid}/abandon", """{ "reason": "not needed" }"""),
                  })
         {
             var (status, text) = await PostAsync(http, path, body);
@@ -147,6 +147,21 @@ public sealed class SessionApiTests : IAsyncDisposable
         Assert.Equal(HttpStatusCode.Conflict, status);
         Assert.Contains("no longer open", text);
         Assert.Equal(HttpStatusCode.NotFound, (await PostAsync(http, "sessions/r1.gate-9/submit", $$"""{ "revision": "{{Commit}}" }""")).Status);
+        Assert.Empty(await AnswersAsync());
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("""{ "reason": "" }""")]
+    public async Task Abandoning_a_session_without_a_reason_is_refused_and_nothing_is_recorded(string body)
+    {
+        var http = Start("approver");
+        await OpenSessionAsync();
+
+        var (status, text) = await PostAsync(http, $"sessions/{Sid}/abandon", body);
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Contains("reason is required", text);
         Assert.Empty(await AnswersAsync());
     }
 }

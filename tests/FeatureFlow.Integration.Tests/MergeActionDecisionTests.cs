@@ -59,7 +59,7 @@ public class MergeActionDecisionTests
         Assert.True(exit == 0, end + error + view.ToJsonString());
         Assert.Equal($"run {id} completed", end.Trim());
         var timeline = Timeline(view);
-        Assert.Contains(timeline, t => t.Kind == "answered" && t.StepId == wait && t.Detail == "approve by tester");
+        Assert.Contains(timeline, t => t.Kind == "answered" && t.StepId == wait && t.Detail == "approve by tester: the integration test");
         Assert.Contains(timeline, t => t.Kind == "agent" && t.Detail.StartsWith("merged ", StringComparison.Ordinal) && t.Detail.Contains("by alice", StringComparison.Ordinal));
         Assert.DoesNotContain(timeline, t => t.Detail.Contains("not through Feature Flow", StringComparison.Ordinal) || t.Detail.Contains("not given through Feature Flow", StringComparison.Ordinal));
         Assert.Empty(await h.WorkflowTaskFailuresAsync(id));

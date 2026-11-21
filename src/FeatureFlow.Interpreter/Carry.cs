@@ -18,17 +18,18 @@ public sealed record CarriedRunInfo(
     string? ParentBranch,
     IReadOnlyDictionary<string, string>? DefaultBranches,
     IReadOnlyDictionary<string, string>? ParentArtifacts,
-    IReadOnlyDictionary<string, string>? RootArtifacts)
+    IReadOnlyDictionary<string, string>? RootArtifacts,
+    string? ParentContext = null)
 {
     public static CarriedRunInfo From(RunInfo run) =>
         new(run.Id, run.Repositories.ToList(),
             new SortedDictionary<string, string>(run.Parameters.ToDictionary(kv => kv.Key, kv => YamlWriter.Write(kv.Value)), StringComparer.Ordinal),
-            run.ParentId, run.TrackerIssue, run.ParentBranch, Sorted(run.DefaultBranches), Sorted(run.ParentArtifacts), Sorted(run.RootArtifacts));
+            run.ParentId, run.TrackerIssue, run.ParentBranch, Sorted(run.DefaultBranches), Sorted(run.ParentArtifacts), Sorted(run.RootArtifacts), run.ParentContext);
 
     public RunInfo ToRunInfo() =>
         new(Id, Repositories.ToList(),
             Parameters.ToDictionary(kv => kv.Key, kv => YamlWriter.Read(kv.Value, $"params.{kv.Key}")),
-            ParentId, TrackerIssue, ParentBranch, DefaultBranches, ParentArtifacts, RootArtifacts);
+            ParentId, TrackerIssue, ParentBranch, DefaultBranches, ParentArtifacts, RootArtifacts, ParentContext);
 
     static SortedDictionary<string, string>? Sorted(IReadOnlyDictionary<string, string>? map) =>
         map is null ? null : new SortedDictionary<string, string>(map.ToDictionary(), StringComparer.Ordinal);
@@ -101,6 +102,9 @@ public sealed record CarriedCore(
 
     /// <summary>The child runs still running (<see cref="RunState.Children"/>). Null when there are none.</summary>
     public IReadOnlyList<ChildRun>? Children { get; init; }
+
+    /// <summary>The run context's entries (<see cref="RunState.Context"/>). Null when there are none.</summary>
+    public IReadOnlyList<ContextEntry>? Context { get; init; }
 }
 
 public sealed partial class RunCore
@@ -153,6 +157,7 @@ public sealed partial class RunCore
             LibraryOverrides = s.LibraryOverrides.Count == 0 ? null : s.LibraryOverrides.ToList(),
             Closed = s.Closed.Count == 0 ? null : s.Closed.ToList(),
             Children = s.Children.Count == 0 ? null : s.Children.ToList(),
+            Context = s.Context.Count == 0 ? null : s.Context.ToList(),
         };
     }
 
@@ -221,6 +226,7 @@ public sealed partial class RunCore
         s.LibraryOverrides.AddRange(carried.LibraryOverrides ?? []);
         s.Closed.AddRange(carried.Closed ?? []);
         s.Children.AddRange(carried.Children ?? []);
+        s.Context.AddRange(carried.Context ?? []);
         return core;
 
         static Execution? Exec(CarriedExecution? e)

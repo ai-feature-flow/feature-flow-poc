@@ -100,7 +100,7 @@ public class SurfacesTests
         Assert.All(answers, a => Assert.Equal("alice", a.Actor));
         Assert.Single(answers, a => a.Result == "recorded");
         var view = await h.ShowAsync(id);
-        Assert.Contains(view["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "answered" && e["detail"]!.ToString().EndsWith("by alice", StringComparison.Ordinal));
+        Assert.Contains(view["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "answered" && e["detail"]!.ToString().EndsWith("by alice: answered with a slack button", StringComparison.Ordinal));
 
         // One thread: the decision starts it; resumed and completed reply in it.
         await PostedAsync(slack, p => p["text"]!.GetValue<string>().Contains($"Run {id} completed", StringComparison.Ordinal));

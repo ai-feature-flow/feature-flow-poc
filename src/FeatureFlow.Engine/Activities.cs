@@ -239,7 +239,8 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
     public static RunInfo RunInfoOf(RunStart start) =>
         new(start.RunId, start.Repositories,
             start.Parameters.ToDictionary(kv => kv.Key, kv => YamlWriter.Read(kv.Value, $"params.{kv.Key}")),
-            start.ParentWorkflowId, start.TrackerIssue, start.ParentBranch, ParentArtifacts: start.ParentArtifacts, RootArtifacts: start.RootArtifacts);
+            start.ParentWorkflowId, start.TrackerIssue, start.ParentBranch, ParentArtifacts: start.ParentArtifacts, RootArtifacts: start.RootArtifacts,
+            ParentContext: start.ParentContext);
 
     // The agent step's activity, RunAgentStep, is the agent worker's: Engine.Agent's AgentActivities (M4).
 

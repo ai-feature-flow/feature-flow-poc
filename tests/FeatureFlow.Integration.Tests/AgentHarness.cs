@@ -349,7 +349,7 @@ public sealed class AgentHarness : IAsyncDisposable
     {
         var output = new StringWriter();
         var error = new StringWriter();
-        var exit = CliApp.Run(["run", .. args, "--api", Api, "--token-file", TokenFile], output, error);
+        var exit = CliApp.Run(["run", .. Harness.WithReason(args), "--api", Api, "--token-file", TokenFile], output, error);
         return (exit, output.ToString(), error.ToString());
     }
 

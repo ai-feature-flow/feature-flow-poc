@@ -4,8 +4,8 @@ using FeatureFlow.Model.Yaml;
 
 namespace FeatureFlow.Testing.Workflows;
 
-/// <summary>What a step does on one visit: an outcome, or an error class first (docs/09 section 4.3).</summary>
-public sealed record Visit(string? Outcome, string? Error = null, int Times = 1);
+/// <summary>What a step does on one visit: an outcome, or an error class first (docs/09 section 4.3); a gate's outcome may carry the person's reason.</summary>
+public sealed record Visit(string? Outcome, string? Error = null, int Times = 1, string? Reason = null);
 
 /// <summary>
 /// A person's run-time override in a test (docs/05 section 5), applied at the run's start as an administrator would:
@@ -70,6 +70,9 @@ public sealed class WorkflowTest
 
     /// <summary>The steps a person's skip ended without running, in order.</summary>
     public List<string>? ExpectSkipped { get; init; }
+
+    /// <summary>Agent step id to execution to the texts its run context must contain when that execution starts (docs/04 section 3.5).</summary>
+    public Dictionary<string, Dictionary<int, List<string>>> ExpectContext { get; } = new(StringComparer.Ordinal);
 }
 
 public static class WorkflowTestReader
@@ -206,6 +209,24 @@ public static class WorkflowTestReader
                 foreach (var (key, _) in eq.Map.Entries)
                     if (eq.Enum(key.Text, QuestionEnds, required: true) is { } how)
                         test.ExpectQuestions[key.Text] = how;
+            if (MapReader.Of(expect.Node("context"), d, "expect.context") is { } ec)
+                foreach (var (key, value) in ec.Map.Entries)
+                {
+                    ec.Node(key.Text);
+                    if (MapReader.Of(value, d, $"expect.context.{key.Text}") is not { } byExecution)
+                        continue;
+                    var expected = test.ExpectContext[key.Text] = [];
+                    foreach (var (number, texts) in byExecution.Map.Entries)
+                    {
+                        byExecution.Node(number.Text);
+                        if (!int.TryParse(number.Text, out var execution) || execution < 1 || texts is not YSeq seq)
+                            byExecution.Error($"expect.context.{key.Text} maps an execution number to the texts its run context contains", number.Location);
+                        else
+                            expected[execution] = seq.Items.Select(i => (i as YScalar)?.Text ?? "").ToList();
+                    }
+
+                    byExecution.Finish();
+                }
             expect.Finish();
         }
 
@@ -287,6 +308,14 @@ public static class WorkflowTestReader
             return new Visit(s.Text);
         if (MapReader.Of(node, d, "a script entry") is not { } m)
             return null;
+        if (m.Has("outcome"))
+        {
+            // A person's answer at a gate, with their reason.
+            var answer = new Visit(m.String("outcome", required: true), Reason: m.String("reason"));
+            m.Finish();
+            return answer;
+        }
+
         var error = m.Enum("error", ErrorClasses, required: true);
         var times = m.Int("times") ?? 1;
         var then = m.String("then");

@@ -45,8 +45,11 @@ public static partial class ApiApp
             var action = body.Action;
             if (wait.Kind == "patch_approval" && action is null && outcome is "approve" or "reject")
                 (action, outcome) = (outcome, null);
+            // An agent's question is answered by its text alone (LOG A3-0e); every other answer is recorded with the person's reason.
+            if (wait.Kind != "question" && ReasonMissing(body.Reason) is { } missing)
+                return missing;
             // F8: the actor is the authenticated caller; the body cannot name one.
-            var args = new AnswerArgs(waitId, caller.Actor, outcome, action, body.StepId, body.CleanUp, body.Attempts, body.Status);
+            var args = new AnswerArgs(waitId, caller.Actor, outcome, action, body.StepId, body.CleanUp, body.Attempts, body.Status, Reason: body.Reason);
             if (body.Artifacts is { } given)
             {
                 // What the person produced, such as a triage of findings (LOG 248), stored and sent by reference on the one answer path.
@@ -99,30 +102,34 @@ public static partial class ApiApp
             {
                 var earlier = (await Records.QueryAsync<AnswerRecord>(Queries.Answers, new Dictionary<string, string> { ["run_id"] = run.RunId }, ct)).Unwrap()
                     .Where(a => a.WaitId == wait.WaitId && a.Result.StartsWith(Pending, StringComparison.Ordinal) && SameWay(a.Answer, args))
-                    .Select(a => a.Actor);
-                var people = earlier.Append(caller.Actor).Distinct(StringComparer.Ordinal).ToList();
+                    .Select(a => (a.Actor, a.Reason));
+                var people = earlier.Append((caller.Actor, args.Reason)).DistinctBy(p => p.Actor, StringComparer.Ordinal).ToList();
                 if (people.Count < minCount)
                 {
                     var progress = $"{people.Count} of {minCount} people have answered this way ({rule.Source})";
                     await Records.AppendAsync(new RecordBatch(Answers: [new AnswerRecord(run.RunId, wait.WaitId, caller.Actor, JsonSerializer.Serialize(args, Stored),
-                        Pending + progress, DateTimeOffset.UtcNow)]), ct);
+                        Pending + progress, DateTimeOffset.UtcNow, args.Reason)]), ct);
                     return Results.Json(new AnswerResponse("recorded: " + progress), Json, statusCode: 202);
                 }
 
-                // Every person who answered is the actor of the delivered answer.
-                args = args with { Actor = string.Join(", ", people) };
+                // Every person who answered is the actor of the delivered answer, and each one's reason is its reason.
+                args = args with
+                {
+                    Actor = string.Join(", ", people.Select(p => p.Actor)),
+                    Reason = args.Reason is null ? null : string.Join("; ", people.Select(p => $"{p.Actor}: {p.Reason}")),
+                };
             }
 
             return await DeliverAnswerAsync(run.RunId, wait.WaitId, caller.Actor, args, ct);
         }
 
-        /// <summary>Whether a recorded answer is the same answer as <paramref name="args"/>, whoever gave it.</summary>
+        /// <summary>Whether a recorded answer is the same answer as <paramref name="args"/>, whoever gave it and whatever their reason.</summary>
         static bool SameWay(string recorded, AnswerArgs args)
         {
             try
             {
                 return JsonSerializer.Deserialize<AnswerArgs>(recorded, Stored) is { } other
-                    && JsonSerializer.Serialize(other with { Actor = "" }, Stored) == JsonSerializer.Serialize(args with { Actor = "" }, Stored);
+                    && JsonSerializer.Serialize(other with { Actor = "", Reason = null }, Stored) == JsonSerializer.Serialize(args with { Actor = "", Reason = null }, Stored);
             }
             catch (JsonException)
             {
@@ -130,20 +137,24 @@ public static partial class ApiApp
             }
         }
 
+        /// <summary>A 400 when a person gives no reason: every answer and abort is recorded with one (docs/05 section 5; F5).</summary>
+        static IResult? ReasonMissing(string? reason) =>
+            string.IsNullOrWhiteSpace(reason) ? Error(400, "reason is required: every answer is recorded with the person's reason (docs/05 section 5)") : null;
+
         async Task<IResult> DeliverAnswerAsync(string runId, string waitId, string recordedActor, AnswerArgs args, CancellationToken ct)
         {
             var answerText = JsonSerializer.Serialize(args, Stored);
-            await Records.AppendAsync(new RecordBatch(Answers: [new AnswerRecord(runId, waitId, recordedActor, answerText, "sent", DateTimeOffset.UtcNow)]), ct);
+            await Records.AppendAsync(new RecordBatch(Answers: [new AnswerRecord(runId, waitId, recordedActor, answerText, "sent", DateTimeOffset.UtcNow, args.Reason)]), ct);
             try
             {
                 var reply = await services.Client.GetWorkflowHandle(runId).ExecuteUpdateAsync<AnswerReply>(RunWorkflowNames.Answer, [args]);
-                await Records.AppendAsync(new RecordBatch(Answers: [new AnswerRecord(runId, waitId, recordedActor, answerText, reply.Result, DateTimeOffset.UtcNow)]), ct);
+                await Records.AppendAsync(new RecordBatch(Answers: [new AnswerRecord(runId, waitId, recordedActor, answerText, reply.Result, DateTimeOffset.UtcNow, args.Reason)]), ct);
                 return Results.Json(new AnswerResponse(reply.Result), Json);
             }
             catch (Exception e) when (e is WorkflowUpdateFailedException or RpcException)
             {
                 var message = e is RpcException ? $"run {runId} has ended or cannot take updates: {e.Message}" : e.InnerException?.Message ?? e.Message;
-                await Records.AppendAsync(new RecordBatch(Answers: [new AnswerRecord(runId, waitId, recordedActor, answerText, "refused: " + message, DateTimeOffset.UtcNow)]), ct);
+                await Records.AppendAsync(new RecordBatch(Answers: [new AnswerRecord(runId, waitId, recordedActor, answerText, "refused: " + message, DateTimeOffset.UtcNow, args.Reason)]), ct);
                 return Error(409, message);
             }
         }
@@ -223,19 +234,21 @@ public static partial class ApiApp
             var (body, malformed) = await BodyAsync<AbortRequest>(context);
             if (body is null)
                 return malformed!;
-            var args = new AbortArgs(caller.Actor, body.Reason ?? "no reason given", body.ClosePullRequests);
+            if (ReasonMissing(body.Reason) is { } missing)
+                return missing;
+            var args = new AbortArgs(caller.Actor, body.Reason!, body.ClosePullRequests);
             var text = args.ClosePullRequests ? args.Reason + " (close pull requests)" : args.Reason;
-            await Records.AppendAsync(new RecordBatch(Answers: [new AnswerRecord(id, "abort", caller.Actor, text, "sent", DateTimeOffset.UtcNow)]), context.RequestAborted);
+            await Records.AppendAsync(new RecordBatch(Answers: [new AnswerRecord(id, "abort", caller.Actor, text, "sent", DateTimeOffset.UtcNow, args.Reason)]), context.RequestAborted);
             try
             {
                 var reply = await services.Client.GetWorkflowHandle(id).ExecuteUpdateAsync<AnswerReply>(RunWorkflowNames.Abort, [args]);
-                await Records.AppendAsync(new RecordBatch(Answers: [new AnswerRecord(id, "abort", caller.Actor, text, reply.Result, DateTimeOffset.UtcNow)]), context.RequestAborted);
+                await Records.AppendAsync(new RecordBatch(Answers: [new AnswerRecord(id, "abort", caller.Actor, text, reply.Result, DateTimeOffset.UtcNow, args.Reason)]), context.RequestAborted);
                 return Results.Json(new AnswerResponse(reply.Result), Json);
             }
             catch (Exception e) when (e is WorkflowUpdateFailedException or RpcException)
             {
                 var message = e is RpcException ? $"run {id} has ended or cannot take updates: {e.Message}" : e.InnerException?.Message ?? e.Message;
-                await Records.AppendAsync(new RecordBatch(Answers: [new AnswerRecord(id, "abort", caller.Actor, text, "refused: " + message, DateTimeOffset.UtcNow)]), context.RequestAborted);
+                await Records.AppendAsync(new RecordBatch(Answers: [new AnswerRecord(id, "abort", caller.Actor, text, "refused: " + message, DateTimeOffset.UtcNow, args.Reason)]), context.RequestAborted);
                 return Error(409, message);
             }
         }

@@ -71,6 +71,10 @@ function waitForm(runId, wait) {
   }
 
   const controls = [];
+  // Every answer but a question's is given with the person's reason (docs/05 section 5).
+  const reason = el("input", { placeholder: "your reason", "aria-label": "reason" });
+  if (wait.kind !== "question") controls.push(reason);
+  const answerWith = body => answer(wait.kind === "question" ? body : Object.assign({ reason: reason.value }, body));
   if (wait.kind === "intervention" || wait.kind === "breakpoint") {
     const action = el("select", { "aria-label": "recovery" }, (wait.choices || []).map(a => el("option", { value: a, text: a })));
     const step = el("input", { placeholder: "step id (go_to, replan)", "aria-label": "step id" });
@@ -78,7 +82,7 @@ function waitForm(runId, wait) {
     const end = el("select", { "aria-label": "end status" }, ["failed", "completed", "partial", "aborted", "incomplete"].map(s => el("option", { value: s, text: s })));
     const cleanUp = el("input", { type: "checkbox", "aria-label": "clean up" });
     controls.push(action, step, attempts, end, el("label", {}, cleanUp, " clean_up"),
-      el("button", { text: "Recover", onclick: () => answer({
+      el("button", { text: "Recover", onclick: () => answerWith({
         action: action.value,
         step_id: step.value || undefined,
         attempts: attempts.value ? Number(attempts.value) : undefined,
@@ -86,7 +90,7 @@ function waitForm(runId, wait) {
         clean_up: cleanUp.checked || undefined,
       }) }));
   } else {
-    for (const choice of wait.choices || []) controls.push(el("button", { text: choice, onclick: () => answer({ outcome: choice }) }));
+    for (const choice of wait.choices || []) controls.push(el("button", { text: choice, onclick: () => answerWith({ outcome: choice }) }));
     if (wait.kind === "question") {
       const text = el("input", { placeholder: "your answer", "aria-label": "answer" });
       controls.push(text, el("button", { text: "Answer", onclick: () => text.value && answer({ outcome: text.value }) }));

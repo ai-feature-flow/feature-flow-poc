@@ -463,7 +463,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             return await reader.ReadToEndAsync(ct);
         }
 
-        /// <summary>The first prompt: the library's reporting preamble, where the step's files are, and the rendered task.</summary>
+        /// <summary>The first prompt: the library's reporting preamble, where the step's files are, the run context, and the rendered task.</summary>
         async Task<string> PromptAsync(bool interrupted)
         {
             var preamble = await PreambleAsync();
@@ -477,6 +477,8 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                 .Append($"- The inputs manifest is `{paths.InputsManifest}`.\n");
             if (interrupted)
                 text.Append("- An earlier attempt of this step was interrupted. Its commits are already in the checkout: continue from them.\n");
+            if (spec.RunContext is { } context)
+                text.Append('\n').Append(context.TrimEnd()).Append('\n');
             text.Append('\n').Append(call.Agent!.TaskText ?? $"Do the work of the {call.What} role.");
             return text.ToString();
         }

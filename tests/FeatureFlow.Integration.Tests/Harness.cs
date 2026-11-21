@@ -210,9 +210,13 @@ public sealed class Harness : IAsyncDisposable
     {
         var output = new StringWriter();
         var error = new StringWriter();
-        var exit = CliApp.Run(["run", .. args, "--api", Api, "--token-file", TokenFile], output, error);
+        var exit = CliApp.Run(["run", .. WithReason(args), "--api", Api, "--token-file", TokenFile], output, error);
         return (exit, output.ToString(), error.ToString());
     }
+
+    /// <summary>A person's answer, recovery or abort is given with a reason (docs/05 section 5); a test that names none gives this one.</summary>
+    public static string[] WithReason(string[] args) =>
+        args is ["answer" or "recover" or "abort", ..] && !args.Contains("--reason") ? [.. args, "--reason", "the integration test"] : args;
 
     public string Start(string template, params string[] args)
     {

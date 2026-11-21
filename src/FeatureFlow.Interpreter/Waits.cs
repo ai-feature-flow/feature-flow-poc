@@ -111,9 +111,9 @@ public sealed partial class RunCore
     }
 
     /// <summary>
-    /// Routes an answer and applies it: the wait closes as answered, with the answer's key and actor, and the timeline says
-    /// who answered. A submission (<see cref="Submits"/>) needs the files the shell imported as <paramref name="imported"/>.
-    /// A duplicate changes nothing.
+    /// Routes an answer and applies it: the wait closes as answered, with the answer's key, actor and reason, the timeline says
+    /// who answered and why, and the run context keeps it for the next agent (docs/04 section 3.5). A submission
+    /// (<see cref="Submits"/>) needs the files the shell imported as <paramref name="imported"/>. A duplicate changes nothing.
     /// </summary>
     public ApplyResult Answer(AnswerArgs a, IReadOnlyDictionary<string, string>? imported = null)
     {
@@ -137,16 +137,24 @@ public sealed partial class RunCore
         }
 
         var wait = State.Waits.First(w => w.Id == a.WaitId);
+        var said = $"{Key(a)} by {a.Actor}{(string.IsNullOrWhiteSpace(a.Reason) ? "" : ": " + a.Reason)}";
+        // A person's answer and their reason go into the run context for the next agent; a question's answer is its agent's alone.
+        var answered = wait.Kind == WaitKind.Question ? null : $"{Describe(wait).Type} at {wait.StepId}: {said}";
+        var execution = Executions(wait.StepId);
         var result = Apply(input);
         if (!result.Accepted)
             return result;
         var at = State.Closed.FindLastIndex(c => c.Id == a.WaitId);
         if (at >= 0)
-            State.Closed[at] = State.Closed[at] with { Key = Key(a), Actor = a.Actor };
-        if (wait.Kind == WaitKind.Question)
+            State.Closed[at] = State.Closed[at] with { Key = Key(a), Actor = a.Actor, Reason = a.Reason };
+        if (answered is null)
             Trace("question_answered", wait.StepId, $"{a.WaitId} by {a.Actor}");
         else
-            Trace("answered", a.WaitId, $"{Key(a)} by {a.Actor}");
+        {
+            Trace("answered", a.WaitId, said);
+            AddContext(ContextKinds.Answer, wait.StepId, execution, answered);
+        }
+
         return result;
     }
 

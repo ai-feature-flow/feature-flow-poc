@@ -63,7 +63,8 @@ public sealed class AgentManifestTests : IAsyncDisposable
     }
 
     async Task<StepOutcome> RunAsync(IReadOnlyDictionary<string, string> edits, bool codeHost = true, string step = "implement", string branch = Branch,
-        ITrackerProvider? tracker = null, string? trackerIssue = null, Action<SandboxHandle>? atStart = null, bool dryRun = false, string? roleRuntime = null)
+        ITrackerProvider? tracker = null, string? trackerIssue = null, Action<SandboxHandle>? atStart = null, bool dryRun = false, string? roleRuntime = null,
+        string? runContext = null)
     {
         var client = Path.Combine(folder, "ff-sandbox");
         await File.WriteAllTextAsync(client, "a stand-in for the sandbox client", TestContext.Current.CancellationToken);
@@ -93,7 +94,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
         var contract = new StepContract([new OutcomeSpec("implemented", "success")], new Dictionary<string, string> { ["commits"] = "number" }, [],
             new Dictionary<string, string> { ["commits"] = "0" });
         var spec = new AgentStepSpec("write", ["read", "edit"], null, null, [], 2, 0, TimeSpan.FromHours(1), true, "commit", "ticket",
-            new Dictionary<string, string> { [repo.FullName] = branch }, new Dictionary<string, string>(), new Dictionary<string, string>(), "wf", "lock", trackerIssue, Runtime: roleRuntime);
+            new Dictionary<string, string> { [repo.FullName] = branch }, new Dictionary<string, string>(), new Dictionary<string, string>(), "wf", "lock", trackerIssue, Runtime: roleRuntime, RunContext: runContext);
         var call = new StepCall(new StepIdentity("run-1", "ticket_delivery", step, 1, $"run-1/{step}/1"), "agent", "std:roles/implementer",
             new Dictionary<string, string>(), contract, dryRun, TimeSpan.FromMinutes(5), spec);
         return await new ActivityEnvironment().RunAsync(() => activities.RunAgentStepAsync(call));
@@ -220,6 +221,22 @@ public sealed class AgentManifestTests : IAsyncDisposable
     }
 
     bool realStarted;
+
+    [Fact]
+    public async Task The_run_context_is_written_into_the_stored_prompt_before_the_task()
+    {
+        const string context = "## Run context\n\n- ticket.spec_approval at approve_spec: rejected by ann: requirements omit the audit log\n";
+
+        var outcome = await RunAsync(new Dictionary<string, string>(), runContext: context);
+
+        Assert.Equal(StepOutcome.Reported, outcome.Kind);
+        var reference = Assert.Single(outcome.Events!, e => e.StartsWith("prompt of session 1: ", StringComparison.Ordinal))["prompt of session 1: ".Length..];
+        await using var stream = (await store.GetAsync(new ArtifactRef(reference), TestContext.Current.CancellationToken)).Unwrap();
+        var prompt = await new StreamReader(stream).ReadToEndAsync(TestContext.Current.CancellationToken);
+        Assert.Contains(context.TrimEnd(), prompt, StringComparison.Ordinal);
+        Assert.True(prompt.IndexOf("## This step", StringComparison.Ordinal) < prompt.IndexOf("## Run context", StringComparison.Ordinal));
+        Assert.EndsWith("Do the work of the std:roles/implementer role.", prompt, StringComparison.Ordinal);
+    }
 
     public ValueTask DisposeAsync()
     {
