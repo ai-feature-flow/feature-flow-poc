@@ -140,7 +140,7 @@ public sealed record ParentPatchSignal(string ChildWorkflowId, string ProposerSt
 
 /// <summary>
 /// A hand-over: the run's state when it continued-as-new, after draining (SP1's record): how many waits it interrupted to
-/// hand over (LOG 139), and what arrived or started while it drained (LOG A2-0i).
+/// hand over (LOG 139), and what arrived or started while it drained (LOG 365).
 /// </summary>
 public sealed record HandOver(int Run, long HistoryEvents, int InFlightActivities, int RunningChildren, int OpenWaits, int PendingChildEnds, int InterruptedWaits,
     int ActivitiesStartedWhileDraining, int ChildEndsWhileDraining, int AnswersWhileDraining);

@@ -59,7 +59,7 @@ other documents cite them.
 | 28 | Patch: the result passes every load check | Patch | Yes |
 | 29 | Patch: protected content touched, or a role outside the allowed list | Patch | **Pending decision** (`docs/05` section 6) |
 | 30 | Patch: relaxes a safety floor | Patch | **Rejected** |
-| 31 | Step inputs satisfy the action's input schema (`docs/04` section 2): every `with` key is an input of the action, and a value has the input's kind and allowed values. Literals are checked at load, expressions when evaluated at step start (LOG A2-0c) | Load, Step start | Yes |
+| 31 | Step inputs satisfy the action's input schema (`docs/04` section 2): every `with` key is an input of the action, and a value has the input's kind and allowed values. Literals are checked at load, expressions when evaluated at step start (LOG 359) | Load, Step start | Yes |
 | 32 | Consumed artifacts exist and validate | Step start | Yes |
 | 33 | Every `tier_tags` tag matches a tier in the manifest read at this step | Step start | Yes |
 | 34 | Unused parameter | Load | No |
@@ -175,7 +175,7 @@ expect:
 | `expand` | LOG 75: the items each `plan.expand` step reads |
 | `expect.executions`, `expect.escalated`, `expect.clean_up` | LOG 75: how many times a step ran; the steps with an open intervention when the run settles; the steps a `clean_up` route reset the branch for |
 | `overrides`, `answers`, `expect.skipped` | A person's steering (M7): `breakpoint`, `skip` (with `outcome`) or `grant_attempts` on a step, made at the run's start as an administrator; answers to the breakpoints, interventions and patch approvals that open at a step, in order (`continue`, `retry`, `approve`, `reject`, `{ go_to: <step> }`, `{ grant_attempts: n }`, `{ end: <status> }`); a patch approval opens at the step that proposed the patch; the steps a skip ended without running |
-| `questions`, `expect.questions` | An agent's questions (`docs/04` section 3.4), by step id, in order: each `ask` (with optional `options`, `id`, default `<step>-q<n>`, and `visit`, default 1) is held while that visit runs, then answered (`answer: <text>`), timed out (`timeout: true`), or with neither left to close when the step ends; how each closed, by id: `answered`, `timed_out` or `step_ended` (LOG A2-8b4). Only a question has a deadline: gates, breakpoints, interventions and patch approvals wait until answered. The `merge_action` gate an action raises while it runs is not scripted |
+| `questions`, `expect.questions` | An agent's questions (`docs/04` section 3.4), by step id, in order: each `ask` (with optional `options`, `id`, default `<step>-q<n>`, and `visit`, default 1) is held while that visit runs, then answered (`answer: <text>`), timed out (`timeout: true`), or with neither left to close when the step ends; how each closed, by id: `answered`, `timed_out` or `step_ended` (LOG 386). Only a question has a deadline: gates, breakpoints, interventions and patch approvals wait until answered. The `merge_action` gate an action raises while it runs is not scripted |
 
 LOG 75: a list's last entry applies to every later visit; a
 `findings.<name>` list gives one value per route evaluation that reads the

@@ -14,7 +14,7 @@ namespace FeatureFlow.Architecture.Tests;
 /// holds no routing decision the core can make (review F8). Two rules, each of which fails on a shell that decides for itself:
 /// no routing vocabulary in the shell's source, with the core read only through a listed set of its members and its state
 /// never touched; and no routing state in the shell's fields. The first is a check of names, not a proof: a decision written
-/// in names the rule does not know passes it (LOG A2-8a2).
+/// in names the rule does not know passes it (LOG 382).
 /// </summary>
 public class ShellRuleTests
 {
@@ -117,9 +117,9 @@ public class ShellRuleTests
         ["dirty"] = "the loop's wake condition",
         ["inFlightActivities"] = "drain: activities the hand-over waits for",
         ["interruptedThisRun"] = "drain: waits this run interrupted, for its hand-over record",
-        ["activitiesStartedWhileDraining"] = "drain: counted for this run's hand-over record (LOG A2-0i)",
-        ["childEndsWhileDraining"] = "drain: counted for this run's hand-over record (LOG A2-0i)",
-        ["answersWhileDraining"] = "drain: counted for this run's hand-over record (LOG A2-0i)",
+        ["activitiesStartedWhileDraining"] = "drain: counted for this run's hand-over record (LOG 365)",
+        ["childEndsWhileDraining"] = "drain: counted for this run's hand-over record (LOG 365)",
+        ["answersWhileDraining"] = "drain: counted for this run's hand-over record (LOG 365)",
         ["stepTokens"] = "cancellation tokens of step activities",
         ["interrupted"] = "steps whose activity this run cancelled, until the cancellation lands",
         ["woken"] = "waits a wake cancelled, until the cancellation lands",

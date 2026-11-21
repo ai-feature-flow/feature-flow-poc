@@ -380,7 +380,7 @@ public class SteeringRunTests
 
     /// <summary>
     /// Whether the drain under way when an override was sent received it: that run's hand-over record, once written, counts what
-    /// arrived while it drained (LOG A2-0i). False when the override reached the next run instead.
+    /// arrived while it drained (LOG 365). False when the override reached the next run instead.
     /// </summary>
     static async Task<bool> ReceivedWhileDrainingAsync(Temporalio.Client.WorkflowHandle handle, int handOvers)
     {

@@ -161,7 +161,7 @@ public class MutationTests
         ["unresolved_reference"] = new(19, "std:roles/implementor does not resolve", "implement names a role that does not exist", [
             new(Ticket, "      role: std:roles/implementer\n", "      role: std:roles/implementor\n")]),
 
-        // Check 31 on what the plan writes (LOG 346, A2-0b, A2-0c): every action's with is checked against its input schema at load.
+        // Check 31 on what the plan writes (LOG 346, 358, 359): every action's with is checked against its input schema at load.
         ["run_child_run_gate"] = new(31, "run.child has no input 'run_gate'", "a run.child step asks for run_gate, dropped by LOG 264", [
             new(Ticket, "  - id: implement\n",
                 "  - id: spawn\n    action: run.child\n    with: { template: std:templates/ticket_delivery, run_gate: manual }\n\n  - id: implement\n")]),

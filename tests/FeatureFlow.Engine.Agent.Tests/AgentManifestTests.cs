@@ -73,7 +73,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
         {
             ["vcs"] = One(new InMemoryVcs(forge)),
             ["sandbox"] = One(sandbox),
-            // A second runtime, which a role may map to; a dry run uses its dry_run instance in its place (LOG A2-8b2).
+            // A second runtime, which a role may map to; a dry run uses its dry_run instance in its place (LOG 384).
             ["agent_runtime"] = new Dictionary<string, IProvider>
             {
                 ["one"] = runtime,

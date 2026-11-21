@@ -202,7 +202,7 @@ sealed partial class Reporter(Func<IArtifactStoreProvider> store)
 /// reads every file of the checkout are recorded, as the hook endpoint would, so std's reviewers do not re-read for ever
 /// (<c>changed_files_unread</c>); and the artifacts the report names are copied into the sandbox's output folder. The
 /// sandbox is the <c>memory</c> one of the runtime's <c>world</c> when that holds it, else the installation's default
-/// sandbox provider's (LOG A2-3b3a). With no sandbox (no step paths) the report keeps its artifact store references.
+/// sandbox provider's (LOG 371). With no sandbox (no step paths) the report keeps its artifact store references.
 /// </summary>
 sealed class SandboxActing(InMemoryForge forge, MemorySandbox memory, Func<ISandboxProvider?> installed, Func<IArtifactStoreProvider> store,
     Func<IRecordStoreProvider?> records, IReadOnlySet<string> noEdits)

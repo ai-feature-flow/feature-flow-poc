@@ -184,7 +184,7 @@ override is idempotent by the id the API gave it, so the same override again
 succeeds with its first result and the same id with another key is refused as a
 conflict; then the key's arguments, the protected-content variants and the run's
 own checks decide whether it applies. The update's validator and handler route
-it with the same function, so they refuse the same overrides (LOG A2-8a1).
+it with the same function, so they refuse the same overrides (LOG 383).
 
 The organisation may change the default role for any override by key, in
 `policy.overrides` (`docs/07` section 3). A `_protected` suffix (`skip_protected`,

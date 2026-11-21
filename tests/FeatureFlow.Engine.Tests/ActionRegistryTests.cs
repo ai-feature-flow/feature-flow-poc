@@ -11,7 +11,7 @@ namespace FeatureFlow.Engine.Tests;
 /// <summary>
 /// The action descriptor registry (docs/04 section 2; F10): an action is one registry entry, its descriptor and its handler
 /// together (<see cref="EngineActions.Register"/>), which loading, validation, run start, the core, the shell's step call and
-/// dispatch all read (LOG A2-0a, A2-8b1).
+/// dispatch all read (LOG 357).
 /// </summary>
 public sealed class ActionRegistryTests
 {

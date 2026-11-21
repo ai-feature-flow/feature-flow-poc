@@ -324,7 +324,7 @@ public class WaitRoutingTests
         var request = Assert.Single(core.Advance().OfType<RequestPatchApproval>());
         var description = core.Describe(Assert.Single(core.State.Waits));
         Assert.Equal(["approve", "reject"], description.Choices);
-        // One name per thing (LOG A2-0d): the kind as recorded is the wait id's prefix and the decision type's suffix.
+        // One name per thing (LOG 360): the kind as recorded is the wait id's prefix and the decision type's suffix.
         Assert.Equal(("patch_approval", "ticket.patch_approval"), (description.Kind, description.Type));
         Assert.StartsWith(description.Kind + "-", request.WaitId, StringComparison.Ordinal);
 

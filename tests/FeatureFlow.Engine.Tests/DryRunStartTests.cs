@@ -11,7 +11,7 @@ namespace FeatureFlow.Engine.Tests;
 
 /// <summary>
 /// A dry run uses each type's <c>dry_run</c> instance and never falls back to the default one, except for the stores,
-/// secrets and credential broker (docs/07 section 5, LOG A2-0f): a type the plan needs with no dry-run instance is
+/// secrets and credential broker (docs/07 section 5, LOG 362): a type the plan needs with no dry-run instance is
 /// absent, so check 21 refuses the run at start.
 /// </summary>
 public sealed class DryRunStartTests : IDisposable

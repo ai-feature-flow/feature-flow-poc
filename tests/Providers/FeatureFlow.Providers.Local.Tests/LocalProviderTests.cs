@@ -171,7 +171,7 @@ public sealed class LocalProviderTests : IDisposable
     public async Task The_scripted_runtime_acts_through_the_sandbox_provider_of_a_sandbox_its_world_does_not_hold()
     {
         // A sandbox provider the runtime's world does not hold stands for the Kubernetes or Docker one: the edit, the
-        // listing of the checkout and the artifacts go through its calls (LOG A2-3b3a).
+        // listing of the checkout and the artifacts go through its calls (LOG 371).
         var store = new FileSystemArtifactStore(Path.Combine(folder, "artifacts"));
         var records = new SqliteRecordStore(Path.Combine(folder, "records.db"));
         var sandboxes = new MemorySandbox(() => store).On(new SandboxRule("^git ls-files", Output: "README.md\nwork/run-1/implement.txt\n"));

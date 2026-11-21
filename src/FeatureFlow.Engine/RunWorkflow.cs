@@ -1040,7 +1040,7 @@ public partial class RunWorkflow
 
     /// <summary>
     /// The one carry-over path (docs/02 section 3): the core's snapshot, which holds everything that routes, and what is
-    /// Temporal's. This run's hand-over record carries what arrived or started while it drained (LOG A2-0i).
+    /// Temporal's. This run's hand-over record carries what arrived or started while it drained (LOG 365).
     /// </summary>
     ContinueAsNewException ContinueAsNew()
     {

@@ -195,7 +195,7 @@ public sealed class PlanValidator
     // ---- Check 31 on what the plan writes ------------------------------------------------------
 
     /// <summary>
-    /// Check 31 at load (LOG A2-0c): every <c>with</c> key is an input of the action, and a literal has its input's kind and
+    /// Check 31 at load (LOG 359): every <c>with</c> key is an input of the action, and a literal has its input's kind and
     /// allowed value. Expressions, artifacts and unbound parameters are left to step start, as is the action's rule across
     /// inputs. Inside <c>plan.expand</c>'s step (<paramref name="items"/>) a <c>$.</c> path is the item's value, checked when
     /// the patch that adds the step is validated.

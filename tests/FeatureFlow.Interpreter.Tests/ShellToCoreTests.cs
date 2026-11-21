@@ -95,7 +95,7 @@ public class ShellToCoreTests
             core.Advance();
         }
 
-        // Read from the descriptors (OpensPullRequest, LOG A2-8b3), not the actions' names.
+        // Read from the descriptors (OpensPullRequest, LOG 385), not the actions' names.
         Assert.Equal(["acme/api#1"], core.ScopeFacts("ship").PullRequests);
         Assert.Equal(["acme/api#1", "acme/docs#2"], core.PullRequestsOpened());
     }

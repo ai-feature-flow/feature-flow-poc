@@ -140,7 +140,7 @@ public class ContinueAsNewTests
         var taskFailures = await h.WorkflowTaskFailuresAsync(id);
         Assert.True(taskFailures.Count == 0, "C5: workflow task failures: " + string.Join("; ", taskFailures));
 
-        // Exercised: without these the checks above prove nothing (SP1's E1 to E3). Each hand-over records what arrived while it drained (LOG A2-0i).
+        // Exercised: without these the checks above prove nothing (SP1's E1 to E3). Each hand-over records what arrived while it drained (LOG 365).
         var withBoth = final.HandOvers.Count(o => o.RunningChildren > 0 && o.OpenWaits > 0);
         var childEnds = final.HandOvers.Sum(o => o.ChildEndsWhileDraining);
         var answersDraining = final.HandOvers.Sum(o => o.AnswersWhileDraining);

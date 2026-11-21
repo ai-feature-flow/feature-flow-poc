@@ -89,10 +89,10 @@ public sealed record ActionDescriptor(
     /// <summary>Whether the action merges: a lost race (<c>base_moved</c>) counts against <c>limits.races</c>, not attempts (LOG 61).</summary>
     public bool CountsRaces { get; init; }
 
-    /// <summary>The pull request the action opens, published as its <c>pull_request</c> output; null for none (LOG A2-8b3).</summary>
+    /// <summary>The pull request the action opens, published as its <c>pull_request</c> output; null for none (LOG 385).</summary>
     public PullRequestKind? OpensPullRequest { get; init; }
 
-    /// <summary>Whether the artifact the action makes is an artifact set, whose members a validator reads (LOG A2-8b3).</summary>
+    /// <summary>Whether the artifact the action makes is an artifact set, whose members a validator reads (LOG 385).</summary>
     public bool MakesSet { get; init; }
 
     /// <summary>A rule across the inputs, given the evaluated values; checked at step start, after each input's own kind.</summary>

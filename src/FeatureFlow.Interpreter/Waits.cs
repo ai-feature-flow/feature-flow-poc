@@ -215,7 +215,7 @@ public sealed partial class RunCore
 
     /// <summary>
     /// A step stops running, however it ended (completed, failed, cannot answer, interrupted, cancelled, or waiting at its
-    /// action's gate): its questions close, since no agent is left to read the answer (LOG A2-0e). Returns whether it was running.
+    /// action's gate): its questions close, since no agent is left to read the answer (LOG 361). Returns whether it was running.
     /// </summary>
     bool LeaveInFlight(string stepId)
     {
@@ -231,7 +231,7 @@ public sealed partial class RunCore
     public IReadOnlyList<ArmTimer> Timers() =>
         State.Waits.Where(w => w.Deadline is not null).Select(w => new ArmTimer(w.Id, w.Deadline!.Value)).ToList();
 
-    // ---- Questions (docs/04 section 3.4; LOG 93 as amended by A2-0h) --------------------------------
+    // ---- Questions (docs/04 section 3.4; LOG 93 as amended by LOG 364) --------------------------------
 
     ApplyResult OpenQuestion(QuestionOpened q)
     {

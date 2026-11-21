@@ -61,7 +61,7 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
 
     /// <summary>
     /// The handler of each action the engine carries out (<see cref="ActionHandling.Engine"/>), bound by the descriptor's name
-    /// (LOG A2-0a). <c>test.integration</c> is <c>test.run</c> across repositories (LOG 120).
+    /// (LOG 357). <c>test.integration</c> is <c>test.run</c> across repositories (LOG 120).
     /// </summary>
     static readonly IReadOnlyDictionary<string, Func<ActionRun, Task<ActionResult>>> Handlers = new Dictionary<string, Func<ActionRun, Task<ActionResult>>>(StringComparer.Ordinal)
     {
@@ -94,7 +94,7 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
 
     /// <summary>
     /// Adds an action as one entry, its descriptor and its handler together, until the scope is disposed (both are
-    /// <see cref="AsyncLocal{T}"/>s, so they do not cross into Temporal's worker threads). For tests (LOG A2-8b1).
+    /// <see cref="AsyncLocal{T}"/>s, so they do not cross into Temporal's worker threads). For tests (LOG 357).
     /// </summary>
     internal static IDisposable Register(ActionDescriptor descriptor, Func<ActionRun, Task<ActionResult>> handler)
     {
