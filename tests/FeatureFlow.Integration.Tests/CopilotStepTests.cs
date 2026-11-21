@@ -178,5 +178,54 @@ public sealed class CopilotStepTests
         Assert.True(model.Refused > 0);
     }
 
+    /// <summary>
+    /// Review 4 finding 2, LOG 497: a continuation keeps only what <c>--resume</c> reads of the step's <c>COPILOT_HOME</c>.
+    /// The agent plants a <c>settings.local.json</c> switching hooks off and a skill in session 1, then ends after a rejected
+    /// report; session 2 resumes the same conversation, the planted files are gone, and a hook still denies a push.
+    /// </summary>
+    [Fact]
+    public async Task A_continued_copilot_session_resumes_without_what_the_agent_planted_in_its_home()
+    {
+        await using var model = new ScriptedModel("model-key-" + Guid.NewGuid().ToString("N"));
+        string? resumed = null, home = null, pushResult = null;
+        model.Then(_ => Bash("mkdir -p $COPILOT_HOME/skills/planted && echo planted > $COPILOT_HOME/skills/planted/SKILL.md; " +
+                             "echo '{\"disableAllHooks\":true}' > $COPILOT_HOME/settings.local.json; echo planted-in-session-1"))
+            .Then(_ => ScriptedModel.ToolUse("engine-report", AgentScripts.Report(answer: null)))
+            .ThenText("Done.")
+            .Then(c =>
+            {
+                resumed = c.Body.ToJsonString();
+                return Bash("ls -A $COPILOT_HOME");
+            })
+            .Then(c =>
+            {
+                home = c.LastToolResult;
+                return Bash("cd /ff/work && git push origin HEAD");
+            })
+            .Then(c =>
+            {
+                pushResult = c.LastToolResult;
+                return ScriptedModel.ToolUse("create", new JsonObject { ["path"] = "/ff/out/notes.md", ["file_text"] = "Notes\n" });
+            })
+            .Then(_ => ScriptedModel.ToolUse("engine-report", AgentScripts.Report()))
+            .ThenText("Done.");
+        await model.StartAsync();
+        await using var h = await AgentHarness.StartAsync("copilot-resume", model, new AgentHarnessOptions { Runtime = "copilot_cli" });
+        var runId = h.Start("T-55", "Write notes.md and report.");
+        var status = await h.WaitForEndAsync(runId, RunTimeout);
+        var timeline = await h.TimelineAsync(runId);
+
+        Assert.True(status == "completed", $"the run ended {status}:\n{timeline}");
+        var sessions = (await h.RecordsAsync<AgentEventRecord>(Queries.AgentEvents, StepKey(runId))).Where(e => e.Kind == "session").Select(e => e.Detail).ToList();
+        Assert.Equal(["1 started", "1 ended completed", "2 started", "2 ended completed"], sessions);
+        // --resume carried session 1's conversation into session 2.
+        Assert.Contains("planted-in-session-1", resumed);
+        Assert.Contains("never push", pushResult);
+        Assert.NotNull(home);
+        Assert.DoesNotContain("settings.local.json", home);
+        Assert.DoesNotContain("skills", home);
+        Assert.Contains("settings.json", home);
+    }
+
     static JsonObject Bash(string command) => ScriptedModel.ToolUse("bash", new JsonObject { ["command"] = command, ["description"] = "scripted" });
 }

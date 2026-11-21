@@ -59,11 +59,16 @@ public sealed partial class ModelProxy(ModelProxyOptions options, HttpMessageHan
     static readonly HashSet<string> GitHubRequests = new(AnthropicRequests, StringComparer.Ordinal) { "GET meta", "GET models", "POST chat/completions" };
 
     /// <summary>The upstream URL for a request, or null when the request is not allowed or would leave the upstream.</summary>
-    public static Uri? Target(Uri upstream, string auth, string method, string path, string query)
+    public static Uri? Target(Uri upstream, string auth, string method, string path, string query) =>
+        Allowed(auth).Contains($"{method} {path}") ? Within(upstream, path + (query.StartsWith('?') && !query.Contains('#') ? query : "")) : null;
+
+    /// <summary>
+    /// <paramref name="relative"/> resolved against the upstream, or null when it would leave the upstream's scheme, host or
+    /// port. Today's allowed requests are relative literals, which cannot; this guards a future entry that is not one.
+    /// </summary>
+    public static Uri? Within(Uri upstream, string relative)
     {
-        if (!Allowed(auth).Contains($"{method} {path}"))
-            return null;
-        var target = new Uri(upstream, path + (query.StartsWith('?') && !query.Contains('#') ? query : ""));
+        var target = new Uri(upstream, relative);
         return target.Scheme == upstream.Scheme && target.Host == upstream.Host && target.Port == upstream.Port ? target : null;
     }
 

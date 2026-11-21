@@ -17,7 +17,16 @@ namespace FeatureFlow.Live.Tests;
 public sealed class LiveCopilotTests
 {
     static readonly TimeSpan RunTimeout = TimeSpan.FromMinutes(8);
-    static readonly AgentHarnessOptions Live = new() { Live = true, Runtime = "copilot_cli", CommitInterval = TimeSpan.FromSeconds(10) };
+    internal static readonly AgentHarnessOptions Live = new() { Live = true, Runtime = "copilot_cli", CommitInterval = TimeSpan.FromSeconds(10) };
+
+    /// <summary>
+    /// N1's model address: nothing listens there, so the connection is refused before TLS. https, as <c>auth: github</c>
+    /// needs (LOG 496), or composition refuses the host before the run starts.
+    /// </summary>
+    internal static readonly AgentHarnessOptions Unreachable = Live with { ModelUpstream = "https://127.0.0.1:9" };
+
+    /// <summary>N2's key, a token GitHub refuses.</summary>
+    internal static readonly AgentHarnessOptions Refused = Live with { ModelKey = "github_pat_ffLiveN2NotAValidToken" };
 
     static string Ticket(string name) => $"LIVE-copilot-{name}-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}";
 
@@ -63,10 +72,11 @@ public sealed class LiveCopilotTests
 
     /// <summary>
     /// What the agent records of its sandbox: its shell's environment, every process's it can read (the CLI's own,
-    /// with the step token), and every file under its home and Copilot's home. Errors are discarded, so a file it cannot
-    /// read does not stop the rest.
+    /// with the step token), the size of its shell's startup files (the engine's, empty: DR19), and every file under its
+    /// home and Copilot's home. Errors are discarded, so a file it cannot read does not stop the rest.
     /// </summary>
     const string Dump = "{ env | sort; echo '--- processes'; for f in /proc/[0-9]*/environ; do tr '\\0' '\\n' < \"$f\"; done | sort -u; " +
+                        "echo '--- startup bytes'; cat \"$HOME/.profile\" \"$HOME/.bashrc\" \"$HOME/.bash_profile\" \"$HOME/.zshenv\" \"$HOME/.zshrc\" | wc -c; " +
                         "echo '--- home'; find \"$HOME\" /ff/copilot -type f -size -4M -exec cat {} +; echo '--- end'; } > /ff/out/notes.md 2>/dev/null";
 
     /// <summary>
@@ -96,9 +106,11 @@ public sealed class LiveCopilotTests
             var transcript = await h.ArtifactTextAsync(AgentScripts.Reference(timeline, "transcript of session 1: "));
             var commits = await h.RemoteChangesAsync(branch);
             Assert.Contains($"Add {ticket} note", commits);
-            // The dump ran to its end, so the checks below read the agent's real view, not an empty file.
+            // The dump ran to its end, in the CLI's own shell, so the checks below read the agent's real view, not an empty file.
             Assert.Contains("HOME=/ff/home", notes);
+            Assert.Contains("COPILOT_AGENT_SESSION_ID=", notes);
             Assert.Contains("--- processes", notes);
+            Assert.Contains("--- startup bytes\n0\n", notes);
             Assert.Contains("--- end", notes);
             var lines = notes.Split('\n');
             foreach (var name in new[] { "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "COPILOT_PROVIDER_API_KEY", "GH_TOKEN", "GITHUB_TOKEN", AgentHarness.CopilotKey })
@@ -108,6 +120,7 @@ public sealed class LiveCopilotTests
             Assert.True(holding.Count == 0, "the GitHub token is in: " + string.Join(", ", holding));
 
             var model = (await h.RecordsAsync<AgentEventRecord>(Queries.AgentEvents, AgentScripts.Key(runId))).Where(e => e.Kind == "model").ToList();
+            // To tighten after the first live run, once the requests the CLI makes are known: every POST 200, and GET meta and models 200.
             Assert.Contains(model, e => e.Detail.StartsWith("POST ", StringComparison.Ordinal) && e.Detail.Contains(" 200 ", StringComparison.Ordinal));
             Log($"copilot C1: run {runId}; branch at {final![..10]}; the key is absent from the environment, processes, homes, transcript and commits; " +
                 $"the CLI's own environment was {(notes.Contains("COPILOT_GITHUB_TOKEN=ghs_", StringComparison.Ordinal) ? "" : "not ")}readable");
@@ -122,7 +135,7 @@ public sealed class LiveCopilotTests
     [Fact]
     public async Task With_the_model_unreachable_the_real_copilot_step_does_not_succeed()
     {
-        await using var h = await AgentHarness.StartAsync("live-copilot-n1", null, Live with { ModelUpstream = "http://127.0.0.1:9" });
+        await using var h = await AgentHarness.StartAsync("live-copilot-n1", null, Unreachable);
         var ticket = Ticket("n1");
         var runId = h.Start(ticket, "Change nothing in the repository. Write notes.md in your output folder saying hello." + Finish);
         try
@@ -153,7 +166,7 @@ public sealed class LiveCopilotTests
     [Fact]
     public async Task With_a_key_github_refuses_the_real_copilot_step_stops_for_a_person()
     {
-        await using var h = await AgentHarness.StartAsync("live-copilot-n2", null, Live with { ModelKey = "github_pat_ffLiveN2NotAValidToken" });
+        await using var h = await AgentHarness.StartAsync("live-copilot-n2", null, Refused);
         var ticket = Ticket("n2");
         var runId = h.Start(ticket, "Change nothing in the repository. Write notes.md in your output folder saying hello." + Finish);
         try

@@ -115,7 +115,14 @@ public sealed record StepOutcome(string Kind, StepReport? Report, string? Reason
 }
 
 /// <summary>The engine's endpoints as the agent in a sandbox reaches them, with the step's token (docs/02 section 4.2).</summary>
-public sealed record EngineEndpoints(IReadOnlyList<string> AgentUrls, string ModelBaseUrl, string StepToken);
+public sealed record EngineEndpoints(IReadOnlyList<string> AgentUrls, string ModelBaseUrl, string StepToken)
+{
+    /// <summary>
+    /// The prefix a runtime may put before the step's token on a model request, for a CLI that accepts only a GitHub token
+    /// (Copilot CLI, LOG 496); the model route drops one.
+    /// </summary>
+    public const string GitHubTokenPrefix = "ghs_";
+}
 
 /// <summary>Where an agent works in its sandbox: the checkout, its output folder, the inputs manifest and its home (DR17, DR19).</summary>
 public sealed record AgentPaths(string Checkout, string Output, string InputsManifest, string Home, string Client)

@@ -285,13 +285,30 @@ public sealed class EndpointTests : IDisposable
     }
 
     /// <summary>
+    /// Review 4 finding 6: an upstream with a path keeps it, and what would resolve off the upstream's scheme, host or port is
+    /// refused. The allow-list's literals never reach that check, so it is tested directly.
+    /// </summary>
+    [Fact]
+    public void An_upstream_s_path_is_kept_and_nothing_resolves_off_its_scheme_host_or_port()
+    {
+        var upstream = new Uri("https://copilot.example/base/");
+        Assert.Equal("https://copilot.example/base/chat/completions?x=1", ModelProxy.Target(upstream, "github", "POST", "chat/completions", "?x=1")!.ToString());
+        Assert.Equal("https://copilot.example/base/v1/messages/count_tokens", ModelProxy.Within(upstream, "v1/messages/count_tokens")!.ToString());
+        foreach (var away in new[] { "//evil.example/v1/messages", "https://evil.example/base/v1/messages", "http://copilot.example/base/v1/messages", "https://copilot.example:8443/base/" })
+            Assert.Null(ModelProxy.Within(upstream, away));
+    }
+
+    /// <summary>
     /// LOG 496: with <c>auth: github</c> the proxy also forwards what Copilot CLI asks the Copilot API for: its model
-    /// catalogue and <c>chat/completions</c>, whose OpenAI-shaped usage is recorded like the Messages API's.
+    /// catalogue and <c>chat/completions</c>, whose OpenAI-shaped usage is recorded like the Messages API's, and the
+    /// Messages API with its token count.
     /// </summary>
     [Theory]
     [InlineData("GET", "meta")]
     [InlineData("GET", "models")]
     [InlineData("POST", "chat/completions")]
+    [InlineData("POST", "v1/messages")]
+    [InlineData("POST", "v1/messages/count_tokens")]
     public async Task With_auth_github_the_proxy_forwards_copilot_s_requests_and_reads_their_usage(string method, string path)
     {
         var upstream = new Upstream(_ => new HttpResponseMessage(HttpStatusCode.OK)

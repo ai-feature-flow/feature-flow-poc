@@ -138,10 +138,8 @@ public static class AgentEndpoint
     static string? ModelToken(HttpContext http)
     {
         var token = Bearer(http) ?? http.Request.Headers["x-api-key"].FirstOrDefault();
-        return token?.StartsWith(GitHubTokenPrefix, StringComparison.Ordinal) == true ? token[GitHubTokenPrefix.Length..] : token;
+        return token?.StartsWith(EngineEndpoints.GitHubTokenPrefix, StringComparison.Ordinal) == true ? token[EngineEndpoints.GitHubTokenPrefix.Length..] : token;
     }
-
-    public const string GitHubTokenPrefix = "ghs_";
 
     static async Task<IResult> Authorised(HttpContext http, AgentEndpointServices s, Func<StepClaims, Task<IResult>> handle) =>
         s.Tokens.Check(Bearer(http)) is { } claims && await ActiveAsync(s, claims)

@@ -140,6 +140,20 @@ public sealed class AgentHarness : IAsyncDisposable
     /// <summary>The variable holding the GitHub token the Copilot Live tests' proxy sends (LOG 498).</summary>
     public const string CopilotKey = "FF_COPILOT_GITHUB_TOKEN";
 
+    /// <summary>
+    /// The Live category's <c>model_access</c> for the options' runtime, and the variable holding its credential: Claude
+    /// Code's subscription token to the Anthropic API (<c>oauth</c>), or Copilot's GitHub token to the account's Copilot API
+    /// <paramref name="copilotApi"/> (<c>github</c>). SP5's negative controls replace the model's address (N1) or the
+    /// proxy's key (N2).
+    /// </summary>
+    public static (string KeyName, string ModelAccess) LiveModelAccess(AgentHarnessOptions options, string? copilotApi)
+    {
+        var (keyName, upstream, auth) = options.Runtime == "copilot_cli"
+            ? (CopilotKey, copilotApi, "github")
+            : ("CLAUDE_CODE_OAUTH_TOKEN", "https://api.anthropic.com", "oauth");
+        return (keyName, $$"""{ mode: proxy, key_ref: secrets/{{(options.ModelKey is null ? keyName : "model_key")}}, upstream: "{{options.ModelUpstream ?? upstream}}", auth: {{auth}} }""");
+    }
+
     public string Repository { get; private set; } = "acme/app";
 
     public bool Live { get; private set; }
@@ -175,17 +189,15 @@ public sealed class AgentHarness : IAsyncDisposable
             Assert.True(secretsFile is not null && File.Exists(secretsFile), "the Live tests need FF_SECRETS_FILE naming the GitHub App's settings");
             // Copilot's key is never COPILOT_GITHUB_TOKEN itself, which the host's own copilot would pick up. Natively the CLI
             // names models by Copilot's catalogue (claude-haiku-4.5), not Anthropic's (claude-haiku-4-5).
-            var (keyName, upstream, auth) = options.Runtime == "copilot_cli"
-                ? (CopilotKey, Environment.GetEnvironmentVariable("FF_COPILOT_API_URL"), "github")
-                : ("CLAUDE_CODE_OAUTH_TOKEN", "https://api.anthropic.com", "oauth");
+            var copilotApi = Environment.GetEnvironmentVariable("FF_COPILOT_API_URL");
+            var (keyName, access) = LiveModelAccess(options, copilotApi);
             Assert.True(Environment.GetEnvironmentVariable(keyName) is { Length: > 0 }, $"the Live tests on {options.Runtime} need {keyName} for the model proxy");
-            Assert.True(upstream is { Length: > 0 }, "the Copilot Live tests need FF_COPILOT_API_URL, the account's Copilot API (endpoints.api of copilot_internal/user)");
+            Assert.True(options.Runtime != "copilot_cli" || copilotApi is { Length: > 0 }, "the Copilot Live tests need FF_COPILOT_API_URL, the account's Copilot API (endpoints.api of copilot_internal/user)");
             var app = JsonSerializer.Deserialize<Dictionary<string, string>>(await File.ReadAllTextAsync(secretsFile!))!;
             h.Repository = FixtureRepository;
             vcs = "{ default: git, instances: { git: { cache: clones } } }";
             broker = $$"""  credential_broker: { default: github_app, instances: { github_app: { app_id: "{{app["github-app-id"]}}", installation_id: "{{app["github-installation-id"]}}", key_path: "{{app["github-app-key"]}}", repositories: [{{FixtureRepository}}] } } }""";
-            // SP5's negative controls replace the model's address (N1) or the proxy's key (N2).
-            modelAccess = $$"""{ mode: proxy, key_ref: secrets/{{(options.ModelKey is null ? keyName : "model_key")}}, upstream: "{{options.ModelUpstream ?? upstream}}", auth: {{auth}} }""";
+            modelAccess = access;
             secretsFromEnvironment = $", from_environment: [{keyName}]";
         }
         else

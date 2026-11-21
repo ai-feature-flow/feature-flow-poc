@@ -26,11 +26,11 @@ public sealed record CopilotCliOptions(string Model, string Executable = "copilo
 /// a custom provider of the Anthropic Messages API, with the step's token as its key and <c>COPILOT_OFFLINE</c>.
 /// </para>
 /// <para>
-/// Its settings come from the engine alone: <c>COPILOT_HOME</c> is the step's own root-owned sticky folder, made fresh at
-/// the step's first session and kept for its continuations, whose <c>settings.json</c> (the hooks) and
-/// <c>mcp-config.json</c> are root's and read-only, so the agent can neither change nor replace them, and nothing it adds
-/// reaches another step; the checkout is not trusted, so a repository's hooks, MCP servers and instructions are not
-/// loaded; built-in MCP servers are off, and only the role's tools are available.
+/// Its settings come from the engine alone: <c>COPILOT_HOME</c> is the step's own root-owned sticky folder, whose
+/// <c>settings.json</c> (the hooks) and <c>mcp-config.json</c> are root's and read-only, so the agent can neither change nor
+/// replace them. It is made fresh at the step's first session, and a continuation keeps only the session's state, so
+/// nothing the agent adds reaches another step or a later start-up; the checkout is not trusted, so a repository's hooks,
+/// MCP servers and instructions are not loaded; built-in MCP servers are off, and only the role's tools are available.
 /// </para>
 /// </summary>
 public sealed class CopilotCliRuntime(CopilotCliOptions options, Func<ISandboxProvider> sandboxes, Func<IArtifactStoreProvider> store)
@@ -132,7 +132,7 @@ public sealed class CopilotCliRuntime(CopilotCliOptions options, Func<ISandboxPr
         };
         if (options.GitHub)
         {
-            env["COPILOT_GITHUB_TOKEN"] = "ghs_" + engine.StepToken;
+            env["COPILOT_GITHUB_TOKEN"] = EngineEndpoints.GitHubTokenPrefix + engine.StepToken;
             env["COPILOT_API_URL"] = engine.ModelBaseUrl;
             env["COPILOT_TELEMETRY_DISABLED"] = "true";
         }
@@ -147,16 +147,22 @@ public sealed class CopilotCliRuntime(CopilotCliOptions options, Func<ISandboxPr
         return env;
     }
 
+    /// <summary>What a continuation keeps of the step's <c>COPILOT_HOME</c>: only what <c>--resume</c> reads (LOG 497).</summary>
+    public static readonly IReadOnlyList<string> Resumed = ["session-state", "session-store.db*", "config.json"];
+
     /// <summary>
     /// The step's <c>COPILOT_HOME</c> is root's and sticky: the CLI may add its own state, but nobody else's files can be
-    /// removed or replaced. A new session gets it empty; a continuation keeps it, for <c>--resume</c> needs the session's state.
+    /// removed or replaced. A new session gets it empty; a continuation keeps only the session's state (<see cref="Resumed"/>),
+    /// so nothing else the agent added, such as a <c>settings.local.json</c> or a skill, reaches the CLI's start-up.
     /// </summary>
     protected override async Task<ProviderResult<Unit>> PrepareAsync(ISandboxProvider sandboxes, SandboxHandle sandbox, AgentTask task, bool resume, string key,
         CancellationToken cancellationToken)
     {
         var home = Home(task.Step.IdempotencyKey);
-        var made = await sandboxes.RunAsync(sandbox, new SandboxCommand(["sh", "-c",
-                (resume ? "" : $"rm -rf {home} && ") + $"mkdir -p {home} && chown root {home} && chmod 1777 {home}"], AsRoot: true),
+        var clear = resume
+            ? $"mkdir -p {home} && find {home} -mindepth 1 -maxdepth 1 {string.Join(" ", Resumed.Select(n => $"! -name '{n}'"))} -exec rm -rf {{}} + && "
+            : $"rm -rf {home} && mkdir -p {home} && ";
+        var made = await sandboxes.RunAsync(sandbox, new SandboxCommand(["sh", "-c", clear + $"chown root {home} && chmod 1777 {home}"], AsRoot: true),
             $"{key}/home", cancellationToken);
         if (!made.Ok)
             return new ProviderResult<Unit>(default, made.Error);

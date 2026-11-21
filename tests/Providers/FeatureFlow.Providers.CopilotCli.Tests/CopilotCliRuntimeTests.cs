@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using FeatureFlow.Model;
 using FeatureFlow.Model.Yaml;
 using FeatureFlow.Providers.Abstractions;
@@ -63,6 +64,7 @@ public sealed class CopilotCliRuntimeTests
     [Theory]
     [InlineData("{ model_access: { mode: proxy, auth: github } }", true)]
     [InlineData("{ model_access: { mode: proxy, auth: api_key } }", false)]
+    [InlineData("{ model_access: { mode: proxy, auth: oauth } }", false)]
     [InlineData("{ model_access: { mode: proxy } }", false)]
     public void The_factory_runs_the_cli_natively_only_for_auth_github(string yaml, bool github)
     {
@@ -127,12 +129,13 @@ public sealed class CopilotCliRuntimeTests
         Assert.Equal(["model", "executable", "model_access"], Assert.Single(CopilotCliProviders.Factories).Settings);
 
     /// <summary>
-    /// M8 follow-up 15, LOG 497: each step has its own <c>COPILOT_HOME</c>, empty at its first session but for the engine's
-    /// settings, and kept for its continuations (<c>--resume</c> reads the session's state there), so what an agent
-    /// planted in it (a skill) reaches no other step, and no new session of its own.
+    /// M8 follow-up 15, LOG 497: each step has its own <c>COPILOT_HOME</c>, root's and sticky, empty at its first session but
+    /// for the engine's settings. A continuation keeps only what <c>--resume</c> reads (the session's state and
+    /// <c>config.json</c>), so what an agent planted there (a skill, a <c>settings.local.json</c>) reaches no other step, no
+    /// new session of its own and no continuation.
     /// </summary>
     [Fact]
-    public async Task Each_step_has_its_own_copilot_home_kept_for_its_continuations_only()
+    public async Task Each_step_has_its_own_root_sticky_copilot_home_and_a_continuation_keeps_only_the_session_s_state()
     {
         var sandbox = new HomeSandbox();
         var runtime = new CopilotCliRuntime(new CopilotCliOptions("claude-haiku-4-5"), () => sandbox, () => sandbox);
@@ -151,20 +154,31 @@ public sealed class CopilotCliRuntimeTests
         Assert.NotEqual(first.Home, other.Home);
         Assert.StartsWith(CopilotCliRuntime.Homes + "/", other.Home, StringComparison.Ordinal);
         Assert.Equal([first.Home + "/mcp-config.json", first.Home + "/settings.json"], first.Found);
-        Assert.Contains(first.Home + "/skills/planted.md", continued.Found);
+        Assert.Equal(new[] { "config.json", "mcp-config.json", "session-state/s/events.jsonl", "session-store.db", "settings.json" }.Select(f => first.Home + "/" + f),
+            continued.Found);
         Assert.Equal([other.Home + "/mcp-config.json", other.Home + "/settings.json"], other.Found);
         Assert.Equal([fresh.Home + "/mcp-config.json", fresh.Home + "/settings.json"], fresh.Found);
+        // The spike: a home with the wrong owner or mode makes the CLI exit silently; the sticky bit stops the agent replacing root's files.
+        Assert.Equal(4, sandbox.Prepared.Count);
+        foreach (var (run, (script, asRoot)) in sandbox.Runs.Zip(sandbox.Prepared))
+        {
+            Assert.True(asRoot);
+            Assert.EndsWith($"chown root {run.Home} && chmod 1777 {run.Home}", script, StringComparison.Ordinal);
+        }
     }
 
     /// <summary>
-    /// A sandbox and store for <see cref="Each_step_has_its_own_copilot_home_kept_for_its_continuations_only"/>: files by
-    /// path; the runtime's <c>rm -rf</c> removes a folder; the CLI records its home and the files there, then plants a skill.
+    /// A sandbox and store for <see cref="Each_step_has_its_own_root_sticky_copilot_home_and_a_continuation_keeps_only_the_session_s_state"/>:
+    /// files by path; the runtime's <c>rm -rf</c> removes a folder, and its <c>find</c> removes the home's entries but those it
+    /// names; the CLI records its home and the files there, then writes its state and plants a skill and a local settings file.
     /// </summary>
     sealed class HomeSandbox : ISandboxProvider, IArtifactStoreProvider
     {
         readonly SortedSet<string> files = new(StringComparer.Ordinal);
 
         public List<(string Home, List<string> Found)> Runs { get; } = [];
+
+        public List<(string Script, bool AsRoot)> Prepared { get; } = [];
 
         public ProviderDescription Describe() => new("sandbox", "test", "0", new object());
 
@@ -177,11 +191,22 @@ public sealed class CopilotCliRuntimeTests
             {
                 var home = command.Environment!["COPILOT_HOME"];
                 Runs.Add((home, files.Where(f => f.StartsWith(home + "/", StringComparison.Ordinal)).ToList()));
-                files.Add(home + "/skills/planted.md");
+                foreach (var made in new[] { "skills/planted.md", "settings.local.json", "session-state/s/events.jsonl", "session-store.db", "config.json" })
+                    files.Add(home + "/" + made);
             }
-            else
-                foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(script, @"rm -rf (\S+)"))
+            else if (key.EndsWith("/home", StringComparison.Ordinal))
+            {
+                Prepared.Add((script, command.AsRoot));
+                foreach (Match m in Regex.Matches(script, @"rm -rf (/\S+)"))
                     files.RemoveWhere(f => f.StartsWith(m.Groups[1].Value + "/", StringComparison.Ordinal));
+                if (Regex.Match(script, @"find (\S+) -mindepth 1 -maxdepth 1 (.*?) -exec rm -rf") is { Success: true } find)
+                {
+                    var kept = Regex.Matches(find.Groups[2].Value, @"! -name '([^']+)'")
+                        .Select(n => new Regex("^" + Regex.Escape(n.Groups[1].Value).Replace(@"\*", ".*") + "$")).ToList();
+                    files.RemoveWhere(f => f.StartsWith(find.Groups[1].Value + "/", StringComparison.Ordinal)
+                                           && !kept.Any(k => k.IsMatch(f[(find.Groups[1].Value.Length + 1)..].Split('/')[0])));
+                }
+            }
             return Done(ProviderResult<CommandHandle>.Success(new CommandHandle(sandbox, key)));
         }
 
