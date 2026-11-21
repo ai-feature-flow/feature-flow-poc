@@ -1,0 +1,10 @@
+api_version: feature-flow/v1
+kind: artifact_type
+metadata:
+  name: loose_list
+  description: A YAML document with no schema, so a step may produce one that holds no list of items.
+
+format: yaml
+evidence: false
+compatible_with: []
+validators: []

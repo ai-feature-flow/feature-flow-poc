@@ -1,0 +1,33 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: expand_loose
+  level: epic
+  description: >-
+    plan.expand over a list whose type has no schema, so the planner may report
+    one with no items: the expansion's read fails with a non-retryable error.
+
+artifact_types:
+  - m5:artifact_types/loose_list
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: plan
+    agent: { role: std:roles/planner, task: m5:tasks/note }
+    produces:
+      planned: [{ name: work_list, type: m5:artifact_types/loose_list }]
+    outcomes: { planned: success }
+  - id: expand
+    action: plan.expand
+    with:
+      from: work_list
+      shape: parallel
+      target: children
+      step: { action: run.child, with: { template: m5:templates/warns, repositories: "$.repositories" } }
+    consumes: [{ name: work_list }]
+  - id: children
+    parallel: { branches: [], join: all }
+    routes: { completed: { end: completed } }

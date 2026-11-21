@@ -24,9 +24,9 @@ public class ObservabilityRunTests
             ActivityStopped = spans.Enqueue,
         };
         ActivitySource.AddActivityListener(listener);
-        await using var h = await Harness.StartAsync("otel", autoApprove: true);
+        await using var h = await Harness.StartAsync("otel", autoApprove: true, policy: "  merge: { default_branch: { engine_may_merge: [acme/api] } }");
 
-        var id = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=FF-11", "--dry-run");
+        var id = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=FF-11", "--param", "engine_can_merge=true", "--dry-run", "--repo", Harness.RepoName);
         var (exit, end, _) = h.Cli("wait", id, "--timeout", "120");
 
         Assert.True((exit, end.Trim()) == (0, $"run {id} completed"), (await h.ShowAsync(id)).ToJsonString());

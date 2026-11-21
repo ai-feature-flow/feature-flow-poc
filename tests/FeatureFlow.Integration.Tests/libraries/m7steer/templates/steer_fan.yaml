@@ -17,5 +17,5 @@ steps:
         - { id: kid_b, action: run.child, with: { template: m7steer:templates/steer_gate, repositories: [acme/api], parameters: {} } }
     routes: { completed: ship, any_failed: { escalate: true } }
   - id: ship
-    action: artifact.compose
-    routes: { composed: { end: completed } }
+    action: repo.inspect
+    routes: { inspected: { end: completed } }
