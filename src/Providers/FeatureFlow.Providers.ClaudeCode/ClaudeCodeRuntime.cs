@@ -204,6 +204,10 @@ public static class ClaudeCodeProviders
         {
             if (c.Instance.Settings["model_access"] is not YMap access || access["mode"].ScalarText() != "proxy")
                 throw new InvalidOperationException($"providers.agent_runtime.instances.{c.Instance.Name} needs model_access with mode proxy (F6)");
+            // The proxy speaks to an Anthropic API for Claude Code; `github` is Copilot CLI's (LOG 496).
+            if (access["auth"].ScalarText() is { } auth && auth is not ("api_key" or "oauth"))
+                throw new InvalidOperationException(
+                    $"providers.agent_runtime.instances.{c.Instance.Name}: model_access.auth '{auth}' is not for claude_code, which takes api_key or oauth");
             var options = new ClaudeCodeOptions(c.Setting("model") ?? "haiku", c.Setting("executable") ?? "claude");
             return new ClaudeCodeRuntime(
                 tune?.Invoke(options) ?? options,

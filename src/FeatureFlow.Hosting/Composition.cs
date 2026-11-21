@@ -19,6 +19,13 @@ namespace FeatureFlow.Hosting;
 /// <summary>The installation and organisation files, read and checked (docs/07 section 7, startup).</summary>
 public sealed record FeatureFlowConfiguration(InstallationConfig Installation, OrganisationConfig Organisation)
 {
+    /// <summary>
+    /// Tests only: the model proxies' HTTP handler, so an integration test can trust its stand-in's certificate for
+    /// <c>auth: github</c>, which needs an https upstream. Not configurable: production validates the upstream with the
+    /// platform's trust store (DR20).
+    /// </summary>
+    internal HttpMessageHandler? ModelProxyHandlerForTests { get; init; }
+
     public static FeatureFlowConfiguration Load(string installationPath, string organisationPath)
     {
         var d = new DiagnosticBag();
@@ -66,6 +73,12 @@ public static class ProviderComposer
 
                 foreach (var key in instance.Settings.Keys.Where(k => !factory.Settings.Contains(k)))
                     errors.Add($"providers.{type}.instances.{name}: unknown setting '{key}'");
+                if (type == "agent_runtime" && FeatureFlowHost.ModelAccessProblem(name, instance) is { } problem)
+                {
+                    errors.Add(problem);
+                    continue;
+                }
+
                 named[name] = ProviderCalls.Decorate(type, name,
                     factory.Create(new ProviderContext(instance, baseDirectory, t => set?.ForRun(t, false)) { SandboxReach = reach }));
             }
@@ -166,7 +179,7 @@ public sealed class FeatureFlowHost : IAsyncDisposable
         if (settings.Listen is not { } listen)
             return;
         var services = new AgentEndpointServices(tokens, providers.Required<IRecordStoreProvider>("record_store"), new TemporalRunSignals(client),
-            ModelProxies(configuration.Installation, secrets), name => providers.Instance("agent_runtime", name) as IAgentHooks);
+            ModelProxies(configuration.Installation, secrets, configuration.ModelProxyHandlerForTests), name => providers.Instance("agent_runtime", name) as IAgentHooks);
         agentEndpoint = AgentEndpoint.Build(services, listen);
         await agentEndpoint.StartAsync();
         AgentEndpointAddress = agentEndpoint.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
@@ -175,10 +188,11 @@ public sealed class FeatureFlowHost : IAsyncDisposable
     /// <summary>
     /// The model proxy of each agent runtime instance, from its own <c>model_access</c> (docs/07 section 2; LOG 446):
     /// <c>key_ref</c> names the credential, <c>upstream</c> the model's API (default the Anthropic API), <c>auth</c> how it
-    /// is sent: <c>api_key</c> (the default) or <c>oauth</c> for a subscription token. A step's token names its instance,
-    /// whose proxy alone serves it.
+    /// is sent: <c>api_key</c> (the default), <c>oauth</c> for a subscription token, or <c>github</c> for a GitHub token to
+    /// the Copilot API (LOG 496). A step's token names its instance, whose proxy alone serves it. <paramref name="handler"/>
+    /// is for tests; by default each proxy validates its upstream with the platform's trust store.
     /// </summary>
-    public static IReadOnlyDictionary<string, ModelProxy> ModelProxies(InstallationConfig installation, ISecretsProvider? secrets)
+    public static IReadOnlyDictionary<string, ModelProxy> ModelProxies(InstallationConfig installation, ISecretsProvider? secrets, HttpMessageHandler? handler = null)
     {
         var proxies = new Dictionary<string, ModelProxy>(StringComparer.Ordinal);
         if (!installation.Providers.TryGetValue("agent_runtime", out var runtimes))
@@ -190,10 +204,27 @@ public sealed class FeatureFlowHost : IAsyncDisposable
             var keyRef = access["key_ref"].ScalarText();
             var upstream = new Uri((access["upstream"].ScalarText() ?? "https://api.anthropic.com").TrimEnd('/') + "/");
             proxies[name] = new ModelProxy(new ModelProxyOptions(upstream, access["auth"].ScalarText() ?? "api_key", async ct =>
-                keyRef is null || secrets is null ? null : (await secrets.ResolveAsync(keyRef, ct)) is { Ok: true } found ? found.Value : null));
+                keyRef is null || secrets is null ? null : (await secrets.ResolveAsync(keyRef, ct)) is { Ok: true } found ? found.Value : null), handler);
         }
 
         return proxies;
+    }
+
+    /// <summary>
+    /// What is wrong with an agent runtime instance's proxy <c>model_access</c>, refused at composition: an <c>auth</c>
+    /// the proxy does not know, or <c>auth: github</c> without an https <c>upstream</c>, since the default upstream is the
+    /// Anthropic API and the GitHub token would go there (LOG 496).
+    /// </summary>
+    public static string? ModelAccessProblem(string name, ProviderInstanceConfig instance)
+    {
+        if (instance.Settings["model_access"] is not YMap access || access["mode"].ScalarText() != "proxy")
+            return null;
+        var auth = access["auth"].ScalarText() ?? "api_key";
+        if (!ModelProxy.Auths.Contains(auth))
+            return $"providers.agent_runtime.instances.{name}: model_access.auth '{auth}' is not one of {string.Join(", ", ModelProxy.Auths)}";
+        return auth == "github" && !(Uri.TryCreate(access["upstream"].ScalarText(), UriKind.Absolute, out var upstream) && upstream.Scheme == Uri.UriSchemeHttps)
+            ? $"providers.agent_runtime.instances.{name}: model_access.auth github needs an https upstream, the account's Copilot API"
+            : null;
     }
 
     /// <summary>The agent endpoint's address once started, when the installation configures one.</summary>

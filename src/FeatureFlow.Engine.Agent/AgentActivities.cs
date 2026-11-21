@@ -586,6 +586,9 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                         End = SessionEnd.Failed,
                         Detail = $"the session claimed the engine was unreachable, but the engine took a call from it at {contact:O}",
                     };
+                if (result.End == SessionEnd.Failed && await RefusedModelRequestsAsync() is { } refused)
+                    // A runtime may print a refusal as text it does not parse (LOG 499): the engine's own model records decide.
+                    result = result with { End = SessionEnd.ModelRefused, Detail = refused + (result.Detail is { Length: > 0 } said ? $"; the runtime said: {Trim(said)}" : "") };
                 await EventAsync("session", $"{number} ended {result.End}");
                 if (result.Transcript is { } transcript)
                 {
@@ -650,6 +653,23 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             var calls = (await EventsAsync()).Where(e => e.Kind.StartsWith("hook_", StringComparison.Ordinal) || e.Kind == "model").Select(e => e.At)
                 .Concat((await ReportsAsync()).Select(r => r.At)).ToList();
             return calls.Count == 0 ? null : calls.Max();
+        }
+
+        /// <summary>
+        /// The model requests the proxy recorded since the last session ended, when there is at least one and the model's
+        /// upstream answered every one 401 or 403 (LOG 499); otherwise null. The proxy's own refusals are 404, 502 and 503,
+        /// so a 401 or 403 is the upstream's. A 429 is a limit, not a configuration fault, and any accepted request means
+        /// the key works.
+        /// </summary>
+        async Task<string?> RefusedModelRequestsAsync()
+        {
+            var all = await EventsAsync();
+            var since = all.Select((e, i) => (e, i)).LastOrDefault(x => x.e.Kind == "session" && x.e.Detail.Contains(" ended ", StringComparison.Ordinal)).i;
+            var requests = all.Skip(since).Where(e => e.Kind == "model").Select(e => e.Detail).ToList();
+            static bool Refused(string detail) => detail.Split(' ') is [_, _, "401" or "403", ..];
+            return requests.Count > 0 && requests.All(Refused)
+                ? $"the model's upstream refused all {requests.Count} of the session's requests ({requests[^1].Split(' ')[2]})"
+                : null;
         }
 
         const string Interrupted ="Your previous session was interrupted. Carry on with the task from where you were.";

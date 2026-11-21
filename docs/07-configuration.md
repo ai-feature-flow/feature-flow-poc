@@ -94,9 +94,9 @@ the address, namespace and payload codec only) and the `teamcity` CI instance.
 | `providers.<type>.instances` | Several instances of one type may coexist (two CI systems, two agent runtimes). Other settings select one by name |
 | `development` | `true` allows the `fake`, `memory` and `scripted` providers (L4). Default `false` |
 | `temporal.task_queue` | The orchestration queue, default `feature-flow-orchestration`; the agent queue is the same name with `-orchestration` replaced by `-agent` (else `-agent` added) |
-| `agent_runtime.*.model_access` | `mode: proxy`, the only mode (a proxy adds the key to model requests). Required for every runtime (F6). `upstream` is the model API (default the Anthropic API) and `auth` how the key is sent: `api_key` (default) or `oauth` (a subscription token). LOG 91. Each instance's `model_access` configures its own model proxy, and a step's token selects its instance's; an instance with none is not served (404). The proxy's URL and the requests it forwards are the same for every instance (LOG 104, 446) |
+| `agent_runtime.*.model_access` | `mode: proxy`, the only mode (a proxy adds the key to model requests). Required for every runtime (F6). `upstream` is the model API (default the Anthropic API) and `auth` how the key is sent: `api_key` (default), `oauth` (a subscription token), or `github` (a GitHub token, sent as `Authorization: Bearer`, for Copilot quota; `upstream` is then the account's Copilot API, and only `copilot_cli` takes it; LOG 496). LOG 91. Each instance's `model_access` configures its own model proxy, and a step's token selects its instance's; an instance with none is not served (404). The proxy's URL is the same for every instance, and the requests it forwards depend only on `auth` (LOG 104, 446; `docs/06` section 3.13) |
 | `agent_runtime.claude_code` | `model` and `executable`. LOG 91. `engine_tools` is removed, and refused as an unknown setting (L5, LOG 448) |
-| `agent_runtime.copilot_cli` | The same settings as `claude_code`. Copilot reaches the model through its instance's model proxy, as a custom Anthropic provider with the step's token (LOG 293, 446) |
+| `agent_runtime.copilot_cli` | The same settings as `claude_code`. Copilot reaches the model through its instance's model proxy with the step's token (LOG 293, 446): natively, on Copilot quota, with `auth: github`, its `model` named as in Copilot's catalogue (`claude-haiku-4.5`); otherwise as a custom Anthropic provider (LOG 496, 497; section 6.1) |
 | `agent_runtime.scripted` | A test double that runs no agent and reports what its `script` says (its `defaults` serve steps its `steps` do not name; a scripted artifact's `${name}` is the step's input `name`, LOG 368). In the step's sandbox it acts as an agent would, through the sandbox provider's calls: a step with write access changes the checkout (`work/<run id>/<step id>.txt`, LOG 368), unless its step id is in `no_edits`, and the reported artifacts are copied into the output folder. The sandbox is the `memory` one of its `world` when that holds it, else the installation's default sandbox (the Kubernetes one in `deploy/k3d/smoke`; LOG 371). Refused unless `development: true` (L4), as are the `fake` and `memory` providers |
 | `agent_runtime.recording` | The dry-run runtime (section 5): `folder` receives a line per step it is given, with its inputs; it reports what its `script` says, else each step's first success outcome, and acts in the step's sandbox as `scripted` does |
 | `sandbox.docker` | `image` (the sandbox image, `feature-flow-sandbox`), `allowed_images` (patterns, `*` matching any run of characters, of the repository images `environment.image` may name, matched with case; default none, so only `image`, LOG 441), `user` (the agent's, default `node`), `docker` (the executable). Its network reaches only `agent_worker`'s `urls` and `model_base_url`, and the internet (LOG 291) |
@@ -339,6 +339,32 @@ Cloud connection, TeamCity and SonarCloud are first full release, not alpha
 (product owner, 2026-11-21; `docs/12` R3). Until R3, the enterprise column
 describes the design, not what version 1 can deploy. Console sign-in by OIDC is
 planned for the OIDC profiles (`docs/12` R2).
+
+### 6.1 The local profile with Copilot CLI
+
+A solo installation can spend a person's Copilot quota instead of an
+Anthropic subscription (LOG 496, 498). Only the agent runtime and the secrets
+differ from any local installation; `<…>` marks your values:
+
+```yaml
+providers:
+  secrets: { default: file, instances: { file: { path: "<folder outside the repository>/secrets.json" } } }
+  agent_runtime:
+    default: copilot_cli
+    instances:
+      copilot_cli:
+        model: claude-haiku-4.5          # Copilot's catalogue name
+        model_access: { mode: proxy, key_ref: secrets/copilot_github_token, upstream: "<the account's Copilot API>", auth: github }
+```
+
+| Item | Where it comes from |
+|---|---|
+| `copilot_github_token` | An entry of the secrets file, which the person places there themselves; never in a repository. A fine-grained personal access token owned by the account whose Copilot seat pays: account permission Copilot Requests only, repository access "Public repositories", a short expiry. Copilot refuses a classic token (`ghp_`) |
+| `upstream` | `endpoints.api` in `GET https://api.github.com/copilot_internal/user` with that token, which spends no quota: for a Copilot Business or Enterprise seat on github.com, `https://api.business.githubcopilot.com` or `https://api.enterprise.githubcopilot.com`. The agent worker must reach it; the sandbox needs nothing new |
+| `model` | A model the account's catalogue offers (`GET <upstream>/models`), with `/v1/messages` or `/chat/completions` in its `supported_endpoints`; `/responses` is not forwarded, so a model offering only that (the GPT-5 family) is refused (LOG 496) |
+
+The steps of a live run on this profile are in `docs/build/a4-results.md`,
+"Live run with Copilot CLI".
 
 ---
 

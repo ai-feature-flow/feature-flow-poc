@@ -6,8 +6,9 @@ namespace FeatureFlow.Engine.Agent;
 
 /// <summary>
 /// The model proxy's settings (floor F6, <c>proxy</c> mode; LOG 68). <see cref="Auth"/> is <c>oauth</c> for a
-/// subscription token, sent as a bearer token with the OAuth beta header, or <c>api_key</c>, sent as
-/// <c>x-api-key</c>. The credential is read when a request is forwarded, never held by the sandbox.
+/// subscription token, sent as a bearer token with the OAuth beta header; <c>github</c> for a GitHub token to the
+/// Copilot API, sent as a bearer token alone (LOG 496); or <c>api_key</c>, sent as <c>x-api-key</c>. The credential
+/// is read when a request is forwarded, never held by the sandbox.
 /// </summary>
 public sealed record ModelProxyOptions(Uri Upstream, string Auth, Func<CancellationToken, Task<string?>> Credential);
 
@@ -24,6 +25,9 @@ public sealed partial class ModelProxy(ModelProxyOptions options, HttpMessageHan
 
     public const string OAuthBeta = "oauth-2025-04-20";
 
+    /// <summary>The ways the credential can be sent, by <c>model_access.auth</c>; any other value is refused at composition.</summary>
+    public static readonly IReadOnlyList<string> Auths = ["api_key", "oauth", "github"];
+
     static readonly HashSet<string> NotForwarded = new(StringComparer.OrdinalIgnoreCase)
     {
         "host", "authorization", "x-api-key", "content-length", "connection", "accept-encoding", "transfer-encoding", "keep-alive",
@@ -35,31 +39,43 @@ public sealed partial class ModelProxy(ModelProxyOptions options, HttpMessageHan
         Timeout = Timeout.InfiniteTimeSpan,
     };
 
-    [GeneratedRegex("\"input_tokens\"\\s*:\\s*(\\d+)")]
+    /// <summary>Anthropic's <c>input_tokens</c> or the OpenAI shape's <c>prompt_tokens</c> (Copilot's <c>chat/completions</c>).</summary>
+    [GeneratedRegex("\"(?:input_tokens|prompt_tokens)\"\\s*:\\s*(\\d+)")]
     private static partial Regex InputTokens();
 
-    [GeneratedRegex("\"output_tokens\"\\s*:\\s*(\\d+)")]
+    [GeneratedRegex("\"(?:output_tokens|completion_tokens)\"\\s*:\\s*(\\d+)")]
     private static partial Regex OutputTokens();
 
-    /// <summary>Forwards one request whose step token the endpoint has checked. Returns the usage seen, for the step's record, and why the model could not be reached when it could not.</summary>
     /// <summary>
-    /// The only requests forwarded (LOG 104): the Messages API and its token count, by POST, as relative paths. Anything
-    /// else is refused before the credential is read, so an agent cannot point the proxy at another host.
+    /// The only requests forwarded (LOG 104), as method and relative path: the Messages API and its token count, by POST.
+    /// With <c>auth: github</c> also what Copilot CLI asks the Copilot API for (LOG 496): its model catalogue
+    /// (<c>meta</c>, <c>models</c>) and <c>chat/completions</c>, used for a model that does not offer the Messages API.
+    /// Anything else is refused before the credential is read, so an agent cannot point the proxy at another host.
     /// </summary>
-    public static readonly IReadOnlySet<string> AllowedPaths = new HashSet<string>(StringComparer.Ordinal) { "v1/messages", "v1/messages/count_tokens" };
+    public static IReadOnlySet<string> Allowed(string auth) => auth == "github" ? GitHubRequests : AnthropicRequests;
 
-    /// <summary>The upstream URL for a request path, or null when the path is not allowed or would leave the upstream.</summary>
-    public static Uri? Target(Uri upstream, string method, string path, string query)
+    static readonly HashSet<string> AnthropicRequests = new(StringComparer.Ordinal) { "POST v1/messages", "POST v1/messages/count_tokens" };
+
+    static readonly HashSet<string> GitHubRequests = new(AnthropicRequests, StringComparer.Ordinal) { "GET meta", "GET models", "POST chat/completions" };
+
+    /// <summary>The upstream URL for a request, or null when the request is not allowed or would leave the upstream.</summary>
+    public static Uri? Target(Uri upstream, string auth, string method, string path, string query) =>
+        Allowed(auth).Contains($"{method} {path}") ? Within(upstream, path + (query.StartsWith('?') && !query.Contains('#') ? query : "")) : null;
+
+    /// <summary>
+    /// <paramref name="relative"/> resolved against the upstream, or null when it would leave the upstream's scheme, host or
+    /// port. Today's allowed requests are relative literals, which cannot; this guards a future entry that is not one.
+    /// </summary>
+    public static Uri? Within(Uri upstream, string relative)
     {
-        if (method != "POST" || !AllowedPaths.Contains(path))
-            return null;
-        var target = new Uri(upstream, path + (query.StartsWith('?') && !query.Contains('#') ? query : ""));
+        var target = new Uri(upstream, relative);
         return target.Scheme == upstream.Scheme && target.Host == upstream.Host && target.Port == upstream.Port ? target : null;
     }
 
+    /// <summary>Forwards one request whose step token the endpoint has checked. Returns the usage seen, for the step's record, and why the model could not be reached when it could not.</summary>
     public async Task<(int Status, long InputTokens, long OutputTokens, string? Model, string? Unreachable)> ForwardAsync(HttpContext context, string path, CancellationToken cancellationToken)
     {
-        if (Target(options.Upstream, context.Request.Method, path, context.Request.QueryString.Value ?? "") is not { } target)
+        if (Target(options.Upstream, options.Auth, context.Request.Method, path, context.Request.QueryString.Value ?? "") is not { } target)
         {
             context.Response.StatusCode = 404;
             await context.Response.WriteAsync("""{"type":"error","error":{"type":"not_found_error","message":"the model proxy does not forward this request"}}""", cancellationToken);
@@ -90,10 +106,10 @@ public sealed partial class ModelProxy(ModelProxyOptions options, HttpMessageHan
         }
 
         var betas = context.Request.Headers["anthropic-beta"].SelectMany(v => (v ?? "").Split(',')).Select(b => b.Trim()).Where(b => b.Length > 0).ToList();
-        if (options.Auth == "oauth")
+        if (options.Auth is "oauth" or "github")
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential);
-            if (!betas.Contains(OAuthBeta))
+            if (options.Auth == "oauth" && !betas.Contains(OAuthBeta))
                 betas.Add(OAuthBeta);
         }
         else
