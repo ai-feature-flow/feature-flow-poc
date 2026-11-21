@@ -207,6 +207,34 @@ public class OrganisationTests
         Assert.Equal("requires.toolsets is not supported in version 1; remove it", Assert.Single(Manifest("{ toolsets: [tracker] }"), x => x.Blocks).Message);
     }
 
+    /// <summary>Keys that were read and never applied are refused when the library loads, each naming itself (LOG AFa-1).</summary>
+    [Theory]
+    [InlineData("inputs: { team: platform }\n", "inputs")]
+    [InlineData("inputs: {}\n", "inputs")]
+    [InlineData("resources: [docs/handbook.md]\n", "resources")]
+    [InlineData("resources: []\n", "resources")]
+    [InlineData("notifications: { events: [failed] }\n", "notifications")]
+    [InlineData("dependencies: [{ name: std, version: \">=0.1.0\" }]\n", "dependencies.version")]
+    public void A_manifest_key_that_does_nothing_is_refused_naming_it(string extra, string key)
+    {
+        var d = new DiagnosticBag();
+        var manifest = LibraryItemReader.ReadManifest(Yaml.YamlText.Parse($"name: acme\nversion: 0.1.0\n{extra}", "library.yaml", d)!, d);
+
+        Assert.Equal($"{key} is not supported in version 1; remove it", Assert.Single(d, x => x.Blocks).Message);
+        Assert.Equal(Checks.Schema, d.Single().Check);
+        Assert.Equal("acme", manifest!.Name);
+    }
+
+    [Fact]
+    public void A_roles_requires_is_refused_naming_it()
+    {
+        var d = new DiagnosticBag();
+        LibraryItemReader.ReadRole(Yaml.YamlText.Parse("api_version: feature-flow/v1\nkind: role\nmetadata: { name: r }\nwrite_access: none\ntools: [read]\nrequires: []\n",
+            "r.yaml", d)!, "r", d);
+
+        Assert.Equal("requires is not supported in version 1; remove it", Assert.Single(d, x => x.Blocks).Message);
+    }
+
     [Fact]
     public void Roles_nest_admin_over_steerer_over_viewer_and_approver_stands_apart()
     {

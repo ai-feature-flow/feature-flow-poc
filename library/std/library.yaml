@@ -13,14 +13,7 @@ requires:
 
 dependencies: []
 
-inputs: {}
-
-resources: []
-
 entrypoints:
   - { template: ticket_delivery, when: "One ticket, from plan to merge into its parent branch" }
   - { template: epic_delivery, when: "One epic: design, tickets, epic review, merge" }
   - { template: project_delivery, when: "A project spanning several epics and repositories" }
-
-notifications:
-  events: [decision_needed, failed, completed]

@@ -5,7 +5,7 @@ description: Templates for the M7 surfaces tests (docs/11, M7)
 requires:
   plan_schema: 1
 dependencies:
-  - { name: std, version: ">=0.1.0" }
+  - { name: std }
 
 # For the console's start form (GET /templates lists entrypoints only).
 entrypoints:
