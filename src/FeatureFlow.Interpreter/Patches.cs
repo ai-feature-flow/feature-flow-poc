@@ -379,7 +379,7 @@ public static class PlanExpansion
         var stepTemplate = with["step"] as YMap;
         if (targetText is null || stepTemplate is null)
             return (null, $"{stepId}: plan.expand needs target and step");
-        if (core.FindStep(targetText, step.Scope) is not { } target)
+        if (core.Plan.FindStep(targetText, step.Scope) is not { } target)
             return (null, $"{stepId}: target '{targetText}' is not a step");
         var onOther = with["on_other"].ScalarText();
         if (shape == "chain" && onOther is null)

@@ -90,12 +90,4 @@ public sealed class ActionRegistryTests
 
         Assert.Equal(engine, EngineActions.Handled.Order(StringComparer.Ordinal));
     }
-
-    [Fact]
-    public void The_actions_a_hand_over_interrupts_are_those_that_wait_between_reads()
-    {
-        // EngineActions.Waits is read by the shell until the shell's routing moves into the core (docs/12 A2, F8).
-        Assert.Equal(ActionRegistry.Default.All.Where(d => d.WaitsBetweenReads).Select(d => d.Name).Order(StringComparer.Ordinal),
-            EngineActions.Waits.Order(StringComparer.Ordinal));
-    }
 }

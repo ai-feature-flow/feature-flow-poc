@@ -133,22 +133,24 @@ public class ContinueAsNewTests
             Assert.Equal([answers[q]], Completions($"questions_{q}"));
 
         // C3: nothing started while draining, and no activity in flight at any hand-over.
-        Assert.Equal(0, final.ActivitiesStartedWhileDraining);
+        Assert.All(final.HandOvers, o => Assert.Equal(0, o.ActivitiesStartedWhileDraining));
         Assert.All(final.HandOvers, o => Assert.Equal(0, o.InFlightActivities));
 
         // C5: no workflow task failed in any run.
         var taskFailures = await h.WorkflowTaskFailuresAsync(id);
         Assert.True(taskFailures.Count == 0, "C5: workflow task failures: " + string.Join("; ", taskFailures));
 
-        // Exercised: without these the checks above prove nothing (SP1's E1 to E3).
+        // Exercised: without these the checks above prove nothing (SP1's E1 to E3). Each hand-over records what arrived while it drained (LOG A2-0i).
         var withBoth = final.HandOvers.Count(o => o.RunningChildren > 0 && o.OpenWaits > 0);
+        var childEnds = final.HandOvers.Sum(o => o.ChildEndsWhileDraining);
+        var answersDraining = final.HandOvers.Sum(o => o.AnswersWhileDraining);
         Assert.True(withBoth >= 3, $"E1: {withBoth} hand-over(s) with children running and decisions open; at least 3 needed: {string.Join("; ", final.HandOvers)}");
-        Assert.True(final.ChildEndsWhileDraining >= 1, $"E2: no child end arrived while draining ({final.HandOvers.Count} hand-overs)");
-        Assert.True(!sentDuringDrain.IsEmpty && final.AnswersWhileDraining >= 1,
-            $"E3: {sentDuringDrain.Count} answer(s) sent and {final.AnswersWhileDraining} received while draining");
+        Assert.True(childEnds >= 1, $"E2: no child end arrived while draining ({final.HandOvers.Count} hand-overs)");
+        Assert.True(!sentDuringDrain.IsEmpty && answersDraining >= 1,
+            $"E3: {sentDuringDrain.Count} answer(s) sent and {answersDraining} received while draining");
 
         TestContext.Current.TestOutputHelper?.WriteLine(
-            $"hand-overs {final.HandOvers.Count}, with children and decisions {withBoth}, child ends while draining {final.ChildEndsWhileDraining}, answers while draining {final.AnswersWhileDraining}");
+            $"hand-overs {final.HandOvers.Count}, with children and decisions {withBoth}, child ends while draining {childEnds}, answers while draining {answersDraining}");
         await h.RecordHistoryAsync(id, "sp1_parent");
         Assert.True(await h.RecordResumedHistoryAsync(id, "sp1_parent_resumed"), "no run resumed carrying unconfirmed child ends");
     }

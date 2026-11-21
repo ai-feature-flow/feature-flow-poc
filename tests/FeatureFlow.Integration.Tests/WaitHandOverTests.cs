@@ -94,7 +94,7 @@ public class WaitHandOverTests
 
         var final = await handle.QueryAsync<RunView>(RunWorkflowNames.View, []);
         Assert.All(final.HandOvers, o => Assert.Equal(0, o.InFlightActivities));
-        Assert.Equal(0, final.ActivitiesStartedWhileDraining);
+        Assert.All(final.HandOvers, o => Assert.Equal(0, o.ActivitiesStartedWhileDraining));
         Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
         if (!midAttempt)
         {

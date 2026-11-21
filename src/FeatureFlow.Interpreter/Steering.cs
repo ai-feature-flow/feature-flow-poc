@@ -1,3 +1,4 @@
+using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Model;
 using FeatureFlow.Model.Plans;
 using FeatureFlow.Model.Yaml;
@@ -27,7 +28,10 @@ public sealed partial class RunCore
         AttemptsGranted g => GrantError(g.StepId, g.Attempts, g.BeyondHardCeiling),
         RoleChanged r => RoleError(r),
         LibraryOverridden o => LibraryOverrideError(o.Entry.Item, o.Libraries),
-        LibraryOverrideProposed p => StepById(p.StepId) is null ? $"{p.StepId} is not a step of plan revision {State.Revision}" : LibraryItemError(p.Item),
+        LibraryOverrideProposed p => StepById(p.StepId) is not { } proposer ? $"{p.StepId} is not a step of plan revision {State.Revision}"
+            : proposer.Agent?.Planning is null ? $"{p.StepId} has no planning authority, so it may not propose a library override"
+            : p.Content is null ? "a library override proposal needs with, the new content"
+            : LibraryItemError(p.Item),
         _ => null,
     };
 
@@ -271,6 +275,20 @@ public sealed partial class RunCore
                                         || s.Produces.Any(p => Is(p.Type)) || s.Consumes.Any(c => Is(c.Type))))
             .Select(s => s.Id).Distinct().ToList();
     }
+
+    /// <summary>
+    /// The protected content an override touches, for its reply and record, so a reader sees the <c>_protected</c> variant was
+    /// needed: a protected step skipped or given another role, or the protected steps that resolve an overridden library item.
+    /// A run that starts children, or may once <c>plan.expand</c> adds them, passes a library override down, where protected
+    /// steps it cannot see may resolve it (LOG 212).
+    /// </summary>
+    public IReadOnlyList<string> ProtectedTouched(OverrideArgs o) => o.Key switch
+    {
+        Overrides.Skip or Overrides.ChangeRole when o.StepId is not null && StepById(o.StepId) is { Protected: true } => [o.StepId],
+        Overrides.OverrideLibrary when o.Change.GetValueOrDefault("item") is { } item => ProtectedResolving(item)
+            .Concat(Plan.AllSteps.Any(x => x.Descriptor?.Handling is ActionHandling.ChildRun or ActionHandling.Expand) ? ["its child runs"] : []).ToList(),
+        _ => [],
+    };
 
     // ---- Re-running a branch of a decided join -----------------------------------------------------
 

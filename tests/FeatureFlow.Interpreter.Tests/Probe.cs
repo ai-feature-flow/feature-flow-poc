@@ -73,6 +73,9 @@ public sealed class Driver(RunCore core)
                 case StartStep s:
                     Queue.Add((s.StepId, s.Execution, false));
                     break;
+                case StartChild s:
+                    Queue.Add((s.StepId, s.Execution, false));
+                    break;
                 case OpenGate o:
                     Queue.Add((o.StepId, o.Execution, true));
                     break;

@@ -317,7 +317,7 @@ public sealed class Harness : IAsyncDisposable
             var history = await Client.GetWorkflowHandle(workflowId, run.RunId).FetchHistoryAsync();
             var input = history.Events.First().WorkflowExecutionStartedEventAttributes.Input.Payloads_[0].Data.ToStringUtf8();
             var start = JsonSerializer.Deserialize<FeatureFlow.Interpreter.Wire.RunStart>(input)!;
-            if (start.Carried is not { PendingChildEnds.Count: > 0, Children.Count: > 0 })
+            if (start.Carried is not { PendingChildEnds.Count: > 0, Core.Children.Count: > 0 })
                 continue;
             if (Environment.GetEnvironmentVariable("FF_RECORD_HISTORIES") is { Length: > 0 } folder)
             {

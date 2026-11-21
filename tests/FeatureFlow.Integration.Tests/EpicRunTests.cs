@@ -83,7 +83,7 @@ public class EpicRunTests
         Assert.True(final.HandOvers.Count(o => o.RunningChildren > 0) >= 1,
             "no hand-over happened while children ran: " + string.Join("; ", final.HandOvers));
         Assert.All(final.HandOvers, o => Assert.Equal(0, o.InFlightActivities));
-        Assert.Equal(0, final.ActivitiesStartedWhileDraining);
+        Assert.All(final.HandOvers, o => Assert.Equal(0, o.ActivitiesStartedWhileDraining));
         var taskFailures = await h.WorkflowTaskFailuresAsync(id);
         Assert.True(taskFailures.Count == 0, "C5: workflow task failures: " + string.Join("; ", taskFailures));
 

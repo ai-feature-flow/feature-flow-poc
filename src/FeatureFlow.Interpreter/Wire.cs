@@ -135,33 +135,27 @@ public sealed record RunPolicy(
         new Model.DecisionTypeItem(pattern, null, new Model.SourceLocation("", 0, 0)).Matches(type);
 }
 
-/// <summary>A child run a <c>run.child</c> step started: its workflow id, by step id.</summary>
-public sealed record ChildRun(string StepId, int Execution, string WorkflowId);
-
 /// <summary>A patch a child sent, held until the parent's core is ready to apply it.</summary>
 public sealed record ParentPatchSignal(string ChildWorkflowId, string ProposerStepId, string Patch);
 
 /// <summary>
-/// A hand-over: the run's state when it continued-as-new, after draining (SP1's record), and how many waits it interrupted
-/// to hand over (LOG 139).
+/// A hand-over: the run's state when it continued-as-new, after draining (SP1's record): how many waits it interrupted to
+/// hand over (LOG 139), and what arrived or started while it drained (LOG A2-0i).
 /// </summary>
-public sealed record HandOver(int Run, long HistoryEvents, int InFlightActivities, int RunningChildren, int OpenWaits, int PendingChildEnds, int InterruptedWaits = 0);
+public sealed record HandOver(int Run, long HistoryEvents, int InFlightActivities, int RunningChildren, int OpenWaits, int PendingChildEnds, int InterruptedWaits,
+    int ActivitiesStartedWhileDraining, int ChildEndsWhileDraining, int AnswersWhileDraining);
 
 /// <summary>
-/// The shell's carried state: the core's, which holds every wait open and closed, and what the Temporal workflow itself must
-/// remember.
+/// The shell's carried state: the core's, which holds every wait open and closed and every child running, and what the
+/// Temporal workflow itself must remember: inbound signals not yet given to the core, record numbering and the hand-overs.
 /// </summary>
 public sealed record ShellState(
     CarriedCore Core,
-    IReadOnlyList<ChildRun> Children,
     IReadOnlyList<string> PendingChildEnds,
     IReadOnlyList<ParentPatchSignal> PendingParentPatches,
     long TimelineSequence,
     IReadOnlyList<HandOver> HandOvers,
-    bool CancelledByParent,
-    int ActivitiesStartedWhileDraining,
-    int ChildEndsWhileDraining,
-    int AnswersWhileDraining);
+    bool CancelledByParent);
 
 /// <summary>
 /// The run workflow's input: on the first run, what the API or the parent gives; after a hand-over, the same with
@@ -224,7 +218,7 @@ public sealed record AnswerReply(string Result);
 /// <summary>A wait as the workflow holds it.</summary>
 public sealed record WaitView(string WaitId, string Kind, string StepId, string Reason);
 
-/// <summary>The query's answer, for tests: the run's status, whether it is draining, and its hand-overs.</summary>
+/// <summary>The query's answer, for tests: the run's status, whether it is draining, its children and its hand-overs.</summary>
 public sealed record RunView(
     string Status,
     bool Ready,
@@ -234,7 +228,4 @@ public sealed record RunView(
     IReadOnlyList<WaitView> Waits,
     IReadOnlyList<string> InFlight,
     IReadOnlyList<ChildRun> Children,
-    IReadOnlyList<HandOver> HandOvers,
-    int ActivitiesStartedWhileDraining,
-    int ChildEndsWhileDraining,
-    int AnswersWhileDraining);
+    IReadOnlyList<HandOver> HandOvers);

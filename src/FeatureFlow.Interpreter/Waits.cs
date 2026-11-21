@@ -260,6 +260,30 @@ public sealed partial class RunCore
     // ---- Records ----------------------------------------------------------------------------------
 
     /// <summary>
+    /// The waits opened and closed since the shell last recorded, drained: each to record, opened with its description or
+    /// closed, leaving out one that opened and closed in between, since no one saw it; and each question that closed answered or
+    /// timed out, whose record the agent endpoint long-polls for its answer (docs/04 section 3.4).
+    /// </summary>
+    public (IReadOnlyList<WaitShown> Waits, IReadOnlyList<QuestionClosed> Questions) TakeWaitChanges()
+    {
+        var changes = State.WaitChanges.ToList();
+        State.WaitChanges.Clear();
+        var waits = new List<WaitShown>();
+        var questions = new List<QuestionClosed>();
+        foreach (var (wait, opened) in changes)
+        {
+            if (!changes.Any(c => c.Wait.Id == wait.Id && c.Open != opened))
+                waits.Add(new WaitShown(wait.Id, wait.StepId, opened ? Describe(wait) : null));
+            if (!opened && wait.Kind == WaitKind.Question && State.Closed.LastOrDefault(c => c.Id == wait.Id) is { How: WaitEnds.Answered or WaitEnds.TimedOut } closed)
+                questions.Add(new QuestionClosed(wait.Id, wait.StepKey!, wait.Text ?? "", wait.Options ?? [], closed.How == WaitEnds.Answered, closed.Key));
+        }
+
+        return (waits, questions);
+    }
+
+    /// <summary>The open waits, for the workflow's query.</summary>
+    public IReadOnlyList<WaitView> WaitViews() => State.Waits.Select(w => new WaitView(w.Id, w.Kind.ToString(), w.StepId, w.Reason)).ToList();
+    /// <summary>
     /// A wait as the record store shows it: its kind, its decision type at the run's level, the choices that answer it, and
     /// the text to show (a gate's rendered prompt, a question's text, else the core's reason), so Slack, the console and the
     /// CLI show the same.

@@ -35,7 +35,8 @@ public static class RunStatuses
 
 /// <summary>
 /// What the core needs to know about the run, fixed at run start. <see cref="Parameters"/> are the request's
-/// values; declared defaults fill the rest.
+/// values; declared defaults fill the rest. A child holds its parent's and its root's artifacts as they were when it
+/// started, by name (docs/03 section 7.2: consumed <c>from: parent</c> or <c>from: root</c>).
 /// </summary>
 public sealed record RunInfo(
     string Id,
@@ -44,7 +45,9 @@ public sealed record RunInfo(
     string? ParentId = null,
     string? TrackerIssue = null,
     string? ParentBranch = null,
-    IReadOnlyDictionary<string, string>? DefaultBranches = null);
+    IReadOnlyDictionary<string, string>? DefaultBranches = null,
+    IReadOnlyDictionary<string, string>? ParentArtifacts = null,
+    IReadOnlyDictionary<string, string>? RootArtifacts = null);
 
 /// <summary>
 /// Limits and policy the core enforces, carried in the run's state because workflow code cannot read
@@ -96,10 +99,27 @@ public sealed record RunOptions
 /// <summary>Something the core asks the shell to do. The Temporal workflow (M3) or the re-drive runner carries it out.</summary>
 public abstract record Command;
 
+/// <summary>Which activity carries a step out: the agent worker's, an engine action's handler, or reading the list <c>plan.expand</c> expands.</summary>
+public enum StepActivity
+{
+    Agent,
+    Engine,
+    Expand,
+}
+
 public sealed record StartStep(string StepId, int Execution) : Command;
 
-/// <summary>A decision step's gate opened as <see cref="WaitId"/>: the shell opens its session, when the step declares one.</summary>
-public sealed record OpenGate(string StepId, int Execution, string WaitId) : Command;
+/// <summary>
+/// A <c>run.child</c> step starts its child run (docs/03 section 9): the shell reserves the work item, makes the work branches
+/// and starts the child workflow from <see cref="RunCore.ChildSpec"/>, then gives the core <see cref="ChildStarted"/>.
+/// </summary>
+public sealed record StartChild(string StepId, int Execution) : Command;
+
+/// <summary>The run no longer needs a child it started (a decided join, a cancelled step, or the run's end): the shell tells it.</summary>
+public sealed record CancelChild(string StepId, string WorkflowId) : Command;
+
+/// <summary>A decision step's gate opened as <see cref="WaitId"/>; <see cref="Session"/> when the step declares one, which the shell opens.</summary>
+public sealed record OpenGate(string StepId, int Execution, string WaitId, bool Session) : Command;
 
 /// <summary>
 /// A wait needs a timer: at <see cref="At"/> the shell gives the core <see cref="WaitTimerFired"/>. Re-armed after a hand-over
@@ -300,7 +320,16 @@ public sealed record LibraryOverridden(LibraryOverrideEntry Entry, Library.Libra
 /// An agent proposed a library override (docs/05 section 6): it never applies at once, but opens a patch approval for
 /// a person; approved, the shell carries it out with the approver as the actor.
 /// </summary>
-public sealed record LibraryOverrideProposed(string StepId, string Item, string Content) : RunInput;
+public sealed record LibraryOverrideProposed(string StepId, string Item, string? Content) : RunInput;
+
+/// <summary>The shell started the child run of a <c>run.child</c> step's execution as <see cref="WorkflowId"/> (or adopted it).</summary>
+public sealed record ChildStarted(string StepId, int Execution, string WorkflowId) : RunInput;
+
+/// <summary>
+/// A child run has ended, as a read of it confirmed, with its status and the artifacts it ended with: its <c>run.child</c> step
+/// completes with the matching outcome, if it still runs that execution.
+/// </summary>
+public sealed record ChildEnded(string WorkflowId, RunStatus Status, IReadOnlyDictionary<string, string>? Artifacts) : RunInput;
 
 /// <summary>
 /// A lock entry of a mid-run library override (docs/08 section 5.2): the item, its file, the old and new content hashes,
@@ -431,8 +460,24 @@ public sealed record WaitChange(OpenWait Wait, bool Open);
 /// <summary>What the record store shows of a wait: its record kind, decision type, the choices that answer it, and the text to show.</summary>
 public sealed record WaitDescription(string Kind, string Type, IReadOnlyList<string> Choices, string Reason);
 
+/// <summary>A wait to record (<see cref="RunCore.TakeWaitChanges"/>): opened, with its description, or closed when <see cref="Opened"/> is null.</summary>
+public sealed record WaitShown(string WaitId, string StepId, WaitDescription? Opened);
+
+/// <summary>A question that closed answered (with the answer's text) or timed out: the record its agent reads (docs/04 section 3.4).</summary>
+public sealed record QuestionClosed(string WaitId, string StepKey, string Text, IReadOnlyList<string> Options, bool Answered, string? Answer);
+
 /// <summary>A run-time override the run applied, by the id the API gave it, so a repeat is answered without a second effect.</summary>
 public sealed record AppliedOverride(string Id, string Key, string Result);
+
+/// <summary>A child run a <c>run.child</c> step's execution started, by its workflow id (the child's run id).</summary>
+public sealed record ChildRun(string StepId, int Execution, string WorkflowId);
+
+/// <summary>
+/// An artifact a step produced, for the record store's artifact index (docs/02 section 5): its step, execution and name, its
+/// declared type, the engine action that produced it (<see cref="Producer"/>; null for an agent step or a decision), and whether
+/// its type is evidence (F7).
+/// </summary>
+public sealed record ProducedArtifact(string StepId, int Execution, string Name, string? Type, string Reference, string? Producer, bool Evidence);
 
 /// <summary>Reads the <c>findings</c> namespace when a route is evaluated; each route evaluation reads each name once.</summary>
 public interface IFindingsSource

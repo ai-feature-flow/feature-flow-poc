@@ -234,7 +234,7 @@ public sealed partial class RunCore
             State.RunAttempts++;
             State.InFlight.Add(step.Id);
             Trace("started", step.Id, $"execution {record.Executions}");
-            outbox.Add(new StartStep(step.Id, record.Executions));
+            outbox.Add(Start(step, record.Executions));
             Progressed();
             return;
         }
@@ -256,8 +256,30 @@ public sealed partial class RunCore
         }
 
         var gate = AddWait(new OpenWait(NewWaitId("gate"), WaitKind.Gate, step.Id, null, "decision"));
-        outbox.Add(new OpenGate(step.Id, record.Executions, gate.Id));
+        outbox.Add(new OpenGate(step.Id, record.Executions, gate.Id, step.Decision?.Session is not null));
         Progressed();
+    }
+
+    /// <summary>What starts a step's execution: its child run for a <c>run.child</c> step, else its activity (<see cref="StepSpec"/>).</summary>
+    static Command Start(Step step, int execution) =>
+        step.Descriptor?.Handling == ActionHandling.ChildRun ? new StartChild(step.Id, execution) : new StartStep(step.Id, execution);
+
+    static StepActivity ActivityOf(Step step) => step switch
+    {
+        { Form: StepForm.Agent } => StepActivity.Agent,
+        { Descriptor.Handling: ActionHandling.Expand } => StepActivity.Expand,
+        _ => StepActivity.Engine,
+    };
+
+    /// <summary>Stops a running step: its activity, and the child run a <c>run.child</c> step started.</summary>
+    void Cancel(string stepId)
+    {
+        outbox.Add(new CancelStep(stepId));
+        if (State.Children.FindLastIndex(c => c.StepId == stepId) is var at and >= 0)
+        {
+            outbox.Add(new CancelChild(stepId, State.Children[at].WorkflowId));
+            State.Children.RemoveAt(at);
+        }
     }
 
     /// <summary>
@@ -269,7 +291,7 @@ public sealed partial class RunCore
         var record = Record(step.Id);
         State.InFlight.Add(step.Id);
         Trace("resumed", step.Id, $"execution {record.Executions}");
-        outbox.Add(new StartStep(step.Id, record.Executions));
+        outbox.Add(Start(step, record.Executions));
         Progressed();
     }
 
@@ -360,7 +382,8 @@ public sealed partial class RunCore
     public ApplyResult Apply(RunInput input)
     {
         if (State.Status != RunStatus.Running)
-            return ApplyResult.Refused($"the run has ended ({State.Status.Name()})");
+            // A proposal its step could never make is refused for that reason, even when its step's end also ended the run.
+            return ApplyResult.Refused(input is LibraryOverrideProposed p && SteeringError(p) is { } why ? why : $"the run has ended ({State.Status.Name()})");
         return input switch
         {
             StepCompleted c => Completed(c),
@@ -375,6 +398,8 @@ public sealed partial class RunCore
             RunAborted a => Abort(a),
             StepCannotAnswer s => CannotAnswer(s),
             ChildPatchProposed p => ProposeFromChild(p),
+            ChildStarted c => StartedChild(c),
+            ChildEnded e => EndedChild(e),
             QuestionOpened q => OpenQuestion(q),
             QuestionAnswered q => AnswerQuestion(q),
             WaitTimerFired t => TimerFired(t),
@@ -433,6 +458,7 @@ public sealed partial class RunCore
                 recordParent.Current!.Outputs[name] = value;
             foreach (var (name, reference) in c.Artifacts ?? new Dictionary<string, string>())
                 recordParent.Current!.Artifacts[name] = reference;
+            Produce(step, recordParent, c.Artifacts);
             Trace("patch_to_parent", step.Id, toParent.Reason);
             outbox.Add(new SendPatchToParent(step.Id, toParent));
             Finish(step, recordParent, c.Outcome);
@@ -461,6 +487,7 @@ public sealed partial class RunCore
             record.Current!.Outputs[name] = value;
         foreach (var (name, reference) in c.Artifacts ?? new Dictionary<string, string>())
             record.Current!.Artifacts[name] = reference;
+        Produce(step, record, c.Artifacts);
         if (CountsRaces(step))
         {
             // LOG 61: an execution that lost a race counts against limits.races, any other against attempts.
@@ -569,7 +596,7 @@ public sealed partial class RunCore
         {
             // Free: the same execution is tried again and nothing is counted (docs/01 section 4).
             Trace("retried", step.Id, f.Reason);
-            outbox.Add(new StartStep(step.Id, record.Executions));
+            outbox.Add(Start(step, record.Executions));
             return ApplyResult.Ok;
         }
 
@@ -604,6 +631,7 @@ public sealed partial class RunCore
         record.Current ??= new Execution { Number = record.Executions };
         foreach (var (name, reference) in a.Artifacts ?? new Dictionary<string, string>())
             record.Current.Artifacts[name] = reference;
+        Produce(step, record, a.Artifacts);
         Finish(step, record, a.Outcome);
         return ApplyResult.Ok;
     }
@@ -772,7 +800,7 @@ public sealed partial class RunCore
         {
             LeaveInFlight(id);
             Trace("cancelled", id);
-            outbox.Add(new CancelStep(id));
+            Cancel(id);
         }
 
         State.Pending.RemoveAll(e => InContainer(e.StepId, containerId));
@@ -796,7 +824,7 @@ public sealed partial class RunCore
         foreach (var id in State.InFlight.ToList())
         {
             Trace("cancelled", id);
-            outbox.Add(new CancelStep(id));
+            Cancel(id);
             LeaveInFlight(id);
         }
 
@@ -806,7 +834,4 @@ public sealed partial class RunCore
         Trace("ended", stepId, $"{status.Name()} ({detail})");
         outbox.Add(new EndRun(status));
     }
-
-    /// <summary>A step named in an expression, as the load check finds it (<see cref="Plan.FindStep"/>).</summary>
-    public Step? FindStep(string local, Scope scope) => Plan.FindStep(local, scope);
 }

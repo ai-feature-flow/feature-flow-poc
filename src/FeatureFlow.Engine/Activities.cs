@@ -152,7 +152,8 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
             }
         }
 
-        foreach (var step in core.Plan.AllSteps.Where(s => s is { Form: Model.Plans.StepForm.Action, Action: "scm.merge" }))
+        // F1 governs the step that merges (the action that counts races, LOG 61): who may merge into the default branch.
+        foreach (var step in core.Plan.AllSteps.Where(s => s.Descriptor is { CountsRaces: true }))
         {
             IReadOnlyList<string> targets;
             bool? engineCanMerge;
@@ -238,7 +239,7 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
     public static RunInfo RunInfoOf(RunStart start) =>
         new(start.RunId, start.Repositories,
             start.Parameters.ToDictionary(kv => kv.Key, kv => YamlWriter.Read(kv.Value, $"params.{kv.Key}")),
-            start.ParentWorkflowId, start.TrackerIssue, start.ParentBranch);
+            start.ParentWorkflowId, start.TrackerIssue, start.ParentBranch, ParentArtifacts: start.ParentArtifacts, RootArtifacts: start.RootArtifacts);
 
     // The agent step's activity, RunAgentStep, is the agent worker's: Engine.Agent's AgentActivities (M4).
 

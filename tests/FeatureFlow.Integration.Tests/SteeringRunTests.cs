@@ -369,7 +369,7 @@ public class SteeringRunTests
             if (view.Draining)
             {
                 await SendAsync(h, id, Override("breakpoint", "final"));
-                sent = (await handle.QueryAsync<RunView>(RunWorkflowNames.View, [])).AnswersWhileDraining > 0;
+                sent = await ReceivedWhileDrainingAsync(handle, view.HandOvers.Count);
                 if (!sent)
                     await SendAsync(h, id, Override("breakpoint", "final", new() { ["set"] = "false" }));
             }
@@ -387,6 +387,26 @@ public class SteeringRunTests
         Assert.True(end.Trim() == $"run {id} completed", end + (await h.ShowAsync(id)).ToJsonString());
         Assert.Contains("BUILD-V5", (await TasksAsync(h, id)).Single(t => t.Step == "final").Task);
         Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
+    }
+
+    /// <summary>
+    /// Whether the drain under way when an override was sent received it: that run's hand-over record, once written, counts what
+    /// arrived while it drained (LOG A2-0i). False when the override reached the next run instead.
+    /// </summary>
+    static async Task<bool> ReceivedWhileDrainingAsync(Temporalio.Client.WorkflowHandle handle, int handOvers)
+    {
+        var until = DateTime.UtcNow.AddSeconds(60);
+        while (DateTime.UtcNow < until)
+        {
+            var view = await handle.QueryAsync<RunView>(RunWorkflowNames.View, []);
+            if (view.HandOvers.Count > handOvers)
+                return view.HandOvers[handOvers].AnswersWhileDraining > 0;
+            if (view.Status is not ("starting" or "running"))
+                return false;
+            await Task.Delay(50, TestContext.Current.CancellationToken);
+        }
+
+        return false;
     }
 
     static async Task<string> ReadAsync(Harness h, string reference)

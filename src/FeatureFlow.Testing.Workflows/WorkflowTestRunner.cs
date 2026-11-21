@@ -123,6 +123,10 @@ public static class WorkflowTestRunner
                     case StartStep s:
                         queue.Add((s.StepId, s.Execution, null));
                         break;
+                    case StartChild s:
+                        // A child run is not started here: the script gives its run.child step's outcome as for any step.
+                        queue.Add((s.StepId, s.Execution, null));
+                        break;
                     case OpenGate o:
                         queue.Add((o.StepId, o.Execution, o.WaitId));
                         break;

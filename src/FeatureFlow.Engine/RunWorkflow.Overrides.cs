@@ -91,7 +91,7 @@ public partial class RunWorkflow
             };
         }
 
-        if (Protected(o) is { Count: > 0 } guarded)
+        if (core.ProtectedTouched(o) is { Count: > 0 } guarded)
             result += $" (protected: {string.Join(", ", guarded)})";
         core.State.Overrides.Add(new AppliedOverride(o.OverrideId, o.Key, result));
         core.State.Trace.Add(new TraceEntry("override", o.StepId ?? "", $"{o.Key} by {o.Actor}: {o.Reason} -> {result}"));
@@ -130,7 +130,7 @@ public partial class RunWorkflow
                     return absent;
                 if (core.LibraryItemError(o.Change["item"]) is { } itemError)
                     return itemError;
-                return Protected(o) is { Count: > 0 } guarded && !Holds(o, Overrides.OverrideLibraryProtected)
+                return core.ProtectedTouched(o) is { Count: > 0 } guarded && !Holds(o, Overrides.OverrideLibraryProtected)
                     ? $"{string.Join(", ", guarded)} may resolve {o.Change["item"]}: overriding it needs {Overrides.OverrideLibraryProtected}"
                     : null;
             case Overrides.Abort:
@@ -155,16 +155,6 @@ public partial class RunWorkflow
         Overrides.Amend when ReadPatch(o.Change["patch"], out _) is { } patch =>
             new PatchProposed(patch with { Reason = $"amend by {o.Actor}: {o.Reason}" }, new Proposer("human", null), Holds(o, Overrides.AmendProtected)),
         _ => null,
-    };
-
-    /// <summary>The protected content an override touched, for its reply and record, so a reader sees the <c>_protected</c> variant was needed.</summary>
-    IReadOnlyList<string> Protected(OverrideArgs o) => o.Key switch
-    {
-        Overrides.Skip or Overrides.ChangeRole when core!.StepById(o.StepId!) is { Protected: true } => [o.StepId!],
-        // A run that starts children, or may once plan.expand adds them, passes the override down, where protected steps it cannot see may resolve it (LOG 212).
-        Overrides.OverrideLibrary => core!.ProtectedResolving(o.Change["item"])
-            .Concat(core.Plan.AllSteps.Any(x => x.Action is "run.child" or "plan.expand") ? ["its child runs"] : []).ToList(),
-        _ => [],
     };
 
     static bool Holds(OverrideArgs o, string variant) => o.Variants?.Contains(variant) == true;
@@ -215,10 +205,9 @@ public partial class RunWorkflow
         var applied = core.Apply(new LibraryOverridden(entry, next));
         if (!applied.Accepted)
             throw new ApplicationFailureException(string.Join("; ", applied.Errors));
-        libraries = next;
         currentLock = overridden.LockRef;
         lockRecords.Add(new LockRecord(input.RunId, currentLock, Workflow.UtcNow));
-        foreach (var child in children.ToList())
+        foreach (var child in core.State.Children.ToList())
             await SignalQuietlyAsync(child.WorkflowId, ParentLibraryOverride, [new InheritedLibraryOverride(item, overridden.NewHash, actor, reason)]);
         dirty = true;
         return overridden.OldHash == overridden.NewHash ? "applied: the content was already in use" : $"applied: {overridden.OldHash} -> {overridden.NewHash}";
@@ -243,38 +232,19 @@ public partial class RunWorkflow
     }
 
     /// <summary>
-    /// An agent's library override (docs/05 section 6) becomes a patch approval for a person, whatever it touches; one from a
-    /// step without planning authority, or naming content that cannot be overridden, is refused and recorded.
+    /// An agent's library override (docs/05 section 6) becomes a patch approval for a person, whatever it touches; one the core
+    /// refuses (no planning authority, no content, or content that cannot be overridden) is recorded.
     /// </summary>
-    void ProposeLibraryOverride(Model.Plans.Step step, IReadOnlyDictionary<string, string> proposal)
+    void ProposeLibraryOverride(string stepId, IReadOnlyDictionary<string, string> proposal)
     {
         var item = proposal.GetValueOrDefault("item") ?? "";
-        string? refused = step.Agent?.Planning is null
-            ? $"{step.Id} has no planning authority, so it may not propose a library override"
-            : !proposal.ContainsKey("with") ? "a library override proposal needs with, the new content" : null;
-        var result = refused is null ? core!.Apply(new LibraryOverrideProposed(step.Id, item, proposal["with"])) : ApplyResult.Refused(refused);
+        var result = core!.Apply(new LibraryOverrideProposed(stepId, item, proposal.GetValueOrDefault("with")));
         if (!result.Accepted)
-            core!.State.Trace.Add(new TraceEntry("library_override_rejected", step.Id, $"{item}: {string.Join("; ", result.Errors)}"));
+            core.State.Trace.Add(new TraceEntry("library_override_rejected", stepId, $"{item}: {string.Join("; ", result.Errors)}"));
     }
 
     [WorkflowQuery(PullRequestsQuery)]
-    public RunPullRequests PullRequests() => new(core is null ? [] : PullRequestsOpened(), core is null ? [] : ChildrenStarted());
-
-    /// <summary>
-    /// The run's pull requests: the <c>pull_request</c> output of its <c>scm.pull_request</c> and <c>artifact.publish</c> steps
-    /// (R1 F7), current and previous executions. Each opens its pull request keyed by run and repository, so earlier executions
-    /// name the same one.
-    /// </summary>
-    List<string> PullRequestsOpened() =>
-        core!.State.Steps.Where(kv => core.StepById(kv.Key)?.Action is "scm.pull_request" or "artifact.publish").OrderBy(kv => kv.Key, StringComparer.Ordinal)
-            .SelectMany(kv => new[] { kv.Value.Previous, kv.Value.Current })
-            .Select(e => e?.Outputs.GetValueOrDefault("pull_request") as string)
-            .OfType<string>().Where(pr => pr.Length > 0).Distinct().ToList();
-
-    /// <summary>Every child run this run started, running or ended: one per execution of each <c>run.child</c> step.</summary>
-    List<string> ChildrenStarted() =>
-        core!.State.Steps.Where(kv => core.StepById(kv.Key)?.Action == "run.child").OrderBy(kv => kv.Key, StringComparer.Ordinal)
-            .SelectMany(kv => Enumerable.Range(1, kv.Value.Executions).Select(n => $"{Workflow.Info.WorkflowId}.{kv.Key}.{n}")).ToList();
+    public RunPullRequests PullRequests() => new(core?.PullRequestsOpened() ?? [], core?.ChildrenStarted() ?? []);
 
     /// <summary>
     /// Closes an aborted run's open pull requests when the person asked (docs/05 section 5; m6-results follow-up 3). Each is
@@ -284,8 +254,8 @@ public partial class RunWorkflow
     {
         if (!closePullRequests || core!.State.Status != RunStatus.Aborted)
             return;
-        var opened = PullRequestsOpened();
-        var started = ChildrenStarted();
+        var opened = core.PullRequestsOpened();
+        var started = core.ChildrenStarted();
         if (opened.Count == 0 && started.Count == 0)
         {
             core.State.Trace.Add(new TraceEntry("pull_request_closed", "", "the run opened no pull requests"));
