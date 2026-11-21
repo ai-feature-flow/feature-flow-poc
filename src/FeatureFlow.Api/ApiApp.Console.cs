@@ -20,7 +20,7 @@ public static partial class ApiApp
     /// The minimal web console (docs/11 section 4, M7; open question 5): runs, a run's readable form and timeline, and
     /// decisions to answer. One static page and its script, with no build chain; it holds no data and reads everything
     /// through the API with the person's own credential, and answers through the same answer call, so authentication and
-    /// authorisation are the API's (LOG 229). The readable form is served here too, as text.
+    /// authorisation are the API's (LOG 229). The run's plan route, which the page reads, is mapped here too.
     /// </summary>
     static void MapConsole(WebApplication app, Handlers api)
     {

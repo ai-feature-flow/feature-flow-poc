@@ -112,7 +112,7 @@ reports.
 | Outcomes | Declared |
 | Idempotency | Re-attach to the sandbox by key; resume the agent session by its recorded reference |
 | Limits | Engine defaults: attempts 3, timeout 4 hours, correction turns 2. `limits.timeout` runs from the step's first attempt, kept in the record store, and time the step spends on an open question does not count toward it (the deadline moves out by that time; LOG 106). At the deadline the session is stopped, its commits kept on the hidden reference, and the attempt fails as a work error, "ran out of time"; a retry after the activity's own timeout finds the deadline passed and fails the same way |
-| Artifacts | In: the rendered task, skills, resources, consumed artifacts, the run context. Out: declared artifacts, the transcript, the record of files opened, the session reference |
+| Artifacts | In: the rendered task, skills, resources, consumed artifacts, the run context. Out: declared artifacts, each session's prompt and transcript (indexed as `prompt:<n>` and `transcript:<n>` for people to read, never consumed by a parent run; LOG A3-0f), the record of files opened, the session reference |
 
 ### 3.1 Lifecycle of an attempt
 
@@ -128,15 +128,18 @@ reports.
    agent's output folder. A step that consumes the reserved name
    `findings_ledger` is given the ledger's current view, every finding with its
    ledger id and state, in the shape of a findings report (LOG 63).
-2. **Start.** Render the task, prepend the library's reporting preamble, and
-   start the agent runtime in the sandbox with the role's tools.
+2. **Start.** Render the task, prepend the library's reporting preamble, store
+   it and index it as `prompt:<n>` (n the session's number), and start the agent
+   runtime in the sandbox with the role's tools.
 3. **Supervise.** Heartbeat. About every 30 seconds, ask the VCS provider
    whether the working copy has new commits; if so, push them to the hidden
    work-in-progress reference. Serve hook calls, the engine tools (section 3.3)
    and questions.
-4. **Collect.** When the agent reports, read its result from the runtime (the
-   report is a hint; the read confirms, `docs/02`). Commit leftover changes
-   unless `on_uncommitted: fail`.
+4. **Collect.** When the session ends, index its transcript as
+   `transcript:<n>`, however it ended, so a failed attempt's transcript is
+   listed too (LOG A3-0f). When the agent reports, read its result from the
+   runtime (the report is a hint; the read confirms, `docs/02`). Commit leftover
+   changes unless `on_uncommitted: fail`.
 5. **Verify.** Check the reported outcome is declared; check produced artifacts
    and outputs against their contracts; for a role with no write access, check
    nothing was committed. Each produced artifact is copied out once and its
@@ -148,7 +151,7 @@ reports.
    commands (formatters, generators) in the same sandbox and commit what they
    change as part of the step (from FF).
 7. **Finish.** Move the work branch to the final commit, once. Record the
-   summary for the run context. Store the transcript.
+   summary for the run context.
 
 ### 3.2 Resume after an interruption
 
@@ -287,7 +290,9 @@ across a hand-over with the rest of the core's state, so a repeated answer is
 still a duplicate in the next run. The record store's wait record has kind
 `gate`, `question`, `intervention`, `patch_approval` or `breakpoint`, the decision
 type, the choices that answer it and the text to show (its `prompt`; "reason"
-means only a person's, LOG A3-0b); wait ids are `gate-N`,
+means only a person's, LOG A3-0b); a gate's also names each artifact its step
+consumes, with its key and its reference as the gate opened, the exact revisions
+the person ratifies (LOG A3-0g); wait ids are `gate-N`,
 `intervention-N`, `breakpoint-N` and `patch_approval-N`, and a question's is the
 id its agent's client gave it (LOG 360).
 

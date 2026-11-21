@@ -82,7 +82,7 @@ notifications:
 | `dependencies` | Other libraries this one references |
 | `inputs` | Library-wide parameter values |
 | `resources` | Folders mounted for every agent step that has skills, unless it opts out |
-| `entrypoints` | Templates people start; others (child templates) are not offered |
+| `entrypoints` | Templates people start; others (child templates) are not offered. Each is listed through the API (`GET /templates`, `docs/02` section 7) with its `when` and its template's parameters, each marked when the library's `inputs` give it, so a start form asks only for the rest |
 | `notifications` | Default events to notify on. Organisation configuration wins; a library cannot name a channel |
 
 An unknown key or a malformed manifest makes the library invalid: new runs
