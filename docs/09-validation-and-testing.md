@@ -49,9 +49,9 @@ other documents cite them.
 | 18 | Required parameters bound | Run start | Yes |
 | 19 | Every library reference resolves; library requirements met; the lock written | Run start | Yes |
 | 20 | A repository's library section adds only, never overrides | Run start | Yes |
-| 21 | Capability negotiation: every capability the plan needs is offered by a configured provider | Run start, Patch | Yes |
-| 22 | No request exceeds a locked organisation cap: attempts and merge races, auto-resolution, checks and tests before merging, budget, agent roles (`docs/05` section 3.1) | Run start, Patch | Yes |
-| 23 | **F1**: no merge step into a default branch has `engine_can_merge: true` unless the organisation allows it for that repository. The default branch is read from the code host | Run start, Patch | Yes |
+| 21 | Capability negotiation: every capability the plan needs is offered by a configured provider | Run start | Yes |
+| 22 | No request exceeds a locked organisation cap (`docs/05` section 3.1): at run start, attempts and races, the merge floors (checks and tests before merging), auto-resolution and the root budget; on a patch, the steps it adds or changes, for attempts, races and the merge floors | Run start, Patch | Yes |
+| 23 | **F1**: no merge step into a default branch has `engine_can_merge: true` unless the organisation allows it for that repository. The default branch is read from the code host | Run start | Yes |
 | 24 | Branch protection exists on each target repository's default branch; classic protection or rulesets both count (LOG 147) | Run start | Yes |
 | 25 | Patch: `base_revision` is current | Patch | Yes |
 | 26 | Patch: `resume_at` exists after the patch (unless sent to a parent) | Patch | Yes |
@@ -67,7 +67,7 @@ other documents cite them.
 | 36 | The run's work branch is neither a repository's default branch nor the run's parent branch (`metadata.branch_pattern` is free text). Checked once: the work branch is fixed when the run starts (LOG 147) | Run start | Yes |
 
 Checks 20, 23, 24 and 36 at run start, and 31 to 33 at step start, are as built in M5 (check 36 at run start only since LOG 147) (LOG 125 to 127, 133,
-134, 141). Check 23 at patch time is not built yet; `scm.merge` re-checks F1 at merge time.
+134, 141). Checks 21 and 23 are not run on a patch (a follow-up; no milestone); `scm.merge` re-checks F1 at merge time.
 
 ### 2.1 Plan size
 
@@ -115,7 +115,7 @@ is already a check above.
 | Tests a change to | Interpreter code | A template or fragment |
 | Input | A recorded Temporal history | A scripted set of step outcomes |
 | Catches | Non-determinism in workflow code | Routing and content regressions |
-| Runs in | Engine CI | Library CI |
+| Runs in | CI, default category | CI, default category |
 
 Replay works: Spike 1's nine recorded histories replay cleanly, and removing a
 version guard from Spike 3's interpreter change made a Spike 1 history fail
@@ -128,46 +128,57 @@ secret (LOG 83). They pass a secret scan before they are committed.
 
 ### 4.2 Test types
 
-| Type | What | Where |
+One workflow, `.github/workflows/ci.yml`, runs the tests in jobs by test
+category: `default`, `integration` and `cluster`. Its header maps each type
+below to its job and test classes. The `live` category is run by hand, not in
+CI.
+
+| Type | What | Category |
 |---|---|---|
-| Validation | Every template and fragment passes the load checks; a negative case for each blocking check | Library CI |
-| Re-drive | Scripted outcomes drive a template; a person's answers to its waits and an agent's questions go through the core's routing as the engine's do; the path, final status and how each question closed are asserted | Library CI |
-| Readable form | The rendered readable form is unchanged (golden file) | Library CI |
-| Replay | Recorded histories replay against the changed interpreter | Engine CI |
-| Failure injection | Worker crash, lost sandbox, Temporal unavailable, hook endpoint unreachable, continue-as-new under load with children and open decisions, stale patch | Engine CI |
-| Run-time rules | Each rule in section 3 | Engine CI |
-| Provider contracts | Each interface's suite, including every documented success response | Provider CI |
-| Merge race | Two work branches catch up from the same parent head; the second merge gets `base_moved` and loops; repeated refusals exhaust the allowance and escalate | Engine CI |
-| Agent reporting | `report`, `ask_human` (including across a worker restart), `checkpoint`, `propose_patch` | Engine CI |
-| Pre-submit parity | A session's check and the later step receive the same task, tools, model and commit | Engine CI |
-| Console (browser) | The console in Chromium (Playwright) against the API in process over the local stores, with a scripted engine writing the records a run would: find a wait in "Needs me" and answer it with a reason, start a run, set a breakpoint and continue, a change arriving over `/events`, the notification link, sign-in, and markup in API data shown as text (LOG 461) | Engine CI, default category |
+| Validation | Every template and fragment passes the load checks; a negative case for each blocking check | default |
+| Re-drive | Scripted outcomes drive a template; a person's answers to its waits and an agent's questions go through the core's routing as the engine's do; the path, final status and how each question closed are asserted | default |
+| Readable form | The rendered readable form is unchanged (golden file) | default |
+| Replay | Recorded histories replay against the changed interpreter | default |
+| Failure injection | Worker crash, lost sandbox, Temporal unavailable, hook endpoint unreachable, continue-as-new under load with children and open decisions, stale patch | integration; stale patch: default |
+| Run-time rules | Each rule in section 3 | default, integration |
+| Provider contracts | Each interface's suite, including every documented success response | default, integration, cluster |
+| Merge race | Two work branches catch up from the same parent head; the second merge gets `base_moved` and loops; repeated refusals exhaust the allowance and escalate | integration |
+| Agent reporting | `report` (including a proposed patch), `ask_human` (including across a worker restart), `checkpoint` | integration |
+| Pre-submit parity | A session's check and the later step receive the same task, tools, model and commit | integration |
+| Architecture | The shell holds no routing; project reference rules | default |
+| Deployment | Images, network policies, stop on SIGTERM | cluster, integration |
+| Console (serving) | The API serves the built console; the console sources never build markup or links from data | default |
+| Console (browser) | The console in Chromium (Playwright) against the API in process over the local stores, with a scripted engine writing the records a run would: find a wait in "Needs me" and answer it with a reason, start a run, set a breakpoint and continue, a change arriving over `/events`, the notification link, sign-in, and markup in API data shown as text (LOG 461) | default |
+| Live | A real agent runtime and the GitHub App | live, by hand |
 
 ### 4.3 Workflow test file
 
 ```yaml
 api_version: feature-flow/v1
 kind: workflow_test
-name: blocking_finding_goes_through_fix_loop
+name: ticket_fix_loop
 template: std:templates/ticket_delivery
 parameters: { ticket_id: FF-1042 }
 repositories: [acme/api]
 
 script:                           # outcome per step id, per visit; unlisted steps take their first success outcome
-  verify.review.findings_record: [recorded, recorded]
-  verify.fix_loop.fix: done
+  verify.fix.verify_fix: [not_fixed, verified]
 outputs:                          # outputs and namespace values per visit, to drive route guards
-  verify.review.findings_record: [{ new: 1 }, { new: 0 }]
+  "findings.open": 1
   "findings.open_blocking": [1, 0]
 
 expect:
-  path_includes: [implement, verify.fix_loop.fix, verify.review.findings_record, deliver.merge]
   status: completed
-  validation_errors: []
+  path_includes: [verify.review.review_0.assess, verify.fix.fix, verify.fix.verify_fix,
+                  verify.fix.fix, verify.fix.verify_fix, verify.tests, deliver.merge]
 ```
+
+An excerpt of `library/std/tests/ticket_fix_loop.yaml`.
 
 | Field | Meaning |
 |---|---|
-| `script` | Step id to outcome, per visit. A scalar applies to every visit. A value may be an error class (`{ error: infrastructure, times: 2 }`) to exercise retry rules, or, for a decision, the person's outcome with their reason (`{ outcome: rejected, reason: "requirements omit the audit log" }`) |
+| `description` | Optional: what the test shows |
+| `script` | Step id to outcome, per visit. A scalar applies to every visit. A value may be an error class (`{ error: infrastructure, times: 2 }`, with an optional `then: <outcome>` after the errors) to exercise retry rules, or, for a decision, the person's outcome with their reason (`{ outcome: rejected, reason: "requirements omit the audit log" }`) |
 | `outputs` | Outputs per visit, and namespace values such as `findings.*`, so guards can be driven |
 | `patch` | Optional: a patch to apply, to test patch checks |
 | `expect.path` or `expect.path_includes` | The steps executed, exactly or as a subsequence. For a `parallel`, branch paths are given separately, without asserting interleaving |
@@ -175,7 +186,7 @@ expect:
 | `expect.validation_errors` | Check numbers expected to block |
 | `expand` | LOG 75: the items each `plan.expand` step reads |
 | `expect.executions`, `expect.escalated`, `expect.clean_up` | LOG 75: how many times a step ran; the steps with an open intervention when the run settles; the steps a `clean_up` route reset the branch for |
-| `overrides`, `answers`, `expect.skipped` | A person's steering (M7): `breakpoint`, `skip` (with `outcome`) or `grant_attempts` on a step, made at the run's start as an administrator; answers to the breakpoints, interventions and patch approvals that open at a step, in order (`continue`, `retry`, `approve`, `reject`, `{ go_to: <step> }`, `{ grant_attempts: n }`, `{ end: <status> }`); a patch approval opens at the step that proposed the patch; the steps a skip ended without running |
+| `overrides`, `answers`, `expect.skipped` | A person's steering (M7): `breakpoint`, `skip` (with `outcome`) or `grant_attempts` on a step, made at the run's start as an administrator; answers to the breakpoints, interventions and patch approvals that open at a step, in order (`continue`, `retry`, `approve`, `reject`, `{ go_to: <step> }`, `{ replan: <step> }`, either with `clean_up: true`, `{ grant_attempts: n }`, `{ end: <status> }`); a patch approval opens at the step that proposed the patch; the steps a skip ended without running |
 | `questions`, `expect.questions` | An agent's questions (`docs/04` section 3.4), by step id, in order: each `ask` (with optional `options`, `id`, default `<step>-q<n>`, and `visit`, default 1) is held while that visit runs, then answered (`answer: <text>`), timed out (`timeout: true`), or with neither left to close when the step ends; how each closed, by id: `answered`, `timed_out` or `step_ended` (LOG 386). Only a question has a deadline: gates, breakpoints, interventions and patch approvals wait until answered. The `merge_action` gate an action raises while it runs is not scripted |
 | `expect.context` | Agent step id to execution number to texts the run context rendered into that execution's specification must contain (`docs/04` section 3.5), such as `{ plan.plan: { 2: ["requirements omit the audit log"] } }` |
 
@@ -185,28 +196,31 @@ name; an output the file does not give takes its type's zero value, and one
 given as `~` is not reported; a work error fails `times` executions; steps
 finish one at a time, in the order they started. `ff test` runs the files.
 
-Tests live with the library they test. An organisation's distribution
-repository runs `std`'s tests against its overrides.
+Tests live with the library they test.
 
 ### 4.4 The readable form
 
-What a person sees in the console and what a planner agent reads through
-`inspect_plan`. Generated from the plan; never maintained by hand.
+What a person sees in the console (`GET /runs/{id}/plan`) and what `ff show`
+prints. Generated from the plan; never maintained by hand. Abridged from the
+golden file for `ticket_delivery` (`tests/FeatureFlow.Validation.Tests/Golden`):
 
 ```
-Plan ticket_delivery rev 3 (ticket FF-1042)            policy: merge by engine (into epic branch)
+Template ticket_delivery (level ticket)
+  policy: deliver.merge engine_can_merge = params.engine_can_merge (default false)
 ──────────────────────────────────────────────────────────────────────────────────────────
- #  id                     form        role / action   access  status    routes (non-default)
- 1  baseline.tests         action      test.run        -       done
- 2  plan_spec              agent       planner         none    done
- 3  approve_spec           decision    ticket.spec_approval  -  done(auto) rejected->plan_spec (clean_up)
- 4  implement              agent       implementer     branch  running
- 5  verify.tests           action      test.run        -       pending   [protected]
- 6  verify.review.angle_0  agent       reviewer        none    pending   [protected]
+  #  id                             form      role / action         access  status   routes (non-default)
+  1  baseline.tests                 action    test.run              -       pending  failed->escalate(std:prompts/baseline_failed)
+  3  plan.plan                      agent     planner               none    pending
+  4  plan.validate                  action    artifact.validate     -       pending  invalid->plan.plan
+  5  approve_spec                   decision  ticket.spec_approval  -       pending  rejected->plan.plan (clean_up)
+  6  implement                      agent     implementer           branch  pending
+  7  verify.tests                   action    test.run              -       pending  failed->verify.repair  [protected]
+ 10  verify.review.review_0.assess  agent     reviewer              none    pending  reviewed->[...]  [protected]
  ...
-12  deliver.merge          action      scm.merge       -       pending   base_moved->deliver.catch_up
+ 37  deliver.merge                  action    scm.merge             -       pending  base_moved->deliver.catch_up  [protected]
 
-Protected: verify.*      Defaults: failure, blocked -> escalate; success -> next
+Protected: verify.*, deliver.*
+Defaults: blocked, failure -> escalate; success -> next; attempts_exhausted -> escalate; in a branch, other outcomes -> join
 ```
 
 | Rule | Detail |
@@ -214,7 +228,7 @@ Protected: verify.*      Defaults: failure, blocked -> escalate; success -> next
 | One line per step | Sequence, id, form, role or action, effective write access, status, non-default routes |
 | Defaults stated once | At the foot, so the lines show only what differs |
 | Protection and policy shown | Protected steps marked; the effective policy summarised |
-| Inputs hidden | An agent asks for one step's detail by id, which keeps the form small |
+| Inputs hidden | A step's inputs are not shown, which keeps the form small |
 
 ---
 

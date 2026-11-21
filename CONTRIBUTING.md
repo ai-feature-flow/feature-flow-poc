@@ -10,10 +10,14 @@ handover, which it replaces.
 | The rewrite plan and its status | `docs/PLAN.md` (start here) |
 | Design documents | `docs/00` (principles) to `docs/10` (decisions, risks, spike plan) |
 | The version 1 build plan | `docs/11-build-plan.md` |
-| Judgement calls made without the product owner (LOG 1 to 70 approved 2026-11-01, 71 to 90 on 2026-11-02, 91 to 147 on 2026-11-03, 148 to 200 on 2026-11-04; new ones are added unreviewed) | `docs/LOG.md` |
+| The alpha and first full release plan | `docs/12-build-plan-phase-2.md` |
+| Milestone results notes and handovers | `docs/build/` |
+| Judgement calls made without the product owner; approvals are recorded there | `docs/LOG.md` |
 | The first design | `archive/docs/`, read-only. Spike results there are the evidence the new design cites: `archive/docs/15` (Spike 1), `16` (Spike 2 and the Claude Code proof), `17` and `18` (Spike 3) |
-| Reviews from the product owner | `docs/reviews/review-NN.md` |
-| Spike code | `spikes/01-interpreter`, `spikes/02-real-run`, `spikes/03-concurrent` |
+| Reviews from the product owner | `archive/docs/reviews/` for the first design; later reviews arrive in pull requests or in `docs/build/` |
+| Spike results for the new design (SP1 to SP5) | `docs/spikes/` |
+| Spike code | `spikes/01-interpreter` to `spikes/08-model-proxy` |
+| Engine code | `src/`, the hosts in `hosts/`, tests in `tests/`, the standard library in `library/std/` |
 | Fixture repositories | `ai-feature-flow/feature-flow-example`, a small .NET API the spikes run against, and `ai-feature-flow/feature-flow-example-client`, its client library (from M6, for runs over two repositories) |
 
 ## Writing
@@ -59,12 +63,8 @@ implementing features and making design decisions.
 
 ## The review cycle
 
-Design work is pushed to `main`. The product owner replies with a review file
-in `docs/reviews/`. Apply it, then push. Keep design work on `main`; do not
-drift onto a branch.
-
-Code work (`src/`, `hosts/`, `tests/`, from build milestone M0) goes through
-pull requests, which merge only when CI passes (`docs/11` section 4.1; while main development goes on, a pull
+Design and code work (`src/`, `hosts/`, `tests/`, `docs/`) go through pull
+requests, which merge only when CI passes (`docs/11` section 4.1; while main development goes on, a pull
 request runs only the default tests unless labelled `full-ci`).
 
 ## Commits

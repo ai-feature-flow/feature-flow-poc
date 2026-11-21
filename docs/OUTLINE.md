@@ -13,7 +13,8 @@ the outline raises.
 
 ## 1. The documents
 
-This section is the plan as accepted before drafting. Where the written
+This section is the plan as accepted before drafting. It is historical and not
+kept in line with the code. Where the written
 documents differ (for example, no `resume` directive; a person's merge on the
 code host is an "action request" decision), the documents win.
 
@@ -235,15 +236,15 @@ documents, which differ in places from the plan in section 1.
 | `setup` and `after_changes` repository commands | `docs/04` section 3.1; `docs/07` section 4 |
 | Run context (`context.md`) and `context: none` | `docs/04` section 3.5; `docs/03` section 2.2 |
 | Roles orchestrator, worker, validator | `docs/08` section 6.1 (replaced by purpose-named roles) |
-| Toolsets and external MCP servers | `docs/06` section 3.9 |
-| Library manifest, inputs, resources, entry points | `docs/08` sections 1 and 2 |
-| Input precedence and child inheritance | `docs/03` sections 6.2 and 9.2 |
+| Toolsets and external MCP servers (not in version 1) | `docs/06` section 3.9 |
+| Library manifest, inputs and resources (both not in version 1), entry points | `docs/08` sections 1 and 2 |
+| Input precedence (the library's `inputs`: not in version 1) and child inheritance | `docs/03` sections 6.2 and 9.2 |
 | Budget on descendant runs (`max_work_items`) | `docs/05` floor F11 and section 3.1 |
 | `approvals: auto` as one switch | `docs/05` section 3.1 (request and cap) |
 | Interactive planning sessions and planning repositories | `docs/04` section 4.4; `docs/06` section 3.11 |
 | `awaitCondition` | `docs/04` section 8.2 |
 | `awaitChecks` and its no-CI logic | `docs/04` section 8.1; `docs/06` section 3.5 |
-| Declarative tracker transitions; Jira tools for planners | `docs/03` section 2.5; `docs/04` section 6.1 |
+| Declarative tracker transitions; Jira tools for planners (not in version 1) | `docs/03` section 2.5; `docs/04` section 6.1 |
 | Notifications on domain events, threaded | `docs/06` section 3.10 |
 | `awaitCopilotReview` | `docs/06` section 3.7 (findings source) |
 | `reportPublication` | `docs/04` section 12 (`delivery.report`) |
