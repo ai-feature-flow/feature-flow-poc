@@ -30,7 +30,8 @@ public sealed record ScriptVisit(
 /// <summary>
 /// A fake world's script (kind <c>fake_script</c>): visits per step, keyed <c>&lt;template&gt;:&lt;step id&gt;</c>
 /// or <c>&lt;step id&gt;</c> for any template, then <c>&lt;template&gt;:*</c> for any other step of a template. A list's last visit repeats.
-/// <c>defaults</c>, keyed the same way, holds the visits of steps <c>steps</c> does not name.
+/// <c>defaults</c>, keyed the same way, holds the visits of steps <c>steps</c> does not name. A scripted artifact's text
+/// may name a step input as <c>${name}</c>, which reports that input's value.
 /// </summary>
 public sealed class FakeScript
 {
@@ -109,7 +110,7 @@ public sealed class FakeScript
 /// Builds a step's report from a visit, writing scripted artifact content to the artifact store. Shared by the
 /// scripted and recording runtimes.
 /// </summary>
-sealed class Reporter(Func<IArtifactStoreProvider> store)
+sealed partial class Reporter(Func<IArtifactStoreProvider> store)
 {
     public async Task<ProviderResult<StepReport>> ReportAsync(StepIdentity step, StepContract contract, IReadOnlyDictionary<string, string> inputs,
         ScriptVisit? visit, CancellationToken cancellationToken)
@@ -131,7 +132,7 @@ sealed class Reporter(Func<IArtifactStoreProvider> store)
         foreach (var name in contract.ArtifactsFor(outcome))
         {
             var content = visit?.Artifacts?[name] is { } node
-                ? node is YScalar { Plain: false } text ? text.Text : YamlWriter.Write(node)
+                ? Fill(node is YScalar { Plain: false } text ? text.Text : YamlWriter.Write(node), inputs)
                 : JsonSerializer.Serialize(new { fake = $"{step.RunId}/{step.StepId}/{step.Execution}/{name}" });
             var put = await store().PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(content)), cancellationToken);
             if (!put.Ok)
@@ -147,6 +148,19 @@ sealed class Reporter(Func<IArtifactStoreProvider> store)
                 : null,
         });
     }
+
+    /// <summary>
+    /// Scripted artifact content with each <c>${name}</c> replaced by the step's input <c>name</c>, as plain text, so one
+    /// visit serves steps whose inputs differ (each child ticket of an epic plans its own <c>subject_id</c>). A name the
+    /// step has no input for is left as written.
+    /// </summary>
+    static string Fill(string text, IReadOnlyDictionary<string, string> inputs) =>
+        Placeholder().Replace(text, m => inputs.TryGetValue(m.Groups[1].Value, out var value)
+            ? Convert.ToString(YamlWriter.ReadPlain(value), CultureInfo.InvariantCulture) ?? value
+            : m.Value);
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")]
+    private static partial System.Text.RegularExpressions.Regex Placeholder();
 
     /// <summary>The visit's delay: <c>delay</c>, or <c>delay_from</c>, an input holding milliseconds.</summary>
     public static TimeSpan Delay(ScriptVisit? visit, IReadOnlyDictionary<string, string> inputs) =>
@@ -177,7 +191,8 @@ sealed class Reporter(Func<IArtifactStoreProvider> store)
 /// <summary>
 /// What the scripted and recording runtimes do in the sandbox an agent step runs in, through the sandbox provider's own
 /// calls, so the step's real path (commit, push to the hidden reference, move the branch, copy artifacts out) runs as with
-/// a real agent in any sandbox: a step with write access changes the checkout, one file per execution, as an agent's edit
+/// a real agent in any sandbox: a step with write access changes the checkout, one file per run and step
+/// (<c>work/&lt;run id&gt;/&lt;step id&gt;.txt</c>, so sibling runs do not edit the same file) rewritten each execution, as an agent's edit
 /// would (unless its step id is in <c>no_edits</c>, such as a fixer that commits no fix); the hook calls of an agent that
 /// reads every file of the checkout are recorded, as the hook endpoint would, so std's reviewers do not re-read for ever
 /// (<c>changed_files_unread</c>); and the artifacts the report names are copied into the sandbox's output folder. The
@@ -210,7 +225,7 @@ sealed class SandboxActing(InMemoryForge forge, MemorySandbox memory, Func<ISand
                 cancellationToken);
             if (!edit.Ok)
                 return edit.Error;
-            if ((await sandboxes.CopyInAsync(sandbox, edit.Value!, $"{checkout}/work/{task.Step.StepId}.txt", readOnly: false, cancellationToken)).Error is { } failed)
+            if ((await sandboxes.CopyInAsync(sandbox, edit.Value!, $"{checkout}/work/{task.Step.RunId}/{task.Step.StepId}.txt", readOnly: false, cancellationToken)).Error is { } failed)
                 return failed;
         }
 

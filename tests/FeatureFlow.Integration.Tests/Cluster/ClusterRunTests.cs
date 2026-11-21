@@ -49,7 +49,7 @@ public class ClusterRunTests
             // The scripted agent's edit, made in the sandbox pod, is on the work branch in the Git server: checked out, committed
             // and pushed on the real path.
             var edit = await Kubectl.OkAsync("-n", "feature-flow", "exec", "deploy/git", "--", "git", "--git-dir", "/srv/git/trial/app.git", "show",
-                $"refs/heads/ff/smoke/{ticket}:work/implement.txt");
+                $"refs/heads/ff/smoke/{ticket}:work/{id}/implement.txt");
             Assert.StartsWith("implement execution 1", edit);
         }
         finally

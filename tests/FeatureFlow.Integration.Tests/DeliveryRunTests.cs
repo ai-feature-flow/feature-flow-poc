@@ -6,7 +6,7 @@ namespace FeatureFlow.Integration.Tests;
 /// <summary>
 /// M6 delivery through the engine: the work-item budget (F11) at <c>run.child</c> and <c>plan.expand</c>, across a run
 /// tree and within the organisation's ceiling, and declarative tracker updates on the run's tracker issue. Test library
-/// <c>libraries/delivery</c>; the stand-in serves the actions.
+/// <c>libraries/delivery</c>; its steps act on the harness's fixture repository.
 /// </summary>
 [Trait("Category", "Integration")]
 public class DeliveryRunTests
@@ -26,7 +26,7 @@ public class DeliveryRunTests
     public async Task The_roots_budget_counts_every_descendant_and_a_childs_own_budget_does_not_count()
     {
         await using var h = await Harness.StartAsync("budget-tree", libraries: Delivery);
-        var root = h.Start("delivery:templates/budget_tree");
+        var root = h.Start("delivery:templates/budget_tree", "--repo", Harness.RepoName);
 
         // The root's child is one work item and its first child the second; the child's second child is refused.
         var middle = await ChildAsync(h, root);
@@ -81,13 +81,13 @@ public class DeliveryRunTests
     {
         await using var h = await Harness.StartAsync("budget-ceiling", libraries: Delivery, policy: "  budgets: { max_work_items: { ceiling: 1 } }");
 
-        var capped = h.Start("delivery:templates/two_children");
+        var capped = h.Start("delivery:templates/two_children", "--repo", Harness.RepoName);
         var reason = await WaitReasonAsync(h, capped);
         Assert.Contains("may create 1 descendant run", reason, StringComparison.Ordinal);
         Assert.Single((await h.ShowAsync(capped))["children"]!.AsArray());
 
         // budget_tree asks for 2, above the ceiling: check 22 refuses it at run start.
-        var asking = h.Start("delivery:templates/budget_tree");
+        var asking = h.Start("delivery:templates/budget_tree", "--repo", Harness.RepoName);
         var (_, end, _) = h.Cli("wait", asking, "--timeout", "120");
         Assert.Equal($"run {asking} failed", end.Trim());
         Assert.Contains("max_work_items", (await h.ShowAsync(asking))["run"]!["detail"]!.ToString(), StringComparison.Ordinal);
@@ -102,7 +102,7 @@ public class DeliveryRunTests
         await using var h = await Harness.StartAsync("tracked", autoApprove: true, libraries: Delivery, without: ["tracker"],
             providers: $"  tracker: {{ instances: {{ memory: {{ world: {world} }} }} }}");
 
-        var id = h.Start("delivery:templates/tracked", "--tracker-issue", issue.Key);
+        var id = h.Start("delivery:templates/tracked", "--repo", Harness.RepoName, "--tracker-issue", issue.Key);
         var (_, end, _) = h.Cli("wait", id, "--timeout", "120");
 
         Assert.Equal($"run {id} completed", end.Trim());
@@ -122,7 +122,7 @@ public class DeliveryRunTests
         await using var h = await Harness.StartAsync("tracked-missing", autoApprove: true, libraries: Delivery, without: ["tracker"],
             providers: $"  tracker: {{ instances: {{ memory: {{ world: {world} }} }} }}");
 
-        var id = h.Start("delivery:templates/tracked", "--tracker-issue", "MEM-404");
+        var id = h.Start("delivery:templates/tracked", "--repo", Harness.RepoName, "--tracker-issue", "MEM-404");
         var (_, end, _) = h.Cli("wait", id, "--timeout", "120");
 
         Assert.Equal($"run {id} completed", end.Trim());
@@ -136,7 +136,7 @@ public class DeliveryRunTests
     {
         // budget_middle asks for 50, above the ceiling of 10; as a child its budget is not read, so it starts.
         await using var h = await Harness.StartAsync("budget-child-cap", libraries: Delivery, policy: "  budgets: { max_work_items: { ceiling: 10 } }");
-        var root = h.Start("delivery:templates/budget_tree");
+        var root = h.Start("delivery:templates/budget_tree", "--repo", Harness.RepoName);
 
         var middle = await ChildAsync(h, root);
         var reason = await WaitReasonAsync(h, middle);
@@ -155,7 +155,7 @@ public class DeliveryRunTests
         await using var h = await Harness.StartAsync("tracked-outage", autoApprove: true, libraries: Delivery, without: ["tracker"],
             providers: $"  tracker: {{ instances: {{ memory: {{ world: {world} }} }} }}");
 
-        var id = h.Start("delivery:templates/tracked", "--tracker-issue", issue.Key);
+        var id = h.Start("delivery:templates/tracked", "--repo", Harness.RepoName, "--tracker-issue", issue.Key);
         var (_, end, _) = h.Cli("wait", id, "--timeout", "180");
 
         Assert.Equal($"run {id} completed", end.Trim());

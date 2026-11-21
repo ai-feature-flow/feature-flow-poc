@@ -47,7 +47,7 @@ public class ForgeTicketTests
         var main = forge.Resolve(repo, "main")!;
         var merged = forge.GetCommit(repo, main);
         Assert.Equal([before], merged.Parents);
-        Assert.StartsWith("implement execution 1", forge.ReadFile(repo, main, "work/implement.txt"), StringComparison.Ordinal);
+        Assert.StartsWith("implement execution 1", forge.ReadFile(repo, main, $"work/{id}/implement.txt"), StringComparison.Ordinal);
         Assert.Contains($"Feature-Flow-Merge: {id}/deliver.merge", merged.Message, StringComparison.Ordinal);
         Assert.Equal(forge.GetCommit(repo, forge.Resolve(repo, "ff/ticket/T-1")!).Files, merged.Files);
 
@@ -125,7 +125,7 @@ public class ForgeTicketTests
         Assert.Equal($"run {id} completed", end.Trim());
         var landed = forge.Resolve(repo, "ff/epic/E-1")!;
         Assert.Equal([epic], forge.GetCommit(repo, landed).Parents);
-        Assert.StartsWith("implement execution 1", forge.ReadFile(repo, landed, "work/implement.txt"), StringComparison.Ordinal);
+        Assert.StartsWith("implement execution 1", forge.ReadFile(repo, landed, $"work/{id}/implement.txt"), StringComparison.Ordinal);
         Assert.Equal("the epic's work\n", forge.ReadFile(repo, landed, "epic.txt"));
         Assert.Equal(main, forge.Resolve(repo, "main"));
         var state = (await new InMemoryCodeHost(forge).GetPullRequestAsync(new PullRequestRef(repo, 1), TestContext.Current.CancellationToken)).Unwrap();
@@ -159,7 +159,7 @@ public class ForgeTicketTests
                                                           && e["detail"]?.ToString().Contains("changed_files_unread=0", StringComparison.Ordinal) == true);
         var landed = forge.Resolve(repo, "ff/epic/E-2")!;
         Assert.Equal("a sibling ticket's work\n", forge.ReadFile(repo, landed, "sibling.txt"));
-        Assert.StartsWith("implement execution 1", forge.ReadFile(repo, landed, "work/implement.txt"), StringComparison.Ordinal);
+        Assert.StartsWith("implement execution 1", forge.ReadFile(repo, landed, $"work/{id}/implement.txt"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -214,7 +214,7 @@ public class ForgeTicketTests
         var (exit, end, error) = h.Cli("wait", id, "--timeout", "240");
         Assert.True(exit == 0, end + error);
         Assert.Null(forge.ReadFile(repo, "main", "stray.txt"));
-        Assert.NotNull(forge.ReadFile(repo, "main", "work/implement.txt"));
+        Assert.NotNull(forge.ReadFile(repo, "main", $"work/{id}/implement.txt"));
         await h.RecordHistoryAsync(id, "ticket_clean_up");
     }
 

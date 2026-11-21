@@ -106,7 +106,7 @@ public class TicketRunTests
         var recorded = await File.ReadAllLinesAsync(Path.Combine(h.Folder, "recorded", id + ".jsonl"), TestContext.Current.CancellationToken);
         Assert.Contains(recorded, l => l.Contains("\"step\":\"implement\"", StringComparison.Ordinal) && l.Contains("\"kind\":\"agent\"", StringComparison.Ordinal));
 
-        Assert.StartsWith("implement execution 1", h.DryForge.ReadFile(h.Repo, h.DryForge.Resolve(h.Repo, "main")!, "work/implement.txt"), StringComparison.Ordinal);
+        Assert.StartsWith("implement execution 1", h.DryForge.ReadFile(h.Repo, h.DryForge.Resolve(h.Repo, "main")!, $"work/{id}/implement.txt"), StringComparison.Ordinal);
         Assert.Equal(before, h.Forge.Resolve(h.Repo, "main"));
     }
 

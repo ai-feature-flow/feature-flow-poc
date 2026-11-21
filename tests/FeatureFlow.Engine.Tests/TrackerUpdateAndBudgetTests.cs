@@ -37,8 +37,8 @@ public sealed class TrackerUpdateAndBudgetTests
 
         Assert.Equal(["begin:in_progress"], Due(plan, new TraceEntry("started", "begin", "execution 1")));
         Assert.Equal(["deliver:code_review"], Due(plan, new TraceEntry("started", "deliver.say", "execution 1")));
-        Assert.Equal(["deliver:done"], Due(plan, new TraceEntry("completed", "deliver.say", "composed")));
-        Assert.Empty(Due(plan, new TraceEntry("completed", "begin", "composed"), new TraceEntry("escalated", "deliver.say")));
+        Assert.Equal(["deliver:done"], Due(plan, new TraceEntry("completed", "deliver.say", "inspected")));
+        Assert.Empty(Due(plan, new TraceEntry("completed", "begin", "inspected"), new TraceEntry("escalated", "deliver.say")));
     }
 
     [Fact]

@@ -115,6 +115,28 @@ public sealed class LocalProviderTests : IDisposable
     }
 
     [Fact]
+    public async Task A_scripted_artifact_names_the_steps_inputs_and_reports_their_values()
+    {
+        var script = Path.Combine(folder, "script.yaml");
+        await File.WriteAllTextAsync(script, """
+            api_version: feature-flow/v1
+            kind: fake_script
+            steps: { implement: { artifacts: { claims: { criterion: "AC-${ticket}", size: "${size}", other: "${unknown}" } } } }
+            """, Ct);
+        var store = new FileSystemArtifactStore(Path.Combine(folder, "artifacts"));
+        var runtime = new ScriptedAgentRuntime(FakeScript.Read(script), () => store);
+        var task = new AgentTask(Step(1), "implementer", null, new Dictionary<string, string> { ["ticket"] = "\"T-1\"", ["size"] = "3" }, Contract);
+
+        var session = (await runtime.StartAsync(SandboxHandle.None, task, new AgentLimits(null, 2), Ct)).Unwrap();
+        var report = (await runtime.GetResultAsync(session, Ct)).Unwrap().Report!;
+
+        var text = await Text(store, new ArtifactRef(report.Artifacts["claims"]));
+        Assert.Contains("AC-T-1", text);
+        Assert.Contains("\"size\": \"3\"", text);
+        Assert.Contains("${unknown}", text);
+    }
+
+    [Fact]
     public async Task A_scripted_infrastructure_error_fails_the_call_the_given_number_of_times_then_goes_on()
     {
         var script = Path.Combine(folder, "script.yaml");
@@ -151,7 +173,7 @@ public sealed class LocalProviderTests : IDisposable
         // listing of the checkout and the artifacts go through its calls (LOG A2-3b3a).
         var store = new FileSystemArtifactStore(Path.Combine(folder, "artifacts"));
         var records = new SqliteRecordStore(Path.Combine(folder, "records.db"));
-        var sandboxes = new MemorySandbox(() => store).On(new SandboxRule("^git ls-files", Output: "README.md\nwork/implement.txt\n"));
+        var sandboxes = new MemorySandbox(() => store).On(new SandboxRule("^git ls-files", Output: "README.md\nwork/run-1/implement.txt\n"));
         var d = new Model.DiagnosticBag();
         var config = Model.ConfigurationReader.ReadInstallation($$"""
             api_version: feature-flow/v1
@@ -171,11 +193,11 @@ public sealed class LocalProviderTests : IDisposable
         var session = (await runtime.StartAsync(sandbox, task, new AgentLimits(null, 2), Ct)).Unwrap();
         var report = (await runtime.GetResultAsync(session, Ct)).Unwrap().Report!;
 
-        Assert.Equal("implement execution 1, session 1\n", sandboxes.ReadFile(sandbox, "/ff/work/work/implement.txt"));
+        Assert.Equal("implement execution 1, session 1\n", sandboxes.ReadFile(sandbox, "/ff/work/work/run-1/implement.txt"));
         Assert.Equal("claims.json", report.Artifacts["claims"]);
         Assert.Contains("run-1/implement/1/claims", sandboxes.ReadFile(sandbox, "/ff/out/claims.json"));
         var hooks = (await records.QueryAsync<AgentEventRecord>(Queries.AgentEvents, new Dictionary<string, string> { ["step_key"] = "run-1/implement/1" }, Ct)).Unwrap();
-        Assert.Equal(["Read", "Read /ff/work/README.md", "Read /ff/work/work/implement.txt"], hooks.Select(h => h.Detail));
+        Assert.Equal(["Read", "Read /ff/work/README.md", "Read /ff/work/work/run-1/implement.txt"], hooks.Select(h => h.Detail));
     }
 
     [Fact]

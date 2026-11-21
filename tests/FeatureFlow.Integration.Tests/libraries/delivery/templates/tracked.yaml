@@ -13,7 +13,7 @@ defaults:
 
 steps:
   - id: begin
-    action: artifact.compose
+    action: repo.inspect
     tracker: { on_start: in_progress }
 
   - id: deliver
