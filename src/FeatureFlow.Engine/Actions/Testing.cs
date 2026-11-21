@@ -132,18 +132,19 @@ static class Testing
 
     /// <summary>
     /// A tier delegated to CI. The run is recorded once triggered, so the activity's retries poll the same run rather
-    /// than start another (LOG 147); only a trigger whose answer was lost starts a second.
+    /// than start another (LOG 147); only a trigger whose answer was lost starts a second. The record's time is the run's
+    /// dispatch time, which the provider may use to tell a run it has not caught up with from one that is gone (LOG 500).
     /// </summary>
     static async Task<TestResults> CiTierAsync(ActionRun run, ICiProvider ci, RepoRef repo, TestTier tier, string head)
     {
-        var recorded = await run.RememberAsync($"ci_run {repo.FullName} {tier.Name} {head}", async () =>
+        var recorded = await run.RememberEventAsync($"ci_run {repo.FullName} {tier.Name} {head}", async () =>
         {
             var triggered = ActionRun.Must(await ci.TriggerAsync(repo, new CiJobRef(tier.Ci!.Job, new Dictionary<string, string>()), head, run.Ct),
                 $"start CI for tier {tier.Name}");
             return $"{triggered.Id} {triggered.Url}".TrimEnd();
         });
-        var parts = recorded.Split(' ', 2);
-        var started = new CiRunRef(repo, parts[0], head, parts.Length > 1 ? parts[1] : null);
+        var parts = recorded.Detail.Split(' ', 2);
+        var started = new CiRunRef(repo, parts[0], head, parts.Length > 1 ? parts[1] : null, recorded.At);
         run.Events.Add($"tier {tier.Name} delegated to CI: {started.Url ?? started.Id}");
         while (true)
         {

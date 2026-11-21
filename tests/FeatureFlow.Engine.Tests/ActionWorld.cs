@@ -45,7 +45,8 @@ public sealed class ActionWorld : IAsyncDisposable
     readonly Dictionary<string, int> executions = new(StringComparer.Ordinal);
 
     public ActionWorld(IReadOnlyDictionary<string, string>? files = null, bool sandbox = true, bool ci = true, bool throwingCodeHost = false, Func<Exception>? codeHostThrows = null,
-        Func<ICodeHostProvider, ICodeHostProvider>? codeHost = null, Func<Func<IArtifactStoreProvider>, IFindingsSourceProvider>? findingsSource = null, bool decorated = false)
+        Func<ICodeHostProvider, ICodeHostProvider>? codeHost = null, Func<Func<IArtifactStoreProvider>, IFindingsSourceProvider>? findingsSource = null, bool decorated = false,
+        Func<Func<IArtifactStoreProvider>, ICiProvider>? ciProvider = null)
     {
         Directory.CreateDirectory(folder);
         Repo = Forge.CreateRepository("acme/api", files ?? new Dictionary<string, string> { ["README.md"] = "# api\n" });
@@ -63,7 +64,7 @@ public sealed class ActionWorld : IAsyncDisposable
             ["tracker"] = One(Tracker),
         };
         if (ci)
-            instances["ci"] = One(new InMemoryCi(Forge, () => Store));
+            instances["ci"] = One(ciProvider?.Invoke(() => Store) ?? new InMemoryCi(Forge, () => Store));
         if (sandbox)
             instances["sandbox"] = One(Sandbox);
         if (findingsSource is not null)

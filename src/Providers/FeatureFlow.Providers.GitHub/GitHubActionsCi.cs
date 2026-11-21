@@ -26,6 +26,12 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
     /// </summary>
     public long MaxDownloadBytes { get; init; } = 100L * 1024 * 1024;
 
+    /// <summary>
+    /// How long after its dispatch a run GitHub answers 404 for is still reported queued (LOG 500): GitHub's run lookup
+    /// can miss a run for a few seconds after the dispatch returned its id. After this, 404 is <c>not_found</c>.
+    /// </summary>
+    public TimeSpan DispatchGrace { get; init; } = TimeSpan.FromMinutes(5);
+
     public ProviderDescription Describe() => new("ci", "github_actions", "0.1.0", new CiCapabilities(true, true, true, false, false));
 
     public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => api.CheckAsync(cancellationToken);
@@ -63,7 +69,7 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
         if (dispatched.Value!.Code != 200 || dispatched.Value.Json?["workflow_run_id"]?.GetValue<long>() is not { } id)
             return GitHubApi.Unexpected<CiRunRef>(dispatched.Value, "POST the dispatch");
         return ProviderResult<CiRunRef>.Success(new CiRunRef(repo, id.ToString(System.Globalization.CultureInfo.InvariantCulture), revision,
-            dispatched.Value.Json["html_url"]?.GetValue<string>()));
+            dispatched.Value.Json["html_url"]?.GetValue<string>(), DateTimeOffset.UtcNow));
     }
 
     async Task<ProviderResult<IReadOnlySet<string>>> DeclaredInputsAsync(RepoRef repo, string workflow, string reference, CancellationToken cancellationToken)
@@ -88,10 +94,15 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
         return response.Value!.Code == 200 ? ProviderResult<JsonNode>.Success(response.Value.Json!) : GitHubApi.Unexpected<JsonNode>(response.Value, "GET the run");
     }
 
-    /// <summary>GitHub's run states: <c>queued</c>, <c>waiting</c>, <c>requested</c> and <c>pending</c> are queued.</summary>
+    /// <summary>
+    /// GitHub's run states: <c>queued</c>, <c>waiting</c>, <c>requested</c> and <c>pending</c> are queued. A run that
+    /// answers 404 within <see cref="DispatchGrace"/> of its dispatch is queued too: GitHub has not caught up with it yet.
+    /// </summary>
     public async Task<ProviderResult<CiRunStatus>> GetRunStatusAsync(CiRunRef run, CancellationToken cancellationToken)
     {
         var raw = await RunAsync(run, cancellationToken);
+        if (raw.Error is { Reason: "not_found" } && IsRunId(run.Id) && run.DispatchedAt is { } at && DateTimeOffset.UtcNow - at < DispatchGrace)
+            return ProviderResult<CiRunStatus>.Success(new CiRunStatus(CheckStates.Queued, null));
         if (!raw.Ok)
             return new ProviderResult<CiRunStatus>(null, raw.Error);
         return ProviderResult<CiRunStatus>.Success(Status(raw.Value!));

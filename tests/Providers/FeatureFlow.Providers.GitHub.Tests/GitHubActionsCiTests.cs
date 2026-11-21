@@ -63,9 +63,11 @@ public sealed class GitHubActionsCiTests : IDisposable
     {
         Dispatchable();
 
+        var before = DateTimeOffset.UtcNow;
         var run = (await ci.TriggerAsync(Repo, Unit, Sha, Ct)).Unwrap();
 
-        Assert.Equal(new CiRunRef(Repo, "43", Sha, "https://x/43"), run);
+        Assert.Equal(new CiRunRef(Repo, "43", Sha, "https://x/43"), run with { DispatchedAt = null });
+        Assert.InRange(run.DispatchedAt!.Value, before, DateTimeOffset.UtcNow);
         var dispatch = JsonNode.Parse(Assert.Single(github.Called(Post, "~/actions/workflows/unit.yml/dispatches")).Body)!;
         // The workflow runs from the reviewed default branch, never from the revision the agent made.
         Assert.Equal("main", dispatch["ref"]!.GetValue<string>());
@@ -135,6 +137,36 @@ public sealed class GitHubActionsCiTests : IDisposable
     {
         github.On(Get, "~/actions/runs/9", 404, """{"message":"Not Found"}""");
         Assert.Equal("not_found", (await ci.GetRunStatusAsync(new CiRunRef(Repo, "9", Sha), Ct)).Error?.Reason);
+    }
+
+    /// <summary>LOG 500: GitHub can answer 404 for a run for a few seconds after the dispatch returned its id.</summary>
+    [Fact]
+    public async Task A_run_GitHub_has_not_caught_up_with_since_its_dispatch_is_queued_until_it_appears()
+    {
+        var reads = 0;
+        github.On(Get, "~/actions/runs/43", _ => ++reads <= 2
+            ? new HttpResponseMessage(System.Net.HttpStatusCode.NotFound) { Content = new StringContent("""{"message":"Not Found"}""") }
+            : new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent("""{"status":"completed","conclusion":"success"}""") });
+        var run = new CiRunRef(Repo, "43", Sha, DispatchedAt: DateTimeOffset.UtcNow);
+
+        var seen = new List<CiRunStatus>();
+        for (var i = 0; i < 3; i++)
+            seen.Add((await ci.GetRunStatusAsync(run, Ct)).Unwrap());
+
+        Assert.Equal([new(CheckStates.Queued, null), new(CheckStates.Queued, null), new CiRunStatus(CheckStates.Completed, Conclusions.Success)], seen);
+    }
+
+    [Fact]
+    public async Task A_dispatched_run_that_never_appears_is_not_found_once_the_grace_period_has_passed()
+    {
+        github.On(Get, "~/actions/runs/43", 404, """{"message":"Not Found"}""");
+        var grace = new GitHubActionsCi(github.Api(), () => store) { DispatchGrace = TimeSpan.FromMinutes(5) };
+
+        var within = await grace.GetRunStatusAsync(new CiRunRef(Repo, "43", Sha, DispatchedAt: DateTimeOffset.UtcNow.AddMinutes(-4)), Ct);
+        var after = await grace.GetRunStatusAsync(new CiRunRef(Repo, "43", Sha, DispatchedAt: DateTimeOffset.UtcNow.AddMinutes(-6)), Ct);
+
+        Assert.Equal(CheckStates.Queued, within.Unwrap().State);
+        Assert.Equal("not_found", after.Error?.Reason);
     }
 
     static byte[] Zip(params (string Name, string Content)[] entries)

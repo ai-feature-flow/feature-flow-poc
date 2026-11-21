@@ -6,8 +6,12 @@ namespace FeatureFlow.Providers.Abstractions;
 /// </summary>
 public sealed record CiJobRef(string Workflow, IReadOnlyDictionary<string, string> Inputs);
 
-/// <summary>A CI run: its repository, the CI system's id for it, and the revision it builds.</summary>
-public sealed record CiRunRef(RepoRef Repo, string Id, string Revision, string? Url = null);
+/// <summary>
+/// A CI run: its repository, the CI system's id for it, and the revision it builds. <paramref name="DispatchedAt"/> is when
+/// the run was triggered, for a run the engine triggered itself (null otherwise): a provider whose CI system answers
+/// a fresh run's lookup "not found" for a while may report it queued until a grace period after it (LOG 500).
+/// </summary>
+public sealed record CiRunRef(RepoRef Repo, string Id, string Revision, string? Url = null, DateTimeOffset? DispatchedAt = null);
 
 /// <summary>A run's progress (<see cref="CheckStates"/>) and, once completed, its conclusion (<see cref="Conclusions"/>).</summary>
 public sealed record CiRunStatus(string State, string? Conclusion);

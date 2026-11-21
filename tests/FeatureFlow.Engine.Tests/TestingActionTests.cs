@@ -177,6 +177,62 @@ public sealed class TestingActionTests
         Assert.Equal(2, w.Forge.CiRunCount(w.Repo));
     }
 
+    /// <summary>
+    /// The GitHub Actions provider against a stand-in GitHub that answers 404 for run 43 until <paramref name="appearsAfter"/>
+    /// reads (never, when null), as GitHub does just after a dispatch (LOG 500). Counts the run's reads.
+    /// </summary>
+    static (ActionWorld World, Func<int> Reads) WithLaggingGitHub(int? appearsAfter, TimeSpan grace)
+    {
+        const string repo = "/repos/acme/api";
+        var reads = 0;
+        var github = new FeatureFlow.Providers.GitHub.Tests.FakeGitHub();
+        var workflow = "on: { workflow_dispatch: { inputs: { commit_sha: { type: string } } } }\njobs: {}\n";
+        var zip = new MemoryStream();
+        using (var archive = new System.IO.Compression.ZipArchive(zip, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        using (var writer = new StreamWriter(archive.CreateEntry("results.xml").Open()))
+            writer.Write(ActionWorld.JUnit(2));
+        github.On(HttpMethod.Get, $"{repo}/contents/.github/workflows/integration.yml?ref=main", 200,
+                new System.Text.Json.Nodes.JsonObject { ["type"] = "file", ["encoding"] = "base64", ["content"] = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(workflow)) }.ToJsonString())
+            .On(HttpMethod.Post, $"{repo}/actions/workflows/integration.yml/dispatches", 200, """{"workflow_run_id":43,"html_url":"https://x/43"}""")
+            .On(HttpMethod.Get, $"{repo}/actions/runs/43/jobs", 200, """{"jobs":[{"name":"integration","conclusion":"success"}]}""")
+            .On(HttpMethod.Get, $"{repo}/actions/runs/43/artifacts", 200, """{"artifacts":[{"id":5,"name":"results","expired":false,"size_in_bytes":100}]}""")
+            .On(HttpMethod.Get, $"{repo}/actions/artifacts/5/zip", 302, "", new Dictionary<string, string> { ["Location"] = "https://blob.example/5.zip" })
+            .Bytes("https://blob.example/5.zip", zip.ToArray())
+            .On(HttpMethod.Get, $"{repo}/actions/runs/43", _ => ++reads > appearsAfter
+                ? new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent("""{"status":"completed","conclusion":"success"}""") }
+                : new HttpResponseMessage(System.Net.HttpStatusCode.NotFound) { Content = new StringContent("""{"message":"Not Found"}""") })
+            .On(HttpMethod.Get, repo, 200, """{"default_branch":"main"}""");
+        var world = new ActionWorld(new Dictionary<string, string> { ["feature-flow.yaml"] = ActionWorld.Manifest(), ["README.md"] = "# api\n" },
+            ciProvider: store => new FeatureFlow.Providers.GitHub.GitHubActionsCi(github.Api(), store) { DispatchGrace = grace });
+        return (world, () => reads);
+    }
+
+    /// <summary>LOG 500: a run GitHub answers 404 for just after its dispatch is polled as queued, and its result read once it appears.</summary>
+    [Fact]
+    public async Task A_CI_run_GitHub_has_not_caught_up_with_is_polled_until_it_appears_and_uses_no_attempt()
+    {
+        var (world, reads) = WithLaggingGitHub(appearsAfter: 3, grace: TimeSpan.FromMinutes(5));
+        await using var w = world;
+
+        var result = await w.RunAsync("test.run", "{ tier_tags: [integration] }");
+
+        Assert.Equal("passed", Outcome(result));
+        Assert.Equal(2, (await EvidenceAsync(w, result)).Tiers.Single().Passed);
+        Assert.Equal(5, reads());   // three 404s, read as queued; the completed run; its results
+    }
+
+    [Fact]
+    public async Task A_CI_run_that_never_appears_fails_the_step_as_not_found_once_the_grace_period_has_passed()
+    {
+        var (world, reads) = WithLaggingGitHub(appearsAfter: null, grace: TimeSpan.FromMilliseconds(300));
+        await using var w = world;
+
+        var result = await w.RunAsync("test.run", "{ tier_tags: [integration] }");
+
+        Assert.Equal((StepOutcome.WorkFailed, true), (result.Kind, result.Reason!.Contains("not_found", StringComparison.Ordinal)));
+        Assert.True(reads() > 1, $"the run was read {reads()} times: the grace period did not hold it as queued");
+    }
+
     [Fact]
     public async Task A_tier_with_both_targets_runs_in_CI_when_no_sandbox_is_configured()
     {
