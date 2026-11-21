@@ -209,8 +209,12 @@ public abstract class SandboxedAgentRuntime(AgentRuntimeOptions options, Func<IS
     public Task<ProviderResult<AgentSession>> ContinueAsync(SandboxHandle sandbox, AgentTask task, AgentLimits limits, string message, CancellationToken cancellationToken) =>
         LaunchAsync(sandbox, task, limits, message, resume: true, cancellationToken);
 
-    /// <summary>Anything the sandbox needs before the files are written (a folder only root may own). None by default.</summary>
-    protected virtual Task<ProviderResult<Unit>> PrepareAsync(ISandboxProvider sandboxes, SandboxHandle sandbox, string key, CancellationToken cancellationToken) =>
+    /// <summary>
+    /// Anything the sandbox needs before the files are written (a folder only root may own), for a new session or, if
+    /// <paramref name="resume"/>, a continuation of the step's session. None by default.
+    /// </summary>
+    protected virtual Task<ProviderResult<Unit>> PrepareAsync(ISandboxProvider sandboxes, SandboxHandle sandbox, AgentTask task, bool resume, string key,
+        CancellationToken cancellationToken) =>
         Task.FromResult(ProviderResult<Unit>.Success(default));
 
     async Task<ProviderResult<AgentSession>> LaunchAsync(SandboxHandle sandbox, AgentTask task, AgentLimits limits, string prompt, bool resume,
@@ -220,7 +224,7 @@ public abstract class SandboxedAgentRuntime(AgentRuntimeOptions options, Func<IS
         var key = CommandKey(task);
         if ((await provider.AttachCommandAsync(sandbox, key, cancellationToken)) is { Ok: true })
             return Session(sandbox, key, task.Session);
-        var prepared = await PrepareAsync(provider, sandbox, key, cancellationToken);
+        var prepared = await PrepareAsync(provider, sandbox, task, resume, key, cancellationToken);
         if (!prepared.Ok)
             return new ProviderResult<AgentSession>(null, prepared.Error);
 

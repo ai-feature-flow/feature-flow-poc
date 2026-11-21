@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using FeatureFlow.Providers.Abstractions;
+using FeatureFlow.Providers.CopilotCli;
 using Temporalio.Client;
 
 namespace FeatureFlow.Integration.Tests;
@@ -28,8 +29,8 @@ public sealed class CopilotStepTests
         string? pushResult = null, tamperResult = null;
         model.Then(_ => Bash("cd /ff/work && echo a > a.txt && git add -A && git commit -q -m 'Add a'"))
             // Review R2, F2: the agent tries to remove or replace the engine's hooks, then to switch them off, before it pushes.
-            .Then(_ => Bash("rm -f /ff/copilot/settings.json; mv /ff/copilot/settings.json /ff/copilot/old.json; echo '{}' > /ff/copilot/settings.json; " +
-                            "echo '{\"disableAllHooks\":true}' > /ff/copilot/settings.local.json; echo '--- settings'; cat /ff/copilot/settings.json"))
+            .Then(_ => Bash("rm -f $COPILOT_HOME/settings.json; mv $COPILOT_HOME/settings.json $COPILOT_HOME/old.json; echo '{}' > $COPILOT_HOME/settings.json; " +
+                            "echo '{\"disableAllHooks\":true}' > $COPILOT_HOME/settings.local.json; echo '--- settings'; cat $COPILOT_HOME/settings.json"))
             .Then(c =>
             {
                 tamperResult = c.LastToolResult;
@@ -95,6 +96,7 @@ public sealed class CopilotStepTests
         Assert.Contains("COPILOT_PROVIDER_API_KEY=ffs1.", notes);
         Assert.Contains("COPILOT_OFFLINE=true", notes);
         Assert.Contains("HOME=/ff/home", notes);
+        Assert.Contains($"COPILOT_HOME={CopilotCliRuntime.Home(StepKey(runId))}\n", notes);
         foreach (var name in CredentialNames)
             Assert.DoesNotContain(name + "=", notes);
         Assert.Contains("--- startup bytes\n0", notes);

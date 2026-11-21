@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FeatureFlow.Model.Yaml;
@@ -5,8 +7,11 @@ using FeatureFlow.Providers.Abstractions;
 
 namespace FeatureFlow.Providers.CopilotCli;
 
-/// <summary>Settings of a Copilot CLI runtime instance (docs/07 section 2): <c>model</c> and <c>executable</c>; the rest are fixed defaults (LOG 91).</summary>
-public sealed record CopilotCliOptions(string Model, string Executable = "copilot", TimeSpan? HookHold = null, TimeSpan? ClientRetry = null)
+/// <summary>
+/// Settings of a Copilot CLI runtime instance (docs/07 section 2): <c>model</c> and <c>executable</c>, and <see cref="GitHub"/>,
+/// whether its <c>model_access.auth</c> is <c>github</c>; the rest are fixed defaults (LOG 91).
+/// </summary>
+public sealed record CopilotCliOptions(string Model, string Executable = "copilot", TimeSpan? HookHold = null, TimeSpan? ClientRetry = null, bool GitHub = false)
     : AgentRuntimeOptions(Model, Executable, HookHold, ClientRetry);
 
 /// <summary>
@@ -14,18 +19,32 @@ public sealed record CopilotCliOptions(string Model, string Executable = "copilo
 /// <c>copilot</c> in prompt mode with JSON-lines output, the prompt on standard input, a session id fixed from the step's
 /// key so a continuation resumes the same conversation.
 /// <para>
-/// The model is reached through the model proxy of its instance's <c>model_access</c> as a custom provider of the
-/// Anthropic Messages API, with the step's token as its key and <c>COPILOT_OFFLINE</c>, so the CLI holds no model or
-/// GitHub credential and makes no other call (F6, LOG 293). Its settings come from the engine alone: <c>COPILOT_HOME</c>
-/// is a root-owned sticky folder whose <c>settings.json</c> (the hooks) and <c>mcp-config.json</c> are root's and
-/// read-only, so the agent can neither change nor replace them; the checkout is not trusted, so a repository's hooks,
-/// MCP servers and instructions are not loaded; built-in MCP servers are off, and only the role's tools are available.
+/// The model is reached only through the model proxy of its instance's <c>model_access</c>, with the step's token as the
+/// CLI's only credential (F6, LOG 293, 497). With <c>auth: github</c> the CLI runs natively, on Copilot quota: the step's
+/// token, prefixed <c>ghs_</c>, is its GitHub token and the proxy is its Copilot API (<c>COPILOT_API_URL</c>), so its
+/// own requests reach the proxy, which holds the real GitHub token. Otherwise (<c>api_key</c>, <c>oauth</c>) the proxy is
+/// a custom provider of the Anthropic Messages API, with the step's token as its key and <c>COPILOT_OFFLINE</c>.
+/// </para>
+/// <para>
+/// Its settings come from the engine alone: <c>COPILOT_HOME</c> is the step's own root-owned sticky folder, made fresh at
+/// the step's first session and kept for its continuations, whose <c>settings.json</c> (the hooks) and
+/// <c>mcp-config.json</c> are root's and read-only, so the agent can neither change nor replace them, and nothing it adds
+/// reaches another step; the checkout is not trusted, so a repository's hooks, MCP servers and instructions are not
+/// loaded; built-in MCP servers are off, and only the role's tools are available.
 /// </para>
 /// </summary>
 public sealed class CopilotCliRuntime(CopilotCliOptions options, Func<ISandboxProvider> sandboxes, Func<IArtifactStoreProvider> store)
     : SandboxedAgentRuntime(options, sandboxes, store)
 {
-    public const string Home = "/ff/copilot";
+    /// <summary>The folder of every step's <c>COPILOT_HOME</c>.</summary>
+    public const string Homes = "/ff/copilot";
+
+    /// <summary>
+    /// A step's <c>COPILOT_HOME</c>, by its key (M8 follow-up 15). The sandbox is the step's and is removed with it; the path is
+    /// the step's too, so no other step's sessions could read what an agent left in it.
+    /// </summary>
+    public static string Home(string stepKey) =>
+        Homes + "/" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(stepKey)))[..16];
 
     protected override string Kind => "copilot_cli";
 
@@ -98,34 +117,57 @@ public sealed class CopilotCliRuntime(CopilotCliOptions options, Func<ISandboxPr
         },
     };
 
-    /// <summary>The step's token is the custom provider's key; no model or GitHub credential (F6).</summary>
-    protected override IReadOnlyDictionary<string, string> RuntimeEnvironment(AgentTask task, AgentLimits limits, EngineEndpoints engine, AgentPaths paths) =>
-        new Dictionary<string, string>
+    /// <summary>
+    /// The step's token is the CLI's only credential (F6): with <c>auth: github</c>, prefixed <c>ghs_</c>, its GitHub token,
+    /// which outranks <c>GH_TOKEN</c> and <c>GITHUB_TOKEN</c>, with the proxy as its Copilot API and offline mode off, as the
+    /// CLI refuses offline without a custom provider (LOG 497); otherwise the custom provider's key, offline.
+    /// </summary>
+    protected override IReadOnlyDictionary<string, string> RuntimeEnvironment(AgentTask task, AgentLimits limits, EngineEndpoints engine, AgentPaths paths)
+    {
+        var env = new Dictionary<string, string>
         {
-            ["COPILOT_HOME"] = Home,
-            ["COPILOT_OFFLINE"] = "true",
+            ["COPILOT_HOME"] = Home(task.Step.IdempotencyKey),
             ["COPILOT_AUTO_UPDATE"] = "false",
-            ["COPILOT_PROVIDER_TYPE"] = "anthropic",
-            ["COPILOT_PROVIDER_BASE_URL"] = engine.ModelBaseUrl,
-            ["COPILOT_PROVIDER_API_KEY"] = engine.StepToken,
             ["COPILOT_MODEL"] = task.Model ?? Options.Model,
         };
+        if (options.GitHub)
+        {
+            env["COPILOT_GITHUB_TOKEN"] = "ghs_" + engine.StepToken;
+            env["COPILOT_API_URL"] = engine.ModelBaseUrl;
+            env["COPILOT_TELEMETRY_DISABLED"] = "true";
+        }
+        else
+        {
+            env["COPILOT_OFFLINE"] = "true";
+            env["COPILOT_PROVIDER_TYPE"] = "anthropic";
+            env["COPILOT_PROVIDER_BASE_URL"] = engine.ModelBaseUrl;
+            env["COPILOT_PROVIDER_API_KEY"] = engine.StepToken;
+        }
 
-    /// <summary>COPILOT_HOME is root's and sticky: the CLI may add its own state, but nobody else's files can be removed or replaced.</summary>
-    protected override async Task<ProviderResult<Unit>> PrepareAsync(ISandboxProvider sandboxes, SandboxHandle sandbox, string key, CancellationToken cancellationToken)
+        return env;
+    }
+
+    /// <summary>
+    /// The step's <c>COPILOT_HOME</c> is root's and sticky: the CLI may add its own state, but nobody else's files can be
+    /// removed or replaced. A new session gets it empty; a continuation keeps it, for <c>--resume</c> needs the session's state.
+    /// </summary>
+    protected override async Task<ProviderResult<Unit>> PrepareAsync(ISandboxProvider sandboxes, SandboxHandle sandbox, AgentTask task, bool resume, string key,
+        CancellationToken cancellationToken)
     {
-        var home = await sandboxes.RunAsync(sandbox, new SandboxCommand(["sh", "-c", $"mkdir -p {Home} && chown root {Home} && chmod 1777 {Home}"], AsRoot: true),
+        var home = Home(task.Step.IdempotencyKey);
+        var made = await sandboxes.RunAsync(sandbox, new SandboxCommand(["sh", "-c",
+                (resume ? "" : $"rm -rf {home} && ") + $"mkdir -p {home} && chown root {home} && chmod 1777 {home}"], AsRoot: true),
             $"{key}/home", cancellationToken);
-        if (!home.Ok)
-            return new ProviderResult<Unit>(default, home.Error);
-        return home.Value.Exit == 0 ? ProviderResult<Unit>.Success(default)
-            : ProviderResult<Unit>.Failure("server_error", "the Copilot home could not be created: " + home.Value.Output);
+        if (!made.Ok)
+            return new ProviderResult<Unit>(default, made.Error);
+        return made.Value.Exit == 0 ? ProviderResult<Unit>.Success(default)
+            : ProviderResult<Unit>.Failure("server_error", "the Copilot home could not be created: " + made.Value.Output);
     }
 
     protected override IEnumerable<(string Path, string Content)> Files(AgentTask task, AgentLimits limits) =>
     [
-        ($"{Home}/settings.json", Settings().ToJsonString()),
-        ($"{Home}/mcp-config.json", """{"mcpServers":{}}"""),
+        ($"{Home(task.Step.IdempotencyKey)}/settings.json", Settings().ToJsonString()),
+        ($"{Home(task.Step.IdempotencyKey)}/mcp-config.json", """{"mcpServers":{}}"""),
         ($"{AgentFolder}/mcp.json", McpConfig(task, limits).ToJsonString()),
     ];
 
@@ -241,10 +283,11 @@ public static class CopilotCliProviders
     public static ProviderFactory Runtime(Func<CopilotCliOptions, CopilotCliOptions>? tune = null) =>
         new("agent_runtime", "copilot_cli", ["model", "executable", "model_access"], c =>
         {
-            // The model is reached through the engine's proxy alone (F6); the CLI's own GitHub sign-in is never used.
+            // The model is reached through the engine's proxy alone (F6); with auth github the CLI's GitHub token is the step's.
             if (c.Instance.Settings["model_access"] is not YMap access || access["mode"].ScalarText() != "proxy")
                 throw new InvalidOperationException($"providers.agent_runtime.instances.{c.Instance.Name} needs model_access with mode proxy (F6)");
-            var options = new CopilotCliOptions(c.Setting("model") ?? "claude-haiku-4-5", c.Setting("executable") ?? "copilot");
+            var options = new CopilotCliOptions(c.Setting("model") ?? "claude-haiku-4-5", c.Setting("executable") ?? "copilot",
+                GitHub: access["auth"].ScalarText() == "github");
             return new CopilotCliRuntime(
                 tune?.Invoke(options) ?? options,
                 () => c.Provider("sandbox") as ISandboxProvider ?? throw new InvalidOperationException("Copilot CLI runs in a sandbox: configure a sandbox provider"),
