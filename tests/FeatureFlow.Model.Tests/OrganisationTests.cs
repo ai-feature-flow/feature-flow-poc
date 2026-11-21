@@ -337,4 +337,29 @@ public class OrganisationTests
         else
             Assert.Equal(("groups", "sub"), (config.ApiAuth.GroupsClaim, config.ApiAuth.ActorClaim));
     }
+
+    [Fact]
+    public void The_installations_api_auth_reads_no_sign_in_with_the_local_actor_and_every_role_by_default()
+    {
+        var d = new DiagnosticBag();
+        var auth = ConfigurationReader.ReadInstallation("api_version: feature-flow/v1\nkind: installation\napi:\n  auth: { mode: none }\n", "installation.yaml", d)!.ApiAuth;
+
+        Assert.Empty(d);
+        Assert.Equal(("none", null, "local"), (auth.Mode, auth.TokenRef, auth.Actor));
+        Assert.Equal(["viewer", "approver", "steerer", "admin"], auth.Roles);
+    }
+
+    [Theory]
+    [InlineData("token_ref: secrets/t")]
+    [InlineData("issuer: \"https://idp.example\"")]
+    [InlineData("audience: feature-flow")]
+    [InlineData("role_claim: grp")]
+    [InlineData("actor_claim: email")]
+    public void Keys_of_the_other_modes_are_refused_with_no_sign_in(string key)
+    {
+        var d = new DiagnosticBag();
+        ConfigurationReader.ReadInstallation($"api_version: feature-flow/v1\nkind: installation\napi:\n  auth: {{ mode: none, actor: ana, roles: [viewer], {key} }}\n", "installation.yaml", d);
+
+        Assert.Equal($"api.auth.{key[..key.IndexOf(':')]} has no use with mode none", Assert.Single(d, x => x.Blocks).Message);
+    }
 }
