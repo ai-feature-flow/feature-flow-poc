@@ -89,7 +89,8 @@ public sealed class RunPageTests(BrowserFixture browser) : BrowserTest(browser)
     public async Task The_timeline_and_history_are_shown()
     {
         var runId = await World.StartRunAsync();
-        await PostAsync($"runs/{runId}/overrides", new OverrideRequest("breakpoint", "look before it goes", "go_ahead", new Dictionary<string, string> { ["set"] = "true" }));
+        // Clearing a breakpoint that is not set is accepted (and traced only as an override); a set one would be refused, the gate being open.
+        await PostAsync($"runs/{runId}/overrides", new OverrideRequest("breakpoint", "look before it goes", "go_ahead", new Dictionary<string, string> { ["set"] = "false" }));
         await PostAsync($"runs/{runId}/answers", new AnswerRequest("gate-1", Outcome: "rejected", Reason: "not yet"));
         await Engine.TraceAsync(runId, "completed", "go_ahead", "the last step");
 
@@ -98,11 +99,11 @@ public sealed class RunPageTests(BrowserFixture browser) : BrowserTest(browser)
         var history = Page.GetByRole(AriaRole.Region, new() { Name = "History" }).Locator("tbody tr");
         var breakpoint = history.Filter(new() { HasText = "breakpoint" }).Filter(new() { HasText = "applied" });
         await Expect(breakpoint).ToContainTextAsync("look before it goes");
-        await Expect(breakpoint).ToContainTextAsync("set: true");
+        await Expect(breakpoint).ToContainTextAsync("set: false");
         await Expect(history.Filter(new() { HasText = "gate-1: rejected" }).Filter(new() { HasText = "recorded" })).ToContainTextAsync("not yet");
 
         var timeline = Page.GetByRole(AriaRole.Region, new() { Name = "Timeline" }).Locator("tbody tr");
-        string[] kinds = ["started", "breakpoint_set", "answered", "completed"];
+        string[] kinds = ["started", "override", "answered", "completed"];
         await Expect(timeline).ToHaveCountAsync(kinds.Length);
         for (var i = 0; i < kinds.Length; i++)
             await Expect(timeline.Nth(i).Locator("td").Nth(1)).ToHaveTextAsync(kinds[i]);
@@ -127,6 +128,22 @@ public sealed class RunPageTests(BrowserFixture browser) : BrowserTest(browser)
         var aborted = Assert.Single(Engine.Aborts);
         Assert.Equal("wrong ticket", aborted.Reason);
         Assert.True(aborted.ClosePullRequests);
+    }
+
+    [Fact]
+    public async Task A_run_that_has_ended_offers_no_abort_or_steering()
+    {
+        // rejected is one of the engine's end statuses (Interpreter/Types.cs, RunStatus); the API refuses any update to it.
+        var runId = await World.StartRunAsync();
+        await Engine.RunAsync(runId, status: "rejected");
+
+        await OpenAsync("#/runs/" + runId);
+
+        await Expect(Page.Locator(".ff-run-heading .ff-status")).ToHaveTextAsync("rejected");
+        await Expect(Page.Locator(".ff-run-heading .ff-status")).ToHaveClassAsync("ff-status ff-status-failed");
+        await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "Plan", Exact = true })).ToContainTextAsync("go_ahead");
+        await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "Plan", Exact = true }).GetByRole(AriaRole.Button)).ToHaveCountAsync(0);
+        await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Abort run" })).ToHaveCountAsync(0);
     }
 
     [Fact]

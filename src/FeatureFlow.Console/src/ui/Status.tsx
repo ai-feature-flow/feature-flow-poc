@@ -1,14 +1,16 @@
 import "./Status.css";
 
-// Known statuses get their own look. The class is chosen from this list, never built from the API's text.
+// Known statuses get their own look: the engine's run statuses (Interpreter/Types.cs, RunStatus) and the status waits.
+// The class is chosen from this list, never built from the API's text.
 const known: Record<string, string> = {
   starting: "running",
   running: "running",
-  waiting: "waiting",
   completed: "done",
   failed: "failed",
+  rejected: "failed",
   aborted: "failed",
-  cancelled: "failed",
+  partial: "warning",
+  incomplete: "warning",
   stalled: "warning",
   stuck: "warning",
 };

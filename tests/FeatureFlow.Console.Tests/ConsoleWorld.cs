@@ -121,10 +121,11 @@ public sealed class ConsoleWorld : IAsyncDisposable
     }
 
     /// <summary>Starts a run through the API (<c>POST /runs</c>), so <see cref="FakeEngine"/> writes what start writes; returns its id.</summary>
-    public async Task<string> StartRunAsync(string template = "m7s:templates/decide")
+    public async Task<string> StartRunAsync(string template = "m7s:templates/decide", IReadOnlyDictionary<string, string>? parameters = null,
+        IReadOnlyList<string>? repositories = null)
     {
         using var http = Http();
-        using var response = await http.PostAsync("runs", new StringContent(JsonSerializer.Serialize(new StartRunRequest(template), ApiJson.Options), Encoding.UTF8, "application/json"), Ct);
+        using var response = await http.PostAsync("runs", new StringContent(JsonSerializer.Serialize(new StartRunRequest(template, repositories, parameters), ApiJson.Options), Encoding.UTF8, "application/json"), Ct);
         var body = await response.Content.ReadAsStringAsync(Ct);
         Assert.True(response.IsSuccessStatusCode, body);
         return JsonSerializer.Deserialize<StartRunResponse>(body, ApiJson.Options)!.RunId;
