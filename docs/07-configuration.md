@@ -296,7 +296,9 @@ declarative `tracker` updates move it (LOG 185, 186).
 in a sandbox, actions through their handlers. `dry_run` only selects providers; no step behaves differently in a dry
 run. A type with no `dry_run` instance is absent from a dry run, never served by its default instance, except the
 artifact store, record store, secrets and credential broker, which are the engine's own; so a dry run that needs a
-type with none is refused at run start by check 21 (LOG A2-0f). The dry-run instances are normally the `memory`
+type with none is refused at run start by check 21 (LOG A2-0f). An agent step's role still picks its runtime through
+`role_mapping` (section 3) in a dry run; a role mapped to an instance other than the agent runtime's `dry_run` instance
+cannot answer, as a step with any provider missing (LOG A2-8b2). The dry-run instances are normally the `memory`
 providers of a world of their own and the `recording` agent runtime (section 2), which are development-only, so dry
 run works in a development installation. A dry run whose memory world holds nothing to act on (no repository) stops
 at an intervention as any run would.

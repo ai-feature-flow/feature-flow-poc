@@ -34,6 +34,13 @@ public sealed class ProviderSet(IReadOnlyDictionary<string, IReadOnlyDictionary<
         return defaults.TryGetValue(type, out var name) ? Instance(type, name) : null;
     }
 
+    /// <summary>
+    /// The named instance of a type, chosen by the run (an agent role's runtime, <c>role_mapping</c>), as the run may use it:
+    /// any configured instance; in a dry run only the type's <c>dry_run</c> instance, as <see cref="ForRun(string, bool)"/>.
+    /// </summary>
+    public IProvider? ForRun(string type, string name, bool dryRun) =>
+        dryRun && dryRunInstances.GetValueOrDefault(type) != name && !SharedInDryRun.Contains(type) ? null : Instance(type, name);
+
     public T Required<T>(string type, bool dryRun = false) where T : class =>
         ForRun(type, dryRun) as T ?? throw new InvalidOperationException($"no {type} provider implementing {typeof(T).Name} is configured");
 
