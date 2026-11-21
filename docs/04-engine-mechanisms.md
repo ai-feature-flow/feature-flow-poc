@@ -128,8 +128,9 @@ reports.
    agent's output folder. A step that consumes the reserved name
    `findings_ledger` is given the ledger's current view, every finding with its
    ledger id and state, in the shape of a findings report (LOG 63).
-2. **Start.** Render the task, prepend the library's reporting preamble, and
-   start the agent runtime in the sandbox with the role's tools.
+2. **Start.** Render the task, prepend the library's reporting preamble and
+   the run context (section 3.5), and start the agent runtime in the sandbox
+   with the role's tools.
 3. **Supervise.** Heartbeat. About every 30 seconds, ask the VCS provider
    whether the working copy has new commits; if so, push them to the hidden
    work-in-progress reference. Serve hook calls, the engine tools (section 3.3)
@@ -220,10 +221,25 @@ ended, is refused. A question never routes the plan: the agent reads the answer
 
 ### 3.5 Run context
 
-Each agent step's summary is appended to the run's **context**, an artifact
-given to later agent steps with `context: full` (from FF's `context.md`). A
-child run's context starts with its parent's. A reviewer with `context: none`
-sees only its task and consumed artifacts.
+The run keeps a **context**: what it has learned that the next agent should
+know (from FF's `context.md`; LOG A3-0r). The interpreter's core holds it in
+the run's state, carried over a hand-over, as entries of three kinds:
+
+| Kind | Added when | Text |
+|---|---|---|
+| `summary` | An agent step completes with a report summary | `<step> reported <outcome>: <summary>`, the summary at most 2 KB (LOG 19) |
+| `answer` | A person answers a gate, an intervention, a breakpoint or a patch approval (not a question, whose answer is its agent's alone) | `<decision type> at <step>: <choice> by <actor>: <reason>` |
+| `retry_cause` | An attempt fails with a work error | `attempt <n> of <step> failed: <reason>`. An infrastructure retry is not a cause the agent can act on and is left out |
+
+The core renders the context in Markdown (`## Run context`, then one bullet per
+entry, oldest first) into the agent step's specification when the step starts,
+and the agent worker writes it into the prompt between `## This step` and the
+task, so it is in the stored prompt. A run keeps at most 64 entries, and the
+rendering is at most 16 KB: the oldest entries are dropped first, with a line
+saying how many. A child run starts with its parent's context as it was when
+the child started, rendered first under `### From the parent run`. A step with
+`context: none` (a reviewer) is given no context, only its task and consumed
+artifacts.
 
 ### 3.6 Outputs the engine publishes for every agent step
 
@@ -264,7 +280,7 @@ One mechanism for every human wait (`docs/01` section 7).
 | Inputs | `type`, `prompt`, `with`, optional `auto`, optional `session` (`docs/03` section 2.3) |
 | Outcomes | Declared |
 | Idempotency | By wait id. A recorded answer is never asked again: the same answer again succeeds and changes nothing, a different one is refused as a conflict |
-| Audit | Opened and answered, with the authenticated actor and the choice; reminders and a required reason are A3 (`docs/12`) |
+| Audit | Opened and answered, with the authenticated actor, the choice and the person's reason (section 4.1); reminders on an open wait are A3 (`docs/12`) |
 
 Every wait is held in the interpreter's core, and every answer goes through one
 routing function (LOG 364). The update's validator asks it whether an answer
@@ -297,6 +313,19 @@ The API authenticates the person, checks organisation policy for the decision
 type, records the answer, then delivers it to the workflow. The workflow trusts
 the API (`docs/02`). A decision may be answered from chat where policy allows
 that type.
+
+Every answer but a question's carries the person's **reason**, and so does an
+abort: the API refuses one without (400), not the core, which trusts the API
+(LOG A3-0d). A question's answer is its text, which the agent reads (LOG
+A3-0e). Two answers are given by the engine: a chat button, which carries no
+words, answers with `answered with a <source> button`, and a session's
+submission with no reason of its own with `submitted <revision>`. The reason is
+not part of the answer's identity: the same choice in other words is a
+duplicate, and people who answer the same way in different words count
+together towards `min_count` (`docs/05` section 3.2), the delivered answer
+carrying each one's reason (`ann: <reason>; cat: <reason>`). The core records
+the reason on the closed wait, on the timeline (`<choice> by <actor>:
+<reason>`) and in the run context (section 3.5).
 
 ### 4.2 Auto-resolution
 

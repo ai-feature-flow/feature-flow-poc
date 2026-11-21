@@ -176,6 +176,13 @@ does not relay its tool calls. Building the engine's own agent loop was rejected
 vendor harnesses are better and improve monthly, and hundreds of tool calls as
 activities would flood history (`archive/docs/01` section 1.4).
 
+The workflow gives the agent worker the step's specification as the core
+computed it: the rendered task, the role's tools and write access, the consumed
+artifacts and the run context the core rendered (`docs/04` section 3.5). The
+worker writes the first prompt from it (the library's reporting preamble, where
+the step's files are, the run context, then the task) and stores the prompt as
+an artifact before the runtime starts.
+
 The runtime calls back to the engine:
 
 | Channel | Used for |

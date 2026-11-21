@@ -113,7 +113,7 @@ approval:
 |---|---|
 | `match` | A decision type pattern. The first matching rule applies |
 | `roles` | People roles that may answer |
-| `min_count` | How many distinct people must answer the same way |
+| `min_count` | How many distinct people must answer the same way: the same choice, whatever words each gives as their reason (`docs/04` section 4.1) |
 | `from_chat` | Whether the decision may be answered from a chat client |
 | `auto` | Whether auto-resolution is allowed. The template asks; this allows |
 
@@ -160,7 +160,9 @@ decision_types:
 
 A person may change a running run in any way the organisation's roles allow
 (P3). Every override goes through the API, is authorised by role, and is
-recorded with the actor, reason and the change.
+recorded with the actor, reason and the change. An answer (but an agent's
+question's) and an abort are refused without a reason too (F5), and the answer
+record keeps it beside the choice (`docs/04` section 4.1).
 
 | Override | Key | Effect | Default role |
 |---|---|---|---|
