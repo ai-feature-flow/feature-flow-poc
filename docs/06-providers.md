@@ -181,9 +181,9 @@ interface IAgentRuntimeProvider : IProvider {
 - `AgentTask` carries the rendered task, the reporting preamble, tool allow-list,
   skills and resources paths, the MCP endpoint, model and limits.
 - The `report` tool's record is the source of truth for the agent's report
-  (`docs/04` section 3.3); `GetResultAsync` gives how the session ended, its
-  usage, and the file report of a runtime without engine tools. A session-end
-  hook only wakes the engine.
+  (`docs/04` section 3.3); `GetResultAsync` gives how the session ended and its
+  usage. A session-end hook only wakes the engine. There is no file report
+  (L5, LOG A5b-5).
 - `ContinueAsync` continues an ended session with a message: a rejected
   report's errors, or word that the attempt was interrupted.
 - `ResumeAsync` reloads the conversation from the recorded reference and must
@@ -195,10 +195,41 @@ interface IAgentRuntimeProvider : IProvider {
   Windows and macOS but only the Anthropic API; Copilot CLI works through an
   OpenAI-compatible router but its tool-call hooks did not fire with a
   third-party model.
-- Built in M8: the Copilot CLI runtime, reaching the model through the same
+- Built in M8: the Copilot CLI runtime, reaching the model through the model
   proxy as a custom Anthropic provider, with SP5's checks held live (LOG 293,
   296). Each step's runtime instance and model follow its role (`role_mapping`,
   LOG 295).
+- **A runtime whose CLI runs in a sandbox** derives from
+  `SandboxedAgentRuntime` (F12, A5), which holds the session lifecycle: a
+  session is the CLI started by key in the step's sandbox from settings files
+  the engine writes read-only, found again by that key, polled for turns, read
+  when it ends (the engine-unreachable marker, an API error by its status, a
+  lost process, the exit code) and stopped by cancelling it. A runtime supplies
+  its command line, environment, settings files, transcript parser, turn marker,
+  the tool names of each tool class, and how its CLI is told a call is denied.
+- **Hooks are read by the runtime** (`IAgentHooks`, LOG A5b-1). Every runtime's
+  settings call the same hook command, `ff-sandbox hook <event>`. The step's
+  token names its runtime instance; the agent worker asks that instance to read
+  the hook input as a tool call (its class: `read`, `search`, `edit`, `shell`,
+  or `engine` for the engine's MCP tools; the file; the command), and the hook
+  policy decides on classes alone. A denial carries the runtime's reply: Claude
+  Code exits 2 with the reason on standard error; Copilot CLI, which shows the
+  agent only the exit code of a hook that exits 2, prints its JSON decision with
+  the reason and exits 0. A tool the runtime does not map is denied; a call with
+  no decision (a revoked token) is blocked with exit 2.
+- **The agent runtime contract** (`AgentRuntimeContract`, LOG A5b-4) drives a
+  runtime against a scripted sandbox and a stand-in for its CLI, with no model,
+  credential or container. The stand-in reads the settings and command line the
+  runtime wrote as the CLI does, prints the CLI's output, and sends its hook
+  input. The suite checks: settings written read-only, calling the sandbox
+  client for every hook, with DR16's timeouts; the step's token and no
+  credential in the environment, and the task only in the prompt file; only the
+  role's tool classes offered; every tool call's hook input read as its class;
+  a denial the CLI blocks with the reason shown; and the lifecycle (start,
+  turns, result, continuation of the same session, re-attach by a new worker,
+  stop, and each way a session ends). Claude Code and Copilot CLI pass it; a
+  tool mapped to the wrong class fails it. Integration tests run the real CLIs
+  against a scripted model.
 
 ### 3.3 VCS
 
@@ -466,7 +497,7 @@ interface ICredentialBroker : IProvider {
 |---|---|
 | The engine | Push and merge on the code host; tracker writes; CI triggers. Never permission to change branch protection |
 | An agent step | No code host credential (LOG 95): its checkout arrives as a Git bundle with no remote. An agent that must read another repository will need a read-only credential, scoped to it and the run's repositories, for the step's lifetime (F5), in a later milestone. No tracker identity |
-| A model proxy | The model key. Never the agent (F6). It forwards only `POST v1/messages` and `v1/messages/count_tokens` to its upstream's own scheme, host and port, and refuses anything else before reading the key (LOG 104) |
+| A model proxy | The model key. Never the agent (F6). Each agent runtime instance has its own, from its `model_access`, and a step's token selects its instance's (LOG A5b-3). It forwards only `POST v1/messages` and `v1/messages/count_tokens` to its upstream's own scheme, host and port, and refuses anything else before reading the key (LOG 104) |
 
 The broker refuses a request wider than it may grant; it never silently narrows
 one. Spike 2 issued a 60-minute, one-repository token and refused wider

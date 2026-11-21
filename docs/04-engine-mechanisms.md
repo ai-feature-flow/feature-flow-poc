@@ -181,9 +181,9 @@ agent how to use them.
 | `propose_patch` | `planning` is set | A patch to this plan or the parent's, validated at once; errors come back to the agent |
 | `run_check` | Interactive sessions only | Run a named later step's checks now (section 4.4) |
 
-A runtime that cannot call MCP tools reports by writing the same `report` data
-to a file in its output folder. An agent that ends without reporting has failed
-its attempt.
+Every built-in runtime calls MCP tools, so the `report` tool is the only way to
+report; the file fall-back for a runtime without MCP is removed (L5, LOG A5b-5).
+An agent that ends without reporting has failed its attempt.
 
 A `report` with a `success` outcome must give every output the step declares,
 each of its declared type (a `number` is whole). A missing or mistyped output
