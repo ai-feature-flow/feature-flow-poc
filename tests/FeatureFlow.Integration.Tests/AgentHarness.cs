@@ -78,8 +78,6 @@ public sealed record AgentHarnessOptions
     /// <summary>How long the sandbox client retries an engine call before it ends the session (LOG 60).</summary>
     public int ClientRetrySeconds { get; init; } = 120;
 
-    public bool EngineTools { get; init; } = true;
-
     /// <summary>The model's API; the scripted model's URL unless a test sets another.</summary>
     public string? ModelUpstream { get; init; }
 
@@ -210,7 +208,6 @@ public sealed class AgentHarness : IAsyncDisposable
                 instances:
                   {{options.Runtime}}:
                     model: {{(options.Runtime == "copilot_cli" ? "claude-haiku-4-5" : "haiku")}}
-                    engine_tools: {{(options.EngineTools ? "true" : "false")}}
                     model_access: {{modelAccess}}
             {{string.Join("\n", options.MoreRuntimes.Select(r => "      " + r.Replace("{model_access}", modelAccess)))}}
               vcs: {{vcs}}

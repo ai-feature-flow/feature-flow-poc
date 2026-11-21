@@ -19,8 +19,21 @@ public sealed class EndpointTests : IDisposable
     readonly SqliteRecordStore store;
     readonly Signals signals = new();
     readonly AgentEndpointServices services;
-    static readonly StepClaims Claims = new("run-1/implement/1", "run-1", "run-1", "implement", "branch", ["read", "shell"], 0);
+    static readonly StepClaims Claims = new("run-1/implement/1", "run-1", "run-1", "implement", "branch", ["read", "shell"], 0, "claude");
     static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    /// <summary>A runtime's reading of its hooks: <c>Bash</c> is a shell call; its denial exits 7 with the reason.</summary>
+    sealed class Hooks : IAgentHooks
+    {
+        public ToolCall Classify(JsonElement hookInput)
+        {
+            var tool = hookInput.GetProperty("tool_name").GetString()!;
+            return new ToolCall(tool, tool == "Bash" ? ToolClass.Shell : null,
+                Command: hookInput.TryGetProperty("tool_input", out var i) && i.TryGetProperty("command", out var c) ? c.GetString() : null);
+        }
+
+        public HookReply Deny(string reason) => new(7, Error: "refused: " + reason);
+    }
 
     sealed class Signals : IRunSignals
     {
@@ -45,7 +58,8 @@ public sealed class EndpointTests : IDisposable
     {
         Directory.CreateDirectory(folder);
         store = new SqliteRecordStore(Path.Combine(folder, "records.db"));
-        services = new AgentEndpointServices(StepTokens.FromSecret("k"), store, signals, null, TimeSpan.FromMilliseconds(20));
+        services = new AgentEndpointServices(StepTokens.FromSecret("k"), store, signals, new Dictionary<string, ModelProxy>(),
+            name => name == "claude" ? new Hooks() : null, TimeSpan.FromMilliseconds(20));
     }
 
     public void Dispose() => Directory.Delete(folder, recursive: true);
@@ -131,14 +145,36 @@ public sealed class EndpointTests : IDisposable
         Assert.Single(signals.Sent);
     }
 
+    /// <summary>
+    /// LOG A5b-1: the step's runtime instance, named in its token, reads the hook input; the policy decides on the class;
+    /// a denial carries the runtime's reply. A step whose runtime reads no hooks is denied.
+    /// </summary>
     [Fact]
-    public async Task A_hook_call_is_decided_from_the_token_and_recorded()
+    public async Task A_hook_call_is_read_by_the_step_s_runtime_decided_from_the_token_and_recorded()
     {
         await StepAsync();
         var decision = await AgentEndpoint.HookAsync(services, Claims, "pre_tool_use", Json("""{"tool_name":"Bash","tool_input":{"command":"git push"}}"""), Ct);
         Assert.Equal("deny", decision.Decision);
+        Assert.Equal(new HookReply(7, Error: "refused: never push: commit your work and the engine pushes it"), decision.Reply);
+        Assert.Equal("allow", (await AgentEndpoint.HookAsync(services, Claims, "pre_tool_use", Json("""{"tool_name":"Bash","tool_input":{"command":"ls"}}"""), Ct)).Decision);
         var events = (await store.QueryAsync<AgentEventRecord>(Queries.AgentEvents, new Dictionary<string, string> { ["step_key"] = Claims.StepKey }, Ct)).Unwrap();
         Assert.Contains(events, e => e.Kind == "hook_pre_tool_use" && e.Detail.StartsWith("Bash deny", StringComparison.Ordinal));
+
+        var unread = await AgentEndpoint.HookAsync(services, Claims with { Runtime = "scripted" }, "pre_tool_use", Json("""{"tool_name":"Bash","tool_input":{"command":"ls"}}"""), Ct);
+        Assert.Equal(("deny", null), (unread.Decision, unread.Reply));
+    }
+
+    /// <summary>LOG A5b-3: a step's model requests go to its runtime instance's proxy; an instance with none has no proxy.</summary>
+    [Fact]
+    public void A_step_s_model_proxy_is_its_runtime_instance_s()
+    {
+        ModelProxy Proxy(string upstream) => new(new ModelProxyOptions(new Uri(upstream), "api_key", _ => Task.FromResult<string?>("k")));
+        var proxied = services with { Proxies = new Dictionary<string, ModelProxy> { ["claude"] = Proxy("https://a.example/"), ["copilot"] = Proxy("https://b.example/") } };
+
+        Assert.Equal(new Uri("https://b.example/"), proxied.ProxyFor(Claims with { Runtime = "copilot" })!.Upstream);
+        Assert.Equal(new Uri("https://a.example/"), proxied.ProxyFor(Claims)!.Upstream);
+        Assert.Null(proxied.ProxyFor(Claims with { Runtime = "scripted" }));
+        Assert.Null(proxied.ProxyFor(Claims with { Runtime = null }));
     }
 
     sealed class Upstream(Func<HttpRequestMessage, HttpResponseMessage> answer) : HttpMessageHandler

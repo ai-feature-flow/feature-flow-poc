@@ -126,29 +126,33 @@ public sealed class SandboxClientTests : IDisposable
         Assert.Contains("never push", error.ToString());
     }
 
-    /// <summary>Copilot CLI shows the agent only the exit code of a hook that exits 2, so its denial is a JSON decision with the reason (LOG 293).</summary>
+    /// <summary>
+    /// LOG A5b-1: the hook command knows no runtime. A denial prints and exits as the step's runtime's reply says (Copilot's
+    /// JSON decision with exit 0, LOG 293; Claude Code's exit 2 with the reason on standard error).
+    /// </summary>
     [Theory]
-    [InlineData("deny", "never push")]
-    [InlineData(null, "unknown or revoked step token")]
-    public async Task For_copilot_the_hook_command_denies_with_a_json_decision_and_its_reason(string? decision, string reason)
+    [InlineData(0, """{"permissionDecision":"deny","permissionDecisionReason":"never push"}""", null)]
+    [InlineData(2, null, "never push")]
+    public async Task The_hook_command_denies_with_the_runtime_s_reply(int code, string? printed, string? shown)
     {
-        var replicas = new Replicas((_, _) => decision is null ? new JsonObject { ["error"] = reason } : new JsonObject { ["decision"] = decision, ["reason"] = reason });
-        var output = new StringWriter();
-        var exit = await HookCommand.RunAsync("pre_tool_use", Client(replicas), new StringReader("""{"tool_name":"Bash"}"""), output, new StringWriter(),
-            new ClientLog(null), Ct, copilot: true);
-        Assert.Equal(0, exit);
-        var answer = JsonNode.Parse(output.ToString())!;
-        Assert.Equal("deny", answer["permissionDecision"]!.ToString());
-        Assert.Contains(reason, answer["permissionDecisionReason"]!.ToString());
+        var replicas = new Replicas((_, _) => new JsonObject
+        {
+            ["decision"] = "deny", ["reason"] = "never push", ["reply"] = new JsonObject { ["exit"] = code, ["output"] = printed, ["error"] = shown },
+        });
+        var (output, error) = (new StringWriter(), new StringWriter());
+        var exit = await HookCommand.RunAsync("pre_tool_use", Client(replicas), new StringReader("""{"tool_name":"Bash"}"""), output, error, new ClientLog(null), Ct);
+        Assert.Equal(code, exit);
+        Assert.Equal(printed ?? "", output.ToString().Trim());
+        Assert.Equal(shown ?? "", error.ToString().Trim());
     }
 
     [Fact]
-    public async Task For_copilot_an_allowed_call_prints_nothing()
+    public async Task An_allowed_call_prints_nothing()
     {
         var replicas = new Replicas((_, _) => new JsonObject { ["decision"] = "allow" });
         var output = new StringWriter();
         Assert.Equal(0, await HookCommand.RunAsync("pre_tool_use", Client(replicas), new StringReader("""{"tool_name":"Read"}"""), output, new StringWriter(),
-            new ClientLog(null), Ct, copilot: true));
+            new ClientLog(null), Ct));
         Assert.Empty(output.ToString());
     }
 

@@ -163,8 +163,11 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                 new AgentStepRecord(key, call.Step.RunId, spec.WorkflowId, call.Step.StepId, spec.Level, call.Contract, spec.CorrectionTurns, spec.QuestionsMax,
                     (long)spec.QuestionsTimeout.TotalSeconds, DateTimeOffset.UtcNow),
             ]));
+            // The instance the step runs on, as resolved (a dry run's dry_run instance), names its hooks' reading and its model proxy (LOG A5b-1, A5b-3).
+            var instance = owner.Providers.Instances("agent_runtime").FirstOrDefault(i => ReferenceEquals(i.Provider, runtime)).Name;
             var token = owner.tokens.Issue(new StepClaims(key, call.Step.RunId, spec.WorkflowId, call.Step.StepId, spec.WriteAccess, spec.Tools,
-                DateTimeOffset.UtcNow.Add((call.Timeout ?? AgentLimits.DefaultTimeout) + spec.QuestionsTimeout * spec.QuestionsMax + TimeSpan.FromHours(2)).ToUnixTimeSeconds()));
+                DateTimeOffset.UtcNow.Add((call.Timeout ?? AgentLimits.DefaultTimeout) + spec.QuestionsTimeout * spec.QuestionsMax + TimeSpan.FromHours(2)).ToUnixTimeSeconds(),
+                instance));
             limits = new AgentLimits(call.Timeout, spec.CorrectionTurns, spec.QuestionsTimeout);
             task = new AgentTask(call.Step, call.What, null, call.Inputs, call.Contract)
             {
@@ -593,24 +596,6 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                 // The last report counts (docs/04 section 3.3), so a report the engine rejected after accepting it is not taken.
                 if (reports.LastOrDefault() is { Accepted: true, Report: { } accepted })
                     candidate = accepted;
-                else if (result.ReportFile is { } file && rejected <= spec.CorrectionTurns)
-                {
-                    var (checkedReport, errors) = await CheckFileReportAsync(file);
-                    await RecordAsync(new RecordBatch(Reports: [new ReportRecord(key, reports.Count + 1, checkedReport is not null, checkedReport, errors, DateTimeOffset.UtcNow)]));
-                    if (checkedReport is null)
-                    {
-                        rejected++;
-                        if (rejected <= spec.CorrectionTurns)
-                        {
-                            message = $"The engine rejected report.json:\n{string.Join("\n", errors.Select(e => "- " + e))}\n" +
-                                      $"Fix what it names and write report.json again (correction turn {rejected} of {spec.CorrectionTurns}).";
-                            running = null;
-                            continue;
-                        }
-                    }
-
-                    candidate = checkedReport;
-                }
                 else if (result.Report is { } own)
                     candidate = own;
 
@@ -628,7 +613,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                                                     string.Join("; ", problems.Take(5)));
                     message = "The engine checked the artifacts you reported against their types and found errors:\n" +
                               string.Join("\n", problems.Select(e => "- " + e)) + "\n" +
-                              $"Fix the files in your output folder and {(task.EngineTools ? "call report again" : "write report.json again")} " +
+                              $"Fix the files in your output folder and call report again " +
                               $"(correction turn {rejected} of {spec.CorrectionTurns}).";
                     running = null;
                     continue;
@@ -746,29 +731,6 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             hiddenRevision = lastPushed = bundle.Head;
             events.Add($"pushed {Revisions.Short(bundle.Head)} to {hiddenRef}");
             await EventAsync("pushed", $"{bundle.Head} to {hiddenRef}");
-        }
-
-        async Task<(StepReport? Report, IReadOnlyList<string> Errors)> CheckFileReportAsync(string text)
-        {
-            JsonElement report;
-            try
-            {
-                report = JsonDocument.Parse(text).RootElement;
-            }
-            catch (JsonException e)
-            {
-                return (null, [$"report.json is not JSON: {e.Message}"]);
-            }
-
-            var missing = new List<string>();
-            foreach (var path in ReportCheck.Paths(report))
-            {
-                var exists = await sandboxes.RunAsync(sandbox, new SandboxCommand(["test", "-s", $"{paths.Output}/{path}"]), $"{key}/exists/{Guid.NewGuid():N}", ct);
-                if (!exists.Ok || exists.Value.Exit != 0)
-                    missing.Add(path);
-            }
-
-            return ReportCheck.Check(report, call.Contract, missing);
         }
 
         /// <summary>

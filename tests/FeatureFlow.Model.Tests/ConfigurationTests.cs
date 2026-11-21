@@ -90,7 +90,6 @@ public class ConfigurationTests
     [InlineData("defaults:", "agent_worker: { listen: \"http://0.0.0.0:8490\", token_key_ref: secrets/k }\ndefaults:", "agent_worker.urls must list")]
     [InlineData("defaults:", "agent_worker: { listen: \"http://0.0.0.0:8490\", urls: [\"http://h:1\"] }\ndefaults:", "agent_worker.token_key_ref must name")]
     [InlineData("defaults:", "agent_worker: { commit_interval: 10s }\ndefaults:", "unknown key 'commit_interval'")]
-    [InlineData("recording: { folder: rec } } }", "recording: { folder: rec }, bare: { provider: claude_code, engine_tools: false } } }", "engine_tools: false is for development only")]
     // L4: the scripted runtime is a test double.
     [InlineData("recording: { folder: rec } } }", "recording: { folder: rec }, scripted: { script: s.yaml } } }", "providers.agent_runtime.instances.scripted: the scripted runtime is for development only")]
     // F19 (LOG 339): toolsets are not in version 1.

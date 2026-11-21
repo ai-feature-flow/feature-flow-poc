@@ -5,8 +5,9 @@ namespace FeatureFlow.Integration.Tests;
 
 /// <summary>
 /// SP3's tasks as contract tests of the Claude Code runtime with the engine's tools (docs/spikes/sp3-results.md):
-/// report, correct, fall back to a file, wait, and stop. The model is scripted, so these test the runtime's and
-/// the engine's side of the contract; the Live category runs the same tasks with a real model.
+/// report, correct, wait, and stop. The model is scripted, so these test the runtime's and the engine's side of the
+/// contract through the real CLI in a sandbox; the runtime contract suite (F12) covers both runtimes without one, and
+/// the Live category runs the same tasks with a real model.
 /// </summary>
 [Trait("Category", "Integration")]
 public sealed class AgentContractTests
@@ -70,9 +71,9 @@ public sealed class AgentContractTests
         Assert.Equal(["1 started", "1 ended completed", "2 started", "2 ended completed"], sessions);
     }
 
-    /// <summary>SP3 T3: with no engine tools, the agent writes report.json to the output folder the engine created (DR17).</summary>
+    /// <summary>DR17: the output folder the engine created is the agent's and empty before the agent does anything.</summary>
     [Fact]
-    public async Task Without_the_report_tool_the_agent_reports_through_a_file_in_its_output_folder()
+    public async Task The_output_folder_is_the_agent_s_and_empty_before_it_starts()
     {
         await using var model = new ScriptedModel("model-key-" + Guid.NewGuid().ToString("N"));
         string? folder = null;
@@ -82,17 +83,15 @@ public sealed class AgentContractTests
                 folder = c.LastToolResult;
                 return ScriptedModel.ToolUse("Write", AgentScripts.Write("/ff/out/notes.md", "Notes\n"));
             })
-            .ThenTool("Write", AgentScripts.Write("/ff/out/report.json", AgentScripts.Report().ToJsonString()))
+            .ThenTool("mcp__engine__report", AgentScripts.Report())
             .ThenText("Done.");
         await model.StartAsync();
-        await using var h = await AgentHarness.StartAsync("fallback", model, new AgentHarnessOptions { EngineTools = false });
+        await using var h = await AgentHarness.StartAsync("output-folder", model);
         var runId = h.Start("T-3", "Write notes.md and report.");
         var status = await h.WaitForEndAsync(runId, RunTimeout);
 
         Assert.True(status == "completed", $"the run ended {status}:\n{await h.TimelineAsync(runId)}");
-        // DR17: the output folder existed, empty and the agent's, before the agent did anything.
         Assert.Equal("node directory\n0", folder?.Trim());
-        Assert.All(model.Requests, r => Assert.DoesNotContain("mcp__engine__report", r["tools"]!.ToJsonString()));
         Assert.True(Assert.Single(await h.RecordsAsync<ReportRecord>(Queries.Reports, Key(runId))).Accepted);
     }
 
