@@ -405,8 +405,8 @@ public enum WaitKind
 
 public static class WaitKinds
 {
-    /// <summary>A wait kind as the record store writes it (<c>WaitRecord.Kind</c>): <c>gate</c>, <c>question</c>, <c>patchapproval</c>, ...</summary>
-    public static string Name(this WaitKind kind) => kind.ToString().ToLowerInvariant();
+    /// <summary>A wait kind as the record store writes it (<c>WaitRecord.Kind</c>) and wait ids begin: <c>gate</c>, <c>question</c>, <c>patch_approval</c>, ...</summary>
+    public static string Name(this WaitKind kind) => kind == WaitKind.PatchApproval ? "patch_approval" : kind.ToString().ToLowerInvariant();
 }
 
 /// <summary>

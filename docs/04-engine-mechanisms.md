@@ -258,11 +258,11 @@ One mechanism for every human wait (`docs/01` section 7).
 
 | Element | Detail |
 |---|---|
-| Form | A durable wait in the workflow. No timeout, except a question's (section 3.4). Reminders on a timer, through notifications |
+| Form | A durable wait in the workflow. No timeout, except a question's (section 3.4); reminders on an open wait are A3 (`docs/12`) |
 | Inputs | `type`, `prompt`, `with`, optional `auto`, optional `session` (`docs/03` section 2.3) |
 | Outcomes | Declared |
 | Idempotency | By wait id. A recorded answer is never asked again: the same answer again succeeds and changes nothing, a different one is refused as a conflict |
-| Audit | Opened, reminded, answered: with the authenticated actor, the choice and the reason |
+| Audit | Opened and answered, with the authenticated actor and the choice; reminders and a required reason are A3 (`docs/12`) |
 
 Every wait is held in the interpreter's core, and every answer goes through one
 routing function (LOG A2-0h). The update's validator asks it whether an answer
@@ -283,7 +283,7 @@ the code host (the `merge_action` gate, section 4.5); or withdrawn (its join
 decided, its step was skipped, or the run ended). The closed waits are carried
 across a hand-over with the rest of the core's state, so a repeated answer is
 still a duplicate in the next run. The record store's wait record has kind
-`gate`, `question`, `intervention`, `patchapproval` or `breakpoint`, the decision
+`gate`, `question`, `intervention`, `patch_approval` or `breakpoint`, the decision
 type, the choices that answer it and the text to show; wait ids are `gate-N`,
 `intervention-N`, `breakpoint-N` and `patch_approval-N`, and a question's is the
 id its agent's client gave it (LOG A2-0d).

@@ -40,7 +40,7 @@ public static partial class ApiApp
 
             var outcome = body!["outcome"]?.GetValue<string>();
             var action = body["action"]?.GetValue<string>();
-            if (wait.Kind == "patchapproval" && action is null && outcome is "approve" or "reject")
+            if (wait.Kind == "patch_approval" && action is null && outcome is "approve" or "reject")
                 (action, outcome) = (outcome, null);
             // F8: the actor is the authenticated caller; an actor or roles in the body are ignored.
             var args = new AnswerArgs(waitId, caller.Actor, outcome, action, body["step_id"]?.GetValue<string>(),
