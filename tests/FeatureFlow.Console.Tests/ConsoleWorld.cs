@@ -43,7 +43,8 @@ public sealed class ConsoleWorld : IAsyncDisposable
     /// The organisation's approval rules. By default approvers answer <c>m7s.*</c>: the m7s library declares no roles for its
     /// decision types, so without a rule no one may answer them.
     /// </param>
-    public ConsoleWorld(string authMode = "none", IReadOnlyList<ApprovalRule>? approval = null)
+    /// <param name="overrides">The organisation's <c>policy.overrides</c>: the roles for an override key in place of its default.</param>
+    public ConsoleWorld(string authMode = "none", IReadOnlyList<ApprovalRule>? approval = null, IReadOnlyDictionary<string, IReadOnlyList<string>>? overrides = null)
     {
         Directory.CreateDirectory(folder);
         File.WriteAllText(Path.Combine(folder, "secrets.json"), $$"""{ "api_token": "{{Token}}" }""");
@@ -73,7 +74,10 @@ public sealed class ConsoleWorld : IAsyncDisposable
                 new LibrarySourceConfig("std", "directory", Path.Combine(Repository.Root, "library", "std")),
                 new LibrarySourceConfig("m7s", "directory", Path.Combine(Repository.Root, "tests", "FeatureFlow.Integration.Tests", "libraries", "m7s")),
             ],
-            new PolicyConfig(approval ?? [new ApprovalRule("m7s.*", [PeopleRoles.Approver], 1, false, new Cap<bool>(false, false))], null, null, null, null),
+            new PolicyConfig(approval ?? [new ApprovalRule("m7s.*", [PeopleRoles.Approver], 1, false, new Cap<bool>(false, false))], null, null, null, null)
+            {
+                Overrides = overrides ?? new Dictionary<string, IReadOnlyList<string>>(),
+            },
             Path.Combine(folder, "organisation.yaml"));
         // As FeatureFlow.Hosting composes it: the configured authenticators and the organisation's roles.
         services = new ApiServices(providers, installation, organisation, Engine.Client)
