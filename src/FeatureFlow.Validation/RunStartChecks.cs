@@ -25,7 +25,7 @@ public static class RunStartChecks
 
     /// <summary>
     /// The capabilities a plan needs, with the first step that needs each (null for the run or a library). An action's are
-    /// its descriptor's <see cref="ActionDescriptor.Needs"/>: a bare provider type means a provider of that type must be
+    /// its descriptor's, given the inputs the step sets (<see cref="ActionDescriptor.NeedsFor"/>): a bare provider type means a provider of that type must be
     /// configured; <c>type.flag</c> means its capability record must have that flag (docs/06 section 1).
     /// </summary>
     public static IReadOnlyDictionary<string, string> Needs(Plan plan, LibrarySet libraries)
@@ -41,7 +41,7 @@ public static class RunStartChecks
             IEnumerable<string> stepNeeds = step.Form switch
             {
                 StepForm.Agent => AgentNeeds,
-                StepForm.Action => step.Descriptor?.Needs ?? [],
+                StepForm.Action => step.Descriptor?.NeedsFor(step.With?.Entries.Where(e => e.Value is not YScalar { IsNull: true }).Select(e => e.Key.Text) ?? []) ?? [],
                 _ => [],
             };
             if (step.Tracker is not null)
@@ -88,63 +88,6 @@ public static class RunStartChecks
 
             if (manifest.PlanSchema is { } schema && schema != PlanSchema)
                 d.Add(Checks.ReferenceResolves, $"library {library.Name} requires plan schema {schema}; this engine reads {PlanSchema}");
-        }
-    }
-
-    /// <summary>The keys a repository's <c>library</c> section may hold, and what <c>adds</c> may add (docs/08 section 4).</summary>
-    public static readonly IReadOnlyList<string> RepositoryLibraryKeys = ["default_template", "adds"];
-
-    public static readonly IReadOnlyList<string> RepositoryAdds = ["skills", "resources", "tasks"];
-
-    /// <summary>
-    /// Check 20: a repository's <c>library</c> section (from <c>feature-flow.yaml</c> on the default branch) names
-    /// a default template and adds skills, resources and tasks under its own name. It never overrides: any other
-    /// key, or an added item that has the name of an item in the run's libraries, is refused.
-    /// </summary>
-    public static void RepositoryLibrary(string repository, YNode? section, LibrarySet libraries, DiagnosticBag d)
-    {
-        if (section is null)
-            return;
-        if (section is not YMap map)
-        {
-            d.Add(Checks.RepositoryLibraryAddsOnly, $"{repository}: the library section must be a map", section.Location);
-            return;
-        }
-
-        foreach (var (key, value) in map.Entries)
-        {
-            if (!RepositoryLibraryKeys.Contains(key.Text))
-            {
-                d.Add(Checks.RepositoryLibraryAddsOnly, $"{repository}: library.{key.Text} is not allowed; a repository may only name a default template and add content", key.Location);
-                continue;
-            }
-
-            if (key.Text != "adds")
-                continue;
-            if (value is not YMap adds)
-            {
-                d.Add(Checks.RepositoryLibraryAddsOnly, $"{repository}: library.adds must be a map", value.Location);
-                continue;
-            }
-
-            foreach (var (type, items) in adds.Entries)
-            {
-                if (!RepositoryAdds.Contains(type.Text))
-                {
-                    d.Add(Checks.RepositoryLibraryAddsOnly, $"{repository}: library.adds.{type.Text} is not allowed; a repository adds only {string.Join(", ", RepositoryAdds)}", type.Location);
-                    continue;
-                }
-
-                foreach (var item in (items as YSeq)?.Items ?? [])
-                {
-                    var name = (item as YMap)?["name"].ScalarText();
-                    if (name is null)
-                        continue;
-                    foreach (var library in libraries.All)
-                        if (library.PathOf(type.Text, name) is not null)
-                            d.Add(Checks.RepositoryLibraryAddsOnly, $"{repository}: library.adds.{type.Text} '{name}' has the name of {library.Name}:{type.Text}/{name}; a repository adds, never overrides", item.Location);
-                }
-            }
         }
     }
 

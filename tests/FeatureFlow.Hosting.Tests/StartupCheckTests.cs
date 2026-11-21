@@ -36,7 +36,7 @@ public sealed class StartupCheckTests : IDisposable
             FeatureFlowConfiguration.Load(Path.Combine(folder, "installation.yaml"), Path.Combine(folder, "organisation.yaml"));
             return [];
         }
-        catch (InvalidOperationException e)
+        catch (StartupRefusal e)
         {
             return e.Message.Split('\n').Skip(1).ToList();
         }
@@ -66,7 +66,7 @@ public sealed class StartupCheckTests : IDisposable
         var missing = Path.Combine(folder, "no-such-library");
         File.WriteAllText(Path.Combine(folder, "installation.yaml"), "api_version: feature-flow/v1\nkind: installation\napi:\n  auth: " + LocalToken + "\n");
         File.WriteAllText(Path.Combine(folder, "organisation.yaml"), $"api_version: feature-flow/v1\nkind: organisation\nname: a\nlibraries: [{{ name: mine, source: directory, path: \"{missing}\" }}]\n");
-        var e = Assert.Throws<InvalidOperationException>(() => FeatureFlowConfiguration.Load(Path.Combine(folder, "installation.yaml"), Path.Combine(folder, "organisation.yaml")));
+        var e = Assert.Throws<StartupRefusal>(() => FeatureFlowConfiguration.Load(Path.Combine(folder, "installation.yaml"), Path.Combine(folder, "organisation.yaml")));
         Assert.Contains("organisation: libraries.mine: the directory", e.Message, StringComparison.Ordinal);
     }
 }

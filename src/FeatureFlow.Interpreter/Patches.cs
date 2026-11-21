@@ -367,21 +367,26 @@ public static class PlanExpansion
 {
     public const int MaxItems = 500;
 
-    /// <summary>Builds the patch for a <c>plan.expand</c> step from its list's items, against the core's current revision.</summary>
-    public static (PatchDocument? Patch, string? Error) Build(RunCore core, string stepId, IReadOnlyList<YNode> items)
+    /// <summary>
+    /// Builds the patch for a <c>plan.expand</c> step from its list's items, against the core's current revision, with the
+    /// <paramref name="inputs"/> check 31 passed at step start (<see cref="RunCore.StepSpec"/>), so what was checked is what is
+    /// used (LOG 488). <c>step</c> is taken as written, since its expressions and <c>$.</c> paths belong to the steps it makes.
+    /// </summary>
+    public static (PatchDocument? Patch, string? Error) Build(RunCore core, string stepId, IReadOnlyDictionary<string, object?> inputs, IReadOnlyList<YNode> items)
     {
         if (core.StepById(stepId) is not { Descriptor.Handling: ActionHandling.Expand, With: { } with } step)
             return (null, $"{stepId} is not a plan.expand step with inputs");
         if (items.Count > MaxItems)
             return (null, $"the list has {items.Count} items; plan.expand takes at most {MaxItems}");
-        var shape = with["shape"].ScalarText() ?? "parallel";
-        var targetText = with["target"].ScalarText();
+
+        var shape = inputs.GetValueOrDefault("shape") as string ?? "parallel";
+        var targetText = inputs.GetValueOrDefault("target") as string;
         var stepTemplate = with["step"] as YMap;
         if (targetText is null || stepTemplate is null)
             return (null, $"{stepId}: plan.expand needs target and step");
         if (core.Plan.FindStep(targetText, step.Scope) is not { } target)
             return (null, $"{stepId}: target '{targetText}' is not a step");
-        var onOther = with["on_other"].ScalarText();
+        var onOther = inputs.GetValueOrDefault("on_other") as string;
         if (shape == "chain" && onOther is null)
             return (null, $"{stepId}: a chain needs on_other");
 

@@ -54,6 +54,14 @@ public sealed class RunCommandTests : IDisposable
             var path = context.Request.Url!.AbsolutePath;
             lock (received)
                 received.Add((context.Request.HttpMethod, path, reader.ReadToEnd()));
+            if (path == "/runs/r0/plan")
+            {
+                // A run with no plan revision yet (LOG 493).
+                context.Response.StatusCode = 204;
+                context.Response.Close();
+                continue;
+            }
+
             object reply = path.EndsWith("/plan", StringComparison.Ordinal)
                 ? new PlanView("r1", 2, "std:templates/ticket_delivery", "Template ticket_delivery (level ticket)\n", [])
                 : new OverrideResponse("o1", "applied: plan revision 2");
@@ -105,5 +113,13 @@ public sealed class RunCommandTests : IDisposable
         Assert.Equal(0, exit);
         Assert.Equal("revision 2 of std:templates/ticket_delivery\nTemplate ticket_delivery (level ticket)\n", output.ReplaceLineEndings("\n"));
         Assert.Equal(("GET", "/runs/r1/plan"), (received.Single().Method, received.Single().Path));
+    }
+
+    [Fact]
+    public async Task Plan_says_when_the_run_has_no_revision_yet()
+    {
+        var (exit, output, error) = await RunAsync("plan", "r0");
+
+        Assert.Equal((0, "run r0 has recorded no plan revision yet\n", ""), (exit, output.ReplaceLineEndings("\n"), error));
     }
 }

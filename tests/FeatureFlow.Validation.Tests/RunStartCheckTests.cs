@@ -11,7 +11,7 @@ namespace FeatureFlow.Validation.Tests;
 /// </summary>
 public class RunStartCheckTests
 {
-    static readonly LibraryReference Ticket = new("std", null, "templates", "ticket_delivery");
+    static readonly LibraryReference Ticket = new("std", "templates", "ticket_delivery");
 
     /// <summary>Std's files with each edit applied once, as a library set, and ticket_delivery loaded from it.</summary>
     static (LibrarySet Libraries, Plan Plan) Load(params Std.Edit[] edits)
@@ -76,25 +76,44 @@ public class RunStartCheckTests
         Assert.Contains(d, x => x.Message.Contains("no ci provider is configured", StringComparison.Ordinal));
     }
 
-    static YNode Section(string yaml) => YamlText.Parse(yaml, "feature-flow.yaml", new DiagnosticBag())!;
+    /// <summary>A template whose only step is <c>wait.condition</c> with <paramref name="condition"/>.</summary>
+    static (LibrarySet Libraries, Plan Plan) Waiting(string condition)
+    {
+        var (libraries, plan, d) = Std.Probe($$"""
+            api_version: feature-flow/v1
+            kind: template
+            metadata: { name: probe, level: ticket }
+            steps:
+              - id: wait
+                action: wait.condition
+                with: { {{condition}} }
+                routes: { met: { end: completed }, unmet: { end: failed } }
+            """);
+        Assert.False(d.HasErrors, string.Join("\n", d));
+        return (libraries, plan);
+    }
 
     [Theory]
-    [InlineData("{ default_template: std:templates/ticket_delivery, adds: { skills: [{ name: acme_api, path: .feature-flow/skills/acme_api }] } }", null)]
-    [InlineData("{ overrides: { std:tasks/implement_ticket: x } }", "library.overrides is not allowed")]
-    [InlineData("{ adds: { templates: [{ name: mine, path: t.yaml }] } }", "library.adds.templates is not allowed")]
-    [InlineData("{ adds: { skills: [{ name: review, path: .feature-flow/skills/review }] } }", "has the name of std:skills/review")]
-    public void Check_20_a_repository_library_section_adds_only(string yaml, string? message)
+    [InlineData("pull_request: approved", "code_host", "tracker", "no code_host provider is configured")]
+    [InlineData("checks: passed", "code_host.check_status", "tracker", "capability code_host.check_status is not offered")]
+    [InlineData("tracker: { statuses: [done] }", "tracker", "code_host", "no tracker provider is configured")]
+    public void Check_21_wait_condition_needs_the_provider_its_condition_reads_and_no_other(string condition, string need, string other, string message)
     {
-        var (libraries, _) = Load();
-        var d = new DiagnosticBag();
-        RunStartChecks.RepositoryLibrary("acme/api", Section(yaml), libraries, d);
-        if (message is null)
-            Assert.Empty(d);
-        else
-        {
-            Assert.Equal([Checks.RepositoryLibraryAddsOnly], Blocking(d));
-            Assert.Contains(message, d.Single().Message);
-        }
+        var (libraries, plan) = Waiting(condition);
+        var needs = RunStartChecks.Needs(plan, libraries);
+        Assert.Equal("step wait", needs.GetValueOrDefault(need));
+        Assert.DoesNotContain(needs, kv => kv.Value == "step wait" && (kv.Key == other || kv.Key.StartsWith(other + ".", StringComparison.Ordinal)));
+
+        // Accepted with the provider its condition needs besides what the run and std need: the other is not asked for.
+        var rest = needs.Where(kv => kv.Value != "step wait").Select(kv => kv.Key).ToList();
+        var accepted = new DiagnosticBag();
+        RunStartChecks.Capabilities(plan, libraries, rest.Append(need).ToHashSet(), accepted);
+        Assert.Empty(accepted);
+
+        var refused = new DiagnosticBag();
+        RunStartChecks.Capabilities(plan, libraries, rest.Append(other).ToHashSet(), refused);
+        Assert.Equal([Checks.Capabilities], Blocking(refused));
+        Assert.Contains(message, refused.Single().Message, StringComparison.Ordinal);
     }
 
     static PolicyConfig Policy(long? perStep = null, ApprovalRule? rule = null, Cap<bool>? requireChecks = null) =>

@@ -100,16 +100,7 @@ public sealed class TrackerActionTests
         Assert.Contains("no tracker issue", result.Reason, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task An_unknown_op_is_refused_by_check_31()
-    {
-        await using var w = new ActionWorld();
-
-        var result = await w.RunAsync("tracker.update", "{ op: delete, issue: MEM-1 }");
-
-        Assert.Equal("cannot_answer", result.Kind);
-        Assert.Contains("check 31", result.Reason, StringComparison.Ordinal);
-    }
+    // Check 31 on op is the core's at step start (ShellToCoreTests; LOG 488).
 
     [Fact]
     public async Task A_tracker_outage_is_retried_not_a_step_failure()

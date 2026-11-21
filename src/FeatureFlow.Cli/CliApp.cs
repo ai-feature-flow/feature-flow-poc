@@ -207,6 +207,6 @@ public static class CliApp
             return null;
         }
 
-        return (root, new LibraryReference(libraryName, null, type, name));
+        return (root, new LibraryReference(libraryName, type, name));
     }
 }

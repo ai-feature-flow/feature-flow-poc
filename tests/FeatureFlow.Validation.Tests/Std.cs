@@ -1,3 +1,7 @@
+using FeatureFlow.Library;
+using FeatureFlow.Model;
+using FeatureFlow.Model.Plans;
+
 namespace FeatureFlow.Validation.Tests;
 
 /// <summary>Locates <c>library/std</c> and makes mutated copies of it (LOG 70).</summary>
@@ -55,4 +59,19 @@ public static class Std
 
     public static string Describe(ValidationResult result) =>
         result.Diagnostics.Count == 0 ? "(no diagnostics)" : string.Join("\n", result.Diagnostics);
+
+    /// <summary>A library named <c>probe</c> holding one template, <c>probe:templates/probe</c>, beside std; loaded and validated, with its load diagnostics.</summary>
+    public static (LibrarySet Libraries, Plan Plan, DiagnosticBag Diagnostics) Probe(string template)
+    {
+        var files = new LibraryFiles(new Dictionary<string, string>
+        {
+            ["library.yaml"] = "name: probe\nversion: 0.1.0\n",
+            ["templates/probe.yaml"] = template,
+        });
+        var d = new DiagnosticBag();
+        var libraries = new LibrarySet(Library.Library.Open(Root, d)!, Library.Library.FromFiles(files, d)!);
+        var plan = PlanLoader.LoadTemplate(libraries, new LibraryReference("probe", "templates", "probe"), d)!;
+        PlanValidator.Validate(plan, libraries, d);
+        return (libraries, plan, d);
+    }
 }

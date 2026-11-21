@@ -36,8 +36,8 @@ public partial class RunWorkflow
     }
 
     /// <summary>Why a step's activity was interrupted: a wake, if one cancelled this very activity; otherwise a hand-over (LOG 139).</summary>
-    string InterruptionReason(string stepId) =>
-        woken.Remove(stepId, out var wake) && wake.Token == stepTokens.GetValueOrDefault(stepId)
+    string InterruptionReason(string stepId, CancellationTokenSource token) =>
+        woken.Remove(stepId, out var wake) && wake.Token == token
             ? wake.Reason
             : "interrupted to hand over to the next run; it resumes there (LOG 139)";
 }

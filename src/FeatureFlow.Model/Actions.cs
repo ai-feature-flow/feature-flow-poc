@@ -59,6 +59,9 @@ public sealed record ActionInput(string Name, string Kind, IReadOnlyList<string>
 {
     /// <summary>The library item type the input names (<c>templates</c>, <c>prompts</c>); null when it is not a reference.</summary>
     public string? References { get; init; }
+
+    /// <summary>The capabilities a step needs when it sets this input, beyond the action's own (check 21; LOG 489).</summary>
+    public IReadOnlyList<string> Needs { get; init; } = [];
 }
 
 /// <summary>An output an action publishes, with its type (docs/03 section 5.4).</summary>
@@ -103,6 +106,16 @@ public sealed record ActionDescriptor(
 
     /// <summary>The type of a published output: <c>dyn</c> when docs/04 lists none, null when the action does not publish it.</summary>
     public string? OutputType(string name) => Outputs is null ? "dyn" : Outputs.FirstOrDefault(o => o.Name == name)?.Type;
+
+    /// <summary>
+    /// The capabilities a step of the action needs, given the inputs it sets (check 21): the action's own, and each set
+    /// input's, such as <c>wait.condition</c>'s tracker condition needing a tracker (LOG 489).
+    /// </summary>
+    public IEnumerable<string> NeedsFor(IEnumerable<string> setInputs)
+    {
+        var set = setInputs.ToHashSet(StringComparer.Ordinal);
+        return Needs.Concat(Inputs.Where(i => set.Contains(i.Name)).SelectMany(i => i.Needs)).Distinct(StringComparer.Ordinal);
+    }
 
     /// <summary>The gate type the action raises at a run's level, or null.</summary>
     public string? GateType(string level) => RaisesGate is null ? null : $"{level}.{RaisesGate}";
@@ -209,6 +222,9 @@ public static class Actions
     static ActionInput Map(string name) => new(name, "map");
     static ActionInput Time(string name, TimeSpan? minimum = null) => new(name, "duration", Minimum: minimum);
     static ActionOutput Number(string name) => new(name, "number");
+    static ActionOutput Text(string name) => new(name, "string");
+    static ActionOutput Flag(string name) => new(name, "boolean");
+    static ActionOutput Items(string name) => new(name, "array");
 
     /// <summary>The shortest poll interval a plan may ask for, so a wait cannot hammer a provider (it must not spin).</summary>
     public static readonly TimeSpan MinimumPoll = TimeSpan.FromSeconds(5);
@@ -241,8 +257,13 @@ public static class Actions
             Evidence = "check_results", WaitsBetweenReads = true,
         },
         new("wait.condition", [S("met"), F("unmet")], [],
-            [Str("pull_request", "approved", "merged", "mergeable"), Str("checks", "passed"), Map("tracker"), Time("poll_every", MinimumPoll), Time("timeout")],
-            ["code_host"])
+            [
+                Str("pull_request", "approved", "merged", "mergeable") with { Needs = ["code_host"] },
+                Str("checks", "passed") with { Needs = ["code_host.check_status"] },
+                Map("tracker") with { Needs = ["tracker"] },
+                Time("poll_every", MinimumPoll), Time("timeout"),
+            ],
+            [])
         {
             WaitsBetweenReads = true, Rule = OneCondition,
         },
@@ -267,7 +288,9 @@ public static class Actions
         {
             Rule = TriageStates,
         },
-        new("repo.inspect", [S("inspected")], null, [Str("repository")], ["vcs", "code_host"]),
+        new("repo.inspect", [S("inspected")],
+            [Items("tiers"), Items("tags"), Flag("ci"), Text("analyser"), Flag("integration_environment"), Text("manifest_hash")],
+            [Str("repository")], ["vcs", "code_host"]),
         new("artifact.compose", [S("composed")], null, [Str("name"), List("members")], []) { MakesSet = true },
         new("artifact.import", [S("imported")], null, [Str("repository"), Str("folder"), List("files"), Str("commit")], ["code_host"]),
         new("artifact.publish", [S("published"), B("conflict")], null,
@@ -275,10 +298,10 @@ public static class Actions
         {
             OpensPullRequest = PullRequestKind.Publication,
         },
-        new("tracker.update", [S("done"), F("not_found")], null,
+        new("tracker.update", [S("done"), F("not_found")], [Text("issue")],
             [Str("op", "create", "update", "transition", "link", "comment"), Str("issue"), Str("title"), Str("body"), List("labels"), Str("parent"),
                 Map("fields"), Str("project"), Str("status"), Str("to"), Str("link_type")], ["tracker"]),
-        new("delivery.report", [S("complete"), F("partial")], null, [List("repositories")], ["code_host"]),
+        new("delivery.report", [S("complete"), F("partial")], [Items("merged"), Items("not_merged")], [List("repositories")], ["code_host"]),
     ];
 
     static IEnumerable<string> OneCondition(IReadOnlyDictionary<string, object?> inputs)

@@ -29,8 +29,7 @@ public sealed record IntegrationEnvironment(string? Image, string? Start, string
 
 /// <summary>
 /// The repository manifest, <c>feature-flow.yaml</c> (docs/07 section 4), read fresh from the branch at every step and
-/// recorded by <see cref="Hash"/> (RW11). <see cref="Library"/> is kept as written for check 20, and is read only from
-/// the default branch's copy. <see cref="Image"/> is <c>environment.image</c>: the image the repository's sandboxes are
+/// recorded by <see cref="Hash"/> (RW11). <see cref="Image"/> is <c>environment.image</c>: the image the repository's sandboxes are
 /// made from, or null for the installation's (LOG 440).
 /// </summary>
 public sealed record RepositoryManifest(
@@ -40,7 +39,6 @@ public sealed record RepositoryManifest(
     IReadOnlyList<TestTier> Tiers,
     StaticAnalysis? Analysis,
     IntegrationEnvironment? Integration,
-    YNode? Library,
     string? Image)
 {
     /// <summary>The repository's manifest file name, at its root.</summary>
@@ -152,7 +150,9 @@ public sealed record RepositoryManifest(
             i.Finish();
         }
 
-        var manifest = new RepositoryManifest(hash, Commands(r, "setup", d), Commands(r, "after_changes", d), tiers, analysis, integration, r.Node("library"), image);
+        // A default template and added content were checked and never applied, so the section is refused (LOG 487).
+        ConfigurationReader.NotInVersion1(r, "library", "library");
+        var manifest = new RepositoryManifest(hash, Commands(r, "setup", d), Commands(r, "after_changes", d), tiers, analysis, integration, image);
         r.Finish();
         return manifest;
     }

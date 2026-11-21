@@ -91,6 +91,25 @@ public class ChildRunTests
     }
 
     [Fact]
+    public async Task A_run_child_step_whose_inputs_evaluate_outside_its_contract_asks_a_person_and_starts_no_child()
+    {
+        // LOG 488: check 31 at step start refuses run.child's tracker_issue (a list); the shell applies the refusal, so the
+        // step stops for a person and the child is never created.
+        await using var h = await Harness.StartAsync("refused-child", Silent, libraries: Library);
+        var id = h.Start("m6:templates/refused_child_parent", "--repo", "acme/api");
+
+        var waitId = await h.WaitForWaitAsync(id, TimeSpan.FromSeconds(30));
+
+        Assert.NotNull(waitId);
+        var wait = (await h.ShowAsync(id))["waits"]!.AsArray().Single()!;
+        Assert.Equal("kid", wait["step_id"]!.ToString());
+        Assert.Contains("check 31", wait["prompt"]!.ToString(), StringComparison.Ordinal);
+        Assert.Contains("run.child input 'tracker_issue' must be a string", wait["prompt"]!.ToString(), StringComparison.Ordinal);
+        Assert.Empty(await h.RunsOfAsync($"{id}.kid.1"));
+        Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
+    }
+
+    [Fact]
     public async Task A_child_ended_without_signalling_completes_the_parents_step_in_the_run_that_started_it()
     {
         await using var h = await Harness.StartAsync("silent", Silent, libraries: Library);

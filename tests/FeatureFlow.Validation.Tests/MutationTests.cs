@@ -218,4 +218,41 @@ public class MutationTests
         Assert.False(result.HasErrors, Describe(result));
         Assert.Equal([35], result.WarningChecks);
     }
+
+    /// <summary>
+    /// Check 5 types a guard's reference to an action's output by the descriptor's outputs (docs/04 section 12; LOG 490):
+    /// a name the action does not publish is refused, naming the ones it does; one it publishes loads.
+    /// </summary>
+    [Theory]
+    [InlineData("repo.inspect", "{}", "inspected", "steps.act.outputs.{0}", "ci", "tier", "analyser, ci, integration_environment, manifest_hash, tags, tiers")]
+    [InlineData("tracker.update", "{ op: comment, body: hello }", "done", "steps.act.outputs.{0} != ''", "issue", "key", "issue")]
+    [InlineData("delivery.report", "{}", "complete", "size(steps.act.outputs.{0}) == 0", "not_merged", "reverted", "merged, not_merged")]
+    public void A_guard_reading_an_output_its_action_does_not_publish_is_check_5(string action, string with, string outcome, string guard, string real, string unknown, string named)
+    {
+        string Template(string output) => $$"""
+            api_version: feature-flow/v1
+            kind: template
+            metadata: { name: probe, level: ticket }
+            defaults:
+              routes:
+                by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+            steps:
+              - id: act
+                action: {{action}}
+                with: {{with}}
+                routes:
+                  {{outcome}}:
+                    - when: "{{guard.Replace("{0}", output, StringComparison.Ordinal)}}"
+                      to: { end: completed }
+                    - to: { end: failed }
+            """;
+
+        var (_, _, accepted) = Probe(Template(real));
+        Assert.False(accepted.HasErrors, string.Join("\n", accepted));
+
+        var (_, _, refused) = Probe(Template(unknown));
+        var error = Assert.Single(refused, x => x.Blocks);
+        Assert.Equal(5, error.Check);
+        Assert.Contains($"step act has no output '{unknown}' ({named})", error.Message, StringComparison.Ordinal);
+    }
 }

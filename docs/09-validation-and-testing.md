@@ -33,7 +33,7 @@ other documents cite them.
 | 2 | Unknown action, unknown construct | Load | Yes |
 | 3 | Duplicate step id, or an id reused from the run's history for a different step | Load, Patch | Yes |
 | 4 | Undeclared parameter referenced | Load | Yes |
-| 5 | Expression parses, type-checks and is within its bounds (`docs/03` section 5.2) | Load | Yes |
+| 5 | Expression parses, type-checks and is within its bounds (`docs/03` section 5.2); a step output it reads is one the step declares or its action publishes (`docs/04` sections 2 and 12; LOG 490) | Load | Yes |
 | 6 | An agent step or decision declares at least one outcome; no step declares `attempts_exhausted` | Load | Yes |
 | 7 | **Every outcome has a route after defaults are applied** (`docs/03` section 4.3) | Load | Yes |
 | 8 | Every route target exists, or is a directive; a guarded list ends with a fallback | Load | Yes |
@@ -48,8 +48,8 @@ other documents cite them.
 | 17 | Plan size: carried state under 1 MB, about 2,000 steps (section 2.1) | Load, Patch | Yes |
 | 18 | Required parameters bound | Run start | Yes |
 | 19 | Every library reference resolves; library requirements met; the lock written | Run start | Yes |
-| 20 | A repository's library section adds only, never overrides | Run start | Yes |
-| 21 | Capability negotiation: every capability the plan needs is offered by a configured provider | Run start | Yes |
+| 20 | Retired: a repository's `library` section, which it checked, is refused (`docs/07` section 4, LOG 487). The number is not reused | None | None |
+| 21 | Capability negotiation: every capability the plan needs is offered by a configured provider. A step needs its action's capabilities and those of the inputs it sets (`wait.condition`'s condition; LOG 489) | Run start | Yes |
 | 22 | No request exceeds a locked organisation cap (`docs/05` section 3.1): at run start, attempts and races, the merge floors (checks and tests before merging), auto-resolution and the root budget; on a patch, the steps it adds or changes, for attempts, races and the merge floors | Run start, Patch | Yes |
 | 23 | **F1**: no merge step into a default branch has `engine_can_merge: true` unless the organisation allows it for that repository. The default branch is read from the code host | Run start | Yes |
 | 24 | Branch protection exists on each target repository's default branch; classic protection or rulesets both count (LOG 147) | Run start | Yes |
@@ -59,14 +59,14 @@ other documents cite them.
 | 28 | Patch: the result passes every load check | Patch | Yes |
 | 29 | Patch: protected content touched, or a role outside the allowed list | Patch | **Pending decision** (`docs/05` section 6) |
 | 30 | Patch: relaxes a safety floor | Patch | **Rejected** |
-| 31 | Step inputs satisfy the action's input schema (`docs/04` section 2): every `with` key is an input of the action, and a value has the input's kind and allowed values. Literals are checked at load, expressions when evaluated at step start (LOG 359) | Load, Step start | Yes |
+| 31 | Step inputs satisfy the action's input schema (`docs/04` section 2): every `with` key is an input of the action, and a value has the input's kind and allowed values. Literals are checked at load, expressions when evaluated at step start (LOG 359), for every action, `run.child` and `plan.expand` included (LOG 488) | Load, Step start | Yes |
 | 32 | Consumed artifacts exist and validate | Step start | Yes |
 | 33 | Every `tier_tags` tag matches a tier in the manifest read at this step | Step start | Yes |
 | 34 | Unused parameter | Load | No |
 | 35 | Deprecated library reference with a replacement | Load | No |
 | 36 | The run's work branch is neither a repository's default branch nor the run's parent branch (`metadata.branch_pattern` is free text). Checked once: the work branch is fixed when the run starts (LOG 147) | Run start | Yes |
 
-Checks 20, 23, 24 and 36 at run start, and 31 to 33 at step start, are as built in M5 (check 36 at run start only since LOG 147) (LOG 125 to 127, 133,
+Checks 23, 24 and 36 at run start, and 31 to 33 at step start, are as built in M5 (check 36 at run start only since LOG 147) (LOG 125 to 127, 133,
 134, 141). Checks 21 and 23 are not run on a patch (a follow-up; no milestone); `scm.merge` re-checks F1 at merge time.
 
 ### 2.1 Plan size

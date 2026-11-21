@@ -374,7 +374,7 @@ public sealed partial class RunCore
     public string? LibraryItemError(string item)
     {
         if (LibraryReference.TryParse(item) is not { } reference)
-            return $"'{item}' is not a library reference, such as std:tasks/implement_ticket";
+            return LibraryReference.ConstraintRefusal(item) ?? $"'{item}' is not a library reference, such as std:tasks/implement_ticket";
         if (!OverridableTypes.Contains(reference.Type))
             return $"{item}: a library override replaces {string.Join(", ", OverridableTypes)}, not {reference.Type}; the plan changes by amend, a role by change_role";
         if (libraries?.Resolve(reference) is not { } library || library.PathOf(reference.Type, reference.Name) is null)
@@ -409,11 +409,10 @@ public sealed partial class RunCore
     {
         if (LibraryReference.TryParse(item) is not { } reference)
             return [];
-        var name = reference with { Constraint = null };
-        bool Is(ItemRef? r) => r?.Reference is { } x && x with { Constraint = null } == name;
+        bool Is(ItemRef? r) => r?.Reference == reference;
         bool Names(YNode? node) => node switch
         {
-            YScalar s => LibraryReference.TryParse(s.Text) is { } x && x with { Constraint = null } == name,
+            YScalar s => LibraryReference.TryParse(s.Text) == reference,
             YMap m => m.Entries.Any(e => Names(e.Value)),
             YSeq q => q.Items.Any(Names),
             _ => false,

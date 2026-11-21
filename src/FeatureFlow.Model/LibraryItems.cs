@@ -3,7 +3,7 @@ using FeatureFlow.Model.Yaml;
 
 namespace FeatureFlow.Model;
 
-public sealed record LibraryDependency(string Name, string? Version);
+public sealed record LibraryDependency(string Name);
 
 public sealed record Entrypoint(string Template, string? When, SourceLocation Location);
 
@@ -16,10 +16,7 @@ public sealed record Manifest(
     string? RequiredEngine,
     long? PlanSchema,
     IReadOnlyList<LibraryDependency> Dependencies,
-    YMap? Inputs,
-    IReadOnlyList<string> Resources,
-    IReadOnlyList<Entrypoint> Entrypoints,
-    IReadOnlyList<string> NotificationEvents);
+    IReadOnlyList<Entrypoint> Entrypoints);
 
 public sealed record RoleItem(string Name, string WriteAccess, IReadOnlyList<string> Tools, ItemRef? DeprecatedBy);
 
@@ -105,16 +102,15 @@ public static class LibraryItemReader
         foreach (var item in Seq(r.Node("dependencies"), d, "dependencies"))
             if (MapReader.Of(item, d, "a dependency") is { } dep)
             {
-                dependencies.Add(new LibraryDependency(dep.String("name", required: true) ?? "", dep.String("version")));
+                dependencies.Add(new LibraryDependency(dep.String("name", required: true) ?? ""));
+                // Each library loads at the one version its source gives, so a constraint would do nothing (LOG 487).
+                ConfigurationReader.NotInVersion1(dep, "version", "dependencies.version");
                 dep.Finish();
             }
 
-        var inputsNode = r.Node("inputs");
-        var inputs = inputsNode as YMap;
-        if (inputsNode is not null and not YMap and not YScalar { IsNull: true })
-            d.Add(Checks.Schema, "inputs must be a map", inputsNode.Location);
-
-        var resources = r.StringList("resources");
+        // Read and never applied, so refused (LOG 487).
+        foreach (var key in new[] { "inputs", "resources", "notifications" })
+            ConfigurationReader.NotInVersion1(r, key, key);
 
         var entrypoints = new List<Entrypoint>();
         foreach (var item in Seq(r.Node("entrypoints"), d, "entrypoints"))
@@ -124,17 +120,10 @@ public static class LibraryItemReader
                 ep.Finish();
             }
 
-        IReadOnlyList<string> events = [];
-        if (MapReader.Of(r.Node("notifications"), d, "notifications") is { } n)
-        {
-            events = n.StringList("events");
-            n.Finish();
-        }
-
         r.Finish();
         return name is null
             ? null
-            : new Manifest(name, version, description, capabilities, engine, planSchema, dependencies, inputs, resources, entrypoints, events);
+            : new Manifest(name, version, description, capabilities, engine, planSchema, dependencies, entrypoints);
     }
 
     /// <summary>Reads the common header: api_version, kind and metadata. Returns the metadata reader, unfinished.</summary>
@@ -184,7 +173,8 @@ public static class LibraryItemReader
             r.Error($"unknown tool class '{tool}'; tools are {string.Join(", ", RoleTools)} (LOG 65)", r.Map["tools"]!.Location);
         // Toolsets are not in version 1 (F19, LOG 339).
         ConfigurationReader.NotInVersion1(r, "toolsets", "toolsets");
-        r.StringList("requires");
+        // Nothing matched a role's requirements against a runtime (LOG 487).
+        ConfigurationReader.NotInVersion1(r, "requires", "requires");
         r.Finish();
         return new RoleItem(name, access, tools, deprecated);
     }
@@ -318,7 +308,9 @@ public static class LibraryItemReader
                 var parsed = LibraryReference.TryParse(s.Text);
                 if (parsed is null)
                 {
-                    r.Error($"{what} '{s.Text}' is not a library reference (<library>:<type>/<name>)", s.Location);
+                    r.Error(LibraryReference.ConstraintRefusal(s.Text) is { } refusal
+                        ? $"{what} {refusal}"
+                        : $"{what} '{s.Text}' is not a library reference (<library>:<type>/<name>)", s.Location);
                     return null;
                 }
 

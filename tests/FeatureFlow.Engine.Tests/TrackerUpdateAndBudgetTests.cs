@@ -105,7 +105,7 @@ public sealed class TrackerUpdateAndBudgetTests
         YNode Item(string name, string? issue) => YamlWriter.Read(
             $"{{ name: {name}, title: T, repositories: [acme/api], boundary: b, owns: [R1]{(issue is null ? "" : $", tracker_issue: \"{issue}\"")} }}");
 
-        var (patch, error) = PlanExpansion.Build(core, "tickets.expand", [Item("with_issue", "acme/api#7"), Item("without", null)]);
+        var (patch, error) = PlanExpansion.Build(core, "tickets.expand", core.StepSpec("tickets.expand", atStart: false).Spec!.Inputs, [Item("with_issue", "acme/api#7"), Item("without", null)]);
 
         Assert.Null(error);
         var withs = patch!.Changes.Select(c => (YMap)c.Step!["with"]!).ToList();

@@ -22,14 +22,17 @@ public sealed record FeatureFlowConfiguration(InstallationConfig Installation, O
     public static FeatureFlowConfiguration Load(string installationPath, string organisationPath)
     {
         var d = new DiagnosticBag();
-        var installation = ConfigurationReader.ReadInstallation(File.ReadAllText(installationPath), Path.GetFullPath(installationPath), d);
-        var organisation = ConfigurationReader.ReadOrganisation(File.ReadAllText(organisationPath), Path.GetFullPath(organisationPath), d);
+        var installation = ConfigurationReader.ReadInstallation(Read(installationPath), Path.GetFullPath(installationPath), d);
+        var organisation = ConfigurationReader.ReadOrganisation(Read(organisationPath), Path.GetFullPath(organisationPath), d);
         if (installation is not null && organisation is not null)
             StartupChecks.Check(installation, organisation, d);
         if (installation is null || organisation is null || d.HasErrors)
-            throw new InvalidOperationException("the configuration does not validate:\n" + string.Join("\n", d.Where(x => x.Blocks)));
+            throw new StartupRefusal("the configuration does not validate:\n" + string.Join("\n", d.Where(x => x.Blocks)));
         return new FeatureFlowConfiguration(installation, organisation);
     }
+
+    static string Read(string path) =>
+        File.Exists(path) ? File.ReadAllText(path) : throw new StartupRefusal($"there is no configuration file {Path.GetFullPath(path)}");
 }
 
 /// <summary>
@@ -71,7 +74,7 @@ public static class ProviderComposer
         }
 
         if (errors.Count > 0)
-            throw new InvalidOperationException("the providers do not compose:\n" + string.Join("\n", errors));
+            throw new StartupRefusal("the providers do not compose:\n" + string.Join("\n", errors));
         set = new ProviderSet(instances, defaults, dryRun);
         return set;
     }
@@ -109,7 +112,7 @@ public sealed class FeatureFlowHost : IAsyncDisposable
         var providers = ProviderComposer.Compose(configuration.Installation, factories);
         foreach (var type in providers.Types)
             if (providers.ForRun(type, false) is { } provider && await provider.CheckAsync(CancellationToken.None) is { Ok: false } failed)
-                throw new InvalidOperationException($"the {type} provider is not usable: {failed.Error!.Message}");
+                throw new StartupRefusal($"the {type} provider is not usable: {failed.Error!.Message}");
         await StartupChecks.CheckSecretsAsync(configuration.Installation, providers, CancellationToken.None);
         var client = await TemporalConnection.ConnectAsync(configuration.Installation, providers);
         var host = new FeatureFlowHost(configuration, providers, client) { tracing = Tracing.Start(configuration.Installation.OtlpEndpoint) };
@@ -135,7 +138,7 @@ public sealed class FeatureFlowHost : IAsyncDisposable
             {
                 host.ApiAddress = (await ApiApp.StartCheckedAsync(host.api, configuration.Installation.ApiAuth))[0];
             }
-            catch (InvalidOperationException)
+            catch (StartupRefusal)
             {
                 await host.DisposeAsync();
                 throw;
@@ -154,7 +157,7 @@ public sealed class FeatureFlowHost : IAsyncDisposable
         var settings = configuration.Installation.AgentWorker ?? AgentWorkerConfig.None;
         var secrets = providers.ForRun("secrets", false) as ISecretsProvider;
         var key = settings.TokenKeyRef is { } reference
-            ? (await (secrets ?? throw new InvalidOperationException("agent_worker.token_key_ref needs a secrets provider")).ResolveAsync(reference, CancellationToken.None)).Unwrap()
+            ? (await (secrets ?? throw new StartupRefusal("agent_worker.token_key_ref needs a secrets provider")).ResolveAsync(reference, CancellationToken.None)).Unwrap()
             : Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
         var tokens = StepTokens.FromSecret(key);
         var options = new AgentWorkerOptions(settings.Urls, settings.ModelBaseUrl ?? (settings.Urls.FirstOrDefault()?.TrimEnd('/') + "/model"), settings.CommitInterval,
@@ -247,21 +250,39 @@ public static class HostArguments
                 organisation = args[++i];
         }
 
-        return (installation ?? throw new ArgumentException("--installation <file> or FF_INSTALLATION is required"),
-            organisation ?? throw new ArgumentException("--organisation <file> or FF_ORGANISATION is required"));
+        return (installation ?? throw new StartupRefusal("--installation <file> or FF_INSTALLATION is required"),
+            organisation ?? throw new StartupRefusal("--organisation <file> or FF_ORGANISATION is required"));
+    }
+
+    /// <summary>
+    /// Runs a host (<see cref="StartAsync"/>), or, with the first argument <c>reconcile</c>, rebuilds the run index once and
+    /// exits (<see cref="RunIndex"/>). A refusal to start (<see cref="StartupRefusal"/>) is written to standard error as its
+    /// message alone, and the host exits 2 (LOG 494).
+    /// </summary>
+    public static async Task<int> RunAsync(string[] args, IEnumerable<ProviderFactory> factories, bool orchestration, bool agent, bool apiHost,
+        TextWriter? error = null)
+    {
+        try
+        {
+            var (installation, organisation) = Files(args);
+            var configuration = FeatureFlowConfiguration.Load(installation, organisation);
+            return args.FirstOrDefault() == "reconcile"
+                ? await ReconcileAsync(configuration, factories, Console.Out)
+                : await StartAsync(configuration, factories, orchestration, agent, apiHost);
+        }
+        catch (StartupRefusal refusal)
+        {
+            await (error ?? Console.Error).WriteLineAsync(refusal.Message);
+            return 2;
+        }
     }
 
     /// <summary>
     /// Runs a host until SIGTERM or Ctrl+C, then stops its workers and endpoints and exits 0. Without its own handler a
     /// host with a web endpoint never exited on SIGTERM: ASP.NET's handler took the signal and stopped only the endpoint.
-    /// With the first argument <c>reconcile</c>, rebuilds the run index once and exits (<see cref="RunIndex"/>).
     /// </summary>
-    public static async Task<int> RunAsync(string[] args, IEnumerable<ProviderFactory> factories, bool orchestration, bool agent, bool apiHost)
+    static async Task<int> StartAsync(FeatureFlowConfiguration configuration, IEnumerable<ProviderFactory> factories, bool orchestration, bool agent, bool apiHost)
     {
-        var (installation, organisation) = Files(args);
-        var configuration = FeatureFlowConfiguration.Load(installation, organisation);
-        if (args.FirstOrDefault() == "reconcile")
-            return await ReconcileAsync(configuration, factories, Console.Out);
         using var cancel = new CancellationTokenSource();
         void Stop(PosixSignalContext context)
         {

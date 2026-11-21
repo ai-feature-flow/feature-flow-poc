@@ -59,7 +59,7 @@ disjoint documents, since about 120 findings would not fit one session's context
 
 ## Follow-ups
 
-Deferred, not built in A6. None has a `docs/12` milestone unless the table says so.
+Deferred, not built in A6. None has a `docs/12` milestone unless the table says so. Follow-ups 1, 2, 8, 9 and 10 were built in the alpha follow-ups batch (`docs/build/alpha-follow-ups-results.md`).
 
 | # | Follow-up | Code | Milestone |
 |---|---|---|---|

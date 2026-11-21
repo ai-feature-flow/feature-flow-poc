@@ -26,6 +26,20 @@ public sealed class RunPageTests(BrowserFixture browser) : BrowserTest(browser)
     }
 
     [Fact]
+    public async Task A_new_run_with_no_plan_revision_yet_is_refused_nothing()
+    {
+        // As a run's page reads it before the engine has indexed revision 1 (LOG 493): no request is refused, so no console error.
+        ExpectNoRefusal();
+        await Engine.RunAsync("run-new");
+
+        await OpenAsync("#/runs/run-new");
+
+        var plan = Page.GetByRole(AriaRole.Region, new() { Name = "Plan" });
+        await Expect(plan).ToContainTextAsync("No plan to show yet.");
+        await Expect(Open).ToContainTextAsync("Nothing is waiting.");
+    }
+
+    [Fact]
     public async Task Stalled_and_stuck_show_as_status_without_a_form()
     {
         await Engine.RunAsync("run-status");

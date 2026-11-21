@@ -335,6 +335,9 @@ Lowest precedence first, from FF's input precedence
 3. The run request, or the `with.parameters` of the `run.child` step that
    started the child.
 
+A library gives no values: a manifest's `inputs` is refused at load
+(`docs/08` section 2, LOG 487).
+
 Engine values (`run.*`) cannot be declared as parameters. A reference to an
 undeclared parameter fails at load; a required parameter left unbound fails at
 run start, so a placeholder never reaches an agent as literal text.

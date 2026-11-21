@@ -30,10 +30,20 @@ public class StdLibraryTests
     [InlineData("fragments", "deliver_in_order")]
     public void Each_template_and_fragment_loads_on_its_own(string type, string name)
     {
-        var result = LibraryValidator.ValidateItem(Std.Root, new LibraryReference("std", null, type, name));
+        var result = LibraryValidator.ValidateItem(Std.Root, new LibraryReference("std", type, name));
 
         Assert.False(result.HasErrors, Std.Describe(result));
         Assert.Single(result.Plans);
+    }
+
+    /// <summary>A version constraint in a reference is refused at load, naming it, rather than accepted and never checked (LOG 487).</summary>
+    [Fact]
+    public void A_version_constraint_in_a_templates_reference_is_refused_naming_it()
+    {
+        var result = Std.Mutate(new Std.Edit("templates/ticket_delivery.yaml", "task: std:tasks/implement_ticket", "task: std@>=1.0.0:tasks/implement_ticket"));
+
+        Assert.Contains(result.Diagnostics, d => d.Blocks && d.Message.Contains(
+            "'std@>=1.0.0:tasks/implement_ticket': a version constraint in a reference (@>=1.0.0) is not supported in version 1; remove it", StringComparison.Ordinal));
     }
 
     /// <summary>No outcome escalates by default but <c>attempts_exhausted</c> (L6, LOG 263): a fix loop that leaves <c>findings.triage</c>'s <c>invalid</c> unrouted is refused like any other.</summary>

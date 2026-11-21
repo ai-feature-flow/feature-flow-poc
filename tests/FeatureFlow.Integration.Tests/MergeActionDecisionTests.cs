@@ -3,6 +3,7 @@ using FeatureFlow.Hosting;
 using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Providers.Local;
+using Temporalio.Api.Enums.V1;
 
 namespace FeatureFlow.Integration.Tests;
 
@@ -88,6 +89,117 @@ public class MergeActionDecisionTests
         Assert.DoesNotContain(timeline, t => t.Kind == "escalated");
         // The decision is closed: answering it now is refused.
         Assert.NotEqual(0, h.Cli("answer", id, wait, "approve").Exit);
+        Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
+    }
+
+    [Fact]
+    public async Task An_approval_while_the_watch_reads_the_pull_request_lets_the_same_execution_ask_a_person_to_merge()
+    {
+        // The CI race (LOG 492): the watch's read is in progress when the approval cancels it, and its "not yet" ends that
+        // attempt after the cancel was asked. That result is the cancelled watch's, not the restarted execution's.
+        var (h, forge, repo) = await ForgeTicketTests.StartAsync("merge-action-race", policy: Policy);
+        await using var _ = h;
+        var (id, wait) = await AtMergeDecisionAsync(h, forge, repo, "T-3");
+        var records = new SqliteRecordStore(Path.Combine(h.Folder, "records.db"));
+
+        await ApproveWhileTheWatchReadsAsync(h, forge, id, wait);
+        forge.ReleaseReads();
+        await UntilAsync(async () => (await EventsAsync(records, id)).FirstOrDefault(e => e.Kind == "action_request"));
+
+        forge.MergePullRequest(new PullRequestRef(repo, 1), "alice");
+        await WakeAsync(h, id);
+        await AssertMergedThroughFeatureFlowAsync(h, id);
+    }
+
+    [Fact]
+    public async Task A_read_that_finds_the_merge_after_the_approval_cancelled_it_does_not_speak_for_the_step()
+    {
+        // LOG 492: the person merges while the cancelled watch's read is held, so that read completes and reports the merge
+        // as made before the decision was answered. Only the restarted execution speaks for the step: it reads the same
+        // merge after the approval, and nothing says the decision was bypassed.
+        var (h, forge, repo) = await ForgeTicketTests.StartAsync("merge-action-read-race", policy: Policy);
+        await using var _ = h;
+        var (id, wait) = await AtMergeDecisionAsync(h, forge, repo, "T-4");
+        var handle = h.Client.GetWorkflowHandle(id);
+
+        await ApproveWhileTheWatchReadsAsync(h, forge, id, wait);
+        forge.MergePullRequest(new PullRequestRef(repo, 1), "alice");
+        var watch = (await handle.FetchHistoryAsync()).Events.Last(e => e.EventType == EventType.ActivityTaskCancelRequested).ActivityTaskCancelRequestedEventAttributes.ScheduledEventId;
+        forge.ReleaseRead();
+        var ended = await UntilAsync(async () => (await handle.FetchHistoryAsync()).Events.FirstOrDefault(e =>
+            (e.ActivityTaskCompletedEventAttributes?.ScheduledEventId ?? e.ActivityTaskCanceledEventAttributes?.ScheduledEventId ?? e.ActivityTaskFailedEventAttributes?.ScheduledEventId) == watch));
+        // The cancelled watch's read completed: it found the merge, and reported it as the step's outcome.
+        Assert.Equal(EventType.ActivityTaskCompleted, ended.EventType);
+        forge.ReleaseReads();
+        await AssertMergedThroughFeatureFlowAsync(h, id);
+    }
+
+    [Fact]
+    public async Task A_wake_that_cancelled_the_watch_before_the_approval_did_does_not_outlive_it()
+    {
+        // LOG 492: a wake cancels the watch while its read is held, and the approval cancels it again before that cancel
+        // lands. The approval's cancel ends the wake's claim on the step, so a later wake still wakes the restarted watch.
+        var (h, forge, repo) = await ForgeTicketTests.StartAsync("merge-action-wake-race", policy: Policy);
+        await using var _ = h;
+        var (id, wait) = await AtMergeDecisionAsync(h, forge, repo, "T-5");
+        var handle = h.Client.GetWorkflowHandle(id);
+        var records = new SqliteRecordStore(Path.Combine(h.Folder, "records.db"));
+
+        await WatchReadingAsync(h, forge, id);
+        var cancels = (await handle.FetchHistoryAsync()).Events.Count(e => e.EventType == EventType.ActivityTaskCancelRequested);
+        await WakeAsync(h, id);
+        await UntilAsync(async () => (await handle.FetchHistoryAsync()).Events.Count(e => e.EventType == EventType.ActivityTaskCancelRequested) > cancels ? (object)true : null);
+        Assert.Equal(0, h.Cli("answer", id, wait, "approve").Exit);
+        // The restarted watch's read is held behind the cancelled one's.
+        await UntilAsync(() => Task.FromResult(forge.HeldReads > 1 ? (object)true : null));
+        forge.ReleaseReads();
+        await UntilAsync(async () => (await EventsAsync(records, id)).FirstOrDefault(e => e.Kind == "action_request"));
+
+        // Woken, the watch reads the merge now, well within its 30-second poll interval.
+        forge.MergePullRequest(new PullRequestRef(repo, 1), "alice");
+        await WakeAsync(h, id);
+        Assert.Equal(0, h.Cli("wait", id, "--timeout", "15").Exit);
+        await AssertMergedThroughFeatureFlowAsync(h, id);
+    }
+
+    /// <summary>
+    /// Once the watch's first read has found the pull request open, a wake makes it read again now; that read is held.
+    /// </summary>
+    static async Task WatchReadingAsync(Harness h, InMemoryForge forge, string id)
+    {
+        await UntilAsync(async () => (await h.Client.WorkflowService.DescribeWorkflowExecutionAsync(new Temporalio.Api.WorkflowService.V1.DescribeWorkflowExecutionRequest
+            {
+                Namespace = h.Client.Options.Namespace,
+                Execution = new Temporalio.Api.Common.V1.WorkflowExecution { WorkflowId = id },
+            })).PendingActivities
+            .Any(a => a.ActivityType.Name == "RunAction" && a.LastFailure?.Message.StartsWith("waiting", StringComparison.Ordinal) == true) ? (object)true : null);
+        forge.HoldReads(InMemoryForge.PullRequestReads);
+        await WakeAsync(h, id);
+        await UntilAsync(() => Task.FromResult(forge.HeldReads > 0 ? (object)true : null));
+    }
+
+    /// <summary>While the watch's read is held, the decision is approved; returns once the approval's cancel of the watch is in the history.</summary>
+    static async Task ApproveWhileTheWatchReadsAsync(Harness h, InMemoryForge forge, string id, string wait)
+    {
+        var handle = h.Client.GetWorkflowHandle(id);
+        await WatchReadingAsync(h, forge, id);
+        var cancels = (await handle.FetchHistoryAsync()).Events.Count(e => e.EventType == EventType.ActivityTaskCancelRequested);
+        Assert.Equal(0, h.Cli("answer", id, wait, "approve").Exit);
+        await UntilAsync(async () => (await handle.FetchHistoryAsync()).Events.Count(e => e.EventType == EventType.ActivityTaskCancelRequested) > cancels ? (object)true : null);
+    }
+
+    /// <summary>The run completes with one decision, answered through Feature Flow, and alice's merge recorded as the step's.</summary>
+    static async Task AssertMergedThroughFeatureFlowAsync(Harness h, string id)
+    {
+        var (exit, end, error) = h.Cli("wait", id, "--timeout", "120");
+
+        var view = await h.ShowAsync(id);
+        Assert.True(exit == 0, end + error + view.ToJsonString());
+        var timeline = Timeline(view);
+        Assert.Single(timeline, t => t.Kind == "decision_opened" && t.StepId == "deliver.merge");
+        Assert.DoesNotContain(timeline, t => t.Kind == "attempt_failed");
+        Assert.Contains(timeline, t => t.Kind == "agent" && t.Detail.StartsWith("merged ", StringComparison.Ordinal) && t.Detail.Contains("by alice", StringComparison.Ordinal));
+        Assert.DoesNotContain(timeline, t => t.Detail.Contains("not through Feature Flow", StringComparison.Ordinal) || t.Detail.Contains("not given through Feature Flow", StringComparison.Ordinal));
         Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
     }
 

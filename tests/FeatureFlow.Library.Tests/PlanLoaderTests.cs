@@ -12,7 +12,7 @@ public class PlanLoaderTests
     {
         var d = new DiagnosticBag();
         var std = Library.Open(StdRoot, d)!;
-        var plan = PlanLoader.LoadTemplate(new LibrarySet(std), new LibraryReference("std", null, "templates", template), d, options)!;
+        var plan = PlanLoader.LoadTemplate(new LibrarySet(std), new LibraryReference("std", "templates", template), d, options)!;
         return (plan, d);
     }
 

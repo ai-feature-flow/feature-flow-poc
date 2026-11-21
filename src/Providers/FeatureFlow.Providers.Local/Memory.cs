@@ -250,45 +250,67 @@ public sealed class InMemoryForge
         }
     }
 
-    TaskCompletionSource? checkGate;
-    int heldCheckReads;
+    /// <summary>The reads that may be held (<see cref="HoldReads"/>): a check read and a pull request read.</summary>
+    public const string CheckReads = "code_host.GetCheckStatus", PullRequestReads = "code_host.GetPullRequest";
+
+    string? heldOperation;
+    readonly Queue<TaskCompletionSource> heldReads = new();
 
     /// <summary>
-    /// Holds every check read (<c>code_host.GetCheckStatus</c>) until <see cref="ReleaseCheckReads"/>: a read in progress,
-    /// for a test where something must happen while it runs. <see cref="HeldCheckReads"/> counts the reads waiting.
+    /// Holds every read of <paramref name="operation"/> (<see cref="CheckReads"/> or <see cref="PullRequestReads"/>) until
+    /// <see cref="ReleaseReads"/>, or <see cref="ReleaseRead"/> releases it: a read in progress, for a test where something
+    /// must happen while it runs. <see cref="HeldReads"/> counts the reads waiting.
     /// </summary>
-    public void HoldCheckReads()
+    public void HoldReads(string operation)
     {
         lock (Gate)
-            checkGate ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            heldOperation = operation;
     }
 
-    public void ReleaseCheckReads()
+    /// <summary>Releases every held read and holds no more.</summary>
+    public void ReleaseReads()
     {
-        TaskCompletionSource? gate;
+        List<TaskCompletionSource> held;
         lock (Gate)
-            (gate, checkGate) = (checkGate, null);
-        gate?.TrySetResult();
+        {
+            held = [.. heldReads];
+            heldReads.Clear();
+            heldOperation = null;
+        }
+
+        foreach (var read in held)
+            read.TrySetResult();
     }
 
-    public int HeldCheckReads => Volatile.Read(ref heldCheckReads);
-
-    internal async Task CheckGateAsync()
+    /// <summary>Releases the read held longest, and goes on holding the others and any later.</summary>
+    public void ReleaseRead()
     {
-        TaskCompletionSource? gate;
+        TaskCompletionSource? read;
         lock (Gate)
-            gate = checkGate;
-        if (gate is null)
-            return;
-        Interlocked.Increment(ref heldCheckReads);
-        try
+            heldReads.TryDequeue(out read);
+        read?.TrySetResult();
+    }
+
+    public int HeldReads
+    {
+        get
         {
-            await gate.Task;
+            lock (Gate)
+                return heldReads.Count;
         }
-        finally
+    }
+
+    internal async Task ReadGateAsync(string operation)
+    {
+        var read = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (Gate)
         {
-            Interlocked.Decrement(ref heldCheckReads);
+            if (heldOperation != operation)
+                return;
+            heldReads.Enqueue(read);
         }
+
+        await read.Task;
     }
 
     /// <summary>A working copy's files, to change as an agent would. Null when nothing is checked out there.</summary>
@@ -628,8 +650,10 @@ public sealed class InMemoryCodeHost(InMemoryForge forge) : ICodeHostProvider
             return ProviderResult<PullRequestRef>.Success(pullRequest);
         });
 
-    public Task<ProviderResult<PullRequestState>> GetPullRequestAsync(PullRequestRef pullRequest, CancellationToken cancellationToken) =>
-        WithPr("GetPullRequest", pullRequest, (r, pr) =>
+    public async Task<ProviderResult<PullRequestState>> GetPullRequestAsync(PullRequestRef pullRequest, CancellationToken cancellationToken)
+    {
+        await forge.ReadGateAsync(InMemoryForge.PullRequestReads);
+        return await WithPr("GetPullRequest", pullRequest, (r, pr) =>
         {
             InMemoryForge.Refresh(r, pr);
             bool? mergeable = pr.State == PullRequestStates.Open && InMemoryForge.Lookup(r, InMemoryForge.Branch(pr.Spec.Base)) is { } target
@@ -641,6 +665,7 @@ public sealed class InMemoryCodeHost(InMemoryForge forge) : ICodeHostProvider
                 pr.Reviews.Where(kv => !kv.Value).Select(kv => kv.Key).Order(StringComparer.Ordinal).ToList(),
                 pr.MergedBy, pr.MergeRevision, $"memory://{pullRequest.Repo.FullName}/pull/{pr.Number}"));
         });
+    }
 
     public Task<ProviderResult<Unit>> ClosePullRequestAsync(PullRequestRef pullRequest, string? comment, CancellationToken cancellationToken) =>
         WithPr("ClosePullRequest", pullRequest, (r, pr) =>
@@ -682,7 +707,7 @@ public sealed class InMemoryCodeHost(InMemoryForge forge) : ICodeHostProvider
 
     public async Task<ProviderResult<CheckStatus>> GetCheckStatusAsync(RepoRef repo, string revision, CancellationToken cancellationToken)
     {
-        await forge.CheckGateAsync();
+        await forge.ReadGateAsync(InMemoryForge.CheckReads);
         return await Run("GetCheckStatus", repo, r => ProviderResult<CheckStatus>.Success(new CheckStatus(revision, InMemoryForge.Checks(r, revision).ToList())));
     }
 

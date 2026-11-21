@@ -5,4 +5,4 @@ description: Templates for the M7 session tests (docs/11, M7)
 requires:
   plan_schema: 1
 dependencies:
-  - { name: std, version: ">=0.1.0" }
+  - { name: std }

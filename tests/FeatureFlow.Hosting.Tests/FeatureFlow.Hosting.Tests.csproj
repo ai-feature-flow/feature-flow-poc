@@ -20,4 +20,11 @@
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Jira\FeatureFlow.Providers.Jira.csproj" />
   </ItemGroup>
 
+  <!-- The hosts, built before this project and not referenced by it, for StartupRefusalTests to run. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\hosts\FeatureFlow.Host.Api\FeatureFlow.Host.Api.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\hosts\FeatureFlow.Host.OrchestrationWorker\FeatureFlow.Host.OrchestrationWorker.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\hosts\FeatureFlow.Host.AgentWorker\FeatureFlow.Host.AgentWorker.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
 </Project>

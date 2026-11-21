@@ -43,7 +43,7 @@ public sealed class ActionRegistryTests
         File.WriteAllText(Path.Combine(root, "templates", "probing.yaml"), Template(with));
         var d = new DiagnosticBag();
         var libraries = new LibrarySet(Library.Library.Open(Path.Combine(Repository.Root, "library", "std"), d)!, Library.Library.Open(root, d)!);
-        return (libraries, new LibraryReference("probe", null, "templates", "probing"));
+        return (libraries, new LibraryReference("probe", "templates", "probing"));
     }
 
     static RunInfo Run => new("run-1", ["acme/api"], new Dictionary<string, YNode>());

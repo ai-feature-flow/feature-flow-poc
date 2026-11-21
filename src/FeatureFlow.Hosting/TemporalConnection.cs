@@ -23,13 +23,20 @@ public static class TemporalConnection
         if (installation.PayloadCodec is { } codec)
         {
             var secrets = providers.ForRun("secrets", false) as ISecretsProvider
-                          ?? throw new InvalidOperationException("temporal.payload_codec.key_ref needs a secrets provider");
+                          ?? throw new StartupRefusal("temporal.payload_codec.key_ref needs a secrets provider");
             var key = (await secrets.ResolveAsync(codec.KeyRef, CancellationToken.None)) is { Ok: true } found
                 ? found.Value!
-                : throw new InvalidOperationException($"temporal.payload_codec.key_ref: the secret {codec.KeyRef} does not resolve");
+                : throw new StartupRefusal($"temporal.payload_codec.key_ref: the secret {codec.KeyRef} does not resolve");
             options.DataConverter = AesGcmPayloadCodec.DataConverterFor(AesGcmPayloadCodec.FromSecret(key));
         }
 
-        return await TemporalClient.ConnectAsync(options);
+        try
+        {
+            return await TemporalClient.ConnectAsync(options);
+        }
+        catch (Exception e)
+        {
+            throw new StartupRefusal($"temporal.address: cannot connect to {installation.TemporalAddress} ({e.Message.ReplaceLineEndings(" ")})");
+        }
     }
 }

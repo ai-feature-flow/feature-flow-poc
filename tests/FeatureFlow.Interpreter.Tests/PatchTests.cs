@@ -376,8 +376,8 @@ public class PatchTests
         var core = Lib.Start("expanding");
         core.Advance();
         var items = new List<YNode> { Item("unit"), Item("e2e") };
-        var (patch, error) = PlanExpansion.Build(core, "expand", items);
-        var (again, _) = PlanExpansion.Build(core, "expand", items);
+        var (patch, error) = Expand(core, "expand", items);
+        var (again, _) = Expand(core, "expand", items);
         Assert.Null(error);
         Assert.Equal(Show(patch!), Show(again!));
 
@@ -390,16 +390,35 @@ public class PatchTests
     }
 
     [Fact]
+    public void Plan_expand_builds_with_the_inputs_checked_at_step_start_not_evaluated_again()
+    {
+        // LOG 488: what check 31 passed at step start is what is used. Inputs that differ from the step's as written now
+        // stand for an expression whose value changed while the list was read.
+        var core = Lib.Start("expanding");
+        core.Advance();
+        var checkedInputs = new Dictionary<string, object?>(core.StepSpec("expand").Spec!.Inputs) { ["on_other"] = "done" };
+
+        var (patch, error) = PlanExpansion.Build(core, "expand", checkedInputs, [Item("unit")]);
+
+        Assert.Null(error);
+        Assert.Equal("done", Assert.Single(patch!.Changes).OnOther);
+    }
+
+    [Fact]
     public void Plan_expand_of_an_empty_list_goes_straight_on()
     {
         var core = Lib.Start("expanding");
         core.Advance();
-        var (patch, _) = PlanExpansion.Build(core, "expand", []);
+        var (patch, _) = Expand(core, "expand", []);
         core.Apply(new StepCompleted("expand", "expanded", Patch: patch));
         new Driver(core) { Respond = (id, _) => new StepCompleted(id, core.StepById(id)!.Outcomes()[0].Name) }.Run();
 
         Assert.Equal(["expand", "done", "report"], Driver.Path(core));
     }
+
+    /// <summary>A <c>plan.expand</c> step's patch, with its inputs as the shell has them from step start.</summary>
+    static (PatchDocument? Patch, string? Error) Expand(RunCore core, string stepId, IReadOnlyList<YNode> items) =>
+        PlanExpansion.Build(core, stepId, core.StepSpec(stepId).Spec!.Inputs, items);
 
     static YNode Item(string tier)
     {

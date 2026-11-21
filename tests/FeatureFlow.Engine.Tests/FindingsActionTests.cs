@@ -490,16 +490,7 @@ public sealed class FindingsActionTests : IAsyncDisposable
         Assert.Empty(world.Forge.Comments(ActionRunAccess.Pr(world.PullRequests.Single())));
     }
 
-    [Fact]
-    public async Task Check_31_refuses_an_unknown_reopen_on()
-    {
-        await Reviewed("review.assess", Finding());
-
-        var result = await Record(reopenOn: "sometimes");
-
-        Assert.Equal(StepOutcome.CannotAnswer, result.Kind);
-        Assert.Contains("reopen_on", result.Reason, StringComparison.Ordinal);
-    }
+    // Check 31 on reopen_on is the core's at step start (ShellToCoreTests; LOG 488).
 
     // ---- Review of PR 11 ----
 
@@ -743,20 +734,7 @@ public sealed class FindingsActionTests : IAsyncDisposable
         Assert.Equal(FindingStates.Open, Assert.Single(await Ledger()).State);
     }
 
-    [Theory]
-    [InlineData("[]")]
-    [InlineData("[open, resolved]")]
-    public async Task Check_31_refuses_states_that_are_empty_or_not_finding_states(string states)
-    {
-        await Reviewed("review.assess", Finding());
-        await Record();
-        await Triaged("fix.triage", new TriageEntry(Assert.Single(await Ledger()).FindingId, FindingStates.Open, "to fix"));
-
-        var result = await Triage(stepId: "fix.apply_triage", states: states);
-
-        Assert.Equal(StepOutcome.CannotAnswer, result.Kind);
-        Assert.Contains("'states' must name one or more of", result.Reason, StringComparison.Ordinal);
-    }
+    // Check 31 on states (empty, or not finding states) is the core's at step start (ShellToCoreTests; LOG 488).
 
     // ---- a person's triage through a decision (LOG 248; F8) ----
 

@@ -255,11 +255,6 @@ integration_environment:                   # for test.integration
   health: curl -f http://localhost:8080/health
   port: 8080
   ready_timeout: 10m
-
-library:                                   # docs/08 section 4; checked (check 20), not used in version 1
-  default_template: std:templates/ticket_delivery
-  adds:
-    skills: [{ name: acme_api_conventions, path: .feature-flow/skills/acme_api_conventions }]
 ```
 
 | Key | Notes |
@@ -270,7 +265,7 @@ library:                                   # docs/08 section 4; checked (check 2
 | `test_tiers[].prerequisites` | `env`: environment variable names the tier needs. `test.run` raises an intervention if one is missing where the tier runs, rather than reporting the tests as failed |
 | `test_tiers[].result` | Parsed format and path. Without it the tier is judged by exit code only, and its tests cannot be claimed as evidence |
 | `test_tiers[].ci` | The CI provider instance and the job (for GitHub Actions, a workflow file). The job runs from the default branch and must check out the revision it is given: the workflow contract is in `docs/06` section 3.5 |
-| `library` | Read from the default branch rather than the working branch, and only checked (check 20): a default template and added content are accepted and not used in version 1 |
+| `library` | Not in version 1: a repository names no default template and adds no content (`docs/08` section 4). The section is refused, naming the key (LOG 487) |
 
 Unknown keys are refused, not ignored, so a misspelt section stops the step
 that reads it (from FF).
@@ -356,7 +351,10 @@ planned for the OIDC profiles (`docs/12` R2).
 | Each step | The manifest read from the branch and its hash recorded |
 
 A validation failure names the layer, the key and the reason. A run fails in
-its first minute, not at step 40.
+its first minute, not at step 40. A host that refuses to start, whether for
+its arguments, a configuration file, a startup check or Temporal being out of
+reach, writes the refusal to standard error with no stack trace and exits 2
+(LOG 494).
 
 ---
 

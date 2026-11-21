@@ -12,7 +12,7 @@ namespace FeatureFlow.Interpreter.Tests;
 public class FindingsNamespaceTests
 {
     static readonly LibrarySet Std = new(Library.Library.Open(Probe.StdRoot, new DiagnosticBag())!);
-    static readonly LibraryReference Ticket = new("std", null, "templates", "ticket_delivery");
+    static readonly LibraryReference Ticket = new("std", "templates", "ticket_delivery");
     static readonly RunInfo Run = new("t-1", ["acme/api"], new Dictionary<string, YNode> { ["ticket_id"] = new YScalar("T-1", true, new SourceLocation("t", 1, 1)) });
 
     /// <summary>Drives std's ticket to its review's recorders, reporting <paramref name="openBlocking"/> with them, and returns the step the merge bar chose.</summary>

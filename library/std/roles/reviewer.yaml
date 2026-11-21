@@ -10,4 +10,3 @@ metadata:
 
 write_access: none
 tools: [read, search, shell]
-requires: []

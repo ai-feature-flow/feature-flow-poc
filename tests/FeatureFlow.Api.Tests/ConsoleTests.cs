@@ -194,9 +194,9 @@ public sealed class ConsoleTests : IAsyncDisposable
     }
 
     /// <summary>Starts a run through the API, which writes its lock and record before it reaches Temporal (absent here: a 500).</summary>
-    async Task<RunRecord> StartRunAsync(HttpClient http, string template)
+    async Task<RunRecord> StartRunAsync(HttpClient http, string template, string parameters = "{}")
     {
-        using (var started = await http.PostAsync("runs", new StringContent($$"""{ "template": "{{template}}" }""", Encoding.UTF8, "application/json"), Ct))
+        using (var started = await http.PostAsync("runs", new StringContent($$"""{ "template": "{{template}}", "parameters": {{parameters}} }""", Encoding.UTF8, "application/json"), Ct))
             Assert.Equal(HttpStatusCode.InternalServerError, started.StatusCode);
         return Assert.Single((await records.QueryAsync<RunRecord>(Queries.Runs, new Dictionary<string, string>(), Ct)).Unwrap());
     }
@@ -276,7 +276,7 @@ public sealed class ConsoleTests : IAsyncDisposable
     {
         using var http = Start();
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "right");
-        var run = await StartRunAsync(http, "std:templates/epic_delivery");
+        var run = await StartRunAsync(http, "std:templates/epic_delivery", """{ "epic_name": "\"billing\"" }""");
         var parameters = new Dictionary<string, YNode> { ["epic_name"] = YamlWriter.Read("\"billing\""), ["engine_can_merge"] = YamlWriter.Read("true") };
         var (core, d) = RunCore.Start(Libraries, LibraryReference.TryParse(run.Template)!, new RunInfo(run.RunId, ["acme/api"], parameters));
         Assert.True(core is not null, string.Join("\n", d));
@@ -290,7 +290,7 @@ public sealed class ConsoleTests : IAsyncDisposable
                 {
                     if (step.Action == "plan.expand")
                     {
-                        core.Apply(new StepCompleted(step.Id, "expanded", Patch: PlanExpansion.Build(core, step.Id, items.Items).Patch));
+                        core.Apply(new StepCompleted(step.Id, "expanded", Patch: PlanExpansion.Build(core, step.Id, core.StepSpec(step.Id).Spec!.Inputs, items.Items).Patch));
                         continue;
                     }
 

@@ -6,4 +6,4 @@ description: Templates for the M3 continue-as-new test, rewritten from spikes/04
 requires:
   plan_schema: 1
 dependencies:
-  - { name: std, version: ">=0.1.0" }
+  - { name: std }

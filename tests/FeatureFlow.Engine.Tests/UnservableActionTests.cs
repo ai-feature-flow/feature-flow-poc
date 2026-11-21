@@ -89,7 +89,7 @@ public sealed class UnservableActionTests
         var d = new DiagnosticBag();
         var std = Path.Combine(Repository.Root, "library", "std");
         var libraries = new LibrarySet(Library.Library.Open(std, d)!, Library.Library.Open(root, d)!);
-        var (core, loaded) = RunCore.Start(libraries, new LibraryReference("probe", null, "templates", "commenting"),
+        var (core, loaded) = RunCore.Start(libraries, new LibraryReference("probe", "templates", "commenting"),
             new RunInfo("run-1", ["acme/api"], new Dictionary<string, YNode>()));
         Assert.True(core is not null, string.Join("\n", loaded.Concat(d)));
         Assert.Equal([new StartStep("comment", 1)], core.Advance());

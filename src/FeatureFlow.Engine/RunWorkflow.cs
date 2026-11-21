@@ -319,8 +319,11 @@ public partial class RunWorkflow
                     await StartChildAsync(s);
                     break;
                 case CancelStep c:
+                    // The core no longer wants this activity's result (LOG 492): a wake that also cancelled it is void.
                     if (stepTokens.Remove(c.StepId, out var token))
                         token.Cancel();
+                    interrupted.Remove(c.StepId);
+                    woken.Remove(c.StepId);
                     break;
                 case CancelChild c:
                     await SignalQuietlyAsync(c.WorkflowId, RunWorkflowNames.ParentCancelled, []);
@@ -388,15 +391,15 @@ public partial class RunWorkflow
         if (CleanUpFailed(s.StepId))
             return;
         var (spec, error) = core!.StepSpec(s.StepId);
-        if (error is not null)
+        if (spec is null)
         {
-            core.Apply(new StepCannotAnswer(s.StepId, error));
+            core.Apply(new StepCannotAnswer(s.StepId, error!));
             dirty = true;
             return;
         }
 
-        var call = CallOf(spec!, new StepIdentity(input.RunId, Template.Name, s.StepId, s.Execution, core.StepKey(s.StepId, s.Execution)));
-        _ = RunStepAsync(s, spec!.Activity, call, spec.Activity == StepActivity.Engine ? ScopeOf(s.StepId) : null);
+        var call = CallOf(spec, new StepIdentity(input.RunId, Template.Name, s.StepId, s.Execution, core.StepKey(s.StepId, s.Execution)));
+        _ = RunStepAsync(s, spec, call, spec.Activity == StepActivity.Engine ? ScopeOf(s.StepId) : null);
     }
 
     /// <summary>A step's activity call, mapped from the core's <see cref="StepSpec"/> (docs/04 sections 2 and 3).</summary>
@@ -489,7 +492,7 @@ public partial class RunWorkflow
         CancellationType = StepCancellation(),
     };
 
-    async Task RunStepAsync(StartStep s, StepActivity activity, StepCall call, ActionScope? scope)
+    async Task RunStepAsync(StartStep s, StepSpec spec, StepCall call, ActionScope? scope)
     {
         var (stepId, execution) = (s.StepId, s.Execution);
         var token = new CancellationTokenSource();
@@ -497,12 +500,13 @@ public partial class RunWorkflow
         BeginActivity();
         StepOutcome? outcome = null;
         string? expandItems = null;
+        bool cancelled = false, current = false, wasInterrupted = false;
         try
         {
-            switch (activity)
+            switch (spec.Activity)
             {
                 case StepActivity.Expand:
-                    var (name, list) = core!.ExpandList(stepId);
+                    var (name, list) = core!.ExpandList(stepId, spec.Inputs);
                     if (list is null)
                         outcome = new StepOutcome(StepOutcome.CannotAnswer, null, $"plan.expand: no artifact '{name}' has been produced");
                     else
@@ -532,17 +536,13 @@ public partial class RunWorkflow
         }
         catch (Exception e) when (TemporalException.IsCanceledException(e))
         {
-            if (interrupted.Remove(stepId) && core!.IsCurrent(stepId, execution))
-                core.Apply(new StepInterrupted(stepId, InterruptionReason(stepId)));
-            return;
+            cancelled = true;
         }
-        catch (ActivityFailureException e) when (interrupted.Contains(stepId) && e.RetryState == Temporalio.Api.Enums.V1.RetryState.CancelRequested)
+        catch (ActivityFailureException e) when (token.IsCancellationRequested && e.RetryState == Temporalio.Api.Enums.V1.RetryState.CancelRequested)
         {
             // The cancel landed while an attempt ran: the attempt's failure (a wait's "not yet", or an infrastructure error)
             // is not retried once a cancel is requested, and acknowledges the cancel as surely as a cancellation does.
-            if (interrupted.Remove(stepId) && core!.IsCurrent(stepId, execution))
-                core.Apply(new StepInterrupted(stepId, InterruptionReason(stepId)));
-            return;
+            cancelled = true;
         }
         catch (ActivityFailureException e)
         {
@@ -553,11 +553,24 @@ public partial class RunWorkflow
         finally
         {
             EndActivity();
-            if (stepTokens.GetValueOrDefault(stepId) == token)
+            current = stepTokens.GetValueOrDefault(stepId) == token;
+            if (current)
             {
                 stepTokens.Remove(stepId);
-                interrupted.Remove(stepId);
+                wasInterrupted = interrupted.Remove(stepId);
             }
+        }
+
+        // LOG 492: only the step's current activity speaks for it. One the core cancelled (CancelStep) is no longer the
+        // step's, whatever it ended with: the core may have restarted the same execution since, as an approved action
+        // decision does, so IsCurrent cannot tell its result from the restarted activity's.
+        if (!current)
+            return;
+        if (cancelled)
+        {
+            if (wasInterrupted && core!.IsCurrent(stepId, execution))
+                core.Apply(new StepInterrupted(stepId, InterruptionReason(stepId, token)));
+            return;
         }
 
         if (!core!.IsCurrent(stepId, execution))
@@ -567,7 +580,7 @@ public partial class RunWorkflow
             if (expandItems is not null)
             {
                 var items = YamlWriter.Read(expandItems, "items") as YSeq ?? throw new FormatException("plan.expand's list is not a list");
-                var (patch, error) = PlanExpansion.Build(core, stepId, items.Items);
+                var (patch, error) = PlanExpansion.Build(core, stepId, spec.Inputs, items.Items);
                 if (error is null && Budget is { } budget && WorkItems.ChildSteps(patch!) is > 0 and var adding)
                 {
                     error = await WorkItemsRefusalAsync(new WorkItemRequest(budget, adding));
@@ -672,14 +685,21 @@ public partial class RunWorkflow
     {
         if (CleanUpFailed(s.StepId))
             return;
-        ChildSpec spec;
+        ChildSpec? spec;
+        string? refusal;
         try
         {
-            spec = core!.ChildSpec(s.StepId, s.Execution);
+            (spec, refusal) = core!.ChildSpec(s.StepId, s.Execution);
         }
         catch (EvaluationException e)
         {
-            core!.Apply(new StepCannotAnswer(s.StepId, "its inputs cannot be evaluated: " + e.Message));
+            (spec, refusal) = (null, "its inputs cannot be evaluated: " + e.Message);
+        }
+
+        // Check 31 refused its inputs, or they cannot be evaluated: the step stops for a person, and no child is created (LOG 488).
+        if (spec is null)
+        {
+            core!.Apply(new StepCannotAnswer(s.StepId, refusal!));
             dirty = true;
             return;
         }
@@ -689,13 +709,13 @@ public partial class RunWorkflow
             && await WorkItemsRefusalAsync(new WorkItemRequest(budget, 1,
                 new RunRecord(spec.WorkflowId, Workflow.Info.WorkflowId, spec.Template, "starting", input.Requester, spec.Repositories, input.DryRun, Workflow.UtcNow, null))) is { } refused)
         {
-            core.Apply(new StepCannotAnswer(s.StepId, refused));
+            core!.Apply(new StepCannotAnswer(s.StepId, refused));
             dirty = true;
             return;
         }
 
         // The child's parent branch is this run's work branch, in every repository the child is given (LOG 196).
-        var made = await EnsureWorkBranchesAsync(new WorkBranchesCall(spec.Repositories, core.WorkBranch(), input.ParentBranch, input.DryRun));
+        var made = await EnsureWorkBranchesAsync(new WorkBranchesCall(spec.Repositories, core!.WorkBranch(), input.ParentBranch, input.DryRun));
         foreach (var e in made.Events)
             core.Note("agent", s.StepId, e);
         if (made.Error is { } error)

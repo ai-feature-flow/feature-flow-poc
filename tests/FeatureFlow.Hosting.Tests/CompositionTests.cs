@@ -49,7 +49,7 @@ public class CompositionTests
     [InlineData("  agent_runtime: { instances: { scripted: { script: s.yaml, model: haiku } } }", "unknown setting 'model'")]
     public void An_instance_no_factory_can_create_is_refused(string providers, string message)
     {
-        var e = Assert.Throws<InvalidOperationException>(() => ProviderComposer.Compose(Read(providers), Factories));
+        var e = Assert.Throws<StartupRefusal>(() => ProviderComposer.Compose(Read(providers), Factories));
         Assert.Contains(message, e.Message);
     }
 
@@ -60,7 +60,7 @@ public class CompositionTests
     public void Engine_tools_is_refused_on_either_built_in_runtime(string kind, string value)
     {
         var installation = Read($"  agent_runtime: {{ instances: {{ a: {{ provider: {kind}, engine_tools: {value}, model_access: {{ mode: proxy }} }} }} }}");
-        var e = Assert.Throws<InvalidOperationException>(() => ProviderComposer.Compose(installation,
+        var e = Assert.Throws<StartupRefusal>(() => ProviderComposer.Compose(installation,
             [.. Providers.ClaudeCode.ClaudeCodeProviders.Factories, .. Providers.CopilotCli.CopilotCliProviders.Factories]));
         Assert.Contains("providers.agent_runtime.instances.a: unknown setting 'engine_tools'", e.Message);
     }

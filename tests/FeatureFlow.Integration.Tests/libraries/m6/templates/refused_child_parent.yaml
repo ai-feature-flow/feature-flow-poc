@@ -1,0 +1,22 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: refused_child_parent
+  level: epic
+  description: >-
+    A run.child step whose tracker_issue loads (an expression) and evaluates at step start
+    to a list, outside run.child's contract: check 31 refuses it and no child is started
+    (LOG 488).
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: kid
+    action: run.child
+    with:
+      template: m6:templates/silent_child
+      repositories: [acme/api]
+      tracker_issue: { expr: "run.repositories" }
+    routes: { completed: { end: completed } }

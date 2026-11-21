@@ -28,7 +28,7 @@ public static partial class ApiApp
         app.MapGet("/console/assets/{**file}", (string file) => ConsoleFile($"assets/{file}", "public, max-age=31536000, immutable"))
             .ExcludeFromDescription();
         app.MapGet("/runs/{id}/plan", (HttpContext c, string id) => api.Guard(c, caller => api.PlanAsync(c, caller, id)))
-            .Described<PlanView>("getRunPlan", 200, 404, 409);
+            .Described<PlanView>("getRunPlan", 200, 404, 409).Produces(StatusCodes.Status204NoContent);
     }
 
     /// <summary>
@@ -94,7 +94,8 @@ public static partial class ApiApp
         /// <summary>
         /// A run's current plan revision (G11; LOG 404): the latest revision the run indexed, rebuilt with the libraries
         /// locked when its root run started, as its readable form (docs/09 section 4.4) and as data, each step with its status
-        /// from the run's timeline and open waits, whether a breakpoint is set on it, and the outcome it is skipped with.
+        /// from the run's timeline and open waits, whether a breakpoint is set on it, and the outcome it is skipped with. A run
+        /// that has indexed no revision yet answers 204: it has no plan to show, which is not a refusal (LOG 493).
         /// </summary>
         public async Task<IResult> PlanAsync(HttpContext context, Caller caller, string id)
         {
@@ -105,7 +106,7 @@ public static partial class ApiApp
             var latest = (await Records.QueryAsync<ArtifactRecord>(Queries.Artifacts, p, ct)).Unwrap()
                 .Where(a => a.RunId == id && a is { StepId: "", Name: ArtifactNames.PlanRevision }).MaxBy(a => a.Execution);
             if (latest is null)
-                return Error(404, $"run {id} has recorded no plan revision yet");
+                return Results.NoContent();
             if (await LockOfAsync(run, ct) is not { } lockRef)
                 return Error(404, $"run {id} has no library lock to show its plan from");
             var d = new DiagnosticBag();

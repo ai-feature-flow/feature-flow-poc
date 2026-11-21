@@ -215,7 +215,8 @@ public static class WorkflowTestRunner
                 }
                 else if (step.Descriptor?.Handling == ActionHandling.Expand)
                 {
-                    var (built, error) = PlanExpansion.Build(core, stepId, test.Expand.GetValueOrDefault(stepId) ?? []);
+                    var (spec, refusal) = core.StepSpec(stepId);
+                    var (built, error) = spec is null ? (null, refusal) : PlanExpansion.Build(core, stepId, spec.Inputs, test.Expand.GetValueOrDefault(stepId) ?? []);
                     if (error is not null)
                     {
                         failures.Add(error);
