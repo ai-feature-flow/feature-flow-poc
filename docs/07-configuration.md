@@ -292,7 +292,7 @@ tracker_issue: ACME-42                    # optional
 dry_run: false
 ```
 
-`template` is required: a template reference such as `std:templates/ticket_delivery`. Other members are refused.
+`template` is required: a template reference such as `std:templates/ticket_delivery`. Other members, apart from `continue_as_new_events` (below), are refused.
 
 `parent_branch` names the branch the run's work branch starts from and merges into, in every
 repository of the run; it must exist. F1 still governs it when it is the default branch (LOG 137).
@@ -323,14 +323,14 @@ The same code runs in every profile; only configuration differs.
 
 | | Solo developer | Small company | Enterprise |
 |---|---|---|---|
-| Temporal | `temporal server start-dev` | Docker Compose, Helm, or Temporal Cloud | Temporal Cloud, one namespace per environment |
+| Temporal | `temporal server start-dev` | Docker Compose or Helm | Temporal Cloud, one namespace per environment |
 | Workers | Local processes | Kubernetes | Organisation Kubernetes |
 | Sandbox | Local Docker | Kubernetes pod | Kubernetes pod; Docker and Windows tiers delegated to CI |
 | Tiers that need Docker | CI delegation | CI delegation | CI delegation |
 | Tracker, code host, CI | GitHub Issues, GitHub, GitHub Actions | Jira, GitHub, GitHub Actions | Jira, GitHub, GitHub Actions and TeamCity |
 | Stores | Local filesystem, SQLite | S3 (or an S3 API store such as MinIO), Postgres | Organisation object store and database |
 | Secrets | Environment or file | A mounted secret file (a Kubernetes secret) | A mounted secret file |
-| Credentials | The developer's token, used only by the engine | GitHub App | GitHub App |
+| Credentials | A GitHub App, its key a local file (`key_path`), used only by the engine | GitHub App | GitHub App |
 | Library source | `directory` | `git` | `git` |
 | API authentication | Local token, or none on loopback | OIDC | OIDC |
 | Default-branch merges | A person, unless the solo organisation file lists the repository | A person | A person; two approvers |

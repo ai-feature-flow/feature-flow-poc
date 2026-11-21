@@ -139,11 +139,11 @@ CI.
 | Re-drive | Scripted outcomes drive a template; a person's answers to its waits and an agent's questions go through the core's routing as the engine's do; the path, final status and how each question closed are asserted | default |
 | Readable form | The rendered readable form is unchanged (golden file) | default |
 | Replay | Recorded histories replay against the changed interpreter | default |
-| Failure injection | Worker crash, lost sandbox, Temporal unavailable, hook endpoint unreachable, continue-as-new under load with children and open decisions, stale patch | integration; stale patch: default |
+| Failure injection | Worker crash, lost sandbox, Temporal unavailable, hook endpoint unreachable, continue-as-new under load with children and open decisions, stale patch | integration; stale patch and hook endpoint unreachable: default |
 | Run-time rules | Each rule in section 3 | default, integration |
 | Provider contracts | Each interface's suite, including every documented success response | default, integration, cluster |
 | Merge race | Two work branches catch up from the same parent head; the second merge gets `base_moved` and loops; repeated refusals exhaust the allowance and escalate | integration |
-| Agent reporting | `report` (including a proposed patch), `ask_human` (including across a worker restart), `checkpoint` | integration |
+| Agent reporting | `report`, `ask_human` (including across a worker restart), `checkpoint` | integration |
 | Pre-submit parity | A session's check and the later step receive the same task, tools, model and commit | integration |
 | Architecture | The shell holds no routing; project reference rules | default |
 | Deployment | Images, network policies, stop on SIGTERM | cluster, integration |

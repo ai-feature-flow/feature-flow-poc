@@ -97,7 +97,7 @@ level of work.
 
 | Concern | One mechanism |
 |---|---|
-| Changing a plan during a run | A patch, applied by one function, whether it comes from an agent, a child run or a human |
+| Changing a plan during a run | A patch, applied by one function, whatever its source (in version 1 a person or `plan.expand`; `docs/04` section 6.1) |
 | Waiting for a human | A decision: a type, a prompt, a set of choices. Gates, interventions, agent questions, merge requests and patch approvals are all decisions |
 | Running an agent | The agent step. Reviewers, planners, fixers and implementers are agent steps with different roles |
 | Levels of work | A run starts child runs with the same interpreter and the same plan language. Levels are named by the workflow and nest to any depth |

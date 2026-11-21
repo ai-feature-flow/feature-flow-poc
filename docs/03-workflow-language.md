@@ -519,8 +519,7 @@ sends through the same path as any patch (section 10), but nothing sends one.
 
 A patch changes a running plan's structure (`docs/01` section 10). Every patch,
 from any source (in version 1 a person's override, `docs/05` section 5, and
-`plan.expand`), goes
-through one function that validates and applies it.
+`plan.expand`), goes through one function that validates and applies it.
 
 ### 10.1 The patch document
 

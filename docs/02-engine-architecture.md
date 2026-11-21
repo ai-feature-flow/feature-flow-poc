@@ -233,7 +233,7 @@ Windows tier can be delegated to CI.
 | Store | Holds | Technology by profile |
 |---|---|---|
 | Temporal state | References and small summaries only: plan revision, positions, step outcomes and outputs, the `findings` counts (`docs/03` section 5.3), attempts. The run's library snapshot is read into history once per history, at run start and after each continue-as-new (LOG 83) | Temporal |
-| Artifact store | Every artifact, every plan revision, rendered tasks, transcripts, logs, library content | Local filesystem; S3 or Azure Blob |
+| Artifact store | Every artifact, every plan revision, rendered tasks, transcripts, logs, library content | Local filesystem; S3 or an S3 API store such as MinIO |
 | Record store | Runs, step runs, decisions, overrides, the findings ledger, the artifact index, the timeline, cost | SQLite; Postgres |
 
 The **artifact index** in the record store lists what a run stored, one record per

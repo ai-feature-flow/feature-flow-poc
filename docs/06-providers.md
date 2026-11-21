@@ -552,7 +552,7 @@ interface ICredentialBroker : IProvider {
 | Actor | Gets |
 |---|---|
 | The engine | Push and merge on the code host; GitHub Issues writes; CI triggers. Never permission to change branch protection |
-| An agent step | No code host credential (LOG 95): its checkout arrives as a Git bundle with no remote. An agent that must read another repository will need a read-only credential, scoped to it and the run's repositories, for the step's lifetime (F5), in a later milestone. No tracker identity |
+| An agent step | No code host credential (LOG 95): its checkout arrives as a Git bundle with no remote. An agent that must read another repository will need a read-only credential, scoped to it and the run's repositories, for the step's lifetime (F5); not in version 1. No tracker identity |
 | A model proxy | The model key. Never the agent (F6). Each agent runtime instance has its own, from its `model_access`, and a step's token selects its instance's (LOG 446). It forwards only `POST v1/messages` and `v1/messages/count_tokens` to its upstream's own scheme, host and port, and refuses anything else before reading the key (LOG 104) |
 
 The broker refuses a request wider than it may grant; it never silently narrows
