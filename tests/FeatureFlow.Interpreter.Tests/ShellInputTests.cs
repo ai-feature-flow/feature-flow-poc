@@ -314,7 +314,7 @@ public class ShellInputTests
                 if (decision)
                     input = new DecisionAnswered(id, step.DeclaredOutcomes.First().Name);
                 else if (step.Action == "plan.expand")
-                    input = new StepCompleted(id, "expanded", Patch: PlanExpansion.Build(core, id, items.Items).Patch);
+                    input = new StepCompleted(id, "expanded", Patch: PlanExpansion.Build(core, id, core.StepSpec(id).Spec!.Inputs, items.Items).Patch);
                 else
                 {
                     var outcome = step.Outcomes().First(o => o.Class == OutcomeClass.Success).Name;

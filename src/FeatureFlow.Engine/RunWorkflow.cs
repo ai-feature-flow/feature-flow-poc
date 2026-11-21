@@ -391,15 +391,15 @@ public partial class RunWorkflow
         if (CleanUpFailed(s.StepId))
             return;
         var (spec, error) = core!.StepSpec(s.StepId);
-        if (error is not null)
+        if (spec is null)
         {
-            core.Apply(new StepCannotAnswer(s.StepId, error));
+            core.Apply(new StepCannotAnswer(s.StepId, error!));
             dirty = true;
             return;
         }
 
-        var call = CallOf(spec!, new StepIdentity(input.RunId, Template.Name, s.StepId, s.Execution, core.StepKey(s.StepId, s.Execution)));
-        _ = RunStepAsync(s, spec!.Activity, call, spec.Activity == StepActivity.Engine ? ScopeOf(s.StepId) : null);
+        var call = CallOf(spec, new StepIdentity(input.RunId, Template.Name, s.StepId, s.Execution, core.StepKey(s.StepId, s.Execution)));
+        _ = RunStepAsync(s, spec, call, spec.Activity == StepActivity.Engine ? ScopeOf(s.StepId) : null);
     }
 
     /// <summary>A step's activity call, mapped from the core's <see cref="StepSpec"/> (docs/04 sections 2 and 3).</summary>
@@ -492,7 +492,7 @@ public partial class RunWorkflow
         CancellationType = StepCancellation(),
     };
 
-    async Task RunStepAsync(StartStep s, StepActivity activity, StepCall call, ActionScope? scope)
+    async Task RunStepAsync(StartStep s, StepSpec spec, StepCall call, ActionScope? scope)
     {
         var (stepId, execution) = (s.StepId, s.Execution);
         var token = new CancellationTokenSource();
@@ -503,10 +503,10 @@ public partial class RunWorkflow
         bool cancelled = false, current = false, wasInterrupted = false;
         try
         {
-            switch (activity)
+            switch (spec.Activity)
             {
                 case StepActivity.Expand:
-                    var (name, list) = core!.ExpandList(stepId);
+                    var (name, list) = core!.ExpandList(stepId, spec.Inputs);
                     if (list is null)
                         outcome = new StepOutcome(StepOutcome.CannotAnswer, null, $"plan.expand: no artifact '{name}' has been produced");
                     else
@@ -580,7 +580,7 @@ public partial class RunWorkflow
             if (expandItems is not null)
             {
                 var items = YamlWriter.Read(expandItems, "items") as YSeq ?? throw new FormatException("plan.expand's list is not a list");
-                var (patch, error) = PlanExpansion.Build(core, stepId, items.Items);
+                var (patch, error) = PlanExpansion.Build(core, stepId, spec.Inputs, items.Items);
                 if (error is null && Budget is { } budget && WorkItems.ChildSteps(patch!) is > 0 and var adding)
                 {
                     error = await WorkItemsRefusalAsync(new WorkItemRequest(budget, adding));

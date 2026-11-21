@@ -107,14 +107,13 @@ public sealed partial class RunCore
     }
 
     /// <summary>
-    /// The list a <c>plan.expand</c> step reads: the name its <c>from</c> evaluates to, and the latest artifact of it nearest
-    /// the step, or null. Its inputs were evaluated and checked when the step started (<see cref="StepSpec"/>).
+    /// The list a <c>plan.expand</c> step reads: the name its <c>from</c> evaluated to when check 31 passed its
+    /// <paramref name="inputs"/> at step start (<see cref="StepSpec"/>), and the latest artifact of it nearest the step, or null.
     /// </summary>
-    public (string? Name, string? Reference) ExpandList(string stepId)
+    public (string? Name, string? Reference) ExpandList(string stepId, IReadOnlyDictionary<string, object?> inputs)
     {
-        var step = StepById(stepId);
-        var name = step is null ? null : ResolveInputs(stepId).GetValueOrDefault("from") as string;
-        return (name, name is null ? null : LatestArtifact(step, name));
+        var name = inputs.GetValueOrDefault("from") as string;
+        return (name, name is null ? null : LatestArtifact(StepById(stepId), name));
     }
 
     /// <summary>Whether an artifact type is marked <c>evidence: true</c> (F7).</summary>

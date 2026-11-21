@@ -290,7 +290,7 @@ public sealed class ConsoleTests : IAsyncDisposable
                 {
                     if (step.Action == "plan.expand")
                     {
-                        core.Apply(new StepCompleted(step.Id, "expanded", Patch: PlanExpansion.Build(core, step.Id, items.Items).Patch));
+                        core.Apply(new StepCompleted(step.Id, "expanded", Patch: PlanExpansion.Build(core, step.Id, core.StepSpec(step.Id).Spec!.Inputs, items.Items).Patch));
                         continue;
                     }
 

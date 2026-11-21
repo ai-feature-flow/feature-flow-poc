@@ -368,25 +368,16 @@ public static class PlanExpansion
     public const int MaxItems = 500;
 
     /// <summary>
-    /// Builds the patch for a <c>plan.expand</c> step from its list's items, against the core's current revision. Its inputs
-    /// are evaluated, as they were when check 31 passed them at step start; <c>step</c> is taken as written, since its
-    /// expressions and <c>$.</c> paths belong to the steps it makes.
+    /// Builds the patch for a <c>plan.expand</c> step from its list's items, against the core's current revision, with the
+    /// <paramref name="inputs"/> check 31 passed at step start (<see cref="RunCore.StepSpec"/>), so what was checked is what is
+    /// used (LOG 488). <c>step</c> is taken as written, since its expressions and <c>$.</c> paths belong to the steps it makes.
     /// </summary>
-    public static (PatchDocument? Patch, string? Error) Build(RunCore core, string stepId, IReadOnlyList<YNode> items)
+    public static (PatchDocument? Patch, string? Error) Build(RunCore core, string stepId, IReadOnlyDictionary<string, object?> inputs, IReadOnlyList<YNode> items)
     {
         if (core.StepById(stepId) is not { Descriptor.Handling: ActionHandling.Expand, With: { } with } step)
             return (null, $"{stepId} is not a plan.expand step with inputs");
         if (items.Count > MaxItems)
             return (null, $"the list has {items.Count} items; plan.expand takes at most {MaxItems}");
-        Dictionary<string, object?> inputs;
-        try
-        {
-            inputs = core.ResolveInputs(stepId);
-        }
-        catch (EvaluationException e)
-        {
-            return (null, $"{stepId}: its inputs cannot be evaluated: {e.Message}");
-        }
 
         var shape = inputs.GetValueOrDefault("shape") as string ?? "parallel";
         var targetText = inputs.GetValueOrDefault("target") as string;

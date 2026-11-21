@@ -436,7 +436,7 @@ override, so workflow tests can exercise the core's path.
 | Element | Detail |
 |---|---|
 | Form | An activity reads the list artifact; the core builds the patch from at most 500 items and applies it through the patch path |
-| Inputs | `from` (a list artifact), `shape` (`parallel` or `chain`), `target` (the `parallel` to fill, or the step to chain after), `on_other` (for a chain), `step` (the step to create per item, with `$.<field>` paths into the item). Its own inputs are evaluated and checked against its schema at step start, like any action's (check 31; LOG 488). The created step's inputs are checked against its action's schema at load, `$.` paths when the patch is validated (check 31) |
+| Inputs | `from` (a list artifact), `shape` (`parallel` or `chain`), `target` (the `parallel` to fill, or the step to chain after), `on_other` (for a chain), `step` (the step to create per item, with `$.<field>` paths into the item). Its own inputs are evaluated and checked against its schema at step start, like any action's, and the list is read and the patch built with those values, not evaluated again (check 31; LOG 488). The created step's inputs are checked against its action's schema at load, `$.` paths when the patch is validated (check 31) |
 | Outcomes | `expanded` |
 | Effect | A patch, applied like any other and recorded with `proposed_by: engine` |
 
