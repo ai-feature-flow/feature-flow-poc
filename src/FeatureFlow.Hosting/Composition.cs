@@ -66,6 +66,12 @@ public static class ProviderComposer
 
                 foreach (var key in instance.Settings.Keys.Where(k => !factory.Settings.Contains(k)))
                     errors.Add($"providers.{type}.instances.{name}: unknown setting '{key}'");
+                if (type == "agent_runtime" && FeatureFlowHost.ModelAccessProblem(name, instance) is { } problem)
+                {
+                    errors.Add(problem);
+                    continue;
+                }
+
                 named[name] = ProviderCalls.Decorate(type, name,
                     factory.Create(new ProviderContext(instance, baseDirectory, t => set?.ForRun(t, false)) { SandboxReach = reach }));
             }
@@ -194,6 +200,23 @@ public sealed class FeatureFlowHost : IAsyncDisposable
         }
 
         return proxies;
+    }
+
+    /// <summary>
+    /// What is wrong with an agent runtime instance's proxy <c>model_access</c>, refused at composition: an <c>auth</c>
+    /// the proxy does not know, or <c>auth: github</c> without an https <c>upstream</c>, since the default upstream is the
+    /// Anthropic API and the GitHub token would go there (LOG 496).
+    /// </summary>
+    public static string? ModelAccessProblem(string name, ProviderInstanceConfig instance)
+    {
+        if (instance.Settings["model_access"] is not YMap access || access["mode"].ScalarText() != "proxy")
+            return null;
+        var auth = access["auth"].ScalarText() ?? "api_key";
+        if (!ModelProxy.Auths.Contains(auth))
+            return $"providers.agent_runtime.instances.{name}: model_access.auth '{auth}' is not one of {string.Join(", ", ModelProxy.Auths)}";
+        return auth == "github" && !(Uri.TryCreate(access["upstream"].ScalarText(), UriKind.Absolute, out var upstream) && upstream.Scheme == Uri.UriSchemeHttps)
+            ? $"providers.agent_runtime.instances.{name}: model_access.auth github needs an https upstream, the account's Copilot API"
+            : null;
     }
 
     /// <summary>The agent endpoint's address once started, when the installation configures one.</summary>

@@ -65,11 +65,30 @@ public class CompositionTests
         Assert.Contains("providers.agent_runtime.instances.a: unknown setting 'engine_tools'", e.Message);
     }
 
+    /// <summary>
+    /// LOG 496: an unknown <c>model_access.auth</c> is refused at composition, and so is <c>auth: github</c> without an
+    /// https upstream, whose default would send the GitHub token to the Anthropic API.
+    /// </summary>
+    [Theory]
+    [InlineData("auth: bearer, upstream: \"https://api.example\"", "model_access.auth 'bearer' is not one of api_key, oauth, github")]
+    [InlineData("auth: github", "model_access.auth github needs an https upstream, the account's Copilot API")]
+    [InlineData("auth: github, upstream: \"http://api.example\"", "model_access.auth github needs an https upstream, the account's Copilot API")]
+    [InlineData("auth: github, upstream: \"https://api.business.githubcopilot.com\"", null)]
+    public void An_unknown_auth_or_github_without_an_https_upstream_is_refused(string access, string? refusal)
+    {
+        var installation = Read($"  agent_runtime: {{ instances: {{ a: {{ provider: copilot_cli, model_access: {{ mode: proxy, {access} }} }} }} }}");
+        var compose = () => ProviderComposer.Compose(installation, Providers.CopilotCli.CopilotCliProviders.Factories);
+        if (refusal is null)
+            compose();
+        else
+            Assert.Contains($"providers.agent_runtime.instances.a: {refusal}", Assert.Throws<StartupRefusal>(compose).Message);
+    }
+
     /// <summary>LOG 496: <c>auth: github</c> is Copilot CLI's; a <c>claude_code</c> instance naming it is refused at load.</summary>
     [Fact]
     public void Auth_github_is_refused_on_claude_code()
     {
-        var installation = Read("  agent_runtime: { instances: { a: { provider: claude_code, model_access: { mode: proxy, auth: github } } } }");
+        var installation = Read("  agent_runtime: { instances: { a: { provider: claude_code, model_access: { mode: proxy, auth: github, upstream: \"https://api.business.githubcopilot.com\" } } } }");
         var e = Assert.Throws<InvalidOperationException>(() => ProviderComposer.Compose(installation, Providers.ClaudeCode.ClaudeCodeProviders.Factories));
         Assert.Contains("providers.agent_runtime.instances.a: model_access.auth 'github' is not for claude_code, which takes api_key or oauth", e.Message);
     }

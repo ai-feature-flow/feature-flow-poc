@@ -25,6 +25,9 @@ public sealed partial class ModelProxy(ModelProxyOptions options, HttpMessageHan
 
     public const string OAuthBeta = "oauth-2025-04-20";
 
+    /// <summary>The ways the credential can be sent, by <c>model_access.auth</c>; any other value is refused at composition.</summary>
+    public static readonly IReadOnlyList<string> Auths = ["api_key", "oauth", "github"];
+
     static readonly HashSet<string> NotForwarded = new(StringComparer.OrdinalIgnoreCase)
     {
         "host", "authorization", "x-api-key", "content-length", "connection", "accept-encoding", "transfer-encoding", "keep-alive",
