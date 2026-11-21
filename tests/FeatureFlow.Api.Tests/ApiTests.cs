@@ -203,7 +203,7 @@ public sealed class ApiTests : IAsyncDisposable
         Assert.Equal(["lead"], ApiApp.RolesToAnswer(rule, Declared, Wait("gate", "x.audit")));
         // Neither: approver for a decision, steerer for the rest.
         Assert.Equal(["approver"], ApiApp.RolesToAnswer(NoRules, [], Wait("gate", "y.other")));
-        Assert.Equal(["steerer", "admin"], ApiApp.RolesToAnswer(NoRules, [], Wait("patchapproval", "ticket.patch_approval")));
+        Assert.Equal(["steerer", "admin"], ApiApp.RolesToAnswer(NoRules, [], Wait("patch_approval", "ticket.patch_approval")));
     }
 
     [Fact]

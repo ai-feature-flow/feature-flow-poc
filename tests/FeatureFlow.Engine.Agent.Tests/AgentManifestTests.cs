@@ -63,7 +63,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
     }
 
     async Task<StepOutcome> RunAsync(IReadOnlyDictionary<string, string> edits, bool codeHost = true, string step = "implement", string branch = Branch,
-        ITrackerProvider? tracker = null, string? trackerIssue = null, Action<SandboxHandle>? atStart = null)
+        ITrackerProvider? tracker = null, string? trackerIssue = null, Action<SandboxHandle>? atStart = null, bool dryRun = false, string? roleRuntime = null)
     {
         var client = Path.Combine(folder, "ff-sandbox");
         await File.WriteAllTextAsync(client, "a stand-in for the sandbox client", TestContext.Current.CancellationToken);
@@ -73,7 +73,12 @@ public sealed class AgentManifestTests : IAsyncDisposable
         {
             ["vcs"] = One(new InMemoryVcs(forge)),
             ["sandbox"] = One(sandbox),
-            ["agent_runtime"] = One(runtime),
+            // A second runtime, which a role may map to; a dry run uses its dry_run instance in its place (LOG A2-8b2).
+            ["agent_runtime"] = new Dictionary<string, IProvider>
+            {
+                ["one"] = runtime,
+                ["real"] = new EditingRuntime(forge, new ScriptedAgentRuntime(FakeScript.Empty, () => store), new Dictionary<string, string>(), _ => realStarted = true),
+            },
             ["artifact_store"] = One(store),
             ["record_store"] = One(records),
         };
@@ -81,15 +86,16 @@ public sealed class AgentManifestTests : IAsyncDisposable
             instances["code_host"] = One(new InMemoryCodeHost(forge));
         if (tracker is not null)
             instances["tracker"] = One(tracker);
-        var providers = new ProviderSet(instances, instances.Keys.ToDictionary(k => k, _ => "one"), new Dictionary<string, string>());
+        var defaults = instances.Keys.ToDictionary(k => k, _ => "one");
+        var providers = new ProviderSet(instances, defaults, dryRun ? defaults : new Dictionary<string, string>());
         var activities = new AgentActivities(providers, StepTokens.FromSecret("test"),
             new AgentWorkerOptions(["http://127.0.0.1:9"], "http://127.0.0.1:9/model", TimeSpan.FromSeconds(30), client, TimeSpan.FromMilliseconds(20)));
         var contract = new StepContract([new OutcomeSpec("implemented", "success")], new Dictionary<string, string> { ["commits"] = "number" }, [],
             new Dictionary<string, string> { ["commits"] = "0" });
         var spec = new AgentStepSpec("write", ["read", "edit"], null, null, [], 2, 0, TimeSpan.FromHours(1), true, "commit", "ticket",
-            new Dictionary<string, string> { [repo.FullName] = branch }, new Dictionary<string, string>(), new Dictionary<string, string>(), "wf", "lock", trackerIssue);
+            new Dictionary<string, string> { [repo.FullName] = branch }, new Dictionary<string, string>(), new Dictionary<string, string>(), "wf", "lock", trackerIssue, Runtime: roleRuntime);
         var call = new StepCall(new StepIdentity("run-1", "ticket_delivery", step, 1, $"run-1/{step}/1"), "agent", "std:roles/implementer",
-            new Dictionary<string, string>(), contract, false, TimeSpan.FromMinutes(5), spec);
+            new Dictionary<string, string>(), contract, dryRun, TimeSpan.FromMinutes(5), spec);
         return await new ActivityEnvironment().RunAsync(() => activities.RunAgentStepAsync(call));
     }
 
@@ -202,6 +208,18 @@ public sealed class AgentManifestTests : IAsyncDisposable
         Assert.Equal(forge.Resolve(repo, "main"), Work);
         Assert.DoesNotContain(sandbox.Commands, c => c.Command.Contains("dotnet", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public async Task A_role_mapped_runtime_runs_the_step_and_in_a_dry_run_the_dry_run_runtime_stands_in_for_it()
+    {
+        Assert.Equal(StepOutcome.Reported, (await RunAsync(new Dictionary<string, string>(), dryRun: true, roleRuntime: "real")).Kind);
+        Assert.False(realStarted);
+
+        Assert.Equal(StepOutcome.Reported, (await RunAsync(new Dictionary<string, string>(), roleRuntime: "real")).Kind);
+        Assert.True(realStarted);
+    }
+
+    bool realStarted;
 
     public ValueTask DisposeAsync()
     {

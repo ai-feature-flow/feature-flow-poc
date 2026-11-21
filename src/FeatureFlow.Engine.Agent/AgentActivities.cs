@@ -63,11 +63,12 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
     public async Task<StepOutcome> RunAgentStepAsync(StepCall call)
     {
         var context = ActivityExecutionContext.Current;
-        // A dry run keeps its dry-run runtime; otherwise the step's role picks the instance (LOG 267), else the default.
-        var runtime = call.Agent?.Runtime is { } name && !call.DryRun
-            ? providers.Instance("agent_runtime", name) as IAgentRuntimeProvider
-              ?? throw new InvalidOperationException($"role_mapping names the agent runtime '{name}', which this agent worker does not configure")
-            : providers.Required<IAgentRuntimeProvider>("agent_runtime", call.DryRun);
+        // The step's role picks the runtime instance (LOG 267), else the run's default; in a dry run the dry_run instance stands in (LOG A2-8b2).
+        var runtime = (call.Agent?.Runtime is { } name ? providers.ForRun("agent_runtime", name, call.DryRun) : providers.ForRun("agent_runtime", call.DryRun)) as IAgentRuntimeProvider;
+        if (runtime is null)
+            return new StepOutcome(StepOutcome.CannotAnswer, null, call.Agent?.Runtime is { } mapped && !call.DryRun
+                ? $"role_mapping names the agent runtime '{mapped}', which this agent worker does not configure"
+                : $"an agent step needs an agent runtime{(call.DryRun ? " for a dry run" : "")}, and one is not configured");
         if (providers.ForRun("sandbox", call.DryRun) is not ISandboxProvider sandboxes || providers.ForRun("vcs", call.DryRun) is not IVcsProvider vcs)
             return new StepOutcome(StepOutcome.CannotAnswer, null, $"an agent step needs a sandbox and a vcs provider{(call.DryRun ? " for a dry run" : "")}, and one is not configured");
         try

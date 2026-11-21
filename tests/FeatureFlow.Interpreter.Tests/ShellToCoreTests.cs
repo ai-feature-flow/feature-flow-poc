@@ -59,7 +59,46 @@ public class ShellToCoreTests
             routes: { completed: { end: completed } }
         """;
 
-    static readonly Probe Lib = new("shell-to-core", ("artifacts", Artifacts), ("child", Child), ("parent", Parent));
+    static readonly Probe Lib = new("shell-to-core", ("artifacts", Artifacts), ("child", Child), ("parent", Parent), ("pulls", Pulls));
+
+    const string Pulls = """
+        api_version: feature-flow/v1
+        kind: template
+        metadata: { name: pulls, level: ticket }
+        defaults:
+          routes:
+            by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+        steps:
+          - id: open
+            action: scm.pull_request
+            with: { title: work }
+            routes: { ready: publish }
+          - id: publish
+            action: artifact.publish
+            with: { repository: acme/docs, folder: docs, files: [] }
+            routes: { published: ship }
+          - id: ship
+            action: artifact.compose
+            with: { name: release, members: [team] }
+            routes: { composed: { end: completed } }
+        """;
+
+    [Fact]
+    public void An_actions_scope_names_the_work_pull_request_and_the_run_lists_every_pull_request_its_actions_opened()
+    {
+        var core = Lib.Start("pulls");
+        core.Advance();
+        foreach (var (step, outcome, pr) in new[] { ("open", "ready", "acme/api#1"), ("publish", "published", "acme/docs#2") })
+        {
+            var outputs = new Dictionary<string, object?>(RunCore.ZeroOutputs(core.StepById(step)!)) { ["pull_request"] = pr };
+            Assert.True(core.Apply(new StepCompleted(step, outcome, outputs)).Accepted);
+            core.Advance();
+        }
+
+        // Read from the descriptors (OpensPullRequest, LOG A2-8b3), not the actions' names.
+        Assert.Equal(["acme/api#1"], core.ScopeFacts("ship").PullRequests);
+        Assert.Equal(["acme/api#1", "acme/docs#2"], core.PullRequestsOpened());
+    }
 
     const string Plan = "std:artifact_types/delivery_plan";
 

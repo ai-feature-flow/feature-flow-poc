@@ -9,8 +9,9 @@ using FeatureFlow.Validation;
 namespace FeatureFlow.Engine.Tests;
 
 /// <summary>
-/// The action descriptor registry (docs/04 section 2; F10): an action is one registry entry, which loading, validation,
-/// run start, the core and dispatch all read, and one handler bound by its name (LOG A2-0a).
+/// The action descriptor registry (docs/04 section 2; F10): an action is one registry entry, its descriptor and its handler
+/// together (<see cref="EngineActions.Register"/>), which loading, validation, run start, the core, the shell's step call and
+/// dispatch all read (LOG A2-0a, A2-8b1).
 /// </summary>
 public sealed class ActionRegistryTests
 {
@@ -50,8 +51,7 @@ public sealed class ActionRegistryTests
     [Fact]
     public async Task A_test_action_needs_one_registry_entry_and_nothing_else()
     {
-        using var registry = ActionRegistry.Use(ActionRegistry.Default.With(Probe));
-        using var handler = EngineActions.Use("test.probe", run => Task.FromResult(run.Report("done", new Dictionary<string, object?> { ["count"] = 3L })));
+        using var entry = EngineActions.Register(Probe, run => Task.FromResult(run.Report("done", new Dictionary<string, object?> { ["count"] = 3L })));
 
         // Load: an input of its schema loads; one outside it is refused at load (check 31).
         var (refusedLibraries, refusedTemplate) = Probing("{ colour: red }");
@@ -66,12 +66,13 @@ public sealed class ActionRegistryTests
         // Run start: its capabilities are what check 21 asks for.
         Assert.Equal("step probe", RunStartChecks.Needs(core.Plan, libraries).GetValueOrDefault("probe_provider"));
 
-        // The core starts it, the engine dispatches it to its handler, and the core takes its output as a number and routes its outcome.
+        // The core starts it and specifies its call as the shell does (StartStepAsync, CallOf), the engine dispatches it to its
+        // handler, and the core takes its output as a number and routes its outcome.
         Assert.Equal([new StartStep("probe", 1)], core.Advance());
-        var contract = new StepContract([new("done", "success"), new("failed", "failure")], new Dictionary<string, string> { ["count"] = RunCore.OutputType(core.StepById("probe")!, "count")! },
-            [], new Dictionary<string, string> { ["count"] = "0" });
-        var call = new StepCall(new StepIdentity("run-1", "probing", "probe", 1, "run-1/probe/1"), "action", "test.probe",
-            core.ResolveInputs("probe").ToDictionary(kv => kv.Key, kv => YamlWriter.WritePlain(kv.Value)), contract, false, null);
+        var (spec, error) = core.StepSpec("probe");
+        Assert.True(error is null, error);
+        Assert.Equal(StepActivity.Engine, spec!.Activity);
+        var call = RunWorkflow.CallOf(spec, new StepIdentity("run-1", "probing", "probe", 1, core.StepKey("probe", 1)), false, null);
         var providers = new ProviderSet(new Dictionary<string, IReadOnlyDictionary<string, IProvider>>(), new Dictionary<string, string>(), new Dictionary<string, string>());
         var result = await new EngineActions(providers).RunAsync(call, ActionScope.None, () => { }, Ct);
 

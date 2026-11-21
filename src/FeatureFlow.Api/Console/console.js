@@ -53,7 +53,8 @@ async function showRuns() {
         r.parentRunId ? runLink(r.parentRunId) : "", new Date(r.updatedAt).toLocaleString()])));
 }
 
-// One open wait and how to answer it: an outcome for a decision, a patch approval or a question; a recovery action for an intervention.
+// One open wait and how to answer it: an outcome for a decision, a patch approval or a question; a recovery action, from the
+// wait's own choices, for an intervention or a breakpoint.
 function waitForm(runId, wait) {
   const result = el("div", { class: "note" });
   async function answer(body) {
@@ -70,8 +71,8 @@ function waitForm(runId, wait) {
   }
 
   const controls = [];
-  if (wait.kind === "intervention") {
-    const action = el("select", { "aria-label": "recovery" }, ["retry", "go_to", "replan", "grant_attempts", "end"].map(a => el("option", { value: a, text: a })));
+  if (wait.kind === "intervention" || wait.kind === "breakpoint") {
+    const action = el("select", { "aria-label": "recovery" }, (wait.choices || []).map(a => el("option", { value: a, text: a })));
     const step = el("input", { placeholder: "step id (go_to, replan)", "aria-label": "step id" });
     const attempts = el("input", { type: "number", min: "1", placeholder: "attempts", "aria-label": "attempts" });
     const end = el("select", { "aria-label": "end status" }, ["failed", "completed", "partial", "aborted", "incomplete"].map(s => el("option", { value: s, text: s })));

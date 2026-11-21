@@ -153,7 +153,7 @@ public sealed partial class RunCore
                 artifacts.Add(new HeldArtifact(other.Id, name, type?.Text, reference, other.Form == StepForm.Action ? other.Action : null, IsEvidence(type)));
             }
 
-            if (other.Action == "scm.pull_request" && current.Outputs.GetValueOrDefault("pull_request") is string pr && pr.Length > 0)
+            if (other.Descriptor?.OpensPullRequest == PullRequestKind.Work && current.Outputs.GetValueOrDefault("pull_request") is string pr && pr.Length > 0)
                 pullRequests.Add(pr);
         }
 
@@ -203,12 +203,12 @@ public sealed partial class RunCore
     }
 
     /// <summary>
-    /// The run's pull requests: the <c>pull_request</c> output of its <c>scm.pull_request</c> and <c>artifact.publish</c> steps
-    /// (R1 F7), current and previous executions. Each opens its pull request keyed by run and repository, so earlier executions
-    /// name the same one.
+    /// The run's pull requests: the <c>pull_request</c> output of its steps whose action opens one (R1 F7; <c>scm.pull_request</c>
+    /// and <c>artifact.publish</c>), current and previous executions. Each opens its pull request keyed by run and repository, so
+    /// earlier executions name the same one.
     /// </summary>
     public IReadOnlyList<string> PullRequestsOpened() =>
-        State.Steps.Where(kv => StepById(kv.Key)?.Action is "scm.pull_request" or "artifact.publish").OrderBy(kv => kv.Key, StringComparer.Ordinal)
+        State.Steps.Where(kv => StepById(kv.Key)?.Descriptor?.OpensPullRequest is not null).OrderBy(kv => kv.Key, StringComparer.Ordinal)
             .SelectMany(kv => new[] { kv.Value.Previous, kv.Value.Current })
             .Select(e => e?.Outputs.GetValueOrDefault("pull_request") as string)
             .OfType<string>().Where(pr => pr.Length > 0).Distinct().ToList();

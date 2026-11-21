@@ -322,7 +322,11 @@ public class WaitRoutingTests
         var proposed = core.Apply(new StepCompleted("ask", "done", Patch: patch));
         Assert.True(proposed.Patch!.Status == PatchStatus.Pending, string.Join("; ", proposed.Errors.Concat(proposed.Patch.Diagnostics.Select(x => x.ToString()))));
         var request = Assert.Single(core.Advance().OfType<RequestPatchApproval>());
-        Assert.Equal(["approve", "reject"], core.Describe(Assert.Single(core.State.Waits)).Choices);
+        var description = core.Describe(Assert.Single(core.State.Waits));
+        Assert.Equal(["approve", "reject"], description.Choices);
+        // One name per thing (LOG A2-0d): the kind as recorded is the wait id's prefix and the decision type's suffix.
+        Assert.Equal(("patch_approval", "ticket.patch_approval"), (description.Kind, description.Type));
+        Assert.StartsWith(description.Kind + "-", request.WaitId, StringComparison.Ordinal);
 
         Assert.Equal($"{request.WaitId} is a patch approval: answer approve or reject", Refusal(core, new AnswerArgs(request.WaitId, "ann", "go")));
         var result = Agree(core, new AnswerArgs(request.WaitId, "ann", Action: action));

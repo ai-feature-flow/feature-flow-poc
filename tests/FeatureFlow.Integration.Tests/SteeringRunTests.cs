@@ -256,7 +256,7 @@ public class SteeringRunTests
         var id = h.Start("m7steer:templates/steer_planner", "--repo", Repo);
         await SendAsync(h, id, Override("breakpoint", "build"));
 
-        var approval = await OpenWaitAsync(h, id, "patchapproval");
+        var approval = await OpenWaitAsync(h, id, "patch_approval");
         Assert.Equal(("plan", "ticket.patch_approval"), (approval["stepId"]!.ToString(), approval["decisionType"]!.ToString()));
         Assert.Contains("m7steer:tasks/build", approval["reason"]!.ToString());
         var (answered, output, error) = h.Cli("answer", id, approval["waitId"]!.ToString(), "approve");

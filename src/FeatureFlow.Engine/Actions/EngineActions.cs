@@ -92,16 +92,23 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
 
     static Func<ActionRun, Task<ActionResult>>? Handler(string action) => Extra.Value?.GetValueOrDefault(action) ?? Handlers.GetValueOrDefault(action);
 
-    /// <summary>Adds or replaces the handler of <paramref name="action"/> until the scope is disposed (an <see cref="AsyncLocal{T}"/>). For tests.</summary>
-    internal static IDisposable Use(string action, Func<ActionRun, Task<ActionResult>> handler)
+    /// <summary>
+    /// Adds an action as one entry, its descriptor and its handler together, until the scope is disposed (both are
+    /// <see cref="AsyncLocal{T}"/>s, so they do not cross into Temporal's worker threads). For tests (LOG A2-8b1).
+    /// </summary>
+    internal static IDisposable Register(ActionDescriptor descriptor, Func<ActionRun, Task<ActionResult>> handler)
     {
         var previous = Extra.Value;
-        var extra = new Dictionary<string, Func<ActionRun, Task<ActionResult>>>(previous ?? new Dictionary<string, Func<ActionRun, Task<ActionResult>>>(), StringComparer.Ordinal)
+        var registry = ActionRegistry.Use(ActionRegistry.Current.With(descriptor));
+        Extra.Value = new Dictionary<string, Func<ActionRun, Task<ActionResult>>>(previous ?? new Dictionary<string, Func<ActionRun, Task<ActionResult>>>(), StringComparer.Ordinal)
         {
-            [action] = handler,
+            [descriptor.Name] = handler,
         };
-        Extra.Value = extra;
-        return new Restore(() => Extra.Value = previous);
+        return new Restore(() =>
+        {
+            Extra.Value = previous;
+            registry.Dispose();
+        });
     }
 
     sealed class Restore(Action restore) : IDisposable

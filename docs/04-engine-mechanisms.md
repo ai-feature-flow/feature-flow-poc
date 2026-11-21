@@ -70,11 +70,13 @@ other table is keyed by action name (F10). An entry holds:
 | Outputs | The outputs the action publishes, with their types (`docs/03` section 5.4); none listed means any name, typed `dyn` | Check 5, the core's output check |
 | Inputs | The input schema: each input's kind (`string`, `boolean`, `array`, `map`, `duration`), allowed values, least duration, and the library item type of a reference input (`run.child`'s `template`, `scm.pull_request`'s `body`); a rule across inputs (`wait.condition` takes exactly one condition; `findings.triage`'s `states`) | Check 31: literals at load, evaluated values at step start (LOG A2-0c); reference resolution (check 19) |
 | Needs | The capabilities it needs (`docs/06` section 1) | Check 21 |
-| Handling | Who carries it out: the engine's handler, bound by name (LOG A2-0a); the run itself for `run.child` (a child workflow) and `plan.expand` (a patch) | Dispatch; a test that the handlers' names equal the engine-handled entries |
+| Handling | Who carries it out: the engine's handler, bound by name (LOG A2-0a), so the descriptor stays data in `Model` and the handler lives in the engine; a test adds an action as one entry, both together (`EngineActions.Register`, LOG A2-8b1); the run itself for `run.child` (a child workflow) and `plan.expand` (a patch) | Dispatch; a test that the handlers' names equal the engine-handled entries |
 | Evidence | The evidence type it makes, indexed when the step does not declare it (LOG 180) | The artifact index; std's validators |
 | Waits between reads | Whether it may wait on the outside world, so a hand-over interrupts it (LOG 139) | The hand-over |
 | Raises gate | The type suffix of the decision it raises while it runs: `scm.merge`'s `<level>.merge_action` (section 4.5) | Check 16, the effective policy view, the core |
 | Counts races | Whether a lost race counts against `limits.races` rather than attempts: `scm.merge` (LOG 61) | The core, check 22 |
+| Opens pull request | The pull request it opens, as its `pull_request` output: the run's work in a repository (`scm.pull_request`), which later actions there act on, or a publication (`artifact.publish`) (LOG A2-8b3) | An action's scope (work only); closing the run's pull requests on abort (both) |
+| Makes set | Whether the artifact it makes is an artifact set: `artifact.compose` (LOG A2-8b3) | `artifact.validate`, which passes a set's members to validators |
 
 An outcome a plan leaves unrouted is refused at load whatever the action
 (check 7); none escalates by default but `attempts_exhausted` (L6, LOG 263).
@@ -258,11 +260,11 @@ One mechanism for every human wait (`docs/01` section 7).
 
 | Element | Detail |
 |---|---|
-| Form | A durable wait in the workflow. No timeout, except a question's (section 3.4). Reminders on a timer, through notifications |
+| Form | A durable wait in the workflow. No timeout, except a question's (section 3.4); reminders on an open wait are A3 (`docs/12`) |
 | Inputs | `type`, `prompt`, `with`, optional `auto`, optional `session` (`docs/03` section 2.3) |
 | Outcomes | Declared |
 | Idempotency | By wait id. A recorded answer is never asked again: the same answer again succeeds and changes nothing, a different one is refused as a conflict |
-| Audit | Opened, reminded, answered: with the authenticated actor, the choice and the reason |
+| Audit | Opened and answered, with the authenticated actor and the choice; reminders and a required reason are A3 (`docs/12`) |
 
 Every wait is held in the interpreter's core, and every answer goes through one
 routing function (LOG A2-0h). The update's validator asks it whether an answer
@@ -283,7 +285,7 @@ the code host (the `merge_action` gate, section 4.5); or withdrawn (its join
 decided, its step was skipped, or the run ended). The closed waits are carried
 across a hand-over with the rest of the core's state, so a repeated answer is
 still a duplicate in the next run. The record store's wait record has kind
-`gate`, `question`, `intervention`, `patchapproval` or `breakpoint`, the decision
+`gate`, `question`, `intervention`, `patch_approval` or `breakpoint`, the decision
 type, the choices that answer it and the text to show; wait ids are `gate-N`,
 `intervention-N`, `breakpoint-N` and `patch_approval-N`, and a question's is the
 id its agent's client gave it (LOG A2-0d).

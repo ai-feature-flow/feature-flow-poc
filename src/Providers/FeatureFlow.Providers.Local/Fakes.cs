@@ -455,8 +455,11 @@ public sealed class RecordingAgentRuntime(Recorder recorder) : IAgentRuntimeProv
 }
 
 /// <summary>
-/// A provider of any type that only describes itself, offering every capability of the type: it lets capability
-/// negotiation (check 21) pass for a type whose real provider a later milestone builds. It is never called.
+/// A provider of any type that only describes itself (kind <c>fake</c>), offering every capability of the type, so
+/// capability negotiation (check 21) passes for a type the installation cannot serve. It is never called: a step that
+/// reaches it stops at an intervention. It is used where a plan needs a type its runs never call: the k3d smoke
+/// installation's <c>code_host</c> (<c>deploy/k3d/smoke</c>; std's templates need <c>code_host.pull_request</c>) and the
+/// integration tests' agent harness (<c>AgentHarness</c>).
 /// </summary>
 public sealed class DescribedOnlyProvider(string type) : IProvider
 {

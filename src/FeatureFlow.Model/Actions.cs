@@ -42,6 +42,16 @@ public enum ActionHandling
 }
 
 /// <summary>
+/// The pull request an action opens: the run's work in a repository, which later actions there act on (<c>scm.pull_request</c>),
+/// or a publication of documents (<c>artifact.publish</c>). An abort closes both.
+/// </summary>
+public enum PullRequestKind
+{
+    Work,
+    Publication,
+}
+
+/// <summary>
 /// One input of an action: its kind (<c>string</c>, <c>boolean</c>, <c>array</c>, <c>duration</c>, <c>map</c>), for a
 /// string the values allowed, for a duration the least it may be, and for a library reference the item type it names.
 /// </summary>
@@ -78,6 +88,12 @@ public sealed record ActionDescriptor(
 
     /// <summary>Whether the action merges: a lost race (<c>base_moved</c>) counts against <c>limits.races</c>, not attempts (LOG 61).</summary>
     public bool CountsRaces { get; init; }
+
+    /// <summary>The pull request the action opens, published as its <c>pull_request</c> output; null for none (LOG A2-8b3).</summary>
+    public PullRequestKind? OpensPullRequest { get; init; }
+
+    /// <summary>Whether the artifact the action makes is an artifact set, whose members a validator reads (LOG A2-8b3).</summary>
+    public bool MakesSet { get; init; }
 
     /// <summary>A rule across the inputs, given the evaluated values; checked at step start, after each input's own kind.</summary>
     public Func<IReadOnlyDictionary<string, object?>, IEnumerable<string>>? Rule { get; init; }
@@ -209,7 +225,10 @@ public static class Actions
             [Str("from"), Str("shape", "parallel", "chain"), Str("target"), Str("on_other"), Map("step")], [], ActionHandling.Expand),
         new("scm.catch_up", [S("updated"), B("conflict")], [new("changed", "boolean")], [Str("repository")], ["vcs", "code_host"]),
         new("scm.pull_request", [S("ready")], [new("pull_request", "string")],
-            [Str("title"), Str("body") with { References = "prompts" }, Bool("draft"), Bool("post_declines")], ["code_host.pull_request"]),
+            [Str("title"), Str("body") with { References = "prompts" }, Bool("draft"), Bool("post_declines")], ["code_host.pull_request"])
+        {
+            OpensPullRequest = PullRequestKind.Work,
+        },
         new("scm.merge", [S("merged"), B("base_moved"), F("checks_failed"), F("declined")], [],
             [Bool("engine_can_merge"), Bool("squash"), Bool("require_checks"), Bool("require_tested")], ["vcs", "code_host"])
         {
@@ -249,10 +268,13 @@ public static class Actions
             Rule = TriageStates,
         },
         new("repo.inspect", [S("inspected")], null, [Str("repository")], ["vcs", "code_host"]),
-        new("artifact.compose", [S("composed")], null, [Str("name"), List("members")], []),
+        new("artifact.compose", [S("composed")], null, [Str("name"), List("members")], []) { MakesSet = true },
         new("artifact.import", [S("imported")], null, [Str("repository"), Str("folder"), List("files"), Str("commit"), Str("record")], ["vcs"]),
         new("artifact.publish", [S("published"), B("conflict")], null,
-            [Str("repository"), Str("folder"), List("files"), Str("previous"), Str("title"), Str("body")], ["vcs", "code_host.pull_request"]),
+            [Str("repository"), Str("folder"), List("files"), Str("previous"), Str("title"), Str("body")], ["vcs", "code_host.pull_request"])
+        {
+            OpensPullRequest = PullRequestKind.Publication,
+        },
         new("tracker.update", [S("done"), F("not_found")], null,
             [Str("op", "create", "update", "transition", "link", "comment"), Str("issue"), Str("title"), Str("body"), List("labels"), Str("parent"),
                 Map("fields"), Str("project"), Str("status"), Str("to"), Str("link_type")], ["tracker"]),

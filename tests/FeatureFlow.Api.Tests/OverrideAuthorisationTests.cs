@@ -22,7 +22,7 @@ public sealed class OverrideAuthorisationTests
         await world.WaitAsync(Run, "gate-1", "gate", "ticket.spec_approval");
         await world.WaitAsync(Run, "question-1", "question", "ticket.question");
         await world.WaitAsync(Run, "intervention-1", "intervention", "ticket.escalation");
-        await world.WaitAsync(Run, "patch-1", "patchapproval", "ticket.patch_approval");
+        await world.WaitAsync(Run, "patch-1", "patch_approval", "ticket.patch_approval");
         await world.WaitAsync(Run, "breakpoint-1", "breakpoint", "ticket.breakpoint");
         return world;
     }

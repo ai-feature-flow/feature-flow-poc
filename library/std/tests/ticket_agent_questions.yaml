@@ -1,0 +1,24 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: ticket_agent_questions
+description: >-
+  The implementer asks three questions while it runs. A person answers the
+  first; the second passes its deadline and the agent carries on without an
+  answer; the third is still open when the step reports, so it closes with
+  the step. No question routes the plan: the ticket completes as on its main
+  path.
+template: std:templates/ticket_delivery
+parameters: { ticket_id: FF-1042 }
+repositories: [acme/api]
+
+questions:
+  implement:
+    - { ask: "Which table holds the orders?", options: [orders, order_items], answer: orders }
+    - { ask: "Should the old endpoint stay?", timeout: true }
+    - { ask: "Is a migration wanted?" }
+
+expect:
+  status: completed
+  path_includes: [implement, verify.tests, deliver.merge]
+  executions: { implement: 1 }
+  questions: { implement-q1: answered, implement-q2: timed_out, implement-q3: step_ended }
