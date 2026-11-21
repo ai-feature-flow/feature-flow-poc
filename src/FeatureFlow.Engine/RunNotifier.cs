@@ -6,7 +6,8 @@ namespace FeatureFlow.Engine;
 
 /// <summary>
 /// Sends a run's notifications (docs/06 section 3.10) from what the run records, in the record activity, never in
-/// workflow code: an opened wait is <c>decision_needed</c> with its kind and choices, a closed one <c>resumed</c>, an
+/// workflow code: an opened wait is <c>decision_needed</c> with its kind and choices, a reminder the run traced on a wait still
+/// open <c>reminder</c>, a closed one <c>resumed</c>, an
 /// ended run <c>completed</c> or <c>failed</c>. Stuck-run detection's waits are <c>stalled</c> or <c>stuck</c> (<see cref="StuckRuns"/>). Organisation configuration, read when sending, routes each event to a
 /// channel and filters which are sent at all (<c>notifications.routing</c>, <c>notifications.events</c>, docs/07
 /// section 3). Each message is sent once per <see cref="NotificationEvents.Key"/>, kept as a
@@ -95,9 +96,8 @@ public sealed class RunNotifier(EngineServices services, ILogger logger, TimeSpa
 
             if (wait.Open)
             {
-                var choices = wait.Kind == "intervention" ? wait.Choices.Where(InterventionButtons.Contains).ToList() : wait.Choices.ToList();
                 list.Add(new Pending(NotificationEvents.DecisionNeeded, NotificationEvents.Key(wait.RunId, wait.WaitId, 0, NotificationEvents.DecisionNeeded),
-                    wait.RunId, wait.StepId, null, new DecisionRequest(wait.RunId, wait.WaitId, wait.Kind, wait.DecisionType, wait.Prompt, choices, wait.StepId)));
+                    wait.RunId, wait.StepId, null, DecisionOf(wait, 0)));
                 continue;
             }
 
@@ -110,6 +110,16 @@ public sealed class RunNotifier(EngineServices services, ILogger logger, TimeSpa
                 : answer is null ? $"{what} closed without an answer from a person" : $"{what} was answered: {answer}";
             list.Add(new Pending(NotificationEvents.Resumed, NotificationEvents.Key(wait.RunId, wait.WaitId, 0, NotificationEvents.Resumed),
                 wait.RunId, opened?.StepId, new Notification(NotificationEvents.Resumed, wait.RunId, $"Run {wait.RunId} resumed", text, opened?.StepId), null));
+        }
+
+        // A reminder the run traced (docs/04 section 4): the decision request again, numbered, while its wait is still open.
+        foreach (var t in batch.Timeline ?? [])
+        {
+            if (t.Kind != Reminded || !int.TryParse(t.Detail, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var number)
+                || await StillOpenAsync(t.RunId, t.StepId, ct) is not { } wait)
+                continue;
+            list.Add(new Pending(NotificationEvents.Reminder, NotificationEvents.Key(wait.RunId, wait.WaitId, number, NotificationEvents.Reminder),
+                wait.RunId, wait.StepId, null, DecisionOf(wait, number)));
         }
 
         foreach (var run in batch.Runs ?? [])
@@ -134,6 +144,21 @@ public sealed class RunNotifier(EngineServices services, ILogger logger, TimeSpa
     async Task<WaitRecord?> OpenedAsync(WaitRecord closed, CancellationToken ct) =>
         (await Records.QueryAsync<WaitRecord>(Queries.Waits, new Dictionary<string, string> { ["run_id"] = closed.RunId }, ct)).Value?
         .FirstOrDefault(w => w.WaitId == closed.WaitId && w.Kind.Length > 0);
+
+    /// <summary>The timeline entry the core writes on a wait as it reminds it, with the reminder's number.</summary>
+    const string Reminded = "reminded";
+
+    /// <summary>A wait's opening record while it is open. The record activity appends its batch first, so the store holds this batch's opens and closes.</summary>
+    async Task<WaitRecord?> StillOpenAsync(string runId, string waitId, CancellationToken ct) =>
+        (await Records.QueryAsync<WaitRecord>(Queries.Waits, new Dictionary<string, string> { ["run_id"] = runId }, ct)).Value?
+        .FirstOrDefault(w => w.WaitId == waitId) is { Open: true, Kind.Length: > 0 } wait ? wait : null;
+
+    /// <summary>A wait as a decision request: <paramref name="reminder"/> 0 for the first, else the reminder's number.</summary>
+    static DecisionRequest DecisionOf(WaitRecord wait, int reminder)
+    {
+        var choices = wait.Kind == "intervention" ? wait.Choices.Where(InterventionButtons.Contains).ToList() : wait.Choices.ToList();
+        return new DecisionRequest(wait.RunId, wait.WaitId, wait.Kind, wait.DecisionType, wait.Prompt, choices, wait.StepId, Reminder: reminder);
+    }
 
     /// <summary>
     /// The answer as the run applied it, from its own timeline (<c>answered</c>: "approved by alice"; for an agent's

@@ -55,6 +55,7 @@ public sealed class EngineServices(ProviderSet providers, InstallationConfig ins
             policy.MaxWorkItems,
             RoleMapping: Organisation.RoleMapping.Count > 0 ? Organisation.RoleMapping : null,
             RequireChecks: policy.RequireChecks,
-            RequireTested: policy.RequireTested);
+            RequireTested: policy.RequireTested,
+            ReminderInterval: Organisation.Notifications.ReminderInterval);
     }
 }

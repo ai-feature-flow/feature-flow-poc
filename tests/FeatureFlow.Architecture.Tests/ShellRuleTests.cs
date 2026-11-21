@@ -54,7 +54,7 @@ public class ShellRuleTests
         ["TakeRevisions"] = "drains accepted plan revisions into the artifact index",
         ["TakeWaitChanges"] = "drains opened and closed waits into records",
         ["WaitViews"] = "the open waits, for the query and the hand-over record",
-        ["Timers"] = "the timers to arm again after a hand-over",
+        ["Timers"] = "the timers and reminders to arm again after a hand-over, carried out as the core's commands",
         ["Snapshot"] = "the core's state carried over a hand-over",
         ["StepSpec"] = "what a step's activity is given, mapped to its call",
         ["StepKey"] = "a step execution's identity, passed to its activity",

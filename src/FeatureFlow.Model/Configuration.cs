@@ -140,11 +140,17 @@ public sealed record NotificationRoute(string Channel);
 
 /// <summary>
 /// <c>notifications</c> (docs/07 section 3, docs/06 section 3.10): the channel per event name, and which events are sent at
-/// all. Empty: nothing is sent.
+/// all. Empty: nothing is sent. <see cref="ReminderInterval"/>, <c>reminder_interval</c>: how often an open wait is reminded;
+/// null, never (LOG A3-0n).
 /// </summary>
 public sealed record NotificationsConfig(IReadOnlyDictionary<string, NotificationRoute> Routing, IReadOnlyList<string> Events)
 {
     public static readonly NotificationsConfig None = new(new Dictionary<string, NotificationRoute>(), []);
+
+    /// <summary>The shortest <see cref="ReminderInterval"/> configuration accepts.</summary>
+    public static readonly TimeSpan MinimumReminderInterval = TimeSpan.FromMinutes(1);
+
+    public TimeSpan? ReminderInterval { get; init; }
 }
 
 /// <summary>
@@ -538,6 +544,14 @@ public static class ConfigurationReader
                 }
 
             notifications = new NotificationsConfig(routing, n.StringList("events"));
+            if (n.String("reminder_interval") is { } every)
+            {
+                if (Durations.Parse(every) is { } interval && interval >= NotificationsConfig.MinimumReminderInterval)
+                    notifications = notifications with { ReminderInterval = interval };
+                else
+                    n.Error($"notifications.reminder_interval: '{every}' is not a duration of at least 1m (such as 30m, 4h or 1d)", n.Node("reminder_interval")!.Location);
+            }
+
             n.Finish();
         }
 

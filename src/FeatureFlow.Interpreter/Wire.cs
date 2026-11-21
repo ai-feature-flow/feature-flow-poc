@@ -105,7 +105,8 @@ public sealed record RunPolicy(
     bool? RequireReview = null,
     IReadOnlyDictionary<string, Model.AgentRoleMapping>? RoleMapping = null,
     Model.Cap<bool>? RequireChecks = null,
-    Model.Cap<bool>? RequireTested = null)
+    Model.Cap<bool>? RequireTested = null,
+    TimeSpan? ReminderInterval = null)
 {
     /// <summary>
     /// The runtime instance and model an agent of <paramref name="role"/> runs with: its own entry, else <c>default</c>; null
@@ -129,6 +130,7 @@ public sealed record RunPolicy(
         RequireReview = RequireReview ?? false,
         RequireChecks = RequireChecks,
         RequireTested = RequireTested,
+        ReminderInterval = ReminderInterval,
     };
 
     static bool Matches(string pattern, string type) =>

@@ -101,9 +101,8 @@ public partial class RunWorkflow
             var snapshot = await Workflow.ExecuteActivityAsync((RunActivities a) => a.LoadLibrariesAsync(input.LockRef), Light);
             policy = input.Policy!;
             core = RunCore.Resume(RunActivities.Build(snapshot, new DiagnosticBag()), Template, input.Carried.Core, policy.ToOptions());
-            // Timers of waits carried over a hand-over are armed again (docs/02 section 3: timers are re-created from state).
-            foreach (var timer in core.Timers())
-                _ = TimerAsync(timer);
+            // Timers and reminders of waits carried over a hand-over are armed again (docs/02 section 3: timers are re-created from state).
+            await ExecuteAsync(core.Timers());
             // Children an earlier run started can no longer be awaited here; a watch notices one that ends without
             // signalling (M3 follow-up 10).
             if (core.Children.Count > 0)
@@ -186,6 +185,14 @@ public partial class RunWorkflow
         if (wait > TimeSpan.Zero)
             await Workflow.DelayAsync(wait);
         core!.Apply(new WaitTimerFired(timer.WaitId, Workflow.UtcNow));
+        dirty = true;
+    }
+
+    /// <summary>A wait's reminder (<see cref="ArmReminder"/>): the shell only sleeps; the core decides whether it is still due.</summary>
+    async Task ReminderAsync(ArmReminder reminder)
+    {
+        await Workflow.DelayAsync(reminder.After);
+        core!.Apply(new ReminderDue(reminder.WaitId, reminder.Number));
         dirty = true;
     }
 
@@ -326,6 +333,9 @@ public partial class RunWorkflow
                     break;
                 case ArmTimer t:
                     _ = TimerAsync(t);
+                    break;
+                case ArmReminder r:
+                    _ = ReminderAsync(r);
                     break;
                 case SendPatchToParent p when input.ParentWorkflowId is { } parent:
                     await SignalQuietlyAsync(parent, RunWorkflowNames.ParentPatch,

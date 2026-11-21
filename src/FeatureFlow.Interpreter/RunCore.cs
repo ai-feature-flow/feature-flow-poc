@@ -439,6 +439,7 @@ public sealed partial class RunCore
             QuestionOpened q => OpenQuestion(q),
             QuestionAnswered q => AnswerQuestion(q),
             WaitTimerFired t => TimerFired(t),
+            ReminderDue r => Remind(r),
             GateSessionOpened s => OpenSession(s),
             BreakpointSet or StepSkipped or AttemptsGranted or RoleChanged or LibraryOverridden or LibraryOverrideProposed => Steer(input),
             _ => ApplyResult.Refused($"unknown input {input.GetType().Name}"),

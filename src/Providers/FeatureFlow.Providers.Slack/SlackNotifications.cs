@@ -66,7 +66,7 @@ public sealed class SlackNotifications(
     public Task<ProviderResult<MessageRef>> PostDecisionAsync(string channel, DecisionRequest request, MessageRef? thread, CancellationToken cancellationToken)
     {
         // The plain text is what a notification and a client without blocks show; it names everything an answer needs.
-        var text = Escape($"*A person is needed ({request.Kind}): {request.DecisionType}* in run {request.RunId}, wait {request.WaitId}"
+        var text = Escape((request.Reminder > 0 ? $"*Reminder {request.Reminder}: a" : "*A") + $" person is needed ({request.Kind}): {request.DecisionType}* in run {request.RunId}, wait {request.WaitId}"
                           + (request.StepId is null ? "" : $", step {request.StepId}")
                           + $"\n{request.Prompt}"
                           + (request.Choices.Count == 0 ? "" : $"\nChoices: {string.Join(", ", request.Choices)}"));

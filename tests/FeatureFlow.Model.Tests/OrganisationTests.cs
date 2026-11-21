@@ -43,6 +43,7 @@ public class OrganisationTests
             decision_needed: { channel: "#ff-decisions" }
             stuck:           { channel: "#ff-ops" }
           events: [decision_needed, failed, completed]
+          reminder_interval: 4h
         teams:
           payments:
             repositories: ["acme/payments-*"]
@@ -77,6 +78,7 @@ public class OrganisationTests
         Assert.Equal(new AgentRoleMapping("claude_code", "claude-sonnet"), org.RoleMapping["planner"]);
         Assert.Equal("#ff-ops", org.Notifications.Routing["stuck"].Channel);
         Assert.Equal(["decision_needed", "failed", "completed"], org.Notifications.Events);
+        Assert.Equal(TimeSpan.FromHours(4), org.Notifications.ReminderInterval);
         Assert.Equal(["admin"], org.Policy.Overrides["skip_protected"]);
         Assert.Equal(new ReviewRule("*:templates/project_*", new Cap<bool>(true, false)), org.Policy.RequireReview.Single());
         var team = org.Teams["payments"];
@@ -151,6 +153,9 @@ public class OrganisationTests
     // Malformed values.
     [InlineData("  planner:     { agent_runtime: claude_code, model: claude-sonnet }", "  planner:     { model: claude-sonnet }", "role_mapping.planner needs 'agent_runtime'")]
     [InlineData("require_review: [{ match: \"*:templates/project_*\", value: true }]", "require_review: [{ match: \"*:templates/project_*\" }]", "needs a value")]
+    // A reminder interval is a duration of at least a minute (LOG A3-0n).
+    [InlineData("reminder_interval: 4h", "reminder_interval: 30s", "notifications.reminder_interval: '30s' is not a duration of at least 1m")]
+    [InlineData("reminder_interval: 4h", "reminder_interval: soon", "notifications.reminder_interval: 'soon' is not a duration of at least 1m")]
     public void An_organisation_refuses_what_it_does_not_read(string old, string replacement, string message)
     {
         Assert.Contains(old, Full, StringComparison.Ordinal);
