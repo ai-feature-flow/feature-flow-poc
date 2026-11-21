@@ -361,7 +361,7 @@ providers:
 |---|---|
 | `copilot_github_token` | An entry of the secrets file, which the person places there themselves; never in a repository. A fine-grained personal access token owned by the account whose Copilot seat pays: account permission Copilot Requests only, repository access "Public repositories", a short expiry. Copilot refuses a classic token (`ghp_`) |
 | `upstream` | `endpoints.api` in `GET https://api.github.com/copilot_internal/user` with that token, which spends no quota: for a Copilot Business or Enterprise seat on github.com, `https://api.business.githubcopilot.com` or `https://api.enterprise.githubcopilot.com`. The agent worker must reach it; the sandbox needs nothing new |
-| `model` | A model the account's catalogue offers (`GET <upstream>/models`) |
+| `model` | A model the account's catalogue offers (`GET <upstream>/models`), with `/v1/messages` or `/chat/completions` in its `supported_endpoints`; `/responses` is not forwarded, so a model offering only that (the GPT-5 family) is refused (LOG 496) |
 
 The steps of a live run on this profile are in `docs/build/a4-results.md`,
 "Live run with Copilot CLI".
