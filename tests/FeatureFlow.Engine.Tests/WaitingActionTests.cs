@@ -199,29 +199,15 @@ public sealed class WaitingActionTests
     }
 
     [Fact]
-    public async Task Wait_condition_times_out_into_an_intervention_and_takes_one_condition_only()
+    public async Task Wait_condition_times_out_into_an_intervention()
     {
         await using var w = await WithPullRequestAsync();
 
         Assert.Equal(StepOutcome.CannotAnswer, (await w.RunAsync("wait.condition", "{ pull_request: approved, timeout: 0s }", "a", waits: 3)).Kind);
-        var two = await w.RunAsync("wait.condition", "{ pull_request: approved, checks: passed }", "b");
-        Assert.Equal(StepOutcome.CannotAnswer, two.Kind);
-        Assert.Contains("check 31", two.Reason, StringComparison.Ordinal);
     }
 
-    [Theory]
-    [InlineData("ci.checks", "{ poll_every: 0s }")]
-    [InlineData("ci.checks", "{ poll_every: 4900ms }")]
-    [InlineData("wait.condition", "{ pull_request: approved, poll_every: 1ms }")]
-    public async Task Check_31_refuses_a_poll_interval_under_five_seconds(string action, string inputs)
-    {
-        await using var w = await WithPullRequestAsync();
-
-        var result = await w.RunAsync(action, inputs, "wait");
-
-        Assert.Equal(StepOutcome.CannotAnswer, result.Kind);
-        Assert.Contains("'poll_every' must be at least 5s", result.Reason, StringComparison.Ordinal);
-    }
+    // Check 31 (an unknown input, a wrong kind, a value not allowed, a poll interval under five seconds, one condition only) is
+    // the core's at step start, before the action's activity runs: ShellToCoreTests (LOG AFb-1).
 
     [Fact]
     public async Task A_poll_interval_of_five_seconds_is_the_next_reads_delay()
@@ -232,21 +218,5 @@ public sealed class WaitingActionTests
         var result = await w.RunAsync("ci.checks", "{ poll_every: 5s }", "checks", waits: 1);
 
         Assert.Equal((ActionResult.Wait, TimeSpan.FromSeconds(5)), (result.Kind, result.Delay));
-    }
-
-    [Fact]
-    public async Task Check_31_refuses_an_unknown_input_and_a_wrong_type_before_the_action_runs()
-    {
-        await using var w = new ActionWorld();
-
-        var unknown = await w.RunAsync("scm.merge", "{ force: true }");
-        var wrong = await w.RunAsync("test.run", "{ tier_tags: unit }");
-        var badEnum = await w.RunAsync("analysis.run", "{ fail_on: sometimes }");
-
-        Assert.All([unknown, wrong, badEnum], r => Assert.Equal(StepOutcome.CannotAnswer, r.Kind));
-        Assert.Contains("has no input 'force'", unknown.Reason, StringComparison.Ordinal);
-        Assert.Contains("must be a list", wrong.Reason, StringComparison.Ordinal);
-        Assert.Contains("must be one of new_issues", badEnum.Reason, StringComparison.Ordinal);
-        Assert.Null(w.Work);                          // nothing ran: no branch was created
     }
 }

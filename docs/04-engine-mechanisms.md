@@ -112,15 +112,15 @@ reports.
 | Outcomes | Declared |
 | Idempotency | Re-attach to the sandbox by key; resume the agent session by its recorded reference |
 | Limits | Engine defaults: attempts 3, timeout 4 hours, correction turns 2. `limits.timeout` runs from the step's first attempt, kept in the record store, and time the step spends on an open question does not count toward it (the deadline moves out by that time; LOG 106). At the deadline the session is stopped, its commits kept on the hidden reference, and the attempt fails as a work error, "ran out of time"; a retry after the activity's own timeout finds the deadline passed and fails the same way |
-| Artifacts | In: the rendered task, skills, resources, consumed artifacts, the run context. Out: declared artifacts, each session's prompt and transcript (indexed as `prompt:<n>` and `transcript:<n>` for people to read, never consumed by a parent run; LOG 393), the record of files opened, the session reference |
+| Artifacts | In: the rendered task, skills, consumed artifacts, the run context. Out: declared artifacts, each session's prompt and transcript (indexed as `prompt:<n>` and `transcript:<n>` for people to read, never consumed by a parent run; LOG 393), the record of files opened, the session reference |
 
 ### 3.1 Lifecycle of an attempt
 
 1. **Prepare.** Create or re-attach the sandbox from the repository manifest's
    `environment.image` (LOG 440);
    check out the work branch (read-only if the role has no write access); run
-   the manifest's `setup` commands; stage consumed artifacts, skills and
-   library resources read-only, with a manifest listing them. A consumed
+   the manifest's `setup` commands; stage consumed artifacts and skills
+   read-only, with a manifest listing them. A consumed
    artifact is staged under its name; one from another run has its source in
    front (`parent/<name>`, `root/<name>`, `child/<step id>/<name>`), so a step
    may consume one name from two runs, and no step may produce an artifact
