@@ -29,7 +29,7 @@ public sealed class SteeringTests(BrowserFixture browser) : BrowserTest(browser)
     }
 
     [Fact]
-    public async Task A_breakpoint_set_from_the_plan_pauses_the_run()
+    public async Task A_breakpoint_set_from_the_plan_pauses_the_run_and_continue_resumes_it()
     {
         var runId = await OpenRunAsync();
 
@@ -40,11 +40,19 @@ public sealed class SteeringTests(BrowserFixture browser) : BrowserTest(browser)
         var o = Assert.Single(Engine.Overrides);
         Assert.Equal(("breakpoint", "go_ahead", "look before it goes", "true"), (o.Key, o.StepId, o.Reason, o.Change["set"]));
         var wait = Assert.Single(await Engine.OpenWaitsAsync(runId), w => w.Kind == "breakpoint");
-        // Without a reload: the wait's form under Open waits (T4, T5); before those merge, T3's placeholder form.
-        var form = Page.GetByRole(AriaRole.Region, new() { Name = "Open waits" }).GetByRole(AriaRole.Region, new() { Name = "Wait " + wait.WaitId })
-            .Or(Page.Locator($"section[data-wait='{wait.WaitId}']"));
+        // Without a reload: the breakpoint's form under Open waits.
+        var form = Page.GetByRole(AriaRole.Region, new() { Name = "Open waits" }).GetByRole(AriaRole.Region, new() { Name = "Wait " + wait.WaitId });
         await Expect(form).ToBeVisibleAsync();
         await Expect(Row("go_ahead").GetByRole(AriaRole.Button, new() { Name = "Clear breakpoint" })).ToBeVisibleAsync();
+
+        await form.GetByLabel("Recovery").SelectOptionAsync("continue");
+        await form.GetByLabel("Reason").FillAsync("looks right");
+        await form.GetByRole(AriaRole.Button, new() { Name = "Send" }).ClickAsync();
+
+        await Expect(form).ToHaveCountAsync(0, new() { Timeout = 5_000 });
+        await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "Closed waits" })).ToContainTextAsync("continue");
+        var answer = Assert.Single(Engine.Answers, a => a.WaitId == wait.WaitId);
+        Assert.Equal(("continue", "looks right"), (answer.Action, answer.Reason));
     }
 
     [Fact]

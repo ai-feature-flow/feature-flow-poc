@@ -24,7 +24,7 @@ public sealed class NeedsMeTests(BrowserFixture browser) : BrowserTest(browser)
     }
 
     [Fact]
-    public async Task A_wait_found_in_needs_me_is_answered_with_a_reason()
+    public async Task A_wait_found_in_needs_me_is_answered_with_a_reason_and_shown_closed()
     {
         var runId = await World.StartRunAsync();
         var page = await OpenAsync();
@@ -38,6 +38,10 @@ public sealed class NeedsMeTests(BrowserFixture browser) : BrowserTest(browser)
         await approved.ClickAsync();
 
         await Expect(form).ToHaveCountAsync(0, new() { Timeout = 5_000 });
+        var closed = page.GetByRole(AriaRole.Region, new() { Name = "Closed waits" });
+        await Expect(closed).ToContainTextAsync(ConsoleWorld.Actor);
+        await Expect(closed).ToContainTextAsync("approved");
+        await Expect(closed).ToContainTextAsync("the tests pass");
         await page.GetByRole(AriaRole.Link, new() { Name = "Needs me" }).ClickAsync();
         await Expect(page.GetByText("Nothing needs you now.")).ToBeVisibleAsync();
         Assert.Equal(1, await EvaluateAsync<int>("window.ffMarker"));
