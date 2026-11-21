@@ -22,4 +22,26 @@ public sealed class NeedsMeTests(BrowserFixture browser) : BrowserTest(browser)
         await Expect(page.Locator(".ff-run-id")).ToHaveTextAsync(runId);
         await Expect(page.Locator(".ff-run-template")).ToHaveTextAsync("m7s:templates/decide");
     }
+
+    [Fact]
+    public async Task A_wait_found_in_needs_me_is_answered_with_a_reason()
+    {
+        var runId = await World.StartRunAsync();
+        var page = await OpenAsync();
+        await page.Locator($"[data-run='{runId}'] tr[data-wait='gate-1']").GetByRole(AriaRole.Link).ClickAsync();
+        await EvaluateAsync<int>("window.ffMarker = 1");
+
+        var form = page.GetByRole(AriaRole.Region, new() { Name = "Wait gate-1" });
+        var approved = form.GetByRole(AriaRole.Button, new() { Name = "approved", Exact = true });
+        await Expect(approved).ToBeDisabledAsync();
+        await form.GetByLabel("Reason").FillAsync("the tests pass");
+        await approved.ClickAsync();
+
+        await Expect(form).ToHaveCountAsync(0, new() { Timeout = 5_000 });
+        await page.GetByRole(AriaRole.Link, new() { Name = "Needs me" }).ClickAsync();
+        await Expect(page.GetByText("Nothing needs you now.")).ToBeVisibleAsync();
+        Assert.Equal(1, await EvaluateAsync<int>("window.ffMarker"));
+        var answer = Assert.Single(Engine.Answers);
+        Assert.Equal(("gate-1", "approved", "the tests pass"), (answer.WaitId, answer.Outcome, answer.Reason));
+    }
 }

@@ -36,6 +36,15 @@ public sealed class TextOnlyTests(BrowserFixture browser) : BrowserTest(browser)
             await t.Engine.TraceAsync(runId, "completed", "go_ahead", Markup);
             await t.OpenAsync("#/runs/" + runId);
         }, 2),
+        // The wait form: the seeded gate's prompt and choice, and a second gate's prompt, choice and consumed names, linked and not.
+        ["wait form"] = new(async t =>
+        {
+            var reference = await t.Engine.ProduceAsync(RunId, "draft", "design.md", "the design");
+            await t.Engine.OpenWaitAsync(RunId, prompt: Markup, choices: [Markup],
+                consumed: [new FeatureFlow.Providers.Abstractions.ConsumedRef("a", Markup, reference), new FeatureFlow.Providers.Abstractions.ConsumedRef("b", Markup, null)]);
+            await t.OpenAsync("#/runs/" + RunId);
+            await Expect(t.Page.GetByRole(Microsoft.Playwright.AriaRole.Region, new() { Name = "Wait gate-2" })).ToBeVisibleAsync();
+        }, 6),
     };
 
     public static TheoryData<string> Names => [.. Screens.Keys];
