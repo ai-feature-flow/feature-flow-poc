@@ -120,6 +120,22 @@ approval:
 Rules are keyed by decision type pattern, not by level name, because levels
 are the workflow's (review finding 3.4).
 
+One rule decides whether a person may answer a wait, in the API's
+`CheckAnswer`, for every answer route (an answer, a session's submission,
+abandonment and checks) and for the `can_answer` a read shows (`GET /runs/{id}`,
+`GET /attention`), so a read never offers what the answer would refuse:
+
+| Wait | May answer |
+|---|---|
+| Gate, agent question, patch approval, breakpoint | The governing rule's `roles` in the run's scope (a steerer's rule admits an administrator) |
+| Intervention | The `recover` override's roles; a grant of attempts needs `grant_attempts`'s as well |
+| `stalled`, `stuck` | No one: they are the engine's status (409) |
+
+Then, for every kind: an answer through chat needs the rule's `from_chat`; and
+where the rule's `min_count` is above 1 beside OIDC, the local token, which has
+no groups, is not a person who can be counted (LOG 221). A read's `can_answer`
+is also false for a closed wait and for a run no longer `starting` or `running`.
+
 ### 3.3 People roles
 
 | Role | May, by default |
@@ -242,7 +258,7 @@ The view is part of the plan's readable form and of the run start record.
 
 | Kind of setting | Takes effect | Why |
 |---|---|---|
-| Checked by the API at the moment of use: who may answer a decision, who may perform an override, chat permissions | Immediately, for running runs too | The API reads current configuration on every request |
+| Checked by the API at the moment of use: who may answer a decision, who may perform an override, chat permissions | Immediately, for running runs too. A read's `can_answer` and `GET /attention` may use library decision types up to a minute old (LOG A3-0h); the answer itself reads them now | The API reads current configuration on every request |
 | Enforced inside the run: attempt ceilings, locked caps, F1, budgets | Fixed for the run when it starts, and recorded in the run start record | Workflow code cannot read configuration (it would break deterministic replay), so these values are carried in the run's state |
 | Library content | Pinned in the run's lock at start (`docs/08` section 5.1) | Reproducibility |
 

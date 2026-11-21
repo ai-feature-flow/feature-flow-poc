@@ -60,6 +60,10 @@ public sealed class ApiWorld : IAsyncDisposable
     readonly string folder = Path.Combine(Path.GetTempPath(), "ff-apiw-" + Guid.NewGuid().ToString("N"));
     readonly Microsoft.AspNetCore.Builder.WebApplication app;
 
+    /// <summary>
+    /// An API over <paramref name="records"/>, else a SQLite store of its own. A given store is shared: each test uses run
+    /// ids of its own there.
+    /// </summary>
     public ApiWorld(OrganisationConfig? organisation = null, IReadOnlyList<IAuthenticator>? authenticators = null, ApiAuthConfig? auth = null,
         IRecordStoreProvider? records = null)
     {

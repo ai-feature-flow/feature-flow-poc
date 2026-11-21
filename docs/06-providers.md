@@ -448,7 +448,8 @@ interface ISecretsProvider : IProvider {
 - The artifact store is immutable and content-addressed. Named pointers (the
   latest revision of a logical artifact) are records, not blobs.
 - The record store takes named queries, not SQL, so a provider cannot leak its
-  storage engine into the interface. The query catalogue is in the engine.
+  storage engine into the interface. The query catalogue is in the engine
+  (`Queries`, `FeatureFlow.Providers.Abstractions/Stores.cs`).
 - The record store numbers the changes each batch makes, in a `changes` table
   written inside `AppendAsync`'s own transaction, so no writer changes and none
   is missed (LOG A3-0j): one `run_changed` per run whose runs, timeline,
@@ -461,6 +462,14 @@ interface ISecretsProvider : IProvider {
   transaction-scoped advisory lock before writing the changes, held to the
   commit, since identity order alone is not commit order. Rows are not pruned
   until R4.
+- `open_waits` answers across runs: every open wait of a `starting` or
+  `running` run, with its run, oldest first, at most 500, for `GET /attention`
+  (`docs/02` section 7). It joins waits to runs on the run's status, so a run
+  that ended without closing its waits (a terminated workflow, set by
+  `reconcile`) shows none. SQLite and Postgres index the waits by organisation
+  and `open` (`waits_open`; Postgres schema script 2); the in-memory store keeps
+  no waits and answers with none. A wait that opened and closed between two
+  records is never written (LOG 374), so it never appears.
 - Secret values are scrubbed at the logging layer.
 
 ### 3.13 Credential broker

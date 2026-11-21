@@ -64,10 +64,9 @@ public static partial class ApiApp
 
         /// <summary>
         /// Every way a person answers a wait goes through here (docs/04 section 4.1), so approval applies to all of them:
-        /// the approval rule's roles in the run's scope, or for an intervention the <c>recover</c> override's (and
-        /// <c>grant_attempts</c>'s for a grant); <c>from_chat</c>; and <c>min_count</c>, distinct people answering the same
-        /// way before the answer is delivered, each recorded as they answer. The answer is recorded with the authenticated
-        /// actor, then delivered as the <c>answer</c> update.
+        /// <see cref="CheckAnswer"/> (roles, <c>from_chat</c>, the local token and <c>min_count</c>), then <c>min_count</c>
+        /// itself, distinct people answering the same way before the answer is delivered, each recorded as they answer. The
+        /// answer is recorded with the authenticated actor, then delivered as the <c>answer</c> update.
         /// </summary>
         public async Task<IResult> SubmitAnswerAsync(HttpContext context, Caller caller, RunRecord run, WaitRecord wait, AnswerArgs args)
         {
@@ -76,28 +75,18 @@ public static partial class ApiApp
             var (types, unreadable) = await DecisionTypesAsync(wait, ct);
             if (types is null)
                 return unreadable!;
-            var rule = Approval.For(wait.DecisionType, services.Organisation.Policy, TeamOf(scope), types, wait.Kind);
-            var intervention = wait.Kind == "intervention";
-            var grant = intervention && args.Action == "grant_attempts";
-            // A recovery needs recover, and a grant grant_attempts as well (coordinator decision C7).
-            var needed = intervention ? RolesForKey(Overrides.Recover) : RolesToAnswer(services.Organisation.Policy, types, wait, TeamOf(scope));
-            if (Refuse(caller, scope, needed, intervention ? $"recover at {wait.DecisionType} (recover)" : $"answer {wait.DecisionType} (approval: {rule.Source})") is { } refused)
+            var check = CheckAnswer(caller, run, wait, types, args.Action);
+            if (check.Refusal is { } refused)
                 return refused;
-            if (grant && Refuse(caller, scope, RolesForKey(Overrides.GrantAttempts), $"grant attempts at {wait.DecisionType} (grant_attempts)") is { } refusedGrant)
-                return refusedGrant;
-            if (caller.FromChat && !rule.Rule.FromChat)
-                return Error(403, $"{wait.DecisionType} may not be answered from chat ({rule.Source}); answer it in the console or the CLI");
+            var rule = check.Approval;
+            var grant = wait.Kind == "intervention" && args.Action == Overrides.GrantAttempts;
 
             args = args with
             {
                 Actor = caller.Actor,
                 BeyondHardCeiling = grant && VariantsHeld(caller, scope, Overrides.GrantAttempts).Contains(Overrides.GrantAttemptsBeyond),
             };
-            var minCount = intervention ? 1 : Math.Max(1, rule.Rule.MinCount);
-            // Beside OIDC, a credential with no identity-provider groups (the shared local token) is not a person who can be
-            // counted among several (LOG 221).
-            if (minCount > 1 && caller.Groups is null && services.Installation.ApiAuth.Mode == "oidc")
-                return Error(403, $"{wait.DecisionType} needs {minCount} people ({rule.Source}); answer it as yourself through the identity provider, not with the local token");
+            var minCount = check.MinCount;
             if (minCount > 1)
             {
                 var earlier = (await Records.QueryAsync<AnswerRecord>(Queries.Answers, new Dictionary<string, string> { ["run_id"] = run.RunId }, ct)).Unwrap()

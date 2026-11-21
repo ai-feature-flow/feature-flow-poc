@@ -1067,6 +1067,66 @@
         }
       }
     },
+    "/attention": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "getAttention",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttentionList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "getMe",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/runs/{id}/plan": {
       "get": {
         "tags": [
@@ -1407,6 +1467,35 @@
           }
         }
       },
+      "AttentionItem": {
+        "required": [
+          "run",
+          "wait"
+        ],
+        "type": "object",
+        "properties": {
+          "run": {
+            "$ref": "#/components/schemas/RunSummary"
+          },
+          "wait": {
+            "$ref": "#/components/schemas/WaitView"
+          }
+        }
+      },
+      "AttentionList": {
+        "required": [
+          "waits"
+        ],
+        "type": "object",
+        "properties": {
+          "waits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttentionItem"
+            }
+          }
+        }
+      },
       "ChangeEvent": {
         "required": [
           "sequence",
@@ -1610,6 +1699,48 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "MeResponse": {
+        "required": [
+          "actor",
+          "channel",
+          "groups",
+          "roles",
+          "teams"
+        ],
+        "type": "object",
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "groups": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "teams": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
           }
         }
       },

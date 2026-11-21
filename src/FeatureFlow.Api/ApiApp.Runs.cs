@@ -141,20 +141,48 @@ public static partial class ApiApp
         }
 
         /// <summary>
-        /// The run's page: the run, its open waits, its timeline after <paramref name="after"/>, and its children. The history
-        /// (answers, overrides) and what the caller may do are filled by later tasks (docs/12 A3); they are empty here.
+        /// The run's page (LOG A3-0i): the run; every wait, open first, then closed ones most recently closed first, each with
+        /// whether the caller may answer it now (<see cref="CheckAnswer"/>), who has answered while more must
+        /// (<c>min_count</c>), and the answer that closed it; the timeline after <paramref name="after"/>; the children; every
+        /// answer and override recorded; and the override keys the caller may use on it.
         /// </summary>
         public async Task<IResult> ShowAsync(HttpContext context, Caller caller, string id, string? after)
         {
+            var ct = context.RequestAborted;
             var p = new Dictionary<string, string> { ["run_id"] = id };
-            var run = (await Records.QueryAsync<RunRecord>(Queries.Run, p, context.RequestAborted)).Unwrap().FirstOrDefault();
+            var run = (await Records.QueryAsync<RunRecord>(Queries.Run, p, ct)).Unwrap().FirstOrDefault();
             if (run is null || !RolesIn(caller, ScopeOf(run.Repositories)).Contains(PeopleRoles.Viewer))
                 return Error(404, $"no run {id}");
-            var waits = (await Records.QueryAsync<WaitRecord>(Queries.Waits, new Dictionary<string, string>(p) { ["open"] = "true" }, context.RequestAborted)).Unwrap();
-            var timeline = (await Records.QueryAsync<TimelineRecord>(Queries.Timeline, new Dictionary<string, string>(p) { ["after"] = after ?? "0" }, context.RequestAborted)).Unwrap();
-            var children = (await Records.QueryAsync<RunRecord>(Queries.Runs, new Dictionary<string, string> { ["parent_run_id"] = id }, context.RequestAborted)).Unwrap();
-            return Results.Json(new RunDetail(ViewOf(run), waits.Select(WaitViewOf).ToList(), timeline.Select(EntryOf).ToList(), children.Select(SummaryOf).ToList(),
-                [], [], []), Json);
+            // A wait closed before any record of its opening was written has no kind (LOG 374): there is nothing to show of it.
+            var waits = (await Records.QueryAsync<WaitRecord>(Queries.Waits, p, ct)).Unwrap().Where(w => w.Kind != "")
+                .OrderByDescending(w => w.Open).ThenByDescending(w => w.Open ? DateTimeOffset.MinValue : w.UpdatedAt).ToList();
+            var timeline = (await Records.QueryAsync<TimelineRecord>(Queries.Timeline, new Dictionary<string, string>(p) { ["after"] = after ?? "0" }, ct)).Unwrap();
+            var children = (await Records.QueryAsync<RunRecord>(Queries.Runs, new Dictionary<string, string> { ["parent_run_id"] = id }, ct)).Unwrap();
+            var answers = (await Records.QueryAsync<AnswerRecord>(Queries.Answers, p, ct)).Unwrap();
+            var overrides = (await Records.QueryAsync<OverrideRecord>(Queries.Overrides, p, ct)).Unwrap();
+            var views = new List<WaitView>();
+            foreach (var wait in waits)
+            {
+                var (canAnswer, minCount) = await MayAnswerAsync(caller, run, wait, ct);
+                views.Add(WaitViewOf(wait, canAnswer, wait.Open && minCount > 1 ? ProgressOf(wait, answers, minCount) : null, wait.Open ? null : ClosedAnswerOf(wait, answers)));
+            }
+
+            return Results.Json(new RunDetail(ViewOf(run), views, timeline.Select(EntryOf).ToList(), children.Select(SummaryOf).ToList(),
+                answers.Select(AnswerViewOf).ToList(), overrides.Select(OverrideViewOf).ToList(), OverridesAllowed(caller, ScopeOf(run.Repositories))), Json);
+        }
+
+        /// <summary>
+        /// The run-time override keys the caller may use in the scope, variants included, as <c>POST /runs/{id}/overrides</c> and
+        /// <c>POST /runs/{id}/abort</c> would authorise them. Answering and recovering are not listed: a wait's <c>can_answer</c>
+        /// says whether the caller may (LOG A3-4a).
+        /// </summary>
+        IReadOnlyList<string> OverridesAllowed(Caller caller, RoleScope scope)
+        {
+            if (caller.Actor == PeopleRoles.PolicyActor)
+                return [];
+            var roles = RolesIn(caller, scope);
+            return Overrides.DefaultRoles.Keys.Where(k => k is not (Overrides.Answer or Overrides.AnswerQuestion or Overrides.Recover) && RolesForKey(k).Intersect(roles).Any())
+                .ToList();
         }
 
         /// <summary>
@@ -212,11 +240,74 @@ public static partial class ApiApp
     static TimelineEntry EntryOf(TimelineRecord t) => new(t.Sequence, t.Kind, t.StepId, t.Detail, t.At);
 
     /// <summary>
-    /// A wait record as the API shows it. Whether the caller may answer it, who has answered while more must, and the answer
-    /// that closed it are filled by later tasks (docs/12 A3); here false and none.
+    /// A wait record as the API shows it, with whether the caller may answer it now, who has answered while more must
+    /// (<c>min_count</c>), and the answer that closed it.
     /// </summary>
-    static WaitView WaitViewOf(WaitRecord w) => new(w.WaitId, KindOf(w.Kind), w.StepId, w.DecisionType, w.Prompt, w.Choices, w.Open, w.UpdatedAt,
-        (w.Consumed ?? []).Select(c => new ConsumedArtifactView(c.Key, c.Name, c.Ref)).ToList(), false, null, null);
+    static WaitView WaitViewOf(WaitRecord w, bool canAnswer, IReadOnlyList<AnswerProgress>? progress, ClosedAnswer? answer) =>
+        new(w.WaitId, KindOf(w.Kind), w.StepId, w.DecisionType, w.Prompt, w.Choices, w.Open, w.UpdatedAt,
+            (w.Consumed ?? []).Select(c => new ConsumedArtifactView(c.Key, c.Name, c.Ref)).ToList(), canAnswer, progress, answer);
+
+    /// <summary>The answer a person gave, as recorded (JSON <see cref="AnswerArgs"/>), or null for text that is not one (an abort's reason).</summary>
+    static AnswerArgs? ArgsOf(string recorded)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<AnswerArgs>(recorded, Stored);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>What an answer chose: its outcome, else its action (an intervention's recovery, a patch approval's).</summary>
+    static string ChoiceOf(AnswerArgs args) => args.Outcome ?? args.Action ?? "";
+
+    /// <summary>Whether a recorded result is the run's reply to a delivered answer, not <c>sent</c>, <c>pending: ...</c> or <c>refused: ...</c>.</summary>
+    static bool Delivered(string result) =>
+        result != "sent" && !result.StartsWith(Pending, StringComparison.Ordinal) && !result.StartsWith("refused: ", StringComparison.Ordinal);
+
+    /// <summary>The answer that closed the wait: the last one the run replied to, or null if it closed otherwise (a timeout, steering).</summary>
+    static ClosedAnswer? ClosedAnswerOf(WaitRecord w, IReadOnlyList<AnswerRecord> answers) =>
+        answers.LastOrDefault(a => a.WaitId == w.WaitId && Delivered(a.Result)) is { } a && ArgsOf(a.Answer) is { } args
+            ? new ClosedAnswer(args.Actor, ChoiceOf(args), a.Reason ?? args.Reason, a.At)
+            : null;
+
+    /// <summary>An answer record as history shows it; an abort's text is its reason.</summary>
+    static AnswerView AnswerViewOf(AnswerRecord a) =>
+        a.WaitId == "abort" ? new AnswerView(a.WaitId, a.Actor, "abort", a.Reason ?? a.Answer, a.Result, a.At)
+        : ArgsOf(a.Answer) is { } args ? new AnswerView(a.WaitId, a.Actor, ChoiceOf(args), a.Reason ?? args.Reason, a.Result, a.At)
+        : new AnswerView(a.WaitId, a.Actor, "", a.Reason, a.Result, a.At);
+
+    static OverrideView OverrideViewOf(OverrideRecord o) => new(o.OverrideId, o.Key, o.Actor, o.Reason, o.StepId, o.Change, o.Result, o.At);
+
+    sealed partial class Handlers
+    {
+        /// <summary>
+        /// Who has answered an open wait each way while it needs <paramref name="needed"/> people (LOG 221): its pending answers,
+        /// grouped as <see cref="SameWay"/> counts them, each person once.
+        /// </summary>
+        static IReadOnlyList<AnswerProgress> ProgressOf(WaitRecord w, IReadOnlyList<AnswerRecord> answers, int needed)
+        {
+            var ways = new List<(AnswerArgs Way, List<string> Actors)>();
+            foreach (var a in answers.Where(a => a.WaitId == w.WaitId && a.Result.StartsWith(Pending, StringComparison.Ordinal)))
+            {
+                if (ArgsOf(a.Answer) is not { } args)
+                    continue;
+                if (ways.FindIndex(g => SameWay(a.Answer, g.Way)) is var i and >= 0)
+                {
+                    if (!ways[i].Actors.Contains(a.Actor, StringComparer.Ordinal))
+                        ways[i].Actors.Add(a.Actor);
+                }
+                else
+                {
+                    ways.Add((args, [a.Actor]));
+                }
+            }
+
+            return ways.Select(g => new AnswerProgress(ChoiceOf(g.Way), g.Actors, needed)).ToList();
+        }
+    }
 
     /// <summary>A wait record's kind as the API names it: the record store's name (<c>patch_approval</c>) read as <see cref="WaitKind"/>.</summary>
     static WaitKind KindOf(string kind) => kind switch

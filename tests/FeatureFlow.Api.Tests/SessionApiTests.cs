@@ -110,7 +110,7 @@ public sealed class SessionApiTests : IAsyncDisposable
         {
             var (status, text) = await PostAsync(http, path, body);
             Assert.Equal(HttpStatusCode.Forbidden, status);
-            Assert.Contains("pat may not act on session", text);
+            Assert.Contains("pat may not answer project.requirements_", text);
         }
 
         Assert.Empty(await AnswersAsync());

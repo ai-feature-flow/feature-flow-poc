@@ -79,6 +79,8 @@ public sealed class InMemoryRecordStore : IRecordStoreProvider
                 Queries.Session => sessions.Values.Where(s => s.SessionId == P("session_id")),
                 Queries.Sessions => sessions.Values.Where(s => s.RunId == P("run_id")).OrderBy(s => s.SessionId, StringComparer.Ordinal),
                 Queries.SessionChecks => checks.Values.Where(c => c.SessionId == P("session_id")).OrderBy(c => c.CheckId, StringComparer.Ordinal),
+                // Waits are not kept here, so no wait is open.
+                Queries.OpenWaits => Enumerable.Empty<OpenWaitRecord>(),
                 _ => throw new NotSupportedException($"the in-memory record store does not answer {queryName}"),
             };
             return Task.FromResult(ProviderResult<IReadOnlyList<T>>.Success(rows.Cast<T>().ToList()));

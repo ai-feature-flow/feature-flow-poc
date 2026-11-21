@@ -222,6 +222,7 @@ public sealed class PostgresRecordStore(Func<CancellationToken, Task<ProviderRes
             Queries.Waits when parameters.GetValueOrDefault("open") == "true" =>
                 ("SELECT body FROM waits WHERE org_id = @o AND run_id = @r AND open ORDER BY wait_id", typeof(WaitRecord), [("r", P("run_id"))]),
             Queries.Waits => ("SELECT body FROM waits WHERE org_id = @o AND run_id = @r ORDER BY wait_id", typeof(WaitRecord), [("r", P("run_id"))]),
+            Queries.OpenWaits => (OpenWaitsSql, typeof(OpenWaitRecord), []),
             Queries.Timeline => ("SELECT body FROM timeline WHERE org_id = @o AND run_id = @r AND sequence > @a ORDER BY sequence", typeof(TimelineRecord),
                 [("r", P("run_id")), ("a", long.Parse(parameters.GetValueOrDefault("after", "0"), CultureInfo.InvariantCulture))]),
             Queries.Answers => ("SELECT body FROM answers WHERE org_id = @o AND run_id = @r ORDER BY id", typeof(AnswerRecord), [("r", P("run_id"))]),
@@ -292,4 +293,15 @@ public sealed class PostgresRecordStore(Func<CancellationToken, Task<ProviderRes
             : (ChangeJson + " AND id > @a ORDER BY id LIMIT @l", typeof(ChangeRecord),
                 [("a", long.Parse(parameters.GetValueOrDefault("after", "0"), CultureInfo.InvariantCulture)),
                  ("l", Math.Clamp(int.Parse(parameters.GetValueOrDefault("limit", "500"), CultureInfo.InvariantCulture), 1, 500))]);
+
+    // ---- Oversight (A3): the open waits of runs still going, for GET /attention (index waits_open, schema script 2) ----
+
+    /// <summary>Every open wait of a <c>starting</c> or <c>running</c> run, with the run, oldest first, at most 500 (<see cref="Queries.OpenWaits"/>).</summary>
+    const string OpenWaitsSql = """
+        SELECT jsonb_build_object('wait', w.body, 'run', r.body)
+        FROM waits w JOIN runs r USING (org_id, run_id)
+        WHERE w.org_id = @o AND w.open AND r.body->>'status' IN ('starting', 'running')
+        ORDER BY w.body->>'updatedAt', w.run_id, w.wait_id
+        LIMIT 500
+        """;
 }

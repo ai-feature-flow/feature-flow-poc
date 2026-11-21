@@ -121,7 +121,7 @@ async function showRun(id) {
       r.parent_run_id ? [el("dt", { text: "Parent" }), el("dd", {}, runLink(r.parent_run_id))] : null,
       r.detail ? [el("dt", { text: "Detail" }), el("dd", { text: r.detail })] : null),
     el("h2", { text: "Decisions" }),
-    view.waits.length === 0 ? el("p", { class: "note", text: "Nothing waits for a person." }) : view.waits.map(w => waitForm(r.run_id, w)),
+    view.waits.every(w => !w.open) ? el("p", { class: "note", text: "Nothing waits for a person." }) : view.waits.filter(w => w.open).map(w => waitForm(r.run_id, w)),
     view.children.length === 0 ? null : [el("h2", { text: "Child runs" }),
       table(["Run", "Template", "Status"], view.children.map(c => [runLink(c.run_id), c.template, status(c.status)]))],
     el("h2", { text: "Plan" }),

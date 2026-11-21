@@ -27,9 +27,8 @@ public static partial class ApiApp
         {
             var templates = new List<TemplateView>();
             var unreadable = new List<UnreadableLibrary>();
-            foreach (var source in services.Organisation.Libraries)
+            foreach (var (source, library, problem) in await libraries.ReadAsync(services.Organisation, context.RequestAborted))
             {
-                var (library, problem) = await OpenLibraryAsync(source, context.RequestAborted);
                 if (library is null)
                 {
                     unreadable.Add(new UnreadableLibrary(source.Name, problem!));
@@ -42,13 +41,6 @@ public static partial class ApiApp
 
             return Results.Json(new TemplateList(templates, unreadable), Json);
         }
-
-        /// <summary>
-        /// An organisation library as it is now. The one place a read route opens a library, so a per-process cache
-        /// (LOG A3-0h) can wrap it.
-        /// </summary>
-        Task<(Library.Library? Library, string? Problem)> OpenLibraryAsync(LibrarySourceConfig source, CancellationToken ct) =>
-            LibrarySources.OpenAsync(source, services.Organisation.Location, ct);
     }
 
     /// <summary>An entrypoint with its template's declared parameters, each marked when the library's <c>inputs</c> supply it.</summary>

@@ -239,4 +239,23 @@ public abstract class RecordStoreContract : ContractBase
         Assert.Equal([Id("first")], (await Query<ChangeRecord>(Queries.Changes, ("after", (all[0].Sequence - 1).ToString(System.Globalization.CultureInfo.InvariantCulture)), ("limit", "1")))
             .Select(c => c.RunId));
     }
+
+    [Fact]
+    public async Task Open_waits_lists_only_open_waits_of_running_runs()
+    {
+        // Older than any other test's records, so a shared database's limit of 500 cannot leave these out.
+        var old = At.AddDays(-30);
+        WaitRecord W(string run, string wait, bool open, int minutes) =>
+            new(Id(run), wait, "gate", "approve_spec", "ticket.spec_approval", "Approve the spec?", ["approved"], open, old.AddMinutes(minutes));
+        Ok(await Append(new RecordBatch(
+            Runs: [Run("going", "running"), Run("new", "starting"), Run("ended", "completed"), Run("failed", "failed")],
+            Waits: [W("going", "gate-2", true, 3), W("going", "gate-1", true, 1), W("going", "gate-0", false, 0), W("new", "gate-1", true, 2),
+                W("ended", "gate-1", true, 0), W("failed", "gate-1", true, 0), W("orphan", "gate-1", true, 0)])));
+
+        var open = (await Query<OpenWaitRecord>(Queries.OpenWaits)).Where(o => o.Wait.RunId.StartsWith(unique, StringComparison.Ordinal)).ToList();
+
+        Assert.Equal([(Id("going"), "gate-1"), (Id("new"), "gate-1"), (Id("going"), "gate-2")], open.Select(o => (o.Wait.RunId, o.Wait.WaitId)));
+        Assert.Equal(("running", "Approve the spec?", "ticket.spec_approval"), (open[0].Run.Status, open[0].Wait.Prompt, open[0].Wait.DecisionType));
+        Assert.Equal([Id("going"), Id("new"), Id("going")], open.Select(o => o.Run.RunId));
+    }
 }

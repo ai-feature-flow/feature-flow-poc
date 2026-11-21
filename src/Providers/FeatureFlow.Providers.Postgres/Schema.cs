@@ -45,8 +45,10 @@ static class Schema
         CREATE TABLE session_checks (org_id text NOT NULL, session_id text NOT NULL, check_id text NOT NULL, body jsonb NOT NULL,
             PRIMARY KEY (org_id, session_id, check_id));
         """,
-        // 2: A3 T4a's script (the open-wait index). This placeholder keeps the numbering until the A3 branches merge, when T4a's script replaces it.
-        "SELECT 1",
+        // 2: the open waits of an organisation, for GET /attention (Queries.OpenWaits).
+        """
+        CREATE INDEX waits_open ON waits (org_id) WHERE open;
+        """,
         // 3: the changes GET /events reports (LOG A3-0j), numbered in commit order (PostgresRecordStore.AppendChangesAsync).
         """
         CREATE TABLE changes (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, org_id text NOT NULL, run_id text NOT NULL, kind text NOT NULL, wait_id text,
