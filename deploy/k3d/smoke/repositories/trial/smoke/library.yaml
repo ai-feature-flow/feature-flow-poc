@@ -7,4 +7,4 @@ description: A run the k3d smoke configuration completes with no GitHub, tracker
 requires:
   plan_schema: 1
 dependencies:
-  - { name: std, version: ">=0.1.0" }
+  - { name: std }

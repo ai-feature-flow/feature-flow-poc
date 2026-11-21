@@ -71,7 +71,7 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
                 RunStartChecks.Capabilities(core.Plan, libraries, services.Providers.Offered(start.DryRun), d);
                 RunStartChecks.Caps(core.Plan, services.Organisation.Policy, core.Allowance, d, root: start.ParentWorkflowId is null, approval: ApprovalOf);
                 if (services.Providers.ForRun("code_host", start.DryRun) is ICodeHostProvider host)
-                    defaultBranches = await RepositoryChecksAsync(host, core, start, libraries, policy, d, ct);
+                    defaultBranches = await RepositoryChecksAsync(host, core, start, policy, d, ct);
                 effective = EffectivePolicy.Lines(EffectivePolicy.For(core.Plan, services.Organisation.Policy, ApprovalOf, step => MergeTargets(core, start, step, defaultBranches)));
             }
         }
@@ -118,11 +118,11 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
 
     /// <summary>
     /// The run-start checks that read the code host (docs/09 section 2), for each repository of the run: 24, its default
-    /// branch is protected; 20, the library section of <c>feature-flow.yaml</c> on the default branch adds only; and 23,
+    /// branch is protected; and 23,
     /// F1, for a run whose parent branch is the default branch: a merge step asking for an engine merge
     /// needs the organisation's leave for that repository. The default branch is read from the code host, never the plan.
     /// </summary>
-    public static async Task<IReadOnlyDictionary<string, string>> RepositoryChecksAsync(ICodeHostProvider host, RunCore core, RunStart start, LibrarySet libraries, RunPolicy policy, DiagnosticBag d,
+    public static async Task<IReadOnlyDictionary<string, string>> RepositoryChecksAsync(ICodeHostProvider host, RunCore core, RunStart start, RunPolicy policy, DiagnosticBag d,
         CancellationToken ct)
     {
         var defaults = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -140,16 +140,6 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
                 d.Add(Checks.WorkBranch, $"{name}: the run's work branch '{work}' is its {(work == defaultBranch ? "default" : "parent")} branch; the engine writes only to a branch of its own (metadata.branch_pattern)");
             if (Readable(await host.GetBranchProtectionAsync(repo, defaultBranch, ct), $"{name}: the protection of {defaultBranch}", Checks.BranchProtection, d) is { } protection)
                 RunStartChecks.BranchProtection(name, defaultBranch, protection.Protected, d);
-            if (Readable(await host.ReadFileAsync(repo, RepositoryManifest.FileName, defaultBranch, ct), $"{name}: {RepositoryManifest.FileName}",
-                    Checks.RepositoryLibraryAddsOnly, d) is { } file)
-            {
-                var parsed = new DiagnosticBag();
-                var node = YamlText.Parse(file.Content, $"{name}:{RepositoryManifest.FileName}", parsed);
-                if (parsed.HasErrors)
-                    d.Add(Checks.RepositoryLibraryAddsOnly, $"{name}: {RepositoryManifest.FileName} on {defaultBranch} does not read, so its library section cannot be checked: {string.Join("; ", parsed.Select(x => x.Message))}");
-                else
-                    RunStartChecks.RepositoryLibrary(name, (node as YMap)?["library"], libraries, d);
-            }
         }
 
         // F1 governs the step that merges (the action that counts races, LOG 61): who may merge into the default branch.

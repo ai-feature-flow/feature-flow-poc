@@ -10,8 +10,8 @@ using FeatureFlow.Providers.Local;
 namespace FeatureFlow.Engine.Tests;
 
 /// <summary>
-/// The run-start checks that read the code host (docs/09 section 2): 23 (F1), 24 (default branch protection) and 20 (a
-/// repository's library section adds only), on std's <c>ticket_delivery</c> and the in-memory code host.
+/// The run-start checks that read the code host (docs/09 section 2): 23 (F1), 24 (default branch protection) and 36
+/// (the work branch), on std's <c>ticket_delivery</c> and the in-memory code host.
 /// </summary>
 public sealed class RunStartCheckTests
 {
@@ -19,10 +19,10 @@ public sealed class RunStartCheckTests
 
     sealed record Setup(InMemoryForge Forge, RepoRef Repo)
     {
-        public static Setup Protected(string? manifest = null)
+        public static Setup Protected()
         {
             var forge = new InMemoryForge();
-            var repo = forge.CreateRepository("acme/api", manifest is null ? null : new Dictionary<string, string> { ["feature-flow.yaml"] = manifest });
+            var repo = forge.CreateRepository("acme/api", null);
             forge.Protect(repo, new BranchProtection("main", true, true, 1, [], false));
             return new Setup(forge, repo);
         }
@@ -46,7 +46,7 @@ public sealed class RunStartCheckTests
         var policy = new RunPolicy(3, 10, 200, null, null, [], EngineMayMerge: engineMayMerge ?? []);
         var checks = new DiagnosticBag();
         var host = new InMemoryCodeHost(s.Forge);
-        await RunActivities.RepositoryChecksAsync(codeHost?.Invoke(host) ?? host, core!, start, libraries, policy, checks, TestContext.Current.CancellationToken);
+        await RunActivities.RepositoryChecksAsync(codeHost?.Invoke(host) ?? host, core!, start, policy, checks, TestContext.Current.CancellationToken);
         return checks;
     }
 
@@ -136,23 +136,5 @@ public sealed class RunStartCheckTests
         var refused = await CheckAsync(s, engineCanMerge: false);
 
         Assert.Equal(Checks.BranchProtection, Assert.Single(refused).Check);
-    }
-
-    [Fact]
-    public async Task Check_20_a_repository_library_section_that_overrides_is_refused_and_one_that_adds_passes()
-    {
-        const string adds = """
-            api_version: feature-flow/v1
-            kind: repository
-            library:
-              default_template: std:templates/ticket_delivery
-              adds: { skills: [{ name: acme_conventions, path: .feature-flow/skills/acme_conventions }] }
-            """;
-        var overrides = adds.Replace("acme_conventions", "verification", StringComparison.Ordinal);
-
-        Assert.Empty(await CheckAsync(Setup.Protected(adds), engineCanMerge: false));
-        var refused = await CheckAsync(Setup.Protected(overrides), engineCanMerge: false);
-        Assert.Equal(Checks.RepositoryLibraryAddsOnly, Assert.Single(refused).Check);
-        Assert.Contains("std:skills/verification", refused[0].Message, StringComparison.Ordinal);
     }
 }

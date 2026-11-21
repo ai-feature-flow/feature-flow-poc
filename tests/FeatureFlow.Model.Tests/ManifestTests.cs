@@ -24,8 +24,6 @@ public class ManifestTests
             prerequisites: { env: [APP_BASE_URL] }
         static_analysis: { analyser: sarif, command: dotnet build, sarif_path: analysis.sarif }
         integration_environment: { image: "mcr.microsoft.com/dotnet/aspnet:9.0", start: dotnet run, port: 8080, ready_timeout: 10m }
-        library:
-          default_template: std:templates/ticket_delivery
         """;
 
     static (RepositoryManifest? Manifest, DiagnosticBag D) Read(string text)
@@ -48,7 +46,6 @@ public class ManifestTests
         Assert.Equal(("integration.yml", "github_actions", "APP_BASE_URL"), (it.Ci!.Job, it.Ci.Instance, it.PrerequisiteEnvironment.Single()));
         Assert.Equal(("sarif", "analysis.sarif"), (m.Analysis!.Analyser, m.Analysis.SarifPath));
         Assert.Equal(8080L, m.Integration!.Port);
-        Assert.NotNull(m.Library);
         Assert.Equal(["unit"], m.TiersTagged(["fast"]).Select(t => t.Name));
         Assert.Equal(2, m.TiersTagged([]).Count);
         Assert.Equal(["e2e"], m.UnknownTags(["unit", "e2e", "e2e"]));
@@ -66,6 +63,8 @@ public class ManifestTests
     [InlineData("environment: { image: x, os: linux }", "unknown key 'os' in environment")]
     [InlineData("environment: { image: x, docker: true }", "unknown key 'docker' in environment")]
     [InlineData("environment: {}", "environment needs 'image'")]
+    [InlineData("library: { default_template: std:templates/ticket_delivery }", "library is not supported in version 1; remove it")]     // LOG AFa-1
+    [InlineData("library: { adds: { skills: [{ name: acme_api, path: .feature-flow/skills/acme_api }] } }", "library is not supported in version 1; remove it")]
     public void A_manifest_that_is_wrong_is_refused_not_ignored(string change, string message)
     {
         var text = change.StartsWith("kind:", StringComparison.Ordinal)

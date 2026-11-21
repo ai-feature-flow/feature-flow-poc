@@ -48,7 +48,7 @@ other documents cite them.
 | 17 | Plan size: carried state under 1 MB, about 2,000 steps (section 2.1) | Load, Patch | Yes |
 | 18 | Required parameters bound | Run start | Yes |
 | 19 | Every library reference resolves; library requirements met; the lock written | Run start | Yes |
-| 20 | A repository's library section adds only, never overrides | Run start | Yes |
+| 20 | Retired: a repository's `library` section, which it checked, is refused (`docs/07` section 4, LOG AFa-1). The number is not reused | None | None |
 | 21 | Capability negotiation: every capability the plan needs is offered by a configured provider | Run start | Yes |
 | 22 | No request exceeds a locked organisation cap (`docs/05` section 3.1): at run start, attempts and races, the merge floors (checks and tests before merging), auto-resolution and the root budget; on a patch, the steps it adds or changes, for attempts, races and the merge floors | Run start, Patch | Yes |
 | 23 | **F1**: no merge step into a default branch has `engine_can_merge: true` unless the organisation allows it for that repository. The default branch is read from the code host | Run start | Yes |
@@ -66,7 +66,7 @@ other documents cite them.
 | 35 | Deprecated library reference with a replacement | Load | No |
 | 36 | The run's work branch is neither a repository's default branch nor the run's parent branch (`metadata.branch_pattern` is free text). Checked once: the work branch is fixed when the run starts (LOG 147) | Run start | Yes |
 
-Checks 20, 23, 24 and 36 at run start, and 31 to 33 at step start, are as built in M5 (check 36 at run start only since LOG 147) (LOG 125 to 127, 133,
+Checks 23, 24 and 36 at run start, and 31 to 33 at step start, are as built in M5 (check 36 at run start only since LOG 147) (LOG 125 to 127, 133,
 134, 141). Checks 21 and 23 are not run on a patch (a follow-up; no milestone); `scm.merge` re-checks F1 at merge time.
 
 ### 2.1 Plan size

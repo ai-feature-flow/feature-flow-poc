@@ -91,63 +91,6 @@ public static class RunStartChecks
         }
     }
 
-    /// <summary>The keys a repository's <c>library</c> section may hold, and what <c>adds</c> may add (docs/08 section 4).</summary>
-    public static readonly IReadOnlyList<string> RepositoryLibraryKeys = ["default_template", "adds"];
-
-    public static readonly IReadOnlyList<string> RepositoryAdds = ["skills", "resources", "tasks"];
-
-    /// <summary>
-    /// Check 20: a repository's <c>library</c> section (from <c>feature-flow.yaml</c> on the default branch) names
-    /// a default template and adds skills, resources and tasks under its own name. It never overrides: any other
-    /// key, or an added item that has the name of an item in the run's libraries, is refused.
-    /// </summary>
-    public static void RepositoryLibrary(string repository, YNode? section, LibrarySet libraries, DiagnosticBag d)
-    {
-        if (section is null)
-            return;
-        if (section is not YMap map)
-        {
-            d.Add(Checks.RepositoryLibraryAddsOnly, $"{repository}: the library section must be a map", section.Location);
-            return;
-        }
-
-        foreach (var (key, value) in map.Entries)
-        {
-            if (!RepositoryLibraryKeys.Contains(key.Text))
-            {
-                d.Add(Checks.RepositoryLibraryAddsOnly, $"{repository}: library.{key.Text} is not allowed; a repository may only name a default template and add content", key.Location);
-                continue;
-            }
-
-            if (key.Text != "adds")
-                continue;
-            if (value is not YMap adds)
-            {
-                d.Add(Checks.RepositoryLibraryAddsOnly, $"{repository}: library.adds must be a map", value.Location);
-                continue;
-            }
-
-            foreach (var (type, items) in adds.Entries)
-            {
-                if (!RepositoryAdds.Contains(type.Text))
-                {
-                    d.Add(Checks.RepositoryLibraryAddsOnly, $"{repository}: library.adds.{type.Text} is not allowed; a repository adds only {string.Join(", ", RepositoryAdds)}", type.Location);
-                    continue;
-                }
-
-                foreach (var item in (items as YSeq)?.Items ?? [])
-                {
-                    var name = (item as YMap)?["name"].ScalarText();
-                    if (name is null)
-                        continue;
-                    foreach (var library in libraries.All)
-                        if (library.PathOf(type.Text, name) is not null)
-                            d.Add(Checks.RepositoryLibraryAddsOnly, $"{repository}: library.adds.{type.Text} '{name}' has the name of {library.Name}:{type.Text}/{name}; a repository adds, never overrides", item.Location);
-                }
-            }
-        }
-    }
-
     /// <summary>
     /// Check 23, F1 (docs/05 section 2): a merge step into a repository's default branch may ask for an engine merge
     /// only where <paramref name="engineMayMerge"/> matches the repository. <paramref name="engineCanMerge"/> is null

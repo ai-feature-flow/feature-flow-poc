@@ -5,4 +5,4 @@ description: Templates for the M5 step-start check tests (docs/11, M5)
 requires:
   plan_schema: 1
 dependencies:
-  - { name: std, version: ">=0.1.0" }
+  - { name: std }

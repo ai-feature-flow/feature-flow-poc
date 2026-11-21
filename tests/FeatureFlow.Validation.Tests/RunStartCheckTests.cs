@@ -76,27 +76,6 @@ public class RunStartCheckTests
         Assert.Contains(d, x => x.Message.Contains("no ci provider is configured", StringComparison.Ordinal));
     }
 
-    static YNode Section(string yaml) => YamlText.Parse(yaml, "feature-flow.yaml", new DiagnosticBag())!;
-
-    [Theory]
-    [InlineData("{ default_template: std:templates/ticket_delivery, adds: { skills: [{ name: acme_api, path: .feature-flow/skills/acme_api }] } }", null)]
-    [InlineData("{ overrides: { std:tasks/implement_ticket: x } }", "library.overrides is not allowed")]
-    [InlineData("{ adds: { templates: [{ name: mine, path: t.yaml }] } }", "library.adds.templates is not allowed")]
-    [InlineData("{ adds: { skills: [{ name: review, path: .feature-flow/skills/review }] } }", "has the name of std:skills/review")]
-    public void Check_20_a_repository_library_section_adds_only(string yaml, string? message)
-    {
-        var (libraries, _) = Load();
-        var d = new DiagnosticBag();
-        RunStartChecks.RepositoryLibrary("acme/api", Section(yaml), libraries, d);
-        if (message is null)
-            Assert.Empty(d);
-        else
-        {
-            Assert.Equal([Checks.RepositoryLibraryAddsOnly], Blocking(d));
-            Assert.Contains(message, d.Single().Message);
-        }
-    }
-
     static PolicyConfig Policy(long? perStep = null, ApprovalRule? rule = null, Cap<bool>? requireChecks = null) =>
         new(rule is null ? [] : [rule], perStep, null, null, requireChecks);
 
