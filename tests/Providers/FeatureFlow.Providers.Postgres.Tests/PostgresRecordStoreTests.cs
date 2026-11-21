@@ -153,7 +153,7 @@ public sealed class PostgresRecordStoreTests(PostgresServer server) : IDisposabl
         var checks = await Task.WhenAll(stores.Select(s => s.CheckAsync(Ct)));
 
         Assert.All(checks, c => Assert.True(c.Ok, c.Error?.Message));
-        Assert.Equal([1], await ColumnAsync<int>(database, "SELECT version FROM ff_schema"));
+        Assert.Equal([1, 2], await ColumnAsync<int>(database, "SELECT version FROM ff_schema ORDER BY version"));
         var tables = await ColumnAsync<string>(database, "SELECT table_name::text FROM information_schema.tables WHERE table_schema = 'public' AND table_name <> 'ff_schema'");
         var keyed = await ColumnAsync<string>(database, "SELECT table_name::text FROM information_schema.columns WHERE table_schema = 'public' AND column_name = 'org_id'");
         Assert.Equal(14, tables.Count);
