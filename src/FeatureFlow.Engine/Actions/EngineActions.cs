@@ -382,13 +382,16 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
     public Task<string> RememberAsync(string kind, string detail) => RememberAsync(kind, () => Task.FromResult(detail));
 
     /// <summary>As above, making the detail only when none was recorded: a CI run is triggered once per execution of the step.</summary>
-    public async Task<string> RememberAsync(string kind, Func<Task<string>> make)
+    public async Task<string> RememberAsync(string kind, Func<Task<string>> make) => (await RememberEventAsync(kind, make)).Detail;
+
+    /// <summary>As above, giving the whole record, so its time is known too (when a CI run was triggered, LOG 500).</summary>
+    public async Task<AgentEventRecord> RememberEventAsync(string kind, Func<Task<string>> make)
     {
         if ((await EventsAsync()).FirstOrDefault(e => e.Kind == kind) is { } recorded)
-            return recorded.Detail;
-        var detail = await make();
-        await EventAsync(kind, detail);
-        return detail;
+            return recorded;
+        var record = new AgentEventRecord(Key, kind, await make(), DateTimeOffset.UtcNow);
+        Must(await Records.AppendAsync(new RecordBatch(AgentEvents: [record]), ct), "record an event");
+        return record;
     }
 
     /// <summary>When this execution of the step began waiting, kept across the activity's retries.</summary>

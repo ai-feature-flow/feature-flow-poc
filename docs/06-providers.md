@@ -369,6 +369,12 @@ interface ICiProvider : IProvider {
   engine records as the step's own event, so the activity's retries poll that
   run. A trigger retried after a lost answer dispatches again; the rare
   duplicate run is accepted (LOG 147).
+- The record's time is the run's dispatch time (`CiRunRef.DispatchedAt`).
+  GitHub's run lookup can answer 404 for a few seconds after the dispatch
+  returned the id, so the GitHub Actions provider reports a run it reads 404
+  for as `queued` until `DispatchGrace` (5 minutes) after its dispatch, and
+  only then as `not_found`, a work failure. The step keeps polling meanwhile, as
+  for any queued run; a run with no dispatch time gets no grace (LOG 500).
 - `HasCiAsync` answers only "is CI configured for this head" (for GitHub
   Actions, a workflow file exists), so `ci.checks` knows to wait a while for a
   first check. Which runs must pass comes from the target branch's required
