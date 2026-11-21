@@ -30,10 +30,11 @@ public abstract class BrowserTest(BrowserFixture browser) : IAsyncLifetime
     protected IPage Page => page ?? throw new InvalidOperationException("open the console first (OpenAsync)");
 
     /// <summary>A world under <paramref name="authMode"/>; call it before anything else uses <see cref="World"/>.</summary>
-    protected ConsoleWorld UseWorld(string authMode, IReadOnlyList<FeatureFlow.Model.ApprovalRule>? approval = null)
+    protected ConsoleWorld UseWorld(string authMode, IReadOnlyList<FeatureFlow.Model.ApprovalRule>? approval = null,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? overrides = null)
     {
         Assert.Null(world);
-        return world = new ConsoleWorld(authMode, approval);
+        return world = new ConsoleWorld(authMode, approval, overrides);
     }
 
     /// <summary>Admits console errors containing <paramref name="fragment"/>, such as a refused connection while the API restarts.</summary>

@@ -28,6 +28,14 @@ public sealed class TextOnlyTests(BrowserFixture browser) : BrowserTest(browser)
         ["needs me"] = new(t => t.OpenAsync(), 3),
         // The run's template.
         ["run heading"] = new(t => t.OpenAsync("#/runs/" + RunId), 1),
+        // A step's status from the timeline (done(<detail>)) in the plan's table and its readable form.
+        ["plan"] = new(async t =>
+        {
+            var runId = await t.World.StartRunAsync();
+            await t.Engine.CloseWaitAsync(runId, "gate-1");
+            await t.Engine.TraceAsync(runId, "completed", "go_ahead", Markup);
+            await t.OpenAsync("#/runs/" + runId);
+        }, 2),
     };
 
     public static TheoryData<string> Names => [.. Screens.Keys];
