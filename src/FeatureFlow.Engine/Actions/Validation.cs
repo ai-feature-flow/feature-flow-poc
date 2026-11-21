@@ -186,7 +186,7 @@ static class Validating
         }
 
         var record = types.GetValueOrDefault(reference);
-        if (record?.Action != "artifact.compose")
+        if (record?.Action is not { } producer || ActionRegistry.Current.Get(producer)?.MakesSet != true)
             return new ValidationSubject(spec.Name, record?.Type, new ArtifactRef(reference), spec.From);
         var set = System.Text.Json.JsonSerializer.Deserialize<ArtifactSet>(text, ArtifactShapes.Engine)
                   ?? throw ActionStop.CannotAnswer($"subject {key} is not an artifact set");

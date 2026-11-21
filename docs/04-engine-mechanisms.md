@@ -75,6 +75,8 @@ other table is keyed by action name (F10). An entry holds:
 | Waits between reads | Whether it may wait on the outside world, so a hand-over interrupts it (LOG 139) | The hand-over |
 | Raises gate | The type suffix of the decision it raises while it runs: `scm.merge`'s `<level>.merge_action` (section 4.5) | Check 16, the effective policy view, the core |
 | Counts races | Whether a lost race counts against `limits.races` rather than attempts: `scm.merge` (LOG 61) | The core, check 22 |
+| Opens pull request | The pull request it opens, as its `pull_request` output: the run's work in a repository (`scm.pull_request`), which later actions there act on, or a publication (`artifact.publish`) (LOG A2-8b3) | An action's scope (work only); closing the run's pull requests on abort (both) |
+| Makes set | Whether the artifact it makes is an artifact set: `artifact.compose` (LOG A2-8b3) | `artifact.validate`, which passes a set's members to validators |
 
 An outcome a plan leaves unrouted is refused at load whatever the action
 (check 7); none escalates by default but `attempts_exhausted` (L6, LOG 263).
