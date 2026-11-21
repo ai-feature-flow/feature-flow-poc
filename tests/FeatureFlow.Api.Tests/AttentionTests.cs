@@ -60,6 +60,23 @@ public sealed class AttentionTests
         Assert.Empty(await AttentionAsync(world.As("vic", "viewer")));
     }
 
+    /// <summary>
+    /// A decision two people must answer leaves the attention list of the one who has answered, while it stays on the other's
+    /// with its <c>min_count</c> and who has answered.
+    /// </summary>
+    [Fact]
+    public async Task A_min_count_decision_the_caller_has_answered_is_not_listed_for_it_while_it_waits_for_others()
+    {
+        await using var world = new ApiWorld(Organisation(Rule("ticket.*", minCount: 2)));
+        await RunAsync(world, "r1");
+        await world.WaitAsync("r1", "gate-1", "gate", "ticket.spec_approval");
+        Assert.Equal(HttpStatusCode.Accepted, (await ApiWorld.PostAsync(world.As("ann", "approver"), "runs/r1/answers", """{ "wait_id": "gate-1", "outcome": "approved", "reason": "ok" }""")).Status);
+
+        Assert.Empty(await AttentionAsync(world.As("ann", "approver")));
+        var item = Assert.Single((await GetAsync<AttentionList>(world.As("cat", "approver"), "attention")).Waits);
+        Assert.Equal(("gate-1", 2, "ann"), (item.Wait.WaitId, item.Wait.MinCount, Assert.Single(Assert.Single(item.Wait.Progress!).Actors)));
+    }
+
     [Fact]
     public async Task An_intervention_is_listed_for_a_steerer_only()
     {
@@ -181,11 +198,15 @@ public sealed class AttentionTests
                 new OverrideRecord("r1", "o2", "amend", "sam", "tighten", "plan", new Dictionary<string, string> { ["with.limit"] = "3" }, "refused: no step plan", at)]), Ct);
         // A spec gate two people must approve, which one has.
         await world.WaitAsync("r1", "gate-2", "gate", "ticket.spec_approval");
+        // Before anyone answers, the page already says how many must.
+        var before = (await GetAsync<RunDetail>(world.As("sam", "steerer"), "runs/r1")).Waits[0];
+        Assert.Equal(("gate-2", 2, 0), (before.WaitId, before.MinCount, before.Progress!.Count));
         Assert.Equal(HttpStatusCode.Accepted, (await ApiWorld.PostAsync(world.As("ann", "approver"), "runs/r1/answers", """{ "wait_id": "gate-2", "outcome": "approved", "reason": "ok" }""")).Status);
 
         var page = await GetAsync<RunDetail>(world.As("sam", "steerer"), "runs/r1");
 
         Assert.Equal(["gate-2", "gate-1"], page.Waits.Select(w => w.WaitId));
+        Assert.Equal((2, 1), (page.Waits[0].MinCount, page.Waits[1].MinCount));
         var progress = Assert.Single(page.Waits[0].Progress!);
         Assert.Equal(("approved", 2), (progress.Choice, progress.Needed));
         Assert.Equal(["ann"], progress.Actors);

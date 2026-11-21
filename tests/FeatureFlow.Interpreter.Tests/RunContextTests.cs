@@ -118,4 +118,23 @@ public class RunContextTests
         Assert.Equal(RunContexts.MaxEntries, core.State.Context.Count);
         Assert.Equal("attempt 6 of work failed: failure 6", core.State.Context[0].Text);
     }
+
+    /// <summary>One very long entry is cut to its own bound, so the rendered context still holds it and the entries before it.</summary>
+    [Fact]
+    public void One_long_entry_is_kept_to_the_entry_bound_and_does_not_empty_the_context()
+    {
+        var core = Lib.Start("context", new RunOptions { DefaultAttempts = 10 });
+        core.Advance();
+        core.Apply(new StepFailed("work", ErrorClass.Work, "tests fail"));
+        core.Advance();
+        core.Apply(new StepFailed("work", ErrorClass.Work, new string('x', 64 * 1024)));
+        core.Advance();
+
+        var entry = core.State.Context[^1];
+        Assert.True(System.Text.Encoding.UTF8.GetByteCount(entry.Text) <= RunContexts.MaxEntryBytes);
+        Assert.EndsWith(" [...]", entry.Text, StringComparison.Ordinal);
+        var context = ContextOf(core, "work")!;
+        Assert.Contains("attempt 1 of work failed: tests fail", context, StringComparison.Ordinal);
+        Assert.Contains("attempt 2 of work failed: xxx", context, StringComparison.Ordinal);
+    }
 }

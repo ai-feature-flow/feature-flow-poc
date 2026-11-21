@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Threading.Channels;
 using FeatureFlow.Providers.Abstractions;
 using Microsoft.Extensions.Logging;
@@ -22,6 +21,9 @@ public sealed class ChangeFeed(ApiServices services, ILogger<ChangeFeed> logger)
     /// <summary>How many frames wait for one subscriber before it is closed.</summary>
     public const int SubscriberCapacity = 256;
 
+    /// <summary>How many runs' repositories are kept for filtering frames by scope.</summary>
+    public const int RepositoryCacheSize = 4096;
+
     /// <summary>The page size of a poll: the store's limit.</summary>
     const int PageSize = 500;
 
@@ -31,7 +33,7 @@ public sealed class ChangeFeed(ApiServices services, ILogger<ChangeFeed> logger)
     readonly Lock gate = new();
     readonly Queue<ChangeRecord> ring = new();
     readonly List<Channel<ChangeRecord?>> subscribers = [];
-    readonly ConcurrentDictionary<string, IReadOnlyList<string>> repositories = new(StringComparer.Ordinal);
+    readonly RunRepositories repositories = new(RepositoryCacheSize);
     readonly CancellationTokenSource stopping = new();
     ITimer? heartbeat;
     Task? loop;
@@ -201,10 +203,60 @@ public sealed class ChangeFeed(ApiServices services, ILogger<ChangeFeed> logger)
     /// <summary>A run's repositories, which never change, cached for filtering frames by scope; null if the run is not recorded.</summary>
     public async Task<IReadOnlyList<string>?> RepositoriesAsync(string runId, CancellationToken ct)
     {
-        if (repositories.TryGetValue(runId, out var known))
+        if (repositories.Get(runId) is { } known)
             return known;
         var run = (await Records.QueryAsync<RunRecord>(Queries.Run, new Dictionary<string, string> { ["run_id"] = runId }, ct)).Unwrap().FirstOrDefault();
-        return run is null ? null : repositories.GetOrAdd(runId, run.Repositories);
+        if (run is null)
+            return null;
+        repositories.Add(runId, run.Repositories);
+        return run.Repositories;
+    }
+
+    /// <summary>
+    /// The repositories of the runs most recently filtered, at most <paramref name="capacity"/>: the one least recently used
+    /// goes first, so a long-lived process does not keep every run it has seen.
+    /// </summary>
+    public sealed class RunRepositories(int capacity)
+    {
+        readonly Lock gate = new();
+        readonly Dictionary<string, LinkedListNode<(string RunId, IReadOnlyList<string> Repositories)>> runs = new(StringComparer.Ordinal);
+        readonly LinkedList<(string RunId, IReadOnlyList<string> Repositories)> order = new();
+
+        public int Count
+        {
+            get
+            {
+                lock (gate)
+                    return runs.Count;
+            }
+        }
+
+        public IReadOnlyList<string>? Get(string runId)
+        {
+            lock (gate)
+            {
+                if (!runs.TryGetValue(runId, out var node))
+                    return null;
+                order.Remove(node);
+                order.AddFirst(node);
+                return node.Value.Repositories;
+            }
+        }
+
+        public void Add(string runId, IReadOnlyList<string> repositories)
+        {
+            lock (gate)
+            {
+                if (runs.Remove(runId, out var existing))
+                    order.Remove(existing);
+                runs[runId] = order.AddFirst((runId, repositories));
+                if (runs.Count > capacity)
+                {
+                    runs.Remove(order.Last!.Value.RunId);
+                    order.RemoveLast();
+                }
+            }
+        }
     }
 
     /// <summary>

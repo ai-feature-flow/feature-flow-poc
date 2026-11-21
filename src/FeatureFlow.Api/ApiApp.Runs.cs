@@ -164,7 +164,7 @@ public static partial class ApiApp
             foreach (var wait in waits)
             {
                 var (canAnswer, minCount) = await MayAnswerAsync(caller, run, wait, ct);
-                views.Add(WaitViewOf(wait, canAnswer, wait.Open && minCount > 1 ? ProgressOf(wait, answers, minCount) : null, wait.Open ? null : ClosedAnswerOf(wait, answers)));
+                views.Add(WaitViewOf(wait, canAnswer, minCount, wait.Open && minCount > 1 ? ProgressOf(wait, answers, minCount) : null, wait.Open ? null : ClosedAnswerOf(wait, answers)));
             }
 
             return Results.Json(new RunDetail(ViewOf(run), views, timeline.Select(EntryOf).ToList(), children.Select(SummaryOf).ToList(),
@@ -243,9 +243,9 @@ public static partial class ApiApp
     /// A wait record as the API shows it, with whether the caller may answer it now, who has answered while more must
     /// (<c>min_count</c>), and the answer that closed it.
     /// </summary>
-    static WaitView WaitViewOf(WaitRecord w, bool canAnswer, IReadOnlyList<AnswerProgress>? progress, ClosedAnswer? answer) =>
+    static WaitView WaitViewOf(WaitRecord w, bool canAnswer, int minCount, IReadOnlyList<AnswerProgress>? progress, ClosedAnswer? answer) =>
         new(w.WaitId, KindOf(w.Kind), w.StepId, w.DecisionType, w.Prompt, w.Choices, w.Open, w.UpdatedAt,
-            (w.Consumed ?? []).Select(c => new ConsumedArtifactView(c.Key, c.Name, c.Ref)).ToList(), canAnswer, progress, answer);
+            (w.Consumed ?? []).Select(c => new ConsumedArtifactView(c.Key, c.Name, c.Ref)).ToList(), canAnswer, minCount, progress, answer);
 
     /// <summary>The answer a person gave, as recorded (JSON <see cref="AnswerArgs"/>), or null for text that is not one (an abort's reason).</summary>
     static AnswerArgs? ArgsOf(string recorded)

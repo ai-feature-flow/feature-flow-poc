@@ -49,14 +49,16 @@ public static partial class ApiApp
             var reason = body.Reason;
             if (string.IsNullOrWhiteSpace(reason))
                 return Error(400, "reason is required: every override is recorded with its reason (docs/05 section 5)");
+            if (ReasonRefused(reason) is { } refusedReason)
+                return refusedReason;
             var change = new Dictionary<string, string>(body.Change ?? new Dictionary<string, string>(), StringComparer.Ordinal);
 
-            var run = await RunAsync(id, ct);
-            var scope = ScopeOf(run?.Repositories ?? []);
+            // A caller who does not view the run is told it does not exist, as on reads.
+            if (await VisibleRunAsync(caller, id, ct) is not { } run)
+                return Error(404, $"no run {id}");
+            var scope = ScopeOf(run.Repositories);
             if (Refuse(caller, scope, RolesForKey(key), $"use the {key} override") is { } refused)
                 return refused;
-            if (run is null)
-                return Error(404, $"no run {id}");
 
             // F8: the actor is the authenticated caller; an actor in the body is ignored.
             var args = new OverrideArgs("override-" + Guid.NewGuid().ToString("N")[..12], key, caller.Actor, reason, body.StepId, change,

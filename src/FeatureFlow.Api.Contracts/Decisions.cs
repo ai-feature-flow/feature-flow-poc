@@ -22,7 +22,7 @@ public sealed record AnswerRequest(
 public sealed record AnswerResponse(string Result);
 
 /// <summary><c>POST /runs/{id}/abort</c>: stop the run, and close the pull requests it opened when asked.</summary>
-public sealed record AbortRequest(string? Reason = null, bool ClosePullRequests = false);
+public sealed record AbortRequest(string Reason, bool ClosePullRequests = false);
 
 /// <summary><c>GET /runs/{id}/findings</c>: the run's findings ledger, its children's included.</summary>
 public sealed record FindingsResponse(IReadOnlyList<FindingView> Findings);

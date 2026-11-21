@@ -142,6 +142,23 @@ public sealed class EventsTests
         Assert.Equal("unauthenticated", JsonSerializer.Deserialize<ErrorResponse>(await response.Content.ReadAsStringAsync(Ct), ApiJson.Options)!.Error);
     }
 
+    /// <summary>The runs' repositories kept for filtering are bounded: past the bound, the run least recently used goes first.</summary>
+    [Fact]
+    public void The_feeds_run_repositories_are_bounded_and_the_least_recently_used_goes_first()
+    {
+        var cache = new ChangeFeed.RunRepositories(2);
+        cache.Add("a", ["acme/a"]);
+        cache.Add("b", ["acme/b"]);
+        Assert.NotNull(cache.Get("a"));
+
+        cache.Add("c", ["acme/c"]);
+
+        Assert.Equal(2, cache.Count);
+        Assert.Null(cache.Get("b"));
+        Assert.Equal(["acme/a"], cache.Get("a"));
+        Assert.Equal(["acme/c"], cache.Get("c"));
+    }
+
     static CancellationTokenSource Bounded()
     {
         var bounded = CancellationTokenSource.CreateLinkedTokenSource(Ct);

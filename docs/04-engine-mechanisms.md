@@ -238,7 +238,9 @@ the run's state, carried over a hand-over, as entries of three kinds:
 The core renders the context in Markdown (`## Run context`, then one bullet per
 entry, oldest first) into the agent step's specification when the step starts,
 and the agent worker writes it into the prompt between `## This step` and the
-task, so it is in the stored prompt. A run keeps at most 64 entries, and the
+task, so it is in the stored prompt. A run keeps at most 64 entries, each at
+most 4.5 KB (cut and marked `[...]`), so one entry, such as several people's
+joined reasons or a long failure, cannot fill the rendering (LOG A3-9b); the
 rendering is at most 16 KB: the oldest entries are dropped first, with a line
 saying how many. A child run starts with its parent's context as it was when
 the child started, rendered first under `### From the parent run`. A step with

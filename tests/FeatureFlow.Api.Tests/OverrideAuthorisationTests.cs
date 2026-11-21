@@ -207,12 +207,41 @@ public sealed class OverrideAuthorisationTests
         Assert.Equal(HttpStatusCode.OK, (await ApiWorld.PostAsync(world.As("lee", groups: "leads"), "runs/web/overrides", body)).Status);
         Assert.Equal(HttpStatusCode.OK, (await ApiWorld.PostAsync(world.As("lee", groups: "leads"), "runs/pay/overrides", body)).Status);
         Assert.Equal(HttpStatusCode.OK, (await ApiWorld.PostAsync(world.As("pia", groups: "payments-leads"), "runs/pay/overrides", body)).Status);
-        Assert.Equal(HttpStatusCode.Forbidden, (await ApiWorld.PostAsync(world.As("pia", groups: "payments-leads"), "runs/web/overrides", body)).Status);
         // Reading needs viewer, which a steerer holds; a person with no role in the scope does not see the run.
         using var response = await world.As("pia", groups: "payments-leads").GetAsync("runs", TestContext.Current.CancellationToken);
         var listed = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         Assert.Contains("\"pay\"", listed, StringComparison.Ordinal);
         Assert.DoesNotContain("\"web\"", listed, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A write route answers a caller who does not view the run as it answers for a run that does not exist (404), as the
+    /// read routes do, so it does not reveal that the run exists.
+    /// </summary>
+    [Fact]
+    public async Task A_caller_who_does_not_view_the_run_is_told_it_does_not_exist_on_every_write_route()
+    {
+        var organisation = new OrganisationConfig("acme", [], new PolicyConfig([], null, null, null, null), "")
+        {
+            Teams = new Dictionary<string, TeamConfig>
+            {
+                ["payments"] = new("payments", ["acme/payments-*"], [], new Dictionary<string, PeopleRoleConfig> { ["admin"] = new(["payments-leads"]) }),
+            },
+        };
+        await using var world = new ApiWorld(organisation);
+        await world.RunAsync("web", "acme/web");
+        await world.WaitAsync("web", "w1", "gate", "ticket.spec_approval");
+        var pia = world.As("pia", groups: "payments-leads");
+
+        foreach (var run in new[] { "web", "none" })
+        {
+            var answer = await ApiWorld.PostAsync(pia, $"runs/{run}/answers", """{ "wait_id": "w1", "outcome": "approved", "reason": "r" }""");
+            var abort = await ApiWorld.PostAsync(pia, $"runs/{run}/abort", """{ "reason": "r" }""");
+            var @override = await ApiWorld.PostAsync(pia, $"runs/{run}/overrides", """{ "key": "breakpoint", "step_id": "implement", "reason": "r", "change": { "set": "true" } }""");
+            Assert.Equal((HttpStatusCode.NotFound, HttpStatusCode.NotFound, HttpStatusCode.NotFound), (answer.Status, abort.Status, @override.Status));
+        }
+
+        Assert.Empty(world.Temporal.Updates);
     }
 
     [Fact]

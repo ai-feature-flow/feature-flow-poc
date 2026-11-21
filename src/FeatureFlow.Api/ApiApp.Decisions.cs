@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using FeatureFlow.Api.Contracts;
 using FeatureFlow.Interpreter.Wire;
@@ -27,6 +28,9 @@ public static partial class ApiApp
     /// <summary>The result an answer is recorded with while it waits for more people to answer the same way (<c>min_count</c>).</summary>
     const string Pending = "pending: ";
 
+    /// <summary>The most a person's reason may be, in UTF-8 bytes (LOG A3-9a).</summary>
+    public const int MaxReasonBytes = 4 * 1024;
+
     sealed partial class Handlers
     {
         public async Task<IResult> AnswerAsync(HttpContext context, Caller caller, string id)
@@ -35,7 +39,7 @@ public static partial class ApiApp
             if (body is null)
                 return malformed!;
             var waitId = body.WaitId;
-            var run = await RunAsync(id, context.RequestAborted);
+            var run = await VisibleRunAsync(caller, id, context.RequestAborted);
             var wait = run is null ? null : (await Records.QueryAsync<WaitRecord>(Queries.Waits, new Dictionary<string, string> { ["run_id"] = id }, context.RequestAborted)).Unwrap()
                 .FirstOrDefault(w => w.WaitId == waitId);
             if (run is null || wait is null || wait.Kind == "")
@@ -46,8 +50,8 @@ public static partial class ApiApp
             if (wait.Kind == "patch_approval" && action is null && outcome is "approve" or "reject")
                 (action, outcome) = (outcome, null);
             // An agent's question is answered by its text alone (LOG A3-0e); every other answer is recorded with the person's reason.
-            if (wait.Kind != "question" && ReasonMissing(body.Reason) is { } missing)
-                return missing;
+            if (ReasonRefused(body.Reason, required: wait.Kind != "question") is { } refusedReason)
+                return refusedReason;
             // F8: the actor is the authenticated caller; the body cannot name one.
             var args = new AnswerArgs(waitId, caller.Actor, outcome, action, body.StepId, body.CleanUp, body.Attempts, body.Status, Reason: body.Reason);
             if (body.Artifacts is { } given)
@@ -126,9 +130,15 @@ public static partial class ApiApp
             }
         }
 
-        /// <summary>A 400 when a person gives no reason: every answer and abort is recorded with one (docs/05 section 5; F5).</summary>
-        static IResult? ReasonMissing(string? reason) =>
-            string.IsNullOrWhiteSpace(reason) ? Error(400, "reason is required: every answer is recorded with the person's reason (docs/05 section 5)") : null;
+        /// <summary>
+        /// A 400 when a person gives no reason where one is <paramref name="required"/> (every answer but a question's, abort and
+        /// abandon; docs/05 section 5; F5), or a reason over <see cref="MaxReasonBytes"/>: it is carried in the run's state and
+        /// its context for the next agent.
+        /// </summary>
+        static IResult? ReasonRefused(string? reason, bool required = true) =>
+            required && string.IsNullOrWhiteSpace(reason) ? Error(400, "reason is required: every answer is recorded with the person's reason (docs/05 section 5)")
+            : reason is not null && Encoding.UTF8.GetByteCount(reason) > MaxReasonBytes ? Error(400, $"reason may be at most {MaxReasonBytes} bytes of UTF-8 text")
+            : null;
 
         async Task<IResult> DeliverAnswerAsync(string runId, string waitId, string recordedActor, AnswerArgs args, CancellationToken ct)
         {
@@ -214,18 +224,17 @@ public static partial class ApiApp
 
         public async Task<IResult> AbortAsync(HttpContext context, Caller caller, string id)
         {
-            var run = await RunAsync(id, context.RequestAborted);
-            var scope = ScopeOf(run?.Repositories ?? []);
-            if (Refuse(caller, scope, RolesForKey(Overrides.Abort), "abort a run") is { } refused)
-                return refused;
-            if (run is null)
+            // A caller who does not view the run is told it does not exist, as on reads.
+            if (await VisibleRunAsync(caller, id, context.RequestAborted) is not { } run)
                 return Error(404, $"no run {id}");
+            if (Refuse(caller, ScopeOf(run.Repositories), RolesForKey(Overrides.Abort), "abort a run") is { } refused)
+                return refused;
             var (body, malformed) = await BodyAsync<AbortRequest>(context);
             if (body is null)
                 return malformed!;
-            if (ReasonMissing(body.Reason) is { } missing)
-                return missing;
-            var args = new AbortArgs(caller.Actor, body.Reason!, body.ClosePullRequests);
+            if (ReasonRefused(body.Reason) is { } refusedReason)
+                return refusedReason;
+            var args = new AbortArgs(caller.Actor, body.Reason, body.ClosePullRequests);
             var text = args.ClosePullRequests ? args.Reason + " (close pull requests)" : args.Reason;
             await Records.AppendAsync(new RecordBatch(Answers: [new AnswerRecord(id, "abort", caller.Actor, text, "sent", DateTimeOffset.UtcNow, args.Reason)]), context.RequestAborted);
             try

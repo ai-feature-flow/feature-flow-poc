@@ -189,6 +189,22 @@ public sealed class InboundTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_chat_approve_on_a_patch_approval_is_sent_as_its_action()
+    {
+        var http = Start();
+        var now = DateTimeOffset.UtcNow;
+        await records.AppendAsync(new RecordBatch(
+            [new RunRecord("r1", null, "m7s:templates/decide", "running", "x", [], false, now, null)],
+            [new WaitRecord("r1", "patch-3", "patch_approval", "plan", "plan.patch_approval", "apply?", ["approve", "reject"], true, now)]), Ct);
+
+        await SendAsync(http, SlackRequest("inbound/chat/slack", Press("U-ALICE", "approve", "patch-3")));
+
+        var sent = Assert.Single(await AnswersAsync(), a => a.Result == "sent");
+        Assert.Contains("\"action\":\"approve\"", sent.Answer);
+        Assert.DoesNotContain("\"outcome\":\"approve\"", sent.Answer);
+    }
+
+    [Fact]
     public async Task A_timestamp_beyond_any_date_is_unauthenticated_not_a_server_error()
     {
         var http = Start();

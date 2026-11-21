@@ -80,6 +80,23 @@ public sealed class OpenApiTests
         Assert.True(problems.Count == 0, string.Join("\n", problems));
     }
 
+    /// <summary>
+    /// The document names the bearer token as an HTTP security scheme and requires it of every operation it describes, so a
+    /// generated client sends it; the document itself is read without one (<see cref="GeneratedAsync"/> reads it anonymously).
+    /// </summary>
+    [Fact]
+    public async Task Every_described_operation_takes_the_bearer_token()
+    {
+        var (document, _) = await GeneratedAsync();
+
+        var scheme = document["components"]?["securitySchemes"]?["bearer"]?.AsObject();
+        Assert.Equal(("http", "bearer"), (scheme?["type"]?.GetValue<string>(), scheme?["scheme"]?.GetValue<string>()));
+        var required = Assert.Single(document["security"]!.AsArray())!.AsObject();
+        Assert.Equal(["bearer"], required.Select(r => r.Key));
+        var overridden = document["paths"]!.AsObject().SelectMany(path => path.Value!.AsObject().Where(op => op.Value!["security"] is not null).Select(op => $"{op.Key} {path.Key}"));
+        Assert.Empty(overridden);
+    }
+
     [Fact]
     public async Task No_schema_has_an_untyped_property()
     {

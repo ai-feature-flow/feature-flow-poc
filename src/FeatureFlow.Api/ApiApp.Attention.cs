@@ -22,8 +22,9 @@ public static partial class ApiApp
         /// <summary>
         /// Every open wait the caller may answer now, oldest first: from the record store's open waits of runs still going
         /// (<see cref="Queries.OpenWaits"/>), less the engine's status waits (<c>stalled</c>, <c>stuck</c>), those of runs the
-        /// caller does not view, and those <see cref="CheckAnswer"/> refuses it. Libraries are read through the cache, and
-        /// only for a wait whose type has no organisation rule (LOG A3-0h).
+        /// caller does not view, those <see cref="CheckAnswer"/> refuses it, and a <c>min_count</c> decision the caller has
+        /// already answered while it waits for others. Libraries are read through the cache, and only for a wait whose type
+        /// has no organisation rule (LOG A3-0h).
         /// </summary>
         public async Task<IResult> AttentionAsync(HttpContext context, Caller caller)
         {
@@ -44,9 +45,12 @@ public static partial class ApiApp
                     if (!answers.TryGetValue(run.RunId, out var recorded))
                         answers[run.RunId] = recorded = (await Records.QueryAsync<AnswerRecord>(Queries.Answers, new Dictionary<string, string> { ["run_id"] = run.RunId }, ct)).Unwrap();
                     progress = ProgressOf(wait, recorded, minCount);
+                    // The caller has answered and the decision waits for others: it no longer needs the caller.
+                    if (progress.Any(p => p.Actors.Contains(caller.Actor, StringComparer.Ordinal)))
+                        continue;
                 }
 
-                items.Add(new AttentionItem(SummaryOf(run), WaitViewOf(wait, canAnswer: true, progress, answer: null)));
+                items.Add(new AttentionItem(SummaryOf(run), WaitViewOf(wait, canAnswer: true, minCount, progress, answer: null)));
             }
 
             return Results.Json(new AttentionList(items), Json);

@@ -45,7 +45,8 @@ public sealed class ApprovalTests
         var (abort, abortText) = await ApiWorld.PostAsync(admin, $"runs/{Run}/abort", $$"""{ "close_pull_requests": false{{reason}} }""");
 
         Assert.Equal((HttpStatusCode.BadRequest, HttpStatusCode.BadRequest), (answer, abort));
-        Assert.All(new[] { answerText, abortText }, t => Assert.Contains("reason is required", t, StringComparison.Ordinal));
+        // An abort's reason is a required property, so a body without one is not a valid request; a blank one is refused by the rule.
+        Assert.All(new[] { answerText, abortText }, t => Assert.Matches("reason is required|missing required properties.*reason", t));
         Assert.Empty(world.Temporal.Updates);
         Assert.Empty(await world.QueryAsync<AnswerRecord>(Queries.Answers, Run));
     }
@@ -216,5 +217,31 @@ public sealed class ApprovalTests
         Assert.Equal(HttpStatusCode.Forbidden, (await ApiWorld.PostAsync(world.As("policy", "admin"), $"runs/{Run}/overrides",
             """{ "key": "skip", "reason": "r" }""")).Status);
         Assert.Empty(world.Temporal.Updates);
+    }
+
+    /// <summary>
+    /// A reason is at most 4 KB of UTF-8 (LOG A3-9a), counted in bytes: 2,049 two-byte characters are refused on every route
+    /// that takes one, a question's answer included, and nothing is recorded or delivered; 4,096 one-byte characters are taken.
+    /// </summary>
+    [Fact]
+    public async Task A_reason_over_four_kilobytes_is_refused_on_every_route_that_takes_one()
+    {
+        await using var world = await WorldAsync(Organisation(Rule("*")));
+        await world.WaitAsync(Run, "w2", "question", "ticket.question");
+        var admin = world.As("ann", "approver,steerer,admin");
+        var tooLong = new string('é', 2049);
+
+        var refusals = new[]
+        {
+            await ApiWorld.PostAsync(admin, $"runs/{Run}/answers", $$"""{ "wait_id": "w1", "outcome": "approved", "reason": "{{tooLong}}" }"""),
+            await ApiWorld.PostAsync(admin, $"runs/{Run}/answers", $$"""{ "wait_id": "w2", "outcome": "teal", "reason": "{{tooLong}}" }"""),
+            await ApiWorld.PostAsync(admin, $"runs/{Run}/abort", $$"""{ "reason": "{{tooLong}}" }"""),
+            await ApiWorld.PostAsync(admin, $"runs/{Run}/overrides", $$"""{ "key": "skip", "step_id": "implement", "reason": "{{tooLong}}" }"""),
+        };
+
+        Assert.All(refusals, r => Assert.Equal((HttpStatusCode.BadRequest, true), (r.Status, r.Body.Contains("at most 4096 bytes", StringComparison.Ordinal))));
+        Assert.Empty(world.Temporal.Updates);
+        Assert.Empty(await world.QueryAsync<AnswerRecord>(Queries.Answers, Run));
+        Assert.Equal(HttpStatusCode.OK, (await AnswerAsync(admin, reason: new string('a', ApiApp.MaxReasonBytes))).Status);
     }
 }

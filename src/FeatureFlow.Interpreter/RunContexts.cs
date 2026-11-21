@@ -30,6 +30,12 @@ public static class RunContexts
     public const int MaxSummaryBytes = 2 * 1024;
 
     /// <summary>
+    /// The most any one entry's text may be, in UTF-8 bytes, so that no single entry (several people's joined reasons, a long
+    /// failure) can fill <see cref="MaxBytes"/> and push every other entry out (LOG A3-9b).
+    /// </summary>
+    public const int MaxEntryBytes = 4 * 1024 + 512;
+
+    /// <summary>
     /// The run context in Markdown: <c>## Run context</c>, then <c>### From the parent run</c> when the run is a child, then one
     /// bullet per entry in order. At most <see cref="MaxBytes"/>: the oldest entries are dropped first, with a line saying how
     /// many, then the parent's section. Null when there is nothing to say.
@@ -93,7 +99,7 @@ public sealed partial class RunCore
 
     void AddContext(string kind, string stepId, int execution, string text)
     {
-        State.Context.Add(new ContextEntry(kind, stepId, execution, text));
+        State.Context.Add(new ContextEntry(kind, stepId, execution, RunContexts.Bounded(text, RunContexts.MaxEntryBytes)));
         if (State.Context.Count > RunContexts.MaxEntries)
             State.Context.RemoveRange(0, State.Context.Count - RunContexts.MaxEntries);
     }

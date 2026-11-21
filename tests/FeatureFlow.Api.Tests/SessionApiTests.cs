@@ -161,7 +161,21 @@ public sealed class SessionApiTests : IAsyncDisposable
         var (status, text) = await PostAsync(http, $"sessions/{Sid}/abandon", body);
 
         Assert.Equal(HttpStatusCode.BadRequest, status);
-        Assert.Contains("reason is required", text);
+        Assert.Matches("reason is required|missing required properties.*reason", text);
+        Assert.Empty(await AnswersAsync());
+    }
+
+    [Fact]
+    public async Task A_submission_or_abandonment_with_a_reason_over_four_kilobytes_is_refused()
+    {
+        var http = Start("approver");
+        await OpenSessionAsync();
+        var tooLong = new string('x', 4097);
+
+        var submit = await PostAsync(http, $"sessions/{Sid}/submit", $$"""{ "revision": "{{Commit}}", "reason": "{{tooLong}}" }""");
+        var abandon = await PostAsync(http, $"sessions/{Sid}/abandon", $$"""{ "reason": "{{tooLong}}" }""");
+
+        Assert.All(new[] { submit, abandon }, r => Assert.Equal((HttpStatusCode.BadRequest, true), (r.Status, r.Body.Contains("at most 4096 bytes", StringComparison.Ordinal))));
         Assert.Empty(await AnswersAsync());
     }
 }
