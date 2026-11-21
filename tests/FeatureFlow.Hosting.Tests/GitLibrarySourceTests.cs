@@ -138,7 +138,7 @@ public sealed class GitLibrarySourceTests : IDisposable
         if (error is null)
             Assert.Null(thrown);
         else
-            Assert.Contains(error + $"{bare} at {reference} does not clone", Assert.IsType<InvalidOperationException>(thrown).Message);
+            Assert.Contains(error + $"{bare} at {reference} does not clone", Assert.IsType<StartupRefusal>(thrown).Message);
     }
 
     static void CopyTree(string from, string to)

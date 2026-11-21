@@ -16,10 +16,10 @@ import "./RunPage.css";
 /** The engine's run statuses while it still runs (Interpreter/Types.cs, RunStatus); any other is an end. */
 const active: readonly string[] = ["starting", "running"];
 
-/** The run's plan, or why there is none to show (404: not indexed yet; 409: it does not load). */
+/** The run's plan, or why there is none to show (204: no revision indexed yet; 404: no lock; 409: it does not load). */
 async function planOf(runId: string): Promise<{ plan: Schema<"PlanView"> | null; note?: string }> {
   try {
-    return { plan: await read(api.GET("/runs/{id}/plan", { params: { path: { id: runId } } })) };
+    return { plan: (await read(api.GET("/runs/{id}/plan", { params: { path: { id: runId } } }))) ?? null };
   } catch (e) {
     if (e instanceof ApiError && (e.status === 404 || e.status === 409)) return { plan: null, note: e.message };
     throw e;

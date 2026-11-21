@@ -30,6 +30,9 @@ public sealed class FakeTemporal : IClientInterceptor
 
     public List<(string WorkflowId, string Update, object? Argument)> Updates { get; } = [];
 
+    /// <summary>The runs the API started, each as the workflow's argument.</summary>
+    public List<RunStart> Starts { get; } = [];
+
     public string Reply { get; set; } = "recorded";
 
     public ClientOutboundInterceptor InterceptClient(ClientOutboundInterceptor nextInterceptor) => new Outbound(this, nextInterceptor);
@@ -38,6 +41,13 @@ public sealed class FakeTemporal : IClientInterceptor
 
     sealed class Outbound(FakeTemporal fake, ClientOutboundInterceptor next) : ClientOutboundInterceptor(next)
     {
+        public override Task<WorkflowHandle<TWorkflow, TResult>> StartWorkflowAsync<TWorkflow, TResult>(StartWorkflowInput input)
+        {
+            lock (fake.Starts)
+                fake.Starts.Add((RunStart)input.Args.Single()!);
+            return Task.FromResult(new WorkflowHandle<TWorkflow, TResult>(fake.Client, input.Options.Id!));
+        }
+
         public override Task<WorkflowUpdateHandle<TResult>> StartWorkflowUpdateAsync<TResult>(StartWorkflowUpdateInput input)
         {
             lock (fake.Updates)
@@ -75,8 +85,9 @@ public sealed class ApiWorld : IAsyncDisposable
             {
                 ["record_store"] = new Dictionary<string, IProvider> { ["sqlite"] = Records },
                 ["secrets"] = new Dictionary<string, IProvider> { ["file"] = new FileSecrets(Path.Combine(folder, "secrets.json")) },
+                ["artifact_store"] = new Dictionary<string, IProvider> { ["files"] = new FileSystemArtifactStore(Path.Combine(folder, "artifacts")) },
             },
-            new Dictionary<string, string> { ["record_store"] = "sqlite", ["secrets"] = "file" },
+            new Dictionary<string, string> { ["record_store"] = "sqlite", ["secrets"] = "file", ["artifact_store"] = "files" },
             new Dictionary<string, string>());
         var installation = new InstallationConfig("localhost:7233", "default", "q", 5120, new Dictionary<string, ProviderTypeConfig>(),
             auth ?? new ApiAuthConfig("local_token", "secrets/api_token", "local", ["viewer", "approver", "steerer", "admin"]), 3, 10, Path.Combine(folder, "installation.yaml"));

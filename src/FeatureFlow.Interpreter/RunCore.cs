@@ -69,6 +69,18 @@ public sealed partial class RunCore
     }
 
     /// <summary>
+    /// Check 18 alone, before a run starts: the API refuses a start that the engine would refuse for its parameters, with
+    /// the same messages (LOG AFd-3). A template that does not load is left to the engine, which reports why.
+    /// </summary>
+    public static IReadOnlyList<Diagnostic> ParameterProblems(LibrarySet libraries, LibraryReference template, RunInfo run)
+    {
+        var d = new DiagnosticBag();
+        if (PlanLoader.LoadTemplate(libraries, template, new DiagnosticBag(), new LoadOptions(run.Parameters, run.Repositories, [])) is { } plan)
+            CheckParameters(plan, run, d);
+        return d.Where(x => x.Blocks).ToList();
+    }
+
+    /// <summary>
     /// Check 18 at run start: every required parameter is bound, and every literal value has its declared type,
     /// a <c>number</c> being a whole number (LOG 76). A value given by an expression is checked when it is read.
     /// </summary>

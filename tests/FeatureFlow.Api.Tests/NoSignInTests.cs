@@ -44,7 +44,7 @@ public sealed class NoSignInTests
     [Fact]
     public void The_API_is_not_built_on_a_configured_address_other_than_loopback()
     {
-        var e = Assert.Throws<InvalidOperationException>(() => ApiApp.Build(Services(), "http://127.0.0.1:0", "http://0.0.0.0:0"));
+        var e = Assert.Throws<StartupRefusal>(() => ApiApp.Build(Services(), "http://127.0.0.1:0", "http://0.0.0.0:0"));
 
         Assert.Contains("but it would listen on 'http://0.0.0.0:0'", e.Message, StringComparison.Ordinal);
     }
@@ -56,7 +56,7 @@ public sealed class NoSignInTests
         // As Kestrel's own configuration can: an address the configured URLs never named.
         app.Urls.Add("http://0.0.0.0:0");
 
-        var e = await Assert.ThrowsAsync<InvalidOperationException>(() => ApiApp.StartCheckedAsync(app, None));
+        var e = await Assert.ThrowsAsync<StartupRefusal>(() => ApiApp.StartCheckedAsync(app, None));
 
         Assert.Contains("api.auth.mode is none", e.Message, StringComparison.Ordinal);
         Assert.Contains("'http://0.0.0.0:", e.Message, StringComparison.Ordinal);

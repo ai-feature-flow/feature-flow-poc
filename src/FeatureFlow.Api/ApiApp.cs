@@ -118,7 +118,7 @@ public static partial class ApiApp
         {
             RefuseUnlessLoopback(auth, bound);
         }
-        catch (InvalidOperationException)
+        catch (StartupRefusal)
         {
             await app.StopAsync();
             throw;
@@ -131,8 +131,8 @@ public static partial class ApiApp
     public static void RefuseUnlessLoopback(ApiAuthConfig auth, IEnumerable<string> urls)
     {
         if (auth.Mode == "none" && LoopbackOnly(urls) is { } refused)
-            throw new InvalidOperationException($"api.auth.mode is none, so the API must listen only on loopback (localhost, 127.0.0.1 or [::1]), " +
-                                                $"but it would listen on '{refused}'. Set FF_API_LISTEN to a loopback address, or use api.auth.mode local_token or oidc.");
+            throw new StartupRefusal($"api.auth.mode is none, so the API must listen only on loopback (localhost, 127.0.0.1 or [::1]), " +
+                                     $"but it would listen on '{refused}'. Set FF_API_LISTEN to a loopback address, or use api.auth.mode local_token or oidc.");
     }
 
     /// <summary>

@@ -1,9 +1,11 @@
 using System.Text;
 using System.Text.Json;
 using FeatureFlow.Api.Contracts;
+using FeatureFlow.Interpreter;
 using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Library;
 using FeatureFlow.Model;
+using FeatureFlow.Model.Yaml;
 using FeatureFlow.Providers.Abstractions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -91,7 +93,12 @@ public static partial class ApiApp
                 handOver = requested;
             }
 
-            var lockRef = await WriteLockAsync(context.RequestAborted);
+            var libraries = await OpenLibrariesAsync(context.RequestAborted);
+            // Check 18 before the run exists (LOG AFd-3): a required parameter missing, or a value of the wrong type, is the caller's to fix.
+            var bound = parameters.ToDictionary(p => p.Key, p => YamlWriter.Read(p.Value, $"params.{p.Key}"));
+            if (RunCore.ParameterProblems(new LibrarySet(libraries), LibraryReference.TryParse(template)!, new RunInfo("", repositories, bound)) is { Count: > 0 } problems)
+                return Error(400, string.Join("; ", problems.Select(p => p.Message)));
+            var lockRef = await WriteLockAsync(libraries, context.RequestAborted);
             var runId = "run-" + Guid.NewGuid().ToString("N")[..12];
             var now = DateTimeOffset.UtcNow;
             await Records.AppendAsync(new RecordBatch(
@@ -104,18 +111,28 @@ public static partial class ApiApp
             return Results.Json(new StartRunResponse(runId), Json, statusCode: 201);
         }
 
+        /// <summary>The organisation's libraries, read now: a run starts on them as they are, not as the read routes cache them.</summary>
+        async Task<IReadOnlyList<Library.Library>> OpenLibrariesAsync(CancellationToken ct)
+        {
+            var opened = new List<Library.Library>();
+            foreach (var source in services.Organisation.Libraries)
+            {
+                var (library, problem) = await LibrarySources.OpenAsync(source, services.Organisation.Location, ct);
+                opened.Add(library ?? throw new InvalidOperationException($"library {source.Name}: {problem}"));
+            }
+
+            return opened;
+        }
+
         /// <summary>
         /// The run's lock (docs/08 sections 3 and 5.1): every content file of the organisation's libraries stored
         /// by content hash, and the lock that lists them stored as an artifact itself.
         /// </summary>
-        async Task<string> WriteLockAsync(CancellationToken ct)
+        async Task<string> WriteLockAsync(IReadOnlyList<Library.Library> libraries, CancellationToken ct)
         {
             var locked = new List<LockedLibrary>();
-            foreach (var source in services.Organisation.Libraries)
+            foreach (var library in libraries)
             {
-                var (library, problem) = await LibrarySources.OpenAsync(source, services.Organisation.Location, ct);
-                if (library is null)
-                    throw new InvalidOperationException($"library {source.Name}: {problem}");
                 foreach (var (_, text) in library.Files.All)
                     (await Artifacts.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(text)), ct)).Unwrap();
                 locked.Add(LibraryLock.Pin(library));
