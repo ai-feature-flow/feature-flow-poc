@@ -67,6 +67,7 @@ public static partial class ApiApp
         MapDecisions(app, api);
         MapOverrides(app, api);
         MapSessions(app, api);
+        MapAttention(app, api);
         MapInbound(app, api);
         MapConsole(app, api);
         return app;

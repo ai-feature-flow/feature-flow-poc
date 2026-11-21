@@ -130,6 +130,7 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
             """);
         CreateLedger(connection);
         CreateSteering(connection);
+        CreateOpenWaits(connection);
     }
 
     /// <summary>One organisation per installation; the key is there from the start (docs/02 section 5).</summary>
@@ -237,6 +238,7 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
             Queries.Waits when parameters.GetValueOrDefault("open") == "true" =>
                 ("SELECT body FROM waits WHERE org_id = $o AND run_id = $r AND open = 1 ORDER BY wait_id", typeof(WaitRecord), [("$r", P("run_id"))]),
             Queries.Waits => ("SELECT body FROM waits WHERE org_id = $o AND run_id = $r ORDER BY wait_id", typeof(WaitRecord), [("$r", P("run_id"))]),
+            Queries.OpenWaits => (OpenWaitsSql, typeof(OpenWaitRecord), []),
             Queries.Timeline => ("SELECT body FROM timeline WHERE org_id = $o AND run_id = $r AND sequence > $a ORDER BY sequence", typeof(TimelineRecord),
                 [("$r", P("run_id")), ("$a", long.Parse(parameters.GetValueOrDefault("after", "0"), System.Globalization.CultureInfo.InvariantCulture))]),
             Queries.Answers => ("SELECT body FROM answers WHERE org_id = $o AND run_id = $r ORDER BY id", typeof(AnswerRecord), [("$r", P("run_id"))]),
@@ -330,4 +332,18 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
             Execute(connection, "INSERT OR REPLACE INTO session_checks VALUES ($o, $s, $c, $b)",
                 ("$o", Org), ("$s", c.SessionId), ("$c", c.CheckId), ("$b", JsonSerializer.Serialize(c, Json)));
     }
+
+    // ---- Oversight (A3): the open waits of runs still going, for GET /attention ----
+
+    static void CreateOpenWaits(SqliteConnection connection) =>
+        Execute(connection, "CREATE INDEX IF NOT EXISTS waits_open ON waits (org_id, open)");
+
+    /// <summary>Every open wait of a <c>starting</c> or <c>running</c> run, with the run, oldest first, at most 500 (<see cref="Queries.OpenWaits"/>).</summary>
+    const string OpenWaitsSql = """
+        SELECT json_object('wait', json(w.body), 'run', json(r.body))
+        FROM waits w JOIN runs r ON r.org_id = w.org_id AND r.run_id = w.run_id
+        WHERE w.org_id = $o AND w.open = 1 AND json_extract(r.body, '$.status') IN ('starting', 'running')
+        ORDER BY json_extract(w.body, '$.updatedAt'), w.run_id, w.wait_id
+        LIMIT 500
+        """;
 }

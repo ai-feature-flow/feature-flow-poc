@@ -60,11 +60,16 @@ public sealed class ApiWorld : IAsyncDisposable
     readonly string folder = Path.Combine(Path.GetTempPath(), "ff-apiw-" + Guid.NewGuid().ToString("N"));
     readonly Microsoft.AspNetCore.Builder.WebApplication app;
 
-    public ApiWorld(OrganisationConfig? organisation = null, IReadOnlyList<IAuthenticator>? authenticators = null, ApiAuthConfig? auth = null)
+    /// <summary>
+    /// An API over <paramref name="records"/>, else a SQLite store of its own. A given store is shared: each test uses run
+    /// ids of its own there.
+    /// </summary>
+    public ApiWorld(OrganisationConfig? organisation = null, IReadOnlyList<IAuthenticator>? authenticators = null, ApiAuthConfig? auth = null,
+        IRecordStoreProvider? records = null)
     {
         Directory.CreateDirectory(folder);
         File.WriteAllText(Path.Combine(folder, "secrets.json"), """{ "api_token": "right" }""");
-        Records = new SqliteRecordStore(Path.Combine(folder, "records.db"));
+        Records = records ?? new SqliteRecordStore(Path.Combine(folder, "records.db"));
         var providers = new ProviderSet(
             new Dictionary<string, IReadOnlyDictionary<string, IProvider>>
             {
@@ -85,7 +90,7 @@ public sealed class ApiWorld : IAsyncDisposable
         Address = new Uri(app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First());
     }
 
-    public SqliteRecordStore Records { get; }
+    public IRecordStoreProvider Records { get; }
 
     public FakeTemporal Temporal { get; } = new();
 

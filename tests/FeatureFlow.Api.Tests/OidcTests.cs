@@ -116,6 +116,21 @@ public sealed class OidcTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Me_names_the_tokens_subject_its_groups_and_the_roles_they_give()
+    {
+        await WorldAsync();
+
+        using var response = await With(Token(groups: ["eng", "leads", "sales"])).GetAsync("me", TestContext.Current.CancellationToken);
+        var me = JsonSerializer.Deserialize<FeatureFlow.Api.Contracts.MeResponse>(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken),
+            FeatureFlow.Api.Contracts.ApiJson.Options)!;
+
+        Assert.Equal(("ana", "api"), (me.Actor, me.Channel));
+        Assert.Equal(["eng", "leads", "sales"], me.Groups!);
+        Assert.Equal(["viewer", "approver", "steerer"], me.Roles);
+        Assert.Empty(me.Teams);
+    }
+
+    [Fact]
     public async Task An_expired_misaddressed_foreign_or_unsigned_token_is_refused()
     {
         await WorldAsync();

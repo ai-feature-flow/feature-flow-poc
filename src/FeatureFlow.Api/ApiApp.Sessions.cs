@@ -143,7 +143,7 @@ public static partial class ApiApp
 
         /// <summary>
         /// The session, its run and its decision's wait, if <paramref name="caller"/> may act on it now: the decision is open, and
-        /// the caller may answer it as the approval rule says (roles in the run's scope, <c>from_chat</c>), as an answer would.
+        /// the caller may answer it (<see cref="CheckAnswer"/>), as an answer would.
         /// </summary>
         async Task<(SessionRecord? Session, RunRecord? Run, WaitRecord? Wait, IResult? Refused)> ActableAsync(Caller caller, string sid, CancellationToken ct)
         {
@@ -159,12 +159,8 @@ public static partial class ApiApp
             var (types, unreadable) = await DecisionTypesAsync(wait, ct);
             if (types is null)
                 return (null, null, null, unreadable);
-            var rule = Approval.For(wait.DecisionType, services.Organisation.Policy, TeamOf(scope), types, wait.Kind);
-            if (Refuse(caller, scope, RolesToAnswer(services.Organisation.Policy, types, wait, TeamOf(scope)),
-                    $"act on session {sid} ({wait.DecisionType}; approval: {rule.Source})") is { } refused)
+            if (CheckAnswer(caller, run, wait, types, action: null).Refusal is { } refused)
                 return (null, null, null, refused);
-            if (caller.FromChat && !rule.Rule.FromChat)
-                return (null, null, null, Error(403, $"{wait.DecisionType} may not be answered from chat ({rule.Source}); act on session {sid} in the CLI"));
             return (session, run, wait, null);
         }
 
