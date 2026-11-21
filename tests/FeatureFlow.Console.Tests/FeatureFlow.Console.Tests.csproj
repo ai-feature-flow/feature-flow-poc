@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The console in a browser (LOG 461): Playwright's Chromium against the API in process. Default category. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\FeatureFlow.Api\FeatureFlow.Api.csproj" />
+    <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Local\FeatureFlow.Providers.Local.csproj" />
+    <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Slack\FeatureFlow.Providers.Slack.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Playwright" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+</Project>

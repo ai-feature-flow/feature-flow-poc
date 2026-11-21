@@ -39,6 +39,7 @@
     <Project Path="tests/FeatureFlow.Api.Tests/FeatureFlow.Api.Tests.csproj" />
     <Project Path="tests/FeatureFlow.Architecture.Tests/FeatureFlow.Architecture.Tests.csproj" />
     <Project Path="tests/FeatureFlow.Cli.Tests/FeatureFlow.Cli.Tests.csproj" />
+    <Project Path="tests/FeatureFlow.Console.Tests/FeatureFlow.Console.Tests.csproj" />
     <Project Path="tests/FeatureFlow.Engine.Agent.Tests/FeatureFlow.Engine.Agent.Tests.csproj" />
     <Project Path="tests/FeatureFlow.Engine.Tests/FeatureFlow.Engine.Tests.csproj" />
     <Project Path="tests/FeatureFlow.Expressions.Tests/FeatureFlow.Expressions.Tests.csproj" />

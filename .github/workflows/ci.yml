@@ -60,7 +60,6 @@ jobs:
       - run: dotnet build FeatureFlow.slnx -c Release
       # --with-deps installs the libraries Chromium needs on Linux. The script is built with FeatureFlow.Console.Tests.
       - name: Install Playwright's Chromium
-        if: hashFiles('tests/FeatureFlow.Console.Tests/FeatureFlow.Console.Tests.csproj') != ''
         run: pwsh tests/FeatureFlow.Console.Tests/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
       - run: dotnet test FeatureFlow.slnx -c Release --no-build --filter "Category!=Integration&Category!=Live&Category!=Cluster" --logger "console;verbosity=normal"
 
