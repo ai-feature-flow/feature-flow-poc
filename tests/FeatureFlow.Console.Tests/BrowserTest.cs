@@ -7,15 +7,19 @@ namespace FeatureFlow.Console.Tests;
 /// first for another mode) and a page in a fresh browser context. The test fails on any page error, console error or
 /// <c>securitypolicyviolation</c> event, checked when it ends. The browser's own report of an API refusal
 /// ("Failed to load resource: the server responded with a status of …") is not an error here: refusals are part of what the
-/// console handles, and each test asserts what the page shows of them. <see cref="Allow"/> admits another expected message.
+/// console handles, and each test asserts what the page shows of them; <see cref="ExpectNoRefusal"/> makes it one.
+/// <see cref="Allow"/> admits another expected message.
 /// </summary>
 public abstract class BrowserTest(BrowserFixture browser) : IAsyncLifetime
 {
     /// <summary>How the page reports a policy violation, so it is caught with the console's errors.</summary>
     const string Violation = "securitypolicyviolation";
 
+    /// <summary>How the browser reports an API refusal in the console.</summary>
+    const string Refusal = "Failed to load resource: the server responded with a status of";
+
     readonly List<string> problems = [];
-    readonly List<string> allowed = ["Failed to load resource: the server responded with a status of"];
+    readonly List<string> allowed = [Refusal];
     ConsoleWorld? world;
     IBrowserContext? context;
     IPage? page;
@@ -39,6 +43,9 @@ public abstract class BrowserTest(BrowserFixture browser) : IAsyncLifetime
 
     /// <summary>Admits console errors containing <paramref name="fragment"/>, such as a refused connection while the API restarts.</summary>
     protected void Allow(string fragment) => allowed.Add(fragment);
+
+    /// <summary>Makes the browser's report of an API refusal an error too, for a page that should be refused nothing.</summary>
+    protected void ExpectNoRefusal() => allowed.Remove(Refusal);
 
     public ValueTask InitializeAsync() => ValueTask.CompletedTask;
 
