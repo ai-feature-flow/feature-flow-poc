@@ -172,6 +172,9 @@ public class SteeringRunTests
         const string role = "{ api_version: feature-flow/v1, kind: patch, base_revision: 2, changes: [{ op: replace, target: build, step: { id: build, agent: { role: std:roles/designer, task: m7steer:tasks/build }, outcomes: { built: success, stuck: blocked } } }] }";
         Assert.Contains("change_role", await RefusedAsync(h, id, Override("amend", null, new() { ["patch"] = role }, "root", "amend_protected")));
         Assert.Equal("applied: plan revision 3", (await SendAsync(h, id, Override("change_role", "build", new() { ["role"] = "std:roles/designer" }, "root"))).Result);
+        // The current revision is what a person reads before amending again (G11, F18): recorded with the run's next record.
+        await UntilAsync(() => Task.FromResult(h.Cli("plan", id).Output.StartsWith("revision 3 of m7steer:templates/steer_line", StringComparison.Ordinal)),
+            "ff run plan did not show revision 3");
 
         Assert.Contains("above the hard ceiling of 4", await RefusedAsync(h, id, Override("grant_attempts", "build", new() { ["attempts"] = "2" })));
         Assert.Equal("applied", (await SendAsync(h, id, Override("grant_attempts", "build", new() { ["attempts"] = "2" }, "root", "grant_attempts_beyond"))).Result);

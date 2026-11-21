@@ -46,10 +46,14 @@ public class ChildRunTests
         Assert.Equal(start.ParentArtifacts, start.RootArtifacts);
         Assert.Contains(view["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "completed" && e["step_id"]!.ToString() == "read");
 
-        // The artifact index: each run's artifacts by step and execution, a parent's view including its children's.
-        var index = (await h.Host.Providers.Required<Providers.Abstractions.IRecordStoreProvider>("record_store").QueryAsync<Providers.Abstractions.ArtifactRecord>(
+        // The artifact index: each run's artifacts by step and execution, a parent's view including its children's. Each run
+        // also indexes its plan revision, and its agent steps' prompts and transcripts, for people to read (LOG A3-0f, A3-0q).
+        var all = (await h.Host.Providers.Required<Providers.Abstractions.IRecordStoreProvider>("record_store").QueryAsync<Providers.Abstractions.ArtifactRecord>(
             Providers.Abstractions.Queries.Artifacts, new Dictionary<string, string> { ["run_id"] = id }, TestContext.Current.CancellationToken)).Value!;
         var againId = $"{id}.again.1";
+        Assert.Equal([id, againId, childId],
+            all.Where(a => a.Name == Providers.Abstractions.ArtifactNames.PlanRevision).Select(a => a.RunId).Order(StringComparer.Ordinal));
+        var index = all.Where(a => !Providers.Abstractions.ArtifactNames.ForPeopleOnly(a)).ToList();
         Assert.Equal([(id, "write", "notes"), (childId, "use", "notes"), (childId, "use", "summary"), (againId, "use", "notes"), (againId, "use", "summary")],
             index.Select(a => (a.RunId, a.StepId, a.Name)));
         Assert.All(index, a => Assert.Equal(("m6:artifact_types/notes", null, false, 1), (a.Type, a.Action, a.Evidence, a.Execution)));
