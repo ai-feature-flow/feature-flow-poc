@@ -194,7 +194,7 @@ public abstract class RecordStoreContract : ContractBase
         await Assert.ThrowsAnyAsync<ArgumentException>(() => Store.QueryAsync<WaitRecord>(Queries.Run, new Dictionary<string, string> { ["run_id"] = Id("run") }, Ct));
     }
 
-    // ---- Changes (docs/06 section 3.12, LOG A3-0j). The store may be shared, so each test reads only its own runs' changes. ----
+    // ---- Changes (docs/06 section 3.12, LOG 397). The store may be shared, so each test reads only its own runs' changes. ----
 
     async Task<long> LatestChange() => (await Query<ChangeRecord>(Queries.LatestChange)).SingleOrDefault()?.Sequence ?? 0;
 

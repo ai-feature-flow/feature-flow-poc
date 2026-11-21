@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 namespace FeatureFlow.Api;
 
 /// <summary>
-/// The change notifications <c>GET /events</c> streams (docs/02 section 7, LOG A3-0j, A3-0k): one feed per API process
+/// The change notifications <c>GET /events</c> streams (docs/02 section 7, LOG 397, 398): one feed per API process
 /// polls the record store's changes (<see cref="Queries.Changes"/>) and fans each out to every subscriber. It reads the
 /// store, never memory shared with the workers, since the API may run apart from them. Each subscriber has a bounded
 /// channel; one that is full is closed rather than waited for, and its client reconnects. The last
@@ -159,7 +159,7 @@ public sealed class ChangeFeed(ApiServices services, ILogger<ChangeFeed> logger)
             Send(null);
     }
 
-    /// <summary>Gives a frame to every subscriber; one whose channel is full is closed and dropped (LOG A3-0k).</summary>
+    /// <summary>Gives a frame to every subscriber; one whose channel is full is closed and dropped (LOG 398).</summary>
     void Send(ChangeRecord? frame)
     {
         for (var i = subscribers.Count - 1; i >= 0; i--)

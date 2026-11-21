@@ -153,7 +153,7 @@ public sealed class InboundTests : IAsyncDisposable
         var sent = Assert.Single(await AnswersAsync(), a => a.Result == "sent");
         Assert.Equal(("alice", "gate-1"), (sent.Actor, sent.WaitId));
         Assert.Contains("\"outcome\":\"approved\"", sent.Answer);
-        // A button carries no words: the engine writes its reason (LOG A3-0d).
+        // A button carries no words: the engine writes its reason (LOG 391).
         Assert.Equal("answered with a slack button", sent.Reason);
     }
 

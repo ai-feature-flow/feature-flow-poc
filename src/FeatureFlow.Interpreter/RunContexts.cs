@@ -3,7 +3,7 @@ using System.Text;
 namespace FeatureFlow.Interpreter;
 
 /// <summary>
-/// One thing the run has learned that the next agent should know (docs/04 section 3.5; LOG A3-0r): an agent step's report
+/// One thing the run has learned that the next agent should know (docs/04 section 3.5; LOG 405): an agent step's report
 /// <see cref="ContextKinds.Summary"/>, a person's <see cref="ContextKinds.Answer"/> with their reason, or a work failure's
 /// <see cref="ContextKinds.RetryCause"/>, with the step and execution it came from. <see cref="Text"/> reads on its own.
 /// </summary>
@@ -31,7 +31,7 @@ public static class RunContexts
 
     /// <summary>
     /// The most any one entry's text may be, in UTF-8 bytes, so that no single entry (several people's joined reasons, a long
-    /// failure) can fill <see cref="MaxBytes"/> and push every other entry out (LOG A3-9b).
+    /// failure) can fill <see cref="MaxBytes"/> and push every other entry out (LOG 433).
     /// </summary>
     public const int MaxEntryBytes = 4 * 1024 + 512;
 

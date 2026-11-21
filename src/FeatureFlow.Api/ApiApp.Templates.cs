@@ -20,7 +20,7 @@ public static partial class ApiApp
     sealed partial class Handlers
     {
         /// <summary>
-        /// The entrypoints of each organisation library (docs/08 section 2), for any authenticated caller (LOG A3-0m): listing
+        /// The entrypoints of each organisation library (docs/08 section 2), for any authenticated caller (LOG 400): listing
         /// them shows no run's data, and starting a run is still authorised in its scope. A library that cannot be read is
         /// listed with why, not a failure of the route.
         /// </summary>

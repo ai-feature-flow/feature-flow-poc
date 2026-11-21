@@ -63,7 +63,7 @@ public static partial class ApiApp
     sealed partial class Handlers
     {
         /// <summary>
-        /// A run's current plan revision (G11; LOG A3-0q): the latest revision the run indexed, rebuilt with the libraries
+        /// A run's current plan revision (G11; LOG 404): the latest revision the run indexed, rebuilt with the libraries
         /// locked when its root run started, as its readable form (docs/09 section 4.4) and as data, each step with its status
         /// from the run's timeline and open waits, whether a breakpoint is set on it, and the outcome it is skipped with.
         /// </summary>

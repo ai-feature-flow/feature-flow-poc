@@ -248,7 +248,7 @@ public static class RunCommands
 
         /// <summary>
         /// An override argument's value: <c>@file</c> is the file's text, such as an <c>amend</c> patch or an
-        /// <c>override_library</c> replacement, and <c>@@</c> a value that starts with a literal <c>@</c> (LOG A3-0s).
+        /// <c>override_library</c> replacement, and <c>@@</c> a value that starts with a literal <c>@</c> (LOG 406).
         /// </summary>
         static string ChangeValue(string name, string value)
         {

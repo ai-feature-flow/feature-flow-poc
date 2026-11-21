@@ -141,7 +141,7 @@ public static partial class ApiApp
         }
 
         /// <summary>
-        /// The run's page (LOG A3-0i): the run; every wait, open first, then closed ones most recently closed first, each with
+        /// The run's page (LOG 396): the run; every wait, open first, then closed ones most recently closed first, each with
         /// whether the caller may answer it now (<see cref="CheckAnswer"/>), who has answered while more must
         /// (<c>min_count</c>), and the answer that closed it; the timeline after <paramref name="after"/>; the children; every
         /// answer and override recorded; and the override keys the caller may use on it.
@@ -174,7 +174,7 @@ public static partial class ApiApp
         /// <summary>
         /// The run-time override keys the caller may use in the scope, variants included, as <c>POST /runs/{id}/overrides</c> and
         /// <c>POST /runs/{id}/abort</c> would authorise them. Answering and recovering are not listed: a wait's <c>can_answer</c>
-        /// says whether the caller may (LOG A3-4a).
+        /// says whether the caller may (LOG 417).
         /// </summary>
         IReadOnlyList<string> OverridesAllowed(Caller caller, RoleScope scope)
         {
@@ -187,7 +187,7 @@ public static partial class ApiApp
 
         /// <summary>
         /// The run's own artifact index, in the order recorded, for a viewer of the run: declared artifacts, evidence, agent
-        /// sessions' transcripts and prompts, and plan revisions (LOG 325 as amended by LOG 343 and A3-0f). A child's are
+        /// sessions' transcripts and prompts, and plan revisions (LOG 325 as amended by LOG 343 and 393). A child's are
         /// listed through the child, whose scope may differ.
         /// </summary>
         public async Task<IResult> ListArtifactsAsync(HttpContext context, Caller caller, string id)
@@ -201,7 +201,7 @@ public static partial class ApiApp
         /// <summary>
         /// An artifact of the run, for a viewer of the run: one its own index holds (what its timeline shows, its transcripts
         /// and prompts), or one a wait of the run names as consumed, such as the parent's contract a child's gate ratifies
-        /// (LOG A3-0g). A child's own artifacts are read through the child, whose scope may differ (review R5, F1).
+        /// (LOG 394). A child's own artifacts are read through the child, whose scope may differ (review R5, F1).
         /// </summary>
         public async Task<IResult> ArtifactAsync(HttpContext context, Caller caller, string id, string reference)
         {

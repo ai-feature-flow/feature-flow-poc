@@ -49,7 +49,7 @@ static class Schema
         """
         CREATE INDEX waits_open ON waits (org_id) WHERE open;
         """,
-        // 3: the changes GET /events reports (LOG A3-0j), numbered in commit order (PostgresRecordStore.AppendChangesAsync).
+        // 3: the changes GET /events reports (LOG 397), numbered in commit order (PostgresRecordStore.AppendChangesAsync).
         """
         CREATE TABLE changes (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, org_id text NOT NULL, run_id text NOT NULL, kind text NOT NULL, wait_id text,
             at timestamptz NOT NULL DEFAULT now());

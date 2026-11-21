@@ -127,7 +127,7 @@ public static partial class ApiApp
             var document = await DocumentAsync(sid, context.RequestAborted);
             if (document is null)
                 return Error(409, $"session {sid} has no workspace: see the run's timeline");
-            // A submission says what it submits; with no words of the person's own, that is its reason (LOG A3-0d).
+            // A submission says what it submits; with no words of the person's own, that is its reason (LOG 391).
             var reason = string.IsNullOrWhiteSpace(body.Reason) ? $"submitted {revision}" : body.Reason;
             return await SubmitAnswerAsync(context, caller, run!, wait!, new AnswerArgs(session!.WaitId, caller.Actor, document.SubmitOutcome, null, Revision: revision, Reason: reason));
         }

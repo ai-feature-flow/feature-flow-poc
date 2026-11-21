@@ -1,7 +1,7 @@
 namespace FeatureFlow.Interpreter.Tests;
 
 /// <summary>
-/// The run context (docs/04 section 3.5; LOG A3-0r): what the run has learned, rendered by the core into the next agent
+/// The run context (docs/04 section 3.5; LOG 405): what the run has learned, rendered by the core into the next agent
 /// step's spec. A work failure is a retry cause the next attempt reads; an infrastructure retry is not; a report's summary
 /// is kept; <c>context: none</c> reads nothing; a child reads its parent's first; the rendering is bounded.
 /// </summary>

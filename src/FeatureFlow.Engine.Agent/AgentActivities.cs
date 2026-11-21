@@ -557,7 +557,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                         var stored = Must(await owner.Store.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(prompt)), ct), "store the prompt");
                         events.Add($"prompt of session {number}: {stored.Id}");
                         await EventAsync("prompt", stored.Id);
-                        // Indexed as it is stored, so a person reads it like any artifact (LOG A3-0f).
+                        // Indexed as it is stored, so a person reads it like any artifact (LOG 393).
                         await RecordAsync(new RecordBatch(Artifacts: [new ArtifactRecord(call.Step.RunId, call.Step.StepId, call.Step.Execution, ArtifactNames.Prompt(number), ArtifactNames.PromptType,
                             stored.Id, null, false, DateTimeOffset.UtcNow)]));
                         running = Must(await runtime.StartAsync(sandbox, task with { Session = number, TaskText = prompt }, limits, ct), "start the agent");
@@ -590,7 +590,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                 if (result.Transcript is { } transcript)
                 {
                     events.Add($"transcript of session {number}: {transcript}");
-                    // Indexed before the session's end is judged, so a failed attempt's transcript is listed too (LOG A3-0f).
+                    // Indexed before the session's end is judged, so a failed attempt's transcript is listed too (LOG 393).
                     await RecordAsync(new RecordBatch(Artifacts: [new ArtifactRecord(call.Step.RunId, call.Step.StepId, call.Step.Execution, ArtifactNames.Transcript(number),
                         ArtifactNames.TranscriptType, transcript, null, false, DateTimeOffset.UtcNow)]));
                 }

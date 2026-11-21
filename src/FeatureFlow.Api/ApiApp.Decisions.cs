@@ -28,7 +28,7 @@ public static partial class ApiApp
     /// <summary>The result an answer is recorded with while it waits for more people to answer the same way (<c>min_count</c>).</summary>
     const string Pending = "pending: ";
 
-    /// <summary>The most a person's reason may be, in UTF-8 bytes (LOG A3-9a).</summary>
+    /// <summary>The most a person's reason may be, in UTF-8 bytes (LOG 432).</summary>
     public const int MaxReasonBytes = 4 * 1024;
 
     sealed partial class Handlers
@@ -49,7 +49,7 @@ public static partial class ApiApp
             var action = body.Action;
             if (wait.Kind == "patch_approval" && action is null && outcome is "approve" or "reject")
                 (action, outcome) = (outcome, null);
-            // An agent's question is answered by its text alone (LOG A3-0e); every other answer is recorded with the person's reason.
+            // An agent's question is answered by its text alone (LOG 392); every other answer is recorded with the person's reason.
             if (ReasonRefused(body.Reason, required: wait.Kind != "question") is { } refusedReason)
                 return refusedReason;
             // F8: the actor is the authenticated caller; the body cannot name one.

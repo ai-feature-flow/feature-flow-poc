@@ -8,7 +8,7 @@ using FeatureFlow.Validation;
 namespace FeatureFlow.Interpreter;
 
 /// <summary>
-/// What rebuilds one revision of a run's plan with the run's library lock (docs/04 section 7; LOG A3-0q): the run, the
+/// What rebuilds one revision of a run's plan with the run's library lock (docs/04 section 7; LOG 404): the run, the
 /// template, the revision, the run's repositories and parameters (YAML text, as <see cref="CarriedRunInfo"/>), and the
 /// accepted patches before it, each as <see cref="PatchReader.Write"/> writes it. Stored as a <c>plan_revision</c> artifact for
 /// each revision.
@@ -46,9 +46,9 @@ public sealed partial class RunCore
     int revisionsTaken;
 
     /// <summary>
-    /// The plan revisions accepted since the last take, revision 1 first, drained for the artifact index (LOG A3-0q). The
+    /// The plan revisions accepted since the last take, revision 1 first, drained for the artifact index (LOG 404). The
     /// count taken is carried (<see cref="CarriedCore.RevisionsTaken"/>), so a hand-over takes only revisions not yet taken:
-    /// each revision holds every patch before it, and taking them all again would grow the history with each hand-over (LOG A3-8a).
+    /// each revision holds every patch before it, and taking them all again would grow the history with each hand-over (LOG 430).
     /// </summary>
     public IReadOnlyList<PlanSource> TakeRevisions()
     {

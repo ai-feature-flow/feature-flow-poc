@@ -1,7 +1,7 @@
 namespace FeatureFlow.Providers.Abstractions;
 
 /// <summary>
-/// The names the engine indexes beside declared artifacts (LOG A3-0f, A3-0q): an agent session's transcript and prompt,
+/// The names the engine indexes beside declared artifacts (LOG 393, 404): an agent session's transcript and prompt,
 /// <c>transcript:&lt;n&gt;</c> and <c>prompt:&lt;n&gt;</c> (the <c>kind:</c> form of evidence's <c>evidence:&lt;type&gt;</c>, which no
 /// declared artifact can take), and each accepted plan revision, under no step with its revision as the execution.
 /// </summary>

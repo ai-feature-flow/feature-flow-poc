@@ -519,7 +519,7 @@ interface ISecretsProvider : IProvider {
   (`Queries`, `FeatureFlow.Providers.Abstractions/Stores.cs`).
 - The record store numbers the changes each batch makes, in a `changes` table
   written inside `AppendAsync`'s own transaction, so no writer changes and none
-  is missed (LOG A3-0j): one `run_changed` per run whose runs, timeline,
+  is missed (LOG 397): one `run_changed` per run whose runs, timeline,
   answers, overrides, artifacts or sessions the batch writes, and one
   `wait_opened` or `wait_closed` per wait record (`ChangeKinds.Of`).
   `Queries.Changes` returns those after a sequence (`after`, ascending, at most

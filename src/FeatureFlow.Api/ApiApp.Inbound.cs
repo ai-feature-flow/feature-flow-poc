@@ -146,7 +146,7 @@ public static partial class ApiApp
         /// <summary>
         /// The chat answer, for the wait the button named, on the one answer path (<see cref="SubmitAnswerAsync"/>): a recovery
         /// action for an intervention, <c>approve</c> or <c>reject</c> for a patch approval, an outcome for anything else. A
-        /// button carries no words, so its reason is the engine's: <c>answered with a &lt;source&gt; button</c> (LOG A3-0d).
+        /// button carries no words, so its reason is the engine's: <c>answered with a &lt;source&gt; button</c> (LOG 391).
         /// Transport-neutral: a socket-mode receiver would make the same call with the answers it receives.
         /// </summary>
         public async Task<IResult> AnswerFromChatAsync(HttpContext context, Caller caller, string source, ChatAnswer answer)

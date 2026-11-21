@@ -47,7 +47,7 @@ public class ChildRunTests
         Assert.Contains(view["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "completed" && e["step_id"]!.ToString() == "read");
 
         // The artifact index: each run's artifacts by step and execution, a parent's view including its children's. Each run
-        // also indexes its plan revision, and its agent steps' prompts and transcripts, for people to read (LOG A3-0f, A3-0q).
+        // also indexes its plan revision, and its agent steps' prompts and transcripts, for people to read (LOG 393, 404).
         var all = (await h.Host.Providers.Required<Providers.Abstractions.IRecordStoreProvider>("record_store").QueryAsync<Providers.Abstractions.ArtifactRecord>(
             Providers.Abstractions.Queries.Artifacts, new Dictionary<string, string> { ["run_id"] = id }, TestContext.Current.CancellationToken)).Value!;
         var againId = $"{id}.again.1";

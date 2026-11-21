@@ -80,7 +80,7 @@ public static partial class ApiApp
         /// <summary>
         /// The decision types <see cref="CheckAnswer"/> needs for <paramref name="wait"/> on a read route: none where the
         /// organisation's policy decides (an intervention, or a type with an organisation rule), else the libraries' from
-        /// <see cref="LibraryCache"/> (LOG A3-0h). Null when a library cannot be read, so the read shows the wait as not
+        /// <see cref="LibraryCache"/> (LOG 395). Null when a library cannot be read, so the read shows the wait as not
         /// answerable rather than judging it by the engine's looser default (LOG 289).
         /// </summary>
         async Task<IReadOnlyList<DecisionTypeItem>?> CachedTypesAsync(WaitRecord wait, CancellationToken ct)

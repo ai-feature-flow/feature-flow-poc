@@ -38,7 +38,7 @@ public sealed record ApiServices(ProviderSet Providers, InstallationConfig Insta
 /// </summary>
 public static partial class ApiApp
 {
-    /// <summary>The API's JSON: snake_case, as the OpenAPI document describes it (LOG A3-0a).</summary>
+    /// <summary>The API's JSON: snake_case, as the OpenAPI document describes it (LOG 388).</summary>
     static readonly JsonSerializerOptions Json = ApiJson.Options;
 
     /// <summary>
@@ -115,7 +115,7 @@ public static partial class ApiApp
 
     /// <summary>
     /// A route's request body, read by <see cref="Handlers.BodyAsync{T}"/> inside the guard, declared for the document. It names
-    /// no content type, so routing does not refuse a request (415) before the guard has authenticated it (LOG A3-0t); the
+    /// no content type, so routing does not refuse a request (415) before the guard has authenticated it (LOG 407); the
     /// document then describes the body as JSON.
     /// </summary>
     static RouteHandlerBuilder Taking<TRequest>(this RouteHandlerBuilder route) where TRequest : notnull =>
@@ -148,7 +148,7 @@ public static partial class ApiApp
         static IResult Error(int status, string message) => Results.Json(new ErrorResponse(message), Json, statusCode: status);
 
         /// <summary>
-        /// The request's body as <typeparamref name="T"/>, read after authentication (LOG A3-0t), or a 400 naming what is
+        /// The request's body as <typeparamref name="T"/>, read after authentication (LOG 407), or a 400 naming what is
         /// wrong: not JSON, a required property missing or null, a value of the wrong type, or a property the record does not
         /// name (an <c>actor</c> included: the actor is the authenticated caller, F8).
         /// </summary>

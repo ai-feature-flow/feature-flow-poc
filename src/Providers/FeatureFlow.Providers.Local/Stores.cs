@@ -336,7 +336,7 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
                 ("$o", Org), ("$s", c.SessionId), ("$c", c.CheckId), ("$b", JsonSerializer.Serialize(c, Json)));
     }
 
-    // ---- Changes (docs/06 section 3.12, LOG A3-0j): what GET /events reports, written in the batch's transaction ----
+    // ---- Changes (docs/06 section 3.12, LOG 397): what GET /events reports, written in the batch's transaction ----
 
     static void CreateChanges(SqliteConnection connection) =>
         Execute(connection, """

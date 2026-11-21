@@ -203,7 +203,7 @@ public sealed partial class RunCore
     {
         State.Waits.Add(wait);
         State.WaitChanges.Add(new WaitChange(wait, true));
-        // Every kind of wait is reminded, questions included (LOG A3-0p).
+        // Every kind of wait is reminded, questions included (LOG 403).
         if (Options.ReminderInterval is { } interval)
             outbox.Add(new ArmReminder(wait.Id, 1, interval));
         return wait;
@@ -240,7 +240,7 @@ public sealed partial class RunCore
 
     /// <summary>
     /// The timers and reminders the open waits need, for a shell starting again after a hand-over: each deadline, and each
-    /// wait's next reminder a whole interval from now, so it may come up to one interval late (LOG A3-0o).
+    /// wait's next reminder a whole interval from now, so it may come up to one interval late (LOG 402).
     /// </summary>
     public IReadOnlyList<Command> Timers() =>
     [
@@ -331,7 +331,7 @@ public sealed partial class RunCore
     /// <summary>
     /// A wait as the record store shows it: its kind, its decision type at the run's level, the choices that answer it, and
     /// the text to show (a gate's rendered prompt, a question's text, else the core's reason), so Slack, the console and the
-    /// CLI show the same. A gate also names what its step consumes as it opens, the revisions the person ratifies (LOG A3-0g).
+    /// CLI show the same. A gate also names what its step consumes as it opens, the revisions the person ratifies (LOG 394).
     /// </summary>
     public WaitDescription Describe(OpenWait wait)
     {

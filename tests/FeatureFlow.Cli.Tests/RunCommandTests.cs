@@ -7,7 +7,7 @@ using FeatureFlow.Cli;
 
 namespace FeatureFlow.Cli.Tests;
 
-/// <summary><c>ff run override --change name=@file</c> (LOG A3-0s) and <c>ff run plan</c>, against a fake API that keeps what it is sent.</summary>
+/// <summary><c>ff run override --change name=@file</c> (LOG 406) and <c>ff run plan</c>, against a fake API that keeps what it is sent.</summary>
 public sealed class RunCommandTests : IDisposable
 {
     readonly string folder = Path.Combine(Path.GetTempPath(), "ff-cli-run-" + Guid.NewGuid().ToString("N"));

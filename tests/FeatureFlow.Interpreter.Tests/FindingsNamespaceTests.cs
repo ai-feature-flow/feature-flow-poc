@@ -108,7 +108,7 @@ public class FindingsNamespaceTests
 
         var gate = Assert.Single(core!.TakeWaitChanges().Waits, w => w.Opened is { Kind: "gate" });
         Assert.Equal("approve_spec", gate.StepId);
-        // The exact revisions the person ratifies (LOG A3-0g).
+        // The exact revisions the person ratifies (LOG 394).
         Assert.Equal([("requirements", "sha256:plan.plan/requirements"), ("delivery_plan", "sha256:plan.plan/delivery_plan")],
             gate.Opened!.Consumed!.Select(c => (c.Key, c.Reference)));
     }

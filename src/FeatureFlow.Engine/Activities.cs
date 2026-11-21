@@ -322,7 +322,7 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
 
         var description = await handle.DescribeAsync(new() { Rpc = new RpcOptions { CancellationToken = ct } });
         // The child's own artifacts from the artifact index (its run id is its workflow id): the latest of each name. Its
-        // transcripts, prompts and plan revisions are indexed for people to read, not for a parent to consume (LOG A3-0f).
+        // transcripts, prompts and plan revisions are indexed for people to read, not for a parent to consume (LOG 393).
         var indexed = await services.RecordStore.QueryAsync<ArtifactRecord>(Queries.Artifacts, new Dictionary<string, string> { ["run_id"] = workflowId }, ct);
         if (!indexed.Ok)
             throw new ApplicationFailureException($"the artifact index cannot be read: {indexed.Error!.Message}", errorType: "infrastructure");
@@ -389,7 +389,7 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
 
     /// <summary>
     /// Writes records for the API to read (docs/02 section 5), and indexes each plan revision given: stored as JSON in the
-    /// artifact store and recorded under no step, its revision as the execution (LOG A3-0q).
+    /// artifact store and recorded under no step, its revision as the execution (LOG 404).
     /// </summary>
     [Activity]
     public async Task RecordAsync(RecordBatch batch, IReadOnlyList<PlanSource>? revisions)

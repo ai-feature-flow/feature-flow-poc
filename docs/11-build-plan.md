@@ -72,7 +72,7 @@ src/
   FeatureFlow.Engine.Agent/             Agent worker services: hook endpoint, engine MCP server, model proxy, per-step tokens, commit detection
   FeatureFlow.SandboxClient/            The executable copied into each sandbox: stdio MCP server and hook command (LOG 67)
   FeatureFlow.Api/                      The API service: authentication, authorisation, audit, inbound gateway, the OpenAPI document
-  FeatureFlow.Api.Contracts/            The API's request and response records, shared with the CLI (LOG A3-0a)
+  FeatureFlow.Api.Contracts/            The API's request and response records, shared with the CLI (LOG 388)
   FeatureFlow.Hosting/                  Composition: selects and registers providers from installation configuration
   FeatureFlow.Cli/                      `ff`
   Providers/
@@ -101,7 +101,7 @@ Reference rules, checked by a test that reads the project files:
 | `Model`, `Expressions`, `Library`, `Validation`, `Interpreter` | Each other, in that order. No Temporal, no providers, no I/O except reading library files |
 | `Providers.*` | `Providers.Abstractions` and `Model` only |
 | `Engine`, `Engine.Agent`, `Api` | The core, `Providers.Abstractions`, Temporal; `Api` also `Api.Contracts` |
-| `Api.Contracts` | Nothing: no project, no package (LOG A3-0a) |
+| `Api.Contracts` | Nothing: no project, no package (LOG 388) |
 | `hosts/*` | `Hosting` and the provider projects they ship |
 | `Testing.Workflows` | The core only. No Temporal: re-drive runs without it (LOG 66). Added in M2, LOG 80 |
 

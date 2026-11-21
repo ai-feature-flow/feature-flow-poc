@@ -33,8 +33,8 @@ public sealed record RunRecord(
 
 /// <summary>
 /// A durable wait for a person: a decision, an intervention or a patch approval, open or answered. A record with <see cref="Open"/> false closes the wait and keeps the rest of what the opening record said.
-/// <see cref="Prompt"/> is the text to show (a gate's rendered prompt, a question's text, else the engine's reason); "reason" means only a person's (LOG A3-0b).
-/// <see cref="Consumed"/> is what a gate's step consumed when it opened, by reference (LOG A3-0g).
+/// <see cref="Prompt"/> is the text to show (a gate's rendered prompt, a question's text, else the engine's reason); "reason" means only a person's (LOG 389).
+/// <see cref="Consumed"/> is what a gate's step consumed when it opened, by reference (LOG 394).
 /// </summary>
 public sealed record WaitRecord(
     string RunId,
@@ -71,7 +71,7 @@ public sealed record ChangeRecord(long Sequence, string RunId, string Kind, stri
 
 /// <summary>
 /// The kinds of <see cref="ChangeRecord"/>, and the changes a batch makes, which every record store writes in the same
-/// transaction as the batch (docs/06 section 3.12, LOG A3-0j).
+/// transaction as the batch (docs/06 section 3.12, LOG 397).
 /// </summary>
 public static class ChangeKinds
 {

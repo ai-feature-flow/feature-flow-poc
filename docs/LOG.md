@@ -539,7 +539,7 @@ Judgement calls made while building milestone A2, Engine simplification (`docs/1
 ## From A3
 
 Judgement calls made while building milestone A3, Oversight API (`docs/12` section 4;
-`docs/build/a3-results.md`), LOG 388 to 439. Unreviewed. LOG 391, 400 and 401 are
+`docs/build/a3-results.md`), LOG 388 to 436. Unreviewed. LOG 391, 400, 401 and 434 are
 provisional answers to questions that are the product owner's, and are flagged.
 
 | # | Where | Decision | Why | Needs a look? |
@@ -586,6 +586,13 @@ provisional answers to questions that are the product owner's, and are flagged.
 | 427 | 02 s7 | **The plan route rebuilds each revision with the tree's current library lock, so after an `override_library` an earlier revision is shown with the overridden content** | The core does not reload the plan on a library override either; stamping each revision with a lock needs the shell's lock, and a hand-over would stamp old revisions with the current one | Medium |
 | 428 | 02 s7 | **`GET /runs/{id}/plan` is 404 until the run records its first revision; there is no fallback to the template as started** | No backward compatibility (LOG 263); a run is recorded as soon as its core starts | Low |
 | 429 | 06 s3.10; `RunNotifier.cs` | **The notifier sends a reminder only while the wait's stored record is open, under a key per wait and number, so a retried record activity sends it once** | The record activity appends before it notifies | Low |
+| 430 | 04 s7; `Carry.cs` | **The count of plan revisions already taken for the artifact index is carried across a hand-over, so each revision is recorded once in a run's life** | Each revision holds every patch before it; taking them all again at each hand-over grew the recorded history quadratically (review R6) | Low |
+| 431 | 05 s8 | **The reminder interval is fixed at run start and carried in `RunPolicy`, like attempt ceilings; like them it is not listed in the run start record** | The run start record lists per-step policy rows; no run-wide value is written there today | Low |
+| 432 | 05 s5; `ApiApp.Decisions.cs` | **A person's reason is at most 4,096 UTF-8 bytes on every route that takes one; a longer one is refused 400** | It is carried in workflow state, the run context and the update payload | Low |
+| 433 | 04 s3.5; `RunContexts.cs` | **Each run-context entry is cut to 4.5 KB and marked `[...]`** | One entry cannot then push every other out of the 16 KB rendering; one person's longest reason is kept whole | Low |
+| 434 | 02 s7; `ApiApp.Templates.cs` | **`GET /templates` does not mark parameters a library's `inputs` would supply, since the engine does not apply `inputs` (`docs/03` s6.2). A literal default is JSON text; an expression default is `default_expression`, with `default` null** | A start form must not skip a parameter the run will then lack | **Yes**: apply library `inputs` in a later milestone, or remove them from `docs/03`? |
+| 435 | 02 s7 | **`WaitView.min_count` is the rule's value for an open decision, and 1 for a closed wait or one whose rule cannot be read now; `/attention` leaves out a wait the caller has already answered while it waits for others** | A4's form needs "0 of 2" before anyone answers; "Needs me" should not list what the caller has done | Low |
+| 436 | 05 s5 | **The answer, abort and override routes answer 404, not 403, to a caller who does not view the run** | As the read routes do: a refusal must not reveal that a run exists | Low |
 
 ## From A5
 

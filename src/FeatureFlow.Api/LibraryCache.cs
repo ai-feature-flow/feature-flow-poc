@@ -7,7 +7,7 @@ public sealed record CachedLibrary(LibrarySourceConfig Source, Library.Library? 
 
 /// <summary>
 /// The organisation's libraries for read routes (<c>GET /attention</c>, <c>can_answer</c> on a run, templates), read at most
-/// once a minute per process so a read does not clone each <c>git</c> library per request (LOG A3-0h). A library that could
+/// once a minute per process so a read does not clone each <c>git</c> library per request (LOG 395). A library that could
 /// not be read is kept as such for the same minute. The answer path does not use it: it reads the libraries at the moment of
 /// use (docs/05 section 8).
 /// </summary>

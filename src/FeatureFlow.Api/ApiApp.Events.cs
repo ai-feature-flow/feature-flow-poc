@@ -20,7 +20,7 @@ public static partial class ApiApp
 
     /// <summary>
     /// <c>GET /events</c> (docs/02 section 7, G8): change notifications as server-sent events, for any authenticated caller,
-    /// each frame only for a run the caller views (LOG A3-0l). The feed starts with the host and stops before it.
+    /// each frame only for a run the caller views (LOG 399). The feed starts with the host and stops before it.
     /// </summary>
     static void MapEvents(WebApplication app, Handlers api)
     {

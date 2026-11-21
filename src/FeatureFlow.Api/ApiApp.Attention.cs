@@ -24,7 +24,7 @@ public static partial class ApiApp
         /// (<see cref="Queries.OpenWaits"/>), less the engine's status waits (<c>stalled</c>, <c>stuck</c>), those of runs the
         /// caller does not view, those <see cref="CheckAnswer"/> refuses it, and a <c>min_count</c> decision the caller has
         /// already answered while it waits for others. Libraries are read through the cache, and only for a wait whose type
-        /// has no organisation rule (LOG A3-0h).
+        /// has no organisation rule (LOG 395).
         /// </summary>
         public async Task<IResult> AttentionAsync(HttpContext context, Caller caller)
         {

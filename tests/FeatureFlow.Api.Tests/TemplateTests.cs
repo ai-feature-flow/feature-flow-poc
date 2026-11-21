@@ -20,7 +20,7 @@ public sealed class TemplateTests
             new PolicyConfig([], null, null, null, null), "");
         await using var world = new ApiWorld(organisation);
 
-        // Any authenticated caller, a viewer of nothing included (LOG A3-0m); no credential is 401.
+        // Any authenticated caller, a viewer of nothing included (LOG 400); no credential is 401.
         using var response = await world.As("eve").GetAsync("templates", ct);
         using var anonymous = await new HttpClient { BaseAddress = world.Address }.GetAsync("templates", ct);
         var list = JsonSerializer.Deserialize<TemplateList>(await response.Content.ReadAsStringAsync(ct), ApiJson.Options)!;

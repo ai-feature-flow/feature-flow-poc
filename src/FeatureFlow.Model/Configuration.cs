@@ -141,7 +141,7 @@ public sealed record NotificationRoute(string Channel);
 /// <summary>
 /// <c>notifications</c> (docs/07 section 3, docs/06 section 3.10): the channel per event name, and which events are sent at
 /// all. Empty: nothing is sent. <see cref="ReminderInterval"/>, <c>reminder_interval</c>: how often an open wait is reminded;
-/// null, never (LOG A3-0n).
+/// null, never (LOG 401).
 /// </summary>
 public sealed record NotificationsConfig(IReadOnlyDictionary<string, NotificationRoute> Routing, IReadOnlyList<string> Events)
 {

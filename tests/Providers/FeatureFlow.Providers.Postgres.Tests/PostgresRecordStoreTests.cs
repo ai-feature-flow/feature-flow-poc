@@ -178,7 +178,7 @@ public sealed class PostgresRecordStoreTests(PostgresServer server) : IDisposabl
     }
 
     /// <summary>
-    /// Changes are numbered in commit order (LOG A3-0j): while one transaction holds changes it has not committed, another
+    /// Changes are numbered in commit order (LOG 397): while one transaction holds changes it has not committed, another
     /// append waits for it, so a reader that keeps its place (the last sequence read) never passes a change that commits
     /// later with a lower number. Without the advisory lock the second append commits first and the held change is skipped.
     /// </summary>

@@ -116,7 +116,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
         var ct = TestContext.Current.CancellationToken;
         var transcript = (await store.PutAsync(new MemoryStream("the session's transcript"u8.ToArray()), ct)).Unwrap().Id;
 
-        // The session ends without a report: the attempt fails, and its transcript is the one a person most needs (LOG A3-0f).
+        // The session ends without a report: the attempt fails, and its transcript is the one a person most needs (LOG 393).
         var outcome = await RunAsync(new Dictionary<string, string>(),
             ending: r => r with { Report = null, End = SessionEnd.Failed, Detail = "gave up", Transcript = transcript });
 

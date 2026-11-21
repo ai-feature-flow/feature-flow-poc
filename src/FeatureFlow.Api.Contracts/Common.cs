@@ -8,7 +8,7 @@ public sealed record ErrorResponse(string Error);
 
 /// <summary>
 /// The API's JSON (docs/02 section 7): snake_case property names and enum values, required constructor parameters and
-/// nullable annotations respected. The API, its OpenAPI document and the CLI use these options and no others (LOG A3-0a).
+/// nullable annotations respected. The API, its OpenAPI document and the CLI use these options and no others (LOG 388).
 /// </summary>
 public static class ApiJson
 {

@@ -652,7 +652,7 @@ public sealed partial class RunCore
         if (CountsRaces(step))
             record.AttemptsUsed++;
         Trace("attempt_failed", step.Id, f.Reason);
-        // A work failure is the next attempt's to put right, so its agent is told why; an infrastructure retry is not (LOG A3-0r).
+        // A work failure is the next attempt's to put right, so its agent is told why; an infrastructure retry is not (LOG 405).
         AddContext(ContextKinds.RetryCause, step.Id, record.Executions, $"attempt {record.Executions} of {step.Id} failed: {f.Reason}");
         State.Pending.Add(new Entry(step.Id, false));
         return ApplyResult.Ok;

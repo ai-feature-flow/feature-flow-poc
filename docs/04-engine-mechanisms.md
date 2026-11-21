@@ -112,7 +112,7 @@ reports.
 | Outcomes | Declared |
 | Idempotency | Re-attach to the sandbox by key; resume the agent session by its recorded reference |
 | Limits | Engine defaults: attempts 3, timeout 4 hours, correction turns 2. `limits.timeout` runs from the step's first attempt, kept in the record store, and time the step spends on an open question does not count toward it (the deadline moves out by that time; LOG 106). At the deadline the session is stopped, its commits kept on the hidden reference, and the attempt fails as a work error, "ran out of time"; a retry after the activity's own timeout finds the deadline passed and fails the same way |
-| Artifacts | In: the rendered task, skills, resources, consumed artifacts, the run context. Out: declared artifacts, each session's prompt and transcript (indexed as `prompt:<n>` and `transcript:<n>` for people to read, never consumed by a parent run; LOG A3-0f), the record of files opened, the session reference |
+| Artifacts | In: the rendered task, skills, resources, consumed artifacts, the run context. Out: declared artifacts, each session's prompt and transcript (indexed as `prompt:<n>` and `transcript:<n>` for people to read, never consumed by a parent run; LOG 393), the record of files opened, the session reference |
 
 ### 3.1 Lifecycle of an attempt
 
@@ -139,7 +139,7 @@ reports.
    and questions.
 4. **Collect.** When the session ends, index its transcript as
    `transcript:<n>`, however it ended, so a failed attempt's transcript is
-   listed too (LOG A3-0f). When the agent reports, read its result from the
+   listed too (LOG 393). When the agent reports, read its result from the
    runtime (the report is a hint; the read confirms, `docs/02`). Commit leftover
    changes unless `on_uncommitted: fail`.
 5. **Verify.** Check the reported outcome is declared; check produced artifacts
@@ -226,7 +226,7 @@ ended, is refused. A question never routes the plan: the agent reads the answer
 ### 3.5 Run context
 
 The run keeps a **context**: what it has learned that the next agent should
-know (from FF's `context.md`; LOG A3-0r). The interpreter's core holds it in
+know (from FF's `context.md`; LOG 405). The interpreter's core holds it in
 the run's state, carried over a hand-over, as entries of three kinds:
 
 | Kind | Added when | Text |
@@ -240,7 +240,7 @@ entry, oldest first) into the agent step's specification when the step starts,
 and the agent worker writes it into the prompt between `## This step` and the
 task, so it is in the stored prompt. A run keeps at most 64 entries, each at
 most 4.5 KB (cut and marked `[...]`), so one entry, such as several people's
-joined reasons or a long failure, cannot fill the rendering (LOG A3-9b); the
+joined reasons or a long failure, cannot fill the rendering (LOG 433); the
 rendering is at most 16 KB: the oldest entries are dropped first, with a line
 saying how many. A child run starts with its parent's context as it was when
 the child started, rendered first under `### From the parent run`. A step with
@@ -309,15 +309,15 @@ across a hand-over with the rest of the core's state, so a repeated answer is
 still a duplicate in the next run. The record store's wait record has kind
 `gate`, `question`, `intervention`, `patch_approval` or `breakpoint`, the decision
 type, the choices that answer it and the text to show (its `prompt`; "reason"
-means only a person's, LOG A3-0b); a gate's also names each artifact its step
+means only a person's, LOG 389); a gate's also names each artifact its step
 consumes, with its key and its reference as the gate opened, the exact revisions
-the person ratifies (LOG A3-0g); wait ids are `gate-N`,
+the person ratifies (LOG 394); wait ids are `gate-N`,
 `intervention-N`, `breakpoint-N` and `patch_approval-N`, and a question's is the
 id its agent's client gave it (LOG 360).
 
 Every open wait, of every kind, questions included, is **reminded** while it is
 open when the organisation sets `notifications.reminder_interval` (`docs/07`
-section 3; no default, LOG A3-0n, A3-0p). The interval is fixed for a run when
+section 3; no default, LOG 401, 403). The interval is fixed for a run when
 it starts, in its policy. As a wait opens the core asks the shell to arm
 reminder 1 after one interval; the shell only sleeps and gives the core the
 reminder's number back. If the wait is still open and that is its next reminder,
@@ -325,7 +325,7 @@ the core counts it on the wait, writes `reminded` with the number on the
 timeline (on the wait's id), and arms the next; otherwise, a repeated or late
 reminder or a closed wait's, it does nothing. The core keeps no clock, so the
 timer is relative: after a hand-over each open wait's next reminder is armed a
-whole interval from the new run's start, up to one interval late (LOG A3-0o).
+whole interval from the new run's start, up to one interval late (LOG 402).
 The notifier sends each `reminded` entry whose wait is still open as the
 `reminder` event, the decision request again with its number, once per wait and
 number (`docs/06` section 3.10).
@@ -339,8 +339,8 @@ that type.
 
 Every answer but a question's carries the person's **reason**, and so does an
 abort: the API refuses one without (400), not the core, which trusts the API
-(LOG A3-0d). A question's answer is its text, which the agent reads (LOG
-A3-0e). Two answers are given by the engine: a chat button, which carries no
+(LOG 391). A question's answer is its text, which the agent reads (LOG
+392). Two answers are given by the engine: a chat button, which carries no
 words, answers with `answered with a <source> button`, and a session's
 submission with no reason of its own with `submitted <revision>`. The reason is
 not part of the answer's identity: the same choice in other words is a

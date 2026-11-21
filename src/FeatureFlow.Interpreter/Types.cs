@@ -94,7 +94,7 @@ public sealed record RunOptions
 
     public Model.Cap<bool>? RequireTested { get; init; }
 
-    /// <summary>The organisation's <c>notifications.reminder_interval</c> (docs/07 section 3): how often an open wait is reminded. Null: never (LOG A3-0n).</summary>
+    /// <summary>The organisation's <c>notifications.reminder_interval</c> (docs/07 section 3): how often an open wait is reminded. Null: never (LOG 401).</summary>
     public TimeSpan? ReminderInterval { get; init; }
 
     /// <summary>The caps one step is checked against (check 22), as at run start.</summary>
@@ -135,7 +135,7 @@ public sealed record ArmTimer(string WaitId, DateTimeOffset At) : Command;
 /// <summary>
 /// An open wait's next reminder (docs/04 section 4): after <see cref="After"/> the shell gives the core <see cref="ReminderDue"/>
 /// with <see cref="Number"/>. Relative, since the core keeps no clock; re-armed after a hand-over from <see cref="RunCore.Timers"/>,
-/// up to one interval late (LOG A3-0o).
+/// up to one interval late (LOG 402).
 /// </summary>
 public sealed record ArmReminder(string WaitId, int Number, TimeSpan After) : Command;
 
@@ -479,7 +479,7 @@ public sealed record WaitChange(OpenWait Wait, bool Open);
 
 /// <summary>
 /// What the record store shows of a wait: its record kind, decision type, the choices that answer it, the text to show, and
-/// for a gate what its step consumed as it opened (LOG A3-0g).
+/// for a gate what its step consumed as it opened (LOG 394).
 /// </summary>
 public sealed record WaitDescription(string Kind, string Type, IReadOnlyList<string> Choices, string Prompt, IReadOnlyList<ConsumedArtifact>? Consumed = null);
 

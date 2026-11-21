@@ -265,7 +265,7 @@ public sealed class PostgresRecordStore(Func<CancellationToken, Task<ProviderRes
         }, cancellationToken);
     }
 
-    // ---- Changes (docs/06 section 3.12, LOG A3-0j): what GET /events reports, written in the batch's transaction ----
+    // ---- Changes (docs/06 section 3.12, LOG 397): what GET /events reports, written in the batch's transaction ----
 
     /// <summary>An arbitrary key for <c>pg_advisory_xact_lock</c>, held from the first change row a transaction writes until it commits.</summary>
     const long ChangesLockKey = 0x46_46_5F_43_48_41_4E_47; // "FF_CHANG"

@@ -92,7 +92,7 @@ public sealed class ApiTests : IAsyncDisposable
     }
 
     /// <summary>
-    /// A body is read after authentication (LOG A3-0t): a caller with no credential is 401 whatever it sends, and an
+    /// A body is read after authentication (LOG 407): a caller with no credential is 401 whatever it sends, and an
     /// authenticated caller's malformed body is 400 with the one error shape, before anything is recorded.
     /// </summary>
     [Theory]
@@ -447,7 +447,7 @@ public sealed class ApiTests : IAsyncDisposable
             return response.StatusCode;
         }
 
-        // The parent's contract the child's gate ratifies reads through the child (LOG A3-0g); another of the parent's does not.
+        // The parent's contract the child's gate ratifies reads through the child (LOG 394); another of the parent's does not.
         Assert.Equal(HttpStatusCode.OK, await ReadAsync(viewer, "r1.c", contract));
         Assert.Equal(HttpStatusCode.NotFound, await ReadAsync(viewer, "r1.c", unnamed));
         Assert.Equal(HttpStatusCode.NotFound, await ReadAsync(Start(), "r1.c", contract));

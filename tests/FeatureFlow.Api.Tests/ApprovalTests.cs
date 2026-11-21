@@ -54,7 +54,7 @@ public sealed class ApprovalTests
     [Fact]
     public async Task An_agents_question_is_answered_by_its_text_alone()
     {
-        // LOG A3-0e: the question's answer is what the agent reads; no reason is asked for.
+        // LOG 392: the question's answer is what the agent reads; no reason is asked for.
         await using var world = await WorldAsync(Organisation(Rule("*")), "ticket.question", kind: "question");
         var (status, text) = await ApiWorld.PostAsync(world.As("ann", "approver"), $"runs/{Run}/answers", """{ "wait_id": "w1", "outcome": "teal" }""");
         Assert.True(status == HttpStatusCode.OK, text);
@@ -220,7 +220,7 @@ public sealed class ApprovalTests
     }
 
     /// <summary>
-    /// A reason is at most 4 KB of UTF-8 (LOG A3-9a), counted in bytes: 2,049 two-byte characters are refused on every route
+    /// A reason is at most 4 KB of UTF-8 (LOG 432), counted in bytes: 2,049 two-byte characters are refused on every route
     /// that takes one, a question's answer included, and nothing is recorded or delivered; 4,096 one-byte characters are taken.
     /// </summary>
     [Fact]

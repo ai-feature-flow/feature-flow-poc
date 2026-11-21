@@ -42,7 +42,7 @@ public static class ReferenceRules
         "FeatureFlow.Api",
     ];
 
-    /// <summary>The API's request and response records, shared by the API and the CLI: no project or package references (LOG A3-0a).</summary>
+    /// <summary>The API's request and response records, shared by the API and the CLI: no project or package references (LOG 388).</summary>
     public const string ApiContracts = "FeatureFlow.Api.Contracts";
 
     public static readonly IReadOnlyList<string> Hosts =
