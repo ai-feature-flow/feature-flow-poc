@@ -31,6 +31,21 @@ public sealed class TextOnlyTests(BrowserFixture browser) : BrowserTest(browser)
         ["needs me"] = new(t => t.OpenAsync(), 3),
         // The run's template.
         ["run heading"] = new(t => t.OpenAsync("#/runs/" + RunId), 1),
+        // The run's template and the artifact's name in the artifact list, which is read after the run.
+        ["artifact list"] = new(async t =>
+        {
+            await t.OpenAsync("#/runs/" + RunId);
+            await Expect(t.Page.Locator("[data-kind='artifact'] a")).ToHaveTextAsync(Markup);
+        }, 2),
+        // The artifact's name, once the run's index is read, and its content.
+        ["viewer"] = new(async t =>
+        {
+            await t.OpenAsync($"#/runs/{RunId}/artifacts/{Uri.EscapeDataString(t.artifact!)}");
+            await Expect(t.Page.Locator("pre")).ToHaveTextAsync(Markup);
+            await Expect(t.Page.Locator(".ff-viewer-name")).ToHaveTextAsync(Markup);
+        }, 2),
+        // Not the start form: its data (template references, parameter names and descriptions, unreadable libraries) comes
+        // from the organisation's libraries, which ConsoleWorld fixes as library/std and m7s; neither holds markup.
         // A step's status from the timeline (done(<detail>)) in the plan's table and its readable form.
         ["plan"] = new(async t =>
         {
@@ -68,6 +83,9 @@ public sealed class TextOnlyTests(BrowserFixture browser) : BrowserTest(browser)
         await Engine.RunAsync("run-markup-child", Markup, parentRunId: RunId);
     }
 
+    /// <summary>The reference of the seeded artifact.</summary>
+    string? artifact;
+
     public static TheoryData<string> Names => [.. Screens.Keys];
 
     /// <summary>The markup in every field of API data a screen shows.</summary>
@@ -75,7 +93,7 @@ public sealed class TextOnlyTests(BrowserFixture browser) : BrowserTest(browser)
     {
         await World.SeedRunWithWaitAsync(RunId, template: Markup, prompt: Markup, choices: [Markup], requester: Markup);
         await Engine.TraceAsync(RunId, "started", "go_ahead", Markup);
-        await Engine.ProduceAsync(RunId, "go_ahead", Markup, Markup);
+        artifact = await Engine.ProduceAsync(RunId, "go_ahead", Markup, Markup);
     }
 
     [Theory]
@@ -88,6 +106,8 @@ public sealed class TextOnlyTests(BrowserFixture browser) : BrowserTest(browser)
 
         var shown = Page.GetByText(Markup);
         await Expect(shown.First).ToBeVisibleAsync();
+        // Screens read in parts (the run, its plan, its artifacts); wait for the last expected element before counting.
+        await Expect(shown.Nth(Screens[screen].Shown - 1)).ToBeAttachedAsync();
         Assert.True(await shown.CountAsync() >= Screens[screen].Shown, $"{screen} shows the markup as text in {await shown.CountAsync()} elements, not {Screens[screen].Shown}");
         Assert.Equal(0, await EvaluateAsync<int>("document.querySelectorAll('.ffx, img').length"));
         Assert.True(await EvaluateAsync<bool>("window.ffx === undefined"));

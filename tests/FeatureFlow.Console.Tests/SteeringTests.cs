@@ -9,7 +9,7 @@ namespace FeatureFlow.Console.Tests;
 /// </summary>
 public sealed class SteeringTests(BrowserFixture browser) : BrowserTest(browser)
 {
-    ILocator Plan => Page.GetByRole(AriaRole.Region, new() { Name = "Plan" });
+    ILocator Plan => Page.GetByRole(AriaRole.Region, new() { Name = "Plan", Exact = true });
 
     ILocator Row(string stepId) => Plan.GetByRole(AriaRole.Row).Filter(new() { Has = Page.GetByText(stepId, new() { Exact = true }) });
 
