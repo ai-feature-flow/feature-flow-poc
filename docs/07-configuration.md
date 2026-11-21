@@ -71,7 +71,6 @@ providers:                       # every type: named instances, one default
   credential_broker: { default: github_app, instances: { github_app: {} } }
 
 api:
-  base_url: https://feature-flow.internal
   auth: { mode: oidc, issuer: https://idp.internal, audience: feature-flow, role_claim: groups }
 
 observability:
@@ -115,7 +114,7 @@ unbuilt is review F14, corrected in `docs/12` A6.
 | `temporal.payload_codec` | Encrypts every payload, and failure messages, the engine sends Temporal. `name: aes_gcm` (the only codec); `key_ref` names a secret of 32 random bytes in base64 (`openssl rand -base64 32`). Replaying an encrypted history needs the same key. LOG 284 |
 | `record_store.postgres` | `connection_ref` names the secret holding the connection string (`Host=...;Database=...;Username=...;Password=...`). The schema is created or migrated at first use. LOG 281 |
 | `artifact_store.s3` | `bucket` (required, created by the deployment), `region` (default `us-east-1`), `endpoint` for a store other than AWS such as MinIO (path-style), and `access_key_ref` with `secret_key_ref`, set together; without them the AWS SDK's credential chain applies, such as an EKS service account's role. LOG 283 |
-| `api.auth` | `local_token` (`token_ref`, `actor`, `roles`) or `oidc` (`issuer`, `audience`, `role_claim`, default `groups`, and `actor_claim`, default `sub`); with `oidc`, a `token_ref` keeps the local token working beside it. The actor `policy` is reserved for automatic answers (LOG 220, 222). Planned (`docs/02` section 7; `docs/12` A4, R2): a `none` mode, with which the host checks the address it has bound at start and refuses to start unless it is loopback (LOG 333); a public console client (client id, and the scopes it asks for) served by `GET /console/config`; modes chosen from authenticators the host registers |
+| `api.auth` | `auth` is the only key of `api`: the API has no configured address of its own, and a link to the console is the notifications provider's `console_url`; `api.base_url` is refused (L5, LOG A5c-1). `local_token` (`token_ref`, `actor`, `roles`) or `oidc` (`issuer`, `audience`, `role_claim`, default `groups`, and `actor_claim`, default `sub`); with `oidc`, a `token_ref` keeps the local token working beside it. The actor `policy` is reserved for automatic answers (LOG 220, 222). Planned (`docs/02` section 7; `docs/12` A4, R2): a `none` mode, with which the host checks the address it has bound at start and refuses to start unless it is loopback (LOG 333); a public console client (client id, and the scopes it asks for) served by `GET /console/config`; modes chosen from authenticators the host registers |
 
 Scaling (replica counts) is deployment configuration, not engine configuration. `workers` (a worker mode and agent
 pools by sandbox capability) is not in version 1 and is refused at startup; every agent worker serves the one agent

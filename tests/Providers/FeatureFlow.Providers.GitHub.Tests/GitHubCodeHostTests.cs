@@ -132,6 +132,9 @@ public sealed class GitHubCodeHostTests
         Assert.True(started.Elapsed >= FakeGitHub.FreshTokenDelay * 0.75, "the retry waited before asking for a fresh token");
         Assert.Equal(branch, result.Value);
         Assert.Equal(branch is null, result.Error?.IsConfigurationFault ?? false);
+        // L10 (LOG A5c-2): GitHub's configuration fault keeps its own hint.
+        if (branch is null)
+            Assert.Contains("the GitHub App's key", result.Error!.DescribeFault(), StringComparison.Ordinal);
         Assert.Equal(2, calls);
         Assert.Equal(2, broker.Issued.Count);                  // the retry's token was issued afresh, not taken from the cache
     }

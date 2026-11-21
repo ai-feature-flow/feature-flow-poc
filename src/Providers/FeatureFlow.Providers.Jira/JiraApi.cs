@@ -28,6 +28,9 @@ public sealed class JiraApi(Func<CancellationToken, Task<ProviderResult<string>>
 
     public string BaseUrl { get; } = baseUrl.TrimEnd('/');
 
+    /// <summary>What a person is told to check when Jira refuses the credential (docs/06 section 1.1, LOG A5c-2).</summary>
+    public const string FaultHint = "Check the Jira instance's secret (<account email>:<API token>) and that account's permissions in the project";
+
     /// <summary>The wait before the fresh-credential retry. Tests shorten it.</summary>
     public TimeSpan FreshCredentialDelay { get; init; } = ProviderError.FreshCredentialDelay;
 
@@ -37,7 +40,7 @@ public sealed class JiraApi(Func<CancellationToken, Task<ProviderResult<string>>
         if (first.Error is not { IsConfigurationFault: true })
             return first;
         await Task.Delay(FreshCredentialDelay, cancellationToken);
-        return await SendOnceAsync(method, path, body, fresh: true, cancellationToken);
+        return (await SendOnceAsync(method, path, body, fresh: true, cancellationToken)).WithFaultHint(FaultHint);
     }
 
     async Task<ProviderResult<string>> AuthorizationAsync(bool fresh, CancellationToken cancellationToken)

@@ -270,7 +270,6 @@ public static class ConfigurationReader
         var auth = new ApiAuthConfig("local_token", null, "local", ["viewer", "approver", "steerer", "admin"]);
         if (MapReader.Of(r.Node("api"), d, "api") is { } api)
         {
-            api.String("base_url");
             if (MapReader.Of(api.Node("auth"), d, "api.auth") is { } a)
             {
                 var mode = a.Enum("mode", ["local_token", "oidc"], required: true) ?? "local_token";
