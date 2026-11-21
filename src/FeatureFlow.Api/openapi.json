@@ -151,6 +151,56 @@
         }
       }
     },
+    "/runs/{id}/artifacts": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "listArtifacts",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/runs/{id}/artifacts/{reference}": {
       "get": {
         "tags": [
@@ -1037,9 +1087,9 @@
           "200": {
             "description": "OK",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/PlanView"
                 }
               }
             }
@@ -1066,6 +1116,36 @@
           },
           "409": {
             "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/templates": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "listTemplates",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -1216,6 +1296,80 @@
           },
           "result": {
             "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ArtifactKind": {
+        "enum": [
+          "artifact",
+          "evidence",
+          "transcript",
+          "prompt",
+          "plan_revision"
+        ]
+      },
+      "ArtifactList": {
+        "required": [
+          "artifacts"
+        ],
+        "type": "object",
+        "properties": {
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArtifactView"
+            }
+          }
+        }
+      },
+      "ArtifactView": {
+        "required": [
+          "step_id",
+          "execution",
+          "name",
+          "type",
+          "ref",
+          "action",
+          "evidence",
+          "kind",
+          "at"
+        ],
+        "type": "object",
+        "properties": {
+          "step_id": {
+            "type": "string"
+          },
+          "execution": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "ref": {
+            "type": "string"
+          },
+          "action": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "evidence": {
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ArtifactKind"
           },
           "at": {
             "type": "string",
@@ -1480,6 +1634,111 @@
           "at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "PlanOutcomeView": {
+        "required": [
+          "name",
+          "class",
+          "route"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "class": {
+            "type": "string"
+          },
+          "route": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "PlanStepView": {
+        "required": [
+          "id",
+          "container",
+          "form",
+          "what",
+          "outcomes",
+          "protected",
+          "status",
+          "breakpoint",
+          "skipped_with"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "container": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "form": {
+            "$ref": "#/components/schemas/StepForm"
+          },
+          "what": {
+            "type": "string"
+          },
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlanOutcomeView"
+            }
+          },
+          "protected": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "breakpoint": {
+            "type": "boolean"
+          },
+          "skipped_with": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "PlanView": {
+        "required": [
+          "run_id",
+          "revision",
+          "template",
+          "readable",
+          "steps"
+        ],
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "template": {
+            "type": "string"
+          },
+          "readable": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlanStepView"
+            }
           }
         }
       },
@@ -1945,9 +2204,110 @@
           }
         }
       },
+      "StepForm": {
+        "enum": [
+          "agent",
+          "decision",
+          "action",
+          "chain",
+          "parallel",
+          "for_each"
+        ]
+      },
       "Stream": {
         "type": "string",
         "format": "binary"
+      },
+      "TemplateList": {
+        "required": [
+          "templates",
+          "unreadable"
+        ],
+        "type": "object",
+        "properties": {
+          "templates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TemplateView"
+            }
+          },
+          "unreadable": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UnreadableLibrary"
+            }
+          }
+        }
+      },
+      "TemplateParameter": {
+        "required": [
+          "name",
+          "type",
+          "required",
+          "default",
+          "description",
+          "from_library"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "default": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "from_library": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TemplateView": {
+        "required": [
+          "reference",
+          "library",
+          "name",
+          "when",
+          "parameters"
+        ],
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string"
+          },
+          "library": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "when": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TemplateParameter"
+            }
+          }
+        }
       },
       "TimelineEntry": {
         "required": [
@@ -1978,6 +2338,21 @@
           "at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "UnreadableLibrary": {
+        "required": [
+          "library",
+          "error"
+        ],
+        "type": "object",
+        "properties": {
+          "library": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
           }
         }
       },

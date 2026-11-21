@@ -456,8 +456,11 @@ public sealed record ClosedWait(string Id, WaitKind Kind, string StepId, string 
 /// <summary>A wait opened (<see cref="Open"/>) or closed since the shell last recorded; drained by the shell like the trace.</summary>
 public sealed record WaitChange(OpenWait Wait, bool Open);
 
-/// <summary>What the record store shows of a wait: its record kind, decision type, the choices that answer it, and the text to show.</summary>
-public sealed record WaitDescription(string Kind, string Type, IReadOnlyList<string> Choices, string Prompt);
+/// <summary>
+/// What the record store shows of a wait: its record kind, decision type, the choices that answer it, the text to show, and
+/// for a gate what its step consumed as it opened (LOG A3-0g).
+/// </summary>
+public sealed record WaitDescription(string Kind, string Type, IReadOnlyList<string> Choices, string Prompt, IReadOnlyList<ConsumedArtifact>? Consumed = null);
 
 /// <summary>A wait to record (<see cref="RunCore.TakeWaitChanges"/>): opened, with its description, or closed when <see cref="Opened"/> is null.</summary>
 public sealed record WaitShown(string WaitId, string StepId, WaitDescription? Opened);

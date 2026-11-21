@@ -299,17 +299,18 @@ public sealed partial class RunCore
     /// <summary>
     /// A wait as the record store shows it: its kind, its decision type at the run's level, the choices that answer it, and
     /// the text to show (a gate's rendered prompt, a question's text, else the core's reason), so Slack, the console and the
-    /// CLI show the same.
+    /// CLI show the same. A gate also names what its step consumes as it opens, the revisions the person ratifies (LOG A3-0g).
     /// </summary>
     public WaitDescription Describe(OpenWait wait)
     {
         var level = Plan.Document.Level ?? "run";
         var step = StepById(wait.StepId);
         var kind = wait.Kind.Name();
+        var consumed = wait.Kind == WaitKind.Gate && step is not null ? Consumed(step.Id).Where(c => !c.LedgerView).ToList() : null;
         return wait.Kind switch
         {
-            WaitKind.Gate when step?.Form == StepForm.Action => new(kind, ActionDecisionTypeOf(step.Id) ?? $"{level}.decision", ActionDecisions.Choices, wait.Reason),
-            WaitKind.Gate => new(kind, step?.Decision?.Type ?? $"{level}.decision", step?.DeclaredOutcomes.Select(o => o.Name).ToList() ?? [], GatePrompt(wait, step)),
+            WaitKind.Gate when step?.Form == StepForm.Action => new(kind, ActionDecisionTypeOf(step.Id) ?? $"{level}.decision", ActionDecisions.Choices, wait.Reason, consumed),
+            WaitKind.Gate => new(kind, step?.Decision?.Type ?? $"{level}.decision", step?.DeclaredOutcomes.Select(o => o.Name).ToList() ?? [], GatePrompt(wait, step), consumed),
             WaitKind.Question => new(kind, $"{level}.question", wait.Options ?? [], wait.Reason),
             WaitKind.PatchApproval => new(kind, $"{level}.patch_approval", PatchChoices, wait.Reason),
             WaitKind.Breakpoint => new(kind, $"{level}.breakpoint", Recoveries.For(wait.Kind), wait.Reason),

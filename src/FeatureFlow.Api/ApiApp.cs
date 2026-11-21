@@ -69,6 +69,7 @@ public static partial class ApiApp
         MapSessions(app, api);
         MapInbound(app, api);
         MapConsole(app, api);
+        MapTemplates(app, api);
         return app;
     }
 
