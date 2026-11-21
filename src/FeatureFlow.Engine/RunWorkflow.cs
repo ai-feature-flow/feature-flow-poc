@@ -392,7 +392,6 @@ public partial class RunWorkflow
     /// <summary>A step's activity call, mapped from the core's <see cref="StepSpec"/> (docs/04 sections 2 and 3).</summary>
     StepCall CallOf(StepSpec spec, StepIdentity identity)
     {
-        var contract = spec.Contract;
         var branch = core!.WorkBranch();
         AgentStepSpec? agent = null;
         if (spec.Agent is { } a)
@@ -406,6 +405,13 @@ public partial class RunWorkflow
                 a.Consumed, Workflow.Info.WorkflowId, LockRef, TrackerIssue: input.TrackerIssue, Runtime: binding?.AgentRuntime, Model: binding?.Model);
         }
 
+        return CallOf(spec, identity, input.DryRun, agent);
+    }
+
+    /// <summary>The run-independent part of <see cref="CallOf(StepSpec, StepIdentity)"/>: the call's kind, inputs and contract.</summary>
+    internal static StepCall CallOf(StepSpec spec, StepIdentity identity, bool dryRun, AgentStepSpec? agent)
+    {
+        var contract = spec.Contract;
         return new StepCall(identity, spec.Activity == StepActivity.Agent ? "agent" : "action", spec.What,
             spec.Inputs.ToDictionary(kv => kv.Key, kv => YamlWriter.WritePlain(kv.Value)),
             new StepContract(
@@ -416,7 +422,7 @@ public partial class RunWorkflow
             {
                 Reported = contract.Reported,
             },
-            input.DryRun, spec.Timeout, agent);
+            dryRun, spec.Timeout, agent);
     }
 
     /// <summary>What an engine action knows of the run (<see cref="ActionScope"/>), mapped from the core's <see cref="ScopeFacts"/>.</summary>
