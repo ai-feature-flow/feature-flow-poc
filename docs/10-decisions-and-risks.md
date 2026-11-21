@@ -135,7 +135,7 @@ loops), were approved the same day. They stay in
 | R20 | Polling inflates history | Poll inside one activity | Mitigated (Spike 1) |
 | R21 | The continue-as-new rule with detached children and carried decisions loses a child's end or an answer | Children signal the parent's workflow id; the parent confirms by reading; answers carried as state | Mitigated (SP1) |
 | R22 | `ask_human` across a worker restart: the agent waits, the worker goes, the answer is lost | Question state in the workflow and record store; stateless replicas; the sandbox client owns the question id and reconnects (LOG 59) | Mitigated (SP2) |
-| R23 | Agent runtimes do not call the engine's MCP tools reliably (reporting, questions, patches) | File fallback for reporting; contract tests per runtime | Mitigated for reporting and questions on Claude Code and Copilot CLI (SP3); patches not measured |
+| R23 | Agent runtimes do not call the engine's MCP tools reliably (reporting, questions, patches) | The agent runtime contract suite run against every runtime (F12); the file fall-back was removed, as every built-in runtime calls MCP tools (L5, LOG A5b-5) | Mitigated for reporting and questions on Claude Code and Copilot CLI (SP3); patches not measured |
 | R24 | **New.** Policy now lives in the standard library, so a weak `std` gives weak delivery | `std` is versioned and tested like engine code; its tests run in engine CI | Residual |
 | R25 | **New.** Fragments and defaults make the resolved plan harder to see than what the author wrote | The readable form shows the resolved plan; validation runs on it | Design |
 

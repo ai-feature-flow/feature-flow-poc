@@ -59,6 +59,10 @@ public sealed class ReportAndHookTests
     static readonly StepClaims Implementer = new("k", "r", "w", "s", "branch", ["read", "search", "edit", "shell"], 0);
     static readonly StepClaims Reviewer = Implementer with { WriteAccess = "none", Tools = ["read", "search", "shell"] };
 
+    static ToolCall Shell(string command) => new("Bash", ToolClass.Shell, Command: command);
+
+    static ToolCall Edit(string path) => new("Edit", ToolClass.Edit, path);
+
     [Theory]
     [InlineData("git push")]
     [InlineData("cd /ff/work && git push origin HEAD")]
@@ -67,67 +71,61 @@ public sealed class ReportAndHookTests
     [InlineData("/usr/bin/git push")]
     [InlineData("cd /ff/work && /usr/local/bin/git -c x=y push")]
     public void A_git_push_is_denied(string command) =>
-        Assert.Equal("deny", HookPolicy.PreToolUse(Implementer, "Bash", Json($$"""{"command":{{JsonSerializer.Serialize(command)}}}""")).Decision);
+        Assert.Equal("deny", HookPolicy.PreToolUse(Implementer, Shell(command)).Decision);
 
     [Theory]
     [InlineData("git status")]
     [InlineData("git commit -m 'push the button'")]
     [InlineData("dotnet test")]
     public void Other_commands_are_allowed(string command) =>
-        Assert.Equal("allow", HookPolicy.PreToolUse(Implementer, "Bash", Json($$"""{"command":{{JsonSerializer.Serialize(command)}}}""")).Decision);
+        Assert.Equal("allow", HookPolicy.PreToolUse(Implementer, Shell(command)).Decision);
 
     [Fact]
     public void A_role_with_no_write_access_may_not_write() =>
-        Assert.Equal("deny", HookPolicy.PreToolUse(Reviewer, "Write", Json("""{"file_path":"/ff/work/x"}""")).Decision);
+        Assert.Equal("deny", HookPolicy.PreToolUse(Reviewer with { Tools = ["read", "edit"] }, Edit("/ff/work/x")).Decision);
 
     [Theory]
-    [InlineData("Edit", """{"file_path":"/ff/work/.git/config"}""")]
-    [InlineData("Write", """{"file_path":"/ff/work/.git/hooks/pre-commit"}""")]
-    [InlineData("MultiEdit", """{"file_path":".git/config"}""")]
-    [InlineData("Bash", """{"command":"echo x >> .git/config"}""")]
-    [InlineData("Bash", """{"command":"cp evil .git/hooks/post-commit"}""")]
-    // Copilot CLI names the file "path" (LOG 293).
-    [InlineData("Edit", """{"path":"/ff/work/.git/config","old_str":"a","new_str":"b"}""")]
-    [InlineData("Write", """{"path":"/ff/work/.git/hooks/pre-commit","file_text":"x"}""")]
-    public void Nobody_edits_the_repository_s_git_folder(string tool, string input) =>
-        Assert.Equal("deny", HookPolicy.PreToolUse(Implementer, tool, Json(input)).Decision);
+    [InlineData("/ff/work/.git/config")]
+    [InlineData("/ff/work/.git/hooks/pre-commit")]
+    [InlineData(".git/config")]
+    public void Nobody_edits_the_repository_s_git_folder(string path) =>
+        Assert.Equal("deny", HookPolicy.PreToolUse(Implementer, Edit(path)).Decision);
 
-    /// <summary>Copilot CLI names the engine's tools <c>engine-&lt;tool&gt;</c>, as Claude Code names them <c>mcp__engine__&lt;tool&gt;</c>: always allowed.</summary>
     [Theory]
-    [InlineData("mcp__engine__report")]
-    [InlineData("engine-report")]
-    [InlineData("engine-ask_human")]
-    public void The_engines_tools_are_allowed_under_either_runtime_s_name(string tool) =>
-        Assert.Equal("allow", HookPolicy.PreToolUse(Reviewer with { Tools = [] }, tool, Json("""{"outcome":"done"}""")).Decision);
-
-    [Fact]
-    public void A_file_copilot_opens_is_recorded_from_its_path() =>
-        Assert.Equal("/ff/work/a.cs", HookPolicy.FileOpened("Read", Json("""{"path":"/ff/work/a.cs"}""")));
+    [InlineData("echo x >> .git/config")]
+    [InlineData("cp evil .git/hooks/post-commit")]
+    public void No_command_changes_the_repository_s_git_folder(string command) =>
+        Assert.Equal("deny", HookPolicy.PreToolUse(Implementer, Shell(command)).Decision);
 
     [Fact]
     public void A_file_whose_name_only_contains_git_may_be_edited() =>
-        Assert.Equal("allow", HookPolicy.PreToolUse(Implementer, "Edit", Json("""{"file_path":"/ff/work/.gitignore"}""")).Decision);
+        Assert.Equal("allow", HookPolicy.PreToolUse(Implementer, Edit("/ff/work/.gitignore")).Decision);
 
-    /// <summary>Each tool is allowed exactly when its class is one of the role's (LOG 65, LOG 101).</summary>
+    /// <summary>Each call is allowed exactly when its class is one of the role's (LOG 65, LOG 101); the engine's tools always are.</summary>
     [Theory]
-    [InlineData("read", "Read", true)]
-    [InlineData("read", "Grep", false)]
-    [InlineData("search", "Grep", true)]
-    [InlineData("search", "Glob", true)]
-    [InlineData("search", "Bash", false)]
-    [InlineData("edit", "Write", true)]
-    [InlineData("edit", "Read", false)]
-    [InlineData("shell", "Bash", true)]
-    [InlineData("shell", "Edit", false)]
-    public void A_tool_is_allowed_only_in_its_class(string toolClass, string tool, bool allowed) =>
+    [InlineData("read", "read", true)]
+    [InlineData("read", "search", false)]
+    [InlineData("search", "search", true)]
+    [InlineData("search", "shell", false)]
+    [InlineData("edit", "edit", true)]
+    [InlineData("edit", "read", false)]
+    [InlineData("shell", "shell", true)]
+    [InlineData("shell", "edit", false)]
+    [InlineData("read", "engine", true)]
+    public void A_call_is_allowed_only_in_the_role_s_classes(string roleClass, string callClass, bool allowed) =>
         Assert.Equal(allowed ? "allow" : "deny",
-            HookPolicy.PreToolUse(Implementer with { Tools = [toolClass] }, tool, Json("""{"file_path":"/ff/work/a.txt","command":"ls","pattern":"x"}""")).Decision);
+            HookPolicy.PreToolUse(Implementer with { Tools = [roleClass] }, new ToolCall("T", callClass, "/ff/work/a.txt", "ls")).Decision);
+
+    /// <summary>A tool the step's runtime does not map has no class, and is denied (LOG A5b-1).</summary>
+    [Fact]
+    public void A_tool_the_runtime_does_not_map_is_denied() =>
+        Assert.Equal("deny", HookPolicy.PreToolUse(Implementer, new ToolCall("WebFetch", null)).Decision);
 
     [Fact]
-    public void A_tool_outside_the_role_s_classes_is_denied_and_the_engine_s_tools_are_allowed()
+    public void A_file_read_or_edited_is_recorded_and_a_command_is_not()
     {
-        Assert.Equal("deny", HookPolicy.PreToolUse(Reviewer with { Tools = ["read"] }, "Bash", Json("""{"command":"ls"}""")).Decision);
-        Assert.Equal("deny", HookPolicy.PreToolUse(Implementer, "WebFetch", Json("""{"url":"https://example.com"}""")).Decision);
-        Assert.Equal("allow", HookPolicy.PreToolUse(Reviewer, "mcp__engine__report", Json("{}")).Decision);
+        Assert.Equal("/ff/work/a.cs", HookPolicy.FileOpened(new ToolCall("Read", ToolClass.Read, "/ff/work/a.cs")));
+        Assert.Equal("/ff/work/b.cs", HookPolicy.FileOpened(Edit("/ff/work/b.cs")));
+        Assert.Null(HookPolicy.FileOpened(new ToolCall("Grep", ToolClass.Search, "/ff/work")));
     }
 }

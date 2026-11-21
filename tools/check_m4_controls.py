@@ -28,6 +28,7 @@ POLICY = "src/FeatureFlow.Engine.Agent/HookPolicy.cs"
 ACTIVITY = "src/FeatureFlow.Engine.Agent/AgentActivities.cs"
 WORKFLOW = "src/FeatureFlow.Engine/RunWorkflow.cs"
 RUNTIME = "src/Providers/FeatureFlow.Providers.ClaudeCode/ClaudeCodeRuntime.cs"
+RUNTIMES = "src/FeatureFlow.Providers.Abstractions/AgentRuntimes.cs"
 BROKER = "src/Providers/FeatureFlow.Providers.GitHub/AppCredentialBroker.cs"
 CONFIG = "src/FeatureFlow.Model/Configuration.cs"
 DOCKER = "src/Providers/FeatureFlow.Providers.Docker/DockerSandbox.cs"
@@ -88,29 +89,29 @@ CONTROLS = [
     },
     {
         "name": "F6: the worker's model credential is passed into the sandbox's environment",
-        "edits": [(RUNTIME, "            [\"HOME\"] = paths.Home,",
+        "edits": [(RUNTIMES, "            [\"HOME\"] = paths.Home,",
                    "            [\"HOME\"] = paths.Home,\n            [\"CLAUDE_CODE_OAUTH_TOKEN\"] = System.Environment.GetEnvironmentVariable(\"CLAUDE_CODE_OAUTH_TOKEN\") ?? \"absent\",")],
         "tests": [(RUNTIME_TESTS, None), it("The_sandbox_holds_no_model_credential")],
-        "expect": ["The_runtime_s_environment_holds_the_step_token_and_no_model_credential", "The_sandbox_holds_no_model_credential_in_its_environment_home_or_transcript"],
+        "expect": ["The_cli_runs_in_the_checkout_with_the_step_token_and_no_credential_and_reads_the_task_from_a_file", "The_sandbox_holds_no_model_credential_in_its_environment_home_or_transcript"],
     },
     {
         "name": "DR19: the runtime's home is the image's, not the engine's",
-        "edits": [(RUNTIME, "            [\"HOME\"] = paths.Home,", "            [\"HOME\"] = \"/home/node\",")],
+        "edits": [(RUNTIMES, "            [\"HOME\"] = paths.Home,", "            [\"HOME\"] = \"/home/node\",")],
         "tests": [(RUNTIME_TESTS, None), it("The_sandbox_holds_no_model_credential")],
-        "expect": ["The_runtime_s_environment_holds_the_step_token_and_no_model_credential", "The_sandbox_holds_no_model_credential_in_its_environment_home_or_transcript"],
+        "expect": ["The_cli_runs_in_the_checkout_with_the_step_token_and_no_credential_and_reads_the_task_from_a_file", "The_sandbox_holds_no_model_credential_in_its_environment_home_or_transcript"],
     },
     {
         "name": "DR17: the output folder is not created before the agent starts",
         "edits": [(ACTIVITY, "[paths.Checkout, paths.Output, \"/ff/inputs\", \"/ff/state\", \"/ff/tmp\"]", "[paths.Checkout, \"/ff/inputs\", \"/ff/state\", \"/ff/tmp\"]")],
-        "tests": [it("Without_the_report_tool_the_agent_reports_through_a_file")],
-        "expect": ["Without_the_report_tool_the_agent_reports_through_a_file_in_its_output_folder"],
+        "tests": [it("The_output_folder_is_the_agent_s_and_empty")],
+        "expect": ["The_output_folder_is_the_agent_s_and_empty_before_it_starts"],
     },
     {
         "name": "DR16: the runtime's MCP tool timeout is shorter than the question timeout",
-        "edits": [(RUNTIME, "public static TimeSpan McpToolTimeout(AgentLimits limits) => (limits.QuestionsTimeout ?? TimeSpan.FromHours(4)) + TimeSpan.FromMinutes(15);",
+        "edits": [(RUNTIMES, "public static TimeSpan McpToolTimeout(AgentLimits limits) => (limits.QuestionsTimeout ?? AgentLimits.DefaultQuestionsTimeout) + TimeSpan.FromMinutes(15);",
                    "public static TimeSpan McpToolTimeout(AgentLimits limits) => TimeSpan.FromMinutes(1);")],
         "tests": [(RUNTIME_TESTS, None)],
-        "expect": ["The_runtime_s_tool_and_hook_timeouts_exceed_the_waits_they_carry"],
+        "expect": ["The_settings_are_written_read_only_and_call_the_sandbox_client_for_every_hook"],
     },
     {
         "name": "no commit detection: commits are pushed only when the session has ended",
@@ -134,7 +135,7 @@ CONTROLS = [
     },
     {
         "name": "the model unreachable is read as a failed session, a work failure (SP5 N1)",
-        "edits": [(RUNTIME, ": parsed.ApiError is not null ? ApiEnd(parsed.ApiStatus)", ": parsed.ApiError is \"control\" ? ApiEnd(parsed.ApiStatus)")],
+        "edits": [(RUNTIMES, ": parsed.ApiError is not null ? ApiEnd(parsed.ApiStatus)", ": parsed.ApiError is \"control\" ? ApiEnd(parsed.ApiStatus)")],
         "tests": [it("With_the_model_unreachable")],
         "expect": ["With_the_model_unreachable_the_step_stops_resumably_rather_than_succeeding"],
     },
@@ -156,7 +157,7 @@ CONTROLS = [
         "name": "the hook policy lets git push through",
         "edits": [(POLICY, "if (GitPush().IsMatch(command))", "if (command.Length < 0 && GitPush().IsMatch(command))")],
         "tests": [(AGENT, None), it("Hooks_deny_a_push")],
-        "expect": ["A_git_push_is_denied", "A_hook_call_is_decided_from_the_token_and_recorded", "Hooks_deny_a_push_and_record_the_files_the_agent_read"],
+        "expect": ["A_git_push_is_denied", "A_hook_call_is_read_by_the_step_s_runtime_decided_from_the_token_and_recorded", "Hooks_deny_a_push_and_record_the_files_the_agent_read"],
     },
     {
         "name": "a step token's signature is not checked",
@@ -213,10 +214,10 @@ CONTROLS = [
     },
     {
         "name": "review 5c: a permanent model error is read as resumable",
-        "edits": [(RUNTIME, "401 or 403 => SessionEnd.ModelRefused,", "401 or 403 => SessionEnd.ModelUnreachable,"),
-                  (RUNTIME, "        _ => SessionEnd.Failed,\n    };", "        _ => SessionEnd.ModelUnreachable,\n    };")],
+        "edits": [(RUNTIMES, "401 or 403 => SessionEnd.ModelRefused,", "401 or 403 => SessionEnd.ModelUnreachable,"),
+                  (RUNTIMES, "        _ => SessionEnd.Failed,\n    };", "        _ => SessionEnd.ModelUnreachable,\n    };")],
         "tests": [(RUNTIME_TESTS, None)],
-        "expect": [("Only_transient_api_errors_are_resumable", 4)],
+        "expect": [("A_model_api_error_ends_the_session_as_its_status_says", 4)],
     },
     {
         "name": "review 6: the hook command allows a call the engine gave no decision for",
@@ -249,10 +250,10 @@ CONTROLS = [
         "expect": ["A_question_of_another_step_is_not_shown"],
     },
     {
-        "name": "review 14: engine_tools: false accepted outside development",
-        "edits": [(CONFIG, "i.Settings[\"engine_tools\"].ScalarText() == \"false\"", "i.Settings[\"engine_tools\"].ScalarText() == \"never\"")],
-        "tests": [("tests/FeatureFlow.Model.Tests", None)],
-        "expect": ["An_installation_refuses_what_it_does_not_read"],
+        "name": "review 14 / L5: engine_tools accepted as a runtime setting",
+        "edits": [("src/Providers/FeatureFlow.Providers.ClaudeCode/ClaudeCodeRuntime.cs", "[\"model\", \"executable\", \"model_access\"]", "[\"model\", \"executable\", \"model_access\", \"engine_tools\"]")],
+        "tests": [("tests/FeatureFlow.Hosting.Tests", None)],
+        "expect": ["Engine_tools_is_refused_on_either_built_in_runtime"],
     },
     {
         "name": "review 17: git push is matched by a literal prefix, so /usr/bin/git push passes",

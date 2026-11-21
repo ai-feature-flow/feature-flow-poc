@@ -5,14 +5,14 @@ namespace FeatureFlow.SandboxClient;
 /// <summary>
 /// The hook command (docs/02 section 4.1): sends the runtime's hook input to a replica and applies its decision.
 /// Unreachable is not denied (risk R19): it holds and retries across replicas for the hold time, then stops the
-/// session in a resumable state. Its exit codes follow Claude Code's hooks: 0 allows, 2 blocks with the reason
-/// on standard error. Copilot CLI shows the agent only the exit code of a hook that exits 2, so for it
-/// (<paramref name="copilot"/>) a denial is its JSON decision with the reason, and exit 0.
+/// session in a resumable state. It knows no runtime: a denial carries the step's runtime's reply (what to print and
+/// the exit code), and a call with no decision is blocked with exit 2 and the reason on standard error, which every
+/// runtime's CLI reads as blocked (LOG A5b-1).
 /// </summary>
 public static class HookCommand
 {
     public static async Task<int> RunAsync(string hook, EngineClient engine, TextReader input, TextWriter output, TextWriter error, ClientLog log,
-        CancellationToken cancellationToken, bool copilot = false)
+        CancellationToken cancellationToken)
     {
         var text = await input.ReadToEndAsync(cancellationToken);
         JsonNode body;
@@ -44,15 +44,18 @@ public static class HookCommand
         // must not block: exit 2 on Stop would keep the runtime from stopping.
         if (reply["decision"]?.ToString() == "allow" || hook != "pre_tool_use" && reply["decision"]?.ToString() != "deny")
             return 0;
-        // Fail closed: a denial, or an answer with no decision (an expired or revoked token, a refused call), blocks it.
-        var reason = reply["reason"]?.ToString() ?? "the engine did not allow this call: " + (reply["error"]?.ToString() ?? "no decision");
-        if (copilot)
+        // The runtime's own way of refusing the call.
+        if (reply["reply"] is JsonObject runtime && runtime["exit"] is JsonValue code && code.TryGetValue<int>(out var exit))
         {
-            await output.WriteLineAsync(new JsonObject { ["permissionDecision"] = "deny", ["permissionDecisionReason"] = reason }.ToJsonString());
-            return 0;
+            if (runtime["output"]?.ToString() is { Length: > 0 } printed)
+                await output.WriteLineAsync(printed);
+            if (runtime["error"]?.ToString() is { Length: > 0 } shown)
+                await error.WriteLineAsync(shown);
+            return exit;
         }
 
-        await error.WriteLineAsync(reason);
+        // Fail closed: an answer with no reply (an expired or revoked token, a refused call) blocks it.
+        await error.WriteLineAsync(reply["reason"]?.ToString() ?? "the engine did not allow this call: " + (reply["error"]?.ToString() ?? "no decision"));
         return 2;
     }
 }

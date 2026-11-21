@@ -117,16 +117,6 @@ public static class ReportCheck
         return artifacts;
     }
 
-    /// <summary>The paths a report names, for the sandbox client to check before it forwards the report.</summary>
-    public static IEnumerable<string> Paths(JsonElement report) =>
-        report.ValueKind == JsonValueKind.Object && report.TryGetProperty("artifacts", out var given)
-            ? given.ValueKind switch
-            {
-                JsonValueKind.Object => given.EnumerateObject().Where(p => p.Value.ValueKind == JsonValueKind.String).Select(p => p.Value.GetString()!),
-                JsonValueKind.Array => given.EnumerateArray().Where(i => i.ValueKind == JsonValueKind.String).Select(i => i.GetString()!),
-                _ => [],
-            }
-            : [];
 
     static string? Text(JsonElement e, string name) =>
         e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
