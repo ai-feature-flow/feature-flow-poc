@@ -45,7 +45,8 @@ public sealed record AgentEndpointServices(StepTokens Tokens, IRecordStoreProvid
 /// </summary>
 public static class AgentEndpoint
 {
-    static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    /// <summary>The endpoint's JSON: the web defaults (camelCase), which the sandbox client reads.</summary>
+    public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     public static WebApplication Build(AgentEndpointServices services, string url)
     {
