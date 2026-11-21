@@ -254,49 +254,63 @@ public sealed class InMemoryForge
     public const string CheckReads = "code_host.GetCheckStatus", PullRequestReads = "code_host.GetPullRequest";
 
     string? heldOperation;
-    TaskCompletionSource? readGate;
-    int heldReads;
+    readonly Queue<TaskCompletionSource> heldReads = new();
 
     /// <summary>
     /// Holds every read of <paramref name="operation"/> (<see cref="CheckReads"/> or <see cref="PullRequestReads"/>) until
-    /// <see cref="ReleaseReads"/>: a read in progress, for a test where something must happen while it runs.
-    /// <see cref="HeldReads"/> counts the reads waiting.
+    /// <see cref="ReleaseReads"/>, or <see cref="ReleaseRead"/> releases it: a read in progress, for a test where something
+    /// must happen while it runs. <see cref="HeldReads"/> counts the reads waiting.
     /// </summary>
     public void HoldReads(string operation)
     {
         lock (Gate)
-        {
             heldOperation = operation;
-            readGate ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        }
     }
 
+    /// <summary>Releases every held read and holds no more.</summary>
     public void ReleaseReads()
     {
-        TaskCompletionSource? gate;
+        List<TaskCompletionSource> held;
         lock (Gate)
-            (gate, readGate, heldOperation) = (readGate, null, null);
-        gate?.TrySetResult();
+        {
+            held = [.. heldReads];
+            heldReads.Clear();
+            heldOperation = null;
+        }
+
+        foreach (var read in held)
+            read.TrySetResult();
     }
 
-    public int HeldReads => Volatile.Read(ref heldReads);
+    /// <summary>Releases the read held longest, and goes on holding the others and any later.</summary>
+    public void ReleaseRead()
+    {
+        TaskCompletionSource? read;
+        lock (Gate)
+            heldReads.TryDequeue(out read);
+        read?.TrySetResult();
+    }
+
+    public int HeldReads
+    {
+        get
+        {
+            lock (Gate)
+                return heldReads.Count;
+        }
+    }
 
     internal async Task ReadGateAsync(string operation)
     {
-        TaskCompletionSource? gate;
+        var read = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (Gate)
-            gate = heldOperation == operation ? readGate : null;
-        if (gate is null)
-            return;
-        Interlocked.Increment(ref heldReads);
-        try
         {
-            await gate.Task;
+            if (heldOperation != operation)
+                return;
+            heldReads.Enqueue(read);
         }
-        finally
-        {
-            Interlocked.Decrement(ref heldReads);
-        }
+
+        await read.Task;
     }
 
     /// <summary>A working copy's files, to change as an agent would. Null when nothing is checked out there.</summary>
