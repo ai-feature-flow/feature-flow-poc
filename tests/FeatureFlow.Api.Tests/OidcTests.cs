@@ -98,7 +98,7 @@ public sealed class OidcTests : IAsyncDisposable
     }
 
     async Task<HttpStatusCode> AbortAsync(string token) =>
-        (await ApiWorld.PostAsync(With(token), "runs/r1/abort", """{ "reason": "stop", "actor": "mallory" }""")).Status;
+        (await ApiWorld.PostAsync(With(token), "runs/r1/abort", """{ "reason": "stop" }""")).Status;
 
     [Fact]
     public async Task A_valid_token_authenticates_its_subject_with_roles_from_its_groups()

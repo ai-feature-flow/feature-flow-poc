@@ -77,8 +77,8 @@ public class StuckRunTests
 
         var view = await h.ShowAsync(id);
         var stalled = Assert.Single(view["waits"]!.AsArray(), w => w!["kind"]!.ToString() == NotificationEvents.Stalled)!;
-        Assert.Contains("RunAction has failed", stalled["reason"]!.ToString());
-        Assert.Contains("unreachable", stalled["reason"]!.ToString());
+        Assert.Contains("RunAction has failed", stalled["prompt"]!.ToString());
+        Assert.Contains("unreachable", stalled["prompt"]!.ToString());
         Assert.Equal("running", view["run"]!["status"]!.ToString());
         Assert.Equal([NotificationEvents.Stalled], await EventsAsync(h, id, NotificationEvents.Stalled));
 
@@ -104,7 +104,7 @@ public class StuckRunTests
         await check.CheckAsync(Ct);
 
         var stuck = Assert.Single((await h.ShowAsync(id))["waits"]!.AsArray(), w => w!["kind"]!.ToString() == NotificationEvents.Stuck)!;
-        Assert.Contains("RunAgentStep has waited", stuck["reason"]!.ToString());
+        Assert.Contains("RunAgentStep has waited", stuck["prompt"]!.ToString());
         Assert.Equal([NotificationEvents.Stuck], await EventsAsync(h, id, NotificationEvents.Stuck));
 
         // An agent worker comes up: it takes the step, the run moves on, and the next check (at the usual threshold) closes the wait.

@@ -22,10 +22,10 @@ public class StepStartCheckTests
         Assert.NotNull(waitId);
         var view = await h.ShowAsync(id);
         var wait = view["waits"]!.AsArray().Single()!;
-        Assert.True(wait["stepId"]!.ToString() == "read", view.ToJsonString());
-        Assert.Contains("check 32", wait["reason"]!.ToString(), StringComparison.Ordinal);
+        Assert.True(wait["step_id"]!.ToString() == "read", view.ToJsonString());
+        Assert.Contains("check 32", wait["prompt"]!.ToString(), StringComparison.Ordinal);
         // The core marks the step started; the check stops it before its activity runs, so it never completes.
-        Assert.DoesNotContain((await h.ShowAsync(id))["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "completed" && e["stepId"]!.ToString() == "read");
+        Assert.DoesNotContain((await h.ShowAsync(id))["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "completed" && e["step_id"]!.ToString() == "read");
     }
 
     [Fact]

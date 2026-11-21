@@ -78,6 +78,9 @@ public sealed class ConsoleTests : IAsyncDisposable
         Assert.DoesNotContain("innerHTML", js);
         Assert.DoesNotContain("insertAdjacentHTML", js);
         Assert.Contains("\"/runs/\"", js.Replace('`', '"'));
+        // It reads the API's snake_case fields (docs/02 section 7), never a record's C# name.
+        Assert.Contains("wait.wait_id", js);
+        Assert.Empty(System.Text.RegularExpressions.Regex.Matches(js, @"\.(runId|waitId|stepId|decisionType|parentRunId|updatedAt|reason)\b"));
     }
 
     [Fact]

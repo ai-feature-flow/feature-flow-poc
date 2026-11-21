@@ -72,9 +72,11 @@ public class PolicyRunTests
             return response.StatusCode;
         }
 
-        // An override the run does not take yet (W1 builds its handler) is still recorded, as the caller, before delivery.
-        await PostAsync($"runs/{id}/overrides", """{ "key": "breakpoint", "step_id": "implement", "reason": "look", "change": { "set": "true" }, "actor": "mallory" }""");
-        Assert.Equal(HttpStatusCode.OK, await PostAsync($"runs/{id}/answers", $$"""{ "wait_id": "{{waitId}}", "outcome": "approved", "actor": "mallory" }"""));
+        // An override the run does not take yet (W1 builds its handler) is still recorded, as the caller, before delivery; a body
+        // that names an actor is refused (F8).
+        Assert.Equal(HttpStatusCode.BadRequest, await PostAsync($"runs/{id}/answers", $$"""{ "wait_id": "{{waitId}}", "outcome": "approved", "actor": "mallory" }"""));
+        await PostAsync($"runs/{id}/overrides", """{ "key": "breakpoint", "step_id": "implement", "reason": "look", "change": { "set": "true" } }""");
+        Assert.Equal(HttpStatusCode.OK, await PostAsync($"runs/{id}/answers", $$"""{ "wait_id": "{{waitId}}", "outcome": "approved" }"""));
 
         // The run records its timeline after the update returns.
         var deadline = DateTime.UtcNow + Timeout;

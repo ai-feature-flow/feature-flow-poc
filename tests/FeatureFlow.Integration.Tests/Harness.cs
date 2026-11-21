@@ -237,7 +237,7 @@ public sealed class Harness : IAsyncDisposable
         {
             var view = await ShowAsync(runId);
             if (view["waits"]!.AsArray().FirstOrDefault() is { } wait)
-                return wait["waitId"]!.ToString();
+                return wait["wait_id"]!.ToString();
             if (view["run"]!["status"]!.ToString() is not ("starting" or "running"))
                 return null;
             await Task.Delay(200);
@@ -248,7 +248,7 @@ public sealed class Harness : IAsyncDisposable
 
     /// <summary>The timeline's started steps, in order.</summary>
     public static List<string> StartedSteps(JsonNode view) =>
-        view["timeline"]!.AsArray().Where(e => e!["kind"]!.ToString() == "started").Select(e => e!["stepId"]!.ToString()).ToList();
+        view["timeline"]!.AsArray().Where(e => e!["kind"]!.ToString() == "started").Select(e => e!["step_id"]!.ToString()).ToList();
 
     /// <summary>Every run of a workflow id, oldest first: one per continue-as-new.</summary>
     public async Task<List<WorkflowExecution>> RunsOfAsync(string workflowId)

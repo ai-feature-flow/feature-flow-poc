@@ -208,7 +208,8 @@ public sealed record AnswerArgs(
     string? Status = null,
     bool BeyondHardCeiling = false,
     IReadOnlyDictionary<string, string>? Artifacts = null,
-    string? Revision = null);
+    string? Revision = null,
+    string? Reason = null);
 
 /// <summary>A person stops the run; <see cref="ClosePullRequests"/> asks that the pull requests it opened be closed too (docs/05 section 5).</summary>
 public sealed record AbortArgs(string Actor, string Reason, bool ClosePullRequests = false);

@@ -94,7 +94,7 @@ public abstract class RecordStoreContract : ContractBase
         var waits = await Query<WaitRecord>(Queries.Waits, ("run_id", Id("run")));
         Assert.Equal(["gate-1", "gate-2"], waits.Select(w => w.WaitId));
         Assert.Equal((false, "gate", "approve_spec", "ticket.spec_approval", "Approve the spec?"),
-            (waits[0].Open, waits[0].Kind, waits[0].StepId, waits[0].DecisionType, waits[0].Reason));
+            (waits[0].Open, waits[0].Kind, waits[0].StepId, waits[0].DecisionType, waits[0].Prompt));
         Assert.Equal(["approved", "rejected"], waits[0].Choices);
         Assert.Equal("gate-2", Assert.Single(await Query<WaitRecord>(Queries.Waits, ("run_id", Id("run")), ("open", "true"))).WaitId);
     }
@@ -107,7 +107,7 @@ public abstract class RecordStoreContract : ContractBase
         Ok(await Append(new RecordBatch(Waits: [Wait("run", "gate-1", true, "Approve the revised spec?")])));
 
         var wait = Assert.Single(await Query<WaitRecord>(Queries.Waits, ("run_id", Id("run")), ("open", "true")));
-        Assert.Equal("Approve the revised spec?", wait.Reason);
+        Assert.Equal("Approve the revised spec?", wait.Prompt);
     }
 
     [Fact]

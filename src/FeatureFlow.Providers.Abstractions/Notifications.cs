@@ -18,6 +18,9 @@ public static class NotificationEvents
     public const string Stalled = "stalled";
     public const string Stuck = "stuck";
 
+    /// <summary>A wait is still open after the organisation's reminder interval. Not yet in <see cref="All"/>: nothing sends it until reminders are built (docs/12 A3).</summary>
+    public const string Reminder = "reminder";
+
     public static readonly IReadOnlyList<string> All = [DecisionNeeded, Resumed, Completed, Failed, Stalled, Stuck];
 
     /// <summary>

@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The API's request and response records (docs/02 section 7), shared by the API and the CLI. No references (LOG A3-0a). -->
+
+</Project>

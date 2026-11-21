@@ -63,7 +63,7 @@ public class SteeringRunTests
     }
 
     static List<(string Kind, string Step, string Detail)> Timeline(JsonNode view) =>
-        view["timeline"]!.AsArray().Select(e => (e!["kind"]!.ToString(), e["stepId"]!.ToString(), e["detail"]?.ToString() ?? "")).ToList();
+        view["timeline"]!.AsArray().Select(e => (e!["kind"]!.ToString(), e["step_id"]!.ToString(), e["detail"]?.ToString() ?? "")).ToList();
 
     /// <summary>The task text each agent step was given, from the workflow's own history: exactly what it resolved.</summary>
     static async Task<List<(string Step, string Task)>> TasksAsync(Harness h, string workflowId)
@@ -96,9 +96,9 @@ public class SteeringRunTests
         Assert.StartsWith("duplicate", (await SendAsync(h, id, skip)).Result);
 
         var paused = await OpenWaitAsync(h, id, "breakpoint");
-        Assert.Equal(("build", "ticket.breakpoint"), (paused["stepId"]!.ToString(), paused["decisionType"]!.ToString()));
+        Assert.Equal(("build", "ticket.breakpoint"), (paused["step_id"]!.ToString(), paused["decision_type"]!.ToString()));
         Assert.DoesNotContain("build", Harness.StartedSteps(await h.ShowAsync(id)));
-        var (answered, output, error) = h.Cli("answer", id, paused["waitId"]!.ToString(), "continue");
+        var (answered, output, error) = h.Cli("answer", id, paused["wait_id"]!.ToString(), "continue");
         Assert.True(answered == 0, output + error);
 
         var (exit, end, _) = h.Cli("wait", id, "--timeout", "60");
@@ -146,7 +146,7 @@ public class SteeringRunTests
         }
 
         var paused = await OpenWaitAsync(h, id, "breakpoint");
-        Assert.Equal(0, h.Cli("answer", id, paused["waitId"]!.ToString(), "continue").Exit);
+        Assert.Equal(0, h.Cli("answer", id, paused["wait_id"]!.ToString(), "continue").Exit);
         var (_, end, _) = h.Cli("wait", id, "--timeout", "60");
         var view = await h.ShowAsync(id);
         Assert.True(end.Trim() == $"run {id} completed", end + view.ToJsonString());
@@ -205,7 +205,7 @@ public class SteeringRunTests
         Assert.EndsWith("(protected: review)", (await SendAsync(h, id, Override("override_library", null, review, "root", "override_library_protected"))).Result);
 
         var paused = await OpenWaitAsync(h, id, "breakpoint");
-        h.Cli("answer", id, paused["waitId"]!.ToString(), "continue");
+        h.Cli("answer", id, paused["wait_id"]!.ToString(), "continue");
         var (_, end, _) = h.Cli("wait", id, "--timeout", "60");
         var view = await h.ShowAsync(id);
         Assert.True(end.Trim() == $"run {id} completed", end + view.ToJsonString());
@@ -257,13 +257,13 @@ public class SteeringRunTests
         await SendAsync(h, id, Override("breakpoint", "build"));
 
         var approval = await OpenWaitAsync(h, id, "patch_approval");
-        Assert.Equal(("plan", "ticket.patch_approval"), (approval["stepId"]!.ToString(), approval["decisionType"]!.ToString()));
-        Assert.Contains("m7steer:tasks/build", approval["reason"]!.ToString());
-        var (answered, output, error) = h.Cli("answer", id, approval["waitId"]!.ToString(), "approve");
+        Assert.Equal(("plan", "ticket.patch_approval"), (approval["step_id"]!.ToString(), approval["decision_type"]!.ToString()));
+        Assert.Contains("m7steer:tasks/build", approval["prompt"]!.ToString());
+        var (answered, output, error) = h.Cli("answer", id, approval["wait_id"]!.ToString(), "approve");
         Assert.True(answered == 0, output + error);
         await UntilAsync(async () => Timeline(await h.ShowAsync(id)).Any(e => e.Kind == "library_overridden"), "the approved override was not applied");
         var paused = await OpenWaitAsync(h, id, "breakpoint");
-        h.Cli("answer", id, paused["waitId"]!.ToString(), "continue");
+        h.Cli("answer", id, paused["wait_id"]!.ToString(), "continue");
 
         var (_, end, _) = h.Cli("wait", id, "--timeout", "60");
         var view = await h.ShowAsync(id);
@@ -283,15 +283,15 @@ public class SteeringRunTests
         var id = h.Start("m7steer:templates/steer_fan", "--repo", Repo);
         var a = await OpenWaitAsync(h, $"{id}.kid_a.1", "gate");
         var b = await OpenWaitAsync(h, $"{id}.kid_b.1", "gate");
-        Assert.Equal(0, h.Cli("answer", $"{id}.kid_a.1", a["waitId"]!.ToString(), "go").Exit);
-        Assert.Equal(0, h.Cli("answer", $"{id}.kid_b.1", b["waitId"]!.ToString(), "stop").Exit);
+        Assert.Equal(0, h.Cli("answer", $"{id}.kid_a.1", a["wait_id"]!.ToString(), "go").Exit);
+        Assert.Equal(0, h.Cli("answer", $"{id}.kid_b.1", b["wait_id"]!.ToString(), "stop").Exit);
 
         var escalation = await OpenWaitAsync(h, id, "intervention");
-        Assert.Equal("fan", escalation["stepId"]!.ToString());
-        var (recovered, output, error) = h.Cli("recover", id, escalation["waitId"]!.ToString(), "go_to", "kid_b");
+        Assert.Equal("fan", escalation["step_id"]!.ToString());
+        var (recovered, output, error) = h.Cli("recover", id, escalation["wait_id"]!.ToString(), "go_to", "kid_b");
         Assert.True(recovered == 0, output + error);
         var again = await OpenWaitAsync(h, $"{id}.kid_b.2", "gate");
-        Assert.Equal(0, h.Cli("answer", $"{id}.kid_b.2", again["waitId"]!.ToString(), "go").Exit);
+        Assert.Equal(0, h.Cli("answer", $"{id}.kid_b.2", again["wait_id"]!.ToString(), "go").Exit);
 
         var (_, end, _) = h.Cli("wait", id, "--timeout", "60");
         var view = await h.ShowAsync(id);
@@ -368,10 +368,10 @@ public class SteeringRunTests
         await SendAsync(h, id, Override("breakpoint", "final"));
         Assert.True(await ReceivedWhileDrainingAsync(handle, draining.HandOvers.Count), "the override did not reach the run while it drained");
         var paused = await OpenWaitAsync(h, id, "breakpoint");
-        Assert.Equal("final", paused["stepId"]!.ToString());
+        Assert.Equal("final", paused["step_id"]!.ToString());
         var after = await handle.QueryAsync<RunView>(RunWorkflowNames.View, []);
         Assert.True(after.HandOvers.Count >= 1, "the run did not hand over");
-        Assert.Equal(0, h.Cli("answer", id, paused["waitId"]!.ToString(), "continue").Exit);
+        Assert.Equal(0, h.Cli("answer", id, paused["wait_id"]!.ToString(), "continue").Exit);
         var (_, end, _) = h.Cli("wait", id, "--timeout", "120");
         Assert.True(end.Trim() == $"run {id} completed", end + (await h.ShowAsync(id)).ToJsonString());
         Assert.Contains("BUILD-V5", (await TasksAsync(h, id)).Single(t => t.Step == "final").Task);

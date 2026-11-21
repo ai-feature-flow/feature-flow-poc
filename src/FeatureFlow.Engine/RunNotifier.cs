@@ -89,7 +89,7 @@ public sealed class RunNotifier(EngineServices services, ILogger logger, TimeSpa
             if (wait.Open && wait.Kind is NotificationEvents.Stalled or NotificationEvents.Stuck)
             {
                 list.Add(new Pending(wait.Kind, NotificationEvents.Key(wait.RunId, wait.WaitId, 0, wait.Kind), wait.RunId, null,
-                    new Notification(wait.Kind, wait.RunId, $"Run {wait.RunId} is {wait.Kind}", wait.Reason), null));
+                    new Notification(wait.Kind, wait.RunId, $"Run {wait.RunId} is {wait.Kind}", wait.Prompt), null));
                 continue;
             }
 
@@ -97,7 +97,7 @@ public sealed class RunNotifier(EngineServices services, ILogger logger, TimeSpa
             {
                 var choices = wait.Kind == "intervention" ? wait.Choices.Where(InterventionButtons.Contains).ToList() : wait.Choices.ToList();
                 list.Add(new Pending(NotificationEvents.DecisionNeeded, NotificationEvents.Key(wait.RunId, wait.WaitId, 0, NotificationEvents.DecisionNeeded),
-                    wait.RunId, wait.StepId, null, new DecisionRequest(wait.RunId, wait.WaitId, wait.Kind, wait.DecisionType, wait.Reason, choices, wait.StepId)));
+                    wait.RunId, wait.StepId, null, new DecisionRequest(wait.RunId, wait.WaitId, wait.Kind, wait.DecisionType, wait.Prompt, choices, wait.StepId)));
                 continue;
             }
 
