@@ -33,8 +33,8 @@ public sealed class LiveTests(BrowserFixture browser) : BrowserTest(browser)
         await World.SeedRunWithWaitAsync("run-before");
         await Expect(page.Locator(Row("run-before"))).ToBeVisibleAsync(new() { Timeout = 5_000 });
         await EvaluateAsync<int>("window.ffMarker = 1");
-        // Let the first connection's re-read and run-before's change land (a 200 ms coalesce, a 100 ms poll), so the console's
-        // last event id is that change and no re-read is pending when the API stops.
+        // Let run-before's change land (a 200 ms coalesce, a 100 ms poll), so the console's last event id is that change and
+        // no re-read is pending when the API stops.
         await Task.Delay(1_000, Ct);
 
         // A restart starts a new change feed, which holds nothing older than its start. The console reconnects with the id

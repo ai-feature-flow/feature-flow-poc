@@ -1,10 +1,10 @@
 import { useEffect, useRef } from "preact/hooks";
 import type { Schema } from "../../api/client";
 import { Age } from "../../ui/Age";
+import { progress } from "../../ui/progress";
 import { Status } from "../../ui/Status";
 import { Table } from "../../ui/Table";
 import { WaitForm } from "../decision/WaitForm";
-import { progress } from "../needs-me/NeedsMe";
 
 type Wait = Schema<"WaitView">;
 
@@ -54,7 +54,7 @@ export function ClosedWaits({ waits }: { waits: readonly Wait[] }) {
             <tr key={w.wait_id} data-wait={w.wait_id}>
               <td>
                 {w.kind}: {w.decision_type}
-                {w.min_count > 1 && w.progress !== null && <div>{progress(w)}</div>}
+                {progress(w).length > 0 && <div>{progress(w).join("; ")}</div>}
               </td>
               <td>{w.step_id}</td>
               {w.answer === null ? (

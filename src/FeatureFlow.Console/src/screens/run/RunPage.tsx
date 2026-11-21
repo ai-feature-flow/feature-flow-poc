@@ -13,8 +13,8 @@ import { Timeline } from "./Timeline";
 import { ClosedWaits, OpenWaits } from "./Waits";
 import "./RunPage.css";
 
-/** Statuses after which a run does nothing more, so there is nothing to abort. */
-const finished: readonly string[] = ["completed", "failed", "aborted", "cancelled"];
+/** The engine's run statuses while it still runs (Interpreter/Types.cs, RunStatus); any other is an end. */
+const active: readonly string[] = ["starting", "running"];
 
 /** The run's plan, or why there is none to show (404: not indexed yet; 409: it does not load). */
 async function planOf(runId: string): Promise<{ plan: Schema<"PlanView"> | null; note?: string }> {
@@ -36,6 +36,8 @@ export function RunPage({ runId }: { runId: string }) {
   if (detail.data === undefined) return detail.error ? <ErrorBox error={detail.error} /> : <Busy />;
   const { run, waits, timeline, children, answers, overrides, overrides_allowed } = detail.data;
   const planView = plan.data?.plan ?? null;
+  // A run that has ended takes no abort or steering: the API answers 409.
+  const allowed = active.includes(run.status) ? overrides_allowed : [];
 
   return (
     <article class="ff-run">
@@ -45,10 +47,10 @@ export function RunPage({ runId }: { runId: string }) {
       <p class="ff-run-template">{run.template}</p>
       {detail.error && <ErrorBox error={detail.error} />}
       <Summary run={run} />
-      {overrides_allowed.includes("abort") && !finished.includes(run.status) && <Abort runId={run.run_id} />}
+      {allowed.includes("abort") && <Abort runId={run.run_id} />}
       <OpenWaits runId={run.run_id} waits={waits} plan={planView} />
       <ClosedWaits waits={waits} />
-      <PlanPanel runId={run.run_id} plan={planView} note={plan.data?.note ?? plan.error?.message} overridesAllowed={overrides_allowed} />
+      <PlanPanel runId={run.run_id} plan={planView} note={plan.data?.note ?? plan.error?.message} overridesAllowed={allowed} />
       {children.length > 0 && <Children children={children} />}
       <History answers={answers} overrides={overrides} />
       <Timeline entries={timeline} />

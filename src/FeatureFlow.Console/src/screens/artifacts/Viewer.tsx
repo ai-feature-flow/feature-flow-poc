@@ -5,7 +5,7 @@ import { Busy } from "../../ui/Busy";
 import { ErrorBox } from "../../ui/ErrorBox";
 import "./Viewer.css";
 
-export interface ArtifactViewerProps {
+interface ArtifactViewerProps {
   runId: string;
   /** The artifact's reference, URL-decoded from #/runs/{id}/artifacts/{ref}. */
   reference: string;
@@ -17,7 +17,8 @@ const shown = 1024 * 1024;
 /** The artifact's content, read with the token, and the first part of it as text. */
 async function contentOf(runId: string, reference: string): Promise<{ blob: Blob; text: string }> {
   const blob = await read(api.GET("/runs/{id}/artifacts/{reference}", { params: { path: { id: runId, reference } }, parseAs: "blob" }));
-  return { blob, text: await blob.slice(0, shown).text() };
+  // Decoded as a stream, so a character the cut splits is left out rather than shown as a replacement character.
+  return { blob, text: new TextDecoder().decode(await blob.slice(0, shown).arrayBuffer(), { stream: true }) };
 }
 
 /** Saves `blob` as `name` through a link to an object URL: a plain link to the API could not send the token. */

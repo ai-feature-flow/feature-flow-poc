@@ -9,7 +9,7 @@ export type Route =
   | { screen: "start" }
   | { screen: "not-found" };
 
-export function parse(hash: string): Route {
+function parse(hash: string): Route {
   const path = hash.replace(/^#\/?/, "");
   const parts = path.split("/");
   try {

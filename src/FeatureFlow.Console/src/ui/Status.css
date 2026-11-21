@@ -7,7 +7,6 @@
 }
 
 .ff-status-running { background: #dbeafe; }
-.ff-status-waiting { background: #fef3c7; }
 .ff-status-done { background: #dcfce7; }
 .ff-status-failed { background: #fee2e2; }
 .ff-status-warning { background: #ffedd5; }

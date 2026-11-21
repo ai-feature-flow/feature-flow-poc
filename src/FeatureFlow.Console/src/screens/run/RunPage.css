@@ -22,9 +22,15 @@
   margin: 0;
 }
 
+/* One style for every section heading on the run page: Plan and Artifacts as much as Open waits or Timeline. */
 .ff-run-section h2 {
   font-size: 1.1em;
   margin: 1.2em 0 0.4em;
+}
+
+.ff-run-section h3 {
+  font-size: 1em;
+  margin: 0.8em 0 0.3em;
 }
 
 .ff-run-text {

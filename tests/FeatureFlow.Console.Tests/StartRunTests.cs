@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Microsoft.Playwright;
 using static Microsoft.Playwright.Assertions;
@@ -70,6 +71,43 @@ public sealed partial class StartRunTests(BrowserFixture browser) : BrowserTest(
         Assert.Equal(new[] { "acme/app", "acme/web" }, start.Repositories);
         Assert.Equal("ACME-12", start.TrackerIssue);
         Assert.True(start.DryRun);
+    }
+
+    [Fact]
+    public async Task A_boolean_without_a_literal_default_is_sent_only_when_changed()
+    {
+        // The libraries here have no such boolean, so the template list is changed on its way to the page: engine_can_merge
+        // gets an expression for its default, as a library may declare it.
+        var page = await OpenAsync();
+        await page.RouteAsync("**/templates", async route =>
+        {
+            var response = await route.FetchAsync();
+            var body = JsonNode.Parse(await response.TextAsync())!;
+            foreach (var parameter in body["templates"]!.AsArray().SelectMany(t => t!["parameters"]!.AsArray()))
+                if ((string?)parameter!["name"] == "engine_can_merge")
+                {
+                    parameter["default"] = null;
+                    parameter["default_expression"] = "params.ticket_id != ''";
+                }
+
+            await route.FulfillAsync(new() { Response = response, Body = body.ToJsonString() });
+        });
+
+        foreach (var merge in new[] { false, true })
+        {
+            await page.EvaluateAsync("() => { location.hash = '#/start'; }");
+            await page.GetByLabel("Template").SelectOptionAsync("std:templates/ticket_delivery");
+            await page.GetByLabel("ticket_id").FillAsync("ACME-12");
+            await Expect(page.GetByLabel("engine_can_merge")).Not.ToBeCheckedAsync();
+            if (merge)
+                await page.GetByLabel("engine_can_merge").CheckAsync();
+            await page.GetByRole(AriaRole.Button, new() { Name = "Start" }).ClickAsync();
+            await Expect(page).ToHaveURLAsync(RunPage());
+        }
+
+        Assert.Collection(Engine.Starts,
+            untouched => Assert.Equal(["ticket_id"], untouched.Parameters.Keys),
+            ticked => Assert.Equal("true", ticked.Parameters["engine_can_merge"]));
     }
 
     [Fact]

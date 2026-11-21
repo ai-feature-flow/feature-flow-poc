@@ -1,6 +1,6 @@
 // The only source of href values (LOG 460). Preact does not refuse a javascript: URL, so a link built from API data is an
-// injection path; these build only #/… routes, every part encoded. ConsoleTests.The_console_sources_never_build_markup_or_links_from_data
-// fails on any href, src or action whose value is not a call into this file. The routes are app/router.ts's (LOG 463).
+// injection path; these build only #/… routes, every part encoded. scripts/text-only.mjs (run by `npm run build` and
+// ConsoleTests) fails on any URL attribute whose value is not a call into this file. The routes are app/router.ts's (LOG 463).
 
 const part = encodeURIComponent;
 

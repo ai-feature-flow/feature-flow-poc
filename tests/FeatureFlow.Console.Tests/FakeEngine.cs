@@ -19,10 +19,15 @@ namespace FeatureFlow.Console.Tests;
 /// deterministic and has no timers; its writes go through the record store, so the change feed (<c>GET /events</c>) sees
 /// them. Its connection is lazy and never used.
 /// <para>
-/// Each reaction is a <see cref="Reaction"/>. This file gives start, answer (closing the wait; <c>continue</c> at a breakpoint
-/// resumes the step), the <c>breakpoint</c> override and abort. A later file of this partial class adds its own in its
-/// hook (<see cref="Decisions"/>, <see cref="Steering"/>, <see cref="Starting"/>); a test may add one with <see cref="On"/>.
-/// The latest added is asked first, and a reaction returning null leaves the update to the next.
+/// Each reaction is a <see cref="Reaction"/>. This file gives start, answer (closing the wait; a recovery at an intervention
+/// or breakpoint traced as the core traces it) and abort; <c>FakeEngine.Steering.cs</c> gives the overrides, refusing what
+/// the core refuses. A test moves a run on with <see cref="ReachAsync"/>, and may add a reaction with <see cref="On"/>. The
+/// latest added is asked first, and a reaction returning null leaves the update to the next. A reaction refuses an update
+/// by throwing <see cref="Refusal"/>, as the workflow's update validator does; the API answers 409 with its message.
+/// </para>
+/// <para>
+/// Not modelled: an answered gate does not complete its step or route the run (the run stays <c>running</c>), and a run that
+/// has ended refuses an update with the core's message rather than Temporal's (the API answers 409 either way).
 /// </para>
 /// </summary>
 public sealed partial class FakeEngine : IClientInterceptor
@@ -32,6 +37,13 @@ public sealed partial class FakeEngine : IClientInterceptor
 
     /// <summary>Answers an update with the workflow's reply, or null to leave it to the next reaction.</summary>
     public delegate Task<string?> Reaction(Update update);
+
+    /// <summary>An update the workflow refuses, with the core's reason.</summary>
+    public sealed class Refusal(string message) : Exception(message);
+
+    /// <summary>Choices as the core lists them in a refusal (<c>Waits.cs</c>, <c>Or</c>).</summary>
+    static string Or(IReadOnlyList<string> choices) =>
+        choices.Count < 2 ? string.Join("", choices) : $"{string.Join(", ", choices.Take(choices.Count - 1))} or {choices[^1]}";
 
     readonly List<Reaction> reactions = [];
     readonly Dictionary<string, (long Timeline, int Waits)> counters = new(StringComparer.Ordinal);
@@ -44,7 +56,6 @@ public sealed partial class FakeEngine : IClientInterceptor
         Libraries = libraries;
         Client = new TemporalClient(TemporalConnection.CreateLazy(new TemporalConnectionOptions("127.0.0.1:1")), new TemporalClientOptions { Interceptors = [this] });
         On(AnswerAsync);
-        On(BreakpointAsync);
         On(AbortAsync);
         Decisions();
         Steering();
@@ -186,7 +197,7 @@ public sealed partial class FakeEngine : IClientInterceptor
 
         if (start.Template == "m7s:templates/decide")
         {
-            await TraceAsync(start.RunId, "started", "go_ahead", "execution 1");
+            await StartStepAsync(start.RunId, "go_ahead");
             await OpenWaitAsync(start.RunId);
         }
 
@@ -194,7 +205,8 @@ public sealed partial class FakeEngine : IClientInterceptor
             await hook(start);
     }
 
-    // Answer: the wait closed and the answer on the timeline; continue at a breakpoint resumes the step.
+    // Answer: the wait closed and the answer on the timeline. A recovery at an intervention or breakpoint is traced as the
+    // core traces it (Recovery.cs, Recover; Waits.cs, Answer): recovered, then answered, then the run moves on.
 
     async Task<string?> AnswerAsync(Update update)
     {
@@ -203,40 +215,92 @@ public sealed partial class FakeEngine : IClientInterceptor
         lock (Answers)
             Answers.Add(answer);
         var wait = (await OpenWaitsAsync(update.RunId)).FirstOrDefault(w => w.WaitId == answer.WaitId);
+        var said = $"{RunCore.Key(answer)} by {answer.Actor}{(string.IsNullOrWhiteSpace(answer.Reason) ? "" : ": " + answer.Reason)}";
+        if (wait is not { Kind: "intervention" or "breakpoint" })
+        {
+            await CloseWaitAsync(update.RunId, answer.WaitId);
+            await TraceAsync(update.RunId, "answered", answer.WaitId, said);
+            return "recorded";
+        }
+
+        // A breakpoint's continue may come as its outcome, as the core reads it.
+        var action = wait.Kind == "breakpoint" ? answer.Action ?? answer.Outcome : answer.Action;
+        if (action is null || !wait.Choices.Contains(action))
+            throw new Refusal($"{wait.WaitId} is a{(wait.Kind == "breakpoint" ? " breakpoint" : "n intervention")}: answer {Or(wait.Choices)}");
         await CloseWaitAsync(update.RunId, answer.WaitId);
-        await TraceAsync(update.RunId, "answered", answer.WaitId, $"{answer.Action ?? answer.Outcome} by {answer.Actor}");
-        if (wait is { Kind: "breakpoint" } && answer.Action == "continue")
-            await TraceAsync(update.RunId, "resumed", wait.StepId, "execution 1");
+        await TraceAsync(update.RunId, "recovered", wait.StepId, action switch
+        {
+            "go_to" or "replan" => $"{action.Replace("_", "")} {answer.StepId}{(answer.CleanUp ? " (clean_up)" : "")}",
+            "grant_attempts" => $"grant {answer.Attempts} attempt(s)",
+            "end" => $"end {answer.Status}",
+            _ => action,
+        });
+        await TraceAsync(update.RunId, "answered", answer.WaitId, said);
+        switch (action)
+        {
+            case "continue":
+                // The paused step starts, past its breakpoint this once.
+                await StartStepAsync(update.RunId, wait.StepId);
+                break;
+            case "retry" or "grant_attempts":
+                await ReachAsync(update.RunId, wait.StepId);
+                break;
+            case "go_to" or "replan":
+                await ReachAsync(update.RunId, answer.StepId!);
+                break;
+            case "end":
+                var run = await RunRecordAsync(update.RunId);
+                await RunAsync(run.RunId, run.Template, answer.Status!, run.Requester, run.Repositories, run.ParentRunId, "ended by a person at an intervention");
+                break;
+        }
+
         return "recorded";
     }
 
-    // The breakpoint override: set opens a breakpoint wait on the step with the engine's recoveries, continue first.
-
-    async Task<string?> BreakpointAsync(Update update)
+    /// <summary>
+    /// The run reaches <paramref name="stepId"/>, as the core enters a step (<c>RunCore.Enter</c>): with a breakpoint set on it,
+    /// it pauses before it (a breakpoint wait, traced <c>paused</c>; <c>Steering.cs</c>, <c>Paused</c>) and returns the wait's
+    /// id; otherwise the step starts and this returns null.
+    /// </summary>
+    public async Task<string?> ReachAsync(string runId, string stepId)
     {
-        if (update is not { Name: RunWorkflowNames.Override, Argument: OverrideArgs { Key: "breakpoint" } o })
+        if (!(await BreakpointsAsync(runId)).Contains(stepId))
+        {
+            await StartStepAsync(runId, stepId);
             return null;
-        lock (Overrides)
-            Overrides.Add(o);
-        var stepId = o.StepId ?? "";
-        var set = !o.Change.TryGetValue("set", out var value) || value != "false";
-        await TraceAsync(update.RunId, set ? "breakpoint_set" : "breakpoint_cleared", stepId, $"by {o.Actor}");
-        if (set)
-            await OpenWaitAsync(update.RunId, "breakpoint", stepId, "ticket.breakpoint", $"a person set a breakpoint before {stepId}");
-        return "applied";
+        }
+
+        var waitId = await OpenWaitAsync(runId, "breakpoint", stepId, "ticket.breakpoint", $"a person set a breakpoint before {stepId}");
+        await TraceAsync(runId, "paused", stepId, waitId);
+        return waitId;
     }
+
+    /// <summary>The step's next execution starts.</summary>
+    async Task StartStepAsync(string runId, string stepId) =>
+        await TraceAsync(runId, "started", stepId, $"execution {(await TimelineAsync(runId)).Count(t => t is { Kind: "started" } && t.StepId == stepId) + 1}");
+
+    /// <summary>The run's timeline, in order.</summary>
+    async Task<IReadOnlyList<TimelineRecord>> TimelineAsync(string runId) =>
+        (await Records.QueryAsync<TimelineRecord>(Queries.Timeline, new Dictionary<string, string> { ["run_id"] = runId, ["after"] = "0" }, Ct)).Unwrap()
+        .OrderBy(t => t.Sequence).ToList();
+
+    async Task<RunRecord> RunRecordAsync(string runId) =>
+        (await Records.QueryAsync<RunRecord>(Queries.Run, new Dictionary<string, string> { ["run_id"] = runId }, Ct)).Unwrap().Single();
 
     async Task<string?> AbortAsync(Update update)
     {
         if (update is not { Name: RunWorkflowNames.Abort, Argument: AbortArgs abort })
             return null;
+        var run = await RunRecordAsync(update.RunId);
+        if (run.Status != "running")
+            throw new Refusal($"the run has ended ({run.Status})");
         lock (Aborts)
             Aborts.Add(abort);
-        var run = (await Records.QueryAsync<RunRecord>(Queries.Run, new Dictionary<string, string> { ["run_id"] = update.RunId }, Ct)).Unwrap().Single();
         foreach (var wait in await OpenWaitsAsync(update.RunId))
             await CloseWaitAsync(update.RunId, wait.WaitId);
         await RunAsync(run.RunId, run.Template, "aborted", run.Requester, run.Repositories, run.ParentRunId, abort.Reason);
-        return abort.ClosePullRequests ? "aborted; its open pull requests will be closed" : "aborted";
+        // The abort update's reply (RunWorkflow.AbortAsync); closing the pull requests is the shell's.
+        return "aborted";
     }
 
     async Task<string> ReactAsync(Update update)
@@ -269,10 +333,22 @@ public sealed partial class FakeEngine : IClientInterceptor
 
         public override async Task<WorkflowUpdateHandle<TResult>> StartWorkflowUpdateAsync<TResult>(StartWorkflowUpdateInput input)
         {
-            var reply = await engine.ReactAsync(new Update(input.Id, input.Update, input.Args.SingleOrDefault()));
             var handle = new WorkflowUpdateHandle<TResult>(engine.Client, input.Options.Id ?? "update", input.Id, input.RunId);
-            var payload = DataConverter.Default.PayloadConverter.ToPayload(new AnswerReply(reply));
-            KnownOutcome.SetValue(handle, new Temporalio.Api.Update.V1.Outcome { Success = new Payloads { Payloads_ = { payload } } });
+            try
+            {
+                var reply = await engine.ReactAsync(new Update(input.Id, input.Update, input.Args.SingleOrDefault()));
+                var payload = DataConverter.Default.PayloadConverter.ToPayload(new AnswerReply(reply));
+                KnownOutcome.SetValue(handle, new Temporalio.Api.Update.V1.Outcome { Success = new Payloads { Payloads_ = { payload } } });
+            }
+            catch (Refusal refusal)
+            {
+                // As the workflow's validator throws ApplicationFailureException: the handle's result is that failure.
+                KnownOutcome.SetValue(handle, new Temporalio.Api.Update.V1.Outcome
+                {
+                    Failure = new Temporalio.Api.Failure.V1.Failure { Message = refusal.Message, ApplicationFailureInfo = new() },
+                });
+            }
+
             return handle;
         }
     }

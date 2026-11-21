@@ -70,7 +70,15 @@ public abstract class BrowserTest(BrowserFixture browser) : IAsyncLifetime
         }
 
         await page.GotoAsync(url);
+        if (World.Auth.Mode == "none")
+            await LiveAsync();
     }
+
+    /// <summary>
+    /// Waits until the console follows the change stream and its first re-read has settled, so a record appended after this
+    /// reaches the page only over <c>GET /events</c>. <see cref="OpenAtAsync"/> waits for it with no sign-in; after a sign-in, call it.
+    /// </summary>
+    protected Task LiveAsync() => Assertions.Expect(Page.Locator("html")).ToHaveAttributeAsync("data-live", "connected");
 
     void Problem(string text)
     {

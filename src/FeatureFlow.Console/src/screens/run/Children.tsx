@@ -1,5 +1,5 @@
-import { api, read, type Schema } from "../../api/client";
-import { useLive } from "../../api/live";
+import type { Schema } from "../../api/client";
+import { useAttention } from "../../app/attention";
 import * as links from "../../app/links";
 import { Age } from "../../ui/Age";
 import { Status } from "../../ui/Status";
@@ -10,7 +10,7 @@ import { Table } from "../../ui/Table";
  * only the waits the caller may answer.
  */
 export function Children({ children }: { children: readonly Schema<"RunSummary">[] }) {
-  const attention = useLive(["attention"], () => read(api.GET("/attention")));
+  const attention = useAttention();
   const waiting = new Set(attention.data?.waits.map(i => i.run.run_id) ?? []);
 
   return (

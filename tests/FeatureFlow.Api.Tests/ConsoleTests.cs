@@ -112,51 +112,85 @@ public sealed class ConsoleTests : IAsyncDisposable
 
     /// <summary>
     /// The text-only rule in the console's sources (LOG 455; the design's section 7): API data reaches the page only as text.
-    /// No source uses a markup sink or evaluates text as code, and every link, image or form target comes from app/links.ts,
-    /// because Preact does not refuse a <c>javascript:</c> URL. The bundle is not scanned: Preact itself holds a markup sink.
+    /// No source uses a markup sink or evaluates text as code, every URL attribute comes from app/links.ts (Preact does not
+    /// refuse a <c>javascript:</c> URL), and no props are spread onto an element. The check is the console's own
+    /// <c>scripts/text-only.mjs</c>, over the TypeScript syntax tree; <c>npm run build</c> runs it too. The bundle is not
+    /// scanned: Preact itself holds a markup sink.
     /// </summary>
     [Fact]
     public void The_console_sources_never_build_markup_or_links_from_data()
     {
-        var root = Path.Combine(Repository.Root, "src", "FeatureFlow.Console", "src");
-        var sources = Directory.EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
-            .Where(f => f.EndsWith(".ts", StringComparison.Ordinal) || f.EndsWith(".tsx", StringComparison.Ordinal))
-            .Where(f => !f.EndsWith(".gen.d.ts", StringComparison.Ordinal))
-            .ToList();
-        Assert.Contains(sources, f => Path.GetFileName(f) == "main.tsx");
+        var (exit, output) = TextOnly(Path.Combine(ConsoleDir, "src"));
+        Assert.True(exit == 0, output);
+    }
 
-        var sinks = new System.Text.RegularExpressions.Regex(
-            @"dangerouslySetInnerHTML|\binnerHTML\b|\bouterHTML\b|\binsertAdjacentHTML\b|\bdocument\s*\.\s*write|\bDOMParser\b|\bcreateContextualFragment\b|\bsrcdoc\b|\beval\s*\(|\bnew\s+Function\b");
-        // href, src or action given a value: a JSX attribute (no space before '='), a property, or through setAttribute.
-        var links = new System.Text.RegularExpressions.Regex(
-            @"((?<![\w.$])(href|src|action)=|\.(href|src|action)\s*=)(?!=)\s*(\{\s*)?(?<value>[^\s}>;]*)|setAttribute\(\s*[""'`](href|src|action)[""'`]");
-        var found = new List<string>();
-        foreach (var file in sources)
+    /// <summary>The check refuses each way of building a link or markup from data it knows, and passes what links.ts builds.</summary>
+    [Fact]
+    public void The_text_only_check_refuses_links_spreads_and_sinks_however_written()
+    {
+        var root = Path.Combine(folder, "text-only");
+        var refused = new Dictionary<string, string>
         {
-            var name = Path.GetRelativePath(root, file).Replace('\\', '/');
-            var lines = File.ReadAllLines(file);
-            // Names this file imports from app/links.ts: the only calls a link may be built with.
-            var fromLinks = System.Text.RegularExpressions.Regex.Matches(string.Join('\n', lines),
-                    @"import\s+(\*\s+as\s+(?<ns>\w+)|\{(?<names>[^}]*)\})\s+from\s+[""'][./]*(app/)?links[""']")
-                .SelectMany(m => m.Groups["ns"].Success ? [m.Groups["ns"].Value] : m.Groups["names"].Value.Split(',').Select(n => n.Split(" as ")[^1].Trim()))
-                .Where(n => n.Length > 0).ToHashSet();
-            for (var i = 0; i < lines.Length; i++)
-            {
-                var line = lines[i].TrimStart();
-                if (line.StartsWith("//", StringComparison.Ordinal) || line.StartsWith("*", StringComparison.Ordinal) || line.StartsWith("/*", StringComparison.Ordinal))
-                    continue;
-                if (sinks.Match(line) is { Success: true } sink)
-                    found.Add($"{name}:{i + 1}: {sink.Value}");
-                if (name == "app/links.ts")
-                    continue;
-                foreach (System.Text.RegularExpressions.Match link in links.Matches(line))
-                    if (!link.Groups["value"].Success || !fromLinks.Any(n => link.Groups["value"].Value.StartsWith(n + "(", StringComparison.Ordinal) ||
-                                                                             link.Groups["value"].Value.StartsWith(n + ".", StringComparison.Ordinal)))
-                        found.Add($"{name}:{i + 1}: {link.Value} (a link not built by app/links.ts)");
-            }
-        }
+            // The review's bypass: spaces around '=', as JSX allows.
+            ["spaced.tsx"] = "export const A = () => <a href = {w.prompt}>x</a>;",
+            ["over-lines.tsx"] = "export const A = () => <a\n  href=\n  {w.prompt}>x</a>;",
+            ["upper-case.tsx"] = "export const A = () => <a HREF={w.url}>x</a>;",
+            ["form-action.tsx"] = "export const A = () => <button formAction={w.url}>x</button>;",
+            ["poster.tsx"] = "export const A = () => <video poster={w.url} />;",
+            ["src-set.tsx"] = "export const A = () => <img srcSet={w.url} />;",
+            ["xlink.tsx"] = "export const A = () => <svg><use xlinkHref={w.url} /></svg>;",
+            ["xlink-namespaced.tsx"] = "export const A = () => <svg><use xlink:href={w.url} /></svg>;",
+            ["a-literal.tsx"] = "export const A = () => <a href=\"https://elsewhere.example\">x</a>;",
+            ["added-to.tsx"] = "import * as links from \"../app/links\";\nexport const A = () => <a href={links.run(w.id) + w.more}>x</a>;",
+            ["spread.tsx"] = "export const A = () => <a {...w.props}>x</a>;",
+            ["h-props.ts"] = "h(\"a\", { href: w.url });",
+            ["h-spread.ts"] = "createElement(\"a\", { ...w.props });",
+            ["h-unread.ts"] = "h(\"a\", w.props);",
+            ["property.ts"] = "element.href = w.url;",
+            ["element-access.ts"] = "element[\"src\"] = w.url;",
+            ["set-attribute.ts"] = "element.setAttribute(\"href\", w.url);",
+            ["computed-name.ts"] = "element.setAttribute(w.name, w.value);",
+            ["inner-html.ts"] = "element.innerHTML = w.text;",
+            ["set-inner-html.tsx"] = "export const A = () => <div dangerouslySetInnerHTML={{ __html: w.text }} />;",
+            ["document-write.ts"] = "document.write(w.text);",
+            ["new-function.ts"] = "new Function(w.text)();",
+        };
+        var passed = new Dictionary<string, string>
+        {
+            ["links.tsx"] = """
+                import * as links from "../app/links";
+                import { run } from "../app/links";
+                export const A = () => <a href = {links.run(w.id)} title={w.title}>{w.text}</a>;
+                export const B = () => <a href={run(w.id)}>{w.text}</a>;
+                element.href = links.download(w.blob);
+                element.setAttribute("title", w.title);
+                h("a", null, w.text);
+                """,
+        };
+        Directory.CreateDirectory(root);
+        foreach (var (name, text) in refused.Concat(passed))
+            File.WriteAllText(Path.Combine(root, name), text);
 
-        Assert.Empty(found);
+        var (exit, output) = TextOnly(root);
+
+        Assert.Equal(1, exit);
+        var flagged = output.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => l.Split(':')[0]).ToHashSet();
+        Assert.Equal(refused.Keys.Order(), flagged.Order());
+    }
+
+    static string ConsoleDir => Path.Combine(Repository.Root, "src", "FeatureFlow.Console");
+
+    /// <summary>Runs the console's text-only check over <paramref name="sources"/>: its exit code and what it printed.</summary>
+    static (int Exit, string Output) TextOnly(string sources)
+    {
+        var start = new System.Diagnostics.ProcessStartInfo("node") { WorkingDirectory = ConsoleDir, RedirectStandardOutput = true, RedirectStandardError = true };
+        start.ArgumentList.Add(Path.Combine("scripts", "text-only.mjs"));
+        start.ArgumentList.Add(sources);
+        using var node = System.Diagnostics.Process.Start(start)!;
+        var output = node.StandardOutput.ReadToEndAsync(Ct);
+        var errors = node.StandardError.ReadToEnd();
+        node.WaitForExit();
+        return (node.ExitCode, output.Result + errors);
     }
 
     /// <summary>Starts a run through the API, which writes its lock and record before it reaches Temporal (absent here: a 500).</summary>

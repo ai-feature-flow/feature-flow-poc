@@ -4,25 +4,30 @@ import { useEffect, useRef, useState } from "preact/hooks";
 // invalidated reads again. There is no cache beyond mounted components. Keys: "attention", "runs", "run:<id>", and "*"
 // for everything.
 
-type Listener = (keys: ReadonlySet<string>) => void;
+/** Reads again if any of the keys concern it; resolves when that read has settled. */
+type Listener = (keys: ReadonlySet<string>) => Promise<void> | undefined;
 
 const listeners = new Set<Listener>();
 let pending = new Set<string>();
-let timer: ReturnType<typeof setTimeout> | undefined;
+let flushed: Promise<void> | undefined;
 
 /** How long invalidations are gathered before readers read again, so a burst of changes is one read. */
 const coalesce = 200;
 
 export const runKey = (runId: string): string => `run:${runId}`;
 
-export function invalidate(keys: readonly string[]): void {
+/** Marks the keys changed; resolves when the reads they cause have settled. */
+export function invalidate(keys: readonly string[]): Promise<void> {
   for (const key of keys) pending.add(key);
-  timer ??= setTimeout(() => {
-    const due = pending;
-    pending = new Set();
-    timer = undefined;
-    for (const listener of [...listeners]) listener(due);
-  }, coalesce);
+  flushed ??= new Promise(resolve =>
+    setTimeout(() => {
+      const due = pending;
+      pending = new Set();
+      flushed = undefined;
+      resolve(Promise.allSettled([...listeners].map(listener => listener(due))).then(() => undefined));
+    }, coalesce),
+  );
+  return flushed;
 }
 
 export interface Live<T> {
@@ -50,15 +55,17 @@ export function useLive<T>(keys: readonly string[], load: () => Promise<T>): Liv
     const read = () => {
       const mine = ++latest;
       setState(s => ({ ...s, loading: true }));
-      loader.current().then(
-        data => mounted && mine === latest && setState({ data, loading: false }),
-        (error: unknown) =>
-          mounted && mine === latest && setState(s => ({ data: s.data, error: error instanceof Error ? error : new Error(String(error)), loading: false })),
+      return loader.current().then(
+        data => {
+          if (mounted && mine === latest) setState({ data, loading: false });
+        },
+        (error: unknown) => {
+          if (mounted && mine === latest)
+            setState(s => ({ data: s.data, error: error instanceof Error ? error : new Error(String(error)), loading: false }));
+        },
       );
     };
-    const listener: Listener = changed => {
-      if (changed.has("*") || keys.some(k => changed.has(k))) read();
-    };
+    const listener: Listener = changed => (changed.has("*") || keys.some(k => changed.has(k)) ? read() : undefined);
     read();
     listeners.add(listener);
     return () => {

@@ -1,4 +1,4 @@
-import { useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { api, read, type Schema } from "../../api/client";
 import { invalidate, runKey } from "../../api/live";
 import { ErrorBox } from "../../ui/ErrorBox";
@@ -28,13 +28,17 @@ export function titleOf({ key, step, set }: Choice): string {
   }
 }
 
+/** The outcomes a step may be skipped with: all but attempts_exhausted (Steering.cs, SkipError). */
+export const outcomesOf = (step: Schema<"PlanStepView">): string[] =>
+  step.outcomes.map(o => o.name).filter(name => name !== "attempts_exhausted");
+
 /** A patch to start an amendment from, against the current revision (docs/03 section 10.1). */
 const skeleton = (revision: number): string =>
   `api_version: feature-flow/v1\nkind: patch\nbase_revision: ${revision}\nresume_at:\nchanges:\n`;
 
 /** The choice's argument as it starts. */
 const initial = (choice: Choice, revision: number): string =>
-  choice.key === "skip" ? (choice.step?.outcomes[0]?.name ?? "") : choice.key === "amend" ? skeleton(revision) : "";
+  choice.key === "skip" && choice.step ? (outcomesOf(choice.step)[0] ?? "") : choice.key === "amend" ? skeleton(revision) : "";
 
 /** The override's arguments by name (Steering.cs, OverrideError), or null while the argument is not valid. */
 function changeOf(key: Choice["key"], argument: string, set?: boolean): Record<string, string> | null {
@@ -63,6 +67,12 @@ export function Steer({ runId, revision, choice, onDone, onCancel }: {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<Error>();
   const change = changeOf(choice.key, argument, choice.set);
+  const form = useRef<HTMLFormElement>(null);
+  // The form opens where it was chosen; bring it into view with its first field ready.
+  useEffect(() => {
+    form.current?.scrollIntoView({ block: "nearest" });
+    form.current?.querySelector<HTMLElement>("select, input, textarea")?.focus();
+  }, []);
 
   const apply = async (e: Event) => {
     e.preventDefault();
@@ -86,17 +96,18 @@ export function Steer({ runId, revision, choice, onDone, onCancel }: {
   };
 
   return (
-    <form class="ff-steer" onSubmit={apply}>
+    <form ref={form} class="ff-steer" onSubmit={apply}>
       <h3>{titleOf(choice)}</h3>
       {choice.key === "skip" && (
         <label>
           Outcome
           <select value={argument} onChange={e => setArgument(e.currentTarget.value)}>
-            {choice.step?.outcomes.map(o => (
-              <option key={o.name} value={o.name}>
-                {o.name}
-              </option>
-            ))}
+            {choice.step &&
+              outcomesOf(choice.step).map(name => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
           </select>
         </label>
       )}

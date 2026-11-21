@@ -7,7 +7,7 @@
   },
   "scripts": {
     "generate": "openapi-typescript ../FeatureFlow.Api/openapi.json -o src/api/schema.gen.d.ts --default-non-nullable false",
-    "build": "npm run generate && tsc --noEmit -p . && vite build",
+    "build": "npm run generate && tsc --noEmit -p . && node scripts/text-only.mjs && vite build",
     "dev": "npm run generate && vite"
   },
   "dependencies": {
