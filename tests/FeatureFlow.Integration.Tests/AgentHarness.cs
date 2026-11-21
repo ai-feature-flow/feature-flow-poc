@@ -91,7 +91,9 @@ public sealed record AgentHarnessOptions
 
     /// <summary>
     /// The Live category: the fixture repository on GitHub through the GitHub App, and the real model through the
-    /// proxy with the subscription token from <c>CLAUDE_CODE_OAUTH_TOKEN</c>. The App's settings come from the file
+    /// proxy. Claude Code's proxy holds the subscription token from <c>CLAUDE_CODE_OAUTH_TOKEN</c>; Copilot CLI's
+    /// (<c>auth: github</c>, LOG 496) holds the GitHub token from <c>FF_COPILOT_GITHUB_TOKEN</c> and forwards to the
+    /// account's Copilot API, <c>FF_COPILOT_API_URL</c> (LOG 498). The App's settings come from the file
     /// <c>FF_SECRETS_FILE</c> names, outside the repository; no value of it is printed.
     /// </summary>
     public bool Live { get; init; }
@@ -135,6 +137,9 @@ public sealed class AgentHarness : IAsyncDisposable
 
     public const string FixtureRepository = "ai-feature-flow/feature-flow-example";
 
+    /// <summary>The variable holding the GitHub token the Copilot Live tests' proxy sends (LOG 498).</summary>
+    public const string CopilotKey = "FF_COPILOT_GITHUB_TOKEN";
+
     public string Repository { get; private set; } = "acme/app";
 
     public bool Live { get; private set; }
@@ -159,7 +164,6 @@ public sealed class AgentHarness : IAsyncDisposable
     public static async Task<AgentHarness> StartAsync(string name, ScriptedModel? model, AgentHarnessOptions? options = null)
     {
         options ??= new AgentHarnessOptions();
-        var client = await AgentWorld.SandboxClientAsync();
         var folder = IOPath.Combine(IOPath.GetTempPath(), $"ff-m4-{name}-{Guid.NewGuid():N}"[..40]);
         Directory.CreateDirectory(folder);
         var h = new AgentHarness(folder) { Live = options.Live, Factories = FactoriesFor(options) };
@@ -169,14 +173,20 @@ public sealed class AgentHarness : IAsyncDisposable
             // CONTRIBUTING.md: a missing credential stops the test; nothing is substituted for it.
             var secretsFile = Environment.GetEnvironmentVariable("FF_SECRETS_FILE");
             Assert.True(secretsFile is not null && File.Exists(secretsFile), "the Live tests need FF_SECRETS_FILE naming the GitHub App's settings");
-            Assert.True(Environment.GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN") is { Length: > 0 }, "the Live tests need CLAUDE_CODE_OAUTH_TOKEN for the model proxy");
+            // Copilot's key is never COPILOT_GITHUB_TOKEN itself, which the host's own copilot would pick up. Natively the CLI
+            // names models by Copilot's catalogue (claude-haiku-4.5), not Anthropic's (claude-haiku-4-5).
+            var (keyName, upstream, auth) = options.Runtime == "copilot_cli"
+                ? (CopilotKey, Environment.GetEnvironmentVariable("FF_COPILOT_API_URL"), "github")
+                : ("CLAUDE_CODE_OAUTH_TOKEN", "https://api.anthropic.com", "oauth");
+            Assert.True(Environment.GetEnvironmentVariable(keyName) is { Length: > 0 }, $"the Live tests on {options.Runtime} need {keyName} for the model proxy");
+            Assert.True(upstream is { Length: > 0 }, "the Copilot Live tests need FF_COPILOT_API_URL, the account's Copilot API (endpoints.api of copilot_internal/user)");
             var app = JsonSerializer.Deserialize<Dictionary<string, string>>(await File.ReadAllTextAsync(secretsFile!))!;
             h.Repository = FixtureRepository;
             vcs = "{ default: git, instances: { git: { cache: clones } } }";
             broker = $$"""  credential_broker: { default: github_app, instances: { github_app: { app_id: "{{app["github-app-id"]}}", installation_id: "{{app["github-installation-id"]}}", key_path: "{{app["github-app-key"]}}", repositories: [{{FixtureRepository}}] } } }""";
             // SP5's negative controls replace the model's address (N1) or the proxy's key (N2).
-            modelAccess = $$"""{ mode: proxy, key_ref: secrets/{{(options.ModelKey is null ? "CLAUDE_CODE_OAUTH_TOKEN" : "model_key")}}, upstream: "{{options.ModelUpstream ?? "https://api.anthropic.com"}}", auth: oauth }""";
-            secretsFromEnvironment = ", from_environment: [CLAUDE_CODE_OAUTH_TOKEN]";
+            modelAccess = $$"""{ mode: proxy, key_ref: secrets/{{(options.ModelKey is null ? keyName : "model_key")}}, upstream: "{{options.ModelUpstream ?? upstream}}", auth: {{auth}} }""";
+            secretsFromEnvironment = $", from_environment: [{keyName}]";
         }
         else
         {
@@ -185,6 +195,8 @@ public sealed class AgentHarness : IAsyncDisposable
             modelAccess = $$"""{ mode: proxy, key_ref: secrets/model_key, upstream: "{{options.ModelUpstream ?? model!.Url}}", auth: api_key }""";
         }
 
+        // After the Live checks, so a missing credential fails before the image is built.
+        var client = await AgentWorld.SandboxClientAsync();
         var token = Guid.NewGuid().ToString("N");
         await File.WriteAllTextAsync(h.TokenFile, token);
         await File.WriteAllTextAsync(IOPath.Combine(folder, "secrets.json"), JsonSerializer.Serialize(new Dictionary<string, string>
@@ -215,7 +227,7 @@ public sealed class AgentHarness : IAsyncDisposable
                 default: {{options.Runtime}}
                 instances:
                   {{options.Runtime}}:
-                    model: {{(options.Runtime == "copilot_cli" ? "claude-haiku-4-5" : "haiku")}}
+                    model: {{(options.Runtime != "copilot_cli" ? "haiku" : options.Live ? "claude-haiku-4.5" : "claude-haiku-4-5")}}
                     model_access: {{modelAccess}}
             {{string.Join("\n", options.MoreRuntimes.Select(r => "      " + r.Replace("{model_access}", modelAccess)))}}
               vcs: {{vcs}}
@@ -288,9 +300,6 @@ public sealed class AgentHarness : IAsyncDisposable
     /// <summary>Removes references a Live test pushed to the fixture repository, with the engine's credential.</summary>
     public async Task DeleteRemoteReferencesAsync(params string[] references)
     {
-        var broker = Host.Providers.Required<ICredentialBroker>("credential_broker");
-        var credential = (await broker.IssueAsync(Actor.Engine, "github", CredentialScope.Write(Repository), TimeSpan.FromMinutes(10), CancellationToken.None)).Unwrap();
-        var header = "AUTHORIZATION: basic " + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("x-access-token:" + credential.Secret));
         var scratch = IOPath.Combine(Folder, "delete-refs");
         Directory.CreateDirectory(scratch);
         await GitAsync(scratch, "init", "-q");
@@ -300,11 +309,31 @@ public sealed class AgentHarness : IAsyncDisposable
                 present.Add(reference);
         if (present.Count == 0)
             return;
-        var (exit, output) = await AgentWorld.RunAsync("git", ["push", "-q", $"https://github.com/{Repository}.git", .. present.Select(r => ":" + r)], scratch,
-            new Dictionary<string, string> { ["GIT_CONFIG_COUNT"] = "1", ["GIT_CONFIG_KEY_0"] = "http.extraHeader", ["GIT_CONFIG_VALUE_0"] = header, ["GIT_TERMINAL_PROMPT"] = "0" });
+        var (exit, output) = await GitHubGitAsync(scratch, ["push", "-q", $"https://github.com/{Repository}.git", .. present.Select(r => ":" + r)]);
         // No assertion here: it runs in a test's finally, where it must not hide the test's own failure.
         if (exit != 0)
             Console.Error.WriteLine("removing the test's references failed: " + output.Split('\n').FirstOrDefault());
+    }
+
+    /// <summary>A Live test's commits on a fixture reference that <c>main</c> lacks, each with its message and patch.</summary>
+    public async Task<string> RemoteChangesAsync(string reference)
+    {
+        var scratch = IOPath.Combine(Folder, "changes-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(scratch);
+        await GitAsync(scratch, "init", "-q");
+        var (exit, output) = await GitHubGitAsync(scratch, ["fetch", "-q", $"https://github.com/{Repository}.git", $"+{reference}:refs/test/changes", "+refs/heads/main:refs/test/main"]);
+        Assert.True(exit == 0, "fetching the test's commits failed: " + output.Split('\n').FirstOrDefault());
+        return await GitAsync(scratch, "log", "-p", "--format=%H%n%B", "refs/test/main..refs/test/changes");
+    }
+
+    /// <summary>Git against GitHub with the engine's credential, sent as a header so it is in no URL or file.</summary>
+    async Task<(int Exit, string Output)> GitHubGitAsync(string directory, IReadOnlyList<string> arguments)
+    {
+        var broker = Host.Providers.Required<ICredentialBroker>("credential_broker");
+        var credential = (await broker.IssueAsync(Actor.Engine, "github", CredentialScope.Write(Repository), TimeSpan.FromMinutes(10), CancellationToken.None)).Unwrap();
+        var header = "AUTHORIZATION: basic " + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("x-access-token:" + credential.Secret));
+        return await AgentWorld.RunAsync("git", arguments, directory,
+            new Dictionary<string, string> { ["GIT_CONFIG_COUNT"] = "1", ["GIT_CONFIG_KEY_0"] = "http.extraHeader", ["GIT_CONFIG_VALUE_0"] = header, ["GIT_TERMINAL_PROMPT"] = "0" });
     }
 
     /// <summary>
