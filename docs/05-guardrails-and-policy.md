@@ -113,12 +113,28 @@ approval:
 |---|---|
 | `match` | A decision type pattern. The first matching rule applies |
 | `roles` | People roles that may answer |
-| `min_count` | How many distinct people must answer the same way |
+| `min_count` | How many distinct people must answer the same way: the same choice, whatever words each gives as their reason (`docs/04` section 4.1) |
 | `from_chat` | Whether the decision may be answered from a chat client |
 | `auto` | Whether auto-resolution is allowed. The template asks; this allows |
 
 Rules are keyed by decision type pattern, not by level name, because levels
 are the workflow's (review finding 3.4).
+
+One rule decides whether a person may answer a wait, in the API's
+`CheckAnswer`, for every answer route (an answer, a session's submission,
+abandonment and checks) and for the `can_answer` a read shows (`GET /runs/{id}`,
+`GET /attention`), so a read never offers what the answer would refuse:
+
+| Wait | May answer |
+|---|---|
+| Gate, agent question, patch approval, breakpoint | The governing rule's `roles` in the run's scope (a steerer's rule admits an administrator) |
+| Intervention | The `recover` override's roles; a grant of attempts needs `grant_attempts`'s as well |
+| `stalled`, `stuck` | No one: they are the engine's status (409) |
+
+Then, for every kind: an answer through chat needs the rule's `from_chat`; and
+where the rule's `min_count` is above 1 beside OIDC, the local token, which has
+no groups, is not a person who can be counted (LOG 221). A read's `can_answer`
+is also false for a closed wait and for a run no longer `starting` or `running`.
 
 ### 3.3 People roles
 
@@ -160,7 +176,9 @@ decision_types:
 
 A person may change a running run in any way the organisation's roles allow
 (P3). Every override goes through the API, is authorised by role, and is
-recorded with the actor, reason and the change.
+recorded with the actor, reason and the change. An answer (but an agent's
+question's) and an abort are refused without a reason too (F5), and the answer
+record keeps it beside the choice (`docs/04` section 4.1).
 
 | Override | Key | Effect | Default role |
 |---|---|---|---|
@@ -185,6 +203,14 @@ succeeds with its first result and the same id with another key is refused as a
 conflict; then the key's arguments, the protected-content variants and the run's
 own checks decide whether it applies. The update's validator and handler route
 it with the same function, so they refuse the same overrides (LOG 383).
+
+A patch names the revision it applies to (`base_revision`). Each accepted
+revision is recorded as a `plan_revision` artifact (LOG 404), and
+`GET /runs/{id}/plan` (`ff run plan <run>`) shows the current one: its number,
+its readable form and each step with its status. The CLI sends an argument's
+value from a file with `--change <name>=@<file>`, for `amend`'s `patch` and
+`override_library`'s `with`; `@@` at the start sends a value that begins with a
+literal `@` (LOG 406).
 
 The organisation may change the default role for any override by key, in
 `policy.overrides` (`docs/07` section 3). A `_protected` suffix (`skip_protected`,
@@ -232,8 +258,8 @@ The view is part of the plan's readable form and of the run start record.
 
 | Kind of setting | Takes effect | Why |
 |---|---|---|
-| Checked by the API at the moment of use: who may answer a decision, who may perform an override, chat permissions | Immediately, for running runs too | The API reads current configuration on every request |
-| Enforced inside the run: attempt ceilings, locked caps, F1, budgets | Fixed for the run when it starts, and recorded in the run start record | Workflow code cannot read configuration (it would break deterministic replay), so these values are carried in the run's state |
+| Checked by the API at the moment of use: who may answer a decision, who may perform an override, chat permissions | Immediately, for running runs too. A read's `can_answer` and `GET /attention` may use library decision types up to a minute old (LOG 395); the answer itself reads them now | The API reads current configuration on every request |
+| Enforced inside the run: attempt ceilings, locked caps, F1, budgets, `notifications.reminder_interval` | Fixed for the run when it starts and carried in its state (`RunPolicy`, the run start activity's result, passed on at each hand-over). F1 and the locked merge caps are also listed in the run start record as the effective policy view (section 7); the ceilings, budgets and reminder interval are not (LOG 431) | Workflow code cannot read configuration (it would break deterministic replay), so these values are carried in the run's state |
 | Library content | Pinned in the run's lock at start (`docs/08` section 5.1) | Reproducibility |
 
 To change an in-run value for a running run, a person uses an override: for

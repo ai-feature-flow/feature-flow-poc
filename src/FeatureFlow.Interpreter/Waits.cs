@@ -111,9 +111,9 @@ public sealed partial class RunCore
     }
 
     /// <summary>
-    /// Routes an answer and applies it: the wait closes as answered, with the answer's key and actor, and the timeline says
-    /// who answered. A submission (<see cref="Submits"/>) needs the files the shell imported as <paramref name="imported"/>.
-    /// A duplicate changes nothing.
+    /// Routes an answer and applies it: the wait closes as answered, with the answer's key, actor and reason, the timeline says
+    /// who answered and why, and the run context keeps it for the next agent (docs/04 section 3.5). A submission
+    /// (<see cref="Submits"/>) needs the files the shell imported as <paramref name="imported"/>. A duplicate changes nothing.
     /// </summary>
     public ApplyResult Answer(AnswerArgs a, IReadOnlyDictionary<string, string>? imported = null)
     {
@@ -137,16 +137,24 @@ public sealed partial class RunCore
         }
 
         var wait = State.Waits.First(w => w.Id == a.WaitId);
+        var said = $"{Key(a)} by {a.Actor}{(string.IsNullOrWhiteSpace(a.Reason) ? "" : ": " + a.Reason)}";
+        // A person's answer and their reason go into the run context for the next agent; a question's answer is its agent's alone.
+        var answered = wait.Kind == WaitKind.Question ? null : $"{Describe(wait).Type} at {wait.StepId}: {said}";
+        var execution = Executions(wait.StepId);
         var result = Apply(input);
         if (!result.Accepted)
             return result;
         var at = State.Closed.FindLastIndex(c => c.Id == a.WaitId);
         if (at >= 0)
-            State.Closed[at] = State.Closed[at] with { Key = Key(a), Actor = a.Actor };
-        if (wait.Kind == WaitKind.Question)
+            State.Closed[at] = State.Closed[at] with { Key = Key(a), Actor = a.Actor, Reason = a.Reason };
+        if (answered is null)
             Trace("question_answered", wait.StepId, $"{a.WaitId} by {a.Actor}");
         else
-            Trace("answered", a.WaitId, $"{Key(a)} by {a.Actor}");
+        {
+            Trace("answered", a.WaitId, said);
+            AddContext(ContextKinds.Answer, wait.StepId, execution, answered);
+        }
+
         return result;
     }
 
@@ -195,6 +203,9 @@ public sealed partial class RunCore
     {
         State.Waits.Add(wait);
         State.WaitChanges.Add(new WaitChange(wait, true));
+        // Every kind of wait is reminded, questions included (LOG 403).
+        if (Options.ReminderInterval is { } interval)
+            outbox.Add(new ArmReminder(wait.Id, 1, interval));
         return wait;
     }
 
@@ -227,9 +238,30 @@ public sealed partial class RunCore
     /// <summary>The identity of a step's execution, by which its activity is idempotent and its agent's questions are held.</summary>
     public string StepKey(string stepId, int execution) => $"{Run.Id}/{stepId}/{execution}";
 
-    /// <summary>The timers the open waits need, for a shell starting again after a hand-over.</summary>
-    public IReadOnlyList<ArmTimer> Timers() =>
-        State.Waits.Where(w => w.Deadline is not null).Select(w => new ArmTimer(w.Id, w.Deadline!.Value)).ToList();
+    /// <summary>
+    /// The timers and reminders the open waits need, for a shell starting again after a hand-over: each deadline, and each
+    /// wait's next reminder a whole interval from now, so it may come up to one interval late (LOG 402).
+    /// </summary>
+    public IReadOnlyList<Command> Timers() =>
+    [
+        .. State.Waits.Where(w => w.Deadline is not null).Select(w => new ArmTimer(w.Id, w.Deadline!.Value)),
+        .. Options.ReminderInterval is { } interval ? State.Waits.Select(w => new ArmReminder(w.Id, w.Reminders + 1, interval)) : [],
+    ];
+
+    /// <summary>
+    /// A wait's reminder is due (docs/04 section 4): only the next reminder of a wait still open counts, so a repeated or late
+    /// one, or a closed wait's, does nothing. It is traced <c>reminded</c> on the wait for the notifier, and the next is armed.
+    /// </summary>
+    ApplyResult Remind(ReminderDue r)
+    {
+        var at = State.Waits.FindIndex(w => w.Id == r.WaitId);
+        if (at < 0 || State.Waits[at].Reminders != r.Number - 1 || Options.ReminderInterval is not { } interval)
+            return ApplyResult.Ok;
+        State.Waits[at] = State.Waits[at] with { Reminders = r.Number };
+        Trace("reminded", r.WaitId, r.Number.ToString(CultureInfo.InvariantCulture));
+        outbox.Add(new ArmReminder(r.WaitId, r.Number + 1, interval));
+        return ApplyResult.Ok;
+    }
 
     // ---- Questions (docs/04 section 3.4; LOG 93 as amended by LOG 364) --------------------------------
 
@@ -299,17 +331,18 @@ public sealed partial class RunCore
     /// <summary>
     /// A wait as the record store shows it: its kind, its decision type at the run's level, the choices that answer it, and
     /// the text to show (a gate's rendered prompt, a question's text, else the core's reason), so Slack, the console and the
-    /// CLI show the same.
+    /// CLI show the same. A gate also names what its step consumes as it opens, the revisions the person ratifies (LOG 394).
     /// </summary>
     public WaitDescription Describe(OpenWait wait)
     {
         var level = Plan.Document.Level ?? "run";
         var step = StepById(wait.StepId);
         var kind = wait.Kind.Name();
+        var consumed = wait.Kind == WaitKind.Gate && step is not null ? Consumed(step.Id).Where(c => !c.LedgerView).ToList() : null;
         return wait.Kind switch
         {
-            WaitKind.Gate when step?.Form == StepForm.Action => new(kind, ActionDecisionTypeOf(step.Id) ?? $"{level}.decision", ActionDecisions.Choices, wait.Reason),
-            WaitKind.Gate => new(kind, step?.Decision?.Type ?? $"{level}.decision", step?.DeclaredOutcomes.Select(o => o.Name).ToList() ?? [], GatePrompt(wait, step)),
+            WaitKind.Gate when step?.Form == StepForm.Action => new(kind, ActionDecisionTypeOf(step.Id) ?? $"{level}.decision", ActionDecisions.Choices, wait.Reason, consumed),
+            WaitKind.Gate => new(kind, step?.Decision?.Type ?? $"{level}.decision", step?.DeclaredOutcomes.Select(o => o.Name).ToList() ?? [], GatePrompt(wait, step), consumed),
             WaitKind.Question => new(kind, $"{level}.question", wait.Options ?? [], wait.Reason),
             WaitKind.PatchApproval => new(kind, $"{level}.patch_approval", PatchChoices, wait.Reason),
             WaitKind.Breakpoint => new(kind, $"{level}.breakpoint", Recoveries.For(wait.Kind), wait.Reason),

@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using FeatureFlow.Api.Contracts;
 using FeatureFlow.Model;
 using FeatureFlow.Model.Yaml;
 
@@ -18,14 +19,15 @@ public static class RunCommands
                ff run start <template> [--param <name>=<value>]... [--repo <owner/name>]... [--parent-branch <branch>] [--tracker-issue <key>] [--dry-run] [--continue-as-new-events <n>]
                ff run show <run id> [--timeline]
                ff run wait <run id> [--for end | wait] [--timeout <seconds>]
-               ff run answer <run id> <wait id> <outcome | approve | reject> [--artifact <name>=<file>]...
+               ff run answer <run id> <wait id> <outcome | approve | reject> --reason <text> [--artifact <name>=<file>]...
                ff run findings <run id>
+               ff run plan <run id>
                ff run artifact <run id> <reference>
-               ff run recover <run id> <wait id> retry | go_to <step> [--clean-up] | replan <step> | grant_attempts <n> | end <status>
-               ff run abort <run id> [--reason <text>] [--close-pull-requests]
-               ff run override <run id> <key> --reason <text> [--step <step id>] [--change <name>=<value>]...
+               ff run recover <run id> <wait id> retry | go_to <step> [--clean-up] | replan <step> | grant_attempts <n> | end <status> --reason <text>
+               ff run abort <run id> --reason <text> [--close-pull-requests]
+               ff run override <run id> <key> --reason <text> [--step <step id>] [--change <name>=<value> | <name>=@<file>]...
                  (key: breakpoint, skip, amend, change_role, grant_attempts or override_library; the run applies a
-                 protected or beyond-ceiling variant where your roles hold it)
+                 protected or beyond-ceiling variant where your roles hold it; @<file> sends the file's text, @@ a literal @)
                (every ff run command takes [--api <url>] [--token-file <file>])
         """;
 
@@ -71,26 +73,24 @@ public static class RunCommands
                     return await client.ShowAsync(id, flags.Contains("--timeline"));
                 case ["wait", var id]:
                     return await client.WaitAsync(id, Option("--for") ?? "end", TimeSpan.FromSeconds(double.Parse(Option("--timeout") ?? "300", System.Globalization.CultureInfo.InvariantCulture)));
-                case ["answer", var id, var wait, var outcome]:
-                    return await client.AnswerAsync(id, Answer(wait, outcome, options.GetValueOrDefault("--artifact") ?? []));
+                case ["answer", var id, var wait, var outcome] when Option("--reason") is { } reason:
+                    return await client.AnswerAsync(id, Answer(wait, outcome, reason, options.GetValueOrDefault("--artifact") ?? []));
                 case ["findings", var id]:
                     return await client.PrintAsync($"runs/{id}/findings");
+                case ["plan", var id]:
+                    return await client.PlanAsync(id);
                 case ["artifact", var id, var reference]:
                     return await client.PrintTextAsync($"runs/{id}/artifacts/{Uri.EscapeDataString(reference)}");
-                case ["recover", var id, var wait, "retry"]:
-                    return await client.AnswerAsync(id, new JsonObject { ["wait_id"] = wait, ["action"] = "retry" });
-                case ["recover", var id, var wait, var action, var step] when action is "go_to" or "replan":
-                    return await client.AnswerAsync(id, new JsonObject { ["wait_id"] = wait, ["action"] = action, ["step_id"] = step, ["clean_up"] = flags.Contains("--clean-up") });
-                case ["recover", var id, var wait, "grant_attempts", var n] when long.TryParse(n, out var attempts):
-                    return await client.AnswerAsync(id, new JsonObject { ["wait_id"] = wait, ["action"] = "grant_attempts", ["attempts"] = attempts });
-                case ["recover", var id, var wait, "end", var status]:
-                    return await client.AnswerAsync(id, new JsonObject { ["wait_id"] = wait, ["action"] = "end", ["status"] = status });
-                case ["abort", var id]:
-                    return await client.SendAsync($"runs/{id}/abort", new JsonObject
-                    {
-                        ["reason"] = Option("--reason") ?? "aborted from the CLI",
-                        ["close_pull_requests"] = flags.Contains("--close-pull-requests"),
-                    });
+                case ["recover", var id, var wait, "retry"] when Option("--reason") is { } reason:
+                    return await client.AnswerAsync(id, new AnswerRequest(wait, Action: "retry", Reason: reason));
+                case ["recover", var id, var wait, var action, var step] when action is "go_to" or "replan" && Option("--reason") is { } reason:
+                    return await client.AnswerAsync(id, new AnswerRequest(wait, Action: action, StepId: step, CleanUp: flags.Contains("--clean-up"), Reason: reason));
+                case ["recover", var id, var wait, "grant_attempts", var n] when long.TryParse(n, out var attempts) && Option("--reason") is { } reason:
+                    return await client.AnswerAsync(id, new AnswerRequest(wait, Action: "grant_attempts", Attempts: attempts, Reason: reason));
+                case ["recover", var id, var wait, "end", var status] when Option("--reason") is { } reason:
+                    return await client.AnswerAsync(id, new AnswerRequest(wait, Action: "end", Status: status, Reason: reason));
+                case ["abort", var id] when Option("--reason") is { } reason:
+                    return await client.SendAsync($"runs/{id}/abort", new AbortRequest(reason, flags.Contains("--close-pull-requests")));
                 case ["override", var id, var key] when Option("--reason") is { } reason:
                     return await client.OverrideAsync(id, key, reason, Option("--step"), options.GetValueOrDefault("--change") ?? []);
             }
@@ -110,22 +110,21 @@ public static class RunCommands
         return 2;
     }
 
-    /// <summary>A decision's answer; each <c>--artifact name=file</c> gives what the person produced, such as a triage (LOG 248).</summary>
-    static JsonObject Answer(string wait, string outcome, List<string> artifacts)
+    /// <summary>A decision's answer with the person's reason; each <c>--artifact name=file</c> gives what the person produced, such as a triage (LOG 248).</summary>
+    static AnswerRequest Answer(string wait, string outcome, string reason, List<string> artifacts)
     {
-        var body = new JsonObject { ["wait_id"] = wait, ["outcome"] = outcome };
-        if (artifacts.Count > 0)
-            body["artifacts"] = new JsonObject(artifacts.Select(a => a.Split('=', 2)).Select(p =>
-                KeyValuePair.Create(p[0], (JsonNode?)JsonValue.Create(File.ReadAllText(p.Length == 2 ? p[1] : throw new ArgumentException($"--artifact takes <name>=<file>, not {p[0]}"))))));
-        return body;
+        var given = artifacts.Select(a => a.Split('=', 2)).ToDictionary(
+            p => p[0], p => File.ReadAllText(p.Length == 2 ? p[1] : throw new ArgumentException($"--artifact takes <name>=<file>, not {p[0]}")), StringComparer.Ordinal);
+        return new AnswerRequest(wait, outcome, Reason: reason, Artifacts: given.Count == 0 ? null : given);
     }
 
+    /// <summary>The API's calls, with the API's records as bodies and replies (docs/02 section 7).</summary>
     sealed class Client(HttpClient http, TextWriter output, TextWriter error)
     {
         /// <summary>A GET's reply as it came, for a document such as the findings ledger.</summary>
         public async Task<int> PrintAsync(string path)
         {
-            var reply = await GetAsync(path);
+            var reply = await GetAsync<JsonNode>(path);
             if (reply is null)
                 return 1;
             output.WriteLine(reply.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
@@ -138,7 +137,7 @@ public static class RunCommands
             using var response = await http.GetAsync(path);
             if (!response.IsSuccessStatusCode)
             {
-                await ReadAsync(response, quiet: false);
+                await ReadAsync<JsonNode>(response, quiet: false);
                 return 1;
             }
 
@@ -149,7 +148,7 @@ public static class RunCommands
         public async Task<int> StartAsync(string template, List<string> parameters, List<string> repositories, bool dryRun, string? handOver, string? parentBranch = null,
             string? trackerIssue = null)
         {
-            var map = new JsonObject();
+            var map = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var p in parameters)
             {
                 var eq = p.IndexOf('=');
@@ -159,49 +158,41 @@ public static class RunCommands
                     return 2;
                 }
 
-                // A value is read as YAML, so true, 3 and text keep their types.
+                // A value is read as YAML, so true, 3 and text keep their types; the API takes each as JSON text.
                 var node = YamlText.Parse(p[(eq + 1)..], "--param", new DiagnosticBag());
-                map[p[..eq]] = node is null ? p[(eq + 1)..] : JsonNode.Parse(YamlWriter.Write(node));
+                map[p[..eq]] = node is null ? JsonSerializer.Serialize(p[(eq + 1)..]) : JsonNode.Parse(YamlWriter.Write(node))?.ToJsonString() ?? "null";
             }
 
-            var body = new JsonObject
-            {
-                ["template"] = template,
-                ["parameters"] = map,
-                ["repositories"] = new JsonArray(repositories.Select(r => (JsonNode?)r).ToArray()),
-                ["dry_run"] = dryRun,
-            };
-            if (parentBranch is not null)
-                body["parent_branch"] = parentBranch;
-            if (trackerIssue is not null)
-                body["tracker_issue"] = trackerIssue;
-            if (handOver is not null)
-                body["continue_as_new_events"] = long.Parse(handOver, System.Globalization.CultureInfo.InvariantCulture);
-            var reply = await PostAsync("runs", body);
+            var body = new StartRunRequest(template, repositories, map, dryRun, parentBranch, trackerIssue,
+                handOver is null ? null : long.Parse(handOver, System.Globalization.CultureInfo.InvariantCulture));
+            var reply = await PostAsync<StartRunRequest, StartRunResponse>("runs", body);
             if (reply is null)
                 return 1;
-            output.WriteLine($"started {reply["run_id"]}");
+            output.WriteLine($"started {reply.RunId}");
             return 0;
         }
 
         public async Task<int> ShowAsync(string id, bool timeline)
         {
-            var view = await GetAsync($"runs/{id}");
+            var view = await GetAsync<RunDetail>($"runs/{id}");
             if (view is null)
                 return 1;
-            var run = view["run"]!;
-            output.WriteLine($"run {run["runId"]} {run["status"]} {run["template"]}{(run["dryRun"]!.GetValue<bool>() ? " (dry run)" : "")}");
-            if (run["detail"] is { } detail)
+            var run = view.Run;
+            output.WriteLine($"run {run.RunId} {run.Status} {run.Template}{(run.DryRun ? " (dry run)" : "")}");
+            if (run.Detail is { } detail)
                 output.WriteLine($"  {detail}");
-            foreach (var wait in view["waits"]!.AsArray())
-                output.WriteLine($"wait {wait!["waitId"]} {wait["kind"]} at {wait["stepId"]} ({wait["decisionType"]}): {wait["reason"]}; answer {string.Join(" | ", wait["choices"]!.AsArray().Select(c => c!.ToString()))}");
-            foreach (var child in view["children"]!.AsArray())
-                output.WriteLine($"child {child!["runId"]} {child["status"]} {child["template"]}");
+            foreach (var wait in view.Waits.Where(w => w.Open))
+                output.WriteLine($"wait {wait.WaitId} {KindName(wait.Kind)} at {wait.StepId} ({wait.DecisionType}): {wait.Prompt}; answer {string.Join(" | ", wait.Choices)}");
+            foreach (var child in view.Children)
+                output.WriteLine($"child {child.RunId} {child.Status} {child.Template}");
             if (timeline)
-                foreach (var entry in view["timeline"]!.AsArray())
-                    output.WriteLine($"  {entry!["sequence"],5} {entry["kind"]} {entry["stepId"]}{(entry["detail"] is { } d ? ": " + d : "")}");
+                foreach (var entry in view.Timeline)
+                    output.WriteLine($"  {entry.Sequence,5} {entry.Kind} {entry.StepId}{(entry.Detail is { } d ? ": " + d : "")}");
             return 0;
         }
+
+        /// <summary>A wait's kind as the API names it (<c>patch_approval</c>).</summary>
+        static string KindName(WaitKind kind) => JsonSerializer.Serialize(kind, ApiJson.Options).Trim('"');
 
         /// <summary>Polls the record store through the API until the run ends, or until it has an open wait.</summary>
         public async Task<int> WaitAsync(string id, string until, TimeSpan timeout)
@@ -209,12 +200,11 @@ public static class RunCommands
             var clock = Stopwatch.StartNew();
             while (clock.Elapsed < timeout)
             {
-                var view = await GetAsync($"runs/{id}", quiet: true);
-                var status = view?["run"]?["status"]?.ToString();
-                if (until == "wait" && view?["waits"]?.AsArray().Count > 0)
+                var view = await GetAsync<RunDetail>($"runs/{id}", quiet: true);
+                var status = view?.Run.Status;
+                if (until == "wait" && view?.Waits.FirstOrDefault(w => w.Open) is { } wait)
                 {
-                    var wait = view["waits"]![0]!;
-                    output.WriteLine($"wait {wait["waitId"]} {wait["kind"]} at {wait["stepId"]}");
+                    output.WriteLine($"wait {wait.WaitId} {KindName(wait.Kind)} at {wait.StepId}");
                     return 0;
                 }
 
@@ -231,12 +221,12 @@ public static class RunCommands
             return 4;
         }
 
-        public async Task<int> AnswerAsync(string id, JsonObject body) => await SendAsync($"runs/{id}/answers", body);
+        public async Task<int> AnswerAsync(string id, AnswerRequest body) => await SendAsync($"runs/{id}/answers", body);
 
         /// <summary>A run-time override (docs/05 section 5): its key, reason, step and its arguments by name, each given as <c>name=value</c>.</summary>
         public async Task<int> OverrideAsync(string id, string key, string reason, string? step, List<string> changes)
         {
-            var change = new JsonObject();
+            var change = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var c in changes)
             {
                 var eq = c.IndexOf('=');
@@ -246,57 +236,83 @@ public static class RunCommands
                     return 2;
                 }
 
-                change[c[..eq]] = c[(eq + 1)..];
+                change[c[..eq]] = ChangeValue(c[..eq], c[(eq + 1)..]);
             }
 
-            var body = new JsonObject { ["key"] = key, ["reason"] = reason, ["change"] = change };
-            if (step is not null)
-                body["step_id"] = step;
-            return await SendAsync($"runs/{id}/overrides", body);
-        }
-
-        public async Task<int> SendAsync(string path, JsonObject body)
-        {
-            var reply = await PostAsync(path, body);
+            var reply = await PostAsync<OverrideRequest, OverrideResponse>($"runs/{id}/overrides", new OverrideRequest(key, reason, step, change));
             if (reply is null)
                 return 1;
-            output.WriteLine(reply["result"]?.ToString() ?? reply.ToJsonString());
+            output.WriteLine(reply.Result);
             return 0;
         }
 
-        async Task<JsonNode?> PostAsync(string path, JsonObject body)
+        /// <summary>
+        /// An override argument's value: <c>@file</c> is the file's text, such as an <c>amend</c> patch or an
+        /// <c>override_library</c> replacement, and <c>@@</c> a value that starts with a literal <c>@</c> (LOG 406).
+        /// </summary>
+        static string ChangeValue(string name, string value)
         {
-            using var response = await http.PostAsync(path, new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"));
-            return await ReadAsync(response, quiet: false);
+            if (value.StartsWith("@@", StringComparison.Ordinal))
+                return value[1..];
+            if (!value.StartsWith('@'))
+                return value;
+            var file = value[1..];
+            return File.Exists(file) ? File.ReadAllText(file) : throw new ArgumentException($"--change {name}=@{file}: there is no file {file}");
         }
 
-        async Task<JsonNode?> GetAsync(string path, bool quiet = false)
+        /// <summary>The run's current plan revision: its number and its readable form.</summary>
+        public async Task<int> PlanAsync(string id)
+        {
+            var plan = await GetAsync<PlanView>($"runs/{id}/plan");
+            if (plan is null)
+                return 1;
+            output.WriteLine($"revision {plan.Revision} of {plan.Template}");
+            output.Write(plan.Readable);
+            return 0;
+        }
+
+        public async Task<int> SendAsync<TRequest>(string path, TRequest body)
+        {
+            var reply = await PostAsync<TRequest, AnswerResponse>(path, body);
+            if (reply is null)
+                return 1;
+            output.WriteLine(reply.Result);
+            return 0;
+        }
+
+        async Task<TResponse?> PostAsync<TRequest, TResponse>(string path, TRequest body) where TResponse : class
+        {
+            using var response = await http.PostAsync(path, new StringContent(JsonSerializer.Serialize(body, ApiJson.Options), Encoding.UTF8, "application/json"));
+            return await ReadAsync<TResponse>(response, quiet: false);
+        }
+
+        async Task<T?> GetAsync<T>(string path, bool quiet = false) where T : class
         {
             using var response = await http.GetAsync(path);
-            return await ReadAsync(response, quiet);
+            return await ReadAsync<T>(response, quiet);
         }
 
-        async Task<JsonNode?> ReadAsync(HttpResponseMessage response, bool quiet)
+        async Task<T?> ReadAsync<T>(HttpResponseMessage response, bool quiet) where T : class
         {
             var text = await response.Content.ReadAsStringAsync();
             if (response.IsSuccessStatusCode)
-                return JsonNode.Parse(text);
+                return JsonSerializer.Deserialize<T>(text, ApiJson.Options);
             if (!quiet)
-            {
-                string message;
-                try
-                {
-                    message = JsonNode.Parse(text)?["error"]?.ToString() ?? text;
-                }
-                catch (JsonException)
-                {
-                    message = text;
-                }
-
-                error.WriteLine($"{(int)response.StatusCode}: {message}");
-            }
-
+                error.WriteLine($"{(int)response.StatusCode}: {ErrorOf(text)}");
             return null;
+        }
+    }
+
+    /// <summary>The message of an API refusal (<see cref="ErrorResponse"/>), else the reply's text as it came.</summary>
+    internal static string ErrorOf(string text)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<ErrorResponse>(text, ApiJson.Options)?.Error ?? text;
+        }
+        catch (JsonException)
+        {
+            return text;
         }
     }
 }

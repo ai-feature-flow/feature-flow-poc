@@ -18,17 +18,18 @@ public sealed record CarriedRunInfo(
     string? ParentBranch,
     IReadOnlyDictionary<string, string>? DefaultBranches,
     IReadOnlyDictionary<string, string>? ParentArtifacts,
-    IReadOnlyDictionary<string, string>? RootArtifacts)
+    IReadOnlyDictionary<string, string>? RootArtifacts,
+    string? ParentContext = null)
 {
     public static CarriedRunInfo From(RunInfo run) =>
         new(run.Id, run.Repositories.ToList(),
             new SortedDictionary<string, string>(run.Parameters.ToDictionary(kv => kv.Key, kv => YamlWriter.Write(kv.Value)), StringComparer.Ordinal),
-            run.ParentId, run.TrackerIssue, run.ParentBranch, Sorted(run.DefaultBranches), Sorted(run.ParentArtifacts), Sorted(run.RootArtifacts));
+            run.ParentId, run.TrackerIssue, run.ParentBranch, Sorted(run.DefaultBranches), Sorted(run.ParentArtifacts), Sorted(run.RootArtifacts), run.ParentContext);
 
     public RunInfo ToRunInfo() =>
         new(Id, Repositories.ToList(),
             Parameters.ToDictionary(kv => kv.Key, kv => YamlWriter.Read(kv.Value, $"params.{kv.Key}")),
-            ParentId, TrackerIssue, ParentBranch, DefaultBranches, ParentArtifacts, RootArtifacts);
+            ParentId, TrackerIssue, ParentBranch, DefaultBranches, ParentArtifacts, RootArtifacts, ParentContext);
 
     static SortedDictionary<string, string>? Sorted(IReadOnlyDictionary<string, string>? map) =>
         map is null ? null : new SortedDictionary<string, string>(map.ToDictionary(), StringComparer.Ordinal);
@@ -54,6 +55,7 @@ public sealed record CarriedWait(string Id, string Kind, string StepId, string? 
     public IReadOnlyList<string>? Options { get; init; }
     public DateTimeOffset? Deadline { get; init; }
     public bool Session { get; init; }
+    public int Reminders { get; init; }
 }
 
 public sealed record CarriedEntry(string StepId, bool CleanUp, bool Resumes = false)
@@ -101,6 +103,12 @@ public sealed record CarriedCore(
 
     /// <summary>The child runs still running (<see cref="RunState.Children"/>). Null when there are none.</summary>
     public IReadOnlyList<ChildRun>? Children { get; init; }
+
+    /// <summary>The run context's entries (<see cref="RunState.Context"/>). Null when there are none.</summary>
+    public IReadOnlyList<ContextEntry>? Context { get; init; }
+
+    /// <summary>How many plan revisions have been taken for the artifact index (<see cref="RunCore.TakeRevisions"/>).</summary>
+    public int RevisionsTaken { get; init; }
 }
 
 public sealed partial class RunCore
@@ -139,6 +147,7 @@ public sealed partial class RunCore
                 Options = w.Options?.ToList(),
                 Deadline = w.Deadline,
                 Session = w.Session,
+                Reminders = w.Reminders,
             }).ToList(),
             s.RunAttempts,
             s.RunCeilingGranted,
@@ -153,6 +162,8 @@ public sealed partial class RunCore
             LibraryOverrides = s.LibraryOverrides.Count == 0 ? null : s.LibraryOverrides.ToList(),
             Closed = s.Closed.Count == 0 ? null : s.Closed.ToList(),
             Children = s.Children.Count == 0 ? null : s.Children.ToList(),
+            Context = s.Context.Count == 0 ? null : s.Context.ToList(),
+            RevisionsTaken = revisionsTaken,
         };
     }
 
@@ -205,6 +216,7 @@ public sealed partial class RunCore
             Options = w.Options,
             Deadline = w.Deadline,
             Session = w.Session,
+            Reminders = w.Reminders,
         }));
         s.RunAttempts = carried.RunAttempts;
         s.RunCeilingGranted = carried.RunCeilingGranted;
@@ -221,6 +233,8 @@ public sealed partial class RunCore
         s.LibraryOverrides.AddRange(carried.LibraryOverrides ?? []);
         s.Closed.AddRange(carried.Closed ?? []);
         s.Children.AddRange(carried.Children ?? []);
+        s.Context.AddRange(carried.Context ?? []);
+        core.revisionsTaken = carried.RevisionsTaken;
         return core;
 
         static Execution? Exec(CarriedExecution? e)

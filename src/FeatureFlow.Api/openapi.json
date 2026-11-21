@@ -1,0 +1,2781 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "Feature Flow API",
+    "description": "The engine\u0027s API (docs/02 section 7). Generated; see OpenApiTests.",
+    "version": "1"
+  },
+  "paths": {
+    "/runs": {
+      "post": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "startRun",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartRunResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "listRuns",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{id}": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "getRun",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{id}/artifacts": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "listArtifacts",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{id}/artifacts/{reference}": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "getArtifact",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "reference",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/Stream"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{id}/answers": {
+      "post": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "answer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnswerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnswerResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnswerResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{id}/abort": {
+      "post": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "abortRun",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AbortRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnswerResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{id}/findings": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "getFindings",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FindingsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{id}/overrides": {
+      "post": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "applyOverride",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverrideRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverrideResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{id}/sessions": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "listSessions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{sid}": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "getSession",
+        "parameters": [
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{sid}/checks": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "listSessionChecks",
+        "parameters": [
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionChecks"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "checkSession",
+        "parameters": [
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionCheckResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{sid}/submit": {
+      "post": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "submitSession",
+        "parameters": [
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionSubmitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnswerResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnswerResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{sid}/abandon": {
+      "post": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "abandonSession",
+        "parameters": [
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionAbandonRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnswerResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnswerResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/attention": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "getAttention",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttentionList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "getMe",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{id}/plan": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "getRunPlan",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "getEvents",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeEvent"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/templates": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "listTemplates",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AbortRequest": {
+        "required": [
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "close_pull_requests": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "AnswerProgress": {
+        "required": [
+          "choice",
+          "actors",
+          "needed"
+        ],
+        "type": "object",
+        "properties": {
+          "choice": {
+            "type": "string"
+          },
+          "actors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "needed": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "AnswerRequest": {
+        "required": [
+          "wait_id"
+        ],
+        "type": "object",
+        "properties": {
+          "wait_id": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "action": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "step_id": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "clean_up": {
+            "type": "boolean",
+            "default": false
+          },
+          "attempts": {
+            "type": "integer",
+            "format": "int64",
+            "default": 0
+          },
+          "status": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "artifacts": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "AnswerResponse": {
+        "required": [
+          "result"
+        ],
+        "type": "object",
+        "properties": {
+          "result": {
+            "type": "string"
+          }
+        }
+      },
+      "AnswerView": {
+        "required": [
+          "wait_id",
+          "actor",
+          "choice",
+          "reason",
+          "result",
+          "at"
+        ],
+        "type": "object",
+        "properties": {
+          "wait_id": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "choice": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "result": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ArtifactKind": {
+        "enum": [
+          "artifact",
+          "evidence",
+          "transcript",
+          "prompt",
+          "plan_revision"
+        ]
+      },
+      "ArtifactList": {
+        "required": [
+          "artifacts"
+        ],
+        "type": "object",
+        "properties": {
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArtifactView"
+            }
+          }
+        }
+      },
+      "ArtifactView": {
+        "required": [
+          "step_id",
+          "execution",
+          "name",
+          "type",
+          "ref",
+          "action",
+          "evidence",
+          "kind",
+          "at"
+        ],
+        "type": "object",
+        "properties": {
+          "step_id": {
+            "type": "string"
+          },
+          "execution": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "ref": {
+            "type": "string"
+          },
+          "action": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "evidence": {
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ArtifactKind"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AttentionItem": {
+        "required": [
+          "run",
+          "wait"
+        ],
+        "type": "object",
+        "properties": {
+          "run": {
+            "$ref": "#/components/schemas/RunSummary"
+          },
+          "wait": {
+            "$ref": "#/components/schemas/WaitView"
+          }
+        }
+      },
+      "AttentionList": {
+        "required": [
+          "waits"
+        ],
+        "type": "object",
+        "properties": {
+          "waits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttentionItem"
+            }
+          }
+        }
+      },
+      "ChangeEvent": {
+        "required": [
+          "sequence",
+          "run_id",
+          "kind",
+          "wait_id",
+          "updated_at"
+        ],
+        "type": "object",
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ChangeKind"
+          },
+          "wait_id": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ChangeKind": {
+        "enum": [
+          "run_changed",
+          "wait_opened",
+          "wait_closed",
+          "reset"
+        ]
+      },
+      "ClosedAnswer": {
+        "required": [
+          "actor",
+          "choice",
+          "reason",
+          "at"
+        ],
+        "type": "object",
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "choice": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ConsumedArtifactView": {
+        "required": [
+          "key",
+          "name",
+          "ref"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ref": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ErrorResponse": {
+        "required": [
+          "error"
+        ],
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "FindingLocationView": {
+        "required": [
+          "repository",
+          "file",
+          "symbol",
+          "snippet",
+          "criterion"
+        ],
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "snippet": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "criterion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "FindingsResponse": {
+        "required": [
+          "findings"
+        ],
+        "type": "object",
+        "properties": {
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FindingView"
+            }
+          }
+        }
+      },
+      "FindingView": {
+        "required": [
+          "ledger_id",
+          "state",
+          "rule",
+          "title",
+          "description",
+          "severity",
+          "blocking",
+          "basis",
+          "location",
+          "required_correction",
+          "proof"
+        ],
+        "type": "object",
+        "properties": {
+          "ledger_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "rule": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "blocking": {
+            "type": "boolean"
+          },
+          "basis": {
+            "type": "string"
+          },
+          "location": {
+            "$ref": "#/components/schemas/FindingLocationView"
+          },
+          "required_correction": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "proof": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "MeResponse": {
+        "required": [
+          "actor",
+          "channel",
+          "groups",
+          "roles",
+          "teams"
+        ],
+        "type": "object",
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "groups": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "teams": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "OverrideRequest": {
+        "required": [
+          "key"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "step_id": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "change": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "OverrideResponse": {
+        "required": [
+          "override_id",
+          "result"
+        ],
+        "type": "object",
+        "properties": {
+          "override_id": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          }
+        }
+      },
+      "OverrideView": {
+        "required": [
+          "override_id",
+          "key",
+          "actor",
+          "reason",
+          "step_id",
+          "change",
+          "result",
+          "at"
+        ],
+        "type": "object",
+        "properties": {
+          "override_id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "step_id": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "change": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "result": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PlanOutcomeView": {
+        "required": [
+          "name",
+          "class",
+          "route"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "class": {
+            "type": "string"
+          },
+          "route": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "PlanStepView": {
+        "required": [
+          "id",
+          "container",
+          "form",
+          "what",
+          "outcomes",
+          "protected",
+          "status",
+          "breakpoint",
+          "skipped_with"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "container": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "form": {
+            "$ref": "#/components/schemas/StepForm"
+          },
+          "what": {
+            "type": "string"
+          },
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlanOutcomeView"
+            }
+          },
+          "protected": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "breakpoint": {
+            "type": "boolean"
+          },
+          "skipped_with": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "PlanView": {
+        "required": [
+          "run_id",
+          "revision",
+          "template",
+          "readable",
+          "steps"
+        ],
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "template": {
+            "type": "string"
+          },
+          "readable": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlanStepView"
+            }
+          }
+        }
+      },
+      "RunDetail": {
+        "required": [
+          "run",
+          "waits",
+          "timeline",
+          "children",
+          "answers",
+          "overrides",
+          "overrides_allowed"
+        ],
+        "type": "object",
+        "properties": {
+          "run": {
+            "$ref": "#/components/schemas/RunView"
+          },
+          "waits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WaitView"
+            }
+          },
+          "timeline": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimelineEntry"
+            }
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RunSummary"
+            }
+          },
+          "answers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AnswerView"
+            }
+          },
+          "overrides": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OverrideView"
+            }
+          },
+          "overrides_allowed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RunList": {
+        "required": [
+          "runs"
+        ],
+        "type": "object",
+        "properties": {
+          "runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RunSummary"
+            }
+          }
+        }
+      },
+      "RunSummary": {
+        "required": [
+          "run_id",
+          "parent_run_id",
+          "template",
+          "status",
+          "requester",
+          "repositories",
+          "dry_run",
+          "updated_at"
+        ],
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string"
+          },
+          "parent_run_id": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "template": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "requester": {
+            "type": "string"
+          },
+          "repositories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "RunView": {
+        "required": [
+          "run_id",
+          "parent_run_id",
+          "template",
+          "status",
+          "requester",
+          "repositories",
+          "dry_run",
+          "updated_at",
+          "detail"
+        ],
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string"
+          },
+          "parent_run_id": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "template": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "requester": {
+            "type": "string"
+          },
+          "repositories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "SessionAbandonRequest": {
+        "required": [
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "SessionCheckRequest": {
+        "required": [
+          "step",
+          "revision"
+        ],
+        "type": "object",
+        "properties": {
+          "step": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          }
+        }
+      },
+      "SessionCheckResponse": {
+        "required": [
+          "check_id",
+          "result"
+        ],
+        "type": "object",
+        "properties": {
+          "check_id": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          }
+        }
+      },
+      "SessionChecks": {
+        "required": [
+          "checks"
+        ],
+        "type": "object",
+        "properties": {
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionCheckView"
+            }
+          }
+        }
+      },
+      "SessionCheckView": {
+        "required": [
+          "check_id",
+          "step_id",
+          "revision",
+          "inputs",
+          "status",
+          "result_ref",
+          "at",
+          "detail",
+          "result"
+        ],
+        "type": "object",
+        "properties": {
+          "check_id": {
+            "type": "string"
+          },
+          "step_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "inputs": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "result_ref": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "result": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "SessionDetail": {
+        "required": [
+          "session",
+          "workspace",
+          "drafts",
+          "context"
+        ],
+        "type": "object",
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/SessionView"
+          },
+          "workspace": {
+            "$ref": "#/components/schemas/WorkspaceView"
+          },
+          "drafts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "context": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "SessionList": {
+        "required": [
+          "sessions"
+        ],
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionView"
+            }
+          }
+        }
+      },
+      "SessionSubmitRequest": {
+        "required": [
+          "revision"
+        ],
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "SessionView": {
+        "required": [
+          "session_id",
+          "run_id",
+          "wait_id",
+          "step_id",
+          "person",
+          "repository",
+          "branch",
+          "base_revision",
+          "status",
+          "submitted_revision",
+          "artifacts",
+          "at"
+        ],
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "wait_id": {
+            "type": "string"
+          },
+          "step_id": {
+            "type": "string"
+          },
+          "person": {
+            "type": "string"
+          },
+          "repository": {
+            "type": "string"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "base_revision": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "submitted_revision": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "artifacts": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "StartRunRequest": {
+        "required": [
+          "template"
+        ],
+        "type": "object",
+        "properties": {
+          "template": {
+            "type": "string"
+          },
+          "repositories": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "parameters": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "dry_run": {
+            "type": "boolean",
+            "default": false
+          },
+          "parent_branch": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "tracker_issue": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "continue_as_new_events": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "StartRunResponse": {
+        "required": [
+          "run_id"
+        ],
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string"
+          }
+        }
+      },
+      "StepForm": {
+        "enum": [
+          "agent",
+          "decision",
+          "action",
+          "chain",
+          "parallel",
+          "for_each"
+        ]
+      },
+      "Stream": {
+        "type": "string",
+        "format": "binary"
+      },
+      "TemplateList": {
+        "required": [
+          "templates",
+          "unreadable"
+        ],
+        "type": "object",
+        "properties": {
+          "templates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TemplateView"
+            }
+          },
+          "unreadable": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UnreadableLibrary"
+            }
+          }
+        }
+      },
+      "TemplateParameter": {
+        "required": [
+          "name",
+          "type",
+          "required",
+          "default",
+          "default_expression",
+          "description"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "default": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "default_expression": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "TemplateView": {
+        "required": [
+          "reference",
+          "library",
+          "name",
+          "when",
+          "parameters"
+        ],
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string"
+          },
+          "library": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "when": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TemplateParameter"
+            }
+          }
+        }
+      },
+      "TimelineEntry": {
+        "required": [
+          "sequence",
+          "kind",
+          "step_id",
+          "detail",
+          "at"
+        ],
+        "type": "object",
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "step_id": {
+            "type": "string"
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "UnreadableLibrary": {
+        "required": [
+          "library",
+          "error"
+        ],
+        "type": "object",
+        "properties": {
+          "library": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "WaitKind": {
+        "enum": [
+          "gate",
+          "question",
+          "intervention",
+          "patch_approval",
+          "breakpoint",
+          "stalled",
+          "stuck"
+        ]
+      },
+      "WaitView": {
+        "required": [
+          "wait_id",
+          "kind",
+          "step_id",
+          "decision_type",
+          "prompt",
+          "choices",
+          "open",
+          "updated_at",
+          "consumed",
+          "can_answer",
+          "min_count",
+          "progress",
+          "answer"
+        ],
+        "type": "object",
+        "properties": {
+          "wait_id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/WaitKind"
+          },
+          "step_id": {
+            "type": "string"
+          },
+          "decision_type": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "choices": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "open": {
+            "type": "boolean"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "consumed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConsumedArtifactView"
+            }
+          },
+          "can_answer": {
+            "type": "boolean"
+          },
+          "min_count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "progress": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/AnswerProgress"
+            }
+          },
+          "answer": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ClosedAnswer"
+              }
+            ]
+          }
+        }
+      },
+      "WorkspaceFileView": {
+        "required": [
+          "path",
+          "artifact",
+          "type",
+          "seed_ref"
+        ],
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "artifact": {
+            "type": "string"
+          },
+          "type": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "seed_ref": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "WorkspaceView": {
+        "required": [
+          "session_id",
+          "run_id",
+          "wait_id",
+          "step_id",
+          "repository",
+          "branch",
+          "base_revision",
+          "folder",
+          "files",
+          "prompt",
+          "context",
+          "checks_from",
+          "submit_outcome",
+          "abandon_outcome",
+          "instructions"
+        ],
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "wait_id": {
+            "type": "string"
+          },
+          "step_id": {
+            "type": "string"
+          },
+          "repository": {
+            "type": "string"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "base_revision": {
+            "type": "string"
+          },
+          "folder": {
+            "type": "string"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceFileView"
+            }
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "context": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "checks_from": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "submit_outcome": {
+            "type": "string"
+          },
+          "abandon_outcome": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "instructions": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "description": "The installation\u0027s API token, or an identity provider\u0027s token where the API uses OIDC",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "FeatureFlow.Api.Tests"
+    }
+  ]
+}

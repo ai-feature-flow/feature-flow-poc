@@ -153,10 +153,10 @@ public sealed class PostgresRecordStoreTests(PostgresServer server) : IDisposabl
         var checks = await Task.WhenAll(stores.Select(s => s.CheckAsync(Ct)));
 
         Assert.All(checks, c => Assert.True(c.Ok, c.Error?.Message));
-        Assert.Equal([1], await ColumnAsync<int>(database, "SELECT version FROM ff_schema"));
+        Assert.Equal([1, 2, 3], await ColumnAsync<int>(database, "SELECT version FROM ff_schema ORDER BY version"));
         var tables = await ColumnAsync<string>(database, "SELECT table_name::text FROM information_schema.tables WHERE table_schema = 'public' AND table_name <> 'ff_schema'");
         var keyed = await ColumnAsync<string>(database, "SELECT table_name::text FROM information_schema.columns WHERE table_schema = 'public' AND column_name = 'org_id'");
-        Assert.Equal(14, tables.Count);
+        Assert.Equal(15, tables.Count);
         Assert.Equal(tables.Order(), keyed.Order());
         foreach (var s in stores)
             await s.DisposeAsync();
@@ -175,6 +175,47 @@ public sealed class PostgresRecordStoreTests(PostgresServer server) : IDisposabl
         await using var store = server.Store(database);
         var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => store.CheckAsync(Ct));
         Assert.Contains("version 99", refused.Message);
+    }
+
+    /// <summary>
+    /// Changes are numbered in commit order (LOG 397): while one transaction holds changes it has not committed, another
+    /// append waits for it, so a reader that keeps its place (the last sequence read) never passes a change that commits
+    /// later with a lower number. Without the advisory lock the second append commits first and the held change is skipped.
+    /// </summary>
+    [Fact]
+    public async Task A_reader_that_keeps_its_place_misses_no_change_committed_by_concurrent_appends()
+    {
+        var database = await NewDatabaseAsync();
+        await using var store = server.Store(database);
+        Assert.True((await store.CheckAsync(Ct)).Ok);
+        static RecordBatch RunNamed(string id) => new([new RunRecord(id, null, "std:templates/t", "running", "me", [], false, DateTimeOffset.UtcNow, null)]);
+
+        await using var held = new NpgsqlConnection(database);
+        await held.OpenAsync(Ct);
+        await using var holding = await held.BeginTransactionAsync(Ct);
+        await PostgresRecordStore.AppendChangesAsync(held, holding, RunNamed("held"), Ct);
+        var other = store.AppendAsync(RunNamed("other"), Ct);
+        // The other append has either committed or is waiting for a lock; no fixed wait.
+        await using (var watch = new NpgsqlConnection(database))
+        {
+            await watch.OpenAsync(Ct);
+            using var bounded = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+            bounded.CancelAfter(TimeSpan.FromSeconds(30));
+            while (!other.IsCompleted
+                   && (long)(await new NpgsqlCommand("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'", watch)
+                       .ExecuteScalarAsync(bounded.Token))! == 0)
+            {
+            }
+        }
+
+        var read = (await store.QueryAsync<ChangeRecord>(Queries.Changes, new Dictionary<string, string> { ["after"] = "0" }, Ct)).Unwrap();
+        var place = read.Count == 0 ? 0 : read[^1].Sequence;
+        await holding.CommitAsync(Ct);
+        Assert.True((await other).Ok);
+        var after = (await store.QueryAsync<ChangeRecord>(Queries.Changes, new Dictionary<string, string> { ["after"] = place.ToString(System.Globalization.CultureInfo.InvariantCulture) }, Ct)).Unwrap();
+
+        Assert.Equal(["held", "other"], read.Concat(after).Select(c => c.RunId).Order(StringComparer.Ordinal));
+        Assert.Equal(["held", "other"], after.Concat(read).OrderBy(c => c.Sequence).Select(c => c.RunId));
     }
 
     async Task<string> NewDatabaseAsync()

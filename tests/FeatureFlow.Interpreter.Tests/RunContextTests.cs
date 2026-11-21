@@ -1,0 +1,140 @@
+namespace FeatureFlow.Interpreter.Tests;
+
+/// <summary>
+/// The run context (docs/04 section 3.5; LOG 405): what the run has learned, rendered by the core into the next agent
+/// step's spec. A work failure is a retry cause the next attempt reads; an infrastructure retry is not; a report's summary
+/// is kept; <c>context: none</c> reads nothing; a child reads its parent's first; the rendering is bounded.
+/// </summary>
+public class RunContextTests
+{
+    const string Template = """
+        api_version: feature-flow/v1
+        kind: template
+        metadata: { name: context, level: ticket }
+        steps:
+          - id: work
+            agent: { role: std:roles/planner, task: std:tasks/repair_failures }
+            outcomes: { done: success }
+            routes: { done: quiet }
+          - id: quiet
+            agent: { role: std:roles/planner, task: std:tasks/repair_failures, context: none }
+            outcomes: { done: success }
+            routes: { done: next }
+          - id: next
+            agent: { role: std:roles/planner, task: std:tasks/repair_failures }
+            outcomes: { done: success }
+            routes: { done: { end: completed } }
+        """;
+
+    static readonly Probe Lib = new("run-context", ("context", Template));
+
+    static string? ContextOf(RunCore core, string stepId) => core.StepSpec(stepId).Spec!.Agent!.RunContext;
+
+    [Fact]
+    public void A_work_failure_is_the_next_attempts_retry_cause_and_an_infrastructure_retry_is_not()
+    {
+        var core = Lib.Start("context");
+        Assert.Equal([new StartStep("work", 1)], core.Advance());
+
+        Assert.True(core.Apply(new StepFailed("work", ErrorClass.Infrastructure, "the sandbox could not be reached")).Accepted);
+        Assert.Equal([new StartStep("work", 1)], core.Advance());
+        Assert.Null(ContextOf(core, "work"));
+
+        Assert.True(core.Apply(new StepFailed("work", ErrorClass.Work, "output contract: outcome 'finished' is not an outcome")).Accepted);
+        Assert.Equal([new StartStep("work", 2)], core.Advance());
+
+        var context = ContextOf(core, "work");
+        Assert.NotNull(context);
+        Assert.Contains("attempt 1 of work failed: output contract: outcome 'finished' is not an outcome", context, StringComparison.Ordinal);
+        Assert.DoesNotContain("sandbox", context, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_reports_summary_is_read_by_later_agents_except_one_with_context_none_and_is_carried()
+    {
+        var core = Lib.Start("context");
+        core.Advance();
+        Assert.True(core.Apply(new StepCompleted("work", "done", Summary: "added the audit log table")).Accepted);
+        Assert.Equal([new StartStep("quiet", 1)], core.Advance());
+        Assert.Null(ContextOf(core, "quiet"));
+
+        var resumed = RunCore.Resume(Lib.Libraries, Probe.Ref("context"), core.Snapshot());
+        Assert.True(resumed.Apply(new StepCompleted("quiet", "done")).Accepted);
+        Assert.Equal([new StartStep("next", 1)], resumed.Advance());
+        Assert.Contains("- work reported done: added the audit log table", ContextOf(resumed, "next"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_child_reads_its_parents_context_first()
+    {
+        var run = Probe.Run() with { ParentId = "parent-1", ParentContext = "## Run context\n\n- ticket.spec_approval at approve: rejected by ann: no audit log\n" };
+        var core = Lib.Start("context", run: run);
+        core.Advance();
+        core.Apply(new StepFailed("work", ErrorClass.Work, "tests fail"));
+        core.Advance();
+
+        var context = ContextOf(RunCore.Resume(Lib.Libraries, Probe.Ref("context"), core.Snapshot()), "work")!;
+        Assert.StartsWith("## Run context\n\n### From the parent run\n\n- ticket.spec_approval at approve: rejected by ann: no audit log", context, StringComparison.Ordinal);
+        Assert.True(context.IndexOf("### This run", StringComparison.Ordinal) < context.IndexOf("attempt 1 of work failed", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void The_rendered_context_is_bounded_by_dropping_the_oldest_entries_first()
+    {
+        var entries = Enumerable.Range(1, RunContexts.MaxEntries)
+            .Select(i => new ContextEntry(ContextKinds.RetryCause, "work", i, $"attempt {i} of work failed: " + new string('x', 400))).ToList();
+
+        var context = RunContexts.Render(entries, null)!;
+
+        Assert.True(System.Text.Encoding.UTF8.GetByteCount(context) <= RunContexts.MaxBytes);
+        Assert.Matches(@"\(\d+ earlier entries omitted\)", context);
+        Assert.Contains($"attempt {RunContexts.MaxEntries} of work failed", context, StringComparison.Ordinal);
+        Assert.DoesNotContain("attempt 1 of work failed", context, StringComparison.Ordinal);
+        Assert.Null(RunContexts.Render([], null));
+    }
+
+    [Fact]
+    public void A_summary_is_kept_to_its_bound()
+    {
+        var core = Lib.Start("context");
+        core.Advance();
+        core.Apply(new StepCompleted("work", "done", Summary: new string('é', 5000)));
+
+        var entry = Assert.Single(core.State.Context);
+        Assert.True(System.Text.Encoding.UTF8.GetByteCount(entry.Text) <= RunContexts.MaxSummaryBytes + "work reported done: ".Length);
+        Assert.EndsWith(" [...]", entry.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_run_keeps_at_most_its_entry_bound()
+    {
+        var core = Lib.Start("context", new RunOptions { DefaultAttempts = 100 });
+        for (var i = 1; i <= RunContexts.MaxEntries + 5; i++)
+        {
+            core.Advance();
+            core.Apply(new StepFailed("work", ErrorClass.Work, $"failure {i}"));
+        }
+
+        Assert.Equal(RunContexts.MaxEntries, core.State.Context.Count);
+        Assert.Equal("attempt 6 of work failed: failure 6", core.State.Context[0].Text);
+    }
+
+    /// <summary>One very long entry is cut to its own bound, so the rendered context still holds it and the entries before it.</summary>
+    [Fact]
+    public void One_long_entry_is_kept_to_the_entry_bound_and_does_not_empty_the_context()
+    {
+        var core = Lib.Start("context", new RunOptions { DefaultAttempts = 10 });
+        core.Advance();
+        core.Apply(new StepFailed("work", ErrorClass.Work, "tests fail"));
+        core.Advance();
+        core.Apply(new StepFailed("work", ErrorClass.Work, new string('x', 64 * 1024)));
+        core.Advance();
+
+        var entry = core.State.Context[^1];
+        Assert.True(System.Text.Encoding.UTF8.GetByteCount(entry.Text) <= RunContexts.MaxEntryBytes);
+        Assert.EndsWith(" [...]", entry.Text, StringComparison.Ordinal);
+        var context = ContextOf(core, "work")!;
+        Assert.Contains("attempt 1 of work failed: tests fail", context, StringComparison.Ordinal);
+        Assert.Contains("attempt 2 of work failed: xxx", context, StringComparison.Ordinal);
+    }
+}

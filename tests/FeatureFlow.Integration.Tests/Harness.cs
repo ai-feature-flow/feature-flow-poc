@@ -123,12 +123,14 @@ public sealed class Harness : IAsyncDisposable
     /// installation's <c>temporal</c> map, after a comma; <paramref name="secrets"/> further secrets beside the API token;
     /// <paramref name="librarySources"/> further entries of the organisation's <c>libraries</c>, as YAML maps;
     /// <paramref name="agentWorker"/> false starts no agent worker; <paramref name="temporalAddress"/> another Temporal than
-    /// <see cref="TemporalAddress"/>.
+    /// <see cref="TemporalAddress"/>; <paramref name="configure"/> changes the configuration as loaded, for a value the
+    /// files refuse on purpose (a reminder interval of seconds).
     /// </para>
     public static async Task<Harness> StartAsync(string name, string script = "{}", bool autoApprove = false, string[]? without = null,
         string[]? libraries = null, string providers = "", string policy = "", string installation = "", IEnumerable<FeatureFlow.Providers.Abstractions.ProviderFactory>? factories = null,
         string? agentRuntime = null, string organisation = "", bool fromChat = false, string temporal = "", IReadOnlyDictionary<string, string>? secrets = null,
-        string[]? librarySources = null, bool agentWorker = true, string? temporalAddress = null, string[]? noEdits = null)
+        string[]? librarySources = null, bool agentWorker = true, string? temporalAddress = null, string[]? noEdits = null,
+        Func<FeatureFlowConfiguration, FeatureFlowConfiguration>? configure = null)
     {
         var folder = IOPath.Combine(IOPath.GetTempPath(), $"ff-it-{name}-{Guid.NewGuid():N}"[..40]);
         Directory.CreateDirectory(folder);
@@ -187,6 +189,8 @@ public sealed class Harness : IAsyncDisposable
             {{organisation}}
             """);
         var configuration = FeatureFlowConfiguration.Load(IOPath.Combine(folder, "installation.yaml"), IOPath.Combine(folder, "organisation.yaml"));
+        if (configure is not null)
+            configuration = configure(configuration);
         harness.Host = await FeatureFlowHost.StartAsync(configuration, LocalProviders.Factories.Concat(StdValidatorProviders.Factories).Concat(factories ?? []),
             true, agentWorker, "http://127.0.0.1:0");
         // The sandboxes the host composed: tests pass with a TRX, analysis is clean.
@@ -210,9 +214,13 @@ public sealed class Harness : IAsyncDisposable
     {
         var output = new StringWriter();
         var error = new StringWriter();
-        var exit = CliApp.Run(["run", .. args, "--api", Api, "--token-file", TokenFile], output, error);
+        var exit = CliApp.Run(["run", .. WithReason(args), "--api", Api, "--token-file", TokenFile], output, error);
         return (exit, output.ToString(), error.ToString());
     }
+
+    /// <summary>A person's answer, recovery or abort is given with a reason (docs/05 section 5); a test that names none gives this one.</summary>
+    public static string[] WithReason(string[] args) =>
+        args is ["answer" or "recover" or "abort", ..] && !args.Contains("--reason") ? [.. args, "--reason", "the integration test"] : args;
 
     public string Start(string template, params string[] args)
     {
@@ -226,7 +234,29 @@ public sealed class Harness : IAsyncDisposable
     {
         using var http = new HttpClient();
         http.DefaultRequestHeaders.Authorization = new("Bearer", await File.ReadAllTextAsync(TokenFile));
-        return JsonNode.Parse(await http.GetStringAsync($"{Api}/runs/{runId}"))!;
+        return OpenWaitsOnly(JsonNode.Parse(await http.GetStringAsync($"{Api}/runs/{runId}"))!);
+    }
+
+    /// <summary>
+    /// The prompts of a step's execution as a viewer reads them: listed by <c>GET /runs/{id}/artifacts</c> as kind
+    /// <c>prompt</c>, each read through <c>GET /runs/{id}/artifacts/{reference}</c>.
+    /// </summary>
+    public async Task<List<string>> PromptsAsync(string runId, string stepId, int execution)
+    {
+        using var http = new HttpClient();
+        http.DefaultRequestHeaders.Authorization = new("Bearer", await File.ReadAllTextAsync(TokenFile));
+        var listed = JsonNode.Parse(await http.GetStringAsync($"{Api}/runs/{runId}/artifacts"))!["artifacts"]!.AsArray();
+        var prompts = new List<string>();
+        foreach (var a in listed.Where(a => a!["kind"]!.ToString() == "prompt" && a["step_id"]!.ToString() == stepId && a["execution"]!.GetValue<int>() == execution))
+            prompts.Add(await http.GetStringAsync($"{Api}/runs/{runId}/artifacts/{Uri.EscapeDataString(a!["ref"]!.ToString())}"));
+        return prompts;
+    }
+
+    /// <summary>The run page lists closed waits too (docs/02 section 7); these tests read its open ones as <c>waits</c>.</summary>
+    public static JsonNode OpenWaitsOnly(JsonNode view)
+    {
+        view["waits"] = new JsonArray(view["waits"]!.AsArray().Where(w => w!["open"]!.GetValue<bool>()).Select(w => w!.DeepClone()).ToArray());
+        return view;
     }
 
     /// <summary>Waits until the run's record shows an open wait, or the run ends. Returns the first open wait's id, or null.</summary>
@@ -237,7 +267,7 @@ public sealed class Harness : IAsyncDisposable
         {
             var view = await ShowAsync(runId);
             if (view["waits"]!.AsArray().FirstOrDefault() is { } wait)
-                return wait["waitId"]!.ToString();
+                return wait["wait_id"]!.ToString();
             if (view["run"]!["status"]!.ToString() is not ("starting" or "running"))
                 return null;
             await Task.Delay(200);
@@ -248,7 +278,7 @@ public sealed class Harness : IAsyncDisposable
 
     /// <summary>The timeline's started steps, in order.</summary>
     public static List<string> StartedSteps(JsonNode view) =>
-        view["timeline"]!.AsArray().Where(e => e!["kind"]!.ToString() == "started").Select(e => e!["stepId"]!.ToString()).ToList();
+        view["timeline"]!.AsArray().Where(e => e!["kind"]!.ToString() == "started").Select(e => e!["step_id"]!.ToString()).ToList();
 
     /// <summary>Every run of a workflow id, oldest first: one per continue-as-new.</summary>
     public async Task<List<WorkflowExecution>> RunsOfAsync(string workflowId)

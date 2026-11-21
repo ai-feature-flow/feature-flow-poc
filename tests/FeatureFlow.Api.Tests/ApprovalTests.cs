@@ -30,8 +30,64 @@ public sealed class ApprovalTests
         return world;
     }
 
-    static Task<(HttpStatusCode Status, string Body)> AnswerAsync(HttpClient http, string outcome = "approved") =>
-        ApiWorld.PostAsync(http, $"runs/{Run}/answers", $$"""{ "wait_id": "w1", "outcome": "{{outcome}}" }""");
+    static Task<(HttpStatusCode Status, string Body)> AnswerAsync(HttpClient http, string outcome = "approved", string reason = "looks right") =>
+        ApiWorld.PostAsync(http, $"runs/{Run}/answers", $$"""{ "wait_id": "w1", "outcome": "{{outcome}}", "reason": "{{reason}}" }""");
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(""", "reason": "  " """)]
+    public async Task An_answer_or_an_abort_without_a_reason_is_refused_and_nothing_is_recorded(string reason)
+    {
+        await using var world = await WorldAsync(Organisation(Rule("*")));
+        var admin = world.As("ann", "approver,steerer,admin");
+
+        var (answer, answerText) = await ApiWorld.PostAsync(admin, $"runs/{Run}/answers", $$"""{ "wait_id": "w1", "outcome": "approved"{{reason}} }""");
+        var (abort, abortText) = await ApiWorld.PostAsync(admin, $"runs/{Run}/abort", $$"""{ "close_pull_requests": false{{reason}} }""");
+
+        Assert.Equal((HttpStatusCode.BadRequest, HttpStatusCode.BadRequest), (answer, abort));
+        // An abort's reason is a required property, so a body without one is not a valid request; a blank one is refused by the rule.
+        Assert.All(new[] { answerText, abortText }, t => Assert.Matches("reason is required|missing required properties.*reason", t));
+        Assert.Empty(world.Temporal.Updates);
+        Assert.Empty(await world.QueryAsync<AnswerRecord>(Queries.Answers, Run));
+    }
+
+    [Fact]
+    public async Task An_agents_question_is_answered_by_its_text_alone()
+    {
+        // LOG 392: the question's answer is what the agent reads; no reason is asked for.
+        await using var world = await WorldAsync(Organisation(Rule("*")), "ticket.question", kind: "question");
+        var (status, text) = await ApiWorld.PostAsync(world.As("ann", "approver"), $"runs/{Run}/answers", """{ "wait_id": "w1", "outcome": "teal" }""");
+        Assert.True(status == HttpStatusCode.OK, text);
+        Assert.Null(((AnswerArgs)Assert.Single(world.Temporal.Updates).Argument!).Reason);
+    }
+
+    [Fact]
+    public async Task The_reason_is_delivered_with_the_answer_and_recorded_with_it()
+    {
+        await using var world = await WorldAsync(Organisation(Rule("*")));
+        Assert.Equal(HttpStatusCode.OK, (await AnswerAsync(world.As("ann", "approver"), "rejected", "requirements omit the audit log")).Status);
+
+        var delivered = (AnswerArgs)Assert.Single(world.Temporal.Updates).Argument!;
+        Assert.Equal(("rejected", "requirements omit the audit log"), (delivered.Outcome, delivered.Reason));
+        Assert.All(await world.QueryAsync<AnswerRecord>(Queries.Answers, Run), a => Assert.Equal("requirements omit the audit log", a.Reason));
+
+        Assert.Equal(HttpStatusCode.OK, (await ApiWorld.PostAsync(world.As("sam", "steerer,admin"), $"runs/{Run}/abort", """{ "reason": "superseded by FF-2" }""")).Status);
+        Assert.Equal("superseded by FF-2", ((AbortArgs)world.Temporal.Updates[^1].Argument!).Reason);
+        Assert.Contains(await world.QueryAsync<AnswerRecord>(Queries.Answers, Run), a => a.WaitId == "abort" && a.Reason == "superseded by FF-2");
+    }
+
+    [Fact]
+    public async Task People_who_answer_the_same_way_in_different_words_count_together()
+    {
+        await using var world = await WorldAsync(Organisation(Rule("*.spec_approval", minCount: 2)));
+
+        Assert.Equal(HttpStatusCode.Accepted, (await AnswerAsync(world.As("ann", "approver"), reason: "covers the audit log")).Status);
+        Assert.Equal(HttpStatusCode.OK, (await AnswerAsync(world.As("cat", "approver"), reason: "matches the ticket")).Status);
+
+        var delivered = (AnswerArgs)Assert.Single(world.Temporal.Updates).Argument!;
+        Assert.Equal(("ann, cat", "ann: covers the audit log; cat: matches the ticket"), (delivered.Actor, delivered.Reason));
+        Assert.Equal("covers the audit log", (await world.QueryAsync<AnswerRecord>(Queries.Answers, Run))[0].Reason);
+    }
 
     [Fact]
     public async Task Min_count_distinct_people_must_answer_the_same_way_before_the_answer_is_delivered()
@@ -136,7 +192,7 @@ public sealed class ApprovalTests
         Assert.Equal(HttpStatusCode.OK, (await AnswerAsync(world.As("ann", "approver"))).Status);
 
         await using var recovery = await WorldAsync(Organisation() with { Libraries = [unreachable] }, "ticket.escalation", kind: "intervention");
-        var (status, text) = await ApiWorld.PostAsync(recovery.As("sam", "steerer"), $"runs/{Run}/answers", """{ "wait_id": "w1", "action": "retry" }""");
+        var (status, text) = await ApiWorld.PostAsync(recovery.As("sam", "steerer"), $"runs/{Run}/answers", """{ "wait_id": "w1", "action": "retry", "reason": "flaky" }""");
         Assert.True(status == HttpStatusCode.OK, text);
     }
 
@@ -161,5 +217,31 @@ public sealed class ApprovalTests
         Assert.Equal(HttpStatusCode.Forbidden, (await ApiWorld.PostAsync(world.As("policy", "admin"), $"runs/{Run}/overrides",
             """{ "key": "skip", "reason": "r" }""")).Status);
         Assert.Empty(world.Temporal.Updates);
+    }
+
+    /// <summary>
+    /// A reason is at most 4 KB of UTF-8 (LOG 432), counted in bytes: 2,049 two-byte characters are refused on every route
+    /// that takes one, a question's answer included, and nothing is recorded or delivered; 4,096 one-byte characters are taken.
+    /// </summary>
+    [Fact]
+    public async Task A_reason_over_four_kilobytes_is_refused_on_every_route_that_takes_one()
+    {
+        await using var world = await WorldAsync(Organisation(Rule("*")));
+        await world.WaitAsync(Run, "w2", "question", "ticket.question");
+        var admin = world.As("ann", "approver,steerer,admin");
+        var tooLong = new string('é', 2049);
+
+        var refusals = new[]
+        {
+            await ApiWorld.PostAsync(admin, $"runs/{Run}/answers", $$"""{ "wait_id": "w1", "outcome": "approved", "reason": "{{tooLong}}" }"""),
+            await ApiWorld.PostAsync(admin, $"runs/{Run}/answers", $$"""{ "wait_id": "w2", "outcome": "teal", "reason": "{{tooLong}}" }"""),
+            await ApiWorld.PostAsync(admin, $"runs/{Run}/abort", $$"""{ "reason": "{{tooLong}}" }"""),
+            await ApiWorld.PostAsync(admin, $"runs/{Run}/overrides", $$"""{ "key": "skip", "step_id": "implement", "reason": "{{tooLong}}" }"""),
+        };
+
+        Assert.All(refusals, r => Assert.Equal((HttpStatusCode.BadRequest, true), (r.Status, r.Body.Contains("at most 4096 bytes", StringComparison.Ordinal))));
+        Assert.Empty(world.Temporal.Updates);
+        Assert.Empty(await world.QueryAsync<AnswerRecord>(Queries.Answers, Run));
+        Assert.Equal(HttpStatusCode.OK, (await AnswerAsync(admin, reason: new string('a', ApiApp.MaxReasonBytes))).Status);
     }
 }

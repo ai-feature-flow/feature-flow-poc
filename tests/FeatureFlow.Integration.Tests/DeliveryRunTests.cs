@@ -19,7 +19,7 @@ public class DeliveryRunTests
     static async Task<string> WaitReasonAsync(Harness h, string runId)
     {
         Assert.NotNull(await h.WaitForWaitAsync(runId, TimeSpan.FromMinutes(2)));
-        return (await h.ShowAsync(runId))["waits"]!.AsArray().Single()!["reason"]!.ToString();
+        return (await h.ShowAsync(runId))["waits"]!.AsArray().Single()!["prompt"]!.ToString();
     }
 
     [Fact]
@@ -35,7 +35,7 @@ public class DeliveryRunTests
         Assert.Contains("F11", reason, StringComparison.Ordinal);
         var children = (await h.ShowAsync(middle))["children"]!.AsArray();
         Assert.Single(children);
-        Assert.Contains((await h.ShowAsync(middle))["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "completed" && e["stepId"]!.ToString() == "first");
+        Assert.Contains((await h.ShowAsync(middle))["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "completed" && e["step_id"]!.ToString() == "first");
         await h.RecordHistoryAsync(middle, "budget_middle");
     }
 
@@ -170,7 +170,7 @@ public class DeliveryRunTests
         while (DateTime.UtcNow < deadline)
         {
             if ((await h.ShowAsync(runId))["children"]!.AsArray().FirstOrDefault() is { } child)
-                return child["runId"]!.ToString();
+                return child["run_id"]!.ToString();
             await Task.Delay(200, Ct);
         }
 

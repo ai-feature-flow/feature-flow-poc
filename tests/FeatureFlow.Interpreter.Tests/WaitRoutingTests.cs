@@ -378,13 +378,72 @@ public class WaitRoutingTests
         Assert.Equal([(gate, true), (gate, false)], core.State.WaitChanges.Select(c => (c.Wait.Id, c.Open)));
     }
 
-    static RunCore Resume(RunCore core) =>
-        RunCore.Resume(Lib.Libraries, Probe.Ref("waits"), JsonSerializer.Deserialize<CarriedCore>(JsonSerializer.Serialize(core.Snapshot()))!);
+    static RunCore Resume(RunCore core, RunOptions? options = null) =>
+        RunCore.Resume(Lib.Libraries, Probe.Ref("waits"), JsonSerializer.Deserialize<CarriedCore>(JsonSerializer.Serialize(core.Snapshot()))!, options);
+
+    // ---- Reminders (F21; docs/04 section 4) ----------------------------------------------------------
+
+    static readonly RunOptions Reminding = new() { ReminderInterval = TimeSpan.FromHours(4) };
+
+    static RunCore AtRemindedGate()
+    {
+        var core = Started(Reminding);
+        core.Apply(new StepCompleted("ask", "done"));
+        Assert.Equal([new ArmReminder("gate-1", 1, TimeSpan.FromHours(4)), new OpenGate("approve", 1, "gate-1", false)], core.Advance());
+        return core;
+    }
+
+    static IReadOnlyList<string> Reminded(RunCore core) =>
+        core.State.Trace.Where(t => t.Kind == "reminded").Select(t => $"{t.StepId} {t.Detail}").ToList();
+
+    [Fact]
+    public void An_open_gate_is_reminded_once_per_number_until_it_is_answered()
+    {
+        var core = AtRemindedGate();
+
+        Assert.True(core.Apply(new ReminderDue("gate-1", 1)).Accepted);
+        Assert.Equal(["gate-1 1"], Reminded(core));
+        Assert.Equal([new ArmReminder("gate-1", 2, TimeSpan.FromHours(4))], core.Advance());
+        // A repeated or late reminder does nothing: no second trace, no second timer.
+        Assert.True(core.Apply(new ReminderDue("gate-1", 1)).Accepted);
+        Assert.Equal(["gate-1 1"], Reminded(core));
+        Assert.Empty(core.Advance());
+
+        Accepted(core, new AnswerArgs("gate-1", "alice", "go", Reason: "fine"));
+        core.Advance();
+        Assert.True(core.Apply(new ReminderDue("gate-1", 2)).Accepted);
+        Assert.Equal(["gate-1 1"], Reminded(core));
+        Assert.Empty(core.Advance());
+    }
+
+    [Fact]
+    public void Without_an_interval_no_wait_arms_a_reminder()
+    {
+        var core = Started();
+        core.Apply(new StepCompleted("ask", "done"));
+        Assert.Equal([new OpenGate("approve", 1, "gate-1", false)], core.Advance());
+        Assert.True(core.Apply(new ReminderDue("gate-1", 1)).Accepted);
+        Assert.Empty(Reminded(core));
+        Assert.Empty(Resume(core).Timers());
+    }
+
+    [Fact]
+    public void After_a_hand_over_each_open_wait_arms_its_next_reminder()
+    {
+        var core = AtRemindedGate();
+        core.Apply(new ReminderDue("gate-1", 1));
+        core.Advance();
+
+        var resumed = Resume(core, Reminding);
+        Assert.Equal([new ArmReminder("gate-1", 2, TimeSpan.FromHours(4))], resumed.Timers());
+        Assert.True(resumed.Apply(new ReminderDue("gate-1", 2)).Accepted);
+        Assert.Equal(["gate-1 1", "gate-1 2"], Reminded(resumed));
+    }
 
     /// <summary>A wait as its record shows it (<see cref="RunCore.Describe"/>): kind, type, choices and text.</summary>
     static string Shown(RunCore core, OpenWait wait)
     {
         var d = core.Describe(wait);
-        return $"{d.Kind} {d.Type} [{string.Join(", ", d.Choices)}]: {d.Reason}";
+        return $"{d.Kind} {d.Type} [{string.Join(", ", d.Choices)}]: {d.Prompt}";
     }
 }

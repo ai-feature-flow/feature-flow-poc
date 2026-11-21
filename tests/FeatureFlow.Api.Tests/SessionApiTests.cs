@@ -103,14 +103,14 @@ public sealed class SessionApiTests : IAsyncDisposable
         Assert.Equal(HttpStatusCode.OK, (await http.GetAsync("runs/r1/sessions", TestContext.Current.CancellationToken)).StatusCode);
         foreach (var (path, body) in new[]
                  {
-                     ($"sessions/{Sid}/submit", $$"""{ "revision": "{{Commit}}", "actor": "lead" }"""),
+                     ($"sessions/{Sid}/submit", $$"""{ "revision": "{{Commit}}" }"""),
                      ($"sessions/{Sid}/checks", $$"""{ "step": "check_requirements", "revision": "{{Commit}}" }"""),
-                     ($"sessions/{Sid}/abandon", "{}"),
+                     ($"sessions/{Sid}/abandon", """{ "reason": "not needed" }"""),
                  })
         {
             var (status, text) = await PostAsync(http, path, body);
             Assert.Equal(HttpStatusCode.Forbidden, status);
-            Assert.Contains("pat may not act on session", text);
+            Assert.Contains("pat may not answer project.requirements_", text);
         }
 
         Assert.Empty(await AnswersAsync());
@@ -147,6 +147,35 @@ public sealed class SessionApiTests : IAsyncDisposable
         Assert.Equal(HttpStatusCode.Conflict, status);
         Assert.Contains("no longer open", text);
         Assert.Equal(HttpStatusCode.NotFound, (await PostAsync(http, "sessions/r1.gate-9/submit", $$"""{ "revision": "{{Commit}}" }""")).Status);
+        Assert.Empty(await AnswersAsync());
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("""{ "reason": "" }""")]
+    public async Task Abandoning_a_session_without_a_reason_is_refused_and_nothing_is_recorded(string body)
+    {
+        var http = Start("approver");
+        await OpenSessionAsync();
+
+        var (status, text) = await PostAsync(http, $"sessions/{Sid}/abandon", body);
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Matches("reason is required|missing required properties.*reason", text);
+        Assert.Empty(await AnswersAsync());
+    }
+
+    [Fact]
+    public async Task A_submission_or_abandonment_with_a_reason_over_four_kilobytes_is_refused()
+    {
+        var http = Start("approver");
+        await OpenSessionAsync();
+        var tooLong = new string('x', 4097);
+
+        var submit = await PostAsync(http, $"sessions/{Sid}/submit", $$"""{ "revision": "{{Commit}}", "reason": "{{tooLong}}" }""");
+        var abandon = await PostAsync(http, $"sessions/{Sid}/abandon", $$"""{ "reason": "{{tooLong}}" }""");
+
+        Assert.All(new[] { submit, abandon }, r => Assert.Equal((HttpStatusCode.BadRequest, true), (r.Status, r.Body.Contains("at most 4096 bytes", StringComparison.Ordinal))));
         Assert.Empty(await AnswersAsync());
     }
 }

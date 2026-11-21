@@ -94,7 +94,7 @@ public abstract class RecordStoreContract : ContractBase
         var waits = await Query<WaitRecord>(Queries.Waits, ("run_id", Id("run")));
         Assert.Equal(["gate-1", "gate-2"], waits.Select(w => w.WaitId));
         Assert.Equal((false, "gate", "approve_spec", "ticket.spec_approval", "Approve the spec?"),
-            (waits[0].Open, waits[0].Kind, waits[0].StepId, waits[0].DecisionType, waits[0].Reason));
+            (waits[0].Open, waits[0].Kind, waits[0].StepId, waits[0].DecisionType, waits[0].Prompt));
         Assert.Equal(["approved", "rejected"], waits[0].Choices);
         Assert.Equal("gate-2", Assert.Single(await Query<WaitRecord>(Queries.Waits, ("run_id", Id("run")), ("open", "true"))).WaitId);
     }
@@ -107,7 +107,7 @@ public abstract class RecordStoreContract : ContractBase
         Ok(await Append(new RecordBatch(Waits: [Wait("run", "gate-1", true, "Approve the revised spec?")])));
 
         var wait = Assert.Single(await Query<WaitRecord>(Queries.Waits, ("run_id", Id("run")), ("open", "true")));
-        Assert.Equal("Approve the revised spec?", wait.Reason);
+        Assert.Equal("Approve the revised spec?", wait.Prompt);
     }
 
     [Fact]
@@ -192,5 +192,70 @@ public abstract class RecordStoreContract : ContractBase
     public async Task A_query_for_another_record_type_than_it_returns_is_a_programming_error()
     {
         await Assert.ThrowsAnyAsync<ArgumentException>(() => Store.QueryAsync<WaitRecord>(Queries.Run, new Dictionary<string, string> { ["run_id"] = Id("run") }, Ct));
+    }
+
+    // ---- Changes (docs/06 section 3.12, LOG 397). The store may be shared, so each test reads only its own runs' changes. ----
+
+    async Task<long> LatestChange() => (await Query<ChangeRecord>(Queries.LatestChange)).SingleOrDefault()?.Sequence ?? 0;
+
+    async Task<List<ChangeRecord>> ChangesAfter(long after) =>
+        [.. (await Query<ChangeRecord>(Queries.Changes, ("after", after.ToString(System.Globalization.CultureInfo.InvariantCulture)))).Where(c => c.RunId.StartsWith(unique, StringComparison.Ordinal))];
+
+    [Fact]
+    public async Task Changes_are_written_with_the_records()
+    {
+        var before = await LatestChange();
+
+        Ok(await Append(new RecordBatch(
+            Runs: [Run("a", "running"), Run("b", "running")],
+            Waits: [Wait("a", "gate-1", open: true)],
+            Timeline: [new TimelineRecord(Id("a"), 1, "step_started", "s", null, At), new TimelineRecord(Id("b"), 1, "step_started", "s", null, At)],
+            Answers: [new AnswerRecord(Id("a"), "gate-1", "a-person", "{}", "sent", At)])));
+        Ok(await Append(new RecordBatch(Waits: [Wait("a", "gate-1", open: false)])));
+        Ok(await Append(new RecordBatch(Locks: [new LockRecord(Id("a"), "sha256:x", At)])));
+
+        var changes = await ChangesAfter(before);
+        Assert.Equal(
+            [(Id("a"), ChangeKinds.RunChanged, (string?)null), (Id("b"), ChangeKinds.RunChanged, null), (Id("a"), ChangeKinds.WaitOpened, "gate-1"), (Id("a"), ChangeKinds.WaitClosed, "gate-1")],
+            changes.Select(c => (c.RunId, c.Kind, c.WaitId)));
+        Assert.All(changes, c => Assert.True(c.Sequence > before && c.At > At, $"change {c.Sequence} at {c.At}"));
+    }
+
+    [Fact]
+    public async Task Changes_follow_commit_order()
+    {
+        var before = await LatestChange();
+        Ok(await Append(new RecordBatch(Runs: [Run("first", "running")])));
+        Ok(await Append(new RecordBatch(Runs: [Run("second", "running")])));
+        Ok(await Append(new RecordBatch(Runs: [Run("third", "running")])));
+
+        var latest = await LatestChange();
+        var all = await ChangesAfter(before);
+        Assert.Equal([Id("first"), Id("second"), Id("third")], all.Select(c => c.RunId));
+        Assert.True(all[0].Sequence < all[1].Sequence && all[1].Sequence < all[2].Sequence);
+        Assert.True(latest >= all[2].Sequence);
+        // A reader that has read up to a change is given only what was committed after it.
+        Assert.Equal([Id("second"), Id("third")], (await ChangesAfter(all[0].Sequence)).Select(c => c.RunId));
+        Assert.Equal([Id("first")], (await Query<ChangeRecord>(Queries.Changes, ("after", (all[0].Sequence - 1).ToString(System.Globalization.CultureInfo.InvariantCulture)), ("limit", "1")))
+            .Select(c => c.RunId));
+    }
+
+    [Fact]
+    public async Task Open_waits_lists_only_open_waits_of_running_runs()
+    {
+        // Older than any other test's records, so a shared database's limit of 500 cannot leave these out.
+        var old = At.AddDays(-30);
+        WaitRecord W(string run, string wait, bool open, int minutes) =>
+            new(Id(run), wait, "gate", "approve_spec", "ticket.spec_approval", "Approve the spec?", ["approved"], open, old.AddMinutes(minutes));
+        Ok(await Append(new RecordBatch(
+            Runs: [Run("going", "running"), Run("new", "starting"), Run("ended", "completed"), Run("failed", "failed")],
+            Waits: [W("going", "gate-2", true, 3), W("going", "gate-1", true, 1), W("going", "gate-0", false, 0), W("new", "gate-1", true, 2),
+                W("ended", "gate-1", true, 0), W("failed", "gate-1", true, 0), W("orphan", "gate-1", true, 0)])));
+
+        var open = (await Query<OpenWaitRecord>(Queries.OpenWaits)).Where(o => o.Wait.RunId.StartsWith(unique, StringComparison.Ordinal)).ToList();
+
+        Assert.Equal([(Id("going"), "gate-1"), (Id("new"), "gate-1"), (Id("going"), "gate-2")], open.Select(o => (o.Wait.RunId, o.Wait.WaitId)));
+        Assert.Equal(("running", "Approve the spec?", "ticket.spec_approval"), (open[0].Run.Status, open[0].Wait.Prompt, open[0].Wait.DecisionType));
+        Assert.Equal([Id("going"), Id("new"), Id("going")], open.Select(o => o.Run.RunId));
     }
 }

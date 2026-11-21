@@ -5,6 +5,7 @@
     <Project Path="hosts/FeatureFlow.Host.OrchestrationWorker/FeatureFlow.Host.OrchestrationWorker.csproj" />
   </Folder>
   <Folder Name="/src/">
+    <Project Path="src/FeatureFlow.Api.Contracts/FeatureFlow.Api.Contracts.csproj" />
     <Project Path="src/FeatureFlow.Api/FeatureFlow.Api.csproj" />
     <Project Path="src/FeatureFlow.Cli/FeatureFlow.Cli.csproj" />
     <Project Path="src/FeatureFlow.Engine.Agent/FeatureFlow.Engine.Agent.csproj" />

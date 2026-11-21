@@ -7,7 +7,7 @@ namespace FeatureFlow.Providers.Local;
 /// (docs/02 section 5); overrides, notification de-duplication and sessions. Finding records, sessions and session checks
 /// are kept by key, the last write winning; finding events and artifacts are appended once per key, a notification is kept
 /// once per key with the first write winning, and overrides are appended. Other records are not kept here: the SQLite
-/// store holds them.
+/// store holds them. The changes each batch makes are numbered and kept as the other stores keep them (<see cref="Queries.Changes"/>).
 /// </summary>
 public sealed class InMemoryRecordStore : IRecordStoreProvider
 {
@@ -51,6 +51,7 @@ public sealed class InMemoryRecordStore : IRecordStoreProvider
                 sessions[session.SessionId] = session;
             foreach (var check in records.SessionChecks ?? [])
                 checks[(check.SessionId, check.CheckId)] = check;
+            AppendChanges(records);
         }
 
         return Task.FromResult(ProviderResult<Unit>.Success(default));
@@ -63,6 +64,8 @@ public sealed class InMemoryRecordStore : IRecordStoreProvider
         {
             IEnumerable<object> rows = queryName switch
             {
+                Queries.Changes => changes.Where(c => c.Sequence > SqliteRecordStore.After(parameters)).Take(SqliteRecordStore.Limit(parameters)),
+                Queries.LatestChange => changes.TakeLast(1),
                 Queries.Run => runs.Values.Where(r => r.RunId == P("run_id")),
                 Queries.Runs when parameters.ContainsKey("parent_run_id") => runs.Values.Where(r => r.ParentRunId == P("parent_run_id")).OrderBy(r => r.RunId, StringComparer.Ordinal),
                 Queries.Runs => runs.Values.OrderByDescending(r => r.UpdatedAt),
@@ -76,6 +79,8 @@ public sealed class InMemoryRecordStore : IRecordStoreProvider
                 Queries.Session => sessions.Values.Where(s => s.SessionId == P("session_id")),
                 Queries.Sessions => sessions.Values.Where(s => s.RunId == P("run_id")).OrderBy(s => s.SessionId, StringComparer.Ordinal),
                 Queries.SessionChecks => checks.Values.Where(c => c.SessionId == P("session_id")).OrderBy(c => c.CheckId, StringComparer.Ordinal),
+                // Waits are not kept here, so no wait is open.
+                Queries.OpenWaits => Enumerable.Empty<OpenWaitRecord>(),
                 _ => throw new NotSupportedException($"the in-memory record store does not answer {queryName}"),
             };
             return Task.FromResult(ProviderResult<IReadOnlyList<T>>.Success(rows.Cast<T>().ToList()));
@@ -95,5 +100,14 @@ public sealed class InMemoryRecordStore : IRecordStoreProvider
         }
 
         return tree;
+    }
+
+    // Changes (docs/06 section 3.12): numbered in the order appended, under the store's lock.
+    readonly List<ChangeRecord> changes = [];
+
+    void AppendChanges(RecordBatch records)
+    {
+        foreach (var (runId, kind, waitId) in ChangeKinds.Of(records))
+            changes.Add(new ChangeRecord(changes.Count + 1, runId, kind, waitId, DateTimeOffset.UtcNow));
     }
 }

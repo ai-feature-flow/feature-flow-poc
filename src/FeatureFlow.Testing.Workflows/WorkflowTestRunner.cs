@@ -114,6 +114,7 @@ public static class WorkflowTestRunner
         var queue = new List<(string StepId, int Execution, string? Gate)>();
         var cleanUps = new List<string>();
         var tries = new Dictionary<(string, int), int>();
+        var contexts = new Dictionary<(string, int), string?>();
         var inputs = 0;
         while (true)
         {
@@ -122,6 +123,9 @@ public static class WorkflowTestRunner
                 switch (command)
                 {
                     case StartStep s:
+                        // The run context as the core renders it into the agent's spec when this execution starts.
+                        if (test.ExpectContext.ContainsKey(s.StepId))
+                            contexts[(s.StepId, s.Execution)] = core.StepSpec(s.StepId).Spec?.Agent?.RunContext;
                         queue.Add((s.StepId, s.Execution, null));
                         break;
                     case StartChild s:
@@ -179,7 +183,7 @@ public static class WorkflowTestRunner
                 // A person answers the gate as the shell routes it. A session's submission produces the artifacts its outcome
                 // promises (docs/04 section 4.4); any other answer none.
                 var submitted = Promised(step, outcome).ToDictionary(n => n, n => $"artifact:{stepId}/{n}/{execution}");
-                var gateAnswer = core.Answer(new AnswerArgs(gate, "test", outcome, Artifacts: submitted.Count == 0 ? null : submitted));
+                var gateAnswer = core.Answer(new AnswerArgs(gate, "test", outcome, Artifacts: submitted.Count == 0 ? null : submitted, Reason: visit.Reason));
                 if (!gateAnswer.Accepted)
                 {
                     failures.Add("the script was refused: " + string.Join("; ", gateAnswer.Errors));
@@ -246,7 +250,7 @@ public static class WorkflowTestRunner
 
         // Names are checked against every revision, since a patch may add steps.
         foreach (var id in test.Script.Keys.Concat(test.Outputs.Keys).Concat(test.Expand.Keys).Concat(test.ExpectExecutions.Keys)
-                     .Concat(test.Answers.Keys).Concat(test.Questions.Keys).Concat(test.Overrides.Select(o => o.StepId)).Distinct())
+                     .Concat(test.Answers.Keys).Concat(test.Questions.Keys).Concat(test.ExpectContext.Keys).Concat(test.Overrides.Select(o => o.StepId)).Distinct())
             if (!core.State.IdHistory.Contains(id))
                 failures.Add($"'{id}' is not a step of {test.Template} in any revision of the run");
 
@@ -266,6 +270,13 @@ public static class WorkflowTestRunner
         foreach (var (id, how) in test.ExpectQuestions)
             if (core.State.Closed.LastOrDefault(c => c.Id == id)?.How is var closed && closed != how)
                 failures.Add($"question {id} {(closed is null ? "did not close" : "closed " + closed)}, expected {how}");
+        foreach (var (id, byExecution) in test.ExpectContext)
+            foreach (var (execution, texts) in byExecution)
+                if (!contexts.TryGetValue((id, execution), out var context))
+                    failures.Add($"{id} execution {execution} did not start as an agent step, so its run context was not seen");
+                else
+                    foreach (var text in texts.Where(t => context?.Contains(t, StringComparison.Ordinal) != true))
+                        failures.Add($"{id} execution {execution}: its run context does not contain '{text}': {context ?? "(none)"}");
 
         CompareChecks(test, observedChecks, failures, patchDiagnostics);
         if (test.ExpectStatus is { } expected && expected != status)

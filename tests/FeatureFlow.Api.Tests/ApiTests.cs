@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
+using FeatureFlow.Api.Contracts;
 using FeatureFlow.Model;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Providers.Local;
@@ -89,6 +91,38 @@ public sealed class ApiTests : IAsyncDisposable
         Assert.Equal(HttpStatusCode.NotFound, (await http.GetAsync("runs/nope", TestContext.Current.CancellationToken)).StatusCode);
     }
 
+    /// <summary>
+    /// A body is read after authentication (LOG 407): a caller with no credential is 401 whatever it sends, and an
+    /// authenticated caller's malformed body is 400 with the one error shape, before anything is recorded.
+    /// </summary>
+    [Theory]
+    [InlineData("runs", "not json")]
+    [InlineData("runs", """{ "template": 3 }""")]
+    [InlineData("runs", """{ "repositories": [] }""")]
+    [InlineData("runs", """{ "template": "std:templates/ticket_delivery", "dry_run": "yes" }""")]
+    [InlineData("runs", """{ "template": "std:templates/ticket_delivery", "parameters": { "n": 3 } }""")]
+    [InlineData("runs", """{ "template": "std:templates/ticket_delivery", "colour": "blue" }""")]
+    [InlineData("runs/r1/answers", """{ "outcome": "approved" }""")]
+    [InlineData("runs/r1/answers", """{ "wait_id": null, "outcome": "approved" }""")]
+    [InlineData("runs/r1/abort", "")]
+    [InlineData("runs/r1/overrides", """{ "key": "skip", "reason": "r", "change": [] }""")]
+    [InlineData("sessions/r1.gate-1/submit", """{ "revision": 7 }""")]
+    [InlineData("sessions/r1.gate-1/checks", """{ "step": "check" }""")]
+    public async Task A_malformed_body_is_400_with_an_error_and_without_a_credential_401(string path, string body)
+    {
+        var http = Start("admin");
+        await OpenWaitAsync("gate-1", "gate", "ticket.spec_approval");
+        using var anonymous = new HttpClient { BaseAddress = http.BaseAddress };
+
+        var (unauthenticated, refusal) = await PostAsync(anonymous, path, body);
+        var (status, text) = await PostAsync(http, path, body);
+
+        Assert.Equal((HttpStatusCode.Unauthorized, "unauthenticated"), (unauthenticated, JsonSerializer.Deserialize<ErrorResponse>(refusal, ApiJson.Options)!.Error));
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.StartsWith("the body ", JsonSerializer.Deserialize<ErrorResponse>(text, ApiJson.Options)!.Error, StringComparison.Ordinal);
+        Assert.Empty((await records.QueryAsync<AnswerRecord>(Queries.Answers, new Dictionary<string, string> { ["run_id"] = "r1" }, TestContext.Current.CancellationToken)).Unwrap());
+    }
+
     /// <summary>An authenticator that accepts a request carrying <c>X-Test-Person</c> as that person, with fixed roles, through chat.</summary>
     sealed class HeaderAuthenticator(params string[] roles) : IAuthenticator
     {
@@ -107,7 +141,8 @@ public sealed class ApiTests : IAsyncDisposable
         Assert.Equal(HttpStatusCode.OK, (await http.GetAsync("runs", TestContext.Current.CancellationToken)).StatusCode);
 
         // The header authenticator comes first: its viewer, not the token's steerer, is refused the abort.
-        using var request = new HttpRequestMessage(HttpMethod.Post, "runs/r1/abort") { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+        await OpenWaitAsync("gate-1", "gate", "ticket.spec_approval");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "runs/r1/abort") { Content = new StringContent("""{ "reason": "stop" }""", Encoding.UTF8, "application/json") };
         request.Headers.Add("X-Test-Person", "pat");
         using var response = await http.SendAsync(request, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -120,10 +155,10 @@ public sealed class ApiTests : IAsyncDisposable
         var http = Start("viewer");
         await OpenWaitAsync("gate-1", "gate", "ticket.spec_approval");
 
-        // The body claims an approver; the token's actor is a viewer.
+        // The token's actor is a viewer; the body cannot claim otherwise.
         Assert.Equal(HttpStatusCode.Forbidden, (await PostAsync(http, "runs/r1/answers",
-            """{ "wait_id": "gate-1", "outcome": "approved", "actor": "lead", "roles": ["approver"] }""")).Status);
-        Assert.Equal(HttpStatusCode.Forbidden, (await PostAsync(http, "runs/r1/abort", "{}")).Status);
+            """{ "wait_id": "gate-1", "outcome": "approved", "reason": "looks right" }""")).Status);
+        Assert.Equal(HttpStatusCode.Forbidden, (await PostAsync(http, "runs/r1/abort", """{ "reason": "stop" }""")).Status);
         var answers = (await records.QueryAsync<AnswerRecord>(Queries.Answers, new Dictionary<string, string> { ["run_id"] = "r1" }, TestContext.Current.CancellationToken)).Unwrap();
         Assert.Empty(answers);
     }
@@ -175,7 +210,7 @@ public sealed class ApiTests : IAsyncDisposable
         // With no Temporal client, delivering the answer throws; the caller must not see the exception.
         var admin = Start("admin");
         await OpenWaitAsync("intervention-1", "intervention", "epic.escalation");
-        var (status, text) = await PostAsync(admin, "runs/r1/answers", """{ "wait_id": "intervention-1", "action": "retry" }""");
+        var (status, text) = await PostAsync(admin, "runs/r1/answers", """{ "wait_id": "intervention-1", "action": "retry", "reason": "flaky" }""");
         Assert.Equal(HttpStatusCode.InternalServerError, status);
         Assert.DoesNotContain("Exception", text);
         Assert.DoesNotContain("null", text, StringComparison.OrdinalIgnoreCase);
@@ -225,7 +260,7 @@ public sealed class ApiTests : IAsyncDisposable
 
         // No Temporal client here: delivery fails after the answer is recorded as sent, which is what findings.triage reads.
         await PostAsync(approver, "runs/r1/answers", $$"""
-            { "wait_id": "gate-1", "outcome": "triaged", "actor": "someone-else", "artifacts": { "person_triage": {{System.Text.Json.JsonSerializer.Serialize(Triage)}} } }
+            { "wait_id": "gate-1", "outcome": "triaged", "reason": "two are false positives", "artifacts": { "person_triage": {{System.Text.Json.JsonSerializer.Serialize(Triage)}} } }
             """);
 
         var sent = Assert.Single((await records.QueryAsync<AnswerRecord>(Queries.Answers, new Dictionary<string, string> { ["run_id"] = "r1" },
@@ -239,15 +274,16 @@ public sealed class ApiTests : IAsyncDisposable
     }
 
     [Theory]
-    [InlineData("[]", "artifacts is a map")]
-    [InlineData("""{ "person_triage": 3 }""", "must be given as text or a JSON map or list")]
-    [InlineData("""{ "person_triage": "  " }""", "must be given as text or a JSON map or list")]
+    [InlineData("[]", "the body is not a valid request")]
+    [InlineData("""{ "person_triage": 3 }""", "the body is not a valid request")]
+    [InlineData("""{ "person_triage": { "schema": 1 } }""", "the body is not a valid request")]
+    [InlineData("""{ "person_triage": "  " }""", "must be given as text")]
     public async Task Artifacts_that_are_not_documents_are_refused_before_anything_is_recorded(string artifacts, string error)
     {
         var approver = Start("approver");
         await OpenWaitAsync("gate-1", "gate", "ticket.spec_approval");
 
-        var (status, text) = await PostAsync(approver, "runs/r1/answers", $$"""{ "wait_id": "gate-1", "outcome": "triaged", "artifacts": {{artifacts}} }""");
+        var (status, text) = await PostAsync(approver, "runs/r1/answers", $$"""{ "wait_id": "gate-1", "outcome": "triaged", "reason": "r", "artifacts": {{artifacts}} }""");
 
         Assert.Equal(HttpStatusCode.BadRequest, status);
         Assert.Contains(error, text);
@@ -309,10 +345,10 @@ public sealed class ApiTests : IAsyncDisposable
             TestContext.Current.CancellationToken);
 
         using var response = await reader.GetAsync("runs/r1/findings", TestContext.Current.CancellationToken);
-        var view = ArtifactShapes.ReadLibrary<FindingsReport>(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken), "the ledger");
+        var view = JsonSerializer.Deserialize<FindingsResponse>(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken), ApiJson.Options)!;
 
         var only = Assert.Single(view.Findings);
-        Assert.Equal(("F-1", FindingStates.Escalated), (only.LedgerId, only.State));
+        Assert.Equal(("F-1", FindingStates.Escalated, "null-check", "A.B"), (only.LedgerId, only.State, only.Rule, only.Location.Symbol));
         using var refused = await Start().GetAsync("runs/r1/findings", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, refused.StatusCode);
     }
@@ -330,8 +366,90 @@ public sealed class ApiTests : IAsyncDisposable
             return await response.Content.ReadAsStringAsync(ct);
         }
 
-        // The viewer gets past the run check to the missing lock; a caller who may not see the run is told it does not exist.
-        Assert.Contains("no library lock", await ReadAsync(Start("viewer")));
+        // The viewer gets past the run check to the missing revision; a caller who may not see the run is told it does not exist.
+        Assert.Contains("recorded no plan revision", await ReadAsync(Start("viewer")));
         Assert.Contains("no run r1", await ReadAsync(Start()));
+    }
+
+    [Fact]
+    public async Task A_run_lists_its_own_artifacts_by_kind_and_each_reads()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var store = new FileSystemArtifactStore(Path.Combine(folder, "artifacts"));
+        async Task<string> PutAsync(string text) => (await store.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(text)), ct)).Unwrap().Id;
+        var (requirements, evidence, transcript, prompt, revision, childs) =
+            (await PutAsync("# requirements\n"), await PutAsync("{\"passed\": 3}"), await PutAsync("transcript text"), await PutAsync("the task"),
+                await PutAsync("{\"revision\": 1}"), await PutAsync("child's"));
+        var now = DateTimeOffset.UtcNow;
+        await records.AppendAsync(new RecordBatch(
+            [
+                new RunRecord("r1", null, "std:templates/ticket_delivery", "running", "x", [], false, now, null),
+                new RunRecord("r1.c", "r1", "std:templates/ticket_delivery", "running", "x", [], false, now, null),
+            ],
+            Artifacts:
+            [
+                new ArtifactRecord("r1", "plan", 1, "requirements", "std:artifact_types/requirements", requirements, null, false, now),
+                new ArtifactRecord("r1", "verify.tests", 1, "evidence:test_results", "test_results", evidence, "test.run", true, now),
+                new ArtifactRecord("r1", "implement", 1, ArtifactNames.Transcript(1), ArtifactNames.TranscriptType, transcript, null, false, now),
+                new ArtifactRecord("r1", "implement", 1, ArtifactNames.Prompt(1), ArtifactNames.PromptType, prompt, null, false, now),
+                new ArtifactRecord("r1", "", 1, ArtifactNames.PlanRevision, ArtifactNames.PlanRevision, revision, null, false, now),
+                new ArtifactRecord("r1.c", "plan", 1, "requirements", null, childs, null, false, now),
+            ]), ct);
+        var viewer = Start("viewer");
+
+        using var listed = await viewer.GetAsync("runs/r1/artifacts", ct);
+        var list = JsonSerializer.Deserialize<ArtifactList>(await listed.Content.ReadAsStringAsync(ct), ApiJson.Options)!;
+
+        // The run's own index only: the child's artifact is listed through the child (LOG 325).
+        Assert.Equal([ArtifactKind.Artifact, ArtifactKind.Evidence, ArtifactKind.Transcript, ArtifactKind.Prompt, ArtifactKind.PlanRevision],
+            list.Artifacts.Select(a => a.Kind));
+        foreach (var (reference, text) in new[] { (requirements, "# requirements\n"), (transcript, "transcript text"), (prompt, "the task"), (revision, "{\"revision\": 1}") })
+            Assert.Equal(text, await viewer.GetStringAsync($"runs/r1/artifacts/{Uri.EscapeDataString(reference)}", ct));
+        using var child = await viewer.GetAsync("runs/r1.c/artifacts", ct);
+        Assert.Equal(childs, Assert.Single(JsonSerializer.Deserialize<ArtifactList>(await child.Content.ReadAsStringAsync(ct), ApiJson.Options)!.Artifacts).Ref);
+        using var refused = await Start().GetAsync("runs/r1/artifacts", ct);
+        Assert.Equal(HttpStatusCode.NotFound, refused.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_gate_names_what_its_step_consumed_and_a_child_reads_its_parents_artifact_its_gate_names()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var store = new FileSystemArtifactStore(Path.Combine(folder, "artifacts"));
+        async Task<string> PutAsync(string text) => (await store.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(text)), ct)).Unwrap().Id;
+        var (contract, requirements, plan, unnamed) = (await PutAsync("the contract"), await PutAsync("# requirements"), await PutAsync("# plan"), await PutAsync("other"));
+        var now = DateTimeOffset.UtcNow;
+        await records.AppendAsync(new RecordBatch(
+            [
+                new RunRecord("r1", null, "std:templates/epic_delivery", "running", "x", [], false, now, null),
+                new RunRecord("r1.c", "r1", "std:templates/ticket_delivery", "running", "x", [], false, now, null),
+            ],
+            [
+                new WaitRecord("r1.c", "gate-1", "gate", "approve_spec", "ticket.spec_approval", "Approve?", ["approved", "rejected"], true, now,
+                    [new ConsumedRef("requirements", "requirements", requirements), new ConsumedRef("delivery_plan", "delivery_plan", plan), new ConsumedRef("parent/contract", "contract", contract)]),
+            ],
+            Artifacts:
+            [
+                new ArtifactRecord("r1", "design", 1, "contract", null, contract, null, false, now),
+                new ArtifactRecord("r1", "design", 1, "notes", null, unnamed, null, false, now),
+                new ArtifactRecord("r1.c", "plan.plan", 1, "requirements", null, requirements, null, false, now),
+                new ArtifactRecord("r1.c", "plan.plan", 1, "delivery_plan", null, plan, null, false, now),
+            ]), ct);
+        var viewer = Start("viewer");
+
+        using var shown = await viewer.GetAsync("runs/r1.c", ct);
+        var gate = Assert.Single(JsonSerializer.Deserialize<RunDetail>(await shown.Content.ReadAsStringAsync(ct), ApiJson.Options)!.Waits);
+        Assert.Equal([("requirements", requirements), ("delivery_plan", plan), ("parent/contract", contract)], gate.Consumed.Select(c => (c.Key, c.Ref)));
+
+        async Task<HttpStatusCode> ReadAsync(HttpClient http, string run, string reference)
+        {
+            using var response = await http.GetAsync($"runs/{run}/artifacts/{Uri.EscapeDataString(reference)}", ct);
+            return response.StatusCode;
+        }
+
+        // The parent's contract the child's gate ratifies reads through the child (LOG 394); another of the parent's does not.
+        Assert.Equal(HttpStatusCode.OK, await ReadAsync(viewer, "r1.c", contract));
+        Assert.Equal(HttpStatusCode.NotFound, await ReadAsync(viewer, "r1.c", unnamed));
+        Assert.Equal(HttpStatusCode.NotFound, await ReadAsync(Start(), "r1.c", contract));
     }
 }

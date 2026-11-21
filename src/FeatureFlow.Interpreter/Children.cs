@@ -5,7 +5,8 @@ namespace FeatureFlow.Interpreter;
 
 /// <summary>
 /// What a child run starts with (docs/03 section 9.2): its workflow id (its run id), template, parameters as JSON text, the
-/// repositories it is given, its tracker issue, and this run's artifacts as they are now, as its parent's and its root's.
+/// repositories it is given, its tracker issue, this run's artifacts as they are now, as its parent's and its root's, and this
+/// run's rendered run context, which the child's agents read first (docs/04 section 3.5; LOG 19).
 /// </summary>
 public sealed record ChildSpec(
     string WorkflowId,
@@ -14,7 +15,8 @@ public sealed record ChildSpec(
     IReadOnlyList<string> Repositories,
     string? TrackerIssue,
     IReadOnlyDictionary<string, string> ParentArtifacts,
-    IReadOnlyDictionary<string, string>? RootArtifacts);
+    IReadOnlyDictionary<string, string>? RootArtifacts,
+    string? ParentContext = null);
 
 /// <summary>
 /// Child runs (docs/03 section 9; docs/02 section 3): the core decides when a <c>run.child</c> step starts its child
@@ -40,7 +42,7 @@ public sealed partial class RunCore
         var repositories = (inputs.GetValueOrDefault("repositories") as IEnumerable<object?> ?? Run.Repositories)
             .Select(r => RepositoryNames.As(r?.ToString() ?? "", Run.Repositories)).ToList();
         return new ChildSpec($"{Run.Id}.{stepId}.{execution}", template, parameters, repositories, inputs.GetValueOrDefault("tracker_issue") as string,
-            artifacts, Run.ParentId is null ? artifacts : Run.RootArtifacts);
+            artifacts, Run.ParentId is null ? artifacts : Run.RootArtifacts, RunContext());
     }
 
     /// <summary>The <c>run.child</c> step that started a running child, or null when no running child has that workflow id.</summary>

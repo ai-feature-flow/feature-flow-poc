@@ -60,11 +60,16 @@ public sealed class ApiWorld : IAsyncDisposable
     readonly string folder = Path.Combine(Path.GetTempPath(), "ff-apiw-" + Guid.NewGuid().ToString("N"));
     readonly Microsoft.AspNetCore.Builder.WebApplication app;
 
-    public ApiWorld(OrganisationConfig? organisation = null, IReadOnlyList<IAuthenticator>? authenticators = null, ApiAuthConfig? auth = null)
+    /// <summary>
+    /// An API over <paramref name="records"/>, else a SQLite store of its own. A given store is shared: each test uses run
+    /// ids of its own there.
+    /// </summary>
+    public ApiWorld(OrganisationConfig? organisation = null, IReadOnlyList<IAuthenticator>? authenticators = null, ApiAuthConfig? auth = null,
+        IRecordStoreProvider? records = null)
     {
         Directory.CreateDirectory(folder);
         File.WriteAllText(Path.Combine(folder, "secrets.json"), """{ "api_token": "right" }""");
-        Records = new SqliteRecordStore(Path.Combine(folder, "records.db"));
+        Records = records ?? new SqliteRecordStore(Path.Combine(folder, "records.db"));
         var providers = new ProviderSet(
             new Dictionary<string, IReadOnlyDictionary<string, IProvider>>
             {
@@ -80,18 +85,30 @@ public sealed class ApiWorld : IAsyncDisposable
         {
             Authenticators = authenticators ?? [new HeaderAuthenticator()],
             PeopleRoles = new OrganisationRoles(Organisation),
+            // The change feed polls only when a test says (ChangeFeed.PollAsync), and its heartbeat runs on Time.
+            EventPoll = Timeout.InfiniteTimeSpan,
+            Time = Time,
         }, "http://127.0.0.1:0");
         app.StartAsync().GetAwaiter().GetResult();
         Address = new Uri(app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First());
     }
 
-    public SqliteRecordStore Records { get; }
+    public IRecordStoreProvider Records { get; }
+
+    /// <summary>The change feed's clock: advance it to send the heartbeat.</summary>
+    public Microsoft.Extensions.Time.Testing.FakeTimeProvider Time { get; } = new();
+
+    /// <summary>The API's change feed (<c>GET /events</c>): poll it to read the changes appended since.</summary>
+    public ChangeFeed Feed => app.Services.GetRequiredService<ChangeFeed>();
 
     public FakeTemporal Temporal { get; } = new();
 
     public OrganisationConfig Organisation { get; }
 
     public Uri Address { get; }
+
+    /// <summary>The API's services, such as its routes (<c>EndpointDataSource</c>).</summary>
+    public IServiceProvider Services => app.Services;
 
     public async ValueTask DisposeAsync()
     {

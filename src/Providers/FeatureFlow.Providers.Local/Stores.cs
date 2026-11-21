@@ -130,6 +130,8 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
             """);
         CreateLedger(connection);
         CreateSteering(connection);
+        CreateChanges(connection);
+        CreateOpenWaits(connection);
     }
 
     /// <summary>One organisation per installation; the key is there from the start (docs/02 section 5).</summary>
@@ -217,6 +219,7 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
                 ("$o", Org), ("$r", a.RunId), ("$s", a.StepId), ("$e", a.Execution), ("$n", a.Name), ("$b", JsonSerializer.Serialize(a, Json)));
         AppendLedger(connection, records);
         AppendSteering(connection, records);
+        AppendChanges(connection, records);
         transaction.Commit();
         return Task.FromResult(ProviderResult<Unit>.Success(default));
     }
@@ -230,6 +233,7 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
         string P(string key) => parameters.TryGetValue(key, out var value) ? value : throw new ArgumentException($"query {queryName} needs {key}");
         (string Sql, Type Type, (string, object?)[] Args) query = queryName switch
         {
+            Queries.Changes or Queries.LatestChange => ChangesQuery(queryName, parameters),
             Queries.Run => ("SELECT body FROM runs WHERE org_id = $o AND run_id = $r", typeof(RunRecord), [("$r", P("run_id"))]),
             Queries.Runs when parameters.ContainsKey("parent_run_id") =>
                 ("SELECT body FROM runs WHERE org_id = $o AND parent_run_id = $p ORDER BY run_id", typeof(RunRecord), [("$p", P("parent_run_id"))]),
@@ -237,6 +241,7 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
             Queries.Waits when parameters.GetValueOrDefault("open") == "true" =>
                 ("SELECT body FROM waits WHERE org_id = $o AND run_id = $r AND open = 1 ORDER BY wait_id", typeof(WaitRecord), [("$r", P("run_id"))]),
             Queries.Waits => ("SELECT body FROM waits WHERE org_id = $o AND run_id = $r ORDER BY wait_id", typeof(WaitRecord), [("$r", P("run_id"))]),
+            Queries.OpenWaits => (OpenWaitsSql, typeof(OpenWaitRecord), []),
             Queries.Timeline => ("SELECT body FROM timeline WHERE org_id = $o AND run_id = $r AND sequence > $a ORDER BY sequence", typeof(TimelineRecord),
                 [("$r", P("run_id")), ("$a", long.Parse(parameters.GetValueOrDefault("after", "0"), System.Globalization.CultureInfo.InvariantCulture))]),
             Queries.Answers => ("SELECT body FROM answers WHERE org_id = $o AND run_id = $r ORDER BY id", typeof(AnswerRecord), [("$r", P("run_id"))]),
@@ -330,4 +335,47 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
             Execute(connection, "INSERT OR REPLACE INTO session_checks VALUES ($o, $s, $c, $b)",
                 ("$o", Org), ("$s", c.SessionId), ("$c", c.CheckId), ("$b", JsonSerializer.Serialize(c, Json)));
     }
+
+    // ---- Changes (docs/06 section 3.12, LOG 397): what GET /events reports, written in the batch's transaction ----
+
+    static void CreateChanges(SqliteConnection connection) =>
+        Execute(connection, """
+            CREATE TABLE IF NOT EXISTS changes (org_id TEXT NOT NULL, id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, kind TEXT NOT NULL, wait_id TEXT, at TEXT NOT NULL);
+            """);
+
+    /// <summary>The batch's changes (<see cref="ChangeKinds.Of"/>). SQLite has one writer at a time, so the ids are in commit order.</summary>
+    static void AppendChanges(SqliteConnection connection, RecordBatch records)
+    {
+        foreach (var (runId, kind, waitId) in ChangeKinds.Of(records))
+            Execute(connection, "INSERT INTO changes (org_id, run_id, kind, wait_id, at) VALUES ($o, $r, $k, $w, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
+                ("$o", Org), ("$r", runId), ("$k", kind), ("$w", waitId));
+    }
+
+    const string ChangeJson = "SELECT json_object('sequence', id, 'runId', run_id, 'kind', kind, 'waitId', wait_id, 'at', at) FROM changes WHERE org_id = $o";
+
+    static (string Sql, Type Type, (string, object?)[] Args) ChangesQuery(string queryName, IReadOnlyDictionary<string, string> parameters) =>
+        queryName == Queries.LatestChange
+            ? (ChangeJson + " ORDER BY id DESC LIMIT 1", typeof(ChangeRecord), [])
+            : (ChangeJson + " AND id > $a ORDER BY id LIMIT $l", typeof(ChangeRecord), [("$a", After(parameters)), ("$l", Limit(parameters))]);
+
+    internal static long After(IReadOnlyDictionary<string, string> parameters) =>
+        long.Parse(parameters.GetValueOrDefault("after", "0"), System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>A page of changes: <c>limit</c>, at most 500 (the default).</summary>
+    internal static int Limit(IReadOnlyDictionary<string, string> parameters) =>
+        Math.Clamp(int.Parse(parameters.GetValueOrDefault("limit", "500"), System.Globalization.CultureInfo.InvariantCulture), 1, 500);
+
+    // ---- Oversight (A3): the open waits of runs still going, for GET /attention ----
+
+    static void CreateOpenWaits(SqliteConnection connection) =>
+        Execute(connection, "CREATE INDEX IF NOT EXISTS waits_open ON waits (org_id) WHERE open = 1");
+
+    /// <summary>Every open wait of a <c>starting</c> or <c>running</c> run, with the run, oldest first, at most 500 (<see cref="Queries.OpenWaits"/>).</summary>
+    const string OpenWaitsSql = """
+        SELECT json_object('wait', json(w.body), 'run', json(r.body))
+        FROM waits w JOIN runs r ON r.org_id = w.org_id AND r.run_id = w.run_id
+        WHERE w.org_id = $o AND w.open = 1 AND json_extract(r.body, '$.status') IN ('starting', 'running')
+        ORDER BY json_extract(w.body, '$.updatedAt'), w.run_id, w.wait_id
+        LIMIT 500
+        """;
 }

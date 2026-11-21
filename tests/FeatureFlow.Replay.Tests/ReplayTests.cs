@@ -24,7 +24,7 @@ public class ReplayTests
     {
         // Without this, a missing folder would leave the theory with no cases and nothing replayed.
         Assert.Equal(["agent_question", "budget_middle", "decision_prompt", "delivery_tracked", "epic_delivery", "epic_delivery_child", "family_child", "family_parent", "merge_action",
-                "project_session", "question_timeout", "silent_parent_resumed", "sp1_parent", "sp1_parent_resumed", "steering_line", "steering_rerun_branch", "ticket_clean_up", "ticket_delivery",
+                "project_session", "question_timeout", "reminder", "silent_parent_resumed", "sp1_parent", "sp1_parent_resumed", "steering_line", "steering_rerun_branch", "ticket_clean_up", "ticket_delivery",
                 "wait_hand_over", "wait_hand_over_resumed", "wake"],
             Names());
     }
@@ -55,6 +55,7 @@ public class ReplayTests
     [InlineData("merge_action", "update answer")]
     [InlineData("merge_action", "text merge_action")]
     [InlineData("merge_action", "signal wake")]
+    [InlineData("reminder", "text \"Kind\":\"reminded\",\"StepId\":\"gate-1\",\"Detail\":\"2\"")]
     public void A_history_takes_the_path_it_covers(string name, string evidence)
     {
         var (kind, value) = (evidence[..evidence.IndexOf(' ')], evidence[(evidence.IndexOf(' ') + 1)..]);

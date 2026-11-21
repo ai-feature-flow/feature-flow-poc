@@ -112,7 +112,7 @@ reports.
 | Outcomes | Declared |
 | Idempotency | Re-attach to the sandbox by key; resume the agent session by its recorded reference |
 | Limits | Engine defaults: attempts 3, timeout 4 hours, correction turns 2. `limits.timeout` runs from the step's first attempt, kept in the record store, and time the step spends on an open question does not count toward it (the deadline moves out by that time; LOG 106). At the deadline the session is stopped, its commits kept on the hidden reference, and the attempt fails as a work error, "ran out of time"; a retry after the activity's own timeout finds the deadline passed and fails the same way |
-| Artifacts | In: the rendered task, skills, resources, consumed artifacts, the run context. Out: declared artifacts, the transcript, the record of files opened, the session reference |
+| Artifacts | In: the rendered task, skills, resources, consumed artifacts, the run context. Out: declared artifacts, each session's prompt and transcript (indexed as `prompt:<n>` and `transcript:<n>` for people to read, never consumed by a parent run; LOG 393), the record of files opened, the session reference |
 
 ### 3.1 Lifecycle of an attempt
 
@@ -129,15 +129,19 @@ reports.
    agent's output folder. A step that consumes the reserved name
    `findings_ledger` is given the ledger's current view, every finding with its
    ledger id and state, in the shape of a findings report (LOG 63).
-2. **Start.** Render the task, prepend the library's reporting preamble, and
-   start the agent runtime in the sandbox with the role's tools.
+2. **Start.** Render the task, prepend the library's reporting preamble and
+   the run context (section 3.5), store it and index it as `prompt:<n>` (n the
+   session's number), and start the agent runtime in the sandbox with the
+   role's tools.
 3. **Supervise.** Heartbeat. About every 30 seconds, ask the VCS provider
    whether the working copy has new commits; if so, push them to the hidden
    work-in-progress reference. Serve hook calls, the engine tools (section 3.3)
    and questions.
-4. **Collect.** When the agent reports, read its result from the runtime (the
-   report is a hint; the read confirms, `docs/02`). Commit leftover changes
-   unless `on_uncommitted: fail`.
+4. **Collect.** When the session ends, index its transcript as
+   `transcript:<n>`, however it ended, so a failed attempt's transcript is
+   listed too (LOG 393). When the agent reports, read its result from the
+   runtime (the report is a hint; the read confirms, `docs/02`). Commit leftover
+   changes unless `on_uncommitted: fail`.
 5. **Verify.** Check the reported outcome is declared; check produced artifacts
    and outputs against their contracts; for a role with no write access, check
    nothing was committed. Each produced artifact is copied out once and its
@@ -149,7 +153,7 @@ reports.
    commands (formatters, generators) in the same sandbox and commit what they
    change as part of the step (from FF).
 7. **Finish.** Move the work branch to the final commit, once. Record the
-   summary for the run context. Store the transcript.
+   summary for the run context.
 
 ### 3.2 Resume after an interruption
 
@@ -221,10 +225,27 @@ ended, is refused. A question never routes the plan: the agent reads the answer
 
 ### 3.5 Run context
 
-Each agent step's summary is appended to the run's **context**, an artifact
-given to later agent steps with `context: full` (from FF's `context.md`). A
-child run's context starts with its parent's. A reviewer with `context: none`
-sees only its task and consumed artifacts.
+The run keeps a **context**: what it has learned that the next agent should
+know (from FF's `context.md`; LOG 405). The interpreter's core holds it in
+the run's state, carried over a hand-over, as entries of three kinds:
+
+| Kind | Added when | Text |
+|---|---|---|
+| `summary` | An agent step completes with a report summary | `<step> reported <outcome>: <summary>`, the summary at most 2 KB (LOG 19) |
+| `answer` | A person answers a gate, an intervention, a breakpoint or a patch approval (not a question, whose answer is its agent's alone) | `<decision type> at <step>: <choice> by <actor>: <reason>` |
+| `retry_cause` | An attempt fails with a work error | `attempt <n> of <step> failed: <reason>`. An infrastructure retry is not a cause the agent can act on and is left out |
+
+The core renders the context in Markdown (`## Run context`, then one bullet per
+entry, oldest first) into the agent step's specification when the step starts,
+and the agent worker writes it into the prompt between `## This step` and the
+task, so it is in the stored prompt. A run keeps at most 64 entries, each at
+most 4.5 KB (cut and marked `[...]`), so one entry, such as several people's
+joined reasons or a long failure, cannot fill the rendering (LOG 433); the
+rendering is at most 16 KB: the oldest entries are dropped first, with a line
+saying how many. A child run starts with its parent's context as it was when
+the child started, rendered first under `### From the parent run`. A step with
+`context: none` (a reviewer) is given no context, only its task and consumed
+artifacts.
 
 ### 3.6 Outputs the engine publishes for every agent step
 
@@ -261,11 +282,11 @@ One mechanism for every human wait (`docs/01` section 7).
 
 | Element | Detail |
 |---|---|
-| Form | A durable wait in the workflow. No timeout, except a question's (section 3.4); reminders on an open wait are A3 (`docs/12`) |
+| Form | A durable wait in the workflow. No timeout, except a question's (section 3.4). Reminded once per `notifications.reminder_interval` while open (below) |
 | Inputs | `type`, `prompt`, `with`, optional `auto`, optional `session` (`docs/03` section 2.3) |
 | Outcomes | Declared |
 | Idempotency | By wait id. A recorded answer is never asked again: the same answer again succeeds and changes nothing, a different one is refused as a conflict |
-| Audit | Opened and answered, with the authenticated actor and the choice; reminders and a required reason are A3 (`docs/12`) |
+| Audit | Opened, reminded and answered, with the authenticated actor, the choice and the person's reason (section 4.1) |
 
 Every wait is held in the interpreter's core, and every answer goes through one
 routing function (LOG 364). The update's validator asks it whether an answer
@@ -287,9 +308,27 @@ decided, its step was skipped, or the run ended). The closed waits are carried
 across a hand-over with the rest of the core's state, so a repeated answer is
 still a duplicate in the next run. The record store's wait record has kind
 `gate`, `question`, `intervention`, `patch_approval` or `breakpoint`, the decision
-type, the choices that answer it and the text to show; wait ids are `gate-N`,
+type, the choices that answer it and the text to show (its `prompt`; "reason"
+means only a person's, LOG 389); a gate's also names each artifact its step
+consumes, with its key and its reference as the gate opened, the exact revisions
+the person ratifies (LOG 394); wait ids are `gate-N`,
 `intervention-N`, `breakpoint-N` and `patch_approval-N`, and a question's is the
 id its agent's client gave it (LOG 360).
+
+Every open wait, of every kind, questions included, is **reminded** while it is
+open when the organisation sets `notifications.reminder_interval` (`docs/07`
+section 3; no default, LOG 401, 403). The interval is fixed for a run when
+it starts, in its policy. As a wait opens the core asks the shell to arm
+reminder 1 after one interval; the shell only sleeps and gives the core the
+reminder's number back. If the wait is still open and that is its next reminder,
+the core counts it on the wait, writes `reminded` with the number on the
+timeline (on the wait's id), and arms the next; otherwise, a repeated or late
+reminder or a closed wait's, it does nothing. The core keeps no clock, so the
+timer is relative: after a hand-over each open wait's next reminder is armed a
+whole interval from the new run's start, up to one interval late (LOG 402).
+The notifier sends each `reminded` entry whose wait is still open as the
+`reminder` event, the decision request again with its number, once per wait and
+number (`docs/06` section 3.10).
 
 ### 4.1 Answering
 
@@ -297,6 +336,19 @@ The API authenticates the person, checks organisation policy for the decision
 type, records the answer, then delivers it to the workflow. The workflow trusts
 the API (`docs/02`). A decision may be answered from chat where policy allows
 that type.
+
+Every answer but a question's carries the person's **reason**, and so does an
+abort: the API refuses one without (400), not the core, which trusts the API
+(LOG 391). A question's answer is its text, which the agent reads (LOG
+392). Two answers are given by the engine: a chat button, which carries no
+words, answers with `answered with a <source> button`, and a session's
+submission with no reason of its own with `submitted <revision>`. The reason is
+not part of the answer's identity: the same choice in other words is a
+duplicate, and people who answer the same way in different words count
+together towards `min_count` (`docs/05` section 3.2), the delivered answer
+carrying each one's reason (`ann: <reason>; cat: <reason>`). The core records
+the reason on the closed wait, on the timeline (`<choice> by <actor>:
+<reason>`) and in the run context (section 3.5).
 
 ### 4.2 Auto-resolution
 

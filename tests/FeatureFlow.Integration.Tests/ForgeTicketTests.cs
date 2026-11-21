@@ -155,7 +155,7 @@ public class ForgeTicketTests
         var view = await h.ShowAsync(id);
         Assert.True(exit == 0, end + error + view.ToJsonString());
         Assert.Equal($"run {id} completed", end.Trim());
-        Assert.Contains(view["timeline"]!.AsArray(), e => e!["stepId"]!.ToString() == "verify.review.review_0.assess"
+        Assert.Contains(view["timeline"]!.AsArray(), e => e!["step_id"]!.ToString() == "verify.review.review_0.assess"
                                                           && e["detail"]?.ToString().Contains("changed_files_unread=0", StringComparison.Ordinal) == true);
         var landed = forge.Resolve(repo, "ff/epic/E-2")!;
         Assert.Equal("a sibling ticket's work\n", forge.ReadFile(repo, landed, "sibling.txt"));
@@ -202,9 +202,11 @@ public class ForgeTicketTests
         var planned = forge.Resolve(repo, "ff/ticket/T-5")!;          // the planner is read-only: where it started
         var stray = forge.Commit(repo, "refs/heads/ff/ticket/T-5", new Dictionary<string, string?> { ["stray.txt"] = "not wanted\n" });
 
-        Assert.Equal(0, h.Cli("answer", id, approval!, "rejected").Exit);
+        Assert.Equal(0, h.Cli("answer", id, approval!, "rejected", "--reason", "the specification omits the audit log").Exit);
         var again = await WaitForAnotherWaitAsync(h, id, approval!);
 
+        // F5: the planner's second execution is told why, in the prompt a viewer reads through the artifact routes (review R1).
+        Assert.Contains(await h.PromptsAsync(id, "plan.plan", 2), p => p.Contains("the specification omits the audit log", StringComparison.Ordinal));
         Assert.Equal(planned, forge.Resolve(repo, "ff/ticket/T-5"));
         Assert.Equal(stray, forge.Resolve(repo, $"refs/feature-flow/superseded/{id}/plan.plan/{stray[..12]}"));
         var trace = Trace(await h.ShowAsync(id));
@@ -232,8 +234,8 @@ public class ForgeTicketTests
         await WaitForAnotherWaitAsync(h, id, approval!);
 
         var wait = (await h.ShowAsync(id))["waits"]!.AsArray().Single()!;
-        Assert.Equal(("intervention", "plan.plan"), (wait["kind"]!.ToString(), wait["stepId"]!.ToString()));
-        Assert.Contains("its clean_up could not reset the work branch", wait["reason"]!.ToString(), StringComparison.Ordinal);
+        Assert.Equal(("intervention", "plan.plan"), (wait["kind"]!.ToString(), wait["step_id"]!.ToString()));
+        Assert.Contains("its clean_up could not reset the work branch", wait["prompt"]!.ToString(), StringComparison.Ordinal);
         Assert.Equal(stray, forge.Resolve(repo, "ff/ticket/T-6"));
         h.Cli("abort", id, "--reason", "test done");
     }
@@ -267,7 +269,7 @@ public class ForgeTicketTests
         var deadline = DateTime.UtcNow + TimeSpan.FromMinutes(2);
         while (DateTime.UtcNow < deadline)
         {
-            if ((await h.ShowAsync(id))["waits"]!.AsArray().Select(w => w!["waitId"]!.ToString()).FirstOrDefault(w => w != previous) is { } next)
+            if ((await h.ShowAsync(id))["waits"]!.AsArray().Select(w => w!["wait_id"]!.ToString()).FirstOrDefault(w => w != previous) is { } next)
                 return next;
             await Task.Delay(200, TestContext.Current.CancellationToken);
         }

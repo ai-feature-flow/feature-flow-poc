@@ -1,5 +1,4 @@
 using System.Net;
-using System.Text.Json;
 using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Model;
 using FeatureFlow.Providers.Abstractions;
@@ -9,7 +8,8 @@ namespace FeatureFlow.Api.Tests;
 /// <summary>
 /// M7's first done-when: every run-time override of docs/05 section 5 has a test showing who may and who may not use it,
 /// with the default roles, with <c>policy.overrides</c> changing them, and for the protected and beyond-ceiling variants.
-/// The verified-by: a request asserting another actor in its body is recorded and delivered with the authenticated one.
+/// The verified-by: an override is recorded and delivered with the authenticated actor, and a body that names an actor is
+/// refused before anything is recorded (F8).
 /// </summary>
 public sealed class OverrideAuthorisationTests
 {
@@ -27,14 +27,14 @@ public sealed class OverrideAuthorisationTests
         return world;
     }
 
-    /// <summary>How each override key is asked for: its route and a body claiming the actor <c>mallory</c>.</summary>
+    /// <summary>How each override key is asked for: its route and its body.</summary>
     static (string Path, string Body) Request(string key) => key switch
     {
-        Overrides.Answer => ($"runs/{Run}/answers", """{ "wait_id": "gate-1", "outcome": "approved", "actor": "mallory" }"""),
-        Overrides.AnswerQuestion => ($"runs/{Run}/answers", """{ "wait_id": "question-1", "outcome": "yes", "actor": "mallory" }"""),
-        Overrides.Recover => ($"runs/{Run}/answers", """{ "wait_id": "intervention-1", "action": "retry", "actor": "mallory" }"""),
-        Overrides.Abort => ($"runs/{Run}/abort", """{ "reason": "stop", "actor": "mallory" }"""),
-        _ => ($"runs/{Run}/overrides", $$"""{ "key": "{{key}}", "step_id": "implement", "reason": "test", "change": { "x": "1" }, "actor": "mallory" }"""),
+        Overrides.Answer => ($"runs/{Run}/answers", """{ "wait_id": "gate-1", "outcome": "approved", "reason": "looks right" }"""),
+        Overrides.AnswerQuestion => ($"runs/{Run}/answers", """{ "wait_id": "question-1", "outcome": "yes" }"""),
+        Overrides.Recover => ($"runs/{Run}/answers", """{ "wait_id": "intervention-1", "action": "retry", "reason": "flaky" }"""),
+        Overrides.Abort => ($"runs/{Run}/abort", """{ "reason": "stop" }"""),
+        _ => ($"runs/{Run}/overrides", $$"""{ "key": "{{key}}", "step_id": "implement", "reason": "test", "change": { "x": "1" } }"""),
     };
 
     /// <summary>
@@ -69,7 +69,7 @@ public sealed class OverrideAuthorisationTests
         Assert.True(allowed == HttpStatusCode.OK, text);
         var delivered = Assert.Single(world.Temporal.Updates);
         Assert.Equal(Run, delivered.WorkflowId);
-        // F8: the body's actor is ignored; the record and the delivered update carry the authenticated one.
+        // F8: the record and the delivered update carry the authenticated actor.
         Assert.Equal("lee", delivered.Argument switch
         {
             AnswerArgs a => a.Actor,
@@ -81,7 +81,25 @@ public sealed class OverrideAuthorisationTests
             .Concat((await world.QueryAsync<OverrideRecord>(Queries.Overrides, Run)).Select(o => o.Actor)).ToList();
         Assert.NotEmpty(actors);
         Assert.All(actors, a => Assert.Equal("lee", a));
-        Assert.DoesNotContain("mallory", JsonSerializer.Serialize(delivered.Argument));
+    }
+
+    /// <summary>F8: a body cannot name the actor. Naming one is a property no request record has, refused before anything is recorded or sent.</summary>
+    [Theory]
+    [InlineData(Overrides.Answer)]
+    [InlineData(Overrides.Recover)]
+    [InlineData(Overrides.Abort)]
+    [InlineData(Overrides.Skip)]
+    public async Task A_body_that_names_an_actor_is_refused_and_nothing_is_recorded(string key)
+    {
+        await using var world = await WorldAsync();
+        var (path, body) = Request(key);
+
+        var (status, text) = await ApiWorld.PostAsync(world.As("ada", "admin"), path, """{ "actor": "mallory",""" + body[1..]);
+
+        Assert.Equal((HttpStatusCode.BadRequest, true, true), (status, text.Contains("actor", StringComparison.Ordinal), text.Contains("could not be mapped", StringComparison.Ordinal)));
+        Assert.Empty(world.Temporal.Updates);
+        Assert.Empty(await world.QueryAsync<AnswerRecord>(Queries.Answers, Run));
+        Assert.Empty(await world.QueryAsync<OverrideRecord>(Queries.Overrides, Run));
     }
 
     /// <summary>
@@ -132,7 +150,7 @@ public sealed class OverrideAuthorisationTests
     public async Task Granting_attempts_at_an_intervention_goes_beyond_the_hard_ceiling_only_for_an_administrator()
     {
         await using var world = await WorldAsync();
-        const string body = """{ "wait_id": "intervention-1", "action": "grant_attempts", "attempts": 50 }""";
+        const string body = """{ "wait_id": "intervention-1", "action": "grant_attempts", "attempts": 50, "reason": "nearly there" }""";
 
         Assert.Equal(HttpStatusCode.Forbidden, (await ApiWorld.PostAsync(world.As("al", "approver"), $"runs/{Run}/answers", body)).Status);
         Assert.Equal(HttpStatusCode.OK, (await ApiWorld.PostAsync(world.As("sam", "steerer"), $"runs/{Run}/answers", body)).Status);
@@ -189,12 +207,41 @@ public sealed class OverrideAuthorisationTests
         Assert.Equal(HttpStatusCode.OK, (await ApiWorld.PostAsync(world.As("lee", groups: "leads"), "runs/web/overrides", body)).Status);
         Assert.Equal(HttpStatusCode.OK, (await ApiWorld.PostAsync(world.As("lee", groups: "leads"), "runs/pay/overrides", body)).Status);
         Assert.Equal(HttpStatusCode.OK, (await ApiWorld.PostAsync(world.As("pia", groups: "payments-leads"), "runs/pay/overrides", body)).Status);
-        Assert.Equal(HttpStatusCode.Forbidden, (await ApiWorld.PostAsync(world.As("pia", groups: "payments-leads"), "runs/web/overrides", body)).Status);
         // Reading needs viewer, which a steerer holds; a person with no role in the scope does not see the run.
         using var response = await world.As("pia", groups: "payments-leads").GetAsync("runs", TestContext.Current.CancellationToken);
         var listed = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         Assert.Contains("\"pay\"", listed, StringComparison.Ordinal);
         Assert.DoesNotContain("\"web\"", listed, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A write route answers a caller who does not view the run as it answers for a run that does not exist (404), as the
+    /// read routes do, so it does not reveal that the run exists.
+    /// </summary>
+    [Fact]
+    public async Task A_caller_who_does_not_view_the_run_is_told_it_does_not_exist_on_every_write_route()
+    {
+        var organisation = new OrganisationConfig("acme", [], new PolicyConfig([], null, null, null, null), "")
+        {
+            Teams = new Dictionary<string, TeamConfig>
+            {
+                ["payments"] = new("payments", ["acme/payments-*"], [], new Dictionary<string, PeopleRoleConfig> { ["admin"] = new(["payments-leads"]) }),
+            },
+        };
+        await using var world = new ApiWorld(organisation);
+        await world.RunAsync("web", "acme/web");
+        await world.WaitAsync("web", "w1", "gate", "ticket.spec_approval");
+        var pia = world.As("pia", groups: "payments-leads");
+
+        foreach (var run in new[] { "web", "none" })
+        {
+            var answer = await ApiWorld.PostAsync(pia, $"runs/{run}/answers", """{ "wait_id": "w1", "outcome": "approved", "reason": "r" }""");
+            var abort = await ApiWorld.PostAsync(pia, $"runs/{run}/abort", """{ "reason": "r" }""");
+            var @override = await ApiWorld.PostAsync(pia, $"runs/{run}/overrides", """{ "key": "breakpoint", "step_id": "implement", "reason": "r", "change": { "set": "true" } }""");
+            Assert.Equal((HttpStatusCode.NotFound, HttpStatusCode.NotFound, HttpStatusCode.NotFound), (answer.Status, abort.Status, @override.Status));
+        }
+
+        Assert.Empty(world.Temporal.Updates);
     }
 
     [Fact]
@@ -227,14 +274,14 @@ public sealed class OverrideAuthorisationTests
             Overrides = new Dictionary<string, IReadOnlyList<string>> { [Overrides.Recover] = ["admin"], [Overrides.GrantAttempts] = ["steerer"] },
         }, "");
         await using var world = await WorldAsync(organisation);
-        const string grant = """{ "wait_id": "intervention-1", "action": "grant_attempts", "attempts": 1 }""";
+        const string grant = """{ "wait_id": "intervention-1", "action": "grant_attempts", "attempts": 1, "reason": "one more" }""";
 
         Assert.Equal(HttpStatusCode.Forbidden, (await ApiWorld.PostAsync(world.As("sam", "steerer"), $"runs/{Run}/answers", grant)).Status);
         var noGrant = organisation with { Policy = organisation.Policy with { Overrides = new Dictionary<string, IReadOnlyList<string>> { [Overrides.GrantAttempts] = ["approver"] } } };
         await using var other = await WorldAsync(noGrant);
         Assert.Equal(HttpStatusCode.Forbidden, (await ApiWorld.PostAsync(other.As("sam", "steerer"), $"runs/{Run}/answers", grant)).Status);
         Assert.Equal(HttpStatusCode.OK, (await ApiWorld.PostAsync(other.As("sam", "steerer"), $"runs/{Run}/answers",
-            """{ "wait_id": "intervention-1", "action": "retry" }""")).Status);
+            """{ "wait_id": "intervention-1", "action": "retry", "reason": "flaky" }""")).Status);
         Assert.Equal(HttpStatusCode.OK, (await ApiWorld.PostAsync(world.As("ada", "admin"), $"runs/{Run}/answers", grant)).Status);
     }
 
@@ -244,7 +291,9 @@ public sealed class OverrideAuthorisationTests
     [InlineData("""{ "key": "skip_protected", "reason": "r" }""", "key must be one of")]
     [InlineData("""{ "key": "launch", "reason": "r" }""", "key must be one of")]
     [InlineData("""{ "key": "skip", "step_id": "implement" }""", "reason is required")]
-    [InlineData("""{ "key": "skip", "reason": "r", "change": "x" }""", "change must be an object")]
+    [InlineData("""{ "key": "skip", "reason": "r", "change": "x" }""", "the body is not a valid request")]
+    [InlineData("""{ "key": "skip", "reason": "r", "change": { "n": 2 } }""", "the body is not a valid request")]
+    [InlineData("""{ "reason": "r" }""", "missing required properties")]
     public async Task A_malformed_override_is_refused_before_anything_is_recorded(string body, string message)
     {
         await using var world = await WorldAsync();
@@ -259,7 +308,7 @@ public sealed class OverrideAuthorisationTests
         await using var world = await WorldAsync();
         world.Temporal.Reply = "skipped";
         var (status, _) = await ApiWorld.PostAsync(world.As("sam", "steerer"), $"runs/{Run}/overrides",
-            """{ "key": "skip", "step_id": "verify", "reason": "flaky", "change": { "outcome": "passed", "n": 2 } }""");
+            """{ "key": "skip", "step_id": "verify", "reason": "flaky", "change": { "outcome": "passed", "n": "2" } }""");
 
         Assert.Equal(HttpStatusCode.OK, status);
         var records = await world.QueryAsync<OverrideRecord>(Queries.Overrides, Run);

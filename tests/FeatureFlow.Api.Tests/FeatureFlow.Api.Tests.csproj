@@ -3,8 +3,18 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\FeatureFlow.Api\FeatureFlow.Api.csproj" />
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Local\FeatureFlow.Providers.Local.csproj" />
+    <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Postgres\FeatureFlow.Providers.Postgres.csproj" />
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Slack\FeatureFlow.Providers.Slack.csproj" />
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.GitHub\FeatureFlow.Providers.GitHub.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- /attention and /events over a Postgres record store (Integration). -->
+    <Compile Include="..\Providers\Shared\Container.cs" Link="Container.cs" />
   </ItemGroup>
 
   <ItemGroup>

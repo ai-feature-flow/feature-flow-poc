@@ -98,7 +98,7 @@ public sealed class OidcTests : IAsyncDisposable
     }
 
     async Task<HttpStatusCode> AbortAsync(string token) =>
-        (await ApiWorld.PostAsync(With(token), "runs/r1/abort", """{ "reason": "stop", "actor": "mallory" }""")).Status;
+        (await ApiWorld.PostAsync(With(token), "runs/r1/abort", """{ "reason": "stop" }""")).Status;
 
     [Fact]
     public async Task A_valid_token_authenticates_its_subject_with_roles_from_its_groups()
@@ -113,6 +113,21 @@ public sealed class OidcTests : IAsyncDisposable
         Assert.Equal(HttpStatusCode.OK, read.StatusCode);
         using var unmapped = await With(Token(groups: ["sales"])).GetAsync("runs/r1", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, unmapped.StatusCode);
+    }
+
+    [Fact]
+    public async Task Me_names_the_tokens_subject_its_groups_and_the_roles_they_give()
+    {
+        await WorldAsync();
+
+        using var response = await With(Token(groups: ["eng", "leads", "sales"])).GetAsync("me", TestContext.Current.CancellationToken);
+        var me = JsonSerializer.Deserialize<FeatureFlow.Api.Contracts.MeResponse>(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken),
+            FeatureFlow.Api.Contracts.ApiJson.Options)!;
+
+        Assert.Equal(("ana", "api"), (me.Actor, me.Channel));
+        Assert.Equal(["eng", "leads", "sales"], me.Groups!);
+        Assert.Equal(["viewer", "approver", "steerer"], me.Roles);
+        Assert.Empty(me.Teams);
     }
 
     [Fact]
@@ -151,7 +166,7 @@ public sealed class OidcTests : IAsyncDisposable
     public async Task The_local_token_is_not_a_second_person_beside_oidc()
     {
         await WorldAsync(tokenRef: "secrets/api_token");
-        const string answer = """{ "wait_id": "w1", "outcome": "approved" }""";
+        const string answer = """{ "wait_id": "w1", "outcome": "approved", "reason": "agreed" }""";
 
         Assert.Equal(HttpStatusCode.Accepted, (await ApiWorld.PostAsync(With(Token("ann")), "runs/r1/answers", answer)).Status);
         var (local, text) = await ApiWorld.PostAsync(With("right"), "runs/r1/answers", answer);

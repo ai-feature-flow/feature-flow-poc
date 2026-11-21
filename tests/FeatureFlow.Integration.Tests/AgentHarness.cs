@@ -354,7 +354,7 @@ public sealed class AgentHarness : IAsyncDisposable
     {
         var output = new StringWriter();
         var error = new StringWriter();
-        var exit = CliApp.Run(["run", .. args, "--api", Api, "--token-file", TokenFile], output, error);
+        var exit = CliApp.Run(["run", .. Harness.WithReason(args), "--api", Api, "--token-file", TokenFile], output, error);
         return (exit, output.ToString(), error.ToString());
     }
 
@@ -372,7 +372,7 @@ public sealed class AgentHarness : IAsyncDisposable
     {
         using var http = new HttpClient();
         http.DefaultRequestHeaders.Authorization = new("Bearer", await File.ReadAllTextAsync(TokenFile));
-        return JsonNode.Parse(await http.GetStringAsync($"{Api}/runs/{runId}"))!;
+        return Harness.OpenWaitsOnly(JsonNode.Parse(await http.GetStringAsync($"{Api}/runs/{runId}"))!);
     }
 
     public async Task<string> WaitForEndAsync(string runId, TimeSpan timeout)
@@ -394,7 +394,7 @@ public sealed class AgentHarness : IAsyncDisposable
         (await ShowAsync(runId))["waits"]!.AsArray().Where(w => w!["kind"]!.ToString() == kind).Select(w => w!).ToList();
 
     public async Task<string> TimelineAsync(string runId) =>
-        string.Join("\n", (await ShowAsync(runId))["timeline"]!.AsArray().Select(e => $"{e!["kind"]} {e["stepId"]}: {e["detail"]}"));
+        string.Join("\n", (await ShowAsync(runId))["timeline"]!.AsArray().Select(e => $"{e!["kind"]} {e["step_id"]}: {e["detail"]}"));
 
     /// <summary>The records the agent worker wrote for a step, by its key.</summary>
     public async Task<IReadOnlyList<T>> RecordsAsync<T>(string query, string stepKey)
@@ -440,7 +440,7 @@ public sealed class AgentHarness : IAsyncDisposable
         while (DateTime.UtcNow < deadline)
         {
             if ((await WaitsAsync(runId, kind)).FirstOrDefault() is { } wait)
-                return wait["waitId"]!.ToString();
+                return wait["wait_id"]!.ToString();
             await Task.Delay(250);
         }
 

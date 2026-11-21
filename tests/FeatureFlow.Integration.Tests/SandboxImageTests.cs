@@ -101,6 +101,6 @@ public sealed class SandboxImageTests
         Assert.NotNull(await h.WaitForWaitAsync(id, TimeSpan.FromMinutes(3)));
 
         var wait = (await h.ShowAsync(id))["waits"]!.AsArray().Single()!;
-        Assert.Contains("matches none of its allowed_images", wait["reason"]!.ToString(), StringComparison.Ordinal);
+        Assert.Contains("matches none of its allowed_images", wait["prompt"]!.ToString(), StringComparison.Ordinal);
     }
 }

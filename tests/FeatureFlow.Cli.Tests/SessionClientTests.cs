@@ -1,5 +1,7 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
+using FeatureFlow.Api.Contracts;
 using FeatureFlow.Cli;
 using FeatureFlow.Interpreter.Wire;
 
@@ -21,15 +23,15 @@ public class SessionClientTests
             {
                 Posts++;
                 return Task.FromResult(Posts <= refusals
-                    ? Reply(HttpStatusCode.Conflict, $$"""{"error":"{{refusal}}"}""")
-                    : Reply(HttpStatusCode.OK, """{"check_id":"c1"}"""));
+                    ? Reply(HttpStatusCode.Conflict, new ErrorResponse(refusal))
+                    : Reply(HttpStatusCode.OK, new SessionCheckResponse("c1", "started")));
             }
 
-            return Task.FromResult(Reply(HttpStatusCode.OK, """{"checks":[{"check":{"checkId":"c1","status":"passed"},"detail":"valid"}]}"""));
+            return Task.FromResult(Reply(HttpStatusCode.OK, new SessionChecks([new SessionCheckView("c1", "check_requirements", Commit, "d", "passed", null, DateTimeOffset.UnixEpoch, "valid", null)])));
         }
 
-        static HttpResponseMessage Reply(HttpStatusCode status, string json) =>
-            new(status) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+        static HttpResponseMessage Reply<T>(HttpStatusCode status, T body) =>
+            new(status) { Content = new StringContent(JsonSerializer.Serialize(body, ApiJson.Options), Encoding.UTF8, "application/json") };
     }
 
     static SessionClient Client(FakeApi api) =>

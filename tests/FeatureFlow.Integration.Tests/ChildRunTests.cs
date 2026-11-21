@@ -44,12 +44,16 @@ public class ChildRunTests
         var notes = Assert.Single(start.ParentArtifacts!);
         Assert.Equal("notes", notes.Key);
         Assert.Equal(start.ParentArtifacts, start.RootArtifacts);
-        Assert.Contains(view["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "completed" && e["stepId"]!.ToString() == "read");
+        Assert.Contains(view["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "completed" && e["step_id"]!.ToString() == "read");
 
-        // The artifact index: each run's artifacts by step and execution, a parent's view including its children's.
-        var index = (await h.Host.Providers.Required<Providers.Abstractions.IRecordStoreProvider>("record_store").QueryAsync<Providers.Abstractions.ArtifactRecord>(
+        // The artifact index: each run's artifacts by step and execution, a parent's view including its children's. Each run
+        // also indexes its plan revision, and its agent steps' prompts and transcripts, for people to read (LOG 393, 404).
+        var all = (await h.Host.Providers.Required<Providers.Abstractions.IRecordStoreProvider>("record_store").QueryAsync<Providers.Abstractions.ArtifactRecord>(
             Providers.Abstractions.Queries.Artifacts, new Dictionary<string, string> { ["run_id"] = id }, TestContext.Current.CancellationToken)).Value!;
         var againId = $"{id}.again.1";
+        Assert.Equal([id, againId, childId],
+            all.Where(a => a.Name == Providers.Abstractions.ArtifactNames.PlanRevision).Select(a => a.RunId).Order(StringComparer.Ordinal));
+        var index = all.Where(a => !Providers.Abstractions.ArtifactNames.ForPeopleOnly(a)).ToList();
         Assert.Equal([(id, "write", "notes"), (childId, "use", "notes"), (childId, "use", "summary"), (againId, "use", "notes"), (againId, "use", "summary")],
             index.Select(a => (a.RunId, a.StepId, a.Name)));
         Assert.All(index, a => Assert.Equal(("m6:artifact_types/notes", null, false, 1), (a.Type, a.Action, a.Evidence, a.Execution)));
@@ -61,6 +65,11 @@ public class ChildRunTests
         Assert.NotEqual(own, index.First(a => a.RunId == childId && a.Name == "notes").Ref);
         var again = await StartOfAsync(h, againId);
         Assert.Equal(new Dictionary<string, string> { ["notes"] = own }, again.ParentArtifacts);
+
+        // F5: the child's agent is told what its parent's run had done: the parent's step summary, under its own heading (review R1).
+        var prompt = Assert.Single(await h.PromptsAsync(childId, "use", 1));
+        Assert.Contains("### From the parent run", prompt, StringComparison.Ordinal);
+        Assert.Contains("write: written", prompt, StringComparison.Ordinal);
         await h.RecordHistoryAsync(id, "family_parent");
         await h.RecordHistoryAsync(childId, "family_child");
     }
@@ -76,9 +85,9 @@ public class ChildRunTests
 
         Assert.NotNull(waitId);
         var wait = (await h.ShowAsync(id))["waits"]!.AsArray().Single()!;
-        Assert.Equal("use", wait["stepId"]!.ToString());
-        Assert.Contains("check 32", wait["reason"]!.ToString(), StringComparison.Ordinal);
-        Assert.Contains("parent/notes", wait["reason"]!.ToString(), StringComparison.Ordinal);
+        Assert.Equal("use", wait["step_id"]!.ToString());
+        Assert.Contains("check 32", wait["prompt"]!.ToString(), StringComparison.Ordinal);
+        Assert.Contains("parent/notes", wait["prompt"]!.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -122,7 +131,7 @@ public class ChildRunTests
         var record = await h.ShowAsync(id);
         Assert.True(end.Trim() == $"run {id} failed", $"the parent did not notice its child's end: {end}{error} {record.ToJsonString()}");
         Assert.Equal(["failed"], Completions(record, "child"));
-        var timeline = record["timeline"]!.AsArray().Select(e => (Kind: e!["kind"]!.ToString(), Step: e["stepId"]!.ToString())).ToList();
+        var timeline = record["timeline"]!.AsArray().Select(e => (Kind: e!["kind"]!.ToString(), Step: e["step_id"]!.ToString())).ToList();
         Assert.True(timeline.FindIndex(e => e is { Kind: "child_started", Step: "child" }) < timeline.FindIndex(e => e.Kind == "continued_as_new"),
             "the child was not started before the first hand-over");
         Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
@@ -143,9 +152,9 @@ public class ChildRunTests
 
         Assert.NotNull(waitId);
         var wait = (await h.ShowAsync(id))["waits"]!.AsArray().Single()!;
-        Assert.Equal("child", wait["stepId"]!.ToString());
-        Assert.Contains("the child's end could not be applied", wait["reason"]!.ToString(), StringComparison.Ordinal);
-        Assert.Contains("claimed", wait["reason"]!.ToString(), StringComparison.Ordinal);
+        Assert.Equal("child", wait["step_id"]!.ToString());
+        Assert.Contains("the child's end could not be applied", wait["prompt"]!.ToString(), StringComparison.Ordinal);
+        Assert.Contains("claimed", wait["prompt"]!.ToString(), StringComparison.Ordinal);
     }
 
     /// <summary>The id of the parent's child once the child is running.</summary>
@@ -173,7 +182,7 @@ public class ChildRunTests
     }
 
     static List<string> Completions(JsonNode view, string step) =>
-        view["timeline"]!.AsArray().Where(e => e!["kind"]!.ToString() == "completed" && e["stepId"]!.ToString() == step).Select(e => e!["detail"]!.ToString()).ToList();
+        view["timeline"]!.AsArray().Where(e => e!["kind"]!.ToString() == "completed" && e["step_id"]!.ToString() == step).Select(e => e!["detail"]!.ToString()).ToList();
 
     /// <summary>A run's input as it first started.</summary>
     static async Task<RunStart> StartOfAsync(Harness h, string workflowId)
@@ -209,7 +218,7 @@ public class ChildRunTests
         var childId = $"{id}.child.1";
         var child = await h.ShowAsync(childId);
         Assert.True((exit, end.Trim()) == (0, $"run {id} completed"), end + error + (await h.ShowAsync(id)).ToJsonString() + child.ToJsonString());
-        Assert.Contains(child["timeline"]!.AsArray(), e => e!["stepId"]!.ToString() == "validate" && e["detail"]?.ToString() == "requirement_support (std): valid");
+        Assert.Contains(child["timeline"]!.AsArray(), e => e!["step_id"]!.ToString() == "validate" && e["detail"]?.ToString() == "requirement_support (std): valid");
     }
 
     /// <summary>

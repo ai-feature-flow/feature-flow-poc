@@ -45,8 +45,8 @@ public static partial class ApiApp
     /// <summary>Inbound events: webhooks that wake waits, and chat answers through the gateway as the mapped person. M7, W3.</summary>
     static void MapInbound(WebApplication app, Handlers api)
     {
-        app.MapPost("/inbound/events/{source}", (HttpContext c, string source) => api.InboundEventAsync(c, source));
-        app.MapPost("/inbound/chat/{source}", (HttpContext c, string source) => api.InboundChatAsync(c, source));
+        app.MapPost("/inbound/events/{source}", (HttpContext c, string source) => api.InboundEventAsync(c, source)).ExcludeFromDescription();
+        app.MapPost("/inbound/chat/{source}", (HttpContext c, string source) => api.InboundChatAsync(c, source)).ExcludeFromDescription();
     }
 
     sealed partial class Handlers
@@ -134,7 +134,7 @@ public static partial class ApiApp
                         : read?.Error?.Reason == "validation_failed"
                             ? Error(400, read.Error.Message)
                             : Error(401, read?.Error?.Message ?? "unauthenticated");
-                return await AnswerFromChatAsync(context, caller, read!.Value!);
+                return await AnswerFromChatAsync(context, caller, source, read!.Value!);
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
@@ -144,18 +144,22 @@ public static partial class ApiApp
         }
 
         /// <summary>
-        /// The chat answer as the API's own answer request: a recovery action for an intervention, an outcome for anything
-        /// else (the answer handler maps a patch approval's approve or reject), for the wait the button named.
+        /// The chat answer, for the wait the button named, on the one answer path (<see cref="SubmitAnswerAsync"/>): a recovery
+        /// action for an intervention, <c>approve</c> or <c>reject</c> for a patch approval, an outcome for anything else. A
+        /// button carries no words, so its reason is the engine's: <c>answered with a &lt;source&gt; button</c> (LOG 391).
         /// Transport-neutral: a socket-mode receiver would make the same call with the answers it receives.
         /// </summary>
-        public async Task<IResult> AnswerFromChatAsync(HttpContext context, Caller caller, ChatAnswer answer)
+        public async Task<IResult> AnswerFromChatAsync(HttpContext context, Caller caller, string source, ChatAnswer answer)
         {
-            var wait = (await Records.QueryAsync<WaitRecord>(Queries.Waits, new Dictionary<string, string> { ["run_id"] = answer.RunId }, context.RequestAborted)).Unwrap()
+            var run = await VisibleRunAsync(caller, answer.RunId, context.RequestAborted);
+            var wait = run is null ? null : (await Records.QueryAsync<WaitRecord>(Queries.Waits, new Dictionary<string, string> { ["run_id"] = answer.RunId }, context.RequestAborted)).Unwrap()
                 .FirstOrDefault(w => w.WaitId == answer.WaitId);
-            var body = new Dictionary<string, string> { ["wait_id"] = answer.WaitId, [wait?.Kind == "intervention" ? "action" : "outcome"] = answer.Choice };
-            context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(body)));
-            context.Request.ContentType = "application/json";
-            return await AnswerAsync(context, caller, answer.RunId);
+            if (run is null || wait is null || wait.Kind == "")
+                return Error(404, $"no wait {answer.WaitId} in run {answer.RunId}");
+            var isAction = wait.Kind == "intervention" || wait.Kind == "patch_approval" && answer.Choice is "approve" or "reject";
+            var args = new AnswerArgs(answer.WaitId, caller.Actor, isAction ? null : answer.Choice, isAction ? answer.Choice : null, null,
+                Reason: $"answered with a {source} button");
+            return await SubmitAnswerAsync(context, caller, run, wait, args);
         }
     }
 

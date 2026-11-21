@@ -239,7 +239,8 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
     public static RunInfo RunInfoOf(RunStart start) =>
         new(start.RunId, start.Repositories,
             start.Parameters.ToDictionary(kv => kv.Key, kv => YamlWriter.Read(kv.Value, $"params.{kv.Key}")),
-            start.ParentWorkflowId, start.TrackerIssue, start.ParentBranch, ParentArtifacts: start.ParentArtifacts, RootArtifacts: start.RootArtifacts);
+            start.ParentWorkflowId, start.TrackerIssue, start.ParentBranch, ParentArtifacts: start.ParentArtifacts, RootArtifacts: start.RootArtifacts,
+            ParentContext: start.ParentContext);
 
     // The agent step's activity, RunAgentStep, is the agent worker's: Engine.Agent's AgentActivities (M4).
 
@@ -320,14 +321,21 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
         }
 
         var description = await handle.DescribeAsync(new() { Rpc = new RpcOptions { CancellationToken = ct } });
-        // The child's own artifacts from the artifact index (its run id is its workflow id): the latest of each name.
+        // The child's own artifacts from the artifact index (its run id is its workflow id): the latest of each name. Its
+        // transcripts, prompts and plan revisions are indexed for people to read, not for a parent to consume (LOG 393).
         var indexed = await services.RecordStore.QueryAsync<ArtifactRecord>(Queries.Artifacts, new Dictionary<string, string> { ["run_id"] = workflowId }, ct);
         if (!indexed.Ok)
             throw new ApplicationFailureException($"the artifact index cannot be read: {indexed.Error!.Message}", errorType: "infrastructure");
+        return new ChildRead(description.Status.ToString(), result, ChildArtifacts(workflowId, indexed.Value!));
+    }
+
+    /// <summary>The artifacts a parent may consume of a child: the latest of each name in the child's own index, less what is indexed for people only.</summary>
+    internal static SortedDictionary<string, string> ChildArtifacts(string childId, IEnumerable<ArtifactRecord> indexed)
+    {
         var artifacts = new SortedDictionary<string, string>(StringComparer.Ordinal);
-        foreach (var record in indexed.Value!.Where(r => r.RunId == workflowId))
+        foreach (var record in indexed.Where(r => r.RunId == childId && !ArtifactNames.ForPeopleOnly(r)))
             artifacts[record.Name] = record.Ref;
-        return new ChildRead(description.Status.ToString(), result, artifacts);
+        return artifacts;
     }
 
     /// <summary>
@@ -379,14 +387,33 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
         return watches.Where(w => w.IsCompletedSuccessfully).Select(w => w.Result).ToList();
     }
 
-    /// <summary>Writes records for the API to read (docs/02 section 5).</summary>
+    /// <summary>
+    /// Writes records for the API to read (docs/02 section 5), and indexes each plan revision given: stored as JSON in the
+    /// artifact store and recorded under no step, its revision as the execution (LOG 404).
+    /// </summary>
     [Activity]
-    public async Task RecordAsync(RecordBatch batch)
+    public async Task RecordAsync(RecordBatch batch, IReadOnlyList<PlanSource>? revisions)
     {
-        var result = await services.RecordStore.AppendAsync(batch, ActivityExecutionContext.Current.CancellationToken);
+        var ct = ActivityExecutionContext.Current.CancellationToken;
+        if (revisions is { Count: > 0 })
+        {
+            var indexed = new List<ArtifactRecord>(batch.Artifacts ?? []);
+            foreach (var revision in revisions)
+            {
+                var stored = await services.ArtifactStore.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(revision.Write())), ct);
+                if (!stored.Ok)
+                    throw new ApplicationFailureException($"artifact store: {stored.Error!.Message}");
+                indexed.Add(new ArtifactRecord(revision.RunId, "", revision.Revision, ArtifactNames.PlanRevision, ArtifactNames.PlanRevision,
+                    stored.Value!.Id, null, false, DateTimeOffset.UtcNow));
+            }
+
+            batch = batch with { Artifacts = indexed };
+        }
+
+        var result = await services.RecordStore.AppendAsync(batch, ct);
         if (!result.Ok)
             throw new ApplicationFailureException($"record store: {result.Error!.Message}");
         // M7: notifications follow what was recorded, here and never in workflow code; a failed send never fails this.
-        await new RunNotifier(services, ActivityExecutionContext.Current.Logger).NotifyAsync(batch, ActivityExecutionContext.Current.CancellationToken);
+        await new RunNotifier(services, ActivityExecutionContext.Current.Logger).NotifyAsync(batch, ct);
     }
 }

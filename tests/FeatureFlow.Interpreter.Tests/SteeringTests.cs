@@ -404,6 +404,31 @@ public class SteeringTests
     }
 
     [Fact]
+    public void Each_accepted_revision_is_taken_once_even_across_a_hand_over()
+    {
+        var core = Lib.Start("line");
+        Assert.Equal([1], core.TakeRevisions().Select(r => r.Revision));
+        Assert.Empty(core.TakeRevisions());
+
+        var amend = Amend(core, """{ op: insert, after: design, step: { id: sketch, agent: { role: std:roles/planner, task: std:tasks/repair_failures }, outcomes: { done: success } } }""");
+        Assert.Equal(PatchStatus.Applied, core.Apply(new PatchProposed(amend, new Proposer("human", null))).Patch!.Status);
+        var second = Assert.Single(core.TakeRevisions());
+        Assert.Equal((2, 1), (second.Revision, second.Patches.Count));
+        // The source rebuilds the revision it names: the inserted step is in it, and not in revision 1.
+        var d = new Model.DiagnosticBag();
+        Assert.Contains(second.Load(Lib.Libraries, d)!.AllSteps, s => s.Id == "sketch");
+        Assert.DoesNotContain((second with { Revision = 1, Patches = [] }).Load(Lib.Libraries, d)!.AllSteps, s => s.Id == "sketch");
+
+        var resumed = RunCore.Resume(Lib.Libraries, Probe.Ref("line"), System.Text.Json.JsonSerializer.Deserialize<CarriedCore>(System.Text.Json.JsonSerializer.Serialize(core.Snapshot()))!);
+        // The count taken is carried: a hand-over does not take the revisions again, and a later one is taken alone.
+        Assert.Empty(resumed.TakeRevisions());
+        var again = Amend(resumed, """{ op: insert, after: sketch, step: { id: outline, agent: { role: std:roles/planner, task: std:tasks/repair_failures }, outcomes: { done: success } } }""");
+        Assert.Equal(PatchStatus.Applied, resumed.Apply(new PatchProposed(again, new Proposer("human", null))).Patch!.Status);
+        var third = Assert.Single(resumed.TakeRevisions());
+        Assert.Equal((3, 2), (third.Revision, third.Patches.Count));
+    }
+
+    [Fact]
     public void A_persons_amend_of_protected_content_needs_amend_protected_and_may_omit_resume_at()
     {
         var (core, _) = Line_core();

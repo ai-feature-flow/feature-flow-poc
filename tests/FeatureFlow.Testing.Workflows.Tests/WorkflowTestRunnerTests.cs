@@ -57,7 +57,7 @@ public class WorkflowTestRunnerTests
     /// </summary>
     [Theory]
     [InlineData("ticket_main_path", "gate-", "approved by test")]
-    [InlineData("ticket_spec_rejected", "gate-", "rejected by test")]
+    [InlineData("ticket_spec_rejected", "gate-", "rejected by test: requirements omit the audit log")]
     [InlineData("ticket_breakpoint_before_merge", "breakpoint-", "continue by test")]
     [InlineData("epic_child_rerun", "intervention-", "go_to tickets.children_1 by test")]
     public void Each_wait_kind_is_answered_through_the_cores_routing(string name, string wait, string answer)

@@ -24,8 +24,8 @@ public class MergeActionDecisionTests
     {
         var id = h.Start("std:templates/ticket_delivery", "--param", $"ticket_id={ticket}", "--repo", "acme/api");
         var waitId = await h.WaitForWaitAsync(id, TimeSpan.FromMinutes(3));
-        var wait = (await h.ShowAsync(id))["waits"]!.AsArray().Single(w => w!["waitId"]!.ToString() == waitId)!;
-        Assert.Equal(("gate", "deliver.merge", "ticket.merge_action"), (wait["kind"]!.ToString(), wait["stepId"]!.ToString(), wait["decisionType"]!.ToString()));
+        var wait = (await h.ShowAsync(id))["waits"]!.AsArray().Single(w => w!["wait_id"]!.ToString() == waitId)!;
+        Assert.Equal(("gate", "deliver.merge", "ticket.merge_action"), (wait["kind"]!.ToString(), wait["step_id"]!.ToString(), wait["decision_type"]!.ToString()));
         Assert.Equal(["approve", "reject"], wait["choices"]!.AsArray().Select(c => c!.ToString()));
         Assert.Equal(PullRequestStates.Open, (await new InMemoryCodeHost(forge).GetPullRequestAsync(new PullRequestRef(repo, 1), Ct)).Unwrap().State);
         return (id, waitId!);
@@ -59,7 +59,7 @@ public class MergeActionDecisionTests
         Assert.True(exit == 0, end + error + view.ToJsonString());
         Assert.Equal($"run {id} completed", end.Trim());
         var timeline = Timeline(view);
-        Assert.Contains(timeline, t => t.Kind == "answered" && t.StepId == wait && t.Detail == "approve by tester");
+        Assert.Contains(timeline, t => t.Kind == "answered" && t.StepId == wait && t.Detail == "approve by tester: the integration test");
         Assert.Contains(timeline, t => t.Kind == "agent" && t.Detail.StartsWith("merged ", StringComparison.Ordinal) && t.Detail.Contains("by alice", StringComparison.Ordinal));
         Assert.DoesNotContain(timeline, t => t.Detail.Contains("not through Feature Flow", StringComparison.Ordinal) || t.Detail.Contains("not given through Feature Flow", StringComparison.Ordinal));
         Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
@@ -108,5 +108,5 @@ public class MergeActionDecisionTests
     }
 
     static List<(string Kind, string StepId, string Detail)> Timeline(JsonNode view) =>
-        view["timeline"]!.AsArray().Select(e => (e!["kind"]!.ToString(), e["stepId"]?.ToString() ?? "", e["detail"]?.ToString() ?? "")).ToList();
+        view["timeline"]!.AsArray().Select(e => (e!["kind"]!.ToString(), e["step_id"]?.ToString() ?? "", e["detail"]?.ToString() ?? "")).ToList();
 }

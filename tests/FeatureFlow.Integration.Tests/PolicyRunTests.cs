@@ -72,9 +72,11 @@ public class PolicyRunTests
             return response.StatusCode;
         }
 
-        // An override the run does not take yet (W1 builds its handler) is still recorded, as the caller, before delivery.
-        await PostAsync($"runs/{id}/overrides", """{ "key": "breakpoint", "step_id": "implement", "reason": "look", "change": { "set": "true" }, "actor": "mallory" }""");
-        Assert.Equal(HttpStatusCode.OK, await PostAsync($"runs/{id}/answers", $$"""{ "wait_id": "{{waitId}}", "outcome": "approved", "actor": "mallory" }"""));
+        // An override the run does not take yet (W1 builds its handler) is still recorded, as the caller, before delivery; a body
+        // that names an actor is refused (F8).
+        Assert.Equal(HttpStatusCode.BadRequest, await PostAsync($"runs/{id}/answers", $$"""{ "wait_id": "{{waitId}}", "outcome": "approved", "actor": "mallory" }"""));
+        await PostAsync($"runs/{id}/overrides", """{ "key": "breakpoint", "step_id": "implement", "reason": "look", "change": { "set": "true" } }""");
+        Assert.Equal(HttpStatusCode.OK, await PostAsync($"runs/{id}/answers", $$"""{ "wait_id": "{{waitId}}", "outcome": "approved", "reason": "looks right" }"""));
 
         // The run records its timeline after the update returns.
         var deadline = DateTime.UtcNow + Timeout;
@@ -85,7 +87,7 @@ public class PolicyRunTests
             await Task.Delay(200, TestContext.Current.CancellationToken);
         }
 
-        Assert.EndsWith("by tester", answered);
+        Assert.EndsWith("by tester: looks right", answered);
         var records = new SqliteRecordStore(Path.Combine(h.Folder, "records.db"));
         var p = new Dictionary<string, string> { ["run_id"] = id };
         var answers = (await records.QueryAsync<AnswerRecord>(Queries.Answers, p, TestContext.Current.CancellationToken)).Unwrap();

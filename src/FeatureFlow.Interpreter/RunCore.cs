@@ -439,6 +439,7 @@ public sealed partial class RunCore
             QuestionOpened q => OpenQuestion(q),
             QuestionAnswered q => AnswerQuestion(q),
             WaitTimerFired t => TimerFired(t),
+            ReminderDue r => Remind(r),
             GateSessionOpened s => OpenSession(s),
             BreakpointSet or StepSkipped or AttemptsGranted or RoleChanged or LibraryOverridden or LibraryOverrideProposed => Steer(input),
             _ => ApplyResult.Refused($"unknown input {input.GetType().Name}"),
@@ -490,6 +491,7 @@ public sealed partial class RunCore
             c = c with { Patch = null, PatchToParent = false };
             var recordParent = Record(step.Id);
             LeaveInFlight(step.Id);
+            Summarise(step, recordParent, c);
             foreach (var (name, value) in outputs)
                 recordParent.Current!.Outputs[name] = value;
             foreach (var (name, reference) in c.Artifacts ?? new Dictionary<string, string>())
@@ -518,6 +520,7 @@ public sealed partial class RunCore
 
         var record = Record(step.Id);
         LeaveInFlight(step.Id);
+        Summarise(step, record, c);
         CloseActionDecision(step.Id, c.Outcome);
         foreach (var (name, value) in outputs)
             record.Current!.Outputs[name] = value;
@@ -563,6 +566,14 @@ public sealed partial class RunCore
         StepForm.Decision => "human",
         _ => "engine",
     };
+
+    /// <summary>An agent step's report summary goes into the run context, at most <see cref="RunContexts.MaxSummaryBytes"/> (LOG 19).</summary>
+    void Summarise(Step step, StepRecord record, StepCompleted c)
+    {
+        if (step.Form == StepForm.Agent && !string.IsNullOrWhiteSpace(c.Summary))
+            AddContext(ContextKinds.Summary, step.Id, record.Executions,
+                $"{step.Id} reported {c.Outcome}: {RunContexts.Bounded(c.Summary.Trim(), RunContexts.MaxSummaryBytes)}");
+    }
 
     /// <summary>Checks an outcome, outputs and artifacts against the step's contract (docs/09 section 3, output contracts).</summary>
     Dictionary<string, object?> CheckOutputs(Step step, StepCompleted c, List<string> errors)
@@ -641,6 +652,8 @@ public sealed partial class RunCore
         if (CountsRaces(step))
             record.AttemptsUsed++;
         Trace("attempt_failed", step.Id, f.Reason);
+        // A work failure is the next attempt's to put right, so its agent is told why; an infrastructure retry is not (LOG 405).
+        AddContext(ContextKinds.RetryCause, step.Id, record.Executions, $"attempt {record.Executions} of {step.Id} failed: {f.Reason}");
         State.Pending.Add(new Entry(step.Id, false));
         return ApplyResult.Ok;
     }

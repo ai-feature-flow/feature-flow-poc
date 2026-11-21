@@ -72,8 +72,8 @@ public class WaitHandOverTests
         Assert.True(exit == 0 && end.Trim() == $"run {id} completed", end + error + record.ToJsonString());
 
         // One execution of the wait: started once, interrupted and resumed at each hand-over, never counted again.
-        Assert.DoesNotContain(record["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "attempt_failed" && e["stepId"]!.ToString() == "checks");
-        var timeline = record["timeline"]!.AsArray().Select(e => (Kind: e!["kind"]!.ToString(), Step: e["stepId"]!.ToString(), Detail: e["detail"]?.ToString())).ToList();
+        Assert.DoesNotContain(record["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "attempt_failed" && e["step_id"]!.ToString() == "checks");
+        var timeline = record["timeline"]!.AsArray().Select(e => (Kind: e!["kind"]!.ToString(), Step: e["step_id"]!.ToString(), Detail: e["detail"]?.ToString())).ToList();
         Assert.Single(timeline, e => e is { Kind: "started", Step: "checks" });
         Assert.Contains(timeline, e => e is { Kind: "interrupted", Step: "checks" });
         Assert.All(timeline.Where(e => e is { Kind: "resumed", Step: "checks" }), e => Assert.Equal("execution 1", e.Detail));

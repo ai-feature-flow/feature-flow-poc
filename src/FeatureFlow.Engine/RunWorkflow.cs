@@ -101,9 +101,8 @@ public partial class RunWorkflow
             var snapshot = await Workflow.ExecuteActivityAsync((RunActivities a) => a.LoadLibrariesAsync(input.LockRef), Light);
             policy = input.Policy!;
             core = RunCore.Resume(RunActivities.Build(snapshot, new DiagnosticBag()), Template, input.Carried.Core, policy.ToOptions());
-            // Timers of waits carried over a hand-over are armed again (docs/02 section 3: timers are re-created from state).
-            foreach (var timer in core.Timers())
-                _ = TimerAsync(timer);
+            // Timers and reminders of waits carried over a hand-over are armed again (docs/02 section 3: timers are re-created from state).
+            await ExecuteAsync(core.Timers());
             // Children an earlier run started can no longer be awaited here; a watch notices one that ends without
             // signalling (M3 follow-up 10).
             if (core.Children.Count > 0)
@@ -186,6 +185,14 @@ public partial class RunWorkflow
         if (wait > TimeSpan.Zero)
             await Workflow.DelayAsync(wait);
         core!.Apply(new WaitTimerFired(timer.WaitId, Workflow.UtcNow));
+        dirty = true;
+    }
+
+    /// <summary>A wait's reminder (<see cref="ArmReminder"/>): the shell only sleeps; the core decides whether it is still due.</summary>
+    async Task ReminderAsync(ArmReminder reminder)
+    {
+        await Workflow.DelayAsync(reminder.After);
+        core!.Apply(new ReminderDue(reminder.WaitId, reminder.Number));
         dirty = true;
     }
 
@@ -327,6 +334,9 @@ public partial class RunWorkflow
                 case ArmTimer t:
                     _ = TimerAsync(t);
                     break;
+                case ArmReminder r:
+                    _ = ReminderAsync(r);
+                    break;
                 case SendPatchToParent p when input.ParentWorkflowId is { } parent:
                     await SignalQuietlyAsync(parent, RunWorkflowNames.ParentPatch,
                         [new ParentPatchSignal(Workflow.Info.WorkflowId, p.StepId, PatchReader.Write(p.Patch))]);
@@ -402,7 +412,8 @@ public partial class RunWorkflow
                 input.Repositories.ToDictionary(r => r, _ => branch),
                 // A child's parent branch is its parent run's work branch; otherwise the agent worker reads the default branch from the code host.
                 input.ParentBranch is { } parentBranch ? input.Repositories.ToDictionary(r => r, _ => parentBranch) : new Dictionary<string, string>(),
-                a.Consumed, Workflow.Info.WorkflowId, LockRef, TrackerIssue: input.TrackerIssue, Runtime: binding?.AgentRuntime, Model: binding?.Model);
+                a.Consumed, Workflow.Info.WorkflowId, LockRef, TrackerIssue: input.TrackerIssue, Runtime: binding?.AgentRuntime, Model: binding?.Model,
+                RunContext: a.RunContext);
         }
 
         return CallOf(spec, identity, input.DryRun, agent);
@@ -632,7 +643,7 @@ public partial class RunWorkflow
 
         var result = core!.Apply(new StepCompleted(stepId, report.Outcome,
             report.Outputs.ToDictionary(kv => kv.Key, kv => YamlWriter.ReadPlain(kv.Value)),
-            report.Artifacts, patch, report.PatchToParent));
+            report.Artifacts, patch, report.PatchToParent, report.Summary));
         if (result.Accepted && report.LibraryOverride is { } proposal)
             ProposeLibraryOverride(stepId, proposal);
         if (!result.Accepted)
@@ -696,7 +707,7 @@ public partial class RunWorkflow
 
         var childInput = new RunStart(spec.WorkflowId, spec.Template, spec.Repositories, spec.Parameters,
             LockRef, input.DryRun, input.Requester, Workflow.Info.WorkflowId, s.StepId, input.HandOverEvents, ParentBranch: core.WorkBranch(),
-            ParentArtifacts: spec.ParentArtifacts, RootArtifacts: spec.RootArtifacts, TrackerIssue: spec.TrackerIssue, WorkItems: budget);
+            ParentArtifacts: spec.ParentArtifacts, RootArtifacts: spec.RootArtifacts, TrackerIssue: spec.TrackerIssue, WorkItems: budget, ParentContext: spec.ParentContext);
         // What this run has produced is recorded before a child exists, so the artifact index lists a parent's artifacts
         // before the child's that may consume them (m8-results Foundations, follow-up 4).
         await RecordAsync();
@@ -922,7 +933,8 @@ public partial class RunWorkflow
 
         var (shown, closedQuestions) = core.TakeWaitChanges();
         var waits = shown.Select(w => w.Opened is { } d
-            ? new WaitRecord(input.RunId, w.WaitId, d.Kind, w.StepId, d.Type, d.Reason, d.Choices, true, now)
+            ? new WaitRecord(input.RunId, w.WaitId, d.Kind, w.StepId, d.Type, d.Prompt, d.Choices, true, now,
+                d.Consumed?.Select(c => new ConsumedRef(c.Key, c.Name, c.Reference)).ToList())
             : new WaitRecord(input.RunId, w.WaitId, "", "", "", "", [], false, now)).ToList();
         // The agent endpoint long-polls a question's record for its answer or timeout (docs/04 section 3.4).
         var questions = closedQuestions.Select(q => new QuestionRecord(q.StepKey, input.RunId, q.WaitId, q.Text, q.Options,
@@ -936,9 +948,12 @@ public partial class RunWorkflow
         lastRecordedStatus = status;
         if (timeline.Count == 0 && waits.Count == 0 && runs.Count == 0 && questions.Count == 0 && artifacts.Count == 0 && locks.Count == 0)
             return false;
+        // Revisions ride with a record that is written anyway (a patch is traced), never cause one: an extra record activity
+        // would change recorded histories. The count taken is carried, so a hand-over takes only those not yet taken.
+        var revisions = core.TakeRevisions();
         var batch = new RecordBatch(runs, waits, timeline, Locks: locks.Count == 0 ? null : locks, Questions: questions.Count == 0 ? null : questions,
             Artifacts: artifacts.Count == 0 ? null : artifacts);
-        await Workflow.ExecuteActivityAsync((RunActivities a) => a.RecordAsync(batch), Light);
+        await Workflow.ExecuteActivityAsync((RunActivities a) => a.RecordAsync(batch, revisions.Count == 0 ? null : revisions), Light);
         return true;
     }
 
@@ -950,7 +965,7 @@ public partial class RunWorkflow
         var now = Workflow.UtcNow;
         var timeline = errors.Select(e => new TimelineRecord(input.RunId, ++timelineSequence, "refused", "", e, now)).ToList();
         var batch = new RecordBatch([RunRecordOf("failed", "refused at run start: " + string.Join("; ", errors.Take(3)), now)], null, timeline);
-        await Workflow.ExecuteActivityAsync((RunActivities a) => a.RecordAsync(batch), Light);
+        await Workflow.ExecuteActivityAsync((RunActivities a) => a.RecordAsync(batch, null), Light);
         await TellParentAsync();
         return "failed";
     }

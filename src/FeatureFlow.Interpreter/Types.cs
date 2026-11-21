@@ -36,7 +36,8 @@ public static class RunStatuses
 /// <summary>
 /// What the core needs to know about the run, fixed at run start. <see cref="Parameters"/> are the request's
 /// values; declared defaults fill the rest. A child holds its parent's and its root's artifacts as they were when it
-/// started, by name (docs/03 section 7.2: consumed <c>from: parent</c> or <c>from: root</c>).
+/// started, by name (docs/03 section 7.2: consumed <c>from: parent</c> or <c>from: root</c>), and its parent's rendered run
+/// context (<see cref="ParentContext"/>; docs/04 section 3.5).
 /// </summary>
 public sealed record RunInfo(
     string Id,
@@ -47,7 +48,8 @@ public sealed record RunInfo(
     string? ParentBranch = null,
     IReadOnlyDictionary<string, string>? DefaultBranches = null,
     IReadOnlyDictionary<string, string>? ParentArtifacts = null,
-    IReadOnlyDictionary<string, string>? RootArtifacts = null);
+    IReadOnlyDictionary<string, string>? RootArtifacts = null,
+    string? ParentContext = null);
 
 /// <summary>
 /// Limits and policy the core enforces, carried in the run's state because workflow code cannot read
@@ -92,6 +94,9 @@ public sealed record RunOptions
 
     public Model.Cap<bool>? RequireTested { get; init; }
 
+    /// <summary>The organisation's <c>notifications.reminder_interval</c> (docs/07 section 3): how often an open wait is reminded. Null: never (LOG 401).</summary>
+    public TimeSpan? ReminderInterval { get; init; }
+
     /// <summary>The caps one step is checked against (check 22), as at run start.</summary>
     public Validation.StepCaps StepCaps => new(StepCeiling, RequireChecks, RequireTested);
 }
@@ -127,6 +132,13 @@ public sealed record OpenGate(string StepId, int Execution, string WaitId, bool 
 /// </summary>
 public sealed record ArmTimer(string WaitId, DateTimeOffset At) : Command;
 
+/// <summary>
+/// An open wait's next reminder (docs/04 section 4): after <see cref="After"/> the shell gives the core <see cref="ReminderDue"/>
+/// with <see cref="Number"/>. Relative, since the core keeps no clock; re-armed after a hand-over from <see cref="RunCore.Timers"/>,
+/// up to one interval late (LOG 402).
+/// </summary>
+public sealed record ArmReminder(string WaitId, int Number, TimeSpan After) : Command;
+
 public sealed record RaiseIntervention(string WaitId, string StepId, string? Outcome, string Reason) : Command;
 
 public sealed record RequestPatchApproval(string WaitId, PatchDocument Patch) : Command;
@@ -154,7 +166,8 @@ public abstract record RunInput;
 
 /// <summary>
 /// A step ended with an outcome. <see cref="Patch"/> is a patch the step proposed, or the patch
-/// <c>plan.expand</c> built (<see cref="PlanExpansion"/>).
+/// <c>plan.expand</c> built (<see cref="PlanExpansion"/>). <see cref="Summary"/> is an agent's report summary, kept in the run
+/// context (docs/04 section 3.5).
 /// </summary>
 public sealed record StepCompleted(
     string StepId,
@@ -162,7 +175,8 @@ public sealed record StepCompleted(
     IReadOnlyDictionary<string, object?>? Outputs = null,
     IReadOnlyDictionary<string, string>? Artifacts = null,
     PatchDocument? Patch = null,
-    bool PatchToParent = false) : RunInput;
+    bool PatchToParent = false,
+    string? Summary = null) : RunInput;
 
 public enum ErrorClass
 {
@@ -275,6 +289,12 @@ public sealed record QuestionAnswered(string WaitId, string Answer) : RunInput;
 
 /// <summary>A wait's timer, armed by <see cref="ArmTimer"/>, fired at <see cref="At"/>: a question past its deadline times out.</summary>
 public sealed record WaitTimerFired(string WaitId, DateTimeOffset At) : RunInput;
+
+/// <summary>
+/// A wait's reminder <see cref="Number"/>, armed by <see cref="ArmReminder"/>, is due: if the wait is still open and this is its
+/// next reminder, the core traces <c>reminded</c> and arms the one after; a repeated, late or closed wait's does nothing.
+/// </summary>
+public sealed record ReminderDue(string WaitId, int Number) : RunInput;
 
 /// <summary>The shell opened an interactive session on gate <see cref="WaitId"/> (docs/04 section 4.4): answers to it follow the session's rules.</summary>
 public sealed record GateSessionOpened(string WaitId) : RunInput;
@@ -414,7 +434,7 @@ public static class WaitKinds
 /// of an agent's library override holds <see cref="LibraryItem"/> and <see cref="LibraryContent"/> instead of a patch; a
 /// question holds the agent's text as its <see cref="Reason"/>, its <see cref="Options"/>, the execution that asked it
 /// (<see cref="StepKey"/>) and when it times out (<see cref="Deadline"/>); a gate with an open interactive session is
-/// <see cref="Session"/>.
+/// <see cref="Session"/>. <see cref="Reminders"/> counts the reminders sent while it is open.
 /// </summary>
 public sealed record OpenWait(string Id, WaitKind Kind, string StepId, string? Outcome, string Reason, PatchDocument? Patch = null, bool FromChild = false)
 {
@@ -425,6 +445,7 @@ public sealed record OpenWait(string Id, WaitKind Kind, string StepId, string? O
     public IReadOnlyList<string>? Options { get; init; }
     public DateTimeOffset? Deadline { get; init; }
     public bool Session { get; init; }
+    public int Reminders { get; init; }
 }
 
 /// <summary>How a wait closed (<see cref="ClosedWait.How"/>).</summary>
@@ -449,15 +470,18 @@ public static class WaitEnds
 /// <summary>
 /// A wait that has closed, and how (<see cref="WaitEnds"/>). An answered one keeps the answer's <see cref="Key"/> (a decision's
 /// outcome, a question's text, a recovery with its arguments) and <see cref="Actor"/>, so a repeat of the same answer is a
-/// duplicate and a different one a conflict (LOG 58).
+/// duplicate and a different one a conflict (LOG 58), and the person's <see cref="Reason"/>, which the key leaves out.
 /// </summary>
-public sealed record ClosedWait(string Id, WaitKind Kind, string StepId, string How, string? Key = null, string? Actor = null);
+public sealed record ClosedWait(string Id, WaitKind Kind, string StepId, string How, string? Key = null, string? Actor = null, string? Reason = null);
 
 /// <summary>A wait opened (<see cref="Open"/>) or closed since the shell last recorded; drained by the shell like the trace.</summary>
 public sealed record WaitChange(OpenWait Wait, bool Open);
 
-/// <summary>What the record store shows of a wait: its record kind, decision type, the choices that answer it, and the text to show.</summary>
-public sealed record WaitDescription(string Kind, string Type, IReadOnlyList<string> Choices, string Reason);
+/// <summary>
+/// What the record store shows of a wait: its record kind, decision type, the choices that answer it, the text to show, and
+/// for a gate what its step consumed as it opened (LOG 394).
+/// </summary>
+public sealed record WaitDescription(string Kind, string Type, IReadOnlyList<string> Choices, string Prompt, IReadOnlyList<ConsumedArtifact>? Consumed = null);
 
 /// <summary>A wait to record (<see cref="RunCore.TakeWaitChanges"/>): opened, with its description, or closed when <see cref="Opened"/> is null.</summary>
 public sealed record WaitShown(string WaitId, string StepId, WaitDescription? Opened);

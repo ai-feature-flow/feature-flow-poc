@@ -153,6 +153,8 @@ public sealed class InboundTests : IAsyncDisposable
         var sent = Assert.Single(await AnswersAsync(), a => a.Result == "sent");
         Assert.Equal(("alice", "gate-1"), (sent.Actor, sent.WaitId));
         Assert.Contains("\"outcome\":\"approved\"", sent.Answer);
+        // A button carries no words: the engine writes its reason (LOG 391).
+        Assert.Equal("answered with a slack button", sent.Reason);
     }
 
     [Fact]
@@ -184,6 +186,22 @@ public sealed class InboundTests : IAsyncDisposable
         var sent = Assert.Single(await AnswersAsync(), a => a.Result == "sent");
         Assert.Equal("steve", sent.Actor);
         Assert.Contains("\"action\":\"retry\"", sent.Answer);
+    }
+
+    [Fact]
+    public async Task A_chat_approve_on_a_patch_approval_is_sent_as_its_action()
+    {
+        var http = Start();
+        var now = DateTimeOffset.UtcNow;
+        await records.AppendAsync(new RecordBatch(
+            [new RunRecord("r1", null, "m7s:templates/decide", "running", "x", [], false, now, null)],
+            [new WaitRecord("r1", "patch-3", "patch_approval", "plan", "plan.patch_approval", "apply?", ["approve", "reject"], true, now)]), Ct);
+
+        await SendAsync(http, SlackRequest("inbound/chat/slack", Press("U-ALICE", "approve", "patch-3")));
+
+        var sent = Assert.Single(await AnswersAsync(), a => a.Result == "sent");
+        Assert.Contains("\"action\":\"approve\"", sent.Answer);
+        Assert.DoesNotContain("\"outcome\":\"approve\"", sent.Answer);
     }
 
     [Fact]

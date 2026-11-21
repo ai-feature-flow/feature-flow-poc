@@ -66,14 +66,14 @@ public class EpicRunTests
 
         var (endExit, end, _) = h.Cli("wait", id, "--timeout", "240");
         var view = await h.ShowAsync(id);
-        var childViews = string.Join("\n", await Task.WhenAll(view["children"]!.AsArray().Select(async c => (await h.ShowAsync(c!["runId"]!.ToString())).ToJsonString())));
+        var childViews = string.Join("\n", await Task.WhenAll(view["children"]!.AsArray().Select(async c => (await h.ShowAsync(c!["run_id"]!.ToString())).ToJsonString())));
         Assert.True((endExit, end.Trim()) == (0, $"run {id} completed"), view.ToJsonString() + "\n" + childViews);
 
         var children = view["children"]!.AsArray();
         Assert.Equal(6, children.Count);
         Assert.All(children, c => Assert.Equal("completed", c!["status"]!.ToString()));
         foreach (var name in Enumerable.Range(0, 6).Select(i => $"tickets.children_{i}"))
-            Assert.Single(view["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "completed" && e["stepId"]!.ToString() == name);
+            Assert.Single(view["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "completed" && e["step_id"]!.ToString() == name);
 
         var runs = await h.RunsOfAsync(id);
         var final = await h.Client.GetWorkflowHandle(id).QueryAsync<RunView>(RunWorkflowNames.View, []);
@@ -88,6 +88,6 @@ public class EpicRunTests
         Assert.True(taskFailures.Count == 0, "C5: workflow task failures: " + string.Join("; ", taskFailures));
 
         await h.RecordHistoryAsync(id, "epic_delivery");
-        await h.RecordHistoryAsync(children[0]!["runId"]!.ToString(), "epic_delivery_child");
+        await h.RecordHistoryAsync(children[0]!["run_id"]!.ToString(), "epic_delivery_child");
     }
 }

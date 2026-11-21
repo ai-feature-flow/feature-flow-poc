@@ -45,6 +45,15 @@ static class Schema
         CREATE TABLE session_checks (org_id text NOT NULL, session_id text NOT NULL, check_id text NOT NULL, body jsonb NOT NULL,
             PRIMARY KEY (org_id, session_id, check_id));
         """,
+        // 2: the open waits of an organisation, for GET /attention (Queries.OpenWaits).
+        """
+        CREATE INDEX waits_open ON waits (org_id) WHERE open;
+        """,
+        // 3: the changes GET /events reports (LOG 397), numbered in commit order (PostgresRecordStore.AppendChangesAsync).
+        """
+        CREATE TABLE changes (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, org_id text NOT NULL, run_id text NOT NULL, kind text NOT NULL, wait_id text,
+            at timestamptz NOT NULL DEFAULT now());
+        """,
     ];
 
     /// <summary>The schema version this build writes.</summary>

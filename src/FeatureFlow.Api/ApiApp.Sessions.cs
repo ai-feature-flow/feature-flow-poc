@@ -1,6 +1,6 @@
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
+using FeatureFlow.Api.Contracts;
 using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Model;
 using FeatureFlow.Providers.Abstractions;
@@ -22,13 +22,27 @@ public static partial class ApiApp
     /// </summary>
     static void MapSessions(WebApplication app, Handlers api)
     {
-        app.MapGet("/runs/{id}/sessions", (HttpContext c, string id) => api.Guard(c, caller => api.SessionsAsync(c, caller, id)));
-        app.MapGet("/sessions/{sid}", (HttpContext c, string sid) => api.Guard(c, caller => api.FetchSessionAsync(c, caller, sid)));
-        app.MapGet("/sessions/{sid}/checks", (HttpContext c, string sid) => api.Guard(c, caller => api.SessionChecksAsync(c, caller, sid)));
-        app.MapPost("/sessions/{sid}/checks", (HttpContext c, string sid) => api.Guard(c, caller => api.CheckSessionAsync(c, caller, sid)));
-        app.MapPost("/sessions/{sid}/submit", (HttpContext c, string sid) => api.Guard(c, caller => api.SubmitSessionAsync(c, caller, sid)));
-        app.MapPost("/sessions/{sid}/abandon", (HttpContext c, string sid) => api.Guard(c, caller => api.AbandonSessionAsync(c, caller, sid)));
+        app.MapGet("/runs/{id}/sessions", (HttpContext c, string id) => api.Guard(c, caller => api.SessionsAsync(c, caller, id)))
+            .Described<SessionList>("listSessions", 200, 404);
+        app.MapGet("/sessions/{sid}", (HttpContext c, string sid) => api.Guard(c, caller => api.FetchSessionAsync(c, caller, sid)))
+            .Described<SessionDetail>("getSession", 200, 404);
+        app.MapGet("/sessions/{sid}/checks", (HttpContext c, string sid) => api.Guard(c, caller => api.SessionChecksAsync(c, caller, sid)))
+            .Described<SessionChecks>("listSessionChecks", 200, 404);
+        app.MapPost("/sessions/{sid}/checks", (HttpContext c, string sid) => api.Guard(c, caller => api.CheckSessionAsync(c, caller, sid)))
+            .Taking<SessionCheckRequest>().Described<SessionCheckResponse>("checkSession", 200, 400, 403, 404, 409, 503);
+        app.MapPost("/sessions/{sid}/submit", (HttpContext c, string sid) => api.Guard(c, caller => api.SubmitSessionAsync(c, caller, sid)))
+            .Taking<SessionSubmitRequest>().Described<AnswerResponse>("submitSession", 200, 400, 403, 404, 409, 503).Produces<AnswerResponse>(202);
+        app.MapPost("/sessions/{sid}/abandon", (HttpContext c, string sid) => api.Guard(c, caller => api.AbandonSessionAsync(c, caller, sid)))
+            .Taking<SessionAbandonRequest>().Described<AnswerResponse>("abandonSession", 200, 400, 403, 404, 409, 503).Produces<AnswerResponse>(202);
     }
+
+    static SessionView SessionViewOf(SessionRecord s) =>
+        new(s.SessionId, s.RunId, s.WaitId, s.StepId, s.Person, s.Repository, s.Branch, s.BaseRevision, s.Status, s.SubmittedRevision, s.Artifacts, s.At);
+
+    static WorkspaceView WorkspaceOf(SessionDocument d) =>
+        new(d.SessionId, d.RunId, d.WaitId, d.StepId, d.Repository, d.Branch, d.BaseRevision, d.Folder,
+            d.Files.Select(f => new WorkspaceFileView(f.Path, f.Artifact, f.Type, f.SeedRef)).ToList(), d.Prompt, d.Context, d.ChecksFrom, d.SubmitOutcome,
+            d.AbandonOutcome, d.Instructions);
 
     sealed partial class Handlers
     {
@@ -37,7 +51,7 @@ public static partial class ApiApp
             if (!await MayViewAsync(caller, id, context.RequestAborted))
                 return Error(404, $"no run {id}");
             var sessions = (await Records.QueryAsync<SessionRecord>(Queries.Sessions, new Dictionary<string, string> { ["run_id"] = id }, context.RequestAborted)).Unwrap();
-            return Results.Json(new { sessions }, Json);
+            return Results.Json(new SessionList(sessions.Select(SessionViewOf).ToList()), Json);
         }
 
         /// <summary>The session's record and workspace document, with the drafts' and the context's content inline.</summary>
@@ -54,7 +68,7 @@ public static partial class ApiApp
             var consumed = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var (name, reference) in document.Context)
                 consumed[name] = await TextAsync(reference, ct);
-            return Results.Json(new { session, workspace = document, drafts, context = consumed }, Json);
+            return Results.Json(new SessionDetail(SessionViewOf(session), WorkspaceOf(document), drafts, consumed), Json);
         }
 
         /// <summary>A session's checks, each with its result's content and what the run's timeline says of it.</summary>
@@ -66,32 +80,30 @@ public static partial class ApiApp
             var records = (await Records.QueryAsync<SessionCheckRecord>(Queries.SessionChecks, new Dictionary<string, string> { ["session_id"] = sid }, ct)).Unwrap();
             var timeline = (await Records.QueryAsync<TimelineRecord>(Queries.Timeline, new Dictionary<string, string> { ["run_id"] = session.RunId, ["after"] = "0" }, ct)).Unwrap()
                 .Where(t => t.Kind == "session_check" && t.Detail?.StartsWith(sid + " ", StringComparison.Ordinal) == true).ToList();
-            var checks = new List<object>();
+            var checks = new List<SessionCheckView>();
             foreach (var check in records)
-                checks.Add(new
-                {
-                    check,
-                    detail = timeline.LastOrDefault(t => t.Detail?.StartsWith($"{sid} {check.CheckId} ", StringComparison.Ordinal) == true)?.Detail,
-                    result = check.ResultRef is { } reference ? await TextAsync(reference, ct) : null,
-                });
-            return Results.Json(new { checks }, Json);
+                checks.Add(new SessionCheckView(check.CheckId, check.StepId, check.Revision, check.Inputs, check.Status, check.ResultRef, check.At,
+                    timeline.LastOrDefault(t => t.Detail?.StartsWith($"{sid} {check.CheckId} ", StringComparison.Ordinal) == true)?.Detail,
+                    check.ResultRef is { } reference ? await TextAsync(reference, ct) : null));
+            return Results.Json(new SessionChecks(checks), Json);
         }
 
         public async Task<IResult> CheckSessionAsync(HttpContext context, Caller caller, string sid)
         {
-            var body = await JsonNode.ParseAsync(context.Request.Body, cancellationToken: context.RequestAborted) as JsonObject;
-            var step = body?["step"]?.GetValue<string>();
-            var revision = body?["revision"]?.GetValue<string>();
-            if (step is null || !SessionNames.IsCommit(revision))
+            var (body, malformed) = await BodyAsync<SessionCheckRequest>(context);
+            if (body is null)
+                return malformed!;
+            var (step, revision) = (body.Step, body.Revision);
+            if (!SessionNames.IsCommit(revision))
                 return Error(400, "a check needs step (a step the session's checks_from names) and revision (a full commit id)");
             var (session, _, _, refused) = await ActableAsync(caller, sid, context.RequestAborted);
             if (refused is not null)
                 return refused;
-            var args = new SessionCheckArgs("check-" + Guid.NewGuid().ToString("N")[..10], sid, step, revision!, caller.Actor);
+            var args = new SessionCheckArgs("check-" + Guid.NewGuid().ToString("N")[..10], sid, step, revision, caller.Actor);
             try
             {
                 var reply = await services.Client.GetWorkflowHandle(session!.RunId).ExecuteUpdateAsync<AnswerReply>(SessionNames.Check, [args]);
-                return Results.Json(new { check_id = args.CheckId, result = reply.Result }, Json);
+                return Results.Json(new SessionCheckResponse(args.CheckId, reply.Result), Json);
             }
             catch (Exception e) when (e is WorkflowUpdateFailedException or RpcException)
             {
@@ -101,32 +113,43 @@ public static partial class ApiApp
 
         public async Task<IResult> SubmitSessionAsync(HttpContext context, Caller caller, string sid)
         {
-            var body = await JsonNode.ParseAsync(context.Request.Body, cancellationToken: context.RequestAborted) as JsonObject;
-            var revision = body?["revision"]?.GetValue<string>();
+            var (body, malformed) = await BodyAsync<SessionSubmitRequest>(context);
+            if (body is null)
+                return malformed!;
+            var revision = body.Revision;
             if (!SessionNames.IsCommit(revision))
                 return Error(400, "a submission needs revision: the full id of the commit to submit, pushed to the session's branch");
+            if (ReasonRefused(body.Reason, required: false) is { } refusedReason)
+                return refusedReason;
             var (session, run, wait, refused) = await ActableAsync(caller, sid, context.RequestAborted);
             if (refused is not null)
                 return refused;
             var document = await DocumentAsync(sid, context.RequestAborted);
             if (document is null)
                 return Error(409, $"session {sid} has no workspace: see the run's timeline");
-            return await SubmitAnswerAsync(context, caller, run!, wait!, new AnswerArgs(session!.WaitId, caller.Actor, document.SubmitOutcome, null, Revision: revision));
+            // A submission says what it submits; with no words of the person's own, that is its reason (LOG 391).
+            var reason = string.IsNullOrWhiteSpace(body.Reason) ? $"submitted {revision}" : body.Reason;
+            return await SubmitAnswerAsync(context, caller, run!, wait!, new AnswerArgs(session!.WaitId, caller.Actor, document.SubmitOutcome, null, Revision: revision, Reason: reason));
         }
 
         public async Task<IResult> AbandonSessionAsync(HttpContext context, Caller caller, string sid)
         {
+            var (body, malformed) = await BodyAsync<SessionAbandonRequest>(context);
+            if (body is null)
+                return malformed!;
+            if (ReasonRefused(body.Reason) is { } refusedReason)
+                return refusedReason;
             var (session, run, wait, refused) = await ActableAsync(caller, sid, context.RequestAborted);
             if (refused is not null)
                 return refused;
             if ((await DocumentAsync(sid, context.RequestAborted))?.AbandonOutcome is not { } outcome)
                 return Error(409, $"session {sid}'s decision declares no outcome to abandon it with; answer it with ff run answer");
-            return await SubmitAnswerAsync(context, caller, run!, wait!, new AnswerArgs(session!.WaitId, caller.Actor, outcome, null));
+            return await SubmitAnswerAsync(context, caller, run!, wait!, new AnswerArgs(session!.WaitId, caller.Actor, outcome, null, Reason: body.Reason));
         }
 
         /// <summary>
         /// The session, its run and its decision's wait, if <paramref name="caller"/> may act on it now: the decision is open, and
-        /// the caller may answer it as the approval rule says (roles in the run's scope, <c>from_chat</c>), as an answer would.
+        /// the caller may answer it (<see cref="CheckAnswer"/>), as an answer would.
         /// </summary>
         async Task<(SessionRecord? Session, RunRecord? Run, WaitRecord? Wait, IResult? Refused)> ActableAsync(Caller caller, string sid, CancellationToken ct)
         {
@@ -142,12 +165,8 @@ public static partial class ApiApp
             var (types, unreadable) = await DecisionTypesAsync(wait, ct);
             if (types is null)
                 return (null, null, null, unreadable);
-            var rule = Approval.For(wait.DecisionType, services.Organisation.Policy, TeamOf(scope), types, wait.Kind);
-            if (Refuse(caller, scope, RolesToAnswer(services.Organisation.Policy, types, wait, TeamOf(scope)),
-                    $"act on session {sid} ({wait.DecisionType}; approval: {rule.Source})") is { } refused)
+            if (CheckAnswer(caller, run, wait, types, action: null).Refusal is { } refused)
                 return (null, null, null, refused);
-            if (caller.FromChat && !rule.Rule.FromChat)
-                return (null, null, null, Error(403, $"{wait.DecisionType} may not be answered from chat ({rule.Source}); act on session {sid} in the CLI"));
             return (session, run, wait, null);
         }
 
@@ -161,7 +180,7 @@ public static partial class ApiApp
         {
             var events = (await Records.QueryAsync<AgentEventRecord>(Queries.AgentEvents, new Dictionary<string, string> { ["step_key"] = SessionNames.EventKey(sid) }, ct)).Unwrap();
             return events.LastOrDefault(e => e.Kind == SessionNames.WorkspaceEvent) is { } recorded
-                ? JsonSerializer.Deserialize<SessionDocument>(await TextAsync(recorded.Detail, ct), Json)
+                ? JsonSerializer.Deserialize<SessionDocument>(await TextAsync(recorded.Detail, ct), Stored)
                 : null;
         }
 

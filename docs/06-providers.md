@@ -468,9 +468,13 @@ interface INotificationsProvider : IProvider {
 ```
 
 - Slack first; no chat-specific types outside its provider.
-- Events, by name: `decision_needed` (with its kind), `resumed`, `completed`,
-  `failed`, `stalled`, `stuck`. Configuration routes and filters by these names.
-  One thread per root run; children reply in it (from FF).
+- Events, by name: `decision_needed` (with its kind), `reminder`, `resumed`,
+  `completed`, `failed`, `stalled`, `stuck`. Configuration routes and filters by
+  these names. One thread per root run; children reply in it (from FF).
+- `reminder` is the decision request again for a wait still open after each
+  `notifications.reminder_interval` (`docs/04` section 4), with
+  `DecisionRequest.Reminder` its number (0 for the first request); Slack titles
+  it "Reminder <n>". Sent once per wait and number.
 - `PostDecisionAsync` does not wait for the answer. A chat answer reaches the
   inbound gateway and becomes an API decision call.
 - De-duplicated per run, step, attempt and event, so a restart does not repeat a
@@ -511,7 +515,31 @@ interface ISecretsProvider : IProvider {
 - The artifact store is immutable and content-addressed. Named pointers (the
   latest revision of a logical artifact) are records, not blobs.
 - The record store takes named queries, not SQL, so a provider cannot leak its
-  storage engine into the interface. The query catalogue is in the engine.
+  storage engine into the interface. The query catalogue is in the engine
+  (`Queries`, `FeatureFlow.Providers.Abstractions/Stores.cs`).
+- The record store numbers the changes each batch makes, in a `changes` table
+  written inside `AppendAsync`'s own transaction, so no writer changes and none
+  is missed (LOG 397): one `run_changed` per run whose runs, timeline,
+  answers, overrides, artifacts or sessions the batch writes, and one
+  `wait_opened` or `wait_closed` per wait record (`ChangeKinds.Of`).
+  `Queries.Changes` returns those after a sequence (`after`, ascending, at most
+  500) and `Queries.LatestChange` the latest; `GET /events` reads them
+  (`docs/02` section 7). The numbers are in commit order, so a reader that keeps
+  its place misses nothing: SQLite has one writer; Postgres takes a
+  transaction-scoped advisory lock before writing the changes, held to the
+  commit, since identity order alone is not commit order. Rows are not pruned
+  until R4.
+- `open_waits` answers across runs: every open wait of a `starting` or
+  `running` run, with its run, oldest first, at most 500, for `GET /attention`
+  (`docs/02` section 7). It joins waits to runs on the run's status, so a run
+  that ended without closing its waits (a terminated workflow, set by
+  `  reconcile`) shows none. SQLite and Postgres index the open waits by
+  organisation (`waits_open`, a partial index on `open`; Postgres schema script
+  2); the in-memory store keeps no waits and answers with none. A wait that
+  opened and closed between two records is never written (LOG 374), so it never
+  appears. Known limit: the 500 are the organisation's oldest open waits, taken
+  before `GET /attention` filters them by caller, so with more than 500 open a
+  caller's newer waits drop out of its list; R4 can page by the caller's scope.
 - Secret values are scrubbed at the logging layer.
 
 ### 3.13 Credential broker
