@@ -69,6 +69,96 @@ public class WorkflowTestRunnerTests
     }
 
     [Fact]
+    public void A_question_is_answered_through_the_cores_routing_times_out_or_closes_with_its_step()
+    {
+        var result = WorkflowTestRunner.RunPath(Path.Combine(StdTests, "ticket_agent_questions.yaml")).Single();
+
+        Assert.True(result.Passed, string.Join("\n", result.Failures));
+        Assert.Contains(result.Trace, t => t is { Kind: "question_answered", StepId: "implement", Detail: "implement-q1 by test" });
+        Assert.Contains(result.Trace, t => t is { Kind: "question_timed_out", StepId: "implement", Detail: "implement-q2" });
+    }
+
+    [Theory]
+    [InlineData("implement-q2: timed_out", "implement-q2: answered", "question implement-q2 closed timed_out, expected answered")]
+    [InlineData("answer: orders }", "answer: \"  \" }", "the answer to question implement-q1 was refused: implement-q1 is a question: answer with text")]
+    [InlineData("{ ask: \"Is a migration wanted?\" }", "{ ask: \"Is a migration wanted?\", visit: 2 }", "question implement-q3 was not asked: its step had no visit 2")]
+    public void A_question_that_does_not_close_as_expected_fails_the_test(string old, string replacement, string failure)
+    {
+        var result = RunVariant("ticket_agent_questions", old, replacement);
+
+        Assert.False(result.Passed);
+        Assert.Contains(failure, result.Failures);
+    }
+
+    /// <summary>
+    /// A patch approval is answered through the core's routing too: an agent's patch that its step's <c>planning.review:
+    /// required</c> holds for a person, approved or rejected by the file's <c>answers</c>.
+    /// </summary>
+    [Theory]
+    [InlineData("approve", 2)]
+    [InlineData("reject", 1)]
+    public void A_patch_approval_is_answered_through_the_cores_routing(string answer, int revision)
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"ff-patch-approval-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(root, "templates"));
+        Directory.CreateDirectory(Path.Combine(root, "tests"));
+        File.WriteAllText(Path.Combine(root, "library.yaml"), "name: probe\nversion: 0.1.0\n");
+        File.WriteAllText(Path.Combine(root, "templates", "planned.yaml"), """
+            api_version: feature-flow/v1
+            kind: template
+            metadata: { name: planned, level: ticket }
+            defaults:
+              routes:
+                by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+            steps:
+              - id: plan
+                agent:
+                  role: std:roles/planner
+                  task: std:tasks/repair_failures
+                  planning: { targets: [self], review: required }
+                outcomes: { planned: success, blocked: blocked }
+                routes: { planned: ship }
+              - id: ship
+                action: artifact.compose
+                with: { name: release, members: [team] }
+                routes: { composed: { end: completed } }
+            """);
+        var test = Path.Combine(root, "tests", "planned_patch.yaml");
+        File.WriteAllText(test, $$"""
+            api_version: feature-flow/v1
+            kind: workflow_test
+            name: planned_patch
+            template: probe:templates/planned
+            patch:
+              api_version: feature-flow/v1
+              kind: patch
+              metadata: { proposed_by: { type: agent, step_id: plan }, reason: test }
+              base_revision: 1
+              resume_at: ship
+              changes:
+                - { op: set, target: ship, field: limits, value: { attempts: 2 } }
+            answers:
+              plan: {{answer}}
+            expect:
+              status: completed
+              path: [plan, ship]
+              validation_errors: [29]
+            """);
+        try
+        {
+            var result = WorkflowTestRunner.RunPath(test, [Path.Combine(Repository.Root, "library", "std")]).Single();
+
+            Assert.True(result.Passed, string.Join("\n", result.Failures));
+            Assert.Contains(result.Trace, t => t.Kind == "answered" && t.StepId.StartsWith("patch_approval-", StringComparison.Ordinal) && t.Detail == $"{answer} by test");
+            Assert.Equal(revision, result.Trace.Count(t => t.Kind == "patch_applied") + 1);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void A_wrong_status_fails_the_test()
     {
         var result = RunVariant("ticket_main_path", "status: completed", "status: incomplete");
