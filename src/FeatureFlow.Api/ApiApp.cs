@@ -19,13 +19,22 @@ public sealed record ApiServices(ProviderSet Providers, InstallationConfig Insta
 
     /// <summary>A caller's people roles in a run's scope (docs/05 section 3.3). Default: the roles the credential carries.</summary>
     public IPeopleRoles PeopleRoles { get; init; } = new CredentialRoles();
+
+    /// <summary>How often the change feed reads the record store's changes for <c>GET /events</c> (docs/02 section 7).</summary>
+    public TimeSpan EventPoll { get; init; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>How often <c>GET /events</c> sends a heartbeat (<c>: ping</c>), so idle connections stay open through proxies.</summary>
+    public TimeSpan EventHeartbeat { get; init; } = TimeSpan.FromSeconds(15);
+
+    /// <summary>The clock the change feed's poll and heartbeat run on.</summary>
+    public TimeProvider Time { get; init; } = TimeProvider.System;
 }
 
 /// <summary>
 /// The API service (docs/02 sections 1 and 7): start, query, answer and abort, behind authentication. Queries read the
 /// record store, never Temporal (docs/02 section 5). An answer is authorised, recorded with the authenticated actor, then
 /// delivered as a Temporal Update (docs/04 section 4.1). Handlers are split by area, each file mapping its own routes:
-/// runs, decisions, overrides, sessions, inbound events and the console; authentication is in its own file.
+/// runs, decisions, overrides, sessions, inbound events, the console and change events; authentication is in its own file.
 /// </summary>
 public static partial class ApiApp
 {
@@ -59,6 +68,7 @@ public static partial class ApiApp
                 return Task.CompletedTask;
             });
         });
+        AddEvents(builder.Services, services);
         var app = builder.Build();
         var api = new Handlers(services, app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("FeatureFlow.Api"));
 
@@ -69,6 +79,7 @@ public static partial class ApiApp
         MapSessions(app, api);
         MapInbound(app, api);
         MapConsole(app, api);
+        MapEvents(app, api);
         return app;
     }
 

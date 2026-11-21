@@ -1076,6 +1076,36 @@
           }
         }
       }
+    },
+    "/events": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "getEvents",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeEvent"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1222,6 +1252,45 @@
             "format": "date-time"
           }
         }
+      },
+      "ChangeEvent": {
+        "required": [
+          "sequence",
+          "run_id",
+          "kind",
+          "wait_id",
+          "updated_at"
+        ],
+        "type": "object",
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ChangeKind"
+          },
+          "wait_id": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ChangeKind": {
+        "enum": [
+          "run_changed",
+          "wait_opened",
+          "wait_closed"
+        ]
       },
       "ClosedAnswer": {
         "required": [

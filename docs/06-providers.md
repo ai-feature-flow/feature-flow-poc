@@ -449,6 +449,18 @@ interface ISecretsProvider : IProvider {
   latest revision of a logical artifact) are records, not blobs.
 - The record store takes named queries, not SQL, so a provider cannot leak its
   storage engine into the interface. The query catalogue is in the engine.
+- The record store numbers the changes each batch makes, in a `changes` table
+  written inside `AppendAsync`'s own transaction, so no writer changes and none
+  is missed (LOG A3-0j): one `run_changed` per run whose runs, timeline,
+  answers, overrides, artifacts or sessions the batch writes, and one
+  `wait_opened` or `wait_closed` per wait record (`ChangeKinds.Of`).
+  `Queries.Changes` returns those after a sequence (`after`, ascending, at most
+  500) and `Queries.LatestChange` the latest; `GET /events` reads them
+  (`docs/02` section 7). The numbers are in commit order, so a reader that keeps
+  its place misses nothing: SQLite has one writer; Postgres takes a
+  transaction-scoped advisory lock before writing the changes, held to the
+  commit, since identity order alone is not commit order. Rows are not pruned
+  until R4.
 - Secret values are scrubbed at the logging layer.
 
 ### 3.13 Credential broker

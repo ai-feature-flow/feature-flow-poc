@@ -5,6 +5,16 @@
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Local\FeatureFlow.Providers.Local.csproj" />
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Slack\FeatureFlow.Providers.Slack.csproj" />
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.GitHub\FeatureFlow.Providers.GitHub.csproj" />
+    <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Postgres\FeatureFlow.Providers.Postgres.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- GET /events over a Postgres record store (Integration). -->
+    <Compile Include="..\Providers\Shared\Container.cs" Link="Container.cs" />
   </ItemGroup>
 
   <ItemGroup>

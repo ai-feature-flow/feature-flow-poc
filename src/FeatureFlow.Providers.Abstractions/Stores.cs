@@ -69,6 +69,40 @@ public sealed record AnswerRecord(string RunId, string WaitId, string Actor, str
 /// </summary>
 public sealed record ChangeRecord(long Sequence, string RunId, string Kind, string? WaitId, DateTimeOffset At);
 
+/// <summary>
+/// The kinds of <see cref="ChangeRecord"/>, and the changes a batch makes, which every record store writes in the same
+/// transaction as the batch (docs/06 section 3.12, LOG A3-0j).
+/// </summary>
+public static class ChangeKinds
+{
+    public const string RunChanged = "run_changed";
+    public const string WaitOpened = "wait_opened";
+    public const string WaitClosed = "wait_closed";
+
+    /// <summary>
+    /// One <c>run_changed</c> per distinct run whose runs, timeline, answers, overrides, artifacts or sessions the batch
+    /// writes, in the order first written; then one <c>wait_opened</c> or <c>wait_closed</c> per wait record. Nothing for a
+    /// batch of other records.
+    /// </summary>
+    public static IReadOnlyList<(string RunId, string Kind, string? WaitId)> Of(RecordBatch batch)
+    {
+        var runs = new List<string>();
+        foreach (var runId in (batch.Runs ?? []).Select(r => r.RunId)
+                     .Concat((batch.Timeline ?? []).Select(t => t.RunId))
+                     .Concat((batch.Answers ?? []).Select(a => a.RunId))
+                     .Concat((batch.Overrides ?? []).Select(o => o.RunId))
+                     .Concat((batch.Artifacts ?? []).Select(a => a.RunId))
+                     .Concat((batch.Sessions ?? []).Select(s => s.RunId)))
+            if (!runs.Contains(runId, StringComparer.Ordinal))
+                runs.Add(runId);
+        return
+        [
+            .. runs.Select(r => (r, RunChanged, (string?)null)),
+            .. (batch.Waits ?? []).Select(w => (w.RunId, w.Open ? WaitOpened : WaitClosed, (string?)w.WaitId)),
+        ];
+    }
+}
+
 /// <summary>A run's library lock, by artifact reference (docs/08 section 5.1).</summary>
 public sealed record LockRecord(string RunId, string LockRef, DateTimeOffset At);
 

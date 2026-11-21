@@ -12,7 +12,8 @@ namespace FeatureFlow.Providers.Postgres;
 /// key, the last write winning (a closing wait keeps what its opening record said; an answered or timed-out question is
 /// not reopened); the timeline, finding events, the artifact index and notifications are kept once per key, so a retried
 /// append adds nothing; answers, reports, agent events and overrides are appended. Every key starts with
-/// <c>org_id</c> (docs/02 section 5). The connection string is a secret, resolved when the store is first used; the
+/// <c>org_id</c> (docs/02 section 5). Each batch also writes its changes, numbered in commit order (<see cref="AppendChangesAsync"/>).
+/// The connection string is a secret, resolved when the store is first used; the
 /// schema is created or migrated then (<see cref="Schema"/>).
 /// </summary>
 public sealed class PostgresRecordStore(Func<CancellationToken, Task<ProviderResult<string>>> connectionString) : IRecordStoreProvider, IAsyncDisposable
@@ -192,6 +193,7 @@ public sealed class PostgresRecordStore(Func<CancellationToken, Task<ProviderRes
                 await Run("INSERT INTO session_checks VALUES (@o, @s, @c, @b::jsonb) ON CONFLICT (org_id, session_id, check_id) DO UPDATE SET body = excluded.body",
                     ("s", c.SessionId), ("c", c.CheckId), ("b", Body(c)));
 
+            await AppendChangesAsync(connection, tx, records, ct);
             await tx.CommitAsync(ct);
             return default(Unit);
         }, cancellationToken);
@@ -212,6 +214,7 @@ public sealed class PostgresRecordStore(Func<CancellationToken, Task<ProviderRes
         string P(string key) => parameters.TryGetValue(key, out var value) ? value : throw new ArgumentException($"query {queryName} needs {key}");
         (string Sql, Type Type, (string, object?)[] Args) query = queryName switch
         {
+            Queries.Changes or Queries.LatestChange => ChangesQuery(queryName, parameters),
             Queries.Run => ("SELECT body FROM runs WHERE org_id = @o AND run_id = @r", typeof(RunRecord), [("r", P("run_id"))]),
             Queries.Runs when parameters.ContainsKey("parent_run_id") =>
                 ("SELECT body FROM runs WHERE org_id = @o AND parent_run_id = @p ORDER BY run_id", typeof(RunRecord), [("p", P("parent_run_id"))]),
@@ -260,4 +263,33 @@ public sealed class PostgresRecordStore(Func<CancellationToken, Task<ProviderRes
             return list;
         }, cancellationToken);
     }
+
+    // ---- Changes (docs/06 section 3.12, LOG A3-0j): what GET /events reports, written in the batch's transaction ----
+
+    /// <summary>An arbitrary key for <c>pg_advisory_xact_lock</c>, held from the first change row a transaction writes until it commits.</summary>
+    const long ChangesLockKey = 0x46_46_5F_43_48_41_4E_47; // "FF_CHANG"
+
+    /// <summary>
+    /// The batch's changes (<see cref="ChangeKinds.Of"/>), last in its transaction. The advisory lock makes identity order
+    /// commit order: without it a transaction that took id 10 could commit after one that took 11, and a reader that had
+    /// read 11 would never see 10. The lock is held only from here to the commit.
+    /// </summary>
+    internal static async Task AppendChangesAsync(NpgsqlConnection connection, NpgsqlTransaction tx, RecordBatch records, CancellationToken ct)
+    {
+        var changes = ChangeKinds.Of(records);
+        if (changes.Count == 0)
+            return;
+        await Execute(connection, tx, $"SELECT pg_advisory_xact_lock({ChangesLockKey})", ct);
+        foreach (var (runId, kind, waitId) in changes)
+            await Execute(connection, tx, "INSERT INTO changes (org_id, run_id, kind, wait_id) VALUES (@o, @r, @k, @w)", ct, ("r", runId), ("k", kind), ("w", waitId));
+    }
+
+    const string ChangeJson = "SELECT jsonb_build_object('sequence', id, 'runId', run_id, 'kind', kind, 'waitId', wait_id, 'at', at) FROM changes WHERE org_id = @o";
+
+    static (string Sql, Type Type, (string, object?)[] Args) ChangesQuery(string queryName, IReadOnlyDictionary<string, string> parameters) =>
+        queryName == Queries.LatestChange
+            ? (ChangeJson + " ORDER BY id DESC LIMIT 1", typeof(ChangeRecord), [])
+            : (ChangeJson + " AND id > @a ORDER BY id LIMIT @l", typeof(ChangeRecord),
+                [("a", long.Parse(parameters.GetValueOrDefault("after", "0"), CultureInfo.InvariantCulture)),
+                 ("l", Math.Clamp(int.Parse(parameters.GetValueOrDefault("limit", "500"), CultureInfo.InvariantCulture), 1, 500))]);
 }
