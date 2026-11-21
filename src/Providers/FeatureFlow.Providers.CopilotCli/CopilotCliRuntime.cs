@@ -39,7 +39,7 @@ public sealed class CopilotCliRuntime(CopilotCliOptions options, Func<ISandboxPr
 
     /// <summary>
     /// Copilot's hooks report its tools by Claude Code's names (<c>view</c> is <c>Read</c>, <c>create</c> is <c>Write</c>,
-    /// <c>bash</c> is <c>Bash</c>; LOG 293); its own names, as offered, are read too (LOG A5b-2).
+    /// <c>bash</c> is <c>Bash</c>; LOG 293); its own names, as offered, are read too (LOG 445).
     /// </summary>
     protected override IReadOnlyDictionary<string, string> CompanionTools { get; } = new Dictionary<string, string>
     {

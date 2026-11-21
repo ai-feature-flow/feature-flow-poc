@@ -127,7 +127,7 @@ public sealed class SandboxClientTests : IDisposable
     }
 
     /// <summary>
-    /// LOG A5b-1: the hook command knows no runtime. A denial prints and exits as the step's runtime's reply says (Copilot's
+    /// LOG 444: the hook command knows no runtime. A denial prints and exits as the step's runtime's reply says (Copilot's
     /// JSON decision with exit 0, LOG 293; Claude Code's exit 2 with the reason on standard error).
     /// </summary>
     [Theory]
@@ -182,7 +182,7 @@ public sealed class SandboxClientTests : IDisposable
 
     /// <summary>
     /// R19 (SP2 S4 and N2): a hook that cannot reach the engine holds, marks the session stopped, then applies the step's
-    /// runtime's reply (LOG A5b-1); it never allows the call.
+    /// runtime's reply (LOG 444); it never allows the call.
     /// </summary>
     [Fact]
     public async Task The_hook_command_holds_while_no_replica_answers_and_then_applies_the_runtime_s_unreachable_reply()

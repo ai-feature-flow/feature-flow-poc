@@ -5,7 +5,7 @@ using FeatureFlow.Providers.Contracts;
 namespace FeatureFlow.Providers.CopilotCli.Tests;
 
 /// <summary>
-/// The agent runtime contract (F12, LOG A5b-4) run against the Copilot CLI runtime, with a stand-in for <c>copilot</c>: it reads
+/// The agent runtime contract (F12, LOG 447) run against the Copilot CLI runtime, with a stand-in for <c>copilot</c>: it reads
 /// <c>COPILOT_HOME</c>'s settings, the MCP configuration and the command line as Copilot does, prints the JSON lines Copilot CLI
 /// 1.0.105 printed (an <c>assistant.message</c> per turn, <c>tool.execution_start</c> by its own tool names, <c>session.error</c>),
 /// writes its usage file, and sends the hook input Copilot sends: Claude Code's tool names, the file as <c>path</c>, the

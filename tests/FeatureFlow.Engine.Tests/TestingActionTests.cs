@@ -62,7 +62,7 @@ public sealed class TestingActionTests
 
     /// <summary>
     /// F4: the tests and the analyser run in a sandbox made from the parent branch's <c>environment.image</c>, which shapes
-    /// the evidence as setup does; an image the agent names on the work branch is not used (LOG A5a-1).
+    /// the evidence as setup does; an image the agent names on the work branch is not used (LOG 440).
     /// </summary>
     [Fact]
     public async Task Test_and_analysis_sandboxes_are_made_from_the_parent_branchs_environment_image()

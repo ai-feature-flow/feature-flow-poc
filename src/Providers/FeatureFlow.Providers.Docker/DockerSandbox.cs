@@ -16,7 +16,7 @@ namespace FeatureFlow.Providers.Docker;
 /// </para>
 /// <para>
 /// The container is made from <paramref name="image"/>, or from the repository's image when the spec names one that
-/// <paramref name="allowedImages"/> allows (<see cref="SandboxImages"/>, LOG A5a-1, A5a-2).
+/// <paramref name="allowedImages"/> allows (<see cref="SandboxImages"/>, LOG 440, 441).
 /// </para>
 /// </summary>
 public sealed class DockerSandbox(string image, string user, Func<IArtifactStoreProvider> store, DockerCli? docker = null, IReadOnlyList<Uri>? reach = null,

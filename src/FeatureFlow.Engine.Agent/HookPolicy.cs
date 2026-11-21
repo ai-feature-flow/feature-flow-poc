@@ -5,7 +5,7 @@ namespace FeatureFlow.Engine.Agent;
 
 /// <summary>
 /// A hook's answer: allow the tool call, or deny it with a reason the agent reads. <see cref="Reply"/> is how the
-/// step's runtime tells its CLI of a denial, which the hook command prints and exits with (LOG A5b-1).
+/// step's runtime tells its CLI of a denial, which the hook command prints and exits with (LOG 444).
 /// </summary>
 public sealed record HookDecision(string Decision, string? Reason = null, HookReply? Reply = null)
 {
@@ -21,7 +21,7 @@ public sealed record HookDecision(string Decision, string? Reason = null, HookRe
 /// checkout), so a runtime without hooks keeps the control (docs/04 section 3.7).
 /// <para>
 /// The policy sees tool classes only: the step's runtime reads its CLI's hook input as a <see cref="ToolCall"/>
-/// (<see cref="IAgentHooks"/>; LOG 65, A5b-1). A tool the runtime does not map has no class and is denied.
+/// (<see cref="IAgentHooks"/>; LOG 65, 444). A tool the runtime does not map has no class and is denied.
 /// </para>
 /// </summary>
 public static partial class HookPolicy

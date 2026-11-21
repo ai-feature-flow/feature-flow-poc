@@ -1,6 +1,6 @@
 namespace FeatureFlow.Providers.Abstractions.Tests;
 
-/// <summary>Which image a container sandbox is made from (docs/06 section 3.1; LOG A5a-1, A5a-2).</summary>
+/// <summary>Which image a container sandbox is made from (docs/06 section 3.1; LOG 440, 441).</summary>
 public sealed class SandboxImagesTests
 {
     const string Own = "feature-flow-sandbox:1";

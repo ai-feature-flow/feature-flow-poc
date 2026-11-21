@@ -28,7 +28,7 @@ public sealed class JiraApi(Func<CancellationToken, Task<ProviderResult<string>>
 
     public string BaseUrl { get; } = baseUrl.TrimEnd('/');
 
-    /// <summary>What a person is told to check when Jira refuses the credential (docs/06 section 1.1, LOG A5c-2).</summary>
+    /// <summary>What a person is told to check when Jira refuses the credential (docs/06 section 1.1, LOG 451).</summary>
     public const string FaultHint = "Check the Jira instance's secret (<account email>:<API token>) and that account's permissions in the project";
 
     /// <summary>The wait before the fresh-credential retry. Tests shorten it.</summary>

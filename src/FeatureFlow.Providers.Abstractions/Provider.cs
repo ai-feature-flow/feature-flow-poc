@@ -12,7 +12,7 @@ public enum ProviderErrorClass
 /// <summary>
 /// An expected failure: a reason from docs/06 section 1.1 and a message. Exceptions are programming errors.
 /// <paramref name="Hint"/> is what the failing provider tells a person to check when the error is a configuration
-/// fault (LOG A5c-2); without one, <see cref="DefaultHint"/> is used.
+/// fault (LOG 451); without one, <see cref="DefaultHint"/> is used.
 /// </summary>
 public sealed record ProviderError(string Reason, string Message, TimeSpan? RetryAfter = null, string? Hint = null)
 {

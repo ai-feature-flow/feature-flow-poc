@@ -8,7 +8,7 @@ namespace FeatureFlow.SandboxClient;
 /// stopped in a resumable state and, on the pre-tool-use hook, applies the reply the step's runtime gave it in
 /// <c>FF_HOOK_UNREACHABLE</c>, or blocks the call with exit 2 when it gave none. It knows no runtime: a denial carries the
 /// step's runtime's reply (what to print and the exit code), and a call with no decision is blocked with exit 2 and the
-/// reason on standard error, which every runtime's CLI reads as blocked (LOG A5b-1).
+/// reason on standard error, which every runtime's CLI reads as blocked (LOG 444).
 /// </summary>
 public static class HookCommand
 {

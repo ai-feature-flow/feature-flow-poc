@@ -38,7 +38,7 @@ public sealed class GitHubApi(Func<ICredentialBroker?> broker, HttpMessageHandle
 
     public ICredentialBroker? Broker => broker();
 
-    /// <summary>What a person is told to check when GitHub refuses the engine's credential (docs/06 section 1.1, LOG A5c-2).</summary>
+    /// <summary>What a person is told to check when GitHub refuses the engine's credential (docs/06 section 1.1, LOG 451).</summary>
     public const string FaultHint = "Check the installation's credential broker: the GitHub App's key, installation and permissions";
 
     public async Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) =>

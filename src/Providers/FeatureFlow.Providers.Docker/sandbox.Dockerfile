@@ -2,7 +2,7 @@
 # Copilot CLI, git, and an unprivileged user (node, uid 1000) the agent runs as. iptables closes a Docker sandbox's network
 # at creation (M4 follow-up 12); tini is a Kubernetes sandbox's init. Nothing of the engine is baked in: the sandbox client
 # is copied into each sandbox (LOG 67), and the home directory, settings and checkout are created by the engine per step
-# (DR19). A repository that needs a toolchain names an image built FROM this one in its environment.image (LOG A5a-1).
+# (DR19). A repository that needs a toolchain names an image built FROM this one in its environment.image (LOG 440).
 #
 #   docker build -t feature-flow-sandbox:m8 -f src/Providers/FeatureFlow.Providers.Docker/sandbox.Dockerfile src/Providers/FeatureFlow.Providers.Docker
 FROM node:24-bookworm-slim

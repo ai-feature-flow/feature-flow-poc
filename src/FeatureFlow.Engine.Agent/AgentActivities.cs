@@ -64,7 +64,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
     {
         var context = ActivityExecutionContext.Current;
         // The step's role picks the runtime instance (LOG 267), else the run's default; in a dry run the dry_run instance stands in (LOG 384).
-        // Its name, as resolved, names the step's hook reading and model proxy in its token (LOG A5b-1, A5b-3).
+        // Its name, as resolved, names the step's hook reading and model proxy in its token (LOG 444, 446).
         var instance = providers.NameForRun("agent_runtime", call.Agent?.Runtime, call.DryRun);
         var runtime = (instance is null ? null : providers.Instance("agent_runtime", instance)) as IAgentRuntimeProvider;
         if (runtime is null)

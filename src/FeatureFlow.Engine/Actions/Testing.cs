@@ -102,7 +102,7 @@ static class Testing
 
     /// <summary>
     /// The manifest whose tiers, analyser, setup and image make evidence: the parent branch's, never the head's (LOG 138;
-    /// setup and image shape the environment the evidence is produced in, re-check R4, LOG A5a-1). With no manifest on the
+    /// setup and image shape the environment the evidence is produced in, re-check R4, LOG 440). With no manifest on the
     /// parent branch the engine cannot tell how to test: an intervention.
     /// </summary>
     static async Task<RepositoryManifest> ManifestAsync(ActionRun run, RepoRef repo, string what)

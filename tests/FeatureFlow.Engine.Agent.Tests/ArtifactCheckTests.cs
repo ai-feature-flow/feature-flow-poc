@@ -192,7 +192,7 @@ public sealed class ArtifactCheckTests : IAsyncDisposable
         Assert.Equal(StepOutcome.Reported, outcome.Kind);
         // One session: started once, continued once with the field and the rule, not re-run.
         Assert.Equal(1, runtime.Started);
-        // LOG A5b-1, A5b-3: the step's token names the runtime instance it runs on, which reads its hooks and picks its model proxy.
+        // LOG 444, 446: the step's token names the runtime instance it runs on, which reads its hooks and picks its model proxy.
         Assert.Equal("one", runtime.TokenRuntime);
         var message = Assert.Single(runtime.Continued);
         Assert.Contains("artifact 'requirements' (requirements.yaml): requirements[0].owner (line 8): must be a map, not text 'billing' [type]", message, StringComparison.Ordinal);

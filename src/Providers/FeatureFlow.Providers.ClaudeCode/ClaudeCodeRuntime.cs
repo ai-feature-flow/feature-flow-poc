@@ -40,7 +40,7 @@ public sealed class ClaudeCodeRuntime(ClaudeCodeOptions options, Func<ISandboxPr
         [ToolClass.Shell] = ["Bash"],
     };
 
-    /// <summary>Tools Claude Code brings with those offered: a notebook read with Read, a background shell's output and kill with Bash (LOG A5b-2).</summary>
+    /// <summary>Tools Claude Code brings with those offered: a notebook read with Read, a background shell's output and kill with Bash (LOG 445).</summary>
     protected override IReadOnlyDictionary<string, string> CompanionTools { get; } = new Dictionary<string, string>
     {
         ["NotebookRead"] = "Read",

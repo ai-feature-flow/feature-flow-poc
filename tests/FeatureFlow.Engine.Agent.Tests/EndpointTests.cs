@@ -146,7 +146,7 @@ public sealed class EndpointTests : IDisposable
     }
 
     /// <summary>
-    /// LOG A5b-1: the step's runtime instance, named in its token, reads the hook input; the policy decides on the class;
+    /// LOG 444: the step's runtime instance, named in its token, reads the hook input; the policy decides on the class;
     /// a denial carries the runtime's reply. A step whose runtime reads no hooks is denied.
     /// </summary>
     [Fact]
@@ -164,7 +164,7 @@ public sealed class EndpointTests : IDisposable
         Assert.Equal(("deny", null), (unread.Decision, unread.Reply));
     }
 
-    /// <summary>LOG A5b-3: a step's model requests go to its runtime instance's proxy; an instance with none has no proxy.</summary>
+    /// <summary>LOG 446: a step's model requests go to its runtime instance's proxy; an instance with none has no proxy.</summary>
     [Fact]
     public void A_step_s_model_proxy_is_its_runtime_instance_s()
     {

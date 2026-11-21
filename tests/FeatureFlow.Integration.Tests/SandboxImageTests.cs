@@ -4,8 +4,8 @@ using FeatureFlow.Providers.Docker;
 namespace FeatureFlow.Integration.Tests;
 
 /// <summary>
-/// F4: a repository's sandboxes are made from the image its manifest names (<c>environment.image</c>, LOG A5a-1), when the
-/// installation allows it (<c>allowed_images</c>, LOG A5a-2). The test builds a small image <c>FROM</c> the base sandbox
+/// F4: a repository's sandboxes are made from the image its manifest names (<c>environment.image</c>, LOG 440), when the
+/// installation allows it (<c>allowed_images</c>, LOG 441). The test builds a small image <c>FROM</c> the base sandbox
 /// image that adds a command the base lacks, and runs <c>test.run</c> in the Docker sandbox on a repository whose only tier
 /// is that command: it passes only in the repository's image.
 /// </summary>

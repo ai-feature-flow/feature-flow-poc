@@ -8,7 +8,7 @@ namespace FeatureFlow.Engine.Agent;
 /// <summary>
 /// What a per-step token carries (docs/02 section 4.2): the step, its run and workflow, and the policy a replica
 /// applies to a hook call from the token alone: the role's write access and tool classes. It expires. <see cref="Runtime"/>
-/// is the agent runtime instance the step runs on: it reads the step's hook calls and picks its model proxy (LOG A5b-1, A5b-3).
+/// is the agent runtime instance the step runs on: it reads the step's hook calls and picks its model proxy (LOG 444, 446).
 /// </summary>
 public sealed record StepClaims(
     [property: JsonPropertyName("k")] string StepKey,

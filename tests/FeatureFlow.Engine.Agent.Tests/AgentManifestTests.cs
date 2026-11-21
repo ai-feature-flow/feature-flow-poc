@@ -124,7 +124,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
         Assert.Contains(outcome.Events!, e => e.StartsWith("committed after_changes", StringComparison.Ordinal));
     }
 
-    /// <summary>F4: the agent's sandbox is made from the manifest's <c>environment.image</c>; with none, the sandbox's own (LOG A5a-1).</summary>
+    /// <summary>F4: the agent's sandbox is made from the manifest's <c>environment.image</c>; with none, the sandbox's own (LOG 440).</summary>
     [Fact]
     public async Task The_agents_sandbox_is_made_from_the_manifests_environment_image()
     {

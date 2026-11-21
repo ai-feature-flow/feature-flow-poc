@@ -117,7 +117,7 @@ reports.
 ### 3.1 Lifecycle of an attempt
 
 1. **Prepare.** Create or re-attach the sandbox from the repository manifest's
-   `environment.image` (LOG A5a-1);
+   `environment.image` (LOG 440);
    check out the work branch (read-only if the role has no write access); run
    the manifest's `setup` commands; stage consumed artifacts, skills and
    library resources read-only, with a manifest listing them. A consumed
@@ -183,7 +183,7 @@ agent how to use them.
 | `run_check` | Interactive sessions only | Run a named later step's checks now (section 4.4) |
 
 Every built-in runtime calls MCP tools, so the `report` tool is the only way to
-report; the file fall-back for a runtime without MCP is removed (L5, LOG A5b-5).
+report; the file fall-back for a runtime without MCP is removed (L5, LOG 448).
 An agent that ends without reporting has failed its attempt.
 
 A `report` with a `success` outcome must give every output the step declares,

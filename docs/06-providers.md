@@ -35,7 +35,7 @@ Signatures are C#, abbreviated: every method is async, takes a
 | `unreachable`, `server_error`, `internal_error` | Infrastructure | Yes, with backoff | The remote or the network failed; the work did not happen |
 | `timeout` | Infrastructure | Yes | The work **may** have happened: creates find by marker first |
 | `rate_limited` | Infrastructure | Yes, honouring `retry_after` | — |
-| `unauthenticated`, `forbidden` | Infrastructure | Once, by the provider, after about 2 s, with a freshly issued credential; then the engine stops for a person: an action, a `clean_up` or the agent step raises an intervention naming the configuration fault, and run start refuses the start (LOG 147). What the person is told to check comes from the provider that failed: the GitHub providers name the App's key, installation and permissions, Jira its secret, Slack its bot token; a provider that gives no hint gets a neutral one naming no system (L10, LOG A5c-2) | Almost always configuration |
+| `unauthenticated`, `forbidden` | Infrastructure | Once, by the provider, after about 2 s, with a freshly issued credential; then the engine stops for a person: an action, a `clean_up` or the agent step raises an intervention naming the configuration fault, and run start refuses the start (LOG 147). What the person is told to check comes from the provider that failed: the GitHub providers name the App's key, installation and permissions, Jira its secret, Slack its bot token; a provider that gives no hint gets a neutral one naming no system (L10, LOG 451) | Almost always configuration |
 | `not_found`, `conflict`, `validation_failed`, `rejected` | Work | No | The remote answered; the step maps it to an outcome or an intervention. A permission the provider's identity lacks (GitHub's 403 "Resource not accessible by integration") is `rejected`, named a configuration fault: it does not heal, so it stops for a person at once (LOG 119) |
 | `base_moved` | Work | No | A push was refused because the target moved since it was read |
 | `capability_missing` | Work | No | — |
@@ -142,12 +142,12 @@ abbreviated: every method also takes a cancellation token, and `..X` stands for
   environment and folders. The checkout is the VCS provider's (`CheckOutAsync`,
   section 3.3), not the sandbox's.
 - `SandboxSpec.Image` is the repository's `environment.image` (`docs/07`
-  section 4), or null for the sandbox's own `image` (LOG A5a-1). The agent step
+  section 4), or null for the sandbox's own `image` (LOG 440). The agent step
   passes its work branch manifest's image; `test.run` and `analysis.run` pass the
   parent branch's, as they do its `setup`, because both shape the evidence. The
   sandbox never reads the manifest itself. A container sandbox uses the image
   only when it is its own or matches one of its `allowed_images`, and refuses any
-  other as `cannot_answer`, which stops the step for a person (LOG A5a-2).
+  other as `cannot_answer`, which stops the step for a person (LOG 441).
 - `PersistentAcrossSteps`: the sandbox outlives a worker restart. Without it, a
   worker loss is treated as a lost sandbox.
 - Read-only checkouts are enforced by the sandbox (`MakeReadOnlyAsync`), not the
@@ -167,9 +167,9 @@ abbreviated: every method also takes a cancellation token, and `..X` stands for
 **The base sandbox image.** The engine ships one base image, `src/Providers/FeatureFlow.Providers.Docker/sandbox.Dockerfile`
 (Debian with Node, Claude Code and Copilot CLI). An installation's sandbox `image` is it or an image built
 on it. A repository that needs a toolchain (a .NET SDK, a JDK) names its own image in `environment.image`,
-built `FROM` the installation's image, and the installation lists it in `allowed_images` (LOG A5a-2). The
+built `FROM` the installation's image, and the installation lists it in `allowed_images` (LOG 441). The
 engine neither builds nor pushes images: Docker pulls an absent image at creation, a Kubernetes node as it
-schedules the pod. What the engine requires of an image (LOG A5a-4):
+schedules the pod. What the engine requires of an image (LOG 443):
 
 | Requirement | Why |
 |---|---|
@@ -206,7 +206,7 @@ interface IAgentRuntimeProvider : IProvider {
 - The `report` tool's record is the source of truth for the agent's report
   (`docs/04` section 3.3); `GetResultAsync` gives how the session ended and its
   usage. A session-end hook only wakes the engine. There is no file report
-  (L5, LOG A5b-5).
+  (L5, LOG 448).
 - `ContinueAsync` continues an ended session with a message: a rejected
   report's errors, or word that the attempt was interrupted.
 - `ResumeAsync` reloads the conversation from the recorded reference and must
@@ -232,7 +232,7 @@ interface IAgentRuntimeProvider : IProvider {
   the tools it offers for each tool class with the other names its hooks report
   for them (one table), how its CLI is told a call is denied, and how it is
   stopped when the engine is unreachable.
-- **Hooks are read by the runtime** (`IAgentHooks`, LOG A5b-1). Every runtime's
+- **Hooks are read by the runtime** (`IAgentHooks`, LOG 444). Every runtime's
   settings call the same hook command, `ff-sandbox hook <event>`. The step's
   token names its runtime instance; the agent worker asks that instance to read
   the hook input as a tool call (its class: `read`, `search`, `edit`, `shell`,
@@ -247,7 +247,7 @@ interface IAgentRuntimeProvider : IProvider {
   (`FF_HOOK_UNREACHABLE`): Claude Code's `continue: false`, which stops the
   session, or exit 2 for Copilot CLI, which blocks the call. With no reply it
   blocks the call with exit 2, so the hook fails closed for any runtime.
-- **The agent runtime contract** (`AgentRuntimeContract`, LOG A5b-4) drives a
+- **The agent runtime contract** (`AgentRuntimeContract`, LOG 447) drives a
   runtime against a scripted sandbox and a stand-in for its CLI, with no model,
   credential or container. The stand-in reads the settings and command line the
   runtime wrote as the CLI does, prints the CLI's output, and sends its hook
@@ -260,7 +260,7 @@ interface IAgentRuntimeProvider : IProvider {
   engine-unreachable reply, which the CLI blocks; and the lifecycle (start,
   turns, result, continuation of the same session, re-attach by a new worker,
   stop, and each way a session ends). Claude Code and Copilot CLI pass it; any
-  tool moved to the wrong class or left unmapped fails it (LOG A5b-4). Integration
+  tool moved to the wrong class or left unmapped fails it (LOG 447). Integration
   tests run the real CLIs against a scripted model.
 
 ### 3.3 VCS
@@ -529,7 +529,7 @@ interface ICredentialBroker : IProvider {
 |---|---|
 | The engine | Push and merge on the code host; tracker writes; CI triggers. Never permission to change branch protection |
 | An agent step | No code host credential (LOG 95): its checkout arrives as a Git bundle with no remote. An agent that must read another repository will need a read-only credential, scoped to it and the run's repositories, for the step's lifetime (F5), in a later milestone. No tracker identity |
-| A model proxy | The model key. Never the agent (F6). Each agent runtime instance has its own, from its `model_access`, and a step's token selects its instance's (LOG A5b-3). It forwards only `POST v1/messages` and `v1/messages/count_tokens` to its upstream's own scheme, host and port, and refuses anything else before reading the key (LOG 104) |
+| A model proxy | The model key. Never the agent (F6). Each agent runtime instance has its own, from its `model_access`, and a step's token selects its instance's (LOG 446). It forwards only `POST v1/messages` and `v1/messages/count_tokens` to its upstream's own scheme, host and port, and refuses anything else before reading the key (LOG 104) |
 
 The broker refuses a request wider than it may grant; it never silently narrows
 one. Spike 2 issued a 60-minute, one-repository token and refused wider

@@ -28,7 +28,7 @@ public sealed record HookReply(int Exit, string? Output = null, string? Error = 
 
 /// <summary>
 /// A runtime's side of the hooks (docs/02 section 4.1): it reads its CLI's hook input as a <see cref="ToolCall"/>, so
-/// the engine's policy sees tool classes only, and says how its CLI is told a call is refused (LOG A5b-1).
+/// the engine's policy sees tool classes only, and says how its CLI is told a call is refused (LOG 444).
 /// </summary>
 public interface IAgentHooks
 {
@@ -69,7 +69,7 @@ public abstract class SandboxedAgentRuntime(AgentRuntimeOptions options, Func<IS
     public const string AgentFolder = "/ff/agent";
     public const string StateFolder = "/ff/state";
 
-    /// <summary>The sandbox client's hook command for an event: the same for every runtime (LOG A5b-1).</summary>
+    /// <summary>The sandbox client's hook command for an event: the same for every runtime (LOG 444).</summary>
     public static string HookCommand(string hookEvent) => $"/ff/bin/ff-sandbox hook {hookEvent}";
 
     /// <summary>

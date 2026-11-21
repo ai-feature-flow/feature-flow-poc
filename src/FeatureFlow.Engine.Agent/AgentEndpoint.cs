@@ -29,7 +29,7 @@ public sealed class TemporalRunSignals(ITemporalClient client) : IRunSignals
 
 /// <summary>
 /// What the agent endpoint uses: tokens, the record store, the run's signal, the model proxy of each agent runtime
-/// instance that configures one (LOG A5b-3), and each instance's reading of its hooks (LOG A5b-1), by instance name.
+/// instance that configures one (LOG 446), and each instance's reading of its hooks (LOG 444), by instance name.
 /// </summary>
 public sealed record AgentEndpointServices(StepTokens Tokens, IRecordStoreProvider Records, IRunSignals Signals,
     IReadOnlyDictionary<string, ModelProxy> Proxies, Func<string, IAgentHooks?> Hooks, TimeSpan? LongPoll = null)
@@ -96,7 +96,7 @@ public static class AgentEndpoint
                 return;
             }
 
-            // The step's runtime instance's own proxy (LOG A5b-3); an instance with none is not served.
+            // The step's runtime instance's own proxy (LOG 446); an instance with none is not served.
             if (s.ProxyFor(claims) is not { } proxy)
             {
                 http.Response.StatusCode = 404;
@@ -145,7 +145,7 @@ public static class AgentEndpoint
 
     public static async Task<HookDecision> HookAsync(AgentEndpointServices s, StepClaims claims, string hook, JsonElement input, CancellationToken cancellationToken)
     {
-        // The step's runtime reads its CLI's hook input and words its refusal (LOG A5b-1); the policy sees tool classes only.
+        // The step's runtime reads its CLI's hook input and words its refusal (LOG 444); the policy sees tool classes only.
         var hooks = claims.Runtime is { } runtime ? s.Hooks(runtime) : null;
         var call = hooks?.Classify(input) ?? new ToolCall(input.TryGetProperty("tool_name", out var t) ? t.GetString() ?? "" : "", null);
         var decision = hook != "pre_tool_use" ? HookDecision.Allow

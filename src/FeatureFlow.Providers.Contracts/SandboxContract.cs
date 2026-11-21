@@ -72,7 +72,7 @@ public abstract class SandboxContract : ContractBase, IAsyncLifetime
 
     /// <summary>
     /// A repository's <c>environment.image</c> that the installation does not allow (neither the sandbox's own image nor one
-    /// of its <c>allowed_images</c>) is refused for a person, and no sandbox is made from it (LOG A5a-2).
+    /// of its <c>allowed_images</c>) is refused for a person, and no sandbox is made from it (LOG 441).
     /// </summary>
     [Fact]
     public async Task An_image_the_installation_does_not_allow_is_refused_and_no_sandbox_is_made()

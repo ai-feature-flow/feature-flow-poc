@@ -53,7 +53,7 @@ public class CompositionTests
         Assert.Contains(message, e.Message);
     }
 
-    /// <summary>L5 (LOG A5b-5): <c>engine_tools</c> is removed, and naming it on either built-in runtime is refused at load.</summary>
+    /// <summary>L5 (LOG 448): <c>engine_tools</c> is removed, and naming it on either built-in runtime is refused at load.</summary>
     [Theory]
     [InlineData("claude_code", "true")]
     [InlineData("copilot_cli", "false")]
@@ -66,7 +66,7 @@ public class CompositionTests
     }
 
     /// <summary>
-    /// LOG A5b-3: each runtime instance's own <c>model_access</c> configures its model proxy, the default's and every other's;
+    /// LOG 446: each runtime instance's own <c>model_access</c> configures its model proxy, the default's and every other's;
     /// an instance with none has no proxy.
     /// </summary>
     [Fact]

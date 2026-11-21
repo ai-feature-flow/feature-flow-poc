@@ -31,7 +31,7 @@ public sealed record IntegrationEnvironment(string? Image, string? Start, string
 /// The repository manifest, <c>feature-flow.yaml</c> (docs/07 section 4), read fresh from the branch at every step and
 /// recorded by <see cref="Hash"/> (RW11). <see cref="Library"/> is kept as written for check 20, and is read only from
 /// the default branch's copy. <see cref="Image"/> is <c>environment.image</c>: the image the repository's sandboxes are
-/// made from, or null for the installation's (LOG A5a-1).
+/// made from, or null for the installation's (LOG 440).
 /// </summary>
 public sealed record RepositoryManifest(
     string Hash,
@@ -82,7 +82,7 @@ public sealed record RepositoryManifest(
         if (kind is not null and not "repository")
             r.Error($"kind must be repository, not '{kind}'", r.Map.Location);
 
-        // The repository's sandbox image (LOG A5a-1). Only `image` is built: `from` (a devcontainer.json), `os` and `docker` are refused (LOG A5a-3).
+        // The repository's sandbox image (LOG 440). Only `image` is built: `from` (a devcontainer.json), `os` and `docker` are refused (LOG 442).
         string? image = null;
         if (MapReader.Of(r.Node("environment"), d, "environment") is { } env)
         {

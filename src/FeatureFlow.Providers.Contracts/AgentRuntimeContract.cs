@@ -28,7 +28,7 @@ public sealed record CliRun(string Output, IReadOnlyDictionary<string, string>? 
 public sealed record HookSetting(string Command, int TimeoutSeconds);
 
 /// <summary>
-/// The agent runtime's contract (docs/06 section 3.2; F12, LOG A5b-4), for a runtime whose CLI runs in a sandbox. It drives
+/// The agent runtime's contract (docs/06 section 3.2; F12, LOG 447), for a runtime whose CLI runs in a sandbox. It drives
 /// the real runtime against a scripted sandbox and a stand-in for its CLI, with no model, credential or container: the
 /// runtime writes its files and starts its command line as it would in a real sandbox, and the stand-in plays the CLI
 /// from them, reading its settings as the CLI would, and printing the CLI's output and sending its hook input for a
@@ -176,7 +176,7 @@ public abstract class AgentRuntimeContract : ContractBase
     }
 
     /// <summary>
-    /// LOG A5b-1: the runtime reads every tool name its CLI's hooks can report, offered or not, as the class of the CLI's
+    /// LOG 444, 445: the runtime reads every tool name its CLI's hooks can report, offered or not, as the class of the CLI's
     /// tool, so a tool mapped to the wrong class, or not mapped, fails here, one tool at a time.
     /// </summary>
     [Fact]
@@ -219,7 +219,7 @@ public abstract class AgentRuntimeContract : ContractBase
         Assert.Equal((true, "never push: commit your work and the engine pushes it"), ReadReply(HookReader.Deny("never push: commit your work and the engine pushes it")));
 
     /// <summary>
-    /// LOG A5b-1, R19: when no replica answers, the hook command applies the reply the runtime gave it in the CLI's
+    /// LOG 444, R19: when no replica answers, the hook command applies the reply the runtime gave it in the CLI's
     /// environment, and the CLI blocks the call or stops the session: the hook fails closed.
     /// </summary>
     [Fact]

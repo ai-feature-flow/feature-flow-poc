@@ -5,7 +5,7 @@ using FeatureFlow.Providers.Contracts;
 namespace FeatureFlow.Providers.ClaudeCode.Tests;
 
 /// <summary>
-/// The agent runtime contract (F12, LOG A5b-4) run against the Claude Code runtime, with a stand-in for <c>claude</c>: it reads
+/// The agent runtime contract (F12, LOG 447) run against the Claude Code runtime, with a stand-in for <c>claude</c>: it reads
 /// the managed settings and the command line as Claude Code does, prints stream-json as Claude Code 2.1 did (an
 /// <c>assistant</c> record per turn, a <c>result</c> record with usage or the API error), and sends Claude Code's hook input.
 /// </summary>

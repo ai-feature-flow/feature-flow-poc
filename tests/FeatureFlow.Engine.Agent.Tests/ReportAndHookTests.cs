@@ -116,7 +116,7 @@ public sealed class ReportAndHookTests
         Assert.Equal(allowed ? "allow" : "deny",
             HookPolicy.PreToolUse(Implementer with { Tools = [roleClass] }, new ToolCall("T", callClass, "/ff/work/a.txt", "ls")).Decision);
 
-    /// <summary>A tool the step's runtime does not map has no class, and is denied (LOG A5b-1).</summary>
+    /// <summary>A tool the step's runtime does not map has no class, and is denied (LOG 444).</summary>
     [Fact]
     public void A_tool_the_runtime_does_not_map_is_denied() =>
         Assert.Equal("deny", HookPolicy.PreToolUse(Implementer, new ToolCall("WebFetch", null)).Decision);

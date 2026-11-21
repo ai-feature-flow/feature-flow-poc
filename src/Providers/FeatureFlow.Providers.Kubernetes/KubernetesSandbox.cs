@@ -20,7 +20,7 @@ namespace FeatureFlow.Providers.Kubernetes;
 /// </para>
 /// <para>
 /// The pod's image is <paramref name="image"/>, or the repository's when the spec names one that
-/// <paramref name="allowedImages"/> allows (<see cref="SandboxImages"/>, LOG A5a-1, A5a-2).
+/// <paramref name="allowedImages"/> allows (<see cref="SandboxImages"/>, LOG 440, 441).
 /// </para>
 /// </summary>
 public sealed class KubernetesSandbox(IKubernetes client, string @namespace, string image, string user, string cpu, string memory,
