@@ -54,7 +54,7 @@ public sealed class CopilotStepTests
         Assert.NotNull(tamperResult);
         Assert.Contains("--- settings", tamperResult);
         var settings = tamperResult[(tamperResult.IndexOf("--- settings", StringComparison.Ordinal) + 1)..];
-        Assert.Contains("/ff/bin/ff-sandbox hook pre_tool_use copilot", settings);
+        Assert.Contains("\"/ff/bin/ff-sandbox hook pre_tool_use\"", settings);
         var events = await h.RecordsAsync<AgentEventRecord>(Queries.AgentEvents, StepKey(runId));
         Assert.Contains(events, e => e.Kind == "hook_pre_tool_use" && e.Detail.StartsWith("Bash deny", StringComparison.Ordinal));
         Assert.Contains(events, e => e.Kind == "hook_pre_tool_use" && e.Detail.StartsWith("engine-report allow", StringComparison.Ordinal));

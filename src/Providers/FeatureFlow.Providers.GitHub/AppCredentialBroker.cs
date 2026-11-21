@@ -55,9 +55,9 @@ public sealed class AppCredentialBroker(
     {
         var jwt = await JwtAsync(cancellationToken);
         if (!jwt.Ok)
-            return new ProviderResult<Unit>(default, jwt.Error);
+            return new ProviderResult<Unit>(default, jwt.Error!.WithFaultHint(GitHubApi.FaultHint));
         var app = await SendAsync(HttpMethod.Get, "/app", jwt.Value!, null, cancellationToken);
-        return app.Ok ? ProviderResult<Unit>.Success(default) : new ProviderResult<Unit>(default, app.Error);
+        return app.Ok ? ProviderResult<Unit>.Success(default) : new ProviderResult<Unit>(default, app.Error!.WithFaultHint(GitHubApi.FaultHint));
     }
 
     /// <summary>The reason a request is refused, or null when it may be granted as asked.</summary>
@@ -81,7 +81,10 @@ public sealed class AppCredentialBroker(
 
     static int Level(string access) => access switch { "read" => 1, "write" => 2, _ => 3 };
 
-    public async Task<ProviderResult<Credential>> IssueAsync(Actor actor, string targetSystem, CredentialScope scope, TimeSpan ttl, CancellationToken cancellationToken)
+    public async Task<ProviderResult<Credential>> IssueAsync(Actor actor, string targetSystem, CredentialScope scope, TimeSpan ttl, CancellationToken cancellationToken) =>
+        (await IssueOnceAsync(actor, targetSystem, scope, ttl, cancellationToken)).WithFaultHint(GitHubApi.FaultHint);
+
+    async Task<ProviderResult<Credential>> IssueOnceAsync(Actor actor, string targetSystem, CredentialScope scope, TimeSpan ttl, CancellationToken cancellationToken)
     {
         if (Refusal(actor, targetSystem, scope, ttl) is { } refusal)
             return new ProviderResult<Credential>(null, new ProviderError("rejected", refusal));

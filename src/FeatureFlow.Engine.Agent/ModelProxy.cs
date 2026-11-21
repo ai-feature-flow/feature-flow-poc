@@ -19,6 +19,9 @@ public sealed record ModelProxyOptions(Uri Upstream, string Auth, Func<Cancellat
 /// </summary>
 public sealed partial class ModelProxy(ModelProxyOptions options, HttpMessageHandler? handler = null)
 {
+    /// <summary>The model API this proxy forwards to.</summary>
+    public Uri Upstream => options.Upstream;
+
     public const string OAuthBeta = "oauth-2025-04-20";
 
     static readonly HashSet<string> NotForwarded = new(StringComparer.OrdinalIgnoreCase)

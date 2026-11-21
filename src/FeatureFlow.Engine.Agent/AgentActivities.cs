@@ -64,7 +64,9 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
     {
         var context = ActivityExecutionContext.Current;
         // The step's role picks the runtime instance (LOG 267), else the run's default; in a dry run the dry_run instance stands in (LOG 384).
-        var runtime = (call.Agent?.Runtime is { } name ? providers.ForRun("agent_runtime", name, call.DryRun) : providers.ForRun("agent_runtime", call.DryRun)) as IAgentRuntimeProvider;
+        // Its name, as resolved, names the step's hook reading and model proxy in its token (LOG 444, 446).
+        var instance = providers.NameForRun("agent_runtime", call.Agent?.Runtime, call.DryRun);
+        var runtime = (instance is null ? null : providers.Instance("agent_runtime", instance)) as IAgentRuntimeProvider;
         if (runtime is null)
             return new StepOutcome(StepOutcome.CannotAnswer, null, call.Agent?.Runtime is { } mapped && !call.DryRun
                 ? $"role_mapping names the agent runtime '{mapped}', which this agent worker does not configure"
@@ -73,7 +75,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             return new StepOutcome(StepOutcome.CannotAnswer, null, $"an agent step needs a sandbox and a vcs provider{(call.DryRun ? " for a dry run" : "")}, and one is not configured");
         try
         {
-            return await new Run(this, call, runtime, sandboxes, vcs, context).ExecuteAsync();
+            return await new Run(this, call, instance!, runtime, sandboxes, vcs, context).ExecuteAsync();
         }
         catch (StepWorkException e)
         {
@@ -125,7 +127,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
     }
 
     /// <summary>One execution of the lifecycle. Its fields are rebuilt from durable state on every activity attempt.</summary>
-    sealed partial class Run(AgentActivities owner, StepCall call, IAgentRuntimeProvider runtime, ISandboxProvider sandboxes, IVcsProvider vcs, ActivityExecutionContext context)
+    sealed partial class Run(AgentActivities owner, StepCall call, string instance, IAgentRuntimeProvider runtime, ISandboxProvider sandboxes, IVcsProvider vcs, ActivityExecutionContext context)
     {
         readonly AgentStepSpec spec = call.Agent!;
         readonly string key = call.Step.IdempotencyKey;
@@ -164,7 +166,8 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                     (long)spec.QuestionsTimeout.TotalSeconds, DateTimeOffset.UtcNow),
             ]));
             var token = owner.tokens.Issue(new StepClaims(key, call.Step.RunId, spec.WorkflowId, call.Step.StepId, spec.WriteAccess, spec.Tools,
-                DateTimeOffset.UtcNow.Add((call.Timeout ?? AgentLimits.DefaultTimeout) + spec.QuestionsTimeout * spec.QuestionsMax + TimeSpan.FromHours(2)).ToUnixTimeSeconds()));
+                DateTimeOffset.UtcNow.Add((call.Timeout ?? AgentLimits.DefaultTimeout) + spec.QuestionsTimeout * spec.QuestionsMax + TimeSpan.FromHours(2)).ToUnixTimeSeconds(),
+                instance));
             limits = new AgentLimits(call.Timeout, spec.CorrectionTurns, spec.QuestionsTimeout);
             task = new AgentTask(call.Step, call.What, null, call.Inputs, call.Contract)
             {
@@ -331,7 +334,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             if (attached.Error!.Reason != "not_found")
                 Must(attached, "attach to the sandbox");
             sandbox = Must(await sandboxes.CreateAsync(new SandboxSpec(key, paths.Home, new Dictionary<string, string>(),
-                [paths.Checkout, paths.Output, "/ff/inputs", "/ff/state", "/ff/tmp"]), ct), "create the sandbox");
+                [paths.Checkout, paths.Output, "/ff/inputs", "/ff/state", "/ff/tmp"], manifest?.Image), ct), "create the sandbox");
             hasSandbox = true;
             copy = copy with { Sandbox = sandbox };
             // Root-owned and read-only. It runs as the agent's user, so its marker and log in /ff/state are hints the
@@ -593,24 +596,6 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                 // The last report counts (docs/04 section 3.3), so a report the engine rejected after accepting it is not taken.
                 if (reports.LastOrDefault() is { Accepted: true, Report: { } accepted })
                     candidate = accepted;
-                else if (result.ReportFile is { } file && rejected <= spec.CorrectionTurns)
-                {
-                    var (checkedReport, errors) = await CheckFileReportAsync(file);
-                    await RecordAsync(new RecordBatch(Reports: [new ReportRecord(key, reports.Count + 1, checkedReport is not null, checkedReport, errors, DateTimeOffset.UtcNow)]));
-                    if (checkedReport is null)
-                    {
-                        rejected++;
-                        if (rejected <= spec.CorrectionTurns)
-                        {
-                            message = $"The engine rejected report.json:\n{string.Join("\n", errors.Select(e => "- " + e))}\n" +
-                                      $"Fix what it names and write report.json again (correction turn {rejected} of {spec.CorrectionTurns}).";
-                            running = null;
-                            continue;
-                        }
-                    }
-
-                    candidate = checkedReport;
-                }
                 else if (result.Report is { } own)
                     candidate = own;
 
@@ -628,7 +613,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                                                     string.Join("; ", problems.Take(5)));
                     message = "The engine checked the artifacts you reported against their types and found errors:\n" +
                               string.Join("\n", problems.Select(e => "- " + e)) + "\n" +
-                              $"Fix the files in your output folder and {(task.EngineTools ? "call report again" : "write report.json again")} " +
+                              $"Fix the files in your output folder and call report again " +
                               $"(correction turn {rejected} of {spec.CorrectionTurns}).";
                     running = null;
                     continue;
@@ -746,29 +731,6 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             hiddenRevision = lastPushed = bundle.Head;
             events.Add($"pushed {Revisions.Short(bundle.Head)} to {hiddenRef}");
             await EventAsync("pushed", $"{bundle.Head} to {hiddenRef}");
-        }
-
-        async Task<(StepReport? Report, IReadOnlyList<string> Errors)> CheckFileReportAsync(string text)
-        {
-            JsonElement report;
-            try
-            {
-                report = JsonDocument.Parse(text).RootElement;
-            }
-            catch (JsonException e)
-            {
-                return (null, [$"report.json is not JSON: {e.Message}"]);
-            }
-
-            var missing = new List<string>();
-            foreach (var path in ReportCheck.Paths(report))
-            {
-                var exists = await sandboxes.RunAsync(sandbox, new SandboxCommand(["test", "-s", $"{paths.Output}/{path}"]), $"{key}/exists/{Guid.NewGuid():N}", ct);
-                if (!exists.Ok || exists.Value.Exit != 0)
-                    missing.Add(path);
-            }
-
-            return ReportCheck.Check(report, call.Contract, missing);
         }
 
         /// <summary>

@@ -38,8 +38,12 @@ public sealed class GitHubApi(Func<ICredentialBroker?> broker, HttpMessageHandle
 
     public ICredentialBroker? Broker => broker();
 
+    /// <summary>What a person is told to check when GitHub refuses the engine's credential (docs/06 section 1.1, LOG 451).</summary>
+    public const string FaultHint = "Check the installation's credential broker: the GitHub App's key, installation and permissions";
+
     public async Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) =>
-        broker() is { } b ? await b.CheckAsync(cancellationToken) : ProviderResult<Unit>.Failure("unauthenticated", "no credential broker is configured for GitHub");
+        (broker() is { } b ? await b.CheckAsync(cancellationToken) : ProviderResult<Unit>.Failure("unauthenticated", "no credential broker is configured for GitHub"))
+        .WithFaultHint(FaultHint);
 
     /// <summary>A token for the scope, from the cache unless <paramref name="fresh"/>: a refused token is replaced, not reused.</summary>
     async Task<ProviderResult<string>> TokenAsync(RepoRef repo, IReadOnlyDictionary<string, string> permissions, bool fresh, CancellationToken cancellationToken)
@@ -77,9 +81,9 @@ public sealed class GitHubApi(Func<ICredentialBroker?> broker, HttpMessageHandle
     {
         var first = await SendOnceAsync(repo, permissions, method, path, body, fresh: false, accept, cancellationToken);
         if (first.Error is not { IsConfigurationFault: true } || broker() is null)
-            return first;
+            return first.WithFaultHint(FaultHint);
         await Task.Delay(FreshTokenDelay, cancellationToken);
-        return await SendOnceAsync(repo, permissions, method, path, body, fresh: true, accept, cancellationToken);
+        return (await SendOnceAsync(repo, permissions, method, path, body, fresh: true, accept, cancellationToken)).WithFaultHint(FaultHint);
     }
 
     /// <summary>The wait before the fresh-token retry. Tests shorten it.</summary>

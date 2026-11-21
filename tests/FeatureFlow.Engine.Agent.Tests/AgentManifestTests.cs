@@ -36,7 +36,8 @@ public sealed class AgentManifestTests : IAsyncDisposable
     }
 
     /// <summary>A scripted runtime that edits the checkout as an agent would, when it is given <paramref name="edits"/>.</summary>
-    sealed class EditingRuntime(InMemoryForge forge, IAgentRuntimeProvider inner, IReadOnlyDictionary<string, string> edits, Action<SandboxHandle>? atStart = null)
+    sealed class EditingRuntime(InMemoryForge forge, IAgentRuntimeProvider inner, IReadOnlyDictionary<string, string> edits, Action<SandboxHandle>? atStart = null,
+        List<string>? tokens = null)
         : IAgentRuntimeProvider
     {
         public ProviderDescription Describe() => inner.Describe();
@@ -46,6 +47,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
         public Task<ProviderResult<AgentSession>> StartAsync(SandboxHandle sandbox, AgentTask task, AgentLimits limits, CancellationToken cancellationToken)
         {
             atStart?.Invoke(sandbox);
+            tokens?.Add(task.Engine!.StepToken);
             if (forge.WorkingFiles(new WorkingCopyRef(sandbox, task.Paths!.Checkout)) is { } files)
                 foreach (var (path, content) in edits)
                     files[path] = content;
@@ -68,7 +70,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
         var client = Path.Combine(folder, "ff-sandbox");
         await File.WriteAllTextAsync(client, "a stand-in for the sandbox client", TestContext.Current.CancellationToken);
         var records = new SqliteRecordStore(Path.Combine(folder, "records.db"));
-        var runtime = new EditingRuntime(forge, new ScriptedAgentRuntime(FakeScript.Empty, () => store), edits, atStart);
+        var runtime = new EditingRuntime(forge, new ScriptedAgentRuntime(FakeScript.Empty, () => store), edits, atStart, startedTokens);
         var instances = new Dictionary<string, IReadOnlyDictionary<string, IProvider>>
         {
             ["vcs"] = One(new InMemoryVcs(forge)),
@@ -77,7 +79,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
             ["agent_runtime"] = new Dictionary<string, IProvider>
             {
                 ["one"] = runtime,
-                ["real"] = new EditingRuntime(forge, new ScriptedAgentRuntime(FakeScript.Empty, () => store), new Dictionary<string, string>(), _ => realStarted = true),
+                ["real"] = new EditingRuntime(forge, new ScriptedAgentRuntime(FakeScript.Empty, () => store), new Dictionary<string, string>(), _ => realStarted = true, startedTokens),
             },
             ["artifact_store"] = One(store),
             ["record_store"] = One(records),
@@ -111,6 +113,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
         var outcome = await RunAsync(new Dictionary<string, string> { ["src/A.cs"] = "class A{int x;}", ["src/B.cs"] = "class B{}" });
 
         Assert.Equal(StepOutcome.Reported, outcome.Kind);
+        Assert.Null(sandbox.Specs.Single().Image);
         var commands = sandbox.Commands.Select(c => c.Command).Where(c => c.Contains("dotnet", StringComparison.Ordinal)).ToList();
         Assert.Equal(["sh -c dotnet tool restore", "sh -c dotnet format"], commands);
         Assert.All(sandbox.Commands.Where(c => c.Command.Contains("dotnet", StringComparison.Ordinal)), c => Assert.Equal(AgentPaths.Default.Checkout, c.Directory));
@@ -119,6 +122,17 @@ public sealed class AgentManifestTests : IAsyncDisposable
         Assert.Equal("class B{}", forge.ReadFile(repo, Work!, "src/B.cs"));
         Assert.Equal(2L, JsonSerializer.Deserialize<long>(outcome.Report!.Outputs["commits"]));
         Assert.Contains(outcome.Events!, e => e.StartsWith("committed after_changes", StringComparison.Ordinal));
+    }
+
+    /// <summary>F4: the agent's sandbox is made from the manifest's <c>environment.image</c>; with none, the sandbox's own (LOG 440).</summary>
+    [Fact]
+    public async Task The_agents_sandbox_is_made_from_the_manifests_environment_image()
+    {
+        forge.Commit(repo, "refs/heads/main", new Dictionary<string, string?> { ["feature-flow.yaml"] = Manifest + "\nenvironment: { image: acme/api-sandbox:1 }\n" });
+
+        Assert.Equal(StepOutcome.Reported, (await RunAsync(new Dictionary<string, string>())).Kind);
+
+        Assert.Equal("acme/api-sandbox:1", sandbox.Specs.Single().Image);
     }
 
     [Fact]
@@ -209,6 +223,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
         Assert.DoesNotContain(sandbox.Commands, c => c.Command.Contains("dotnet", StringComparison.Ordinal));
     }
 
+    /// <summary>The step's token names the instance it runs on, as resolved: it picks the step's hook reading and model proxy.</summary>
     [Fact]
     public async Task A_role_mapped_runtime_runs_the_step_and_in_a_dry_run_the_dry_run_runtime_stands_in_for_it()
     {
@@ -217,8 +232,10 @@ public sealed class AgentManifestTests : IAsyncDisposable
 
         Assert.Equal(StepOutcome.Reported, (await RunAsync(new Dictionary<string, string>(), roleRuntime: "real")).Kind);
         Assert.True(realStarted);
+        Assert.Equal(["one", "real"], startedTokens.Select(t => StepTokens.FromSecret("test").Check(t)!.Runtime));
     }
 
+    readonly List<string> startedTokens = [];
     bool realStarted;
 
     public ValueTask DisposeAsync()

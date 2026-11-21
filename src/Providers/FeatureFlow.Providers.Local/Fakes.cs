@@ -136,7 +136,7 @@ sealed partial class Reporter(Func<IArtifactStoreProvider> store)
                 : JsonSerializer.Serialize(new { fake = $"{step.RunId}/{step.StepId}/{step.Execution}/{name}" });
             var put = await store().PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(content)), cancellationToken);
             if (!put.Ok)
-                return ProviderResult<StepReport>.Failure(put.Error!.Reason, put.Error.Message);
+                return new ProviderResult<StepReport>(null, put.Error);
             artifacts[name] = put.Value!.Id;
         }
 

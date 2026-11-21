@@ -48,10 +48,6 @@ If the engine rejects your report, read its message, fix what it names, and call
 `report` again. When it says the report is accepted, or that the attempt has
 failed, stop.
 
-If the `report` tool is not available to you, write the same report as a JSON
-object with the keys `outcome`, `summary`, `outputs` and `artifacts` to
-`report.json` in your output folder instead.
-
 Chat text does not finish the step. A step that ends without a report has failed
 its attempt.
 

@@ -270,7 +270,6 @@ public static class ConfigurationReader
         var auth = new ApiAuthConfig("local_token", null, "local", ["viewer", "approver", "steerer", "admin"]);
         if (MapReader.Of(r.Node("api"), d, "api") is { } api)
         {
-            api.String("base_url");
             if (MapReader.Of(api.Node("auth"), d, "api.auth") is { } a)
             {
                 var mode = a.Enum("mode", ["local_token", "oidc"], required: true) ?? "local_token";
@@ -345,16 +344,10 @@ public static class ConfigurationReader
             foreach (var (type, config) in providers)
                 foreach (var instance in config.Instances.Values.Where(i => i.Kind is "fake" or "memory"))
                     r.Error($"providers.{type}.instances.{instance.Name}: the fake provider is for development only; set development: true", r.Map.Location);
-        // A runtime without the engine's tools reports only through a file: a test setting (SP3 T3), not for production.
         // The scripted runtime is a test double that runs no agent (L4).
         if (!development && providers.TryGetValue("agent_runtime", out var runtimes))
-            foreach (var instance in runtimes.Instances.Values)
-            {
-                if (instance.Settings["engine_tools"].ScalarText() == "false")
-                    r.Error($"providers.agent_runtime.instances.{instance.Name}: engine_tools: false is for development only; set development: true", r.Map.Location);
-                if (instance.Kind == "scripted")
-                    r.Error($"providers.agent_runtime.instances.{instance.Name}: the scripted runtime is for development only; set development: true", r.Map.Location);
-            }
+            foreach (var instance in runtimes.Instances.Values.Where(i => i.Kind == "scripted"))
+                r.Error($"providers.agent_runtime.instances.{instance.Name}: the scripted runtime is for development only; set development: true", r.Map.Location);
         r.Finish();
         return new InstallationConfig(address, ns, queue, events, providers, auth, attempts, races, file, development, agentWorker)
         {

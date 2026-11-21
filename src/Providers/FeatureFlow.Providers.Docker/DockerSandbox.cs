@@ -14,13 +14,19 @@ namespace FeatureFlow.Providers.Docker;
 /// (<see cref="ShellSandbox.NetworkScript"/>): the container has <c>NET_ADMIN</c> for root's rules, and the agent's user,
 /// with no capabilities, cannot change them (M4 follow-up 12).
 /// </para>
+/// <para>
+/// The container is made from <paramref name="image"/>, or from the repository's image when the spec names one that
+/// <paramref name="allowedImages"/> allows (<see cref="SandboxImages"/>, LOG 440, 441).
+/// </para>
 /// </summary>
-public sealed class DockerSandbox(string image, string user, Func<IArtifactStoreProvider> store, DockerCli? docker = null, IReadOnlyList<Uri>? reach = null)
+public sealed class DockerSandbox(string image, string user, Func<IArtifactStoreProvider> store, DockerCli? docker = null, IReadOnlyList<Uri>? reach = null,
+    IReadOnlyList<string>? allowedImages = null)
     : ShellSandbox(user, store)
 {
     public const string Label = "feature-flow.sandbox";
     readonly DockerCli cli = docker ?? new DockerCli();
     readonly IReadOnlyList<Uri> reach = reach ?? [];
+    readonly IReadOnlyList<string> allowedImages = allowedImages ?? [];
 
     public override ProviderDescription Describe() => new("sandbox", "docker", "0.2.0", new SandboxCapabilities(["linux"], false, true, true, true));
 
@@ -39,6 +45,9 @@ public sealed class DockerSandbox(string image, string user, Func<IArtifactStore
         var name = NameOf(spec.Key);
         if ((await AttachAsync(spec.Key, cancellationToken)) is { Ok: true } existing)
             return existing;
+        var chosen = SandboxImages.Choose(spec, image, allowedImages);
+        if (!chosen.Ok)
+            return new ProviderResult<SandboxHandle>(null, chosen.Error);
         var arguments = new List<string>
         {
             "create", "--name", name, "--label", $"{Label}=1", "--label", $"{Label}.key={spec.Key}",
@@ -46,7 +55,7 @@ public sealed class DockerSandbox(string image, string user, Func<IArtifactStore
         };
         foreach (var (key, value) in spec.Environment)
             arguments.AddRange(["-e", $"{key}={value}"]);
-        arguments.AddRange([image, "sleep", "infinity"]);
+        arguments.AddRange([chosen.Value!, "sleep", "infinity"]);
         if (await Docker(arguments, "create", cancellationToken) is { } created)
             return created.Convert<SandboxHandle>();
         if (await Docker(["start", name], "start", cancellationToken) is { } started)

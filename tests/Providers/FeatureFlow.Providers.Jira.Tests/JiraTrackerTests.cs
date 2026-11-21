@@ -231,6 +231,9 @@ public sealed class JiraTrackerTests
         var read = await new JiraTracker(api, "ACME").GetIssueAsync(new IssueRef("ACME-1"), Ct);
 
         Assert.Equal(("unauthenticated", 2, 2), (read.Error!.Reason, resolved, jira.Calls.Count));
+        // L10 (LOG 451): the person is told to check Jira's credential, not GitHub's.
+        Assert.Contains("Jira instance's secret", read.Error.DescribeFault(), StringComparison.Ordinal);
+        Assert.DoesNotContain("GitHub", read.Error.DescribeFault(), StringComparison.Ordinal);
     }
 
     [Fact]
