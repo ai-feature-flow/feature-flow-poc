@@ -65,6 +65,15 @@ public class CompositionTests
         Assert.Contains("providers.agent_runtime.instances.a: unknown setting 'engine_tools'", e.Message);
     }
 
+    /// <summary>LOG 496: <c>auth: github</c> is Copilot CLI's; a <c>claude_code</c> instance naming it is refused at load.</summary>
+    [Fact]
+    public void Auth_github_is_refused_on_claude_code()
+    {
+        var installation = Read("  agent_runtime: { instances: { a: { provider: claude_code, model_access: { mode: proxy, auth: github } } } }");
+        var e = Assert.Throws<InvalidOperationException>(() => ProviderComposer.Compose(installation, Providers.ClaudeCode.ClaudeCodeProviders.Factories));
+        Assert.Contains("providers.agent_runtime.instances.a: model_access.auth 'github' is not for claude_code, which takes api_key or oauth", e.Message);
+    }
+
     /// <summary>
     /// LOG 446: each runtime instance's own <c>model_access</c> configures its model proxy, the default's and every other's;
     /// an instance with none has no proxy.

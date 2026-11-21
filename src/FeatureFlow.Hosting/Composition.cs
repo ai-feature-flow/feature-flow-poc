@@ -175,8 +175,8 @@ public sealed class FeatureFlowHost : IAsyncDisposable
     /// <summary>
     /// The model proxy of each agent runtime instance, from its own <c>model_access</c> (docs/07 section 2; LOG 446):
     /// <c>key_ref</c> names the credential, <c>upstream</c> the model's API (default the Anthropic API), <c>auth</c> how it
-    /// is sent: <c>api_key</c> (the default) or <c>oauth</c> for a subscription token. A step's token names its instance,
-    /// whose proxy alone serves it.
+    /// is sent: <c>api_key</c> (the default), <c>oauth</c> for a subscription token, or <c>github</c> for a GitHub token to
+    /// the Copilot API (LOG 496). A step's token names its instance, whose proxy alone serves it.
     /// </summary>
     public static IReadOnlyDictionary<string, ModelProxy> ModelProxies(InstallationConfig installation, ISecretsProvider? secrets)
     {

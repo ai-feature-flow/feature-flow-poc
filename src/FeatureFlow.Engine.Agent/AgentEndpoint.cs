@@ -88,8 +88,7 @@ public static class AgentEndpoint
 
         app.Map("/model/{**path}", async (HttpContext http, string? path) =>
         {
-            var token = Bearer(http) ?? http.Request.Headers["x-api-key"].FirstOrDefault();
-            if (s.Tokens.Check(token) is not { } claims || !await ActiveAsync(s, claims))
+            if (s.Tokens.Check(ModelToken(http)) is not { } claims || !await ActiveAsync(s, claims))
             {
                 http.Response.StatusCode = 401;
                 await http.Response.WriteAsync("""{"type":"error","error":{"type":"authentication_error","message":"unknown step token"}}""");
@@ -130,6 +129,19 @@ public static class AgentEndpoint
 
     static string? Bearer(HttpContext http) =>
         http.Request.Headers.Authorization.FirstOrDefault() is { } value && value.StartsWith("Bearer ", StringComparison.Ordinal) ? value["Bearer ".Length..].Trim() : null;
+
+    /// <summary>
+    /// The step's token on a model request: a bearer token or <c>x-api-key</c>. Copilot CLI accepts only a GitHub-prefixed
+    /// token, so its runtime sends <c>ghs_</c> and the step's token (LOG 496); one such prefix is dropped here, on the model
+    /// route only.
+    /// </summary>
+    static string? ModelToken(HttpContext http)
+    {
+        var token = Bearer(http) ?? http.Request.Headers["x-api-key"].FirstOrDefault();
+        return token?.StartsWith(GitHubTokenPrefix, StringComparison.Ordinal) == true ? token[GitHubTokenPrefix.Length..] : token;
+    }
+
+    public const string GitHubTokenPrefix = "ghs_";
 
     static async Task<IResult> Authorised(HttpContext http, AgentEndpointServices s, Func<StepClaims, Task<IResult>> handle) =>
         s.Tokens.Check(Bearer(http)) is { } claims && await ActiveAsync(s, claims)
