@@ -21,7 +21,7 @@ author may change.
 | Fragments | `fragments/` | Reusable step groups (`docs/03` section 11) |
 | Tasks | `tasks/` | Markdown instructions for one agent step: objective, procedure, what each outcome means |
 | Skills | `skills/` | Reusable guidance an agent reads on demand: one folder per skill with a `SKILL.md` |
-| Roles | `roles/` | Agent roles: write access and tools (`docs/01` section 2.2). Toolsets and requirements are not in version 1: a role's `toolsets` and `requires` are refused at load, naming the key (LOG 339, AFa-1) |
+| Roles | `roles/` | Agent roles: write access and tools (`docs/01` section 2.2). Toolsets and requirements are not in version 1: a role's `toolsets` and `requires` are refused at load, naming the key (LOG 339, 487) |
 | Artifact types | `artifact_types/` | Schema (JSON Schema for data; required headings, front matter and identifier patterns for Markdown), the validators to run on production, `evidence: true` for engine-only types, `compatible_with` |
 | Decision types | `decision_types/` | Names and default approval rules (`docs/05` section 4) |
 | Prompts | `prompts/` | Markdown for decisions, pull request bodies, the agent reporting preamble |
@@ -44,7 +44,7 @@ path; the manifest maps names to paths, so a library can reorganise its files
 without breaking a plan.
 
 In version 1 each library is loaded at the one version its source gives. A
-dependency's `version` is refused at load (section 2, LOG AFa-1); a constraint in
+dependency's `version` is refused at load (section 2, LOG 487); a constraint in
 a reference is accepted and not checked.
 
 ---
@@ -78,7 +78,7 @@ entrypoints:                  # templates a person starts from, listed first in 
 | `entrypoints` | Templates people start; others (child templates) are not offered. Each is listed through the API (`GET /templates`, `docs/02` section 7) with its `when` and its template's declared parameters and defaults |
 
 `inputs`, `resources`, `notifications` and a dependency's `version` are not in
-version 1 and are refused at load, each refusal naming its key (LOG AFa-1), as
+version 1 and are refused at load, each refusal naming its key (LOG 487), as
 `requires.toolsets` is (LOG 339).
 
 An unknown key or a malformed manifest makes the library invalid: new runs
@@ -111,7 +111,7 @@ to the source.
 |---|---|
 | Base: `std` | Define everything |
 | Organisation: libraries named in organisation configuration | Add content: its own templates, tasks and roles under its own name. Overriding a base item by name is not in version 1 (LOG 268) |
-| Repository: `feature-flow.yaml` | Nothing in version 1: a `library` section is refused, naming the key, by the step that reads the manifest (`docs/07` section 4, LOG AFa-1) |
+| Repository: `feature-flow.yaml` | Nothing in version 1: a `library` section is refused, naming the key, by the step that reads the manifest (`docs/07` section 4, LOG 487) |
 | Run: a library override | Replace content for this run's future steps (section 5.2) |
 
 A template refers to content by library name, so an organisation that wants its own

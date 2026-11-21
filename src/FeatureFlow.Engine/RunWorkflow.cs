@@ -319,7 +319,7 @@ public partial class RunWorkflow
                     await StartChildAsync(s);
                     break;
                 case CancelStep c:
-                    // The core no longer wants this activity's result (LOG AFc-1): a wake that also cancelled it is void.
+                    // The core no longer wants this activity's result (LOG 492): a wake that also cancelled it is void.
                     if (stepTokens.Remove(c.StepId, out var token))
                         token.Cancel();
                     interrupted.Remove(c.StepId);
@@ -561,7 +561,7 @@ public partial class RunWorkflow
             }
         }
 
-        // LOG AFc-1: only the step's current activity speaks for it. One the core cancelled (CancelStep) is no longer the
+        // LOG 492: only the step's current activity speaks for it. One the core cancelled (CancelStep) is no longer the
         // step's, whatever it ended with: the core may have restarted the same execution since, as an approved action
         // decision does, so IsCurrent cannot tell its result from the restarted activity's.
         if (!current)

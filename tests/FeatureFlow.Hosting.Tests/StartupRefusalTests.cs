@@ -3,7 +3,7 @@ using System.Diagnostics;
 namespace FeatureFlow.Hosting.Tests;
 
 /// <summary>
-/// LOG AFd-2: a host that refuses to start writes the refusal alone to standard error, with no stack trace, and exits 2,
+/// LOG 494: a host that refuses to start writes the refusal alone to standard error, with no stack trace, and exits 2,
 /// whatever the refusal: arguments, a configuration file, a diagnostic, an address.
 /// </summary>
 public sealed class StartupRefusalTests : IDisposable

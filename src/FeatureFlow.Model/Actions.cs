@@ -60,7 +60,7 @@ public sealed record ActionInput(string Name, string Kind, IReadOnlyList<string>
     /// <summary>The library item type the input names (<c>templates</c>, <c>prompts</c>); null when it is not a reference.</summary>
     public string? References { get; init; }
 
-    /// <summary>The capabilities a step needs when it sets this input, beyond the action's own (check 21; LOG AFb-2).</summary>
+    /// <summary>The capabilities a step needs when it sets this input, beyond the action's own (check 21; LOG 489).</summary>
     public IReadOnlyList<string> Needs { get; init; } = [];
 }
 
@@ -109,7 +109,7 @@ public sealed record ActionDescriptor(
 
     /// <summary>
     /// The capabilities a step of the action needs, given the inputs it sets (check 21): the action's own, and each set
-    /// input's, such as <c>wait.condition</c>'s tracker condition needing a tracker (LOG AFb-2).
+    /// input's, such as <c>wait.condition</c>'s tracker condition needing a tracker (LOG 489).
     /// </summary>
     public IEnumerable<string> NeedsFor(IEnumerable<string> setInputs)
     {

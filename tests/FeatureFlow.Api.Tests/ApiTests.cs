@@ -359,7 +359,7 @@ public sealed class ApiTests : IAsyncDisposable
         var ct = TestContext.Current.CancellationToken;
         await records.AppendAsync(new RecordBatch([new RunRecord("r1", null, "std:templates/ticket_delivery", "running", "x", [], false, DateTimeOffset.UnixEpoch, null)]), ct);
 
-        // The viewer gets past the run check to a run with no revision yet: nothing to show, not a refusal (LOG AFd-1).
+        // The viewer gets past the run check to a run with no revision yet: nothing to show, not a refusal (LOG 493).
         using var viewer = await Start("viewer").GetAsync("runs/r1/plan", ct);
         Assert.Equal((HttpStatusCode.NoContent, ""), (viewer.StatusCode, await viewer.Content.ReadAsStringAsync(ct)));
         // A caller who may not see the run is told it does not exist.

@@ -64,7 +64,7 @@ public sealed class NoSignInTests : IDisposable
         {
             var error = new StringWriter();
 
-            // A refusal is the message alone on standard error and exit 2, not an unhandled exception (LOG AFd-2).
+            // A refusal is the message alone on standard error and exit 2, not an unhandled exception (LOG 494).
             Assert.Equal(2, await HostArguments.RunAsync(Arguments(), [], false, false, true, error));
             var line = Assert.Single(error.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries));
             Assert.StartsWith("api.auth.mode is none, so the API must listen only on loopback", line, StringComparison.Ordinal);

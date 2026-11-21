@@ -56,7 +56,7 @@ public sealed class RunCommandTests : IDisposable
                 received.Add((context.Request.HttpMethod, path, reader.ReadToEnd()));
             if (path == "/runs/r0/plan")
             {
-                // A run with no plan revision yet (LOG AFd-1).
+                // A run with no plan revision yet (LOG 493).
                 context.Response.StatusCode = 204;
                 context.Response.Close();
                 continue;

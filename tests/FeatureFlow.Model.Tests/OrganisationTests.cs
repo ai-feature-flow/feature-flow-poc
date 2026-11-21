@@ -207,7 +207,7 @@ public class OrganisationTests
         Assert.Equal("requires.toolsets is not supported in version 1; remove it", Assert.Single(Manifest("{ toolsets: [tracker] }"), x => x.Blocks).Message);
     }
 
-    /// <summary>Keys that were read and never applied are refused when the library loads, each naming itself (LOG AFa-1).</summary>
+    /// <summary>Keys that were read and never applied are refused when the library loads, each naming itself (LOG 487).</summary>
     [Theory]
     [InlineData("inputs: { team: platform }\n", "inputs")]
     [InlineData("inputs: {}\n", "inputs")]

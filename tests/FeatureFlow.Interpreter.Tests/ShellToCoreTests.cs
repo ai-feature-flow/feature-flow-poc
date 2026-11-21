@@ -63,7 +63,7 @@ public class ShellToCoreTests
         ("bad_child", BadChild), ("bad_expand", BadExpand));
 
     // Inputs that load (an expression is checked when it is evaluated) and that evaluate, at step start, to values outside
-    // the action's contract: a list for run.child's tracker_issue, a run id for plan.expand's shape (LOG AFb-1).
+    // the action's contract: a list for run.child's tracker_issue, a run id for plan.expand's shape (LOG 488).
     const string BadChild = """
         api_version: feature-flow/v1
         kind: template
@@ -127,7 +127,7 @@ public class ShellToCoreTests
     }
 
     /// <summary>
-    /// Check 31 at step start, the one place it is applied to an engine action's inputs (LOG AFb-1): values that load (an
+    /// Check 31 at step start, the one place it is applied to an engine action's inputs (LOG 488): values that load (an
     /// expression, or a literal only the action's rule across inputs refuses) and that do not satisfy the action's contract
     /// once evaluated stop the step before any activity runs.
     /// </summary>

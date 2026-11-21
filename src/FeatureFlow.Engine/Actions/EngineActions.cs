@@ -24,7 +24,7 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
 
     /// <summary>
     /// Runs one action. Its inputs were checked against the action's contract (check 31) by the core before the call was
-    /// made (<c>RunCore.StepSpec</c>; LOG AFb-1). <paramref name="heartbeat"/> is called while the action polls. A
+    /// made (<c>RunCore.StepSpec</c>; LOG 488). <paramref name="heartbeat"/> is called while the action polls. A
     /// configuration fault stops the step for a person (<see cref="Must{T}"/>); every other infrastructure error is thrown for
     /// Temporal to retry.
     /// </summary>

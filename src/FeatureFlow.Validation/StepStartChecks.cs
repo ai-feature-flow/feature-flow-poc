@@ -6,7 +6,7 @@ namespace FeatureFlow.Validation;
 /// The step-start checks of docs/09 section 2 that need no provider and no run state: 33 (every <c>tier_tags</c> tag matches
 /// a tier of the manifest read at this step). Check 31 (an action's evaluated inputs satisfy its schema) is the core's, which
 /// evaluates them and applies it to every action before it starts (<c>RunCore.StepSpec</c>, <c>RunCore.ChildSpec</c>; LOG
-/// AFb-1); check 32 (consumed artifacts exist) is the core's too, which knows the run's artifacts.
+/// 488); check 32 (consumed artifacts exist) is the core's too, which knows the run's artifacts.
 /// </summary>
 public static class StepStartChecks
 {

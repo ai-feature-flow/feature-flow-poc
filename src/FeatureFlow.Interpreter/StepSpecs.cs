@@ -55,7 +55,7 @@ public sealed partial class RunCore
     /// <summary>
     /// A step's inputs at step start, evaluated, or why it cannot start: they cannot be evaluated, or an action's do not
     /// satisfy its contract (check 31). Every action takes this path, whoever carries it out: <see cref="StepSpec"/> for the
-    /// engine's actions and <c>plan.expand</c>, <see cref="ChildSpec"/> for <c>run.child</c> (LOG AFb-1).
+    /// engine's actions and <c>plan.expand</c>, <see cref="ChildSpec"/> for <c>run.child</c> (LOG 488).
     /// </summary>
     (Dictionary<string, object?>? Inputs, string? Error) StartInputs(Step step)
     {

@@ -95,7 +95,7 @@ public static partial class ApiApp
         /// A run's current plan revision (G11; LOG 404): the latest revision the run indexed, rebuilt with the libraries
         /// locked when its root run started, as its readable form (docs/09 section 4.4) and as data, each step with its status
         /// from the run's timeline and open waits, whether a breakpoint is set on it, and the outcome it is skipped with. A run
-        /// that has indexed no revision yet answers 204: it has no plan to show, which is not a refusal (LOG AFd-1).
+        /// that has indexed no revision yet answers 204: it has no plan to show, which is not a refusal (LOG 493).
         /// </summary>
         public async Task<IResult> PlanAsync(HttpContext context, Caller caller, string id)
         {

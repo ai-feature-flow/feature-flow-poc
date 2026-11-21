@@ -336,7 +336,7 @@ Lowest precedence first, from FF's input precedence
    started the child.
 
 A library gives no values: a manifest's `inputs` is refused at load
-(`docs/08` section 2, LOG AFa-1).
+(`docs/08` section 2, LOG 487).
 
 Engine values (`run.*`) cannot be declared as parameters. A reference to an
 undeclared parameter fails at load; a required parameter left unbound fails at

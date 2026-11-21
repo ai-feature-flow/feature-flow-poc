@@ -100,7 +100,7 @@ public sealed class TrackerActionTests
         Assert.Contains("no tracker issue", result.Reason, StringComparison.Ordinal);
     }
 
-    // Check 31 on op is the core's at step start (ShellToCoreTests; LOG AFb-1).
+    // Check 31 on op is the core's at step start (ShellToCoreTests; LOG 488).
 
     [Fact]
     public async Task A_tracker_outage_is_retried_not_a_step_failure()

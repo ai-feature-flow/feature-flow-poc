@@ -95,7 +95,7 @@ public class MergeActionDecisionTests
     [Fact]
     public async Task An_approval_while_the_watch_reads_the_pull_request_lets_the_same_execution_ask_a_person_to_merge()
     {
-        // The CI race (LOG AFc-1): the watch's read is in progress when the approval cancels it, and its "not yet" ends that
+        // The CI race (LOG 492): the watch's read is in progress when the approval cancels it, and its "not yet" ends that
         // attempt after the cancel was asked. That result is the cancelled watch's, not the restarted execution's.
         var (h, forge, repo) = await ForgeTicketTests.StartAsync("merge-action-race", policy: Policy);
         await using var _ = h;

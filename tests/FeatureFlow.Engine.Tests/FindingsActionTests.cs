@@ -490,7 +490,7 @@ public sealed class FindingsActionTests : IAsyncDisposable
         Assert.Empty(world.Forge.Comments(ActionRunAccess.Pr(world.PullRequests.Single())));
     }
 
-    // Check 31 on reopen_on is the core's at step start (ShellToCoreTests; LOG AFb-1).
+    // Check 31 on reopen_on is the core's at step start (ShellToCoreTests; LOG 488).
 
     // ---- Review of PR 11 ----
 
@@ -734,7 +734,7 @@ public sealed class FindingsActionTests : IAsyncDisposable
         Assert.Equal(FindingStates.Open, Assert.Single(await Ledger()).State);
     }
 
-    // Check 31 on states (empty, or not finding states) is the core's at step start (ShellToCoreTests; LOG AFb-1).
+    // Check 31 on states (empty, or not finding states) is the core's at step start (ShellToCoreTests; LOG 488).
 
     // ---- a person's triage through a decision (LOG 248; F8) ----
 

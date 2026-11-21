@@ -220,7 +220,7 @@ public class MutationTests
     }
 
     /// <summary>
-    /// Check 5 types a guard's reference to an action's output by the descriptor's outputs (docs/04 section 12; LOG AFb-3):
+    /// Check 5 types a guard's reference to an action's output by the descriptor's outputs (docs/04 section 12; LOG 490):
     /// a name the action does not publish is refused, naming the ones it does; one it publishes loads.
     /// </summary>
     [Theory]

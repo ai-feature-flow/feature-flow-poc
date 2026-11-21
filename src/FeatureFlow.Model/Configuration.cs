@@ -722,6 +722,6 @@ public static class ConfigurationReader
 
 /// <summary>
 /// A host's refusal to start (docs/07 section 7): the configuration does not validate, or names something the host cannot
-/// use. Its message is for the operator, so a host prints it alone, with no stack trace, and exits 2 (LOG AFd-2).
+/// use. Its message is for the operator, so a host prints it alone, with no stack trace, and exits 2 (LOG 494).
 /// </summary>
 public sealed class StartupRefusal(string message) : Exception(message);

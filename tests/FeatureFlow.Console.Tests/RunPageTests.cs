@@ -28,7 +28,7 @@ public sealed class RunPageTests(BrowserFixture browser) : BrowserTest(browser)
     [Fact]
     public async Task A_new_run_with_no_plan_revision_yet_is_refused_nothing()
     {
-        // As a run's page reads it before the engine has indexed revision 1 (LOG AFd-1): no request is refused, so no console error.
+        // As a run's page reads it before the engine has indexed revision 1 (LOG 493): no request is refused, so no console error.
         ExpectNoRefusal();
         await Engine.RunAsync("run-new");
 

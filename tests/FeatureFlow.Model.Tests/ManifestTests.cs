@@ -63,7 +63,7 @@ public class ManifestTests
     [InlineData("environment: { image: x, os: linux }", "unknown key 'os' in environment")]
     [InlineData("environment: { image: x, docker: true }", "unknown key 'docker' in environment")]
     [InlineData("environment: {}", "environment needs 'image'")]
-    [InlineData("library: { default_template: std:templates/ticket_delivery }", "library is not supported in version 1; remove it")]     // LOG AFa-1
+    [InlineData("library: { default_template: std:templates/ticket_delivery }", "library is not supported in version 1; remove it")]     // LOG 487
     [InlineData("library: { adds: { skills: [{ name: acme_api, path: .feature-flow/skills/acme_api }] } }", "library is not supported in version 1; remove it")]
     public void A_manifest_that_is_wrong_is_refused_not_ignored(string change, string message)
     {

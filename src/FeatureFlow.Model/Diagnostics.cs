@@ -50,7 +50,7 @@ public static class Checks
     public const int PlanSize = 17;
     public const int RequiredParameters = 18;
     public const int ReferenceResolves = 19;
-    // 20 (a repository's library section adds only) is retired with the section (LOG AFa-1); numbers are not reused.
+    // 20 (a repository's library section adds only) is retired with the section (LOG 487); numbers are not reused.
     public const int Capabilities = 21;
     public const int LockedCap = 22;
     public const int EngineMerge = 23;

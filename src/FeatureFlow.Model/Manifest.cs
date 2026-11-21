@@ -150,7 +150,7 @@ public sealed record RepositoryManifest(
             i.Finish();
         }
 
-        // A default template and added content were checked and never applied, so the section is refused (LOG AFa-1).
+        // A default template and added content were checked and never applied, so the section is refused (LOG 487).
         ConfigurationReader.NotInVersion1(r, "library", "library");
         var manifest = new RepositoryManifest(hash, Commands(r, "setup", d), Commands(r, "after_changes", d), tiers, analysis, integration, image);
         r.Finish();

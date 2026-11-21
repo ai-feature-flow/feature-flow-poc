@@ -70,7 +70,7 @@ public sealed partial class RunCore
 
     /// <summary>
     /// Check 18 alone, before a run starts: the API refuses a start that the engine would refuse for its parameters, with
-    /// the same messages (LOG AFd-3). A template that does not load is left to the engine, which reports why.
+    /// the same messages (LOG 495). A template that does not load is left to the engine, which reports why.
     /// </summary>
     public static IReadOnlyList<Diagnostic> ParameterProblems(LibrarySet libraries, LibraryReference template, RunInfo run)
     {

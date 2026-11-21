@@ -207,7 +207,7 @@ public sealed class WaitingActionTests
     }
 
     // Check 31 (an unknown input, a wrong kind, a value not allowed, a poll interval under five seconds, one condition only) is
-    // the core's at step start, before the action's activity runs: ShellToCoreTests (LOG AFb-1).
+    // the core's at step start, before the action's activity runs: ShellToCoreTests (LOG 488).
 
     [Fact]
     public async Task A_poll_interval_of_five_seconds_is_the_next_reads_delay()

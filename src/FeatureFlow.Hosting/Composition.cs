@@ -257,7 +257,7 @@ public static class HostArguments
     /// <summary>
     /// Runs a host (<see cref="StartAsync"/>), or, with the first argument <c>reconcile</c>, rebuilds the run index once and
     /// exits (<see cref="RunIndex"/>). A refusal to start (<see cref="StartupRefusal"/>) is written to standard error as its
-    /// message alone, and the host exits 2 (LOG AFd-2).
+    /// message alone, and the host exits 2 (LOG 494).
     /// </summary>
     public static async Task<int> RunAsync(string[] args, IEnumerable<ProviderFactory> factories, bool orchestration, bool agent, bool apiHost,
         TextWriter? error = null)

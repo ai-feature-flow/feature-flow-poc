@@ -260,7 +260,7 @@ public static class RunCommands
             return File.Exists(file) ? File.ReadAllText(file) : throw new ArgumentException($"--change {name}=@{file}: there is no file {file}");
         }
 
-        /// <summary>The run's current plan revision: its number and its readable form; none yet is said so (204, LOG AFd-1).</summary>
+        /// <summary>The run's current plan revision: its number and its readable form; none yet is said so (204, LOG 493).</summary>
         public async Task<int> PlanAsync(string id)
         {
             using var response = await http.GetAsync($"runs/{id}/plan");

@@ -103,12 +103,12 @@ public static class LibraryItemReader
             if (MapReader.Of(item, d, "a dependency") is { } dep)
             {
                 dependencies.Add(new LibraryDependency(dep.String("name", required: true) ?? ""));
-                // Each library loads at the one version its source gives, so a constraint would do nothing (LOG AFa-1).
+                // Each library loads at the one version its source gives, so a constraint would do nothing (LOG 487).
                 ConfigurationReader.NotInVersion1(dep, "version", "dependencies.version");
                 dep.Finish();
             }
 
-        // Read and never applied, so refused (LOG AFa-1).
+        // Read and never applied, so refused (LOG 487).
         foreach (var key in new[] { "inputs", "resources", "notifications" })
             ConfigurationReader.NotInVersion1(r, key, key);
 
@@ -173,7 +173,7 @@ public static class LibraryItemReader
             r.Error($"unknown tool class '{tool}'; tools are {string.Join(", ", RoleTools)} (LOG 65)", r.Map["tools"]!.Location);
         // Toolsets are not in version 1 (F19, LOG 339).
         ConfigurationReader.NotInVersion1(r, "toolsets", "toolsets");
-        // Nothing matched a role's requirements against a runtime (LOG AFa-1).
+        // Nothing matched a role's requirements against a runtime (LOG 487).
         ConfigurationReader.NotInVersion1(r, "requires", "requires");
         r.Finish();
         return new RoleItem(name, access, tools, deprecated);
