@@ -1,21 +1,15 @@
-import { api, read, type Schema } from "../../api/client";
-import { useLive } from "../../api/live";
+import type { Schema } from "../../api/client";
+import { useAttention } from "../../app/attention";
 import * as links from "../../app/links";
 import { Age } from "../../ui/Age";
 import { Busy } from "../../ui/Busy";
 import { ErrorBox } from "../../ui/ErrorBox";
+import { progress } from "../../ui/progress";
 import { Status } from "../../ui/Status";
 import { Table } from "../../ui/Table";
 import "./NeedsMe.css";
 
 type Item = Schema<"AttentionItem">;
-
-/** A min_count decision's answers so far, such as "approved: 1 of 2". */
-export function progress(wait: Schema<"WaitView">): string {
-  if (wait.min_count <= 1) return "";
-  if (wait.progress === null || wait.progress.length === 0) return `0 of ${wait.min_count}`;
-  return wait.progress.map(p => `${p.choice}: ${p.actors.length} of ${p.needed}`).join("; ");
-}
 
 /** The items grouped by run, in the order the API gives them (oldest wait first). */
 function byRun(items: readonly Item[]): Item[][] {
@@ -30,7 +24,7 @@ function byRun(items: readonly Item[]): Item[][] {
 
 /** Needs me (#/): every open wait the caller may answer now (GET /attention), grouped by run. */
 export function NeedsMe() {
-  const attention = useLive(["attention"], () => read(api.GET("/attention")));
+  const attention = useAttention();
   if (attention.data === undefined) return attention.error ? <ErrorBox error={attention.error} /> : <Busy />;
   const groups = byRun(attention.data.waits);
 
@@ -59,7 +53,7 @@ export function NeedsMe() {
                   </td>
                   <td>{wait.step_id}</td>
                   <td class="ff-needs-me-prompt">{wait.prompt}</td>
-                  <td>{progress(wait)}</td>
+                  <td>{progress(wait).join("; ")}</td>
                   <td>
                     <Age at={wait.updated_at} />
                   </td>

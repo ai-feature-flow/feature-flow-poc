@@ -5,7 +5,7 @@ import { Busy } from "../../ui/Busy";
 import { ErrorBox } from "../../ui/ErrorBox";
 import { Table } from "../../ui/Table";
 
-export interface ArtifactListProps {
+interface ArtifactListProps {
   runId: string;
 }
 
@@ -24,7 +24,7 @@ export function ArtifactList({ runId }: ArtifactListProps) {
   const artifacts = list.data?.artifacts;
 
   return (
-    <section class="ff-artifacts" aria-label="Artifacts">
+    <section class="ff-artifacts ff-run-section" aria-label="Artifacts">
       <h2>Artifacts</h2>
       {list.error && <ErrorBox error={list.error} />}
       {artifacts === undefined && !list.error && <Busy />}

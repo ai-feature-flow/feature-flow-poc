@@ -1,13 +1,14 @@
 import type { Schema } from "../../api/client";
 import * as links from "../../app/links";
 import { ErrorBox } from "../../ui/ErrorBox";
+import { progress } from "../../ui/progress";
 import { useAnswer } from "./answer";
 import { Choices } from "./Choices";
 import { Question } from "./Question";
 import { Recovery } from "./Recovery";
 import "./WaitForm.css";
 
-export interface WaitFormProps {
+interface WaitFormProps {
   runId: string;
   wait: Schema<"WaitView">;
   /** The run's plan, for route labels and the step picker; null while it loads or when there is none. */
@@ -16,20 +17,13 @@ export interface WaitFormProps {
   canAnswer: boolean;
 }
 
-/** A min_count decision's answers so far, such as "approved: 1 of 2 people (ann)". */
-function progressOf(wait: Schema<"WaitView">): string[] {
-  if (wait.min_count <= 1) return [];
-  if (wait.progress === null || wait.progress.length === 0) return [`0 of ${wait.min_count} people`];
-  return wait.progress.map(p => `${p.choice}: ${p.actors.length} of ${p.needed} people (${p.actors.join(", ")})`);
-}
-
 /**
  * An open wait's form (POST /runs/{id}/answers), by kind: a gate's outcomes, an agent's question, a patch approval, or an
  * intervention's or breakpoint's recovery. The run page shows the status waits (stalled, stuck) without a form.
  */
 export function WaitForm({ runId, wait, plan, canAnswer }: WaitFormProps) {
   const answer = useAnswer(runId, wait.wait_id);
-  const progress = progressOf(wait);
+  const lines = progress(wait);
 
   return (
     <section class="ff-wait" aria-label={`Wait ${wait.wait_id}`} data-wait={wait.wait_id}>
@@ -44,7 +38,7 @@ export function WaitForm({ runId, wait, plan, canAnswer }: WaitFormProps) {
           ))}
         </ul>
       )}
-      {progress.map(line => (
+      {lines.map(line => (
         <p key={line} class="ff-wait-progress">
           {line}
         </p>

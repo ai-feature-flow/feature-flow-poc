@@ -4,6 +4,7 @@ import { NeedsMe } from "../screens/needs-me/NeedsMe";
 import { RunPage } from "../screens/run/RunPage";
 import { RunList } from "../screens/runs/RunList";
 import { StartRun } from "../screens/start/StartRun";
+import { AttentionProvider } from "./attention";
 import { Header } from "./Header";
 import * as links from "./links";
 import { useRoute, type Route } from "./router";
@@ -33,9 +34,9 @@ function screen(route: Route) {
 export function App({ me, signedInWithToken }: { me: Me; signedInWithToken: boolean }) {
   const route = useRoute();
   return (
-    <>
+    <AttentionProvider>
       <Header me={me} signedInWithToken={signedInWithToken} />
       <main>{screen(route)}</main>
-    </>
+    </AttentionProvider>
   );
 }

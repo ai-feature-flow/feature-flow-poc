@@ -22,7 +22,7 @@ export function authHeaders(): Record<string, string> {
 }
 
 /** The ErrorResponse's text, else the status. */
-export async function messageOf(response: Response): Promise<string> {
+async function messageOf(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as { error?: unknown };
     if (typeof body.error === "string") return body.error;

@@ -4,7 +4,10 @@ import { hasReason, Reason } from "../../ui/Reason";
 import type { Answering } from "./answer";
 import { Field } from "./Field";
 
-/** The statuses a person may end a run with (RunCore.EndableStatuses); the run refuses any other. */
+/**
+ * The statuses a person may end a run with: a copy of RunCore.EndableStatuses (Interpreter/Recovery.cs), kept by hand
+ * because the API does not send it. The run refuses any other, so a drift shows as a refusal, not a wrong end.
+ */
 const endable = ["failed", "rejected", "partial", "aborted"];
 
 function Options({ values }: { values: readonly string[] }) {
