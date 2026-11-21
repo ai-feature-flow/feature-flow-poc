@@ -24,8 +24,8 @@ public class MergeActionDecisionTests
     {
         var id = h.Start("std:templates/ticket_delivery", "--param", $"ticket_id={ticket}", "--repo", "acme/api");
         var waitId = await h.WaitForWaitAsync(id, TimeSpan.FromMinutes(3));
-        var wait = (await h.ShowAsync(id))["waits"]!.AsArray().Single(w => w!["waitId"]!.ToString() == waitId)!;
-        Assert.Equal(("gate", "deliver.merge", "ticket.merge_action"), (wait["kind"]!.ToString(), wait["stepId"]!.ToString(), wait["decisionType"]!.ToString()));
+        var wait = (await h.ShowAsync(id))["waits"]!.AsArray().Single(w => w!["wait_id"]!.ToString() == waitId)!;
+        Assert.Equal(("gate", "deliver.merge", "ticket.merge_action"), (wait["kind"]!.ToString(), wait["step_id"]!.ToString(), wait["decision_type"]!.ToString()));
         Assert.Equal(["approve", "reject"], wait["choices"]!.AsArray().Select(c => c!.ToString()));
         Assert.Equal(PullRequestStates.Open, (await new InMemoryCodeHost(forge).GetPullRequestAsync(new PullRequestRef(repo, 1), Ct)).Unwrap().State);
         return (id, waitId!);
@@ -108,5 +108,5 @@ public class MergeActionDecisionTests
     }
 
     static List<(string Kind, string StepId, string Detail)> Timeline(JsonNode view) =>
-        view["timeline"]!.AsArray().Select(e => (e!["kind"]!.ToString(), e["stepId"]?.ToString() ?? "", e["detail"]?.ToString() ?? "")).ToList();
+        view["timeline"]!.AsArray().Select(e => (e!["kind"]!.ToString(), e["step_id"]?.ToString() ?? "", e["detail"]?.ToString() ?? "")).ToList();
 }

@@ -45,8 +45,8 @@ public static partial class ApiApp
     /// <summary>Inbound events: webhooks that wake waits, and chat answers through the gateway as the mapped person. M7, W3.</summary>
     static void MapInbound(WebApplication app, Handlers api)
     {
-        app.MapPost("/inbound/events/{source}", (HttpContext c, string source) => api.InboundEventAsync(c, source));
-        app.MapPost("/inbound/chat/{source}", (HttpContext c, string source) => api.InboundChatAsync(c, source));
+        app.MapPost("/inbound/events/{source}", (HttpContext c, string source) => api.InboundEventAsync(c, source)).ExcludeFromDescription();
+        app.MapPost("/inbound/chat/{source}", (HttpContext c, string source) => api.InboundChatAsync(c, source)).ExcludeFromDescription();
     }
 
     sealed partial class Handlers

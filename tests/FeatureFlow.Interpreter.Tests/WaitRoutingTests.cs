@@ -385,6 +385,6 @@ public class WaitRoutingTests
     static string Shown(RunCore core, OpenWait wait)
     {
         var d = core.Describe(wait);
-        return $"{d.Kind} {d.Type} [{string.Join(", ", d.Choices)}]: {d.Reason}";
+        return $"{d.Kind} {d.Type} [{string.Join(", ", d.Choices)}]: {d.Prompt}";
     }
 }

@@ -1,4 +1,6 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using FeatureFlow.Api.Contracts;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Providers.Local;
 
@@ -102,7 +104,7 @@ public class FindingsLoopTests
 
         var view = await h.ShowAsync(id);
         var wait = view["waits"]!.AsArray().Single()!;
-        Assert.Equal((kind, stopsAt), (wait["kind"]!.ToString(), wait["stepId"]!.ToString()));
+        Assert.Equal((kind, stopsAt), (wait["kind"]!.ToString(), wait["step_id"]!.ToString()));
         var path = Harness.StartedSteps(view);
         Assert.DoesNotContain(path, s => s.StartsWith("deliver.", StringComparison.Ordinal));
         Assert.DoesNotContain("verify.fix.fix", path);
@@ -139,7 +141,7 @@ public class FindingsLoopTests
 
         var view = await h.ShowAsync(id);
         var wait = view["waits"]!.AsArray().Single()!;
-        Assert.Equal(("intervention", "verify.fix.verify_fix"), (wait["kind"]!.ToString(), wait["stepId"]!.ToString()));
+        Assert.Equal(("intervention", "verify.fix.verify_fix"), (wait["kind"]!.ToString(), wait["step_id"]!.ToString()));
         var path = Harness.StartedSteps(view);
         Assert.DoesNotContain(path, s => s.StartsWith("deliver.", StringComparison.Ordinal));
         Assert.Equal(3, path.Count(s => s == "verify.fix.record_fixes"));
@@ -226,7 +228,7 @@ public class FindingsLoopTests
 
         var id = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=T-1", "--param", "engine_can_merge=true", "--repo", "acme/api");
         var wait = await h.WaitForWaitAsync(id, TimeSpan.FromSeconds(240));
-        Assert.Equal(("gate", "verify.fix.person_triage"), ((await h.ShowAsync(id))["waits"]![0]!["kind"]!.ToString(), (await h.ShowAsync(id))["waits"]![0]!["stepId"]!.ToString()));
+        Assert.Equal(("gate", "verify.fix.person_triage"), ((await h.ShowAsync(id))["waits"]![0]!["kind"]!.ToString(), (await h.ShowAsync(id))["waits"]![0]!["step_id"]!.ToString()));
 
         var (refused, _, refusal) = h.Cli("answer", id, wait!, "triaged");
         Assert.NotEqual(0, refused);
@@ -241,7 +243,7 @@ public class FindingsLoopTests
         for (var i = 0; i < 300 && (again is null || again == wait); i++)
         {
             await Task.Delay(200, ct);
-            again = (await h.ShowAsync(id))["waits"]!.AsArray().FirstOrDefault()?["waitId"]?.ToString();
+            again = (await h.ShowAsync(id))["waits"]!.AsArray().FirstOrDefault()?["wait_id"]?.ToString();
         }
 
         Assert.True(again is not null && again != wait, "the person's decision was not asked again after an empty triage");
@@ -250,7 +252,7 @@ public class FindingsLoopTests
 
         var (read, ledger, readError) = h.Cli("findings", id);
         Assert.True(read == 0, readError);
-        var finding = Assert.Single(ArtifactShapes.ReadLibrary<FindingsReport>(ledger, "the ledger").Findings);
+        var finding = Assert.Single(JsonSerializer.Deserialize<FindingsResponse>(ledger, ApiJson.Options)!.Findings);
         Assert.Equal(FindingStates.Declined, finding.State);
         var triage = Path.Combine(h.Folder, "person_triage.yaml");
         await File.WriteAllTextAsync(triage, $"schema: 1\nentries:\n  - {{ finding: {finding.LedgerId}, state: declined, reason: \"A known limitation; accepted for this release\" }}\n", ct);

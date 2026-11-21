@@ -76,7 +76,7 @@ public class SurfacesTests
         var decision = await PostedAsync(slack, p => p["blocks"] is not null);
         // The question is the decision's rendered prompt, not the word "decision", in chat and in the run's wait record (the console's).
         Assert.Contains("Approve to let the run go on", decision["text"]!.GetValue<string>());
-        Assert.Contains("Approve to let the run go on", (await h.ShowAsync(id))["waits"]![0]!["reason"]!.GetValue<string>());
+        Assert.Contains("Approve to let the run go on", (await h.ShowAsync(id))["waits"]![0]!["prompt"]!.GetValue<string>());
 
         // The person presses "approved": Slack sends back the button's own value, signed.
         var button = decision["blocks"]!.AsArray().Single(b => b!["type"]!.GetValue<string>() == "actions")!["elements"]!.AsArray()
@@ -218,7 +218,7 @@ public class SurfacesTests
     }
 
     static List<(string Kind, string Step, string Detail)> Timeline(JsonNode view) =>
-        view["timeline"]!.AsArray().Select(e => (e!["kind"]!.ToString(), e["stepId"]!.ToString(), e["detail"]?.ToString() ?? "")).ToList();
+        view["timeline"]!.AsArray().Select(e => (e!["kind"]!.ToString(), e["step_id"]!.ToString(), e["detail"]?.ToString() ?? "")).ToList();
 
     /// <summary>The wait's pending activity as <c>id/attempt</c>: a new id is a restarted activity, a new attempt another read.</summary>
     static async Task<string> PendingAsync(WorkflowHandle handle) =>

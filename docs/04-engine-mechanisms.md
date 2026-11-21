@@ -286,7 +286,8 @@ decided, its step was skipped, or the run ended). The closed waits are carried
 across a hand-over with the rest of the core's state, so a repeated answer is
 still a duplicate in the next run. The record store's wait record has kind
 `gate`, `question`, `intervention`, `patch_approval` or `breakpoint`, the decision
-type, the choices that answer it and the text to show; wait ids are `gate-N`,
+type, the choices that answer it and the text to show (its `prompt`; "reason"
+means only a person's, LOG A3-0b); wait ids are `gate-N`,
 `intervention-N`, `breakpoint-N` and `patch_approval-N`, and a question's is the
 id its agent's client gave it (LOG 360).
 

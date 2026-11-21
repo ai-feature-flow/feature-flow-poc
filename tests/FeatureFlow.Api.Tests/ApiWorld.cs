@@ -93,6 +93,9 @@ public sealed class ApiWorld : IAsyncDisposable
 
     public Uri Address { get; }
 
+    /// <summary>The API's services, such as its routes (<c>EndpointDataSource</c>).</summary>
+    public IServiceProvider Services => app.Services;
+
     public async ValueTask DisposeAsync()
     {
         await app.DisposeAsync();

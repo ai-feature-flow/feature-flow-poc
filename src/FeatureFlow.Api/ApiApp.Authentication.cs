@@ -81,7 +81,7 @@ public static partial class ApiApp
                 if ((caller = await authenticator.AuthenticateAsync(context, services)) is not null)
                     break;
             if (caller is null)
-                return Results.Json(new { error = "unauthenticated" }, Json, statusCode: 401);
+                return Error(401, "unauthenticated");
             try
             {
                 return await handle(caller);

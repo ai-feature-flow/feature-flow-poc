@@ -111,7 +111,7 @@ public sealed class StuckRuns(EngineServices services, ITemporalClient? client, 
         var records = new RecordBatch(Waits: batch);
         (await Records.AppendAsync(records, ct)).Unwrap();
         foreach (var wait in batch)
-            logger.LogWarning("stuck runs: {RunId} {Change} {Kind}: {Reason}", run.RunId, wait.Open ? "is" : "is no longer", wait.Kind, wait.Reason);
+            logger.LogWarning("stuck runs: {RunId} {Change} {Kind}: {Prompt}", run.RunId, wait.Open ? "is" : "is no longer", wait.Kind, wait.Prompt);
         await new RunNotifier(services, logger).NotifyAsync(records, ct);
     }
 

@@ -55,32 +55,35 @@ public class SessionRunTests
         var first = await OpenSessionAsync(h, http, id);
         var workspace = first["workspace"]!;
         Assert.Equal("projects/invoicing", workspace["folder"]!.ToString());
-        Assert.Equal(["check_requirements"], workspace["checksFrom"]!.AsArray().Select(c => c!.ToString()));
+        Assert.Equal(["check_requirements"], workspace["checks_from"]!.AsArray().Select(c => c!.ToString()));
         var branch = workspace["branch"]!.ToString();
-        Assert.Equal(workspace["baseRevision"]!.ToString(), forge.Resolve(repo, "refs/heads/" + branch));
+        Assert.Equal(workspace["base_revision"]!.ToString(), forge.Resolve(repo, "refs/heads/" + branch));
         Assert.Contains("ff session submit", workspace["instructions"]!.ToString());
         Assert.Contains("invoicing", workspace["prompt"]!.ToString());
         Assert.Empty(first["drafts"]!.AsObject());
-        var sid = first["session"]!["sessionId"]!.ToString();
+        var sid = first["session"]!["session_id"]!.ToString();
 
         var bad = Commit(forge, repo, branch, Invalid);
         var badCheck = await CheckAsync(http, sid, bad);
-        Assert.Equal("failed", badCheck["check"]!["status"]!.ToString());
+        Assert.Equal("failed", badCheck["status"]!.ToString());
         Assert.Contains("invalid", badCheck["detail"]!.ToString());
-        // The body cannot name another actor (F8): the person is the authenticated caller.
-        var firstSubmit = await PostAsync(http, $"sessions/{sid}/submit", new JsonObject { ["revision"] = bad, ["actor"] = "mallory" });
+        // The body cannot name another actor (F8): refused, and the person is the authenticated caller.
+        using (var named = await http.PostAsync($"sessions/{sid}/submit", new StringContent(new JsonObject { ["revision"] = bad, ["actor"] = "mallory" }.ToJsonString(),
+                   System.Text.Encoding.UTF8, "application/json"), TestContext.Current.CancellationToken))
+            Assert.Equal(System.Net.HttpStatusCode.BadRequest, named.StatusCode);
+        var firstSubmit = await PostAsync(http, $"sessions/{sid}/submit", new JsonObject { ["revision"] = bad });
         Assert.Equal("recorded", firstSubmit["result"]!.ToString());
         var firstRecord = (await GetAsync(http, $"sessions/{sid}"))["session"]!;
-        Assert.Equal(bad, firstRecord["submittedRevision"]!.ToString());
+        Assert.Equal(bad, firstRecord["submitted_revision"]!.ToString());
         Assert.Equal("tester", firstRecord["person"]!.ToString());
 
         var second = await OpenSessionAsync(h, http, id, after: sid);
         // The next session's record can land before the timeline batch holding the step's digest: wait for it.
-        Assert.Equal(badCheck["check"]!["inputs"]!.ToString(), Assert.Single(await DigestsAsync(h, id, "check_requirements", 1)));
+        Assert.Equal(badCheck["inputs"]!.ToString(), Assert.Single(await DigestsAsync(h, id, "check_requirements", 1)));
         Assert.Equal(Invalid, second["drafts"]!["requirements.yaml"]!.ToString());
 
         // Round 2, as a person does it: ff session fetch, the check through the engine MCP server, ff session submit.
-        var sid2 = second["session"]!["sessionId"]!.ToString();
+        var sid2 = second["session"]!["session_id"]!.ToString();
         var branch2 = second["workspace"]!["branch"]!.ToString();
         var folder = Directory.CreateTempSubdirectory("ff-session-").FullName;
         var (fetchExit, fetched, fetchError) = Session(h, "fetch", sid2, "--out", folder);
@@ -106,7 +109,7 @@ public class SessionRunTests
         var goodCheck = (await GetAsync(http, $"sessions/{sid2}/checks"))["checks"]!.AsArray().Single()!;
         Assert.Contains("\"valid\": true", goodCheck["result"]!.ToString());
         // The check at one commit and at another are given different inputs.
-        Assert.NotEqual(badCheck["check"]!["inputs"]!.ToString(), goodCheck["check"]!["inputs"]!.ToString());
+        Assert.NotEqual(badCheck["inputs"]!.ToString(), goodCheck["inputs"]!.ToString());
 
         var (submitExit, submittedText, submitError) = Session(h, "submit", sid2, "--revision", good);
         Assert.True(submitExit == 0, submitError);
@@ -116,14 +119,14 @@ public class SessionRunTests
         var view = await h.ShowAsync(id);
         var digests = await DigestsAsync(h, id, "check_requirements", 2);
         Assert.Equal(2, digests.Count);
-        Assert.Equal(goodCheck["check"]!["inputs"]!.ToString(), digests[1]);
-        Assert.Contains(view["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "completed" && e["stepId"]!.ToString() == "check_requirements"
+        Assert.Equal(goodCheck["inputs"]!.ToString(), digests[1]);
+        Assert.Contains(view["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "completed" && e["step_id"]!.ToString() == "check_requirements"
                                                           && e["detail"]!.ToString() == "valid");
 
         var record = await GetAsync(http, $"sessions/{sid2}");
         Assert.Equal(SessionStatuses.Submitted, record["session"]!["status"]!.ToString());
         Assert.Equal("tester", record["session"]!["person"]!.ToString());
-        Assert.Equal(good, record["session"]!["submittedRevision"]!.ToString());
+        Assert.Equal(good, record["session"]!["submitted_revision"]!.ToString());
         Assert.Equal(["contract", "requirements"], record["session"]!["artifacts"]!.AsObject().Select(kv => kv.Key).Order());
         Assert.Contains(view["timeline"]!.AsArray(), e => e!["kind"]!.ToString() == "session_submitted" && e["detail"]!.ToString().Contains($"at {good} by tester"));
 
@@ -145,8 +148,8 @@ public class SessionRunTests
         var id = h.Start("std:templates/project_delivery", "--param", "project_name=invoicing", "--repo", repo.FullName);
         var http = await ClientAsync(h);
         var opened = await OpenSessionAsync(h, http, id);
-        var sid = opened["session"]!["sessionId"]!.ToString();
-        var wait = opened["session"]!["waitId"]!.ToString();
+        var sid = opened["session"]!["session_id"]!.ToString();
+        var wait = opened["session"]!["wait_id"]!.ToString();
 
         var (exit, _, error) = h.Cli("answer", id, wait, "submitted");
         Assert.NotEqual(0, exit);
@@ -187,7 +190,7 @@ public class SessionRunTests
         var id = h.Start("std:templates/project_delivery", "--param", "project_name=invoicing", "--repo", repo.FullName, "--continue-as-new-events", "100");
         var http = await ClientAsync(h);
         var opened = await OpenSessionAsync(h, http, id);
-        var sid = opened["session"]!["sessionId"]!.ToString();
+        var sid = opened["session"]!["session_id"]!.ToString();
         var good = Commit(forge, repo, opened["workspace"]!["branch"]!.ToString(), Valid);
 
         // Checks grow the history until the run hands over with the session's decision open.
@@ -202,7 +205,7 @@ public class SessionRunTests
         await WaitAtAsync(h, id, "approve");
 
         // A revision on a wait that is not a session is refused, never taken as a plain answer (fails closed).
-        var approve = (await h.ShowAsync(id))["waits"]![0]!["waitId"]!.ToString();
+        var approve = (await h.ShowAsync(id))["waits"]![0]!["wait_id"]!.ToString();
         var refusal = await Assert.ThrowsAsync<Temporalio.Exceptions.WorkflowUpdateFailedException>(() =>
             h.Client.GetWorkflowHandle(id).ExecuteUpdateAsync<AnswerReply>(RunWorkflowNames.Answer, [new AnswerArgs(approve, "tester", "approved", null, Revision: good)]));
         Assert.Contains("is not an open session", refusal.InnerException?.Message ?? refusal.Message);
@@ -227,7 +230,7 @@ public class SessionRunTests
         var id = h.Start("std:templates/project_delivery", "--param", "project_name=invoicing", "--repo", repo.FullName);
         var http = await ClientAsync(h);
         var opened = await OpenSessionAsync(h, http, id);
-        var sid = opened["session"]!["sessionId"]!.ToString();
+        var sid = opened["session"]!["session_id"]!.ToString();
         var branch = opened["workspace"]!["branch"]!.ToString();
 
         var broken = Commit(forge, repo, branch, brokenTypes);
@@ -252,7 +255,7 @@ public class SessionRunTests
         await using var _h = h;
         var id = h.Start("m7:templates/session_checks", "--repo", repo.FullName);
         var http = await ClientAsync(h);
-        var sid = (await OpenSessionAsync(h, http, id))["session"]!["sessionId"]!.ToString();
+        var sid = (await OpenSessionAsync(h, http, id))["session"]!["session_id"]!.ToString();
 
         var refused = await http.PostAsJsonAsync($"sessions/{sid}/checks", new { step = "publish", revision = new string('a', 40) }, TestContext.Current.CancellationToken);
         Assert.Equal(409, (int)refused.StatusCode);
@@ -270,9 +273,9 @@ public class SessionRunTests
         var http = await ClientAsync(h);
 
         var opened = await OpenSessionAsync(h, http, id);
-        var sid = opened["session"]!["sessionId"]!.ToString();
+        var sid = opened["session"]!["session_id"]!.ToString();
         var branch = opened["workspace"]!["branch"]!.ToString();
-        Assert.Equal(opened["workspace"]!["baseRevision"]!.ToString(), h.DryForge.Resolve(repo, "refs/heads/" + branch));
+        Assert.Equal(opened["workspace"]!["base_revision"]!.ToString(), h.DryForge.Resolve(repo, "refs/heads/" + branch));
         Assert.Null(forge.Resolve(repo, "refs/heads/" + branch));
         Assert.NotNull(h.DrySessions.Workspace(sid));
         await PostAsync(http, $"runs/{id}/abort", new JsonObject { ["reason"] = "the test is done" });
@@ -283,7 +286,7 @@ public class SessionRunTests
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(120);
         while (DateTime.UtcNow < deadline)
         {
-            if ((await h.ShowAsync(runId))["waits"]!.AsArray().Any(w => w!["stepId"]!.ToString() == step))
+            if ((await h.ShowAsync(runId))["waits"]!.AsArray().Any(w => w!["step_id"]!.ToString() == step))
                 return;
             await Task.Delay(200, TestContext.Current.CancellationToken);
         }
@@ -305,7 +308,7 @@ public class SessionRunTests
     }
 
     static List<string> Digests(JsonNode view, string step) =>
-        view["timeline"]!.AsArray().Where(e => e!["kind"]!.ToString() == "check_inputs" && e["stepId"]!.ToString() == step).Select(e => e!["detail"]!.ToString()).ToList();
+        view["timeline"]!.AsArray().Where(e => e!["kind"]!.ToString() == "check_inputs" && e["step_id"]!.ToString() == step).Select(e => e!["detail"]!.ToString()).ToList();
 
     static string Commit(InMemoryForge forge, RepoRef repo, string branch, string requirements) =>
         forge.Commit(repo, "refs/heads/" + branch, new Dictionary<string, string?>
@@ -328,14 +331,14 @@ public class SessionRunTests
         while (DateTime.UtcNow < deadline)
         {
             var sessions = (await GetAsync(http, $"runs/{runId}/sessions"))["sessions"]!.AsArray()
-                .Where(s => s!["status"]!.ToString() == SessionStatuses.Prepared && s["sessionId"]!.ToString() != after).ToList();
+                .Where(s => s!["status"]!.ToString() == SessionStatuses.Prepared && s["session_id"]!.ToString() != after).ToList();
             if (sessions.Count == 1)
             {
-                var sid = sessions[0]!["sessionId"]!.ToString();
+                var sid = sessions[0]!["session_id"]!.ToString();
                 // The session's record can land before its wait's: wait for both, as an answer needs the wait record.
-                var waitId = sessions[0]!["waitId"]!.ToString();
+                var waitId = sessions[0]!["wait_id"]!.ToString();
                 var fetched = await http.GetAsync($"sessions/{sid}", TestContext.Current.CancellationToken);
-                if (fetched.IsSuccessStatusCode && (await h.ShowAsync(runId))["waits"]!.AsArray().Any(w => w!["waitId"]!.ToString() == waitId))
+                if (fetched.IsSuccessStatusCode && (await h.ShowAsync(runId))["waits"]!.AsArray().Any(w => w!["wait_id"]!.ToString() == waitId))
                     return JsonNode.Parse(await fetched.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))!;
             }
 
@@ -353,8 +356,8 @@ public class SessionRunTests
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(60);
         while (DateTime.UtcNow < deadline)
         {
-            var check = (await GetAsync(http, $"sessions/{sid}/checks"))["checks"]!.AsArray().FirstOrDefault(c => c!["check"]!["checkId"]!.ToString() == checkId);
-            if (check is not null && check["check"]!["status"]!.ToString() != "running" && check["detail"] is not null)
+            var check = (await GetAsync(http, $"sessions/{sid}/checks"))["checks"]!.AsArray().FirstOrDefault(c => c!["check_id"]!.ToString() == checkId);
+            if (check is not null && check["status"]!.ToString() != "running" && check["detail"] is not null)
                 return check;
             await Task.Delay(200, TestContext.Current.CancellationToken);
         }

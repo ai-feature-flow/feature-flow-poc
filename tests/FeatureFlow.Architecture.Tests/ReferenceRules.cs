@@ -42,6 +42,9 @@ public static class ReferenceRules
         "FeatureFlow.Api",
     ];
 
+    /// <summary>The API's request and response records, shared by the API and the CLI: no project or package references (LOG A3-0a).</summary>
+    public const string ApiContracts = "FeatureFlow.Api.Contracts";
+
     public static readonly IReadOnlyList<string> Hosts =
     [
         "FeatureFlow.Host.Api",
@@ -66,7 +69,7 @@ public static class ReferenceRules
         "FeatureFlow.Cli",
     ];
 
-    public static IEnumerable<string> AllProjects => Core.Concat(Providers).Concat(Engine).Concat(Hosts).Concat(ReDrive).Concat(Unconstrained);
+    public static IEnumerable<string> AllProjects => Core.Concat(Providers).Concat(Engine).Append(ApiContracts).Concat(Hosts).Concat(ReDrive).Concat(Unconstrained);
 
     const string Abstractions = "FeatureFlow.Providers.Abstractions";
 
@@ -92,8 +95,17 @@ public static class ReferenceRules
         else if (Engine.Contains(project))
         {
             var allowed = Core.Append(Abstractions).ToHashSet();
+            if (project == "FeatureFlow.Api")
+                allowed.Add(ApiContracts);
             foreach (var reference in projects.Where(r => !allowed.Contains(r)))
                 yield return $"{project} references {reference}: it may reference only the core, Providers.Abstractions and Temporal";
+        }
+        else if (project == ApiContracts)
+        {
+            foreach (var reference in projects)
+                yield return $"{project} references {reference}: the API's records reference nothing, so the CLI and clients share them without the engine";
+            foreach (var package in packages)
+                yield return $"{project} references package {package}: the API's records reference nothing (no ASP.NET, no Temporal)";
         }
         else if (ReDrive.Contains(project))
         {

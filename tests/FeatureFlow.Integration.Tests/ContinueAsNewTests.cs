@@ -57,8 +57,8 @@ public class ContinueAsNewTests
         while (waits.Count < Questions && DateTime.UtcNow < until)
         {
             foreach (var wait in (await h.ShowAsync(id))["waits"]!.AsArray())
-                if (wait!["stepId"]!.ToString() is var step && step.StartsWith("questions_", StringComparison.Ordinal))
-                    waits[int.Parse(step["questions_".Length..], CultureInfo.InvariantCulture)] = wait["waitId"]!.ToString();
+                if (wait!["step_id"]!.ToString() is var step && step.StartsWith("questions_", StringComparison.Ordinal))
+                    waits[int.Parse(step["questions_".Length..], CultureInfo.InvariantCulture)] = wait["wait_id"]!.ToString();
             await Task.Delay(200, TestContext.Current.CancellationToken);
         }
 
@@ -115,7 +115,7 @@ public class ContinueAsNewTests
 
         var timeline = record["timeline"]!.AsArray().Select(e => e!).ToList();
         List<string> Completions(string step) =>
-            timeline.Where(e => e["kind"]!.ToString() == "completed" && e["stepId"]!.ToString() == step).Select(e => e["detail"]!.ToString()).ToList();
+            timeline.Where(e => e["kind"]!.ToString() == "completed" && e["step_id"]!.ToString() == step).Select(e => e["detail"]!.ToString()).ToList();
 
         // C1: every child's end recorded once, with the outcome Temporal reports for that child when read directly.
         for (var i = 0; i < Children; i++)

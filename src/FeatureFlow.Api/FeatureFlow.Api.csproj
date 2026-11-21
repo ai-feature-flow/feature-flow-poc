@@ -5,12 +5,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\FeatureFlow.Api.Contracts\FeatureFlow.Api.Contracts.csproj" />
     <ProjectReference Include="..\FeatureFlow.Interpreter\FeatureFlow.Interpreter.csproj" />
     <ProjectReference Include="..\FeatureFlow.Providers.Abstractions\FeatureFlow.Providers.Abstractions.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Temporalio" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
     <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" />
   </ItemGroup>

@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using FeatureFlow.Api.Contracts;
 using FeatureFlow.Library;
 using FeatureFlow.Model;
 using FeatureFlow.Providers.Abstractions;
@@ -20,9 +21,10 @@ public static partial class ApiApp
     /// </summary>
     static void MapConsole(WebApplication app, Handlers api)
     {
-        app.MapGet("/console", () => Page("console.html", "text/html; charset=utf-8"));
-        app.MapGet("/console/console.js", () => Page("console.js", "text/javascript; charset=utf-8"));
-        app.MapGet("/runs/{id}/plan", (HttpContext c, string id) => api.Guard(c, caller => api.ReadableFormAsync(c, caller, id)));
+        app.MapGet("/console", () => Page("console.html", "text/html; charset=utf-8")).ExcludeFromDescription();
+        app.MapGet("/console/console.js", () => Page("console.js", "text/javascript; charset=utf-8")).ExcludeFromDescription();
+        app.MapGet("/runs/{id}/plan", (HttpContext c, string id) => api.Guard(c, caller => api.ReadableFormAsync(c, caller, id)))
+            .WithName("getRunPlan").Produces<string>(200, "text/plain").Produces<ErrorResponse>(401).Produces<ErrorResponse>(404).Produces<ErrorResponse>(409);
     }
 
     static readonly Dictionary<string, string> Pages = new(StringComparer.Ordinal);
@@ -71,7 +73,7 @@ public static partial class ApiApp
             if (await LockOfAsync(run, ct) is not { } lockRef || LibraryReference.TryParse(run.Template) is not { } template)
                 return Error(404, $"run {id} has no library lock to show its plan from");
             var d = new DiagnosticBag();
-            var lockDocument = JsonSerializer.Deserialize<LibraryLock>(await ReadTextAsync(lockRef, ct), Json)!;
+            var lockDocument = JsonSerializer.Deserialize<LibraryLock>(await ReadTextAsync(lockRef, ct), Stored)!;
             var libraries = new List<Library.Library>();
             foreach (var locked in lockDocument.Libraries)
             {

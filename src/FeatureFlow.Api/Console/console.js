@@ -49,8 +49,8 @@ async function showRuns() {
   show(el("h1", { text: "Runs" }),
     runs.length === 0 ? el("p", { class: "note", text: "No runs yet." }) :
       table(["Run", "Template", "Status", "Requested by", "Repositories", "Parent", "Updated"], runs.map(r => [
-        runLink(r.runId), r.template, status(r.status), r.requester, (r.repositories || []).join(", "),
-        r.parentRunId ? runLink(r.parentRunId) : "", new Date(r.updatedAt).toLocaleString()])));
+        runLink(r.run_id), r.template, status(r.status), r.requester, (r.repositories || []).join(", "),
+        r.parent_run_id ? runLink(r.parent_run_id) : "", new Date(r.updated_at).toLocaleString()])));
 }
 
 // One open wait and how to answer it: an outcome for a decision, a patch approval or a question; a recovery action, from the
@@ -61,7 +61,7 @@ function waitForm(runId, wait) {
     result.className = "note";
     result.textContent = "Sending…";
     try {
-      const reply = await api("POST", `/runs/${encodeURIComponent(runId)}/answers`, Object.assign({ wait_id: wait.waitId }, body));
+      const reply = await api("POST", `/runs/${encodeURIComponent(runId)}/answers`, Object.assign({ wait_id: wait.wait_id }, body));
       result.textContent = "Answer " + reply.result;
       setTimeout(route, 800);
     } catch (e) {
@@ -94,8 +94,8 @@ function waitForm(runId, wait) {
   }
 
   return el("div", { class: "wait" },
-    el("strong", { text: `${wait.kind}: ${wait.decisionType}` }), el("span", { class: "note", text: ` at ${wait.stepId} (${wait.waitId})` }),
-    el("p", { text: wait.reason }), el("div", {}, controls), result);
+    el("strong", { text: `${wait.kind}: ${wait.decision_type}` }), el("span", { class: "note", text: ` at ${wait.step_id} (${wait.wait_id})` }),
+    el("p", { text: wait.prompt }), el("div", {}, controls), result);
 }
 
 async function showRun(id) {
@@ -106,23 +106,23 @@ async function showRun(id) {
   const r = view.run;
   show(
     el("p", {}, el("a", { href: "#/runs", text: "← Runs" })),
-    el("h1", { text: r.runId }),
+    el("h1", { text: r.run_id }),
     el("dl", {},
       el("dt", { text: "Template" }), el("dd", { text: r.template }),
       el("dt", { text: "Status" }), el("dd", {}, status(r.status)),
       el("dt", { text: "Requested by" }), el("dd", { text: r.requester }),
       el("dt", { text: "Repositories" }), el("dd", { text: (r.repositories || []).join(", ") || "none" }),
-      r.parentRunId ? [el("dt", { text: "Parent" }), el("dd", {}, runLink(r.parentRunId))] : null,
+      r.parent_run_id ? [el("dt", { text: "Parent" }), el("dd", {}, runLink(r.parent_run_id))] : null,
       r.detail ? [el("dt", { text: "Detail" }), el("dd", { text: r.detail })] : null),
     el("h2", { text: "Decisions" }),
-    view.waits.length === 0 ? el("p", { class: "note", text: "Nothing waits for a person." }) : view.waits.map(w => waitForm(r.runId, w)),
+    view.waits.length === 0 ? el("p", { class: "note", text: "Nothing waits for a person." }) : view.waits.map(w => waitForm(r.run_id, w)),
     view.children.length === 0 ? null : [el("h2", { text: "Child runs" }),
-      table(["Run", "Template", "Status"], view.children.map(c => [runLink(c.runId), c.template, status(c.status)]))],
+      table(["Run", "Template", "Status"], view.children.map(c => [runLink(c.run_id), c.template, status(c.status)]))],
     el("h2", { text: "Plan" }),
     el("p", { class: "note", text: "As the run started; changes made while it runs are in the timeline." }),
     el("pre", { text: plan }),
     el("h2", { text: "Timeline" }),
-    table(["#", "At", "Kind", "Step", "Detail"], view.timeline.map(t => [String(t.sequence), new Date(t.at).toLocaleTimeString(), t.kind, t.stepId, t.detail || ""])));
+    table(["#", "At", "Kind", "Step", "Detail"], view.timeline.map(t => [String(t.sequence), new Date(t.at).toLocaleTimeString(), t.kind, t.step_id, t.detail || ""])));
 }
 
 async function route() {

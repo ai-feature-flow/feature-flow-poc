@@ -31,23 +31,43 @@ public sealed record RunRecord(
     DateTimeOffset UpdatedAt,
     string? Detail);
 
-/// <summary>A durable wait for a person: a decision, an intervention or a patch approval, open or answered. A record with <see cref="Open"/> false closes the wait and keeps the rest of what the opening record said.</summary>
+/// <summary>
+/// A durable wait for a person: a decision, an intervention or a patch approval, open or answered. A record with <see cref="Open"/> false closes the wait and keeps the rest of what the opening record said.
+/// <see cref="Prompt"/> is the text to show (a gate's rendered prompt, a question's text, else the engine's reason); "reason" means only a person's (LOG A3-0b).
+/// <see cref="Consumed"/> is what a gate's step consumed when it opened, by reference (LOG A3-0g).
+/// </summary>
 public sealed record WaitRecord(
     string RunId,
     string WaitId,
     string Kind,
     string StepId,
     string DecisionType,
-    string Reason,
+    string Prompt,
     IReadOnlyList<string> Choices,
     bool Open,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    IReadOnlyList<ConsumedRef>? Consumed = null);
+
+/// <summary>An artifact a gate's step consumed: its key as staged (<c>name</c>, <c>parent/name</c>, <c>child/&lt;step&gt;/name</c>), its name and reference.</summary>
+public sealed record ConsumedRef(string Key, string Name, string? Ref);
+
+/// <summary>An open wait of a run still going, with its run: what <see cref="Queries.OpenWaits"/> returns.</summary>
+public sealed record OpenWaitRecord(WaitRecord Wait, RunRecord Run);
 
 /// <summary>One entry of a run's timeline, numbered in the order the run recorded it.</summary>
 public sealed record TimelineRecord(string RunId, long Sequence, string Kind, string StepId, string? Detail, DateTimeOffset At);
 
-/// <summary>An answer or override from a person, recorded by the API with the authenticated actor before it is delivered (F8).</summary>
-public sealed record AnswerRecord(string RunId, string WaitId, string Actor, string Answer, string Result, DateTimeOffset At);
+/// <summary>
+/// An answer or override from a person, recorded by the API with the authenticated actor before it is delivered (F8).
+/// <see cref="Reason"/> is the person's reason (docs/05 section 5).
+/// </summary>
+public sealed record AnswerRecord(string RunId, string WaitId, string Actor, string Answer, string Result, DateTimeOffset At, string? Reason = null);
+
+/// <summary>
+/// A change the record store wrote, numbered in commit order by the store itself as it appends: a run's records changed
+/// (<c>run_changed</c>), or one of its waits opened or closed (<c>wait_opened</c>, <c>wait_closed</c>, with <see cref="WaitId"/>).
+/// </summary>
+public sealed record ChangeRecord(long Sequence, string RunId, string Kind, string? WaitId, DateTimeOffset At);
 
 /// <summary>A run's library lock, by artifact reference (docs/08 section 5.1).</summary>
 public sealed record LockRecord(string RunId, string LockRef, DateTimeOffset At);
@@ -341,4 +361,16 @@ public static class Queries
 
     /// <summary><see cref="SessionCheckRecord"/>: a session's checks, by <c>session_id</c>, ordered by check id.</summary>
     public const string SessionChecks = "session_checks";
+
+    /// <summary>
+    /// <see cref="OpenWaitRecord"/>: every open wait of a run that is <c>starting</c> or <c>running</c>, with its run,
+    /// oldest first, at most 500. No parameters.
+    /// </summary>
+    public const string OpenWaits = "open_waits";
+
+    /// <summary><see cref="ChangeRecord"/>: the changes after the sequence <c>after</c>, ascending, at most <c>limit</c> (up to 500).</summary>
+    public const string Changes = "changes";
+
+    /// <summary><see cref="ChangeRecord"/>: the latest change, or none. No parameters.</summary>
+    public const string LatestChange = "latest_change";
 }

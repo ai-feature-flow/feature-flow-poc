@@ -457,7 +457,7 @@ public sealed record ClosedWait(string Id, WaitKind Kind, string StepId, string 
 public sealed record WaitChange(OpenWait Wait, bool Open);
 
 /// <summary>What the record store shows of a wait: its record kind, decision type, the choices that answer it, and the text to show.</summary>
-public sealed record WaitDescription(string Kind, string Type, IReadOnlyList<string> Choices, string Reason);
+public sealed record WaitDescription(string Kind, string Type, IReadOnlyList<string> Choices, string Prompt);
 
 /// <summary>A wait to record (<see cref="RunCore.TakeWaitChanges"/>): opened, with its description, or closed when <see cref="Opened"/> is null.</summary>
 public sealed record WaitShown(string WaitId, string StepId, WaitDescription? Opened);

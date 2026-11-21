@@ -22,7 +22,7 @@ public class StepFailureTests
         JsonNode? wait = null;
         while (wait is null && DateTime.UtcNow < deadline)
         {
-            wait = (await h.ShowAsync(id))["waits"]!.AsArray().FirstOrDefault(w => w!["stepId"]!.ToString() == "expand");
+            wait = (await h.ShowAsync(id))["waits"]!.AsArray().FirstOrDefault(w => w!["step_id"]!.ToString() == "expand");
             await Task.Delay(200, TestContext.Current.CancellationToken);
         }
 
@@ -30,7 +30,7 @@ public class StepFailureTests
         Assert.True(wait is not null, "expand never escalated: " + view.ToJsonString());
         Assert.Equal("intervention", wait!["kind"]!.ToString());
         var failures = view["timeline"]!.AsArray()
-            .Where(e => e!["kind"]!.ToString() == "attempt_failed" && e["stepId"]!.ToString() == "expand").ToList();
+            .Where(e => e!["kind"]!.ToString() == "attempt_failed" && e["step_id"]!.ToString() == "expand").ToList();
         Assert.Equal(3, failures.Count);
         Assert.All(failures, f => Assert.Contains("holds no list of items", f!["detail"]!.ToString()));
     }

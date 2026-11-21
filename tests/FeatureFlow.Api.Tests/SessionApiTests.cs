@@ -103,7 +103,7 @@ public sealed class SessionApiTests : IAsyncDisposable
         Assert.Equal(HttpStatusCode.OK, (await http.GetAsync("runs/r1/sessions", TestContext.Current.CancellationToken)).StatusCode);
         foreach (var (path, body) in new[]
                  {
-                     ($"sessions/{Sid}/submit", $$"""{ "revision": "{{Commit}}", "actor": "lead" }"""),
+                     ($"sessions/{Sid}/submit", $$"""{ "revision": "{{Commit}}" }"""),
                      ($"sessions/{Sid}/checks", $$"""{ "step": "check_requirements", "revision": "{{Commit}}" }"""),
                      ($"sessions/{Sid}/abandon", "{}"),
                  })
