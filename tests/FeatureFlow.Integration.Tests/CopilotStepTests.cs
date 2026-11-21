@@ -279,9 +279,9 @@ public sealed class CopilotStepTests
 
     /// <summary>
     /// With <c>auth: github</c> and a key the Copilot API refuses, the step neither succeeds nor hangs: it stops for a
-    /// person, and nothing reached the stand-in with an accepted credential. Not yet asserted: that the engine names it
-    /// the model's refusal. Natively the CLI reports a refused <c>GET meta</c> as plain text ("Error: Authentication
-    /// failed"), not as a <c>session.error</c>, so the runtime sees a failed attempt (build-copilot 5-e2e, finding 1).
+    /// person as the model's refusal, and nothing reached the stand-in with an accepted credential. Natively the CLI
+    /// reports a refused <c>GET meta</c> as plain text ("Error: Authentication failed"), not as a <c>session.error</c>,
+    /// so the runtime sees a failed session; the engine's own records of the refused requests name it (LOG 499).
     /// </summary>
     [Fact]
     public async Task With_auth_github_and_a_key_the_copilot_api_refuses_the_step_stops_for_a_person()
@@ -295,6 +295,9 @@ public sealed class CopilotStepTests
 
         await h.WaitForWaitAsync(runId, "intervention", RunTimeout);
         Assert.Equal("running", (await h.ShowAsync(runId))["run"]!["status"]!.ToString());
+        var timeline = await h.TimelineAsync(runId);
+        Assert.Contains("the model refused the step's requests", timeline);
+        Assert.DoesNotContain("attempt_failed", timeline);
         Assert.Equal(0, model.Accepted);
         Assert.True(model.Refused > 0);
         Assert.All(model.Received, r => Assert.Equal("Bearer github_pat_not_the_key", r.Authorization));

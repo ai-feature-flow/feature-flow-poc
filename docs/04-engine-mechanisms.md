@@ -166,7 +166,10 @@ A resume is free if the agent made progress since the last one (`docs/01`
 section 4): a tool call or a pushed commit. After 5 stops in a row without
 progress, or 20 in all, the step stops for a person (LOG 98). Only a transient
 model error, a lost process or an unreachable engine stops a session resumably;
-a 401 or 403 from the model stops the step for a person. Commands in the
+a 401 or 403 from the model stops the step for a person. A session that ends
+with an error of the runtime's own is also taken as the model's refusal when
+the engine's records show every model request of that session answered 401 or
+403 by the model's upstream, whatever the runtime printed (LOG 499). Commands in the
 sandbox are started and polled, never awaited, so a long test run survives a
 worker restart.
 
