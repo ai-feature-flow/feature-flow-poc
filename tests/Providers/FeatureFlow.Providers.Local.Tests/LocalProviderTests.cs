@@ -121,7 +121,7 @@ public sealed class LocalProviderTests : IDisposable
         await File.WriteAllTextAsync(script, """
             api_version: feature-flow/v1
             kind: fake_script
-            steps: { implement: { artifacts: { claims: { criterion: "AC-${ticket}", size: "${size}", other: "${unknown}" } } } }
+            steps: { implement: { artifacts: { claims: { criterion: "AC-${ticket}", size: "${size}", other: "${unknown}", file: "work/${run_id}/${step_id}.txt" } } } }
             """, Ct);
         var store = new FileSystemArtifactStore(Path.Combine(folder, "artifacts"));
         var runtime = new ScriptedAgentRuntime(FakeScript.Read(script), () => store);
@@ -134,6 +134,7 @@ public sealed class LocalProviderTests : IDisposable
         Assert.Contains("AC-T-1", text);
         Assert.Contains("\"size\": \"3\"", text);
         Assert.Contains("${unknown}", text);
+        Assert.Contains("work/run-1/implement.txt", text);
     }
 
     [Fact]
