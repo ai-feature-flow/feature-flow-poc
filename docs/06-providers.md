@@ -165,7 +165,7 @@ abbreviated: every method also takes a cancellation token, and `..X` stands for
   machinery (LOG 292) and pass `SandboxContract`, which checks the network.
 
 **The base sandbox image.** The engine ships one base image, `src/Providers/FeatureFlow.Providers.Docker/sandbox.Dockerfile`
-(Debian with Node, Claude Code and Copilot CLI). An installation's sandbox `image` is it or an image built
+(Debian with Node, Claude Code and Copilot CLI 1.0.107, pinned; LOG 497). An installation's sandbox `image` is it or an image built
 on it. A repository that needs a toolchain (a .NET SDK, a JDK) names its own image in `environment.image`,
 built `FROM` the installation's image, and the installation lists it in `allowed_images` (LOG 441). The
 engine neither builds nor pushes images: Docker pulls an absent image at creation, a Kubernetes node as it
@@ -219,9 +219,31 @@ interface IAgentRuntimeProvider : IProvider {
   OpenAI-compatible router but its tool-call hooks did not fire with a
   third-party model.
 - Built in M8: the Copilot CLI runtime, reaching the model through the model
-  proxy as a custom Anthropic provider, with SP5's checks held live (LOG 293,
-  296). Each step's runtime instance and model follow its role (`role_mapping`,
-  LOG 295).
+  proxy, with SP5's checks held live (LOG 293, 296). Each step's runtime
+  instance and model follow its role (`role_mapping`, LOG 295). How the CLI
+  reaches the proxy follows its instance's `model_access.auth` (LOG 496, 497):
+  - `github`, Copilot quota: the CLI runs in its native GitHub mode.
+    `COPILOT_API_URL` (read by the CLI, not documented) points its Copilot API
+    at the proxy, and `COPILOT_GITHUB_TOKEN` holds `ghs_` and the step's token;
+    there is no `COPILOT_OFFLINE` and no `COPILOT_PROVIDER_*`. The CLI makes its
+    own requests, so GitHub's billing headers are its own. Its few calls to
+    `api.github.com` carry only the step's token, which GitHub refuses, and do
+    not stop the session; nor does its `GET /agents/tasks/<session id>`, which
+    reaches the agent endpoint outside `/model/` and is answered 404 (both
+    accepted, LOG 496). Models are named as in Copilot's catalogue
+    (`claude-haiku-4.5`), and must offer `/v1/messages` or `/chat/completions`:
+    `/responses` is not forwarded.
+  - `api_key` or `oauth`: the proxy is a custom Anthropic provider, offline,
+    with the step's token as its key (LOG 293).
+- Copilot's home (`COPILOT_HOME`) belongs to one step: created at its first
+  session, root's and sticky (1777) with the engine's settings read-only. A
+  continuation keeps only what `--resume` reads (`session-state/`,
+  `session-store.db*`, `config.json`), so nothing else the agent adds, such as
+  a `settings.local.json` or a skill, reaches a later start-up; the home is
+  removed when the step ends, so nothing outlives the step (M8 follow-up 15,
+  LOG 497). The base image pins Copilot CLI 1.0.107, the version the native
+  mode was shown on (spike 0); the Copilot Live tests re-check any bump
+  (LOG 497, 498).
 - **A runtime whose CLI runs in a sandbox** derives from
   `SandboxedAgentRuntime` (F12, A5), which holds the session lifecycle: a
   session is the CLI started by key in the step's sandbox from settings files
@@ -553,7 +575,7 @@ interface ICredentialBroker : IProvider {
 |---|---|
 | The engine | Push and merge on the code host; GitHub Issues writes; CI triggers. Never permission to change branch protection |
 | An agent step | No code host credential (LOG 95): its checkout arrives as a Git bundle with no remote. An agent that must read another repository will need a read-only credential, scoped to it and the run's repositories, for the step's lifetime (F5); not in version 1. No tracker identity |
-| A model proxy | The model key. Never the agent (F6). Each agent runtime instance has its own, from its `model_access`, and a step's token selects its instance's (LOG 446). It forwards only `POST v1/messages` and `v1/messages/count_tokens` to its upstream's own scheme, host and port, and refuses anything else before reading the key (LOG 104) |
+| A model proxy | The model key. Never the agent (F6). Each agent runtime instance has its own, from its `model_access`, and a step's token selects its instance's (LOG 446). It forwards, by its `auth`, only `POST v1/messages` and `v1/messages/count_tokens` (`api_key`, `oauth`), or `GET meta`, `GET models`, `POST v1/messages`, `POST v1/messages/count_tokens` and `POST chat/completions` with the key as `Authorization: Bearer` (`github`, the account's Copilot API, whose models must offer one of those; `POST responses` is not forwarded; LOG 496), to its upstream's own scheme, host and port, and refuses anything else before reading the key (LOG 104). A `github` key is a fine-grained personal access token with only the Copilot Requests permission |
 
 The broker refuses a request wider than it may grant; it never silently narrows
 one. Spike 2 issued a 60-minute, one-repository token and refused wider

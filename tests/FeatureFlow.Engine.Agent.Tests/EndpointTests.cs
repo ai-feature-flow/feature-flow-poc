@@ -203,6 +203,7 @@ public sealed class EndpointTests : IDisposable
     [Theory]
     [InlineData("api_key")]
     [InlineData("oauth")]
+    [InlineData("github")]
     public async Task The_model_proxy_replaces_the_step_token_with_the_credential(string auth)
     {
         var upstream = new Upstream(_ => new HttpResponseMessage(HttpStatusCode.OK)
@@ -222,6 +223,13 @@ public sealed class EndpointTests : IDisposable
             Assert.Equal("Bearer real-credential", sent.Headers.Authorization!.ToString());
             Assert.Contains(ModelProxy.OAuthBeta, sent.Headers.GetValues("anthropic-beta").Single());
         }
+        else if (auth == "github")
+        {
+            // LOG 496: the GitHub token alone; the client's own beta passes, the proxy adds no Anthropic header.
+            Assert.Equal("Bearer real-credential", sent.Headers.Authorization!.ToString());
+            Assert.Equal("tools-2024", sent.Headers.GetValues("anthropic-beta").Single());
+            Assert.False(sent.Headers.Contains("x-api-key"));
+        }
         else
         {
             Assert.Equal("real-credential", sent.Headers.GetValues("x-api-key").Single());
@@ -238,17 +246,23 @@ public sealed class EndpointTests : IDisposable
     /// POST, reach the upstream; anything else is refused before the credential is even read, so it is never sent.
     /// </summary>
     [Theory]
-    [InlineData("POST", "https://evil.example/steal")]
-    [InlineData("POST", "//evil.example/steal")]
-    [InlineData("POST", "http://evil.example/v1/messages")]
-    [InlineData("POST", "v1/models")]
-    [InlineData("POST", "v1/messages/../../steal")]
-    [InlineData("GET", "v1/messages")]
-    public async Task The_model_proxy_refuses_any_request_but_the_messages_api_and_never_sends_the_credential(string method, string path)
+    [InlineData("api_key", "POST", "https://evil.example/steal")]
+    [InlineData("api_key", "POST", "//evil.example/steal")]
+    [InlineData("api_key", "POST", "http://evil.example/v1/messages")]
+    [InlineData("api_key", "POST", "v1/models")]
+    [InlineData("api_key", "POST", "v1/messages/../../steal")]
+    [InlineData("api_key", "GET", "v1/messages")]
+    [InlineData("oauth", "GET", "models")]
+    [InlineData("api_key", "POST", "chat/completions")]
+    [InlineData("github", "POST", "meta")]
+    [InlineData("github", "GET", "chat/completions")]
+    [InlineData("github", "GET", "copilot_internal/user")]
+    [InlineData("github", "POST", "//evil.example/chat/completions")]
+    public async Task The_model_proxy_refuses_any_request_but_the_messages_api_and_never_sends_the_credential(string auth, string method, string path)
     {
         var read = false;
         var upstream = new Upstream(_ => new HttpResponseMessage(HttpStatusCode.OK));
-        var proxy = new ModelProxy(new ModelProxyOptions(new Uri("https://model.example/"), "api_key", _ =>
+        var proxy = new ModelProxy(new ModelProxyOptions(new Uri("https://model.example/"), auth, _ =>
         {
             read = true;
             return Task.FromResult<string?>("real-credential");
@@ -266,8 +280,97 @@ public sealed class EndpointTests : IDisposable
     public void The_proxy_s_target_keeps_the_upstream_s_scheme_host_and_port()
     {
         var upstream = new Uri("https://model.example:8443/");
-        Assert.Equal("https://model.example:8443/v1/messages?beta=true", ModelProxy.Target(upstream, "POST", "v1/messages", "?beta=true")!.ToString());
-        Assert.Null(ModelProxy.Target(upstream, "POST", "https://evil.example/v1/messages", ""));
+        Assert.Equal("https://model.example:8443/v1/messages?beta=true", ModelProxy.Target(upstream, "api_key", "POST", "v1/messages", "?beta=true")!.ToString());
+        Assert.Null(ModelProxy.Target(upstream, "api_key", "POST", "https://evil.example/v1/messages", ""));
+    }
+
+    /// <summary>
+    /// Review 4 finding 6: an upstream with a path keeps it, and what would resolve off the upstream's scheme, host or port is
+    /// refused. The allow-list's literals never reach that check, so it is tested directly.
+    /// </summary>
+    [Fact]
+    public void An_upstream_s_path_is_kept_and_nothing_resolves_off_its_scheme_host_or_port()
+    {
+        var upstream = new Uri("https://copilot.example/base/");
+        Assert.Equal("https://copilot.example/base/chat/completions?x=1", ModelProxy.Target(upstream, "github", "POST", "chat/completions", "?x=1")!.ToString());
+        Assert.Equal("https://copilot.example/base/v1/messages/count_tokens", ModelProxy.Within(upstream, "v1/messages/count_tokens")!.ToString());
+        foreach (var away in new[] { "//evil.example/v1/messages", "https://evil.example/base/v1/messages", "http://copilot.example/base/v1/messages", "https://copilot.example:8443/base/" })
+            Assert.Null(ModelProxy.Within(upstream, away));
+    }
+
+    /// <summary>LOG 104, 496: each auth's allow-list is exactly its documented set, so an added entry fails here.</summary>
+    [Theory]
+    [InlineData("api_key", new[] { "POST v1/messages", "POST v1/messages/count_tokens" })]
+    [InlineData("oauth", new[] { "POST v1/messages", "POST v1/messages/count_tokens" })]
+    [InlineData("github", new[] { "GET meta", "GET models", "POST chat/completions", "POST v1/messages", "POST v1/messages/count_tokens" })]
+    public void Each_auth_forwards_exactly_its_documented_requests(string auth, string[] requests) =>
+        Assert.Equal(requests.Order(StringComparer.Ordinal), ModelProxy.Allowed(auth).Order(StringComparer.Ordinal));
+
+    /// <summary>
+    /// LOG 496: with <c>auth: github</c> the proxy also forwards what Copilot CLI asks the Copilot API for: its model
+    /// catalogue and <c>chat/completions</c>, whose OpenAI-shaped usage is recorded like the Messages API's, and the
+    /// Messages API with its token count.
+    /// </summary>
+    [Theory]
+    [InlineData("GET", "meta")]
+    [InlineData("GET", "models")]
+    [InlineData("POST", "chat/completions")]
+    [InlineData("POST", "v1/messages")]
+    [InlineData("POST", "v1/messages/count_tokens")]
+    public async Task With_auth_github_the_proxy_forwards_copilot_s_requests_and_reads_their_usage(string method, string path)
+    {
+        var upstream = new Upstream(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"choices":[],"usage":{"prompt_tokens":21,"completion_tokens":8,"total_tokens":29}}"""),
+        });
+        var proxy = new ModelProxy(new ModelProxyOptions(new Uri("https://api.business.githubcopilot.example/"), "github", _ => Task.FromResult<string?>("github-token")), upstream);
+        var context = Request("Bearer step-token");
+        context.Request.Method = method;
+        context.Request.Body = new MemoryStream(method == "POST" ? Encoding.UTF8.GetBytes("""{"model":"gpt-5"}""") : []);
+        var (status, input, output, model, _) = await proxy.ForwardAsync(context, path, Ct);
+
+        var sent = Assert.Single(upstream.Seen);
+        Assert.Equal((method, $"https://api.business.githubcopilot.example/{path}"), (sent.Method.Method, sent.RequestUri!.ToString()));
+        Assert.Equal("Bearer github-token", sent.Headers.Authorization!.ToString());
+        Assert.Equal(200, status);
+        if (method == "POST")
+            Assert.Equal((21L, 8L, "gpt-5"), (input, output, model));
+    }
+
+    /// <summary>
+    /// LOG 496: Copilot CLI accepts only a GitHub-prefixed token, so its step token arrives as <c>ghs_</c> and the token.
+    /// The model route drops the prefix, and a token without it still works; the engine tools and hooks take no prefix.
+    /// </summary>
+    [Fact]
+    public async Task The_model_route_accepts_a_ghs_prefixed_step_token_and_the_other_routes_do_not()
+    {
+        await StepAsync();
+        var upstream = new Upstream(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") });
+        var proxied = services with
+        {
+            Proxies = new Dictionary<string, ModelProxy>
+            {
+                ["claude"] = new(new ModelProxyOptions(new Uri("https://model.example/"), "github", _ => Task.FromResult<string?>("k")), upstream),
+            },
+        };
+        await using var app = AgentEndpoint.Build(proxied, "http://127.0.0.1:0");
+        await app.StartAsync(Ct);
+        using var client = new HttpClient { BaseAddress = new Uri(app.Urls.First()) };
+        var token = proxied.Tokens.Issue(Claims with { ExpiresAt = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds() });
+
+        async Task<HttpStatusCode> Send(string path, string bearer)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = new StringContent("""{"model":"m"}""", Encoding.UTF8, "application/json") };
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", bearer);
+            using var response = await client.SendAsync(request, Ct);
+            return response.StatusCode;
+        }
+
+        Assert.Equal(HttpStatusCode.OK, await Send("/model/v1/messages", "ghs_" + token));
+        Assert.Equal(HttpStatusCode.OK, await Send("/model/v1/messages", token));
+        Assert.Equal(HttpStatusCode.Unauthorized, await Send("/model/v1/messages", "ghs_ghs_" + token));
+        Assert.Equal(HttpStatusCode.Unauthorized, await Send("/agent/v1/report", "ghs_" + token));
+        Assert.Equal(2, upstream.Seen.Count);
     }
 
     /// <summary>Review finding 11: when the step's attempt ends, its token stops working.</summary>
