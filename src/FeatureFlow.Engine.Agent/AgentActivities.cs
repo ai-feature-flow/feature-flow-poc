@@ -64,7 +64,9 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
     {
         var context = ActivityExecutionContext.Current;
         // The step's role picks the runtime instance (LOG 267), else the run's default; in a dry run the dry_run instance stands in (LOG 384).
-        var runtime = (call.Agent?.Runtime is { } name ? providers.ForRun("agent_runtime", name, call.DryRun) : providers.ForRun("agent_runtime", call.DryRun)) as IAgentRuntimeProvider;
+        // Its name, as resolved, names the step's hook reading and model proxy in its token (LOG A5b-1, A5b-3).
+        var instance = providers.NameForRun("agent_runtime", call.Agent?.Runtime, call.DryRun);
+        var runtime = (instance is null ? null : providers.Instance("agent_runtime", instance)) as IAgentRuntimeProvider;
         if (runtime is null)
             return new StepOutcome(StepOutcome.CannotAnswer, null, call.Agent?.Runtime is { } mapped && !call.DryRun
                 ? $"role_mapping names the agent runtime '{mapped}', which this agent worker does not configure"
@@ -73,7 +75,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             return new StepOutcome(StepOutcome.CannotAnswer, null, $"an agent step needs a sandbox and a vcs provider{(call.DryRun ? " for a dry run" : "")}, and one is not configured");
         try
         {
-            return await new Run(this, call, runtime, sandboxes, vcs, context).ExecuteAsync();
+            return await new Run(this, call, instance!, runtime, sandboxes, vcs, context).ExecuteAsync();
         }
         catch (StepWorkException e)
         {
@@ -125,7 +127,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
     }
 
     /// <summary>One execution of the lifecycle. Its fields are rebuilt from durable state on every activity attempt.</summary>
-    sealed partial class Run(AgentActivities owner, StepCall call, IAgentRuntimeProvider runtime, ISandboxProvider sandboxes, IVcsProvider vcs, ActivityExecutionContext context)
+    sealed partial class Run(AgentActivities owner, StepCall call, string instance, IAgentRuntimeProvider runtime, ISandboxProvider sandboxes, IVcsProvider vcs, ActivityExecutionContext context)
     {
         readonly AgentStepSpec spec = call.Agent!;
         readonly string key = call.Step.IdempotencyKey;
@@ -163,8 +165,6 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                 new AgentStepRecord(key, call.Step.RunId, spec.WorkflowId, call.Step.StepId, spec.Level, call.Contract, spec.CorrectionTurns, spec.QuestionsMax,
                     (long)spec.QuestionsTimeout.TotalSeconds, DateTimeOffset.UtcNow),
             ]));
-            // The instance the step runs on, as resolved (a dry run's dry_run instance), names its hooks' reading and its model proxy (LOG A5b-1, A5b-3).
-            var instance = owner.Providers.Instances("agent_runtime").FirstOrDefault(i => ReferenceEquals(i.Provider, runtime)).Name;
             var token = owner.tokens.Issue(new StepClaims(key, call.Step.RunId, spec.WorkflowId, call.Step.StepId, spec.WriteAccess, spec.Tools,
                 DateTimeOffset.UtcNow.Add((call.Timeout ?? AgentLimits.DefaultTimeout) + spec.QuestionsTimeout * spec.QuestionsMax + TimeSpan.FromHours(2)).ToUnixTimeSeconds(),
                 instance));

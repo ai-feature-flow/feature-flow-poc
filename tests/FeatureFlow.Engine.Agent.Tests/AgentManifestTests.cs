@@ -36,7 +36,8 @@ public sealed class AgentManifestTests : IAsyncDisposable
     }
 
     /// <summary>A scripted runtime that edits the checkout as an agent would, when it is given <paramref name="edits"/>.</summary>
-    sealed class EditingRuntime(InMemoryForge forge, IAgentRuntimeProvider inner, IReadOnlyDictionary<string, string> edits, Action<SandboxHandle>? atStart = null)
+    sealed class EditingRuntime(InMemoryForge forge, IAgentRuntimeProvider inner, IReadOnlyDictionary<string, string> edits, Action<SandboxHandle>? atStart = null,
+        List<string>? tokens = null)
         : IAgentRuntimeProvider
     {
         public ProviderDescription Describe() => inner.Describe();
@@ -46,6 +47,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
         public Task<ProviderResult<AgentSession>> StartAsync(SandboxHandle sandbox, AgentTask task, AgentLimits limits, CancellationToken cancellationToken)
         {
             atStart?.Invoke(sandbox);
+            tokens?.Add(task.Engine!.StepToken);
             if (forge.WorkingFiles(new WorkingCopyRef(sandbox, task.Paths!.Checkout)) is { } files)
                 foreach (var (path, content) in edits)
                     files[path] = content;
@@ -68,7 +70,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
         var client = Path.Combine(folder, "ff-sandbox");
         await File.WriteAllTextAsync(client, "a stand-in for the sandbox client", TestContext.Current.CancellationToken);
         var records = new SqliteRecordStore(Path.Combine(folder, "records.db"));
-        var runtime = new EditingRuntime(forge, new ScriptedAgentRuntime(FakeScript.Empty, () => store), edits, atStart);
+        var runtime = new EditingRuntime(forge, new ScriptedAgentRuntime(FakeScript.Empty, () => store), edits, atStart, startedTokens);
         var instances = new Dictionary<string, IReadOnlyDictionary<string, IProvider>>
         {
             ["vcs"] = One(new InMemoryVcs(forge)),
@@ -77,7 +79,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
             ["agent_runtime"] = new Dictionary<string, IProvider>
             {
                 ["one"] = runtime,
-                ["real"] = new EditingRuntime(forge, new ScriptedAgentRuntime(FakeScript.Empty, () => store), new Dictionary<string, string>(), _ => realStarted = true),
+                ["real"] = new EditingRuntime(forge, new ScriptedAgentRuntime(FakeScript.Empty, () => store), new Dictionary<string, string>(), _ => realStarted = true, startedTokens),
             },
             ["artifact_store"] = One(store),
             ["record_store"] = One(records),
@@ -221,6 +223,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
         Assert.DoesNotContain(sandbox.Commands, c => c.Command.Contains("dotnet", StringComparison.Ordinal));
     }
 
+    /// <summary>The step's token names the instance it runs on, as resolved: it picks the step's hook reading and model proxy.</summary>
     [Fact]
     public async Task A_role_mapped_runtime_runs_the_step_and_in_a_dry_run_the_dry_run_runtime_stands_in_for_it()
     {
@@ -229,8 +232,10 @@ public sealed class AgentManifestTests : IAsyncDisposable
 
         Assert.Equal(StepOutcome.Reported, (await RunAsync(new Dictionary<string, string>(), roleRuntime: "real")).Kind);
         Assert.True(realStarted);
+        Assert.Equal(["one", "real"], startedTokens.Select(t => StepTokens.FromSecret("test").Check(t)!.Runtime));
     }
 
+    readonly List<string> startedTokens = [];
     bool realStarted;
 
     public ValueTask DisposeAsync()
