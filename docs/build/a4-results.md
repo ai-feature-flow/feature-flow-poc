@@ -177,6 +177,8 @@ console's TypeScript (and its check script) is about 2,200 lines, with 300 of CS
 
 ## Follow-ups
 
+Follow-ups 2, 4 and 5 were built in the alpha follow-ups batch (`docs/build/alpha-follow-ups-results.md`).
+
 1. Product owner: the live run above; LOG 453, 461 and 470.
 2. `GET /runs/{id}/plan` answers 404 until the first plan revision is recorded, so a new run page logs one browser
    console error (the console handles it). Answer 200 with no plan, or let the run detail say whether a revision exists.
