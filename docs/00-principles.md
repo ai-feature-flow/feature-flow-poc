@@ -82,7 +82,8 @@ content, grant extra attempts, answer for an agent, or abort.
 
 Agents are not humans. An agent may **propose** a change; if it touches
 protected content it becomes a pending human decision, never silently applied
-and never silently refused.
+and never silently refused. In version 1 an agent proposes none (`docs/04`
+section 6.1).
 
 Why: FF let a person amend a run's workflow freely (`ff amend-step` was not
 bound by `protected`), and a supervising agent had to keep runs moving with
