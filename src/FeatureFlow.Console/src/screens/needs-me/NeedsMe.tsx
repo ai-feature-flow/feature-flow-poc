@@ -11,7 +11,7 @@ import "./NeedsMe.css";
 type Item = Schema<"AttentionItem">;
 
 /** A min_count decision's answers so far, such as "approved: 1 of 2". */
-function progress(wait: Schema<"WaitView">): string {
+export function progress(wait: Schema<"WaitView">): string {
   if (wait.min_count <= 1) return "";
   if (wait.progress === null || wait.progress.length === 0) return `0 of ${wait.min_count}`;
   return wait.progress.map(p => `${p.choice}: ${p.actors.length} of ${p.needed}`).join("; ");

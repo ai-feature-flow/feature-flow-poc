@@ -31,10 +31,10 @@ public abstract class BrowserTest(BrowserFixture browser) : IAsyncLifetime
 
     /// <summary>A world under <paramref name="authMode"/>; call it before anything else uses <see cref="World"/>.</summary>
     protected ConsoleWorld UseWorld(string authMode, IReadOnlyList<FeatureFlow.Model.ApprovalRule>? approval = null,
-        IReadOnlyDictionary<string, IReadOnlyList<string>>? overrides = null)
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? overrides = null, IReadOnlyList<string>? roles = null)
     {
         Assert.Null(world);
-        return world = new ConsoleWorld(authMode, approval, overrides);
+        return world = new ConsoleWorld(authMode, approval, overrides, roles);
     }
 
     /// <summary>Admits console errors containing <paramref name="fragment"/>, such as a refused connection while the API restarts.</summary>

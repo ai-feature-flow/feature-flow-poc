@@ -44,7 +44,9 @@ public sealed class ConsoleWorld : IAsyncDisposable
     /// decision types, so without a rule no one may answer them.
     /// </param>
     /// <param name="overrides">The organisation's <c>policy.overrides</c>: the roles for an override key in place of its default.</param>
-    public ConsoleWorld(string authMode = "none", IReadOnlyList<ApprovalRule>? approval = null, IReadOnlyDictionary<string, IReadOnlyList<string>>? overrides = null)
+    /// <param name="roles">The roles the caller holds; by default every role (viewer, approver, steerer, admin).</param>
+    public ConsoleWorld(string authMode = "none", IReadOnlyList<ApprovalRule>? approval = null,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? overrides = null, IReadOnlyList<string>? roles = null)
     {
         Directory.CreateDirectory(folder);
         File.WriteAllText(Path.Combine(folder, "secrets.json"), $$"""{ "api_token": "{{Token}}" }""");
@@ -60,7 +62,7 @@ public sealed class ConsoleWorld : IAsyncDisposable
             },
             new Dictionary<string, string> { ["record_store"] = "sqlite", ["artifact_store"] = "fs", ["secrets"] = "file" },
             new Dictionary<string, string>());
-        string[] roles = ["viewer", "approver", "steerer", "admin"];
+        roles ??= ["viewer", "approver", "steerer", "admin"];
         Auth = authMode switch
         {
             "none" => new ApiAuthConfig("none", null, Actor, roles),

@@ -7,3 +7,41 @@
   margin-top: 0;
   color: #444;
 }
+
+.ff-run-summary {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.2em 1em;
+}
+
+.ff-run-summary dt {
+  font-weight: 600;
+}
+
+.ff-run-summary dd {
+  margin: 0;
+}
+
+.ff-run-section h2 {
+  font-size: 1.1em;
+  margin: 1.2em 0 0.4em;
+}
+
+.ff-run-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ff-run-banner {
+  padding: 0.4em 0.6em;
+  border-left: 4px solid #f97316;
+  background: #fff7ed;
+}
+
+.ff-run-mark {
+  color: #92400e;
+}
+
+.ff-run-abort form {
+  max-width: 40em;
+}
