@@ -18,8 +18,8 @@ using StepForm = FeatureFlow.Api.Contracts.StepForm;
 namespace FeatureFlow.Api.Tests;
 
 /// <summary>
-/// The minimal console (M7): a static page that holds no data and reads everything through the API with the person's
-/// token, and the readable form it shows, from the libraries the run locked, with each step's status.
+/// The console (A4): the single-page application served as hashed assets with its policy, the text-only rule in its
+/// sources, and the readable form it shows, from the libraries the run locked, with each step's status.
 /// </summary>
 public sealed class ConsoleTests : IAsyncDisposable
 {
@@ -68,26 +68,95 @@ public sealed class ConsoleTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task The_page_and_its_script_are_served_with_no_data_and_kept_to_their_own_origin()
+    public async Task The_console_is_served_as_hashed_assets_with_its_policy()
     {
         using var http = Start();
 
-        using var page = await http.GetAsync("console", Ct);
-        using var script = await http.GetAsync("console/console.js", Ct);
+        using var index = await http.GetAsync("console", Ct);
+        using var slash = await http.GetAsync("console/", Ct);
+        var html = await index.Content.ReadAsStringAsync(Ct);
 
-        Assert.Equal((HttpStatusCode.OK, HttpStatusCode.OK), (page.StatusCode, script.StatusCode));
-        Assert.Contains("text/html", page.Content.Headers.ContentType!.ToString());
-        Assert.Contains("<script src=\"/console/console.js\"", await page.Content.ReadAsStringAsync(Ct));
-        Assert.Contains("default-src 'self'", page.Headers.GetValues("Content-Security-Policy").Single());
-        Assert.Contains("frame-ancestors 'none'", page.Headers.GetValues("Content-Security-Policy").Single());
-        // Run data reaches the page only as text: the script never parses it as markup.
-        var js = await script.Content.ReadAsStringAsync(Ct);
-        Assert.DoesNotContain("innerHTML", js);
-        Assert.DoesNotContain("insertAdjacentHTML", js);
-        Assert.Contains("\"/runs/\"", js.Replace('`', '"'));
-        // It reads the API's snake_case fields (docs/02 section 7), never a record's C# name.
-        Assert.Contains("wait.wait_id", js);
-        Assert.Empty(System.Text.RegularExpressions.Regex.Matches(js, @"\.(runId|waitId|stepId|decisionType|parentRunId|updatedAt|reason)\b"));
+        Assert.Equal((HttpStatusCode.OK, HttpStatusCode.OK), (index.StatusCode, slash.StatusCode));
+        Assert.Equal(html, await slash.Content.ReadAsStringAsync(Ct));
+        Assert.Equal("text/html", index.Content.Headers.ContentType!.MediaType);
+        Assert.True(index.Headers.CacheControl!.NoCache);
+        AssertKeptToItsOrigin(index);
+        // Every script and style the index loads is a hashed asset under /console/assets/, kept for a year.
+        var assets = System.Text.RegularExpressions.Regex.Matches(html, @"<(script|link)\b[^>]*\b(src|href)=""([^""]+)""").Select(m => (m.Groups[1].Value, m.Groups[3].Value)).ToList();
+        Assert.Contains(assets, a => a.Item1 == "script");
+        Assert.Contains(assets, a => a.Item1 == "link");
+        Assert.DoesNotContain("<style", html);
+        foreach (var (tag, path) in assets)
+        {
+            Assert.Matches(@"^/console/assets/[\w.-]+-[\w-]{8}\.(js|css)$", path);
+            using var asset = await http.GetAsync(path.TrimStart('/'), Ct);
+            Assert.Equal(HttpStatusCode.OK, asset.StatusCode);
+            Assert.Equal(tag == "script" ? "text/javascript" : "text/css", asset.Content.Headers.ContentType!.MediaType);
+            Assert.Equal("public, max-age=31536000, immutable", asset.Headers.CacheControl!.ToString());
+            AssertKeptToItsOrigin(asset);
+        }
+
+        Assert.Equal(HttpStatusCode.NotFound, (await http.GetAsync("console/assets/index-00000000.js", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await http.GetAsync("console/console.js", Ct)).StatusCode);
+    }
+
+    static void AssertKeptToItsOrigin(HttpResponseMessage response)
+    {
+        var policy = response.Headers.GetValues("Content-Security-Policy").Single();
+        foreach (var directive in (string[])["default-src 'self'", "object-src 'none'", "frame-ancestors 'none'", "base-uri 'none'", "form-action 'none'",
+                     "require-trusted-types-for 'script'", "trusted-types 'none'"])
+            Assert.Contains(directive, policy);
+        Assert.DoesNotContain("unsafe-", policy);
+        Assert.Equal("nosniff", response.Headers.GetValues("X-Content-Type-Options").Single());
+    }
+
+    /// <summary>
+    /// The text-only rule in the console's sources (LOG 455; the design's section 7): API data reaches the page only as text.
+    /// No source uses a markup sink or evaluates text as code, and every link, image or form target comes from app/links.ts,
+    /// because Preact does not refuse a <c>javascript:</c> URL. The bundle is not scanned: Preact itself holds a markup sink.
+    /// </summary>
+    [Fact]
+    public void The_console_sources_never_build_markup_or_links_from_data()
+    {
+        var root = Path.Combine(Repository.Root, "src", "FeatureFlow.Console", "src");
+        var sources = Directory.EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
+            .Where(f => f.EndsWith(".ts", StringComparison.Ordinal) || f.EndsWith(".tsx", StringComparison.Ordinal))
+            .Where(f => !f.EndsWith(".gen.d.ts", StringComparison.Ordinal))
+            .ToList();
+        Assert.Contains(sources, f => Path.GetFileName(f) == "main.tsx");
+
+        var sinks = new System.Text.RegularExpressions.Regex(
+            @"dangerouslySetInnerHTML|\binnerHTML\b|\bouterHTML\b|\binsertAdjacentHTML\b|\bdocument\s*\.\s*write|\bDOMParser\b|\bcreateContextualFragment\b|\bsrcdoc\b|\beval\s*\(|\bnew\s+Function\b");
+        // href, src or action given a value: a JSX attribute (no space before '='), a property, or through setAttribute.
+        var links = new System.Text.RegularExpressions.Regex(
+            @"((?<![\w.$])(href|src|action)=|\.(href|src|action)\s*=)(?!=)\s*(\{\s*)?(?<value>[^\s}>;]*)|setAttribute\(\s*[""'`](href|src|action)[""'`]");
+        var found = new List<string>();
+        foreach (var file in sources)
+        {
+            var name = Path.GetRelativePath(root, file).Replace('\\', '/');
+            var lines = File.ReadAllLines(file);
+            // Names this file imports from app/links.ts: the only calls a link may be built with.
+            var fromLinks = System.Text.RegularExpressions.Regex.Matches(string.Join('\n', lines),
+                    @"import\s+(\*\s+as\s+(?<ns>\w+)|\{(?<names>[^}]*)\})\s+from\s+[""'][./]*(app/)?links[""']")
+                .SelectMany(m => m.Groups["ns"].Success ? [m.Groups["ns"].Value] : m.Groups["names"].Value.Split(',').Select(n => n.Split(" as ")[^1].Trim()))
+                .Where(n => n.Length > 0).ToHashSet();
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i].TrimStart();
+                if (line.StartsWith("//", StringComparison.Ordinal) || line.StartsWith("*", StringComparison.Ordinal) || line.StartsWith("/*", StringComparison.Ordinal))
+                    continue;
+                if (sinks.Match(line) is { Success: true } sink)
+                    found.Add($"{name}:{i + 1}: {sink.Value}");
+                if (name == "app/links.ts")
+                    continue;
+                foreach (System.Text.RegularExpressions.Match link in links.Matches(line))
+                    if (!link.Groups["value"].Success || !fromLinks.Any(n => link.Groups["value"].Value.StartsWith(n + "(", StringComparison.Ordinal) ||
+                                                                             link.Groups["value"].Value.StartsWith(n + ".", StringComparison.Ordinal)))
+                        found.Add($"{name}:{i + 1}: {link.Value} (a link not built by app/links.ts)");
+            }
+        }
+
+        Assert.Empty(found);
     }
 
     /// <summary>Starts a run through the API, which writes its lock and record before it reaches Temporal (absent here: a 500).</summary>

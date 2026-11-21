@@ -7,6 +7,17 @@
 # Nothing secret is baked in: the installation and organisation files and the secrets are mounted at run time and
 # named by FF_INSTALLATION and FF_ORGANISATION. The process runs as the base image's unprivileged user and exits 0
 # on SIGTERM. The standard library ships in /opt/feature-flow/library/std (docs/08 section 6).
+#
+# The console is built once, on the builder's platform, in its own stage (LOG 462): the SDK image's Node is older than
+# Vite needs. The .NET stage embeds its output with ConsoleBuild=false, so it needs no Node. Every host embeds it.
+FROM --platform=$BUILDPLATFORM node:26-slim AS console
+WORKDIR /src/src/FeatureFlow.Console
+COPY src/FeatureFlow.Console/package.json src/FeatureFlow.Console/package-lock.json src/FeatureFlow.Console/.npmrc ./
+RUN npm ci --no-audit --no-fund
+COPY src/FeatureFlow.Console/ ./
+COPY src/FeatureFlow.Api/openapi.json /src/src/FeatureFlow.Api/openapi.json
+RUN npm run build
+
 FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG HOST
 ARG TARGETARCH
@@ -14,7 +25,8 @@ WORKDIR /src
 COPY global.json Directory.Build.props Directory.Packages.props ./
 COPY src/ src/
 COPY hosts/ hosts/
-RUN dotnet publish hosts/FeatureFlow.Host.$HOST -c Release -a $TARGETARCH --no-self-contained -p:DebugType=none -o /out \
+COPY --from=console /src/src/FeatureFlow.Console/dist src/FeatureFlow.Console/dist
+RUN dotnet publish hosts/FeatureFlow.Host.$HOST -c Release -a $TARGETARCH --no-self-contained -p:DebugType=none -p:ConsoleBuild=false -o /out \
     && ln -s FeatureFlow.Host.$HOST /out/feature-flow-host
 # The agent worker copies the sandbox client into each sandbox (LOG 67); sandboxes run on the worker's architecture.
 RUN if [ "$HOST" = AgentWorker ]; then \

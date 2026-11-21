@@ -116,6 +116,8 @@ sections 3 and 4).
 | Need | Detail |
 |---|---|
 | .NET | SDK 10. All spike code targets `net10.0`. The fixture targets `net9.0`; run its tests with `DOTNET_ROLL_FORWARD=Major` |
+| Node (A4) | Node 26 and npm on `PATH`. `dotnet build` builds the console (`src/FeatureFlow.Console`) with them, and fails with an install hint without them. To build without Node, pass `-p:ConsoleBuild=false`: npm is skipped, and `/console` then serves whatever `src/FeatureFlow.Console/dist` already holds, or answers 404 |
+| Console development | In `src/FeatureFlow.Console`, `npm run dev` serves the sources at `http://localhost:5173/console/` with hot reload and passes the API's routes to a local API at `FF_API` (default `http://127.0.0.1:8480`). The client types are generated from `src/FeatureFlow.Api/openapi.json` by every build and are not committed. Add packages at exact versions; commit `package-lock.json` |
 | Temporal | CLI at `~/.temporalio/bin/temporal`. Dev server ports used so far: 7233 (Spike 1), 7333 (Spike 2), 7533 (Spike 3) |
 | Agent runtime | `claude` on `PATH`, signed in to the Anthropic subscription. The spikes use model `haiku` |
 | Secrets | `~/keys/feature-flow-secrets.json`, outside the repository, passed as `FF_SECRETS_FILE`. It holds the GitHub App id (5507595) and installation id (176108462), and the path to the App's private key. Never commit a credential, and never print one |
