@@ -168,6 +168,42 @@ public sealed partial class RunCore
 
     void Trace(string kind, string stepId, string? detail = null) => State.Trace.Add(new TraceEntry(kind, stepId, detail));
 
+    // ---- What the shell reads and notes (docs/02 section 2.1; ShellRuleTests) ----------------------
+
+    /// <summary>The run's status.</summary>
+    public RunStatus Status => State.Status;
+
+    /// <summary>The child runs started and not yet ended.</summary>
+    public IReadOnlyList<ChildRun> Children => State.Children;
+
+    /// <summary>The steps whose activity or child is running.</summary>
+    public IReadOnlyList<string> InFlight => State.InFlight;
+
+    /// <summary>The timeline entries not yet recorded, in order.</summary>
+    public IReadOnlyList<TraceEntry> Timeline => State.Trace;
+
+    /// <summary>
+    /// Notes on the timeline what the shell saw happen outside the core: an activity's warning or failure, a session's or a
+    /// tracker's result, a hand-over. Changes no routing.
+    /// </summary>
+    public void Note(string kind, string stepId, string? detail = null) => Trace(kind, stepId, detail);
+
+    /// <summary>The timeline entries not yet recorded, drained for the record store.</summary>
+    public IReadOnlyList<TraceEntry> TakeTimeline()
+    {
+        var entries = State.Trace.ToList();
+        State.Trace.Clear();
+        return entries;
+    }
+
+    /// <summary>The artifacts steps and answers produced since the last record, drained for the artifact index.</summary>
+    public IReadOnlyList<ProducedArtifact> TakeProduced()
+    {
+        var produced = State.Produced.ToList();
+        State.Produced.Clear();
+        return produced;
+    }
+
     // ---- Entering a step --------------------------------------------------------------------------
 
     void Enter(Entry entry)

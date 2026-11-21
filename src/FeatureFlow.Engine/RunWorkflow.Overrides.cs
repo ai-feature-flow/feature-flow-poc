@@ -1,8 +1,6 @@
 using FeatureFlow.Interpreter;
 using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Model;
-using FeatureFlow.Model.Plans;
-using FeatureFlow.Model.Yaml;
 using FeatureFlow.Providers.Abstractions;
 using Temporalio.Exceptions;
 using Temporalio.Workflows;
@@ -12,9 +10,10 @@ namespace FeatureFlow.Engine;
 /// <summary>
 /// Run-time overrides (docs/05 section 5): the <c>override</c> update (<c>RunWorkflowNames.Override</c>, <c>OverrideArgs</c>),
 /// mid-run library overrides (docs/08 section 5.2) and closing an aborted run's pull requests. M7, W1. The API authenticated
-/// the actor (F8), authorised the base key and recorded the override; the workflow, which alone knows what is protected,
-/// refuses protected content or a grant beyond the hard ceiling without the variant the caller holds, and anything that
-/// relaxes a floor (LOG 203).
+/// the actor (F8), authorised the base key and recorded the override; the run's core, which alone knows what is protected,
+/// routes it (<see cref="RunCore.RouteOverride"/>, <see cref="RunCore.Override"/>): it refuses protected content or a grant
+/// beyond the hard ceiling without the variant the caller holds, and anything that relaxes a floor (LOG 203). The shell
+/// stores a library override's content and closes an aborted run's pull requests, which are activities.
 /// </summary>
 public partial class RunWorkflow
 {
@@ -23,10 +22,6 @@ public partial class RunWorkflow
 
     /// <summary>Signal, from a run to its running children: a library override, which applies to the run tree from that run down (docs/08 section 5.2).</summary>
     public const string ParentLibraryOverride = "parent_library_override";
-
-    /// <summary>The keys the <c>override</c> update carries out: answers keep the <c>answer</c> update (LOG 203).</summary>
-    static readonly IReadOnlyList<string> UpdateKeys =
-        [Overrides.Breakpoint, Overrides.Skip, Overrides.Amend, Overrides.ChangeRole, Overrides.GrantAttempts, Overrides.OverrideLibrary, Overrides.Abort];
 
     /// <summary>An abort asked for the run's open pull requests to be closed (docs/05 section 5).</summary>
     bool closePullRequests;
@@ -42,17 +37,8 @@ public partial class RunWorkflow
     [WorkflowUpdateValidator(nameof(OverrideAsync))]
     public void ValidateOverride(OverrideArgs o)
     {
-        if (core is null)
-            return;
-        if (core.State.Overrides.FirstOrDefault(a => a.Id == o.OverrideId) is { } previous)
-        {
-            if (previous.Key != o.Key)
-                throw new ApplicationFailureException($"conflict: override {o.OverrideId} was already applied as {previous.Key}");
-            return;
-        }
-
-        if (OverrideError(o) is { } error)
-            throw new ApplicationFailureException(error);
+        if (core?.RouteOverride(o) is Refused refused)
+            throw new ApplicationFailureException(refused.Error);
     }
 
     [WorkflowUpdate(RunWorkflowNames.Override)]
@@ -61,117 +47,15 @@ public partial class RunWorkflow
         await Workflow.WaitConditionAsync(() => core is not null);
         if (draining)
             answersWhileDraining++;
-        if (core!.State.Overrides.FirstOrDefault(a => a.Id == o.OverrideId) is { } previous)
-            return previous.Key == o.Key
-                ? new AnswerReply("duplicate: " + previous.Result)
-                : throw new ApplicationFailureException($"conflict: override {o.OverrideId} was already applied as {previous.Key}");
-        if (OverrideError(o) is { } error)
-            throw new ApplicationFailureException(error);
-
-        string result;
-        if (o.Key == Overrides.OverrideLibrary)
-            result = await OverrideLibraryAsync(o.Change["item"], o.Change["with"], null, o.Actor, o.Reason);
-        else if (o.Key == Overrides.Abort)
-        {
-            closePullRequests = Bool(o.Change, "close_pull_requests") == true;
-            core.Apply(new RunAborted($"{o.Reason} (by {o.Actor})"));
-            result = closePullRequests ? "aborted; its open pull requests will be closed" : "aborted";
-        }
-        else
-        {
-            var applied = core.Apply(SteeringInput(o)!);
-            if (!applied.Accepted || applied.Patch is { Status: not PatchStatus.Applied })
-                throw new ApplicationFailureException(string.Join("; ", applied.Errors.Concat(applied.Patch?.Diagnostics.Where(d => d.Blocks).Select(d => $"check {d.Check}: {d.Message}") ?? [])));
-            result = o.Key switch
-            {
-                Overrides.Amend or Overrides.ChangeRole => $"applied: plan revision {core.State.Revision}",
-                Overrides.Skip when core.State.Skips.ContainsKey(o.StepId!) => "applied: skipped when the run reaches it",
-                Overrides.Skip => "applied: skipped",
-                _ => "applied",
-            };
-        }
-
-        if (core.ProtectedTouched(o) is { Count: > 0 } guarded)
-            result += $" (protected: {string.Join(", ", guarded)})";
-        core.State.Overrides.Add(new AppliedOverride(o.OverrideId, o.Key, result));
-        core.State.Trace.Add(new TraceEntry("override", o.StepId ?? "", $"{o.Key} by {o.Actor}: {o.Reason} -> {result}"));
-        dirty = true;
-        return new AnswerReply(result);
-    }
-
-    /// <summary>Why an override would be refused now, or null: its key and arguments, then the core's own check.</summary>
-    string? OverrideError(OverrideArgs o)
-    {
-        if (!UpdateKeys.Contains(o.Key))
-            return Overrides.IsKey(o.Key)
-                ? $"{o.Key} is not delivered as an override: answers, recoveries and answers to agents go through the answer update"
-                : $"'{o.Key}' is not a run-time override key";
-        if (core!.State.Status != RunStatus.Running)
-            return $"the run has ended ({core.State.Status.Name()})";
-        string? Missing(params string[] names) => names.FirstOrDefault(n => !o.Change.TryGetValue(n, out var v) || string.IsNullOrWhiteSpace(v)) is { } name
-            ? $"{o.Key} needs change.{name}"
+        var stored = core!.RouteOverride(o) is StoresLibrary library
+            ? await OverrideLibraryAsync(library.Item, library.Content, null, o.Actor, o.Reason)
             : null;
-        switch (o.Key)
-        {
-            case Overrides.Breakpoint or Overrides.Skip or Overrides.ChangeRole when o.StepId is null:
-                return $"{o.Key} needs a step";
-            case Overrides.Skip when Missing("outcome") is { } missing:
-                return missing;
-            case Overrides.ChangeRole when Missing("role") is { } missing:
-                return missing;
-            case Overrides.Amend when Missing("patch") is { } missing:
-                return missing;
-            case Overrides.GrantAttempts when !long.TryParse(o.Change.GetValueOrDefault("attempts"), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out _):
-                return "grant_attempts needs change.attempts, a whole number";
-            case Overrides.Breakpoint when o.Change.ContainsKey("set") && Bool(o.Change, "set") is null:
-                return "breakpoint's change.set is true or false";
-            case Overrides.OverrideLibrary:
-                if (Missing("item", "with") is { } absent)
-                    return absent;
-                if (core.LibraryItemError(o.Change["item"]) is { } itemError)
-                    return itemError;
-                return core.ProtectedTouched(o) is { Count: > 0 } guarded && !Holds(o, Overrides.OverrideLibraryProtected)
-                    ? $"{string.Join(", ", guarded)} may resolve {o.Change["item"]}: overriding it needs {Overrides.OverrideLibraryProtected}"
-                    : null;
-            case Overrides.Abort:
-                return null;
-        }
-
-        if (o.Key == Overrides.Amend)
-            return ReadPatch(o.Change["patch"], out var d) is not { } patch ? "the patch does not read: " + string.Join("; ", d.Where(x => x.Blocks).Select(x => x.Message))
-                : patch.ResumeAt is not null ? "an amend changes the plan, not where the run is: omit resume_at, then answer a breakpoint or intervention with go_to (LOG 209)"
-                : null;
-        return core.SteeringCheck(SteeringInput(o)!);
-    }
-
-    /// <summary>The core input an override stands for; the actor is the authenticated one the API named (F8).</summary>
-    RunInput? SteeringInput(OverrideArgs o) => o.Key switch
-    {
-        Overrides.Breakpoint => new BreakpointSet(o.StepId!, Bool(o.Change, "set") ?? true, o.Actor),
-        Overrides.Skip => new StepSkipped(o.StepId!, o.Change["outcome"], o.Actor, o.Reason, Holds(o, Overrides.SkipProtected)),
-        Overrides.GrantAttempts => new AttemptsGranted(o.StepId, long.Parse(o.Change["attempts"], System.Globalization.CultureInfo.InvariantCulture),
-            Holds(o, Overrides.GrantAttemptsBeyond), o.Actor),
-        Overrides.ChangeRole => new RoleChanged(o.StepId!, o.Change["role"], o.Actor, o.Reason),
-        Overrides.Amend when ReadPatch(o.Change["patch"], out _) is { } patch =>
-            new PatchProposed(patch with { Reason = $"amend by {o.Actor}: {o.Reason}" }, new Proposer("human", null), Holds(o, Overrides.AmendProtected)),
-        _ => null,
-    };
-
-    static bool Holds(OverrideArgs o, string variant) => o.Variants?.Contains(variant) == true;
-
-    static bool? Bool(IReadOnlyDictionary<string, string> change, string name) => change.GetValueOrDefault(name) switch
-    {
-        "true" => true,
-        "false" => false,
-        _ => null,
-    };
-
-    static PatchDocument? ReadPatch(string text, out DiagnosticBag d)
-    {
-        d = new DiagnosticBag();
-        var node = YamlText.Parse(text, "patch", d);
-        var patch = node is null || d.HasErrors ? null : PatchReader.Read(node, d);
-        return d.HasErrors ? null : patch;
+        var outcome = core.Override(o, stored);
+        if (outcome.Error is { } error)
+            throw new ApplicationFailureException(error);
+        closePullRequests |= outcome.ClosePullRequests;
+        dirty = true;
+        return new AnswerReply(outcome.Result);
     }
 
     /// <summary>
@@ -201,13 +85,13 @@ public partial class RunWorkflow
 
         var next = RunActivities.Build(overridden.Libraries, new DiagnosticBag());
         var entry = new LibraryOverrideEntry(item, $"{file.Library}/{file.Path}", overridden.OldHash, overridden.NewHash, actor, reason,
-            core.State.InFlight.ToList(), core.ProtectedResolving(item));
+            core.InFlight.ToList(), core.ProtectedResolving(item));
         var applied = core.Apply(new LibraryOverridden(entry, next));
         if (!applied.Accepted)
             throw new ApplicationFailureException(string.Join("; ", applied.Errors));
         currentLock = overridden.LockRef;
         lockRecords.Add(new LockRecord(input.RunId, currentLock, Workflow.UtcNow));
-        foreach (var child in core.State.Children.ToList())
+        foreach (var child in core.Children.ToList())
             await SignalQuietlyAsync(child.WorkflowId, ParentLibraryOverride, [new InheritedLibraryOverride(item, overridden.NewHash, actor, reason)]);
         dirty = true;
         return overridden.OldHash == overridden.NewHash ? "applied: the content was already in use" : $"applied: {overridden.OldHash} -> {overridden.NewHash}";
@@ -218,7 +102,7 @@ public partial class RunWorkflow
     public async Task ParentLibraryOverrideAsync(InheritedLibraryOverride inherited)
     {
         await Workflow.WaitConditionAsync(() => core is not null);
-        if (core!.State.Status != RunStatus.Running || core.LibraryItemError(inherited.Item) is not null)
+        if (core!.Status != RunStatus.Running || core.LibraryItemError(inherited.Item) is not null)
             return;
         try
         {
@@ -226,7 +110,7 @@ public partial class RunWorkflow
         }
         catch (ApplicationFailureException e)
         {
-            core.State.Trace.Add(new TraceEntry("library_override_refused", "", $"{inherited.Item} from the parent run: {e.Message}"));
+            core.Note("library_override_refused", "", $"{inherited.Item} from the parent run: {e.Message}");
             dirty = true;
         }
     }
@@ -240,7 +124,7 @@ public partial class RunWorkflow
         var item = proposal.GetValueOrDefault("item") ?? "";
         var result = core!.Apply(new LibraryOverrideProposed(stepId, item, proposal.GetValueOrDefault("with")));
         if (!result.Accepted)
-            core.State.Trace.Add(new TraceEntry("library_override_rejected", stepId, $"{item}: {string.Join("; ", result.Errors)}"));
+            core.Note("library_override_rejected", stepId, $"{item}: {string.Join("; ", result.Errors)}");
     }
 
     [WorkflowQuery(PullRequestsQuery)]
@@ -252,13 +136,13 @@ public partial class RunWorkflow
     /// </summary>
     async Task CloseAbortedPullRequestsAsync()
     {
-        if (!closePullRequests || core!.State.Status != RunStatus.Aborted)
+        if (!closePullRequests || core!.Status != RunStatus.Aborted)
             return;
         var opened = core.PullRequestsOpened();
         var started = core.ChildrenStarted();
         if (opened.Count == 0 && started.Count == 0)
         {
-            core.State.Trace.Add(new TraceEntry("pull_request_closed", "", "the run opened no pull requests"));
+            core.Note("pull_request_closed", "", "the run opened no pull requests");
             return;
         }
 
@@ -275,7 +159,7 @@ public partial class RunWorkflow
         }
 
         foreach (var e in events)
-            core.State.Trace.Add(new TraceEntry("pull_request_closed", "", e));
+            core.Note("pull_request_closed", "", e);
     }
 }
 

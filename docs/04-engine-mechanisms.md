@@ -274,7 +274,7 @@ two cannot disagree. It decides, in order:
 | Question | Result |
 |---|---|
 | Was the wait answered? | The same answer: a duplicate. Another: refused as a conflict (LOG 58) |
-| Did the wait close otherwise? | A question that timed out or whose step ended: refused, the agent has carried on. Any other: refused, no wait is open |
+| Did the wait close otherwise? | A question that timed out: refused as timed out, the agent has carried on. A question whose step ended: refused as its step ended, no agent is left to read the answer. Any other: refused, no wait is open |
 | What kind of wait is it? | A **gate** (a decision step's, or the `merge_action` gate an action raises, section 4.5) takes an outcome; a **question** text; a **patch approval** `approve` or `reject`; an **intervention** a recovery action, a **breakpoint** `continue` or a recovery action (`docs/01` section 7.2) |
 | Is it a session's gate? | The session's rules (section 4.4); a submission is imported by the run, then answered |
 | Would the run apply it? | The core's own checks: a declared outcome, the artifacts the outcome promises, a recovery's target and ceilings |

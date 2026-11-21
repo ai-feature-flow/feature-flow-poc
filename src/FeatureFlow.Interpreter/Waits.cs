@@ -5,11 +5,14 @@ using FeatureFlow.Model.Plans;
 
 namespace FeatureFlow.Interpreter;
 
-/// <summary>Where a person's answer goes (<see cref="RunCore.Route"/>).</summary>
+/// <summary>Where a person's answer (<see cref="RunCore.Route"/>) or override (<see cref="RunCore.RouteOverride"/>) goes.</summary>
 public abstract record AnswerRoute;
 
-/// <summary>The same answer as the one the wait was answered with: succeeds without a second effect (LOG 58).</summary>
-public sealed record Duplicate : AnswerRoute;
+/// <summary>
+/// The same answer as the one the wait was answered with, or the same override as the one applied with its id: succeeds
+/// without a second effect (LOG 58). An override's keeps the result it was first applied with.
+/// </summary>
+public sealed record Duplicate(string? Result = null) : AnswerRoute;
 
 /// <summary>Refused: a conflicting answer, a question that timed out, an answer of the wrong kind, or one the run would not apply.</summary>
 public sealed record Refused(string Error) : AnswerRoute;
@@ -19,6 +22,15 @@ public sealed record Applies(RunInput Input) : AnswerRoute;
 
 /// <summary>A session's submission (docs/04 section 4.4): the shell imports the session's files first, then gives them to <see cref="RunCore.Answer"/>.</summary>
 public sealed record Submits(string StepId) : AnswerRoute;
+
+/// <summary>
+/// A library override (docs/08 section 5.2): the shell stores <see cref="Content"/> for <see cref="Item"/> (an activity), the
+/// core applies it as <see cref="LibraryOverridden"/>, and <see cref="RunCore.Override"/> records it with the stored result.
+/// </summary>
+public sealed record StoresLibrary(string Item, string Content) : AnswerRoute;
+
+/// <summary>What <see cref="RunCore.Override"/> did: refused with <see cref="Error"/>, or applied (or a duplicate) with the reply's <see cref="Result"/>, and whether an abort asked for the run's open pull requests to be closed.</summary>
+public sealed record OverrideOutcome(string? Error, string Result = "", bool ClosePullRequests = false);
 
 /// <summary>
 /// One routing for every human wait (docs/04 section 4): gates, agents' questions, interventions, patch approvals and
@@ -43,7 +55,9 @@ public sealed partial class RunCore
             if (closed.How == WaitEnds.Answered)
                 return closed.Key == Key(a) ? new Duplicate() : new Refused($"conflict: {a.WaitId} was already answered ({closed.Key})");
             if (closed.Kind == WaitKind.Question)
-                return new Refused($"timed out: the agent has carried on without an answer to {a.WaitId}");
+                return new Refused(closed.How == WaitEnds.TimedOut
+                    ? $"timed out: the agent has carried on without an answer to {a.WaitId}"
+                    : $"step ended: {closed.StepId} stopped running before {a.WaitId} was answered, so no agent is left to read it");
         }
 
         if (State.Status != RunStatus.Running)
@@ -229,7 +243,6 @@ public sealed partial class RunCore
         AddWait(new OpenWait(q.QuestionId, WaitKind.Question, q.StepId, null, q.Text)
         {
             StepKey = q.StepKey,
-            Text = q.Text,
             Options = q.Options.ToList(),
             Deadline = deadline,
         });
@@ -275,7 +288,7 @@ public sealed partial class RunCore
             if (!changes.Any(c => c.Wait.Id == wait.Id && c.Open != opened))
                 waits.Add(new WaitShown(wait.Id, wait.StepId, opened ? Describe(wait) : null));
             if (!opened && wait.Kind == WaitKind.Question && State.Closed.LastOrDefault(c => c.Id == wait.Id) is { How: WaitEnds.Answered or WaitEnds.TimedOut } closed)
-                questions.Add(new QuestionClosed(wait.Id, wait.StepKey!, wait.Text ?? "", wait.Options ?? [], closed.How == WaitEnds.Answered, closed.Key));
+                questions.Add(new QuestionClosed(wait.Id, wait.StepKey!, wait.Reason, wait.Options ?? [], closed.How == WaitEnds.Answered, closed.Key));
         }
 
         return (waits, questions);
@@ -297,7 +310,7 @@ public sealed partial class RunCore
         {
             WaitKind.Gate when step?.Form == StepForm.Action => new(kind, ActionDecisionTypeOf(step.Id) ?? $"{level}.decision", ActionDecisions.Choices, wait.Reason),
             WaitKind.Gate => new(kind, step?.Decision?.Type ?? $"{level}.decision", step?.DeclaredOutcomes.Select(o => o.Name).ToList() ?? [], GatePrompt(wait, step)),
-            WaitKind.Question => new(kind, $"{level}.question", wait.Options ?? [], wait.Text ?? wait.Reason),
+            WaitKind.Question => new(kind, $"{level}.question", wait.Options ?? [], wait.Reason),
             WaitKind.PatchApproval => new(kind, $"{level}.patch_approval", PatchChoices, wait.Reason),
             WaitKind.Breakpoint => new(kind, $"{level}.breakpoint", Recoveries.For(wait.Kind), wait.Reason),
             _ => new(kind, $"{level}.escalation", Recoveries.For(wait.Kind), wait.Reason),

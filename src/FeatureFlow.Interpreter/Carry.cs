@@ -51,7 +51,6 @@ public sealed record CarriedWait(string Id, string Kind, string StepId, string? 
     public string? LibraryItem { get; init; }
     public string? LibraryContent { get; init; }
     public string? StepKey { get; init; }
-    public string? Text { get; init; }
     public IReadOnlyList<string>? Options { get; init; }
     public DateTimeOffset? Deadline { get; init; }
     public bool Session { get; init; }
@@ -137,7 +136,6 @@ public sealed partial class RunCore
                 LibraryItem = w.LibraryItem,
                 LibraryContent = w.LibraryContent,
                 StepKey = w.StepKey,
-                Text = w.Text,
                 Options = w.Options?.ToList(),
                 Deadline = w.Deadline,
                 Session = w.Session,
@@ -204,7 +202,6 @@ public sealed partial class RunCore
             LibraryItem = w.LibraryItem,
             LibraryContent = w.LibraryContent,
             StepKey = w.StepKey,
-            Text = w.Text,
             Options = w.Options,
             Deadline = w.Deadline,
             Session = w.Session,

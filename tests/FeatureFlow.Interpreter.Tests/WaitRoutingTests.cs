@@ -177,7 +177,7 @@ public class WaitRoutingTests
         Assert.DoesNotContain(core.State.Waits, w => w.Kind == WaitKind.Question);
         Assert.Equal(new ClosedWait("q-1", WaitKind.Question, "ask", WaitEnds.StepEnded), core.State.Closed.First());
         Assert.Contains(core.State.WaitChanges, c => c.Wait.Id == "q-1" && !c.Open);
-        Assert.Equal("timed out: the agent has carried on without an answer to q-1", Refusal(core, new AnswerArgs("q-1", "alice", "orders")));
+        Assert.Equal("step ended: ask stopped running before q-1 was answered, so no agent is left to read it", Refusal(core, new AnswerArgs("q-1", "alice", "orders")));
     }
 
     [Fact]

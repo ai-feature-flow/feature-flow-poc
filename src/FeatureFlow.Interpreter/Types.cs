@@ -412,7 +412,7 @@ public static class WaitKinds
 /// <summary>
 /// A durable wait for a person. A breakpoint keeps its entry's <see cref="CleanUp"/>, for the step it paused; a patch approval
 /// of an agent's library override holds <see cref="LibraryItem"/> and <see cref="LibraryContent"/> instead of a patch; a
-/// question holds the agent's <see cref="Text"/> and <see cref="Options"/>, the execution that asked it
+/// question holds the agent's text as its <see cref="Reason"/>, its <see cref="Options"/>, the execution that asked it
 /// (<see cref="StepKey"/>) and when it times out (<see cref="Deadline"/>); a gate with an open interactive session is
 /// <see cref="Session"/>.
 /// </summary>
@@ -422,7 +422,6 @@ public sealed record OpenWait(string Id, WaitKind Kind, string StepId, string? O
     public string? LibraryItem { get; init; }
     public string? LibraryContent { get; init; }
     public string? StepKey { get; init; }
-    public string? Text { get; init; }
     public IReadOnlyList<string>? Options { get; init; }
     public DateTimeOffset? Deadline { get; init; }
     public bool Session { get; init; }
