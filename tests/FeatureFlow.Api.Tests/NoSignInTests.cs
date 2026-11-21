@@ -62,4 +62,122 @@ public sealed class NoSignInTests
         Assert.Contains("'http://0.0.0.0:", e.Message, StringComparison.Ordinal);
         Assert.True(app.Lifetime.ApplicationStopped.IsCancellationRequested);
     }
+
+    /// <summary>A request as a page of another site, or DNS rebinding, can make a browser send it (review R1, LOG 469).</summary>
+    public static TheoryData<string, string> CrossSite => new()
+    {
+        { "host", "Host 'evil.example" },
+        { "text/plain", "must have Content-Type application/json" },
+        { "cross-site", "Sec-Fetch-Site is 'cross-site'" },
+        { "same-site", "Sec-Fetch-Site is 'same-site'" },
+    };
+
+    static HttpRequestMessage Abort(string kind)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "runs/r-missing/abort")
+        {
+            Content = new StringContent("""{"reason":"x"}""", System.Text.Encoding.UTF8, kind == "text/plain" ? "text/plain" : "application/json"),
+        };
+        if (kind == "host")
+            request.Headers.Host = "evil.example";
+        if (kind is "cross-site" or "same-site")
+            request.Headers.Add("Sec-Fetch-Site", kind);
+        return request;
+    }
+
+    [Theory]
+    [MemberData(nameof(CrossSite))]
+    public async Task With_no_sign_in_a_request_a_page_of_another_site_could_make_is_refused(string kind, string reason)
+    {
+        await using var world = new ApiWorld(auth: None, authenticators: ApiAuthentication.For(None));
+        using var http = new HttpClient { BaseAddress = world.Address };
+
+        using var response = await http.SendAsync(Abort(kind), Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var error = JsonSerializer.Deserialize<ErrorResponse>(await response.Content.ReadAsStringAsync(Ct), ApiJson.Options)!;
+        Assert.Contains("api.auth.mode is none", error.Error, StringComparison.Ordinal);
+        Assert.Contains(reason, error.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task With_no_sign_in_the_consoles_own_requests_are_answered_and_the_gateway_and_console_files_are_not_checked()
+    {
+        await using var world = new ApiWorld(auth: None, authenticators: ApiAuthentication.For(None));
+        using var http = new HttpClient { BaseAddress = world.Address };
+
+        // Same-origin JSON, as the console sends it, on a loopback name and another port (a port forward).
+        using var abort = Abort("json");
+        abort.Headers.Add("Sec-Fetch-Site", "same-origin");
+        abort.Headers.Host = "LOCALHOST:9999";
+        using var answered = await http.SendAsync(abort, Ct);
+        Assert.Equal(HttpStatusCode.NotFound, answered.StatusCode);
+        foreach (var (host, site) in new[] { ("[::1]", "none"), ($"127.0.0.2:{world.Address.Port}", "") })
+        {
+            using var me = new HttpRequestMessage(HttpMethod.Get, "me");
+            me.Headers.Host = host;
+            if (site.Length > 0)
+                me.Headers.Add("Sec-Fetch-Site", site);
+            using var read = await http.SendAsync(me, Ct);
+            Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+        }
+
+        // The chat gateway authenticates its own signed requests, form-encoded and through whatever proxy; the console's
+        // files are public.
+        using var chat = new HttpRequestMessage(HttpMethod.Post, "inbound/chat/slack") { Content = new FormUrlEncodedContent([new("payload", "{}")]) };
+        chat.Headers.Host = "ff.example";
+        chat.Headers.Add("Sec-Fetch-Site", "cross-site");
+        using var gateway = await http.SendAsync(chat, Ct);
+        Assert.Equal(HttpStatusCode.NotFound, gateway.StatusCode);
+        Assert.Contains("no provider receives slack answers", await gateway.Content.ReadAsStringAsync(Ct), StringComparison.Ordinal);
+        using var page = new HttpRequestMessage(HttpMethod.Get, "console");
+        page.Headers.Host = "evil.example";
+        using var console = await http.SendAsync(page, Ct);
+        Assert.NotEqual(HttpStatusCode.Forbidden, console.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("host")]
+    [InlineData("text/plain")]
+    [InlineData("cross-site")]
+    [InlineData("same-site")]
+    public async Task With_a_token_the_same_requests_are_not_checked(string kind)
+    {
+        var token = new ApiAuthConfig("local_token", "secrets/api_token", "ana", ["admin"]);
+        await using var world = new ApiWorld(auth: token, authenticators: ApiAuthentication.For(token));
+        using var http = new HttpClient { BaseAddress = world.Address };
+        http.DefaultRequestHeaders.Authorization = ApiWorld.Bearer("right");
+
+        using var response = await http.SendAsync(Abort(kind), Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    /// <summary>
+    /// Review R7: an address Kestrel's own configuration bound is answered from the moment the API starts until
+    /// <see cref="ApiApp.StartCheckedAsync"/> stops it, so each request's local address is checked too. Seen as the
+    /// predicate: a request to this machine's own non-loopback address cannot be made where a firewall drops it.
+    /// </summary>
+    [Theory]
+    [InlineData("127.0.0.1", true)]
+    [InlineData("127.9.8.7", true)]
+    [InlineData("::1", true)]
+    [InlineData("::ffff:127.0.0.1", true)]
+    [InlineData("10.1.2.3", false)]
+    [InlineData("192.168.0.7", false)]
+    [InlineData("fe80::1", false)]
+    [InlineData(null, false)]
+    public void With_no_sign_in_only_a_connection_to_a_loopback_address_is_answered(string? local, bool answered)
+    {
+        var context = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+        context.Connection.LocalIpAddress = local is null ? null : IPAddress.Parse(local);
+        context.Request.Method = "GET";
+        context.Request.Host = new("127.0.0.1", 8480);
+
+        var refusal = NoSignInAuthenticator.Refusal(context);
+
+        Assert.Equal(answered, refusal is null);
+        if (!answered)
+            Assert.Contains("is not a loopback address", refusal, StringComparison.Ordinal);
+    }
 }

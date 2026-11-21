@@ -157,6 +157,12 @@ public static partial class ApiApp
             return false;
         }
 
+        return IsLoopbackHost(host);
+    }
+
+    /// <summary>A host name or address, without its port, that is loopback: <c>localhost</c> (any case), 127.0.0.0/8 or <c>::1</c> (bracketed or not).</summary>
+    internal static bool IsLoopbackHost(string host)
+    {
         if (host.Equals("localhost", StringComparison.OrdinalIgnoreCase))
             return true;
         if (!System.Net.IPAddress.TryParse(host.StartsWith('[') && host.EndsWith(']') ? host[1..^1] : host, out var ip))

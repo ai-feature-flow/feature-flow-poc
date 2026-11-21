@@ -73,13 +73,20 @@ public static partial class ApiApp
     {
         static readonly IReadOnlyList<IAuthenticator> LocalToken = [new LocalTokenAuthenticator()];
 
-        /// <summary>Authenticates the request with the first authenticator that accepts its credential, then handles it as that caller.</summary>
+        /// <summary>
+        /// Authenticates the request with the first authenticator that accepts its credential, then handles it as that caller.
+        /// Under mode <c>none</c> a request a page of another site could have made is refused with 403 first (LOG 469).
+        /// </summary>
         public async Task<IResult> Guard(HttpContext context, Func<Caller, Task<IResult>> handle)
         {
             Caller? caller = null;
             foreach (var authenticator in services.Authenticators.Count > 0 ? services.Authenticators : LocalToken)
+            {
+                if (authenticator is NoSignInAuthenticator && NoSignInAuthenticator.Refusal(context) is { } refused)
+                    return Error(403, refused);
                 if ((caller = await authenticator.AuthenticateAsync(context, services)) is not null)
                     break;
+            }
             if (caller is null)
                 return Error(401, "unauthenticated");
             try
