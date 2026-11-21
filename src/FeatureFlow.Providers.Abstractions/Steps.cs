@@ -136,9 +136,6 @@ public sealed record AgentTask(StepIdentity Step, string Role, string? TaskText,
     public EngineEndpoints? Engine { get; init; }
     public AgentPaths? Paths { get; init; }
 
-    /// <summary>Whether the engine's MCP tools are offered. False only for a runtime asked to report through the file (SP3 T3).</summary>
-    public bool EngineTools { get; init; } = true;
-
     public bool Questions { get; init; }
 
     /// <summary>The model the step's role maps to (LOG 267); null for the runtime instance's own <c>model</c>.</summary>
@@ -189,9 +186,8 @@ public static class SessionEnd
 
 /// <summary>
 /// What the runtime read when a session ended: how it ended, its usage, the files the agent opened where the
-/// runtime streams its tool calls, and the transcript. <see cref="ReportFile"/> is the JSON the agent wrote to
-/// <c>report.json</c> in its output folder (the file fallback, docs/04 section 3.3), unchecked; the engine checks
-/// it. <see cref="Report"/> is a fake runtime's own report.
+/// runtime streams its tool calls, and the transcript. <see cref="Report"/> is a fake runtime's own report; a real
+/// agent reports through the engine's <c>report</c> tool, which the engine records (L5).
 /// </summary>
 public sealed record AgentResult(
     StepReport? Report,
@@ -200,8 +196,7 @@ public sealed record AgentResult(
     long InputTokens = 0,
     long OutputTokens = 0,
     IReadOnlyList<string>? FilesOpened = null,
-    string? Transcript = null,
-    string? ReportFile = null)
+    string? Transcript = null)
 {
     /// <summary>
     /// The shortest time the runtime's clients keep failing against the engine before they stop the session: a real
@@ -213,7 +208,8 @@ public sealed record AgentResult(
 /// <summary>
 /// The agent runtime (docs/06 section 3.2). From M4 it runs in a sandbox, with hooks and the engine MCP server
 /// configured from the task. A report through the engine's <c>report</c> tool is recorded by the engine; the
-/// result read here carries the file fallback and how the session ended.
+/// result read here says how the session ended. <see cref="SandboxedAgentRuntime"/> holds the lifecycle of a runtime
+/// whose CLI runs in a sandbox.
 /// </summary>
 public interface IAgentRuntimeProvider : IProvider
 {

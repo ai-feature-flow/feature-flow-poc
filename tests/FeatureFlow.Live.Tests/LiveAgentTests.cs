@@ -178,28 +178,6 @@ public sealed class LiveAgentTests
         }
     }
 
-    /// <summary>SP3 live, fall back: with no engine tools the real agent reports through report.json.</summary>
-    [Fact]
-    public async Task Without_the_report_tool_the_real_agent_reports_through_a_file()
-    {
-        await using var h = await AgentHarness.StartAsync("live-fallback", null, Live with { EngineTools = false });
-        var ticket = Ticket("fallback");
-        var runId = h.Start(ticket, "Change nothing in the repository. Write notes.md in your output folder saying hello." + Finish);
-        try
-        {
-            var status = await h.WaitForEndAsync(runId, RunTimeout);
-            Assert.True(status == "completed", $"the run ended {status}:\n{await h.TimelineAsync(runId)}");
-            // The report came through the file; a rejected one is corrected through the file in a further session.
-            Assert.True((await h.RecordsAsync<ReportRecord>(Queries.Reports, AgentScripts.Key(runId)))[^1].Accepted);
-        }
-        finally
-        {
-            await LogRunAsync(h, "SP3 fallback", runId);
-            await h.StopRunAsync(runId);
-            await h.DeleteRemoteReferencesAsync($"refs/heads/ff/ticket/{ticket}", AgentHarness.HiddenReference(runId, "implement"));
-        }
-    }
-
     /// <summary>
     /// SP3 live, stop: every report is invalid. The attempt fails, by the third rejection or because the agent gives up
     /// first (SP3's N2 saw both), and no report is accepted. Never more than three reports reach the engine.

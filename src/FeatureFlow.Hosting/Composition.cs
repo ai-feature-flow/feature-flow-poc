@@ -153,26 +153,34 @@ public sealed class FeatureFlowHost : IAsyncDisposable
         if (settings.Listen is not { } listen)
             return;
         var services = new AgentEndpointServices(tokens, providers.Required<IRecordStoreProvider>("record_store"), new TemporalRunSignals(client),
-            ModelProxyOf(configuration.Installation, secrets));
+            ModelProxies(configuration.Installation, secrets), name => providers.Instance("agent_runtime", name) as IAgentHooks);
         agentEndpoint = AgentEndpoint.Build(services, listen);
         await agentEndpoint.StartAsync();
         AgentEndpointAddress = agentEndpoint.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
     }
 
     /// <summary>
-    /// The model proxy from the default agent runtime's <c>model_access</c> (docs/07 section 2): <c>key_ref</c> names the
-    /// credential, <c>upstream</c> the model's API (default the Anthropic API), <c>auth</c> how it is sent: <c>api_key</c>
-    /// (the default) or <c>oauth</c> for a subscription token.
+    /// The model proxy of each agent runtime instance, from its own <c>model_access</c> (docs/07 section 2; LOG 446):
+    /// <c>key_ref</c> names the credential, <c>upstream</c> the model's API (default the Anthropic API), <c>auth</c> how it
+    /// is sent: <c>api_key</c> (the default) or <c>oauth</c> for a subscription token. A step's token names its instance,
+    /// whose proxy alone serves it.
     /// </summary>
-    static ModelProxy? ModelProxyOf(InstallationConfig installation, ISecretsProvider? secrets)
+    public static IReadOnlyDictionary<string, ModelProxy> ModelProxies(InstallationConfig installation, ISecretsProvider? secrets)
     {
-        if (!installation.Providers.TryGetValue("agent_runtime", out var runtimes) || runtimes.Default is null
-            || runtimes.Instances[runtimes.Default].Settings["model_access"] is not YMap access || access["mode"].ScalarText() != "proxy")
-            return null;
-        var keyRef = access["key_ref"].ScalarText();
-        var upstream = new Uri((access["upstream"].ScalarText() ?? "https://api.anthropic.com").TrimEnd('/') + "/");
-        return new ModelProxy(new ModelProxyOptions(upstream, access["auth"].ScalarText() ?? "api_key", async ct =>
-            keyRef is null || secrets is null ? null : (await secrets.ResolveAsync(keyRef, ct)) is { Ok: true } found ? found.Value : null));
+        var proxies = new Dictionary<string, ModelProxy>(StringComparer.Ordinal);
+        if (!installation.Providers.TryGetValue("agent_runtime", out var runtimes))
+            return proxies;
+        foreach (var (name, instance) in runtimes.Instances)
+        {
+            if (instance.Settings["model_access"] is not YMap access || access["mode"].ScalarText() != "proxy")
+                continue;
+            var keyRef = access["key_ref"].ScalarText();
+            var upstream = new Uri((access["upstream"].ScalarText() ?? "https://api.anthropic.com").TrimEnd('/') + "/");
+            proxies[name] = new ModelProxy(new ModelProxyOptions(upstream, access["auth"].ScalarText() ?? "api_key", async ct =>
+                keyRef is null || secrets is null ? null : (await secrets.ResolveAsync(keyRef, ct)) is { Ok: true } found ? found.Value : null));
+        }
+
+        return proxies;
     }
 
     /// <summary>The agent endpoint's address once started, when the installation configures one.</summary>

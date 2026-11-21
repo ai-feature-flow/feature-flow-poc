@@ -1,3 +1,5 @@
+using FeatureFlow.Model;
+
 namespace FeatureFlow.Providers.Abstractions;
 
 /// <summary>A sandbox, created by the sandbox provider. M3's scripted runtime runs with <see cref="None"/>.</summary>
@@ -10,12 +12,29 @@ public sealed record SandboxHandle(string Id, string Provider)
 /// What a sandbox is created with (docs/06 section 3.1). <see cref="Home"/> is the runtime's home directory,
 /// which the engine creates with startup files it controls (DR19); <see cref="Environment"/> holds no credential
 /// (F6). <see cref="ReadOnlyPaths"/> are made unwritable for the agent (a read-only checkout, docs/04 section 3.7).
+/// <see cref="Image"/> is the repository's <c>environment.image</c>; null for the provider's own image (LOG 440).
 /// </summary>
 public sealed record SandboxSpec(
     string Key,
     string Home,
     IReadOnlyDictionary<string, string> Environment,
-    IReadOnlyList<string> Folders);
+    IReadOnlyList<string> Folders,
+    string? Image = null);
+
+/// <summary>Which image a container sandbox is created from (docs/06 section 3.1).</summary>
+public static class SandboxImages
+{
+    /// <summary>
+    /// The spec's image when it names one the installation allows: the provider's own <paramref name="image"/>, or one
+    /// matching a pattern of its <c>allowed_images</c> (<c>*</c> matches any run of characters; case matters, as it does in
+    /// an image's name and tag). Any other is refused for a person, as <c>cannot_answer</c> (LOG 441).
+    /// </summary>
+    public static ProviderResult<string> Choose(SandboxSpec spec, string image, IReadOnlyList<string> allowed) =>
+        spec.Image is not { } wanted || wanted == image ? ProviderResult<string>.Success(image)
+        : allowed.Any(pattern => RepositoryPatterns.Matches(pattern, wanted, StringComparison.Ordinal)) ? ProviderResult<string>.Success(wanted)
+        : ProviderResult<string>.Failure("cannot_answer",
+            $"the repository's environment.image {wanted} is not the sandbox's image {image} and matches none of its allowed_images");
+}
 
 /// <summary>A command to run in a sandbox: argument vector, extra environment, working directory, and whether it runs as the agent's user.</summary>
 public sealed record SandboxCommand(IReadOnlyList<string> Arguments, IReadOnlyDictionary<string, string>? Environment = null, string? WorkingDirectory = null,

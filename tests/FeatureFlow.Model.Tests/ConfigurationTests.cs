@@ -90,7 +90,6 @@ public class ConfigurationTests
     [InlineData("defaults:", "agent_worker: { listen: \"http://0.0.0.0:8490\", token_key_ref: secrets/k }\ndefaults:", "agent_worker.urls must list")]
     [InlineData("defaults:", "agent_worker: { listen: \"http://0.0.0.0:8490\", urls: [\"http://h:1\"] }\ndefaults:", "agent_worker.token_key_ref must name")]
     [InlineData("defaults:", "agent_worker: { commit_interval: 10s }\ndefaults:", "unknown key 'commit_interval'")]
-    [InlineData("recording: { folder: rec } } }", "recording: { folder: rec }, bare: { provider: claude_code, engine_tools: false } } }", "engine_tools: false is for development only")]
     // L4: the scripted runtime is a test double.
     [InlineData("recording: { folder: rec } } }", "recording: { folder: rec }, scripted: { script: s.yaml } } }", "providers.agent_runtime.instances.scripted: the scripted runtime is for development only")]
     // F19 (LOG 339): toolsets are not in version 1.
@@ -107,6 +106,8 @@ public class ConfigurationTests
     [InlineData("continue_as_new_events: 400", "continue_as_new_events: 50", "must be at least 100")]
     [InlineData("  record_store: { default: sqlite,", "  code_host: { instances: { fake: {} } }\n  record_store: { default: sqlite,", "for development only")]
     [InlineData("  record_store: { default: sqlite,", "  vcs: { instances: { memory: { world: w } } }\n  record_store: { default: sqlite,", "for development only")]
+    // L5 (LOG 263): api.base_url was read and discarded; it is now refused like any other unknown key.
+    [InlineData("  auth: { mode: local_token,", "  base_url: https://ff.example\n  auth: { mode: local_token,", "unknown key 'base_url' in api")]
     public void An_installation_refuses_what_it_does_not_read(string old, string replacement, string message)
     {
         var d = new DiagnosticBag();

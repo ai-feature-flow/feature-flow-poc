@@ -70,6 +70,19 @@ public abstract class SandboxContract : ContractBase, IAsyncLifetime
         Refused(await Sandboxes.AttachAsync("contract/never-created-" + Guid.NewGuid().ToString("N"), Ct), "not_found");
     }
 
+    /// <summary>
+    /// A repository's <c>environment.image</c> that the installation does not allow (neither the sandbox's own image nor one
+    /// of its <c>allowed_images</c>) is refused for a person, and no sandbox is made from it (LOG 441).
+    /// </summary>
+    [Fact]
+    public async Task An_image_the_installation_does_not_allow_is_refused_and_no_sandbox_is_made()
+    {
+        var key = Key + "-image";
+
+        Refused(await Sandboxes.CreateAsync(new SandboxSpec(key, Home, new Dictionary<string, string>(), [], "feature-flow-contract/not-allowed:1"), Ct), "cannot_answer");
+        Refused(await Sandboxes.AttachAsync(key, Ct), "not_found");
+    }
+
     [Fact]
     public async Task A_command_runs_as_the_agents_user_with_its_output_and_exit_code()
     {
