@@ -229,7 +229,9 @@ interface IAgentRuntimeProvider : IProvider {
   when it ends (the engine-unreachable marker, an API error by its status, a
   lost process, the exit code) and stopped by cancelling it. A runtime supplies
   its command line, environment, settings files, transcript parser, turn marker,
-  the tool names of each tool class, and how its CLI is told a call is denied.
+  the tools it offers for each tool class with the other names its hooks report
+  for them (one table), how its CLI is told a call is denied, and how it is
+  stopped when the engine is unreachable.
 - **Hooks are read by the runtime** (`IAgentHooks`, LOG A5b-1). Every runtime's
   settings call the same hook command, `ff-sandbox hook <event>`. The step's
   token names its runtime instance; the agent worker asks that instance to read
@@ -239,7 +241,12 @@ interface IAgentRuntimeProvider : IProvider {
   Code exits 2 with the reason on standard error; Copilot CLI, which shows the
   agent only the exit code of a hook that exits 2, prints its JSON decision with
   the reason and exits 0. A tool the runtime does not map is denied; a call with
-  no decision (a revoked token) is blocked with exit 2.
+  no decision (a revoked token) is blocked with exit 2. When no replica answers
+  for the hold (R19), the hook command marks the session stopped and, on the
+  pre-tool-use hook, applies the reply the runtime gave it in its environment
+  (`FF_HOOK_UNREACHABLE`): Claude Code's `continue: false`, which stops the
+  session, or exit 2 for Copilot CLI, which blocks the call. With no reply it
+  blocks the call with exit 2, so the hook fails closed for any runtime.
 - **The agent runtime contract** (`AgentRuntimeContract`, LOG A5b-4) drives a
   runtime against a scripted sandbox and a stand-in for its CLI, with no model,
   credential or container. The stand-in reads the settings and command line the
@@ -247,12 +254,14 @@ interface IAgentRuntimeProvider : IProvider {
   input. The suite checks: settings written read-only, calling the sandbox
   client for every hook, with DR16's timeouts; the step's token and no
   credential in the environment, and the task only in the prompt file; only the
-  role's tool classes offered; every tool call's hook input read as its class;
-  a denial the CLI blocks with the reason shown; and the lifecycle (start,
+  role's tool classes offered; every tool name the CLI's hooks can report, offered
+  or not, read as the class of the CLI's tool, one tool at a time, by the
+  stand-in's own table; a denial the CLI blocks with the reason shown; the
+  engine-unreachable reply, which the CLI blocks; and the lifecycle (start,
   turns, result, continuation of the same session, re-attach by a new worker,
-  stop, and each way a session ends). Claude Code and Copilot CLI pass it; a
-  tool mapped to the wrong class fails it. Integration tests run the real CLIs
-  against a scripted model.
+  stop, and each way a session ends). Claude Code and Copilot CLI pass it; any
+  tool moved to the wrong class or left unmapped fails it (LOG A5b-4). Integration
+  tests run the real CLIs against a scripted model.
 
 ### 3.3 VCS
 

@@ -74,6 +74,28 @@ public sealed class ClaudeCodeRuntimeContract : AgentRuntimeContract
     protected override JsonObject HookInputForTool(string tool) =>
         new() { ["hook_event_name"] = "PreToolUse", ["tool_name"] = tool, ["tool_input"] = new JsonObject { ["file_path"] = "/ff/work/a.txt" } };
 
-    /// <summary>Claude Code blocks a call whose hook exits 2 and shows the agent its standard error.</summary>
-    protected override (bool Blocked, string? Shown) ReadReply(HookReply reply) => reply.Exit == 2 ? (true, reply.Error?.Trim()) : (false, null);
+    /// <summary>
+    /// Claude Code 2.1's tools by what they do: reading (a todo list writes no file), searching, editing files, and the
+    /// shell, with the tools that come with them (a notebook read, a background shell's output and kill).
+    /// </summary>
+    protected override IReadOnlyDictionary<string, string> CliTools { get; } = new Dictionary<string, string>
+    {
+        ["Read"] = ToolClass.Read, ["LS"] = ToolClass.Read, ["TodoWrite"] = ToolClass.Read, ["NotebookRead"] = ToolClass.Read,
+        ["Grep"] = ToolClass.Search, ["Glob"] = ToolClass.Search,
+        ["Edit"] = ToolClass.Edit, ["Write"] = ToolClass.Edit, ["MultiEdit"] = ToolClass.Edit, ["NotebookEdit"] = ToolClass.Edit,
+        ["Bash"] = ToolClass.Shell, ["BashOutput"] = ToolClass.Shell, ["KillShell"] = ToolClass.Shell, ["KillBash"] = ToolClass.Shell,
+    };
+
+    /// <summary>
+    /// Claude Code blocks a call whose hook exits 2 and shows the agent its standard error; a hook that prints
+    /// <c>continue: false</c> stops the session before the call runs.
+    /// </summary>
+    protected override (bool Blocked, string? Shown) ReadReply(HookReply reply)
+    {
+        if (reply.Exit == 2)
+            return (true, reply.Error?.Trim());
+        return reply is { Exit: 0, Output: { } output } && JsonNode.Parse(output) is { } decision && decision["continue"]?.GetValue<bool>() == false
+            ? (true, decision["stopReason"]?.ToString())
+            : (false, null);
+    }
 }

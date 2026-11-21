@@ -15,7 +15,8 @@ switch (args.FirstOrDefault())
         return 0;
     case "hook" when args.Length > 1:
         var hookEngine = EngineClient.FromEnvironment(log, Seconds("FF_HOOK_HOLD_SECONDS", 120));
-        return await HookCommand.RunAsync(args[1], hookEngine, Console.In, Console.Out, Console.Error, log, CancellationToken.None);
+        return await HookCommand.RunAsync(args[1], hookEngine, Console.In, Console.Out, Console.Error, log, CancellationToken.None,
+            Environment.GetEnvironmentVariable("FF_HOOK_UNREACHABLE"));
     case "--version":
         Console.WriteLine("ff-sandbox 0.1.0");
         return 0;

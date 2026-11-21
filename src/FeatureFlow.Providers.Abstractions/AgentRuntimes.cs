@@ -72,6 +72,12 @@ public abstract class SandboxedAgentRuntime(AgentRuntimeOptions options, Func<IS
     /// <summary>The sandbox client's hook command for an event: the same for every runtime (LOG A5b-1).</summary>
     public static string HookCommand(string hookEvent) => $"/ff/bin/ff-sandbox hook {hookEvent}";
 
+    /// <summary>
+    /// The variable that gives the hook command the runtime's reply when no replica answers (<see cref="Unreachable"/>),
+    /// as JSON in the endpoint's shape (<c>exit</c>, <c>output</c>, <c>error</c>).
+    /// </summary>
+    public const string UnreachableVariable = "FF_HOOK_UNREACHABLE";
+
     readonly ConcurrentDictionary<string, (SandboxHandle Sandbox, long Cursor, int Turns, int Session)> progress = new();
 
     protected AgentRuntimeOptions Options => options;
@@ -85,8 +91,30 @@ public abstract class SandboxedAgentRuntime(AgentRuntimeOptions options, Func<IS
     /// <summary>The runtime's tools for each abstract tool class, as offered on its command line (LOG 65).</summary>
     public abstract IReadOnlyDictionary<string, IReadOnlyList<string>> ToolClasses { get; }
 
-    /// <summary>The tool names the runtime's hooks report for each class: those offered and those that come with them.</summary>
-    protected abstract IReadOnlyDictionary<string, IReadOnlyList<string>> HookTools { get; }
+    /// <summary>
+    /// The tool names its hooks report that the command line does not offer by that name, each with the offered tool it
+    /// comes with or stands for, whose class it has: a background shell's output with <c>Bash</c>, or another name for
+    /// the same tool. None by default.
+    /// </summary>
+    protected virtual IReadOnlyDictionary<string, string> CompanionTools { get; } = new Dictionary<string, string>();
+
+    IReadOnlyDictionary<string, string>? hookTools;
+
+    /// <summary>Every tool name the runtime's hooks report, with its class: the offered tools and their companions, one table.</summary>
+    IReadOnlyDictionary<string, string> HookTools => hookTools ??= MergeHookTools();
+
+    IReadOnlyDictionary<string, string> MergeHookTools()
+    {
+        var classes = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (toolClass, tools) in ToolClasses)
+            foreach (var tool in tools)
+                if (!classes.TryAdd(tool, toolClass))
+                    throw new InvalidOperationException($"{Kind} offers the tool {tool} in two classes");
+        foreach (var (tool, offered) in CompanionTools)
+            if (!classes.TryAdd(tool, classes.GetValueOrDefault(offered) ?? throw new InvalidOperationException($"{Kind}'s tool {tool} comes with {offered}, which it does not offer")))
+                throw new InvalidOperationException($"{Kind}'s companion tool {tool} is also offered");
+        return classes;
+    }
 
     /// <summary>The fields of a hook's tool input that name a file, in order.</summary>
     protected abstract IReadOnlyList<string> PathFields { get; }
@@ -110,6 +138,12 @@ public abstract class SandboxedAgentRuntime(AgentRuntimeOptions options, Func<IS
     protected abstract Task<Transcript> ReadAsync(SandboxHandle sandbox, string output, int session, string key, CancellationToken cancellationToken);
 
     public abstract HookReply Deny(string reason);
+
+    /// <summary>
+    /// What the hook command prints and exits with when no replica answers for the hold (R19): the CLI's own way of
+    /// stopping the session or, failing that, blocking the call, without telling the agent of an engine error (LOG 60).
+    /// </summary>
+    protected abstract HookReply Unreachable { get; }
 
     public ProviderDescription Describe() => new("agent_runtime", Kind, "0.1.0", new AgentRuntimeCapabilities(true, true, true, true, true, true, true, null));
 
@@ -155,6 +189,7 @@ public abstract class SandboxedAgentRuntime(AgentRuntimeOptions options, Func<IS
             ["FF_WRITE"] = task.WriteAccess == "none" ? "false" : "true",
             ["FF_HOOK_HOLD_SECONDS"] = ((int)options.Hold.TotalSeconds).ToString(CultureInfo.InvariantCulture),
             ["FF_RETRY_SECONDS"] = ((int)options.Retry.TotalSeconds).ToString(CultureInfo.InvariantCulture),
+            [UnreachableVariable] = JsonSerializer.Serialize(Unreachable, JsonSerializerOptions.Web),
         };
         foreach (var (name, value) in RuntimeEnvironment(task, limits, engine, paths))
             env[name] = value;
@@ -291,7 +326,7 @@ public abstract class SandboxedAgentRuntime(AgentRuntimeOptions options, Func<IS
         var tool = Text(hookInput, "tool_name") ?? "";
         var input = hookInput.ValueKind == JsonValueKind.Object && hookInput.TryGetProperty("tool_input", out var i) ? i : default;
         var toolClass = tool.StartsWith(EngineToolPrefix, StringComparison.Ordinal) ? ToolClass.Engine
-            : HookTools.FirstOrDefault(c => c.Value.Contains(tool)).Key;
+            : HookTools.GetValueOrDefault(tool);
         return new ToolCall(tool, toolClass, PathFields.Select(f => Text(input, f)).FirstOrDefault(p => p is not null), Text(input, "command"));
     }
 

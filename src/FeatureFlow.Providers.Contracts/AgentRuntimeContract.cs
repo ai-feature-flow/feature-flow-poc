@@ -34,8 +34,9 @@ public sealed record HookSetting(string Command, int TimeoutSeconds);
 /// from them, reading its settings as the CLI would, and printing the CLI's output and sending its hook input for a
 /// <see cref="CliScript"/>. The suite checks what the engine relies on: settings only the engine controls, calling the
 /// sandbox client for every hook; no credential and no task text in the command; only the role's tool classes offered;
-/// each tool call's hook input read as its class (a broken mapping fails here); a denial the CLI blocks with the reason
-/// shown; and the session lifecycle: start, turns, the result, a continuation of the same session, re-attach, stop, and
+/// every tool name the CLI's hooks can report read as the class of the CLI's tool, by the stand-in's own table, so any
+/// tool mapped to the wrong class fails; a denial the CLI blocks with the reason shown; the runtime's reply for an
+/// unreachable engine, which the CLI blocks; and the session lifecycle: start, turns, the result, a continuation of the same session, re-attach, stop, and
 /// how an API error, the engine unreachable, a lost process and a failed exit end the session.
 /// <para>
 /// A runtime's test project subclasses it with its stand-in. The stand-in's output and hook shapes are those its CLI was
@@ -68,7 +69,16 @@ public abstract class AgentRuntimeContract : ContractBase
     /// <summary>The hook input the CLI sends when the agent calls one of the tools its command line offered.</summary>
     protected abstract JsonObject HookInputForTool(string tool);
 
-    /// <summary>How the CLI reads a hook's reply to a tool call: whether it blocks the call, and the text the agent is shown.</summary>
+    /// <summary>
+    /// Every tool name the CLI's hooks can report, offered or brought with an offered tool, with the class of the CLI's
+    /// tool: the stand-in's own table, written from the CLI, never taken from the runtime's.
+    /// </summary>
+    protected abstract IReadOnlyDictionary<string, string> CliTools { get; }
+
+    /// <summary>
+    /// How the CLI reads a hook's reply to a tool call: whether it blocks the call (or stops the session before it runs),
+    /// and the text shown.
+    /// </summary>
     protected abstract (bool Blocked, string? Shown) ReadReply(HookReply reply);
 
     readonly MemoryArtifacts store = new();
@@ -148,7 +158,10 @@ public abstract class AgentRuntimeContract : ContractBase
         Assert.Equal(taskText, cli.Files[cli.Stdin ?? throw new InvalidOperationException("the prompt is not on standard input")]);
     }
 
-    /// <summary>LOG 65: the command line offers the role's tool classes and no others; a role with no write access, no editing tool.</summary>
+    /// <summary>
+    /// LOG 65: the command line offers the role's tool classes and no others; a role with no write access, no editing tool.
+    /// Each offered tool is one the CLI has, and its class is the CLI's, by the stand-in's own table.
+    /// </summary>
     [Theory]
     [InlineData("branch", new[] { "read", "search" }, new[] { "read", "search" })]
     [InlineData("branch", new[] { "read", "search", "edit", "shell" }, new[] { "edit", "read", "search", "shell" })]
@@ -157,13 +170,28 @@ public abstract class AgentRuntimeContract : ContractBase
     {
         var (_, cli) = await StartAsync(Simple, StepTask(writeAccess, role));
 
-        var classes = OfferedTools(cli).Select(t => HookReader.Classify(Element(HookInputForTool(t))).Class).Distinct().Order(StringComparer.Ordinal);
-        Assert.Equal(offered, classes);
+        var names = OfferedTools(cli).Select(t => HookInputForTool(t)["tool_name"]!.GetValue<string>()).ToList();
+        Assert.All(names, name => Assert.True(CliTools.ContainsKey(name), $"the command line offers {name}, a tool the CLI does not have"));
+        Assert.Equal(offered, names.Select(name => CliTools[name]).Distinct().Order(StringComparer.Ordinal));
     }
 
     /// <summary>
-    /// LOG A5b-1: the runtime reads its CLI's hook input as the engine's tool classes, with the file or command, so the
-    /// engine's policy names no runtime's tools. A tool mapped to the wrong class fails here.
+    /// LOG A5b-1: the runtime reads every tool name its CLI's hooks can report, offered or not, as the class of the CLI's
+    /// tool, so a tool mapped to the wrong class, or not mapped, fails here, one tool at a time.
+    /// </summary>
+    [Fact]
+    public void Every_tool_the_cli_reports_is_read_as_its_class()
+    {
+        Assert.NotEmpty(CliTools);
+        Assert.All(CliTools, tool =>
+        {
+            var read = HookReader.Classify(Element(new JsonObject { ["tool_name"] = tool.Key, ["tool_input"] = new JsonObject() })).Class;
+            Assert.True(read == tool.Value, $"{tool.Key} is read as {read ?? "no class"}; the CLI's {tool.Key} is {tool.Value}");
+        });
+    }
+
+    /// <summary>
+    /// The runtime reads its CLI's hook input with the file or command, so the engine's policy names no runtime's tools.
     /// </summary>
     [Theory]
     [InlineData("read", "/ff/work/src/a.cs", null)]
@@ -189,6 +217,20 @@ public abstract class AgentRuntimeContract : ContractBase
     [Fact]
     public void A_denial_blocks_the_call_and_shows_the_agent_the_reason() =>
         Assert.Equal((true, "never push: commit your work and the engine pushes it"), ReadReply(HookReader.Deny("never push: commit your work and the engine pushes it")));
+
+    /// <summary>
+    /// LOG A5b-1, R19: when no replica answers, the hook command applies the reply the runtime gave it in the CLI's
+    /// environment, and the CLI blocks the call or stops the session: the hook fails closed.
+    /// </summary>
+    [Fact]
+    public async Task The_engine_unreachable_reply_blocks_the_call()
+    {
+        var (_, cli) = await StartAsync(Simple);
+
+        Assert.True(cli.Environment.TryGetValue(SandboxedAgentRuntime.UnreachableVariable, out var text), $"the CLI's environment has no {SandboxedAgentRuntime.UnreachableVariable}");
+        var reply = JsonSerializer.Deserialize<HookReply>(text!, JsonSerializerOptions.Web)!;
+        Assert.True(ReadReply(reply).Blocked, $"the CLI does not block a call on the unreachable reply {text}");
+    }
 
     [Fact]
     public async Task A_session_is_started_polled_and_read_when_it_ends()

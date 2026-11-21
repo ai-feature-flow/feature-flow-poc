@@ -100,6 +100,18 @@ public sealed class CopilotCliRuntimeContract : AgentRuntimeContract
     protected override JsonObject HookInputForTool(string tool) =>
         new() { ["tool_name"] = HookName(tool), ["tool_input"] = new JsonObject { ["path"] = "/ff/work/a.txt" } };
 
+    /// <summary>
+    /// Copilot CLI 1.0.105's tools by what they do, by the names its hooks give them (Claude Code's) and by its own:
+    /// viewing, searching, creating and editing files, and the shell.
+    /// </summary>
+    protected override IReadOnlyDictionary<string, string> CliTools { get; } = new Dictionary<string, string>
+    {
+        ["Read"] = ToolClass.Read, ["view"] = ToolClass.Read,
+        ["Grep"] = ToolClass.Search, ["Glob"] = ToolClass.Search, ["grep"] = ToolClass.Search, ["glob"] = ToolClass.Search,
+        ["Write"] = ToolClass.Edit, ["Edit"] = ToolClass.Edit, ["create"] = ToolClass.Edit, ["edit"] = ToolClass.Edit,
+        ["Bash"] = ToolClass.Shell, ["bash"] = ToolClass.Shell,
+    };
+
     /// <summary>Copilot blocks a call whose hook exits 2 but shows the agent nothing; its JSON decision blocks it with the reason (LOG 293).</summary>
     protected override (bool Blocked, string? Shown) ReadReply(HookReply reply)
     {

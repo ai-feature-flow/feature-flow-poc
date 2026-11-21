@@ -39,14 +39,16 @@ public sealed class CopilotCliRuntime(CopilotCliOptions options, Func<ISandboxPr
 
     /// <summary>
     /// Copilot's hooks report its tools by Claude Code's names (<c>view</c> is <c>Read</c>, <c>create</c> is <c>Write</c>,
-    /// <c>bash</c> is <c>Bash</c>; LOG 293); its own names are mapped too (LOG A5b-2).
+    /// <c>bash</c> is <c>Bash</c>; LOG 293); its own names, as offered, are read too (LOG A5b-2).
     /// </summary>
-    protected override IReadOnlyDictionary<string, IReadOnlyList<string>> HookTools { get; } = new Dictionary<string, IReadOnlyList<string>>
+    protected override IReadOnlyDictionary<string, string> CompanionTools { get; } = new Dictionary<string, string>
     {
-        [ToolClass.Read] = ["Read", "view"],
-        [ToolClass.Search] = ["Grep", "Glob", "grep", "glob"],
-        [ToolClass.Edit] = ["Write", "Edit", "create", "edit"],
-        [ToolClass.Shell] = ["Bash", "bash"],
+        ["Read"] = "view",
+        ["Grep"] = "grep",
+        ["Glob"] = "glob",
+        ["Write"] = "create",
+        ["Edit"] = "edit",
+        ["Bash"] = "bash",
     };
 
     protected override IReadOnlyList<string> PathFields { get; } = ["path", "file_path"];
@@ -159,6 +161,12 @@ public sealed class CopilotCliRuntime(CopilotCliOptions options, Func<ISandboxPr
     /// <summary>Copilot shows the agent only the exit code of a hook that exits 2, so a denial is its JSON decision with the reason (LOG 293).</summary>
     public override HookReply Deny(string reason) =>
         new(0, Output: new JsonObject { ["permissionDecision"] = "deny", ["permissionDecisionReason"] = reason }.ToJsonString());
+
+    /// <summary>
+    /// Copilot is not known to stop on <c>continue: false</c> (M8 follow-up 15), so the call is blocked by exit 2, which
+    /// Copilot honours and shows the agent nothing of (LOG 293): no engine error reaches the agent (LOG 60).
+    /// </summary>
+    protected override HookReply Unreachable { get; } = new(2);
 
     /// <summary>The output and the usage file Copilot wrote, which is the agent's user's to write: it serves accounting only; the proxy records what was really used.</summary>
     protected override async Task<Transcript> ReadAsync(SandboxHandle sandbox, string output, int session, string key, CancellationToken cancellationToken)

@@ -40,13 +40,13 @@ public sealed class ClaudeCodeRuntime(ClaudeCodeOptions options, Func<ISandboxPr
         [ToolClass.Shell] = ["Bash"],
     };
 
-    /// <summary>The offered tools and those Claude Code brings with them: a notebook read with Read, a background shell's output and kill with Bash (LOG A5b-2).</summary>
-    protected override IReadOnlyDictionary<string, IReadOnlyList<string>> HookTools { get; } = new Dictionary<string, IReadOnlyList<string>>
+    /// <summary>Tools Claude Code brings with those offered: a notebook read with Read, a background shell's output and kill with Bash (LOG A5b-2).</summary>
+    protected override IReadOnlyDictionary<string, string> CompanionTools { get; } = new Dictionary<string, string>
     {
-        [ToolClass.Read] = ["Read", "LS", "NotebookRead", "TodoWrite"],
-        [ToolClass.Search] = ["Grep", "Glob"],
-        [ToolClass.Edit] = ["Edit", "Write", "MultiEdit", "NotebookEdit"],
-        [ToolClass.Shell] = ["Bash", "BashOutput", "KillShell", "KillBash"],
+        ["NotebookRead"] = "Read",
+        ["BashOutput"] = "Bash",
+        ["KillShell"] = "Bash",
+        ["KillBash"] = "Bash",
     };
 
     protected override IReadOnlyList<string> PathFields { get; } = ["file_path", "notebook_path"];
@@ -141,6 +141,10 @@ public sealed class ClaudeCodeRuntime(ClaudeCodeOptions options, Func<ISandboxPr
 
     /// <summary>Claude Code's hook protocol: exit 2 blocks the call and shows the agent standard error.</summary>
     public override HookReply Deny(string reason) => new(2, Error: reason);
+
+    /// <summary>Claude Code stops the session on <c>continue: false</c>, before the call runs, and shows the person, not the agent, the reason.</summary>
+    protected override HookReply Unreachable { get; } =
+        new(0, Output: new JsonObject { ["continue"] = false, ["stopReason"] = "the engine is unreachable; the step can be resumed" }.ToJsonString());
 
     protected override Task<Transcript> ReadAsync(SandboxHandle sandbox, string output, int session, string key, CancellationToken cancellationToken) =>
         Task.FromResult(Parse(output));

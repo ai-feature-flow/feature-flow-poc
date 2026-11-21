@@ -64,7 +64,7 @@ CONTROLS = [
         "name": "sp2-n2: the hook command fails closed: an unreachable engine is a denial (R19)",
         "edits": [(HOOK, "            SessionStop.Mark(e.Message);\n", "            SessionStop.Mark(e.Message);\n            if (e.Message.Length > 0)\n                return 2;\n")],
         "tests": [(CLIENT_TESTS, None)],
-        "expect": ["The_hook_command_holds_while_no_replica_answers_and_then_stops_the_session_rather_than_deny"],
+        "expect": ["The_hook_command_holds_while_no_replica_answers_and_then_applies_the_runtime_s_unreachable_reply"],
     },
     {
         "name": "LOG 59: a question is not opened idempotently by its id",
