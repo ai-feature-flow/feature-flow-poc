@@ -685,22 +685,21 @@ public partial class RunWorkflow
     {
         if (CleanUpFailed(s.StepId))
             return;
-        ChildSpec spec;
+        ChildSpec? spec;
+        string? refusal;
         try
         {
-            var (childSpec, refusal) = core!.ChildSpec(s.StepId, s.Execution);
-            if (refusal is not null)
-            {
-                core.Apply(new StepCannotAnswer(s.StepId, refusal));
-                dirty = true;
-                return;
-            }
-
-            spec = childSpec!;
+            (spec, refusal) = core!.ChildSpec(s.StepId, s.Execution);
         }
         catch (EvaluationException e)
         {
-            core!.Apply(new StepCannotAnswer(s.StepId, "its inputs cannot be evaluated: " + e.Message));
+            (spec, refusal) = (null, "its inputs cannot be evaluated: " + e.Message);
+        }
+
+        // Check 31 refused its inputs, or they cannot be evaluated: the step stops for a person, and no child is created (LOG 488).
+        if (spec is null)
+        {
+            core!.Apply(new StepCannotAnswer(s.StepId, refusal!));
             dirty = true;
             return;
         }
@@ -710,13 +709,13 @@ public partial class RunWorkflow
             && await WorkItemsRefusalAsync(new WorkItemRequest(budget, 1,
                 new RunRecord(spec.WorkflowId, Workflow.Info.WorkflowId, spec.Template, "starting", input.Requester, spec.Repositories, input.DryRun, Workflow.UtcNow, null))) is { } refused)
         {
-            core.Apply(new StepCannotAnswer(s.StepId, refused));
+            core!.Apply(new StepCannotAnswer(s.StepId, refused));
             dirty = true;
             return;
         }
 
         // The child's parent branch is this run's work branch, in every repository the child is given (LOG 196).
-        var made = await EnsureWorkBranchesAsync(new WorkBranchesCall(spec.Repositories, core.WorkBranch(), input.ParentBranch, input.DryRun));
+        var made = await EnsureWorkBranchesAsync(new WorkBranchesCall(spec.Repositories, core!.WorkBranch(), input.ParentBranch, input.DryRun));
         foreach (var e in made.Events)
             core.Note("agent", s.StepId, e);
         if (made.Error is { } error)
