@@ -17,4 +17,10 @@
     <ProjectReference Include="..\FeatureFlow.Api\FeatureFlow.Api.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- FeatureFlowConfiguration.ModelProxyHandlerForTests: the Copilot test's https stand-in upstream (AgentHarness, shared by both). -->
+    <InternalsVisibleTo Include="FeatureFlow.Integration.Tests" />
+    <InternalsVisibleTo Include="FeatureFlow.Live.Tests" />
+  </ItemGroup>
+
 </Project>

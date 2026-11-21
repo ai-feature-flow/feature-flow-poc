@@ -101,6 +101,12 @@ public sealed record AgentHarnessOptions
     /// <summary>The key the proxy sends instead of the model's own: SP5 N2, a credential the model refuses.</summary>
     public string? ModelKey { get; init; }
 
+    /// <summary>
+    /// The proxy's <c>model_access.auth</c> when not Live: <c>api_key</c> by default, or <c>github</c> for Copilot CLI
+    /// natively against a scripted model standing for the Copilot API, which must then serve https (LOG 496).
+    /// </summary>
+    public string Auth { get; init; } = "api_key";
+
     /// <summary>The default agent runtime: <c>claude_code</c>, or <c>copilot_cli</c> (M8).</summary>
     public string Runtime { get; init; } = "claude_code";
 
@@ -192,7 +198,7 @@ public sealed class AgentHarness : IAsyncDisposable
         {
             await h.CreateRemoteAsync();
             vcs = $$"""{ default: git, instances: { git: { remote: "file://{{folder}}/remotes/{repo}.git", cache: clones } } }""";
-            modelAccess = $$"""{ mode: proxy, key_ref: secrets/model_key, upstream: "{{options.ModelUpstream ?? model!.Url}}", auth: api_key }""";
+            modelAccess = $$"""{ mode: proxy, key_ref: secrets/model_key, upstream: "{{options.ModelUpstream ?? model!.Url}}", auth: {{options.Auth}} }""";
         }
 
         // After the Live checks, so a missing credential fails before the image is built.
@@ -227,7 +233,7 @@ public sealed class AgentHarness : IAsyncDisposable
                 default: {{options.Runtime}}
                 instances:
                   {{options.Runtime}}:
-                    model: {{(options.Runtime != "copilot_cli" ? "haiku" : options.Live ? "claude-haiku-4.5" : "claude-haiku-4-5")}}
+                    model: {{(options.Runtime != "copilot_cli" ? "haiku" : options.Live || options.Auth == "github" ? ScriptedModel.CopilotModel : "claude-haiku-4-5")}}
                     model_access: {{modelAccess}}
             {{string.Join("\n", options.MoreRuntimes.Select(r => "      " + r.Replace("{model_access}", modelAccess)))}}
               vcs: {{vcs}}
@@ -252,6 +258,7 @@ public sealed class AgentHarness : IAsyncDisposable
         h.Configuration = loaded with
         {
             Installation = loaded.Installation with { AgentWorker = loaded.Installation.AgentWorker! with { CommitInterval = options.CommitInterval } },
+            ModelProxyHandlerForTests = !options.Live && options.Auth == "github" ? model?.TrustingHandler() : null,
         };
         h.Host = await FeatureFlowHost.StartAsync(h.Configuration, h.Factories, true, !options.SeparateAgentWorker, "http://127.0.0.1:0");
         if (options.SeparateAgentWorker)
