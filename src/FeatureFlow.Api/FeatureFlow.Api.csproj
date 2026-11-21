@@ -26,7 +26,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ConsoleInput Include="$(ConsoleDir)src\**\*;$(ConsoleDir)index.html;$(ConsoleDir)vite.config.ts;$(ConsoleDir)tsconfig.json;$(ConsoleDir)package.json;$(ConsoleDir)package-lock.json;$(MSBuildThisFileDirectory)openapi.json"
+    <ConsoleInput Include="$(ConsoleDir)src\**\*;$(ConsoleDir)scripts\**\*;$(ConsoleDir)index.html;$(ConsoleDir)vite.config.ts;$(ConsoleDir)tsconfig.json;$(ConsoleDir)package.json;$(ConsoleDir)package-lock.json;$(MSBuildThisFileDirectory)openapi.json"
                   Exclude="$(ConsoleDir)src\api\schema.gen.d.ts" />
   </ItemGroup>
 
