@@ -1,0 +1,15 @@
+.ff-needs-me-run h2 {
+  font-size: 1.1em;
+  margin-bottom: 0.2em;
+}
+
+.ff-needs-me-run-id {
+  margin-top: 0;
+  color: #555;
+  font-size: 0.9em;
+}
+
+.ff-needs-me-prompt {
+  white-space: pre-wrap;
+  max-width: 40em;
+}
