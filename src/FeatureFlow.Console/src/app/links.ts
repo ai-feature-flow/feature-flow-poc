@@ -16,3 +16,10 @@ export const run = (runId: string): string => `#/runs/${part(runId)}`;
 export const artifact = (runId: string, reference: string): string => `#/runs/${part(runId)}/artifacts/${part(reference)}`;
 
 export const start = (): string => "#/start";
+
+/**
+ * A link to content the console already holds, for a download: an object URL of a Blob it read with the token, because
+ * a plain link to the API cannot send the token. The URL is the browser's own (blob:), never text from the API; revoke it
+ * with URL.revokeObjectURL once used.
+ */
+export const download = (content: Blob): string => URL.createObjectURL(content);

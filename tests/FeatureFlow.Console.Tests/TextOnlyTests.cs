@@ -28,7 +28,25 @@ public sealed class TextOnlyTests(BrowserFixture browser) : BrowserTest(browser)
         ["needs me"] = new(t => t.OpenAsync(), 3),
         // The run's template.
         ["run heading"] = new(t => t.OpenAsync("#/runs/" + RunId), 1),
+        // The run's template and the artifact's name in the artifact list, which is read after the run.
+        ["artifact list"] = new(async t =>
+        {
+            await t.OpenAsync("#/runs/" + RunId);
+            await Expect(t.Page.Locator("[data-kind='artifact'] a")).ToHaveTextAsync(Markup);
+        }, 2),
+        // The artifact's name, once the run's index is read, and its content.
+        ["viewer"] = new(async t =>
+        {
+            await t.OpenAsync($"#/runs/{RunId}/artifacts/{Uri.EscapeDataString(t.artifact!)}");
+            await Expect(t.Page.Locator("pre")).ToHaveTextAsync(Markup);
+            await Expect(t.Page.Locator(".ff-viewer-name")).ToHaveTextAsync(Markup);
+        }, 2),
+        // Not the start form: its data (template references, parameter names and descriptions, unreadable libraries) comes
+        // from the organisation's libraries, which ConsoleWorld fixes as library/std and m7s; neither holds markup.
     };
+
+    /// <summary>The reference of the seeded artifact.</summary>
+    string? artifact;
 
     public static TheoryData<string> Names => [.. Screens.Keys];
 
@@ -37,7 +55,7 @@ public sealed class TextOnlyTests(BrowserFixture browser) : BrowserTest(browser)
     {
         await World.SeedRunWithWaitAsync(RunId, template: Markup, prompt: Markup, choices: [Markup], requester: Markup);
         await Engine.TraceAsync(RunId, "started", "go_ahead", Markup);
-        await Engine.ProduceAsync(RunId, "go_ahead", Markup, Markup);
+        artifact = await Engine.ProduceAsync(RunId, "go_ahead", Markup, Markup);
     }
 
     [Theory]
