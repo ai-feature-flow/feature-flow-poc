@@ -136,7 +136,7 @@ public sealed class EventsTests
         await using var world = new ApiWorld();
         using var anonymous = new HttpClient { BaseAddress = world.Address };
 
-        using var response = await anonymous.GetAsync("events", Ct);
+        using var response = await anonymous.GetAsync("events", HttpCompletionOption.ResponseHeadersRead, Ct);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Equal("unauthenticated", JsonSerializer.Deserialize<ErrorResponse>(await response.Content.ReadAsStringAsync(Ct), ApiJson.Options)!.Error);
