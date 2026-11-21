@@ -22,7 +22,7 @@ public sealed class ApprovalTests
     static ApprovalRule Rule(string match, long minCount = 1, bool fromChat = false, params string[] roles) =>
         new(match, roles.Length == 0 ? ["approver"] : roles, minCount, fromChat, new Cap<bool>(false, false));
 
-    static async Task<ApiWorld> WorldAsync(OrganisationConfig organisation, string type = "ticket.spec_approval", string kind = "decision")
+    static async Task<ApiWorld> WorldAsync(OrganisationConfig organisation, string type = "ticket.spec_approval", string kind = "gate")
     {
         var world = new ApiWorld(organisation);
         await world.RunAsync(Run, "acme/api");

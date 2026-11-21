@@ -91,7 +91,7 @@ public sealed class ConsoleTests : IAsyncDisposable
         var run = Assert.Single((await records.QueryAsync<RunRecord>(Queries.Runs, new Dictionary<string, string>(), Ct)).Unwrap());
         var now = DateTimeOffset.UtcNow;
         await records.AppendAsync(new RecordBatch(
-            Waits: [new WaitRecord(run.RunId, "decision-1", "decision", "go_ahead", "m7s.go_ahead", "Go ahead?", ["approved", "rejected"], true, now)],
+            Waits: [new WaitRecord(run.RunId, "gate-1", "gate", "go_ahead", "m7s.go_ahead", "Go ahead?", ["approved", "rejected"], true, now)],
             Timeline: [new TimelineRecord(run.RunId, 1, "started", "go_ahead", "execution 1", now)]), Ct);
 
         using var anonymous = new HttpClient { BaseAddress = http.BaseAddress };
@@ -102,6 +102,6 @@ public sealed class ConsoleTests : IAsyncDisposable
         Assert.Contains("Template decide (level ticket)", form);
         var row = Assert.Single(form.Split('\n'), l => l.Contains("go_ahead", StringComparison.Ordinal));
         Assert.Contains("m7s.go_ahead", row);
-        Assert.Contains("waiting(decision)", row);
+        Assert.Contains("waiting(gate)", row);
     }
 }

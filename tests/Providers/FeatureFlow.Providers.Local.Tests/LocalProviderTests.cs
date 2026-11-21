@@ -44,18 +44,18 @@ public sealed class LocalProviderTests : IDisposable
         await store.AppendAsync(new RecordBatch(
             [new RunRecord("r1", null, "std:templates/ticket_delivery", "starting", "me", ["acme/api"], false, now, null),
              new RunRecord("r1.kid.1", "r1", "std:templates/ticket_delivery", "running", "me", [], false, now, null)],
-            [new WaitRecord("r1", "decision-1", "decision", "approve_spec", "ticket.spec_approval", "decision", ["approved", "rejected"], true, now)],
+            [new WaitRecord("r1", "gate-1", "gate", "approve_spec", "ticket.spec_approval", "gate", ["approved", "rejected"], true, now)],
             [new TimelineRecord("r1", 1, "started", "plan", null, now), new TimelineRecord("r1", 2, "completed", "plan", "planned", now)]), Ct);
         await store.AppendAsync(new RecordBatch(
             [new RunRecord("r1", null, "std:templates/ticket_delivery", "completed", "me", ["acme/api"], false, now.AddMinutes(1), null)],
-            [new WaitRecord("r1", "decision-1", "", "", "", "", [], false, now.AddMinutes(1))],
+            [new WaitRecord("r1", "gate-1", "", "", "", "", [], false, now.AddMinutes(1))],
             [new TimelineRecord("r1", 2, "completed", "plan", "a retried append adds nothing", now)]), Ct);
 
         var p = new Dictionary<string, string> { ["run_id"] = "r1" };
         Assert.Equal("completed", (await store.QueryAsync<RunRecord>(Queries.Run, p, Ct)).Unwrap().Single().Status);
         Assert.Equal("r1.kid.1", (await store.QueryAsync<RunRecord>(Queries.Runs, new Dictionary<string, string> { ["parent_run_id"] = "r1" }, Ct)).Unwrap().Single().RunId);
         var wait = (await store.QueryAsync<WaitRecord>(Queries.Waits, p, Ct)).Unwrap().Single();
-        Assert.Equal((false, "decision", "ticket.spec_approval"), (wait.Open, wait.Kind, wait.DecisionType));
+        Assert.Equal((false, "gate", "ticket.spec_approval"), (wait.Open, wait.Kind, wait.DecisionType));
         Assert.Empty((await store.QueryAsync<WaitRecord>(Queries.Waits, new Dictionary<string, string>(p) { ["open"] = "true" }, Ct)).Unwrap());
         var timeline = (await store.QueryAsync<TimelineRecord>(Queries.Timeline, p, Ct)).Unwrap();
         Assert.Equal(["started", "completed"], timeline.Select(t => t.Kind));

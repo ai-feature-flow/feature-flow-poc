@@ -73,7 +73,7 @@ public sealed class Driver(RunCore core)
                 case StartStep s:
                     Queue.Add((s.StepId, s.Execution, false));
                     break;
-                case OpenDecision o:
+                case OpenGate o:
                     Queue.Add((o.StepId, o.Execution, true));
                     break;
                 case CancelStep c:
@@ -103,4 +103,28 @@ public sealed class Driver(RunCore core)
     }
 
     public static List<string> Path(RunCore core) => core.State.Trace.Where(t => t.Kind == "started").Select(t => t.StepId).ToList();
+}
+
+/// <summary>What the shell's update validators ask of the core, for tests written against core inputs.</summary>
+public static class Validators
+{
+    /// <summary>
+    /// Why the shell's validator would refuse <paramref name="input"/> now, or null: an answer goes through <see cref="RunCore.Route"/>
+    /// as the person's <see cref="Wire.AnswerArgs"/> would, an override through <see cref="RunCore.SteeringCheck"/>.
+    /// </summary>
+    public static string? Check(this RunCore core, RunInput input)
+    {
+        Wire.AnswerArgs? answer = input switch
+        {
+            DecisionAnswered d => new(core.State.Waits.FirstOrDefault(w => w.Kind == WaitKind.Gate && w.StepId == d.StepId)?.Id ?? $"no gate at {d.StepId}", "test",
+                d.Outcome, Artifacts: d.Artifacts),
+            InterventionAnswered i => new(i.WaitId, "test", Action: Recoveries.Name(i.Action.Kind), StepId: i.Action.StepId, CleanUp: i.Action.CleanUp,
+                Attempts: i.Action.Attempts, Status: i.Action.Status?.Name(), BeyondHardCeiling: i.Action.BeyondHardCeiling),
+            PatchAnswered p => new(p.WaitId, "test", Action: p.Approve ? "approve" : "reject"),
+            _ => null,
+        };
+        if (answer is not null)
+            return core.Route(answer) is Refused r ? r.Error : null;
+        return input is RunAborted ? core.State.Status == RunStatus.Running ? null : "the run has ended" : core.SteeringCheck(input);
+    }
 }

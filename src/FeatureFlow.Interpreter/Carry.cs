@@ -46,6 +46,11 @@ public sealed record CarriedWait(string Id, string Kind, string StepId, string? 
     public bool CleanUp { get; init; }
     public string? LibraryItem { get; init; }
     public string? LibraryContent { get; init; }
+    public string? StepKey { get; init; }
+    public string? Text { get; init; }
+    public IReadOnlyList<string>? Options { get; init; }
+    public DateTimeOffset? Deadline { get; init; }
+    public bool Session { get; init; }
 }
 
 public sealed record CarriedEntry(string StepId, bool CleanUp, bool Resumes = false)
@@ -87,6 +92,9 @@ public sealed record CarriedCore(
     public IReadOnlyList<AppliedOverride>? Overrides { get; init; }
 
     public IReadOnlyList<LibraryOverrideEntry>? LibraryOverrides { get; init; }
+
+    /// <summary>The waits that have closed, and how (<see cref="RunState.Closed"/>). Null when none has.</summary>
+    public IReadOnlyList<ClosedWait>? Closed { get; init; }
 }
 
 public sealed partial class RunCore
@@ -121,6 +129,11 @@ public sealed partial class RunCore
                 CleanUp = w.CleanUp,
                 LibraryItem = w.LibraryItem,
                 LibraryContent = w.LibraryContent,
+                StepKey = w.StepKey,
+                Text = w.Text,
+                Options = w.Options?.ToList(),
+                Deadline = w.Deadline,
+                Session = w.Session,
             }).ToList(),
             s.RunAttempts,
             s.RunCeilingGranted,
@@ -133,6 +146,7 @@ public sealed partial class RunCore
             Skips = s.Skips.Count == 0 ? null : new SortedDictionary<string, string>(s.Skips, StringComparer.Ordinal),
             Overrides = s.Overrides.Count == 0 ? null : s.Overrides.ToList(),
             LibraryOverrides = s.LibraryOverrides.Count == 0 ? null : s.LibraryOverrides.ToList(),
+            Closed = s.Closed.Count == 0 ? null : s.Closed.ToList(),
         };
     }
 
@@ -181,6 +195,11 @@ public sealed partial class RunCore
             CleanUp = w.CleanUp,
             LibraryItem = w.LibraryItem,
             LibraryContent = w.LibraryContent,
+            StepKey = w.StepKey,
+            Text = w.Text,
+            Options = w.Options,
+            Deadline = w.Deadline,
+            Session = w.Session,
         }));
         s.RunAttempts = carried.RunAttempts;
         s.RunCeilingGranted = carried.RunCeilingGranted;
@@ -195,6 +214,7 @@ public sealed partial class RunCore
             s.Skips[id] = outcome;
         s.Overrides.AddRange(carried.Overrides ?? []);
         s.LibraryOverrides.AddRange(carried.LibraryOverrides ?? []);
+        s.Closed.AddRange(carried.Closed ?? []);
         return core;
 
         static Execution? Exec(CarriedExecution? e)

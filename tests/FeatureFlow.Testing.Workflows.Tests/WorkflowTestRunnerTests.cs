@@ -51,6 +51,23 @@ public class WorkflowTestRunnerTests
         }
     }
 
+    /// <summary>
+    /// The runner answers as the shell does, through the core's one routing (<c>RunCore.Answer</c>, docs/04 section 4): a
+    /// gate, a breakpoint and an intervention, each in a std test, are answered and recorded as a person's answer is.
+    /// </summary>
+    [Theory]
+    [InlineData("ticket_main_path", "gate-", "approved by test")]
+    [InlineData("ticket_spec_rejected", "gate-", "rejected by test")]
+    [InlineData("ticket_breakpoint_before_merge", "breakpoint-", "continue by test")]
+    [InlineData("epic_child_rerun", "intervention-", "go_to tickets.children_1 by test")]
+    public void Each_wait_kind_is_answered_through_the_cores_routing(string name, string wait, string answer)
+    {
+        var result = WorkflowTestRunner.RunPath(Path.Combine(StdTests, name + ".yaml")).Single();
+
+        Assert.True(result.Passed, string.Join("\n", result.Failures));
+        Assert.Contains(result.Trace, t => t.Kind == "answered" && t.StepId.StartsWith(wait, StringComparison.Ordinal) && t.Detail == answer);
+    }
+
     [Fact]
     public void A_wrong_status_fails_the_test()
     {

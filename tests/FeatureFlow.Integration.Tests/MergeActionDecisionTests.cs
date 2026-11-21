@@ -25,7 +25,7 @@ public class MergeActionDecisionTests
         var id = h.Start("std:templates/ticket_delivery", "--param", $"ticket_id={ticket}", "--repo", "acme/api");
         var waitId = await h.WaitForWaitAsync(id, TimeSpan.FromMinutes(3));
         var wait = (await h.ShowAsync(id))["waits"]!.AsArray().Single(w => w!["waitId"]!.ToString() == waitId)!;
-        Assert.Equal(("decision", "deliver.merge", "ticket.merge_action"), (wait["kind"]!.ToString(), wait["stepId"]!.ToString(), wait["decisionType"]!.ToString()));
+        Assert.Equal(("gate", "deliver.merge", "ticket.merge_action"), (wait["kind"]!.ToString(), wait["stepId"]!.ToString(), wait["decisionType"]!.ToString()));
         Assert.Equal(["approve", "reject"], wait["choices"]!.AsArray().Select(c => c!.ToString()));
         Assert.Equal(PullRequestStates.Open, (await new InMemoryCodeHost(forge).GetPullRequestAsync(new PullRequestRef(repo, 1), Ct)).Unwrap().State);
         return (id, waitId!);

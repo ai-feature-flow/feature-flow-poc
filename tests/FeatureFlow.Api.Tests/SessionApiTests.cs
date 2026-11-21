@@ -16,7 +16,7 @@ namespace FeatureFlow.Api.Tests;
 /// </summary>
 public sealed class SessionApiTests : IAsyncDisposable
 {
-    const string Sid = "r1.decision-1";
+    const string Sid = "r1.gate-1";
     const string Commit = "0123456789abcdef0123456789abcdef01234567";
 
     readonly string folder = Path.Combine(Path.GetTempPath(), "ff-api-session-" + Guid.NewGuid().ToString("N"));
@@ -80,8 +80,8 @@ public sealed class SessionApiTests : IAsyncDisposable
         var now = DateTimeOffset.UtcNow;
         await records.AppendAsync(new RecordBatch(
             [new RunRecord("r1", null, "std:templates/project_delivery", "running", "starter", ["acme/api"], false, now, null)],
-            [new WaitRecord("r1", "decision-1", open ? "decision" : "", "define", open ? "project.requirements_session" : "", "decision", ["submitted", "abandoned"], open, now)],
-            Sessions: [new SessionRecord(Sid, "r1", "decision-1", "define", "", "acme/api", "ff/session/r1/decision-1", Commit, SessionStatuses.Prepared, null, null, now)]),
+            [new WaitRecord("r1", "gate-1", open ? "gate" : "", "define", open ? "project.requirements_session" : "", "gate", ["submitted", "abandoned"], open, now)],
+            Sessions: [new SessionRecord(Sid, "r1", "gate-1", "define", "", "acme/api", "ff/session/r1/gate-1", Commit, SessionStatuses.Prepared, null, null, now)]),
             TestContext.Current.CancellationToken);
     }
 
@@ -146,7 +146,7 @@ public sealed class SessionApiTests : IAsyncDisposable
         var (status, text) = await PostAsync(http, $"sessions/{Sid}/submit", $$"""{ "revision": "{{Commit}}" }""");
         Assert.Equal(HttpStatusCode.Conflict, status);
         Assert.Contains("no longer open", text);
-        Assert.Equal(HttpStatusCode.NotFound, (await PostAsync(http, "sessions/r1.decision-9/submit", $$"""{ "revision": "{{Commit}}" }""")).Status);
+        Assert.Equal(HttpStatusCode.NotFound, (await PostAsync(http, "sessions/r1.gate-9/submit", $$"""{ "revision": "{{Commit}}" }""")).Status);
         Assert.Empty(await AnswersAsync());
     }
 }

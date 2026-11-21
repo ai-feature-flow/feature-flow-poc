@@ -8,7 +8,7 @@ public static class RunWorkflowNames
 {
     public const string Workflow = "Run";
 
-    /// <summary>Update: a person's answer to a decision, intervention or patch approval (docs/02 section 7).</summary>
+    /// <summary>Update: a person's answer to a gate, question, intervention, breakpoint or patch approval (docs/02 section 7).</summary>
     public const string Answer = "answer";
 
     /// <summary>Update: a person stops the run.</summary>
@@ -75,14 +75,11 @@ public sealed record OverrideArgs(
 /// </summary>
 public sealed record WakeSignal(string Source, string Event, string? StepId = null);
 
-/// <summary>A question an agent asked: the run opens a question decision for it, answered with the <c>answer</c> update.</summary>
+/// <summary>A question an agent asked: the run opens a question wait for it, answered with the <c>answer</c> update.</summary>
 public sealed record QuestionSignal(string QuestionId, string StepId, string StepKey, string Text, IReadOnlyList<string> Options, long TimeoutSeconds);
 
 /// <summary>A step's model could not be reached through the model proxy, with the cause the proxy saw.</summary>
 public sealed record ModelUnreachableSignal(string StepId, string Cause);
-
-/// <summary>A question the run holds open, carried across continue-as-new; <see cref="Deadline"/> is when it times out.</summary>
-public sealed record OpenQuestion(QuestionSignal Question, DateTimeOffset Deadline);
 
 /// <summary>An approval rule's decision type pattern and whether it allows auto-resolution (docs/05 section 3.2).</summary>
 public sealed record AutoRule(string Match, bool Auto);
@@ -150,26 +147,21 @@ public sealed record ParentPatchSignal(string ChildWorkflowId, string ProposerSt
 /// </summary>
 public sealed record HandOver(int Run, long HistoryEvents, int InFlightActivities, int RunningChildren, int OpenWaits, int PendingChildEnds, int InterruptedWaits = 0);
 
-/// <summary>An answer already applied, by wait id, so a repeat of the same answer succeeds without a second effect.</summary>
-public sealed record AppliedAnswer(string WaitId, string Key);
-
-/// <summary>The shell's carried state: the core's, and what the Temporal workflow itself must remember.</summary>
+/// <summary>
+/// The shell's carried state: the core's, which holds every wait open and closed, and what the Temporal workflow itself must
+/// remember.
+/// </summary>
 public sealed record ShellState(
     CarriedCore Core,
     IReadOnlyList<ChildRun> Children,
     IReadOnlyList<string> PendingChildEnds,
     IReadOnlyList<ParentPatchSignal> PendingParentPatches,
-    IReadOnlyList<AppliedAnswer> Answered,
-    IReadOnlyList<string> RecordedOpenWaits,
     long TimelineSequence,
     IReadOnlyList<HandOver> HandOvers,
     bool CancelledByParent,
     int ActivitiesStartedWhileDraining,
     int ChildEndsWhileDraining,
-    int AnswersWhileDraining,
-    IReadOnlyList<OpenQuestion>? Questions = null,
-    IReadOnlyList<string>? ClosedQuestions = null,
-    IReadOnlyList<string>? SessionWaits = null);
+    int AnswersWhileDraining);
 
 /// <summary>
 /// The run workflow's input: on the first run, what the API or the parent gives; after a hand-over, the same with
@@ -205,9 +197,9 @@ public sealed record WorkItemBudget(string RootRunId, long Limit);
 
 /// <summary>
 /// A person's answer, from the API, which authenticated the actor and recorded the answer first (docs/04
-/// section 4.1). For a decision, <see cref="Outcome"/>; for a patch approval, <see cref="Action"/>
-/// <c>approve</c> or <c>reject</c>; for an intervention, a recovery <see cref="Action"/>: <c>retry</c>,
-/// <c>go_to</c>, <c>replan</c>, <c>grant_attempts</c> or <c>end</c>. An answer may carry what the person produced:
+/// section 4.1). For a gate, <see cref="Outcome"/>; for a question, the answer's text as <see cref="Outcome"/>; for a patch
+/// approval, <see cref="Action"/> <c>approve</c> or <c>reject</c>; for an intervention or breakpoint, a recovery
+/// <see cref="Action"/> (<see cref="Recoveries"/>). The core routes it (<see cref="RunCore.Route"/>). An answer may carry what the person produced:
 /// <see cref="Artifacts"/>, by declared name, already stored and validated by the API (a session's submitted files, a
 /// person's <c>triage</c>), and <see cref="Revision"/>, the exact commit a session submitted.
 /// </summary>

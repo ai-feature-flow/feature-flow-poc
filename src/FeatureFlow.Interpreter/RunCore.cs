@@ -157,7 +157,7 @@ public sealed partial class RunCore
 
     void Progressed() => enteredWithoutProgress.Clear();
 
-    bool WaitingOn(string stepId) => State.Waits.Any(w => w.StepId == stepId && w.Kind is WaitKind.Decision or WaitKind.Breakpoint && !IsActionDecision(w));
+    bool WaitingOn(string stepId) => State.Waits.Any(w => w.StepId == stepId && w.Kind is WaitKind.Gate or WaitKind.Breakpoint && !IsActionDecision(w));
 
     StepRecord Record(string stepId)
     {
@@ -255,8 +255,8 @@ public sealed partial class RunCore
             return;
         }
 
-        State.Waits.Add(new OpenWait(NewWaitId("decision"), WaitKind.Decision, step.Id, null, "decision"));
-        outbox.Add(new OpenDecision(step.Id, record.Executions));
+        var gate = AddWait(new OpenWait(NewWaitId("gate"), WaitKind.Gate, step.Id, null, "decision"));
+        outbox.Add(new OpenGate(step.Id, record.Executions, gate.Id));
         Progressed();
     }
 
@@ -375,6 +375,10 @@ public sealed partial class RunCore
             RunAborted a => Abort(a),
             StepCannotAnswer s => CannotAnswer(s),
             ChildPatchProposed p => ProposeFromChild(p),
+            QuestionOpened q => OpenQuestion(q),
+            QuestionAnswered q => AnswerQuestion(q),
+            WaitTimerFired t => TimerFired(t),
+            GateSessionOpened s => OpenSession(s),
             BreakpointSet or StepSkipped or AttemptsGranted or RoleChanged or LibraryOverridden or LibraryOverrideProposed => Steer(input),
             _ => ApplyResult.Refused($"unknown input {input.GetType().Name}"),
         };
@@ -424,7 +428,7 @@ public sealed partial class RunCore
             var toParent = c.Patch with { ProposedBy = new Proposer("agent", step.Id) };
             c = c with { Patch = null, PatchToParent = false };
             var recordParent = Record(step.Id);
-            State.InFlight.Remove(step.Id);
+            LeaveInFlight(step.Id);
             foreach (var (name, value) in outputs)
                 recordParent.Current!.Outputs[name] = value;
             foreach (var (name, reference) in c.Artifacts ?? new Dictionary<string, string>())
@@ -451,7 +455,7 @@ public sealed partial class RunCore
         }
 
         var record = Record(step.Id);
-        State.InFlight.Remove(step.Id);
+        LeaveInFlight(step.Id);
         CloseActionDecision(step.Id, c.Outcome);
         foreach (var (name, value) in outputs)
             record.Current!.Outputs[name] = value;
@@ -569,7 +573,7 @@ public sealed partial class RunCore
             return ApplyResult.Ok;
         }
 
-        State.InFlight.Remove(step.Id);
+        LeaveInFlight(step.Id);
         CloseActionDecision(step.Id, null);
         if (CountsRaces(step))
             record.AttemptsUsed++;
@@ -582,7 +586,7 @@ public sealed partial class RunCore
     {
         if (StepById(i.StepId) is null || !State.InFlight.Contains(i.StepId))
             return ApplyResult.Refused($"{i.StepId} is not running");
-        State.InFlight.Remove(i.StepId);
+        LeaveInFlight(i.StepId);
         State.Pending.Insert(0, new Entry(i.StepId, false, Resumes: true));
         Trace("interrupted", i.StepId, i.Reason);
         return ApplyResult.Ok;
@@ -590,16 +594,12 @@ public sealed partial class RunCore
 
     ApplyResult Answered(DecisionAnswered a)
     {
-        var wait = State.Waits.FirstOrDefault(w => w.Kind == WaitKind.Decision && w.StepId == a.StepId);
-        if (wait is null || StepById(a.StepId) is not { } step)
-            return ApplyResult.Refused($"no decision is open at {a.StepId}");
-        if (IsActionDecision(wait))
-            return AnswerActionDecision(step, wait, a);
-        if (!step.DeclaredOutcomes.Any(o => o.Name == a.Outcome))
-            return ApplyResult.Refused($"{a.StepId}: '{a.Outcome}' is not a declared outcome ({string.Join(", ", step.DeclaredOutcomes.Select(o => o.Name))})");
-        if (SessionArtifactsError(step, a) is { } error)
+        if (GateAnswerError(a, out var wait) is { } error)
             return ApplyResult.Refused(error);
-        State.Waits.Remove(wait);
+        var step = StepById(a.StepId)!;
+        if (IsActionDecision(wait!))
+            return AnswerActionDecision(step, wait!, a);
+        RemoveWait(wait!, WaitEnds.Answered);
         var record = Record(step.Id);
         record.Current ??= new Execution { Number = record.Executions };
         foreach (var (name, reference) in a.Artifacts ?? new Dictionary<string, string>())
@@ -770,27 +770,19 @@ public sealed partial class RunCore
     {
         foreach (var id in State.InFlight.Where(id => InContainer(id, containerId)).ToList())
         {
-            State.InFlight.Remove(id);
+            LeaveInFlight(id);
             Trace("cancelled", id);
             outbox.Add(new CancelStep(id));
         }
 
         State.Pending.RemoveAll(e => InContainer(e.StepId, containerId));
         foreach (var wait in State.Waits.Where(w => InContainer(w.StepId, containerId)).ToList())
-            CloseWaitFor(wait);
-    }
-
-    void CloseWaitFor(OpenWait wait)
-    {
-        State.Waits.Remove(wait);
-        Trace("wait_closed", wait.StepId, wait.Id);
-        outbox.Add(new CloseWait(wait.Id, wait.StepId));
+            CloseWaitFor(wait, WaitEnds.Withdrawn);
     }
 
     void Intervene(string stepId, string? outcome, string reason)
     {
-        var wait = new OpenWait(NewWaitId("intervention"), WaitKind.Intervention, stepId, outcome, reason);
-        State.Waits.Add(wait);
+        var wait = AddWait(new OpenWait(NewWaitId("intervention"), WaitKind.Intervention, stepId, outcome, reason));
         Trace("escalated", stepId, reason);
         outbox.Add(new RaiseIntervention(wait.Id, stepId, outcome, reason));
         Progressed();
@@ -801,16 +793,16 @@ public sealed partial class RunCore
     void End(RunStatus status, string stepId, string detail)
     {
         State.Status = status;
-        foreach (var id in State.InFlight)
+        foreach (var id in State.InFlight.ToList())
         {
             Trace("cancelled", id);
             outbox.Add(new CancelStep(id));
+            LeaveInFlight(id);
         }
 
-        State.InFlight.Clear();
         State.Pending.Clear();
         foreach (var wait in State.Waits.ToList())
-            CloseWaitFor(wait);
+            CloseWaitFor(wait, WaitEnds.Withdrawn);
         Trace("ended", stepId, $"{status.Name()} ({detail})");
         outbox.Add(new EndRun(status));
     }

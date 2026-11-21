@@ -1,4 +1,5 @@
 using FeatureFlow.Interpreter;
+using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Library;
 using FeatureFlow.Model;
 using FeatureFlow.Model.Plans;
@@ -109,7 +110,7 @@ public static class WorkflowTestRunner
         }
 
         var answered = new Dictionary<string, int>(StringComparer.Ordinal);
-        var queue = new List<(string StepId, int Execution, bool Decision)>();
+        var queue = new List<(string StepId, int Execution, string? Gate)>();
         var cleanUps = new List<string>();
         var tries = new Dictionary<(string, int), int>();
         var inputs = 0;
@@ -120,10 +121,10 @@ public static class WorkflowTestRunner
                 switch (command)
                 {
                     case StartStep s:
-                        queue.Add((s.StepId, s.Execution, false));
+                        queue.Add((s.StepId, s.Execution, null));
                         break;
-                    case OpenDecision o:
-                        queue.Add((o.StepId, o.Execution, true));
+                    case OpenGate o:
+                        queue.Add((o.StepId, o.Execution, o.WaitId));
                         break;
                     case CancelStep c:
                         queue.RemoveAll(q => q.StepId == c.StepId);
@@ -136,8 +137,8 @@ public static class WorkflowTestRunner
 
             if (queue.Count == 0 && core.State.Status == RunStatus.Running && NextAnswer(test, core, answered) is { } answer)
             {
-                // Settled at a breakpoint or intervention the file answers: a person answers it, and the run goes on.
-                var given = core.Apply(answer);
+                // Settled at a breakpoint or intervention the file answers: a person answers it, through the shell's routing, and the run goes on.
+                var given = core.Answer(answer);
                 if (!given.Accepted)
                 {
                     failures.Add("the answer was refused: " + string.Join("; ", given.Errors));
@@ -155,7 +156,7 @@ public static class WorkflowTestRunner
                 break;
             }
 
-            var (stepId, execution, decision) = queue[0];
+            var (stepId, execution, gate) = queue[0];
             queue.RemoveAt(0);
             var step = core.StepById(stepId)!;
             var visits = test.Script.GetValueOrDefault(stepId);
@@ -168,13 +169,22 @@ public static class WorkflowTestRunner
             }
 
             RunInput input;
-            if (decision)
+            if (gate is not null)
             {
-                // A session's submission produces the artifacts its outcome promises (docs/04 section 4.4); any other answer none.
+                // A person answers the gate as the shell routes it. A session's submission produces the artifacts its outcome
+                // promises (docs/04 section 4.4); any other answer none.
                 var submitted = Promised(step, outcome).ToDictionary(n => n, n => $"artifact:{stepId}/{n}/{execution}");
-                input = new DecisionAnswered(stepId, outcome, submitted.Count == 0 ? null : submitted);
+                var gateAnswer = core.Answer(new AnswerArgs(gate, "test", outcome, Artifacts: submitted.Count == 0 ? null : submitted));
+                if (!gateAnswer.Accepted)
+                {
+                    failures.Add("the script was refused: " + string.Join("; ", gateAnswer.Errors));
+                    break;
+                }
+
+                continue;
             }
-            else if (visit.Error == "infrastructure" && tries.GetValueOrDefault((stepId, execution)) < visit.Times)
+
+            if (visit.Error == "infrastructure" && tries.GetValueOrDefault((stepId, execution)) < visit.Times)
             {
                 tries[(stepId, execution)] = tries.GetValueOrDefault((stepId, execution)) + 1;
                 input = new StepFailed(stepId, ErrorClass.Infrastructure, "scripted infrastructure failure");
@@ -299,8 +309,8 @@ public static class WorkflowTestRunner
         return null;
     }
 
-    /// <summary>The file's next answer to a breakpoint or intervention open now, in the order they opened; null when it gives none.</summary>
-    static InterventionAnswered? NextAnswer(WorkflowTest test, RunCore core, Dictionary<string, int> answered)
+    /// <summary>The file's next answer to a breakpoint or intervention open now, in the order they opened, as a person gives it; null when it gives none.</summary>
+    static Interpreter.Wire.AnswerArgs? NextAnswer(WorkflowTest test, RunCore core, Dictionary<string, int> answered)
     {
         foreach (var wait in core.State.Waits.Where(w => w.Kind is WaitKind.Breakpoint or WaitKind.Intervention))
         {
@@ -309,16 +319,8 @@ public static class WorkflowTestRunner
                 continue;
             answered[wait.StepId] = used + 1;
             var a = list[used];
-            var kind = a.Action switch
-            {
-                "continue" => RecoveryKind.Continue,
-                "go_to" => RecoveryKind.GoTo,
-                "replan" => RecoveryKind.Replan,
-                "grant_attempts" => RecoveryKind.GrantAttempts,
-                "end" => RecoveryKind.End,
-                _ => RecoveryKind.Retry,
-            };
-            return new InterventionAnswered(wait.Id, new Recovery(kind, a.StepId, a.CleanUp, a.Attempts, a.Status is null ? null : RunStatuses.Parse(a.Status), BeyondHardCeiling: true));
+            return new Interpreter.Wire.AnswerArgs(wait.Id, "test", Action: a.Action, StepId: a.StepId, CleanUp: a.CleanUp, Attempts: a.Attempts,
+                Status: a.Status, BeyondHardCeiling: true);
         }
 
         return null;
@@ -376,8 +378,5 @@ public static class WorkflowTestRunner
         }
     }
 
-    /// <summary>The artifacts a step's outcome promises: those declared for it, and those declared for every success.</summary>
-    static IEnumerable<string> Promised(Step step, string outcome) => step.Produces
-        .Where(p => p.Outcome == outcome || (p.Outcome is null && step.Outcomes().Any(o => o.Name == outcome && o.Class == OutcomeClass.Success)))
-        .Select(p => p.Name).Distinct();
+    static IReadOnlyList<string> Promised(Step step, string outcome) => RunCore.Promised(step, outcome);
 }

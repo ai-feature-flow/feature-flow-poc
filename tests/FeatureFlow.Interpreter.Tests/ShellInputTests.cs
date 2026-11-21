@@ -300,7 +300,7 @@ public class ShellInputTests
                     switch (command)
                     {
                         case StartStep s: queue.Add((s.StepId, false)); break;
-                        case OpenDecision o: queue.Add((o.StepId, true)); break;
+                        case OpenGate o: queue.Add((o.StepId, true)); break;
                         case CancelStep c: queue.RemoveAll(q => q.Id == c.StepId); break;
                     }
 
@@ -331,7 +331,7 @@ public class ShellInputTests
                         switch (command)
                         {
                             case StartStep s: queue.Add((s.StepId, false)); break;
-                            case OpenDecision o: queue.Add((o.StepId, true)); break;
+                            case OpenGate o: queue.Add((o.StepId, true)); break;
                             case CancelStep c: queue.RemoveAll(q => q.Id == c.StepId); break;
                         }
 

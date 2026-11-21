@@ -27,7 +27,7 @@ public sealed partial class RunCore
         if (wait is { LibraryItem: { } item })
         {
             // An agent's library override (docs/05 section 6): approved, the shell carries it out with the approver as the actor.
-            State.Waits.Remove(wait);
+            RemoveWait(wait, WaitEnds.Answered);
             Trace(answer.Approve ? "library_override_approved" : "library_override_rejected", wait.StepId, $"{item} by {answer.Actor}");
             if (answer.Approve)
                 outbox.Add(new OverrideLibrary(wait.Id, item, wait.LibraryContent ?? "", answer.Actor, $"approved proposal of {wait.StepId}"));
@@ -36,7 +36,7 @@ public sealed partial class RunCore
 
         if (wait?.Patch is not { } patch)
             return ApplyResult.Refused($"no patch approval is open as {answer.WaitId}");
-        State.Waits.Remove(wait);
+        RemoveWait(wait, WaitEnds.Answered);
         if (!answer.Approve)
         {
             Trace("patch_rejected", wait.StepId, "a person rejected it");
@@ -163,8 +163,7 @@ public sealed partial class RunCore
             foreach (var reason in reasons)
                 d.Add(Checks.PatchProtected, reason, patch.Location, proposer?.Id);
             var waitStep = fromChild ? childStepId ?? "" : proposer?.Id ?? "";
-            var wait = new OpenWait(NewWaitId("patch_approval"), WaitKind.PatchApproval, waitStep, null, string.Join("; ", reasons), patch, fromChild);
-            State.Waits.Add(wait);
+            var wait = AddWait(new OpenWait(NewWaitId("patch_approval"), WaitKind.PatchApproval, waitStep, null, string.Join("; ", reasons), patch, fromChild));
             Trace("patch_pending", waitStep, string.Join("; ", reasons));
             outbox.Add(new RequestPatchApproval(wait.Id, patch));
             return new PatchResult(PatchStatus.Pending, d);

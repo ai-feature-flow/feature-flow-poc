@@ -101,19 +101,23 @@ public class ReplayTests
     }
 
     /// <summary>Histories whose recorded libraries carry action inputs check 31 now refuses at load; T5 re-records them and removes this.</summary>
-    static readonly IReadOnlySet<string> AwaitingRerecord = new HashSet<string>(StringComparer.Ordinal)
+    static readonly IReadOnlyDictionary<string, string> AwaitingRerecord = new Dictionary<string, string>(StringComparer.Ordinal)
     {
-        "budget_middle", "delivery_tracked", "epic_delivery", "family_parent", "project_session", "silent_parent_resumed", "sp1_parent", "sp1_parent_resumed",
-        "steering_line", "steering_rerun_branch",
+        ["budget_middle"] = RefusedAtLoad, ["delivery_tracked"] = RefusedAtLoad, ["epic_delivery"] = RefusedAtLoad, ["family_parent"] = RefusedAtLoad,
+        ["project_session"] = RefusedAtLoad, ["silent_parent_resumed"] = RefusedAtLoad, ["sp1_parent"] = RefusedAtLoad, ["sp1_parent_resumed"] = RefusedAtLoad,
+        ["steering_line"] = RefusedAtLoad, ["steering_rerun_branch"] = RefusedAtLoad,
+        ["decision_prompt"] = GateIds, ["ticket_clean_up"] = GateIds, ["ticket_delivery"] = GateIds,
     };
 
-    const string AwaitingRerecordReason = "A2: re-recorded in T5 (LOG A2-0g); refused at load by check 31 after T2";
+    const string RefusedAtLoad = "A2: re-recorded in T5 (LOG A2-0g); refused at load by check 31 after T2";
+
+    const string GateIds = "A2: re-recorded in T5 (LOG A2-0g); its answers name decision-N waits, which are gate-N after T4 (LOG A2-0d)";
 
     [Theory]
     [MemberData(nameof(Histories))]
     public async Task A_recorded_history_replays_against_the_current_workflow(string name)
     {
-        Assert.SkipWhen(AwaitingRerecord.Contains(name), AwaitingRerecordReason);
+        Assert.SkipWhen(AwaitingRerecord.ContainsKey(name), AwaitingRerecord.GetValueOrDefault(name) ?? "");
         var json = await File.ReadAllTextAsync(Path.Combine(HistoryFolder, name + ".json"), TestContext.Current.CancellationToken);
         // Replay checks determinism, not timing: debug mode turns off the 2 s deadlock detector, which fired on a
         // loaded CI runner (docs/build/m4-results.md follow-up 14).

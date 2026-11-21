@@ -56,7 +56,7 @@ public sealed class RunNotifierTests : IDisposable
 
     RunRecord Run(string id, string status, string? parent = null) => new(id, parent, "std:templates/ticket_delivery", status, "pat", ["acme/api"], false, now, null);
 
-    WaitRecord Wait(string run, string id, string kind = "decision", bool open = true, IReadOnlyList<string>? choices = null) =>
+    WaitRecord Wait(string run, string id, string kind = "gate", bool open = true, IReadOnlyList<string>? choices = null) =>
         open
             ? new WaitRecord(run, id, kind, "approve_spec", "ticket.spec_approval", "Approve the spec?", choices ?? ["approved", "rejected"], true, now)
             : new WaitRecord(run, id, "", "", "", "", [], false, now);
@@ -71,19 +71,19 @@ public sealed class RunNotifierTests : IDisposable
     [Fact]
     public async Task Each_event_goes_to_its_routed_channel_and_an_event_not_listed_or_not_routed_is_not_sent()
     {
-        await RecordAsync(Notifier(), new RecordBatch([Run("r1", "running")], [Wait("r1", "decision-1")]));
+        await RecordAsync(Notifier(), new RecordBatch([Run("r1", "running")], [Wait("r1", "gate-1")]));
         await RecordAsync(Notifier(), new RecordBatch([Run("r1", "completed")]));
 
         var decision = Assert.Single(chat.Messages("#decisions")).Decision!;
-        Assert.Equal(("r1", "decision-1", "decision", "ticket.spec_approval"), (decision.RunId, decision.WaitId, decision.Kind, decision.DecisionType));
+        Assert.Equal(("r1", "gate-1", "gate", "ticket.spec_approval"), (decision.RunId, decision.WaitId, decision.Kind, decision.DecisionType));
         Assert.Equal(["approved", "rejected"], decision.Choices);
         Assert.Contains("[completed] Run r1 completed", Assert.Single(chat.Messages("#runs")).Text);
 
         // Filtered: failed is routed but not listed in events. Unrouted: decision_needed listed with no channel.
         var filtered = new NotificationsConfig(Routed.Routing, [NotificationEvents.Completed]);
-        await RecordAsync(Notifier(filtered), new RecordBatch([Run("r2", "failed")], [Wait("r2", "decision-1")]));
+        await RecordAsync(Notifier(filtered), new RecordBatch([Run("r2", "failed")], [Wait("r2", "gate-1")]));
         var unrouted = new NotificationsConfig(new Dictionary<string, NotificationRoute>(), [NotificationEvents.DecisionNeeded]);
-        await RecordAsync(Notifier(unrouted), new RecordBatch(Waits: [Wait("r3", "decision-1")]));
+        await RecordAsync(Notifier(unrouted), new RecordBatch(Waits: [Wait("r3", "gate-1")]));
 
         Assert.DoesNotContain(AllMessages(), m => m.Text.Contains("r2", StringComparison.Ordinal) || m.Text.Contains("r3", StringComparison.Ordinal));
         Assert.Empty(await NotificationsOf("r2"));
@@ -109,16 +109,16 @@ public sealed class RunNotifierTests : IDisposable
     {
         // The child posts first in #decisions: its message starts the root's thread there.
         await RecordAsync(Notifier(), new RecordBatch([Run("root", "running"), Run("root.child.1", "running", "root")]));
-        await RecordAsync(Notifier(), new RecordBatch(Waits: [Wait("root.child.1", "decision-1")]));
-        await RecordAsync(Notifier(), new RecordBatch(Waits: [Wait("root", "decision-1")]));
-        await RecordAsync(Notifier(), new RecordBatch(Waits: [Wait("root.child.1", "decision-2")]));
+        await RecordAsync(Notifier(), new RecordBatch(Waits: [Wait("root.child.1", "gate-1")]));
+        await RecordAsync(Notifier(), new RecordBatch(Waits: [Wait("root", "gate-1")]));
+        await RecordAsync(Notifier(), new RecordBatch(Waits: [Wait("root.child.1", "gate-2")]));
         // The root posts first in #runs.
         await RecordAsync(Notifier(), new RecordBatch([Run("root", "completed")]));
         await RecordAsync(Notifier(), new RecordBatch([Run("root.child.1", "completed", "root")]));
 
         var top = Assert.Single(chat.Messages("#decisions"));
-        Assert.Equal(("root.child.1", "decision-1"), (top.Decision!.RunId, top.Decision.WaitId));
-        Assert.Equal(["root:decision-1", "root.child.1:decision-2"], chat.Messages("#decisions", top.Ref).Select(m => $"{m.Decision!.RunId}:{m.Decision.WaitId}"));
+        Assert.Equal(("root.child.1", "gate-1"), (top.Decision!.RunId, top.Decision.WaitId));
+        Assert.Equal(["root:gate-1", "root.child.1:gate-2"], chat.Messages("#decisions", top.Ref).Select(m => $"{m.Decision!.RunId}:{m.Decision.WaitId}"));
         var runs = Assert.Single(chat.Messages("#runs"));
         Assert.Contains("Run root completed", runs.Text);
         Assert.Contains("Run root.child.1 completed", Assert.Single(chat.Messages("#runs", runs.Ref)).Text);
@@ -127,17 +127,17 @@ public sealed class RunNotifierTests : IDisposable
     [Fact]
     public async Task A_closed_wait_is_resumed_naming_the_person_who_answered()
     {
-        await RecordAsync(Notifier(), new RecordBatch([Run("r1", "running")], [Wait("r1", "decision-1")]));
+        await RecordAsync(Notifier(), new RecordBatch([Run("r1", "running")], [Wait("r1", "gate-1")]));
 
         // The run records the closed wait with its own account of the answer; the API's record of it may come later.
-        await RecordAsync(Notifier(), new RecordBatch(Waits: [Wait("r1", "decision-1", open: false)],
-            Timeline: [new TimelineRecord("r1", 1, "answered", "decision-1", "approved by alice", now)]));
+        await RecordAsync(Notifier(), new RecordBatch(Waits: [Wait("r1", "gate-1", open: false)],
+            Timeline: [new TimelineRecord("r1", 1, "answered", "gate-1", "approved by alice", now)]));
         // A question closed by its timeout has no answer.
         await RecordAsync(Notifier(), new RecordBatch(Waits: [Wait("r1", "q-7", "question"), Wait("r1", "q-7", open: false)]));
 
         var thread = chat.Messages("#decisions").Single().Ref;
         var replies = chat.Messages("#decisions", thread);
-        Assert.Contains("decision decision-1 (ticket.spec_approval) at approve_spec was answered: approved by alice", replies[0].Text);
+        Assert.Contains("gate gate-1 (ticket.spec_approval) at approve_spec was answered: approved by alice", replies[0].Text);
         Assert.Contains("q-7", replies[^1].Text);
         Assert.Contains("closed without an answer from a person", replies[^1].Text);
     }
@@ -166,7 +166,7 @@ public sealed class RunNotifierTests : IDisposable
     [Fact]
     public async Task A_send_that_fails_throws_or_hangs_never_fails_the_record_activity_and_records_nothing()
     {
-        var batch = new RecordBatch([Run("r1", "failed")], [Wait("r1", "decision-1")]);
+        var batch = new RecordBatch([Run("r1", "failed")], [Wait("r1", "gate-1")]);
         var refused = new Broken(() => Task.FromResult(ProviderResult<MessageRef>.Failure("server_error", "down")));
         var throwing = new Broken(() => throw new InvalidOperationException("a bug in the provider"));
         var hanging = new Broken(async () =>
@@ -197,7 +197,7 @@ public sealed class RunNotifierTests : IDisposable
             await Task.Delay(TimeSpan.FromSeconds(30), Ct);
             return ProviderResult<MessageRef>.Success(new MessageRef("#decisions", "late"));
         });
-        var batch = new RecordBatch(Waits: Enumerable.Range(1, 8).Select(i => Wait("r1", $"decision-{i}")).ToList());
+        var batch = new RecordBatch(Waits: Enumerable.Range(1, 8).Select(i => Wait("r1", $"gate-{i}")).ToList());
         (await records.AppendAsync(batch, Ct)).Unwrap();
 
         var started = DateTime.UtcNow;

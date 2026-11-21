@@ -82,8 +82,8 @@ public class FindingsLoopTests
     /// </summary>
     [Theory]
     [InlineData("fixed", "intervention", "verify.fix.triage")]
-    [InlineData("escalated", "decision", "verify.fix.person_triage")]
-    [InlineData("declined", "decision", "verify.fix.person_triage")]
+    [InlineData("escalated", "gate", "verify.fix.person_triage")]
+    [InlineData("declined", "gate", "verify.fix.person_triage")]
     public async Task The_triager_alone_cannot_clear_a_demonstrated_blocking_finding(string state, string kind, string stopsAt)
     {
         var demonstrated = Blocking.Replace("basis: reasoned", "basis: demonstrated, proof: AppTests.Null fails", StringComparison.Ordinal);
@@ -226,7 +226,7 @@ public class FindingsLoopTests
 
         var id = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=T-1", "--param", "engine_can_merge=true", "--repo", "acme/api");
         var wait = await h.WaitForWaitAsync(id, TimeSpan.FromSeconds(240));
-        Assert.Equal(("decision", "verify.fix.person_triage"), ((await h.ShowAsync(id))["waits"]![0]!["kind"]!.ToString(), (await h.ShowAsync(id))["waits"]![0]!["stepId"]!.ToString()));
+        Assert.Equal(("gate", "verify.fix.person_triage"), ((await h.ShowAsync(id))["waits"]![0]!["kind"]!.ToString(), (await h.ShowAsync(id))["waits"]![0]!["stepId"]!.ToString()));
 
         var (refused, _, refusal) = h.Cli("answer", id, wait!, "triaged");
         Assert.NotEqual(0, refused);

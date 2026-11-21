@@ -769,7 +769,7 @@ public sealed class FindingsActionTests : IAsyncDisposable
         var args = new FeatureFlow.Interpreter.Wire.AnswerArgs(waitId, actor, "triaged", Artifacts: new Dictionary<string, string> { ["person_triage"] = artifactRef });
         var text = System.Text.Json.JsonSerializer.Serialize(args, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
         (await world.Records.AppendAsync(new RecordBatch(
-            Waits: [new WaitRecord(world.RunId, waitId, "decision", waitStep, "findings.triage", "", ["triaged", "escalate"], true, DateTimeOffset.UtcNow)],
+            Waits: [new WaitRecord(world.RunId, waitId, "gate", waitStep, "findings.triage", "", ["triaged", "escalate"], true, DateTimeOffset.UtcNow)],
             Answers: [new AnswerRecord(world.RunId, waitId, actor, text, result, DateTimeOffset.UtcNow),
                 .. refusedToo ? [new AnswerRecord(world.RunId, waitId, actor, text, "refused: not allowed", DateTimeOffset.UtcNow)] : Array.Empty<AnswerRecord>()]),
             Ct)).Unwrap();

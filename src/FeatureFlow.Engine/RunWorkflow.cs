@@ -35,22 +35,17 @@ public partial class RunWorkflow
     readonly List<ChildRun> children;
     readonly List<string> pendingChildEnds;
     readonly List<ParentPatchSignal> pendingParentPatches;
-    readonly List<AppliedAnswer> answered;
-    readonly List<string> recordedOpenWaits;
     readonly List<HandOver> handOvers;
     long timelineSequence;
     bool cancelledByParent;
     int activitiesStartedWhileDraining;
     int childEndsWhileDraining;
     int answersWhileDraining;
-    readonly List<OpenQuestion> questions;
-    readonly List<string> closedQuestions;
 
     // This run only.
     RunCore? core;
     LibrarySet? libraries;
     RunPolicy? policy;
-    readonly List<QuestionRecord> questionRecords = [];
     string lastRecordedStatus = "";
     bool draining;
     bool dirty;
@@ -69,17 +64,12 @@ public partial class RunWorkflow
         children = c?.Children.ToList() ?? [];
         pendingChildEnds = c?.PendingChildEnds.ToList() ?? [];
         pendingParentPatches = c?.PendingParentPatches.ToList() ?? [];
-        answered = c?.Answered.ToList() ?? [];
-        recordedOpenWaits = c?.RecordedOpenWaits.ToList() ?? [];
         handOvers = c?.HandOvers.ToList() ?? [];
         timelineSequence = c?.TimelineSequence ?? 0;
         cancelledByParent = c?.CancelledByParent ?? false;
         activitiesStartedWhileDraining = c?.ActivitiesStartedWhileDraining ?? 0;
         childEndsWhileDraining = c?.ChildEndsWhileDraining ?? 0;
         answersWhileDraining = c?.AnswersWhileDraining ?? 0;
-        questions = c?.Questions?.ToList() ?? [];
-        closedQuestions = c?.ClosedQuestions?.ToList() ?? [];
-        sessionWaits = [.. c?.SessionWaits ?? []];
         if (c is not null)
             lastRecordedStatus = "running";
     }
@@ -117,9 +107,9 @@ public partial class RunWorkflow
             libraries = RunActivities.Build(snapshot, new DiagnosticBag());
             core = RunCore.Resume(libraries, Template, input.Carried.Core,
                 policy.ToOptions());
-            // Questions carried over a hand-over get their timers again (docs/02 section 3: timers are re-created from state).
-            foreach (var open in questions.ToList())
-                _ = TimeOutQuestionAsync(open);
+            // Timers of waits carried over a hand-over are armed again (docs/02 section 3: timers are re-created from state).
+            foreach (var timer in core.Timers())
+                _ = TimerAsync(timer);
             // Children an earlier run started can no longer be awaited here; a watch notices one that ends without
             // signalling (M3 follow-up 10).
             if (children.Count > 0)
@@ -172,19 +162,16 @@ public partial class RunWorkflow
     }
 
     /// <summary>
-    /// An agent asked a question (docs/04 section 3.4). The shell, not the core, holds it: it is a wait on a running
-    /// step, which the step's activity serves, not a step of the plan. Idempotent by the question's id (LOG 59).
+    /// An agent asked a question (docs/04 section 3.4): the core holds it as a wait on the running step, idempotently by
+    /// the question's id (LOG 59), and asks for its timer.
     /// </summary>
     [WorkflowSignal(RunWorkflowNames.QuestionOpened)]
-    public Task QuestionOpenedAsync(QuestionSignal question)
+    public async Task QuestionOpenedAsync(QuestionSignal question)
     {
-        if (questions.Any(q => q.Question.QuestionId == question.QuestionId) || closedQuestions.Contains(question.QuestionId))
-            return Task.CompletedTask;
-        var open = new OpenQuestion(question, Workflow.UtcNow + TimeSpan.FromSeconds(question.TimeoutSeconds));
-        questions.Add(open);
-        _ = TimeOutQuestionAsync(open);
+        await Workflow.WaitConditionAsync(() => core is not null);
+        core!.Apply(new QuestionOpened(question.QuestionId, question.StepId, question.StepKey, question.Text, question.Options,
+            TimeSpan.FromSeconds(question.TimeoutSeconds), Workflow.UtcNow));
         dirty = true;
-        return Task.CompletedTask;
     }
 
     /// <summary>The agent worker could not reach a step's model (LOG 326): shown on the timeline, nothing else changes.</summary>
@@ -198,22 +185,15 @@ public partial class RunWorkflow
         return Task.CompletedTask;
     }
 
-    /// <summary>On timeout the agent is told no answer came, and carries on (docs/04 section 3.4; LOG 18).</summary>
-    async Task TimeOutQuestionAsync(OpenQuestion open)
+    /// <summary>A wait's timer (<see cref="ArmTimer"/>): when it fires, the core decides what it means, such as a question timing out.</summary>
+    async Task TimerAsync(ArmTimer timer)
     {
-        var wait = open.Deadline - Workflow.UtcNow;
+        var wait = timer.At - Workflow.UtcNow;
         if (wait > TimeSpan.Zero)
             await Workflow.DelayAsync(wait);
-        if (!questions.Remove(open))
-            return;
-        closedQuestions.Add(open.Question.QuestionId);
-        questionRecords.Add(QuestionRecordOf(open.Question, QuestionRecord.TimedOut, null));
-        core?.State.Trace.Add(new TraceEntry("question_timed_out", open.Question.StepId, open.Question.QuestionId));
+        core!.Apply(new WaitTimerFired(timer.WaitId, Workflow.UtcNow));
         dirty = true;
     }
-
-    QuestionRecord QuestionRecordOf(QuestionSignal q, string status, string? answer) =>
-        new(q.StepKey, input.RunId, q.QuestionId, q.Text, q.Options, status, answer, Workflow.UtcNow);
 
     [WorkflowSignal(RunWorkflowNames.ParentCancelled)]
     public Task ParentCancelledAsync()
@@ -224,49 +204,14 @@ public partial class RunWorkflow
     }
 
     /// <summary>
-    /// The update validator rejects only unknown and conflicting answers (LOG 58): an answer is accepted while
-    /// the run drains for continue-as-new. Before the core is ready it accepts, and the handler checks.
+    /// The update validator refuses what the core's routing refuses (LOG 58): an answer is accepted while the run drains
+    /// for continue-as-new. Before the core is ready it accepts, and the handler checks.
     /// </summary>
     [WorkflowUpdateValidator(nameof(AnswerAsync))]
     public void ValidateAnswer(AnswerArgs answer)
     {
-        if (Previous(answer) is { } previous)
-        {
-            if (previous.Key != Key(answer))
-                throw new ApplicationFailureException($"conflict: {answer.WaitId} was already answered ({previous.Key})");
-            return;
-        }
-
-        if (closedQuestions.Contains(answer.WaitId))
-            throw new ApplicationFailureException($"timed out: the agent has carried on without an answer to {answer.WaitId}");
-        if (questions.Any(q => q.Question.QuestionId == answer.WaitId))
-        {
-            if (string.IsNullOrWhiteSpace(answer.Outcome))
-                throw new ApplicationFailureException($"{answer.WaitId} is a question: answer with text");
-            return;
-        }
-
-        if (core is not null && SessionAnswerError(answer) is { } refused)
-            throw new ApplicationFailureException(refused);
-        if (core is not null && AnswerArtifactsMissing(answer) is { } missing)
-            throw new ApplicationFailureException(missing);
-        if (core is not null && core.Check(ToInput(answer)) is { } error)
-            throw new ApplicationFailureException(error);
-    }
-
-    /// <summary>
-    /// An answer to a decision gives the artifacts its outcome promises (a person's triage, LOG 248); a session's step is
-    /// submitted from its commit instead. Checked in the update's validator only, which replay does not run, so committed
-    /// histories of answers without artifacts still replay.
-    /// </summary>
-    string? AnswerArtifactsMissing(AnswerArgs a)
-    {
-        if (core!.State.Waits.FirstOrDefault(w => w.Id == a.WaitId) is not { Kind: WaitKind.Decision } wait || a.Outcome is null
-            || core.StepById(wait.StepId) is not { Decision.Session: null } step)
-            return null;
-        var missing = step.Produces.Where(p => p.Outcome == a.Outcome || (p.Outcome is null && step.Outcomes().Any(o => o.Name == a.Outcome && o.Class == OutcomeClass.Success)))
-            .Select(p => p.Name).Distinct().Where(n => a.Artifacts?.ContainsKey(n) != true).ToList();
-        return missing.Count == 0 ? null : $"{a.WaitId}: '{a.Outcome}' must give artifact {string.Join(", ", missing)}";
+        if (core?.Route(answer, submitting.Contains(answer.WaitId)) is Refused refused)
+            throw new ApplicationFailureException(refused.Error);
     }
 
     [WorkflowUpdate(RunWorkflowNames.Answer)]
@@ -275,39 +220,24 @@ public partial class RunWorkflow
         await Workflow.WaitConditionAsync(() => core is not null);
         if (draining)
             answersWhileDraining++;
-        if (Previous(answer) is { } previous)
-            return previous.Key == Key(answer)
-                ? new AnswerReply("duplicate")
-                : throw new ApplicationFailureException($"conflict: {answer.WaitId} was already answered ({previous.Key})");
-        if (questions.FirstOrDefault(q => q.Question.QuestionId == answer.WaitId) is { } question)
+        var route = core!.Route(answer, submitting.Contains(answer.WaitId));
+        switch (route)
         {
-            questions.Remove(question);
-            closedQuestions.Add(answer.WaitId);
-            questionRecords.Add(QuestionRecordOf(question.Question, QuestionRecord.Answered, answer.Outcome));
-            answered.Add(new AppliedAnswer(answer.WaitId, Key(answer)));
-            core!.State.Trace.Add(new TraceEntry("question_answered", question.Question.StepId, $"{answer.WaitId} by {answer.Actor}"));
-            dirty = true;
-            return new AnswerReply("recorded");
+            case Duplicate:
+                return new AnswerReply("duplicate");
+            case Refused refused:
+                throw new ApplicationFailureException(refused.Error);
+            case Submits submits:
+                return await SubmitAsync(answer, core.StepById(submits.StepId)!);
         }
 
-        if (closedQuestions.Contains(answer.WaitId))
-            throw new ApplicationFailureException($"timed out: the agent has carried on without an answer to {answer.WaitId}");
-        if (SessionAnswerError(answer) is { } refused)
-            throw new ApplicationFailureException(refused);
-        var session = SessionStep(answer.WaitId);
-        if (session is not null && answer.Revision is not null)
-            return await SubmitAsync(answer, session);
-        var answeredStep = answer.Artifacts is { Count: > 0 } && core!.State.Waits.FirstOrDefault(w => w.Id == answer.WaitId) is { Kind: WaitKind.Decision } decision
-            ? core.StepById(decision.StepId)
-            : null;
-        var result = core!.Apply(ToInput(answer));
+        var session = core.SessionStep(answer.WaitId);
+        var result = core.Answer(answer);
         if (!result.Accepted)
             throw new ApplicationFailureException(string.Join("; ", result.Errors));
-        answered.Add(new AppliedAnswer(answer.WaitId, Key(answer)));
         // A person's artifacts (a triage, LOG 248) are indexed as a session's submitted files are (W5 follow-up 2).
-        if (answeredStep is not null)
-            IndexArtifacts(answeredStep, answer.Artifacts);
-        core.State.Trace.Add(new TraceEntry("answered", answer.WaitId, $"{Key(answer)} by {answer.Actor}"));
+        if (route is Applies { Input: DecisionAnswered { Artifacts.Count: > 0 } decided })
+            IndexArtifacts(core.StepById(decided.StepId)!, decided.Artifacts);
         dirty = true;
         if (session is not null)
             await CloseSessionAsync(answer, session);
@@ -317,8 +247,8 @@ public partial class RunWorkflow
     [WorkflowUpdateValidator(nameof(AbortAsync))]
     public void ValidateAbort(AbortArgs abort)
     {
-        if (core is not null && core.Check(new RunAborted(abort.Reason)) is { } error)
-            throw new ApplicationFailureException(error);
+        if (core is { State.Status: not RunStatus.Running })
+            throw new ApplicationFailureException($"the run has ended ({core.State.Status.Name()})");
     }
 
     [WorkflowUpdate(RunWorkflowNames.Abort)]
@@ -347,47 +277,6 @@ public partial class RunWorkflow
         activitiesStartedWhileDraining,
         childEndsWhileDraining,
         answersWhileDraining);
-
-    AppliedAnswer? Previous(AnswerArgs answer) => answered.FirstOrDefault(a => a.WaitId == answer.WaitId);
-
-    static string Key(AnswerArgs a) =>
-        a.Outcome ?? string.Join(" ", new[] { a.Action, a.StepId, a.CleanUp ? "clean_up" : null, a.Attempts > 0 ? a.Attempts.ToString(System.Globalization.CultureInfo.InvariantCulture) : null, a.Status }.Where(x => x is not null));
-
-    /// <summary>The core input an answer stands for, by the kind of the wait it names.</summary>
-    RunInput ToInput(AnswerArgs a)
-    {
-        var wait = core?.State.Waits.FirstOrDefault(w => w.Id == a.WaitId)
-                   ?? throw new ApplicationFailureException($"no wait is open as {a.WaitId}");
-        switch (wait.Kind)
-        {
-            case WaitKind.Decision:
-                // An answer's artifacts (a person's triage, LOG 202) become the decision step's, as a completed step's do.
-                return new DecisionAnswered(wait.StepId, a.Outcome ?? throw new ApplicationFailureException($"{a.WaitId} is a decision: answer with an outcome"), a.Artifacts);
-            case WaitKind.PatchApproval:
-                return a.Action switch
-                {
-                    "approve" => new PatchAnswered(a.WaitId, true, a.Actor),
-                    "reject" => new PatchAnswered(a.WaitId, false, a.Actor),
-                    _ => throw new ApplicationFailureException($"{a.WaitId} is a patch approval: answer approve or reject"),
-                };
-            default:
-                // A breakpoint's continue may come as its outcome (ff run answer <run> <wait> continue).
-                var kind = (wait.Kind == WaitKind.Breakpoint ? a.Action ?? a.Outcome : a.Action) switch
-                {
-                    "retry" => RecoveryKind.Retry,
-                    "go_to" => RecoveryKind.GoTo,
-                    "replan" => RecoveryKind.Replan,
-                    "grant_attempts" => RecoveryKind.GrantAttempts,
-                    "end" => RecoveryKind.End,
-                    "continue" when wait.Kind == WaitKind.Breakpoint => RecoveryKind.Continue,
-                    _ => throw new ApplicationFailureException(wait.Kind == WaitKind.Breakpoint
-                        ? $"{a.WaitId} is a breakpoint: answer continue, retry, go_to, replan, grant_attempts or end"
-                        : $"{a.WaitId} is an intervention: answer retry, go_to, replan, grant_attempts or end"),
-                };
-                RunStatus? status = a.Status is null ? null : RunStatuses.Parse(a.Status);
-                return new InterventionAnswered(a.WaitId, new Recovery(kind, a.StepId, a.CleanUp, a.Attempts, status, a.BeyondHardCeiling));
-        }
-    }
 
     // ---- Carrying out the core's commands ----------------------------------------------------------
 
@@ -445,8 +334,11 @@ public partial class RunWorkflow
                 case CleanUp c:
                     await CleanUpAsync(c.StepId);
                     break;
-                case OpenDecision o when IsSession(o.StepId):
+                case OpenGate o when IsSession(o.StepId):
                     await OpenSessionAsync(o);
+                    break;
+                case ArmTimer t:
+                    _ = TimerAsync(t);
                     break;
                 case SendPatchToParent p when input.ParentWorkflowId is { } parent:
                     await SignalQuietlyAsync(parent, RunWorkflowNames.ParentPatch,
@@ -519,7 +411,7 @@ public partial class RunWorkflow
             return;
         }
 
-        var (call, scope, error) = CallOf(step, new StepIdentity(input.RunId, Template.Name, step.Id, s.Execution, $"{input.RunId}/{step.Id}/{s.Execution}"), inputs);
+        var (call, scope, error) = CallOf(step, new StepIdentity(input.RunId, Template.Name, step.Id, s.Execution, core.StepKey(step.Id, s.Execution)), inputs);
         if (error is not null)
         {
             core.Apply(new StepCannotAnswer(step.Id, error));
@@ -653,7 +545,7 @@ public partial class RunWorkflow
 
         return new ActionScope(input.Repositories, repository, core.WorkBranch(), input.ParentBranch, artifacts, pullRequests, policy?.EngineMayMerge ?? [],
             Consumed: consumed, TrackerIssue: input.TrackerIssue, Declared: declared, LockRef: LockRef,
-            Decision: core.ActionDecisionState(step.Id) is { } decided ? new StepDecision(core.ActionDecisionType, decided) : null);
+            Decision: core.ActionDecisionState(step.Id) is { } decided ? new StepDecision(core.ActionDecisionTypeOf(step.Id)!, decided) : null);
     }
 
     /// <summary>
@@ -821,8 +713,6 @@ public partial class RunWorkflow
                 stepTokens.Remove(step.Id);
                 interrupted.Remove(step.Id);
             }
-
-            CloseQuestionsOf(call.Step.IdempotencyKey);
         }
 
         if (!Current(step.Id, execution))
@@ -865,17 +755,6 @@ public partial class RunWorkflow
     /// and removed its sandbox before the run moves on.
     /// </summary>
     static ActivityCancellationType StepCancellation() => ActivityCancellationType.WaitCancellationCompleted;
-
-    /// <summary>A step that ended no longer waits on its questions: their waits close unanswered.</summary>
-    void CloseQuestionsOf(string stepKey)
-    {
-        foreach (var open in questions.Where(q => q.Question.StepKey == stepKey).ToList())
-        {
-            questions.Remove(open);
-            closedQuestions.Add(open.Question.QuestionId);
-            dirty = true;
-        }
-    }
 
     /// <summary>Whether a step's result still belongs to the run: the step is running, at the execution that started it.</summary>
     bool Current(string stepId, int execution) =>
@@ -1261,32 +1140,26 @@ public partial class RunWorkflow
         trackedThrough = 0;
 
         var waits = new List<WaitRecord>();
-        var open = core.State.Waits.Select(w => w.Id).ToList();
-        foreach (var wait in core.State.Waits.Where(w => !recordedOpenWaits.Contains(w.Id)))
-            waits.Add(WaitRecordOf(wait, true, now));
-        // Questions are the shell's, not the core's: recorded and closed below.
-        bool Question(string id) => questions.Any(q => q.Question.QuestionId == id) || closedQuestions.Contains(id);
-        foreach (var closed in recordedOpenWaits.Where(id => !open.Contains(id) && !Question(id)).ToList())
-            waits.Add(new WaitRecord(input.RunId, closed, "", "", "", "", [], false, now));
-        var keep = recordedOpenWaits.Where(Question).ToList();
-        recordedOpenWaits.Clear();
-        recordedOpenWaits.AddRange(open);
-        recordedOpenWaits.AddRange(keep);
-        var level = core.Plan.Document.Level ?? "run";
-        foreach (var q in questions.Where(q => !recordedOpenWaits.Contains(q.Question.QuestionId)))
+        var questions = new List<QuestionRecord>();
+        var changes = core.State.WaitChanges.ToList();
+        core.State.WaitChanges.Clear();
+        foreach (var (wait, opened) in changes)
         {
-            waits.Add(new WaitRecord(input.RunId, q.Question.QuestionId, "question", q.Question.StepId, $"{level}.question", q.Question.Text, q.Question.Options, true, now));
-            recordedOpenWaits.Add(q.Question.QuestionId);
+            // A wait that opened and closed since the last record was never shown to anyone: neither is recorded.
+            if (!changes.Any(c => c.Wait.Id == wait.Id && c.Open != opened))
+            {
+                var d = core.Describe(wait);
+                waits.Add(opened
+                    ? new WaitRecord(input.RunId, wait.Id, d.Kind, wait.StepId, d.Type, d.Reason, d.Choices, true, now)
+                    : new WaitRecord(input.RunId, wait.Id, "", "", "", "", [], false, now));
+            }
+
+            // The agent endpoint long-polls a question's record for its answer or timeout (docs/04 section 3.4).
+            if (!opened && wait.Kind == WaitKind.Question && core.State.Closed.LastOrDefault(c => c.Id == wait.Id) is { How: WaitEnds.Answered or WaitEnds.TimedOut } closed)
+                questions.Add(new QuestionRecord(wait.StepKey!, input.RunId, wait.Id, wait.Text ?? "", wait.Options ?? [],
+                    closed.How == WaitEnds.Answered ? QuestionRecord.Answered : QuestionRecord.TimedOut, closed.Key, now));
         }
 
-        foreach (var closed in recordedOpenWaits.Where(closedQuestions.Contains).ToList())
-        {
-            waits.Add(new WaitRecord(input.RunId, closed, "", "", "", "", [], false, now));
-            recordedOpenWaits.Remove(closed);
-        }
-
-        var answers = questionRecords.ToList();
-        questionRecords.Clear();
         var artifacts = artifactRecords.ToList();
         artifactRecords.Clear();
         var locks = lockRecords.ToList();
@@ -1295,9 +1168,9 @@ public partial class RunWorkflow
         var status = core.State.Status.Name();
         var runs = status == lastRecordedStatus ? [] : new List<RunRecord> { RunRecordOf(status, null, now) };
         lastRecordedStatus = status;
-        if (timeline.Count == 0 && waits.Count == 0 && runs.Count == 0 && answers.Count == 0 && artifacts.Count == 0 && locks.Count == 0)
+        if (timeline.Count == 0 && waits.Count == 0 && runs.Count == 0 && questions.Count == 0 && artifacts.Count == 0 && locks.Count == 0)
             return false;
-        var batch = new RecordBatch(runs, waits, timeline, Locks: locks.Count == 0 ? null : locks, Questions: answers.Count == 0 ? null : answers,
+        var batch = new RecordBatch(runs, waits, timeline, Locks: locks.Count == 0 ? null : locks, Questions: questions.Count == 0 ? null : questions,
             Artifacts: artifacts.Count == 0 ? null : artifacts);
         await Workflow.ExecuteActivityAsync((RunActivities a) => a.RecordAsync(batch), Light);
         return true;
@@ -1305,36 +1178,6 @@ public partial class RunWorkflow
 
     RunRecord RunRecordOf(string status, string? detail, DateTimeOffset now) =>
         new(input.RunId, input.ParentWorkflowId, input.Template, status, input.Requester, input.Repositories, input.DryRun, now, detail);
-
-    WaitRecord WaitRecordOf(OpenWait wait, bool open, DateTimeOffset now)
-    {
-        var level = core!.Plan.Document.Level ?? "run";
-        var step = core.StepById(wait.StepId);
-        var (type, choices) = wait.Kind switch
-        {
-            WaitKind.Decision when step?.Form == StepForm.Action => (core.ActionDecisionType, ActionDecisions.Choices.ToList()),
-            WaitKind.Decision => (step?.Decision?.Type ?? $"{level}.decision", step?.DeclaredOutcomes.Select(o => o.Name).ToList() ?? []),
-            WaitKind.PatchApproval => ($"{level}.patch_approval", new List<string> { "approve", "reject" }),
-            WaitKind.Breakpoint => ($"{level}.breakpoint", new List<string> { "continue", "retry", "go_to", "replan", "grant_attempts", "end" }),
-            _ => ($"{level}.escalation", new List<string> { "retry", "go_to", "replan", "grant_attempts", "end" }),
-        };
-        return new WaitRecord(input.RunId, wait.Id, wait.Kind.ToString().ToLowerInvariant(), wait.StepId, type, ReasonOf(wait, step), choices, open, now);
-    }
-
-    /// <summary>A decision's rendered prompt, else the core's reason, so Slack and the console show the question (M7 integration).</summary>
-    string ReasonOf(OpenWait wait, Step? step)
-    {
-        if (wait.Kind != WaitKind.Decision || step?.Decision?.Prompt is not { Unbound: false } prompt)
-            return wait.Reason;
-        try
-        {
-            return core!.RenderPrompt(step.Id, prompt.Text) is { Length: > 0 } text ? text : wait.Reason;
-        }
-        catch (EvaluationException)
-        {
-            return wait.Reason;
-        }
-    }
 
     async Task<string> RefuseAsync(IReadOnlyList<string> errors)
     {
@@ -1433,10 +1276,8 @@ public partial class RunWorkflow
     {
         handOvers.Add(new HandOver(handOvers.Count, Workflow.CurrentHistoryLength, inFlightActivities, children.Count, core!.State.Waits.Count, pendingChildEnds.Count,
             interruptedThisRun));
-        var carried = new ShellState(core.Snapshot(), children.ToList(), pendingChildEnds.ToList(), pendingParentPatches.ToList(), answered.ToList(),
-            recordedOpenWaits.ToList(), timelineSequence, handOvers.ToList(), cancelledByParent,
-            activitiesStartedWhileDraining, childEndsWhileDraining, answersWhileDraining, questions.ToList(), closedQuestions.ToList(),
-            sessionWaits.Count == 0 ? null : sessionWaits.Where(id => core.State.Waits.Any(w => w.Id == id)).ToList());
+        var carried = new ShellState(core.Snapshot(), children.ToList(), pendingChildEnds.ToList(), pendingParentPatches.ToList(),
+            timelineSequence, handOvers.ToList(), cancelledByParent, activitiesStartedWhileDraining, childEndsWhileDraining, answersWhileDraining);
         // The run's lock carries its library overrides (docs/08 section 5.2).
         var next = input with { Policy = policy, Carried = carried, LockRef = LockRef };
         return Workflow.CreateContinueAsNewException((RunWorkflow w) => w.RunAsync(next));

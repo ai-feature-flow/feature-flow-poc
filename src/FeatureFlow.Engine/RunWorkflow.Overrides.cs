@@ -141,7 +141,7 @@ public partial class RunWorkflow
             return ReadPatch(o.Change["patch"], out var d) is not { } patch ? "the patch does not read: " + string.Join("; ", d.Where(x => x.Blocks).Select(x => x.Message))
                 : patch.ResumeAt is not null ? "an amend changes the plan, not where the run is: omit resume_at, then answer a breakpoint or intervention with go_to (LOG 209)"
                 : null;
-        return core.Check(SteeringInput(o)!);
+        return core.SteeringCheck(SteeringInput(o)!);
     }
 
     /// <summary>The core input an override stands for; the actor is the authenticated one the API named (F8).</summary>

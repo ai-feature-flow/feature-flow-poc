@@ -281,8 +281,8 @@ public class SteeringRunTests
     {
         await using var h = await Harness.StartAsync("steerfan", "{}", libraries: Library);
         var id = h.Start("m7steer:templates/steer_fan", "--repo", Repo);
-        var a = await OpenWaitAsync(h, $"{id}.kid_a.1", "decision");
-        var b = await OpenWaitAsync(h, $"{id}.kid_b.1", "decision");
+        var a = await OpenWaitAsync(h, $"{id}.kid_a.1", "gate");
+        var b = await OpenWaitAsync(h, $"{id}.kid_b.1", "gate");
         Assert.Equal(0, h.Cli("answer", $"{id}.kid_a.1", a["waitId"]!.ToString(), "go").Exit);
         Assert.Equal(0, h.Cli("answer", $"{id}.kid_b.1", b["waitId"]!.ToString(), "stop").Exit);
 
@@ -290,7 +290,7 @@ public class SteeringRunTests
         Assert.Equal("fan", escalation["stepId"]!.ToString());
         var (recovered, output, error) = h.Cli("recover", id, escalation["waitId"]!.ToString(), "go_to", "kid_b");
         Assert.True(recovered == 0, output + error);
-        var again = await OpenWaitAsync(h, $"{id}.kid_b.2", "decision");
+        var again = await OpenWaitAsync(h, $"{id}.kid_b.2", "gate");
         Assert.Equal(0, h.Cli("answer", $"{id}.kid_b.2", again["waitId"]!.ToString(), "go").Exit);
 
         var (_, end, _) = h.Cli("wait", id, "--timeout", "60");

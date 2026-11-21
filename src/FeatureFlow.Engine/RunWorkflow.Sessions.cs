@@ -29,41 +29,29 @@ public partial class RunWorkflow
         RetryPolicy = new RetryPolicy { InitialInterval = TimeSpan.FromSeconds(1), MaximumInterval = TimeSpan.FromSeconds(10), MaximumAttempts = 5 },
     };
 
-    /// <summary>
-    /// The decision waits this run opened a session for; carried over a hand-over. Only these are sessions: a decision whose
-    /// plan declares <c>session</c> but that opened none (a dry run) is answered as any decision is.
-    /// </summary>
-    readonly HashSet<string> sessionWaits;
-
-    // This run only: a check id already started, and a submission being imported, by wait id.
+    // This run only: a check id already started, and a submission being imported, by wait id. A submission is an activity
+    // in flight, not state, so it stays here; the core is told of it when it routes an answer (RunCore.Route).
     readonly HashSet<string> sessionChecks = new(StringComparer.Ordinal);
     readonly HashSet<string> submitting = new(StringComparer.Ordinal);
 
     bool IsSession(string stepId) => core?.StepById(stepId)?.Decision?.Session is not null;
 
-    /// <summary>The decision step with a session that the open wait <paramref name="waitId"/> is, or null.</summary>
-    Step? SessionStep(string waitId) =>
-        sessionWaits.Contains(waitId) && core?.State.Waits.FirstOrDefault(w => w.Id == waitId && w.Kind == WaitKind.Decision) is { } wait
-                                      && core.StepById(wait.StepId) is { Decision.Session: not null } step
-            ? step
-            : null;
-
     // ---- Opening ---------------------------------------------------------------------------------------
 
-    async Task OpenSessionAsync(OpenDecision opened)
+    async Task OpenSessionAsync(OpenGate opened)
     {
         var step = core!.StepById(opened.StepId)!;
-        if (core.State.Waits.LastOrDefault(w => w.Kind == WaitKind.Decision && w.StepId == step.Id) is not { } wait)
+        if (!core.Apply(new GateSessionOpened(opened.WaitId)).Accepted)
             return;
-        sessionWaits.Add(wait.Id);
+        var wait = opened.WaitId;
         SessionOpen open;
         try
         {
-            open = SessionOpenOf(step, wait.Id, opened.Execution);
+            open = SessionOpenOf(step, wait, opened.Execution);
         }
         catch (EvaluationException e)
         {
-            core.State.Trace.Add(new TraceEntry("session_failed", step.Id, $"{SessionNames.Id(input.RunId, wait.Id)}: {e.Message}"));
+            core.State.Trace.Add(new TraceEntry("session_failed", step.Id, $"{SessionNames.Id(input.RunId, wait)}: {e.Message}"));
             return;
         }
 
@@ -103,7 +91,7 @@ public partial class RunWorkflow
         return new SessionOpen(input.RunId, step.Id, execution, SessionNames.Id(input.RunId, waitId), waitId, repository, SessionNames.Branch(input.RunId, waitId),
             core.WorkBranch(), input.ParentBranch, folder,
             spec.Files.Select(f => new SessionDocumentFile(f.Path, f.Name, f.Type?.Text, Seed(f.Name))).ToList(),
-            prompt, context, spec.ChecksFrom, SubmitOutcome(step), AbandonOutcome(step), input.DryRun);
+            prompt, context, spec.ChecksFrom, RunCore.SubmitOutcome(step), RunCore.AbandonOutcome(step), input.DryRun);
     }
 
     /// <summary>The session's repository (its own, else the run's first) and folder, evaluated now.</summary>
@@ -117,45 +105,7 @@ public partial class RunWorkflow
         return (repository, folder);
     }
 
-    /// <summary>The artifacts an outcome of a step promises: those declared for it, and those declared for every success.</summary>
-    static IReadOnlyList<string> Promised(Step step, string outcome) => step.Produces
-        .Where(p => p.Outcome == outcome || (p.Outcome is null && step.DeclaredOutcomes.Any(o => o.Name == outcome && o.Class == OutcomeClass.Success)))
-        .Select(p => p.Name).Distinct().ToList();
-
-    /// <summary>The outcome a submission takes: the one that promises the session's files (std: <c>submitted</c>), else the first success.</summary>
-    static string SubmitOutcome(Step step)
-    {
-        var files = step.Decision!.Session!.Files.Select(f => f.Name).ToList();
-        return step.DeclaredOutcomes.FirstOrDefault(o => Promised(step, o.Name) is { Count: > 0 } promised && files.All(promised.Contains))?.Name
-               ?? step.DeclaredOutcomes.FirstOrDefault(o => o.Class == OutcomeClass.Success)?.Name
-               ?? step.DeclaredOutcomes.First().Name;
-    }
-
-    /// <summary>The outcome abandoning takes: the first declared one that is not a success (std: <c>abandoned</c>).</summary>
-    static string? AbandonOutcome(Step step) => step.DeclaredOutcomes.FirstOrDefault(o => o.Class != OutcomeClass.Success)?.Name;
-
     // ---- Answers: a submission, or any other answer that closes the session -------------------------------
-
-    /// <summary>
-    /// Why an answer to a session's decision is refused, or null. Only a submission (an answer with the exact commit) takes
-    /// the outcome that promises the session's files, and its artifacts come from the run's own import, never the request.
-    /// </summary>
-    string? SessionAnswerError(AnswerArgs answer)
-    {
-        // Fails closed: a submission (an answer with a revision) is only ever for a session this run opened.
-        if (SessionStep(answer.WaitId) is not { } step)
-            return answer.Revision is null ? null : $"{answer.WaitId} is not an open session of run {input.RunId}: nothing to submit";
-        var session = SessionNames.Id(input.RunId, answer.WaitId);
-        if (submitting.Contains(answer.WaitId))
-            return $"session {session} is being submitted";
-        if (answer.Revision is null)
-            return answer.Outcome is { } outcome && Promised(step, outcome).Count > 0
-                ? $"{answer.WaitId} is session {session}: '{outcome}' takes the session's files, so submit it (ff session submit {session})"
-                : null;
-        if (answer.Artifacts is not null)
-            return $"session {session}: a submission's artifacts are imported by the run from the commit, not given";
-        return answer.Outcome == SubmitOutcome(step) ? null : $"session {session}: a submission takes '{SubmitOutcome(step)}', not '{answer.Outcome}'";
-    }
 
     async Task<AnswerReply> SubmitAsync(AnswerArgs answer, Step step)
     {
@@ -173,12 +123,10 @@ public partial class RunWorkflow
             submitting.Remove(answer.WaitId);
         }
 
-        var result = core!.Apply(new DecisionAnswered(step.Id, answer.Outcome!, artifacts));
+        var result = core!.Answer(answer, artifacts);
         if (!result.Accepted)
             throw new ApplicationFailureException(string.Join("; ", result.Errors));
-        answered.Add(new AppliedAnswer(answer.WaitId, Key(answer)));
         IndexArtifacts(step, artifacts);
-        core.State.Trace.Add(new TraceEntry("answered", answer.WaitId, $"{Key(answer)} by {answer.Actor}"));
         core.State.Trace.Add(new TraceEntry("session_submitted", step.Id,
             $"{SessionNames.Id(input.RunId, answer.WaitId)} at {answer.Revision} by {answer.Actor}: {string.Join(", ", artifacts.Keys.Order(StringComparer.Ordinal))}"));
         dirty = true;
@@ -291,7 +239,7 @@ public partial class RunWorkflow
             error = $"the run has ended ({core.State.Status.Name()})";
         else if (draining)
             error = SessionNames.HandingOver;
-        else if (SessionNames.WaitOf(check.SessionId, input.RunId) is not { } waitId || (session = SessionStep(waitId)) is null)
+        else if (SessionNames.WaitOf(check.SessionId, input.RunId) is not { } waitId || (session = core.SessionStep(waitId)) is null)
             error = $"session {check.SessionId} is not open in run {input.RunId}";
         else if (submitting.Contains(waitId))
             error = $"session {check.SessionId} is being submitted";

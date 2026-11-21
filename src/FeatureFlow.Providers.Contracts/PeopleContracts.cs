@@ -50,7 +50,7 @@ public abstract class NotificationsContract : ContractBase
     [Fact]
     public async Task A_decision_request_carries_its_prompt_choices_run_and_wait()
     {
-        var request = new DecisionRequest($"{unique}-run", $"{unique}-wait", "decision", "ticket.spec_approval", $"{unique} approve the spec?", ["approved", "rejected"]);
+        var request = new DecisionRequest($"{unique}-run", $"{unique}-wait", "gate", "ticket.spec_approval", $"{unique} approve the spec?", ["approved", "rejected"]);
 
         Ok(await Notifications.PostDecisionAsync(Channel, request, null, Ct));
 
@@ -62,7 +62,7 @@ public abstract class NotificationsContract : ContractBase
     public async Task An_unknown_channel_is_not_found_and_nothing_is_posted()
     {
         Refused(await Notifications.SendAsync(UnknownChannel, Message($"{unique} lost"), null, Ct), "not_found");
-        Refused(await Notifications.PostDecisionAsync(UnknownChannel, new DecisionRequest("r", "w", "decision", "t", $"{unique} lost", ["a"]), null, Ct), "not_found");
+        Refused(await Notifications.PostDecisionAsync(UnknownChannel, new DecisionRequest("r", "w", "gate", "t", $"{unique} lost", ["a"]), null, Ct), "not_found");
 
         Assert.DoesNotContain(await MessagesAsync(Channel, null), m => m.Contains($"{unique} lost", StringComparison.Ordinal));
     }

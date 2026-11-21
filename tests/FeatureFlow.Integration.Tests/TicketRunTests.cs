@@ -25,7 +25,7 @@ public class TicketRunTests
         // The spec approval is a decision; the organisation allows no auto-resolution, so a person answers.
         var (waitExit, waitOutput, _) = h.Cli("wait", id, "--for", "wait", "--timeout", "60");
         Assert.Equal(0, waitExit);
-        Assert.Contains("decision at approve_spec", waitOutput);
+        Assert.Contains("gate at approve_spec", waitOutput);
         var waitId = waitOutput.Split(' ')[1];
         var (showExit, show, _) = h.Cli("show", id);
         Assert.Equal(0, showExit);

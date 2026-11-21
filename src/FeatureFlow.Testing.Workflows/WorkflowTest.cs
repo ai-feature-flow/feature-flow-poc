@@ -208,7 +208,7 @@ public static class WorkflowTestReader
         return o;
     }
 
-    public static readonly IReadOnlyList<string> AnswerActions = ["continue", "retry", "go_to", "replan", "grant_attempts", "end"];
+    public static readonly IReadOnlyList<string> AnswerActions = Interpreter.Recoveries.For(Interpreter.WaitKind.Breakpoint);
 
     static TestAnswer? ReadAnswer(YNode node, DiagnosticBag d)
     {

@@ -98,7 +98,14 @@ public abstract record Command;
 
 public sealed record StartStep(string StepId, int Execution) : Command;
 
-public sealed record OpenDecision(string StepId, int Execution) : Command;
+/// <summary>A decision step's gate opened as <see cref="WaitId"/>: the shell opens its session, when the step declares one.</summary>
+public sealed record OpenGate(string StepId, int Execution, string WaitId) : Command;
+
+/// <summary>
+/// A wait needs a timer: at <see cref="At"/> the shell gives the core <see cref="WaitTimerFired"/>. Re-armed after a hand-over
+/// from <see cref="RunCore.Timers"/> (docs/02 section 3: timers are re-created from state).
+/// </summary>
+public sealed record ArmTimer(string WaitId, DateTimeOffset At) : Command;
 
 public sealed record RaiseIntervention(string WaitId, string StepId, string? Outcome, string Reason) : Command;
 
@@ -106,7 +113,7 @@ public sealed record RequestPatchApproval(string WaitId, PatchDocument Patch) : 
 
 public sealed record CancelStep(string StepId) : Command;
 
-/// <summary>A decision, intervention or patch approval that is no longer wanted: its join decided, or the run ended.</summary>
+/// <summary>A wait that is no longer wanted: its join decided, its step ended, or the run ended.</summary>
 public sealed record CloseWait(string WaitId, string StepId) : Command;
 
 public sealed record CleanUp(string StepId) : Command;
@@ -208,6 +215,49 @@ public sealed record Recovery(RecoveryKind Kind, string? StepId = null, bool Cle
 
 /// <summary>A person answered an intervention with a recovery action. The shell names the actor; the core does not need it.</summary>
 public sealed record InterventionAnswered(string WaitId, Recovery Action) : RunInput;
+
+/// <summary>
+/// The recovery actions by the name a person answers with (docs/01 section 7.2): one table for the answer, the wait's
+/// choices, the CLI and the re-drive runner.
+/// </summary>
+public static class Recoveries
+{
+    public static readonly IReadOnlyList<(string Name, RecoveryKind Kind)> All =
+    [
+        ("retry", RecoveryKind.Retry), ("go_to", RecoveryKind.GoTo), ("replan", RecoveryKind.Replan),
+        ("grant_attempts", RecoveryKind.GrantAttempts), ("end", RecoveryKind.End), ("continue", RecoveryKind.Continue),
+    ];
+
+    public static RecoveryKind? Parse(string? name) => All.FirstOrDefault(r => r.Name == name) is { Name: not null } r ? r.Kind : null;
+
+    public static string Name(RecoveryKind kind) => All.First(r => r.Kind == kind).Name;
+
+    /// <summary>The recoveries that answer a wait of <paramref name="kind"/>: at a breakpoint <c>continue</c> first, then the rest; at an intervention all but <c>continue</c>.</summary>
+    public static IReadOnlyList<string> For(WaitKind kind) => kind switch
+    {
+        WaitKind.Breakpoint => ["continue", .. All.Where(r => r.Kind != RecoveryKind.Continue).Select(r => r.Name)],
+        WaitKind.Intervention => All.Where(r => r.Kind != RecoveryKind.Continue).Select(r => r.Name).ToList(),
+        _ => [],
+    };
+}
+
+/// <summary>
+/// An agent asked a question (docs/04 section 3.4) while its step runs, as the execution <see cref="StepKey"/> names. The
+/// core holds it as a <see cref="WaitKind.Question"/> wait until it is answered, times out at <see cref="At"/> plus
+/// <see cref="Timeout"/>, or its step stops running. Idempotent by <see cref="QuestionId"/>, which the sandbox client
+/// assigned (LOG 59).
+/// </summary>
+public sealed record QuestionOpened(string QuestionId, string StepId, string StepKey, string Text, IReadOnlyList<string> Options, TimeSpan Timeout, DateTimeOffset At)
+    : RunInput;
+
+/// <summary>A person answered an agent's question with text. Questions never route the plan: the agent reads the answer.</summary>
+public sealed record QuestionAnswered(string WaitId, string Answer) : RunInput;
+
+/// <summary>A wait's timer, armed by <see cref="ArmTimer"/>, fired at <see cref="At"/>: a question past its deadline times out.</summary>
+public sealed record WaitTimerFired(string WaitId, DateTimeOffset At) : RunInput;
+
+/// <summary>The shell opened an interactive session on gate <see cref="WaitId"/> (docs/04 section 4.4): answers to it follow the session's rules.</summary>
+public sealed record GateSessionOpened(string WaitId) : RunInput;
 
 /// <summary>A person stopped the run (docs/05 section 5, <c>abort</c>): it ends <c>aborted</c>.</summary>
 public sealed record RunAborted(string Reason) : RunInput;
@@ -311,25 +361,75 @@ public sealed record TraceEntry(string Kind, string StepId, string? Detail = nul
     public override string ToString() => Detail is null ? $"{Kind} {StepId}" : $"{Kind} {StepId}: {Detail}";
 }
 
+/// <summary>
+/// The kinds of human wait, each answered through <see cref="RunCore.Route"/> (docs/04 section 4): a decision step's gate (and
+/// the gate an engine action raises, LOG 331), an agent's question, an intervention, a patch approval, a breakpoint.
+/// </summary>
 public enum WaitKind
 {
-    Decision,
+    Gate,
+    Question,
     Intervention,
     PatchApproval,
     Breakpoint,
 }
 
+public static class WaitKinds
+{
+    /// <summary>A wait kind as the record store writes it (<c>WaitRecord.Kind</c>): <c>gate</c>, <c>question</c>, <c>patchapproval</c>, ...</summary>
+    public static string Name(this WaitKind kind) => kind.ToString().ToLowerInvariant();
+}
+
 /// <summary>
-/// A durable wait for a person: an open decision, an intervention, a patch approval or a breakpoint. A breakpoint keeps
-/// its entry's <see cref="CleanUp"/>, for the step it paused; a patch approval of an agent's library override holds
-/// <see cref="LibraryItem"/> and <see cref="LibraryContent"/> instead of a patch.
+/// A durable wait for a person. A breakpoint keeps its entry's <see cref="CleanUp"/>, for the step it paused; a patch approval
+/// of an agent's library override holds <see cref="LibraryItem"/> and <see cref="LibraryContent"/> instead of a patch; a
+/// question holds the agent's <see cref="Text"/> and <see cref="Options"/>, the execution that asked it
+/// (<see cref="StepKey"/>) and when it times out (<see cref="Deadline"/>); a gate with an open interactive session is
+/// <see cref="Session"/>.
 /// </summary>
 public sealed record OpenWait(string Id, WaitKind Kind, string StepId, string? Outcome, string Reason, PatchDocument? Patch = null, bool FromChild = false)
 {
     public bool CleanUp { get; init; }
     public string? LibraryItem { get; init; }
     public string? LibraryContent { get; init; }
+    public string? StepKey { get; init; }
+    public string? Text { get; init; }
+    public IReadOnlyList<string>? Options { get; init; }
+    public DateTimeOffset? Deadline { get; init; }
+    public bool Session { get; init; }
 }
+
+/// <summary>How a wait closed (<see cref="ClosedWait.How"/>).</summary>
+public static class WaitEnds
+{
+    /// <summary>A person answered it through Feature Flow.</summary>
+    public const string Answered = "answered";
+
+    /// <summary>A question's deadline passed: the agent carries on without an answer (LOG 18).</summary>
+    public const string TimedOut = "timed_out";
+
+    /// <summary>Its step stopped running: a question, or an action's gate the step ended without an outcome.</summary>
+    public const string StepEnded = "step_ended";
+
+    /// <summary>An action's gate the step ended with an outcome first: a person acted on the code host (LOG 341).</summary>
+    public const string AnsweredOnCodeHost = "answered_on_code_host";
+
+    /// <summary>No longer wanted: its join decided, its step was skipped, or the run ended.</summary>
+    public const string Withdrawn = "withdrawn";
+}
+
+/// <summary>
+/// A wait that has closed, and how (<see cref="WaitEnds"/>). An answered one keeps the answer's <see cref="Key"/> (a decision's
+/// outcome, a question's text, a recovery with its arguments) and <see cref="Actor"/>, so a repeat of the same answer is a
+/// duplicate and a different one a conflict (LOG 58).
+/// </summary>
+public sealed record ClosedWait(string Id, WaitKind Kind, string StepId, string How, string? Key = null, string? Actor = null);
+
+/// <summary>A wait opened (<see cref="Open"/>) or closed since the shell last recorded; drained by the shell like the trace.</summary>
+public sealed record WaitChange(OpenWait Wait, bool Open);
+
+/// <summary>What the record store shows of a wait: its record kind, decision type, the choices that answer it, and the text to show.</summary>
+public sealed record WaitDescription(string Kind, string Type, IReadOnlyList<string> Choices, string Reason);
 
 /// <summary>A run-time override the run applied, by the id the API gave it, so a repeat is answered without a second effect.</summary>
 public sealed record AppliedOverride(string Id, string Key, string Result);

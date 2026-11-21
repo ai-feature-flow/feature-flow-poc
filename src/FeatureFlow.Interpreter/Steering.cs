@@ -15,6 +15,10 @@ public sealed partial class RunCore
     /// <summary>The library content types a mid-run override may replace: what steps resolve, never the plan's structure or a role (F10).</summary>
     public static readonly IReadOnlyList<string> OverridableTypes = ["tasks", "prompts", "skills", "artifact_types"];
 
+    /// <summary>Why a steering input would be refused now, or null: the overrides' update validator's check as well as the handler's.</summary>
+    public string? SteeringCheck(RunInput input) =>
+        State.Status != RunStatus.Running ? $"the run has ended ({State.Status.Name()})" : SteeringError(input);
+
     /// <summary>Why a steering input would be refused now, or null; the update validator's check as well as the handler's.</summary>
     string? SteeringError(RunInput input) => input switch
     {
@@ -54,14 +58,13 @@ public sealed partial class RunCore
                                               + (o.Entry.ProtectedSteps.Count > 0 ? $"; protected steps affected: {string.Join(", ", o.Entry.ProtectedSteps)}" : ""));
                 return ApplyResult.Ok;
             case LibraryOverrideProposed p:
-                var wait = new OpenWait(NewWaitId("patch_approval"), WaitKind.PatchApproval, p.StepId, null,
+                var wait = AddWait(new OpenWait(NewWaitId("patch_approval"), WaitKind.PatchApproval, p.StepId, null,
                     $"{p.StepId} proposes a library override of {p.Item}; a person decides (docs/05 section 6)"
                     + (ProtectedResolving(p.Item) is { Count: > 0 } guarded ? $"; protected steps resolve it: {string.Join(", ", guarded)}" : ""))
                 {
                     LibraryItem = p.Item,
                     LibraryContent = p.Content,
-                };
-                State.Waits.Add(wait);
+                });
                 Trace("library_override_proposed", p.StepId, $"{p.Item}, {wait.Id}");
                 return ApplyResult.Ok;
             default:
@@ -90,8 +93,7 @@ public sealed partial class RunCore
     {
         if (entry.PastBreakpoint || !State.Breakpoints.Contains(step.Id))
             return false;
-        var wait = new OpenWait(NewWaitId("breakpoint"), WaitKind.Breakpoint, step.Id, null, $"a person set a breakpoint before {step.Id}") { CleanUp = entry.CleanUp };
-        State.Waits.Add(wait);
+        var wait = AddWait(new OpenWait(NewWaitId("breakpoint"), WaitKind.Breakpoint, step.Id, null, $"a person set a breakpoint before {step.Id}") { CleanUp = entry.CleanUp });
         Trace("paused", step.Id, wait.Id);
         Progressed();
         return true;
@@ -125,11 +127,11 @@ public sealed partial class RunCore
     {
         Trace("skip_set", s.StepId, $"{s.Outcome} by {s.Actor}: {s.Reason}");
         State.Skips[s.StepId] = s.Outcome;
-        var waits = State.Waits.Where(w => w.StepId == s.StepId && w.Kind is WaitKind.Decision or WaitKind.Breakpoint or WaitKind.Intervention).ToList();
+        var waits = State.Waits.Where(w => w.StepId == s.StepId && w.Kind is WaitKind.Gate or WaitKind.Breakpoint or WaitKind.Intervention).ToList();
         if (waits.Count == 0)
             return;
         foreach (var wait in waits)
-            CloseWaitFor(wait);
+            CloseWaitFor(wait, WaitEnds.Withdrawn);
         State.Pending.Add(new Entry(s.StepId, false));
     }
 

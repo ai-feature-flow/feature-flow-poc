@@ -31,7 +31,7 @@ public abstract class RecordStoreContract : ContractBase
 
     WaitRecord Wait(string run, string wait, bool open, string reason = "Approve the spec?") =>
         open
-            ? new(Id(run), wait, "decision", "approve_spec", "ticket.spec_approval", reason, ["approved", "rejected"], true, At)
+            ? new(Id(run), wait, "gate", "approve_spec", "ticket.spec_approval", reason, ["approved", "rejected"], true, At)
             : new(Id(run), wait, "", "", "", "", [], false, At.AddMinutes(1));
 
     [Fact]
@@ -88,23 +88,23 @@ public abstract class RecordStoreContract : ContractBase
     [Fact]
     public async Task A_closing_wait_keeps_what_its_opening_record_said_and_open_narrows_to_open_waits()
     {
-        Ok(await Append(new RecordBatch(Waits: [Wait("run", "decision-1", true), Wait("run", "decision-2", true), Wait("other", "decision-1", true)])));
-        Ok(await Append(new RecordBatch(Waits: [Wait("run", "decision-1", false)])));
+        Ok(await Append(new RecordBatch(Waits: [Wait("run", "gate-1", true), Wait("run", "gate-2", true), Wait("other", "gate-1", true)])));
+        Ok(await Append(new RecordBatch(Waits: [Wait("run", "gate-1", false)])));
 
         var waits = await Query<WaitRecord>(Queries.Waits, ("run_id", Id("run")));
-        Assert.Equal(["decision-1", "decision-2"], waits.Select(w => w.WaitId));
-        Assert.Equal((false, "decision", "approve_spec", "ticket.spec_approval", "Approve the spec?"),
+        Assert.Equal(["gate-1", "gate-2"], waits.Select(w => w.WaitId));
+        Assert.Equal((false, "gate", "approve_spec", "ticket.spec_approval", "Approve the spec?"),
             (waits[0].Open, waits[0].Kind, waits[0].StepId, waits[0].DecisionType, waits[0].Reason));
         Assert.Equal(["approved", "rejected"], waits[0].Choices);
-        Assert.Equal("decision-2", Assert.Single(await Query<WaitRecord>(Queries.Waits, ("run_id", Id("run")), ("open", "true"))).WaitId);
+        Assert.Equal("gate-2", Assert.Single(await Query<WaitRecord>(Queries.Waits, ("run_id", Id("run")), ("open", "true"))).WaitId);
     }
 
     [Fact]
     public async Task A_wait_opened_again_takes_its_new_record()
     {
-        Ok(await Append(new RecordBatch(Waits: [Wait("run", "decision-1", true)])));
-        Ok(await Append(new RecordBatch(Waits: [Wait("run", "decision-1", false)])));
-        Ok(await Append(new RecordBatch(Waits: [Wait("run", "decision-1", true, "Approve the revised spec?")])));
+        Ok(await Append(new RecordBatch(Waits: [Wait("run", "gate-1", true)])));
+        Ok(await Append(new RecordBatch(Waits: [Wait("run", "gate-1", false)])));
+        Ok(await Append(new RecordBatch(Waits: [Wait("run", "gate-1", true, "Approve the revised spec?")])));
 
         var wait = Assert.Single(await Query<WaitRecord>(Queries.Waits, ("run_id", Id("run")), ("open", "true")));
         Assert.Equal("Approve the revised spec?", wait.Reason);
@@ -125,7 +125,7 @@ public abstract class RecordStoreContract : ContractBase
     [Fact]
     public async Task Answers_are_appended_in_order_and_a_lock_keeps_its_last_write()
     {
-        AnswerRecord A(string result) => new(Id("run"), "decision-1", "a-person", "approved", result, At);
+        AnswerRecord A(string result) => new(Id("run"), "gate-1", "a-person", "approved", result, At);
         Ok(await Append(new RecordBatch(Answers: [A("sent")], Locks: [new LockRecord(Id("run"), "sha256:1", At)])));
         Ok(await Append(new RecordBatch(Answers: [A("recorded"), new AnswerRecord(Id("other"), "w", "x", "y", "sent", At)],
             Locks: [new LockRecord(Id("run"), "sha256:2", At.AddMinutes(1))])));

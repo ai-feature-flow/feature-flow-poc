@@ -1,4 +1,5 @@
 using System.Globalization;
+using FeatureFlow.Interpreter;
 using FeatureFlow.Providers.Abstractions;
 
 namespace FeatureFlow.Engine.Actions;
@@ -330,7 +331,7 @@ static class FindingsActions
         var records = run.Provider<IRecordStoreProvider>("record_store");
         var p = new Dictionary<string, string> { ["run_id"] = run.Call.Step.RunId };
         var waits = ActionRun.Must(await records.QueryAsync<WaitRecord>(Queries.Waits, p, run.Ct), "read the run's waits")
-            .Where(w => w.Kind == "decision" && w.StepId == entry.StepId).Select(w => w.WaitId).ToHashSet(StringComparer.Ordinal);
+            .Where(w => w.Kind == WaitKind.Gate.Name() && w.StepId == entry.StepId).Select(w => w.WaitId).ToHashSet(StringComparer.Ordinal);
         if (waits.Count == 0)
             return entry.StepId;
         var answers = ActionRun.Must(await records.QueryAsync<AnswerRecord>(Queries.Answers, p, run.Ct), "read the run's answers");

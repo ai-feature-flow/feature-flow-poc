@@ -73,10 +73,10 @@ public static class Approval
     public static TeamConfig? TeamFor(OrganisationConfig organisation, IReadOnlyList<string> repositories) => TeamsFor(organisation, repositories).FirstOrDefault();
 
     /// <summary>
-    /// The rule for <paramref name="type"/>. <paramref name="kind"/> is the wait's kind, which picks the engine's default
-    /// where nothing matches: <c>approver</c> for a decision or an agent's question, <c>steerer</c> for the rest.
+    /// The rule for <paramref name="type"/>. <paramref name="kind"/> is the wait's record kind, which picks the engine's default
+    /// where nothing matches: <c>approver</c> for a gate or an agent's question, <c>steerer</c> for the rest.
     /// </summary>
-    public static EffectiveApproval For(string type, PolicyConfig policy, TeamConfig? team, IReadOnlyList<DecisionTypeItem> declared, string kind = "decision")
+    public static EffectiveApproval For(string type, PolicyConfig policy, TeamConfig? team, IReadOnlyList<DecisionTypeItem> declared, string kind = "gate")
     {
         var governing = Governing(type, policy, declared, kind);
         if (team?.Approval.FirstOrDefault(r => r.Matches(type)) is { } teamRule && teamRule.MinCount > governing.Rule.MinCount)
@@ -91,7 +91,7 @@ public static class Approval
         if (Declared(type, declared) is { } item)
             return new(item.DefaultApproval ?? new ApprovalRule(item.Name, item.DefaultRoles, 1, false, new Cap<bool>(false, false)),
                 $"library default_approval of {item.Name}");
-        return new(new ApprovalRule("*", [kind is "decision" or "question" ? PeopleRoles.Approver : PeopleRoles.Steerer], 1, false, new Cap<bool>(false, false)),
+        return new(new ApprovalRule("*", [kind is "gate" or "question" ? PeopleRoles.Approver : PeopleRoles.Steerer], 1, false, new Cap<bool>(false, false)),
             "the engine's default");
     }
 

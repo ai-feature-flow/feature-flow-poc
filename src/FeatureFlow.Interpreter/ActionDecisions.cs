@@ -33,19 +33,13 @@ public sealed partial class RunCore
 {
     /// <summary>The open decision a running action raised, if any.</summary>
     OpenWait? ActionDecisionOf(string stepId) =>
-        State.Waits.FirstOrDefault(w => w.Kind == WaitKind.Decision && w.StepId == stepId && StepById(stepId)?.Form == StepForm.Action);
+        State.Waits.FirstOrDefault(w => w.Kind == WaitKind.Gate && w.StepId == stepId && StepById(stepId)?.Form == StepForm.Action);
 
     /// <summary>Whether a wait is a decision an action raised: its step goes on running while it is open.</summary>
-    bool IsActionDecision(OpenWait wait) => wait.Kind == WaitKind.Decision && StepById(wait.StepId)?.Form == StepForm.Action;
+    bool IsActionDecision(OpenWait wait) => wait.Kind == WaitKind.Gate && StepById(wait.StepId)?.Form == StepForm.Action;
 
     /// <summary>The type of the decision a step's action raises, at the run's level: its descriptor's <see cref="ActionDescriptor.GateType"/>.</summary>
     public string? ActionDecisionTypeOf(string stepId) => StepById(stepId)?.Descriptor?.GateType(Plan.Document.Level ?? "run");
-
-    /// <summary>
-    /// The type of the decision the run's actions raise, for a reader that has no step: the one action that raises one
-    /// (<c>scm.merge</c>). The shell reads it until its wait records and action scopes move into the core (<c>docs/12</c> A2, F8).
-    /// </summary>
-    public string ActionDecisionType => ActionRegistry.Current.All.Single(d => d.RaisesGate is not null).GateType(Plan.Document.Level ?? "run")!;
 
     /// <summary>The state of the decision a step's execution raised: null when none, <c>open</c>, or the answer given.</summary>
     public string? ActionDecisionState(string stepId) =>
@@ -61,9 +55,8 @@ public sealed partial class RunCore
             return ApplyResult.Refused($"{r.StepId} is not a running action");
         if (ActionDecisionState(step.Id) is { } state)
             return ApplyResult.Refused($"{step.Id} already raised its decision in this execution ({state})");
-        var wait = new OpenWait(NewWaitId("decision"), WaitKind.Decision, step.Id, null, r.Reason);
-        State.Waits.Add(wait);
-        State.InFlight.Remove(step.Id);
+        var wait = AddWait(new OpenWait(NewWaitId("gate"), WaitKind.Gate, step.Id, null, r.Reason));
+        LeaveInFlight(step.Id);
         State.Pending.Insert(0, new Entry(step.Id, false, Resumes: true));
         Trace("decision_opened", step.Id, $"{wait.Id} ({ActionDecisionTypeOf(step.Id)}): {r.Reason}");
         Progressed();
@@ -84,9 +77,9 @@ public sealed partial class RunCore
     {
         if (ActionAnswerError(a) is { } error)
             return ApplyResult.Refused(error);
-        State.Waits.Remove(wait);
+        RemoveWait(wait, WaitEnds.Answered);
         var record = Record(step.Id);
-        var running = State.InFlight.Remove(step.Id);
+        var running = LeaveInFlight(step.Id);
         State.Pending.RemoveAll(e => e.StepId == step.Id && e.Resumes);
         if (running)
             outbox.Add(new CancelStep(step.Id));
@@ -113,6 +106,6 @@ public sealed partial class RunCore
             return;
         if (outcome is not null)
             Trace("answered", wait.Id, $"on the code host, not through Feature Flow: {stepId} ended {outcome} before {ActionDecisionTypeOf(stepId)} was answered");
-        CloseWaitFor(wait);
+        CloseWaitFor(wait, outcome is null ? WaitEnds.StepEnded : WaitEnds.AnsweredOnCodeHost);
     }
 }
