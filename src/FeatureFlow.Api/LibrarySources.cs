@@ -15,8 +15,12 @@ public static class LibrarySources
 {
     static readonly TimeSpan CloneTimeout = TimeSpan.FromMinutes(2);
 
-    /// <summary>The library the source names, or null and why not.</summary>
-    public static async Task<(Library.Library? Library, string? Problem)> OpenAsync(LibrarySourceConfig source, string organisationLocation, CancellationToken ct)
+    /// <summary>
+    /// The library the source names, or null and why not. A <c>git</c> source is cloned into a new folder under
+    /// <paramref name="tempRoot"/>, the system's temporary folder unless given.
+    /// </summary>
+    public static async Task<(Library.Library? Library, string? Problem)> OpenAsync(LibrarySourceConfig source, string organisationLocation, CancellationToken ct,
+        string? tempRoot = null)
     {
         if (source.Source != "git")
         {
@@ -24,7 +28,7 @@ public static class LibrarySources
             return Directory.Exists(path) ? Open(path, $"the library at {path}") : (null, $"the directory {path} does not exist");
         }
 
-        var checkout = Path.Combine(Path.GetTempPath(), $"ff-library-{Guid.NewGuid():N}");
+        var checkout = Path.Combine(tempRoot ?? Path.GetTempPath(), $"ff-library-{Guid.NewGuid():N}");
         try
         {
             var where = source.Ref is null ? source.Repository : $"{source.Repository} at {source.Ref}";

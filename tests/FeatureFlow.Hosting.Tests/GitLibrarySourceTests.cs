@@ -63,17 +63,19 @@ public sealed class GitLibrarySourceTests : IDisposable
     [Fact]
     public async Task Nothing_is_left_behind_and_a_missing_ref_or_repository_says_which()
     {
-        var temp = Directory.GetDirectories(Path.GetTempPath(), "ff-library-*").ToHashSet();
+        // Its own temporary folder, so another process's clones in the shared one cannot be mistaken for this test's.
+        var temp = Path.Combine(folder, "temp");
+        Directory.CreateDirectory(temp);
 
-        var missingRef = await LibrarySources.OpenAsync(Source("no-such-branch"), Organisation, Ct);
-        var missingRepository = await LibrarySources.OpenAsync(new LibrarySourceConfig("acme", "git", "", Path.Combine(folder, "nothing.git"), "main"), Organisation, Ct);
-        Assert.NotNull((await LibrarySources.OpenAsync(Source("main"), Organisation, Ct)).Library);
+        var missingRef = await LibrarySources.OpenAsync(Source("no-such-branch"), Organisation, Ct, temp);
+        var missingRepository = await LibrarySources.OpenAsync(new LibrarySourceConfig("acme", "git", "", Path.Combine(folder, "nothing.git"), "main"), Organisation, Ct, temp);
+        Assert.NotNull((await LibrarySources.OpenAsync(Source("main"), Organisation, Ct, temp)).Library);
 
         Assert.Null(missingRef.Library);
         Assert.Contains($"{bare} at no-such-branch does not clone", missingRef.Problem);
         Assert.Null(missingRepository.Library);
         Assert.Contains("nothing.git at main does not clone", missingRepository.Problem);
-        Assert.Subset(temp, Directory.GetDirectories(Path.GetTempPath(), "ff-library-*").ToHashSet());
+        Assert.Empty(Directory.EnumerateFileSystemEntries(temp));
     }
 
     [Fact]
