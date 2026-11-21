@@ -269,7 +269,7 @@ public static class Actions
         },
         new("repo.inspect", [S("inspected")], null, [Str("repository")], ["vcs", "code_host"]),
         new("artifact.compose", [S("composed")], null, [Str("name"), List("members")], []) { MakesSet = true },
-        new("artifact.import", [S("imported")], null, [Str("repository"), Str("folder"), List("files"), Str("commit"), Str("record")], ["vcs"]),
+        new("artifact.import", [S("imported")], null, [Str("repository"), Str("folder"), List("files"), Str("commit")], ["code_host"]),
         new("artifact.publish", [S("published"), B("conflict")], null,
             [Str("repository"), Str("folder"), List("files"), Str("previous"), Str("title"), Str("body")], ["vcs", "code_host.pull_request"])
         {
