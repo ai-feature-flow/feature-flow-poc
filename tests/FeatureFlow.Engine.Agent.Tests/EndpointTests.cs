@@ -298,6 +298,14 @@ public sealed class EndpointTests : IDisposable
             Assert.Null(ModelProxy.Within(upstream, away));
     }
 
+    /// <summary>LOG 104, 496: each auth's allow-list is exactly its documented set, so an added entry fails here.</summary>
+    [Theory]
+    [InlineData("api_key", new[] { "POST v1/messages", "POST v1/messages/count_tokens" })]
+    [InlineData("oauth", new[] { "POST v1/messages", "POST v1/messages/count_tokens" })]
+    [InlineData("github", new[] { "GET meta", "GET models", "POST chat/completions", "POST v1/messages", "POST v1/messages/count_tokens" })]
+    public void Each_auth_forwards_exactly_its_documented_requests(string auth, string[] requests) =>
+        Assert.Equal(requests.Order(StringComparer.Ordinal), ModelProxy.Allowed(auth).Order(StringComparer.Ordinal));
+
     /// <summary>
     /// LOG 496: with <c>auth: github</c> the proxy also forwards what Copilot CLI asks the Copilot API for: its model
     /// catalogue and <c>chat/completions</c>, whose OpenAI-shaped usage is recorded like the Messages API's, and the
