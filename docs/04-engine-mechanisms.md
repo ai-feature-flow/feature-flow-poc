@@ -116,7 +116,8 @@ reports.
 
 ### 3.1 Lifecycle of an attempt
 
-1. **Prepare.** Create or re-attach the sandbox from the repository manifest;
+1. **Prepare.** Create or re-attach the sandbox from the repository manifest's
+   `environment.image` (LOG A5a-1);
    check out the work branch (read-only if the role has no write access); run
    the manifest's `setup` commands; stage consumed artifacts, skills and
    library resources read-only, with a manifest listing them. A consumed

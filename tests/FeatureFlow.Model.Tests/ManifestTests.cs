@@ -6,7 +6,7 @@ public class ManifestTests
     const string Full = """
         api_version: feature-flow/v1
         kind: repository
-        environment: { from: .devcontainer/devcontainer.json, os: linux }
+        environment: { image: "registry.example/acme/api-sandbox:3" }
         setup: { commands: ["git config core.hooksPath .githooks", "dotnet tool restore"] }
         after_changes: { commands: ["dotnet format"] }
         test_tiers:
@@ -40,7 +40,8 @@ public class ManifestTests
         var (m, d) = Read(Full);
 
         Assert.Empty(d);
-        Assert.Equal(["git config core.hooksPath .githooks", "dotnet tool restore"], m!.Setup);
+        Assert.Equal("registry.example/acme/api-sandbox:3", m!.Image);
+        Assert.Equal(["git config core.hooksPath .githooks", "dotnet tool restore"], m.Setup);
         Assert.Equal(["dotnet format"], m.AfterChanges);
         Assert.Equal(["unit", "integration"], m.Tiers.Select(t => t.Name));
         var it = m.Tiers[1];
@@ -61,6 +62,10 @@ public class ManifestTests
     [InlineData("test_tiers: [{ name: a, targets: [cloud], command: x }]", "'cloud' is not sandbox, local or ci")]
     [InlineData("test_tiers: [{ name: a, command: x }, { name: a, command: y }]", "declared twice")]
     [InlineData("static_analysis: { analyser: sarif }", "needs command and sarif_path")]
+    [InlineData("environment: { from: .devcontainer/devcontainer.json }", "unknown key 'from' in environment")]
+    [InlineData("environment: { image: x, os: linux }", "unknown key 'os' in environment")]
+    [InlineData("environment: { image: x, docker: true }", "unknown key 'docker' in environment")]
+    [InlineData("environment: {}", "environment needs 'image'")]
     public void A_manifest_that_is_wrong_is_refused_not_ignored(string change, string message)
     {
         var text = change.StartsWith("kind:", StringComparison.Ordinal)

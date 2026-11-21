@@ -21,22 +21,30 @@ namespace FeatureFlow.Integration.Tests;
 public static class AgentWorld
 {
     public const string Image = "feature-flow-sandbox:m8";
+    static readonly Lazy<Task> BaseImage = new(BuildImageAsync);
     static readonly Lazy<Task<string>> Client = new(PrepareAsync);
 
     public static Task<string> SandboxClientAsync() => Client.Value;
 
-    static async Task<string> PrepareAsync()
+    /// <summary>The sandbox image, built from the repository's Dockerfile if it is not present.</summary>
+    public static Task ImageAsync() => BaseImage.Value;
+
+    static async Task BuildImageAsync()
     {
-        var root = Repository.Root;
         var (exit, _) = await RunAsync("docker", ["image", "inspect", Image]);
         if (exit != 0)
         {
-            var dockerfile = IOPath.Combine(root, "src", "Providers", "FeatureFlow.Providers.Docker", "sandbox.Dockerfile");
+            var dockerfile = IOPath.Combine(Repository.Root, "src", "Providers", "FeatureFlow.Providers.Docker", "sandbox.Dockerfile");
             var (built, output) = await RunAsync("docker", ["build", "-q", "-t", Image, "-f", dockerfile, IOPath.GetDirectoryName(dockerfile)!]);
             if (built != 0)
                 throw new InvalidOperationException("the sandbox image did not build:\n" + output);
         }
+    }
 
+    static async Task<string> PrepareAsync()
+    {
+        var root = Repository.Root;
+        await ImageAsync();
         var (_, arch) = await RunAsync("docker", ["info", "--format", "{{.Architecture}}"]);
         var rid = arch.Trim() is "aarch64" or "arm64" ? "linux-arm64" : "linux-x64";
         var folder = IOPath.Combine(IOPath.GetTempPath(), $"ff-sandbox-client-{rid}-{Guid.NewGuid():N}"[..48]);

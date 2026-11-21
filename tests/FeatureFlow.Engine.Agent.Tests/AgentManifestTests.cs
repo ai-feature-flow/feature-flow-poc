@@ -111,6 +111,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
         var outcome = await RunAsync(new Dictionary<string, string> { ["src/A.cs"] = "class A{int x;}", ["src/B.cs"] = "class B{}" });
 
         Assert.Equal(StepOutcome.Reported, outcome.Kind);
+        Assert.Null(sandbox.Specs.Single().Image);
         var commands = sandbox.Commands.Select(c => c.Command).Where(c => c.Contains("dotnet", StringComparison.Ordinal)).ToList();
         Assert.Equal(["sh -c dotnet tool restore", "sh -c dotnet format"], commands);
         Assert.All(sandbox.Commands.Where(c => c.Command.Contains("dotnet", StringComparison.Ordinal)), c => Assert.Equal(AgentPaths.Default.Checkout, c.Directory));
@@ -119,6 +120,17 @@ public sealed class AgentManifestTests : IAsyncDisposable
         Assert.Equal("class B{}", forge.ReadFile(repo, Work!, "src/B.cs"));
         Assert.Equal(2L, JsonSerializer.Deserialize<long>(outcome.Report!.Outputs["commits"]));
         Assert.Contains(outcome.Events!, e => e.StartsWith("committed after_changes", StringComparison.Ordinal));
+    }
+
+    /// <summary>F4: the agent's sandbox is made from the manifest's <c>environment.image</c>; with none, the sandbox's own (LOG A5a-1).</summary>
+    [Fact]
+    public async Task The_agents_sandbox_is_made_from_the_manifests_environment_image()
+    {
+        forge.Commit(repo, "refs/heads/main", new Dictionary<string, string?> { ["feature-flow.yaml"] = Manifest + "\nenvironment: { image: acme/api-sandbox:1 }\n" });
+
+        Assert.Equal(StepOutcome.Reported, (await RunAsync(new Dictionary<string, string>())).Kind);
+
+        Assert.Equal("acme/api-sandbox:1", sandbox.Specs.Single().Image);
     }
 
     [Fact]

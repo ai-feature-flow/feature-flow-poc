@@ -28,7 +28,7 @@ with a change, and by what), or **superseded** (replaced).
 |---|---|---|---|
 | Q1 | .NET, not Python | Kept | `docs/02` |
 | Q2 | Tiers that need Docker are delegated to CI by default; a privileged container only in the solo profile | Kept | `docs/07` section 6 |
-| Q3 | One repository file, `feature-flow.yaml`, which may reference a `devcontainer.json` | Changed by LOG 44 and 46: FF's test manifest keys merged in; `branches` and `merge` sections removed | `docs/07` section 4 |
+| Q3 | One repository file, `feature-flow.yaml`, which may reference a `devcontainer.json` | Changed by LOG 44 and 46: FF's test manifest keys merged in; `branches` and `merge` sections removed. Changed by LOG A5a-3: no `devcontainer.json` reference; the environment is an image | `docs/07` section 4 |
 | Q4 | Artifact store plus record store; Git is not a store | Kept | `docs/02` section 5 |
 | Q5 | People's decisions arrive as Temporal Updates through the API, which authorises them | Kept | `docs/02` section 7 |
 | Q6 | Plan as data in workflow state, continue-as-new at a measured threshold | Changed by LOG 31: new safe-point rule | `docs/02` section 3 |

@@ -496,6 +496,7 @@ refuse a caller who is not a viewer of the run, LOG 327). Dropped by the product
 | 25 | A decline from a triage with `post_declines: false` is still posted when the pull request later opens | M7 17 |
 | 26 | A plan's `artifact.import` stops for a person on a type error; type-check the artifacts on a person's decision answer | M7 19, 20 |
 | 27 | Still open from M6: `verification_satisfaction` and the trace checks; the work-item budget's overshoot; `EpicRunTests`' per-child durations; a live hand-over during a CI wait; the Copilot findings source unseen; M5 follow-ups 3 and 7; watch activities per run; parent counts lag a child's; `wait.condition` on a tracker issue | M7 21 |
+| 28 | The sandbox is not built from the repository manifest's `environment`: the half of M4 follow-up 1 that M5 left open (its `setup` and `after_changes` half closed with LOG 135), dropped from this list by mistake and restored in A5. **Closed by A5 (F4)**: sandboxes are made from `environment.image` when the installation's `allowed_images` allows it (LOG A5a-1 to A5a-4). Still open: no run exercises the Kubernetes sandbox with a repository image (its contract's refusal test runs only in the `Cluster` category); a repository image that cannot be pulled is retried as an infrastructure failure rather than stopping for a person | M4 1 |
 
 ## Coordinator decisions
 
