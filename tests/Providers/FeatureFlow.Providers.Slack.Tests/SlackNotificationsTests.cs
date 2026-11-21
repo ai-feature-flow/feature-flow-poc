@@ -91,6 +91,21 @@ public sealed class SlackNotificationsTests
         Assert.All(answers, a => Assert.Equal(("run-1", "gate-3"), (a["r"]!.GetValue<string>(), a["w"]!.GetValue<string>())));
         Assert.All(buttons.Where(b => b!["value"] is not null), b => Assert.StartsWith(SlackNotifications.AnswerAction, b!["action_id"]!.GetValue<string>()));
         Assert.Equal("https://ff.example/console/#/runs/run-1", buttons.Single(b => b!["url"] is not null)!["url"]!.GetValue<string>());
+        Assert.StartsWith("*A person is needed (gate)", fake.Messages[0].Text);
+    }
+
+    [Fact]
+    public async Task A_reminder_is_the_decision_again_titled_with_its_number()
+    {
+        var fake = new FakeSlack();
+        var slack = Slack.Provider(fake);
+
+        var posted = await slack.PostDecisionAsync("#ff", new DecisionRequest("run-1", "gate-3", "gate", "ticket.spec_approval", "Approve the spec?",
+            ["approved", "rejected"], "approve_spec", Reminder: 2), null, Ct);
+
+        Assert.True(posted.Ok, posted.Error?.Message);
+        Assert.StartsWith("*Reminder 2: a person is needed (gate): ticket.spec_approval* in run run-1, wait gate-3", Assert.Single(fake.Messages).Text);
+        Assert.Contains(fake.Messages[0].Blocks!.OfType<JsonObject>(), b => b["type"]!.GetValue<string>() == "actions");
     }
 
     [Fact]

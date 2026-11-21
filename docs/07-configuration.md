@@ -174,7 +174,9 @@ notifications:
     stalled:         { channel: "#ff-ops" }
     completed:       { channel: "#ff-runs" }
     failed:          { channel: "#ff-runs" }
-  events: [decision_needed, failed, completed]
+    reminder:        { channel: "#ff-decisions" }
+  events: [decision_needed, reminder, failed, completed]
+  reminder_interval: 4h                     # no default: absent, no reminders
 
 teams:
   payments:
@@ -192,6 +194,7 @@ teams:
 | `policy.budgets.max_work_items.ceiling` | F11's ceiling, always locked: a root template asking more does not start; a root that sets no budget gets the ceiling (LOG 187) |
 | `roles`, `teams` | People roles to groups. A run is in the scope of the team whose `repositories` match its repositories; a run spanning two teams is refused. In its scope a team's groups add holders to a role, and its approval rules may only raise `min_count` (LOG 204, 217) |
 | `role_mapping` | Each library agent role's `agent_runtime` (an instance of the installation's) and `model` (default: that instance's own). `default` serves roles with no entry; with neither, the installation's default runtime runs the step with its own model. Fixed for a run when it starts (LOG 267, 295) |
+| `notifications` | `routing` gives each event of `docs/06` section 3.10 a `channel`; `events` lists those sent at all. `reminder_interval`: how often an open wait is reminded (`docs/04` section 4), a duration of at least `1m`, refused at startup otherwise, naming the key. No default: absent, no wait is reminded (LOG A3-0n). Fixed for a run when it starts |
 
 `library_overrides`, `library_inputs`, `policy.toolsets` (whose only key was `allowed`) and `timeouts` are not in
 version 1 and are refused at startup, whatever they hold (LOG 268 to 270, 273). So are the installation's

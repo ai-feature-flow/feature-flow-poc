@@ -123,12 +123,14 @@ public sealed class Harness : IAsyncDisposable
     /// installation's <c>temporal</c> map, after a comma; <paramref name="secrets"/> further secrets beside the API token;
     /// <paramref name="librarySources"/> further entries of the organisation's <c>libraries</c>, as YAML maps;
     /// <paramref name="agentWorker"/> false starts no agent worker; <paramref name="temporalAddress"/> another Temporal than
-    /// <see cref="TemporalAddress"/>.
+    /// <see cref="TemporalAddress"/>; <paramref name="configure"/> changes the configuration as loaded, for a value the
+    /// files refuse on purpose (a reminder interval of seconds).
     /// </para>
     public static async Task<Harness> StartAsync(string name, string script = "{}", bool autoApprove = false, string[]? without = null,
         string[]? libraries = null, string providers = "", string policy = "", string installation = "", IEnumerable<FeatureFlow.Providers.Abstractions.ProviderFactory>? factories = null,
         string? agentRuntime = null, string organisation = "", bool fromChat = false, string temporal = "", IReadOnlyDictionary<string, string>? secrets = null,
-        string[]? librarySources = null, bool agentWorker = true, string? temporalAddress = null, string[]? noEdits = null)
+        string[]? librarySources = null, bool agentWorker = true, string? temporalAddress = null, string[]? noEdits = null,
+        Func<FeatureFlowConfiguration, FeatureFlowConfiguration>? configure = null)
     {
         var folder = IOPath.Combine(IOPath.GetTempPath(), $"ff-it-{name}-{Guid.NewGuid():N}"[..40]);
         Directory.CreateDirectory(folder);
@@ -187,6 +189,8 @@ public sealed class Harness : IAsyncDisposable
             {{organisation}}
             """);
         var configuration = FeatureFlowConfiguration.Load(IOPath.Combine(folder, "installation.yaml"), IOPath.Combine(folder, "organisation.yaml"));
+        if (configure is not null)
+            configuration = configure(configuration);
         harness.Host = await FeatureFlowHost.StartAsync(configuration, LocalProviders.Factories.Concat(StdValidatorProviders.Factories).Concat(factories ?? []),
             true, agentWorker, "http://127.0.0.1:0");
         // The sandboxes the host composed: tests pass with a TRX, analysis is clean.

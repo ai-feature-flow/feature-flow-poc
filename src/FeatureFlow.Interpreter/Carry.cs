@@ -55,6 +55,7 @@ public sealed record CarriedWait(string Id, string Kind, string StepId, string? 
     public IReadOnlyList<string>? Options { get; init; }
     public DateTimeOffset? Deadline { get; init; }
     public bool Session { get; init; }
+    public int Reminders { get; init; }
 }
 
 public sealed record CarriedEntry(string StepId, bool CleanUp, bool Resumes = false)
@@ -143,6 +144,7 @@ public sealed partial class RunCore
                 Options = w.Options?.ToList(),
                 Deadline = w.Deadline,
                 Session = w.Session,
+                Reminders = w.Reminders,
             }).ToList(),
             s.RunAttempts,
             s.RunCeilingGranted,
@@ -210,6 +212,7 @@ public sealed partial class RunCore
             Options = w.Options,
             Deadline = w.Deadline,
             Session = w.Session,
+            Reminders = w.Reminders,
         }));
         s.RunAttempts = carried.RunAttempts;
         s.RunCeilingGranted = carried.RunCeilingGranted;

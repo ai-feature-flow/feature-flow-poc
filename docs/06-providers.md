@@ -468,9 +468,13 @@ interface INotificationsProvider : IProvider {
 ```
 
 - Slack first; no chat-specific types outside its provider.
-- Events, by name: `decision_needed` (with its kind), `resumed`, `completed`,
-  `failed`, `stalled`, `stuck`. Configuration routes and filters by these names.
-  One thread per root run; children reply in it (from FF).
+- Events, by name: `decision_needed` (with its kind), `reminder`, `resumed`,
+  `completed`, `failed`, `stalled`, `stuck`. Configuration routes and filters by
+  these names. One thread per root run; children reply in it (from FF).
+- `reminder` is the decision request again for a wait still open after each
+  `notifications.reminder_interval` (`docs/04` section 4), with
+  `DecisionRequest.Reminder` its number (0 for the first request); Slack titles
+  it "Reminder <n>". Sent once per wait and number.
 - `PostDecisionAsync` does not wait for the answer. A chat answer reaches the
   inbound gateway and becomes an API decision call.
 - De-duplicated per run, step, attempt and event, so a restart does not repeat a

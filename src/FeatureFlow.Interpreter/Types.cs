@@ -94,6 +94,9 @@ public sealed record RunOptions
 
     public Model.Cap<bool>? RequireTested { get; init; }
 
+    /// <summary>The organisation's <c>notifications.reminder_interval</c> (docs/07 section 3): how often an open wait is reminded. Null: never (LOG A3-0n).</summary>
+    public TimeSpan? ReminderInterval { get; init; }
+
     /// <summary>The caps one step is checked against (check 22), as at run start.</summary>
     public Validation.StepCaps StepCaps => new(StepCeiling, RequireChecks, RequireTested);
 }
@@ -128,6 +131,13 @@ public sealed record OpenGate(string StepId, int Execution, string WaitId, bool 
 /// from <see cref="RunCore.Timers"/> (docs/02 section 3: timers are re-created from state).
 /// </summary>
 public sealed record ArmTimer(string WaitId, DateTimeOffset At) : Command;
+
+/// <summary>
+/// An open wait's next reminder (docs/04 section 4): after <see cref="After"/> the shell gives the core <see cref="ReminderDue"/>
+/// with <see cref="Number"/>. Relative, since the core keeps no clock; re-armed after a hand-over from <see cref="RunCore.Timers"/>,
+/// up to one interval late (LOG A3-0o).
+/// </summary>
+public sealed record ArmReminder(string WaitId, int Number, TimeSpan After) : Command;
 
 public sealed record RaiseIntervention(string WaitId, string StepId, string? Outcome, string Reason) : Command;
 
@@ -280,6 +290,12 @@ public sealed record QuestionAnswered(string WaitId, string Answer) : RunInput;
 /// <summary>A wait's timer, armed by <see cref="ArmTimer"/>, fired at <see cref="At"/>: a question past its deadline times out.</summary>
 public sealed record WaitTimerFired(string WaitId, DateTimeOffset At) : RunInput;
 
+/// <summary>
+/// A wait's reminder <see cref="Number"/>, armed by <see cref="ArmReminder"/>, is due: if the wait is still open and this is its
+/// next reminder, the core traces <c>reminded</c> and arms the one after; a repeated, late or closed wait's does nothing.
+/// </summary>
+public sealed record ReminderDue(string WaitId, int Number) : RunInput;
+
 /// <summary>The shell opened an interactive session on gate <see cref="WaitId"/> (docs/04 section 4.4): answers to it follow the session's rules.</summary>
 public sealed record GateSessionOpened(string WaitId) : RunInput;
 
@@ -418,7 +434,7 @@ public static class WaitKinds
 /// of an agent's library override holds <see cref="LibraryItem"/> and <see cref="LibraryContent"/> instead of a patch; a
 /// question holds the agent's text as its <see cref="Reason"/>, its <see cref="Options"/>, the execution that asked it
 /// (<see cref="StepKey"/>) and when it times out (<see cref="Deadline"/>); a gate with an open interactive session is
-/// <see cref="Session"/>.
+/// <see cref="Session"/>. <see cref="Reminders"/> counts the reminders sent while it is open.
 /// </summary>
 public sealed record OpenWait(string Id, WaitKind Kind, string StepId, string? Outcome, string Reason, PatchDocument? Patch = null, bool FromChild = false)
 {
@@ -429,6 +445,7 @@ public sealed record OpenWait(string Id, WaitKind Kind, string StepId, string? O
     public IReadOnlyList<string>? Options { get; init; }
     public DateTimeOffset? Deadline { get; init; }
     public bool Session { get; init; }
+    public int Reminders { get; init; }
 }
 
 /// <summary>How a wait closed (<see cref="ClosedWait.How"/>).</summary>

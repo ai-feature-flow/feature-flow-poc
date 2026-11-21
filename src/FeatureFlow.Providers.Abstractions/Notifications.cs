@@ -18,10 +18,13 @@ public static class NotificationEvents
     public const string Stalled = "stalled";
     public const string Stuck = "stuck";
 
-    /// <summary>A wait is still open after the organisation's reminder interval. Not yet in <see cref="All"/>: nothing sends it until reminders are built (docs/12 A3).</summary>
+    /// <summary>
+    /// An open wait is still open after the organisation's <c>notifications.reminder_interval</c>: the decision request again,
+    /// with <see cref="DecisionRequest.Reminder"/>, once per interval until the wait closes.
+    /// </summary>
     public const string Reminder = "reminder";
 
-    public static readonly IReadOnlyList<string> All = [DecisionNeeded, Resumed, Completed, Failed, Stalled, Stuck];
+    public static readonly IReadOnlyList<string> All = [DecisionNeeded, Reminder, Resumed, Completed, Failed, Stalled, Stuck];
 
     /// <summary>
     /// The de-duplication key (docs/06 section 3.10): one message per run, step, attempt and event, so a restart does not
@@ -39,6 +42,7 @@ public sealed record Notification(string Event, string RunId, string Title, stri
 /// <c>intervention</c>, <c>patch_approval</c>, <c>question</c>, a breakpoint or an action request), its decision type, the
 /// prompt and the choices. An interactive provider offers the choices as buttons; the answer reaches the inbound gateway,
 /// which makes it an API decision call as the mapped person, where approval rules (<c>from_chat</c>) are checked.
+/// <see cref="Reminder"/> is 0 for the first request and the reminder's number for a reminder of it.
 /// </summary>
 public sealed record DecisionRequest(
     string RunId,
@@ -48,7 +52,8 @@ public sealed record DecisionRequest(
     string Prompt,
     IReadOnlyList<string> Choices,
     string? StepId = null,
-    string? Link = null);
+    string? Link = null,
+    int Reminder = 0);
 
 /// <summary>
 /// The notifications provider (docs/06 section 3.10). Slack first; no chat-specific type outside its provider. A post

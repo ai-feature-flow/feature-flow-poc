@@ -240,6 +240,32 @@ public sealed class RunNotifierTests : IDisposable
     List<PostedMessage> AllMessages() =>
         new[] { "#decisions", "#runs" }.SelectMany(c => chat.Messages(c).SelectMany(m => chat.Messages(c, m.Ref).Prepend(m))).ToList();
 
+    [Fact]
+    public async Task A_reminder_the_run_traced_is_sent_once_while_its_wait_is_open()
+    {
+        var config = new NotificationsConfig(new Dictionary<string, NotificationRoute>
+        {
+            [NotificationEvents.DecisionNeeded] = new("#decisions"),
+            [NotificationEvents.Reminder] = new("#decisions"),
+        }, [NotificationEvents.DecisionNeeded, NotificationEvents.Reminder]);
+        TimelineRecord Reminded(string wait, int n) => new("r1", n, "reminded", wait, n.ToString(System.Globalization.CultureInfo.InvariantCulture), now);
+        await RecordAsync(Notifier(config), new RecordBatch([Run("r1", "running")], [Wait("r1", "gate-1"), Wait("r1", "gate-2")]));
+
+        var batch = new RecordBatch(Timeline: [Reminded("gate-1", 1)]);
+        await RecordAsync(Notifier(config), batch);
+        // The same batch again (a retried record activity, or a restarted worker) sends nothing more.
+        await Notifier(config).NotifyAsync(batch, Ct);
+        // A wait closed in the same batch, or before, is not reminded.
+        await RecordAsync(Notifier(config), new RecordBatch(Waits: [Wait("r1", "gate-2", open: false)], Timeline: [Reminded("gate-2", 1)]));
+        await RecordAsync(Notifier(config), new RecordBatch(Timeline: [Reminded("gate-2", 2)]));
+
+        var reminders = AllMessages().Where(m => m.Decision is { Reminder: > 0 }).Select(m => m.Decision!).ToList();
+        var reminder = Assert.Single(reminders);
+        Assert.Equal(("gate-1", 1, "ticket.spec_approval"), (reminder.WaitId, reminder.Reminder, reminder.DecisionType));
+        Assert.Equal(["approved", "rejected"], reminder.Choices);
+        Assert.Single(await NotificationsOf("r1"), n => n.Event == NotificationEvents.Reminder);
+    }
+
     async Task<IReadOnlyList<NotificationRecord>> NotificationsOf(string run) =>
         (await records.QueryAsync<NotificationRecord>(Queries.Notifications, new Dictionary<string, string> { ["run_id"] = run }, Ct)).Unwrap();
 }

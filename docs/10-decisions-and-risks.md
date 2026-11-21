@@ -121,7 +121,7 @@ loops), were approved the same day. They stay in
 | R5 | Sandbox does not match CI | Tiers declared per repository; CI delegation | Mitigated (Spike 2) |
 | R6 | Credential exposure | Floors F2, F5, F6; per-step tokens; the sandbox's own home (DR19) | Partly mitigated: F6 `proxy` mode evidenced for Claude Code (SP5); F5, Copilot CLI and `per_run_key` not yet |
 | R7 | An agent weakens protected steps | F3 in the patch path | Mitigated (Spike 1) |
-| R8 | Runs stall on people | Unbounded durable waits with reminders; stuck-run notifications | Mitigated in mechanism |
+| R8 | Runs stall on people | Unbounded durable waits, every kind reminded once per the organisation's `notifications.reminder_interval` while open (`docs/04` section 4; none unless set, LOG A3-0n); stuck-run notifications | Mitigated in mechanism; reminders tested on a dev server |
 | R9 | An organisation's distribution drifts from upstream | Configuration, providers and library overrides; contract and library tests | Residual |
 | R10 | Concurrent work in one repository conflicts | Catch up, re-test if changed, merge refused if the parent moved; race allowance (LOG 61) | Mitigated for the lock-free form (SP4) |
 | R11 | A long agent step restarts from scratch | Sandbox outlives the worker; durable resume state; hidden reference | Mitigated, with the Spike 3 gap fixed in design |

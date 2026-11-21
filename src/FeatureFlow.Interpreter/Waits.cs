@@ -203,6 +203,9 @@ public sealed partial class RunCore
     {
         State.Waits.Add(wait);
         State.WaitChanges.Add(new WaitChange(wait, true));
+        // Every kind of wait is reminded, questions included (LOG A3-0p).
+        if (Options.ReminderInterval is { } interval)
+            outbox.Add(new ArmReminder(wait.Id, 1, interval));
         return wait;
     }
 
@@ -235,9 +238,30 @@ public sealed partial class RunCore
     /// <summary>The identity of a step's execution, by which its activity is idempotent and its agent's questions are held.</summary>
     public string StepKey(string stepId, int execution) => $"{Run.Id}/{stepId}/{execution}";
 
-    /// <summary>The timers the open waits need, for a shell starting again after a hand-over.</summary>
-    public IReadOnlyList<ArmTimer> Timers() =>
-        State.Waits.Where(w => w.Deadline is not null).Select(w => new ArmTimer(w.Id, w.Deadline!.Value)).ToList();
+    /// <summary>
+    /// The timers and reminders the open waits need, for a shell starting again after a hand-over: each deadline, and each
+    /// wait's next reminder a whole interval from now, so it may come up to one interval late (LOG A3-0o).
+    /// </summary>
+    public IReadOnlyList<Command> Timers() =>
+    [
+        .. State.Waits.Where(w => w.Deadline is not null).Select(w => new ArmTimer(w.Id, w.Deadline!.Value)),
+        .. Options.ReminderInterval is { } interval ? State.Waits.Select(w => new ArmReminder(w.Id, w.Reminders + 1, interval)) : [],
+    ];
+
+    /// <summary>
+    /// A wait's reminder is due (docs/04 section 4): only the next reminder of a wait still open counts, so a repeated or late
+    /// one, or a closed wait's, does nothing. It is traced <c>reminded</c> on the wait for the notifier, and the next is armed.
+    /// </summary>
+    ApplyResult Remind(ReminderDue r)
+    {
+        var at = State.Waits.FindIndex(w => w.Id == r.WaitId);
+        if (at < 0 || State.Waits[at].Reminders != r.Number - 1 || Options.ReminderInterval is not { } interval)
+            return ApplyResult.Ok;
+        State.Waits[at] = State.Waits[at] with { Reminders = r.Number };
+        Trace("reminded", r.WaitId, r.Number.ToString(CultureInfo.InvariantCulture));
+        outbox.Add(new ArmReminder(r.WaitId, r.Number + 1, interval));
+        return ApplyResult.Ok;
+    }
 
     // ---- Questions (docs/04 section 3.4; LOG 93 as amended by LOG 364) --------------------------------
 

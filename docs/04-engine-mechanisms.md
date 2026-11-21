@@ -280,11 +280,11 @@ One mechanism for every human wait (`docs/01` section 7).
 
 | Element | Detail |
 |---|---|
-| Form | A durable wait in the workflow. No timeout, except a question's (section 3.4); reminders on an open wait are A3 (`docs/12`) |
+| Form | A durable wait in the workflow. No timeout, except a question's (section 3.4). Reminded once per `notifications.reminder_interval` while open (below) |
 | Inputs | `type`, `prompt`, `with`, optional `auto`, optional `session` (`docs/03` section 2.3) |
 | Outcomes | Declared |
 | Idempotency | By wait id. A recorded answer is never asked again: the same answer again succeeds and changes nothing, a different one is refused as a conflict |
-| Audit | Opened and answered, with the authenticated actor, the choice and the person's reason (section 4.1); reminders on an open wait are A3 (`docs/12`) |
+| Audit | Opened, reminded and answered, with the authenticated actor, the choice and the person's reason (section 4.1) |
 
 Every wait is held in the interpreter's core, and every answer goes through one
 routing function (LOG 364). The update's validator asks it whether an answer
@@ -312,6 +312,21 @@ consumes, with its key and its reference as the gate opened, the exact revisions
 the person ratifies (LOG A3-0g); wait ids are `gate-N`,
 `intervention-N`, `breakpoint-N` and `patch_approval-N`, and a question's is the
 id its agent's client gave it (LOG 360).
+
+Every open wait, of every kind, questions included, is **reminded** while it is
+open when the organisation sets `notifications.reminder_interval` (`docs/07`
+section 3; no default, LOG A3-0n, A3-0p). The interval is fixed for a run when
+it starts, in its policy. As a wait opens the core asks the shell to arm
+reminder 1 after one interval; the shell only sleeps and gives the core the
+reminder's number back. If the wait is still open and that is its next reminder,
+the core counts it on the wait, writes `reminded` with the number on the
+timeline (on the wait's id), and arms the next; otherwise, a repeated or late
+reminder or a closed wait's, it does nothing. The core keeps no clock, so the
+timer is relative: after a hand-over each open wait's next reminder is armed a
+whole interval from the new run's start, up to one interval late (LOG A3-0o).
+The notifier sends each `reminded` entry whose wait is still open as the
+`reminder` event, the decision request again with its number, once per wait and
+number (`docs/06` section 3.10).
 
 ### 4.1 Answering
 
