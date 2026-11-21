@@ -227,5 +227,88 @@ public sealed class CopilotStepTests
         Assert.Contains("settings.json", home);
     }
 
+    /// <summary>
+    /// <c>auth: github</c> end to end (LOG 496): the real Copilot CLI runs natively in the sandbox, its Copilot API is the
+    /// engine's model proxy (<c>COPILOT_API_URL</c>), and the proxy forwards to a stand-in for the Copilot API over https.
+    /// Every request the stand-in saw carried the proxy's key as <c>Authorization: Bearer</c>, none the step's token,
+    /// and only the catalogue and model paths reached it (the CLI's <c>GET /agents/tasks/…</c> stays at the endpoint).
+    /// The key is in none of the agent's environment, its processes', its homes (<c>COPILOT_HOME</c> included), the
+    /// transcript or the work branch's commits.
+    /// </summary>
+    [Fact]
+    public async Task With_auth_github_the_cli_reaches_the_copilot_api_only_through_the_proxy_which_alone_holds_the_key()
+    {
+        var key = "github_pat_test_" + Guid.NewGuid().ToString("N");
+        await using var model = new ScriptedModel(key, https: true);
+        model.Then(_ => Bash("cd /ff/work && echo a > a.txt && git add -A && git commit -q -m 'Add a'"))
+            .Then(_ => Bash(Dump))
+            .Then(_ => ScriptedModel.ToolUse("engine-report", AgentScripts.Report()))
+            .ThenText("Done.");
+        await model.StartAsync();
+        await using var h = await AgentHarness.StartAsync("copilot-github", model, new AgentHarnessOptions { Runtime = "copilot_cli", Auth = "github" });
+        var runId = h.Start("T-55", "Add a.txt and record your sandbox in notes.md.");
+        var status = await h.WaitForEndAsync(runId, RunTimeout);
+        var timeline = await h.TimelineAsync(runId);
+        Assert.True(status == "completed", $"the run ended {status}:\n{timeline}");
+
+        var notes = await h.ArtifactTextAsync(AgentScripts.Reference(timeline, "artifact notes: "));
+        var transcript = await h.ArtifactTextAsync(AgentScripts.Reference(timeline, "transcript of session 1: "));
+        var branch = await h.RemoteRevisionAsync("refs/heads/ff/ticket/T-55");
+        Assert.Equal("Add a", await h.RemoteMessageAsync(branch!));
+        var commits = await AgentHarness.GitAsync(h.Folder, "--git-dir", h.Remote, "log", "-p", "--format=%H%n%B", branch!);
+        // The CLI ran natively: the step's token as its GitHub token, the proxy as its Copilot API, no custom provider.
+        Assert.Contains("--- end", notes);
+        var environment = "\n" + notes[..notes.IndexOf("--- homes", StringComparison.Ordinal)];
+        Assert.Contains("COPILOT_GITHUB_TOKEN=ghs_ffs1.", environment);
+        Assert.Contains("COPILOT_API_URL=http://host.docker.internal:", environment);
+        Assert.DoesNotContain("\nCOPILOT_PROVIDER_", environment);
+        Assert.Contains($"COPILOT_HOME={CopilotCliRuntime.Home(StepKey(runId))}\n", environment);
+        foreach (var (place, text) in new[] { ("the agent's environment or homes", notes), ("the transcript", transcript), ("the commits", commits) })
+            Assert.False(text.Contains(key, StringComparison.Ordinal), $"the proxy's key is in {place}");
+
+        var received = model.Received.ToList();
+        Assert.Contains(received, r => r is { Method: "GET", Path: "/meta" });
+        Assert.Contains(received, r => r is { Method: "POST", Path: "/v1/messages" });
+        Assert.All(received, r => Assert.Contains($"{r.Method} {r.Path}", CopilotApiRequests));
+        Assert.All(received, r => Assert.Equal($"Bearer {key}", r.Authorization));
+        Assert.All(received, r => Assert.False(r.Headers.Contains("ghs_", StringComparison.Ordinal) || r.Headers.Contains("ffs1.", StringComparison.Ordinal),
+            $"{r.Method} {r.Path} carried the step's token"));
+        Assert.True(model.Refused == 0, $"the stand-in refused {model.Refused} requests");
+        Assert.All(model.Requests, r => Assert.Equal(ScriptedModel.CopilotModel, r["model"]?.ToString()));
+    }
+
+    /// <summary>
+    /// With <c>auth: github</c> and a key the Copilot API refuses, the step neither succeeds nor hangs: it stops for a
+    /// person, and nothing reached the stand-in with an accepted credential. Not yet asserted: that the engine names it
+    /// the model's refusal. Natively the CLI reports a refused <c>GET meta</c> as plain text ("Error: Authentication
+    /// failed"), not as a <c>session.error</c>, so the runtime sees a failed attempt (build-copilot 5-e2e, finding 1).
+    /// </summary>
+    [Fact]
+    public async Task With_auth_github_and_a_key_the_copilot_api_refuses_the_step_stops_for_a_person()
+    {
+        await using var model = new ScriptedModel("github_pat_test_" + Guid.NewGuid().ToString("N"), https: true);
+        model.Then(_ => ScriptedModel.ToolUse("engine-report", AgentScripts.Report())).ThenText("Done.");
+        await model.StartAsync();
+        await using var h = await AgentHarness.StartAsync("copilot-github-refused", model,
+            new AgentHarnessOptions { Runtime = "copilot_cli", Auth = "github", ModelKey = "github_pat_not_the_key" });
+        var runId = h.Start("T-56", "Write notes.md and report.");
+
+        await h.WaitForWaitAsync(runId, "intervention", RunTimeout);
+        Assert.Equal("running", (await h.ShowAsync(runId))["run"]!["status"]!.ToString());
+        Assert.Equal(0, model.Accepted);
+        Assert.True(model.Refused > 0);
+        Assert.All(model.Received, r => Assert.Equal("Bearer github_pat_not_the_key", r.Authorization));
+    }
+
+    /// <summary>What the proxy forwards for <c>auth: github</c> (<c>ModelProxy.Allowed</c>), as the stand-in sees it.</summary>
+    static readonly string[] CopilotApiRequests = ["GET /meta", "GET /models", "POST /v1/messages", "POST /v1/messages/count_tokens", "POST /chat/completions"];
+
+    /// <summary>
+    /// The agent's record of its sandbox, as the Live C1 test takes it: its shell's environment, every process's it can
+    /// read (the CLI's own included), and every file of its home and Copilot home.
+    /// </summary>
+    const string Dump = "{ env | sort; echo '--- processes'; for f in /proc/[0-9]*/environ; do tr '\\0' '\\n' < \"$f\"; done | sort -u; " +
+                        "echo '--- homes'; find \"$HOME\" \"$COPILOT_HOME\" -type f -size -4M -exec cat {} +; echo '--- end'; } > /ff/out/notes.md 2>/dev/null";
+
     static JsonObject Bash(string command) => ScriptedModel.ToolUse("bash", new JsonObject { ["command"] = command, ["description"] = "scripted" });
 }
