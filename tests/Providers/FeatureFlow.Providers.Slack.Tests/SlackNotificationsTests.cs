@@ -165,6 +165,10 @@ public sealed class SlackNotificationsTests
         var result = await Slack.Provider(fake).SendAsync("#ff", new Notification("failed", "r", "t", "x"), null, Ct);
 
         Assert.Equal(reason, result.Error?.Reason);
+        // L10 (LOG 451): a refused token names Slack's credential, never GitHub's.
+        if (result.Error!.IsConfigurationFault)
+            Assert.Contains("Slack instance's token_ref", result.Error.DescribeFault(), StringComparison.Ordinal);
+        Assert.DoesNotContain("GitHub", result.Error.DescribeFault(), StringComparison.Ordinal);
     }
 
     [Fact]

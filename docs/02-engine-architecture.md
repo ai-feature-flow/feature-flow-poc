@@ -206,11 +206,11 @@ Not inside the sandbox, where the agent could reach and alter it.
 
 | Rule | Detail |
 |---|---|
-| Any replica serves any step | The per-step token is signed and carries the step's policy (run, step, role, write access, allowed tools). A replica evaluates a hook call from the token alone |
+| Any replica serves any step | The per-step token is signed and carries the step's policy (run, step, role, write access, allowed tools) and its agent runtime instance. A replica evaluates a hook call from the token alone: the instance's runtime reads the call as a tool class, the policy decides on classes, and a denial is answered in the runtime's own form, which the hook command applies (LOG 444) |
 | State | Events, cost and questions are written to the record store; nothing is kept in replica memory |
 | The client in the sandbox | A local stdio MCP server that serves the engine tools to the runtime and forwards each call to a replica, moving to another replica on any connection error (LOG 59) |
 | Questions | The client assigns each question's id. `ask_human` signals the run to open a question decision, idempotently by that id, then waits on the record store for the answer. A worker restart breaks the connection; the client reconnects to another replica, which resumes the same question. Spiked in SP2 (`docs/spikes/sp2-results.md`): answers survived rolling restarts, a full outage and a 20-minute wait |
-| Unreachable is not denied | The hook command and the client in the sandbox retry and hold the call for a bounded time, then stop the session in a resumable state, classified as infrastructure. Neither returns an infrastructure error to the agent: SP2 showed an agent given one improvises a result and reports success (LOG 60; risk R19, re-tested in SP2) |
+| Unreachable is not denied | The hook command and the client in the sandbox retry and hold the call for a bounded time, then stop the session in a resumable state, classified as infrastructure; the hook command does so in the step's runtime's own way, and blocks the call where it has none (LOG 444). Neither returns an infrastructure error to the agent: SP2 showed an agent given one improvises a result and reports success (LOG 60; risk R19, re-tested in SP2) |
 
 ### 4.3 Resume, commits and pushes
 

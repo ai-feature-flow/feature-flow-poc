@@ -9,9 +9,16 @@ public enum ProviderErrorClass
     Work,
 }
 
-/// <summary>An expected failure: a reason from docs/06 section 1.1 and a message. Exceptions are programming errors.</summary>
-public sealed record ProviderError(string Reason, string Message, TimeSpan? RetryAfter = null)
+/// <summary>
+/// An expected failure: a reason from docs/06 section 1.1 and a message. Exceptions are programming errors.
+/// <paramref name="Hint"/> is what the failing provider tells a person to check when the error is a configuration
+/// fault (LOG 451); without one, <see cref="DefaultHint"/> is used.
+/// </summary>
+public sealed record ProviderError(string Reason, string Message, TimeSpan? RetryAfter = null, string? Hint = null)
 {
+    /// <summary>The hint of a provider that gives none of its own: it names no particular system.</summary>
+    public const string DefaultHint = "Check the provider's configuration: its credential, and the permissions that credential holds";
+
     static readonly HashSet<string> InfrastructureReasons =
         ["unreachable", "server_error", "internal_error", "timeout", "rate_limited", "unauthenticated", "forbidden"];
 
@@ -27,9 +34,12 @@ public sealed record ProviderError(string Reason, string Message, TimeSpan? Retr
     /// <summary>How long a provider waits before its one fresh-credential retry: a newly minted token can take a moment to be accepted.</summary>
     public static readonly TimeSpan FreshCredentialDelay = TimeSpan.FromSeconds(2);
 
-    /// <summary>What a person is told about a configuration fault.</summary>
+    /// <summary>What a person is told about a configuration fault: the failing provider's hint, or the default.</summary>
     public string DescribeFault() =>
-        $"a configuration fault ({Reason}: {Message}). Check the installation's credential broker: the GitHub App's key, installation and permissions. Retry once it is fixed";
+        $"a configuration fault ({Reason}: {Message}). {Hint ?? DefaultHint}. Retry once it is fixed";
+
+    /// <summary>This error with the provider's configuration-fault hint, unless it is not such a fault or already has one.</summary>
+    public ProviderError WithFaultHint(string hint) => IsConfigurationFault && Hint is null ? this with { Hint = hint } : this;
 }
 
 public readonly record struct Unit;
@@ -42,6 +52,9 @@ public sealed record ProviderResult<T>(T? Value, ProviderError? Error)
     public static ProviderResult<T> Success(T value) => new(value, null);
 
     public static ProviderResult<T> Failure(string reason, string message) => new(default, new ProviderError(reason, message));
+
+    /// <summary>This result with the provider's configuration-fault hint on its error (<see cref="ProviderError.WithFaultHint"/>).</summary>
+    public ProviderResult<T> WithFaultHint(string hint) => Error is null ? this : this with { Error = Error.WithFaultHint(hint) };
 
     public T Unwrap() => Error is null ? Value! : throw new ProviderException(Error);
 }
@@ -90,6 +103,15 @@ public sealed record ProviderContext(ProviderInstanceConfig Instance, string Bas
 
     public string RequiredSetting(string key) =>
         Setting(key) ?? throw new InvalidOperationException($"providers.{Instance.Type}.instances.{Instance.Name} needs '{key}'");
+
+    /// <summary>A setting that is a list of strings; empty when it is absent. Anything else, or an item that is not a string, is refused.</summary>
+    public IReadOnlyList<string> SettingList(string key) => Instance.Settings[key] switch
+    {
+        null or Model.Yaml.YScalar { IsNull: true } => [],
+        Model.Yaml.YSeq items => items.Items.Select((item, i) => item is Model.Yaml.YScalar { IsNull: false } s ? s.Text
+            : throw new InvalidOperationException($"providers.{Instance.Type}.instances.{Instance.Name}.{key}[{i}] must be a string, not {item.Describe()}")).ToList(),
+        var other => throw new InvalidOperationException($"providers.{Instance.Type}.instances.{Instance.Name}.{key} must be a list of strings, not {other.Describe()}"),
+    };
 
     /// <summary>A path setting, relative to the configuration file's folder.</summary>
     public string? PathSetting(string key) => Setting(key) is { } p ? Path.GetFullPath(Path.Combine(BaseDirectory, p)) : null;

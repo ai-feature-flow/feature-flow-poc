@@ -40,6 +40,17 @@ public sealed class MemorySandbox(Func<IArtifactStoreProvider> store, InMemoryFo
     readonly List<SandboxRule> rules = [];
     readonly List<(string Sandbox, string Command, string? Directory)> commands = [];
     int created;
+    readonly List<SandboxSpec> specs = [];
+
+    /// <summary>Every sandbox's spec, in the order they were created; the image a container sandbox would use is its <see cref="SandboxSpec.Image"/>.</summary>
+    public IReadOnlyList<SandboxSpec> Specs
+    {
+        get
+        {
+            lock (gate)
+                return specs.ToList();
+        }
+    }
 
     /// <summary>Adds a rule. It is tried before the rules added earlier, so a test can change what a command does.</summary>
     public MemorySandbox On(SandboxRule rule)
@@ -101,6 +112,7 @@ public sealed class MemorySandbox(Func<IArtifactStoreProvider> store, InMemoryFo
                 return Done(ProviderResult<SandboxHandle>.Failure("validation_failed", $"a sandbox with key {spec.Key} exists"));
             boxes[spec.Key] = new Box(spec.Key);
             created++;
+            specs.Add(spec);
             return Done(ProviderResult<SandboxHandle>.Success(Handle(spec.Key)));
         }
     }

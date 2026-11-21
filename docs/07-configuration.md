@@ -49,7 +49,7 @@ providers:                       # every type: named instances, one default
     default: claude_code
     instances:
       claude_code: { model_access: { mode: proxy, key_ref: secrets/anthropic_key } }
-      copilot_cli: { model: claude-haiku-4-5, model_access: { mode: proxy } }
+      copilot_cli: { model: claude-haiku-4-5, model_access: { mode: proxy, key_ref: secrets/anthropic_key } }
   vcs:            { default: git, instances: { git: {} } }
   code_host:      { default: github, instances: { github: { app_id: 12345, secret_ref: secrets/github_app_key, webhook_secret_ref: secrets/github_webhook } } }
   ci:             { default: github_actions, instances: { github_actions: {}, teamcity: { base_url: https://tc.internal, secret_ref: secrets/teamcity } } }
@@ -71,7 +71,6 @@ providers:                       # every type: named instances, one default
   credential_broker: { default: github_app, instances: { github_app: {} } }
 
 api:
-  base_url: https://feature-flow.internal
   auth: { mode: oidc, issuer: https://idp.internal, audience: feature-flow, role_claim: groups }
 
 observability:
@@ -95,16 +94,16 @@ unbuilt is review F14, corrected in `docs/12` A6.
 | Key | Notes |
 |---|---|
 | `providers.<type>.instances` | Several instances of one type may coexist (two CI systems, two agent runtimes). Other settings select one by name |
-| `agent_runtime.*.model_access` | `proxy` (a proxy adds the key to model requests) or `per_run_key` (a key with a spend limit and expiry). Required for every runtime (F6). With `proxy`, `upstream` is the model API (default the Anthropic API) and `auth` how the key is sent: `api_key` (default) or `oauth` (a subscription token). LOG 91 |
-| `agent_runtime.claude_code` | `model`, `executable`, and `engine_tools`: `false` offers the agent no engine tools, for SP3's file fall-back test, and is refused unless `development: true`. LOG 91 |
-| `agent_runtime.copilot_cli` | The same four settings as `claude_code`. Copilot reaches the model through the same model proxy, as a custom Anthropic provider with the step's token; one proxy, configured by the default runtime's `model_access`, serves every runtime instance (LOG 293) |
+| `agent_runtime.*.model_access` | `proxy` (a proxy adds the key to model requests) or `per_run_key` (a key with a spend limit and expiry). Required for every runtime (F6). With `proxy`, `upstream` is the model API (default the Anthropic API) and `auth` how the key is sent: `api_key` (default) or `oauth` (a subscription token). LOG 91. Each instance's `model_access` configures its own model proxy, and a step's token selects its instance's; an instance with none is not served (404). The proxy's URL and the requests it forwards are the same for every instance (LOG 104, 446) |
+| `agent_runtime.claude_code` | `model` and `executable`. LOG 91. `engine_tools` is removed, and refused as an unknown setting (L5, LOG 448) |
+| `agent_runtime.copilot_cli` | The same settings as `claude_code`. Copilot reaches the model through its instance's model proxy, as a custom Anthropic provider with the step's token (LOG 293, 446) |
 | `agent_runtime.scripted` | A test double that runs no agent and reports what its `script` says (its `defaults` serve steps its `steps` do not name; a scripted artifact's `${name}` is the step's input `name`, LOG 368). In the step's sandbox it acts as an agent would, through the sandbox provider's calls: a step with write access changes the checkout (`work/<run id>/<step id>.txt`, LOG 368), unless its step id is in `no_edits`, and the reported artifacts are copied into the output folder. The sandbox is the `memory` one of its `world` when that holds it, else the installation's default sandbox (the Kubernetes one in `deploy/k3d/smoke`; LOG 371). Refused unless `development: true` (L4), as are the `fake` and `memory` providers |
 | `agent_runtime.recording` | The dry-run runtime (section 5): `folder` receives a line per step it is given, with its inputs; it reports what its `script` says, else each step's first success outcome, and acts in the step's sandbox as `scripted` does |
-| `sandbox.docker` | `image` (the sandbox image, `feature-flow-sandbox`), `user` (the agent's, default `node`), `docker` (the executable). Its network reaches only `agent_worker`'s `urls` and `model_base_url`, and the internet (LOG 291) |
-| `sandbox.kubernetes` | `image`, `user`, `namespace` (default `default`), `cpu` (default 2) and `memory` (default 4Gi) limits per pod, and `context` (a kubeconfig context; omitted, the cluster the worker runs in). Its network is `sandbox-network-policy.yaml`, which must be applied in `namespace` first; the agent worker's pods carry `app.kubernetes.io/name: feature-flow-agent-worker` (LOG 294) |
+| `sandbox.docker` | `image` (the sandbox image, `feature-flow-sandbox`), `allowed_images` (patterns, `*` matching any run of characters, of the repository images `environment.image` may name, matched with case; default none, so only `image`, LOG 441), `user` (the agent's, default `node`), `docker` (the executable). Its network reaches only `agent_worker`'s `urls` and `model_base_url`, and the internet (LOG 291) |
+| `sandbox.kubernetes` | `image`, `allowed_images` (as for Docker), `user`, `namespace` (default `default`), `cpu` (default 2) and `memory` (default 4Gi) limits per pod, and `context` (a kubeconfig context; omitted, the cluster the worker runs in). Its network is `sandbox-network-policy.yaml`, which must be applied in `namespace` first; the agent worker's pods carry `app.kubernetes.io/name: feature-flow-agent-worker` (LOG 294) |
 | `agent_worker` | LOG 91: `listen` (the agent worker's endpoint), `urls` (its replicas as sandboxes reach them), `model_base_url` (the model proxy as sandboxes reach it; default the first of `urls` with `/model`), `token_key_ref` (the secret every replica signs step tokens with) and `sandbox_client` (the executable copied into each sandbox). How often commits are pushed (30 seconds), Claude Code's own model retries, the hook's hold (120 seconds) and the sandbox client's retry (10 minutes) are fixed defaults, not settings |
 | `secrets.file.from_environment` | Secret names the `file` provider reads from the process environment, such as the solo profile's subscription token. LOG 91 |
-| `endpoint` | Not in version 1: every runtime reaches its model through the one model proxy; a per-runtime upstream is a follow-up (LOG 293) |
+| `endpoint` | Not in version 1: a runtime reaches its model through its instance's model proxy, whose `upstream` may be any service of the Anthropic Messages API (LOG 293, 446) |
 | `code_host` identity | Must not be able to change branch protection (F5); checked at startup |
 | `tracker.*.status_map` | Maps the library's abstract statuses to the tracker's (`docs/08` section 1). For `github_issues` (settings `repository`, `status_map`) a status maps to a label or to `closed` (LOG 184). For `jira` (settings `base_url`, `secret_ref`, `project`, `issue_type`, default Task, and `status_map`) a status maps to a Jira status name, default `in_progress` to "In Progress", `code_review` to "In Review" and `done` to "Done"; the secret holds `<account email>:<API token>` (LOG 301) |
 | `observability.otlp_endpoint` | Where traces are exported with OTLP over gRPC: an http or https URL. Without it nothing is exported. Version 1 exports traces only; metrics and logs are later (LOG 305) |
@@ -115,7 +114,7 @@ unbuilt is review F14, corrected in `docs/12` A6.
 | `temporal.payload_codec` | Encrypts every payload, and failure messages, the engine sends Temporal. `name: aes_gcm` (the only codec); `key_ref` names a secret of 32 random bytes in base64 (`openssl rand -base64 32`). Replaying an encrypted history needs the same key. LOG 284 |
 | `record_store.postgres` | `connection_ref` names the secret holding the connection string (`Host=...;Database=...;Username=...;Password=...`). The schema is created or migrated at first use. LOG 281 |
 | `artifact_store.s3` | `bucket` (required, created by the deployment), `region` (default `us-east-1`), `endpoint` for a store other than AWS such as MinIO (path-style), and `access_key_ref` with `secret_key_ref`, set together; without them the AWS SDK's credential chain applies, such as an EKS service account's role. LOG 283 |
-| `api.auth` | `local_token` (`token_ref`, `actor`, `roles`) or `oidc` (`issuer`, `audience`, `role_claim`, default `groups`, and `actor_claim`, default `sub`); with `oidc`, a `token_ref` keeps the local token working beside it. The actor `policy` is reserved for automatic answers (LOG 220, 222). Planned (`docs/02` section 7; `docs/12` A4, R2): a `none` mode, with which the host checks the address it has bound at start and refuses to start unless it is loopback (LOG 333); a public console client (client id, and the scopes it asks for) served by `GET /console/config`; modes chosen from authenticators the host registers |
+| `api.auth` | `auth` is the only key of `api`: the API has no configured address of its own, and a link to the console is the notifications provider's `console_url`; `api.base_url` is refused (L5, LOG 450). `local_token` (`token_ref`, `actor`, `roles`) or `oidc` (`issuer`, `audience`, `role_claim`, default `groups`, and `actor_claim`, default `sub`); with `oidc`, a `token_ref` keeps the local token working beside it. The actor `policy` is reserved for automatic answers (LOG 220, 222). Planned (`docs/02` section 7; `docs/12` A4, R2): a `none` mode, with which the host checks the address it has bound at start and refuses to start unless it is loopback (LOG 333); a public console client (client id, and the scopes it asks for) served by `GET /console/config`; modes chosen from authenticators the host registers |
 
 Scaling (replica counts) is deployment configuration, not engine configuration. `workers` (a worker mode and agent
 pools by sandbox capability) is not in version 1 and is refused at startup; every agent worker serves the one agent
@@ -216,8 +215,7 @@ api_version: feature-flow/v1
 kind: repository
 
 environment:
-  from: .devcontainer/devcontainer.json    # or inline: image, os, docker
-  os: linux
+  image: registry.internal/acme/api-sandbox:3   # built FROM the installation's sandbox image
 
 setup:
   commands: ["git config core.hooksPath .githooks", "dotnet tool restore"]
@@ -259,7 +257,7 @@ library:                                   # docs/08 section 4; read from the de
 
 | Key | Notes |
 |---|---|
-| `environment` | Inline, or a referenced `devcontainer.json`. The engine merges the two into the **resolved manifest**, which providers receive |
+| `environment` | `image`: the image the repository's sandboxes are made from, built on the installation's sandbox image (`docs/06` section 3.1, its contract). The installation must allow it (`allowed_images`), or the step stops for a person. Without the section, the installation's image (LOG 440, 441). `from` (a `devcontainer.json`), `os` and `docker` are not built and are refused (LOG 442) |
 | `test_tiers[].tags` | What templates select by (`test.run` `tier_tags`), so a template never lists a repository's tiers |
 | `test_tiers[].targets` | Where the tier may run. A tier that needs Docker or Windows normally lists only `ci` |
 | `test_tiers[].prerequisites` | `env`: environment variable names the tier needs. `test.run` raises an intervention if one is missing where the tier runs, rather than reporting the tests as failed |

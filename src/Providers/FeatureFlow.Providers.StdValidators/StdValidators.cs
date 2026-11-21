@@ -82,7 +82,7 @@ public sealed class StdValidators(Func<IArtifactStoreProvider?> store, Func<ICod
         }
         catch (ProviderException e)
         {
-            return ProviderResult<ValidationResult>.Failure(e.Error.Reason, e.Error.Message);
+            return new ProviderResult<ValidationResult>(null, e.Error);
         }
 
         return ProviderResult<ValidationResult>.Success(ValidationResult.Of(check.Issues, check.Reports));

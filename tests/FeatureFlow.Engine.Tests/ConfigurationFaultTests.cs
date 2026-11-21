@@ -62,6 +62,9 @@ public sealed class ConfigurationFaultTests
         Assert.Equal(StepOutcome.CannotAnswer, result.Kind);
         Assert.Contains("configuration fault", result.Reason, StringComparison.Ordinal);
         Assert.Contains(fault, result.Reason, StringComparison.Ordinal);
+        // L10 (LOG 451): a provider that gives no hint of its own gets the neutral one, never GitHub's.
+        Assert.Contains(ProviderError.DefaultHint, result.Reason, StringComparison.Ordinal);
+        Assert.DoesNotContain("GitHub App", result.Reason, StringComparison.Ordinal);
         Assert.Equal(1, host().Calls);
     }
 

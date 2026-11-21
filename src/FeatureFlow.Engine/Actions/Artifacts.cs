@@ -208,7 +208,7 @@ static class Artifacts
             commit = mine;
         else
         {
-            await using var session = await SandboxSession.OpenAsync(run, repo, "refs/heads/" + baseBranch, baseHead, branch, [], "publish");
+            await using var session = await SandboxSession.OpenAsync(run, repo, "refs/heads/" + baseBranch, baseHead, branch, null, "publish");
             foreach (var source in sources)
                 await session.CopyInAsync(source.Ref, source.Path);
             commit = ActionRun.Must(await run.Vcs.CommitAllAsync(session.Copy,

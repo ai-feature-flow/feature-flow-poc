@@ -36,6 +36,9 @@ public sealed class SlackNotifications(
     /// <summary>The action id prefix of an answer button; the console link button has another.</summary>
     public const string AnswerAction = "ff_answer";
 
+    /// <summary>What a person is told to check when Slack refuses the bot token (docs/06 section 1.1, LOG 451).</summary>
+    public const string FaultHint = "Check the Slack instance's token_ref: the app's bot token, and that the app is still installed in the workspace";
+
     // Slack's limits: 25 elements in an actions block, 75 characters of button text, 2000 of a button's value, 3000 of a section.
     const int MaxButtons = 25;
     const int MaxButtonText = 75;
@@ -179,7 +182,7 @@ public sealed class SlackNotifications(
             if (json["ok"]?.GetValue<bool>() == true)
                 return ProviderResult<JsonObject>.Success(json);
             var error = json["error"]?.GetValue<string>() ?? "unknown";
-            return ProviderResult<JsonObject>.Failure(Classify(error), $"slack {method}: {error}");
+            return ProviderResult<JsonObject>.Failure(Classify(error), $"slack {method}: {error}").WithFaultHint(FaultHint);
         }
     }
 

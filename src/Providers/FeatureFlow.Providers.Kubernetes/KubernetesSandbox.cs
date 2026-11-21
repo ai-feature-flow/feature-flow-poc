@@ -18,9 +18,13 @@ namespace FeatureFlow.Providers.Kubernetes;
 /// the internet, nothing else in the cluster or on its nodes (M4 follow-up 12). <see cref="CheckAsync"/> refuses to start
 /// without that policy, so a sandbox is never created with an open network.
 /// </para>
+/// <para>
+/// The pod's image is <paramref name="image"/>, or the repository's when the spec names one that
+/// <paramref name="allowedImages"/> allows (<see cref="SandboxImages"/>, LOG 440, 441).
+/// </para>
 /// </summary>
 public sealed class KubernetesSandbox(IKubernetes client, string @namespace, string image, string user, string cpu, string memory,
-    Func<IArtifactStoreProvider> store) : ShellSandbox(user, store)
+    Func<IArtifactStoreProvider> store, IReadOnlyList<string>? allowedImages = null) : ShellSandbox(user, store)
 {
     public const string AppLabel = "feature-flow-sandbox";
     public const string NetworkPolicyName = "feature-flow-sandbox";
@@ -44,7 +48,10 @@ public sealed class KubernetesSandbox(IKubernetes client, string @namespace, str
         var existing = await AttachAsync(spec.Key, cancellationToken);
         if (existing.Ok || existing.Error!.Reason != "not_found")
             return existing;
-        var created = await Call(() => client.CoreV1.CreateNamespacedPodAsync(Pod(name, spec), @namespace, cancellationToken: cancellationToken));
+        var chosen = SandboxImages.Choose(spec, image, allowedImages ?? []);
+        if (!chosen.Ok)
+            return new ProviderResult<SandboxHandle>(null, chosen.Error);
+        var created = await Call(() => client.CoreV1.CreateNamespacedPodAsync(Pod(name, spec, chosen.Value!), @namespace, cancellationToken: cancellationToken));
         if (!created.Ok && created.Error!.Reason != "conflict")
             return new ProviderResult<SandboxHandle>(null, created.Error);
         var handle = new SandboxHandle(name, "kubernetes");
@@ -55,7 +62,7 @@ public sealed class KubernetesSandbox(IKubernetes client, string @namespace, str
         return ProviderResult<SandboxHandle>.Success(handle);
     }
 
-    V1Pod Pod(string name, SandboxSpec spec) => new()
+    V1Pod Pod(string name, SandboxSpec spec, string podImage) => new()
     {
         Metadata = new V1ObjectMeta
         {
@@ -74,7 +81,7 @@ public sealed class KubernetesSandbox(IKubernetes client, string @namespace, str
                 new V1Container
                 {
                     Name = Container,
-                    Image = image,
+                    Image = podImage,
                     ImagePullPolicy = "IfNotPresent",
                     Command = ["tini", "--", "sleep", "infinity"],
                     Env = spec.Environment.Select(kv => new V1EnvVar { Name = kv.Key, Value = kv.Value }).Prepend(new V1EnvVar { Name = "HOME", Value = spec.Home }).ToList(),
@@ -200,7 +207,7 @@ public static class KubernetesProviders
 {
     public static IReadOnlyList<ProviderFactory> Factories { get; } =
     [
-        new("sandbox", "kubernetes", ["image", "user", "namespace", "cpu", "memory", "context"], c => new KubernetesSandbox(
+        new("sandbox", "kubernetes", ["image", "allowed_images", "user", "namespace", "cpu", "memory", "context"], c => new KubernetesSandbox(
             new k8s.Kubernetes(c.Setting("context") is null && KubernetesClientConfiguration.IsInCluster()
                 ? KubernetesClientConfiguration.InClusterConfig()
                 : KubernetesClientConfiguration.BuildConfigFromConfigFile(currentContext: c.Setting("context"))),
@@ -209,6 +216,7 @@ public static class KubernetesProviders
             c.Setting("user") ?? "node",
             c.Setting("cpu") ?? "2",
             c.Setting("memory") ?? "4Gi",
-            () => c.Provider("artifact_store") as IArtifactStoreProvider ?? throw new InvalidOperationException("the Kubernetes sandbox needs an artifact store"))),
+            () => c.Provider("artifact_store") as IArtifactStoreProvider ?? throw new InvalidOperationException("the Kubernetes sandbox needs an artifact store"),
+            c.SettingList("allowed_images"))),
     ];
 }

@@ -30,7 +30,8 @@ public sealed record IntegrationEnvironment(string? Image, string? Start, string
 /// <summary>
 /// The repository manifest, <c>feature-flow.yaml</c> (docs/07 section 4), read fresh from the branch at every step and
 /// recorded by <see cref="Hash"/> (RW11). <see cref="Library"/> is kept as written for check 20, and is read only from
-/// the default branch's copy.
+/// the default branch's copy. <see cref="Image"/> is <c>environment.image</c>: the image the repository's sandboxes are
+/// made from, or null for the installation's (LOG 440).
 /// </summary>
 public sealed record RepositoryManifest(
     string Hash,
@@ -39,7 +40,8 @@ public sealed record RepositoryManifest(
     IReadOnlyList<TestTier> Tiers,
     StaticAnalysis? Analysis,
     IntegrationEnvironment? Integration,
-    YNode? Library)
+    YNode? Library,
+    string? Image)
 {
     /// <summary>The repository's manifest file name, at its root.</summary>
     public const string FileName = "feature-flow.yaml";
@@ -80,13 +82,11 @@ public sealed record RepositoryManifest(
         if (kind is not null and not "repository")
             r.Error($"kind must be repository, not '{kind}'", r.Map.Location);
 
-        // The sandbox is not yet built from the environment section (M4 follow-up 1); it is read so it is not refused.
+        // The repository's sandbox image (LOG 440). Only `image` is built: `from` (a devcontainer.json), `os` and `docker` are refused (LOG 442).
+        string? image = null;
         if (MapReader.Of(r.Node("environment"), d, "environment") is { } env)
         {
-            env.String("from");
-            env.String("image");
-            env.String("os");
-            env.Bool("docker");
+            image = env.String("image", required: true);
             env.Finish();
         }
 
@@ -152,7 +152,7 @@ public sealed record RepositoryManifest(
             i.Finish();
         }
 
-        var manifest = new RepositoryManifest(hash, Commands(r, "setup", d), Commands(r, "after_changes", d), tiers, analysis, integration, r.Node("library"));
+        var manifest = new RepositoryManifest(hash, Commands(r, "setup", d), Commands(r, "after_changes", d), tiers, analysis, integration, r.Node("library"), image);
         r.Finish();
         return manifest;
     }
@@ -167,29 +167,33 @@ public sealed record RepositoryManifest(
     }
 }
 
-/// <summary>Repository patterns such as <c>acme/poc-*</c> (F1's <c>engine_may_merge</c>): <c>*</c> matches any run of characters.</summary>
+/// <summary>
+/// Repository patterns such as <c>acme/poc-*</c> (F1's <c>engine_may_merge</c>): <c>*</c> matches any run of characters.
+/// Repository names match ignoring case, as the code host treats them; an image name, which is case-sensitive, passes
+/// <see cref="StringComparison.Ordinal"/>.
+/// </summary>
 public static class RepositoryPatterns
 {
-    public static bool Matches(string pattern, string repository)
+    public static bool Matches(string pattern, string repository, StringComparison comparison = StringComparison.OrdinalIgnoreCase)
     {
         var parts = pattern.Split('*');
         if (parts.Length == 1)
-            return string.Equals(pattern, repository, StringComparison.OrdinalIgnoreCase);
+            return string.Equals(pattern, repository, comparison);
         var at = 0;
         for (var i = 0; i < parts.Length; i++)
         {
             var part = parts[i];
             if (i == 0)
             {
-                if (!repository.StartsWith(part, StringComparison.OrdinalIgnoreCase))
+                if (!repository.StartsWith(part, comparison))
                     return false;
                 at = part.Length;
                 continue;
             }
 
             if (i == parts.Length - 1)
-                return repository.Length - at >= part.Length && repository.EndsWith(part, StringComparison.OrdinalIgnoreCase);
-            var found = repository.IndexOf(part, at, StringComparison.OrdinalIgnoreCase);
+                return repository.Length - at >= part.Length && repository.EndsWith(part, comparison);
+            var found = repository.IndexOf(part, at, comparison);
             if (found < 0)
                 return false;
             at = found + part.Length;

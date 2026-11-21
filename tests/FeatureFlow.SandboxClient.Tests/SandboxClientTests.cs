@@ -126,29 +126,33 @@ public sealed class SandboxClientTests : IDisposable
         Assert.Contains("never push", error.ToString());
     }
 
-    /// <summary>Copilot CLI shows the agent only the exit code of a hook that exits 2, so its denial is a JSON decision with the reason (LOG 293).</summary>
+    /// <summary>
+    /// LOG 444: the hook command knows no runtime. A denial prints and exits as the step's runtime's reply says (Copilot's
+    /// JSON decision with exit 0, LOG 293; Claude Code's exit 2 with the reason on standard error).
+    /// </summary>
     [Theory]
-    [InlineData("deny", "never push")]
-    [InlineData(null, "unknown or revoked step token")]
-    public async Task For_copilot_the_hook_command_denies_with_a_json_decision_and_its_reason(string? decision, string reason)
+    [InlineData(0, """{"permissionDecision":"deny","permissionDecisionReason":"never push"}""", null)]
+    [InlineData(2, null, "never push")]
+    public async Task The_hook_command_denies_with_the_runtime_s_reply(int code, string? printed, string? shown)
     {
-        var replicas = new Replicas((_, _) => decision is null ? new JsonObject { ["error"] = reason } : new JsonObject { ["decision"] = decision, ["reason"] = reason });
-        var output = new StringWriter();
-        var exit = await HookCommand.RunAsync("pre_tool_use", Client(replicas), new StringReader("""{"tool_name":"Bash"}"""), output, new StringWriter(),
-            new ClientLog(null), Ct, copilot: true);
-        Assert.Equal(0, exit);
-        var answer = JsonNode.Parse(output.ToString())!;
-        Assert.Equal("deny", answer["permissionDecision"]!.ToString());
-        Assert.Contains(reason, answer["permissionDecisionReason"]!.ToString());
+        var replicas = new Replicas((_, _) => new JsonObject
+        {
+            ["decision"] = "deny", ["reason"] = "never push", ["reply"] = new JsonObject { ["exit"] = code, ["output"] = printed, ["error"] = shown },
+        });
+        var (output, error) = (new StringWriter(), new StringWriter());
+        var exit = await HookCommand.RunAsync("pre_tool_use", Client(replicas), new StringReader("""{"tool_name":"Bash"}"""), output, error, new ClientLog(null), Ct);
+        Assert.Equal(code, exit);
+        Assert.Equal(printed ?? "", output.ToString().Trim());
+        Assert.Equal(shown ?? "", error.ToString().Trim());
     }
 
     [Fact]
-    public async Task For_copilot_an_allowed_call_prints_nothing()
+    public async Task An_allowed_call_prints_nothing()
     {
         var replicas = new Replicas((_, _) => new JsonObject { ["decision"] = "allow" });
         var output = new StringWriter();
         Assert.Equal(0, await HookCommand.RunAsync("pre_tool_use", Client(replicas), new StringReader("""{"tool_name":"Read"}"""), output, new StringWriter(),
-            new ClientLog(null), Ct, copilot: true));
+            new ClientLog(null), Ct));
         Assert.Empty(output.ToString());
     }
 
@@ -176,17 +180,46 @@ public sealed class SandboxClientTests : IDisposable
         Assert.Equal(0, exit);
     }
 
-    /// <summary>R19 (SP2 S4 and N2): a hook that cannot reach the engine holds, then stops the session; it never denies.</summary>
+    /// <summary>
+    /// R19 (SP2 S4 and N2): a hook that cannot reach the engine holds, marks the session stopped, then applies the step's
+    /// runtime's reply (LOG 444); it never allows the call.
+    /// </summary>
     [Fact]
-    public async Task The_hook_command_holds_while_no_replica_answers_and_then_stops_the_session_rather_than_deny()
+    public async Task The_hook_command_holds_while_no_replica_answers_and_then_applies_the_runtime_s_unreachable_reply()
     {
         var output = new StringWriter();
         var started = DateTime.UtcNow;
         var exit = await HookCommand.RunAsync("pre_tool_use", Client(new Replicas((_, _) => null), budgetSeconds: 0.5), new StringReader("{}"), output,
-            new StringWriter(), new ClientLog(null), Ct);
+            new StringWriter(), new ClientLog(null), Ct, """{"exit":0,"output":"{\"continue\":false}","error":null}""");
         Assert.Equal(0, exit);
         Assert.True(DateTime.UtcNow - started >= TimeSpan.FromSeconds(0.5));
         Assert.False(JsonNode.Parse(output.ToString())!["continue"]!.GetValue<bool>());
+        Assert.True(File.Exists(SessionStop.MarkerPath));
+    }
+
+    /// <summary>With no reply from the runtime, or one it cannot read, the unreachable pre-tool-use hook fails closed: exit 2, the reason on standard error.</summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("not json")]
+    [InlineData("""{"output":"no exit"}""")]
+    public async Task The_hook_command_blocks_the_call_when_the_engine_is_unreachable_and_the_runtime_gave_no_reply(string? unreachable)
+    {
+        var error = new StringWriter();
+        var exit = await HookCommand.RunAsync("pre_tool_use", Client(new Replicas((_, _) => null), budgetSeconds: 0.2), new StringReader("{}"), new StringWriter(),
+            error, new ClientLog(null), Ct, unreachable);
+        Assert.Equal(2, exit);
+        Assert.NotEmpty(error.ToString().Trim());
+        Assert.True(File.Exists(SessionStop.MarkerPath));
+    }
+
+    /// <summary>A hook that gates nothing does not block when the engine is unreachable, even with the runtime's reply; the marker still ends the session.</summary>
+    [Fact]
+    public async Task A_hook_that_gates_nothing_does_not_block_when_the_engine_is_unreachable()
+    {
+        var exit = await HookCommand.RunAsync("stop", Client(new Replicas((_, _) => null), budgetSeconds: 0.2), new StringReader("{}"), new StringWriter(),
+            new StringWriter(), new ClientLog(null), Ct, """{"exit":2}""");
+        Assert.Equal(0, exit);
+        Assert.True(File.Exists(SessionStop.MarkerPath));
     }
 
     [Fact]

@@ -27,8 +27,16 @@ public sealed class TemporalRunSignals(ITemporalClient client) : IRunSignals
         client.GetWorkflowHandle(workflowId).SignalAsync(RunWorkflowNames.ModelUnreachable, [signal], new WorkflowSignalOptions { Rpc = new RpcOptions { CancellationToken = cancellationToken } });
 }
 
-/// <summary>What the agent endpoint uses: tokens, the record store, the run's signal, and the model proxy.</summary>
-public sealed record AgentEndpointServices(StepTokens Tokens, IRecordStoreProvider Records, IRunSignals Signals, ModelProxy? Proxy, TimeSpan? LongPoll = null);
+/// <summary>
+/// What the agent endpoint uses: tokens, the record store, the run's signal, the model proxy of each agent runtime
+/// instance that configures one (LOG 446), and each instance's reading of its hooks (LOG 444), by instance name.
+/// </summary>
+public sealed record AgentEndpointServices(StepTokens Tokens, IRecordStoreProvider Records, IRunSignals Signals,
+    IReadOnlyDictionary<string, ModelProxy> Proxies, Func<string, IAgentHooks?> Hooks, TimeSpan? LongPoll = null)
+{
+    /// <summary>The model proxy of the step's runtime instance, or null when it configures none.</summary>
+    public ModelProxy? ProxyFor(StepClaims claims) => claims.Runtime is { } name ? Proxies.GetValueOrDefault(name) : null;
+}
 
 /// <summary>
 /// The agent worker's endpoint (docs/02 section 4.2, RW17; LOG 68): the hook endpoint, the engine tools the
@@ -37,7 +45,8 @@ public sealed record AgentEndpointServices(StepTokens Tokens, IRecordStoreProvid
 /// </summary>
 public static class AgentEndpoint
 {
-    static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    /// <summary>The endpoint's JSON: the web defaults (camelCase), which the sandbox client reads.</summary>
+    public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     public static WebApplication Build(AgentEndpointServices services, string url)
     {
@@ -80,14 +89,22 @@ public static class AgentEndpoint
         app.Map("/model/{**path}", async (HttpContext http, string? path) =>
         {
             var token = Bearer(http) ?? http.Request.Headers["x-api-key"].FirstOrDefault();
-            if (s.Proxy is null || s.Tokens.Check(token) is not { } claims || !await ActiveAsync(s, claims))
+            if (s.Tokens.Check(token) is not { } claims || !await ActiveAsync(s, claims))
             {
                 http.Response.StatusCode = 401;
                 await http.Response.WriteAsync("""{"type":"error","error":{"type":"authentication_error","message":"unknown step token"}}""");
                 return;
             }
 
-            var (status, input, output, model, unreachable) = await s.Proxy.ForwardAsync(http, path ?? "", http.RequestAborted);
+            // The step's runtime instance's own proxy (LOG 446); an instance with none is not served.
+            if (s.ProxyFor(claims) is not { } proxy)
+            {
+                http.Response.StatusCode = 404;
+                await http.Response.WriteAsync("""{"type":"error","error":{"type":"not_found_error","message":"the step's agent runtime has no model proxy"}}""");
+                return;
+            }
+
+            var (status, input, output, model, unreachable) = await proxy.ForwardAsync(http, path ?? "", http.RequestAborted);
             await AppendAsync(s, new RecordBatch(AgentEvents: [new AgentEventRecord(claims.StepKey, "model",
                 $"{http.Request.Method} /{path} {status} in={input} out={output} model={model ?? "none"}", DateTimeOffset.UtcNow)]));
             if (unreachable is not null)
@@ -128,13 +145,18 @@ public static class AgentEndpoint
 
     public static async Task<HookDecision> HookAsync(AgentEndpointServices s, StepClaims claims, string hook, JsonElement input, CancellationToken cancellationToken)
     {
-        var tool = input.TryGetProperty("tool_name", out var t) ? t.GetString() ?? "" : "";
-        var toolInput = input.TryGetProperty("tool_input", out var ti) ? ti : default;
-        var decision = hook == "pre_tool_use" ? HookPolicy.PreToolUse(claims, tool, toolInput) : HookDecision.Allow;
+        // The step's runtime reads its CLI's hook input and words its refusal (LOG 444); the policy sees tool classes only.
+        var hooks = claims.Runtime is { } runtime ? s.Hooks(runtime) : null;
+        var call = hooks?.Classify(input) ?? new ToolCall(input.TryGetProperty("tool_name", out var t) ? t.GetString() ?? "" : "", null);
+        var decision = hook != "pre_tool_use" ? HookDecision.Allow
+            : hooks is null ? HookDecision.Deny($"the step's agent runtime '{claims.Runtime}' does not read hooks")
+            : HookPolicy.PreToolUse(claims, call);
+        if (decision.Decision == "deny" && hooks is not null)
+            decision = decision with { Reply = hooks.Deny(decision.Reason!) };
         var detail = hook switch
         {
-            "pre_tool_use" => $"{tool} {decision.Decision}" + (decision.Reason is null ? "" : $": {decision.Reason}"),
-            "post_tool_use" => HookPolicy.FileOpened(tool, toolInput) is { } file ? $"{tool} {file}" : tool,
+            "pre_tool_use" => $"{call.Tool} {decision.Decision}" + (decision.Reason is null ? "" : $": {decision.Reason}"),
+            "post_tool_use" => HookPolicy.FileOpened(call) is { } file ? $"{call.Tool} {file}" : call.Tool,
             _ => "",
         };
         await AppendAsync(s, new RecordBatch(AgentEvents: [new AgentEventRecord(claims.StepKey, "hook_" + hook, detail, DateTimeOffset.UtcNow)]));

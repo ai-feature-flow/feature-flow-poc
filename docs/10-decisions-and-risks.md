@@ -28,7 +28,7 @@ with a change, and by what), or **superseded** (replaced).
 |---|---|---|---|
 | Q1 | .NET, not Python | Kept | `docs/02` |
 | Q2 | Tiers that need Docker are delegated to CI by default; a privileged container only in the solo profile | Kept | `docs/07` section 6 |
-| Q3 | One repository file, `feature-flow.yaml`, which may reference a `devcontainer.json` | Changed by LOG 44 and 46: FF's test manifest keys merged in; `branches` and `merge` sections removed | `docs/07` section 4 |
+| Q3 | One repository file, `feature-flow.yaml`, which may reference a `devcontainer.json` | Changed by LOG 44 and 46: FF's test manifest keys merged in; `branches` and `merge` sections removed. Changed by LOG 442: no `devcontainer.json` reference; the environment is an image | `docs/07` section 4 |
 | Q4 | Artifact store plus record store; Git is not a store | Kept | `docs/02` section 5 |
 | Q5 | People's decisions arrive as Temporal Updates through the API, which authorises them | Kept | `docs/02` section 7 |
 | Q6 | Plan as data in workflow state, continue-as-new at a measured threshold | Changed by LOG 31: new safe-point rule | `docs/02` section 3 |
@@ -135,7 +135,7 @@ loops), were approved the same day. They stay in
 | R20 | Polling inflates history | Poll inside one activity | Mitigated (Spike 1) |
 | R21 | The continue-as-new rule with detached children and carried decisions loses a child's end or an answer | Children signal the parent's workflow id; the parent confirms by reading; answers carried as state | Mitigated (SP1) |
 | R22 | `ask_human` across a worker restart: the agent waits, the worker goes, the answer is lost | Question state in the workflow and record store; stateless replicas; the sandbox client owns the question id and reconnects (LOG 59) | Mitigated (SP2) |
-| R23 | Agent runtimes do not call the engine's MCP tools reliably (reporting, questions, patches) | File fallback for reporting; contract tests per runtime | Mitigated for reporting and questions on Claude Code and Copilot CLI (SP3); patches not measured |
+| R23 | Agent runtimes do not call the engine's MCP tools reliably (reporting, questions, patches) | The agent runtime contract suite run against every runtime (F12); the file fall-back was removed, as every built-in runtime calls MCP tools (L5, LOG 448) | Mitigated for reporting and questions on Claude Code and Copilot CLI (SP3); patches not measured |
 | R24 | **New.** Policy now lives in the standard library, so a weak `std` gives weak delivery | `std` is versioned and tested like engine code; its tests run in engine CI | Residual |
 | R25 | **New.** Fragments and defaults make the resolved plan harder to see than what the author wrote | The readable form shows the resolved plan; validation runs on it | Design |
 
