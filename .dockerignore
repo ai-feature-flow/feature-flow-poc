@@ -1,4 +1,0 @@
-# The console is built in its own stage of deploy/images/host.Dockerfile (LOG 462): never copy a local install or build.
-src/FeatureFlow.Console/node_modules/
-src/FeatureFlow.Console/dist/
-src/FeatureFlow.Console/src/api/schema.gen.d.ts
