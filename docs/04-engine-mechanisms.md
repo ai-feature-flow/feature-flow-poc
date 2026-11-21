@@ -207,9 +207,14 @@ and duration limits paused.
 | Who answers | A human allowed by policy for the step's question decision type. Auto-resolution never answers a question |
 | Durability | The open question lives in workflow state and the record store, not in worker memory. If the worker restarts, the sandbox and the waiting agent survive; the new worker re-attaches and serves the answer when it arrives. Spiked in SP2 (`docs/spikes/sp2-results.md`), except the re-attach, which the spike's harness did not exercise |
 
-The run's workflow shell, not the interpreter's core, holds an open question,
-as a wait of kind `question` answered through the API with free text; an answer
-after the timeout is refused (LOG 93).
+The run's core holds an open question as a wait of kind `question` on the running
+step, answered through the API with free text like any other wait (section 4).
+It is idempotent by the question's id; it is held only for the execution that
+asked it; its timer is armed by the core and fired back to it, so a hand-over
+re-arms it from the carried state; and it closes when its step stops running,
+however the step ends (LOG A2-0e). An answer after the timeout, or after the step
+ended, is refused. A question never routes the plan: the agent reads the answer
+(LOG 93 as amended, LOG A2-0h).
 
 ### 3.5 Run context
 
@@ -253,11 +258,35 @@ One mechanism for every human wait (`docs/01` section 7).
 
 | Element | Detail |
 |---|---|
-| Form | A durable wait in the workflow. No timeout. Reminders on a timer, through notifications |
+| Form | A durable wait in the workflow. No timeout, except a question's (section 3.4). Reminders on a timer, through notifications |
 | Inputs | `type`, `prompt`, `with`, optional `auto`, optional `session` (`docs/03` section 2.3) |
 | Outcomes | Declared |
-| Idempotency | By decision id. A recorded answer is never asked again |
+| Idempotency | By wait id. A recorded answer is never asked again: the same answer again succeeds and changes nothing, a different one is refused as a conflict |
 | Audit | Opened, reminded, answered: with the authenticated actor, the choice and the reason |
+
+Every wait is held in the interpreter's core, and every answer goes through one
+routing function (LOG A2-0h). The update's validator asks it whether an answer
+would be refused; the handler routes and applies with the same function, so the
+two cannot disagree. It decides, in order:
+
+| Question | Result |
+|---|---|
+| Was the wait answered? | The same answer: a duplicate. Another: refused as a conflict (LOG 58) |
+| Did the wait close otherwise? | A question that timed out or whose step ended: refused, the agent has carried on. Any other: refused, no wait is open |
+| What kind of wait is it? | A **gate** (a decision step's, or the `merge_action` gate an action raises, section 4.5) takes an outcome; a **question** text; a **patch approval** `approve` or `reject`; an **intervention** a recovery action, a **breakpoint** `continue` or a recovery action (`docs/01` section 7.2) |
+| Is it a session's gate? | The session's rules (section 4.4); a submission is imported by the run, then answered |
+| Would the run apply it? | The core's own checks: a declared outcome, the artifacts the outcome promises, a recovery's target and ceilings |
+
+A wait closes one way: answered; timed out (a question); its step ended (a
+question, or an action's gate when the step fails or cannot answer); answered on
+the code host (the `merge_action` gate, section 4.5); or withdrawn (its join
+decided, its step was skipped, or the run ended). The closed waits are carried
+across a hand-over with the rest of the core's state, so a repeated answer is
+still a duplicate in the next run. The record store's wait record has kind
+`gate`, `question`, `intervention`, `patchapproval` or `breakpoint`, the decision
+type, the choices that answer it and the text to show; wait ids are `gate-N`,
+`intervention-N`, `breakpoint-N` and `patch_approval-N`, and a question's is the
+id its agent's client gave it (LOG A2-0d).
 
 ### 4.1 Answering
 
@@ -310,7 +339,7 @@ code host that refuses an allowed engine merge). It is a
 
 | Element | Detail |
 |---|---|
-| Form | A decision-kind wait on the running `scm.merge` step, not a step of its own. Choices `approve` and `reject`. It never auto-resolves: the step has no `auto` outcome |
+| Form | A gate on the running `scm.merge` step, not a step of its own. Choices `approve` and `reject`. It never auto-resolves: the step has no `auto` outcome |
 | Opening | The first read that finds the pull request open, in an execution that has raised none, returns to the run, which opens the decision and starts the same execution again at once: no attempt is used. One decision per execution. It opens whether or not an approval rule names `*.merge_action`; with none, the default rule applies (LOG 351) |
 | While it is open | The step reads the pull request every poll interval; a pull request event wakes it to read at once (events wake, reads confirm, `docs/02` section 2.3). It does not yet ask anyone to merge (LOG 350) |
 | `approve` | The watch is restarted at the same execution and asks a person to merge or close the pull request on the code host; it returns `merged` when it sees the merge, `declined` when it sees the pull request closed |

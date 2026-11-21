@@ -52,7 +52,7 @@ their plan.
 ### 2.1 The loop
 
 ```
-state = { plan_revision, positions[], step_runs[], findings_summary, attempts, in_flight[], open_decisions[], children[] }
+state = { plan_revision, positions[], step_runs[], findings_summary, attempts, in_flight[], waits[] (open and closed), children[] }
 
 loop:
   ready = plan.ready(positions, state)              # pure
@@ -64,7 +64,7 @@ loop:
     elif step is a decision: open_decision(step) or auto_resolve(step)     # pure
     else: in_flight.add(start(step))               # activity, local, or child workflow
 
-  event = await first(in_flight, decisions answered, child signals, patches, overrides)
+  event = await first(in_flight, waits answered or timed out, child signals, patches, overrides)
   state = apply(state, event)                       # pure
   positions = route(event, state)                   # pure
 
@@ -126,7 +126,7 @@ that point. The new rule:
 | Activities | **Drain**: stop starting new activities, let in-flight ones finish, then continue-as-new. Activities are at most hours long, and their heartbeats add no history |
 | Waits (`ci.checks`, `wait.condition`, a merge's action request) | **Do not block.** A wait may last days, so its activity is cancelled and the step returns to pending at the same execution, using no attempt. The new run starts that execution again with the same identity, so what it recorded (when it began waiting, the head it waits on) still applies, and its `timeout` and `grace` run from its first start (LOG 139, LOG 152) |
 | Child runs | **Do not block.** Children are started with a parent-close policy that leaves them running. A child reports its end to the parent's workflow id by signal, which reaches whichever run of the parent is current; the parent then reads the child's result to confirm. A child that ends without signalling (terminated, or failed before it could) is noticed all the same: the run that started it is told by Temporal when it closes, and a later run watches the children it carried over with one activity, which a hand-over interrupts like a wait (LOG 154). The parent reads a child's artifacts from the record store's artifact index (LOG 155) |
-| Open decisions | **Do not block.** They are state, carried over. Answers are Temporal Updates addressed by workflow id, which Temporal delivers to the current run. They are **accepted during the drain**: the handler only records the answer, and the hand-over waits for running handlers to finish, so the answer is in the carried state (LOG 58). The validator rejects unknown and conflicting answers only |
+| Open decisions | **Do not block.** Every wait, open and closed, is the core's state, carried over; a question's timer is armed again from it. Answers are Temporal Updates addressed by workflow id, which Temporal delivers to the current run. They are **accepted during the drain**: the handler only records the answer, and the hand-over waits for running handlers to finish, so the answer is in the carried state (LOG 58). The validator and the handler route an answer with the core's one routing function, so they refuse the same answers (`docs/04` section 4) |
 | Timers | Re-created from state in the new run |
 
 Spiked in SP1 (`docs/spikes/sp1-results.md`): in 39 hand-overs, 24 with
