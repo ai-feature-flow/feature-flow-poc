@@ -156,8 +156,8 @@ public sealed class ApiTests : IAsyncDisposable
 
         // The token's actor is a viewer; the body cannot claim otherwise.
         Assert.Equal(HttpStatusCode.Forbidden, (await PostAsync(http, "runs/r1/answers",
-            """{ "wait_id": "gate-1", "outcome": "approved" }""")).Status);
-        Assert.Equal(HttpStatusCode.Forbidden, (await PostAsync(http, "runs/r1/abort", "{}")).Status);
+            """{ "wait_id": "gate-1", "outcome": "approved", "reason": "looks right" }""")).Status);
+        Assert.Equal(HttpStatusCode.Forbidden, (await PostAsync(http, "runs/r1/abort", """{ "reason": "stop" }""")).Status);
         var answers = (await records.QueryAsync<AnswerRecord>(Queries.Answers, new Dictionary<string, string> { ["run_id"] = "r1" }, TestContext.Current.CancellationToken)).Unwrap();
         Assert.Empty(answers);
     }
@@ -209,7 +209,7 @@ public sealed class ApiTests : IAsyncDisposable
         // With no Temporal client, delivering the answer throws; the caller must not see the exception.
         var admin = Start("admin");
         await OpenWaitAsync("intervention-1", "intervention", "epic.escalation");
-        var (status, text) = await PostAsync(admin, "runs/r1/answers", """{ "wait_id": "intervention-1", "action": "retry" }""");
+        var (status, text) = await PostAsync(admin, "runs/r1/answers", """{ "wait_id": "intervention-1", "action": "retry", "reason": "flaky" }""");
         Assert.Equal(HttpStatusCode.InternalServerError, status);
         Assert.DoesNotContain("Exception", text);
         Assert.DoesNotContain("null", text, StringComparison.OrdinalIgnoreCase);
@@ -259,7 +259,7 @@ public sealed class ApiTests : IAsyncDisposable
 
         // No Temporal client here: delivery fails after the answer is recorded as sent, which is what findings.triage reads.
         await PostAsync(approver, "runs/r1/answers", $$"""
-            { "wait_id": "gate-1", "outcome": "triaged", "artifacts": { "person_triage": {{System.Text.Json.JsonSerializer.Serialize(Triage)}} } }
+            { "wait_id": "gate-1", "outcome": "triaged", "reason": "two are false positives", "artifacts": { "person_triage": {{System.Text.Json.JsonSerializer.Serialize(Triage)}} } }
             """);
 
         var sent = Assert.Single((await records.QueryAsync<AnswerRecord>(Queries.Answers, new Dictionary<string, string> { ["run_id"] = "r1" },
@@ -282,7 +282,7 @@ public sealed class ApiTests : IAsyncDisposable
         var approver = Start("approver");
         await OpenWaitAsync("gate-1", "gate", "ticket.spec_approval");
 
-        var (status, text) = await PostAsync(approver, "runs/r1/answers", $$"""{ "wait_id": "gate-1", "outcome": "triaged", "artifacts": {{artifacts}} }""");
+        var (status, text) = await PostAsync(approver, "runs/r1/answers", $$"""{ "wait_id": "gate-1", "outcome": "triaged", "reason": "r", "artifacts": {{artifacts}} }""");
 
         Assert.Equal(HttpStatusCode.BadRequest, status);
         Assert.Contains(error, text);

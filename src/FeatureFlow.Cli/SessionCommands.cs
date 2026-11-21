@@ -20,8 +20,8 @@ public static class SessionCommands
                ff session list <run id>
                ff session fetch <session id> [--out <folder>]
                ff session check <session id> <step> [--revision <commit>] [--timeout <seconds>]
-               ff session submit <session id> [--revision <commit>]
-               ff session abandon <session id>
+               ff session submit <session id> [--revision <commit>] [--reason <text>]
+               ff session abandon <session id> --reason <text>
                ff session mcp
                (every ff session command takes [--api <url>] [--token-file <file>])
         """;
@@ -57,8 +57,8 @@ public static class SessionCommands
                 ["list", var run] => await client.ListAsync(run),
                 ["fetch", var sid] => await client.FetchAsync(sid, options.GetValueOrDefault("--out")),
                 ["check", var sid, var step] => await client.CheckAsync(sid, step, options.GetValueOrDefault("--revision"), timeout),
-                ["submit", var sid] => await client.SubmitAsync(sid, options.GetValueOrDefault("--revision")),
-                ["abandon", var sid] => await client.AbandonAsync(sid),
+                ["submit", var sid] => await client.SubmitAsync(sid, options.GetValueOrDefault("--revision"), options.GetValueOrDefault("--reason")),
+                ["abandon", var sid] when options.GetValueOrDefault("--reason") is { } reason => await client.AbandonAsync(sid, reason),
                 ["mcp"] => (await new SessionMcpServer(client).RunAsync(input ?? Console.In, output), ""),
                 _ => (-1, ""),
             };
@@ -170,21 +170,21 @@ public sealed class SessionClient(HttpClient http)
         return (4, $"check {checkId} did not finish within {timeout.TotalSeconds:0} s; see ff session fetch {sid} and the run's timeline\n");
     }
 
-    public async Task<(int, string)> SubmitAsync(string sid, string? revision)
+    public async Task<(int, string)> SubmitAsync(string sid, string? revision, string? reason = null)
     {
         if (NotAnId(sid) is { } refused)
             return refused;
         if (Revision(revision) is not { } commit)
             return (2, "no commit to submit: give --revision <full commit id>, or run this in a git working copy\n");
-        var (reply, failure) = await PostAsync<SessionSubmitRequest, AnswerResponse>($"sessions/{Uri.EscapeDataString(sid)}/submit", new SessionSubmitRequest(commit));
+        var (reply, failure) = await PostAsync<SessionSubmitRequest, AnswerResponse>($"sessions/{Uri.EscapeDataString(sid)}/submit", new SessionSubmitRequest(commit, reason));
         return reply is null ? (1, failure) : (0, $"submitted {commit}: {reply.Result}\n");
     }
 
-    public async Task<(int, string)> AbandonAsync(string sid)
+    public async Task<(int, string)> AbandonAsync(string sid, string reason)
     {
         if (NotAnId(sid) is { } refused)
             return refused;
-        var (reply, failure) = await PostAsync<SessionAbandonRequest, AnswerResponse>($"sessions/{Uri.EscapeDataString(sid)}/abandon", new SessionAbandonRequest());
+        var (reply, failure) = await PostAsync<SessionAbandonRequest, AnswerResponse>($"sessions/{Uri.EscapeDataString(sid)}/abandon", new SessionAbandonRequest(reason));
         return reply is null ? (1, failure) : (0, $"abandoned: {reply.Result}\n");
     }
 

@@ -402,7 +402,8 @@ public partial class RunWorkflow
                 input.Repositories.ToDictionary(r => r, _ => branch),
                 // A child's parent branch is its parent run's work branch; otherwise the agent worker reads the default branch from the code host.
                 input.ParentBranch is { } parentBranch ? input.Repositories.ToDictionary(r => r, _ => parentBranch) : new Dictionary<string, string>(),
-                a.Consumed, Workflow.Info.WorkflowId, LockRef, TrackerIssue: input.TrackerIssue, Runtime: binding?.AgentRuntime, Model: binding?.Model);
+                a.Consumed, Workflow.Info.WorkflowId, LockRef, TrackerIssue: input.TrackerIssue, Runtime: binding?.AgentRuntime, Model: binding?.Model,
+                RunContext: a.RunContext);
         }
 
         return CallOf(spec, identity, input.DryRun, agent);
@@ -632,7 +633,7 @@ public partial class RunWorkflow
 
         var result = core!.Apply(new StepCompleted(stepId, report.Outcome,
             report.Outputs.ToDictionary(kv => kv.Key, kv => YamlWriter.ReadPlain(kv.Value)),
-            report.Artifacts, patch, report.PatchToParent));
+            report.Artifacts, patch, report.PatchToParent, report.Summary));
         if (result.Accepted && report.LibraryOverride is { } proposal)
             ProposeLibraryOverride(stepId, proposal);
         if (!result.Accepted)
@@ -696,7 +697,7 @@ public partial class RunWorkflow
 
         var childInput = new RunStart(spec.WorkflowId, spec.Template, spec.Repositories, spec.Parameters,
             LockRef, input.DryRun, input.Requester, Workflow.Info.WorkflowId, s.StepId, input.HandOverEvents, ParentBranch: core.WorkBranch(),
-            ParentArtifacts: spec.ParentArtifacts, RootArtifacts: spec.RootArtifacts, TrackerIssue: spec.TrackerIssue, WorkItems: budget);
+            ParentArtifacts: spec.ParentArtifacts, RootArtifacts: spec.RootArtifacts, TrackerIssue: spec.TrackerIssue, WorkItems: budget, ParentContext: spec.ParentContext);
         // What this run has produced is recorded before a child exists, so the artifact index lists a parent's artifacts
         // before the child's that may consume them (m8-results Foundations, follow-up 4).
         await RecordAsync();

@@ -151,7 +151,7 @@ public sealed class OidcTests : IAsyncDisposable
     public async Task The_local_token_is_not_a_second_person_beside_oidc()
     {
         await WorldAsync(tokenRef: "secrets/api_token");
-        const string answer = """{ "wait_id": "w1", "outcome": "approved" }""";
+        const string answer = """{ "wait_id": "w1", "outcome": "approved", "reason": "agreed" }""";
 
         Assert.Equal(HttpStatusCode.Accepted, (await ApiWorld.PostAsync(With(Token("ann")), "runs/r1/answers", answer)).Status);
         var (local, text) = await ApiWorld.PostAsync(With("right"), "runs/r1/answers", answer);

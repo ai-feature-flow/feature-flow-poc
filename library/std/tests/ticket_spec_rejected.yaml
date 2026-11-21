@@ -2,18 +2,21 @@ api_version: feature-flow/v1
 kind: workflow_test
 name: ticket_spec_rejected
 description: >-
-  The specification is rejected once. The route back to the planner carries
-  clean_up, so the work branch is reset to where planning started before the
-  planner runs again. The second plan is approved and the ticket merges.
+  The specification is rejected once, with the person's reason. The route back
+  to the planner carries clean_up, so the work branch is reset to where planning
+  started before the planner runs again, and the planner's second execution is
+  told why the first plan was rejected (docs/04 section 3.5). The second plan is
+  approved and the ticket merges.
 template: std:templates/ticket_delivery
 parameters: { ticket_id: FF-1042 }
 repositories: [acme/api]
 
 script:
-  approve_spec: [rejected, approved]
+  approve_spec: [{ outcome: rejected, reason: "requirements omit the audit log" }, approved]
 
 expect:
   status: completed
   clean_up: [plan.plan]
   path_includes: [plan.plan, plan.validate, approve_spec, plan.plan, plan.validate, approve_spec, implement]
   executions: { plan.plan: 2, approve_spec: 2 }
+  context: { plan.plan: { 2: ["requirements omit the audit log"] } }

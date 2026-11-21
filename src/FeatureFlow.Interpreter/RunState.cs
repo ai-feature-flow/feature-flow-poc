@@ -117,4 +117,7 @@ public sealed class RunState
 
     /// <summary>The run's mid-run library overrides: its lock entries (docs/08 section 5.2).</summary>
     public List<LibraryOverrideEntry> LibraryOverrides { get; } = [];
+
+    /// <summary>What the next agent is told (docs/04 section 3.5): reports' summaries, people's answers and work failures, oldest first, at most <see cref="RunContexts.MaxEntries"/>.</summary>
+    public List<ContextEntry> Context { get; } = [];
 }

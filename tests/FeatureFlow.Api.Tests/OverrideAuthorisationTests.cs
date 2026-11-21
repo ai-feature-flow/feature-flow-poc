@@ -30,9 +30,9 @@ public sealed class OverrideAuthorisationTests
     /// <summary>How each override key is asked for: its route and its body.</summary>
     static (string Path, string Body) Request(string key) => key switch
     {
-        Overrides.Answer => ($"runs/{Run}/answers", """{ "wait_id": "gate-1", "outcome": "approved" }"""),
+        Overrides.Answer => ($"runs/{Run}/answers", """{ "wait_id": "gate-1", "outcome": "approved", "reason": "looks right" }"""),
         Overrides.AnswerQuestion => ($"runs/{Run}/answers", """{ "wait_id": "question-1", "outcome": "yes" }"""),
-        Overrides.Recover => ($"runs/{Run}/answers", """{ "wait_id": "intervention-1", "action": "retry" }"""),
+        Overrides.Recover => ($"runs/{Run}/answers", """{ "wait_id": "intervention-1", "action": "retry", "reason": "flaky" }"""),
         Overrides.Abort => ($"runs/{Run}/abort", """{ "reason": "stop" }"""),
         _ => ($"runs/{Run}/overrides", $$"""{ "key": "{{key}}", "step_id": "implement", "reason": "test", "change": { "x": "1" } }"""),
     };
@@ -150,7 +150,7 @@ public sealed class OverrideAuthorisationTests
     public async Task Granting_attempts_at_an_intervention_goes_beyond_the_hard_ceiling_only_for_an_administrator()
     {
         await using var world = await WorldAsync();
-        const string body = """{ "wait_id": "intervention-1", "action": "grant_attempts", "attempts": 50 }""";
+        const string body = """{ "wait_id": "intervention-1", "action": "grant_attempts", "attempts": 50, "reason": "nearly there" }""";
 
         Assert.Equal(HttpStatusCode.Forbidden, (await ApiWorld.PostAsync(world.As("al", "approver"), $"runs/{Run}/answers", body)).Status);
         Assert.Equal(HttpStatusCode.OK, (await ApiWorld.PostAsync(world.As("sam", "steerer"), $"runs/{Run}/answers", body)).Status);
@@ -245,14 +245,14 @@ public sealed class OverrideAuthorisationTests
             Overrides = new Dictionary<string, IReadOnlyList<string>> { [Overrides.Recover] = ["admin"], [Overrides.GrantAttempts] = ["steerer"] },
         }, "");
         await using var world = await WorldAsync(organisation);
-        const string grant = """{ "wait_id": "intervention-1", "action": "grant_attempts", "attempts": 1 }""";
+        const string grant = """{ "wait_id": "intervention-1", "action": "grant_attempts", "attempts": 1, "reason": "one more" }""";
 
         Assert.Equal(HttpStatusCode.Forbidden, (await ApiWorld.PostAsync(world.As("sam", "steerer"), $"runs/{Run}/answers", grant)).Status);
         var noGrant = organisation with { Policy = organisation.Policy with { Overrides = new Dictionary<string, IReadOnlyList<string>> { [Overrides.GrantAttempts] = ["approver"] } } };
         await using var other = await WorldAsync(noGrant);
         Assert.Equal(HttpStatusCode.Forbidden, (await ApiWorld.PostAsync(other.As("sam", "steerer"), $"runs/{Run}/answers", grant)).Status);
         Assert.Equal(HttpStatusCode.OK, (await ApiWorld.PostAsync(other.As("sam", "steerer"), $"runs/{Run}/answers",
-            """{ "wait_id": "intervention-1", "action": "retry" }""")).Status);
+            """{ "wait_id": "intervention-1", "action": "retry", "reason": "flaky" }""")).Status);
         Assert.Equal(HttpStatusCode.OK, (await ApiWorld.PostAsync(world.As("ada", "admin"), $"runs/{Run}/answers", grant)).Status);
     }
 

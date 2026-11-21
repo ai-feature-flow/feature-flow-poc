@@ -125,7 +125,9 @@ public static partial class ApiApp
             var document = await DocumentAsync(sid, context.RequestAborted);
             if (document is null)
                 return Error(409, $"session {sid} has no workspace: see the run's timeline");
-            return await SubmitAnswerAsync(context, caller, run!, wait!, new AnswerArgs(session!.WaitId, caller.Actor, document.SubmitOutcome, null, Revision: revision));
+            // A submission says what it submits; with no words of the person's own, that is its reason (LOG A3-0d).
+            var reason = string.IsNullOrWhiteSpace(body.Reason) ? $"submitted {revision}" : body.Reason;
+            return await SubmitAnswerAsync(context, caller, run!, wait!, new AnswerArgs(session!.WaitId, caller.Actor, document.SubmitOutcome, null, Revision: revision, Reason: reason));
         }
 
         public async Task<IResult> AbandonSessionAsync(HttpContext context, Caller caller, string sid)
@@ -133,12 +135,14 @@ public static partial class ApiApp
             var (body, malformed) = await BodyAsync<SessionAbandonRequest>(context);
             if (body is null)
                 return malformed!;
+            if (ReasonMissing(body.Reason) is { } missing)
+                return missing;
             var (session, run, wait, refused) = await ActableAsync(caller, sid, context.RequestAborted);
             if (refused is not null)
                 return refused;
             if ((await DocumentAsync(sid, context.RequestAborted))?.AbandonOutcome is not { } outcome)
                 return Error(409, $"session {sid}'s decision declares no outcome to abandon it with; answer it with ff run answer");
-            return await SubmitAnswerAsync(context, caller, run!, wait!, new AnswerArgs(session!.WaitId, caller.Actor, outcome, null));
+            return await SubmitAnswerAsync(context, caller, run!, wait!, new AnswerArgs(session!.WaitId, caller.Actor, outcome, null, Reason: body.Reason));
         }
 
         /// <summary>

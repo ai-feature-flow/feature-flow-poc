@@ -36,7 +36,8 @@ public static class RunStatuses
 /// <summary>
 /// What the core needs to know about the run, fixed at run start. <see cref="Parameters"/> are the request's
 /// values; declared defaults fill the rest. A child holds its parent's and its root's artifacts as they were when it
-/// started, by name (docs/03 section 7.2: consumed <c>from: parent</c> or <c>from: root</c>).
+/// started, by name (docs/03 section 7.2: consumed <c>from: parent</c> or <c>from: root</c>), and its parent's rendered run
+/// context (<see cref="ParentContext"/>; docs/04 section 3.5).
 /// </summary>
 public sealed record RunInfo(
     string Id,
@@ -47,7 +48,8 @@ public sealed record RunInfo(
     string? ParentBranch = null,
     IReadOnlyDictionary<string, string>? DefaultBranches = null,
     IReadOnlyDictionary<string, string>? ParentArtifacts = null,
-    IReadOnlyDictionary<string, string>? RootArtifacts = null);
+    IReadOnlyDictionary<string, string>? RootArtifacts = null,
+    string? ParentContext = null);
 
 /// <summary>
 /// Limits and policy the core enforces, carried in the run's state because workflow code cannot read
@@ -154,7 +156,8 @@ public abstract record RunInput;
 
 /// <summary>
 /// A step ended with an outcome. <see cref="Patch"/> is a patch the step proposed, or the patch
-/// <c>plan.expand</c> built (<see cref="PlanExpansion"/>).
+/// <c>plan.expand</c> built (<see cref="PlanExpansion"/>). <see cref="Summary"/> is an agent's report summary, kept in the run
+/// context (docs/04 section 3.5).
 /// </summary>
 public sealed record StepCompleted(
     string StepId,
@@ -162,7 +165,8 @@ public sealed record StepCompleted(
     IReadOnlyDictionary<string, object?>? Outputs = null,
     IReadOnlyDictionary<string, string>? Artifacts = null,
     PatchDocument? Patch = null,
-    bool PatchToParent = false) : RunInput;
+    bool PatchToParent = false,
+    string? Summary = null) : RunInput;
 
 public enum ErrorClass
 {
@@ -449,9 +453,9 @@ public static class WaitEnds
 /// <summary>
 /// A wait that has closed, and how (<see cref="WaitEnds"/>). An answered one keeps the answer's <see cref="Key"/> (a decision's
 /// outcome, a question's text, a recovery with its arguments) and <see cref="Actor"/>, so a repeat of the same answer is a
-/// duplicate and a different one a conflict (LOG 58).
+/// duplicate and a different one a conflict (LOG 58), and the person's <see cref="Reason"/>, which the key leaves out.
 /// </summary>
-public sealed record ClosedWait(string Id, WaitKind Kind, string StepId, string How, string? Key = null, string? Actor = null);
+public sealed record ClosedWait(string Id, WaitKind Kind, string StepId, string How, string? Key = null, string? Actor = null, string? Reason = null);
 
 /// <summary>A wait opened (<see cref="Open"/>) or closed since the shell last recorded; drained by the shell like the trace.</summary>
 public sealed record WaitChange(OpenWait Wait, bool Open);

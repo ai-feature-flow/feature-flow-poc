@@ -19,11 +19,11 @@ public static class RunCommands
                ff run start <template> [--param <name>=<value>]... [--repo <owner/name>]... [--parent-branch <branch>] [--tracker-issue <key>] [--dry-run] [--continue-as-new-events <n>]
                ff run show <run id> [--timeline]
                ff run wait <run id> [--for end | wait] [--timeout <seconds>]
-               ff run answer <run id> <wait id> <outcome | approve | reject> [--artifact <name>=<file>]...
+               ff run answer <run id> <wait id> <outcome | approve | reject> --reason <text> [--artifact <name>=<file>]...
                ff run findings <run id>
                ff run artifact <run id> <reference>
-               ff run recover <run id> <wait id> retry | go_to <step> [--clean-up] | replan <step> | grant_attempts <n> | end <status>
-               ff run abort <run id> [--reason <text>] [--close-pull-requests]
+               ff run recover <run id> <wait id> retry | go_to <step> [--clean-up] | replan <step> | grant_attempts <n> | end <status> --reason <text>
+               ff run abort <run id> --reason <text> [--close-pull-requests]
                ff run override <run id> <key> --reason <text> [--step <step id>] [--change <name>=<value>]...
                  (key: breakpoint, skip, amend, change_role, grant_attempts or override_library; the run applies a
                  protected or beyond-ceiling variant where your roles hold it)
@@ -72,22 +72,22 @@ public static class RunCommands
                     return await client.ShowAsync(id, flags.Contains("--timeline"));
                 case ["wait", var id]:
                     return await client.WaitAsync(id, Option("--for") ?? "end", TimeSpan.FromSeconds(double.Parse(Option("--timeout") ?? "300", System.Globalization.CultureInfo.InvariantCulture)));
-                case ["answer", var id, var wait, var outcome]:
-                    return await client.AnswerAsync(id, Answer(wait, outcome, options.GetValueOrDefault("--artifact") ?? []));
+                case ["answer", var id, var wait, var outcome] when Option("--reason") is { } reason:
+                    return await client.AnswerAsync(id, Answer(wait, outcome, reason, options.GetValueOrDefault("--artifact") ?? []));
                 case ["findings", var id]:
                     return await client.PrintAsync($"runs/{id}/findings");
                 case ["artifact", var id, var reference]:
                     return await client.PrintTextAsync($"runs/{id}/artifacts/{Uri.EscapeDataString(reference)}");
-                case ["recover", var id, var wait, "retry"]:
-                    return await client.AnswerAsync(id, new AnswerRequest(wait, Action: "retry"));
-                case ["recover", var id, var wait, var action, var step] when action is "go_to" or "replan":
-                    return await client.AnswerAsync(id, new AnswerRequest(wait, Action: action, StepId: step, CleanUp: flags.Contains("--clean-up")));
-                case ["recover", var id, var wait, "grant_attempts", var n] when long.TryParse(n, out var attempts):
-                    return await client.AnswerAsync(id, new AnswerRequest(wait, Action: "grant_attempts", Attempts: attempts));
-                case ["recover", var id, var wait, "end", var status]:
-                    return await client.AnswerAsync(id, new AnswerRequest(wait, Action: "end", Status: status));
-                case ["abort", var id]:
-                    return await client.SendAsync($"runs/{id}/abort", new AbortRequest(Option("--reason") ?? "aborted from the CLI", flags.Contains("--close-pull-requests")));
+                case ["recover", var id, var wait, "retry"] when Option("--reason") is { } reason:
+                    return await client.AnswerAsync(id, new AnswerRequest(wait, Action: "retry", Reason: reason));
+                case ["recover", var id, var wait, var action, var step] when action is "go_to" or "replan" && Option("--reason") is { } reason:
+                    return await client.AnswerAsync(id, new AnswerRequest(wait, Action: action, StepId: step, CleanUp: flags.Contains("--clean-up"), Reason: reason));
+                case ["recover", var id, var wait, "grant_attempts", var n] when long.TryParse(n, out var attempts) && Option("--reason") is { } reason:
+                    return await client.AnswerAsync(id, new AnswerRequest(wait, Action: "grant_attempts", Attempts: attempts, Reason: reason));
+                case ["recover", var id, var wait, "end", var status] when Option("--reason") is { } reason:
+                    return await client.AnswerAsync(id, new AnswerRequest(wait, Action: "end", Status: status, Reason: reason));
+                case ["abort", var id] when Option("--reason") is { } reason:
+                    return await client.SendAsync($"runs/{id}/abort", new AbortRequest(reason, flags.Contains("--close-pull-requests")));
                 case ["override", var id, var key] when Option("--reason") is { } reason:
                     return await client.OverrideAsync(id, key, reason, Option("--step"), options.GetValueOrDefault("--change") ?? []);
             }
@@ -107,12 +107,12 @@ public static class RunCommands
         return 2;
     }
 
-    /// <summary>A decision's answer; each <c>--artifact name=file</c> gives what the person produced, such as a triage (LOG 248).</summary>
-    static AnswerRequest Answer(string wait, string outcome, List<string> artifacts)
+    /// <summary>A decision's answer with the person's reason; each <c>--artifact name=file</c> gives what the person produced, such as a triage (LOG 248).</summary>
+    static AnswerRequest Answer(string wait, string outcome, string reason, List<string> artifacts)
     {
         var given = artifacts.Select(a => a.Split('=', 2)).ToDictionary(
             p => p[0], p => File.ReadAllText(p.Length == 2 ? p[1] : throw new ArgumentException($"--artifact takes <name>=<file>, not {p[0]}")), StringComparer.Ordinal);
-        return new AnswerRequest(wait, outcome, Artifacts: given.Count == 0 ? null : given);
+        return new AnswerRequest(wait, outcome, Reason: reason, Artifacts: given.Count == 0 ? null : given);
     }
 
     /// <summary>The API's calls, with the API's records as bodies and replies (docs/02 section 7).</summary>

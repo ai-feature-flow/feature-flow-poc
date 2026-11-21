@@ -134,7 +134,7 @@ public static partial class ApiApp
                         : read?.Error?.Reason == "validation_failed"
                             ? Error(400, read.Error.Message)
                             : Error(401, read?.Error?.Message ?? "unauthenticated");
-                return await AnswerFromChatAsync(context, caller, read!.Value!);
+                return await AnswerFromChatAsync(context, caller, source, read!.Value!);
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
@@ -145,14 +145,20 @@ public static partial class ApiApp
 
         /// <summary>
         /// The chat answer as the API's own answer request: a recovery action for an intervention, an outcome for anything
-        /// else (the answer handler maps a patch approval's approve or reject), for the wait the button named.
+        /// else (the answer handler maps a patch approval's approve or reject), for the wait the button named. A button carries
+        /// no words, so its reason is the engine's: <c>answered with a &lt;source&gt; button</c> (LOG A3-0d).
         /// Transport-neutral: a socket-mode receiver would make the same call with the answers it receives.
         /// </summary>
-        public async Task<IResult> AnswerFromChatAsync(HttpContext context, Caller caller, ChatAnswer answer)
+        public async Task<IResult> AnswerFromChatAsync(HttpContext context, Caller caller, string source, ChatAnswer answer)
         {
             var wait = (await Records.QueryAsync<WaitRecord>(Queries.Waits, new Dictionary<string, string> { ["run_id"] = answer.RunId }, context.RequestAborted)).Unwrap()
                 .FirstOrDefault(w => w.WaitId == answer.WaitId);
-            var body = new Dictionary<string, string> { ["wait_id"] = answer.WaitId, [wait?.Kind == "intervention" ? "action" : "outcome"] = answer.Choice };
+            var body = new Dictionary<string, string>
+            {
+                ["wait_id"] = answer.WaitId,
+                [wait?.Kind == "intervention" ? "action" : "outcome"] = answer.Choice,
+                ["reason"] = $"answered with a {source} button",
+            };
             context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(body)));
             context.Request.ContentType = "application/json";
             return await AnswerAsync(context, caller, answer.RunId);
