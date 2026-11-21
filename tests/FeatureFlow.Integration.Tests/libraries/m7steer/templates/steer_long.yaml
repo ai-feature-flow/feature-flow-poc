@@ -3,7 +3,9 @@ kind: template
 metadata:
   name: steer_long
   level: ticket
-  description: A chain of short scripted agent steps that grows the history past the hand-over threshold, then a build.
+  description: >-
+    Scripted agent steps all started at once, then a build. The short ones grow the history past the hand-over
+    threshold while a long one is still running, so the run drains for as long as the long one takes.
 
 parameters:
   work: { type: array, required: true, description: "One agent step per item, which the scripted runtime holds for item milliseconds" }
@@ -16,7 +18,7 @@ steps:
   - id: work
     for_each:
       items: { expr: "params.work" }
-      mode: chain
+      mode: parallel
       step:
         agent: { role: std:roles/reviewer, task: m7steer:tasks/prepare }
         with: { wait_ms: { expr: "item" } }

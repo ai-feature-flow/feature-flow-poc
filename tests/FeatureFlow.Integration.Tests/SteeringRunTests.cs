@@ -352,32 +352,21 @@ public class SteeringRunTests
     public async Task An_override_arriving_while_the_run_hands_over_is_carried_into_the_next_run()
     {
         await using var h = await Harness.StartAsync("steerdrain", """{ "steer_long:*": { delay_from: wait_ms } }""", libraries: Library);
-        var work = "[" + string.Join(", ", Enumerable.Repeat(600, 40)) + "]";
+        // Sixteen short steps, finishing a quarter-second apart, pass the 100-event threshold while the long one runs; the run
+        // then drains until the long one ends, so the override below reaches the drain however slowly the test runs.
+        var work = "[30000, " + string.Join(", ", Enumerable.Range(1, 16).Select(i => i * 250)) + "]";
         var id = h.Start("m7steer:templates/steer_long", "--param", $"work={work}", "--repo", Repo, "--continue-as-new-events", "100");
         var handle = h.Client.GetWorkflowHandle(id);
         // A library override made before the hand-over must still be what the final step resolves after it (R1 I1).
         await SendAsync(h, id, Override("override_library", null, new() { ["item"] = "m7steer:tasks/build", ["with"] = "Build the change. BUILD-V5\n" }));
 
-        // Sent the moment the run reports it is draining, as SP1's answers were; the handler applies it during the drain.
-        var sent = false;
-        var until = DateTime.UtcNow.AddSeconds(90);
-        while (!sent && DateTime.UtcNow < until)
-        {
-            var view = await handle.QueryAsync<RunView>(RunWorkflowNames.View, []);
-            if (view.Status is not ("starting" or "running"))
-                break;
-            if (view.Draining)
-            {
-                await SendAsync(h, id, Override("breakpoint", "final"));
-                sent = await ReceivedWhileDrainingAsync(handle, view.HandOvers.Count);
-                if (!sent)
-                    await SendAsync(h, id, Override("breakpoint", "final", new() { ["set"] = "false" }));
-            }
-
-            await Task.Delay(20, TestContext.Current.CancellationToken);
-        }
-
-        Assert.True(sent, "no override reached the run while it drained");
+        RunView? draining = null;
+        await UntilAsync(async () => (draining = await handle.QueryAsync<RunView>(RunWorkflowNames.View, [])) is { Draining: true } or { Status: not ("starting" or "running") },
+            $"{id} did not drain");
+        Assert.True(draining!.Draining, $"{id} ended without draining: {draining.Status}");
+        Assert.Contains("work_0", draining.InFlight);
+        await SendAsync(h, id, Override("breakpoint", "final"));
+        Assert.True(await ReceivedWhileDrainingAsync(handle, draining.HandOvers.Count), "the override did not reach the run while it drained");
         var paused = await OpenWaitAsync(h, id, "breakpoint");
         Assert.Equal("final", paused["stepId"]!.ToString());
         var after = await handle.QueryAsync<RunView>(RunWorkflowNames.View, []);
