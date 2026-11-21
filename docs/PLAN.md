@@ -3,7 +3,7 @@
 Status: design complete 2026-11-01. Version 1 built: milestones M0 to M8 of
 `docs/11-build-plan.md` done by 2026-11-05; the latest handover is
 `docs/build/handover-2026-11-05-v1.md`. Next phase: `docs/12-build-plan-phase-2.md`,
-drafted 2026-11-21; A1 and A2 built 2026-11-21, A3 and A5 next. Started 2026-10-31. This file is the
+drafted 2026-11-21; A1, A2, A3 and A5 built 2026-11-21, A4 next. Started 2026-10-31. This file is the
 resume point: a new session reads it first, then the status table in section 6
 and the latest handover.
 
@@ -145,7 +145,8 @@ Paths in all design documents are relative to the repository root.
 | Push the `docs/12` branch, once the product owner approves the push; then start A1 | Done 2026-11-21 |
 | A1 (control gaps) | Done 2026-11-21: one cap function for locked merge floors and races at run start and on patches, `merge.require_tested`, the `<level>.merge_action` decision with a code-host merge before the answer accepted, `notify.send` removed, an unservable action raising an intervention, and toolset settings, the `scripted` runtime outside development and evidence types on `artifact.import` refused. Results in `docs/build/a1-results.md`; LOG 347 to 355, unreviewed (LOG 351 flagged for the product owner) |
 | A2 (engine simplification) | Done 2026-11-21: the action stand-in deleted and dry run served by the memory and recording providers on the real paths; one action descriptor registry with an input schema for every action (`run_gate` refused at load); one routing function for every human wait, with agent questions held by the core and `Decision` renamed `Gate`; overrides routed by the core; the shell's logic and state moved into the interpreter core, held there by an architecture test; shared rules, compatibility leftovers and the test root helper consolidated. Results in `docs/build/a2-results.md`; LOG 357 to 387, unreviewed (LOG 362 and 370 flagged for the product owner) |
-| A3 (oversight API) | **Next** |
+| A3 (oversight API) | Done 2026-11-21: typed request and response records shared by the API and the CLI, with a generated and checked OpenAPI document; a required reason on answers and aborts, carried with retry causes and summaries to the next agent in a run context; prompts and transcripts indexed, a run's artifacts listed, and each gate linked to what its step consumed; `GET /attention`, `GET /me` and `can_answer` from one answer rule; history on the run page; server-sent change notifications over a `changes` table; templates read; each plan revision recorded and the current one served as data, with `ff run override --change name=@file`; reminders on open waits. Results in `docs/build/a3-results.md`; LOG 388 to 436, unreviewed (LOG 391, 400, 401 and 434 flagged for the product owner) |
+| A4 (console first slice) | **Next** |
 | A5 (sandboxes and runtimes) | Done 2026-11-21: sandboxes made from the repository's `environment.image`, bounded by the sandbox's `allowed_images`, with the base sandbox image's contract in `docs/06`; an agent runtime base class with hooks read by the step's runtime, a runtime contract suite both built-in runtimes pass, and `model_access` per runtime instance; `engine_tools` and `api.base_url` removed and refused; a configuration fault's hint supplied by the failing provider. Results in `docs/build/a5-results.md`; LOG 440 to 451, unreviewed (LOG 441, 442 and 444 flagged for the product owner) |
 
 ## 7. How to resume
