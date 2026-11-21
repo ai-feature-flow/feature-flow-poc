@@ -1,0 +1,57 @@
+using static Microsoft.Playwright.Assertions;
+
+namespace FeatureFlow.Console.Tests;
+
+/// <summary>
+/// The text-only rule in a browser (LOG 460): API data holding markup is shown as its literal text and inserts no element
+/// and runs no script, on every screen that shows it. The sources scan (ConsoleTests) and the Trusted Types policy are
+/// the other two layers.
+/// <para>
+/// To add a screen: seeding is shared (<see cref="SeedAsync"/> already puts the markup in the run's template, requester,
+/// wait prompt and choices, a timeline entry's detail and an artifact's name and content); add an entry to
+/// <see cref="Screens"/> that opens the screen and names how many elements must show the markup as text.
+/// </para>
+/// </summary>
+public sealed class TextOnlyTests(BrowserFixture browser) : BrowserTest(browser)
+{
+    /// <summary>Markup that, if it were inserted as markup, would add an image, run its handler and add a bold element.</summary>
+    public const string Markup = """<img src=x onerror="window.ffx=1"><b class="ffx">x</b>""";
+
+    const string RunId = "run-markup";
+
+    /// <summary>A screen that shows the seeded data: how to open it, and the least number of elements showing the markup.</summary>
+    sealed record Screen(Func<TextOnlyTests, Task> Open, int Shown);
+
+    static readonly Dictionary<string, Screen> Screens = new()
+    {
+        // The run's template, requester and the wait's prompt.
+        ["needs me"] = new(t => t.OpenAsync(), 3),
+        // The run's template.
+        ["run heading"] = new(t => t.OpenAsync("#/runs/" + RunId), 1),
+    };
+
+    public static TheoryData<string> Names => [.. Screens.Keys];
+
+    /// <summary>The markup in every field of API data a screen shows.</summary>
+    async Task SeedAsync()
+    {
+        await World.SeedRunWithWaitAsync(RunId, template: Markup, prompt: Markup, choices: [Markup], requester: Markup);
+        await Engine.TraceAsync(RunId, "started", "go_ahead", Markup);
+        await Engine.ProduceAsync(RunId, "go_ahead", Markup, Markup);
+    }
+
+    [Theory]
+    [MemberData(nameof(Names))]
+    public async Task Markup_in_api_data_is_shown_as_text_and_inserts_no_element(string screen)
+    {
+        await SeedAsync();
+
+        await Screens[screen].Open(this);
+
+        var shown = Page.GetByText(Markup);
+        await Expect(shown.First).ToBeVisibleAsync();
+        Assert.True(await shown.CountAsync() >= Screens[screen].Shown, $"{screen} shows the markup as text in {await shown.CountAsync()} elements, not {Screens[screen].Shown}");
+        Assert.Equal(0, await EvaluateAsync<int>("document.querySelectorAll('.ffx, img').length"));
+        Assert.True(await EvaluateAsync<bool>("window.ffx === undefined"));
+    }
+}

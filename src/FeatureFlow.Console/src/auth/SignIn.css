@@ -1,0 +1,17 @@
+.ff-sign-in {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75em;
+  max-width: 28em;
+  margin-top: 3em;
+}
+
+.ff-sign-in label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25em;
+}
+
+.ff-sign-in button {
+  align-self: flex-start;
+}
