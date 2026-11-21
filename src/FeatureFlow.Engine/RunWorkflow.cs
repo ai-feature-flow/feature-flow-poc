@@ -90,11 +90,11 @@ public partial class RunWorkflow
             // docs/09 section 1: a warning changes nothing, and is listed in the run start record (the timeline).
             if (prepared.Warnings.Count > 0)
                 foreach (var warning in prepared.Warnings)
-                    core.State.Trace.Add(new TraceEntry("warning", "", warning));
+                    core.Note("warning", "", warning);
             // docs/05 section 7: the effective policy is part of the run start record.
             if (prepared.EffectivePolicy is { Count: > 0 } effective)
                 foreach (var line in effective)
-                    core.State.Trace.Add(new TraceEntry("policy", "", line));
+                    core.Note("policy", "", line);
         }
         else
         {
@@ -106,8 +106,8 @@ public partial class RunWorkflow
                 _ = TimerAsync(timer);
             // Children an earlier run started can no longer be awaited here; a watch notices one that ends without
             // signalling (M3 follow-up 10).
-            if (core.State.Children.Count > 0)
-                _ = WatchCarriedChildrenAsync(core.State.Children.Select(c => c.WorkflowId).ToList());
+            if (core.Children.Count > 0)
+                _ = WatchCarriedChildrenAsync(core.Children.Select(c => c.WorkflowId).ToList());
         }
 
         var events = Math.Max(input.HandOverEvents, ConfigurationReader.MinimumHandOverEvents);
@@ -115,7 +115,7 @@ public partial class RunWorkflow
         {
             dirty = false;
             ProcessSignals();
-            if (!draining && core.State.Status == RunStatus.Running
+            if (!draining && core.Status == RunStatus.Running
                 && (Workflow.CurrentHistoryLength >= events || Workflow.CurrentHistorySize >= HandOverBytes))
                 draining = true;
             if (draining)
@@ -124,7 +124,7 @@ public partial class RunWorkflow
             await ExecuteAsync(draining ? core.Flush() : core.Advance());
             await RecordAsync();
 
-            if (core.State.Status != RunStatus.Running)
+            if (core.Status != RunStatus.Running)
                 return await FinishAsync();
 
             if (draining && inFlightActivities == 0 && !await HandOverAsync())
@@ -174,7 +174,7 @@ public partial class RunWorkflow
     {
         if (core is null)
             return Task.CompletedTask;
-        core.State.Trace.Add(new TraceEntry("model_unreachable", signal.StepId, signal.Cause));
+        core.Note("model_unreachable", signal.StepId, signal.Cause);
         dirty = true;
         return Task.CompletedTask;
     }
@@ -237,8 +237,8 @@ public partial class RunWorkflow
     [WorkflowUpdateValidator(nameof(AbortAsync))]
     public void ValidateAbort(AbortArgs abort)
     {
-        if (core is { State.Status: not RunStatus.Running })
-            throw new ApplicationFailureException($"the run has ended ({core.State.Status.Name()})");
+        if (core is not null && core.Status != RunStatus.Running)
+            throw new ApplicationFailureException($"the run has ended ({core.Status.Name()})");
     }
 
     [WorkflowUpdate(RunWorkflowNames.Abort)]
@@ -255,14 +255,14 @@ public partial class RunWorkflow
 
     [WorkflowQuery(RunWorkflowNames.View)]
     public RunView View() => new(
-        core?.State.Status.Name() ?? "starting",
+        core?.Status.Name() ?? "starting",
         core is not null,
         draining,
         handOvers.Count,
         Workflow.CurrentHistoryLength,
         core?.WaitViews() ?? [],
-        core?.State.InFlight.ToList() ?? [],
-        core?.State.Children.ToList() ?? [],
+        core?.InFlight.ToList() ?? [],
+        core?.Children.ToList() ?? [],
         handOvers.ToList());
 
     // ---- Carrying out the core's commands ----------------------------------------------------------
@@ -271,7 +271,7 @@ public partial class RunWorkflow
     {
         if (core is null)
             return;
-        if (cancelledByParent && core.State.Status == RunStatus.Running)
+        if (cancelledByParent && core.Status == RunStatus.Running)
             core.Apply(new RunAborted("the parent run no longer needs this run"));
 
         foreach (var signal in pendingParentPatches.ToList())
@@ -282,7 +282,7 @@ public partial class RunWorkflow
             var patch = PatchReader.Read(YamlWriter.Read(signal.Patch, "patch"), d);
             if (childStep is null || patch is null || d.HasErrors)
             {
-                core.State.Trace.Add(new TraceEntry("patch_rejected", childStep ?? "", $"from {signal.ChildWorkflowId}: " + string.Join("; ", d.Where(x => x.Blocks).Select(x => x.Message).DefaultIfEmpty("not from a running child"))));
+                core.Note("patch_rejected", childStep ?? "", $"from {signal.ChildWorkflowId}: " + string.Join("; ", d.Where(x => x.Blocks).Select(x => x.Message).DefaultIfEmpty("not from a running child")));
                 continue;
             }
 
@@ -339,7 +339,7 @@ public partial class RunWorkflow
                     }
                     catch (ApplicationFailureException e)
                     {
-                        core!.State.Trace.Add(new TraceEntry("library_override_refused", "", $"{o.Item} ({o.WaitId}): {e.Message}"));
+                        core!.Note("library_override_refused", "", $"{o.Item} ({o.WaitId}): {e.Message}");
                     }
 
                     break;
@@ -441,7 +441,7 @@ public partial class RunWorkflow
         {
             var result = await Workflow.ExecuteActivityAsync((RunActivities a) => a.CleanUpAsync(call), Light);
             foreach (var e in result.Events)
-                core.State.Trace.Add(new TraceEntry("clean_up", stepId, e));
+                core.Note("clean_up", stepId, e);
             if (result.Error is { } error)
                 // The target step does not run on a branch that was not reset: it raises an intervention when it starts.
                 cleanUpFailures[stepId] = error;
@@ -604,13 +604,13 @@ public partial class RunWorkflow
         {
             if (ending is ActionDecisionRequested)
                 foreach (var e in outcome.Events ?? [])
-                    core!.State.Trace.Add(new TraceEntry("agent", stepId, e));
+                    core!.Note("agent", stepId, e);
             core!.Apply(ending);
             return;
         }
 
         foreach (var e in outcome.Events ?? [])
-            core!.State.Trace.Add(new TraceEntry("agent", stepId, e));
+            core!.Note("agent", stepId, e);
         var report = outcome.Report!;
         PatchDocument? patch = null;
         if (report.Patch is { } text)
@@ -680,7 +680,7 @@ public partial class RunWorkflow
         // The child's parent branch is this run's work branch, in every repository the child is given (LOG 196).
         var made = await EnsureWorkBranchesAsync(new WorkBranchesCall(spec.Repositories, core.WorkBranch(), input.ParentBranch, input.DryRun));
         foreach (var e in made.Events)
-            core.State.Trace.Add(new TraceEntry("agent", s.StepId, e));
+            core.Note("agent", s.StepId, e);
         if (made.Error is { } error)
         {
             core.Apply(new StepCannotAnswer(s.StepId, error));
@@ -863,7 +863,7 @@ public partial class RunWorkflow
     {
         if (input.TrackerIssue is null || !TrackerUpdates.Declared(core!.Plan))
             return null;
-        var trace = core.State.Trace;
+        var trace = core.Timeline;
         while (trackerUpdates.Count == 0 && trackedThrough < trace.Count)
             foreach (var update in TrackerUpdates.Due(core.Plan, [trace[trackedThrough++]]))
                 trackerUpdates.Enqueue(update);
@@ -895,7 +895,7 @@ public partial class RunWorkflow
             note = $"could not move {call.Issue} to {call.Status}: the tracker did not answer in {TrackerTries.RetryPolicy!.MaximumAttempts} tries ({e.InnerException?.Message ?? e.Message})";
         }
 
-        core!.State.Trace.Add(new TraceEntry("tracker", update.StepId, $"{update.Why}: {note}"));
+        core!.Note("tracker", update.StepId, $"{update.Why}: {note}");
     }
 
     // ---- Records, hand-over and the end ------------------------------------------------------------
@@ -911,8 +911,7 @@ public partial class RunWorkflow
         while (NextTrackerUpdate() is { } update)
             await TrackAsync(update);
         var now = Workflow.UtcNow;
-        var timeline = core!.State.Trace.Select(t => new TimelineRecord(input.RunId, ++timelineSequence, t.Kind, t.StepId, t.Detail, now)).ToList();
-        core.State.Trace.Clear();
+        var timeline = core!.TakeTimeline().Select(t => new TimelineRecord(input.RunId, ++timelineSequence, t.Kind, t.StepId, t.Detail, now)).ToList();
         trackedThrough = 0;
 
         var (shown, closedQuestions) = core.TakeWaitChanges();
@@ -922,12 +921,11 @@ public partial class RunWorkflow
         // The agent endpoint long-polls a question's record for its answer or timeout (docs/04 section 3.4).
         var questions = closedQuestions.Select(q => new QuestionRecord(q.StepKey, input.RunId, q.WaitId, q.Text, q.Options,
             q.Answered ? QuestionRecord.Answered : QuestionRecord.TimedOut, q.Answer, now)).ToList();
-        var artifacts = core.State.Produced.Select(a => new ArtifactRecord(input.RunId, a.StepId, a.Execution, a.Name, a.Type, a.Reference, a.Producer, a.Evidence, now)).ToList();
-        core.State.Produced.Clear();
+        var artifacts = core.TakeProduced().Select(a => new ArtifactRecord(input.RunId, a.StepId, a.Execution, a.Name, a.Type, a.Reference, a.Producer, a.Evidence, now)).ToList();
         var locks = lockRecords.ToList();
         lockRecords.Clear();
 
-        var status = core.State.Status.Name();
+        var status = core.Status.Name();
         var runs = status == lastRecordedStatus ? [] : new List<RunRecord> { RunRecordOf(status, null, now) };
         lastRecordedStatus = status;
         if (timeline.Count == 0 && waits.Count == 0 && runs.Count == 0 && questions.Count == 0 && artifacts.Count == 0 && locks.Count == 0)
@@ -969,7 +967,7 @@ public partial class RunWorkflow
         }
 
         await TellParentAsync();
-        return core!.State.Status.Name();
+        return core!.Status.Name();
     }
 
     async Task TellParentAsync()
@@ -1018,7 +1016,7 @@ public partial class RunWorkflow
             var late = core!.Flush();
             await ExecuteAsync(late);
             var recorded = await RecordAsync();
-            if (core.State.Status != RunStatus.Running)
+            if (core.Status != RunStatus.Running)
                 return false;
             if (late.Count > 0 || recorded || !Workflow.AllHandlersFinished || inFlightActivities > 0)
                 continue;
@@ -1026,7 +1024,7 @@ public partial class RunWorkflow
             {
                 // The timeline shows each hand-over (M3).
                 handOverRecorded = true;
-                core.State.Trace.Add(new TraceEntry("continued_as_new", "", $"run {handOvers.Count + 1} follows at {Workflow.CurrentHistoryLength} history events"));
+                core.Note("continued_as_new", "", $"run {handOvers.Count + 1} follows at {Workflow.CurrentHistoryLength} history events");
                 continue;
             }
 
@@ -1040,7 +1038,7 @@ public partial class RunWorkflow
     /// </summary>
     ContinueAsNewException ContinueAsNew()
     {
-        handOvers.Add(new HandOver(handOvers.Count, Workflow.CurrentHistoryLength, inFlightActivities, core!.State.Children.Count, core.WaitViews().Count,
+        handOvers.Add(new HandOver(handOvers.Count, Workflow.CurrentHistoryLength, inFlightActivities, core!.Children.Count, core.WaitViews().Count,
             pendingChildEnds.Count, interruptedThisRun, activitiesStartedWhileDraining, childEndsWhileDraining, answersWhileDraining));
         var carried = new ShellState(core.Snapshot(), pendingChildEnds.ToList(), pendingParentPatches.ToList(), timelineSequence, handOvers.ToList(), cancelledByParent);
         // The run's lock carries its library overrides (docs/08 section 5.2).

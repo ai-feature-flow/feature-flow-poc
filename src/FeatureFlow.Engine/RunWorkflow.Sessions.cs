@@ -50,7 +50,7 @@ public partial class RunWorkflow
         }
         catch (EvaluationException e)
         {
-            core.State.Trace.Add(new TraceEntry("session_failed", opened.StepId, $"{SessionNames.Id(input.RunId, wait)}: {e.Message}"));
+            core.Note("session_failed", opened.StepId, $"{SessionNames.Id(input.RunId, wait)}: {e.Message}");
             return;
         }
 
@@ -58,13 +58,13 @@ public partial class RunWorkflow
         try
         {
             var result = await Workflow.ExecuteActivityAsync((RunActivities a) => a.OpenSessionAsync(open), SessionActivity);
-            core.State.Trace.Add(new TraceEntry("session_opened", opened.StepId,
-                $"{open.SessionId}: {open.Repository} branch {open.Branch} at {Revisions.Short(result.BaseRevision)}"));
+            core.Note("session_opened", opened.StepId,
+                $"{open.SessionId}: {open.Repository} branch {open.Branch} at {Revisions.Short(result.BaseRevision)}");
         }
         catch (ActivityFailureException e)
         {
             // The decision stays open: the person can still abandon it, and a retry of the step opens a new session.
-            core.State.Trace.Add(new TraceEntry("session_failed", opened.StepId, $"{open.SessionId}: {e.InnerException?.Message ?? e.Message}"));
+            core.Note("session_failed", opened.StepId, $"{open.SessionId}: {e.InnerException?.Message ?? e.Message}");
         }
         finally
         {
@@ -93,8 +93,8 @@ public partial class RunWorkflow
         var result = core!.Answer(answer, artifacts);
         if (!result.Accepted)
             throw new ApplicationFailureException(string.Join("; ", result.Errors));
-        core.State.Trace.Add(new TraceEntry("session_submitted", stepId,
-            $"{SessionNames.Id(input.RunId, answer.WaitId)} at {answer.Revision} by {answer.Actor}: {string.Join(", ", artifacts.Keys.Order(StringComparer.Ordinal))}"));
+        core.Note("session_submitted", stepId,
+            $"{SessionNames.Id(input.RunId, answer.WaitId)} at {answer.Revision} by {answer.Actor}: {string.Join(", ", artifacts.Keys.Order(StringComparer.Ordinal))}");
         dirty = true;
         await EndSessionAsync(stepId, answer, SessionStatuses.Submitted, artifacts);
         return new AnswerReply("recorded");
@@ -252,7 +252,7 @@ public partial class RunWorkflow
     async Task EndCheckAsync(SessionCheckArgs check, string target, string digest, string status, string? result, string detail)
     {
         // The detail (the step's outcome, or why the check could not run) goes on the run's timeline, which the API shows with the check.
-        core!.State.Trace.Add(new TraceEntry("session_check", target, $"{check.SessionId} {check.CheckId} at {Revisions.Short(check.Revision)} by {check.Actor}: {status}: {detail}"));
+        core!.Note("session_check", target, $"{check.SessionId} {check.CheckId} at {Revisions.Short(check.Revision)} by {check.Actor}: {status}: {detail}");
         dirty = true;
         await RecordCheckAsync(check, target, digest, status, result);
     }
