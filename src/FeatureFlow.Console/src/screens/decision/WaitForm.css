@@ -1,0 +1,55 @@
+.ff-wait {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 0.5em 1em;
+  margin: 1em 0;
+  overflow-wrap: anywhere;
+}
+
+.ff-wait-heading {
+  font-size: 1.1em;
+  margin: 0.2em 0;
+}
+
+.ff-wait-prompt {
+  white-space: pre-wrap;
+}
+
+.ff-wait-answer {
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ff-wait-choices {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em 1em;
+  padding: 0;
+}
+
+.ff-wait-route,
+.ff-wait-note,
+.ff-wait-progress {
+  color: #444;
+  margin-left: 0.3em;
+}
+
+.ff-wait-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25em;
+  margin: 0.5em 0;
+  max-width: 40em;
+}
+
+.ff-wait-field textarea,
+.ff-wait-field input,
+.ff-wait-field select {
+  font: inherit;
+}
+
+.ff-wait-pending {
+  font-style: italic;
+}
