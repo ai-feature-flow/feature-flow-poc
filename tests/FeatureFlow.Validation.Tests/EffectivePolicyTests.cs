@@ -16,7 +16,7 @@ public class EffectivePolicyTests
     {
         var d = new DiagnosticBag();
         var libraries = new LibrarySet(Library.Library.Open(Std.Root, d)!);
-        var plan = PlanLoader.LoadTemplate(libraries, new LibraryReference("std", null, "templates", "ticket_delivery"), d)!;
+        var plan = PlanLoader.LoadTemplate(libraries, new LibraryReference("std", "templates", "ticket_delivery"), d)!;
         Assert.False(d.HasErrors, string.Join("\n", d));
         return plan;
     }

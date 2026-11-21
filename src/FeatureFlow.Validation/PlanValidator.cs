@@ -164,7 +164,8 @@ public sealed class PlanValidator
             return null;
         if (reference.Reference is not { } r)
         {
-            d.Add(Checks.Schema, $"'{reference.Text}' is not a library reference (<library>:<type>/<name>)", reference.Location, stepId);
+            d.Add(Checks.Schema, LibraryReference.ConstraintRefusal(reference.Text) ?? $"'{reference.Text}' is not a library reference (<library>:<type>/<name>)",
+                reference.Location, stepId);
             return null;
         }
 

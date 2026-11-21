@@ -11,7 +11,7 @@ namespace FeatureFlow.Validation.Tests;
 /// </summary>
 public class RunStartCheckTests
 {
-    static readonly LibraryReference Ticket = new("std", null, "templates", "ticket_delivery");
+    static readonly LibraryReference Ticket = new("std", "templates", "ticket_delivery");
 
     /// <summary>Std's files with each edit applied once, as a library set, and ticket_delivery loaded from it.</summary>
     static (LibrarySet Libraries, Plan Plan) Load(params Std.Edit[] edits)

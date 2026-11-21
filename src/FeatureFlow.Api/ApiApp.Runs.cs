@@ -49,7 +49,7 @@ public static partial class ApiApp
                 return malformed!;
             var template = body.Template;
             if (LibraryReference.TryParse(template) is null)
-                return Error(400, "template must be a template reference, such as std:templates/ticket_delivery");
+                return Error(400, LibraryReference.ConstraintRefusal(template) ?? "template must be a template reference, such as std:templates/ticket_delivery");
             var repositories = body.Repositories ?? [];
             // Starting a run steers work in its repositories (LOG 219); a run is in at most one team's scope (LOG 217).
             if (Approval.MoreThanOneTeam(services.Organisation, repositories) is { } teams)

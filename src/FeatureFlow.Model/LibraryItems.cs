@@ -308,7 +308,9 @@ public static class LibraryItemReader
                 var parsed = LibraryReference.TryParse(s.Text);
                 if (parsed is null)
                 {
-                    r.Error($"{what} '{s.Text}' is not a library reference (<library>:<type>/<name>)", s.Location);
+                    r.Error(LibraryReference.ConstraintRefusal(s.Text) is { } refusal
+                        ? $"{what} {refusal}"
+                        : $"{what} '{s.Text}' is not a library reference (<library>:<type>/<name>)", s.Location);
                     return null;
                 }
 

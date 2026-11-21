@@ -106,7 +106,7 @@ public static class WorkflowTestReader
             Name = name,
             File = path,
             Description = description,
-            Template = template ?? new LibraryReference("std", null, "templates", "unknown"),
+            Template = template ?? new LibraryReference("std", "templates", "unknown"),
             Patch = patch,
             ExpectPath = expect?.Has("path") == true ? expect.StringList("path").ToList() : null,
             ExpectPathIncludes = expect?.Has("path_includes") == true ? expect.StringList("path_includes").ToList() : null,

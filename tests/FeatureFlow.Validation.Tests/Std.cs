@@ -70,7 +70,7 @@ public static class Std
         });
         var d = new DiagnosticBag();
         var libraries = new LibrarySet(Library.Library.Open(Root, d)!, Library.Library.FromFiles(files, d)!);
-        var plan = PlanLoader.LoadTemplate(libraries, new LibraryReference("probe", null, "templates", "probe"), d)!;
+        var plan = PlanLoader.LoadTemplate(libraries, new LibraryReference("probe", "templates", "probe"), d)!;
         PlanValidator.Validate(plan, libraries, d);
         return (libraries, plan, d);
     }

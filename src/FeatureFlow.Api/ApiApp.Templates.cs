@@ -47,7 +47,7 @@ public static partial class ApiApp
     /// <summary>An entrypoint with its template's declared parameters.</summary>
     static TemplateView TemplateOf(Library.Library library, Entrypoint entrypoint)
     {
-        var reference = new LibraryReference(library.Name, null, "templates", entrypoint.Template);
+        var reference = new LibraryReference(library.Name, "templates", entrypoint.Template);
         var d = new DiagnosticBag();
         var parameters = library.Yaml("templates", entrypoint.Template) is { } root
                          && DocumentReader.Read(root, "template", entrypoint.Template, library.Relative(library.PathOf("templates", entrypoint.Template)!), reference, d) is { } read

@@ -280,7 +280,7 @@ public class ShellInputTests
     public void A_run_carried_after_every_input_takes_the_same_path_as_one_that_is_not()
     {
         var std = new LibrarySet(Library.Library.Open(Probe.StdRoot, new DiagnosticBag())!);
-        var template = new LibraryReference("std", null, "templates", "epic_delivery");
+        var template = new LibraryReference("std", "templates", "epic_delivery");
         var parameters = new Dictionary<string, YNode>
         {
             ["epic_name"] = new YScalar("billing", true, new SourceLocation("t", 1, 1)),

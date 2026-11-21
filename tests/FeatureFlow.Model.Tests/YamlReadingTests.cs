@@ -53,11 +53,11 @@ public class YamlReadingTests
     }
 
     [Theory]
-    [InlineData("std:roles/implementer", "std", null, "roles", "implementer")]
-    [InlineData("acme@>=2.0.0:tasks/implement_ticket", "acme", ">=2.0.0", "tasks", "implement_ticket")]
-    public void References_parse(string text, string library, string? constraint, string type, string name)
+    [InlineData("std:roles/implementer", "std", "roles", "implementer")]
+    [InlineData("acme_delivery:tasks/implement_ticket", "acme_delivery", "tasks", "implement_ticket")]
+    public void References_parse(string text, string library, string type, string name)
     {
-        Assert.Equal(new LibraryReference(library, constraint, type, name), LibraryReference.TryParse(text));
+        Assert.Equal(new LibraryReference(library, type, name), LibraryReference.TryParse(text));
     }
 
     [Theory]
@@ -65,9 +65,19 @@ public class YamlReadingTests
     [InlineData("roles/implementer")]
     [InlineData("std:roles/Implementer")]
     [InlineData("library/std/roles/implementer.yaml")]
+    [InlineData("acme@>=2.0.0:tasks/implement_ticket")]
     public void Malformed_references_do_not_parse(string text)
     {
         Assert.Null(LibraryReference.TryParse(text));
+    }
+
+    [Fact]
+    public void A_version_constraint_in_a_reference_is_refused_naming_it()
+    {
+        // LOG 487: version 1 loads each library at the one version its source gives, so a constraint would never be checked.
+        Assert.Equal("'acme@>=2.0.0:tasks/implement_ticket': a version constraint in a reference (@>=2.0.0) is not supported in version 1; remove it",
+            LibraryReference.ConstraintRefusal("acme@>=2.0.0:tasks/implement_ticket"));
+        Assert.Null(LibraryReference.ConstraintRefusal("std:role/implementer"));
     }
 
     [Fact]

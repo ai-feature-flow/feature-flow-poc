@@ -51,13 +51,13 @@ public static class LibraryValidator
 
         foreach (var name in library.Names("templates"))
         {
-            var reference = new LibraryReference(library.Name, null, "templates", name);
+            var reference = new LibraryReference(library.Name, "templates", name);
             if (Validate(set, reference, d) is { } plan)
                 plans[reference.ToString()] = plan;
         }
 
         foreach (var name in library.Names("fragments"))
-            Validate(set, new LibraryReference(library.Name, null, "fragments", name), d);
+            Validate(set, new LibraryReference(library.Name, "fragments", name), d);
 
         d.AddRange(library.Diagnostics);
         return new ValidationResult { Diagnostics = Distinct(d), Plans = plans };

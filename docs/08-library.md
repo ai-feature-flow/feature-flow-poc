@@ -35,17 +35,18 @@ section 3.8). Library content names them and sets their options.
 One format everywhere:
 
 ```
-<library>[@<version constraint>]:<type>/<name>
+<library>:<type>/<name>
 ```
 
-For example `std:roles/implementer`, `acme@>=2.0.0:tasks/implement_ticket`.
+For example `std:roles/implementer`, `acme:tasks/implement_ticket`.
 `std` is the standard library. A reference names a content item, never a file
 path; the manifest maps names to paths, so a library can reorganise its files
 without breaking a plan.
 
 In version 1 each library is loaded at the one version its source gives. A
-dependency's `version` is refused at load (section 2, LOG 487); a constraint in
-a reference is accepted and not checked.
+dependency's `version` is refused at load (section 2), and so is a version
+constraint in a reference (`acme@>=2.0.0:tasks/implement_ticket`), naming the
+constraint as not supported in version 1 (LOG 487).
 
 ---
 

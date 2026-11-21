@@ -29,7 +29,7 @@ public sealed class Probe
 
     public LibrarySet Libraries { get; }
 
-    public static LibraryReference Ref(string name) => new("probe", null, "templates", name);
+    public static LibraryReference Ref(string name) => new("probe", "templates", name);
 
     public static RunInfo Run(params string[] repositories) =>
         new("run-1", repositories.Length == 0 ? ["acme/api"] : repositories, new Dictionary<string, YNode>());
