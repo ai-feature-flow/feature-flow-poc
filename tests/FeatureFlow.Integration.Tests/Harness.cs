@@ -226,7 +226,14 @@ public sealed class Harness : IAsyncDisposable
     {
         using var http = new HttpClient();
         http.DefaultRequestHeaders.Authorization = new("Bearer", await File.ReadAllTextAsync(TokenFile));
-        return JsonNode.Parse(await http.GetStringAsync($"{Api}/runs/{runId}"))!;
+        return OpenWaitsOnly(JsonNode.Parse(await http.GetStringAsync($"{Api}/runs/{runId}"))!);
+    }
+
+    /// <summary>The run page lists closed waits too (docs/02 section 7); these tests read its open ones as <c>waits</c>.</summary>
+    public static JsonNode OpenWaitsOnly(JsonNode view)
+    {
+        view["waits"] = new JsonArray(view["waits"]!.AsArray().Where(w => w!["open"]!.GetValue<bool>()).Select(w => w!.DeepClone()).ToArray());
+        return view;
     }
 
     /// <summary>Waits until the run's record shows an open wait, or the run ends. Returns the first open wait's id, or null.</summary>

@@ -178,7 +178,7 @@ public static class RunCommands
             output.WriteLine($"run {run.RunId} {run.Status} {run.Template}{(run.DryRun ? " (dry run)" : "")}");
             if (run.Detail is { } detail)
                 output.WriteLine($"  {detail}");
-            foreach (var wait in view.Waits)
+            foreach (var wait in view.Waits.Where(w => w.Open))
                 output.WriteLine($"wait {wait.WaitId} {KindName(wait.Kind)} at {wait.StepId} ({wait.DecisionType}): {wait.Prompt}; answer {string.Join(" | ", wait.Choices)}");
             foreach (var child in view.Children)
                 output.WriteLine($"child {child.RunId} {child.Status} {child.Template}");
@@ -199,9 +199,8 @@ public static class RunCommands
             {
                 var view = await GetAsync<RunDetail>($"runs/{id}", quiet: true);
                 var status = view?.Run.Status;
-                if (until == "wait" && view?.Waits.Count > 0)
+                if (until == "wait" && view?.Waits.FirstOrDefault(w => w.Open) is { } wait)
                 {
-                    var wait = view.Waits[0];
                     output.WriteLine($"wait {wait.WaitId} {KindName(wait.Kind)} at {wait.StepId}");
                     return 0;
                 }

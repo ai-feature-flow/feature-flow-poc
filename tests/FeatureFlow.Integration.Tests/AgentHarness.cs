@@ -367,7 +367,7 @@ public sealed class AgentHarness : IAsyncDisposable
     {
         using var http = new HttpClient();
         http.DefaultRequestHeaders.Authorization = new("Bearer", await File.ReadAllTextAsync(TokenFile));
-        return JsonNode.Parse(await http.GetStringAsync($"{Api}/runs/{runId}"))!;
+        return Harness.OpenWaitsOnly(JsonNode.Parse(await http.GetStringAsync($"{Api}/runs/{runId}"))!);
     }
 
     public async Task<string> WaitForEndAsync(string runId, TimeSpan timeout)
