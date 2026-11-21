@@ -36,10 +36,10 @@ public sealed class ProviderSet(IReadOnlyDictionary<string, IReadOnlyDictionary<
 
     /// <summary>
     /// The named instance of a type, chosen by the run (an agent role's runtime, <c>role_mapping</c>), as the run may use it:
-    /// any configured instance; in a dry run only the type's <c>dry_run</c> instance, as <see cref="ForRun(string, bool)"/>.
+    /// the named instance; in a dry run the type's <c>dry_run</c> instance in its place, as <see cref="ForRun(string, bool)"/>
+    /// selects for any choice (LOG A2-0f, A2-8b2).
     /// </summary>
-    public IProvider? ForRun(string type, string name, bool dryRun) =>
-        dryRun && dryRunInstances.GetValueOrDefault(type) != name && !SharedInDryRun.Contains(type) ? null : Instance(type, name);
+    public IProvider? ForRun(string type, string name, bool dryRun) => dryRun ? ForRun(type, dryRun) : Instance(type, name);
 
     public T Required<T>(string type, bool dryRun = false) where T : class =>
         ForRun(type, dryRun) as T ?? throw new InvalidOperationException($"no {type} provider implementing {typeof(T).Name} is configured");

@@ -73,8 +73,12 @@ public sealed class AgentManifestTests : IAsyncDisposable
         {
             ["vcs"] = One(new InMemoryVcs(forge)),
             ["sandbox"] = One(sandbox),
-            // A second runtime that would act for real: a dry run must not reach it (LOG A2-8b2).
-            ["agent_runtime"] = new Dictionary<string, IProvider> { ["one"] = runtime, ["real"] = new ScriptedAgentRuntime(FakeScript.Empty, () => store) },
+            // A second runtime, which a role may map to; a dry run uses its dry_run instance in its place (LOG A2-8b2).
+            ["agent_runtime"] = new Dictionary<string, IProvider>
+            {
+                ["one"] = runtime,
+                ["real"] = new EditingRuntime(forge, new ScriptedAgentRuntime(FakeScript.Empty, () => store), new Dictionary<string, string>(), _ => realStarted = true),
+            },
             ["artifact_store"] = One(store),
             ["record_store"] = One(records),
         };
@@ -206,15 +210,16 @@ public sealed class AgentManifestTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task A_dry_run_follows_its_role_mapping_to_its_dry_run_runtime_and_cannot_answer_when_the_role_maps_elsewhere()
+    public async Task A_role_mapped_runtime_runs_the_step_and_in_a_dry_run_the_dry_run_runtime_stands_in_for_it()
     {
-        Assert.Equal(StepOutcome.Reported, (await RunAsync(new Dictionary<string, string>(), dryRun: true, roleRuntime: "one")).Kind);
+        Assert.Equal(StepOutcome.Reported, (await RunAsync(new Dictionary<string, string>(), dryRun: true, roleRuntime: "real")).Kind);
+        Assert.False(realStarted);
 
-        var elsewhere = await RunAsync(new Dictionary<string, string>(), dryRun: true, roleRuntime: "real");
-
-        Assert.Equal(StepOutcome.CannotAnswer, elsewhere.Kind);
-        Assert.Equal("role_mapping names the agent runtime 'real', which is not the agent runtime's dry_run instance", elsewhere.Reason);
+        Assert.Equal(StepOutcome.Reported, (await RunAsync(new Dictionary<string, string>(), roleRuntime: "real")).Kind);
+        Assert.True(realStarted);
     }
+
+    bool realStarted;
 
     public ValueTask DisposeAsync()
     {
