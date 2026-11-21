@@ -31,7 +31,7 @@ public sealed record ScriptVisit(
 /// A fake world's script (kind <c>fake_script</c>): visits per step, keyed <c>&lt;template&gt;:&lt;step id&gt;</c>
 /// or <c>&lt;step id&gt;</c> for any template, then <c>&lt;template&gt;:*</c> for any other step of a template. A list's last visit repeats.
 /// <c>defaults</c>, keyed the same way, holds the visits of steps <c>steps</c> does not name. A scripted artifact's text
-/// may name a step input as <c>${name}</c>, which reports that input's value.
+/// may name a step input as <c>${name}</c>, which reports that input's value, and <c>${run_id}</c> or <c>${step_id}</c>.
 /// </summary>
 public sealed class FakeScript
 {
@@ -132,7 +132,7 @@ sealed partial class Reporter(Func<IArtifactStoreProvider> store)
         foreach (var name in contract.ArtifactsFor(outcome))
         {
             var content = visit?.Artifacts?[name] is { } node
-                ? Fill(node is YScalar { Plain: false } text ? text.Text : YamlWriter.Write(node), inputs)
+                ? Fill(node is YScalar { Plain: false } text ? text.Text : YamlWriter.Write(node), step, inputs)
                 : JsonSerializer.Serialize(new { fake = $"{step.RunId}/{step.StepId}/{step.Execution}/{name}" });
             var put = await store().PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(content)), cancellationToken);
             if (!put.Ok)
@@ -151,13 +151,18 @@ sealed partial class Reporter(Func<IArtifactStoreProvider> store)
 
     /// <summary>
     /// Scripted artifact content with each <c>${name}</c> replaced by the step's input <c>name</c>, as plain text, so one
-    /// visit serves steps whose inputs differ (each child ticket of an epic plans its own <c>subject_id</c>). A name the
+    /// visit serves steps whose inputs differ (each child ticket of an epic plans its own <c>subject_id</c>).
+    /// <c>${run_id}</c> and <c>${step_id}</c> name the step's run and step, as the scripted edit's path does. A name the
     /// step has no input for is left as written.
     /// </summary>
-    static string Fill(string text, IReadOnlyDictionary<string, string> inputs) =>
-        Placeholder().Replace(text, m => inputs.TryGetValue(m.Groups[1].Value, out var value)
-            ? Convert.ToString(YamlWriter.ReadPlain(value), CultureInfo.InvariantCulture) ?? value
-            : m.Value);
+    static string Fill(string text, StepIdentity step, IReadOnlyDictionary<string, string> inputs) =>
+        Placeholder().Replace(text, m => m.Groups[1].Value switch
+        {
+            "run_id" => step.RunId,
+            "step_id" => step.StepId,
+            var name when inputs.TryGetValue(name, out var value) => Convert.ToString(YamlWriter.ReadPlain(value), CultureInfo.InvariantCulture) ?? value,
+            _ => m.Value,
+        });
 
     [System.Text.RegularExpressions.GeneratedRegex(@"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")]
     private static partial System.Text.RegularExpressions.Regex Placeholder();

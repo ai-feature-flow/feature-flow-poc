@@ -23,7 +23,7 @@ public class FindingsLoopTests
     /// the engine checks its claims against their type when it reports (LOG 246).
     /// </summary>
     const string FixClaims = "verify.fix.fix: { artifacts: { fix_claims: { schema: 1, claims: [{ criterion: AC-1, verification: unit, tests: "
-        + "[{ repository: acme/api, tier: unit, id: Regression.fix, change: modified, source: { file: work/verify.fix.fix.txt } }] }] }, "
+        + "[{ repository: acme/api, tier: unit, id: Regression.fix, change: modified, source: { file: \"work/${run_id}/verify.fix.fix.txt\" } }] }] }, "
         + "implementation_claims: { schema: 1, claims: [{ criterion: AC-1, verification: unit, tests: [{ repository: acme/api, tier: unit, id: Adds, change: new }] }] } } }";
 
     static string Report(string findings) => $"{{ artifacts: {{ findings_report: {{ schema: 1, findings: [{findings}] }} }} }}";
