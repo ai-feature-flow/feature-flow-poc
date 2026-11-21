@@ -259,7 +259,7 @@ The view is part of the plan's readable form and of the run start record.
 | Kind of setting | Takes effect | Why |
 |---|---|---|
 | Checked by the API at the moment of use: who may answer a decision, who may perform an override, chat permissions | Immediately, for running runs too. A read's `can_answer` and `GET /attention` may use library decision types up to a minute old (LOG A3-0h); the answer itself reads them now | The API reads current configuration on every request |
-| Enforced inside the run: attempt ceilings, locked caps, F1, budgets | Fixed for the run when it starts, and recorded in the run start record | Workflow code cannot read configuration (it would break deterministic replay), so these values are carried in the run's state |
+| Enforced inside the run: attempt ceilings, locked caps, F1, budgets, `notifications.reminder_interval` | Fixed for the run when it starts and carried in its state (`RunPolicy`, the run start activity's result, passed on at each hand-over). F1 and the locked merge caps are also listed in the run start record as the effective policy view (section 7); the ceilings, budgets and reminder interval are not (LOG A3-8b) | Workflow code cannot read configuration (it would break deterministic replay), so these values are carried in the run's state |
 | Library content | Pinned in the run's lock at start (`docs/08` section 5.1) | Reproducibility |
 
 To change an in-run value for a running run, a person uses an override: for

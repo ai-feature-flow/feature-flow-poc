@@ -65,6 +65,11 @@ public class ChildRunTests
         Assert.NotEqual(own, index.First(a => a.RunId == childId && a.Name == "notes").Ref);
         var again = await StartOfAsync(h, againId);
         Assert.Equal(new Dictionary<string, string> { ["notes"] = own }, again.ParentArtifacts);
+
+        // F5: the child's agent is told what its parent's run had done: the parent's step summary, under its own heading (review R1).
+        var prompt = Assert.Single(await h.PromptsAsync(childId, "use", 1));
+        Assert.Contains("### From the parent run", prompt, StringComparison.Ordinal);
+        Assert.Contains("write: written", prompt, StringComparison.Ordinal);
         await h.RecordHistoryAsync(id, "family_parent");
         await h.RecordHistoryAsync(childId, "family_child");
     }

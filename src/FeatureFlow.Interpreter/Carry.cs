@@ -106,6 +106,9 @@ public sealed record CarriedCore(
 
     /// <summary>The run context's entries (<see cref="RunState.Context"/>). Null when there are none.</summary>
     public IReadOnlyList<ContextEntry>? Context { get; init; }
+
+    /// <summary>How many plan revisions have been taken for the artifact index (<see cref="RunCore.TakeRevisions"/>).</summary>
+    public int RevisionsTaken { get; init; }
 }
 
 public sealed partial class RunCore
@@ -160,6 +163,7 @@ public sealed partial class RunCore
             Closed = s.Closed.Count == 0 ? null : s.Closed.ToList(),
             Children = s.Children.Count == 0 ? null : s.Children.ToList(),
             Context = s.Context.Count == 0 ? null : s.Context.ToList(),
+            RevisionsTaken = revisionsTaken,
         };
     }
 
@@ -230,6 +234,7 @@ public sealed partial class RunCore
         s.Closed.AddRange(carried.Closed ?? []);
         s.Children.AddRange(carried.Children ?? []);
         s.Context.AddRange(carried.Context ?? []);
+        core.revisionsTaken = carried.RevisionsTaken;
         return core;
 
         static Execution? Exec(CarriedExecution? e)

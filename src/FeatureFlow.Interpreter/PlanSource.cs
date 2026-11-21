@@ -47,7 +47,8 @@ public sealed partial class RunCore
 
     /// <summary>
     /// The plan revisions accepted since the last take, revision 1 first, drained for the artifact index (LOG A3-0q). The
-    /// count taken is not carried: after a hand-over every revision is taken again, and indexing one again changes nothing.
+    /// count taken is carried (<see cref="CarriedCore.RevisionsTaken"/>), so a hand-over takes only revisions not yet taken:
+    /// each revision holds every patch before it, and taking them all again would grow the history with each hand-over (LOG A3-8a).
     /// </summary>
     public IReadOnlyList<PlanSource> TakeRevisions()
     {
