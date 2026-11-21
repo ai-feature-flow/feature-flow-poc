@@ -39,12 +39,18 @@
   </Target>
 
   <Target Name="ConsoleInstall" DependsOnTargets="ConsoleNode" Condition="'$(ConsoleBuild)' == 'true'"
-          Inputs="$(ConsoleDir)package.json;$(ConsoleDir)package-lock.json" Outputs="$(ConsoleDir)node_modules\.package-lock.json">
+          Inputs="$(ConsoleDir)package.json;$(ConsoleDir)package-lock.json;$(ConsoleDir).npmrc" Outputs="$(ConsoleDir)node_modules\.package-lock.json">
     <Exec Command="npm ci --no-audit --no-fund" WorkingDirectory="$(ConsoleDir)" />
   </Target>
 
-  <Target Name="ConsoleCompile" DependsOnTargets="ConsoleInstall" Condition="'$(ConsoleBuild)' == 'true'"
-          Inputs="@(ConsoleInput)" Outputs="$(ConsoleDir)dist\index.html">
+  <!-- Inputs and outputs see a changed file, not a deleted one, so the list of inputs is an input too: it is rewritten,
+       and so newer than dist/, only when a file is added, renamed or deleted. -->
+  <Target Name="ConsoleInputList" Condition="'$(ConsoleBuild)' == 'true'">
+    <WriteLinesToFile File="$(IntermediateOutputPath)console.inputs" Lines="@(ConsoleInput)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+  </Target>
+
+  <Target Name="ConsoleCompile" DependsOnTargets="ConsoleInstall;ConsoleInputList" Condition="'$(ConsoleBuild)' == 'true'"
+          Inputs="@(ConsoleInput);$(IntermediateOutputPath)console.inputs" Outputs="$(ConsoleDir)dist\index.html">
     <Exec Command="npm run build" WorkingDirectory="$(ConsoleDir)" />
   </Target>
 
