@@ -3,10 +3,11 @@ using FeatureFlow.Model;
 namespace FeatureFlow.Validation;
 
 /// <summary>
-/// The step-start checks of docs/09 section 2 that need no provider: 31 (an engine action's evaluated inputs satisfy its
-/// schema, <see cref="ActionDescriptor.InputErrors"/>; literals were checked at load) and 33 (every <c>tier_tags</c> tag
-/// matches a tier of the manifest read at this step). Check 32 (consumed artifacts exist) is the workflow's, which knows the
-/// run's artifacts.
+/// The step-start checks of docs/09 section 2 that need no provider: 31 (an action's evaluated inputs satisfy its schema,
+/// <see cref="ActionDescriptor.InputErrors"/>; literals were checked at load), which the core applies to every action before
+/// it starts (<c>RunCore.StepSpec</c>, <c>RunCore.ChildSpec</c>; LOG AFb-1) and an engine action's activity applies again to
+/// the call it is given, and 33 (every <c>tier_tags</c> tag matches a tier of the manifest read at this step). Check 32
+/// (consumed artifacts exist) is the workflow's, which knows the run's artifacts.
 /// </summary>
 public static class StepStartChecks
 {

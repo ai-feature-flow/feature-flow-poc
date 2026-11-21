@@ -53,22 +53,40 @@ public sealed record StepSpec(StepActivity Activity, string What, IReadOnlyDicti
 public sealed partial class RunCore
 {
     /// <summary>
-    /// What a step's activity is given, or why it cannot start: its inputs cannot be evaluated, it consumes an artifact that
-    /// does not exist (check 32, when <paramref name="atStart"/>), or a prompt or task it names cannot be rendered. A session's
-    /// pre-submit check is given the same, without check 32, so it stands for the step (docs/09 section 4.2).
+    /// A step's inputs at step start, evaluated, or why it cannot start: they cannot be evaluated, or an action's do not
+    /// satisfy its contract (check 31). Every action takes this path, whoever carries it out: <see cref="StepSpec"/> for the
+    /// engine's actions and <c>plan.expand</c>, <see cref="ChildSpec"/> for <c>run.child</c> (LOG AFb-1).
     /// </summary>
-    public (StepSpec? Spec, string? Error) StepSpec(string stepId, bool atStart = true)
+    (Dictionary<string, object?>? Inputs, string? Error) StartInputs(Step step)
     {
-        var step = StepById(stepId) ?? throw new EvaluationException($"{stepId} is not a step of plan revision {State.Revision}");
         Dictionary<string, object?> inputs;
         try
         {
-            inputs = ResolveInputs(stepId);
+            inputs = ResolveInputs(step.Id);
         }
         catch (EvaluationException e)
         {
             return (null, "its inputs cannot be evaluated: " + e.Message);
         }
+
+        if (step.Descriptor?.InputErrors(inputs) is { Count: > 0 } errors)
+            return (null, $"check 31 ({Checks.Title(Checks.StepInputs)}): {string.Join("; ", errors)}");
+        return (inputs, null);
+    }
+
+    /// <summary>
+    /// What a step's activity is given, or why it cannot start: its inputs cannot be evaluated or do not satisfy its action's
+    /// contract (check 31), it consumes an artifact that does not exist (check 32, when <paramref name="atStart"/>), or a prompt
+    /// or task it names cannot be rendered. A session's pre-submit check is given the same, without check 32, so it stands for
+    /// the step (docs/09 section 4.2).
+    /// </summary>
+    public (StepSpec? Spec, string? Error) StepSpec(string stepId, bool atStart = true)
+    {
+        var step = StepById(stepId) ?? throw new EvaluationException($"{stepId} is not a step of plan revision {State.Revision}");
+        var (resolved, inputError) = StartInputs(step);
+        if (inputError is not null)
+            return (null, inputError);
+        var inputs = resolved!;
 
         if (atStart && MissingConsumed(stepId) is { } missing)
             return (null, missing);

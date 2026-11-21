@@ -23,7 +23,8 @@ public sealed class EngineActions(ProviderSet providers, ActionOptions? options 
     internal ActionOptions Options => options;
 
     /// <summary>
-    /// Runs one action. Step-start check 31 comes first: inputs that do not satisfy the action's contract stop the step
+    /// Runs one action. Step-start check 31 comes first, on the call as given (the core has checked the step's inputs before
+    /// the call was made, LOG AFb-1): inputs that do not satisfy the action's contract stop the step
     /// for a person. <paramref name="heartbeat"/> is called while the action polls. A configuration fault stops the step
     /// for a person (<see cref="Must{T}"/>); every other infrastructure error is thrown for Temporal to retry.
     /// </summary>

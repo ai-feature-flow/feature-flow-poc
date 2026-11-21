@@ -68,8 +68,8 @@ other table is keyed by action name (F10). An entry holds:
 |---|---|---|
 | Outcomes | Each outcome and its class, as in the table above | Loading: route resolution and check 7 |
 | Outputs | The outputs the action publishes, with their types (`docs/03` section 5.4); none listed means any name, typed `dyn` | Check 5, the core's output check |
-| Inputs | The input schema: each input's kind (`string`, `boolean`, `array`, `map`, `duration`), allowed values, least duration, and the library item type of a reference input (`run.child`'s `template`, `scm.pull_request`'s `body`); a rule across inputs (`wait.condition` takes exactly one condition; `findings.triage`'s `states`) | Check 31: literals at load, evaluated values at step start for the engine-handled actions (not yet `run.child` or `plan.expand`; LOG 359); reference resolution (check 19) |
-| Needs | The capabilities it needs (`docs/06` section 1) | Check 21 |
+| Inputs | The input schema: each input's kind (`string`, `boolean`, `array`, `map`, `duration`), allowed values, least duration, and the library item type of a reference input (`run.child`'s `template`, `scm.pull_request`'s `body`); a rule across inputs (`wait.condition` takes exactly one condition; `findings.triage`'s `states`) | Check 31: literals at load, evaluated values at step start for every action, `run.child` and `plan.expand` included, before anything is started (LOG 359, AFb-1); reference resolution (check 19) |
+| Needs | The capabilities it needs (`docs/06` section 1), and those an input adds when a step sets it: `wait.condition`'s `pull_request` condition needs a code host, `checks` a code host's check status, `tracker` a tracker (LOG AFb-2) | Check 21 |
 | Handling | Who carries it out: the engine's handler, bound by name (LOG 357), so the descriptor stays data in `Model` and the handler lives in the engine; a test adds an action as one entry, both together (`EngineActions.Register`, LOG 357); the run itself for `run.child` (a child workflow) and `plan.expand` (a patch) | Dispatch; a test that the handlers' names equal the engine-handled entries |
 | Evidence | The evidence type it makes, indexed when the step does not declare it (LOG 180) | The artifact index; std's validators |
 | Waits between reads | Whether it may wait on the outside world, so a hand-over interrupts it (LOG 139) | The hand-over |
@@ -409,7 +409,7 @@ code host that refuses an allowed engine merge). It is a
 | Element | Detail |
 |---|---|
 | Form | Child workflow |
-| Inputs | `template` (a library reference to a template), `repositories` (a list), `parameters` (a map), `tracker_issue` (the child's own; it never inherits its parent's, LOG 185). Any other key is refused at load (check 31; LOG 346): `run_gate` was dropped (LOG 264), and a child's level is its template's (LOG 358) |
+| Inputs | `template` (a library reference to a template), `repositories` (a list), `parameters` (a map), `tracker_issue` (the child's own; it never inherits its parent's, LOG 185). Any other key is refused at load (check 31; LOG 346): `run_gate` was dropped (LOG 264), and a child's level is its template's (LOG 358). Evaluated values are checked at step start, before the child is created (LOG AFb-1) |
 | Outcomes | From the child's status (`docs/03` section 9.3) |
 | Idempotency | By run id and step key: a retry adopts the existing child |
 | Checks | The root's work-item budget before creating the child (F11; counted in the record store, LOG 187) |
@@ -436,7 +436,7 @@ override, so workflow tests can exercise the core's path.
 | Element | Detail |
 |---|---|
 | Form | An activity reads the list artifact; the core builds the patch from at most 500 items and applies it through the patch path |
-| Inputs | `from` (a list artifact), `shape` (`parallel` or `chain`), `target` (the `parallel` to fill, or the step to chain after), `on_other` (for a chain), `step` (the step to create per item, with `$.<field>` paths into the item). The step's own inputs are checked against its action's schema at load, `$.` paths when the patch is validated (check 31) |
+| Inputs | `from` (a list artifact), `shape` (`parallel` or `chain`), `target` (the `parallel` to fill, or the step to chain after), `on_other` (for a chain), `step` (the step to create per item, with `$.<field>` paths into the item). Its own inputs are evaluated and checked against its schema at step start, like any action's (check 31; LOG AFb-1). The created step's inputs are checked against its action's schema at load, `$.` paths when the patch is validated (check 31) |
 | Outcomes | `expanded` |
 | Effect | A patch, applied like any other and recorded with `proposed_by: engine` |
 
@@ -533,7 +533,7 @@ Waits for an external state, from FF's `awaitCondition`.
 
 | Element | Detail |
 |---|---|
-| Inputs | One condition: `pull_request` (`approved`, `merged` or `mergeable`), `checks: passed` (judged as `ci.checks` judges them, with its default `grace`), or `tracker` (`issue`, default the run's tracker issue; `statuses`, the library statuses that meet it; `unmet`, those that do not); `poll_every`; `timeout` (default 7 days) |
+| Inputs | One condition: `pull_request` (`approved`, `merged` or `mergeable`), `checks: passed` (judged as `ci.checks` judges them, with its default `grace`), or `tracker` (`issue`, default the run's tracker issue; `statuses`, the library statuses that meet it; `unmet`, those that do not); `poll_every`; `timeout` (default 7 days). The condition decides what check 21 asks for: a code host, a code host's check status, or a tracker (LOG AFb-2) |
 | Outcomes | `met`; `unmet` (closed unmerged, changes requested, failed checks, an issue in an `unmet` status) |
 | Behaviour | Holds no worker slot between reads: the activity reads, then is retried after `poll_every`; an inbound event wakes it to read at once (`docs/02` section 2.3). The timeout raises an intervention |
 
@@ -658,7 +658,7 @@ run holds are ignored (LOG 169).
 
 | Action | Inputs | Behaviour |
 |---|---|---|
-| `repo.inspect` | `repository` | Reads the manifest and publishes facts as outputs: `tiers`, `tags`, `ci` (a tier targets CI), `analyser`, `integration_environment`, `manifest_hash` |
+| `repo.inspect` | `repository` | Reads the manifest and publishes facts as outputs: `tiers` and `tags` (lists), `ci` (a tier targets CI), `analyser` (its name, or `none`), `integration_environment` (whether the manifest declares one), `manifest_hash`. A reference to any other output is refused at load (check 5; LOG AFb-3), as for `tracker.update` and `delivery.report` |
 | `artifact.compose` | `name`, `members` | Groups artifacts into a set. Copies and approves nothing |
 | `artifact.import` | `repository`, `folder`, `files` (each `{ path, name, type }`), `commit` (a full commit id) | Registers files as artifacts at that commit, validated against their types like an agent's artifacts (LOG 246); an evidence type is refused (section 10.1) |
 | `artifact.publish` | `repository`, `folder`, `files`, `previous` (an earlier publication to supersede), `title`, `body` | Copies artifacts into a repository in one commit and opens a pull request. `conflict` if the destination changed in a way the earlier publication did not expect; nothing is written (from FF; branch, record and superseding, LOG 182) |
