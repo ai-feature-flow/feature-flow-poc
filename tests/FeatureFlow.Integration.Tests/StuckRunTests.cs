@@ -2,6 +2,7 @@ using FeatureFlow.Engine;
 using FeatureFlow.Hosting;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Providers.Local;
+using FeatureFlow.Providers.StdValidators;
 using Microsoft.Extensions.Logging.Abstractions;
 using Temporalio.Api.Workflow.V1;
 using Temporalio.Api.WorkflowService.V1;
@@ -22,9 +23,12 @@ public class StuckRunTests
     static string Routed(params string[] events) =>
         "notifications: { routing: { " + string.Join(", ", events.Select(e => e + ": { channel: \"#ff\" }")) + " }, events: [" + string.Join(", ", events) + "] }";
 
+    static readonly string[] Ticket = ["--repo", Harness.RepoName, "--param", "engine_can_merge=true"];
+
     static Task<Harness> StartAsync(string name, string script = "{}", bool agentWorker = true) =>
         Harness.StartAsync(name, script, autoApprove: true, without: ["notifications"], agentWorker: agentWorker,
             providers: $"  notifications: {{ instances: {{ memory: {{ world: {name}-{Guid.NewGuid():N} }} }} }}",
+            policy: "  merge: { default_branch: { engine_may_merge: [acme/api] } }",
             organisation: Routed(NotificationEvents.Stalled, NotificationEvents.Stuck, NotificationEvents.Resumed));
 
     static StuckRuns Check(Harness h, TimeSpan stuckAfter) =>
@@ -60,9 +64,10 @@ public class StuckRunTests
     [Fact]
     public async Task A_provider_unreachable_shows_stalled_once_and_resumed_when_it_answers_and_the_run_completes()
     {
-        // The tests action is unreachable on its first four calls, then answers: Temporal retries it (1, 2, 4, 8 s apart).
-        await using var h = await StartAsync("stalled", """{ "baseline.tests": { error: infrastructure, times: 4 } }""");
-        var id = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=FF-12");
+        // The VCS is unreachable on the tests action's first four pushes (of the work branch), then answers: Temporal retries it (1, 2, 4, 8 s apart).
+        await using var h = await StartAsync("stalled");
+        h.Forge.Fail("vcs.Push", new ProviderError("unreachable", "scripted: the forge cannot be reached"), times: 4);
+        var id = h.Start("std:templates/ticket_delivery", ["--param", "ticket_id=FF-12", .. Ticket]);
         var check = Check(h, TimeSpan.FromHours(1));
         await UntilAsync(async () => (await PendingAsync(h, id)).Any(a => a.Attempt >= 2 && a.LastFailure?.ApplicationFailureInfo?.Type == "infrastructure"),
             "the tests action to fail twice");
@@ -90,7 +95,7 @@ public class StuckRunTests
     public async Task An_activity_no_worker_takes_shows_stuck_and_resumed_once_a_worker_takes_it()
     {
         await using var h = await StartAsync("stuck", agentWorker: false);
-        var id = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=FF-13");
+        var id = h.Start("std:templates/ticket_delivery", ["--param", "ticket_id=FF-13", .. Ticket]);
         var check = Check(h, TimeSpan.Zero);
         // Only the agent step left pending: the run's own record write, an activity in flight, would count as alive (a CI race).
         await UntilAsync(async () => (await PendingAsync(h, id)).Select(a => a.ActivityType.Name).SequenceEqual(["RunAgentStep"]),
@@ -103,7 +108,7 @@ public class StuckRunTests
         Assert.Equal([NotificationEvents.Stuck], await EventsAsync(h, id, NotificationEvents.Stuck));
 
         // An agent worker comes up: it takes the step, the run moves on, and the next check (at the usual threshold) closes the wait.
-        await using var worker = await FeatureFlowHost.StartAsync(h.Host.Configuration, LocalProviders.Factories, false, true, null);
+        await using var worker = await FeatureFlowHost.StartAsync(h.Host.Configuration, LocalProviders.Factories.Concat(StdValidatorProviders.Factories), false, true, null);
         await UntilAsync(async () => Harness.StartedSteps(await h.ShowAsync(id)).Contains("approve_spec"), "the run to move past the agent step");
         await Check(h, StuckRunTimings.Default.StuckAfter).CheckAsync(Ct);
 

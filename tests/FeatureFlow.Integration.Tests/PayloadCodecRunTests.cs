@@ -16,14 +16,17 @@ namespace FeatureFlow.Integration.Tests;
 [Trait("Category", "Integration")]
 public class PayloadCodecRunTests
 {
-    const string Script = """{ "ticket_delivery:implement": [{ error: work }, implemented] }""";
+    static readonly string Script = $$"""{ "ticket_delivery:implement": [{ error: work }, { outcome: implemented, artifacts: { {{Harness.ImplementationClaims}} } }] }""";
+
+    /// <summary>The organisation lets the engine merge into the fixture repository's protected default branch (F1).</summary>
+    const string EngineMerges = "  merge: { default_branch: { engine_may_merge: [acme/api] } }";
 
     [Fact]
     public async Task With_the_codec_a_runs_histories_hold_no_plaintext_and_replay_only_with_its_key()
     {
         var key = RandomNumberGenerator.GetBytes(32);
         var marker = "FF-" + Guid.NewGuid().ToString("N")[..10];
-        await using var h = await Harness.StartAsync("codec", Script, autoApprove: true,
+        await using var h = await Harness.StartAsync("codec", Script, autoApprove: true, policy: EngineMerges,
             temporal: ", payload_codec: { name: aes_gcm, key_ref: secrets/payload_key }",
             secrets: new Dictionary<string, string> { ["payload_key"] = Convert.ToBase64String(key) });
 
@@ -53,7 +56,7 @@ public class PayloadCodecRunTests
     public async Task Without_the_codec_the_same_check_finds_the_plaintext()
     {
         var marker = "FF-" + Guid.NewGuid().ToString("N")[..10];
-        await using var h = await Harness.StartAsync("nocodec", Script, autoApprove: true);
+        await using var h = await Harness.StartAsync("nocodec", Script, autoApprove: true, policy: EngineMerges);
 
         var id = await RunAsync(h, marker);
 
@@ -64,9 +67,9 @@ public class PayloadCodecRunTests
 
     static async Task<string> RunAsync(Harness h, string marker)
     {
-        var id = h.Start("std:templates/ticket_delivery", "--param", $"ticket_id={marker}", "--repo", "acme/api");
+        var id = h.Start("std:templates/ticket_delivery", "--param", $"ticket_id={marker}", "--param", "engine_can_merge=true", "--repo", Harness.RepoName);
         var (exit, end, error) = h.Cli("wait", id, "--timeout", "120");
-        Assert.True(exit == 0 && end.Contains("completed", StringComparison.Ordinal), end + error);
+        Assert.True(exit == 0 && end.Contains("completed", StringComparison.Ordinal), end + error + (await h.ShowAsync(id)).ToJsonString());
         Assert.Equal(2, Harness.StartedSteps(await h.ShowAsync(id)).Count(s => s == "implement"));
         return id;
     }

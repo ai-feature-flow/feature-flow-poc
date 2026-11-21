@@ -3,10 +3,10 @@ kind: template
 metadata:
   name: steer_long
   level: ticket
-  description: A chain of short actions that grows the history past the hand-over threshold, then a build.
+  description: A chain of short scripted agent steps that grows the history past the hand-over threshold, then a build.
 
 parameters:
-  work: { type: array, required: true, description: "One action per item, which takes item milliseconds" }
+  work: { type: array, required: true, description: "One agent step per item, which the scripted runtime holds for item milliseconds" }
 
 defaults:
   routes:
@@ -18,8 +18,9 @@ steps:
       items: { expr: "params.work" }
       mode: chain
       step:
-        action: artifact.compose
+        agent: { role: std:roles/reviewer, task: m7steer:tasks/prepare }
         with: { wait_ms: { expr: "item" } }
+        outcomes: { prepared: success }
   - id: final
     agent: { role: std:roles/implementer, task: m7steer:tasks/build }
     outcomes: { built: success, stuck: blocked }

@@ -258,7 +258,7 @@ public sealed class AgentHarness : IAsyncDisposable
     async Task CreateRemoteAsync()
     {
         Directory.CreateDirectory(Remote);
-        await GitAsync(Remote, "init", "-q", "--bare", "-b", "main");
+        await GitAsync(Folder, "init", "-q", "--bare", "-b", "main", Remote);
         var work = IOPath.Combine(Folder, "seed");
         await GitAsync(Folder, "init", "-q", "-b", "main", work);
         await File.WriteAllTextAsync(IOPath.Combine(work, "README.md"), "# app\n\nA fixture for the M4 tests.\n");
@@ -331,11 +331,14 @@ public sealed class AgentHarness : IAsyncDisposable
         return (await GitAsync(work, "rev-parse", "HEAD")).Trim();
     }
 
-    /// <summary>The branch's commit messages, newest first.</summary>
+    /// <summary>
+    /// The branch's commit messages, newest first. Git calls on the bare remote name it with <c>--git-dir</c>, so they work
+    /// where <c>safe.bareRepository</c> is <c>explicit</c>.
+    /// </summary>
     public async Task<List<string>> RemoteLogAsync(string reference, int count) =>
-        (await GitAsync(Remote, "log", $"-{count}", "--format=%s", reference)).Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList();
+        (await GitAsync(Folder, "--git-dir", Remote, "log", $"-{count}", "--format=%s", reference)).Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList();
 
-    public async Task<string> RemoteMessageAsync(string revision) => (await GitAsync(Remote, "log", "-1", "--format=%s", revision)).Trim();
+    public async Task<string> RemoteMessageAsync(string revision) => (await GitAsync(Folder, "--git-dir", Remote, "log", "-1", "--format=%s", revision)).Trim();
 
     public static string HiddenReference(string runId, string stepId) =>
         $"refs/feature-flow/wip/{Safe(runId)}/{Safe(stepId)}";

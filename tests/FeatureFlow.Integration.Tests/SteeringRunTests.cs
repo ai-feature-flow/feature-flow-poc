@@ -90,7 +90,7 @@ public class SteeringRunTests
         Assert.StartsWith("applied", (await SendAsync(h, id, Override("breakpoint", "build"))).Result);
         Assert.Contains("skip_protected", await RefusedAsync(h, id, Override("skip", "review", new() { ["outcome"] = "accepted" })));
         Assert.Contains("not an outcome", await RefusedAsync(h, id, Override("skip", "review", new() { ["outcome"] = "maybe" }, "ann", "skip_protected")));
-        Assert.Contains("is running", await RefusedAsync(h, id, Override("skip", "prepare", new() { ["outcome"] = "composed" })));
+        Assert.Contains("is running", await RefusedAsync(h, id, Override("skip", "prepare", new() { ["outcome"] = "prepared" })));
         var skip = Override("skip", "review", new() { ["outcome"] = "accepted" }, "root", "skip_protected");
         Assert.Equal("applied: skipped when the run reaches it (protected: review)", (await SendAsync(h, id, skip)).Result);
         Assert.StartsWith("duplicate", (await SendAsync(h, id, skip)).Result);
@@ -128,7 +128,7 @@ public class SteeringRunTests
         (string Key, string? Step, string[] Change)[] sent =
         [
             ("breakpoint", "review", ["set=true"]),
-            ("skip", "ship", ["outcome=composed"]),
+            ("skip", "ship", ["outcome=inspected"]),
             ("grant_attempts", "build", ["attempts=1"]),
             ("change_role", "build", ["role=std:roles/designer"]),
             ("amend", null, ["patch={ api_version: feature-flow/v1, kind: patch, base_revision: 2, changes: [{ op: set, target: ship, field: limits, value: { attempts: 2 } }] }"]),
