@@ -26,12 +26,12 @@ public static class SandboxImages
 {
     /// <summary>
     /// The spec's image when it names one the installation allows: the provider's own <paramref name="image"/>, or one
-    /// matching a pattern of its <c>allowed_images</c> (<c>*</c> matches any run of characters). Any other is refused for
-    /// a person, as <c>cannot_answer</c> (LOG A5a-2).
+    /// matching a pattern of its <c>allowed_images</c> (<c>*</c> matches any run of characters; case matters, as it does in
+    /// an image's name and tag). Any other is refused for a person, as <c>cannot_answer</c> (LOG A5a-2).
     /// </summary>
     public static ProviderResult<string> Choose(SandboxSpec spec, string image, IReadOnlyList<string> allowed) =>
         spec.Image is not { } wanted || wanted == image ? ProviderResult<string>.Success(image)
-        : allowed.Any(pattern => RepositoryPatterns.Matches(pattern, wanted)) ? ProviderResult<string>.Success(wanted)
+        : allowed.Any(pattern => RepositoryPatterns.Matches(pattern, wanted, StringComparison.Ordinal)) ? ProviderResult<string>.Success(wanted)
         : ProviderResult<string>.Failure("cannot_answer",
             $"the repository's environment.image {wanted} is not the sandbox's image {image} and matches none of its allowed_images");
 }

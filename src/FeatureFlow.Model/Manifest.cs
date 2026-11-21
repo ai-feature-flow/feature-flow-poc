@@ -167,29 +167,33 @@ public sealed record RepositoryManifest(
     }
 }
 
-/// <summary>Repository patterns such as <c>acme/poc-*</c> (F1's <c>engine_may_merge</c>): <c>*</c> matches any run of characters.</summary>
+/// <summary>
+/// Repository patterns such as <c>acme/poc-*</c> (F1's <c>engine_may_merge</c>): <c>*</c> matches any run of characters.
+/// Repository names match ignoring case, as the code host treats them; an image name, which is case-sensitive, passes
+/// <see cref="StringComparison.Ordinal"/>.
+/// </summary>
 public static class RepositoryPatterns
 {
-    public static bool Matches(string pattern, string repository)
+    public static bool Matches(string pattern, string repository, StringComparison comparison = StringComparison.OrdinalIgnoreCase)
     {
         var parts = pattern.Split('*');
         if (parts.Length == 1)
-            return string.Equals(pattern, repository, StringComparison.OrdinalIgnoreCase);
+            return string.Equals(pattern, repository, comparison);
         var at = 0;
         for (var i = 0; i < parts.Length; i++)
         {
             var part = parts[i];
             if (i == 0)
             {
-                if (!repository.StartsWith(part, StringComparison.OrdinalIgnoreCase))
+                if (!repository.StartsWith(part, comparison))
                     return false;
                 at = part.Length;
                 continue;
             }
 
             if (i == parts.Length - 1)
-                return repository.Length - at >= part.Length && repository.EndsWith(part, StringComparison.OrdinalIgnoreCase);
-            var found = repository.IndexOf(part, at, StringComparison.OrdinalIgnoreCase);
+                return repository.Length - at >= part.Length && repository.EndsWith(part, comparison);
+            var found = repository.IndexOf(part, at, comparison);
             if (found < 0)
                 return false;
             at = found + part.Length;

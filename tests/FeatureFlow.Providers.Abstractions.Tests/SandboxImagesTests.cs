@@ -27,4 +27,12 @@ public sealed class SandboxImagesTests
         // With no allowed_images, only the sandbox's own image.
         Assert.Equal("cannot_answer", SandboxImages.Choose(Spec("acme-api-sandbox:2"), Own, []).Error?.Reason);
     }
+
+    /// <summary>An image's name and tag are case-sensitive: <c>api:V3</c> is not <c>api:v3</c>, so neither an exact entry nor a pattern admits it.</summary>
+    [Theory]
+    [InlineData("acme/api:V3", "acme/api:v3")]
+    [InlineData("Registry.acme/feature-flow/api:3", "registry.acme/feature-flow/*")]
+    [InlineData("registry.acme/feature-flow/api:V3", "registry.acme/feature-flow/*:v3")]
+    public void An_allowed_image_matches_with_its_case(string wanted, string pattern) =>
+        Assert.Equal("cannot_answer", SandboxImages.Choose(Spec(wanted), Own, [pattern]).Error?.Reason);
 }

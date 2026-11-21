@@ -104,9 +104,14 @@ public sealed record ProviderContext(ProviderInstanceConfig Instance, string Bas
     public string RequiredSetting(string key) =>
         Setting(key) ?? throw new InvalidOperationException($"providers.{Instance.Type}.instances.{Instance.Name} needs '{key}'");
 
-    /// <summary>A setting that is a list of strings; empty when it is absent.</summary>
-    public IReadOnlyList<string> SettingList(string key) =>
-        Instance.Settings[key] is Model.Yaml.YSeq items ? items.Items.Select(i => i is Model.Yaml.YScalar { IsNull: false } s ? s.Text : "").ToList() : [];
+    /// <summary>A setting that is a list of strings; empty when it is absent. Anything else, or an item that is not a string, is refused.</summary>
+    public IReadOnlyList<string> SettingList(string key) => Instance.Settings[key] switch
+    {
+        null or Model.Yaml.YScalar { IsNull: true } => [],
+        Model.Yaml.YSeq items => items.Items.Select((item, i) => item is Model.Yaml.YScalar { IsNull: false } s ? s.Text
+            : throw new InvalidOperationException($"providers.{Instance.Type}.instances.{Instance.Name}.{key}[{i}] must be a string, not {item.Describe()}")).ToList(),
+        var other => throw new InvalidOperationException($"providers.{Instance.Type}.instances.{Instance.Name}.{key} must be a list of strings, not {other.Describe()}"),
+    };
 
     /// <summary>A path setting, relative to the configuration file's folder.</summary>
     public string? PathSetting(string key) => Setting(key) is { } p ? Path.GetFullPath(Path.Combine(BaseDirectory, p)) : null;
