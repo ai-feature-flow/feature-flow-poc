@@ -92,7 +92,12 @@ export function follow(): () => void {
         return "again";
       }
       failures = 0;
-      if (lastId === null) invalidate(["*"]);
+      // On a connection with no Last-Event-ID, changes may have been missed: read everything again. Once that has
+      // settled, every later change arrives over this stream, which <html data-live="connected"> says (tests wait for it).
+      if (lastId === null)
+        void invalidate(["*"]).then(() => {
+          if (!stopped) document.documentElement.dataset.live = "connected";
+        });
       const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
       let buffer = "";
       for (;;) {
@@ -126,6 +131,7 @@ export function follow(): () => void {
   return () => {
     stopped = true;
     controller.abort();
+    delete document.documentElement.dataset.live;
     document.removeEventListener("visibilitychange", visible);
   };
 }

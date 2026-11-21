@@ -26,6 +26,7 @@ public sealed class SignInTests(BrowserFixture browser) : BrowserTest(browser)
         await Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Needs me" })).ToBeVisibleAsync();
         await Expect(page.GetByText("Nothing needs you now.")).ToBeVisibleAsync();
         await Expect(page.GetByRole(AriaRole.Button, new() { Name = "Sign out" })).ToBeVisibleAsync();
+        await LiveAsync();
 
         // Appended now, so it reaches the page only over GET /events, which must carry the token.
         await World.SeedRunWithWaitAsync("run-signed-in");
