@@ -100,8 +100,8 @@ unbuilt is review F14, corrected in `docs/12` A6.
 | `agent_runtime.copilot_cli` | The same four settings as `claude_code`. Copilot reaches the model through the same model proxy, as a custom Anthropic provider with the step's token; one proxy, configured by the default runtime's `model_access`, serves every runtime instance (LOG 293) |
 | `agent_runtime.scripted` | A test double that runs no agent and reports what its `script` says (its `defaults` serve steps its `steps` do not name; a scripted artifact's `${name}` is the step's input `name`, LOG 368). In the step's sandbox it acts as an agent would, through the sandbox provider's calls: a step with write access changes the checkout (`work/<run id>/<step id>.txt`, LOG 368), unless its step id is in `no_edits`, and the reported artifacts are copied into the output folder. The sandbox is the `memory` one of its `world` when that holds it, else the installation's default sandbox (the Kubernetes one in `deploy/k3d/smoke`; LOG 371). Refused unless `development: true` (L4), as are the `fake` and `memory` providers |
 | `agent_runtime.recording` | The dry-run runtime (section 5): `folder` receives a line per step it is given, with its inputs; it reports what its `script` says, else each step's first success outcome, and acts in the step's sandbox as `scripted` does |
-| `sandbox.docker` | `image` (the sandbox image, `feature-flow-sandbox`), `user` (the agent's, default `node`), `docker` (the executable). Its network reaches only `agent_worker`'s `urls` and `model_base_url`, and the internet (LOG 291) |
-| `sandbox.kubernetes` | `image`, `user`, `namespace` (default `default`), `cpu` (default 2) and `memory` (default 4Gi) limits per pod, and `context` (a kubeconfig context; omitted, the cluster the worker runs in). Its network is `sandbox-network-policy.yaml`, which must be applied in `namespace` first; the agent worker's pods carry `app.kubernetes.io/name: feature-flow-agent-worker` (LOG 294) |
+| `sandbox.docker` | `image` (the sandbox image, `feature-flow-sandbox`), `allowed_images` (patterns, `*` matching any run of characters, of the repository images `environment.image` may name; default none, so only `image`, LOG A5a-2), `user` (the agent's, default `node`), `docker` (the executable). Its network reaches only `agent_worker`'s `urls` and `model_base_url`, and the internet (LOG 291) |
+| `sandbox.kubernetes` | `image`, `allowed_images` (as for Docker), `user`, `namespace` (default `default`), `cpu` (default 2) and `memory` (default 4Gi) limits per pod, and `context` (a kubeconfig context; omitted, the cluster the worker runs in). Its network is `sandbox-network-policy.yaml`, which must be applied in `namespace` first; the agent worker's pods carry `app.kubernetes.io/name: feature-flow-agent-worker` (LOG 294) |
 | `agent_worker` | LOG 91: `listen` (the agent worker's endpoint), `urls` (its replicas as sandboxes reach them), `model_base_url` (the model proxy as sandboxes reach it; default the first of `urls` with `/model`), `token_key_ref` (the secret every replica signs step tokens with) and `sandbox_client` (the executable copied into each sandbox). How often commits are pushed (30 seconds), Claude Code's own model retries, the hook's hold (120 seconds) and the sandbox client's retry (10 minutes) are fixed defaults, not settings |
 | `secrets.file.from_environment` | Secret names the `file` provider reads from the process environment, such as the solo profile's subscription token. LOG 91 |
 | `endpoint` | Not in version 1: every runtime reaches its model through the one model proxy; a per-runtime upstream is a follow-up (LOG 293) |
@@ -213,8 +213,7 @@ api_version: feature-flow/v1
 kind: repository
 
 environment:
-  from: .devcontainer/devcontainer.json    # or inline: image, os, docker
-  os: linux
+  image: registry.internal/acme/api-sandbox:3   # built FROM the installation's sandbox image
 
 setup:
   commands: ["git config core.hooksPath .githooks", "dotnet tool restore"]
@@ -256,7 +255,7 @@ library:                                   # docs/08 section 4; read from the de
 
 | Key | Notes |
 |---|---|
-| `environment` | Inline, or a referenced `devcontainer.json`. The engine merges the two into the **resolved manifest**, which providers receive |
+| `environment` | `image`: the image the repository's sandboxes are made from, built on the installation's sandbox image (`docs/06` section 3.1, its contract). The installation must allow it (`allowed_images`), or the step stops for a person. Without the section, the installation's image (LOG A5a-1, A5a-2). `from` (a `devcontainer.json`), `os` and `docker` are not built and are refused (LOG A5a-3) |
 | `test_tiers[].tags` | What templates select by (`test.run` `tier_tags`), so a template never lists a repository's tiers |
 | `test_tiers[].targets` | Where the tier may run. A tier that needs Docker or Windows normally lists only `ci` |
 | `test_tiers[].prerequisites` | `env`: environment variable names the tier needs. `test.run` raises an intervention if one is missing where the tier runs, rather than reporting the tests as failed |

@@ -118,7 +118,7 @@ record SandboxCapabilities(IReadOnlyList<string> Os, bool Docker, bool NetworkPo
                            bool PersistentAcrossSteps, bool StreamingOutput);
 
 record SandboxSpec(string Key, string Home, IReadOnlyDictionary<string, string> Environment,
-                   IReadOnlyList<string> Folders);
+                   IReadOnlyList<string> Folders, string? Image = null);
 
 interface ISandboxProvider : IProvider {
     Task<..SandboxHandle> CreateAsync(SandboxSpec spec);
@@ -141,9 +141,13 @@ abbreviated: every method also takes a cancellation token, and `..X` stands for
 - `SandboxSpec` gives the step's key, the engine-controlled home (DR19),
   environment and folders. The checkout is the VCS provider's (`CheckOutAsync`,
   section 3.3), not the sandbox's.
-- Will receive the **resolved manifest** (the repository's `feature-flow.yaml`
-  merged with any referenced `devcontainer.json` and defaults), not yet built. It
-  never parses either file itself.
+- `SandboxSpec.Image` is the repository's `environment.image` (`docs/07`
+  section 4), or null for the sandbox's own `image` (LOG A5a-1). The agent step
+  passes its work branch manifest's image; `test.run` and `analysis.run` pass the
+  parent branch's, as they do its `setup`, because both shape the evidence. The
+  sandbox never reads the manifest itself. A container sandbox uses the image
+  only when it is its own or matches one of its `allowed_images`, and refuses any
+  other as `cannot_answer`, which stops the step for a person (LOG A5a-2).
 - `PersistentAcrossSteps`: the sandbox outlives a worker restart. Without it, a
   worker loss is treated as a lost sandbox.
 - Read-only checkouts are enforced by the sandbox (`MakeReadOnlyAsync`), not the
@@ -159,6 +163,25 @@ abbreviated: every method also takes a cancellation token, and `..X` stands for
   cluster. Docker closes it with rules inside the container (LOG 291); the
   Kubernetes pod sandbox with a network policy (LOG 294). Both share one command
   machinery (LOG 292) and pass `SandboxContract`, which checks the network.
+
+**The base sandbox image.** The engine ships one base image, `src/Providers/FeatureFlow.Providers.Docker/sandbox.Dockerfile`
+(Debian with Node, Claude Code and Copilot CLI). An installation's sandbox `image` is it or an image built
+on it. A repository that needs a toolchain (a .NET SDK, a JDK) names its own image in `environment.image`,
+built `FROM` the installation's image, and the installation lists it in `allowed_images` (LOG A5a-2). The
+engine neither builds nor pushes images: Docker pulls an absent image at creation, a Kubernetes node as it
+schedules the pod. What the engine requires of an image (LOG A5a-4):
+
+| Requirement | Why |
+|---|---|
+| Linux on glibc, with `sh`, coreutils, `tar`, `awk`, `getent`, `setsid` and `setpriv` (util-linux), and `git` | The shared command machinery (LOG 292), the self-contained sandbox client (LOG 67) and the Git provider's checkout run on them |
+| The agent's user (the sandbox's `user` setting, default `node`, uid 1000), unprivileged; root reachable by the engine's exec | Commands run as the agent's user under `setpriv`; copies, read-only paths and the network rules are root's |
+| `iptables` and `ip6tables` (Docker), `tini` (Kubernetes) | Docker closes the network from inside the container, and a sandbox without them is removed at creation; the pod runs `tini -- sleep infinity` |
+| `claude` and `copilot` on `PATH`, at versions the runtimes support | Only for agent steps run by those runtimes; tests and analysis do not use them |
+| No `ENTRYPOINT` that does not run its arguments, and nothing at start that needs the network | Docker starts the container as `sleep infinity` with its own init; the network is closed before anything else runs |
+| Nothing relied on in `/ff`, the home directory, `USER`, `WORKDIR` or `ENV HOME` | The engine creates `/ff` and the home per step (DR19), sets `HOME`, and runs each command as a named user in a named folder |
+
+A repository image adds to the base with root (`RUN apt-get install …`) and removes nothing from it. At
+run time its sandbox has the same network as any other: the agent worker and the internet (LOG 291, 294).
 
 ### 3.2 Agent runtime
 
