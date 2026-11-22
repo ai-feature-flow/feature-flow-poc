@@ -825,9 +825,10 @@ public sealed class PlanValidator
     // ---- Check 37 ------------------------------------------------------------------------------
 
     /// <summary>
-    /// A route on an outcome that is not a success, from step A to step B, where B consumes (optionally or not) an artifact
-    /// A declares but not for that outcome: B starts without A's evidence of why it was sent there, or with an earlier
-    /// execution's (LOG 515). A list-form <c>produces</c> keeps its artifacts for success outcomes only.
+    /// A route on a failure outcome, from step A to step B, where B consumes (optionally or not) an artifact A declares but
+    /// not for that outcome: B starts without A's evidence of why it was sent there, or with an earlier execution's
+    /// (LOG 515). A list-form <c>produces</c> keeps its artifacts for success outcomes only. A <c>blocked</c> outcome is
+    /// not checked: it produces a reason, not evidence, and the reason reaches the step it routes to (LOG 513).
     /// </summary>
     void CheckFailureRoutes()
     {
@@ -838,7 +839,7 @@ public sealed class PlanValidator
                 continue;
             foreach (var route in from.ResolvedRoutes)
             {
-                if (from.Outcomes().FirstOrDefault(o => o.Name == route.Outcome) is not { } outcome || outcome.Class == OutcomeClass.Success)
+                if (from.Outcomes().FirstOrDefault(o => o.Name == route.Outcome) is not { } outcome || outcome.Class != OutcomeClass.Failure)
                     continue;
                 foreach (var stepId in Targets(route.Target).Distinct())
                 {

@@ -177,7 +177,8 @@ public class WorkflowTestRunnerTests
     [InlineData("approve_spec: { 2: [requirements] }", "approve_spec execution 2 did not start, so what it consumed was not seen")]
     public void Consumed_keys_are_expected_per_execution(string expectation, string? failure)
     {
-        var result = RunVariant("ticket_main_path", "expect:\n", $"expect:\n  consumed: {{ {expectation} }}\n");
+        // ticket_main_path already expects what its reviewers consume; the case is added to those.
+        var result = RunVariant("ticket_main_path", "  consumed:", $"  consumed:\n    {expectation}");
 
         if (failure is null)
             Assert.True(result.Passed, string.Join("\n", result.Failures));

@@ -299,4 +299,29 @@ public class MutationTests
         Assert.Equal(("retest", Severity.Error), (error.StepId, error.Severity));
         Assert.Contains("routes 'failed' to fix, which consumes 'fix_test_results', but this step keeps 'fix_test_results' only for passed", error.Message, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void A_blocked_route_to_a_step_consuming_what_the_router_keeps_only_on_success_passes()
+    {
+        // A blocked agent gives a reason, not evidence; the reason reaches the step it routes to (LOG 513).
+        var (_, _, d) = Probe("""
+            api_version: feature-flow/v1
+            kind: template
+            metadata: { name: probe, level: ticket }
+            artifact_types: [std:artifact_types/evidence_claims]
+            steps:
+              - id: plan
+                agent: { role: std:roles/planner, task: std:tasks/plan_ticket }
+                consumes: [{ name: implementation_claims, optional: true }]
+                outcomes: { planned: success }
+                routes: { planned: implement }
+              - id: implement
+                agent: { role: std:roles/implementer, task: std:tasks/implement_ticket }
+                produces: { implemented: [{ name: implementation_claims, type: std:artifact_types/evidence_claims }] }
+                outcomes: { implemented: success, blocked: blocked }
+                routes: { implemented: { end: completed }, blocked: plan }
+            """);
+
+        Assert.DoesNotContain(d, x => x.Check == Checks.FailureRouteArtifact);
+    }
 }
