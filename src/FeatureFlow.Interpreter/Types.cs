@@ -152,8 +152,11 @@ public sealed record CleanUp(string StepId) : Command;
 
 public sealed record EndRun(RunStatus Status) : Command;
 
-/// <summary>A child run's agent step proposed a patch to the parent's plan (docs/03 section 9.4): the shell signals the parent.</summary>
-public sealed record SendPatchToParent(string StepId, PatchDocument Patch) : Command;
+/// <summary>
+/// A child run's agent step proposed a patch to the parent's plan (docs/03 section 9.4): the shell signals the parent, with the
+/// step's <c>planning.review: required</c> as <see cref="ReviewRequired"/>, which the parent applies.
+/// </summary>
+public sealed record SendPatchToParent(string StepId, PatchDocument Patch, bool ReviewRequired = false) : Command;
 
 /// <summary>
 /// A person approved an agent's library override (docs/05 section 6): the shell stores the content, writes the run's new

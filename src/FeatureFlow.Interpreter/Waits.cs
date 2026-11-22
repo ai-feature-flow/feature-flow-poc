@@ -1,7 +1,9 @@
 using System.Globalization;
+using System.Text;
 using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Model;
 using FeatureFlow.Model.Plans;
+using FeatureFlow.Model.Yaml;
 
 namespace FeatureFlow.Interpreter;
 
@@ -352,7 +354,7 @@ public sealed partial class RunCore
             WaitKind.Gate => new(kind, step?.Decision?.Type ?? $"{level}.decision", step?.DeclaredOutcomes.Select(o => o.Name).ToList() ?? [], GatePrompt(wait, step), consumed,
                 step?.DeclaredOutcomes.Where(o => o.Class == OutcomeClass.Failure).Select(o => o.Name).ToList() ?? []),
             WaitKind.Question => new(kind, $"{level}.question", wait.Options ?? [], wait.Reason),
-            WaitKind.PatchApproval => new(kind, $"{level}.patch_approval", PatchChoices, wait.Reason),
+            WaitKind.PatchApproval => new(kind, $"{level}.patch_approval", PatchChoices, PatchPrompt(wait)),
             WaitKind.Breakpoint => new(kind, $"{level}.breakpoint", Recoveries.For(wait.Kind), wait.Reason, ReasonRequired: [Recoveries.Name(RecoveryKind.End)]),
             _ => new(kind, $"{level}.escalation", Recoveries.For(wait.Kind), wait.Reason, ReasonRequired: [Recoveries.Name(RecoveryKind.End)]),
         };
@@ -372,4 +374,95 @@ public sealed partial class RunCore
             return wait.Reason;
         }
     }
+
+    /// <summary>The most a patch approval's prompt holds, in UTF-8 bytes: the changes are cut to fit.</summary>
+    public const int MaxPatchPrompt = 8 * 1024;
+
+    /// <summary>
+    /// A patch approval's prompt as plain text (design note s6): who proposes it against which revision, its reason, why it needs
+    /// a person, where the run continues, and the changes as YAML, at most <see cref="MaxPatchPrompt"/> bytes, with no control
+    /// characters but line breaks. A library override's approval keeps the core's reason.
+    /// </summary>
+    static string PatchPrompt(OpenWait wait)
+    {
+        if (wait.Patch is not { } patch)
+            return wait.Reason;
+        var by = patch.ProposedBy.StepId ?? "an agent";
+        var head = new StringBuilder()
+            .Append(wait.FromChild ? $"{by} (in the child run of {wait.StepId})" : by)
+            .Append($" proposes a change to the plan (revision {patch.BaseRevision.ToString(CultureInfo.InvariantCulture)}).\n")
+            .Append($"Reason: {OneLine(patch.Reason ?? "none given")}\n")
+            .Append($"Needs approval: {OneLine(wait.Reason)}\n")
+            .Append($"Continues at: {patch.ResumeAt ?? (wait.FromChild ? "where the run was" : "the proposer's route")}\n")
+            .Append("Changes:\n").ToString();
+        var changes = string.Join('\n', patch.Changes.SelectMany(op => Item(OpNode(op))).Select(Plain));
+        const string Cut = "\n... (cut: the full patch is in the run's record)";
+        if (Encoding.UTF8.GetByteCount(head) + Encoding.UTF8.GetByteCount(changes) > MaxPatchPrompt)
+        {
+            var room = MaxPatchPrompt - Encoding.UTF8.GetByteCount(head) - Encoding.UTF8.GetByteCount(Cut);
+            var length = Math.Min(changes.Length, Math.Max(0, room));
+            while (length > 0 && Encoding.UTF8.GetByteCount(changes.AsSpan(0, length)) > room)
+                length--;
+            if (length > 0 && char.IsHighSurrogate(changes[length - 1]))
+                length--;
+            changes = changes[..length] + Cut;
+        }
+
+        return head + changes;
+    }
+
+    static string OneLine(string text) => Plain(string.Join(' ', text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)));
+
+    static string Plain(string text) => string.Concat(text.Where(c => c == '\n' || !char.IsControl(c)));
+
+    /// <summary>A patch operation as the patch document writes it (docs/03 section 10.2).</summary>
+    static YMap OpNode(PatchOp op)
+    {
+        var at = op.Location;
+        var entries = new List<KeyValuePair<YScalar, YNode>>();
+        void Add(string key, YNode value) => entries.Add(new(new YScalar(key, true, at), value));
+        void Text(string key, string? value)
+        {
+            if (value is not null)
+                Add(key, new YScalar(value, false, at));
+        }
+
+        Text("op", op.Op);
+        Text(op.Op == "insert" ? op.Position ?? "after" : "target", op.Target);
+        if (op.Step is not null)
+            Add("step", op.Step);
+        Text("field", op.Field);
+        if (op.Value is not null)
+            Add("value", op.Value);
+        Text("on_other", op.OnOther);
+        Text("branch", op.Branch);
+        return new YMap(entries, at);
+    }
+
+    /// <summary>A node as block YAML lines: maps as <c>key: value</c>, lists as <c>- item</c>, nested two spaces in.</summary>
+    static IEnumerable<string> Lines(YNode node) => node switch
+    {
+        YMap { Entries.Count: > 0 } m => m.Entries.SelectMany(e => Nested(Scalar(e.Key) + ":", e.Value)),
+        YSeq { Items.Count: > 0 } q => q.Items.SelectMany(Item),
+        _ => [Scalar(node)],
+    };
+
+    static IEnumerable<string> Nested(string head, YNode value) =>
+        Lines(value).ToList() is var lines && Simple(value) ? [$"{head} {lines[0]}"] : [head, .. lines.Select(l => "  " + l)];
+
+    static IEnumerable<string> Item(YNode value)
+    {
+        var lines = Lines(value).ToList();
+        return [$"- {lines[0]}", .. lines.Skip(1).Select(l => "  " + l)];
+    }
+
+    static bool Simple(YNode node) => node is not (YMap { Entries.Count: > 0 } or YSeq { Items.Count: > 0 });
+
+    static string Scalar(YNode node) =>
+        node is YScalar { IsNull: false } s && PlainScalar().IsMatch(s.Text) && !ReservedScalars.Contains(s.Text) ? s.Text : YamlWriter.Write(node);
+
+    static readonly HashSet<string> ReservedScalars = new(StringComparer.OrdinalIgnoreCase) { "true", "false", "null", "yes", "no", "on", "off", "y", "n" };
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_./-]*(:[A-Za-z0-9_./-]+)*$")]
+    private static partial System.Text.RegularExpressions.Regex PlainScalar();
 }
