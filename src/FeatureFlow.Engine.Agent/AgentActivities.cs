@@ -151,6 +151,8 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
         string parentBranch = "";
         RepositoryManifest? manifest;
 
+        /// <summary>The accepted report's artifacts as the agent named them, paths in its output folder.</summary>
+        IReadOnlyDictionary<string, string> reportedPaths = new Dictionary<string, string>();
         bool Writes => spec.WriteAccess != "none" && spec.Push;
 
         public async Task<StepOutcome> ExecuteAsync()
@@ -466,7 +468,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             return await reader.ReadToEndAsync(ct);
         }
 
-        /// <summary>The first prompt: the library's reporting preamble, where the step's files are, the run context, and the rendered task.</summary>
+        /// <summary>The first prompt: the library's reporting preamble, where the step's files are, why it runs again, the run context, and the rendered task.</summary>
         async Task<string> PromptAsync(bool interrupted)
         {
             var preamble = await PreambleAsync();
@@ -480,6 +482,8 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                 .Append($"- The inputs manifest is `{paths.InputsManifest}`.\n");
             if (interrupted)
                 text.Append("- An earlier attempt of this step was interrupted. Its commits are already in the checkout: continue from them.\n");
+            if (spec.Causes is { } causes)
+                text.Append('\n').Append(causes.TrimEnd()).Append('\n');
             if (spec.RunContext is { } context)
                 text.Append('\n').Append(context.TrimEnd()).Append('\n');
             text.Append('\n').Append(call.Agent!.TaskText ?? $"Do the work of the {call.What} role.");
@@ -616,7 +620,10 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                 {
                     var (stored, problems) = await CheckArtifactsAsync(candidate);
                     if (problems.Count == 0)
+                    {
+                        reportedPaths = candidate.Artifacts;
                         return candidate with { Artifacts = stored };
+                    }
                     // An artifact that breaks its type is rejected like a report, from the same allowance of correction turns.
                     var all = await ReportsAsync();
                     await RecordAsync(new RecordBatch(Reports: [new ReportRecord(key, all.Count + 1, false, null, problems, DateTimeOffset.UtcNow)]));
@@ -764,8 +771,9 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
         }
 
         /// <summary>
-        /// Commits leftovers (unless <c>on_uncommitted: fail</c>), checks a read-only role committed nothing, pushes,
-        /// moves the work branch once, copies the artifacts out, publishes the engine's outputs, and removes the sandbox.
+        /// Commits leftovers (unless <c>on_uncommitted: fail</c>), checks a read-only role committed nothing, pushes, checks no
+        /// reported artifact was committed, moves the work branch once, copies the artifacts out, publishes the engine's
+        /// outputs, and removes the sandbox.
         /// </summary>
         async Task<StepOutcome> FinishAsync(StepReport report)
         {
@@ -796,6 +804,8 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             if (spec.WriteAccess == "none" && head != startRevision)
                 throw new StepWorkException("a role with no write access committed: nothing it changed is kept");
             await PushCommitsAsync();
+            if (Writes && head != startRevision)
+                await RefuseCommittedArtifactsAsync(head);
 
             // The artifacts were copied out and checked when the report was taken (CheckArtifactsAsync): the output folder is not read again.
             var artifacts = new Dictionary<string, string>(report.Artifacts, StringComparer.Ordinal);
@@ -836,6 +846,29 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
         }
 
         string Relative(string path) => path.StartsWith(paths.Checkout + "/", StringComparison.Ordinal) ? path[(paths.Checkout.Length + 1)..] : path;
+
+        /// <summary>
+        /// An artifact lives only in the output folder (LOG 509). The attempt fails when the step's net change since it started
+        /// (the agent's commits, the sandbox <c>checkpoint</c> tool's and the engine's leftover commit alike) writes a file at
+        /// the checkout-relative path of an artifact it reported: <c>claims.yaml</c> committed at the checkout's root. Its
+        /// commits stay on the hidden reference, so the next attempt removes the file. A file the step deleted is not counted:
+        /// it is read at the step's final commit, through the code host.
+        /// </summary>
+        async Task RefuseCommittedArtifactsAsync(string head)
+        {
+            var reported = reportedPaths.Values.Select(p => p.StartsWith("./", StringComparison.Ordinal) ? p[2..] : p).ToHashSet(StringComparer.Ordinal);
+            var changed = Must(await vcs.ChangedFilesAsync(copy, startRevision, head, ct), "list the step's changed files").Where(reported.Contains).ToList();
+            if (changed.Count == 0)
+                return;
+            var host = owner.Providers.ForRun("code_host", call.DryRun) as ICodeHostProvider;
+            var written = new List<string>();
+            foreach (var path in changed)
+                if (host is null || Must(await host.ReadFileAsync(repo, path, head, ct), "read the step's final commit") is not null)
+                    written.Add(path);
+            if (written.Count > 0)
+                throw new StepWorkException($"the step's commits add {string.Join(", ", written)} to the checkout, which it also reported as an artifact; " +
+                                            $"artifacts live only in the output folder {paths.Output} and are never committed: remove {(written.Count == 1 ? "it" : "them")} from the branch");
+        }
 
         async Task KeepCommitsAndDisposeAsync()
         {

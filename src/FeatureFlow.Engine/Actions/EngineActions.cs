@@ -492,7 +492,17 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
         var values = new Dictionary<string, string>(call.Contract.ZeroOutputs, StringComparer.Ordinal);
         foreach (var (key, value) in outputs ?? new Dictionary<string, object?>())
             values[key] = YamlWriter.WritePlain(value);
-        return ActionResult.Reported(new StepReport(outcome, values, artifacts, $"{call.Step.StepId}: {outcome}"), Events);
+        return ActionResult.Reported(new StepReport(outcome, values, artifacts, SummaryOf(outcome)), Events);
+    }
+
+    /// <summary>
+    /// A report's summary: <c>&lt;step&gt;: &lt;outcome&gt;</c>, and for an outcome that is not a success, what the action
+    /// found (its events) after it, so the agent step it routes back to is told why (LOG 508).
+    /// </summary>
+    public string SummaryOf(string outcome)
+    {
+        var summary = $"{call.Step.StepId}: {outcome}";
+        return Events.Count == 0 || call.Contract.Outcomes.Any(o => o.Name == outcome && o.Class == "success") ? summary : $"{summary}: {string.Join("; ", Events)}";
     }
 
     public static JsonSerializerOptions JsonOptions => Json;

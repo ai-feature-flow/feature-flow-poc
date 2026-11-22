@@ -65,6 +65,7 @@ other documents cite them.
 | 34 | Unused parameter | Load | No |
 | 35 | Deprecated library reference with a replacement | Load | No |
 | 36 | The run's work branch is neither a repository's default branch nor the run's parent branch (`metadata.branch_pattern` is free text). Checked once: the work branch is fixed when the run starts (LOG 147) | Run start | Yes |
+| 37 | A route on an outcome that is not a success, from step A to step B, where B consumes (optionally or not) an artifact A declares but not for that outcome: B would start without A's evidence, or with an earlier execution's. A list-form `produces` keeps its artifacts for success outcomes only (LOG 510) | Load | No, for now (LOG 510) |
 
 Checks 23, 24 and 36 at run start, and 31 to 33 at step start, are as built in M5 (check 36 at run start only since LOG 147) (LOG 125 to 127, 133,
 134, 141). Checks 21 and 23 are not run on a patch (a follow-up; no milestone); `scm.merge` re-checks F1 at merge time.

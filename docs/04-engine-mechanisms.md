@@ -129,10 +129,10 @@ reports.
    agent's output folder. A step that consumes the reserved name
    `findings_ledger` is given the ledger's current view, every finding with its
    ledger id and state, in the shape of a findings report (LOG 63).
-2. **Start.** Render the task, prepend the library's reporting preamble and
-   the run context (section 3.5), store it and index it as `prompt:<n>` (n the
-   session's number), and start the agent runtime in the sandbox with the
-   role's tools.
+2. **Start.** Render the task, prepend the library's reporting preamble,
+   why the step runs again and the run context (section 3.5), store it and
+   index it as `prompt:<n>` (n the session's number), and start the agent
+   runtime in the sandbox with the role's tools.
 3. **Supervise.** Heartbeat. About every 30 seconds, ask the VCS provider
    whether the working copy has new commits; if so, push them to the hidden
    work-in-progress reference. Serve hook calls, the engine tools (section 3.3)
@@ -152,7 +152,12 @@ reports.
 6. **After changes.** If the step committed, run the manifest's `after_changes`
    commands (formatters, generators) in the same sandbox and commit what they
    change as part of the step (from FF).
-7. **Finish.** Move the work branch to the final commit, once. Record the
+7. **Finish.** Refuse a step whose commits since it started (its own, the
+   sandbox `checkpoint` tool's and the leftover commit alike) add or change a
+   file at the checkout-relative path of an artifact it reported, such as
+   `claims.yaml` at the checkout's root: an artifact lives only in the output
+   folder, so the attempt fails, saying so, and the branch does not move
+   (LOG 509). Move the work branch to the final commit, once. Record the
    summary for the run context.
 
 ### 3.2 Resume after an interruption
@@ -233,7 +238,7 @@ the run's state, carried over a hand-over, as entries of three kinds:
 |---|---|---|
 | `summary` | An agent step completes with a report summary | `<step> reported <outcome>: <summary>`, the summary at most 2 KB (LOG 19) |
 | `answer` | A person answers a gate, an intervention, a breakpoint or a patch approval (not a question, whose answer is its agent's alone) | `<decision type> at <step>: <choice> by <actor>: <reason>`, or without `: <reason>` when the person gave none (LOG 502) |
-| `retry_cause` | An attempt fails with a work error | `attempt <n> of <step> failed: <reason>`. An infrastructure retry is not a cause the agent can act on and is left out |
+| `retry_cause` | An attempt fails with a work error; or a step ends with an outcome that is not a success, with a summary, and routes to an agent step (LOG 508) | `attempt <n> of <step> failed: <reason>`, or `<step> ended <outcome>: <summary>`. An action's summary for an outcome that is not a success is `<step>: <outcome>: ` and what it found (its events), so `findings.triage`'s and `artifact.validate`'s `invalid` name the problems. An infrastructure retry is not a cause the agent can act on and is left out |
 
 The core renders the context in Markdown (`## Run context`, then one bullet per
 entry, oldest first) into the agent step's specification when the step starts,
@@ -246,6 +251,13 @@ saying how many. A child run starts with its parent's context as it was when
 the child started, rendered first under `### From the parent run`. A step with
 `context: none` (a reviewer) is given no context, only its task and consumed
 artifacts.
+
+A retry cause is addressed to the step that runs because of it. The core also
+renders the causes addressed to the step's current execution, those added since
+its previous execution ended, under `## Why this step runs again`, which the
+agent worker writes before the run context; a step reads its own causes whatever
+its `context`, since they are addressed to it, not the run's history (LOG 508).
+A first execution, and one entered by a success, have none.
 
 ### 3.6 Outputs the engine publishes for every agent step
 

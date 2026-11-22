@@ -154,6 +154,7 @@ public sealed class ValidationActionTests : IAsyncDisposable
         var result = await ValidateAsync(TicketValidators, "plan_validation");
 
         Assert.Equal("valid", result.Report?.Outcome);
+        Assert.Equal("validate: valid", result.Report?.Summary);
         var report = await ReportAsync(result, "plan_validation");
         Assert.True(report.Valid);
         Assert.Equal(["requirement_support", "requirement_inheritance", "verification_method_support"], report.Validations.Select(v => v.Validator));
@@ -183,6 +184,7 @@ public sealed class ValidationActionTests : IAsyncDisposable
         Assert.Empty(undeclared.Report!.Artifacts);
     }
 
+    /// <summary>The invalid report's summary says what was found, so the planner it routes back to is told why (LOG 508).</summary>
     [Fact]
     public async Task An_invalid_plan_is_invalid_and_its_report_is_kept_for_the_planner()
     {
@@ -193,6 +195,8 @@ public sealed class ValidationActionTests : IAsyncDisposable
         var result = await ValidateAsync(TicketValidators, "plan_validation");
 
         Assert.Equal("invalid", result.Report?.Outcome);
+        Assert.StartsWith("validate: invalid: ", result.Report!.Summary, StringComparison.Ordinal);
+        Assert.Contains("no_method", result.Report.Summary, StringComparison.Ordinal);
         var report = await ReportAsync(result, "plan_validation");
         Assert.False(report.Valid);
         var issue = Assert.Single(report.Validations.SelectMany(v => v.Result.Issues));

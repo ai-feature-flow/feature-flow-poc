@@ -170,4 +170,47 @@ public class RunContextTests
 
         Assert.EndsWith(line, ContextOf(core, "next"), StringComparison.Ordinal);
     }
+
+    const string Checked = """
+        api_version: feature-flow/v1
+        kind: template
+        metadata: { name: checked, level: ticket }
+        steps:
+          - id: verify
+            agent: { role: std:roles/planner, task: std:tasks/repair_failures, context: none }
+            outcomes: { done: success, stuck: failure }
+            routes: { done: check, stuck: { end: failed } }
+          - id: check
+            action: artifact.validate
+            routes: { invalid: verify, valid: verify }
+        """;
+
+    static string? CausesOf(RunCore core, string stepId) => core.StepSpec(stepId).Spec!.Agent!.Causes;
+
+    /// <summary>
+    /// An action's non-success summary is addressed to the agent step it routes back to, which reads it even with
+    /// <c>context: none</c>; a first execution, and one after a success, read none (LOG 508).
+    /// </summary>
+    [Fact]
+    public void A_failures_reason_reaches_the_agent_step_it_routes_back_to_even_with_context_none()
+    {
+        var core = new Probe("run-context-checked", ("checked", Checked)).Start("checked");
+        Assert.Equal([new StartStep("verify", 1)], core.Advance());
+        Assert.Null(CausesOf(core, "verify"));
+
+        Assert.True(core.Apply(new StepCompleted("verify", "done")).Accepted);
+        Assert.Equal([new StartStep("check", 1)], core.Advance());
+        Assert.True(core.Apply(new StepCompleted("check", "invalid", Summary: "check: invalid: F-1: this step may set only fixed, open, not 'declined'")).Accepted);
+        Assert.Equal([new StartStep("verify", 2)], core.Advance());
+
+        Assert.Null(ContextOf(core, "verify"));
+        Assert.Equal("## Why this step runs again\n\n- check ended invalid: check: invalid: F-1: this step may set only fixed, open, not 'declined'\n",
+            CausesOf(core, "verify"));
+
+        Assert.True(core.Apply(new StepCompleted("verify", "done")).Accepted);
+        core.Advance();
+        Assert.True(core.Apply(new StepCompleted("check", "valid")).Accepted);
+        Assert.Equal([new StartStep("verify", 3)], core.Advance());
+        Assert.Null(CausesOf(core, "verify"));
+    }
 }

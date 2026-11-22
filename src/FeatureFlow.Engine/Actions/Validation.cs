@@ -66,7 +66,7 @@ static class Validating
         foreach (var unkept in offered.Where(r => !artifacts.ContainsValue(r.Artifact.Id)))
             run.Events.Add($"the offered {unkept.Type} {unkept.Artifact.Id} is not kept: the step declares no artifact of that name for {outcome}");
         run.IndexIfUndeclared(outcome, reference);
-        return ActionResult.Reported(new StepReport(outcome, run.Call.Contract.ZeroOutputs, artifacts, $"{run.Call.Step.StepId}: {outcome}"), run.Events);
+        return ActionResult.Reported(new StepReport(outcome, run.Call.Contract.ZeroOutputs, artifacts, run.SummaryOf(outcome)), run.Events);
     }
 
     static IRecordStoreProvider Records(ActionRun run) => run.Provider<IRecordStoreProvider>("record_store");
