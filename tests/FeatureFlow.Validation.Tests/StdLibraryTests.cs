@@ -96,8 +96,12 @@ public class StdLibraryTests
 
         // RW13: a success outcome with no route goes to the next step in list order.
         Assert.Equal(new Model.Plans.ResolvedStep("implement", false), Route("approve_spec", "approved"));
-        // The template's class default: blocked escalates.
-        Assert.Equal(new Model.Plans.ResolvedEscalate(null, null), Route("implement", "blocked"));
+        // A route the template writes: the implementer's blocked goes back to the planner, keeping the branch (LOG 507).
+        Assert.Equal(new Model.Plans.ResolvedStep("plan.plan", false), Route("implement", "blocked"));
+        // The template's class default: blocked escalates, once the step routes it no other way.
+        var unrouted = Std.Mutate(Std.WithoutBlockedToPlan).Plans["std:templates/ticket_delivery"];
+        Assert.Equal(new Model.Plans.ResolvedEscalate(null, null),
+            unrouted.AllSteps.Single(s => s.Id == "implement").ResolvedRoutes.Single(r => r.Outcome == "blocked").Target);
         // A fragment exit routed by the caller: merge_into_parent's reverify goes back to verification.
         Assert.Equal(new Model.Plans.ResolvedStep("verify.tests", false), Route("deliver.checks", "failed"));
         // The engine default for attempts_exhausted.
@@ -115,7 +119,7 @@ public class StdLibraryTests
         // The ticket routes verify_and_review's escalated exit; fix_loop's blocked triager must reach that
         // route through fix_loop's and verify_and_review's escalated exits (LOG 72).
         var result = Std.Mutate(new Std.Edit("templates/ticket_delivery.yaml",
-            "    routes:\n      ready: deliver\n", "    routes:\n      ready: deliver\n      escalated: { end: failed }\n"));
+            "    routes:\n      ready: deliver\n", "    routes:\n      ready: deliver\n      escalated: { end: failed }\n"), Std.WithoutBlockedToPlan);
         Assert.False(result.HasErrors, Std.Describe(result));
         var plan = result.Plans["std:templates/ticket_delivery"];
 
