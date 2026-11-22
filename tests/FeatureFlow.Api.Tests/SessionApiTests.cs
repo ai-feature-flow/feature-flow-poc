@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
+using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Model;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Providers.Local;
@@ -22,12 +24,14 @@ public sealed class SessionApiTests : IAsyncDisposable
     readonly string folder = Path.Combine(Path.GetTempPath(), "ff-api-session-" + Guid.NewGuid().ToString("N"));
     readonly List<Microsoft.AspNetCore.Builder.WebApplication> apps = [];
     readonly SqliteRecordStore records;
+    readonly FileSystemArtifactStore artifacts;
 
     public SessionApiTests()
     {
         Directory.CreateDirectory(folder);
         File.WriteAllText(Path.Combine(folder, "secrets.json"), """{ "api_token": "right" }""");
         records = new SqliteRecordStore(Path.Combine(folder, "records.db"));
+        artifacts = new FileSystemArtifactStore(Path.Combine(folder, "artifacts"));
     }
 
     /// <summary>A person other than the run's starter, by header, with <paramref name="roles"/>; the local token is the starter's.</summary>
@@ -49,8 +53,9 @@ public sealed class SessionApiTests : IAsyncDisposable
             {
                 ["record_store"] = new Dictionary<string, IProvider> { ["sqlite"] = records },
                 ["secrets"] = new Dictionary<string, IProvider> { ["file"] = new FileSecrets(Path.Combine(folder, "secrets.json")) },
+                ["artifact_store"] = new Dictionary<string, IProvider> { ["files"] = artifacts },
             },
-            new Dictionary<string, string> { ["record_store"] = "sqlite", ["secrets"] = "file" },
+            new Dictionary<string, string> { ["record_store"] = "sqlite", ["secrets"] = "file", ["artifact_store"] = "files" },
             new Dictionary<string, string>());
         var installation = new InstallationConfig("localhost:7233", "default", "q", 5120, new Dictionary<string, ProviderTypeConfig>(),
             new ApiAuthConfig("local_token", "secrets/api_token", "starter", ["steerer", "approver"]), 3, 10, Path.Combine(folder, "installation.yaml"));
@@ -75,14 +80,23 @@ public sealed class SessionApiTests : IAsyncDisposable
         Directory.Delete(folder, recursive: true);
     }
 
-    async Task OpenSessionAsync(bool open = true)
+    async Task OpenSessionAsync(bool open = true, bool document = false)
     {
         var now = DateTimeOffset.UtcNow;
+        var ct = TestContext.Current.CancellationToken;
         await records.AppendAsync(new RecordBatch(
             [new RunRecord("r1", null, "std:templates/project_delivery", "running", "starter", ["acme/api"], false, now, null)],
-            [new WaitRecord("r1", "gate-1", open ? "gate" : "", "define", open ? "project.requirements_session" : "", "gate", ["submitted", "abandoned"], open, now)],
+            [new WaitRecord("r1", "gate-1", open ? "gate" : "", "define", open ? "project.requirements_session" : "", "gate", ["submitted", "abandoned"], open, now,
+                ReasonRequired: ["abandoned"])],
             Sessions: [new SessionRecord(Sid, "r1", "gate-1", "define", "", "acme/api", "ff/session/r1/gate-1", Commit, SessionStatuses.Prepared, null, null, now)]),
-            TestContext.Current.CancellationToken);
+            ct);
+        if (!document)
+            return;
+        // The workspace document the session opened with, which names the outcome that abandons it.
+        var text = JsonSerializer.Serialize(new SessionDocument(Sid, "r1", "gate-1", "define", "acme/api", "ff/session/r1/gate-1",
+            Commit, "", [], "", new Dictionary<string, string>(), [], "submitted", "abandoned", ""), new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var stored = (await artifacts.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(text)), ct)).Unwrap();
+        await records.AppendAsync(new RecordBatch(AgentEvents: [new AgentEventRecord(SessionNames.EventKey(Sid), SessionNames.WorkspaceEvent, stored.Id, now)]), ct);
     }
 
     async Task<(HttpStatusCode Status, string Body)> PostAsync(HttpClient http, string path, string body)
@@ -155,13 +169,14 @@ public sealed class SessionApiTests : IAsyncDisposable
     [InlineData("""{ "reason": "" }""")]
     public async Task Abandoning_a_session_without_a_reason_is_refused_and_nothing_is_recorded(string body)
     {
+        // Abandoning answers with the decision's abandon outcome, a failure (std: abandoned), which needs a reason (LOG 501).
         var http = Start("approver");
-        await OpenSessionAsync();
+        await OpenSessionAsync(document: true);
 
         var (status, text) = await PostAsync(http, $"sessions/{Sid}/abandon", body);
 
         Assert.Equal(HttpStatusCode.BadRequest, status);
-        Assert.Matches("reason is required|missing required properties.*reason", text);
+        Assert.Contains("reason is required", text);
         Assert.Empty(await AnswersAsync());
     }
 

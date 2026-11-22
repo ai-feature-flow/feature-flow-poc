@@ -142,7 +142,8 @@ public sealed partial class FakeEngine : IClientInterceptor
         string prompt = "Go ahead?", IReadOnlyList<string>? choices = null, string? waitId = null, IReadOnlyList<ConsumedRef>? consumed = null)
     {
         waitId ??= NewWaitId(runId, kind);
-        await AppendAsync(new RecordBatch(Waits: [new WaitRecord(runId, waitId, kind, stepId, decisionType, prompt, choices ?? DefaultChoices(kind), true, Now(), consumed)]));
+        await AppendAsync(new RecordBatch(Waits: [new WaitRecord(runId, waitId, kind, stepId, decisionType, prompt, choices ?? DefaultChoices(kind), true, Now(), consumed,
+            ReasonRequired(kind))]));
         return waitId;
     }
 
@@ -152,6 +153,14 @@ public sealed partial class FakeEngine : IClientInterceptor
         "intervention" => Recoveries.For(WaitKind.Intervention),
         "breakpoint" => Recoveries.For(WaitKind.Breakpoint),
         "patch_approval" => ["approve", "reject"],
+        _ => [],
+    };
+
+    /// <summary>The choices that need a person's reason, as the core describes them (<c>RunCore.Describe</c>): a gate's failure outcome, ending the run at an intervention.</summary>
+    static IReadOnlyList<string> ReasonRequired(string kind) => kind switch
+    {
+        "gate" => ["rejected"],
+        "intervention" => ["end"],
         _ => [],
     };
 

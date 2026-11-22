@@ -89,7 +89,7 @@ public sealed partial class RunCore
         if (ProtectedTouched(o) is { Count: > 0 } guarded)
             result += $" (protected: {string.Join(", ", guarded)})";
         State.Overrides.Add(new AppliedOverride(o.OverrideId, o.Key, result));
-        Trace("override", o.StepId ?? "", $"{o.Key} by {o.Actor}: {o.Reason} -> {result}");
+        Trace("override", o.StepId ?? "", $"{o.Key} {By(o.Actor, o.Reason)} -> {result}");
         return new(null, result, close);
     }
 
@@ -147,7 +147,7 @@ public sealed partial class RunCore
             Holds(o, Overrides.GrantAttemptsBeyond), o.Actor),
         Overrides.ChangeRole => new RoleChanged(o.StepId!, o.Change["role"], o.Actor, o.Reason),
         Overrides.Amend when ReadPatch(o.Change["patch"], out _) is { } patch =>
-            new PatchProposed(patch with { Reason = $"amend by {o.Actor}: {o.Reason}" }, new Proposer("human", null), Holds(o, Overrides.AmendProtected)),
+            new PatchProposed(patch with { Reason = $"amend {By(o.Actor, o.Reason)}" }, new Proposer("human", null), Holds(o, Overrides.AmendProtected)),
         _ => null,
     };
 
@@ -205,7 +205,7 @@ public sealed partial class RunCore
             case LibraryOverridden o:
                 libraries = o.Libraries;
                 State.LibraryOverrides.Add(o.Entry);
-                Trace("library_overridden", "", $"{o.Entry.Item} ({o.Entry.Path}) {o.Entry.OldHash} -> {o.Entry.NewHash} by {o.Entry.Actor}: {o.Entry.Reason}"
+                Trace("library_overridden", "", $"{o.Entry.Item} ({o.Entry.Path}) {o.Entry.OldHash} -> {o.Entry.NewHash} {By(o.Entry.Actor, o.Entry.Reason)}"
                                               + (o.Entry.InFlight.Count > 0 ? $"; in flight, keeping theirs: {string.Join(", ", o.Entry.InFlight)}" : "")
                                               + (o.Entry.ProtectedSteps.Count > 0 ? $"; protected steps affected: {string.Join(", ", o.Entry.ProtectedSteps)}" : ""));
                 return ApplyResult.Ok;
@@ -277,7 +277,7 @@ public sealed partial class RunCore
     /// </summary>
     void Skip(StepSkipped s)
     {
-        Trace("skip_set", s.StepId, $"{s.Outcome} by {s.Actor}: {s.Reason}");
+        Trace("skip_set", s.StepId, $"{s.Outcome} {By(s.Actor, s.Reason)}");
         State.Skips[s.StepId] = s.Outcome;
         var waits = State.Waits.Where(w => w.StepId == s.StepId && w.Kind is WaitKind.Gate or WaitKind.Breakpoint or WaitKind.Intervention).ToList();
         if (waits.Count == 0)
@@ -351,12 +351,12 @@ public sealed partial class RunCore
         var source = step.Source!;
         var agent = (YMap)source["agent"]!;
         var changed = With(source, "agent", With(agent, "role", new YScalar(r.Role, true, agent.Location)));
-        var patch = new PatchDocument(Run.Id, new Proposer("human", null), $"change_role by {r.Actor}: {r.Reason}", State.Revision, null,
+        var patch = new PatchDocument(Run.Id, new Proposer("human", null), $"change_role {By(r.Actor, r.Reason)}", State.Revision, null,
             [new PatchOp("replace", step.Id, source.Location, Step: changed)], source.Location);
         var result = Propose(patch, null, roleChange: true);
         if (result.Status != PatchStatus.Applied)
             return new ApplyResult(false, result.Diagnostics.Where(d => d.Blocks).Select(d => $"check {d.Check}: {d.Message}").ToList(), result);
-        Trace("role_changed", step.Id, $"{step.Agent!.Role?.Text ?? "none"} -> {r.Role} by {r.Actor}: {r.Reason}");
+        Trace("role_changed", step.Id, $"{step.Agent!.Role?.Text ?? "none"} -> {r.Role} {By(r.Actor, r.Reason)}");
         return new ApplyResult(true, [], result);
     }
 

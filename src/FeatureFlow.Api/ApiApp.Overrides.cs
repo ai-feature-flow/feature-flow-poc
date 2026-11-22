@@ -46,11 +46,9 @@ public static partial class ApiApp
                                   " (a protected or beyond-ceiling variant is not asked for: the run applies it where the caller holds it)");
             if (OtherRoutes.TryGetValue(key, out var route))
                 return Error(400, $"{key} is not made here: {route}");
-            var reason = body.Reason;
-            if (string.IsNullOrWhiteSpace(reason))
-                return Error(400, "reason is required: every override is recorded with its reason (docs/05 section 5)");
-            if (ReasonRefused(reason) is { } refusedReason)
+            if (ReasonRefused(body.Reason, required: false) is { } refusedReason)
                 return refusedReason;
+            var reason = string.IsNullOrWhiteSpace(body.Reason) ? null : body.Reason;
             var change = new Dictionary<string, string>(body.Change ?? new Dictionary<string, string>(), StringComparer.Ordinal);
 
             // A caller who does not view the run is told it does not exist, as on reads.

@@ -9,3 +9,7 @@
   font: inherit;
   max-width: 40em;
 }
+
+.ff-reason-hint {
+  opacity: 0.75;
+}

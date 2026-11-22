@@ -165,8 +165,8 @@ public sealed class ApiWorld : IAsyncDisposable
         await Records.AppendAsync(new RecordBatch([new RunRecord(runId, null, "std:templates/ticket_delivery", "running", "x", repositories, false, DateTimeOffset.UtcNow, null)]),
             TestContext.Current.CancellationToken);
 
-    public async Task WaitAsync(string runId, string waitId, string kind, string type) =>
-        await Records.AppendAsync(new RecordBatch(Waits: [new WaitRecord(runId, waitId, kind, "implement", type, "reason", [], true, DateTimeOffset.UtcNow)]),
+    public async Task WaitAsync(string runId, string waitId, string kind, string type, IReadOnlyList<string>? reasonRequired = null) =>
+        await Records.AppendAsync(new RecordBatch(Waits: [new WaitRecord(runId, waitId, kind, "implement", type, "reason", [], true, DateTimeOffset.UtcNow, ReasonRequired: reasonRequired)]),
             TestContext.Current.CancellationToken);
 
     public async Task<IReadOnlyList<T>> QueryAsync<T>(string query, string runId) =>

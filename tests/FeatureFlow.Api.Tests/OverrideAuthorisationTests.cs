@@ -290,7 +290,6 @@ public sealed class OverrideAuthorisationTests
     [InlineData("""{ "key": "abort", "reason": "r" }""", "is not made here")]
     [InlineData("""{ "key": "skip_protected", "reason": "r" }""", "key must be one of")]
     [InlineData("""{ "key": "launch", "reason": "r" }""", "key must be one of")]
-    [InlineData("""{ "key": "skip", "step_id": "implement" }""", "reason is required")]
     [InlineData("""{ "key": "skip", "reason": "r", "change": "x" }""", "the body is not a valid request")]
     [InlineData("""{ "key": "skip", "reason": "r", "change": { "n": 2 } }""", "the body is not a valid request")]
     [InlineData("""{ "reason": "r" }""", "missing required properties")]
@@ -315,5 +314,20 @@ public sealed class OverrideAuthorisationTests
         Assert.Equal(["sent", "skipped"], records.Select(r => r.Result));
         Assert.All(records, r => Assert.Equal(("skip", "sam", "flaky", "verify"), (r.Key, r.Actor, r.Reason, r.StepId)));
         Assert.Equal(new Dictionary<string, string> { ["outcome"] = "passed", ["n"] = "2" }, records[0].Change);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(""", "reason": " " """)]
+    public async Task An_override_needs_no_reason_and_is_recorded_with_none(string reason)
+    {
+        // LOG 501: steering is not a rejection; no reason is invented for one given without.
+        await using var world = await WorldAsync();
+        var (status, text) = await ApiWorld.PostAsync(world.As("sam", "steerer"), $"runs/{Run}/overrides",
+            $$"""{ "key": "skip", "step_id": "verify", "change": { "outcome": "passed" }{{reason}} }""");
+
+        Assert.True(status == HttpStatusCode.OK, text);
+        Assert.Null(((OverrideArgs)Assert.Single(world.Temporal.Updates).Argument!).Reason);
+        Assert.All(await world.QueryAsync<OverrideRecord>(Queries.Overrides, Run), r => Assert.Null(r.Reason));
     }
 }

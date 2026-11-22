@@ -266,7 +266,7 @@ public static partial class ApiApp
     /// (<c>min_count</c>), and the answer that closed it.
     /// </summary>
     static WaitView WaitViewOf(WaitRecord w, bool canAnswer, int minCount, IReadOnlyList<AnswerProgress>? progress, ClosedAnswer? answer) =>
-        new(w.WaitId, KindOf(w.Kind), w.StepId, w.DecisionType, w.Prompt, w.Choices, w.Open, w.UpdatedAt,
+        new(w.WaitId, KindOf(w.Kind), w.StepId, w.DecisionType, w.Prompt, w.Choices, w.ReasonRequired ?? [], w.Open, w.UpdatedAt,
             (w.Consumed ?? []).Select(c => new ConsumedArtifactView(c.Key, c.Name, c.Ref)).ToList(), canAnswer, minCount, progress, answer);
 
     /// <summary>The answer a person gave, as recorded (JSON <see cref="AnswerArgs"/>), or null for text that is not one (an abort's reason).</summary>

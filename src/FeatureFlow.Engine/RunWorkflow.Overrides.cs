@@ -63,7 +63,7 @@ public partial class RunWorkflow
     /// the run's lock rewritten with the item's new hash, and the core resolves from the new libraries; steps in flight keep
     /// what they resolved. Recorded as a lock entry: actor, reason, old and new hash, and the steps that keep the old.
     /// </summary>
-    async Task<string> OverrideLibraryAsync(string item, string? content, string? contentHash, string actor, string reason)
+    async Task<string> OverrideLibraryAsync(string item, string? content, string? contentHash, string actor, string? reason)
     {
         if (core!.LibraryFile(item) is not { } file)
             throw new ApplicationFailureException($"{item} is not in the run's libraries");
@@ -106,7 +106,7 @@ public partial class RunWorkflow
             return;
         try
         {
-            await OverrideLibraryAsync(inherited.Item, null, inherited.ContentHash, inherited.Actor, $"from the parent run: {inherited.Reason}");
+            await OverrideLibraryAsync(inherited.Item, null, inherited.ContentHash, inherited.Actor, inherited.Reason is null ? "from the parent run" : $"from the parent run: {inherited.Reason}");
         }
         catch (ApplicationFailureException e)
         {
@@ -167,4 +167,4 @@ public partial class RunWorkflow
 public sealed record RunPullRequests(IReadOnlyList<string> PullRequests, IReadOnlyList<string> Children);
 
 /// <summary>A parent's library override for a running child: the item, the stored content's hash, and who and why.</summary>
-public sealed record InheritedLibraryOverride(string Item, string ContentHash, string Actor, string Reason);
+public sealed record InheritedLibraryOverride(string Item, string ContentHash, string Actor, string? Reason);

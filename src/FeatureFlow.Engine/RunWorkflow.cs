@@ -954,7 +954,7 @@ public partial class RunWorkflow
         var (shown, closedQuestions) = core.TakeWaitChanges();
         var waits = shown.Select(w => w.Opened is { } d
             ? new WaitRecord(input.RunId, w.WaitId, d.Kind, w.StepId, d.Type, d.Prompt, d.Choices, true, now,
-                d.Consumed?.Select(c => new ConsumedRef(c.Key, c.Name, c.Reference)).ToList())
+                d.Consumed?.Select(c => new ConsumedRef(c.Key, c.Name, c.Reference)).ToList(), d.ReasonRequired)
             : new WaitRecord(input.RunId, w.WaitId, "", "", "", "", [], false, now)).ToList();
         // The agent endpoint long-polls a question's record for its answer or timeout (docs/04 section 3.4).
         var questions = closedQuestions.Select(q => new QuestionRecord(q.StepKey, input.RunId, q.WaitId, q.Text, q.Options,

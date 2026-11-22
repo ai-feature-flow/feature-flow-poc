@@ -1,6 +1,6 @@
 import { useState } from "preact/hooks";
 import type { Schema } from "../../api/client";
-import { hasReason, Reason } from "../../ui/Reason";
+import { hasReason, labelOf, Reason, reasonOf } from "../../ui/Reason";
 import type { Answering } from "./answer";
 import { Field } from "./Field";
 
@@ -10,12 +10,12 @@ import { Field } from "./Field";
  */
 const endable = ["failed", "rejected", "partial", "aborted"];
 
-function Options({ values }: { values: readonly string[] }) {
+function Options({ values, required = [] }: { values: readonly string[]; required?: readonly string[] }) {
   return (
     <>
       {values.map(v => (
         <option key={v} value={v}>
-          {v}
+          {labelOf(v, required.includes(v))}
         </option>
       ))}
     </>
@@ -24,7 +24,8 @@ function Options({ values }: { values: readonly string[] }) {
 
 /**
  * An intervention or a breakpoint: a recovery from the wait's choices, which the engine fills (Recoveries.For), so
- * `continue` is there at a breakpoint and nowhere else; then the recovery's arguments and the reason.
+ * `continue` is there at a breakpoint and nowhere else; then the recovery's arguments and an optional comment, which
+ * ending the run at an intervention needs (the wait's `reason_required`).
  */
 export function Recovery({ wait, plan, answer }: { wait: Schema<"WaitView">; plan: Schema<"PlanView"> | null; answer: Answering }) {
   const [action, setAction] = useState(wait.choices[0] ?? "");
@@ -38,13 +39,14 @@ export function Recovery({ wait, plan, answer }: { wait: Schema<"WaitView">; pla
   const toStep = action === "go_to" || action === "replan";
   const step = stepId || steps[0] || "";
   const granted = Number(attempts);
+  const required = wait.reason_required.includes(action);
   const ready =
-    action !== "" && hasReason(reason) && (!toStep || step !== "") && (action !== "grant_attempts" || (Number.isInteger(granted) && granted > 0));
+    action !== "" && (!required || hasReason(reason)) && (!toStep || step !== "") && (action !== "grant_attempts" || (Number.isInteger(granted) && granted > 0));
 
   const send = () =>
     answer.send({
       action,
-      reason,
+      reason: reasonOf(reason),
       ...(toStep && { step_id: step, clean_up: cleanUp }),
       ...(action === "grant_attempts" && { attempts: granted }),
       ...(action === "end" && { status }),
@@ -55,7 +57,7 @@ export function Recovery({ wait, plan, answer }: { wait: Schema<"WaitView">; pla
       <Field label="Recovery">
         {id => (
           <select id={id} value={action} onChange={e => setAction(e.currentTarget.value)}>
-            <Options values={wait.choices} />
+            <Options values={wait.choices} required={wait.reason_required} />
           </select>
         )}
       </Field>
@@ -91,7 +93,7 @@ export function Recovery({ wait, plan, answer }: { wait: Schema<"WaitView">; pla
           )}
         </Field>
       )}
-      <Reason value={reason} onInput={setReason} />
+      <Reason value={reason} onInput={setReason} required={required} />
       <button type="button" disabled={!ready || answer.busy} onClick={send}>
         Send
       </button>

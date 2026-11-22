@@ -8,7 +8,7 @@ namespace FeatureFlow.Console.Tests;
 
 /// <summary>
 /// The plan panel's steering (F18, G11): breakpoint, skip, grant attempts and amend, each through
-/// <c>POST /runs/{id}/overrides</c> with a required reason, offered only where the caller may use it and the core accepts
+/// <c>POST /runs/{id}/overrides</c> with an optional comment, offered only where the caller may use it and the core accepts
 /// it, in a form that opens where it was chosen.
 /// </summary>
 public sealed class SteeringTests(BrowserFixture browser) : BrowserTest(browser)
@@ -22,10 +22,10 @@ public sealed class SteeringTests(BrowserFixture browser) : BrowserTest(browser)
 
     ILocator Button(ILocator within, string name) => within.GetByRole(AriaRole.Button, new() { Name = name, Exact = true });
 
-    /// <summary>Fills the open steering form's reason and applies it.</summary>
+    /// <summary>Fills the open steering form's comment and applies it.</summary>
     async Task ApplyAsync(string reason)
     {
-        await Plan.GetByLabel("Reason").FillAsync(reason);
+        await Plan.GetByLabel("Comment").FillAsync(reason);
         await Button(Plan, "Apply").ClickAsync();
     }
 
@@ -63,7 +63,7 @@ public sealed class SteeringTests(BrowserFixture browser) : BrowserTest(browser)
         await Expect(form).ToBeVisibleAsync(new() { Timeout = 5_000 });
         await Expect(Row("implement")).ToContainTextAsync("waiting(breakpoint)");
         await form.GetByLabel("Recovery").SelectOptionAsync("continue");
-        await form.GetByLabel("Reason").FillAsync("looks right");
+        await form.GetByLabel("Comment").FillAsync("looks right");
         await Button(form, "Send").ClickAsync();
 
         await Expect(form).ToHaveCountAsync(0, new() { Timeout = 5_000 });
@@ -182,7 +182,7 @@ public sealed class SteeringTests(BrowserFixture browser) : BrowserTest(browser)
     }
 
     [Fact]
-    public async Task Every_override_needs_a_reason()
+    public async Task No_override_needs_a_comment()
     {
         await OpenTicketRunAsync();
         var apply = Button(Plan, "Apply");
@@ -192,15 +192,16 @@ public sealed class SteeringTests(BrowserFixture browser) : BrowserTest(browser)
             await open.ClickAsync();
             if (await Plan.GetByLabel("Attempts").CountAsync() > 0)
                 await Plan.GetByLabel("Attempts").FillAsync("1");
-            await Expect(apply).ToBeDisabledAsync();
-            await Plan.GetByLabel("Reason").FillAsync("   ");
-            await Expect(apply).ToBeDisabledAsync();
-            await Plan.GetByLabel("Reason").FillAsync("because");
+            await Expect(Plan.GetByText("optional; shown to the next agent")).ToBeVisibleAsync();
             await Expect(apply).ToBeEnabledAsync();
             await Button(Plan, "Cancel").ClickAsync();
         }
 
         Assert.Empty(Engine.Overrides);
+        await Button(Row("implement"), "Set breakpoint").ClickAsync();
+        await apply.ClickAsync();
+        await Expect(Under("implement").GetByRole(AriaRole.Status)).ToHaveTextAsync("Set breakpoint on implement: applied");
+        Assert.Null(Assert.Single(Engine.Overrides).Reason);
     }
 
     [Fact]

@@ -64,7 +64,7 @@ public sealed record OverrideArgs(
     string OverrideId,
     string Key,
     string Actor,
-    string Reason,
+    string? Reason,
     string? StepId,
     IReadOnlyDictionary<string, string> Change,
     IReadOnlyList<string>? Variants = null);
