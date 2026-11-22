@@ -94,6 +94,13 @@ public sealed record AgentSpec(
 
 public sealed record PlanningSpec(IReadOnlyList<string> Targets, IReadOnlyList<ItemRef> Templates, string Review);
 
+/// <summary>
+/// An agent step's planning authority as its activity and sandbox see it (from <see cref="PlanningSpec"/>): the plans it may
+/// propose a patch to (<c>self</c>, <c>parent</c>) and its <c>review</c> (<c>required</c> or <c>auto</c>). Null when the step has no
+/// <c>planning</c>. Here rather than with the activity records because the interpreter and the providers both carry it.
+/// </summary>
+public sealed record PlanningGrant(IReadOnlyList<string> Targets, string Review);
+
 public sealed record SessionFile(string Path, string Name, ItemRef? Type);
 
 public sealed record SessionSpec(YNode? Repository, YNode? Folder, IReadOnlyList<SessionFile> Files, IReadOnlyList<string> ChecksFrom, SourceLocation Location);

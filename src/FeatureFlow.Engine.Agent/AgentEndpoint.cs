@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Providers.Abstractions;
 using Microsoft.AspNetCore.Builder;
@@ -10,12 +11,21 @@ using Temporalio.Client;
 
 namespace FeatureFlow.Engine.Agent;
 
-/// <summary>Tells a run that an agent asked a question, or that its model cannot be reached. The Temporal implementation signals the run's workflow id.</summary>
+/// <summary>
+/// Tells a run that an agent asked a question, or that its model cannot be reached, and asks it about its plan. The Temporal
+/// implementation signals and queries the run's workflow id.
+/// </summary>
 public interface IRunSignals
 {
     Task QuestionOpenedAsync(string workflowId, QuestionSignal question, CancellationToken cancellationToken);
 
     Task ModelUnreachableAsync(string workflowId, ModelUnreachableSignal signal, CancellationToken cancellationToken);
+
+    /// <summary>The <c>agent_plan</c> query.</summary>
+    Task<AgentPlanView> PlanAsync(string workflowId, AgentPlanQuery query, CancellationToken cancellationToken);
+
+    /// <summary>The <c>patch_preview</c> query for a <see cref="PatchPreviewQuery"/>, or <c>child_patch_preview</c> for a <see cref="ChildPatchPreviewQuery"/>.</summary>
+    Task<PatchPreview> PreviewAsync(string workflowId, object query, CancellationToken cancellationToken);
 }
 
 public sealed class TemporalRunSignals(ITemporalClient client) : IRunSignals
@@ -25,6 +35,12 @@ public sealed class TemporalRunSignals(ITemporalClient client) : IRunSignals
 
     public Task ModelUnreachableAsync(string workflowId, ModelUnreachableSignal signal, CancellationToken cancellationToken) =>
         client.GetWorkflowHandle(workflowId).SignalAsync(RunWorkflowNames.ModelUnreachable, [signal], new WorkflowSignalOptions { Rpc = new RpcOptions { CancellationToken = cancellationToken } });
+
+    public Task<AgentPlanView> PlanAsync(string workflowId, AgentPlanQuery query, CancellationToken cancellationToken) =>
+        throw new NotImplementedException();
+
+    public Task<PatchPreview> PreviewAsync(string workflowId, object query, CancellationToken cancellationToken) =>
+        throw new NotImplementedException();
 }
 
 /// <summary>
@@ -205,6 +221,41 @@ public static class AgentEndpoint
     }
 
     public sealed record QuestionReply(string Status, string? Answer, string? Message);
+
+    /// <summary>
+    /// The body of <c>POST /agent/v1/patches</c> (<c>propose_patch</c>): the plan <see cref="Target"/> (<c>self</c> or
+    /// <c>parent</c>), the revision the agent read (<see cref="BaseRevision"/>), where the run continues once it applies
+    /// (<see cref="ResumeAt"/>, required for <c>self</c>), why, and the operations of docs/03 s10.2 as JSON; or
+    /// <see cref="Withdraw"/> to clear the staged patch.
+    /// </summary>
+    public sealed record PatchRequest(
+        [property: JsonPropertyName("target")] string Target,
+        [property: JsonPropertyName("base_revision")] int BaseRevision,
+        [property: JsonPropertyName("resume_at")] string? ResumeAt,
+        [property: JsonPropertyName("reason")] string Reason,
+        [property: JsonPropertyName("changes")] IReadOnlyList<JsonElement> Changes,
+        [property: JsonPropertyName("withdraw")] bool Withdraw = false);
+
+    /// <summary>
+    /// The answer to <see cref="PatchRequest"/>: <see cref="Status"/> <c>staged</c> (sent with the next accepted report, its
+    /// <see cref="Effect"/> <c>applies</c> or <c>needs_approval</c> with <see cref="Reasons"/>), <c>refused</c> (<see cref="Messages"/>:
+    /// the checks' messages), <c>withdrawn</c>, <c>limit</c> (too many proposals or too large) or <c>unavailable</c>;
+    /// <see cref="Revision"/> is the plan revision checked against, and <see cref="Message"/> the text for the agent.
+    /// </summary>
+    public sealed record PatchReply(
+        [property: JsonPropertyName("status")] string Status,
+        [property: JsonPropertyName("effect")] string? Effect,
+        [property: JsonPropertyName("reasons")] IReadOnlyList<string> Reasons,
+        [property: JsonPropertyName("messages")] IReadOnlyList<string> Messages,
+        [property: JsonPropertyName("revision")] int Revision,
+        [property: JsonPropertyName("message")] string Message)
+    {
+        public const string Staged = "staged";
+        public const string Refused = "refused";
+        public const string Withdrawn = "withdrawn";
+        public const string Limit = "limit";
+        public const string Unavailable = "unavailable";
+    }
 
     /// <summary>The agent event recording when a question opened; its detail is the question's id.</summary>
     public const string QuestionOpenedEvent = "question_opened";

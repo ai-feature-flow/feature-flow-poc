@@ -71,6 +71,11 @@ public sealed class ModelRefusalTests : IAsyncDisposable
         public Task QuestionOpenedAsync(string workflowId, FeatureFlow.Interpreter.Wire.QuestionSignal question, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task ModelUnreachableAsync(string workflowId, FeatureFlow.Interpreter.Wire.ModelUnreachableSignal signal, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<FeatureFlow.Interpreter.Wire.AgentPlanView> PlanAsync(string workflowId, FeatureFlow.Interpreter.Wire.AgentPlanQuery query, CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
+
+        public Task<FeatureFlow.Interpreter.Wire.PatchPreview> PreviewAsync(string workflowId, object query, CancellationToken cancellationToken) => throw new NotImplementedException();
     }
 
     static IReadOnlyDictionary<string, IProvider> One(IProvider provider) => new Dictionary<string, IProvider> { ["one"] = provider };

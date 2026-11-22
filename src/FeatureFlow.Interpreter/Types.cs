@@ -376,8 +376,9 @@ public sealed record StepCannotAnswer(string StepId, string Reason) : RunInput;
 /// <summary>
 /// A child run proposed a patch to this run's plan (docs/03 section 9.4). <see cref="ChildStepId"/> is the
 /// <c>run.child</c> step that started the child; <see cref="ProposerStepId"/> is the agent step in the child.
+/// <see cref="ReviewRequired"/> is that step's <c>planning.review: required</c>, which makes the patch wait for a person here too.
 /// </summary>
-public sealed record ChildPatchProposed(string ChildStepId, PatchDocument Patch, string ProposerStepId) : RunInput;
+public sealed record ChildPatchProposed(string ChildStepId, PatchDocument Patch, string ProposerStepId, bool ReviewRequired = false) : RunInput;
 
 /// <summary>
 /// The counts of the <c>findings</c> namespace, from the ledger (docs/03 section 5.3), read at ledger

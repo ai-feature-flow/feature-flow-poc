@@ -179,6 +179,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                 Paths = paths,
                 Questions = spec.QuestionsMax > 0,
                 Model = spec.Model,
+                Planning = spec.Planning,
             };
 
             try

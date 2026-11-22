@@ -416,7 +416,7 @@ public partial class RunWorkflow
                 // A child's parent branch is its parent run's work branch; otherwise the agent worker reads the default branch from the code host.
                 input.ParentBranch is { } parentBranch ? input.Repositories.ToDictionary(r => r, _ => parentBranch) : new Dictionary<string, string>(),
                 a.Consumed, Workflow.Info.WorkflowId, LockRef, TrackerIssue: input.TrackerIssue, Runtime: binding?.AgentRuntime, Model: binding?.Model,
-                RunContext: a.RunContext, Causes: a.Causes);
+                RunContext: a.RunContext, Causes: a.Causes, Planning: a.Planning);
         }
 
         return CallOf(spec, identity, input.DryRun, agent);

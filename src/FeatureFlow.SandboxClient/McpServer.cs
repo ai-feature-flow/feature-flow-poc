@@ -4,14 +4,18 @@ using System.Text.Json.Nodes;
 
 namespace FeatureFlow.SandboxClient;
 
-/// <summary>Which of the engine tools a step is offered (docs/04 section 3.3), and where its output folder and checkout are.</summary>
-public sealed record McpSettings(string Output, string? Checkout, bool Questions, bool Checkpoint)
+/// <summary>
+/// Which of the engine tools a step is offered (docs/04 section 3.3), and where its output folder and checkout are.
+/// <see cref="Planning"/> (<c>FF_PLANNING</c>) offers <c>inspect_plan</c> and <c>propose_patch</c>.
+/// </summary>
+public sealed record McpSettings(string Output, string? Checkout, bool Questions, bool Checkpoint, bool Planning = false)
 {
     public static McpSettings FromEnvironment() => new(
         Environment.GetEnvironmentVariable("FF_OUTPUT") ?? "/ff/out",
         Environment.GetEnvironmentVariable("FF_CHECKOUT"),
         Environment.GetEnvironmentVariable("FF_QUESTIONS") == "true",
-        Environment.GetEnvironmentVariable("FF_WRITE") == "true");
+        Environment.GetEnvironmentVariable("FF_WRITE") == "true",
+        Environment.GetEnvironmentVariable("FF_PLANNING") == "true");
 }
 
 /// <summary>

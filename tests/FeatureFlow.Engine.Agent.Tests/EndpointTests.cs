@@ -52,6 +52,10 @@ public sealed class EndpointTests : IDisposable
             Unreachable.Add((workflowId, signal));
             return Task.CompletedTask;
         }
+
+        public Task<AgentPlanView> PlanAsync(string workflowId, AgentPlanQuery query, CancellationToken cancellationToken) => throw new NotImplementedException();
+
+        public Task<PatchPreview> PreviewAsync(string workflowId, object query, CancellationToken cancellationToken) => throw new NotImplementedException();
     }
 
     public EndpointTests()
