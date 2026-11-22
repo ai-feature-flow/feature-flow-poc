@@ -1818,7 +1818,10 @@
             "type": "string"
           },
           "reason": {
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "step_id": {
             "type": [
@@ -2113,13 +2116,13 @@
         }
       },
       "SessionAbandonRequest": {
-        "required": [
-          "reason"
-        ],
         "type": "object",
         "properties": {
           "reason": {
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -2588,6 +2591,7 @@
           "decision_type",
           "prompt",
           "choices",
+          "reason_required",
           "open",
           "updated_at",
           "consumed",
@@ -2614,6 +2618,12 @@
             "type": "string"
           },
           "choices": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reason_required": {
             "type": "array",
             "items": {
               "type": "string"

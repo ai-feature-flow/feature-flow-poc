@@ -122,7 +122,7 @@ public static class Validators
             DecisionAnswered d => new(core.State.Waits.FirstOrDefault(w => w.Kind == WaitKind.Gate && w.StepId == d.StepId)?.Id ?? $"no gate at {d.StepId}", "test",
                 d.Outcome, Artifacts: d.Artifacts),
             InterventionAnswered i => new(i.WaitId, "test", Action: Recoveries.Name(i.Action.Kind), StepId: i.Action.StepId, CleanUp: i.Action.CleanUp,
-                Attempts: i.Action.Attempts, Status: i.Action.Status?.Name(), BeyondHardCeiling: i.Action.BeyondHardCeiling),
+                Attempts: i.Action.Attempts, Status: i.Action.Status?.Name(), BeyondHardCeiling: i.Action.BeyondHardCeiling, Reason: i.Action.Reason),
             PatchAnswered p => new(p.WaitId, "test", Action: p.Approve ? "approve" : "reject"),
             _ => null,
         };

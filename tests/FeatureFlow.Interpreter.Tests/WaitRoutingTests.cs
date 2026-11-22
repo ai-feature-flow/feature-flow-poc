@@ -112,7 +112,7 @@ public class WaitRoutingTests
         Assert.True(core.Apply(Question()).Accepted);
         Assert.Single(core.State.Waits);
         Assert.Empty(core.Advance());
-        Assert.Equal("question ticket.question [orders, items]: Which table?", Shown(core, wait));
+        Assert.Equal("question ticket.question [orders, items | ]: Which table?", Shown(core, wait));
 
         Assert.Equal("q-1 is a question: answer with text", Refusal(core, new AnswerArgs("q-1", "alice", "  ")));
         Accepted(core, new AnswerArgs("q-1", "alice", "orders"));
@@ -210,7 +210,7 @@ public class WaitRoutingTests
     {
         var (core, gate) = AtGate();
         var wait = Assert.Single(core.State.Waits);
-        Assert.StartsWith("gate delivery.partial_recovery [go, stop]: ", Shown(core, wait));
+        Assert.StartsWith("gate delivery.partial_recovery [go, stop | stop]: ", Shown(core, wait));
 
         Assert.Equal("gate-1 is a gate: answer with an outcome", Refusal(core, new AnswerArgs(gate, "alice", Action: "retry")));
         Assert.Equal("approve: 'maybe' is not a declared outcome (go, stop)", Refusal(core, new AnswerArgs(gate, "alice", "maybe")));
@@ -260,7 +260,7 @@ public class WaitRoutingTests
     public void An_intervention_is_answered_with_each_recovery(string action, string? step, long attempts, string? status, string? next)
     {
         var (core, wait) = AtIntervention();
-        Assert.Equal($"intervention ticket.escalation [retry, go_to, replan, grant_attempts, end]: {core.State.Waits[0].Reason}", Shown(core, core.State.Waits[0]));
+        Assert.Equal($"intervention ticket.escalation [retry, go_to, replan, grant_attempts, end | end]: {core.State.Waits[0].Reason}", Shown(core, core.State.Waits[0]));
         Assert.Equal("intervention-1 is an intervention: answer retry, go_to, replan, grant_attempts or end",
             Refusal(core, new AnswerArgs(wait, "root", Action: "continue")));
 
@@ -296,7 +296,7 @@ public class WaitRoutingTests
         core.Apply(new StepCompleted("ask", "done"));
         core.Advance();
         var wait = Assert.Single(core.State.Waits);
-        Assert.Equal($"breakpoint ticket.breakpoint [continue, retry, go_to, replan, grant_attempts, end]: {wait.Reason}", Shown(core, wait));
+        Assert.Equal($"breakpoint ticket.breakpoint [continue, retry, go_to, replan, grant_attempts, end | end]: {wait.Reason}", Shown(core, wait));
 
         var answer = asAction
             ? new AnswerArgs(wait.Id, "ann", Action: action, StepId: action == "go_to" ? "ask" : null, Attempts: action == "grant_attempts" ? 1 : 0,
@@ -324,6 +324,7 @@ public class WaitRoutingTests
         var request = Assert.Single(core.Advance().OfType<RequestPatchApproval>());
         var description = core.Describe(Assert.Single(core.State.Waits));
         Assert.Equal(["approve", "reject"], description.Choices);
+        Assert.Null(description.ReasonRequired);
         // One name per thing (LOG 360): the kind as recorded is the wait id's prefix and the decision type's suffix.
         Assert.Equal(("patch_approval", "ticket.patch_approval"), (description.Kind, description.Type));
         Assert.StartsWith(description.Kind + "-", request.WaitId, StringComparison.Ordinal);
@@ -342,7 +343,7 @@ public class WaitRoutingTests
         Assert.Equal([new StartStep("merge", 1)], core.Advance());
         Assert.True(core.Apply(new ActionDecisionRequested("merge", "may acme/api#1 be merged into main?")).Accepted);
         var wait = Assert.Single(core.State.Waits);
-        Assert.Equal("gate ticket.merge_action [approve, reject]: may acme/api#1 be merged into main?", Shown(core, wait));
+        Assert.Equal("gate ticket.merge_action [approve, reject | reject]: may acme/api#1 be merged into main?", Shown(core, wait));
         return (core, wait.Id);
     }
 
@@ -440,10 +441,13 @@ public class WaitRoutingTests
         Assert.Equal(["gate-1 1", "gate-1 2"], Reminded(resumed));
     }
 
-    /// <summary>A wait as its record shows it (<see cref="RunCore.Describe"/>): kind, type, choices and text.</summary>
+    /// <summary>
+    /// A wait as its record shows it (<see cref="RunCore.Describe"/>): kind, type, choices, those that need a person's
+    /// reason after <c>|</c> (a choice routing the step as a failure or ending the run; LOG 502), and text.
+    /// </summary>
     static string Shown(RunCore core, OpenWait wait)
     {
         var d = core.Describe(wait);
-        return $"{d.Kind} {d.Type} [{string.Join(", ", d.Choices)}]: {d.Prompt}";
+        return $"{d.Kind} {d.Type} [{string.Join(", ", d.Choices)} | {string.Join(", ", d.ReasonRequired ?? [])}]: {d.Prompt}";
     }
 }

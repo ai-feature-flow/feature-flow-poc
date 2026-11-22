@@ -29,7 +29,7 @@ public sealed partial class RunCore
                 if (StepById(wait.StepId) is null)
                     return $"{wait.StepId} is not a step of plan revision {State.Revision}";
                 // A grant at a step that uses no attempts (a decision, a join) raises the run ceiling alone.
-                return GrantError(StepById(wait.StepId)!.ConsumesAttempts ? wait.StepId : null, action.Attempts, action.BeyondHardCeiling);
+                return GrantError(StepById(wait.StepId)!.ConsumesAttempts ? wait.StepId : null, action.Attempts, action.BeyondHardCeiling, action.Reason);
             case RecoveryKind.GoTo:
                 if (action.StepId is null || FindIn(action.StepId) is not { } target)
                     return $"go to: '{action.StepId}' is not a step of plan revision {State.Revision}";

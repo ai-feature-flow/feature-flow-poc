@@ -103,7 +103,7 @@ public sealed partial class RunCore
                 if (!choices.Contains(name) || Recoveries.Parse(name) is not { } kind)
                     return new Refused($"{a.WaitId} is a{(wait.Kind == WaitKind.Breakpoint ? " breakpoint" : "n intervention")}: answer {Or(choices)}");
                 input = new InterventionAnswered(a.WaitId,
-                    new Recovery(kind, a.StepId, a.CleanUp, a.Attempts, a.Status is null ? null : RunStatuses.Parse(a.Status), a.BeyondHardCeiling));
+                    new Recovery(kind, a.StepId, a.CleanUp, a.Attempts, a.Status is null ? null : RunStatuses.Parse(a.Status), a.BeyondHardCeiling, a.Reason));
                 break;
         }
 
@@ -137,7 +137,7 @@ public sealed partial class RunCore
         }
 
         var wait = State.Waits.First(w => w.Id == a.WaitId);
-        var said = $"{Key(a)} by {a.Actor}{(string.IsNullOrWhiteSpace(a.Reason) ? "" : ": " + a.Reason)}";
+        var said = $"{Key(a)} {By(a.Actor, a.Reason)}";
         // A person's answer and their reason go into the run context for the next agent; a question's answer is its agent's alone.
         var answered = wait.Kind == WaitKind.Question ? null : $"{Describe(wait).Type} at {wait.StepId}: {said}";
         var execution = Executions(wait.StepId);
@@ -162,6 +162,9 @@ public sealed partial class RunCore
     public static string Key(AnswerArgs a) =>
         a.Outcome ?? string.Join(" ", new[] { a.Action, a.StepId, a.CleanUp ? "clean_up" : null, a.Attempts > 0 ? a.Attempts.ToString(CultureInfo.InvariantCulture) : null, a.Status }
             .Where(x => x is not null));
+
+    /// <summary>Who did something and why: <c>by &lt;actor&gt;</c>, with <c>: &lt;reason&gt;</c> only when the person gave one (LOG 502).</summary>
+    static string By(string actor, string? reason) => string.IsNullOrWhiteSpace(reason) ? $"by {actor}" : $"by {actor}: {reason}";
 
     /// <summary>Why the core would refuse an answer's input now, or null.</summary>
     string? InputError(RunInput input) => input switch
@@ -332,6 +335,9 @@ public sealed partial class RunCore
     /// A wait as the record store shows it: its kind, its decision type at the run's level, the choices that answer it, and
     /// the text to show (a gate's rendered prompt, a question's text, else the core's reason), so Slack, the console and the
     /// CLI show the same. A gate also names what its step consumes as it opens, the revisions the person ratifies (LOG 394).
+    /// The choices that need a person's reason (LOG 502) are those that route the step as a failure or end the run: a gate's
+    /// outcomes of class failure, an action decision's reject, and <c>end</c> at an intervention or a breakpoint; the API
+    /// refuses them without one.
     /// </summary>
     public WaitDescription Describe(OpenWait wait)
     {
@@ -341,12 +347,14 @@ public sealed partial class RunCore
         var consumed = wait.Kind == WaitKind.Gate && step is not null ? Consumed(step.Id).Where(c => !c.LedgerView).ToList() : null;
         return wait.Kind switch
         {
-            WaitKind.Gate when step?.Form == StepForm.Action => new(kind, ActionDecisionTypeOf(step.Id) ?? $"{level}.decision", ActionDecisions.Choices, wait.Reason, consumed),
-            WaitKind.Gate => new(kind, step?.Decision?.Type ?? $"{level}.decision", step?.DeclaredOutcomes.Select(o => o.Name).ToList() ?? [], GatePrompt(wait, step), consumed),
+            WaitKind.Gate when step?.Form == StepForm.Action => new(kind, ActionDecisionTypeOf(step.Id) ?? $"{level}.decision", ActionDecisions.Choices, wait.Reason, consumed,
+                [ActionDecisions.Reject]),
+            WaitKind.Gate => new(kind, step?.Decision?.Type ?? $"{level}.decision", step?.DeclaredOutcomes.Select(o => o.Name).ToList() ?? [], GatePrompt(wait, step), consumed,
+                step?.DeclaredOutcomes.Where(o => o.Class == OutcomeClass.Failure).Select(o => o.Name).ToList() ?? []),
             WaitKind.Question => new(kind, $"{level}.question", wait.Options ?? [], wait.Reason),
             WaitKind.PatchApproval => new(kind, $"{level}.patch_approval", PatchChoices, wait.Reason),
-            WaitKind.Breakpoint => new(kind, $"{level}.breakpoint", Recoveries.For(wait.Kind), wait.Reason),
-            _ => new(kind, $"{level}.escalation", Recoveries.For(wait.Kind), wait.Reason),
+            WaitKind.Breakpoint => new(kind, $"{level}.breakpoint", Recoveries.For(wait.Kind), wait.Reason, ReasonRequired: [Recoveries.Name(RecoveryKind.End)]),
+            _ => new(kind, $"{level}.escalation", Recoveries.For(wait.Kind), wait.Reason, ReasonRequired: [Recoveries.Name(RecoveryKind.End)]),
         };
     }
 

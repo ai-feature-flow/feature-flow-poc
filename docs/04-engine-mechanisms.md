@@ -232,7 +232,7 @@ the run's state, carried over a hand-over, as entries of three kinds:
 | Kind | Added when | Text |
 |---|---|---|
 | `summary` | An agent step completes with a report summary | `<step> reported <outcome>: <summary>`, the summary at most 2 KB (LOG 19) |
-| `answer` | A person answers a gate, an intervention, a breakpoint or a patch approval (not a question, whose answer is its agent's alone) | `<decision type> at <step>: <choice> by <actor>: <reason>` |
+| `answer` | A person answers a gate, an intervention, a breakpoint or a patch approval (not a question, whose answer is its agent's alone) | `<decision type> at <step>: <choice> by <actor>: <reason>`, or without `: <reason>` when the person gave none (LOG 502) |
 | `retry_cause` | An attempt fails with a work error | `attempt <n> of <step> failed: <reason>`. An infrastructure retry is not a cause the agent can act on and is left out |
 
 The core renders the context in Markdown (`## Run context`, then one bullet per
@@ -308,7 +308,8 @@ decided, its step was skipped, or the run ended). The closed waits are carried
 across a hand-over with the rest of the core's state, so a repeated answer is
 still a duplicate in the next run. The record store's wait record has kind
 `gate`, `question`, `intervention`, `patch_approval` or `breakpoint`, the decision
-type, the choices that answer it and the text to show (its `prompt`; "reason"
+type, the choices that answer it, those that need a person's reason (section
+4.1) and the text to show (its `prompt`; "reason"
 means only a person's, LOG 389); a gate's also names each artifact its step
 consumes, with its key and its reference as the gate opened, the exact revisions
 the person ratifies (LOG 394); wait ids are `gate-N`,
@@ -337,18 +338,27 @@ type, records the answer, then delivers it to the workflow. The workflow trusts
 the API (`docs/02`). A decision may be answered from chat where policy allows
 that type.
 
-Every answer but a question's carries the person's **reason**, and so does an
-abort: the API refuses one without (400), not the core, which trusts the API
-(LOG 391). A question's answer is its text, which the agent reads (LOG
-392). Two answers are given by the engine: a chat button, which carries no
-words, answers with `answered with a <source> button`, and a session's
-submission with no reason of its own with `submitted <revision>`. The reason is
-not part of the answer's identity: the same choice in other words is a
-duplicate, and people who answer the same way in different words count
-together towards `min_count` (`docs/05` section 3.2), the delivered answer
-carrying each one's reason (`ann: <reason>; cat: <reason>`). The core records
-the reason on the closed wait, on the timeline (`<choice> by <actor>:
-<reason>`) and in the run context (section 3.5).
+Every answer may carry the person's **reason** (a comment), and an abort must:
+the API refuses one without (400), not the core, which trusts the API (LOG
+391). A reason is required only where the choice routes the step as a failure
+or ends the run; the core names those choices on the
+wait record (`reason_required`: a gate's outcomes of class `failure`, `reject`
+on an action's `merge_action` gate, `end` at an intervention or a breakpoint;
+none at a patch approval or a question), so the API and the console read
+the rule rather than repeat it (LOG 502). A grant beyond the hard ceiling also
+needs a reason, which the core checks, since only it knows the ceilings (`docs/05`
+section 5). Any other reason is optional, and
+where none is given none is recorded or invented. A question's answer is its
+text, which the agent reads (LOG 392). Two answers are given by the engine: a
+chat button, which carries no words, answers with `answered with a <source>
+button`, and a session's submission with no reason of its own with `submitted
+<revision>`. The reason is not part of the answer's identity: the same choice in
+other words is a duplicate, and people who answer the same way in different
+words count together towards `min_count` (`docs/05` section 3.2), the delivered
+answer carrying the reasons those who gave one gave (`ann: <reason>; cat:
+<reason>`). The core records the reason on the closed wait, on the timeline
+(`<choice> by <actor>: <reason>`, or `<choice> by <actor>` with none) and in the
+run context (section 3.5).
 
 ### 4.2 Auto-resolution
 

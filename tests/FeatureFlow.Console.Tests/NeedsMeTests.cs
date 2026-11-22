@@ -33,8 +33,8 @@ public sealed class NeedsMeTests(BrowserFixture browser) : BrowserTest(browser)
 
         var form = page.GetByRole(AriaRole.Region, new() { Name = "Wait gate-1" });
         var approved = form.GetByRole(AriaRole.Button, new() { Name = "approved", Exact = true });
-        await Expect(approved).ToBeDisabledAsync();
-        await form.GetByLabel("Reason").FillAsync("the tests pass");
+        await Expect(approved).ToBeEnabledAsync();
+        await form.GetByLabel("Comment").FillAsync("the tests pass");
         await approved.ClickAsync();
 
         await Expect(form).ToHaveCountAsync(0, new() { Timeout = 5_000 });

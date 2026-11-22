@@ -1,3 +1,5 @@
+using FeatureFlow.Interpreter.Wire;
+
 namespace FeatureFlow.Interpreter.Tests;
 
 /// <summary>
@@ -136,5 +138,36 @@ public class RunContextTests
         var context = ContextOf(core, "work")!;
         Assert.Contains("attempt 1 of work failed: tests fail", context, StringComparison.Ordinal);
         Assert.Contains("attempt 2 of work failed: xxx", context, StringComparison.Ordinal);
+    }
+
+    const string Gated = """
+        api_version: feature-flow/v1
+        kind: template
+        metadata: { name: gated, level: ticket }
+        steps:
+          - id: approve
+            decision: { type: ticket.spec_approval }
+            outcomes: { approved: success, rejected: failure }
+            routes: { approved: next, rejected: { end: rejected } }
+          - id: next
+            agent: { role: std:roles/planner, task: std:tasks/repair_failures }
+            outcomes: { done: success }
+            routes: { done: { end: completed } }
+        """;
+
+    /// <summary>An answer given without a reason reaches the next agent as what was decided and by whom, with no reason invented (LOG 502).</summary>
+    [Theory]
+    [InlineData(null, "- ticket.spec_approval at approve: approved by ann\n")]
+    [InlineData("covers the audit log", "- ticket.spec_approval at approve: approved by ann: covers the audit log\n")]
+    public void An_answer_reaches_the_next_agent_with_its_reason_only_when_one_was_given(string? reason, string line)
+    {
+        var lib = new Probe("run-context-gated", ("gated", Gated));
+        var core = lib.Start("gated");
+        var gate = Assert.IsType<OpenGate>(Assert.Single(core.Advance()));
+
+        Assert.True(core.Answer(new AnswerArgs(gate.WaitId, "ann", "approved", Reason: reason)).Accepted);
+        Assert.Equal([new StartStep("next", 1)], core.Advance());
+
+        Assert.EndsWith(line, ContextOf(core, "next"), StringComparison.Ordinal);
     }
 }

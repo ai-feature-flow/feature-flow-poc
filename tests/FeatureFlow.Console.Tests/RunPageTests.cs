@@ -52,7 +52,7 @@ public sealed class RunPageTests(BrowserFixture browser) : BrowserTest(browser)
         await Expect(banners).ToHaveCountAsync(2);
         await Expect(banners.Nth(0)).ToContainTextAsync("stalled at build: no progress for an hour");
         await Expect(banners.Nth(1)).ToContainTextAsync("stuck at test: the same failure three times");
-        await Expect(Open.GetByLabel("Reason")).ToHaveCountAsync(0);
+        await Expect(Open.GetByLabel("Comment")).ToHaveCountAsync(0);
         await Expect(Open.GetByRole(AriaRole.Button)).ToHaveCountAsync(0);
         await Expect(Open.Locator("section")).ToHaveCountAsync(0);
     }
@@ -125,15 +125,15 @@ public sealed class RunPageTests(BrowserFixture browser) : BrowserTest(browser)
     }
 
     [Fact]
-    public async Task Abort_needs_a_reason_and_ends_the_run()
+    public async Task Abort_needs_a_comment_and_ends_the_run()
     {
         var runId = await World.StartRunAsync();
         await OpenAsync("#/runs/" + runId);
 
         await Page.GetByRole(AriaRole.Button, new() { Name = "Abort run" }).ClickAsync();
-        var abort = Page.GetByRole(AriaRole.Button, new() { Name = "Abort", Exact = true });
+        var abort = Page.GetByRole(AriaRole.Button, new() { Name = "Abort (comment required)", Exact = true });
         await Expect(abort).ToBeDisabledAsync();
-        await Page.Locator(".ff-run-abort").GetByLabel("Reason").FillAsync("wrong ticket");
+        await Page.Locator(".ff-run-abort").GetByLabel("Comment").FillAsync("wrong ticket");
         await Page.GetByLabel("Close its pull requests").CheckAsync();
         await abort.ClickAsync();
 

@@ -132,7 +132,8 @@ public class ShellInputTests
         Assert.True(core is not null, string.Join("\n", d));
         var driver = new Driver(core!) { Respond = (id, _) => id == "work" ? new StepFailed(id, ErrorClass.Work, "x") : new StepCompleted(id, "composed") };
         driver.Run();
-        var answer = new InterventionAnswered(core!.State.Waits.Single().Id, new Recovery(RecoveryKind.GrantAttempts, Attempts: attempts, BeyondHardCeiling: administrator));
+        var answer = new InterventionAnswered(core!.State.Waits.Single().Id, new Recovery(RecoveryKind.GrantAttempts, Attempts: attempts, BeyondHardCeiling: administrator,
+            Reason: "the flaky dependency is fixed"));
         var result = core.Apply(answer);
         Assert.Equal(accepted, result.Accepted);
         if (!accepted)
@@ -147,7 +148,9 @@ public class ShellInputTests
         driver.Run();
         var wait = core!.State.Waits.Single().Id;
         Assert.Contains("run ceiling", core.Check(new InterventionAnswered(wait, new Recovery(RecoveryKind.GrantAttempts, Attempts: 2))));
-        Assert.Null(core.Check(new InterventionAnswered(wait, new Recovery(RecoveryKind.GrantAttempts, Attempts: 2, BeyondHardCeiling: true))));
+        // Beyond the hard ceiling the reason is the grant's audit trail (LOG 502).
+        Assert.Contains("needs a reason", core.Check(new InterventionAnswered(wait, new Recovery(RecoveryKind.GrantAttempts, Attempts: 2, BeyondHardCeiling: true, Reason: " "))));
+        Assert.Null(core.Check(new InterventionAnswered(wait, new Recovery(RecoveryKind.GrantAttempts, Attempts: 2, BeyondHardCeiling: true, Reason: "a long run"))));
     }
 
     [Fact]

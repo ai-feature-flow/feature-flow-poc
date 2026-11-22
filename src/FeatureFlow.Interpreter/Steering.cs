@@ -89,7 +89,7 @@ public sealed partial class RunCore
         if (ProtectedTouched(o) is { Count: > 0 } guarded)
             result += $" (protected: {string.Join(", ", guarded)})";
         State.Overrides.Add(new AppliedOverride(o.OverrideId, o.Key, result));
-        Trace("override", o.StepId ?? "", $"{o.Key} by {o.Actor}: {o.Reason} -> {result}");
+        Trace("override", o.StepId ?? "", $"{o.Key} {By(o.Actor, o.Reason)} -> {result}");
         return new(null, result, close);
     }
 
@@ -144,10 +144,10 @@ public sealed partial class RunCore
         Overrides.Breakpoint => new BreakpointSet(o.StepId!, Bool(o.Change, "set") ?? true, o.Actor),
         Overrides.Skip => new StepSkipped(o.StepId!, o.Change["outcome"], o.Actor, o.Reason, Holds(o, Overrides.SkipProtected)),
         Overrides.GrantAttempts => new AttemptsGranted(o.StepId, long.Parse(o.Change["attempts"], System.Globalization.CultureInfo.InvariantCulture),
-            Holds(o, Overrides.GrantAttemptsBeyond), o.Actor),
+            Holds(o, Overrides.GrantAttemptsBeyond), o.Actor, o.Reason),
         Overrides.ChangeRole => new RoleChanged(o.StepId!, o.Change["role"], o.Actor, o.Reason),
         Overrides.Amend when ReadPatch(o.Change["patch"], out _) is { } patch =>
-            new PatchProposed(patch with { Reason = $"amend by {o.Actor}: {o.Reason}" }, new Proposer("human", null), Holds(o, Overrides.AmendProtected)),
+            new PatchProposed(patch with { Reason = $"amend {By(o.Actor, o.Reason)}" }, new Proposer("human", null), Holds(o, Overrides.AmendProtected)),
         _ => null,
     };
 
@@ -173,7 +173,7 @@ public sealed partial class RunCore
     {
         BreakpointSet b => BreakpointError(b),
         StepSkipped s => SkipError(s),
-        AttemptsGranted g => GrantError(g.StepId, g.Attempts, g.BeyondHardCeiling),
+        AttemptsGranted g => GrantError(g.StepId, g.Attempts, g.BeyondHardCeiling, g.Reason),
         RoleChanged r => RoleError(r),
         LibraryOverridden o => LibraryOverrideError(o.Entry.Item, o.Libraries),
         LibraryOverrideProposed p => StepById(p.StepId) is not { } proposer ? $"{p.StepId} is not a step of plan revision {State.Revision}"
@@ -205,7 +205,7 @@ public sealed partial class RunCore
             case LibraryOverridden o:
                 libraries = o.Libraries;
                 State.LibraryOverrides.Add(o.Entry);
-                Trace("library_overridden", "", $"{o.Entry.Item} ({o.Entry.Path}) {o.Entry.OldHash} -> {o.Entry.NewHash} by {o.Entry.Actor}: {o.Entry.Reason}"
+                Trace("library_overridden", "", $"{o.Entry.Item} ({o.Entry.Path}) {o.Entry.OldHash} -> {o.Entry.NewHash} {By(o.Entry.Actor, o.Entry.Reason)}"
                                               + (o.Entry.InFlight.Count > 0 ? $"; in flight, keeping theirs: {string.Join(", ", o.Entry.InFlight)}" : "")
                                               + (o.Entry.ProtectedSteps.Count > 0 ? $"; protected steps affected: {string.Join(", ", o.Entry.ProtectedSteps)}" : ""));
                 return ApplyResult.Ok;
@@ -277,7 +277,7 @@ public sealed partial class RunCore
     /// </summary>
     void Skip(StepSkipped s)
     {
-        Trace("skip_set", s.StepId, $"{s.Outcome} by {s.Actor}: {s.Reason}");
+        Trace("skip_set", s.StepId, $"{s.Outcome} {By(s.Actor, s.Reason)}");
         State.Skips[s.StepId] = s.Outcome;
         var waits = State.Waits.Where(w => w.StepId == s.StepId && w.Kind is WaitKind.Gate or WaitKind.Breakpoint or WaitKind.Intervention).ToList();
         if (waits.Count == 0)
@@ -301,7 +301,12 @@ public sealed partial class RunCore
 
     // ---- Attempt grants: the override and the recovery action share one mechanism ------------------
 
-    string? GrantError(string? stepId, long attempts, bool beyond)
+    /// <summary>
+    /// Why a grant would be refused, or null. Beyond the hard ceiling it needs <paramref name="beyond"/> (an administrator,
+    /// <c>grant_attempts_beyond</c>, F4) and the person's reason, its audit trail (LOG 502); only the core knows the ceilings,
+    /// so this rule is the core's, where every other reason rule is the API's.
+    /// </summary>
+    string? GrantError(string? stepId, long attempts, bool beyond, string? reason)
     {
         if (attempts <= 0)
             return "grant attempts needs a positive number of attempts";
@@ -310,19 +315,22 @@ public sealed partial class RunCore
             return $"{stepId} is not a step of plan revision {State.Revision}";
         if (step is { ConsumesAttempts: false })
             return $"{stepId} uses no attempts";
-        if (beyond)
-            return null;
+        string? over = null;
         if (step is not null)
         {
             var allowance = Allowance(step) + (State.Steps.GetValueOrDefault(step.Id)?.AttemptsGranted ?? 0) + attempts;
             if (Options.HardStepCeiling is { } hardStep && allowance > hardStep)
-                return $"granting {attempts} would give {step.Id} {allowance} attempts, above the hard ceiling of {hardStep}; an administrator may grant beyond it ({Model.Overrides.GrantAttemptsBeyond})";
+                over = $"granting {attempts} would give {step.Id} {allowance} attempts, above the hard ceiling of {hardStep}";
         }
 
         var ceiling = Options.RunCeiling + State.RunCeilingGranted + attempts;
-        if (Options.HardRunCeiling is { } hardRun && ceiling > hardRun)
-            return $"granting {attempts} would raise the run ceiling to {ceiling}, above the hard ceiling of {hardRun}; an administrator may grant beyond it ({Model.Overrides.GrantAttemptsBeyond})";
-        return null;
+        if (over is null && Options.HardRunCeiling is { } hardRun && ceiling > hardRun)
+            over = $"granting {attempts} would raise the run ceiling to {ceiling}, above the hard ceiling of {hardRun}";
+        if (over is null)
+            return null;
+        if (!beyond)
+            return $"{over}; an administrator may grant beyond it ({Model.Overrides.GrantAttemptsBeyond})";
+        return string.IsNullOrWhiteSpace(reason) ? $"{over}; a grant beyond the hard ceiling needs a reason, its audit trail" : null;
     }
 
     void Grant(string? stepId, long attempts)
@@ -351,12 +359,12 @@ public sealed partial class RunCore
         var source = step.Source!;
         var agent = (YMap)source["agent"]!;
         var changed = With(source, "agent", With(agent, "role", new YScalar(r.Role, true, agent.Location)));
-        var patch = new PatchDocument(Run.Id, new Proposer("human", null), $"change_role by {r.Actor}: {r.Reason}", State.Revision, null,
+        var patch = new PatchDocument(Run.Id, new Proposer("human", null), $"change_role {By(r.Actor, r.Reason)}", State.Revision, null,
             [new PatchOp("replace", step.Id, source.Location, Step: changed)], source.Location);
         var result = Propose(patch, null, roleChange: true);
         if (result.Status != PatchStatus.Applied)
             return new ApplyResult(false, result.Diagnostics.Where(d => d.Blocks).Select(d => $"check {d.Check}: {d.Message}").ToList(), result);
-        Trace("role_changed", step.Id, $"{step.Agent!.Role?.Text ?? "none"} -> {r.Role} by {r.Actor}: {r.Reason}");
+        Trace("role_changed", step.Id, $"{step.Agent!.Role?.Text ?? "none"} -> {r.Role} {By(r.Actor, r.Reason)}");
         return new ApplyResult(true, [], result);
     }
 
