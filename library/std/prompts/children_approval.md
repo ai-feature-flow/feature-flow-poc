@@ -15,7 +15,8 @@ Check:
 - Where this is a revision, each document's `changes` lists what changed since
   the last plan and why. Units whose item is unchanged keep their result; a
   changed or new item runs as a new child, and a unit no longer listed does not
-  run.
+  run. Changing a completed unit's item runs it again on its merged work;
+  dropping one does not undo it.
 
 | Answer | Effect |
 |---|---|

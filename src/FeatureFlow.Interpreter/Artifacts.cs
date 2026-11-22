@@ -56,7 +56,7 @@ public sealed partial class RunCore
 
     /// <summary>
     /// The artifact a step consumes: from this run, the latest of its name nearest the step; from <c>previous</c>, the same
-    /// over each step's previous execution; from the parent or root, as it was when this run started (the root of a root run
+    /// over each step's earlier executions; from the parent or root, as it was when this run started (the root of a root run
     /// is the run itself); from a child, as the child ended (its <c>run.child</c> step holds it). Null when there is none.
     /// </summary>
     string? ConsumedReference(Step step, ArtifactIn consumed)
@@ -82,17 +82,18 @@ public sealed partial class RunCore
 
     /// <summary>
     /// The latest artifact of a name in this run, nearest a step's own scope (the run's top level when null). A child's are not
-    /// this run's. With <paramref name="previous"/>, the same over each step's previous execution (<c>from: previous</c>).
+    /// this run's. With <paramref name="previous"/>, the same over each step's earlier executions (<c>from: previous</c>): the
+    /// latest of the name from any execution before the step's current one.
     /// </summary>
     string? LatestArtifact(Step? near, string name, bool previous = false)
     {
         var prefix = near?.Scope.Prefix ?? "";
-        Execution? Of(StepRecord record) => previous ? record.Previous : record.Current;
+        IReadOnlyDictionary<string, string>? Of(StepRecord record) => previous ? record.EarlierArtifacts : record.Current?.Artifacts;
         return State.Steps
-            .Where(kv => Of(kv.Value)?.Artifacts.ContainsKey(name) == true && !HoldsChildArtifacts(kv.Key))
+            .Where(kv => Of(kv.Value)?.ContainsKey(name) == true && !HoldsChildArtifacts(kv.Key))
             .OrderByDescending(kv => kv.Key.StartsWith(prefix, StringComparison.Ordinal))
             .ThenBy(kv => kv.Key, StringComparer.Ordinal)
-            .Select(kv => Of(kv.Value)!.Artifacts[name])
+            .Select(kv => Of(kv.Value)![name])
             .FirstOrDefault();
     }
 

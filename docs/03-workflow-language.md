@@ -378,7 +378,7 @@ An agent or decision step may not declare an evidence type (`docs/01` section
 ```yaml
 consumes:
   - { name: plan }                                  # this run
-  - { name: plan, from: previous, optional: true }  # this run, the step's last execution before
+  - { name: plan, from: previous, optional: true }  # this run, the step's latest before its current execution
   - { name: epic_acceptance_criteria, from: parent }
   - { name: findings_report, from: { child: ticket_a } }
   - { name: previous_review, optional: true }
@@ -394,7 +394,7 @@ consumes:
 | `from` | The artifact | Its key in the inputs and sandbox |
 |---|---|---|
 | `current` | The latest of its name in this run, nearest the consuming step's scope, from each step's current execution | `<name>` |
-| `previous` | As `current`, but from each step's previous execution (`steps.<id>.previous`, section 4.2): what a step that ran again, such as a planner sent back, produced last time. None until a producer has run twice, so it is usually `optional`. Only one previous execution is kept (LOG 505) | `previous/<name>` |
+| `previous` | As `current`, but from each step's earlier executions: the latest of its name from any execution before the step's current one, so what a step that ran again, such as a planner sent back, last produced, even with an execution that produced nothing (an exhausted attempt, a `blocked` report) in between. None until a producer has run twice, so it is usually `optional`. `steps.<id>.previous` (section 4.2) is still only the one previous execution (LOG 505) | `previous/<name>` |
 | `parent`, `root` | The parent's or root run's, as it was when this run started (section 9.2) | `parent/<name>`, `root/<name>` |
 | `{ child: <step id> }` | The child run's, as it ended (section 9.3) | `child/<step id>/<name>` |
 

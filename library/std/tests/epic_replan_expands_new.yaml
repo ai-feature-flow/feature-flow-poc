@@ -33,3 +33,4 @@ expect:
     tickets.children_1: 2
     tickets.children_2: 1
     deliver.merge: 1
+  branches: { tickets.children: [tickets.children_0, tickets.children_1, tickets.children_2] }

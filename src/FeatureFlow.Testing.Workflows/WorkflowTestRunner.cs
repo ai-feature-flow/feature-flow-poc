@@ -260,7 +260,7 @@ public static class WorkflowTestRunner
 
         // Names are checked against every revision, since a patch may add steps.
         foreach (var id in test.Script.Keys.Concat(test.Outputs.Keys).Concat(test.Expand.Keys).Concat(test.ExpectExecutions.Keys)
-                     .Concat(test.Answers.Keys).Concat(test.Questions.Keys).Concat(test.ExpectContext.Keys).Concat(test.ExpectConsumed.Keys).Concat(test.Overrides.Select(o => o.StepId)).Distinct())
+                     .Concat(test.Answers.Keys).Concat(test.Questions.Keys).Concat(test.ExpectContext.Keys).Concat(test.ExpectConsumed.Keys).Concat(test.ExpectBranches.Keys).Concat(test.Overrides.Select(o => o.StepId)).Distinct())
             if (!core.State.IdHistory.Contains(id))
                 failures.Add($"'{id}' is not a step of {test.Template} in any revision of the run");
 
@@ -294,6 +294,11 @@ public static class WorkflowTestRunner
                 else
                     foreach (var key in keys.Where(k => !had.Contains(k)))
                         failures.Add($"{id} execution {execution} did not consume '{key}'; it consumed [{string.Join(", ", had)}]");
+        foreach (var (id, expectBranches) in test.ExpectBranches)
+            if (core.StepById(id)?.Container is not { } container)
+                failures.Add($"{id} is not a parallel or chain in the final plan, so it has no branches");
+            else if (container.Branches.Select(b => b.Steps.FirstOrDefault()?.Id ?? "").ToList() is var branches && !expectBranches.SequenceEqual(branches))
+                failures.Add($"{id}'s branches are [{string.Join(", ", branches)}], expected [{string.Join(", ", expectBranches)}]");
 
         CompareChecks(test, observedChecks, failures, patchDiagnostics);
         if (test.ExpectStatus is { } expected && expected != status)

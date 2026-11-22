@@ -13,9 +13,9 @@ will be verified. You change no code.
 | `child_requirements` from the parent, when present | The epic's acceptance criteria. The ones whose owner is this ticket are yours to copy |
 | `contract` from the parent, when present | The epic's design: the boundary you plan within |
 | `baseline_test_results` | Which test tiers this repository actually runs and parses |
-| `plan_validation`, when present | Why your previous plan failed validation |
+| `plan_validation`, when present | The last validation report; on rework after `invalid`, why the plan failed |
 | `previous/requirements` and `previous/delivery_plan`, when present | Your last plan: this execution revises it |
-| `implementation_claims`, when present | What the implementer claimed before it stopped |
+| `implementation_claims`, when present | What a finished implementation claimed, when the plan was sent back after it |
 | The run context, when you are revising | Why the plan came back: an implementer's `blocked` summary, a person's reason for rejecting it, or a person's re-plan |
 
 ## Procedure

@@ -186,6 +186,25 @@ public class WorkflowTestRunnerTests
     }
 
     /// <summary>
+    /// <c>expect.branches</c> (docs/09 section 4.3): a <c>parallel</c>'s branches in the final plan, exactly and in order. A
+    /// branch too many or missing, or an id that is not a container, fails the test.
+    /// </summary>
+    [Theory]
+    [InlineData("tickets.children: [tickets.children_0, tickets.children_1]", null)]
+    [InlineData("tickets.children: [tickets.children_0, tickets.children_1, tickets.children_2]", "tickets.children's branches are [tickets.children_0, tickets.children_1], expected [tickets.children_0, tickets.children_1, tickets.children_2]")]
+    [InlineData("tickets.children: [tickets.children_0]", "tickets.children's branches are [tickets.children_0, tickets.children_1], expected [tickets.children_0]")]
+    [InlineData("tickets.expand: [tickets.children_0]", "tickets.expand is not a parallel or chain in the final plan, so it has no branches")]
+    public void Branches_are_expected_exactly_from_the_final_plan(string expectation, string? failure)
+    {
+        var result = RunVariant("epic_child_rerun", "expect:\n", $"expect:\n  branches: {{ {expectation} }}\n");
+
+        if (failure is null)
+            Assert.True(result.Passed, string.Join("\n", result.Failures));
+        else
+            Assert.Equal(failure, Assert.Single(result.Failures));
+    }
+
+    /// <summary>
     /// <c>expand:</c> as a list per execution (docs/09 section 4.3): the epic's work list gains a ticket when a person sends the
     /// run back to expand, so only the new ticket and the failed one run again (docs/03 section 10.4).
     /// </summary>

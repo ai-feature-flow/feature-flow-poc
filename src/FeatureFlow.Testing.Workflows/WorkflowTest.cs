@@ -79,6 +79,9 @@ public sealed class WorkflowTest
 
     /// <summary>Step id to execution to keys it must have consumed, resolved, when that execution started (docs/03 section 7.2).</summary>
     public Dictionary<string, Dictionary<int, List<string>>> ExpectConsumed { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>A <c>parallel</c> or chain's id to its branches in the final plan, each by its first step's id, exactly and in order.</summary>
+    public Dictionary<string, List<string>> ExpectBranches { get; } = new(StringComparer.Ordinal);
 }
 
 public static class WorkflowTestReader
@@ -222,6 +225,9 @@ public static class WorkflowTestReader
                 ReadByExecution(ec, "expect.context", "the texts its run context contains", test.ExpectContext, d);
             if (MapReader.Of(expect.Node("consumed"), d, "expect.consumed") is { } eco)
                 ReadByExecution(eco, "expect.consumed", "the keys it consumed", test.ExpectConsumed, d);
+            if (MapReader.Of(expect.Node("branches"), d, "expect.branches") is { } eb)
+                foreach (var (key, _) in eb.Map.Entries)
+                    test.ExpectBranches[key.Text] = eb.StringList(key.Text).ToList();
             expect.Finish();
         }
 

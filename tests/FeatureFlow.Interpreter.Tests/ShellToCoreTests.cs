@@ -83,6 +83,7 @@ public class ShellToCoreTests
             consumes: [{ name: notes }, { name: notes, from: previous }]
             outcomes: { planned: success, blocked: blocked }
             routes: { planned: { end: completed }, blocked: plan }
+            limits: { attempts: 9 }
         """;
 
     [Fact]
@@ -113,6 +114,59 @@ public class ShellToCoreTests
             core.Consumed("build"));
         Assert.Null(core.MissingConsumed("build"));
         Assert.Equal("sha256:first", core.ScopeFacts("build").Consumed["previous/notes"]);
+    }
+
+    [Fact]
+    public void Previous_is_the_latest_earlier_artifact_of_the_name_past_an_execution_without_one_and_is_carried()
+    {
+        var core = Lib.Start("revising");
+        core.Advance();
+        Assert.True(core.Apply(new StepCompleted("plan", "planned", RunCore.ZeroOutputs(core.StepById("plan")!), new Dictionary<string, string> { ["notes"] = "sha256:first" })).Accepted);
+        core.Advance();
+        Assert.True(core.Apply(new StepCompleted("build", "blocked")).Accepted);
+        core.Advance();
+
+        // The re-plan reports blocked with no plan, and a person retries it: its execution 2 holds nothing, so previous/notes
+        // is still execution 1's (LOG 505), here and after a hand-over.
+        Assert.True(core.Apply(new StepCompleted("plan", "blocked")).Accepted);
+        core.Advance();
+        Assert.True(core.Apply(new InterventionAnswered(Assert.Single(core.State.Waits).Id, new Recovery(RecoveryKind.Retry))).Accepted);
+        core.Advance();
+        Assert.Equal(3, core.State.Steps["plan"].Executions);
+        Assert.Equal("sha256:first", core.Consumed("plan").Single().Reference);
+
+        var resumed = RunCore.Resume(Lib.Libraries, Probe.Ref("revising"), core.Snapshot());
+        Assert.Equal("sha256:first", resumed.Consumed("plan").Single().Reference);
+    }
+
+    /// <summary>
+    /// A step whose allowance is spent escalates naming what sent it back: another step's outcome with its summary, cut as an
+    /// escalating outcome's is (LOG 510).
+    /// </summary>
+    [Fact]
+    public void An_exhausted_step_s_intervention_names_the_outcome_that_sent_it_back()
+    {
+        static string Exhaust(string summary)
+        {
+            var core = Lib.Start("revising");
+            core.Advance();
+            for (var i = 1; i < 10; i++)
+            {
+                Assert.True(core.Apply(new StepCompleted("plan", "planned", RunCore.ZeroOutputs(core.StepById("plan")!), new Dictionary<string, string> { ["notes"] = $"sha256:{i}" })).Accepted);
+                core.Advance();
+                Assert.True(core.Apply(new StepCompleted("build", "blocked", Summary: summary)).Accepted);
+                if (core.Advance().OfType<RaiseIntervention>().SingleOrDefault() is { } raised)
+                    return raised.Reason;
+            }
+
+            throw new InvalidOperationException("the planner's allowance was never spent");
+        }
+
+        Assert.Equal("attempts exhausted (build reported blocked: the contract has no refunds endpoint)", Exhaust("the contract has no refunds endpoint"));
+        var cut = Exhaust(new string('x', 2000));
+        Assert.StartsWith("attempts exhausted (build reported blocked: xxx", cut, StringComparison.Ordinal);
+        Assert.EndsWith(" [...])", cut, StringComparison.Ordinal);
+        Assert.Equal("attempts exhausted ()".Length + 500, cut.Length);
     }
 
     // Inputs that load (an expression is checked when it is evaluated) and that evaluate, at step start, to values outside

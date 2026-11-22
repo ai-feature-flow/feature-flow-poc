@@ -274,10 +274,10 @@ public sealed partial class RunCore
             // whatever route led here (docs/01 section 4).
             if (Exhausted(step, record) is { } reason)
             {
-                record.Previous = record.Current;
+                record.MoveAside();
                 record.Current = new Execution { Number = record.Executions, Outcome = Actions.AttemptsExhausted };
                 Trace("exhausted", step.Id, reason);
-                Route(step, Actions.AttemptsExhausted);
+                Route(step, Actions.AttemptsExhausted, SentBackBy(entry, step));
                 return;
             }
 
@@ -286,7 +286,7 @@ public sealed partial class RunCore
 
             // Re-entry clears the current outcome, outputs and artifacts; the earlier execution stays readable (DR12).
             CleanUpFor(entry, step);
-            record.Previous = record.Current;
+            record.MoveAside();
             record.Executions++;
             record.Current = new Execution { Number = record.Executions };
             if (!CountsRaces(step))
@@ -303,7 +303,7 @@ public sealed partial class RunCore
         if (Paused(entry, step))
             return;
         CleanUpFor(entry, step);
-        record.Previous = record.Current;
+        record.MoveAside();
         record.Executions++;
         record.Current = new Execution { Number = record.Executions };
         Trace("started", step.Id, $"execution {record.Executions}");
@@ -374,6 +374,15 @@ public sealed partial class RunCore
     /// <summary>The race allowance (<see cref="Validation.StepCaps.RaceAllowance"/>): the step's or its document's, else the engine default held to the per-step ceiling.</summary>
     public long RaceAllowance(Step step) => Validation.StepCaps.RaceAllowance(step, Options.DefaultRaces, Options.StepCeiling);
 
+    /// <summary>
+    /// What sent a step back when its allowance is spent: the run context's summary of the execution of another step whose route
+    /// made the entry, such as <c>implement reported blocked: ...</c>, or null (LOG 510).
+    /// </summary>
+    string? SentBackBy(Entry entry, Step step) =>
+        entry.From is { } from && from != step.Id && State.Steps.GetValueOrDefault(from) is { } source
+            ? State.Context.LastOrDefault(c => c.Kind == ContextKinds.Summary && c.StepId == from && c.Execution == source.Executions)?.Text
+            : null;
+
     string? Exhausted(Step step, StepRecord record)
     {
         var allowance = Allowance(step) + record.AttemptsGranted;
@@ -392,7 +401,7 @@ public sealed partial class RunCore
     {
         var container = step.Container!;
         var record = Record(step.Id);
-        record.Previous = record.Current;
+        record.MoveAside();
         record.Executions++;
         record.Current = new Execution { Number = record.Executions };
         var state = new ContainerRecord
@@ -783,14 +792,16 @@ public sealed partial class RunCore
 
                 throw new EvaluationException("no guard held and the list has no fallback");
             case ResolvedStep to:
-                State.Pending.Add(new Entry(to.StepId, to.CleanUp));
+                State.Pending.Add(new Entry(to.StepId, to.CleanUp, From: from.Id));
                 break;
             case ResolvedEnd end:
                 End(RunStatuses.Parse(end.Status) ?? RunStatus.Failed, from.Id, $"{outcome} -> end {end.Status}");
                 break;
             case ResolvedEscalate:
                 var reason = outcome == Actions.AttemptsExhausted ? "attempts exhausted" : $"{outcome} escalates";
-                if (!string.IsNullOrWhiteSpace(said))
+                if (outcome == Actions.AttemptsExhausted && !string.IsNullOrWhiteSpace(said))
+                    reason += $" ({RunContexts.Bounded(said.Trim(), MaxEscalationSaidBytes)})";
+                else if (!string.IsNullOrWhiteSpace(said))
                     reason += ": " + RunContexts.Bounded(said.Trim(), MaxEscalationSaidBytes);
                 Intervene(from.Id, outcome, reason);
                 break;

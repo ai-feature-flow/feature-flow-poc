@@ -33,6 +33,20 @@ public sealed class StepRecord
 
     public Execution? Current { get; set; }
     public Execution? Previous { get; set; }
+
+    /// <summary>
+    /// The latest artifact of each name from the executions before <see cref="Current"/>: what <c>from: previous</c> reads
+    /// (docs/03 section 7.2), so an execution without artifacts in between does not lose an earlier one.
+    /// </summary>
+    public SortedDictionary<string, string> EarlierArtifacts { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Moves the current execution aside to <see cref="Previous"/>, before a new one becomes current.</summary>
+    public void MoveAside()
+    {
+        foreach (var (name, reference) in Current?.Artifacts ?? [])
+            EarlierArtifacts[name] = reference;
+        Previous = Current;
+    }
 }
 
 public enum BranchStatus
@@ -55,9 +69,10 @@ public sealed class ContainerRecord
 /// <summary>
 /// A step a route has entered and the core has not yet started (the run's position, docs/01 section 1.2). An entry that
 /// <see cref="Resumes"/> restarts an interrupted execution (<see cref="StepInterrupted"/>) instead of starting a new one;
-/// one <see cref="PastBreakpoint"/> was let through its step's breakpoint by a person's answer.
+/// one <see cref="PastBreakpoint"/> was let through its step's breakpoint by a person's answer. <see cref="From"/> is the step
+/// whose route made the entry, when a route did.
 /// </summary>
-public sealed record Entry(string StepId, bool CleanUp, bool Resumes = false, bool PastBreakpoint = false);
+public sealed record Entry(string StepId, bool CleanUp, bool Resumes = false, bool PastBreakpoint = false, string? From = null);
 
 /// <summary>
 /// The run's carried state (docs/02 section 2.1). Every collection the core iterates is a list or an ordinal

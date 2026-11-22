@@ -13,20 +13,21 @@ step 2. No live run was made; the product owner's live steps are below.
 | Route | std `ticket_delivery`: the implementer's `blocked` goes to `plan`, without `clean_up`. The bound is the planner step's existing attempt allowance; a spent allowance escalates at the planner. Nothing else is re-routed (LOG 507) |
 | Revising planners | `plan_and_validate.plan`, `plan_children.plan` and `epic_delivery.design` consume their own previous artifacts (`from: previous`, optional) and `plan_and_validate.plan` the implementer's claims. `requirements`, `delivery_plan` and `work_list` gain an optional `changes` list; `contract` takes `changes` in its front matter. The four planning tasks gain a "Revising a plan" step; `spec_approval` and `children_approval` ask the person to check `changes` (LOG 508) |
 | `planning` | The same three steps have `planning: { targets: [self], review: required }`, so a person's `replan` at them is accepted (LOG 509) |
-| Core | `from: previous`, re-expansion in `plan.expand`, `expand:` per execution and a consumed-keys expectation in workflow tests (LOG 505, 506; the core builder's report) |
-| Tests | std workflow tests `ticket_replan_blocked`, `ticket_replan_exhausted`, `epic_replan_expands_new`, `ticket_replan_recovery` |
-| Documents | `docs/08` s6.1 to s6.5; `docs/01` s7.2, `docs/03` s2.2 and s9.4, `docs/04` s6.1 (a person's re-plan now works in std); LOG 507 to 509 (unreviewed) |
+| Core | `from: previous` (the latest artifact of the name from any earlier execution of the producer), re-expansion in `plan.expand`, `expand:` per execution and consumed-keys and branches expectations in workflow tests (LOG 505, 506; the core builder's report). An exhausted step's escalation names the outcome and summary that sent it back (LOG 510) |
+| Tests | std workflow tests `ticket_replan_blocked`, `ticket_replan_exhausted`, `ticket_replan_granted`, `ticket_replan_planner_blocked`, `epic_replan_expands_new`, `ticket_replan_recovery` |
+| Documents | `docs/08` s6.1 to s6.5; `docs/01` s7.2, `docs/03` s2.2, s7.2 and s9.4, `docs/04` s6.1 and s6.2 (a person's re-plan now works in std); `docs/09` s4.3; LOG 505 to 510 (unreviewed) |
 
 ## Evidence
 
 | Check | Result |
 |---|---|
-| `dotnet test tests/FeatureFlow.Testing.Workflows.Tests` | 58 passed, the four new tests among them |
+| `dotnet test tests/FeatureFlow.Testing.Workflows.Tests` | 64 passed, the six new std tests and the `expect.branches` runner test among them |
+| `dotnet test tests/FeatureFlow.Interpreter.Tests` | 192 passed, the two review-fix tests among them |
 | `dotnet test tests/FeatureFlow.Library.Tests` | 6 passed |
 | `dotnet test tests/FeatureFlow.Validation.Tests` | 96 passed. Four had used the implementer's `blocked` as the example of the template's class default, and failed with the new route; they now assert the route and check the default on a copy without it, and the ticket's readable-form golden file shows `blocked->plan.plan` |
-| `dotnet test tests/FeatureFlow.Replay.Tests` | 44 passed, before and after the core merge: no recorded history changed |
-| Default suite (`Category!=Integration&Category!=Live&Category!=Cluster`) | 26 projects, 1,882 passed, 0 failed |
-| Integration category (Temporal dev server on port 7653) | 195 passed, 0 failed (Integration.Tests 134, Postgres 30, Docker 17, S3 12, API 2) |
+| `dotnet test tests/FeatureFlow.Replay.Tests` | 44 passed, before and after the core merge and after the review fixes: no recorded history changed |
+| Default suite (`Category!=Integration&Category!=Live&Category!=Cluster`) | 26 projects, 1,890 passed, 0 failed |
+| Integration category (Temporal dev server on port 7673) | 195 passed, 0 failed (Integration.Tests 134, Postgres 30, Docker 17, S3 12, API 2) |
 
 Each new test was seen to fail without its change:
 
@@ -36,6 +37,12 @@ Each new test was seen to fail without its change:
 | `ticket_replan_recovery` | `planning` on `plan_and_validate.plan` | `the answer was refused: re-plan: plan.plan is not an agent step with planning authority` |
 | `ticket_replan_blocked` | The `from: previous` consumes on `plan_and_validate.plan` | `plan.plan execution 2 did not consume 'previous/requirements'; it consumed [baseline_test_results, plan_validation]` |
 | `epic_replan_expands_new` | `planning` on `plan_children.plan` | `the answer was refused: re-plan: tickets.plan is not an agent step with planning authority`; `tickets.children_2 ran 0 time(s), expected 1` |
+| `epic_replan_expands_new` (`expect.branches`, review F2) | Identity matching in `Patches.cs` (`expandedBefore = []`) | `tickets.children's branches are [tickets.children_0, tickets.children_1, tickets.children_2, tickets.children_3, tickets.children_4], expected [tickets.children_0, tickets.children_1, tickets.children_2]` |
+| `ticket_replan_granted` (review F1 a) | The earlier-artifacts rule (`from: previous` reading only the previous execution) | `plan.plan execution 4 did not consume 'previous/requirements'; it consumed [baseline_test_results, plan_validation]` |
+| `ticket_replan_planner_blocked` (review F1 b) | The same | `plan.plan execution 3 did not consume 'previous/requirements'; it consumed [baseline_test_results, plan_validation]` |
+| `ShellToCoreTests.Previous_is_the_latest_earlier_artifact_...` | The carried `EarlierArtifacts` (snapshot writes null) | the resumed core's `previous/notes` was null, expected `sha256:first` |
+| `ShellToCoreTests.An_exhausted_step_s_intervention_names_...` (review F4) | The cause passed to the exhaustion's route | `Expected: "attempts exhausted (build reported blocked: the co"··· Actual: "attempts exhausted"` |
+| `WorkflowTestRunnerTests.Branches_are_expected_exactly_...` | `expect.branches` in the reader and runner | all four cases fail: `error check 1 (schema conformance): unknown key 'branches' in expect` |
 
 ## Judgement calls
 
@@ -48,6 +55,13 @@ Each new test was seen to fail without its change:
 - `epic_replan_expands_new` answers the children's failure with `replan`, so the failed ticket re-runs with the new
   one, and the ticket that passed does not; this also shows re-expansion's rule that only branches that have not
   succeeded run.
+- `from: previous` reads a per-step map of the latest artifact of each name from earlier executions, filled when an
+  execution is moved aside and carried with the step record; state carried before it reads as the previous
+  execution's artifacts, the old rule (review F1; LOG 505).
+- An exhausted step's escalation names the step whose route sent it back, which the pending entry now records
+  (`Entry.From`, carried); the text is the run context's existing summary entry, cut to 500 bytes (review F4; LOG 510).
+- `ticket_replan_granted` grants one attempt at each step the bound stops (`plan.plan`, `plan.validate`, `implement`),
+  since each has the same default allowance of 3.
 
 ## Live-run steps for the product owner
 
@@ -70,7 +84,10 @@ configuration, secrets, Temporal (port 7833) and three hosts, built from the mer
    with no intervention; the planner's context shows the summary; its revision lists `changes`; the spec approval
    opens again. If the implementer does not block, the step proves nothing and can be skipped.
 5. **The bound**, optionally: in step 4, reject the spec once more after each revision. The planner's third entry is
-   its last; the next return escalates at `plan.plan` with `attempts exhausted`.
+   its last; the next return escalates at `plan.plan` with `attempts exhausted`. When the return that spent it was
+   the implementer's `blocked`, the text names it: `attempts exhausted (implement reported blocked: <summary>)`
+   (LOG 510); a spec rejection's return reads `attempts exhausted`, and the person's reason is in the run context. A
+   grant then revises the last plan: `plan.plan`'s inputs include `previous/requirements` (LOG 505).
 6. **Evidence to record**: the run id; `plan.plan`'s executions and their consumed inputs; the two plans' `changes`;
    the intervention or route that sent the plan back; the premium requests the extra planning sessions used.
 

@@ -10,7 +10,7 @@ agent in between.
 |---|---|
 | `requirements` | The epic's requirements, from its design step |
 | `contract` | The epic's design: the tickets deliver it |
-| Earlier work list and validation reports, when present | Why a previous plan was sent back |
+| Earlier work list and the last validation report, when present | The last plan's validation; on rework after `invalid`, why the plan failed |
 | `previous/work_list` and `previous/child_requirements`, when present | Your last plan: this execution revises it |
 
 ## Procedure
@@ -39,7 +39,9 @@ agent in between.
    boundaries. Change only what the problem requires (a failed ticket, the
    validation report or a person's reason in the run context) and what depends
    on it, adding tickets or criteria as needed. A ticket whose item is unchanged
-   is not run again; a changed or new item runs as a new ticket. Never drop a
+   is not run again; a changed or new item runs as a new ticket. Changing a
+   completed ticket's item runs it again on its merged work; dropping one does
+   not undo it. Never drop a
    criterion only to get past the problem. List in each document's `changes`
    what changed and why; leave `changes` out of a first plan.
 
