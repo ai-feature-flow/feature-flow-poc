@@ -32,6 +32,7 @@ public sealed class TemplateTests
         Assert.Equal(new TemplateParameter("ticket_id", "string", true, null, null, "The tracker key, or the ticket's name in its epic's work list"),
             ticket.Parameters.Single(p => p.Name == "ticket_id"));
         Assert.Equal(("boolean", false, "false"), ticket.Parameters.Single(p => p.Name == "engine_can_merge") is var m ? (m.Type, m.Required, m.Default) : default);
+        Assert.Equal(["ticket_id", null, null], list.Templates.Select(t => t.TrackerParameter));
         var unreadable = Assert.Single(list.Unreadable);
         Assert.Equal("gone", unreadable.Library);
         Assert.Contains("does not exist", unreadable.Error);

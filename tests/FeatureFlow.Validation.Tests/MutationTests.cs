@@ -26,6 +26,11 @@ public class MutationTests
                 "    limits: { questions: { max: 3, timeout: 24h } }\n",
                 "    limits: { questions: { max: 3, timeout: 24h } }\n    retries: 2\n")]),
 
+        // LOG 501: the run's tracker issue comes from a parameter the template declares.
+        ["tracker_parameter_undeclared"] = new(1, "metadata.tracker_parameter names 'ticket', which is not a declared string parameter",
+            "the ticket names a tracker parameter it does not declare", [
+            new(Ticket, "  tracker_parameter: ticket_id ", "  tracker_parameter: ticket ")]),
+
         ["unknown_action"] = new(2, "unknown action 'analysis.execute'", "verify_and_review's analysis step names an action that does not exist", [
             new(VerifyAndReview, "    action: analysis.run\n    with: { fail_on: new_issues }", "    action: analysis.execute\n    with: { fail_on: new_issues }")]),
 

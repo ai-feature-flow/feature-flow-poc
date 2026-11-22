@@ -9,7 +9,7 @@ will be verified. You change no code.
 
 | Input | Use |
 |---|---|
-| The ticket, `/ff/inputs/ticket.md` (the inputs manifest's `ticket`), when the run has a tracker issue | The source of what is asked, read from the tracker when this step started. Without one, the parent's plan is the source |
+| The ticket, `/ff/inputs/ticket.md` (the inputs manifest's `ticket`), when the run has a tracker issue | The source of what is asked, read from the tracker when this step started. Without one, the parent's plan is the source. With neither, there is nothing to plan: report `blocked` |
 | `child_requirements` from the parent, when present | The epic's acceptance criteria. The ones whose owner is this ticket are yours to copy |
 | `contract` from the parent, when present | The epic's design: the boundary you plan within |
 | `baseline_test_results` | Which test tiers this repository actually runs and parses |
@@ -17,7 +17,10 @@ will be verified. You change no code.
 
 ## Procedure
 
-1. Read the `verification` skill. Read the ticket. Read the inputs above.
+1. Read the `verification` skill. Read the ticket. Read the inputs above. If the
+   manifest's `ticket` is null and there is no `child_requirements` from the
+   parent, stop and report `blocked`: the run has no ticket. Never write
+   requirements the ticket or the parent's plan does not ask for.
 2. Inspect the relevant code and the repository manifest's test tiers. Confirm
    that each tier you intend to name produced parsed results in the baseline. A
    tier that ran without parsed results does not count.
@@ -41,6 +44,6 @@ will be verified. You change no code.
 | Outcome | When | Artifacts |
 |---|---|---|
 | `planned` | Both documents are written and consistent | `requirements.yaml` as `requirements`; `delivery_plan.yaml` as `delivery_plan` |
-| `blocked` | Information is missing, the ticket conflicts with the epic, or the repository cannot run a tier the behaviour needs. Say what would unblock it | None |
+| `blocked` | Information is missing (the run has no ticket and no parent plan), the ticket conflicts with the epic, or the repository cannot run a tier the behaviour needs. Say what would unblock it | None |
 
 Output `tier_tags`: the list of tiers your methods name.

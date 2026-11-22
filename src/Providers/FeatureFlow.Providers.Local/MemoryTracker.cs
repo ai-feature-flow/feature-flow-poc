@@ -69,6 +69,23 @@ public sealed class InMemoryTracker(IReadOnlyCollection<string>? statuses = null
             return Find(issue)?.Links.ToList() ?? [];
     }
 
+    /// <summary>
+    /// Files an issue under a key of the caller's choosing, as a person files a ticket before a run is started on it; a key
+    /// already filed is kept as it is.
+    /// </summary>
+    public IssueRef Add(string key, IssueSpec spec)
+    {
+        lock (gate)
+            if (Find(new IssueRef(key)) is null)
+            {
+                var stored = new Stored { Key = key, Marker = key, Project = spec.Project ?? "MEM" };
+                Apply(stored, spec);
+                issues.Add(stored);
+            }
+
+        return new IssueRef(key);
+    }
+
     public Task<ProviderResult<Issue>> GetIssueAsync(IssueRef issue, CancellationToken cancellationToken) =>
         Run("GetIssue", () => Find(issue) is { } found ? ProviderResult<Issue>.Success(View(found)) : NotFound<Issue>(issue));
 

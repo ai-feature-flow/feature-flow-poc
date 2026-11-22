@@ -68,16 +68,28 @@ public sealed partial class RunCore
         return core;
     }
 
+    /// <summary>What the API checks before a root run starts: the problems that refuse it, and the run's tracker issue.</summary>
+    public sealed record StartCheck(IReadOnlyList<string> Problems, string? TrackerIssue);
+
     /// <summary>
-    /// Check 18 alone, before a run starts: the API refuses a start that the engine would refuse for its parameters, with
-    /// the same messages (LOG 495). A template that does not load is left to the engine, which reports why.
+    /// Before a root run starts: check 18 alone, so the API refuses a start that the engine would refuse for its parameters,
+    /// with the same messages (LOG 495); and the run's tracker issue (LOG 501), the value of the parameter the template names
+    /// in <c>metadata.tracker_parameter</c>, or <c>run.TrackerIssue</c> when it names none. A requested tracker issue that is
+    /// not that value is refused. A template that does not load is left to the engine, which reports why.
     /// </summary>
-    public static IReadOnlyList<Diagnostic> ParameterProblems(LibrarySet libraries, LibraryReference template, RunInfo run)
+    public static StartCheck CheckStart(LibrarySet libraries, LibraryReference template, RunInfo run)
     {
         var d = new DiagnosticBag();
-        if (PlanLoader.LoadTemplate(libraries, template, new DiagnosticBag(), new LoadOptions(run.Parameters, run.Repositories, [])) is { } plan)
-            CheckParameters(plan, run, d);
-        return d.Where(x => x.Blocks).ToList();
+        if (PlanLoader.LoadTemplate(libraries, template, new DiagnosticBag(), new LoadOptions(run.Parameters, run.Repositories, [])) is not { } plan)
+            return new StartCheck([], run.TrackerIssue);
+        CheckParameters(plan, run, d);
+        var problems = d.Where(x => x.Blocks).Select(x => x.Message).ToList();
+        if (plan.Document.TrackerParameter is not { } name
+            || (run.Parameters.GetValueOrDefault(name) ?? plan.Document.Parameter(name)?.Default) is not YScalar { IsNull: false } value)
+            return new StartCheck(problems, run.TrackerIssue);
+        if (run.TrackerIssue is { } requested && requested != value.Text)
+            problems.Add($"tracker_issue '{requested}' is not parameter {name} '{value.Text}', which is this template's tracker issue; give only {name}");
+        return new StartCheck(problems, value.Text);
     }
 
     /// <summary>
