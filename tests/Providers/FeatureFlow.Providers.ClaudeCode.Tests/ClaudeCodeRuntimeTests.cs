@@ -42,6 +42,19 @@ public sealed class ClaudeCodeRuntimeTests
         Assert.DoesNotContain("mcp__engine__checkpoint", Runtime.CommandLine(Task("none"), "p", false));
     }
 
+    /// <summary>The planning tools are allowed, and offered by the sandbox client (<c>FF_PLANNING</c>), only to a step with <c>planning</c>.</summary>
+    [Fact]
+    public void Only_a_step_with_planning_is_allowed_the_planning_tools()
+    {
+        var planning = Task() with { Planning = new Model.Plans.PlanningGrant(["self"], "required") };
+        Assert.Contains("mcp__engine__report,mcp__engine__ask_human,mcp__engine__checkpoint,mcp__engine__inspect_plan,mcp__engine__propose_patch'",
+            Runtime.CommandLine(planning, "p", false));
+        Assert.Equal("true", Runtime.Environment(planning, new AgentLimits(null, 2))["FF_PLANNING"]);
+        Assert.DoesNotContain("inspect_plan", Runtime.CommandLine(Task(), "p", false));
+        Assert.DoesNotContain("propose_patch", Runtime.CommandLine(Task(), "p", false));
+        Assert.Equal("false", Runtime.Environment(Task(), new AgentLimits(null, 2))["FF_PLANNING"]);
+    }
+
     /// <summary>Review finding 7: hooks come from the root-owned managed settings, and no other source's hooks run.</summary>
     [Fact]
     public void Hooks_are_managed_settings_that_allow_no_other_hooks()

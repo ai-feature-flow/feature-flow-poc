@@ -125,6 +125,8 @@ public sealed class ClaudeCodeRuntime(ClaudeCodeOptions options, Func<ISandboxPr
             allowed = allowed.Append("mcp__engine__ask_human");
         if (task.WriteAccess != "none")
             allowed = allowed.Append("mcp__engine__checkpoint");
+        if (task.Planning is not null)
+            allowed = allowed.Concat(["mcp__engine__inspect_plan", "mcp__engine__propose_patch"]);
         var paths = task.Paths!;
         var parts = new List<string>
         {

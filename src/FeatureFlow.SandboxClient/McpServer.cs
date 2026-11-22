@@ -116,6 +116,33 @@ public sealed class McpServer(EngineClient engine, McpSettings settings, ClientL
         if (settings.Checkpoint)
             tools.Add(Tool("checkpoint", "Commit everything in the checkout now; the engine pushes it. Optional: the engine also detects your commits.",
                 new JsonObject { ["message"] = new JsonObject { ["type"] = "string" } }, []));
+        if (settings.Planning)
+        {
+            var target = new JsonObject
+            {
+                ["type"] = "string", ["enum"] = new JsonArray("self", "parent"),
+                ["description"] = "self (default): this run's plan; parent: the plan of the run that started this one",
+            };
+            tools.Add(Tool("inspect_plan", "Read the run's plan as you may see it: its revision, your step and authority, the readable form, where the run is, " +
+                                           "and each step with its outcomes, routes and the step as written.",
+                new JsonObject { ["target"] = target.DeepClone() }, []));
+            tools.Add(Tool("propose_patch", "Propose a small change to the plan, checked now and sent with your next report. It takes effect only when you report: " +
+                                            "finish your work and call report as usual. A later proposal replaces this one; withdraw: true clears it.",
+                new JsonObject
+                {
+                    ["target"] = target.DeepClone(),
+                    ["base_revision"] = new JsonObject { ["type"] = "integer", ["description"] = "The plan revision inspect_plan showed you" },
+                    ["resume_at"] = new JsonObject { ["type"] = "string", ["description"] = "The step the run continues at once the change applies; required for self" },
+                    ["reason"] = new JsonObject { ["type"] = "string", ["description"] = "Why the plan must change, for the person who reviews it" },
+                    ["changes"] = new JsonObject
+                    {
+                        ["type"] = "array", ["items"] = new JsonObject { ["type"] = "object" },
+                        ["description"] = "The operations: insert (before or after, step), replace (target, step), remove (target), set (target, field, value), " +
+                                          "add_branch, remove_branch, chain; each with op",
+                    },
+                    ["withdraw"] = new JsonObject { ["type"] = "boolean", ["description"] = "Clear your staged proposal instead" },
+                }, []));
+        }
         return tools;
     }
 
@@ -143,6 +170,8 @@ public sealed class McpServer(EngineClient engine, McpSettings settings, ClientL
                 "report" => await ReportAsync(arguments, cancellationToken),
                 "ask_human" when settings.Questions => await AskAsync(arguments, cancellationToken),
                 "checkpoint" when settings.Checkpoint => Checkpoint(arguments),
+                "inspect_plan" when settings.Planning => await InspectPlanAsync(arguments, cancellationToken),
+                "propose_patch" when settings.Planning => await ProposePatchAsync(arguments, cancellationToken),
                 _ => $"There is no engine tool named {name}.",
             };
         }
@@ -194,6 +223,25 @@ public sealed class McpServer(EngineClient engine, McpSettings settings, ClientL
                 _ => [],
             }
             : [];
+
+    /// <summary><c>inspect_plan</c>: the endpoint's answer, as JSON the agent reads.</summary>
+    async Task<string> InspectPlanAsync(JsonObject arguments, CancellationToken cancellationToken)
+    {
+        var target = arguments["target"]?.GetValue<string>() is "parent" ? "parent" : "self";
+        var reply = await engine.SendAsync(HttpMethod.Get, $"/agent/v1/plan?target={target}", null, TimeSpan.FromSeconds(30), cancellationToken);
+        log.Write("inspected_plan", ("target", target), ("status", reply["status"]?.ToString()));
+        return reply.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+    }
+
+    /// <summary><c>propose_patch</c>: forwarded as given; the endpoint checks and stages it, and words the answer.</summary>
+    async Task<string> ProposePatchAsync(JsonObject arguments, CancellationToken cancellationToken)
+    {
+        var body = (JsonObject)arguments.DeepClone();
+        body["target"] ??= "self";
+        var reply = await engine.SendAsync(HttpMethod.Post, "/agent/v1/patches", body, TimeSpan.FromSeconds(30), cancellationToken);
+        log.Write("proposed_patch", ("status", reply["status"]?.ToString()));
+        return reply["message"]?.GetValue<string>() ?? "The engine did not answer the proposal.";
+    }
 
     /// <summary>The question's id is fixed here, once, before the first attempt (LOG 59).</summary>
     async Task<string> AskAsync(JsonObject arguments, CancellationToken cancellationToken)
