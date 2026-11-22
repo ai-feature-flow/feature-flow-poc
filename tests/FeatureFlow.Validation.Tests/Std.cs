@@ -14,6 +14,10 @@ public static class Std
     /// <summary>One text replacement in one std file. <see cref="Old"/> must occur exactly once.</summary>
     public sealed record Edit(string File, string Old, string New);
 
+    /// <summary>Removes the implementer's <c>blocked: plan</c> route (LOG 507), so its blocked takes the template's class default.</summary>
+    public static readonly Edit WithoutBlockedToPlan = new("templates/ticket_delivery.yaml",
+        "    routes:\n      blocked: plan               # the planner revises with the reason; bounded by its attempts; no clean_up (LOG 507)\n", "");
+
     /// <summary>Copies std to a temporary folder, applies the edits, and validates the copy as a library.</summary>
     public static ValidationResult Mutate(params Edit[] edits)
     {

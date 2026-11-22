@@ -41,8 +41,11 @@ public sealed class WorkflowTest
     /// <summary><c>findings.&lt;name&gt;</c> values, one per route evaluation that reads the name.</summary>
     public Dictionary<string, List<long>> Findings { get; } = new(StringComparer.Ordinal);
 
-    /// <summary>A <c>plan.expand</c> step id to the items of its list.</summary>
-    public Dictionary<string, List<YNode>> Expand { get; } = new(StringComparer.Ordinal);
+    /// <summary>
+    /// A <c>plan.expand</c> step id to the items of its list, one list per execution as <see cref="Script"/> has one outcome per
+    /// visit; the last list applies to every later execution.
+    /// </summary>
+    public Dictionary<string, List<List<YNode>>> Expand { get; } = new(StringComparer.Ordinal);
 
     public PatchDocument? Patch { get; init; }
 
@@ -74,8 +77,11 @@ public sealed class WorkflowTest
     /// <summary>Agent step id to execution to the texts its run context must contain when that execution starts (docs/04 section 3.5).</summary>
     public Dictionary<string, Dictionary<int, List<string>>> ExpectContext { get; } = new(StringComparer.Ordinal);
 
-    /// <summary>Step id to execution to the names of artifacts that must be staged for that execution when it starts (the ledger view included).</summary>
+    /// <summary>Step id to execution to keys it must have consumed, resolved, when that execution started (docs/03 section 7.2).</summary>
     public Dictionary<string, Dictionary<int, List<string>>> ExpectConsumed { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>A <c>parallel</c> or chain's id to its branches in the final plan, each by its first step's id, exactly and in order.</summary>
+    public Dictionary<string, List<string>> ExpectBranches { get; } = new(StringComparer.Ordinal);
 }
 
 public static class WorkflowTestReader
@@ -190,10 +196,13 @@ public static class WorkflowTestReader
             foreach (var (key, value) in expand.Map.Entries)
             {
                 expand.Node(key.Text);
-                if (value is YSeq seq)
-                    test.Expand[key.Text] = seq.Items.ToList();
+                // One list of items, or a list of such lists, one per execution.
+                if (value is YSeq { Items.Count: > 0 } perExecution && perExecution.Items.All(i => i is YSeq))
+                    test.Expand[key.Text] = perExecution.Items.Select(i => ((YSeq)i).Items.ToList()).ToList();
+                else if (value is YSeq seq)
+                    test.Expand[key.Text] = [seq.Items.ToList()];
                 else
-                    expand.Error($"expand.{key.Text} is the list plan.expand reads", value.Location);
+                    expand.Error($"expand.{key.Text} is the list plan.expand reads, or a list of them, one per execution", value.Location);
             }
 
         if (expect is not null)
@@ -212,8 +221,13 @@ public static class WorkflowTestReader
                 foreach (var (key, _) in eq.Map.Entries)
                     if (eq.Enum(key.Text, QuestionEnds, required: true) is { } how)
                         test.ExpectQuestions[key.Text] = how;
-            ReadByExecution(expect, "context", "the texts its run context contains", test.ExpectContext, d);
-            ReadByExecution(expect, "consumed", "the artifacts staged for it", test.ExpectConsumed, d);
+            if (MapReader.Of(expect.Node("context"), d, "expect.context") is { } ec)
+                ReadByExecution(ec, "expect.context", "the texts its run context contains", test.ExpectContext, d);
+            if (MapReader.Of(expect.Node("consumed"), d, "expect.consumed") is { } eco)
+                ReadByExecution(eco, "expect.consumed", "the keys it consumed", test.ExpectConsumed, d);
+            if (MapReader.Of(expect.Node("branches"), d, "expect.branches") is { } eb)
+                foreach (var (key, _) in eb.Map.Entries)
+                    test.ExpectBranches[key.Text] = eb.StringList(key.Text).ToList();
             expect.Finish();
         }
 
@@ -221,22 +235,20 @@ public static class WorkflowTestReader
         return test;
     }
 
-    /// <summary>An <c>expect</c> entry mapping a step id to an execution number to a list of texts.</summary>
-    static void ReadByExecution(MapReader expect, string field, string what, Dictionary<string, Dictionary<int, List<string>>> into, DiagnosticBag d)
+    /// <summary>Reads <c>{ &lt;step id&gt;: { &lt;execution&gt;: [texts] } }</c> into <paramref name="into"/>.</summary>
+    static void ReadByExecution(MapReader m, string field, string what, Dictionary<string, Dictionary<int, List<string>>> into, DiagnosticBag d)
     {
-        if (MapReader.Of(expect.Node(field), d, $"expect.{field}") is not { } map)
-            return;
-        foreach (var (key, value) in map.Map.Entries)
+        foreach (var (key, value) in m.Map.Entries)
         {
-            map.Node(key.Text);
-            if (MapReader.Of(value, d, $"expect.{field}.{key.Text}") is not { } byExecution)
+            m.Node(key.Text);
+            if (MapReader.Of(value, d, $"{field}.{key.Text}") is not { } byExecution)
                 continue;
             var expected = into[key.Text] = [];
             foreach (var (number, texts) in byExecution.Map.Entries)
             {
                 byExecution.Node(number.Text);
                 if (!int.TryParse(number.Text, out var execution) || execution < 1 || texts is not YSeq seq)
-                    byExecution.Error($"expect.{field}.{key.Text} maps an execution number to {what}", number.Location);
+                    byExecution.Error($"{field}.{key.Text} maps an execution number to {what}", number.Location);
                 else
                     expected[execution] = seq.Items.Select(i => (i as YScalar)?.Text ?? "").ToList();
             }

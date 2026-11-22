@@ -26,6 +26,10 @@ schema:
       properties:
         kind: { enum: [project, epic, ticket] }
         id: { $ref: "#/$defs/id" }
+    changes:
+      type: array
+      items: { type: string, minLength: 1 }
+      description: "On a revision only: what changed from the previous revision, and why (LOG 508)"
     acceptance_criteria:
       type: array
       items:

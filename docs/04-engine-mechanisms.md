@@ -454,7 +454,9 @@ section 8).
 An agent cannot propose a patch in version 1: the engine serves no
 `inspect_plan` or `propose_patch` tool (LOG 264). The core's patch path
 (`docs/03` section 10) takes `plan.expand`'s patches and a person's `amend`;
-`planning` on an agent step loads but gives the agent nothing. Only the
+`planning` on an agent step loads but gives the agent nothing. It makes the
+step a target for a person's `replan` recovery (`docs/01` section 7.2), which is
+why std's planner and designer steps have it (LOG 509). Only the
 `scripted` and `recording` test runtimes send an agent's patch or library
 override, so workflow tests can exercise the core's path.
 
@@ -465,7 +467,8 @@ override, so workflow tests can exercise the core's path.
 | Form | An activity reads the list artifact; the core builds the patch from at most 500 items and applies it through the patch path |
 | Inputs | `from` (a list artifact), `shape` (`parallel` or `chain`), `target` (the `parallel` to fill, or the step to chain after), `on_other` (for a chain), `step` (the step to create per item, with `$.<field>` paths into the item). Its own inputs are evaluated and checked against its schema at step start, like any action's, and the list is read and the patch built with those values, not evaluated again (check 31; LOG 488). The created step's inputs are checked against its action's schema at load, `$.` paths when the patch is validated (check 31) |
 | Outcomes | `expanded` |
-| Effect | A patch, applied like any other and recorded with `proposed_by: engine` |
+| Effect | A patch, applied like any other and recorded with `proposed_by: engine`. The engine's patch only adds and removes branches and chains steps (`add_branch`, `remove_branch`, `chain`, `insert`) |
+| Expanding again | Into a `parallel` an earlier expansion filled, only what changed (`docs/03` section 10.4; LOG 506). A first expansion gives the same patch as before |
 
 ---
 

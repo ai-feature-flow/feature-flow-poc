@@ -73,8 +73,8 @@ public class MutationTests
         ["unrouted_outcome"] = new(7, "outcome 'retry' (class ~) has no route", "the partial-delivery decision's retry outcome, which has no class, loses its route", [
             new(DeliverInOrder, "      retry: deliver\n", "")]),
 
-        ["unclassed_outcome"] = new(7, "outcome 'blocked' (class ~) has no route", "implement's blocked outcome loses its class, so no default routes it", [
-            new(Ticket, "    outcomes: { implemented: success, blocked: blocked }", "    outcomes: { implemented: success, blocked: ~ }")]),
+        ["unclassed_outcome"] = new(7, "outcome 'blocked' (class ~) has no route", "implement's blocked outcome loses its class and its route, so no default routes it", [
+            new(Ticket, "    outcomes: { implemented: success, blocked: blocked }", "    outcomes: { implemented: success, blocked: ~ }"), WithoutBlockedToPlan]),
 
         ["fragment_without_defaults"] = new(7, "outcome 'blocked' (class blocked) has no route",
             "fix_loop loses its defaults: its blocked agents may not fall through to the template's (LOG 72)", [

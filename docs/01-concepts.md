@@ -341,7 +341,7 @@ The answers to an intervention or a breakpoint:
 |---|---|
 | Retry | Run the stopped step again |
 | Go to | Run a named step next, optionally with `clean_up` |
-| Re-plan | Run a named agent step that has `planning` next (in version 1 it cannot propose a patch: `docs/04` section 6.1) |
+| Re-plan | Run a named agent step that has `planning` next, such as std's planners and designer (LOG 509). In version 1 the step cannot propose a patch (`docs/04` section 6.1): it revises its artifacts |
 | Grant attempts | Add attempts to the step's allowance, then retry |
 | End | End the run with a chosen status |
 | Continue | Breakpoints only: start the step that was paused before |

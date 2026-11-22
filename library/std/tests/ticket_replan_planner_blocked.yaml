@@ -1,0 +1,23 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: ticket_replan_planner_blocked
+description: >-
+  The implementer reports blocked and the planner, re-planning, reports blocked
+  too, so the run escalates at the planner. A person retries it. The planner
+  revises its last plan, not the blocked execution between: its third
+  execution consumes the previous requirements and delivery plan (LOG 505).
+  The implementer then finishes and the ticket merges.
+template: std:templates/ticket_delivery
+parameters: { ticket_id: FF-1042 }
+repositories: [acme/api]
+
+script:
+  plan.plan: [planned, blocked, planned]
+  implement: [blocked, implemented]
+answers:
+  plan.plan: retry
+
+expect:
+  status: completed
+  executions: { plan.plan: 3, implement: 2, deliver.merge: 1 }
+  consumed: { plan.plan: { 3: [previous/requirements, previous/delivery_plan] } }

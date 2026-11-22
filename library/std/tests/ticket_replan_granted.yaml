@@ -1,0 +1,26 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: ticket_replan_granted
+description: >-
+  The implementer reports blocked three times, so the planner's allowance is
+  spent and it escalates (as in ticket_replan_exhausted). A person grants one
+  more attempt, and one more at the plan's validation and the implementer when
+  each escalates the same way. The planner revises its last plan, not the exhaustion
+  placeholder between: its fourth execution consumes the previous requirements
+  and delivery plan (LOG 505). The implementer then finishes and the ticket
+  merges.
+template: std:templates/ticket_delivery
+parameters: { ticket_id: FF-1042 }
+repositories: [acme/api]
+
+script:
+  implement: [blocked, blocked, blocked, implemented]
+answers:
+  plan.plan: { grant_attempts: 1 }
+  plan.validate: { grant_attempts: 1 }
+  implement: { grant_attempts: 1 }
+
+expect:
+  status: completed
+  executions: { plan.plan: 4, implement: 4, deliver.merge: 1 }
+  consumed: { plan.plan: { 4: [previous/requirements, previous/delivery_plan] } }

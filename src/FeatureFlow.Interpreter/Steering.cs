@@ -291,7 +291,7 @@ public sealed partial class RunCore
     void EndSkipped(Step step, string outcome)
     {
         var record = Record(step.Id);
-        record.Previous = record.Current;
+        record.MoveAside();
         record.Executions++;
         record.Current = new Execution { Number = record.Executions, Skipped = true };
         Trace("skipped", step.Id, outcome);

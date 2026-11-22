@@ -156,7 +156,7 @@ left open are LOG 62 to 65, approved 2026-11-01.
 
 | Role | Write access | Notes |
 |---|---|---|
-| `planner` | none | An agent cannot propose a patch in version 1 (`docs/04` section 6.1). A tracker toolset is not in version 1 (`docs/06` section 3.9) |
+| `planner` | none | An agent cannot propose a patch in version 1 (`docs/04` section 6.1). Std's planner and designer steps have `planning: { targets: [self], review: required }`, so a person's re-plan at them is accepted (LOG 509). A tracker toolset is not in version 1 (`docs/06` section 3.9) |
 | `designer` | none | — |
 | `implementer` | branch | `ask_human` enabled by its standard steps |
 | `fixer` | branch | — |
@@ -180,17 +180,22 @@ and permission.
 | `contract` | No | A parent's interface or behaviour contract for its children |
 | `test_results`, `analysis_results`, `check_results`, `merge_record`, `revert_record`, `validation_report`, `trace_report` | Yes | Produced only by engine actions |
 
+A revised `requirements`, `delivery_plan`, `work_list` or `contract` (in its
+front matter) may list `changes`: what changed from the previous revision and
+why. Planners fill it only on a revision, and the approval prompts ask the
+person to check it (LOG 508).
+
 ### 6.3 Fragments
 
 | Fragment | Steps | Parameters | Exits |
 |---|---|---|---|
 | `baseline` | `test.run` and `analysis.run` with `baseline: true` | `tier_tags` (default all) | `done` |
-| `plan_and_validate` | Planner agent producing `requirements` and `delivery_plan`; `artifact.validate` with `requirement_support`, `requirement_ownership` or `requirement_inheritance` (by level), `verification_method_support`; on `invalid` back to the planner | `planner_task`, `subject_id`, `level_validators` | `planned` |
+| `plan_and_validate` | Planner agent producing `requirements` and `delivery_plan`; `artifact.validate` with `requirement_support`, `requirement_ownership` or `requirement_inheritance` (by level), `verification_method_support`; on `invalid` back to the planner. The planner consumes its own previous `requirements` and `delivery_plan` (`from: previous`) and the implementer's claims, so a re-entry revises the last plan rather than starting again (LOG 508) | `planner_task`, `subject_id`, `level_validators` | `planned` |
 | `standard_review` | `for_each` over `angles` (default: correctness, design, tests, security, specification) of a reviewer agent step, each judging the net diff at `HEAD` against the ledger view (`findings_ledger`, so a repeat names the finding it repeats in `same_as`) and producing a `findings_report` (LOG 516); `findings.record` for each; a reviewer with `changed_files_unread > 0` re-runs | `spec_refs`, `angles`, `reviewer_task`, `reopen_on` (set to `code_change`) | `reviewed` |
 | `fix_loop` | Triager agent producing `triage`; `findings.triage`, allowing the triager only `open`, `declined` and `escalated`, with an `invalid` triage back to its producer, and an escalation or a declined blocking or demonstrated finding to a person's triage decision (`findings.triage`), applied as that person (LOG 248); out by `cleared` when no finding is open after the triager's or the person's triage, which come before any fixer in the pass, so no code changed (LOG 503, 518); fixer agent, which a `fixed` report with no commit sends to a person; a verifying reviewer checking the fix against the original finding on the full diff, the only step that may set `fixed`, skipped when nothing is open (the fixer was sent back by the re-test or validation, LOG 517); `test.run` on the fix, its results kept on failure for the fixer; `artifact.validate` with `tests_added`; out by `fixed` | `fixer_task`, `triager_task`, `tier_tags` | `fixed`, `cleared`, `escalated` |
 | `verify_and_review` | `test.run`; `analysis.run`; failures, with their results, to a repair agent and back (LOG 517); `standard_review`; then the merge bar: `findings.repeat_fixes > 0` escalates, `findings.open_blocking > 0` goes to `fix_loop`, and back to the tests after `fixed`, or on past the merge bar after `cleared` (nothing changed to re-test or re-review); then `artifact.validate` with `verification_satisfaction`, after the review because satisfaction needs the reviewer's verdict on the claims (LOG 64) | `tier_tags`, `spec_refs`, `angles`, `reviewer_task`, `fixer_task`, `triager_task`, `check_satisfaction` (an epic sets `false`) | `ready`, `escalated` |
 | `merge_into_parent` | `scm.pull_request`; optionally `findings.record` from an external source; `ci.checks`; `scm.catch_up`; re-test and re-check if `changed`; `scm.merge`; `base_moved` back to catch-up, with catch-up, re-test and checks allowed 12 attempts so races are bounded by `limits.races` (LOG 61); `conflict` to a conflict-resolver agent. Anything needing verification again leaves by `reverify` | `repository`, `squash`, `engine_can_merge`, `tier_tags`, `external_findings` (optional) | `merged`, `declined`, `reverify` (no class: the caller routes it to its verification) |
-| `plan_children` | Planner producing a `work_list` and child-level requirements; validation; an approval decision that ratifies them; `plan.expand` into a `parallel` of `run.child`, which runs the children | `planner_task`, `child_template`, `child_requirements_type`, `approval_type`, `child_parameters`, `max_concurrency` | `completed`, `any_failed` |
+| `plan_children` | Planner producing a `work_list` and child-level requirements, revising its previous ones (`from: previous`) when re-entered (LOG 508); validation; an approval decision that ratifies them; `plan.expand` into a `parallel` of `run.child`, which runs the children. Expanding again adds only new or changed items, and re-runs only children that have not succeeded (`docs/03` section 10.4) | `planner_task`, `child_template`, `child_requirements_type`, `approval_type`, `child_parameters`, `max_concurrency` | `completed`, `any_failed` |
 | `trace` | `artifact.validate` with `requirement_trace`, producing a `trace_report` | `requirements` (the artifact to trace) | `traced` |
 | `deliver_in_order` | A `for_each` chain of `merge_into_parent` per repository; `delivery.report`; on `partial`, a decision offering retry, fix forward or revert | `repositories`, `squash`, `engine_can_merge`, `tier_tags` | `delivered`, `partial` |
 
@@ -198,8 +203,8 @@ and permission.
 
 | Template | Level | Shape |
 |---|---|---|
-| `ticket_delivery` | ticket | `baseline`; `plan_and_validate`; spec approval (auto-resolvable); implement; `verify_and_review`; `merge_into_parent`. Works standalone (parent branch is the default branch) or as a child. Parameter `ticket_id` is its `metadata.tracker_parameter`: a standalone ticket's tracker issue is `ticket_id`, read and staged for its agents, and a ticket the tracker does not have stops the planner for a person (LOG 501); a child's is the issue its epic's work list names, if any. Parameter `engine_can_merge`, default `false`, so a standalone ticket passes F1 in a default organisation; `epic_delivery` passes `true` to its tickets |
-| `epic_delivery` | epic | `baseline`; design and contract, validated; `plan_children` (tickets); the epic's own `verify_and_review` over the combined branch with the tickets' ledgers as prior findings; `trace`; `merge_into_parent` (an epic in several repositories would use `deliver_in_order` instead). `epic_name` is a scope id, not a tracker key, so it names no tracker parameter: a standalone epic's ticket is the start request's `tracker_issue`. Parameter `engine_can_merge`, default `false`; `project_delivery` passes `true` |
+| `ticket_delivery` | ticket | `baseline`; `plan_and_validate`; spec approval (auto-resolvable); implement; `verify_and_review`; `merge_into_parent`. An implementer's `blocked` goes back to the planner, without `clean_up`, bounded by the planner's attempts (LOG 507). Works standalone (parent branch is the default branch) or as a child. Parameter `ticket_id` is its `metadata.tracker_parameter`: a standalone ticket's tracker issue is `ticket_id`, read and staged for its agents, and a ticket the tracker does not have stops the planner for a person (LOG 501); a child's is the issue its epic's work list names, if any. Parameter `engine_can_merge`, default `false`, so a standalone ticket passes F1 in a default organisation; `epic_delivery` passes `true` to its tickets |
+| `epic_delivery` | epic | `baseline`; design and contract, validated, the designer revising its previous ones when re-entered (LOG 508); `plan_children` (tickets); the epic's own `verify_and_review` over the combined branch with the tickets' ledgers as prior findings; `trace`; `merge_into_parent` (an epic in several repositories would use `deliver_in_order` instead). `epic_name` is a scope id, not a tracker key, so it names no tracker parameter: a standalone epic's ticket is the start request's `tracker_issue`. Parameter `engine_can_merge`, default `false`; `project_delivery` passes `true` |
 | `project_delivery` | project | An interactive session for the project's requirements and architecture; approval that ratifies them; `plan_children` (epics); integration tests when the epic plan says they are needed; tests on each repository's project head; `trace`; `deliver_in_order` into the default branch, where by default a person merges (F1) |
 
 Budget: `project_delivery` sets `budget.max_work_items: 20`, within the organisation's
@@ -220,6 +225,7 @@ by the standard library. The last column says how to change it.
 | A finding fixed twice and raised again escalates | The `findings.repeat_fixes` guard in `verify_and_review` | Change or remove the guard |
 | The reviewer reads every changed file | The `changed_files_unread` guard in `standard_review` | Narrow or remove it for a specialised review |
 | A merge conflict goes to an agent first | `merge_into_parent` | Route `conflict` to a decision instead |
+| An implementer's `blocked` goes back to the planner, keeping the branch | The `blocked` route on `ticket_delivery`'s `implement` | Route it to escalate, or add `clean_up` |
 | Squash tickets into the epic; plain merges above | `with: { squash: ... }` on each template's `merge_into_parent` | Change the parameter |
 | Delivery to `main` once, at project level | `project_delivery` | Use `merge_into_parent` at epic level instead |
 

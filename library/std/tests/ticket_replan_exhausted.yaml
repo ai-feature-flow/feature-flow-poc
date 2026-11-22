@@ -1,0 +1,23 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: ticket_replan_exhausted
+description: >-
+  The implementer reports blocked every time. Each blocked goes back to the
+  planner (LOG 507) and counts against its allowance of 3 attempts, so the
+  fourth entry is refused before it runs (F4) and escalates at the planner. The
+  run waits for a person; it does not loop and does not report success.
+template: std:templates/ticket_delivery
+parameters: { ticket_id: FF-1042 }
+repositories: [acme/api]
+
+script:
+  implement: blocked
+
+expect:
+  status: running
+  escalated: [plan.plan]
+  executions:
+    plan.plan: 3
+    approve_spec: 3
+    implement: 3
+    deliver.merge: 0

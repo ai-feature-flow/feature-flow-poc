@@ -7,7 +7,7 @@ Template ticket_delivery (level ticket)
   3  plan.plan                       agent     planner               none    pending
   4  plan.validate                   action    artifact.validate     -       pending  invalid->plan.plan
   5  approve_spec                    decision  ticket.spec_approval  -       pending  rejected->plan.plan (clean_up)
-  6  implement                       agent     implementer           branch  pending
+  6  implement                       agent     implementer           branch  pending  blocked->plan.plan
   7  verify.tests                    action    test.run              -       pending  failed->verify.repair  baseline_failed->escalate(std:prompts/baseline_failed)  [protected]
   8  verify.analysis                 action    analysis.run          -       pending  failed->verify.repair  [protected]
   9  verify.review.review            for_each  join all              -       pending  completed->[if findings.repeat_fixes > 0: escalate; if findings.open_blocking == 0 && params.check_satisfaction: verify.satisfaction; if findings.open_blocking == 0: deliver.open_pr; else verify.fix.triage]  [protected]

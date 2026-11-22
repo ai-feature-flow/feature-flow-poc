@@ -20,6 +20,7 @@ schema:
   properties:
     schema: { const: 1 }
     scope: { $ref: "#/$defs/scope" }
+    changes: { $ref: "#/$defs/changes" }
     requirements:
       type: array
       items:
@@ -39,6 +40,10 @@ schema:
         not: { description: "gives both supports and supports_reason; give one or the other", required: [supports, supports_reason], properties: { supports: { minItems: 1 } } }
   $defs:
     id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+    changes:
+      type: array
+      items: { type: string, minLength: 1 }
+      description: "On a revision only: what changed from the previous revision, and why (LOG 508)"
     scope:
       type: object
       additionalProperties: false

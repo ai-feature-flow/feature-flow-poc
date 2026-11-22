@@ -686,9 +686,10 @@ public sealed class PlanValidator
 
         foreach (var (step, produced) in producers)
         {
-            // An artifact consumed from another run is staged as parent/<name>, root/<name> or child/<id>/<name> (LOG 153).
-            if (produced.Name is "parent" or "root" or "child")
-                d.Add(Checks.ArtifactProducer, $"may not produce an artifact named '{produced.Name}': a step's inputs use that name for artifacts from other runs ({produced.Name}/...)",
+            // An artifact consumed from another run or execution is staged as parent/<name>, root/<name>, previous/<name> or
+            // child/<id>/<name> (LOG 153, 505).
+            if (produced.Name is "parent" or "root" or "child" or "previous")
+                d.Add(Checks.ArtifactProducer, $"may not produce an artifact named '{produced.Name}': a step's inputs use that name for artifacts from other runs or executions ({produced.Name}/...)",
                     produced.Location, step.Id);
             if (produced.Type is not { Reference: { } typeRef } type)
                 continue;
@@ -748,7 +749,8 @@ public sealed class PlanValidator
                     continue;
                 }
 
-                if (input.From != "current" || input.Optional || input.Name == FindingsLedger)
+                // A previous execution's artifact was produced in this run, so its producer is checked as a current one's.
+                if (input.From is not ("current" or "previous") || input.Optional || input.Name == FindingsLedger)
                     continue;
                 var visible = producers.Where(p => p.Out.Name == input.Name && Visible(p.Step, step)).ToList();
                 if (visible.Count == 0)
