@@ -300,6 +300,53 @@ public class AgentPlanningTests
             Assert.Contains(reason, result.Diagnostics.Select(d => d.Message));
     }
 
+    static string Helper(string planning, string op = "insert, after: build", string id = "helper") =>
+        $"  - {{ op: {op}, step: {{ id: {id}, agent: {{ role: std:roles/planner, task: std:tasks/repair_failures, planning: {planning} }}, outcomes: {{ planned: success, blocked: blocked }} }} }}";
+
+    /// <summary>
+    /// An agent does not widen planning authority without a person: a step the patch adds or replaces with targets, templates or
+    /// review beyond the proposer's grant waits, with the reason; the same grant applies; a child's patch adding planning is held.
+    /// </summary>
+    [Theory]
+    [InlineData("auto", "{ targets: [self, parent] }", "insert, after: build", "helper gets planning.targets parent, beyond the proposer's")]
+    [InlineData("granted", "{ targets: [self], templates: [probe:templates/kid, probe:templates/parent] }", "insert, after: build",
+        "helper gets planning.templates probe:templates/parent, outside the proposer's")]
+    [InlineData("required", "{ targets: [self], review: auto }", "insert, after: build", "helper gets planning.review: auto, where the proposer's is required")]
+    [InlineData("auto", "{ targets: [self, parent] }", "replace, target: plan", "plan_again gets planning.targets parent, beyond the proposer's")]
+    [InlineData("auto", "{ targets: [self] }", "insert, after: build", null)]
+    public void A_step_given_wider_planning_than_the_proposers_waits_for_a_person(string template, string planning, string op, string? reason)
+    {
+        var id = op.StartsWith("replace", StringComparison.Ordinal) ? "plan_again" : "helper";
+        var (_, result) = Proposed(template, Helper(planning, op, id));
+
+        Assert.True(result.Status != PatchStatus.Rejected, string.Join("; ", result.Diagnostics));
+        if (reason is null)
+            Assert.Equal(PatchStatus.Applied, result.Status);
+        else
+            Assert.Contains(reason, result.Diagnostics.Select(d => d.Message));
+    }
+
+    [Fact]
+    public void A_childs_patch_that_adds_planning_is_held_at_the_parent()
+    {
+        var parent = Started("parent");
+        var patch = Read(Doc(Helper("{ targets: [self] }", "insert, after: kid"), resumeAt: null));
+
+        var result = parent.Apply(new ChildPatchProposed("kid", patch, "plan")).Patch!;
+
+        Assert.Equal(PatchStatus.Pending, result.Status);
+        Assert.Contains("helper gets planning authority; the parent does not hold the child step's grant to compare it with", result.Diagnostics.Select(d => d.Message));
+    }
+
+    [Fact]
+    public void Inspecting_its_own_plan_needs_self_in_the_steps_targets()
+    {
+        var view = Started("parent_only").AgentPlan(new AgentPlanQuery(Key, "self"));
+
+        Assert.Equal(AgentPlanView.Unavailable, view.Status);
+        Assert.Equal("plan has no planning authority over this run's plan (docs/04 section 6.1)", view.Message);
+    }
+
     [Fact]
     public void A_childs_review_required_is_carried_to_the_parent_whose_approval_opens_at_the_run_child_step()
     {

@@ -253,7 +253,7 @@ public sealed partial class RunCore
             case "agent":
                 if (proposer?.Agent?.Planning is not { } planning || !planning.Targets.Contains("self"))
                 {
-                    d.Add(Checks.PatchProposer, $"{patch.ProposedBy.StepId ?? "the proposer"} has no planning authority over this run's plan (docs/04 section 6.1)", patch.Location);
+                    d.Add(Checks.PatchProposer, NoSelfAuthority(patch.ProposedBy.StepId ?? "the proposer"), patch.Location);
                     return;
                 }
 
@@ -267,6 +267,8 @@ public sealed partial class RunCore
                 break;
         }
     }
+
+    static string NoSelfAuthority(string stepId) => $"{stepId} has no planning authority over this run's plan (docs/04 section 6.1)";
 
     /// <summary>Check 27 for a patch whose authority was checked elsewhere (a child's): an agent never changes a role.</summary>
     void CheckRoleUnchanged(PatchDocument patch, DiagnosticBag d)
@@ -337,12 +339,43 @@ public sealed partial class RunCore
         if (!fromChild)
             foreach (var reason in TemplateReasons(next, proposer?.Agent?.Planning?.Templates ?? []))
                 yield return reason;
+        foreach (var reason in WiderPlanning(next, fromChild ? null : proposer?.Agent?.Planning))
+            yield return reason;
 
         var by = patch.ProposedBy.StepId ?? "the proposer";
         if (fromChild ? reviewRequired : proposer?.Agent?.Planning?.Review == "required")
             yield return fromChild ? $"{by} (in the child run) has planning.review: required" : $"{proposer!.Id} has planning.review: required";
         else if (Options.RequireReview)
             yield return "the organisation requires review of agent patches for this template (planning.require_review)";
+    }
+
+    /// <summary>
+    /// The steps a patch adds, or whose <c>planning</c> it changes, that would hold more planning authority than the proposer's
+    /// <paramref name="grant"/>: <c>targets</c> beyond its targets, a <c>templates</c> entry outside its list (when it has one), or
+    /// <c>review: auto</c> where it has <c>required</c>. A person decides, as for an unlisted role (F10): an agent does not widen
+    /// its own authority. With no grant (a child's patch at its parent, which does not hold the child step's grant) any
+    /// planning added or changed is held.
+    /// </summary>
+    IEnumerable<string> WiderPlanning(Plan next, PlanningSpec? grant)
+    {
+        static string Key(PlanningSpec p) => $"{string.Join(",", p.Targets)}|{p.Review}|{string.Join(",", p.Templates.Select(t => t.Text))}";
+        foreach (var step in next.AllSteps)
+        {
+            if (step.Agent?.Planning is not { } planning || StepById(step.Id)?.Agent?.Planning is { } was && Key(was) == Key(planning))
+                continue;
+            if (grant is null)
+            {
+                yield return $"{step.Id} gets planning authority; the parent does not hold the child step's grant to compare it with";
+                continue;
+            }
+
+            if (planning.Targets.Except(grant.Targets).ToList() is { Count: > 0 } targets)
+                yield return $"{step.Id} gets planning.targets {string.Join(", ", targets)}, beyond the proposer's";
+            if (grant.Templates.Count > 0 && planning.Templates.Where(t => !grant.Templates.Any(g => g.Reference == t.Reference)).ToList() is { Count: > 0 } templates)
+                yield return $"{step.Id} gets planning.templates {string.Join(", ", templates.Select(t => t.Text))}, outside the proposer's";
+            if (planning.Review == "auto" && grant.Review == "required")
+                yield return $"{step.Id} gets planning.review: auto, where the proposer's is required";
+        }
     }
 
     /// <summary>

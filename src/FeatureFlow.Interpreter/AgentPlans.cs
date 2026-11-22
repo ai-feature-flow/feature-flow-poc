@@ -34,12 +34,16 @@ public sealed partial class RunCore
             return PlanUnavailable(Run.Id, $"{step.Id} has no planning authority (docs/04 section 6.1)");
         return query.Target switch
         {
+            "self" when !planning.Targets.Contains("self") => PlanUnavailable(Run.Id, NoSelfAuthority(step.Id)),
             "self" => View(new AgentPlanSelf(step.Id, execution), new AgentPlanAuthority(planning.Targets, planning.Review, Options.RequireReview, allowed)),
             "parent" when ParentRefusal(step) is { } refusal => PlanUnavailable(Run.Id, refusal),
-            "parent" => PlanUnavailable(Run.Id, null) with { Status = AgentPlanView.Forward, ForwardTo = Run.ParentId },
+            "parent" => PlanForward(Run.Id, Run.ParentId!),
             _ => PlanUnavailable(Run.Id, $"target must be self or parent, not '{query.Target}'"),
         };
     }
+
+    public static AgentPlanView PlanForward(string runId, string parentWorkflowId) =>
+        new(AgentPlanView.Forward, null, parentWorkflowId, runId, "", 0, null, null, "", [], []);
 
     /// <summary>
     /// What the core would do now with an agent step's patch (YAML), as <see cref="Completed"/> would when the step reports it.
