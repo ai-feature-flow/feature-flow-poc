@@ -52,8 +52,9 @@ public sealed class StdValidators(Func<IArtifactStoreProvider?> store, Func<ICod
             Evidence.TestsAddedAsync),
         (new ValidatorDescriptor(Names.DocumentRules,
                 "The rules std's artifact types state that a schema cannot, one document at a time: ids unique (methods within their criterion), " +
-                "a work list's names unique, its dependencies known and acyclic, and a triage naming each finding once",
-                [Types.Requirements, Types.DeliveryPlan, Types.WorkList, Types.Triage], None, []),
+                "a work list's names unique, its dependencies known and acyclic, a triage naming each finding once, and a findings report's same_as " +
+                "naming a finding in the run's ledger",
+                [Types.Requirements, Types.DeliveryPlan, Types.WorkList, Types.Triage, Types.FindingsReport], None, []),
             DocumentRules.CheckAsync),
     ];
 
@@ -111,6 +112,7 @@ public static class Types
     public const string TestResults = "test_results";
     public const string MergeRecord = "merge_record";
     public const string Triage = "triage";
+    public const string FindingsReport = "findings_report";
     public const string WorkList = "work_list";
     public const string TraceReport = "trace_report";
 }

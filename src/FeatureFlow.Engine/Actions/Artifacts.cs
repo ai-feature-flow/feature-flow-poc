@@ -128,7 +128,9 @@ static class Artifacts
             throw ActionStop.CannotAnswer($"artifact.import may not import {path} as evidence type {declared}; an imported file is not evidence the engine made (F7)");
         try
         {
-            return await ArtifactTypeCheck.CheckAsync(type, name, declared, path, text, reference, run.Providers, run.Ct);
+            var findings = ActionRun.Must(await run.Provider<IRecordStoreProvider>("record_store").QueryAsync<FindingRecord>(Queries.Findings,
+                new Dictionary<string, string> { ["run_id"] = run.Call.Step.RunId }, run.Ct), "read the findings ledger");
+            return await ArtifactTypeCheck.CheckAsync(type, name, declared, path, text, reference, run.Providers, findings, run.Ct);
         }
         catch (ArtifactCheckException e) when (e.Infrastructure)
         {

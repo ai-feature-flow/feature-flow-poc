@@ -281,16 +281,16 @@ convention, a gap against the specification.
 
 The **findings ledger** is the run's record of every finding and its history.
 A review pass adds to the ledger; it does not replace it. When a new finding
-matches an existing one by fingerprint, the engine records it as a **re-raise**
-of that finding rather than a new one, and records whether the code at the
-fingerprint has changed since the finding last changed state. A parent run's
+names an existing one in `same_as`, or matches one by fingerprint, the engine
+records it as a **re-raise** of that finding rather than a new one (LOG 505), and
+records whether the code at the finding has changed since the finding last changed state. A parent run's
 ledger view includes its children's ledgers, so a parent-level review is
 matched against what the children already found and fixed.
 
 | The engine provides (mechanism) | The workflow decides (policy, with library defaults, RW4) |
 |---|---|
 | Recording findings from a findings artifact or an external reviewer | Which findings block a merge (the merge bar) |
-| Matching by fingerprint; recording re-raises and code changes | Whether a re-raise of a fixed or declined finding reopens it |
+| Matching by `same_as` or fingerprint; recording re-raises and code changes | Whether a re-raise of a fixed or declined finding reopens it |
 | State changes, each with actor, reason and time | Who or what triages: an agent, a human, or both |
 | Queries for routes: counts by state, severity, basis | Whether a fix must add a regression test |
 | Posting a decline reason on the pull request | When repeated re-raises escalate |
