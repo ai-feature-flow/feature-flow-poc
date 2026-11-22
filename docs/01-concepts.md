@@ -109,7 +109,7 @@ configuration.
 
 A step marked **protected** cannot be removed, changed or made unreachable by a
 patch an agent proposes. Such a patch becomes a decision for a human (section
-7); in version 1 an agent cannot propose one (`docs/04` section 6.1). A human with the right role may change or bypass a protected step; the
+7; how an agent proposes, `docs/04` section 6.1). A human with the right role may change or bypass a protected step; the
 override is audited (P3, RW8).
 
 ---
@@ -329,7 +329,7 @@ Other steps keep running while it is open.
 | **Gate** | A decision step in the plan. It may open an **interactive session**: a workspace where the person works in their own agent tool, runs the later steps' checks on demand, and submits files that become artifacts (RW18) | One of the step's declared outcomes |
 | **Intervention** | The engine, when a route escalates or something unexpected stops a step | A recovery action (section 7.2) |
 | **Question** | An agent, through the `ask_human` tool, during its step (RW14) | Free text, or one of the options the agent offered. The agent waits with its session intact |
-| **Patch approval** | An agent's patch that touches protected content, or uses a role outside the organisation's allowed list. Not raised in version 1: an agent cannot propose a patch (`docs/04` section 6.1) | Apply or reject |
+| **Patch approval** | An agent's patch that needs a person, by the rules of `docs/05` section 6 | Apply or reject |
 | **Action request** | A step that needs a human to act outside the engine, such as merging into the default branch on the code host | Observed: the engine detects that the action happened. A human may also decline |
 | **Breakpoint** | A human, asking the run to pause before a named step | Continue, or any recovery action |
 
@@ -341,7 +341,7 @@ The answers to an intervention or a breakpoint:
 |---|---|
 | Retry | Run the stopped step again |
 | Go to | Run a named step next, optionally with `clean_up` |
-| Re-plan | Run a named agent step that has `planning` next, such as std's planners and designer (LOG 509). In version 1 the step cannot propose a patch (`docs/04` section 6.1): it revises its artifacts |
+| Re-plan | Run a named agent step that has `planning` next, such as std's planners and designer (LOG 509). It revises its artifacts, and may propose a patch (`docs/04` section 6.1) |
 | Grant attempts | Add attempts to the step's allowance, then retry |
 | End | End the run with a chosen status |
 | Continue | Breakpoints only: start the step that was paused before |
@@ -402,7 +402,7 @@ Three ways, each with one path (P4).
 
 | Change | What it changes | Proposed by | Applied by | Owned by |
 |---|---|---|---|---|
-| **Patch** | The plan's structure: steps, routes, inputs, limits | A human, or the engine's deterministic expansion of a list (`plan.expand`). An agent cannot propose one in version 1 (`docs/04` section 6.1) | One function, which validates it against the plan's rules and protected steps. An applied patch names the step the run continues at | `docs/03` |
+| **Patch** | The plan's structure: steps, routes, inputs, limits | A human, an agent step with planning authority (`docs/04` section 6.1), or the engine's deterministic expansion of a list (`plan.expand`) | One function, which validates it against the plan's rules and protected steps. An applied patch names the step the run continues at | `docs/03` |
 | **Library override** | The content future steps resolve: a task, a prompt, a schema | A human | The engine, as an entry in the run's library lock | `docs/08` |
 | **Human override** | Anything else about the run: answer a decision, skip or bypass a step, grant attempts, abort | A human, through the API | The engine, after authorisation by role | `docs/05` |
 

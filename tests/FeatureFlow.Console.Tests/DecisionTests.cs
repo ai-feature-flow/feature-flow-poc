@@ -53,6 +53,29 @@ public sealed class DecisionTests(BrowserFixture browser) : BrowserTest(browser)
     }
 
     [Fact]
+    public async Task A_patch_approvals_prompt_is_shown_as_text_line_by_line_and_approve_sends_the_action()
+    {
+        // The core renders the prompt as plain text: the agent's reason, why it needs approval, and the changes as YAML.
+        const string prompt = "implement proposes a change to the plan (revision 1).\nReason: <b>orders</b> needs a <script>window.ffx = 1</script> migration\n"
+                              + "Needs approval: implement has planning.review: required\nContinues at: migrate\nChanges:\n- op: insert\n  after: implement\n  step: { id: migrate }";
+        var runId = await World.StartRunAsync();
+        var waitId = await Engine.OpenWaitAsync(runId, "patch_approval", stepId: "go_ahead", prompt: prompt);
+        await OpenAsync("#/runs/" + runId);
+        var form = Form(waitId);
+
+        var shown = form.Locator(".ff-wait-prompt");
+        await Expect(shown).ToBeVisibleAsync();
+        Assert.Equal(prompt, await shown.TextContentAsync());
+        Assert.Equal("pre-wrap", await shown.EvaluateAsync<string>("e => getComputedStyle(e).whiteSpace"));
+        Assert.Equal(0, await shown.Locator("*").CountAsync());
+        Assert.True(await EvaluateAsync<bool>("window.ffx === undefined"));
+
+        await form.GetByRole(AriaRole.Button, new() { Name = "approve", Exact = true }).ClickAsync();
+        await Expect(form).ToHaveCountAsync(0, new() { Timeout = 5_000 });
+        Assert.Equal("approve", Assert.Single(Engine.Answers).Action);
+    }
+
+    [Fact]
     public async Task An_intervention_offers_its_recoveries_and_go_to_picks_a_step_from_the_plan()
     {
         var (runId, form) = await OpenWaitAsync("intervention");

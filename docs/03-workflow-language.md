@@ -107,7 +107,7 @@ its form (`docs/01` section 2.1). A list entry may instead be `parallel`,
 | `skills` | Library skills, mounted for the agent to read on demand. Added to the role's |
 | `write_access` | `none`, `branch` or `repository`. Tightens only |
 | `context` | `full` (default): the agent is given the run's step summaries. `none`: it is not, so a reviewer judges independently (from FF); it still reads why it runs again, which is addressed to it (`docs/04` section 3.5, LOG 513) |
-| `planning` | Loads (`targets`, `templates`, `review`), but gives the agent nothing in version 1: an agent cannot propose a patch (`docs/04` section 6.1). A recovery's re-plan names a step that has it (`docs/01` section 7.2); std's planners and designer have it (LOG 509) |
+| `planning` | `targets` (`self`, `parent`), `templates`, `review` (`auto` or `required`): the step may propose patches to its own run's plan, or to its parent's, through the `inspect_plan` and `propose_patch` tools (`docs/04` section 6.1), by the rules of `docs/05` section 6. A recovery's re-plan names a step that has it (`docs/01` section 7.2); std's planners, designer and implementer have it (LOG 509, 524) |
 | `push` | Default `true`. `false`: the agent's commits are not pushed (scratch work) |
 | `on_uncommitted` | `commit` (default) or `fail`: what to do with changes left uncommitted at the end |
 
@@ -525,20 +525,28 @@ The parent may also consume the child's artifacts (`from: { child: <id> }`).
 
 ### 9.4 A child proposing a change to its parent
 
-Not in version 1: an agent cannot propose a patch (`docs/04` section 6.1), so a
-child cannot change its parent's plan. The core would apply a patch a child
-sends through the same path as any patch (section 10), but nothing sends one.
-A person can: a re-plan at the parent's planner revises the work list, and
-expanding it again adds only the new or changed children (section 10.4,
-LOG 509).
+A child's agent step whose `planning.targets` contains `parent` proposes with
+`target: parent` (`docs/04` section 6.1). The parent consents by naming the
+child's template in its `run.child`; there is no other key. The parent's core
+checks and applies the patch as any patch (section 10), by the parent's rules
+plus the child step's own `planning.review` (`docs/05` section 6); a held patch
+waits at the parent's `run.child` step. `resume_at` may be omitted: the parent
+continues where it was. The child run goes on by its step's outcome either way
+(LOG 521).
+
+A branch cannot be added to a running `parallel` (section 10.2), and a child
+runs inside its parent's: a child can change the parent's later steps but not
+add a sibling. So std grants `parent` to no step. A person can add children: a
+re-plan at the parent's planner revises the work list, and expanding it again
+adds only the new or changed children (section 10.4, LOG 509).
 
 ---
 
 ## 10. Patches
 
 A patch changes a running plan's structure (`docs/01` section 10). Every patch,
-from any source (in version 1 a person's override, `docs/05` section 5, and
-`plan.expand`), goes through one function that validates and applies it.
+from any source (an agent with `planning`, a person's override, `docs/05`
+section 5, and `plan.expand`), goes through one function that validates and applies it.
 
 ### 10.1 The patch document
 
@@ -581,7 +589,7 @@ There is no operation to change a step's role: privilege comes from the role
 | Result | When |
 |---|---|
 | Applied | Valid, and touches nothing protected, or comes from a human with the right role |
-| Pending decision | Only an agent's patch is held for a person's approval, and an agent cannot propose one in version 1 (`docs/04` section 6.1). A patch that makes any step unreachable fails check 9, whoever proposes it (LOG 210) |
+| Pending decision | Only an agent's patch is held for a person's approval, by the rules of `docs/05` section 6, as a `patch_approval` wait whose prompt gives the agent's reason and the changes (`docs/04` section 6.1). A patch that makes any step unreachable fails check 9, whoever proposes it (LOG 210) |
 | Rejected | Invalid, stale, or it would relax a safety floor. Recorded, never silently dropped |
 
 Validation of a patch runs every load check on the plan as it will be after the

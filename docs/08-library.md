@@ -156,10 +156,10 @@ left open are LOG 62 to 65, approved 2026-11-01.
 
 | Role | Write access | Notes |
 |---|---|---|
-| `planner` | none | An agent cannot propose a patch in version 1 (`docs/04` section 6.1). Std's planner and designer steps have `planning: { targets: [self], review: required }`, so a person's re-plan at them is accepted (LOG 509). A tracker toolset is not in version 1 (`docs/06` section 3.9) |
+| `planner` | none | Std's planner and designer steps have `planning: { targets: [self], review: required }`, so a person's re-plan at them is accepted (LOG 509), and they may propose patches to their own run, each approved by a person (`docs/04` section 6.1). Large changes stay a planner's revision of its artifacts. A tracker toolset is not in version 1 (`docs/06` section 3.9) |
 | `designer` | none | — |
-| `implementer` | branch | `ask_human` enabled by its standard steps |
-| `fixer` | branch | — |
+| `implementer` | branch | `ask_human` enabled by its standard steps. `ticket_delivery`'s `implement` has `planning: { targets: [self], review: required }`: it may propose a step the plan did not foresee, a person approves each, and `verify` and `deliver` are protected (LOG 524) |
+| `fixer` | branch | No `planning`: a fix that needs the plan changed reports `blocked`, which escalates to a person (LOG 524) |
 | `reviewer` | none | `context: none` in its standard steps, so it judges independently. Mapped to a different, ideally stronger, model than the implementer in the example organisation configuration; the engine records both models |
 | `triager` | none | — |
 | `conflict_resolver` | branch | — |
@@ -203,7 +203,7 @@ person to check it (LOG 508).
 
 | Template | Level | Shape |
 |---|---|---|
-| `ticket_delivery` | ticket | `baseline`; `plan_and_validate`; spec approval (auto-resolvable); implement; `verify_and_review`; `merge_into_parent`. An implementer's `blocked` goes back to the planner, without `clean_up`, bounded by the planner's attempts (LOG 507). Works standalone (parent branch is the default branch) or as a child. Parameter `ticket_id` is its `metadata.tracker_parameter`: a standalone ticket's tracker issue is `ticket_id`, read and staged for its agents, and a ticket the tracker does not have stops the planner for a person (LOG 501); a child's is the issue its epic's work list names, if any. Parameter `engine_can_merge`, default `false`, so a standalone ticket passes F1 in a default organisation; `epic_delivery` passes `true` to its tickets |
+| `ticket_delivery` | ticket | `baseline`; `plan_and_validate`; spec approval (auto-resolvable); implement; `verify_and_review`; `merge_into_parent`. An implementer's `blocked` goes back to the planner, without `clean_up`, bounded by the planner's attempts (LOG 507). The implementer may propose a patch to its run, each approved by a person (LOG 524). Works standalone (parent branch is the default branch) or as a child. Parameter `ticket_id` is its `metadata.tracker_parameter`: a standalone ticket's tracker issue is `ticket_id`, read and staged for its agents, and a ticket the tracker does not have stops the planner for a person (LOG 501); a child's is the issue its epic's work list names, if any. Parameter `engine_can_merge`, default `false`, so a standalone ticket passes F1 in a default organisation; `epic_delivery` passes `true` to its tickets |
 | `epic_delivery` | epic | `baseline`; design and contract, validated, the designer revising its previous ones when re-entered (LOG 508); `plan_children` (tickets); the epic's own `verify_and_review` over the combined branch with the tickets' ledgers as prior findings; `trace`; `merge_into_parent` (an epic in several repositories would use `deliver_in_order` instead). `epic_name` is a scope id, not a tracker key, so it names no tracker parameter: a standalone epic's ticket is the start request's `tracker_issue`. Parameter `engine_can_merge`, default `false`; `project_delivery` passes `true` |
 | `project_delivery` | project | An interactive session for the project's requirements and architecture; approval that ratifies them; `plan_children` (epics); integration tests when the epic plan says they are needed; tests on each repository's project head; `trace`; `deliver_in_order` into the default branch, where by default a person merges (F1) |
 
@@ -226,6 +226,7 @@ by the standard library. The last column says how to change it.
 | The reviewer reads every changed file | The `changed_files_unread` guard in `standard_review` | Narrow or remove it for a specialised review |
 | A merge conflict goes to an agent first | `merge_into_parent` | Route `conflict` to a decision instead |
 | An implementer's `blocked` goes back to the planner, keeping the branch | The `blocked` route on `ticket_delivery`'s `implement` | Route it to escalate, or add `clean_up` |
+| A person approves every agent patch | `review: required` on each std `planning` grant | Set `review: auto`; a patch that touches protected content (F3), or adds or replaces a step with wider `planning` than its proposer's, still needs a person (`docs/05` section 6) |
 | Squash tickets into the epic; plain merges above | `with: { squash: ... }` on each template's `merge_into_parent` | Change the parameter |
 | Delivery to `main` once, at project level | `project_delivery` | Use `merge_into_parent` at epic level instead |
 

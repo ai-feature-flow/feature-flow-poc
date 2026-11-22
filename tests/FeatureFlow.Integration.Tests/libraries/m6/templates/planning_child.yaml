@@ -1,0 +1,21 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: planning_child
+  level: ticket
+  description: >-
+    A planner with authority over its parent's plan whose every proposal a person
+    reviews (planning.review: required): its patch is held at the parent.
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: plan
+    agent:
+      role: std:roles/planner
+      task: m6:tasks/note
+      planning: { targets: [parent], review: required }
+    outcomes: { planned: success, blocked: blocked }
+    routes: { planned: { end: completed } }

@@ -187,6 +187,7 @@ public abstract class SandboxedAgentRuntime(AgentRuntimeOptions options, Func<IS
             ["FF_CLIENT_LOG"] = StateFolder + "/client.jsonl",
             ["FF_QUESTIONS"] = task.Questions ? "true" : "false",
             ["FF_WRITE"] = task.WriteAccess == "none" ? "false" : "true",
+            ["FF_PLANNING"] = task.Planning is not null ? "true" : "false",
             ["FF_HOOK_HOLD_SECONDS"] = ((int)options.Hold.TotalSeconds).ToString(CultureInfo.InvariantCulture),
             ["FF_RETRY_SECONDS"] = ((int)options.Retry.TotalSeconds).ToString(CultureInfo.InvariantCulture),
             [UnreachableVariable] = JsonSerializer.Serialize(Unreachable, JsonSerializerOptions.Web),

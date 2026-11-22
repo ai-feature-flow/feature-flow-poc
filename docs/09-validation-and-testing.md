@@ -57,7 +57,7 @@ other documents cite them.
 | 26 | Patch: `resume_at` exists after the patch (unless sent to a parent) | Patch | Yes |
 | 27 | Patch: the proposer may use the operation; an agent never changes a role | Patch | Yes |
 | 28 | Patch: the result passes every load check | Patch | Yes |
-| 29 | Patch: protected content touched, or a role outside the allowed list | Patch | **Pending decision** (`docs/05` section 6) |
+| 29 | Patch: an agent's patch needs a person: protected content touched or left unrun, or a step added inside it; a role outside `planning.allowed_roles`; a child template outside `planning.templates`; a step added or replaced with `planning` wider than the proposer's; or review required by the step (a child's, at its parent) or the organisation | Patch | **Pending decision** (`docs/05` section 6) |
 | 30 | Patch: relaxes a safety floor | Patch | **Rejected** |
 | 31 | Step inputs satisfy the action's input schema (`docs/04` section 2): every `with` key is an input of the action, and a value has the input's kind and allowed values. Literals are checked at load, expressions when evaluated at step start (LOG 359), for every action, `run.child` and `plan.expand` included (LOG 488) | Load, Step start | Yes |
 | 32 | Consumed artifacts exist and validate | Step start | Yes |
@@ -144,12 +144,12 @@ CI.
 | Run-time rules | Each rule in section 3 | default, integration |
 | Provider contracts | Each interface's suite, including every documented success response | default, integration, cluster |
 | Merge race | Two work branches catch up from the same parent head; the second merge gets `base_moved` and loops; repeated refusals exhaust the allowance and escalate | integration |
-| Agent reporting | `report`, `ask_human` (including across a worker restart), `checkpoint` | integration |
+| Agent reporting | `report`, `ask_human` (including across a worker restart), `checkpoint`; `inspect_plan` and `propose_patch`, a staged patch carried by the report and held for a person (`docs/04` section 6.1) | integration |
 | Pre-submit parity | A session's check and the later step receive the same task, tools, model and commit | integration |
 | Architecture | The shell holds no routing; project reference rules | default |
 | Deployment | Images, network policies, stop on SIGTERM | cluster, integration |
 | Console (serving) | The API serves the built console; the console sources never build markup or links from data | default |
-| Console (browser) | The console in Chromium (Playwright) against the API in process over the local stores, with a scripted engine writing the records a run would: find a wait in "Needs me" and answer it with a reason, start a run, set a breakpoint and continue, a change arriving over `/events`, the notification link, sign-in, and markup in API data shown as text (LOG 461) | default |
+| Console (browser) | The console in Chromium (Playwright) against the API in process over the local stores, with a scripted engine writing the records a run would: find a wait in "Needs me" and answer it with a reason, start a run, set a breakpoint and continue, a change arriving over `/events`, the notification link, sign-in, markup in API data shown as text (LOG 461), and a patch approval's prompt shown as text, line by line | default |
 | Live | A real agent runtime and the GitHub App | live, by hand |
 
 ### 4.3 Workflow test file
@@ -181,7 +181,7 @@ An excerpt of `library/std/tests/ticket_fix_loop.yaml`.
 | `description` | Optional: what the test shows |
 | `script` | Step id to outcome, per visit. A scalar applies to every visit. A value may be an error class (`{ error: infrastructure, times: 2 }`, with an optional `then: <outcome>` after the errors) to exercise retry rules, or, for a decision, the person's outcome with their reason (`{ outcome: rejected, reason: "requirements omit the audit log" }`) |
 | `outputs` | Outputs per visit, and namespace values such as `findings.*`, so guards can be driven |
-| `patch` | Optional: a patch to apply, to test patch checks |
+| `patch` | Optional: a patch to apply, to test patch checks. A person's (`proposed_by: { type: human }`) applies at the start; an agent's (`{ type: agent, step_id: <id> }`) is carried by that step's first report, as `propose_patch` stages it for the report, and a held one is answered by `answers` (`approve` or `reject`; std's `ticket_implementer_patch_approved` and `_rejected`) |
 | `expect.path` or `expect.path_includes` | The steps executed, exactly or as a subsequence. For a `parallel`, branch paths are given separately, without asserting interleaving |
 | `expect.status` | The final run status, or `running` |
 | `expect.validation_errors` | Check numbers expected to block |

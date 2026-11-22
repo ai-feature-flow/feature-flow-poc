@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Providers.Abstractions;
 using Microsoft.AspNetCore.Builder;
@@ -10,12 +11,24 @@ using Temporalio.Client;
 
 namespace FeatureFlow.Engine.Agent;
 
-/// <summary>Tells a run that an agent asked a question, or that its model cannot be reached. The Temporal implementation signals the run's workflow id.</summary>
+/// <summary>
+/// Tells a run that an agent asked a question, or that its model cannot be reached, and asks it about its plan. The Temporal
+/// implementation signals and queries the run's workflow id.
+/// </summary>
 public interface IRunSignals
 {
     Task QuestionOpenedAsync(string workflowId, QuestionSignal question, CancellationToken cancellationToken);
 
     Task ModelUnreachableAsync(string workflowId, ModelUnreachableSignal signal, CancellationToken cancellationToken);
+
+    /// <summary>The <c>agent_plan</c> query.</summary>
+    Task<AgentPlanView> PlanAsync(string workflowId, AgentPlanQuery query, CancellationToken cancellationToken);
+
+    /// <summary>The <c>patch_preview</c> query.</summary>
+    Task<PatchPreview> PreviewAsync(string workflowId, PatchPreviewQuery query, CancellationToken cancellationToken);
+
+    /// <summary>The <c>child_patch_preview</c> query, on a parent.</summary>
+    Task<PatchPreview> ChildPreviewAsync(string workflowId, ChildPatchPreviewQuery query, CancellationToken cancellationToken);
 }
 
 public sealed class TemporalRunSignals(ITemporalClient client) : IRunSignals
@@ -25,6 +38,15 @@ public sealed class TemporalRunSignals(ITemporalClient client) : IRunSignals
 
     public Task ModelUnreachableAsync(string workflowId, ModelUnreachableSignal signal, CancellationToken cancellationToken) =>
         client.GetWorkflowHandle(workflowId).SignalAsync(RunWorkflowNames.ModelUnreachable, [signal], new WorkflowSignalOptions { Rpc = new RpcOptions { CancellationToken = cancellationToken } });
+
+    public Task<AgentPlanView> PlanAsync(string workflowId, AgentPlanQuery query, CancellationToken cancellationToken) =>
+        client.GetWorkflowHandle(workflowId).QueryAsync<AgentPlanView>(RunWorkflowNames.AgentPlan, [query], new WorkflowQueryOptions { Rpc = new RpcOptions { CancellationToken = cancellationToken } });
+
+    public Task<PatchPreview> PreviewAsync(string workflowId, PatchPreviewQuery query, CancellationToken cancellationToken) =>
+        client.GetWorkflowHandle(workflowId).QueryAsync<PatchPreview>(RunWorkflowNames.PatchPreview, [query], new WorkflowQueryOptions { Rpc = new RpcOptions { CancellationToken = cancellationToken } });
+
+    public Task<PatchPreview> ChildPreviewAsync(string workflowId, ChildPatchPreviewQuery query, CancellationToken cancellationToken) =>
+        client.GetWorkflowHandle(workflowId).QueryAsync<PatchPreview>(RunWorkflowNames.ChildPatchPreview, [query], new WorkflowQueryOptions { Rpc = new RpcOptions { CancellationToken = cancellationToken } });
 }
 
 /// <summary>
@@ -43,7 +65,7 @@ public sealed record AgentEndpointServices(StepTokens Tokens, IRecordStoreProvid
 /// sandbox client forwards, and the model proxy. Every call carries the step's token; a replica keeps nothing in
 /// memory, so any replica serves any step from the token and the record store.
 /// </summary>
-public static class AgentEndpoint
+public static partial class AgentEndpoint
 {
     /// <summary>The endpoint's JSON: the web defaults (camelCase), which the sandbox client reads.</summary>
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -85,6 +107,16 @@ public static class AgentEndpoint
         app.MapGet("/agent/v1/questions/{id}", async (HttpContext http, string id, int? wait) =>
             await Authorised(http, s, async claims =>
                 Results.Json(await PollQuestionAsync(s, claims, id, TimeSpan.FromSeconds(Math.Clamp(wait ?? 25, 0, 55)), http.RequestAborted), Json)));
+
+        app.MapGet("/agent/v1/plan", async (HttpContext http, string? target) =>
+            await Authorised(http, s, async claims => Results.Json(await InspectPlanAsync(s, claims, target ?? Self, http.RequestAborted), Json)));
+
+        app.MapPost("/agent/v1/patches", (Func<HttpContext, Task<IResult>>)(async http =>
+            await Authorised(http, s, async claims =>
+            {
+                var input = await JsonDocument.ParseAsync(http.Request.Body, cancellationToken: http.RequestAborted);
+                return Results.Json(await ProposePatchAsync(s, claims, input.RootElement, http.RequestAborted), Json);
+            })));
 
         app.Map("/model/{**path}", async (HttpContext http, string? path) =>
         {
@@ -141,10 +173,20 @@ public static class AgentEndpoint
         return token?.StartsWith(EngineEndpoints.GitHubTokenPrefix, StringComparison.Ordinal) == true ? token[EngineEndpoints.GitHubTokenPrefix.Length..] : token;
     }
 
-    static async Task<IResult> Authorised(HttpContext http, AgentEndpointServices s, Func<StepClaims, Task<IResult>> handle) =>
-        s.Tokens.Check(Bearer(http)) is { } claims && await ActiveAsync(s, claims)
-            ? await handle(claims)
-            : Results.Json(new { error = "unknown or revoked step token" }, Json, statusCode: 401);
+    static async Task<IResult> Authorised(HttpContext http, AgentEndpointServices s, Func<StepClaims, Task<IResult>> handle)
+    {
+        if (s.Tokens.Check(Bearer(http)) is not { } claims || !await ActiveAsync(s, claims))
+            return Results.Json(new { error = "unknown or revoked step token" }, Json, statusCode: 401);
+        try
+        {
+            return await handle(claims);
+        }
+        catch (EngineFaultException e)
+        {
+            // LOG 60: the client retries, then ends the session resumably; the agent is not told.
+            return Results.Json(new { error = e.Message }, Json, statusCode: 503);
+        }
+    }
 
     /// <summary>A token works only while its step attempt is recorded and not ended: the activity revokes it at the end.</summary>
     public static async Task<bool> ActiveAsync(AgentEndpointServices s, StepClaims claims) =>
@@ -194,6 +236,8 @@ public static class AgentEndpoint
             : [];
         var report = input.TryGetProperty("report", out var r) ? r : input;
         var (checkedReport, errors) = ReportCheck.Check(report, step.Contract, missing);
+        if (checkedReport is { } passed)
+            (checkedReport, errors) = await WithStagedPatchAsync(s, claims, passed, cancellationToken);
         var record = new ReportRecord(claims.StepKey, reports.Count + 1, checkedReport is not null, checkedReport, errors, DateTimeOffset.UtcNow);
         await AppendAsync(s, new RecordBatch(Reports: [record]));
         if (checkedReport is not null)
@@ -205,6 +249,41 @@ public static class AgentEndpoint
     }
 
     public sealed record QuestionReply(string Status, string? Answer, string? Message);
+
+    /// <summary>
+    /// The body of <c>POST /agent/v1/patches</c> (<c>propose_patch</c>): the plan <see cref="Target"/> (<c>self</c> or
+    /// <c>parent</c>), the revision the agent read (<see cref="BaseRevision"/>), where the run continues once it applies
+    /// (<see cref="ResumeAt"/>, required for <c>self</c>), why, and the operations of docs/03 s10.2 as JSON; or
+    /// <see cref="Withdraw"/> to clear the staged patch.
+    /// </summary>
+    public sealed record PatchRequest(
+        [property: JsonPropertyName("target")] string Target,
+        [property: JsonPropertyName("base_revision")] int BaseRevision,
+        [property: JsonPropertyName("resume_at")] string? ResumeAt,
+        [property: JsonPropertyName("reason")] string Reason,
+        [property: JsonPropertyName("changes")] IReadOnlyList<JsonElement> Changes,
+        [property: JsonPropertyName("withdraw")] bool Withdraw = false);
+
+    /// <summary>
+    /// The answer to <see cref="PatchRequest"/>: <see cref="Status"/> <c>staged</c> (sent with the next accepted report, its
+    /// <see cref="Effect"/> <c>applies</c> or <c>needs_approval</c> with <see cref="Reasons"/>), <c>refused</c> (<see cref="Messages"/>:
+    /// the checks' messages), <c>withdrawn</c>, <c>limit</c> (too many proposals or too large) or <c>unavailable</c>;
+    /// <see cref="Revision"/> is the plan revision checked against, and <see cref="Message"/> the text for the agent.
+    /// </summary>
+    public sealed record PatchReply(
+        [property: JsonPropertyName("status")] string Status,
+        [property: JsonPropertyName("effect")] string? Effect,
+        [property: JsonPropertyName("reasons")] IReadOnlyList<string> Reasons,
+        [property: JsonPropertyName("messages")] IReadOnlyList<string> Messages,
+        [property: JsonPropertyName("revision")] int Revision,
+        [property: JsonPropertyName("message")] string Message)
+    {
+        public const string Staged = "staged";
+        public const string Refused = "refused";
+        public const string Withdrawn = "withdrawn";
+        public const string Limit = "limit";
+        public const string Unavailable = "unavailable";
+    }
 
     /// <summary>The agent event recording when a question opened; its detail is the question's id.</summary>
     public const string QuestionOpenedEvent = "question_opened";

@@ -152,8 +152,11 @@ public sealed record CleanUp(string StepId) : Command;
 
 public sealed record EndRun(RunStatus Status) : Command;
 
-/// <summary>A child run's agent step proposed a patch to the parent's plan (docs/03 section 9.4): the shell signals the parent.</summary>
-public sealed record SendPatchToParent(string StepId, PatchDocument Patch) : Command;
+/// <summary>
+/// A child run's agent step proposed a patch to the parent's plan (docs/03 section 9.4): the shell signals the parent, with the
+/// step's <c>planning.review: required</c> as <see cref="ReviewRequired"/>, which the parent applies.
+/// </summary>
+public sealed record SendPatchToParent(string StepId, PatchDocument Patch, bool ReviewRequired = false) : Command;
 
 /// <summary>
 /// A person approved an agent's library override (docs/05 section 6): the shell stores the content, writes the run's new
@@ -376,8 +379,9 @@ public sealed record StepCannotAnswer(string StepId, string Reason) : RunInput;
 /// <summary>
 /// A child run proposed a patch to this run's plan (docs/03 section 9.4). <see cref="ChildStepId"/> is the
 /// <c>run.child</c> step that started the child; <see cref="ProposerStepId"/> is the agent step in the child.
+/// <see cref="ReviewRequired"/> is that step's <c>planning.review: required</c>, which makes the patch wait for a person here too.
 /// </summary>
-public sealed record ChildPatchProposed(string ChildStepId, PatchDocument Patch, string ProposerStepId) : RunInput;
+public sealed record ChildPatchProposed(string ChildStepId, PatchDocument Patch, string ProposerStepId, bool ReviewRequired = false) : RunInput;
 
 /// <summary>
 /// The counts of the <c>findings</c> namespace, from the ledger (docs/03 section 5.3), read at ledger

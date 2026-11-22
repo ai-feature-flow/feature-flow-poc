@@ -176,4 +176,90 @@ public sealed class AgentContractTests
         Assert.Contains("attempt has failed", results[2]);
         Assert.Contains("the report was rejected 3 times", await h.TimelineAsync(runId));
     }
+
+    /// <summary>
+    /// Agent planning through the real runtime (design note s1, s3): the agent reads its plan with <c>inspect_plan</c>, proposes an
+    /// inserted step with <c>propose_patch</c>, and reports. With <c>review: required</c> the run opens a patch approval at the step,
+    /// its prompt carrying the agent's reason; a person approves it through the CLI, and the inserted step runs.
+    /// </summary>
+    [Fact]
+    public async Task An_agent_s_proposed_step_waits_for_approval_and_then_runs()
+    {
+        await using var model = new ScriptedModel("model-key-" + Guid.NewGuid().ToString("N"));
+        string? plan = null, staged = null;
+        const string migration = "Write the migration notes and report.";
+        var migrate = new JsonObject
+        {
+            ["id"] = "migrate",
+            ["agent"] = new JsonObject { ["role"] = "std:roles/implementer", ["task"] = "m4:tasks/agent_task" },
+            ["with"] = new JsonObject { ["ticket_id"] = "T-6", ["instruction"] = migration },
+            ["produces"] = new JsonObject { ["implemented"] = new JsonArray(new JsonObject { ["name"] = "notes", ["type"] = "m4:artifact_types/notes" }) },
+            ["outputs"] = new JsonObject { ["answer"] = new JsonObject { ["type"] = "string" } },
+            ["outcomes"] = new JsonObject { ["implemented"] = "success" },
+            ["routes"] = new JsonObject { ["implemented"] = new JsonObject { ["end"] = "completed" } },
+        };
+        List<Func<ScriptedModel.Conversation, JsonObject>> implement =
+        [
+            _ => ScriptedModel.ToolUse("mcp__engine__inspect_plan", new JsonObject()),
+            c =>
+            {
+                plan = c.LastToolResult;
+                return ScriptedModel.ToolUse("mcp__engine__propose_patch", new JsonObject
+                {
+                    ["base_revision"] = JsonNode.Parse(plan)!["revision"]!.GetValue<int>(),
+                    ["resume_at"] = "migrate",
+                    ["reason"] = "the schema needs a migration step",
+                    ["changes"] = new JsonArray(
+                        new JsonObject { ["op"] = "insert", ["after"] = "implement", ["step"] = migrate.DeepClone() },
+                        // Without it the inserted step is unreachable (check 9): implement's outcome ends the run.
+                        new JsonObject { ["op"] = "set", ["target"] = "implement", ["field"] = "routes.implemented", ["value"] = "migrate" }),
+                });
+            },
+            c =>
+            {
+                staged = c.LastToolResult;
+                Assert.Contains("Staged against revision", staged);
+                return ScriptedModel.ToolUse("Write", AgentScripts.Write("/ff/out/notes.md", "Notes\n"));
+            },
+            _ => ScriptedModel.ToolUse("mcp__engine__report", AgentScripts.Report()),
+        ];
+        // The inserted step's own session, which starts its turns again: told apart by its prompt.
+        List<Func<ScriptedModel.Conversation, JsonObject>> migrateScript =
+        [
+            _ => ScriptedModel.ToolUse("Write", AgentScripts.Write("/ff/out/notes.md", "Migration notes\n")),
+            _ => ScriptedModel.ToolUse("mcp__engine__report", AgentScripts.Report()),
+        ];
+        for (var i = 0; i < implement.Count; i++)
+        {
+            var turn = i;
+            model.Then(c => (c.Prompt.Contains(migration, StringComparison.Ordinal) ? migrateScript : implement) is var script && turn < script.Count
+                ? script[turn](c)
+                : new JsonObject { ["type"] = "text", ["text"] = "Done." });
+        }
+        await model.StartAsync();
+        await using var h = await AgentHarness.StartAsync("planning", model);
+        var runId = h.Start("T-6", "Write notes.md and report.", "m4:templates/planning_step");
+        string approval;
+        try
+        {
+            approval = await h.WaitForWaitAsync(runId, "patch_approval", RunTimeout);
+        }
+        catch (TimeoutException e)
+        {
+            throw new TimeoutException($"{e.Message}\ninspect_plan answered:\n{plan}\npropose_patch answered:\n{staged}", e);
+        }
+        var prompt = (await h.WaitsAsync(runId, "patch_approval")).Single()["prompt"]!.ToString();
+        var (exit, output, error) = h.Cli("answer", runId, approval, "approve");
+        Assert.True(exit == 0, output + error);
+        var status = await h.WaitForEndAsync(runId, RunTimeout);
+
+        Assert.True(status == "completed", $"the run ended {status}:\n{await h.TimelineAsync(runId)}");
+        Assert.Contains("\"you\"", plan);
+        Assert.Contains("Staged against revision", staged);
+        Assert.Contains("the schema needs a migration step", prompt);
+        Assert.Contains(model.Requests, r => System.Text.RegularExpressions.Regex.Unescape(r.ToJsonString()).Contains("## Planning authority", StringComparison.Ordinal));
+        Assert.NotNull(Assert.Single(await h.RecordsAsync<ReportRecord>(Queries.Reports, Key(runId))).Report!.Patch);
+        Assert.True(Assert.Single(await h.RecordsAsync<ReportRecord>(Queries.Reports, $"{runId}/migrate/1")).Accepted);
+        await h.RecordHistoryAsync(runId, "agent_planning_patch", model.Credential);
+    }
 }

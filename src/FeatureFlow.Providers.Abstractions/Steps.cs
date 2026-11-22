@@ -1,3 +1,5 @@
+using FeatureFlow.Model.Plans;
+
 namespace FeatureFlow.Providers.Abstractions;
 
 /// <summary>An outcome a step may report, with its class: <c>success</c>, <c>failure</c>, <c>blocked</c> or <c>~</c>.</summary>
@@ -80,7 +82,8 @@ public sealed record AgentStepSpec(
     string? Runtime = null,
     string? Model = null,
     string? RunContext = null,
-    string? Causes = null);
+    string? Causes = null,
+    PlanningGrant? Planning = null);
 
 /// <summary>One step for an activity to carry out. <see cref="Agent"/> is set for an agent step from M4.</summary>
 public sealed record StepCall(StepIdentity Step, string Form, string What, IReadOnlyDictionary<string, string> Inputs, StepContract Contract, bool DryRun,
@@ -152,6 +155,9 @@ public sealed record AgentTask(StepIdentity Step, string Role, string? TaskText,
 
     /// <summary>Which session of the step this is: 1 for the first; each continuation (a correction turn, a resume) adds one.</summary>
     public int Session { get; init; } = 1;
+
+    /// <summary>The step's planning authority, which offers it <c>inspect_plan</c> and <c>propose_patch</c>; null without <c>planning</c>.</summary>
+    public PlanningGrant? Planning { get; init; }
 }
 
 /// <summary>

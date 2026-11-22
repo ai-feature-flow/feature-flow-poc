@@ -23,6 +23,63 @@ public class ChildRunTests
         { "silent_child:work": { delay: 600s }, "silent_parent:*": { delay_from: wait_ms } }
         """;
 
+    const string Planning = """
+        {
+          "planning_child:plan": {
+            outcome: planned, to_parent: true,
+            patch: {
+              api_version: feature-flow/v1, kind: patch,
+              metadata: { proposed_by: { type: agent, step_id: plan }, reason: "the epic needs a release note" },
+              base_revision: 1,
+              changes: [{ op: set, target: work, field: limits, value: { attempts: 2 } }]
+            }
+          },
+          "planning_parent:work": { outcome: written, delay: 600s }
+        }
+        """;
+
+    /// <summary>
+    /// A child's planner with <c>planning: { targets: [parent], review: required }</c> proposes a patch to its parent: the
+    /// parent holds it as a <c>patch_approval</c> at the <c>run.child</c> step, with the child's reason and its review in the
+    /// prompt, though nothing protected is touched; a person approves it and the parent's plan moves on a revision.
+    /// </summary>
+    [Fact]
+    public async Task A_childs_patch_with_review_required_waits_for_a_person_at_the_parent()
+    {
+        await using var h = await Harness.StartAsync("planning-child", Planning, libraries: Library);
+        var id = h.Start("m6:templates/planning_parent", "--repo", "acme/api");
+
+        string? waitId = null;
+        try
+        {
+            waitId = await h.WaitForWaitAsync(id, TimeSpan.FromMinutes(1));
+        }
+        catch (TimeoutException)
+        {
+            Assert.Fail((await h.ShowAsync(id)).ToJsonString() + "\nCHILD " + (await h.ShowAsync($"{id}.kid.1")).ToJsonString());
+        }
+
+        Assert.NotNull(waitId);
+        var wait = (await h.ShowAsync(id))["waits"]!.AsArray().Single()!;
+        Assert.Equal(("kid", "patch_approval"), (wait["step_id"]!.ToString(), wait["kind"]!.ToString()));
+        var prompt = wait["prompt"]!.ToString();
+        Assert.StartsWith("plan (in the child run of kid) proposes a change to the plan (revision 1).\nReason: the epic needs a release note\n"
+                          + "Needs approval: plan (in the child run) has planning.review: required\nContinues at: where the run was\nChanges:\n- op: set\n  target: work\n",
+            prompt, StringComparison.Ordinal);
+
+        var (exit, _, error) = h.Cli("answer", id, waitId!, "approve");
+        Assert.True(exit == 0, error);
+        var applied = false;
+        for (var i = 0; i < 60 && !applied; i++)
+        {
+            applied = (await h.ShowAsync(id))["timeline"]!.AsArray().Any(e => e!["kind"]!.ToString() == "patch_applied");
+            if (!applied)
+                await Task.Delay(500, TestContext.Current.CancellationToken);
+        }
+
+        Assert.True(applied, (await h.ShowAsync(id)).ToJsonString());
+    }
+
     [Fact]
     public async Task A_child_inherits_its_parents_parameters_and_artifacts_and_its_parent_consumes_the_childs()
     {

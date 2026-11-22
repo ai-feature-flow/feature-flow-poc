@@ -23,7 +23,7 @@ public class ReplayTests
     public void The_recorded_histories_are_there()
     {
         // Without this, a missing folder would leave the theory with no cases and nothing replayed.
-        Assert.Equal(["agent_question", "budget_middle", "decision_prompt", "delivery_tracked", "epic_delivery", "epic_delivery_child", "family_child", "family_parent", "merge_action",
+        Assert.Equal(["agent_planning_patch", "agent_question", "budget_middle", "decision_prompt", "delivery_tracked", "epic_delivery", "epic_delivery_child", "family_child", "family_parent", "merge_action",
                 "project_session", "question_timeout", "reminder", "silent_parent_resumed", "sp1_parent", "sp1_parent_resumed", "steering_line", "steering_rerun_branch", "ticket_clean_up", "ticket_delivery",
                 "wait_hand_over", "wait_hand_over_resumed", "wake"],
             Names());
@@ -50,6 +50,8 @@ public class ReplayTests
     [InlineData("project_session", "activity OpenSession")]
     [InlineData("project_session", "update session_check")]
     [InlineData("agent_question", "signal question_opened")]
+    [InlineData("agent_planning_patch", "update answer")]
+    [InlineData("agent_planning_patch", "text \"Kind\":\"patch_applied\",\"StepId\":\"implement\"")]
     [InlineData("question_timeout", "signal question_opened")]
     [InlineData("question_timeout", "text \"Kind\":\"question_timed_out\"")]
     [InlineData("merge_action", "update answer")]

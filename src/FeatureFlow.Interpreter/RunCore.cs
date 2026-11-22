@@ -516,10 +516,8 @@ public sealed partial class RunCore
             // docs/03 section 9.4: the patch goes to the parent, and this step ends as reported.
             if (c.Patch is null)
                 return ApplyResult.Refused($"{step.Id}: a patch to the parent needs a patch");
-            if (step.Agent?.Planning?.Targets.Contains("parent") != true)
-                return ApplyResult.Refused($"{step.Id}: the step has no planning authority over its parent's plan (planning.targets)");
-            if (Run.ParentId is null)
-                return ApplyResult.Refused($"{step.Id}: this run has no parent to send a patch to");
+            if (ParentRefusal(step) is { } refusal)
+                return ApplyResult.Refused(refusal);
             var toParent = c.Patch with { ProposedBy = new Proposer("agent", step.Id) };
             c = c with { Patch = null, PatchToParent = false };
             var recordParent = Record(step.Id);
@@ -531,7 +529,7 @@ public sealed partial class RunCore
                 recordParent.Current!.Artifacts[name] = reference;
             Produce(step, recordParent, c.Artifacts);
             Trace("patch_to_parent", step.Id, toParent.Reason);
-            outbox.Add(new SendPatchToParent(step.Id, toParent));
+            outbox.Add(new SendPatchToParent(step.Id, toParent, step.Agent?.Planning?.Review == "required"));
             Finish(step, recordParent, c.Outcome, c.Summary);
             return ApplyResult.Ok;
         }

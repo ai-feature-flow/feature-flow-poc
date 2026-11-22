@@ -293,7 +293,7 @@ public partial class RunWorkflow
                 continue;
             }
 
-            core.Apply(new ChildPatchProposed(childStep, patch, signal.ProposerStepId));
+            core.Apply(new ChildPatchProposed(childStep, patch, signal.ProposerStepId, signal.ReviewRequired));
         }
 
         // A child's end is confirmed by reading the child; while draining, the read waits for the next run.
@@ -342,7 +342,7 @@ public partial class RunWorkflow
                     break;
                 case SendPatchToParent p when input.ParentWorkflowId is { } parent:
                     await SignalQuietlyAsync(parent, RunWorkflowNames.ParentPatch,
-                        [new ParentPatchSignal(Workflow.Info.WorkflowId, p.StepId, PatchReader.Write(p.Patch))]);
+                        [new ParentPatchSignal(Workflow.Info.WorkflowId, p.StepId, PatchReader.Write(p.Patch), p.ReviewRequired)]);
                     break;
                 case OverrideLibrary o:
                     // A person approved an agent's library override (docs/05 section 6): it is theirs, recorded as their override.
@@ -416,7 +416,7 @@ public partial class RunWorkflow
                 // A child's parent branch is its parent run's work branch; otherwise the agent worker reads the default branch from the code host.
                 input.ParentBranch is { } parentBranch ? input.Repositories.ToDictionary(r => r, _ => parentBranch) : new Dictionary<string, string>(),
                 a.Consumed, Workflow.Info.WorkflowId, LockRef, TrackerIssue: input.TrackerIssue, Runtime: binding?.AgentRuntime, Model: binding?.Model,
-                RunContext: a.RunContext, Causes: a.Causes);
+                RunContext: a.RunContext, Causes: a.Causes, Planning: a.Planning);
         }
 
         return CallOf(spec, identity, input.DryRun, agent);

@@ -191,6 +191,7 @@ agent how to use them.
 | `report` | Always | The agent's result: one declared outcome, a short summary (at most 2 KB, used for the run context), outputs, and the paths of the artifacts it produced. May be called again to correct; the last call counts |
 | `ask_human` | `limits.questions` is set | A question, with up to 4 suggested answers and optional context. Blocks until answered or timed out (section 3.4) |
 | `checkpoint` | The role has write access | Commit now and have the engine push. A convenience; commit detection is the backstop |
+| `inspect_plan`, `propose_patch` | The step has `planning` | Read the plan; stage a patch, which takes effect with the next accepted `report` (section 6.1) |
 
 Every built-in runtime calls MCP tools, so the `report` tool is the only way to
 report; the file fall-back for a runtime without MCP is removed (L5, LOG 448).
@@ -451,14 +452,44 @@ section 8).
 
 ### 6.1 Planning authority
 
-An agent cannot propose a patch in version 1: the engine serves no
-`inspect_plan` or `propose_patch` tool (LOG 264). The core's patch path
-(`docs/03` section 10) takes `plan.expand`'s patches and a person's `amend`;
-`planning` on an agent step loads but gives the agent nothing. It makes the
-step a target for a person's `replan` recovery (`docs/01` section 7.2), which is
-why std's planner and designer steps have it (LOG 509). Only the
-`scripted` and `recording` test runtimes send an agent's patch or library
-override, so workflow tests can exercise the core's path.
+An agent step with `planning` (`docs/03` section 2.2) is offered two engine
+tools besides `report` and `ask_human` (LOG 519):
+
+| Tool | Input | Answer |
+|---|---|---|
+| `inspect_plan` | `target`: `self` (default) or `parent` | The plan as the agent may see it: run id, level, revision; its own step and execution; its authority (`targets`, `review`, whether the organisation requires review, `planning.allowed_roles`); the readable form; each step's id, form, role or action, outcomes and routes, protection, status, and the step as written; where the run is; its staged proposal. Not other runs, people, wait or artifact contents, or configuration. Or `unavailable`, with why |
+| `propose_patch` | `target`, `base_revision`, `resume_at` (required for `self`), `reason`, `changes` (the operations of `docs/03` section 10.2, as JSON); or `withdraw: true` | `staged`, with `effect: applies` or `needs_approval` and the reasons; `refused`, with the checks' messages; `withdrawn`; `limit`; `unavailable` |
+
+**How a proposal takes effect.** `propose_patch` checks the patch against the
+live plan without changing it (a workflow query, so nothing enters the run's
+history) and stages it in the record store, in the detail of a `patch_staged`
+agent event. The endpoint itself refuses a patch that does not read, or one for
+`self` without `resume_at`; every other check is the core's, the same function
+the report's patch goes through. A later proposal that passes replaces the
+staged one; one that is refused leaves it, and the answer says so. At most 5
+proposals an attempt, staged or refused, of at most 64 KB each. The tool returns at
+once: nothing changes while the step runs. The staged patch travels with the
+step's next accepted `report`, and the core decides it as any patch
+(`docs/03` section 10.3), by the rules of `docs/05` section 6:
+
+| At the report | Then |
+|---|---|
+| Applied | The plan moves to its next revision and the run continues at `resume_at`, instead of the outcome's route. `resume_at` may name the proposer, which runs again within its attempts |
+| Held for a person | A `patch_approval` wait opens at the step. Its prompt, written by the core as plain text, gives the agent's reason, why it needs approval, where the run continues, and the changes as YAML. Approved: applied, then `resume_at`. Rejected: the outcome's route |
+| Refused, because the plan moved since it was staged | The endpoint checks it again at `report`, so the agent gets a correction turn naming the checks (section 3.3) |
+
+The agent is told this in a paragraph of its run context (section 3.5), only
+when its step has `planning`. With `target: parent`, a child run's step
+proposes to the run that started it (`docs/03` section 9.4); `inspect_plan`
+then shows the parent's plan as the parent shows it to a child, with the step's
+own authority.
+
+An agent cannot propose a library override: no tool sends one. The core's path
+for it (LOG 213) is reached only by the `scripted` and `recording` test
+runtimes, which also send patches, so workflow tests exercise the patch path
+without a model. `planning` also makes the step a target for a person's
+`replan` recovery (`docs/01` section 7.2), which is why std's planner and
+designer steps have it (LOG 509).
 
 ### 6.2 `plan.expand`
 

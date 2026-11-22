@@ -42,7 +42,8 @@ public sealed record AgentStepFacts(
     IReadOnlyDictionary<string, string> Consumed,
     string? Role,
     string? RunContext = null,
-    string? Causes = null);
+    string? Causes = null,
+    PlanningGrant? Planning = null);
 
 /// <summary>
 /// What a step's activity is given, from the plan and the state now: which activity, what it runs (a role or an action), its
@@ -163,7 +164,8 @@ public sealed partial class RunCore
             consumed,
             agent.Role?.Reference?.Name,
             agent.Context == "none" ? null : RunContext(),
-            CausesOf(step.Id));
+            CausesOf(step.Id),
+            agent.Planning is { } planning ? new PlanningGrant(planning.Targets, planning.Review) : null);
     }
 
     /// <summary>Whether a running step's action waits on the outside world between reads, so a hand-over or a wake interrupts it (LOG 139).</summary>

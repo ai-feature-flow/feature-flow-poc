@@ -77,8 +77,8 @@ limit. Validation reports where a request was capped.
 | Attempts | `limits.attempts` | Ceilings per step form and per run (F4) |
 | Merge races | `limits.races` on `scm.merge` | None of its own: the per-step attempts ceiling (LOG 340). A `limits.races` above it is refused; a merge step that sets none, itself or in its document's `defaults.limits`, gets the installation's default held to the ceiling (LOG 348) |
 | Work items | `budget.max_work_items` on the root template | Ceiling (F11), always locked (LOG 187) |
-| Review of agent patches | `planning.review` | `planning.require_review`, per template name pattern. No agent patch in version 1 (section 6) |
-| Agent roles | The roles a template's steps name | `planning.allowed_roles` for steps an agent adds. No agent patch in version 1 (section 6) |
+| Review of agent patches | `planning.review` | `planning.require_review`, per template name pattern (section 6) |
+| Agent roles | The roles a template's steps name | `planning.allowed_roles` for steps an agent adds (section 6) |
 | Toolsets | The role's toolsets | None: toolsets are not in version 1 (`docs/06` section 3.9) |
 
 A request that exceeds its cap is not silently lowered:
@@ -236,21 +236,27 @@ the hard ceiling.
 
 ## 6. Agent proposals
 
-An agent cannot propose a patch or a library override in version 1: it has no
-tool to do so (`docs/04` section 6.1). The engine holds the rule for when it
-can (check 29). An agent's proposal would become a **patch approval** decision,
-rather than being applied, when any of these hold; a library override always
-would:
+An agent step with `planning` proposes patches through the engine's
+`inspect_plan` and `propose_patch` tools (`docs/04` section 6.1). Every rule
+below is the core's, checked when the patch arrives with the step's report; the
+tools only shape the call. An agent's proposal becomes a **patch approval**
+decision (check 29), rather than being applied, when any of these hold; a library override
+always would, though no tool proposes one yet:
 
 | Condition | Why |
 |---|---|
-| It touches protected content (F3) | The workflow marked it as not the agent's to change |
+| It touches protected content, or leaves a protected step unrun that the run would otherwise run (F3). A step it adds inside protected content (a protected fragment, `parallel` or chain) touches it, whatever the operation | The workflow marked it as not the agent's to change |
 | It adds or changes a step to use a role outside `planning.allowed_roles` | Otherwise an agent could give a new step more access than itself (F10) |
+| It adds a `run.child`, or changes one's template, to a template not in the proposer's `planning.templates`; a template given by an expression counts as unlisted. A patch to its own run only | The same reasoning for the child runs an agent may start. A child's patch to its parent is not held to it: the parent does not hold the child step's grant, and consented by starting the child's template (LOG 522) |
 | The step's `planning.review` is `required`, or the organisation requires review at this level | The workflow or organisation asked for it |
+| It adds a step, or replaces one, whose `planning` is wider than the proposer's: its `targets` are not a subset of the proposer's; it lists a template outside the proposer's `planning.templates`, when the proposer's lists any; or its `review` is `auto` where the proposer's is `required`. A proposer without `planning` cannot propose (check 27) | Otherwise an agent could give a step more planning authority than its own, and a later patch from that step would need no person (F10's reasoning, applied to `planning`; LOG 526) |
+| For a child's patch to its parent: any of the above at the parent but `planning.templates`, or the child step's own `planning.review` is `required`. The parent does not hold the child step's grant, so a step the patch adds or replaces with `planning` is always held | The parent's rules govern its plan; the proposer's own review and grant still apply (LOG 521, 526) |
 
-A proposal that would relax a floor is rejected outright, with no decision. An
-agent is never silently refused and never silently trusted: it proposes, a
-person decides, and the decision is recorded.
+An agent never changes a step's role (P8): a patch that would is refused. A
+proposal that would relax a floor, or that breaks a load check, a cap or a
+ceiling, is refused outright, with no decision. An agent is never silently
+refused and never silently trusted: it proposes, a person decides, and the
+decision is recorded.
 
 ---
 

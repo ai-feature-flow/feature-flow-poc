@@ -1,9 +1,11 @@
+using System.Text.Json.Serialization;
+
 namespace FeatureFlow.Interpreter.Wire;
 
 // What the API and the Temporal workflow exchange. Plain serialisable records with no Temporal type, so both
 // the API and the engine reference them without referencing each other (docs/11 section 2.3).
 
-/// <summary>The names of the run workflow and of its updates, signals and query.</summary>
+/// <summary>The names of the run workflow and of its updates, signals and queries.</summary>
 public static class RunWorkflowNames
 {
     public const string Workflow = "Run";
@@ -49,6 +51,18 @@ public static class RunWorkflowNames
     /// A hint: the wait reads again to confirm (events wake, reads confirm), so a wrong or repeated wake changes nothing.
     /// </summary>
     public const string Wake = "wake";
+
+    /// <summary>Query, from the agent endpoint's <c>inspect_plan</c>: the plan as an agent step may see it, with <see cref="AgentPlanQuery"/>.</summary>
+    public const string AgentPlan = "agent_plan";
+
+    /// <summary>
+    /// Query, from the agent endpoint's <c>propose_patch</c> and <c>report</c>: what the core would do with an agent step's patch
+    /// now, with <see cref="PatchPreviewQuery"/>. Pure: it changes no state and records nothing.
+    /// </summary>
+    public const string PatchPreview = "patch_preview";
+
+    /// <summary>Query, on a parent's workflow: what its core would do with a child's patch now, with <see cref="ChildPatchPreviewQuery"/>.</summary>
+    public const string ChildPatchPreview = "child_patch_preview";
 }
 
 /// <summary>
@@ -137,8 +151,11 @@ public sealed record RunPolicy(
         new Model.DecisionTypeItem(pattern, null, new Model.SourceLocation("", 0, 0)).Matches(type);
 }
 
-/// <summary>A patch a child sent, held until the parent's core is ready to apply it.</summary>
-public sealed record ParentPatchSignal(string ChildWorkflowId, string ProposerStepId, string Patch);
+/// <summary>
+/// A patch a child sent, held until the parent's core is ready to apply it. <see cref="ReviewRequired"/> is the proposing step's
+/// <c>planning.review: required</c> (false in histories from before it was carried).
+/// </summary>
+public sealed record ParentPatchSignal(string ChildWorkflowId, string ProposerStepId, string Patch, bool ReviewRequired = false);
 
 /// <summary>
 /// A hand-over: the run's state when it continued-as-new, after draining (SP1's record): how many waits it interrupted to
@@ -234,3 +251,114 @@ public sealed record RunView(
     IReadOnlyList<string> InFlight,
     IReadOnlyList<ChildRun> Children,
     IReadOnlyList<HandOver> HandOvers);
+
+/// <summary>
+/// The <c>agent_plan</c> query: the plan as the agent step <see cref="StepKey"/> (its agent step record's key, from the step's
+/// token) may see it. <see cref="Target"/> is <c>self</c> or <c>parent</c>; for <c>parent</c> this run answers only with
+/// <see cref="AgentPlanView.ForwardTo"/>, and the endpoint queries the parent.
+/// </summary>
+public sealed record AgentPlanQuery(
+    [property: JsonPropertyName("step_key")] string StepKey,
+    [property: JsonPropertyName("target")] string Target);
+
+/// <summary>
+/// The answer to <see cref="AgentPlanQuery"/> (design note s1): <see cref="Status"/> <c>ok</c>, <c>forward</c> (ask
+/// <see cref="ForwardTo"/>, the parent's workflow id) or <c>unavailable</c> with <see cref="Message"/> saying why; and with
+/// <c>ok</c>, the run, the agent's own step and authority, the readable form (<c>ReadableForm.Render</c>), where the run is
+/// (<see cref="Positions"/>: step ids entered, running, waiting or active parallels) and each step.
+/// </summary>
+public sealed record AgentPlanView(
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("message")] string? Message,
+    [property: JsonPropertyName("forward_to")] string? ForwardTo,
+    [property: JsonPropertyName("run_id")] string RunId,
+    [property: JsonPropertyName("level")] string Level,
+    [property: JsonPropertyName("revision")] int Revision,
+    [property: JsonPropertyName("you")] AgentPlanSelf? You,
+    [property: JsonPropertyName("authority")] AgentPlanAuthority? Authority,
+    [property: JsonPropertyName("readable")] string Readable,
+    [property: JsonPropertyName("positions")] IReadOnlyList<string> Positions,
+    [property: JsonPropertyName("steps")] IReadOnlyList<AgentPlanStep> Steps)
+{
+    public const string Ok = "ok";
+    public const string Forward = "forward";
+    public const string Unavailable = "unavailable";
+}
+
+/// <summary>The proposing step: its id and execution. Null in a parent's view, where the agent's step is not a step.</summary>
+public sealed record AgentPlanSelf(
+    [property: JsonPropertyName("step_id")] string StepId,
+    [property: JsonPropertyName("execution")] int Execution);
+
+/// <summary>
+/// The agent's authority over the plan it is shown: its step's <c>planning.targets</c> and <c>review</c>, the organisation's
+/// <c>planning.require_review</c> for the run's template, and <c>planning.allowed_roles</c> when set (null: any role).
+/// </summary>
+public sealed record AgentPlanAuthority(
+    [property: JsonPropertyName("targets")] IReadOnlyList<string> Targets,
+    [property: JsonPropertyName("review")] string Review,
+    [property: JsonPropertyName("require_review")] bool RequireReview,
+    [property: JsonPropertyName("allowed_roles")] IReadOnlyList<string>? AllowedRoles);
+
+/// <summary>
+/// A step as an agent sees it: the API's <c>PlanStepView</c> fields (its container, form, role or action as <see cref="What"/>,
+/// outcomes and routes, protected, status; a wait shows as <c>waiting(&lt;kind&gt;)</c>) and <see cref="Source"/>, the step as
+/// written (YAML), which <c>replace</c> and <c>set</c> need; null where the core does not keep it.
+/// </summary>
+public sealed record AgentPlanStep(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("container")] string? Container,
+    [property: JsonPropertyName("form")] string Form,
+    [property: JsonPropertyName("what")] string What,
+    [property: JsonPropertyName("outcomes")] IReadOnlyList<AgentPlanOutcome> Outcomes,
+    [property: JsonPropertyName("protected")] bool Protected,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("source")] string? Source);
+
+/// <summary>An outcome of a step: its name, its class, and where it routes.</summary>
+public sealed record AgentPlanOutcome(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("class")] string Class,
+    [property: JsonPropertyName("route")] string? Route);
+
+/// <summary>
+/// The <c>patch_preview</c> query: what the core would do now with <see cref="Patch"/> (the patch document as YAML text) from the
+/// agent step <see cref="StepKey"/>. With <see cref="ToParent"/> the run checks only that the step may propose to its parent
+/// and answers with <see cref="PatchPreview.ForwardTo"/>; the endpoint then asks the parent (<see cref="ChildPatchPreviewQuery"/>).
+/// </summary>
+public sealed record PatchPreviewQuery(
+    [property: JsonPropertyName("step_key")] string StepKey,
+    [property: JsonPropertyName("patch")] string Patch,
+    [property: JsonPropertyName("to_parent")] bool ToParent);
+
+/// <summary>
+/// The <c>child_patch_preview</c> query, on the parent: what its core would do with <see cref="Patch"/> (YAML) from the child
+/// workflow <see cref="ChildWorkflowId"/>'s step <see cref="ProposerStepId"/>, whose <c>planning.review</c> is
+/// <c>required</c> when <see cref="ReviewRequired"/>.
+/// </summary>
+public sealed record ChildPatchPreviewQuery(
+    [property: JsonPropertyName("child_workflow_id")] string ChildWorkflowId,
+    [property: JsonPropertyName("proposer_step_id")] string ProposerStepId,
+    [property: JsonPropertyName("patch")] string Patch,
+    [property: JsonPropertyName("review_required")] bool ReviewRequired);
+
+/// <summary>
+/// The answer to a preview: <see cref="Status"/> <c>applies</c>, <c>needs_approval</c> (<see cref="Reasons"/>: why a person must
+/// decide), <c>refused</c> (<see cref="Messages"/>: the checks' messages), <c>unavailable</c> (<see cref="Messages"/>: why), or
+/// <c>forward</c> (ask the parent, <see cref="ForwardTo"/>). <see cref="Revision"/> is the plan revision it was checked against;
+/// <see cref="ReviewRequired"/> the proposing step's <c>planning.review: required</c>, for the endpoint to carry to the parent.
+/// </summary>
+public sealed record PatchPreview(
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("reasons")] IReadOnlyList<string> Reasons,
+    [property: JsonPropertyName("messages")] IReadOnlyList<string> Messages,
+    [property: JsonPropertyName("revision")] int Revision,
+    [property: JsonPropertyName("forward_to")] string? ForwardTo,
+    [property: JsonPropertyName("review_required")] bool ReviewRequired)
+{
+    public const string Applies = "applies";
+    public const string NeedsApproval = "needs_approval";
+    public const string Refused = "refused";
+    public const string Unavailable = "unavailable";
+    public const string Forward = "forward";
+}

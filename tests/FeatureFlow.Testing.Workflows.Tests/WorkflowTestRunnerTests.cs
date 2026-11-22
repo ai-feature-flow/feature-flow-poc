@@ -158,6 +158,122 @@ public class WorkflowTestRunnerTests
         }
     }
 
+    /// <summary>
+    /// F3 holds an implementer's patch to protected content for a person whatever its grant says: on a copy of std's
+    /// ticket_delivery whose implementer has <c>planning.review: auto</c>, a patch that changes <c>verify.tests</c>, or adds a
+    /// step inside <c>deliver</c> (before <c>deliver.open_pr</c>, so after review), is held for that reason alone, and
+    /// rejected, so the run goes on by the implementer's outcome.
+    /// </summary>
+    [Theory]
+    [InlineData("verify", "{ op: set, target: verify.tests, field: limits, value: { attempts: 1 } }", "set touches protected step verify.tests (F3)")]
+    [InlineData("verify", "{ op: insert, before: deliver.open_pr, step: { id: sneak, agent: { role: std:roles/implementer, task: std:tasks/implement_ticket }, with: { ticket_id: FF-1042 }, outcomes: { done: success } } }",
+        "adds deliver.sneak inside protected content (F3)")]
+    public void An_implementers_patch_to_protected_content_is_held_even_with_review_auto(string resumeAt, string change, string reason)
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"ff-implementer-auto-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(root, "templates"));
+        Directory.CreateDirectory(Path.Combine(root, "tests"));
+        File.WriteAllText(Path.Combine(root, "library.yaml"), "name: probe\nversion: 0.1.0\n");
+        var template = File.ReadAllText(Path.Combine(Repository.Root, "library", "std", "templates", "ticket_delivery.yaml"));
+        const string grant = "planning: { targets: [self], review: required }";
+        Assert.Contains(grant, template);
+        File.WriteAllText(Path.Combine(root, "templates", "ticket_delivery.yaml"), template.Replace(grant, "planning: { targets: [self], review: auto }"));
+        var test = Path.Combine(root, "tests", "protected_patch.yaml");
+        File.WriteAllText(test, $$"""
+            api_version: feature-flow/v1
+            kind: workflow_test
+            name: protected_patch
+            template: probe:templates/ticket_delivery
+            parameters: { ticket_id: FF-1042 }
+            repositories: [acme/api]
+            patch:
+              api_version: feature-flow/v1
+              kind: patch
+              metadata: { proposed_by: { type: agent, step_id: implement }, reason: "the tests are slow" }
+              base_revision: 1
+              resume_at: {{resumeAt}}
+              changes:
+                - {{change}}
+            answers:
+              implement: reject
+            expect:
+              status: completed
+              path_includes: [implement, verify.tests, deliver.merge]
+              validation_errors: [29]
+            """);
+        try
+        {
+            var result = WorkflowTestRunner.RunPath(test, [Path.Combine(Repository.Root, "library", "std")]).Single();
+
+            Assert.True(result.Passed, string.Join("\n", result.Failures));
+            Assert.Contains(result.Trace, t => t is { Kind: "patch_pending", StepId: "implement" } && t.Detail == reason);
+            Assert.Contains(result.Trace, t => t is { Kind: "patch_rejected", StepId: "implement" });
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>An agent's patch that nothing holds for a person (<c>review: auto</c>, nothing protected) applies, and the step it inserts runs.</summary>
+    [Fact]
+    public void An_agents_patch_with_review_auto_applies_and_its_inserted_step_runs()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"ff-patch-applies-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(root, "templates"));
+        Directory.CreateDirectory(Path.Combine(root, "tests"));
+        File.WriteAllText(Path.Combine(root, "library.yaml"), "name: probe\nversion: 0.1.0\n");
+        File.WriteAllText(Path.Combine(root, "templates", "planned.yaml"), """
+            api_version: feature-flow/v1
+            kind: template
+            metadata: { name: planned, level: ticket }
+            defaults:
+              routes:
+                by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+            steps:
+              - id: plan
+                agent:
+                  role: std:roles/planner
+                  task: std:tasks/repair_failures
+                  planning: { targets: [self], review: auto }
+                outcomes: { planned: success, blocked: blocked }
+                routes: { planned: ship }
+              - id: ship
+                action: artifact.compose
+                with: { name: release, members: [team] }
+                routes: { composed: { end: completed } }
+            """);
+        var test = Path.Combine(root, "tests", "planned_patch.yaml");
+        File.WriteAllText(test, """
+            api_version: feature-flow/v1
+            kind: workflow_test
+            name: planned_patch
+            template: probe:templates/planned
+            patch:
+              api_version: feature-flow/v1
+              kind: patch
+              metadata: { proposed_by: { type: agent, step_id: plan }, reason: test }
+              base_revision: 1
+              resume_at: notice
+              changes:
+                - { op: insert, before: ship, step: { id: notice, action: artifact.compose, with: { name: notice, members: [team] }, routes: { composed: ship } } }
+            expect:
+              status: completed
+              path: [plan, notice, ship]
+            """);
+        try
+        {
+            var result = WorkflowTestRunner.RunPath(test, [Path.Combine(Repository.Root, "library", "std")]).Single();
+
+            Assert.True(result.Passed, string.Join("\n", result.Failures));
+            Assert.Contains(result.Trace, t => t is { Kind: "patch_applied", Detail: "revision 2, by agent" });
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public void A_wrong_status_fails_the_test()
     {
