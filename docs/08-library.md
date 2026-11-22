@@ -226,7 +226,7 @@ by the standard library. The last column says how to change it.
 | The reviewer reads every changed file | The `changed_files_unread` guard in `standard_review` | Narrow or remove it for a specialised review |
 | A merge conflict goes to an agent first | `merge_into_parent` | Route `conflict` to a decision instead |
 | An implementer's `blocked` goes back to the planner, keeping the branch | The `blocked` route on `ticket_delivery`'s `implement` | Route it to escalate, or add `clean_up` |
-| A person approves every agent patch | `review: required` on each std `planning` grant | Set `review: auto`; protected content still needs a person (F3) |
+| A person approves every agent patch | `review: required` on each std `planning` grant | Set `review: auto`; a patch that touches protected content (F3), or adds or replaces a step with wider `planning` than its proposer's, still needs a person (`docs/05` section 6) |
 | Squash tickets into the epic; plain merges above | `with: { squash: ... }` on each template's `merge_into_parent` | Change the parameter |
 | Delivery to `main` once, at project level | `project_delivery` | Use `merge_into_parent` at epic level instead |
 
