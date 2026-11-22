@@ -451,7 +451,8 @@ override, so workflow tests can exercise the core's path.
 | Form | An activity reads the list artifact; the core builds the patch from at most 500 items and applies it through the patch path |
 | Inputs | `from` (a list artifact), `shape` (`parallel` or `chain`), `target` (the `parallel` to fill, or the step to chain after), `on_other` (for a chain), `step` (the step to create per item, with `$.<field>` paths into the item). Its own inputs are evaluated and checked against its schema at step start, like any action's, and the list is read and the patch built with those values, not evaluated again (check 31; LOG 488). The created step's inputs are checked against its action's schema at load, `$.` paths when the patch is validated (check 31) |
 | Outcomes | `expanded` |
-| Effect | A patch, applied like any other and recorded with `proposed_by: engine` |
+| Effect | A patch, applied like any other and recorded with `proposed_by: engine`. The engine's patch only adds and removes branches and chains steps (`add_branch`, `remove_branch`, `chain`, `insert`) |
+| Expanding again | Into a `parallel` an earlier expansion filled, the patch adds only the items not already expanded and removes the branches no item matches, unless running; the core then runs only the branches that have not succeeded, reopening the decided join as a go to a branch does, so the join decides again with the succeeded branches' outcomes (`docs/03` section 10.4; LOG 506). A first expansion gives the same patch as before |
 
 ---
 

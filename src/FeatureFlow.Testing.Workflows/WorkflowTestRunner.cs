@@ -115,6 +115,7 @@ public static class WorkflowTestRunner
         var cleanUps = new List<string>();
         var tries = new Dictionary<(string, int), int>();
         var contexts = new Dictionary<(string, int), string?>();
+        var consumed = new Dictionary<(string, int), List<string>>();
         var inputs = 0;
         while (true)
         {
@@ -126,13 +127,19 @@ public static class WorkflowTestRunner
                         // The run context as the core renders it into the agent's spec when this execution starts.
                         if (test.ExpectContext.ContainsKey(s.StepId))
                             contexts[(s.StepId, s.Execution)] = core.StepSpec(s.StepId).Spec?.Agent?.RunContext;
+                        if (test.ExpectConsumed.ContainsKey(s.StepId))
+                            consumed[(s.StepId, s.Execution)] = Resolved(core, s.StepId);
                         queue.Add((s.StepId, s.Execution, null));
                         break;
                     case StartChild s:
+                        if (test.ExpectConsumed.ContainsKey(s.StepId))
+                            consumed[(s.StepId, s.Execution)] = Resolved(core, s.StepId);
                         // A child run is not started here: the script gives its run.child step's outcome as for any step.
                         queue.Add((s.StepId, s.Execution, null));
                         break;
                     case OpenGate o:
+                        if (test.ExpectConsumed.ContainsKey(o.StepId))
+                            consumed[(o.StepId, o.Execution)] = Resolved(core, o.StepId);
                         queue.Add((o.StepId, o.Execution, o.WaitId));
                         break;
                     case CancelStep c:
@@ -216,7 +223,9 @@ public static class WorkflowTestRunner
                 else if (step.Descriptor?.Handling == ActionHandling.Expand)
                 {
                     var (spec, refusal) = core.StepSpec(stepId);
-                    var (built, error) = spec is null ? (null, refusal) : PlanExpansion.Build(core, stepId, spec.Inputs, test.Expand.GetValueOrDefault(stepId) ?? []);
+                    var lists = test.Expand.GetValueOrDefault(stepId);
+                    var items = lists is null ? [] : lists[Math.Min(execution - 1, lists.Count - 1)];
+                    var (built, error) = spec is null ? (null, refusal) : PlanExpansion.Build(core, stepId, spec.Inputs, items);
                     if (error is not null)
                     {
                         failures.Add(error);
@@ -251,7 +260,7 @@ public static class WorkflowTestRunner
 
         // Names are checked against every revision, since a patch may add steps.
         foreach (var id in test.Script.Keys.Concat(test.Outputs.Keys).Concat(test.Expand.Keys).Concat(test.ExpectExecutions.Keys)
-                     .Concat(test.Answers.Keys).Concat(test.Questions.Keys).Concat(test.ExpectContext.Keys).Concat(test.Overrides.Select(o => o.StepId)).Distinct())
+                     .Concat(test.Answers.Keys).Concat(test.Questions.Keys).Concat(test.ExpectContext.Keys).Concat(test.ExpectConsumed.Keys).Concat(test.Overrides.Select(o => o.StepId)).Distinct())
             if (!core.State.IdHistory.Contains(id))
                 failures.Add($"'{id}' is not a step of {test.Template} in any revision of the run");
 
@@ -278,6 +287,13 @@ public static class WorkflowTestRunner
                 else
                     foreach (var text in texts.Where(t => context?.Contains(t, StringComparison.Ordinal) != true))
                         failures.Add($"{id} execution {execution}: its run context does not contain '{text}': {context ?? "(none)"}");
+        foreach (var (id, byExecution) in test.ExpectConsumed)
+            foreach (var (execution, keys) in byExecution)
+                if (!consumed.TryGetValue((id, execution), out var had))
+                    failures.Add($"{id} execution {execution} did not start, so what it consumed was not seen");
+                else
+                    foreach (var key in keys.Where(k => !had.Contains(k)))
+                        failures.Add($"{id} execution {execution} did not consume '{key}'; it consumed [{string.Join(", ", had)}]");
 
         CompareChecks(test, observedChecks, failures, patchDiagnostics);
         if (test.ExpectStatus is { } expected && expected != status)
@@ -297,6 +313,10 @@ public static class WorkflowTestRunner
 
         return new WorkflowTestResult(test.Name, test.File, failures, status, path, core.State.Trace.ToList());
     }
+
+    /// <summary>The keys of the artifacts a step consumes that resolve now, as its execution starts: what is staged for it.</summary>
+    static List<string> Resolved(RunCore core, string stepId) =>
+        core.Consumed(stepId).Where(c => c.Reference is not null).Select(c => c.Key).Distinct().ToList();
 
     static void Record(ApplyResult result, SortedSet<int> observed, List<Diagnostic> diagnostics, List<string> failures)
     {

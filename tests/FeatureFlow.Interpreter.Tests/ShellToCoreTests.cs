@@ -60,7 +60,60 @@ public class ShellToCoreTests
         """;
 
     static readonly Probe Lib = new("shell-to-core", ("artifacts", Artifacts), ("child", Child), ("parent", Parent), ("pulls", Pulls),
-        ("bad_child", BadChild), ("bad_expand", BadExpand));
+        ("bad_child", BadChild), ("bad_expand", BadExpand), ("revising", Revising));
+
+    /// <summary>A planner that revises its own last plan (<c>from: previous</c>) when the step after it is blocked.</summary>
+    const string Revising = """
+        api_version: feature-flow/v1
+        kind: template
+        metadata: { name: revising, level: ticket }
+        artifact_types: [std:artifact_types/delivery_plan]
+        defaults:
+          routes:
+            by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+        steps:
+          - id: plan
+            agent: { role: std:roles/planner, task: std:tasks/repair_failures }
+            consumes: [{ name: notes, from: previous, optional: true }]
+            outcomes: { planned: success, blocked: blocked }
+            produces: [{ name: notes, type: std:artifact_types/delivery_plan }]
+            limits: { attempts: 5 }
+          - id: build
+            agent: { role: std:roles/planner, task: std:tasks/repair_failures }
+            consumes: [{ name: notes }, { name: notes, from: previous }]
+            outcomes: { planned: success, blocked: blocked }
+            routes: { planned: { end: completed }, blocked: plan }
+        """;
+
+    [Fact]
+    public void A_step_entered_again_consumes_the_artifact_its_previous_execution_produced_as_previous_name()
+    {
+        var core = Lib.Start("revising");
+        core.Advance();
+        Assert.Equal([new ConsumedArtifact("previous/notes", "notes", true, false, null)], core.Consumed("plan"));
+        Assert.Null(core.MissingConsumed("plan"));
+
+        void Plan(string reference)
+        {
+            Assert.True(core.Apply(new StepCompleted("plan", "planned", RunCore.ZeroOutputs(core.StepById("plan")!), new Dictionary<string, string> { ["notes"] = reference })).Accepted);
+            core.Advance();
+        }
+
+        Plan("sha256:first");
+        // build needs a previous plan, which the first plan has none of yet: check 32 names it by its key.
+        Assert.Equal("check 32 (consumed artifacts exist): build consumes previous/notes, which no step has produced", core.MissingConsumed("build"));
+        Assert.True(core.Apply(new StepCompleted("build", "blocked")).Accepted);
+        core.Advance();
+
+        // The planner runs again: its own last plan is previous/notes; nothing is current, since re-entry cleared it (DR12).
+        Assert.Equal([new ConsumedArtifact("previous/notes", "notes", true, false, "sha256:first")], core.Consumed("plan"));
+        Plan("sha256:second");
+        Assert.Equal(
+            [new ConsumedArtifact("notes", "notes", false, false, "sha256:second"), new ConsumedArtifact("previous/notes", "notes", false, false, "sha256:first")],
+            core.Consumed("build"));
+        Assert.Null(core.MissingConsumed("build"));
+        Assert.Equal("sha256:first", core.ScopeFacts("build").Consumed["previous/notes"]);
+    }
 
     // Inputs that load (an expression is checked when it is evaluated) and that evaluate, at step start, to values outside
     // the action's contract: a list for run.child's tracker_issue, a run id for plan.expand's shape (LOG 488).

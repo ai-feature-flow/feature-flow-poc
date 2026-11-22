@@ -184,11 +184,12 @@ An excerpt of `library/std/tests/ticket_fix_loop.yaml`.
 | `expect.path` or `expect.path_includes` | The steps executed, exactly or as a subsequence. For a `parallel`, branch paths are given separately, without asserting interleaving |
 | `expect.status` | The final run status, or `running` |
 | `expect.validation_errors` | Check numbers expected to block |
-| `expand` | LOG 75: the items each `plan.expand` step reads |
+| `expand` | LOG 75: the items each `plan.expand` step reads: one list, or a list of lists, one per execution (the last applying to every later one), as `script` gives an outcome per visit (LOG 506) |
 | `expect.executions`, `expect.escalated`, `expect.clean_up` | LOG 75: how many times a step ran; the steps with an open intervention when the run settles; the steps a `clean_up` route reset the branch for |
 | `overrides`, `answers`, `expect.skipped` | A person's steering (M7): `breakpoint`, `skip` (with `outcome`) or `grant_attempts` on a step, made at the run's start as an administrator; answers to the breakpoints, interventions and patch approvals that open at a step, in order (`continue`, `retry`, `approve`, `reject`, `{ go_to: <step> }`, `{ replan: <step> }`, either with `clean_up: true`, `{ grant_attempts: n }`, `{ end: <status> }`); a patch approval opens at the step that proposed the patch; the steps a skip ended without running |
 | `questions`, `expect.questions` | An agent's questions (`docs/04` section 3.4), by step id, in order: each `ask` (with optional `options`, `id`, default `<step>-q<n>`, and `visit`, default 1) is held while that visit runs, then answered (`answer: <text>`), timed out (`timeout: true`), or with neither left to close when the step ends; how each closed, by id: `answered`, `timed_out` or `step_ended` (LOG 386). Only a question has a deadline: gates, breakpoints, interventions and patch approvals wait until answered. The `merge_action` gate an action raises while it runs is not scripted |
 | `expect.context` | Agent step id to execution number to texts the run context rendered into that execution's specification must contain (`docs/04` section 3.5), such as `{ plan.plan: { 2: ["requirements omit the audit log"] } }` |
+| `expect.consumed` | Step id to execution number to keys of artifacts the step must have consumed, resolved, when that execution started (`docs/03` section 7.2), such as `{ plan.plan: { 2: [previous/requirements] } }`; other keys it consumed are allowed (LOG 505) |
 
 LOG 75: a list's last entry applies to every later visit; a
 `findings.<name>` list gives one value per route evaluation that reads the

@@ -374,15 +374,15 @@ public static partial class StepReader
             var from = "current";
             if (fromNode is YScalar { IsNull: false } fs)
             {
-                if (fs.Text is "current" or "parent" or "root")
+                if (fs.Text is "current" or "previous" or "parent" or "root")
                     from = fs.Text;
                 else
-                    c.Error($"from must be current, parent, root or {{ child: <step id> }}, not '{fs.Text}'", fs.Location);
+                    c.Error($"from must be current, previous, parent, root or {{ child: <step id> }}, not '{fs.Text}'", fs.Location);
             }
             else if (fromNode is not null && fromNode.IsSingleKeyMap("child", out var child) && child.ScalarText() is { } childId)
                 from = $"child:{childId}";
             else if (fromNode is not null)
-                c.Error("from must be current, parent, root or { child: <step id> }", fromNode.Location);
+                c.Error("from must be current, previous, parent, root or { child: <step id> }", fromNode.Location);
 
             var optional = c.Bool("optional") ?? false;
             var type = LibraryItemReader.Ref(c.Node("type"), c, "consumed artifact type");

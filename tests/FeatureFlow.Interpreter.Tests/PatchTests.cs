@@ -81,7 +81,38 @@ public class PatchTests
             action: artifact.compose
         """;
 
-    static readonly Probe Lib = new("patches", ("planned", Planned), ("expanding", Expanding), ("lanes", Lanes));
+    static readonly Probe Lib = new("patches", ("planned", Planned), ("expanding", Expanding), ("lanes", Lanes), ("fanning", Fanning("fanning", "all")),
+        ("fanning_one", Fanning("fanning_one", "1\n      max_concurrency: 1")));
+
+    /// <summary>
+    /// plan.expand filling a parallel of test steps, one per item, then a check that may send the run back to expand again
+    /// (docs/03 section 10.4).
+    /// </summary>
+    static string Fanning(string name, string join) => $$"""
+        api_version: feature-flow/v1
+        kind: template
+        metadata: { name: {{name}}, level: ticket }
+        defaults:
+          routes:
+            by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+        steps:
+          - id: expand
+            action: plan.expand
+            with:
+              from: tiers
+              shape: parallel
+              target: lanes
+              step: { action: test.run, with: { tier_tags: ["$.tier"] } }
+          - id: lanes
+            parallel:
+              branches: []
+              join: {{join}}
+            routes: { completed: check, any_failed: check }
+          - id: check
+            agent: { role: std:roles/planner, task: std:tasks/repair_failures }
+            outcomes: { planned: success, blocked: blocked }
+            routes: { planned: { end: completed }, blocked: expand }
+        """;
 
     static PatchDocument Patch(string yaml)
     {
@@ -419,6 +450,107 @@ public class PatchTests
     /// <summary>A <c>plan.expand</c> step's patch, with its inputs as the shell has them from step start.</summary>
     static (PatchDocument? Patch, string? Error) Expand(RunCore core, string stepId, IReadOnlyList<YNode> items) =>
         PlanExpansion.Build(core, stepId, core.StepSpec(stepId).Spec!.Inputs, items);
+
+    /// <summary>
+    /// Runs a fanning template: expand's nth execution expands the nth list; a test step's outcome is <paramref name="outcome"/>'s
+    /// (passed when it gives none), and the check sends the run back to expand while lists are left.
+    /// </summary>
+    static (RunCore Core, List<PatchDocument> Patches) Fan(string template, string[][] lists, Func<string, int, string?>? outcome = null)
+    {
+        var core = Lib.Start(template);
+        var patches = new List<PatchDocument>();
+        new Driver(core)
+        {
+            Respond = (id, execution) =>
+            {
+                switch (id)
+                {
+                    case "expand":
+                        var (patch, error) = Expand(core, "expand", lists[execution - 1].Select(Item).ToList());
+                        Assert.Null(error);
+                        patches.Add(patch!);
+                        return new StepCompleted(id, "expanded", Patch: patch);
+                    case "check":
+                        return new StepCompleted(id, execution < lists.Length ? "blocked" : "planned");
+                    default:
+                        return new StepCompleted(id, outcome?.Invoke(id, execution) ?? "passed");
+                }
+            },
+        }.Run();
+        return (core, patches);
+    }
+
+    static int Executions(RunCore core, string id) => core.State.Steps.GetValueOrDefault(id)?.Executions ?? 0;
+
+    static List<string> Branches(RunCore core) => core.StepById("lanes")!.Container!.Branches.Select(b => b.Steps[0].Id).ToList();
+
+    [Fact]
+    public void Plan_expand_of_the_same_list_again_adds_nothing_and_re_runs_only_the_branch_that_failed()
+    {
+        var (core, patches) = Fan("fanning", [["unit", "e2e"], ["unit", "e2e"]], (id, execution) => id == "lanes_1" && execution == 1 ? "failed" : null);
+
+        Assert.Equal(RunStatus.Completed, core.State.Status);
+        Assert.Empty(patches[1].Changes);
+        Assert.Equal("plan.expand of 2 item(s): kept lanes_0, lanes_1; added none; removed none", patches[1].Reason);
+        Assert.Equal(["lanes_0", "lanes_1"], Branches(core));
+        Assert.Equal(1, Executions(core, "lanes_0"));
+        Assert.Equal(2, Executions(core, "lanes_1"));
+        Assert.Equal("completed", core.State.Steps["lanes"].Current!.Outcome);
+    }
+
+    [Fact]
+    public void Plan_expand_of_one_more_item_adds_one_branch_at_the_next_index_and_runs_only_it()
+    {
+        var (core, patches) = Fan("fanning", [["unit", "e2e"], ["unit", "e2e", "smoke"]]);
+
+        Assert.Equal(RunStatus.Completed, core.State.Status);
+        var added = Assert.Single(patches[1].Changes);
+        Assert.Equal(("add_branch", "lanes_2"), (added.Op, added.Step!["id"].ScalarText()));
+        Assert.Equal(["lanes_0", "lanes_1", "lanes_2"], Branches(core));
+        Assert.Equal([1, 1, 1], new[] { "lanes_0", "lanes_1", "lanes_2" }.Select(id => Executions(core, id)));
+        Assert.Equal(["expand", "lanes_0", "lanes_1", "check", "expand", "lanes_2", "check"], Driver.Path(core));
+    }
+
+    [Fact]
+    public void Plan_expand_removes_the_branch_of_a_dropped_or_changed_item_and_the_join_decides_without_it()
+    {
+        // e2e fails and the planner replaces it with e2e_fixed: its branch goes, so it neither runs nor fails the join.
+        var (core, patches) = Fan("fanning", [["unit", "e2e"], ["unit", "e2e_fixed"]], (id, _) => id == "lanes_1" ? "failed" : null);
+
+        Assert.Equal(RunStatus.Completed, core.State.Status);
+        Assert.Equal(["add_branch lanes_2", "remove_branch lanes_1"],
+            patches[1].Changes.Select(c => $"{c.Op} {c.Step?["id"].ScalarText() ?? c.Branch}"));
+        Assert.Equal("plan.expand of 2 item(s): kept lanes_0; added lanes_2; removed lanes_1", patches[1].Reason);
+        Assert.Equal(["lanes_0", "lanes_2"], Branches(core));
+        Assert.Equal([1, 1, 1], new[] { "lanes_0", "lanes_1", "lanes_2" }.Select(id => Executions(core, id)));
+        Assert.Equal("completed", core.State.Steps["lanes"].Current!.Outcome);
+    }
+
+    [Fact]
+    public void Plan_expand_removes_a_branch_that_never_started_and_a_later_one_never_takes_its_id()
+    {
+        // join 1, one at a time: unit succeeds and the join decides, so e2e and perf never start.
+        var (core, patches) = Fan("fanning_one", [["unit", "e2e", "perf"], ["unit", "perf"], ["unit", "perf", "e2e"]]);
+
+        Assert.Equal(RunStatus.Completed, core.State.Status);
+        Assert.Equal("plan.expand of 2 item(s): kept lanes_0, lanes_2; added none; removed lanes_1", patches[1].Reason);
+        // e2e comes back as a new item: lanes_1 was used for another step, so it is lanes_3 (check 3).
+        Assert.Equal("plan.expand of 3 item(s): kept lanes_0, lanes_2; added lanes_3; removed none", patches[2].Reason);
+        Assert.Equal(["lanes_0", "lanes_2", "lanes_3"], Branches(core));
+        Assert.Equal([1, 0, 0, 0], new[] { "lanes_0", "lanes_1", "lanes_2", "lanes_3" }.Select(id => Executions(core, id)));
+    }
+
+    [Fact]
+    public void A_first_plan_expand_into_a_parallel_is_unchanged_by_the_re_expansion_rule()
+    {
+        var core = Lib.Start("fanning");
+        core.Advance();
+        var (patch, _) = Expand(core, "expand", [Item("unit"), Item("e2e")]);
+
+        Assert.Equal("plan.expand of 2 item(s)", patch!.Reason);
+        Assert.Equal(["lanes_0", "lanes_1"], patch.Changes.Select(c => c.Step!["id"].ScalarText()));
+        Assert.All(patch.Changes, c => Assert.Equal(("add_branch", "lanes"), (c.Op, c.Target)));
+    }
 
     static YNode Item(string tier)
     {

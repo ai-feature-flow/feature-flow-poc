@@ -830,11 +830,9 @@ public sealed partial class RunCore
             return;
         state.Branches[index] = cls == OutcomeClass.Success ? BranchStatus.Succeeded : BranchStatus.Failed;
         Trace("branch_ended", container.Id, $"branch {index}: {cls.Name()}");
-        var join = container.Container!.Join;
-        var succeeded = state.Branches.Count(b => b == BranchStatus.Succeeded);
-        var open = state.Branches.Count(b => b is BranchStatus.Waiting or BranchStatus.Running);
         if (container.Form == StepForm.Chain)
         {
+            var open = state.Branches.Count(b => b is BranchStatus.Waiting or BranchStatus.Running);
             // A chain: success goes on to the next item; anything else ends it (docs/03 section 8.2).
             if (cls != OutcomeClass.Success)
                 Join(container, state, "any_failed");
@@ -845,6 +843,15 @@ public sealed partial class RunCore
             return;
         }
 
+        DecideJoin(container, state);
+    }
+
+    /// <summary>A parallel's join on its branches as they stand: decided, or the waiting branches started.</summary>
+    void DecideJoin(Step container, ContainerRecord state)
+    {
+        var join = container.Container!.Join;
+        var succeeded = state.Branches.Count(b => b == BranchStatus.Succeeded);
+        var open = state.Branches.Count(b => b is BranchStatus.Waiting or BranchStatus.Running);
         var needed = join switch
         {
             "all" => state.Branches.Count,

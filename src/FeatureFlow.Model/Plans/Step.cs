@@ -103,7 +103,7 @@ public sealed record DecisionSpec(string? Type, SourceLocation TypeLocation, Ite
 /// <summary>An artifact a step produces; <see cref="Outcome"/> null means every success outcome.</summary>
 public sealed record ArtifactOut(string? Outcome, string Name, ItemRef? Type, SourceLocation Location);
 
-/// <summary>An artifact a step consumes. <see cref="From"/> is current, parent, root, or child:&lt;id&gt;.</summary>
+/// <summary>An artifact a step consumes. <see cref="From"/> is current, previous, parent, root, or child:&lt;id&gt;.</summary>
 public sealed record ArtifactIn(string Name, string From, bool Optional, ItemRef? Type, SourceLocation Location);
 
 public sealed record OutputDecl(string Name, string Type, SourceLocation Location);
