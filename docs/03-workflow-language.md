@@ -107,7 +107,7 @@ its form (`docs/01` section 2.1). A list entry may instead be `parallel`,
 | `skills` | Library skills, mounted for the agent to read on demand. Added to the role's |
 | `write_access` | `none`, `branch` or `repository`. Tightens only |
 | `context` | `full` (default): the agent is given the run's step summaries. `none`: it is not, so a reviewer judges independently (from FF) |
-| `planning` | Loads (`targets`, `templates`, `review`), but gives the agent nothing in version 1: an agent cannot propose a patch (`docs/04` section 6.1). A recovery's re-plan names a step that has it (`docs/01` section 7.2) |
+| `planning` | Loads (`targets`, `templates`, `review`), but gives the agent nothing in version 1: an agent cannot propose a patch (`docs/04` section 6.1). A recovery's re-plan names a step that has it (`docs/01` section 7.2); std's planners and designer have it (LOG 509) |
 | `push` | Default `true`. `false`: the agent's commits are not pushed (scratch work) |
 | `on_uncommitted` | `commit` (default) or `fail`: what to do with changes left uncommitted at the end |
 
@@ -378,6 +378,7 @@ An agent or decision step may not declare an evidence type (`docs/01` section
 ```yaml
 consumes:
   - { name: plan }                                  # this run
+  - { name: plan, from: previous, optional: true }  # this run, the step's latest before its current execution
   - { name: epic_acceptance_criteria, from: parent }
   - { name: findings_report, from: { child: ticket_a } }
   - { name: previous_review, optional: true }
@@ -386,9 +387,19 @@ consumes:
 | Field | Meaning |
 |---|---|
 | `name` | The artifact's logical name |
-| `from` | `current` (default), `parent`, `root`, or `{ child: <step id> }` |
+| `from` | `current` (default), `previous`, `parent`, `root`, or `{ child: <step id> }` |
 | `type` | Optional: the type the step expects; a producer in this run must declare it or a type `compatible_with` it (section 7.3) |
 | `optional` | The step runs even if the artifact does not exist yet |
+
+| `from` | The artifact | Its key in the inputs and sandbox |
+|---|---|---|
+| `current` | The latest of its name in this run, nearest the consuming step's scope, from each step's current execution | `<name>` |
+| `previous` | As `current`, but from each step's earlier executions: the latest of its name from any execution before the step's current one, so what a step that ran again, such as a planner sent back, last produced, even with an execution that produced nothing (an exhausted attempt, a `blocked` report) in between. None until a producer has run twice, so it is usually `optional`. `steps.<id>.previous` (section 4.2) is still only the one previous execution (LOG 505) | `previous/<name>` |
+| `parent`, `root` | The parent's or root run's, as it was when this run started (section 9.2) | `parent/<name>`, `root/<name>` |
+| `{ child: <step id> }` | The child run's, as it ended (section 9.3) | `child/<step id>/<name>` |
+
+No step may produce an artifact named `parent`, `root`, `child` or
+`previous`, since those name the keys above.
 
 Each consumed artifact is pinned at its revision current when the attempt
 starts, and staged read-only in the sandbox with a manifest listing them (from
@@ -517,6 +528,9 @@ The parent may also consume the child's artifacts (`from: { child: <id> }`).
 Not in version 1: an agent cannot propose a patch (`docs/04` section 6.1), so a
 child cannot change its parent's plan. The core would apply a patch a child
 sends through the same path as any patch (section 10), but nothing sends one.
+A person can: a re-plan at the parent's planner revises the work list, and
+expanding it again adds only the new or changed children (section 10.4,
+LOG 509).
 
 ---
 
@@ -556,7 +570,7 @@ changes:
 | `replace` | Replace the step at the target |
 | `remove` | Remove the step at the target. Routes that pointed at it must be given new targets in the same patch |
 | `set` | Change one field of the target: `with`, `limits`, `outputs`, `consumes`, `produces`, or `routes.<outcome>` |
-| `add_branch`, `remove_branch` | Add or remove a branch of a `parallel` that has not started |
+| `add_branch`, `remove_branch` | Add or remove a branch of a `parallel` that is not running: one not yet entered, or one whose join has decided. A removed branch's records stay |
 | `chain` | Add a step after the target: the target's `success` routes go to the new step, every other outcome to `on_other`, a step id given in the operation |
 
 There is no operation to change a step's role: privilege comes from the role
@@ -581,6 +595,21 @@ through the `plan.expand` action. It maps each item of a list artifact to a step
 or as a chain. No agent is involved: the mapping is data, so the expansion
 cannot fail if the artifact is valid. An empty list is not an error: a
 `parallel` with no branches completes at once.
+
+Each item becomes a branch with id `<target>_<index>`. A second expansion into
+a `parallel` that an earlier one filled, such as after a planner revised the
+list, changes only what changed (LOG 506):
+
+| Rule | Detail |
+|---|---|
+| Identity | An item is already expanded when its step, with the item's values put in, equals an earlier expansion's branch. It is kept, not added again |
+| New or changed items | Added as new branches, from the next index this run has not used (one more than the highest so far). A changed item is a new branch; its old branch falls under the next rule |
+| Branches matching no item | Removed from the plan, so they neither run nor count towards the join; their records stay. A branch still running is left for a person |
+| Resume | Only the branches that have not ended with class `success` run, as when a person goes to a branch of a decided join: the new ones and the failed ones still in the list. A succeeded branch keeps its outcome, and the join decides again with it. With none to run, the join decides at once |
+| Reason | The patch's reason names the branches kept, added and removed |
+
+Branches written in the template are not an expansion's and are left alone. A
+first expansion, and a `chain`, are as described above.
 
 ---
 

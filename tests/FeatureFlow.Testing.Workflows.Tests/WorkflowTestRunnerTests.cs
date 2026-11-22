@@ -167,6 +167,103 @@ public class WorkflowTestRunnerTests
         Assert.Contains("status is completed, expected incomplete", result.Failures.Single());
     }
 
+    /// <summary>
+    /// <c>expect.consumed</c> (docs/09 section 4.3): the keys a step consumed, resolved, when an execution started. A key it
+    /// did not consume, or an execution that never started, fails the test.
+    /// </summary>
+    [Theory]
+    [InlineData("approve_spec: { 1: [requirements, delivery_plan] }", null)]
+    [InlineData("approve_spec: { 1: [previous/requirements] }", "approve_spec execution 1 did not consume 'previous/requirements'; it consumed [requirements, delivery_plan]")]
+    [InlineData("approve_spec: { 2: [requirements] }", "approve_spec execution 2 did not start, so what it consumed was not seen")]
+    public void Consumed_keys_are_expected_per_execution(string expectation, string? failure)
+    {
+        var result = RunVariant("ticket_main_path", "expect:\n", $"expect:\n  consumed: {{ {expectation} }}\n");
+
+        if (failure is null)
+            Assert.True(result.Passed, string.Join("\n", result.Failures));
+        else
+            Assert.Equal(failure, Assert.Single(result.Failures));
+    }
+
+    /// <summary>
+    /// <c>expect.branches</c> (docs/09 section 4.3): a <c>parallel</c>'s branches in the final plan, exactly and in order. A
+    /// branch too many or missing, or an id that is not a container, fails the test.
+    /// </summary>
+    [Theory]
+    [InlineData("tickets.children: [tickets.children_0, tickets.children_1]", null)]
+    [InlineData("tickets.children: [tickets.children_0, tickets.children_1, tickets.children_2]", "tickets.children's branches are [tickets.children_0, tickets.children_1], expected [tickets.children_0, tickets.children_1, tickets.children_2]")]
+    [InlineData("tickets.children: [tickets.children_0]", "tickets.children's branches are [tickets.children_0, tickets.children_1], expected [tickets.children_0]")]
+    [InlineData("tickets.expand: [tickets.children_0]", "tickets.expand is not a parallel or chain in the final plan, so it has no branches")]
+    public void Branches_are_expected_exactly_from_the_final_plan(string expectation, string? failure)
+    {
+        var result = RunVariant("epic_child_rerun", "expect:\n", $"expect:\n  branches: {{ {expectation} }}\n");
+
+        if (failure is null)
+            Assert.True(result.Passed, string.Join("\n", result.Failures));
+        else
+            Assert.Equal(failure, Assert.Single(result.Failures));
+    }
+
+    /// <summary>
+    /// <c>expand:</c> as a list per execution (docs/09 section 4.3): the epic's work list gains a ticket when a person sends the
+    /// run back to expand, so only the new ticket and the failed one run again (docs/03 section 10.4).
+    /// </summary>
+    [Fact]
+    public void Expand_takes_a_list_per_execution_and_the_second_expansion_adds_only_the_new_item()
+    {
+        var result = RunVariant("epic_child_rerun", ExpandOnce, ExpandTwice);
+
+        Assert.True(result.Passed, string.Join("\n", result.Failures) + "\n" + string.Join("\n", result.Trace));
+        Assert.Contains(result.Trace, t => t is { Kind: "patch_applied", Detail: "revision 3, by engine" });
+    }
+
+    [Fact]
+    public void A_branch_re_run_against_expectation_fails_an_expand_per_execution_test()
+    {
+        var result = RunVariant("epic_child_rerun", ExpandOnce, ExpandTwice.Replace("tickets.children_0: 1", "tickets.children_0: 2", StringComparison.Ordinal));
+
+        Assert.False(result.Passed);
+        Assert.Equal("tickets.children_0 ran 1 time(s), expected 2", Assert.Single(result.Failures));
+    }
+
+    const string ExpandOnce = """
+        expand:
+          tickets.expand:
+            - { name: invoice_totals, repositories: [acme/api] }
+            - { name: invoice_export, repositories: [acme/api] }
+        script:
+          tickets.children_1: [failed, completed]
+        answers:
+          tickets.children: { go_to: tickets.children_1 }
+
+        expect:
+          status: completed
+          path_includes: [tickets.children_1, tickets.children_1, verify.tests, deliver.merge]
+          executions:
+            tickets.children_0: 1
+
+        """;
+
+    const string ExpandTwice = """
+        expand:
+          tickets.expand:
+            - [{ name: invoice_totals, repositories: [acme/api] }, { name: invoice_export, repositories: [acme/api] }]
+            - [{ name: invoice_totals, repositories: [acme/api] }, { name: invoice_export, repositories: [acme/api] }, { name: invoice_audit, repositories: [acme/api] }]
+        script:
+          tickets.children_1: [failed, completed]
+        answers:
+          tickets.children: { go_to: tickets.expand }
+
+        expect:
+          status: completed
+          path_includes: [tickets.children_1, tickets.expand, tickets.children_1, tickets.children_2, verify.tests, deliver.merge]
+          executions:
+            tickets.children_0: 1
+            tickets.children_2: 1
+            tickets.expand: 2
+
+        """;
+
     [Fact]
     public void A_path_out_of_order_fails_the_test()
     {

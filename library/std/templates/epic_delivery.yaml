@@ -37,12 +37,15 @@ steps:
       role: std:roles/designer
       task: std:tasks/design_epic
       skills: [std:skills/solution_design, std:skills/verification]
+      planning: { targets: [self], review: required }   # so a person's replan is accepted (LOG 509)
     with: { epic_name: { expr: "params.epic_name" } }
     consumes:
       - { name: child_requirements, from: parent, optional: true }
       - { name: contract, from: parent, optional: true }
       - { name: requirements, from: parent, optional: true }
       - { name: design_validation, optional: true }
+      - { name: requirements, from: previous, optional: true }      # a revision starts from the last design (LOG 508)
+      - { name: contract, from: previous, optional: true }
     produces:
       designed:
         - { name: requirements, type: std:artifact_types/requirements }

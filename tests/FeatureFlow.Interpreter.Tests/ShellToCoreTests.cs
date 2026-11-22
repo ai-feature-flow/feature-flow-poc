@@ -60,7 +60,114 @@ public class ShellToCoreTests
         """;
 
     static readonly Probe Lib = new("shell-to-core", ("artifacts", Artifacts), ("child", Child), ("parent", Parent), ("pulls", Pulls),
-        ("bad_child", BadChild), ("bad_expand", BadExpand));
+        ("bad_child", BadChild), ("bad_expand", BadExpand), ("revising", Revising));
+
+    /// <summary>A planner that revises its own last plan (<c>from: previous</c>) when the step after it is blocked.</summary>
+    const string Revising = """
+        api_version: feature-flow/v1
+        kind: template
+        metadata: { name: revising, level: ticket }
+        artifact_types: [std:artifact_types/delivery_plan]
+        defaults:
+          routes:
+            by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+        steps:
+          - id: plan
+            agent: { role: std:roles/planner, task: std:tasks/repair_failures }
+            consumes: [{ name: notes, from: previous, optional: true }]
+            outcomes: { planned: success, blocked: blocked }
+            produces: [{ name: notes, type: std:artifact_types/delivery_plan }]
+            limits: { attempts: 5 }
+          - id: build
+            agent: { role: std:roles/planner, task: std:tasks/repair_failures }
+            consumes: [{ name: notes }, { name: notes, from: previous }]
+            outcomes: { planned: success, blocked: blocked }
+            routes: { planned: { end: completed }, blocked: plan }
+            limits: { attempts: 9 }
+        """;
+
+    [Fact]
+    public void A_step_entered_again_consumes_the_artifact_its_previous_execution_produced_as_previous_name()
+    {
+        var core = Lib.Start("revising");
+        core.Advance();
+        Assert.Equal([new ConsumedArtifact("previous/notes", "notes", true, false, null)], core.Consumed("plan"));
+        Assert.Null(core.MissingConsumed("plan"));
+
+        void Plan(string reference)
+        {
+            Assert.True(core.Apply(new StepCompleted("plan", "planned", RunCore.ZeroOutputs(core.StepById("plan")!), new Dictionary<string, string> { ["notes"] = reference })).Accepted);
+            core.Advance();
+        }
+
+        Plan("sha256:first");
+        // build needs a previous plan, which the first plan has none of yet: check 32 names it by its key.
+        Assert.Equal("check 32 (consumed artifacts exist): build consumes previous/notes, which no step has produced", core.MissingConsumed("build"));
+        Assert.True(core.Apply(new StepCompleted("build", "blocked")).Accepted);
+        core.Advance();
+
+        // The planner runs again: its own last plan is previous/notes; nothing is current, since re-entry cleared it (DR12).
+        Assert.Equal([new ConsumedArtifact("previous/notes", "notes", true, false, "sha256:first")], core.Consumed("plan"));
+        Plan("sha256:second");
+        Assert.Equal(
+            [new ConsumedArtifact("notes", "notes", false, false, "sha256:second"), new ConsumedArtifact("previous/notes", "notes", false, false, "sha256:first")],
+            core.Consumed("build"));
+        Assert.Null(core.MissingConsumed("build"));
+        Assert.Equal("sha256:first", core.ScopeFacts("build").Consumed["previous/notes"]);
+    }
+
+    [Fact]
+    public void Previous_is_the_latest_earlier_artifact_of_the_name_past_an_execution_without_one_and_is_carried()
+    {
+        var core = Lib.Start("revising");
+        core.Advance();
+        Assert.True(core.Apply(new StepCompleted("plan", "planned", RunCore.ZeroOutputs(core.StepById("plan")!), new Dictionary<string, string> { ["notes"] = "sha256:first" })).Accepted);
+        core.Advance();
+        Assert.True(core.Apply(new StepCompleted("build", "blocked")).Accepted);
+        core.Advance();
+
+        // The re-plan reports blocked with no plan, and a person retries it: its execution 2 holds nothing, so previous/notes
+        // is still execution 1's (LOG 505), here and after a hand-over.
+        Assert.True(core.Apply(new StepCompleted("plan", "blocked")).Accepted);
+        core.Advance();
+        Assert.True(core.Apply(new InterventionAnswered(Assert.Single(core.State.Waits).Id, new Recovery(RecoveryKind.Retry))).Accepted);
+        core.Advance();
+        Assert.Equal(3, core.State.Steps["plan"].Executions);
+        Assert.Equal("sha256:first", core.Consumed("plan").Single().Reference);
+
+        var resumed = RunCore.Resume(Lib.Libraries, Probe.Ref("revising"), core.Snapshot());
+        Assert.Equal("sha256:first", resumed.Consumed("plan").Single().Reference);
+    }
+
+    /// <summary>
+    /// A step whose allowance is spent escalates naming what sent it back: another step's outcome with its summary, cut as an
+    /// escalating outcome's is (LOG 510).
+    /// </summary>
+    [Fact]
+    public void An_exhausted_step_s_intervention_names_the_outcome_that_sent_it_back()
+    {
+        static string Exhaust(string summary)
+        {
+            var core = Lib.Start("revising");
+            core.Advance();
+            for (var i = 1; i < 10; i++)
+            {
+                Assert.True(core.Apply(new StepCompleted("plan", "planned", RunCore.ZeroOutputs(core.StepById("plan")!), new Dictionary<string, string> { ["notes"] = $"sha256:{i}" })).Accepted);
+                core.Advance();
+                Assert.True(core.Apply(new StepCompleted("build", "blocked", Summary: summary)).Accepted);
+                if (core.Advance().OfType<RaiseIntervention>().SingleOrDefault() is { } raised)
+                    return raised.Reason;
+            }
+
+            throw new InvalidOperationException("the planner's allowance was never spent");
+        }
+
+        Assert.Equal("attempts exhausted (build reported blocked: the contract has no refunds endpoint)", Exhaust("the contract has no refunds endpoint"));
+        var cut = Exhaust(new string('x', 2000));
+        Assert.StartsWith("attempts exhausted (build reported blocked: xxx", cut, StringComparison.Ordinal);
+        Assert.EndsWith(" [...])", cut, StringComparison.Ordinal);
+        Assert.Equal("attempts exhausted ()".Length + 500, cut.Length);
+    }
 
     // Inputs that load (an expression is checked when it is evaluated) and that evaluate, at step start, to values outside
     // the action's contract: a list for run.child's tracker_issue, a run id for plan.expand's shape (LOG 488).

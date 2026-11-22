@@ -42,7 +42,14 @@ public sealed record CarriedExecution(int Number, string? Outcome, IReadOnlyDict
     public string? ActionAnswer { get; init; }
 }
 
-public sealed record CarriedStep(int Executions, int AttemptsUsed, int RacesUsed, long AttemptsGranted, CarriedExecution? Current, CarriedExecution? Previous);
+public sealed record CarriedStep(int Executions, int AttemptsUsed, int RacesUsed, long AttemptsGranted, CarriedExecution? Current, CarriedExecution? Previous)
+{
+    /// <summary>
+    /// <see cref="StepRecord.EarlierArtifacts"/>; null when empty. State carried before it existed has none, and is read as the
+    /// previous execution's artifacts, which is what <c>from: previous</c> read then.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? EarlierArtifacts { get; init; }
+}
 
 public sealed record CarriedContainer(IReadOnlyList<int> BranchIndexes, IReadOnlyList<string> Branches, bool Active);
 
@@ -61,6 +68,7 @@ public sealed record CarriedWait(string Id, string Kind, string StepId, string? 
 public sealed record CarriedEntry(string StepId, bool CleanUp, bool Resumes = false)
 {
     public bool PastBreakpoint { get; init; }
+    public string? From { get; init; }
 }
 
 public sealed record CarriedTrace(string Kind, string StepId, string? Detail);
@@ -133,10 +141,13 @@ public sealed partial class RunCore
             s.Patches.Select(PatchReader.Write).ToList(),
             s.IdHistory.ToList(),
             new SortedDictionary<string, CarriedStep>(s.Steps.ToDictionary(kv => kv.Key,
-                kv => new CarriedStep(kv.Value.Executions, kv.Value.AttemptsUsed, kv.Value.RacesUsed, kv.Value.AttemptsGranted, Exec(kv.Value.Current), Exec(kv.Value.Previous))), StringComparer.Ordinal),
+                kv => new CarriedStep(kv.Value.Executions, kv.Value.AttemptsUsed, kv.Value.RacesUsed, kv.Value.AttemptsGranted, Exec(kv.Value.Current), Exec(kv.Value.Previous))
+                {
+                    EarlierArtifacts = kv.Value.EarlierArtifacts.Count == 0 ? null : new SortedDictionary<string, string>(kv.Value.EarlierArtifacts, StringComparer.Ordinal),
+                }), StringComparer.Ordinal),
             new SortedDictionary<string, CarriedContainer>(s.Containers.ToDictionary(kv => kv.Key,
                 kv => new CarriedContainer(kv.Value.BranchIndexes.ToList(), kv.Value.Branches.Select(b => b.ToString()).ToList(), kv.Value.Active)), StringComparer.Ordinal),
-            s.Pending.Select(e => new CarriedEntry(e.StepId, e.CleanUp, e.Resumes) { PastBreakpoint = e.PastBreakpoint }).ToList(),
+            s.Pending.Select(e => new CarriedEntry(e.StepId, e.CleanUp, e.Resumes) { PastBreakpoint = e.PastBreakpoint, From = e.From }).ToList(),
             s.InFlight.ToList(),
             s.Waits.Select(w => new CarriedWait(w.Id, w.Kind.ToString(), w.StepId, w.Outcome, w.Reason, w.Patch is null ? null : PatchReader.Write(w.Patch), w.FromChild)
             {
@@ -188,7 +199,8 @@ public sealed partial class RunCore
         foreach (var id in carried.IdHistory)
             s.IdHistory.Add(id);
         foreach (var (id, step) in carried.Steps)
-            s.Steps[id] = new StepRecord
+        {
+            var record = new StepRecord
             {
                 Executions = step.Executions,
                 AttemptsUsed = step.AttemptsUsed,
@@ -197,6 +209,10 @@ public sealed partial class RunCore
                 Current = Exec(step.Current),
                 Previous = Exec(step.Previous),
             };
+            foreach (var (name, reference) in step.EarlierArtifacts ?? step.Previous?.Artifacts ?? new Dictionary<string, string>())
+                record.EarlierArtifacts[name] = reference;
+            s.Steps[id] = record;
+        }
         foreach (var (id, container) in carried.Containers)
             s.Containers[id] = new ContainerRecord
             {
@@ -204,7 +220,7 @@ public sealed partial class RunCore
                 Branches = container.Branches.Select(Enum.Parse<BranchStatus>).ToList(),
                 Active = container.Active,
             };
-        s.Pending.AddRange(carried.Pending.Select(e => new Entry(e.StepId, e.CleanUp, e.Resumes, e.PastBreakpoint)));
+        s.Pending.AddRange(carried.Pending.Select(e => new Entry(e.StepId, e.CleanUp, e.Resumes, e.PastBreakpoint, e.From)));
         s.InFlight.AddRange(carried.InFlight);
         s.Waits.AddRange(carried.Waits.Select(w => new OpenWait(w.Id, Enum.Parse<WaitKind>(w.Kind), w.StepId, w.Outcome, w.Reason,
             w.Patch is null ? null : PatchReader.ReadWritten(w.Patch), w.FromChild)

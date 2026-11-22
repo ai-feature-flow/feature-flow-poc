@@ -38,10 +38,13 @@ steps:
       role: std:roles/planner
       task: { param: planner_task }
       skills: [std:skills/verification, std:skills/solution_design]
+      planning: { targets: [self], review: required }   # so a person's replan is accepted (LOG 509)
     consumes:
       - { name: requirements }
       - { name: contract, optional: true }
       - { name: children_validation, optional: true }
+      - { name: work_list, from: previous, optional: true }         # a revision starts from the last plan (LOG 508)
+      - { name: child_requirements, from: previous, optional: true }
     produces:
       planned:
         - { name: work_list, type: std:artifact_types/work_list }

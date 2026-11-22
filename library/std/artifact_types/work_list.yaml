@@ -19,6 +19,10 @@ schema:
   properties:
     schema: { const: 1 }
     level: { enum: [epic, ticket], description: "The level of the child runs" }
+    changes:
+      type: array
+      items: { type: string, minLength: 1 }
+      description: "On a revision only: what changed from the previous revision, and why (LOG 508)"
     items:
       type: array
       maxItems: 500

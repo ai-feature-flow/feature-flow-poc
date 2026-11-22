@@ -79,9 +79,50 @@ public sealed partial class RunCore
     void Resume(PatchDocument patch, string proposerId)
     {
         if (patch.ResumeAt is { } at && FindIn(at) is { } step)
-            State.Pending.Add(new Entry(step, false));
+        {
+            if (ReExpanded(patch, step) is { } container)
+                ResumeExpanded(container);
+            else
+                State.Pending.Add(new Entry(step, false));
+        }
         else if (proposerId.Length > 0 && StepById(proposerId) is { } proposer)
             Route(proposer, State.Steps[proposer.Id].Current?.Outcome ?? "");
+    }
+
+    /// <summary>
+    /// The parallel a <c>plan.expand</c> patch expanded again, when an earlier expansion filled it and it has run (docs/03
+    /// section 10.4), else null: a first expansion resumes at its target as any patch does.
+    /// </summary>
+    Step? ReExpanded(PatchDocument patch, string resumeAt)
+    {
+        if (patch.ProposedBy is not { Type: "engine", StepId: { } by } || StepById(by)?.Descriptor?.Handling != ActionHandling.Expand
+            || StepById(resumeAt) is not { Container: not null, Form: not StepForm.Chain } container || !State.Containers.ContainsKey(container.Id))
+            return null;
+        var earlier = State.Patches.Take(State.Patches.Count - 1).Where(p => p.ProposedBy.Type == "engine").SelectMany(p => p.Changes);
+        return earlier.Any(op => op.Op == "add_branch" && op.Target == container.Id) ? container : null;
+    }
+
+    /// <summary>
+    /// Resumes a parallel an expansion changed as a go to its branches does (<see cref="Reopen"/>): only the branches that have
+    /// not ended with class <c>success</c> run, new ones included; a succeeded branch keeps its outcome for the join, which
+    /// decides again. A parallel still running goes on: its join decides as it would have.
+    /// </summary>
+    void ResumeExpanded(Step container)
+    {
+        var before = State.Containers[container.Id];
+        if (before.Active)
+            return;
+        var succeeded = new HashSet<int>(before.BranchIndexes.Where((_, i) => before.Branches[i] == BranchStatus.Succeeded));
+        var branches = container.Container!.Branches;
+        var state = new ContainerRecord
+        {
+            BranchIndexes = branches.Select(b => b.Index).ToList(),
+            Branches = branches.Select(b => succeeded.Contains(b.Index) ? BranchStatus.Succeeded : BranchStatus.Waiting).ToList(),
+        };
+        State.Containers[container.Id] = state;
+        Trace("reopened", container.Id,
+            $"expanded again: {state.Branches.Count(b => b == BranchStatus.Waiting)} branch(es) run, {state.Branches.Count(b => b == BranchStatus.Succeeded)} succeeded kept; the join decides again");
+        DecideJoin(container, state);
     }
 
     /// <summary>A full step id or a fragment use id in the current plan, as the step a run continues at.</summary>
@@ -205,8 +246,8 @@ public sealed partial class RunCore
                         d.Add(Checks.PatchProposer, $"replace of {op.Target} changes its role from {role} to {RoleOf(op.Step) ?? "none"}; an agent never changes a role (P8)", op.Location);
                 break;
             case "engine":
-                foreach (var op in patch.Changes.Where(o => o.Op is not ("add_branch" or "chain" or "insert")))
-                    d.Add(Checks.PatchProposer, $"the engine only expands lists (add_branch, chain, insert), not {op.Op}", op.Location);
+                foreach (var op in patch.Changes.Where(o => o.Op is not ("add_branch" or "remove_branch" or "chain" or "insert")))
+                    d.Add(Checks.PatchProposer, $"the engine only expands lists (add_branch, remove_branch, chain, insert), not {op.Op}", op.Location);
                 break;
         }
     }
@@ -233,6 +274,9 @@ public sealed partial class RunCore
                 d.Add(Checks.PatchLoadChecks, $"{op.Op}: {busy} is running or waiting{(busy == op.Target ? "" : $" inside {op.Target}")}", op.Location, op.Target);
         }
     }
+
+    /// <summary>Whether a step, or one inside it, is running, waiting for a person or about to start.</summary>
+    public bool IsBusy(string stepId) => Busy(stepId, null) is not null;
 
     /// <summary>A step at or inside the target that is running or waiting for a person, or an entered container.</summary>
     string? Busy(string target, string? except)
@@ -390,17 +434,53 @@ public static class PlanExpansion
         if (shape == "chain" && onOther is null)
             return (null, $"{stepId}: a chain needs on_other");
 
-        var changes = new List<PatchOp>();
-        var previous = target.Id;
-        string? first = null;
+        var mapped = new List<YMap>();
         for (var i = 0; i < items.Count; i++)
         {
             var (map, error) = Substitute(stepTemplate, items[i]);
             if (error is not null)
                 return (null, $"{stepId}: item {i}: {error}");
-            var localId = $"{target.LocalId}_{i}";
-            var entries = new List<KeyValuePair<YScalar, YNode>> { new(new YScalar("id", true, map!.Location), new YScalar(localId, true, map.Location)) };
-            entries.AddRange(((YMap)map).Entries.Where(e => e.Key.Text != "id"));
+            mapped.Add(new YMap(((YMap)map!).Entries.Where(e => e.Key.Text != "id").ToList(), map.Location));
+        }
+
+        // A parallel that earlier expansions filled is expanded again (docs/03 section 10.4): an item already expanded is kept,
+        // a new or changed one added at the next free index, and a branch no item matches removed.
+        var expandedBefore = shape == "parallel" ? Expanded(core, target) : [];
+        var kept = new List<string>();
+        var removed = new List<string>();
+        var adding = mapped;
+        if (expandedBefore.Count > 0)
+        {
+            var unmatched = new List<YMap>();
+            var open = expandedBefore.ToList();
+            foreach (var map in mapped)
+            {
+                var text = YamlWriter.Write(map);
+                var at = open.FindIndex(b => b.Text == text);
+                if (at < 0)
+                {
+                    unmatched.Add(map);
+                    continue;
+                }
+
+                kept.Add(open[at].StepId);
+                open.RemoveAt(at);
+            }
+
+            adding = unmatched;
+            // A branch that is running or waiting is left for a person (docs/03 section 10.4).
+            removed.AddRange(open.Select(b => b.StepId).Where(id => !core.IsBusy(id)));
+        }
+
+        var changes = new List<PatchOp>();
+        var previous = target.Id;
+        string? first = null;
+        var next = shape == "parallel" ? NextFreeIndex(core, target) : 0;
+        foreach (var map in adding)
+        {
+            var localId = $"{target.LocalId}_{next++}";
+            var entries = new List<KeyValuePair<YScalar, YNode>> { new(new YScalar("id", true, map.Location), new YScalar(localId, true, map.Location)) };
+            entries.AddRange(map.Entries);
             var stepMap = new YMap(entries, map.Location);
             var fullId = target.Scope.Prefix + localId;
             first ??= fullId;
@@ -410,13 +490,48 @@ public static class PlanExpansion
             previous = fullId;
         }
 
+        // Added before removed, so a new branch never takes the place of one removed (Branch.Index).
+        changes.AddRange(removed.Select(id => new PatchOp("remove_branch", target.Id, step.Location, Branch: id)));
+
         var expanded = step.ResolvedRoutes.FirstOrDefault(r => r.Outcome == "expanded")?.Target as ResolvedStep;
         var resumeAt = shape == "chain" && target.Id == step.Id
             ? first ?? expanded?.StepId
             : shape == "parallel" ? target.Id : expanded?.StepId ?? target.Id;
-        var patch = new PatchDocument(core.Run.Id, new Proposer("engine", step.Id), $"plan.expand of {items.Count} item(s)",
-            core.State.Revision, resumeAt, changes, step.Location);
+        var reason = $"plan.expand of {items.Count} item(s)";
+        if (expandedBefore.Count > 0)
+            reason += $": kept {Names(kept)}; added {Names(changes.Where(c => c.Op == "add_branch").Select(c => target.Scope.Prefix + c.Step!["id"].ScalarText()))}; removed {Names(removed)}";
+        var patch = new PatchDocument(core.Run.Id, new Proposer("engine", step.Id), reason, core.State.Revision, resumeAt, changes, step.Location);
         return (patch, null);
+    }
+
+    static string Names(IEnumerable<string> ids) => ids.ToList() is { Count: > 0 } list ? string.Join(", ", list) : "none";
+
+    /// <summary>
+    /// The branches of a parallel that an engine's <c>add_branch</c> made (an earlier <c>plan.expand</c>), each with its step as
+    /// the expansion wrote it, less its id: what an item now must equal to be the same item. Branches written in the template
+    /// are not an expansion's.
+    /// </summary>
+    static List<(string StepId, string Text)> Expanded(RunCore core, Step target)
+    {
+        var written = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var op in core.State.Patches.Where(p => p.ProposedBy.Type == "engine").SelectMany(p => p.Changes))
+            if (op is { Op: "add_branch", Step: { } map } && op.Target == target.Id && map["id"].ScalarText() is { } id)
+                written[target.Scope.Prefix + id] = YamlWriter.Write(new YMap(map.Entries.Where(e => e.Key.Text != "id").ToList(), map.Location));
+        return target.Container!.Branches.Where(b => b.Steps.Count > 0 && written.ContainsKey(b.Steps[0].Id))
+            .Select(b => (b.Steps[0].Id, written[b.Steps[0].Id])).ToList();
+    }
+
+    /// <summary>
+    /// The first index whose step id <c>&lt;target&gt;_&lt;index&gt;</c> this run has never used: one more than the highest so far,
+    /// so a removed branch's id is not used again for another step (check 3). 0 on a first expansion.
+    /// </summary>
+    static int NextFreeIndex(RunCore core, Step target)
+    {
+        var prefix = $"{target.Scope.Prefix}{target.LocalId}_";
+        var used = core.State.IdHistory.Where(id => id.StartsWith(prefix, StringComparison.Ordinal))
+            .Select(id => int.TryParse(id[prefix.Length..], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : -1)
+            .DefaultIfEmpty(-1).Max();
+        return used + 1;
     }
 
     /// <summary>

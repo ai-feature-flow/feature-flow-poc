@@ -75,6 +75,8 @@ steps:
       implemented: [{ name: implementation_claims, type: std:artifact_types/evidence_claims }]
     outcomes: { implemented: success, blocked: blocked }
     limits: { questions: { max: 3, timeout: 24h } }
+    routes:
+      blocked: plan               # the planner revises with the reason; bounded by its attempts; no clean_up (LOG 507)
 
   - id: verify
     use: std:fragments/verify_and_review
