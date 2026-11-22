@@ -1,0 +1,36 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: ticket_person_clears
+description: >-
+  The reviewers raise a blocking finding; the triager escalates it, and a person
+  declines it in a decision. Nothing is open and no fixer ran, so the loop
+  leaves by cleared: nothing changed, so the change is not tested or reviewed
+  again, and the run goes straight on from the merge bar to the satisfaction
+  check and merges.
+template: std:templates/ticket_delivery
+parameters: { ticket_id: FF-1042 }
+repositories: [acme/api]
+
+outputs:
+  verify.fix.apply_triage: { escalated: 1, declined_blocking: 0 }
+  verify.fix.apply_person_triage: { escalated: 0, declined_blocking: 1 }
+  "findings.open_blocking": 1           # the merge bar, evaluated once
+  "findings.open": 0
+
+expect:
+  status: completed
+  path_includes:
+    - verify.review.review_0.assess
+    - verify.fix.triage
+    - verify.fix.apply_triage
+    - verify.fix.person_triage
+    - verify.fix.apply_person_triage
+    - verify.satisfaction
+    - deliver.merge
+  executions:
+    verify.fix.person_triage: 1
+    verify.fix.fix: 0
+    verify.tests: 1
+    verify.analysis: 1
+    verify.review.review_0.assess: 1
+    verify.satisfaction: 1

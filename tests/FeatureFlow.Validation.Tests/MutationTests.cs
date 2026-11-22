@@ -56,12 +56,12 @@ public class MutationTests
             new(FixLoop, "steps.apply_triage.outputs.escalated > 0 ||", "steps.apply_triage.outputs.to_fix > 0 ||")]),
 
         ["guard_not_bool"] = new(5, "is int64, not bool", "a fix-loop guard reads a number as a condition", [
-            new(FixLoop, "        - when: \"findings.open == 0\"\n          to: { exit: fixed }\n        - to: fix\n      invalid: triage",
-                "        - when: \"findings.open\"\n          to: { exit: fixed }\n        - to: fix\n      invalid: triage")]),
+            new(FixLoop, "        - when: \"findings.open == 0\"\n          to: { exit: cleared }",
+                "        - when: \"findings.open\"\n          to: { exit: cleared }")]),
 
         ["index_access"] = new(5, "index access on", "a fix-loop guard reaches an undeclared parameter and output by index", [
-            new(FixLoop, "        - when: \"findings.open == 0\"\n          to: { exit: fixed }\n        - to: fix\n      invalid: triage",
-                "        - when: \"params['nope'] == 1 && steps['apply_triage'].outputs.bogus > 0\"\n          to: { exit: fixed }\n        - to: fix\n      invalid: triage")]),
+            new(FixLoop, "        - when: \"findings.open == 0\"\n          to: { exit: cleared }",
+                "        - when: \"params['nope'] == 1 && steps['apply_triage'].outputs.bogus > 0\"\n          to: { exit: cleared }")]),
 
         ["declared_exhausted"] = new(6, "'attempts_exhausted' is added by the engine and may not be declared", "implement declares attempts_exhausted itself", [
             new(Ticket, "    outcomes: { implemented: success, blocked: blocked }", "    outcomes: { implemented: success, blocked: blocked, attempts_exhausted: failure }")]),
@@ -95,7 +95,8 @@ public class MutationTests
 
         ["cycle_without_exit"] = new(10, "has no route out", "the fix loop's validated tests go back to the fixer instead of leaving", [
             new(FixLoop, "      valid: { exit: fixed }\n      invalid: fix", "      valid: fix\n      invalid: fix"),
-            new(FixLoop, "          to: { exit: fixed }\n        - to: fix\n      invalid: person_triage", "          to: fix\n        - to: fix\n      invalid: person_triage")]),
+            new(FixLoop, "          to: { exit: cleared }                   # no fixer has run", "          to: fix                   # no fixer has run"),
+            new(FixLoop, "          to: { exit: fixed }                     # a fixer has run", "          to: fix                     # a fixer has run")]),
 
         ["missing_producer"] = new(11, "consumes 'delivery_plans', which no step produces", "implement consumes an artifact no step produces", [
             new(Ticket, "      - { name: requirements }\n      - { name: delivery_plan }\n      - { name: contract, from: parent, optional: true }\n      - { name: baseline_test_results }",

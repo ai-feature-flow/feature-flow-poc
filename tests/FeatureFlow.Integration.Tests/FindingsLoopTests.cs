@@ -210,7 +210,8 @@ public class FindingsLoopTests
     /// LOG 248, F8: the triager declines a demonstrated blocking finding, which it may not clear alone, so a person triages it
     /// in a decision. An answer without the triage is refused. The person reads the ledger, declines the finding with a reason
     /// through the CLI, and the decline is recorded as the authenticated person (the harness's token is "tester"), not as a
-    /// step. Nothing is left open, so the fix loop ends without a fix, and the ticket merges.
+    /// step. Nothing is left open and no fixer ran, so the fix loop ends cleared, the change is not re-tested or re-reviewed,
+    /// and the ticket merges.
     /// </summary>
     [Fact]
     public async Task A_person_triages_what_the_triager_may_not_clear_and_is_recorded_as_the_actor()
@@ -265,6 +266,8 @@ public class FindingsLoopTests
         var path = Harness.StartedSteps(view);
         Assert.Equal(2, path.Count(s => s == "verify.fix.apply_person_triage"));
         Assert.DoesNotContain("verify.fix.fix", path);
+        Assert.Equal(1, path.Count(s => s == "verify.tests"));   // the loop left by cleared: nothing changed to re-test (LOG 502)
+        Assert.Equal(1, path.Count(s => s == "verify.review.review_0.assess"));
         Assert.Contains("deliver.merge", path);
 
         var records = new SqliteRecordStore(Path.Combine(h.Folder, "records.db"));
