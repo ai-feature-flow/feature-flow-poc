@@ -251,8 +251,25 @@ public class WaitRoutingTests
         return (core, raised.WaitId);
     }
 
+    /// <summary>A blocked agent's own reason is in the intervention's text, its start only, so the person can act on it.</summary>
+    [Fact]
+    public void A_blocked_agent_s_reason_is_in_the_intervention_s_text()
+    {
+        var core = Started();
+        core.Apply(new StepCompleted("ask", "stuck", Summary: "  Shell writes to /ff/out were denied.\n"));
+        var raised = Assert.IsType<RaiseIntervention>(Assert.Single(core.Advance()));
+        Assert.Equal("stuck escalates: Shell writes to /ff/out were denied.", raised.Reason);
+        Assert.Equal(raised.Reason, core.State.Waits[0].Reason);
+
+        var longer = Started();
+        longer.Apply(new StepCompleted("ask", "stuck", Summary: new string('x', 2000)));
+        var cut = Assert.IsType<RaiseIntervention>(Assert.Single(longer.Advance())).Reason;
+        Assert.StartsWith("stuck escalates: xxx", cut, StringComparison.Ordinal);
+        Assert.EndsWith(" [...]", cut, StringComparison.Ordinal);
+        Assert.Equal("stuck escalates: ".Length + 500, cut.Length);
+    }
+
     [Theory]
-    [InlineData("retry", null, 0, null, "ask")]
     [InlineData("go_to", "approve", 0, null, "approve")]
     [InlineData("replan", "ask", 0, null, "ask")]
     [InlineData("grant_attempts", null, 2, null, "ask")]

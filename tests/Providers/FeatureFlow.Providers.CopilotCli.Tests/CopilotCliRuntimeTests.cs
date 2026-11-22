@@ -91,7 +91,7 @@ public sealed class CopilotCliRuntimeTests
 
         Assert.EndsWith("'--available-tools' 'view' 'grep' 'glob' 'create' 'edit' 'bash' 'engine' < '/ff/agent/prompt-1.md'", implementer, StringComparison.Ordinal);
         Assert.EndsWith("'--available-tools' 'view' 'grep' 'glob' 'bash' 'engine' < '/ff/agent/prompt-1.md'", reviewer, StringComparison.Ordinal);
-        Assert.DoesNotContain("'write'", reviewer, StringComparison.Ordinal);
+        Assert.DoesNotContain("'create'", reviewer, StringComparison.Ordinal);
         foreach (var line in new[] { implementer, reviewer })
         {
             Assert.Contains("'--disable-builtin-mcps' '--no-custom-instructions'", line, StringComparison.Ordinal);
@@ -103,6 +103,21 @@ public sealed class CopilotCliRuntimeTests
         }
     }
 
+    /// <summary>
+    /// Copilot CLI asks its <c>write</c> permission for a shell redirection into a file, and <c>--no-ask-user</c> denies what is
+    /// not allowed; so a role with the shell gets <c>write</c> (without the edit tools), or it cannot write its output folder.
+    /// The sandbox is the files' boundary: a read-only checkout for a role without edit, a writable <c>/ff/out</c>.
+    /// </summary>
+    [Fact]
+    public void A_role_with_the_shell_may_write_through_it_and_a_role_without_may_not()
+    {
+        var planner = Runtime.CommandLine(Task("none", ["read", "search", "shell"]), "/ff/agent/prompt-1.md", false);
+        var reader = Runtime.CommandLine(Task("none", ["read", "search"]), "/ff/agent/prompt-1.md", false);
+
+        Assert.Contains("'--allow-tool' 'write' '--allow-tool' 'shell'", planner, StringComparison.Ordinal);
+        Assert.DoesNotContain("'write'", reader, StringComparison.Ordinal);
+        Assert.DoesNotContain("'shell'", reader, StringComparison.Ordinal);
+    }
 
     [Fact]
     public void A_model_that_cannot_be_reached_ends_resumably_and_a_refusal_is_a_configuration_fault()

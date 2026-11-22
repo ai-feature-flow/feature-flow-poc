@@ -194,7 +194,10 @@ public sealed class CopilotCliRuntime(CopilotCliOptions options, Func<ISandboxPr
             "--usage-output-file", $"{StateFolder}/copilot-usage-{task.Session}.json",
             "--log-dir", $"{StateFolder}/copilot-logs",
         };
-        if (tools.Any(ToolClasses[ToolClass.Edit].Contains))
+        // Copilot asks its write permission for a shell redirection into a file too, so a role with the shell gets it, or
+        // with --no-ask-user it cannot write its own output folder. The edit tools stay out of --available-tools; the
+        // sandbox is the boundary (a read-only checkout for a role without edit, a writable output folder).
+        if (tools.Any(ToolClasses[ToolClass.Edit].Contains) || tools.Contains("bash"))
             parts.AddRange(["--allow-tool", "write"]);
         if (tools.Contains("bash"))
             parts.AddRange(["--allow-tool", "shell"]);

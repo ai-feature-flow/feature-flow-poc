@@ -523,7 +523,7 @@ public sealed partial class RunCore
             Produce(step, recordParent, c.Artifacts);
             Trace("patch_to_parent", step.Id, toParent.Reason);
             outbox.Add(new SendPatchToParent(step.Id, toParent));
-            Finish(step, recordParent, c.Outcome);
+            Finish(step, recordParent, c.Outcome, c.Summary);
             return ApplyResult.Ok;
         }
 
@@ -562,7 +562,7 @@ public sealed partial class RunCore
 
         if (patch is null)
         {
-            Finish(step, record, c.Outcome);
+            Finish(step, record, c.Outcome, c.Summary);
             return ApplyResult.Ok;
         }
 
@@ -722,17 +722,24 @@ public sealed partial class RunCore
         return errors.Count == 0 ? null : $"{a.StepId}: {string.Join("; ", errors)}";
     }
 
-    void Finish(Step step, StepRecord record, string outcome)
+    /// <summary>
+    /// Ends a step's execution with an outcome and routes it. <paramref name="said"/> is an agent's report summary: an outcome
+    /// that escalates shows the person its start (<see cref="MaxEscalationSaidBytes"/>), so they can act on the agent's reason.
+    /// </summary>
+    void Finish(Step step, StepRecord record, string outcome, string? said = null)
     {
         record.Current ??= new Execution { Number = record.Executions };
         record.Current.Outcome = outcome;
         Trace("completed", step.Id, outcome);
-        Route(step, outcome);
+        Route(step, outcome, said);
     }
+
+    /// <summary>How much of an agent's summary an escalation's text carries.</summary>
+    public const int MaxEscalationSaidBytes = 500;
 
     // ---- Routing ----------------------------------------------------------------------------------
 
-    void Route(Step step, string outcome)
+    void Route(Step step, string outcome, string? said = null)
     {
         var route = step.ResolvedRoutes.FirstOrDefault(r => r.Outcome == outcome);
         if (route is null)
@@ -752,7 +759,7 @@ public sealed partial class RunCore
 
         try
         {
-            Follow(route.Target, step, outcome, route.Class, ReadFindings);
+            Follow(route.Target, step, outcome, route.Class, ReadFindings, said);
         }
         catch (EvaluationException e)
         {
@@ -762,7 +769,7 @@ public sealed partial class RunCore
         }
     }
 
-    void Follow(Resolved target, Step from, string outcome, OutcomeClass cls, Func<string, long> findings)
+    void Follow(Resolved target, Step from, string outcome, OutcomeClass cls, Func<string, long> findings, string? said)
     {
         switch (target)
         {
@@ -770,7 +777,7 @@ public sealed partial class RunCore
                 foreach (var (when, next) in guarded.Entries)
                     if (when is null || evaluator.Guard(when, findings))
                     {
-                        Follow(next, from, outcome, cls, findings);
+                        Follow(next, from, outcome, cls, findings, said);
                         return;
                     }
 
@@ -782,7 +789,10 @@ public sealed partial class RunCore
                 End(RunStatuses.Parse(end.Status) ?? RunStatus.Failed, from.Id, $"{outcome} -> end {end.Status}");
                 break;
             case ResolvedEscalate:
-                Intervene(from.Id, outcome, outcome == Actions.AttemptsExhausted ? "attempts exhausted" : $"{outcome} escalates");
+                var reason = outcome == Actions.AttemptsExhausted ? "attempts exhausted" : $"{outcome} escalates";
+                if (!string.IsNullOrWhiteSpace(said))
+                    reason += ": " + RunContexts.Bounded(said.Trim(), MaxEscalationSaidBytes);
+                Intervene(from.Id, outcome, reason);
                 break;
             case ResolvedBranchEnd branchEnd:
                 if (StepById(branchEnd.ContainerId) is { } container && BranchOf(from, branchEnd.ContainerId) is { } index)
