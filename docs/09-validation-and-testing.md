@@ -57,7 +57,7 @@ other documents cite them.
 | 26 | Patch: `resume_at` exists after the patch (unless sent to a parent) | Patch | Yes |
 | 27 | Patch: the proposer may use the operation; an agent never changes a role | Patch | Yes |
 | 28 | Patch: the result passes every load check | Patch | Yes |
-| 29 | Patch: an agent's patch needs a person: protected content touched or left unrun, or a step added inside it; a role outside `planning.allowed_roles`; a child template outside `planning.templates`; or review required by the step (a child's, at its parent) or the organisation | Patch | **Pending decision** (`docs/05` section 6) |
+| 29 | Patch: an agent's patch needs a person: protected content touched or left unrun, or a step added inside it; a role outside `planning.allowed_roles`; a child template outside `planning.templates`; a step added or replaced with `planning` wider than the proposer's; or review required by the step (a child's, at its parent) or the organisation | Patch | **Pending decision** (`docs/05` section 6) |
 | 30 | Patch: relaxes a safety floor | Patch | **Rejected** |
 | 31 | Step inputs satisfy the action's input schema (`docs/04` section 2): every `with` key is an input of the action, and a value has the input's kind and allowed values. Literals are checked at load, expressions when evaluated at step start (LOG 359), for every action, `run.child` and `plan.expand` included (LOG 488) | Load, Step start | Yes |
 | 32 | Consumed artifacts exist and validate | Step start | Yes |
@@ -144,7 +144,7 @@ CI.
 | Run-time rules | Each rule in section 3 | default, integration |
 | Provider contracts | Each interface's suite, including every documented success response | default, integration, cluster |
 | Merge race | Two work branches catch up from the same parent head; the second merge gets `base_moved` and loops; repeated refusals exhaust the allowance and escalate | integration |
-| Agent reporting | `report`, `ask_human` (including across a worker restart), `checkpoint`; `inspect_plan` and `propose_patch`, a staged patch carried by the report and held for a person (`docs/04` section 6.1) | integration |
+| Agent reporting | `report`, `ask_human` (including across a worker restart), `checkpoint`; `inspect_plan` and `propose_patch`, a staged patch carried by the report and held for a person (`docs/04` section 6.1): the Integration test is written, its passing run to fill by the sub-orchestrator | integration |
 | Pre-submit parity | A session's check and the later step receive the same task, tools, model and commit | integration |
 | Architecture | The shell holds no routing; project reference rules | default |
 | Deployment | Images, network policies, stop on SIGTERM | cluster, integration |

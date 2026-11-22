@@ -329,7 +329,7 @@ Other steps keep running while it is open.
 | **Gate** | A decision step in the plan. It may open an **interactive session**: a workspace where the person works in their own agent tool, runs the later steps' checks on demand, and submits files that become artifacts (RW18) | One of the step's declared outcomes |
 | **Intervention** | The engine, when a route escalates or something unexpected stops a step | A recovery action (section 7.2) |
 | **Question** | An agent, through the `ask_human` tool, during its step (RW14) | Free text, or one of the options the agent offered. The agent waits with its session intact |
-| **Patch approval** | An agent's patch that needs a person: it touches protected content, uses a role outside the organisation's allowed list, or its step's `planning.review` is `required` (`docs/05` section 6) | Apply or reject |
+| **Patch approval** | An agent's patch that needs a person, by the rules of `docs/05` section 6 | Apply or reject |
 | **Action request** | A step that needs a human to act outside the engine, such as merging into the default branch on the code host | Observed: the engine detects that the action happened. A human may also decline |
 | **Breakpoint** | A human, asking the run to pause before a named step | Continue, or any recovery action |
 
