@@ -62,7 +62,8 @@ public class FindingsLoopTests
         Assert.Equal((FindingStates.Fixed, 1, "verify.review.review_0.assess"), (finding.State, finding.Fixes, finding.Source));
         var history = (await records.QueryAsync<FindingEventRecord>(Queries.FindingEvents,
             new Dictionary<string, string> { ["run_id"] = id, ["finding_id"] = finding.FindingId }, ct)).Unwrap();
-        Assert.Equal([(FindingEventKinds.Raised, FindingStates.Open, "verify.review.review_0.assess"), (FindingEventKinds.Triaged, FindingStates.Open, "verify.fix.triage"),
+        // The triager's `open` restates the state, so it records no event (LOG 506).
+        Assert.Equal([(FindingEventKinds.Raised, FindingStates.Open, "verify.review.review_0.assess"),
             (FindingEventKinds.Triaged, FindingStates.Fixed, "verify.fix.verify_fix")], history.Select(e => (e.Kind, e.State, e.Actor)));
 
         // The triager and verifier were shown the ledger with its ids: one finding, open.
