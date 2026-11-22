@@ -303,6 +303,42 @@ public sealed class CopilotStepTests
         Assert.All(model.Received, r => Assert.Equal("Bearer github_pat_not_the_key", r.Authorization));
     }
 
+    /// <summary>
+    /// A role with the shell and no edit tools, as std's planner and reviewer: Copilot asks its write permission for a shell
+    /// redirection, so without it the agent could not write its own output folder (the live run's planner, blocked). It
+    /// writes <c>/ff/out</c> by a redirect; its checkout stays read-only, and the edit tools stay out of its offer.
+    /// </summary>
+    [Fact]
+    public async Task A_copilot_role_with_the_shell_and_no_edit_writes_its_output_by_a_redirect_but_not_its_checkout()
+    {
+        await using var model = new ScriptedModel("model-key-" + Guid.NewGuid().ToString("N"));
+        string? outResult = null, workResult = null;
+        model.Then(_ => Bash("echo reviewed > /ff/out/notes.md; echo out=$?"))
+            .Then(c =>
+            {
+                outResult = c.LastToolResult;
+                return Bash("echo changed > /ff/work/x.txt; echo work=$?");
+            })
+            .Then(c =>
+            {
+                workResult = c.LastToolResult;
+                return ScriptedModel.ToolUse("engine-report", AgentScripts.Report());
+            })
+            .ThenText("Done.");
+        await model.StartAsync();
+        await using var h = await AgentHarness.StartAsync("copilot-shell-write", model, new AgentHarnessOptions { Runtime = "copilot_cli" });
+        var runId = h.Start("T-57", "Review the repository.", "m4:templates/review_step");
+        var status = await h.WaitForEndAsync(runId, RunTimeout);
+        var timeline = await h.TimelineAsync(runId);
+
+        Assert.True(status == "completed", $"the run ended {status}:\n{timeline}\nout: {outResult}\nwork: {workResult}");
+        Assert.Contains("out=0", outResult);
+        Assert.DoesNotContain("work=0", workResult);
+        Assert.Equal("reviewed\n", await h.ArtifactTextAsync(AgentScripts.Reference(timeline, "artifact notes: ")));
+        Assert.All(model.Requests, r => Assert.DoesNotContain("\"name\":\"create\"", r["tools"]!.ToJsonString()));
+        Assert.Null(await h.RemoteRevisionAsync(AgentHarness.HiddenReference(runId, "implement")));
+    }
+
     /// <summary>What the proxy forwards for <c>auth: github</c> (<c>ModelProxy.Allowed</c>), as the stand-in sees it.</summary>
     static readonly string[] CopilotApiRequests = ["GET /meta", "GET /models", "POST /v1/messages", "POST /v1/messages/count_tokens", "POST /chat/completions"];
 
