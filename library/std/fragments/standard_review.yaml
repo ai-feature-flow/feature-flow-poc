@@ -40,6 +40,7 @@ steps:
             - { name: delivery_plan, optional: true }
             - { name: contract, optional: true }
             - { name: implementation_claims, optional: true }
+            - { name: findings_ledger }         # what is already raised, so a repeat names its ledger id (LOG 511); empty on the first pass
           produces:
             reviewed: [{ name: findings_report, type: std:artifact_types/findings_report }]
           verdicts: { reviewed: { accept: [implementation_claims] } }

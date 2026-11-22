@@ -73,6 +73,9 @@ public sealed class WorkflowTest
 
     /// <summary>Agent step id to execution to the texts its run context must contain when that execution starts (docs/04 section 3.5).</summary>
     public Dictionary<string, Dictionary<int, List<string>>> ExpectContext { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Step id to execution to the names of artifacts that must be staged for that execution when it starts (the ledger view included).</summary>
+    public Dictionary<string, Dictionary<int, List<string>>> ExpectConsumed { get; } = new(StringComparer.Ordinal);
 }
 
 public static class WorkflowTestReader
@@ -209,29 +212,37 @@ public static class WorkflowTestReader
                 foreach (var (key, _) in eq.Map.Entries)
                     if (eq.Enum(key.Text, QuestionEnds, required: true) is { } how)
                         test.ExpectQuestions[key.Text] = how;
-            if (MapReader.Of(expect.Node("context"), d, "expect.context") is { } ec)
-                foreach (var (key, value) in ec.Map.Entries)
-                {
-                    ec.Node(key.Text);
-                    if (MapReader.Of(value, d, $"expect.context.{key.Text}") is not { } byExecution)
-                        continue;
-                    var expected = test.ExpectContext[key.Text] = [];
-                    foreach (var (number, texts) in byExecution.Map.Entries)
-                    {
-                        byExecution.Node(number.Text);
-                        if (!int.TryParse(number.Text, out var execution) || execution < 1 || texts is not YSeq seq)
-                            byExecution.Error($"expect.context.{key.Text} maps an execution number to the texts its run context contains", number.Location);
-                        else
-                            expected[execution] = seq.Items.Select(i => (i as YScalar)?.Text ?? "").ToList();
-                    }
-
-                    byExecution.Finish();
-                }
+            ReadByExecution(expect, "context", "the texts its run context contains", test.ExpectContext, d);
+            ReadByExecution(expect, "consumed", "the artifacts staged for it", test.ExpectConsumed, d);
             expect.Finish();
         }
 
         r.Finish();
         return test;
+    }
+
+    /// <summary>An <c>expect</c> entry mapping a step id to an execution number to a list of texts.</summary>
+    static void ReadByExecution(MapReader expect, string field, string what, Dictionary<string, Dictionary<int, List<string>>> into, DiagnosticBag d)
+    {
+        if (MapReader.Of(expect.Node(field), d, $"expect.{field}") is not { } map)
+            return;
+        foreach (var (key, value) in map.Map.Entries)
+        {
+            map.Node(key.Text);
+            if (MapReader.Of(value, d, $"expect.{field}.{key.Text}") is not { } byExecution)
+                continue;
+            var expected = into[key.Text] = [];
+            foreach (var (number, texts) in byExecution.Map.Entries)
+            {
+                byExecution.Node(number.Text);
+                if (!int.TryParse(number.Text, out var execution) || execution < 1 || texts is not YSeq seq)
+                    byExecution.Error($"expect.{field}.{key.Text} maps an execution number to {what}", number.Location);
+                else
+                    expected[execution] = seq.Items.Select(i => (i as YScalar)?.Text ?? "").ToList();
+            }
+
+            byExecution.Finish();
+        }
     }
 
     public static readonly IReadOnlyList<string> OverrideKeys = ["breakpoint", "skip", "grant_attempts"];

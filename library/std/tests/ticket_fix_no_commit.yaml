@@ -1,0 +1,26 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: ticket_fix_no_commit
+description: >-
+  The fixer reports fixed but committed nothing (LOG 512). Nothing changed, so
+  there is no fix to verify: the step escalates to a person instead of going on
+  to the verifying reviewer.
+template: std:templates/ticket_delivery
+parameters: { ticket_id: FF-1045 }
+repositories: [acme/api]
+
+outputs:
+  verify.fix.fix: { commits: 0 }
+  "findings.open": 1
+  "findings.open_blocking": [1]
+
+expect:
+  status: running
+  path_includes:
+    - verify.fix.apply_triage
+    - verify.fix.fix
+  escalated: [verify.fix.fix]
+  executions:
+    verify.fix.fix: 1
+    verify.fix.verify_fix: 0
+    deliver.merge: 0

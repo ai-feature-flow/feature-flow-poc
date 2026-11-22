@@ -10,6 +10,7 @@ parameters: { ticket_id: FF-1042 }
 repositories: [acme/api]
 
 outputs:
+  verify.fix.fix: { commits: 1 }
   verify.fix.apply_triage: { escalated: 1, declined_blocking: 0 }
   "findings.open_blocking": [1, 0]
   "findings.open": 1

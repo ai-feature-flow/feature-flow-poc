@@ -41,7 +41,9 @@ steps:
   - id: tests
     action: test.run
     with: { tier_tags: { expr: "params.tier_tags" } }
-    produces: [{ name: test_results, type: std:artifact_types/test_results }]
+    produces:                                   # on both outcomes: a failure's results go to repair (LOG 512)
+      passed: [{ name: test_results, type: std:artifact_types/test_results }]
+      failed: [{ name: test_results, type: std:artifact_types/test_results }]
     routes:
       passed: analysis
       failed: repair
@@ -50,7 +52,9 @@ steps:
   - id: analysis
     action: analysis.run
     with: { fail_on: new_issues }
-    produces: [{ name: analysis_results, type: std:artifact_types/analysis_results }]
+    produces:
+      passed: [{ name: analysis_results, type: std:artifact_types/analysis_results }]
+      failed: [{ name: analysis_results, type: std:artifact_types/analysis_results }]
     routes:
       passed: review
       failed: repair

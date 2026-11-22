@@ -9,7 +9,7 @@ metadata:
     what is left open, with regression tests; a verifying reviewer checks each fix
     against its finding on the full diff; the fix is re-tested and its regression
     tests are validated as new and passing. The caller re-tests and re-reviews after the fixed exit;
-    the cleared exit, nothing open and no fixer run, changed no code, so the caller goes on to its merge bar.
+    the cleared exit, nothing open after the pass's triage and no fixer run in it, changed no code, so the caller goes on to its merge bar.
 
 parameters:
   fixer_task: { type: reference, default: std:tasks/fix_findings }
@@ -18,7 +18,7 @@ parameters:
 
 exits:
   fixed: success                        # nothing open after a fix: the caller re-tests and re-reviews
-  cleared: success                      # nothing open and no fixer has run: no code changed (LOG 503)
+  cleared: success                      # nothing open after the pass's triage, before any fixer: no code changed (LOG 503, 513)
   escalated: blocked
 
 defaults:
@@ -38,7 +38,7 @@ steps:
       role: std:roles/triager
       task: { param: triager_task }
       skills: [std:skills/review]
-    consumes: [{ name: findings_ledger }]
+    consumes: [{ name: findings_ledger }, { name: test_results, optional: true }]   # the engine's tests check a demonstrated claim (LOG 511)
     produces:
       triaged: [{ name: triage, type: std:artifact_types/triage }]
     outcomes: { triaged: success, blocked: blocked }
@@ -75,10 +75,8 @@ steps:
       applied:
         - when: "steps.apply_person_triage.outputs.escalated > 0"
           to: { exit: escalated }                 # the person escalates beyond this loop
-        - when: "findings.open == 0 && steps.fix.executions == 0"
-          to: { exit: cleared }                   # no fixer has run, so no code changed
         - when: "findings.open == 0"
-          to: { exit: fixed }                     # a fixer has run (in this pass or an earlier one): re-test to be safe
+          to: { exit: cleared }                   # the person is reached only before a fixer in this pass, so no code changed (LOG 513)
         - to: fix
       invalid: person_triage                      # names a finding the ledger does not hold: back to the person
 
@@ -94,12 +92,20 @@ steps:
       - { name: person_triage, optional: true }   # a person's decisions, over the triager's (LOG 248)
       - { name: implementation_claims, optional: true }
       - { name: fix_verification, optional: true }
-      - { name: fix_test_results, optional: true }
+      - { name: fix_test_results, optional: true }   # a failed re-test's results: what sent the fixer back (LOG 512)
+      - { name: fix_validation, optional: true }     # an invalid regression-test validation, likewise
     produces:
       fixed:
         - { name: fix_claims, type: std:artifact_types/evidence_claims }
         - { name: implementation_claims, type: std:artifact_types/evidence_claims }
     outcomes: { fixed: success, blocked: blocked }
+    routes:
+      fixed:                                      # LOG 512
+        - when: "steps.fix.outputs.commits == 0"
+          to: { escalate: true }                  # a fix that changed nothing: a person decides, rather than verifying nothing
+        - when: "findings.open == 0"
+          to: retest                              # sent back by the re-test or validation, not by a finding: nothing for verify_fix
+        - to: verify_fix
 
   - id: verify_fix
     agent:
@@ -121,19 +127,18 @@ steps:
 
   - id: record_fixes
     action: findings.triage
-    with: { from: fix_verification, states: [fixed, open] }
+    with: { from: fix_verification, states: [fixed, open] }   # never escalated or declined, so a person is reached only before a fixer (LOG 513)
     consumes: [{ name: fix_verification }]
     routes:
-      applied:                                    # as apply_triage: should states be widened, a person still decides
-        - when: "steps.record_fixes.outputs.escalated > 0 || steps.record_fixes.outputs.declined_blocking > 0"
-          to: person_triage
-        - to: retest
+      applied: retest
       invalid: verify_fix
 
   - id: retest                          # tests_added counts only tests the engine saw pass at the fixed head
     action: test.run
     with: { tier_tags: { expr: "params.tier_tags" } }
-    produces: [{ name: fix_test_results, type: std:artifact_types/test_results }]   # not test_results: verify.repair reads that
+    produces:                           # not test_results: verify.repair reads that. On both outcomes: a failure's results go back to the fixer
+      passed: [{ name: fix_test_results, type: std:artifact_types/test_results }]
+      failed: [{ name: fix_test_results, type: std:artifact_types/test_results }]
     routes:
       failed: fix
       baseline_failed: { exit: escalated }

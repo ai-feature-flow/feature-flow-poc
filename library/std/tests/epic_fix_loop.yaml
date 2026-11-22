@@ -13,6 +13,7 @@ repositories: [acme/api]
 expand:
   tickets.expand: [{ name: invoice_totals, repositories: [acme/api] }]
 outputs:
+  verify.fix.fix: { commits: 1 }
   "findings.open": 2                     # read when the triage is applied: findings left to fix
   "findings.open_blocking": [2, 0]
 

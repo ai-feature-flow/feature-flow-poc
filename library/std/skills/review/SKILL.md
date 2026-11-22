@@ -46,11 +46,19 @@ problem then give it the same rule, so it is matched as one finding.
 A finding that was fixed or declined reopens only if its code changed since
 (the std setting). Raising it again on unchanged code does not reopen it.
 
+A reviewer is given the ledger view. When it already holds the problem you
+found, in any state, name its ledger id in `same_as`: the engine then matches
+your finding to that one, whatever its rule or snippet.
+
+A review judges the code at `HEAD`, the net diff from the baseline commit. How
+the change got there (an intermediate commit later corrected, commit messages,
+their order) is not a finding unless the ticket asks for work on the history.
+
 ## What blocks
 
 | Basis | Meaning | Blocks a merge |
 |---|---|---|
-| `demonstrated` | You proved it: a failing test, a command and its output, or a criterion the change plainly does not meet. The proof goes in `proof` | Yes, `blocking: true` |
+| `demonstrated` | You proved it by running something: a failing test, or another command and its output. The command and output go in `proof` | Yes, `blocking: true` |
 | `reasoned` | You argue it from reading the code | No, `blocking: false`, whatever the severity |
 
 The merge bar in std is: no open blocking finding. A reasoned finding is
@@ -97,6 +105,7 @@ findings:                       # [] when there are none
     basis: reasoned             # demonstrated or reasoned
     proof: >-
       For demonstrated only: the failing test or command and its output.
+    same_as: F-0123456789       # only when the ledger already holds this problem: its ledger id
     location:
       repository: owner/name    # the repository named in the inputs manifest
       file: src/Example.cs

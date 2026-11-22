@@ -27,3 +27,6 @@ expect:
     - deliver.catch_up
     - deliver.merge
   executions: { implement: 1, deliver.merge: 1, verify.fix.fix: 0 }
+  consumed:                             # every reviewer is given the ledger, empty on the first pass (LOG 511)
+    verify.review.review_0.assess: { 1: [findings_ledger] }
+    verify.review.review_4.assess: { 1: [findings_ledger] }

@@ -177,6 +177,16 @@ public class WorkflowTestRunnerTests
     }
 
     [Fact]
+    public void An_artifact_not_staged_for_an_execution_fails_the_test()
+    {
+        // The first fixer has no re-test results yet: only a failed re-test's are staged for the second.
+        var result = RunVariant("ticket_fix_retest_failed", "verify.fix.fix: { 2: [fix_test_results] }", "verify.fix.fix: { 1: [fix_test_results] }");
+
+        Assert.False(result.Passed);
+        Assert.Contains(result.Failures, f => f.StartsWith("verify.fix.fix execution 1: 'fix_test_results' is not staged for it", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void A_misspelt_step_fails_the_test()
     {
         var result = RunVariant("ticket_fix_loop", "verify.fix.verify_fix: [not_fixed, verified]", "verify.fix.verifyfix: [not_fixed, verified]");

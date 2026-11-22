@@ -1,7 +1,8 @@
 # Repair the failing checks
 
 The engine's own test run, static analysis or claims check failed on this run's
-change. Make it pass without weakening what it checks.
+change. Make it pass without weakening what it checks. If `test_results` shows
+failures, make them pass: they are what sent you back.
 
 ## Inputs
 
@@ -20,12 +21,13 @@ change. Make it pass without weakening what it checks.
    plan.
 3. Run the affected tiers locally, where they can run in your sandbox (a tier
    with `targets: [ci]` runs only in CI; do not install a toolchain).
-4. Produce `claims.yaml` again, corrected where a claim was wrong.
-5. Commit everything; the checkout must be clean.
+4. Write `claims.yaml` again in your output folder, starting from
+   `implementation_claims` and corrected where a claim was wrong.
+5. Commit your changes to the code; the checkout must be clean.
 
 ## Report
 
 | Outcome | When | Artifacts |
 |---|---|---|
-| `repaired` | The cause of each failure is fixed and committed | `claims.yaml` as `implementation_claims` |
+| `repaired` | The cause of each failure is fixed and committed | `claims.yaml` in your output folder as `implementation_claims` |
 | `blocked` | A failure cannot be fixed within the plan, or comes from outside the change. Say which | None |

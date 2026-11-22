@@ -115,6 +115,7 @@ public static class WorkflowTestRunner
         var cleanUps = new List<string>();
         var tries = new Dictionary<(string, int), int>();
         var contexts = new Dictionary<(string, int), string?>();
+        var staged = new Dictionary<(string, int), List<string>>();
         var inputs = 0;
         while (true)
         {
@@ -126,6 +127,9 @@ public static class WorkflowTestRunner
                         // The run context as the core renders it into the agent's spec when this execution starts.
                         if (test.ExpectContext.ContainsKey(s.StepId))
                             contexts[(s.StepId, s.Execution)] = core.StepSpec(s.StepId).Spec?.Agent?.RunContext;
+                        // What the core resolves for the execution to consume as it starts: the artifacts the worker stages.
+                        if (test.ExpectConsumed.ContainsKey(s.StepId))
+                            staged[(s.StepId, s.Execution)] = core.Consumed(s.StepId).Where(c => c.LedgerView || c.Reference is not null).Select(c => c.Key).ToList();
                         queue.Add((s.StepId, s.Execution, null));
                         break;
                     case StartChild s:
@@ -251,7 +255,7 @@ public static class WorkflowTestRunner
 
         // Names are checked against every revision, since a patch may add steps.
         foreach (var id in test.Script.Keys.Concat(test.Outputs.Keys).Concat(test.Expand.Keys).Concat(test.ExpectExecutions.Keys)
-                     .Concat(test.Answers.Keys).Concat(test.Questions.Keys).Concat(test.ExpectContext.Keys).Concat(test.Overrides.Select(o => o.StepId)).Distinct())
+                     .Concat(test.Answers.Keys).Concat(test.Questions.Keys).Concat(test.ExpectContext.Keys).Concat(test.ExpectConsumed.Keys).Concat(test.Overrides.Select(o => o.StepId)).Distinct())
             if (!core.State.IdHistory.Contains(id))
                 failures.Add($"'{id}' is not a step of {test.Template} in any revision of the run");
 
@@ -278,6 +282,13 @@ public static class WorkflowTestRunner
                 else
                     foreach (var text in texts.Where(t => context?.Contains(t, StringComparison.Ordinal) != true))
                         failures.Add($"{id} execution {execution}: its run context does not contain '{text}': {context ?? "(none)"}");
+        foreach (var (id, byExecution) in test.ExpectConsumed)
+            foreach (var (execution, names) in byExecution)
+                if (!staged.TryGetValue((id, execution), out var keys))
+                    failures.Add($"{id} execution {execution} did not start, so what it consumes was not seen");
+                else
+                    foreach (var name in names.Where(n => !keys.Contains(n)))
+                        failures.Add($"{id} execution {execution}: '{name}' is not staged for it; it has [{string.Join(", ", keys)}]");
 
         CompareChecks(test, observedChecks, failures, patchDiagnostics);
         if (test.ExpectStatus is { } expected && expected != status)
