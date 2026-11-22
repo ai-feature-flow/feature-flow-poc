@@ -531,7 +531,7 @@ public sealed partial class RunCore
                 recordParent.Current!.Artifacts[name] = reference;
             Produce(step, recordParent, c.Artifacts);
             Trace("patch_to_parent", step.Id, toParent.Reason);
-            outbox.Add(new SendPatchToParent(step.Id, toParent));
+            outbox.Add(new SendPatchToParent(step.Id, toParent, step.Agent?.Planning?.Review == "required"));
             Finish(step, recordParent, c.Outcome, c.Summary);
             return ApplyResult.Ok;
         }

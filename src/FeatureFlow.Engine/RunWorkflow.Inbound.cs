@@ -3,7 +3,10 @@ using Temporalio.Workflows;
 
 namespace FeatureFlow.Engine;
 
-/// <summary>Inbound wakes (<c>RunWorkflowNames.Wake</c>, <c>WakeSignal</c>): an event ends a wait's delay early; the wait reads again to confirm. M7, W3.</summary>
+/// <summary>
+/// Inbound wakes (<c>RunWorkflowNames.Wake</c>, <c>WakeSignal</c>): an event ends a wait's delay early; the wait reads again to
+/// confirm. M7, W3. And the agent endpoint's queries of the plan (design note s3), which change nothing.
+/// </summary>
 public partial class RunWorkflow
 {
     /// <summary>Waits a wake has cancelled, by step, with the activity's token and what woke them, until the cancellation lands.</summary>
@@ -34,6 +37,21 @@ public partial class RunWorkflow
 
         return Task.CompletedTask;
     }
+
+    /// <summary>Query <c>agent_plan</c>: the plan as an agent step may see it (<see cref="Interpreter.RunCore.AgentPlan"/>). Pure.</summary>
+    [WorkflowQuery(RunWorkflowNames.AgentPlan)]
+    public AgentPlanView AgentPlan(AgentPlanQuery query) =>
+        core?.AgentPlan(query) ?? Interpreter.RunCore.PlanUnavailable(input.RunId, "the run is starting");
+
+    /// <summary>Query <c>patch_preview</c>: what the core would do now with an agent step's patch (<see cref="Interpreter.RunCore.PreviewPatch"/>). Pure.</summary>
+    [WorkflowQuery(RunWorkflowNames.PatchPreview)]
+    public PatchPreview PatchPreview(PatchPreviewQuery query) =>
+        core?.PreviewPatch(query) ?? Interpreter.RunCore.PreviewUnavailable(0, "the run is starting");
+
+    /// <summary>Query <c>child_patch_preview</c>: what the core would do now with a running child's patch (<see cref="Interpreter.RunCore.PreviewChildPatch"/>). Pure.</summary>
+    [WorkflowQuery(RunWorkflowNames.ChildPatchPreview)]
+    public PatchPreview ChildPatchPreview(ChildPatchPreviewQuery query) =>
+        core?.PreviewChildPatch(query) ?? Interpreter.RunCore.PreviewUnavailable(0, "the run is starting");
 
     /// <summary>Why a step's activity was interrupted: a wake, if one cancelled this very activity; otherwise a hand-over (LOG 139).</summary>
     string InterruptionReason(string stepId, CancellationTokenSource token) =>

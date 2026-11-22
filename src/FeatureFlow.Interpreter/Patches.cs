@@ -70,7 +70,7 @@ public sealed partial class RunCore
         if (StepById(input.ChildStepId) is not { Descriptor.Handling: ActionHandling.ChildRun })
             return ApplyResult.Refused($"{input.ChildStepId} is not a run.child step of plan revision {State.Revision}");
         var patch = input.Patch with { ProposedBy = new Proposer("agent", input.ProposerStepId) };
-        var result = Propose(patch, null, fromChild: true, childStepId: input.ChildStepId);
+        var result = Propose(patch, null, fromChild: true, childStepId: input.ChildStepId, reviewRequired: input.ReviewRequired);
         if (result.Status == PatchStatus.Applied && patch.ResumeAt is { } at && FindIn(at) is { } resume)
             State.Pending.Add(new Entry(resume, false));
         return new ApplyResult(true, [], result);
@@ -137,14 +137,45 @@ public sealed partial class RunCore
     /// role only as <c>change_role</c> (<paramref name="roleChange"/>).
     /// </summary>
     PatchResult Propose(PatchDocument patch, Step? proposer, bool approved = false, bool fromChild = false, string? childStepId = null,
-        bool mayTouchProtected = true, bool roleChange = false)
+        bool mayTouchProtected = true, bool roleChange = false, bool reviewRequired = false)
+    {
+        var (d, next, reasons) = CheckPatch(patch, proposer, approved, fromChild, mayTouchProtected, roleChange, reviewRequired);
+        if (d.HasErrors)
+            return Reject(patch, d);
+
+        if (reasons.Count > 0)
+        {
+            foreach (var reason in reasons)
+                d.Add(Checks.PatchProtected, reason, patch.Location, proposer?.Id);
+            var waitStep = fromChild ? childStepId ?? "" : proposer?.Id ?? "";
+            var wait = AddWait(new OpenWait(NewWaitId("patch_approval"), WaitKind.PatchApproval, waitStep, null, string.Join("; ", reasons), patch, fromChild));
+            Trace("patch_pending", waitStep, string.Join("; ", reasons));
+            outbox.Add(new RequestPatchApproval(wait.Id, patch));
+            return new PatchResult(PatchStatus.Pending, d);
+        }
+
+        State.Patches.Add(patch);
+        SetPlan(next!);
+        foreach (var step in Plan.AllSteps)
+            State.IdHistory.Add(step.Id);
+        Trace("patch_applied", proposer?.Id ?? "", $"revision {State.Revision}, by {patch.ProposedBy.Type}");
+        return new PatchResult(PatchStatus.Applied, d);
+    }
+
+    /// <summary>
+    /// The checks of <see cref="Propose"/> without its effects: the diagnostics (any error refuses the patch), the plan after
+    /// it, and why a person must approve it (check 29; empty when it applies). Changes no state, so a preview calls it alone.
+    /// <paramref name="reviewRequired"/> is a child's proposing step's <c>planning.review: required</c>, which the parent applies.
+    /// </summary>
+    (DiagnosticBag Diagnostics, Plan? Next, IReadOnlyList<string> Pending) CheckPatch(PatchDocument patch, Step? proposer, bool approved = false,
+        bool fromChild = false, bool mayTouchProtected = true, bool roleChange = false, bool reviewRequired = false)
     {
         var human = patch.ProposedBy.Type == "human";
         var d = new DiagnosticBag();
         if (libraries is null || template is null)
         {
             d.Add(Checks.PatchLoadChecks, "this run has no template to load the patched plan from");
-            return Reject(patch, d);
+            return (d, null, []);
         }
 
         if (patch.BaseRevision != State.Revision)
@@ -155,7 +186,7 @@ public sealed partial class RunCore
             CheckRoleUnchanged(patch, d);
         CheckRunning(patch, proposer, d);
         if (d.HasErrors)
-            return Reject(patch, d);
+            return (d, null, []);
 
         var loaded = new DiagnosticBag();
         var next = Load(libraries, template, Run, State.Patches.Append(patch).ToList(), loaded);
@@ -197,25 +228,10 @@ public sealed partial class RunCore
                 d.Add(Checks.PatchProtected, $"{reason}: a person's patch to protected content needs {Model.Overrides.AmendProtected}", patch.Location);
 
         if (d.HasErrors)
-            return Reject(patch, d);
+            return (d, next, []);
 
-        if (!approved && patch.ProposedBy.Type == "agent" && PendingReasons(patch, proposer, next!).ToList() is { Count: > 0 } reasons)
-        {
-            foreach (var reason in reasons)
-                d.Add(Checks.PatchProtected, reason, patch.Location, proposer?.Id);
-            var waitStep = fromChild ? childStepId ?? "" : proposer?.Id ?? "";
-            var wait = AddWait(new OpenWait(NewWaitId("patch_approval"), WaitKind.PatchApproval, waitStep, null, string.Join("; ", reasons), patch, fromChild));
-            Trace("patch_pending", waitStep, string.Join("; ", reasons));
-            outbox.Add(new RequestPatchApproval(wait.Id, patch));
-            return new PatchResult(PatchStatus.Pending, d);
-        }
-
-        State.Patches.Add(patch);
-        SetPlan(next!);
-        foreach (var step in Plan.AllSteps)
-            State.IdHistory.Add(step.Id);
-        Trace("patch_applied", proposer?.Id ?? "", $"revision {State.Revision}, by {patch.ProposedBy.Type}");
-        return new PatchResult(PatchStatus.Applied, d);
+        var reasons = !approved && patch.ProposedBy.Type == "agent" ? PendingReasons(patch, proposer, next!, fromChild, reviewRequired).ToList() : [];
+        return (d, next, reasons);
     }
 
     PatchResult Reject(PatchDocument patch, DiagnosticBag d)
@@ -305,10 +321,12 @@ public sealed partial class RunCore
     }
 
     /// <summary>
-    /// Check 29: an agent's patch that touches protected content, adds or changes a step to use an unlisted role (F10), or
-    /// must be reviewed: the step's <c>planning.review: required</c>, or the organisation's <c>planning.require_review</c>.
+    /// Check 29: an agent's patch that touches protected content, adds or changes a step to use an unlisted role (F10) or a
+    /// <c>run.child</c> to start a template not in the proposer's <c>planning.templates</c>, or must be reviewed: the proposing
+    /// step's <c>planning.review: required</c> (a child's, carried as <paramref name="reviewRequired"/>), or the organisation's
+    /// <c>planning.require_review</c>.
     /// </summary>
-    IEnumerable<string> PendingReasons(PatchDocument patch, Step? proposer, Plan next)
+    IEnumerable<string> PendingReasons(PatchDocument patch, Step? proposer, Plan next, bool fromChild = false, bool reviewRequired = false)
     {
         foreach (var reason in ProtectedReasons(patch, next, proposer?.Id))
             yield return reason;
@@ -316,11 +334,37 @@ public sealed partial class RunCore
             if (RoleOf(op.Step) is { } role && Options.AllowedRoles is { } allowed
                 && !allowed.Contains(LibraryReference.TryParse(role)?.Name ?? role))
                 yield return $"{op.Op} uses role {role}, which is not in planning.allowed_roles";
+        if (!fromChild)
+            foreach (var reason in TemplateReasons(next, proposer?.Agent?.Planning?.Templates ?? []))
+                yield return reason;
 
-        if (proposer?.Agent?.Planning?.Review == "required")
-            yield return $"{proposer.Id} has planning.review: required";
+        var by = patch.ProposedBy.StepId ?? "the proposer";
+        if (fromChild ? reviewRequired : proposer?.Agent?.Planning?.Review == "required")
+            yield return fromChild ? $"{by} (in the child run) has planning.review: required" : $"{proposer!.Id} has planning.review: required";
         else if (Options.RequireReview)
             yield return "the organisation requires review of agent patches for this template (planning.require_review)";
+    }
+
+    /// <summary>
+    /// The <c>run.child</c> steps a patch adds, or whose <c>template</c> it changes, that start a template not in
+    /// <paramref name="granted"/> (the proposer's <c>planning.templates</c>): a person decides, as for an unlisted role (F10). A
+    /// template that is not a literal reference is unlisted. A child's patch is not held to it: the parent does not hold the
+    /// child step's grant, and consented to the child by starting its template (design note s4).
+    /// </summary>
+    IEnumerable<string> TemplateReasons(Plan next, IReadOnlyList<ItemRef> granted)
+    {
+        static YNode? TemplateOf(Step s) => s.Descriptor?.Handling == ActionHandling.ChildRun ? s.With?["template"] : null;
+        foreach (var step in next.AllSteps)
+        {
+            if (TemplateOf(step) is not { } node)
+                continue;
+            var text = YamlWriter.Write(node);
+            if (StepById(step.Id) is { } before && TemplateOf(before) is { } was && YamlWriter.Write(was) == text)
+                continue;
+            var reference = node.ScalarText() is { } scalar ? LibraryReference.TryParse(scalar) : null;
+            if (reference is null || !granted.Any(g => g.Reference == reference))
+                yield return $"{step.Id} starts template {node.ScalarText() ?? text.Trim()}, which is not in planning.templates";
+        }
     }
 
     /// <summary>
@@ -334,6 +378,9 @@ public sealed partial class RunCore
         foreach (var op in patch.Changes)
             if (StepById(op.Target) is { Protected: true } target && (op.Op != "insert" || op.Position == "after"))
                 yield return $"{op.Op} touches protected step {target.Id} (F3)";
+        // A step added inside protected content (a protected fragment, parallel or chain) changes it, whatever the operation.
+        foreach (var added in next.AllSteps.Where(s => StepById(s.Id) is null && InsideProtected(next, s)))
+            yield return $"adds {added.Id} inside protected content (F3)";
 
         var before = Positions().Concat(proposerId is null ? [] : [proposerId]).ToList();
         // The proposer stays a way on: its routes are how the run leaves it whenever it runs again.
@@ -342,6 +389,20 @@ public sealed partial class RunCore
             after.Add(resume);
         foreach (var left in StillToRun(Plan, before).Except(StillToRun(next, after)))
             yield return $"leaves protected step {left} unrun (F3)";
+    }
+
+    /// <summary>
+    /// Whether a step is protected content: protected itself (the loader marks a step in a protected fragment so), or inside a
+    /// protected parallel or chain.
+    /// </summary>
+    static bool InsideProtected(Plan plan, Step step)
+    {
+        if (step.Protected)
+            return true;
+        for (var scope = step.Scope; scope is not null; scope = scope.Parent)
+            if (scope.ContainerId is { } id && plan.AllSteps.FirstOrDefault(s => s.Id == id) is { Protected: true })
+                return true;
+        return false;
     }
 
     /// <summary>Where the run is: steps entered and not started, steps running, steps waiting for a person, and parallels that have started.</summary>

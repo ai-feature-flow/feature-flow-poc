@@ -1,0 +1,28 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: planning_parent
+  level: epic
+  description: >-
+    Starts a child whose planner proposes a patch to this run's plan, then works
+    (scripted to take its time) so the patch's approval opens while the run goes on
+    (agent planning, design note s4).
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: kid
+    action: run.child
+    with:
+      template: m6:templates/planning_child
+      repositories: [acme/api]
+    routes: { completed: work }
+
+  - id: work
+    agent:
+      role: std:roles/implementer
+      task: m6:tasks/note
+    outcomes: { written: success }
+    routes: { written: { end: completed } }

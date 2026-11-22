@@ -158,6 +158,65 @@ public class WorkflowTestRunnerTests
         }
     }
 
+    /// <summary>An agent's patch that nothing holds for a person (<c>review: auto</c>, nothing protected) applies, and the step it inserts runs.</summary>
+    [Fact]
+    public void An_agents_patch_with_review_auto_applies_and_its_inserted_step_runs()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"ff-patch-applies-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(root, "templates"));
+        Directory.CreateDirectory(Path.Combine(root, "tests"));
+        File.WriteAllText(Path.Combine(root, "library.yaml"), "name: probe\nversion: 0.1.0\n");
+        File.WriteAllText(Path.Combine(root, "templates", "planned.yaml"), """
+            api_version: feature-flow/v1
+            kind: template
+            metadata: { name: planned, level: ticket }
+            defaults:
+              routes:
+                by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+            steps:
+              - id: plan
+                agent:
+                  role: std:roles/planner
+                  task: std:tasks/repair_failures
+                  planning: { targets: [self], review: auto }
+                outcomes: { planned: success, blocked: blocked }
+                routes: { planned: ship }
+              - id: ship
+                action: artifact.compose
+                with: { name: release, members: [team] }
+                routes: { composed: { end: completed } }
+            """);
+        var test = Path.Combine(root, "tests", "planned_patch.yaml");
+        File.WriteAllText(test, """
+            api_version: feature-flow/v1
+            kind: workflow_test
+            name: planned_patch
+            template: probe:templates/planned
+            patch:
+              api_version: feature-flow/v1
+              kind: patch
+              metadata: { proposed_by: { type: agent, step_id: plan }, reason: test }
+              base_revision: 1
+              resume_at: notice
+              changes:
+                - { op: insert, before: ship, step: { id: notice, action: artifact.compose, with: { name: notice, members: [team] }, routes: { composed: ship } } }
+            expect:
+              status: completed
+              path: [plan, notice, ship]
+            """);
+        try
+        {
+            var result = WorkflowTestRunner.RunPath(test, [Path.Combine(Repository.Root, "library", "std")]).Single();
+
+            Assert.True(result.Passed, string.Join("\n", result.Failures));
+            Assert.Contains(result.Trace, t => t is { Kind: "patch_applied", Detail: "revision 2, by agent" });
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public void A_wrong_status_fails_the_test()
     {
