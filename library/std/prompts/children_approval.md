@@ -12,6 +12,10 @@ Check:
   least one.
 - Dependencies between units are stated, so ordering is right.
 - Repositories are right for each unit.
+- Where this is a revision, each document's `changes` lists what changed since
+  the last plan and why. Units whose item is unchanged keep their result; a
+  changed or new item runs as a new child, and a unit no longer listed does not
+  run.
 
 | Answer | Effect |
 |---|---|

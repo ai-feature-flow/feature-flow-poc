@@ -440,7 +440,9 @@ section 8).
 An agent cannot propose a patch in version 1: the engine serves no
 `inspect_plan` or `propose_patch` tool (LOG 264). The core's patch path
 (`docs/03` section 10) takes `plan.expand`'s patches and a person's `amend`;
-`planning` on an agent step loads but gives the agent nothing. Only the
+`planning` on an agent step loads but gives the agent nothing. It makes the
+step a target for a person's `replan` recovery (`docs/01` section 7.2), which is
+why std's planner and designer steps have it (LOG 509). Only the
 `scripted` and `recording` test runtimes send an agent's patch or library
 override, so workflow tests can exercise the core's path.
 

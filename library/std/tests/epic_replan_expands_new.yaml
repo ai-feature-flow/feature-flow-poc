@@ -1,0 +1,35 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: epic_replan_expands_new
+description: >-
+  One of two tickets fails and the children's join escalates. A person answers
+  with replan at the ticket planner (LOG 509). Its second work list keeps the two
+  tickets and adds a third, so expanding again adds only the new branch
+  (docs/03 section 10.4). The failed ticket and the new one run; the ticket that
+  passed is not re-run and keeps its result for the join.
+template: std:templates/epic_delivery
+parameters: { epic_name: billing, engine_can_merge: true }
+repositories: [acme/api]
+
+expand:
+  tickets.expand:
+    - - { name: invoice_totals, repositories: [acme/api] }
+      - { name: invoice_export, repositories: [acme/api] }
+    - - { name: invoice_totals, repositories: [acme/api] }
+      - { name: invoice_export, repositories: [acme/api] }
+      - { name: invoice_audit, repositories: [acme/api] }
+script:
+  tickets.children_1: [failed, completed]
+answers:
+  tickets.children: { replan: tickets.plan }
+
+expect:
+  status: completed
+  path_includes: [tickets.plan, tickets.expand, tickets.plan, tickets.approve, tickets.expand, verify.tests, deliver.merge]
+  executions:
+    tickets.plan: 2
+    tickets.expand: 2
+    tickets.children_0: 1
+    tickets.children_1: 2
+    tickets.children_2: 1
+    deliver.merge: 1

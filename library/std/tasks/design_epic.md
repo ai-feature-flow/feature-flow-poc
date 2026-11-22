@@ -12,6 +12,7 @@ current code, and the epic's own requirements document. You change no code.
 | `requirements` from the parent, when present | The project's top-level requirements, which yours support |
 | The epic's tracker issue, `/ff/inputs/ticket.md`, when there is one | The ask, in the requester's words |
 | Earlier design and findings, when present | Why a previous design was sent back |
+| `previous/requirements` and `previous/contract`, when present | Your last design: this execution revises it |
 
 ## Procedure
 
@@ -31,6 +32,12 @@ current code, and the epic's own requirements document. You change no code.
    direction, public and internal contracts, data and control flow, failure
    handling, and the material decisions with the alternatives rejected. Justify
    each boundary; do not add layers only to match a pattern.
+4. **Revising a design.** When `previous/...` inputs are present, start from
+   them. Keep what still stands, with its ids. Change what the problem requires
+   (the validation report, or a person's reason in the run context), adding
+   requirements as needed. Never drop one only to get past the problem. List
+   what changed and why in `requirements.yaml`'s `changes` and in `design.md`'s
+   front matter as `changes`; leave both out of a first design.
 
 ## Report
 

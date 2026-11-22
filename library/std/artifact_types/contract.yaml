@@ -6,6 +6,8 @@ metadata:
     A parent's technical design and interface contract for its children: the
     project architecture, or an epic's design. Children consume it with
     from: parent; a ratified contract is their authority (docs/01 section 5.3).
+    On a revision only, the front matter may list `changes`: what changed from
+    the previous revision, and why (LOG 508).
 
 format: markdown
 evidence: false

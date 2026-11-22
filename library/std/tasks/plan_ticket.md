@@ -14,6 +14,9 @@ will be verified. You change no code.
 | `contract` from the parent, when present | The epic's design: the boundary you plan within |
 | `baseline_test_results` | Which test tiers this repository actually runs and parses |
 | `plan_validation`, when present | Why your previous plan failed validation |
+| `previous/requirements` and `previous/delivery_plan`, when present | Your last plan: this execution revises it |
+| `implementation_claims`, when present | What the implementer claimed before it stopped |
+| The run context, when you are revising | Why the plan came back: an implementer's `blocked` summary, a person's reason for rejecting it, or a person's re-plan |
 
 ## Procedure
 
@@ -36,8 +39,12 @@ will be verified. You change no code.
    verification method: `kind: parsed_test`, this repository, a tier from step 2,
    `semantic_review: required`. Do not name tests: the implementer maps tests to
    methods later.
-5. On rework, keep ids stable unless the required behaviour changed. Do not drop
-   requirements or criteria only to pass validation.
+5. **Revising a plan.** When `previous/...` inputs are present, start from them.
+   Keep what still stands, with its ids. Change what the problem requires (the
+   latest `blocked` summary in the run context, the implementer's claims, the
+   validation report or a person's reason), adding requirements or criteria as
+   needed. Never drop one only to get past the problem. List in each document's
+   `changes` what changed and why; leave `changes` out of a first plan.
 
 ## Report
 

@@ -14,6 +14,9 @@ Check:
   repository can run and parse.
 - Where the ticket belongs to an epic, the criteria it copied from the epic keep
   their meaning.
+- Where this is a revision, each document's `changes` lists what changed since
+  the last plan and why. Check that the changes answer the problem that sent the
+  plan back, and that nothing was dropped only to get past it.
 
 | Answer | Effect |
 |---|---|

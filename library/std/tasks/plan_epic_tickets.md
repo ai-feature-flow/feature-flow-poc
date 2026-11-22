@@ -11,6 +11,7 @@ agent in between.
 | `requirements` | The epic's requirements, from its design step |
 | `contract` | The epic's design: the tickets deliver it |
 | Earlier work list and validation reports, when present | Why a previous plan was sent back |
+| `previous/work_list` and `previous/child_requirements`, when present | Your last plan: this execution revises it |
 
 ## Procedure
 
@@ -33,8 +34,14 @@ agent in between.
 5. Write `work_list.yaml` with `level: ticket` and one item per ticket. In each
    item's `owns`, list the criteria it owns. Put the tracker key in
    `tracker_issue` where you created or found one.
-6. On rework after a ticket failed, change only that ticket and what depends on
-   it. Keep criterion ids stable and completed tickets' boundaries unchanged.
+6. **Revising a plan.** When `previous/...` inputs are present, start from them.
+   Keep what still stands: ticket names, criterion ids and completed tickets'
+   boundaries. Change only what the problem requires (a failed ticket, the
+   validation report or a person's reason in the run context) and what depends
+   on it, adding tickets or criteria as needed. A ticket whose item is unchanged
+   is not run again; a changed or new item runs as a new ticket. Never drop a
+   criterion only to get past the problem. List in each document's `changes`
+   what changed and why; leave `changes` out of a first plan.
 
 ## Report
 

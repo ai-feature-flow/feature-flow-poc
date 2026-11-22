@@ -107,7 +107,7 @@ its form (`docs/01` section 2.1). A list entry may instead be `parallel`,
 | `skills` | Library skills, mounted for the agent to read on demand. Added to the role's |
 | `write_access` | `none`, `branch` or `repository`. Tightens only |
 | `context` | `full` (default): the agent is given the run's step summaries. `none`: it is not, so a reviewer judges independently (from FF) |
-| `planning` | Loads (`targets`, `templates`, `review`), but gives the agent nothing in version 1: an agent cannot propose a patch (`docs/04` section 6.1). A recovery's re-plan names a step that has it (`docs/01` section 7.2) |
+| `planning` | Loads (`targets`, `templates`, `review`), but gives the agent nothing in version 1: an agent cannot propose a patch (`docs/04` section 6.1). A recovery's re-plan names a step that has it (`docs/01` section 7.2); std's planners and designer have it (LOG 509) |
 | `push` | Default `true`. `false`: the agent's commits are not pushed (scratch work) |
 | `on_uncommitted` | `commit` (default) or `fail`: what to do with changes left uncommitted at the end |
 
@@ -517,6 +517,9 @@ The parent may also consume the child's artifacts (`from: { child: <id> }`).
 Not in version 1: an agent cannot propose a patch (`docs/04` section 6.1), so a
 child cannot change its parent's plan. The core would apply a patch a child
 sends through the same path as any patch (section 10), but nothing sends one.
+A person can: a re-plan at the parent's planner revises the work list, and
+expanding it again adds only the new or changed children (section 10.4,
+LOG 509).
 
 ---
 

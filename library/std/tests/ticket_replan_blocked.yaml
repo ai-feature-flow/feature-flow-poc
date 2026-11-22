@@ -1,0 +1,20 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: ticket_replan_blocked
+description: >-
+  The implementer reports blocked once. The route goes back to the planner
+  (LOG 507), which revises its last plan: its second execution consumes the
+  previous requirements and delivery plan (LOG 508). The revised plan is
+  validated and approved, the implementer runs again and the ticket merges.
+template: std:templates/ticket_delivery
+parameters: { ticket_id: FF-1042 }
+repositories: [acme/api]
+
+script:
+  implement: [blocked, implemented]
+
+expect:
+  status: completed
+  path_includes: [plan.plan, approve_spec, implement, plan.plan, plan.validate, approve_spec, implement, deliver.merge]
+  executions: { plan.plan: 2, approve_spec: 2, implement: 2 }
+  consumed: { plan.plan: { 2: [previous/requirements, previous/delivery_plan] } }

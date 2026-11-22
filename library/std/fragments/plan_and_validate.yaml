@@ -33,6 +33,7 @@ steps:
       role: std:roles/planner
       task: { param: planner_task }
       skills: [std:skills/verification]
+      planning: { targets: [self], review: required }   # so a person's replan is accepted (LOG 509)
     with: { subject_id: { expr: "params.subject_id" } }
     consumes:
       - { name: child_requirements, from: parent, optional: true }
@@ -40,6 +41,9 @@ steps:
       - { name: requirements, from: parent, optional: true }
       - { name: baseline_test_results, optional: true }
       - { name: plan_validation, optional: true }
+      - { name: requirements, from: previous, optional: true }      # a revision starts from the last plan (LOG 508)
+      - { name: delivery_plan, from: previous, optional: true }
+      - { name: implementation_claims, optional: true }             # the implementer's claims, when it got that far
     produces:
       planned:
         - { name: requirements, type: std:artifact_types/requirements }
