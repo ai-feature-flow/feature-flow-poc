@@ -80,6 +80,12 @@ steps:
       tier_tags: { expr: "params.tier_tags" }
     routes:
       fixed: tests                                # re-test and re-review after every fix
+      cleared:                                    # nothing open and no code changed: on from the merge bar, untested again
+        - when: "findings.repeat_fixes > 0"
+          to: { exit: escalated }
+        - when: "params.check_satisfaction"
+          to: satisfaction
+        - to: { exit: ready }
       escalated: { exit: escalated }
 
   - id: satisfaction

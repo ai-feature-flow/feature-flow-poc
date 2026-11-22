@@ -8,7 +8,8 @@ metadata:
     who triages in a decision (any state, recorded as that person); a fixer fixes
     what is left open, with regression tests; a verifying reviewer checks each fix
     against its finding on the full diff; the fix is re-tested and its regression
-    tests are validated as new and passing. The caller re-tests and re-reviews after the fixed exit.
+    tests are validated as new and passing. The caller re-tests and re-reviews after the fixed exit;
+    the cleared exit, nothing open and no fixer run, changed no code, so the caller goes on to its merge bar.
 
 parameters:
   fixer_task: { type: reference, default: std:tasks/fix_findings }
@@ -16,7 +17,8 @@ parameters:
   tier_tags: { type: array, default: [] }
 
 exits:
-  fixed: success
+  fixed: success                        # nothing open after a fix: the caller re-tests and re-reviews
+  cleared: success                      # nothing open and no fixer has run: no code changed (LOG 503)
   escalated: blocked
 
 defaults:
@@ -50,7 +52,7 @@ steps:
         - when: "steps.apply_triage.outputs.escalated > 0 || steps.apply_triage.outputs.declined_blocking > 0"
           to: person_triage                       # a person decides an escalation or a declined blocking or demonstrated finding
         - when: "findings.open == 0"
-          to: { exit: fixed }
+          to: { exit: cleared }                   # the loop's first decision: nothing has been fixed in this pass
         - to: fix
       invalid: triage                             # names a finding the ledger does not hold: back to its producer
 
@@ -73,8 +75,10 @@ steps:
       applied:
         - when: "steps.apply_person_triage.outputs.escalated > 0"
           to: { exit: escalated }                 # the person escalates beyond this loop
+        - when: "findings.open == 0 && steps.fix.executions == 0"
+          to: { exit: cleared }                   # no fixer has run, so no code changed
         - when: "findings.open == 0"
-          to: { exit: fixed }
+          to: { exit: fixed }                     # a fixer has run (in this pass or an earlier one): re-test to be safe
         - to: fix
       invalid: person_triage                      # names a finding the ledger does not hold: back to the person
 
