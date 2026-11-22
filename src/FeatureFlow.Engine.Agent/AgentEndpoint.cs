@@ -37,10 +37,15 @@ public sealed class TemporalRunSignals(ITemporalClient client) : IRunSignals
         client.GetWorkflowHandle(workflowId).SignalAsync(RunWorkflowNames.ModelUnreachable, [signal], new WorkflowSignalOptions { Rpc = new RpcOptions { CancellationToken = cancellationToken } });
 
     public Task<AgentPlanView> PlanAsync(string workflowId, AgentPlanQuery query, CancellationToken cancellationToken) =>
-        throw new NotImplementedException();
+        client.GetWorkflowHandle(workflowId).QueryAsync<AgentPlanView>(RunWorkflowNames.AgentPlan, [query], new WorkflowQueryOptions { Rpc = new RpcOptions { CancellationToken = cancellationToken } });
 
     public Task<PatchPreview> PreviewAsync(string workflowId, object query, CancellationToken cancellationToken) =>
-        throw new NotImplementedException();
+        client.GetWorkflowHandle(workflowId).QueryAsync<PatchPreview>(query switch
+        {
+            PatchPreviewQuery => RunWorkflowNames.PatchPreview,
+            ChildPatchPreviewQuery => RunWorkflowNames.ChildPatchPreview,
+            _ => throw new ArgumentException($"no preview query takes a {query.GetType().Name}", nameof(query)),
+        }, [query], new WorkflowQueryOptions { Rpc = new RpcOptions { CancellationToken = cancellationToken } });
 }
 
 /// <summary>
@@ -59,7 +64,7 @@ public sealed record AgentEndpointServices(StepTokens Tokens, IRecordStoreProvid
 /// sandbox client forwards, and the model proxy. Every call carries the step's token; a replica keeps nothing in
 /// memory, so any replica serves any step from the token and the record store.
 /// </summary>
-public static class AgentEndpoint
+public static partial class AgentEndpoint
 {
     /// <summary>The endpoint's JSON: the web defaults (camelCase), which the sandbox client reads.</summary>
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -101,6 +106,16 @@ public static class AgentEndpoint
         app.MapGet("/agent/v1/questions/{id}", async (HttpContext http, string id, int? wait) =>
             await Authorised(http, s, async claims =>
                 Results.Json(await PollQuestionAsync(s, claims, id, TimeSpan.FromSeconds(Math.Clamp(wait ?? 25, 0, 55)), http.RequestAborted), Json)));
+
+        app.MapGet("/agent/v1/plan", async (HttpContext http, string? target) =>
+            await Authorised(http, s, async claims => Results.Json(await InspectPlanAsync(s, claims, target ?? Self, http.RequestAborted), Json)));
+
+        app.MapPost("/agent/v1/patches", (Func<HttpContext, Task<IResult>>)(async http =>
+            await Authorised(http, s, async claims =>
+            {
+                var input = await JsonDocument.ParseAsync(http.Request.Body, cancellationToken: http.RequestAborted);
+                return Results.Json(await ProposePatchAsync(s, claims, input.RootElement, http.RequestAborted), Json);
+            })));
 
         app.Map("/model/{**path}", async (HttpContext http, string? path) =>
         {
@@ -157,10 +172,20 @@ public static class AgentEndpoint
         return token?.StartsWith(EngineEndpoints.GitHubTokenPrefix, StringComparison.Ordinal) == true ? token[EngineEndpoints.GitHubTokenPrefix.Length..] : token;
     }
 
-    static async Task<IResult> Authorised(HttpContext http, AgentEndpointServices s, Func<StepClaims, Task<IResult>> handle) =>
-        s.Tokens.Check(Bearer(http)) is { } claims && await ActiveAsync(s, claims)
-            ? await handle(claims)
-            : Results.Json(new { error = "unknown or revoked step token" }, Json, statusCode: 401);
+    static async Task<IResult> Authorised(HttpContext http, AgentEndpointServices s, Func<StepClaims, Task<IResult>> handle)
+    {
+        if (s.Tokens.Check(Bearer(http)) is not { } claims || !await ActiveAsync(s, claims))
+            return Results.Json(new { error = "unknown or revoked step token" }, Json, statusCode: 401);
+        try
+        {
+            return await handle(claims);
+        }
+        catch (EngineFaultException e)
+        {
+            // LOG 60: the client retries, then ends the session resumably; the agent is not told.
+            return Results.Json(new { error = e.Message }, Json, statusCode: 503);
+        }
+    }
 
     /// <summary>A token works only while its step attempt is recorded and not ended: the activity revokes it at the end.</summary>
     public static async Task<bool> ActiveAsync(AgentEndpointServices s, StepClaims claims) =>
@@ -210,6 +235,8 @@ public static class AgentEndpoint
             : [];
         var report = input.TryGetProperty("report", out var r) ? r : input;
         var (checkedReport, errors) = ReportCheck.Check(report, step.Contract, missing);
+        if (checkedReport is { } passed)
+            (checkedReport, errors) = await WithStagedPatchAsync(s, claims, passed, cancellationToken);
         var record = new ReportRecord(claims.StepKey, reports.Count + 1, checkedReport is not null, checkedReport, errors, DateTimeOffset.UtcNow);
         await AppendAsync(s, new RecordBatch(Reports: [record]));
         if (checkedReport is not null)

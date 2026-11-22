@@ -487,7 +487,36 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                 text.Append('\n').Append(causes.TrimEnd()).Append('\n');
             if (spec.RunContext is { } context)
                 text.Append('\n').Append(context.TrimEnd()).Append('\n');
+            if (spec.Planning is { } planning)
+                text.Append('\n').Append(PlanningAuthority(planning)).Append('\n');
             text.Append('\n').Append(call.Agent!.TaskText ?? $"Do the work of the {call.What} role.");
+            return text.ToString();
+        }
+
+        /// <summary>The run-context paragraph of a step with <c>planning</c> (design note s5), its parts as its grant has them.</summary>
+        static string PlanningAuthority(Model.Plans.PlanningGrant planning)
+        {
+            var self = planning.Targets.Contains(AgentEndpoint.Self);
+            var parent = planning.Targets.Contains(AgentEndpoint.Parent);
+            var plans = (self, parent) switch
+            {
+                (true, true) => "this run's plan and to the plan of the run that started it",
+                (false, true) => "the plan of the run that started this one",
+                _ => "this run's plan",
+            };
+            var text = new StringBuilder("## Planning authority\n\n")
+                .Append($"You may propose a small change to {plans} with the engine tools `inspect_plan` and `propose_patch`, when the work needs ")
+                .Append("something the plan did not foresee: a step to add, a route to change. For a larger change, to the requirements or the delivery plan, ")
+                .Append("report `blocked` and say why: the planner revises the plan. You never change a step's role. A change to a protected step, or one ")
+                .Append("that would leave it unrun, needs a person.");
+            if (planning.Review == "required")
+                text.Append(" Every proposal is reviewed by a person before it applies.");
+            text.Append("\n\nA proposal takes effect only when you report. Finish your work and call `report` with your outcome as usual.");
+            if (self)
+                text.Append(" If the change is applied, the run continues at its `resume_at` instead of your outcome's route; if a person rejects it, ")
+                    .Append("your outcome's route is followed.");
+            if (parent)
+                text.Append(" A change to the parent's plan goes to the parent run, which decides it; this run continues by your outcome.");
             return text.ToString();
         }
 

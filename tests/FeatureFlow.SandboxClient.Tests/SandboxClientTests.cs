@@ -100,6 +100,67 @@ public sealed class SandboxClientTests : IDisposable
         Assert.True(File.Exists(Path.Combine(folder, "engine_unreachable")));
     }
 
+    static async Task<List<JsonNode>> ListAsync(McpServer server)
+    {
+        var input = new StringReader(new JsonObject { ["jsonrpc"] = "2.0", ["id"] = 1, ["method"] = "tools/list" }.ToJsonString() + "\n");
+        var output = new StringWriter();
+        await server.RunAsync(input, output, CancellationToken.None);
+        return output.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => JsonNode.Parse(l)!).ToList();
+    }
+
+    /// <summary>The planning tools are offered only to a step with <c>planning</c>; without it a call to one reaches no endpoint.</summary>
+    [Fact]
+    public async Task The_planning_tools_are_listed_and_served_only_with_planning()
+    {
+        static IEnumerable<string> Names(List<JsonNode> replies) => replies.Single()["result"]!["tools"]!.AsArray().Select(t => t!["name"]!.ToString());
+        var replicas = new Replicas((_, _) => new JsonObject { ["status"] = "ok" });
+        var without = new McpServer(Client(replicas), new McpSettings(folder, null, false, false), new ClientLog(null));
+        var with = new McpServer(Client(replicas), new McpSettings(folder, null, false, false, Planning: true), new ClientLog(null));
+
+        Assert.Equal(["report"], Names(await ListAsync(without)));
+        Assert.Equal(["report", "inspect_plan", "propose_patch"], Names(await ListAsync(with)));
+        var refused = await CallAsync(without, "propose_patch", new JsonObject { ["reason"] = "x", ["changes"] = new JsonArray() });
+        Assert.Equal("There is no engine tool named propose_patch.", refused.Single(r => r["id"]?.GetValue<int>() == 2)["result"]!["content"]![0]!["text"]!.ToString());
+        Assert.Empty(replicas.Requests);
+    }
+
+    [Fact]
+    public async Task The_planning_tools_forward_their_arguments_and_return_the_endpoint_s_answer()
+    {
+        var replicas = new Replicas((request, _) => request.Method == HttpMethod.Get
+            ? new JsonObject { ["status"] = "ok", ["revision"] = 3 }
+            : new JsonObject { ["status"] = "staged", ["message"] = "Staged: it applies when you report." });
+        var server = new McpServer(Client(replicas), new McpSettings(folder, null, false, false, Planning: true), new ClientLog(null));
+
+        var plan = await CallAsync(server, "inspect_plan", new JsonObject { ["target"] = "parent" });
+        var change = new JsonObject { ["op"] = "insert", ["after"] = "implement", ["step"] = new JsonObject { ["id"] = "migrate" } };
+        var proposed = await CallAsync(server, "propose_patch", new JsonObject
+        {
+            ["base_revision"] = 3, ["resume_at"] = "migrate", ["reason"] = "needs a migration", ["changes"] = new JsonArray(change.DeepClone()),
+        });
+
+        Assert.EndsWith("/agent/v1/plan?target=parent", replicas.Requests[0].Url, StringComparison.Ordinal);
+        Assert.Equal(3, JsonNode.Parse(plan.Single(r => r["id"]?.GetValue<int>() == 2)["result"]!["content"]![0]!["text"]!.ToString())!["revision"]!.GetValue<int>());
+        Assert.EndsWith("/agent/v1/patches", replicas.Requests[1].Url, StringComparison.Ordinal);
+        var sent = JsonNode.Parse(replicas.Requests[1].Body)!;
+        Assert.Equal(("self", 3, "migrate", "needs a migration"), (sent["target"]!.ToString(), sent["base_revision"]!.GetValue<int>(), sent["resume_at"]!.ToString(), sent["reason"]!.ToString()));
+        Assert.True(JsonNode.DeepEquals(change, sent["changes"]![0]));
+        Assert.Equal("Staged: it applies when you report.", proposed.Single(r => r["id"]?.GetValue<int>() == 2)["result"]!["content"]![0]!["text"]!.ToString());
+    }
+
+    /// <summary>A failed plan query is an engine fault (LOG 60): the endpoint's 503 is retried, then the session ends resumably.</summary>
+    [Fact]
+    public async Task A_planning_tool_whose_query_keeps_failing_ends_the_session()
+    {
+        var ended = false;
+        var server = new McpServer(Client(new Replicas((_, _) => null), budgetSeconds: 0.3), new McpSettings(folder, null, false, false, Planning: true), new ClientLog(null),
+            () => ended = true);
+        var replies = await CallAsync(server, "inspect_plan", new JsonObject());
+
+        Assert.True(ended);
+        Assert.DoesNotContain(replies, r => r["id"]?.GetValue<int>() == 2);
+    }
+
     [Fact]
     public async Task A_report_names_the_artifacts_missing_from_the_output_folder()
     {

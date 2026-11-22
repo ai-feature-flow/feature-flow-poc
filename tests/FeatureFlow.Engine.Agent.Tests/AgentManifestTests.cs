@@ -70,7 +70,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
 
     async Task<StepOutcome> RunAsync(IReadOnlyDictionary<string, string> edits, bool codeHost = true, string step = "implement", string branch = Branch,
         ITrackerProvider? tracker = null, string? trackerIssue = null, Action<SandboxHandle>? atStart = null, bool dryRun = false, string? roleRuntime = null,
-        string? runContext = null, Func<AgentResult, AgentResult>? ending = null, string? causes = null)
+        string? runContext = null, Func<AgentResult, AgentResult>? ending = null, string? causes = null, Model.Plans.PlanningGrant? planning = null)
     {
         var client = Path.Combine(folder, "ff-sandbox");
         await File.WriteAllTextAsync(client, "a stand-in for the sandbox client", TestContext.Current.CancellationToken);
@@ -100,7 +100,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
         var contract = new StepContract([new OutcomeSpec("implemented", "success")], new Dictionary<string, string> { ["commits"] = "number" }, [],
             new Dictionary<string, string> { ["commits"] = "0" });
         var spec = new AgentStepSpec("write", ["read", "edit"], null, null, [], 2, 0, TimeSpan.FromHours(1), true, "commit", "ticket",
-            new Dictionary<string, string> { [repo.FullName] = branch }, new Dictionary<string, string>(), new Dictionary<string, string>(), "wf", "lock", trackerIssue, Runtime: roleRuntime, RunContext: runContext, Causes: causes);
+            new Dictionary<string, string> { [repo.FullName] = branch }, new Dictionary<string, string>(), new Dictionary<string, string>(), "wf", "lock", trackerIssue, Runtime: roleRuntime, RunContext: runContext, Causes: causes, Planning: planning);
         var call = new StepCall(new StepIdentity("run-1", "ticket_delivery", step, 1, $"run-1/{step}/1"), "agent", "std:roles/implementer",
             new Dictionary<string, string>(), contract, dryRun, TimeSpan.FromMinutes(5), spec);
         return await new ActivityEnvironment().RunAsync(() => activities.RunAgentStepAsync(call));
@@ -278,6 +278,32 @@ public sealed class AgentManifestTests : IAsyncDisposable
         Assert.True(prompt.IndexOf("## This step", StringComparison.Ordinal) < prompt.IndexOf("## Why this step runs again", StringComparison.Ordinal));
         Assert.True(prompt.IndexOf("## Why this step runs again", StringComparison.Ordinal) < prompt.IndexOf("## Run context", StringComparison.Ordinal));
         Assert.EndsWith("Do the work of the std:roles/implementer role.", prompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("## Planning authority", prompt, StringComparison.Ordinal);
+    }
+
+    /// <summary>A step with <c>planning</c> is told its authority after the run context (design note s5), with the parts its grant has.</summary>
+    [Fact]
+    public async Task A_step_with_planning_is_told_its_authority_in_the_prompt()
+    {
+        const string context = "## Run context\n\n- something learned\n";
+        var self = await PromptOfAsync(await RunAsync(new Dictionary<string, string>(), runContext: context, planning: new Model.Plans.PlanningGrant(["self"], "required")));
+        var both = await PromptOfAsync(await RunAsync(new Dictionary<string, string>(), step: "plan", planning: new Model.Plans.PlanningGrant(["self", "parent"], "auto")));
+
+        Assert.True(self.IndexOf("## Run context", StringComparison.Ordinal) < self.IndexOf("## Planning authority", StringComparison.Ordinal));
+        Assert.True(self.IndexOf("## Planning authority", StringComparison.Ordinal) < self.IndexOf("Do the work of", StringComparison.Ordinal));
+        Assert.Contains("Every proposal is reviewed by a person before it applies.", self, StringComparison.Ordinal);
+        Assert.Contains("the run continues at its `resume_at`", self, StringComparison.Ordinal);
+        Assert.DoesNotContain("the run that started", self, StringComparison.Ordinal);
+        Assert.DoesNotContain("Every proposal is reviewed", both, StringComparison.Ordinal);
+        Assert.Contains("this run's plan and to the plan of the run that started it", both, StringComparison.Ordinal);
+        Assert.Contains("A change to the parent's plan goes to the parent run", both, StringComparison.Ordinal);
+    }
+
+    async Task<string> PromptOfAsync(StepOutcome outcome)
+    {
+        var reference = Assert.Single(outcome.Events!, e => e.StartsWith("prompt of session 1: ", StringComparison.Ordinal))["prompt of session 1: ".Length..];
+        await using var stream = (await store.GetAsync(new ArtifactRef(reference), TestContext.Current.CancellationToken)).Unwrap();
+        return await new StreamReader(stream).ReadToEndAsync(TestContext.Current.CancellationToken);
     }
 
     /// <summary>
