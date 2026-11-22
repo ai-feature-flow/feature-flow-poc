@@ -851,8 +851,9 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
         /// An artifact lives only in the output folder (LOG 509). The attempt fails when the step's net change since it started
         /// (the agent's commits, the sandbox <c>checkpoint</c> tool's and the engine's leftover commit alike) writes a file at
         /// the checkout-relative path of an artifact it reported: <c>claims.yaml</c> committed at the checkout's root. Its
-        /// commits stay on the hidden reference, so the next attempt removes the file. A file the step deleted is not counted:
-        /// it is read at the step's final commit, through the code host.
+        /// commits stay on the hidden reference, so the next attempt removes the file. A path counts only if the work branch
+        /// changed it from where it now parts from its parent, so a file brought in by merging the parent is not the step's, and
+        /// only if it is a file at the step's final commit, so a step that deletes one is not refused.
         /// </summary>
         async Task RefuseCommittedArtifactsAsync(string head)
         {
@@ -860,11 +861,10 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             var changed = Must(await vcs.ChangedFilesAsync(copy, startRevision, head, ct), "list the step's changed files").Where(reported.Contains).ToList();
             if (changed.Count == 0)
                 return;
-            var host = owner.Providers.ForRun("code_host", call.DryRun) as ICodeHostProvider;
-            var written = new List<string>();
-            foreach (var path in changed)
-                if (host is null || Must(await host.ReadFileAsync(repo, path, head, ct), "read the step's final commit") is not null)
-                    written.Add(path);
+            var parentHead = Must(await vcs.ResolveAsync(repo, $"refs/heads/{parentBranch}", ct), "read the parent branch");
+            if (parentHead is not null && Must(await vcs.MergeBaseAsync(repo, head, parentHead, ct), "find where the step's commit parts from its parent") is { } parts)
+                changed = changed.Intersect(Must(await vcs.ChangedFilesAsync(copy, parts, head, ct), "list the work branch's changed files")).ToList();
+            var written = Must(await vcs.FilesAtAsync(copy, head, changed, ct), "read the step's final commit");
             if (written.Count > 0)
                 throw new StepWorkException($"the step's commits add {string.Join(", ", written)} to the checkout, which it also reported as an artifact; " +
                                             $"artifacts live only in the output folder {paths.Output} and are never committed: remove {(written.Count == 1 ? "it" : "them")} from the branch");

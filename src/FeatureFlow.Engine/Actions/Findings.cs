@@ -55,13 +55,17 @@ static class FindingsActions
                      Location = f.Location with { Repository = RepositoryNames.As(f.Location.Repository, run.Scope.Repositories) } },
                      string.IsNullOrWhiteSpace(f.SameAs) ? null : f.SameAs.Trim())))
         {
-            // Identity (LOG 505): the ledger id the reviewer names, else the fingerprint. An unknown id is refused, as the type's
-            // validator refused it when the reviewer produced the report.
+            // Identity (LOG 505): the ledger id the reviewer names, else the fingerprint. An unknown id, or one at another place,
+            // is refused, as the type's validator refused it when the reviewer produced the report.
             var fingerprint = FingerprintOf(reported);
             var existing = sameAs is not null
                 ? ledger.FirstOrDefault(f => f.FindingId == sameAs)
                   ?? throw ActionStop.CannotAnswer($"{raisedBy}'s finding \"{reported.Title}\" is same_as {sameAs}, which is not a finding in this run's ledger")
                 : Match(ledger, fingerprint, run.Call.Step.RunId);
+            if (sameAs is not null && !(string.Equals(existing!.Finding.Location.Repository, reported.Location.Repository, StringComparison.OrdinalIgnoreCase)
+                                        && existing.Finding.Location.File == reported.Location.File))
+                throw ActionStop.CannotAnswer($"{raisedBy}'s finding \"{reported.Title}\" in {reported.Location.Repository} {reported.Location.File} is same_as {sameAs}, " +
+                                              $"which is in {existing.Finding.Location.Repository} {existing.Finding.Location.File}");
             var id = existing?.FindingId ?? Fingerprints.LedgerId(run.Call.Step.RunId, fingerprint);
             if (!seen.Add(id))
             {
@@ -84,13 +88,13 @@ static class FindingsActions
                 continue;
             }
 
-            // The code the finding concerns is where the ledger has it: a same_as re-raise may point elsewhere, but keeps its place.
+            // The code the finding concerns is where the ledger has it; a same_as re-raise keeps its place and its title.
             var changed = await code.ChangedAsync(existing.Finding.Location, existing.StateRevision, head);
             var reopen = existing.State is FindingStates.Fixed or FindingStates.Declined
                          && (reopenOn == Always || (reopenOn == CodeChange && changed));
             var after = existing with
             {
-                Finding = Merge(existing.Finding, sameAs is null ? reported : reported with { Location = existing.Finding.Location }),
+                Finding = Merge(existing.Finding, sameAs is null ? reported : reported with { Location = existing.Finding.Location, Title = existing.Finding.Title }),
                 Reraises = existing.Reraises + 1,
                 ReraisedUnchanged = !changed,
                 UpdatedAt = now,

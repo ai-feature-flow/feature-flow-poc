@@ -43,7 +43,9 @@ and your inputs.
    `title` and `description`, and the `required_correction`. Write the report
    exactly in the format the `review` skill shows.
 7. Check each finding against the ledger. If the ledger already holds the same
-   problem, in any state, set `same_as: <ledger id>` on your finding. Do not
+   problem at the same place (the same repository and file), in any state, set
+   `same_as: <ledger id>` on your finding; a finding in another file is a new
+   one, without `same_as`. Do not
    raise a finding the ledger shows `declined` again unless the code it concerns
    has changed since; if it has, say in the description what changed.
 

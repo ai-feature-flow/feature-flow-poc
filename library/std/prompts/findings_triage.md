@@ -11,8 +11,9 @@ triager's entries, with its reasons, are the `triage` artifact.
 
 Answer `triaged` with an artifact `person_triage` of type `triage`, with an entry
 for every finding the ledger holds `escalated`, and every `declined` one that is
-blocking or demonstrated, except those a person already decided in this state; a
-triage leaving one out comes back to you:
+blocking or demonstrated. A finding you or another person already decided in its
+present state may be left out; including it again does no harm. A triage leaving
+out one that still needs a person comes back to you:
 
 ```yaml
 schema: 1

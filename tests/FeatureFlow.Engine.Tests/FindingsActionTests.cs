@@ -210,7 +210,21 @@ public sealed class FindingsActionTests : IAsyncDisposable
         Assert.Equal((0L, 1L, 0L), (Output(again, "new"), Output(again, "reraised"), Output(again, "reopened")));
         var finding = Assert.Single(await Ledger());
         Assert.Equal((declined.FindingId, FindingStates.Declined, 1, File), (finding.FindingId, finding.State, finding.Reraises, finding.Finding.Location.File));
+        Assert.Equal(declined.Finding.Title, finding.Finding.Title);
         Assert.Null(finding.Finding.SameAs);
+    }
+
+    [Fact]
+    public async Task A_same_as_naming_a_finding_in_another_file_stops_the_step_and_changes_nothing()
+    {
+        var declined = await DeclinedThenRepeated();
+        await Reviewed("review.assess", Finding("maintainability", file: "src/Other.cs", snippet: "class Other") with { SameAs = declined.FindingId });
+
+        var result = await Record();
+
+        Assert.Equal(StepOutcome.CannotAnswer, result.Kind);
+        Assert.Contains($"is same_as {declined.FindingId}, which is in acme/api {File}", result.Reason, StringComparison.Ordinal);
+        Assert.Equal(0, Assert.Single(await Ledger()).Reraises);
     }
 
     [Fact]

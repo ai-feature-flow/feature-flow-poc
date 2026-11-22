@@ -1,3 +1,6 @@
+using FeatureFlow.Model;
+using FeatureFlow.Providers.Abstractions;
+
 namespace FeatureFlow.Providers.StdValidators;
 
 public sealed record WorkListItem(string? Name, IReadOnlyList<string>? DependsOn = null);
@@ -10,7 +13,9 @@ public sealed record TriageItem(string? Finding);
 /// <summary>A <c>triage</c> document, read for the findings it names.</summary>
 public sealed record TriageDocument(IReadOnlyList<TriageItem>? Entries);
 
-public sealed record FindingsReportItem(string? SameAs);
+public sealed record FindingsReportLocation(string? Repository, string? File);
+
+public sealed record FindingsReportItem(string? SameAs, FindingsReportLocation? Location);
 
 /// <summary>A <c>findings_report</c>, read for the ledger ids its findings name.</summary>
 public sealed record FindingsReportDocument(IReadOnlyList<FindingsReportItem?>? Findings);
@@ -38,14 +43,28 @@ static class DocumentRules
                 foreach (var duplicate in (triage.Entries ?? []).Where(e => !string.IsNullOrEmpty(e.Finding)).GroupBy(e => e.Finding).Where(g => g.Count() > 1))
                     c.Error("duplicate_id", $"finding {duplicate.Key} is triaged {duplicate.Count()} times; give it one entry", subject.Name, duplicate.Key);
 
-        // A finding's same_as names the ledger finding it repeats (LOG 505); the request carries the run's ledger.
-        var ledger = c.Request.Findings.Select(f => f.FindingId).ToHashSet(StringComparer.Ordinal);
+        // A finding's same_as names the ledger finding it repeats, at the same place (LOG 505); the request carries the run's ledger.
+        var ledger = c.Request.Findings.GroupBy(f => f.FindingId, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         foreach (var subject in c.Present(Types.FindingsReport))
             if (await c.ReadAsync<FindingsReportDocument>(subject) is { } report)
-                foreach (var sameAs in (report.Findings ?? []).Select(f => f?.SameAs).Where(s => !string.IsNullOrWhiteSpace(s) && !ledger.Contains(s.Trim())).Distinct())
-                    c.Error("unknown_finding", $"same_as {sameAs} is not a finding in this run's ledger; name a ledger id from findings_ledger, or leave same_as out for a new finding",
-                        subject.Name, sameAs);
+                foreach (var finding in (report.Findings ?? []).Where(f => !string.IsNullOrWhiteSpace(f?.SameAs)))
+                {
+                    var sameAs = finding!.SameAs!.Trim();
+                    if (!ledger.TryGetValue(sameAs, out var named))
+                        c.Error("unknown_finding", $"same_as {sameAs} is not a finding in this run's ledger; name a ledger id from findings_ledger, or leave same_as out for a new finding",
+                            subject.Name, sameAs);
+                    else if (!SamePlace(finding.Location?.Repository, finding.Location?.File, named.Finding.Location))
+                        c.Error("same_as_elsewhere", $"same_as {sameAs} names a finding in {named.Finding.Location.Repository} {named.Finding.Location.File}, but this finding is in " +
+                            $"{finding.Location?.Repository} {finding.Location?.File}; same_as is only for the same problem at the same place, so leave it out for a finding elsewhere",
+                            subject.Name, sameAs);
+                }
     }
+
+    /// <summary>A reported repository and file are the ledger finding's: the repository as written or as its full name.</summary>
+    internal static bool SamePlace(string? repository, string? file, FindingLocation ledger) =>
+        repository is not null && file is not null
+        && string.Equals(RepositoryNames.As(repository.Trim(), [ledger.Repository]), ledger.Repository, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(file.Trim(), ledger.File, StringComparison.Ordinal);
 
     /// <summary>Item names are unique; <c>depends_on</c> names an item of the list; the dependencies form no cycle.</summary>
     static void WorkList(Check c, string subject, IReadOnlyList<WorkListItem> items)

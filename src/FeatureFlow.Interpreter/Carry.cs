@@ -42,7 +42,10 @@ public sealed record CarriedExecution(int Number, string? Outcome, IReadOnlyDict
     public string? ActionAnswer { get; init; }
 }
 
-public sealed record CarriedStep(int Executions, int AttemptsUsed, int RacesUsed, long AttemptsGranted, CarriedExecution? Current, CarriedExecution? Previous);
+public sealed record CarriedStep(int Executions, int AttemptsUsed, int RacesUsed, long AttemptsGranted, CarriedExecution? Current, CarriedExecution? Previous)
+{
+    public int LastSuccess { get; init; }
+}
 
 public sealed record CarriedContainer(IReadOnlyList<int> BranchIndexes, IReadOnlyList<string> Branches, bool Active);
 
@@ -133,7 +136,8 @@ public sealed partial class RunCore
             s.Patches.Select(PatchReader.Write).ToList(),
             s.IdHistory.ToList(),
             new SortedDictionary<string, CarriedStep>(s.Steps.ToDictionary(kv => kv.Key,
-                kv => new CarriedStep(kv.Value.Executions, kv.Value.AttemptsUsed, kv.Value.RacesUsed, kv.Value.AttemptsGranted, Exec(kv.Value.Current), Exec(kv.Value.Previous))), StringComparer.Ordinal),
+                kv => new CarriedStep(kv.Value.Executions, kv.Value.AttemptsUsed, kv.Value.RacesUsed, kv.Value.AttemptsGranted, Exec(kv.Value.Current), Exec(kv.Value.Previous))
+                    { LastSuccess = kv.Value.LastSuccess }), StringComparer.Ordinal),
             new SortedDictionary<string, CarriedContainer>(s.Containers.ToDictionary(kv => kv.Key,
                 kv => new CarriedContainer(kv.Value.BranchIndexes.ToList(), kv.Value.Branches.Select(b => b.ToString()).ToList(), kv.Value.Active)), StringComparer.Ordinal),
             s.Pending.Select(e => new CarriedEntry(e.StepId, e.CleanUp, e.Resumes) { PastBreakpoint = e.PastBreakpoint }).ToList(),
@@ -194,6 +198,7 @@ public sealed partial class RunCore
                 AttemptsUsed = step.AttemptsUsed,
                 RacesUsed = step.RacesUsed,
                 AttemptsGranted = step.AttemptsGranted,
+                LastSuccess = step.LastSuccess,
                 Current = Exec(step.Current),
                 Previous = Exec(step.Previous),
             };

@@ -47,8 +47,10 @@ A finding that was fixed or declined reopens only if its code changed since
 (the std setting). Raising it again on unchanged code does not reopen it.
 
 A reviewer is given the ledger view. When it already holds the problem you
-found, in any state, name its ledger id in `same_as`: the engine then matches
-your finding to that one, whatever its rule or snippet.
+found at the same place (the same repository and file), in any state, name its
+ledger id in `same_as`: the engine then matches your finding to that one,
+whatever its rule or snippet. A `same_as` naming a finding in another file is
+refused.
 
 A review judges the code at `HEAD`, the net diff from the baseline commit. How
 the change got there (an intermediate commit later corrected, commit messages,

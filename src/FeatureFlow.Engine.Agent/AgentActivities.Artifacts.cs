@@ -37,8 +37,9 @@ public sealed partial class AgentActivities
                            ?? throw new StepCannotAnswerException($"artifact {name}'s type {declared} is not in the run's libraries, so it cannot be checked");
                 try
                 {
-                    findings ??= Must(await owner.Records.QueryAsync<FindingRecord>(Queries.Findings, new Dictionary<string, string> { ["run_id"] = call.Step.RunId }, ct));
-                    errors.AddRange(await ArtifactTypeCheck.CheckAsync(type, name, declared, path, await TextAsync(reference), reference, owner.Providers, findings, ct));
+                    if (type.Validators.Count > 0)
+                        findings ??= Must(await owner.Records.QueryAsync<FindingRecord>(Queries.Findings, new Dictionary<string, string> { ["run_id"] = call.Step.RunId }, ct));
+                    errors.AddRange(await ArtifactTypeCheck.CheckAsync(type, name, declared, path, await TextAsync(reference), reference, owner.Providers, findings ?? [], ct));
                 }
                 catch (ArtifactCheckException e) when (e.Infrastructure)
                 {

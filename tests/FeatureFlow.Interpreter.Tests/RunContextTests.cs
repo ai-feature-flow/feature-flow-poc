@@ -213,4 +213,22 @@ public class RunContextTests
         Assert.Equal([new StartStep("verify", 3)], core.Advance());
         Assert.Null(CausesOf(core, "verify"));
     }
+
+    /// <summary>A cause outlasts a failed attempt: the next attempt reads it with the failure's reason (LOG 508); a success ends it (above).</summary>
+    [Fact]
+    public void A_cause_reaches_every_attempt_until_the_step_succeeds()
+    {
+        var core = new Probe("run-context-checked", ("checked", Checked)).Start("checked");
+        core.Advance();
+        Assert.True(core.Apply(new StepCompleted("verify", "done")).Accepted);
+        core.Advance();
+        Assert.True(core.Apply(new StepCompleted("check", "invalid", Summary: "F-1 may not be declined")).Accepted);
+        Assert.Equal([new StartStep("verify", 2)], core.Advance());
+
+        Assert.True(core.Apply(new StepFailed("verify", ErrorClass.Work, "output still invalid after correction turns")).Accepted);
+        Assert.Equal([new StartStep("verify", 3)], core.Advance());
+
+        Assert.Equal("## Why this step runs again\n\n- check ended invalid: F-1 may not be declined\n" +
+                     "- attempt 2 of verify failed: output still invalid after correction turns\n", CausesOf(core, "verify"));
+    }
 }

@@ -320,6 +320,32 @@ public sealed class InMemoryForge
             return WorkingCopies.GetValueOrDefault(copy)?.Files;
     }
 
+    /// <summary>
+    /// Merges <paramref name="revision"/> into a working copy as an agent's <c>git merge</c> would, with no conflicts: a commit
+    /// whose parents are the copy's head and the revision, holding the revision's files with the copy's changes since their merge
+    /// base on top. Returns the merge commit.
+    /// </summary>
+    public string MergeIntoWorkingCopy(WorkingCopyRef copy, string revision)
+    {
+        lock (Gate)
+        {
+            var wc = WorkingCopies[copy];
+            var r = Get(wc.Repo);
+            var basis = r.Commits[MergeBase(r, wc.Head, revision) ?? throw new InvalidOperationException("no shared history")].Files;
+            var files = new Dictionary<string, string>(r.Commits[revision].Files, StringComparer.Ordinal);
+            foreach (var path in basis.Keys.Union(wc.Files.Keys).Where(p => basis.GetValueOrDefault(p) != wc.Files.GetValueOrDefault(p)))
+                if (wc.Files.TryGetValue(path, out var content))
+                    files[path] = content;
+                else
+                    files.Remove(path);
+            wc.Head = Add(r, [wc.Head, revision], files, "merge the parent");
+            wc.Files.Clear();
+            foreach (var (path, content) in files)
+                wc.Files[path] = content;
+            return wc.Head;
+        }
+    }
+
     /// <summary>The comments added to a pull request: on close, and by <c>AddCommentAsync</c> with their markers.</summary>
     public IReadOnlyList<string> Comments(PullRequestRef pullRequest)
     {
@@ -516,6 +542,10 @@ public sealed class InMemoryVcs(InMemoryForge forge) : IVcsProvider
             IReadOnlyList<string> changed = a.Keys.Union(b.Keys).Where(p => a.GetValueOrDefault(p) != b.GetValueOrDefault(p)).Order(StringComparer.Ordinal).ToList();
             return ProviderResult<IReadOnlyList<string>>.Success(changed);
         });
+
+    public Task<ProviderResult<IReadOnlyList<string>>> FilesAtAsync(WorkingCopyRef copy, string revision, IReadOnlyList<string> paths,
+        CancellationToken cancellationToken) =>
+        InCopy("FilesAt", copy, (r, _) => ProviderResult<IReadOnlyList<string>>.Success(paths.Where(r.Commits[revision].Files.ContainsKey).ToList()));
 
     public Task<ProviderResult<PushResult>> PushAsync(RepoRef repo, string reference, string revision, CommitBundle? commits, string? expectedOldRevision,
         CancellationToken cancellationToken) =>

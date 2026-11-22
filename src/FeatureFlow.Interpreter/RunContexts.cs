@@ -113,13 +113,14 @@ public sealed partial class RunCore
     public string? RunContext() => RunContexts.Render(State.Context, Run.ParentContext);
 
     /// <summary>
-    /// The retry causes addressed to a step's current execution, rendered (LOG 508): those added after its previous execution
-    /// ended. They are its own, so a step with <c>context: none</c> reads them too.
+    /// The retry causes addressed to a step's current execution, rendered (LOG 508): those added since its last execution that
+    /// ended with a success-class outcome, so a cause outlasts a failed attempt until the step succeeds. They are its own, so a
+    /// step with <c>context: none</c> reads them too.
     /// </summary>
     string? CausesOf(string stepId)
     {
-        var previous = Executions(stepId) - 1;
-        return RunContexts.RenderCauses(State.Context.Where(e => e.Kind == ContextKinds.RetryCause && e.StepId == stepId && e.Execution == previous).ToList());
+        var since = State.Steps.GetValueOrDefault(stepId)?.LastSuccess ?? 0;
+        return RunContexts.RenderCauses(State.Context.Where(e => e.Kind == ContextKinds.RetryCause && e.StepId == stepId && e.Execution >= since).ToList());
     }
 
     void AddContext(string kind, string stepId, int execution, string text)

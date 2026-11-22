@@ -157,7 +157,8 @@ reports.
    file at the checkout-relative path of an artifact it reported, such as
    `claims.yaml` at the checkout's root: an artifact lives only in the output
    folder, so the attempt fails, saying so, and the branch does not move
-   (LOG 509). Move the work branch to the final commit, once. Record the
+   (LOG 509). A path brought in by merging the parent, or deleted at the final
+   commit, does not count. Move the work branch to the final commit, once. Record the
    summary for the run context.
 
 ### 3.2 Resume after an interruption
@@ -253,10 +254,11 @@ the child started, rendered first under `### From the parent run`. A step with
 artifacts.
 
 A retry cause is addressed to the step that runs because of it. The core also
-renders the causes addressed to the step's current execution, those added since
-its previous execution ended, under `## Why this step runs again`, which the
-agent worker writes before the run context; a step reads its own causes whatever
-its `context`, since they are addressed to it, not the run's history (LOG 508).
+renders the causes addressed to the step since its last execution that ended
+with a success-class outcome, under `## Why this step runs again`, which the
+agent worker writes before the run context, so a cause outlasts a failed
+attempt until the step succeeds; a step reads its own causes whatever its
+`context`, since they are addressed to it, not the run's history (LOG 508).
 A first execution, and one entered by a success, have none.
 
 ### 3.6 Outputs the engine publishes for every agent step
@@ -636,7 +638,7 @@ The standard set, from FF's validators:
 | `verification_satisfaction` | The agent's evidence claims match passing tests in the engine's test results evidence |
 | `requirement_trace` | Every requirement of this run traces through owners and supporting items, across completed children, to passing tests at commits the work contains |
 | `tests_added` | A fix's claims name at least one test that is new or changed since the commit the finding was raised on |
-| `document_rules` | The rules std's types state that a schema cannot, one document at a time: unique ids, a work list's dependencies known and acyclic, a finding triaged once, a findings report's `same_as` naming a finding of the run's ledger (the request carries the ledger, LOG 505). std's types name it, so it runs when the document is produced (LOG 247) |
+| `document_rules` | The rules std's types state that a schema cannot, one document at a time: unique ids, a work list's dependencies known and acyclic, a finding triaged once, a findings report's `same_as` naming a finding of the run's ledger at the same repository and file (the request carries the ledger, LOG 505). std's types name it, so it runs when the document is produced (LOG 247) |
 
 ### 10.3 `artifact.validate`
 
@@ -660,7 +662,7 @@ workflow's (`docs/01` section 6, RW4).
 |---|---|
 | Inputs | `source`: an artifact of type findings report (from a reviewer agent step), or a findings source provider by name (`copilot_review`, the Copilot review on the pull request). `reopen_on`: when a re-raise of a `fixed` or `declined` finding reopens it: `code_change`, `always` or `never`. The engine default, `code_change`, is a fallback; the standard library sets it explicitly |
 | Outcomes | `recorded`, with outputs `new`, `reraised`, `reopened`, `repeat_fixes` (findings reopened after being fixed at least twice); `unavailable` (the external source could not review, for example Copilot review not enabled, or it stayed pending for 30 minutes) |
-| Behaviour | Matches each finding against the ledger (including children's) and records it as new or as a re-raise. A finding that names a ledger id in `same_as` is that finding; one that does not is matched by its fingerprint. A finding that repeats one already in the ledger, any pass, any angle, is the same finding: a declined one stays declined unless the code it concerns changed (LOG 505). Findings of one report that resolve to the same ledger finding are recorded once. A re-raise records whether the code at the finding changed since the finding last changed state: whether the finding's file, where the ledger has it, differs between that revision and the work branch head (LOG 162). A re-raise never weakens the finding: blocking, demonstrated and the higher severity are kept (LOG 169); a `same_as` re-raise keeps the finding's location. Applies `reopen_on`. A report that does not read as a findings report, or a `same_as` naming no ledger finding, raises an intervention; `std`'s findings report type refuses such a `same_as` when the reviewer produces the report, so the reviewer corrects it in its session (`document_rules`) |
+| Behaviour | Matches each finding against the ledger (including children's) and records it as new or as a re-raise. A finding that names a ledger id in `same_as` is that finding; one that does not is matched by its fingerprint. A finding that repeats one already in the ledger, any pass, any angle, is the same finding: a declined one stays declined unless the code it concerns changed (LOG 505). Findings of one report that resolve to the same ledger finding are recorded once. A re-raise records whether the code at the finding changed since the finding last changed state: whether the finding's file, where the ledger has it, differs between that revision and the work branch head (LOG 162). A re-raise never weakens the finding: blocking, demonstrated and the higher severity are kept (LOG 169); a `same_as` re-raise keeps the finding's location and title. Applies `reopen_on`. A report that does not read as a findings report, or a `same_as` naming no ledger finding or one at another repository or file, raises an intervention; `std`'s findings report type refuses such a `same_as` when the reviewer produces the report, so the reviewer corrects it in its session (`document_rules`) |
 
 ### 11.2 `findings.triage`
 

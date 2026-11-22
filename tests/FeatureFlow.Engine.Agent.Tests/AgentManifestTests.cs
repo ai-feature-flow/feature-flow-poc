@@ -305,6 +305,46 @@ public sealed class AgentManifestTests : IAsyncDisposable
         Assert.Null(forge.ReadFile(repo, Work!, "claims.yaml"));
     }
 
+    static AgentResult ReportsClaims(AgentResult r) =>
+        r with { Report = new StepReport("implemented", new Dictionary<string, string>(), new Dictionary<string, string> { ["claims"] = "claims.yaml" }) };
+
+    /// <summary>A file of an artifact's name that the step brings in by merging its parent is the parent's, not the step's (LOG 509).</summary>
+    [Fact]
+    public async Task A_step_that_merges_its_parent_which_has_a_file_of_an_artifacts_name_passes()
+    {
+        forge.Commit(repo, "refs/heads/" + Branch, new Dictionary<string, string?> { ["src/W.cs"] = "class W{}" });
+        var parent = forge.Commit(repo, "refs/heads/main", new Dictionary<string, string?> { ["claims.yaml"] = "the parent's file" });
+
+        var outcome = await RunAsync(new Dictionary<string, string> { ["src/B.cs"] = "class B{}" },
+            atStart: handle =>
+            {
+                sandbox.WriteFile(handle, $"{AgentPaths.Default.Output}/claims.yaml", "claims: []");
+                forge.MergeIntoWorkingCopy(new WorkingCopyRef(handle, AgentPaths.Default.Checkout), parent);
+            },
+            ending: ReportsClaims);
+
+        Assert.True(StepOutcome.Reported == outcome.Kind, outcome.Reason);
+        Assert.Equal("the parent's file", forge.ReadFile(repo, Work!, "claims.yaml"));
+    }
+
+    /// <summary>A step that deletes a file of an artifact's name, an earlier attempt's, is not refused, with or without a code host (LOG 509).</summary>
+    [Fact]
+    public async Task A_step_that_deletes_a_committed_artifact_passes_without_a_code_host()
+    {
+        forge.Commit(repo, "refs/heads/" + Branch, new Dictionary<string, string?> { ["claims.yaml"] = "claims: []" });
+
+        var outcome = await RunAsync(new Dictionary<string, string> { ["src/B.cs"] = "class B{}" }, codeHost: false,
+            atStart: handle =>
+            {
+                sandbox.WriteFile(handle, $"{AgentPaths.Default.Output}/claims.yaml", "claims: []");
+                forge.WorkingFiles(new WorkingCopyRef(handle, AgentPaths.Default.Checkout))!.Remove("claims.yaml");
+            },
+            ending: ReportsClaims);
+
+        Assert.True(StepOutcome.Reported == outcome.Kind, outcome.Reason);
+        Assert.Null(forge.ReadFile(repo, Work!, "claims.yaml"));
+    }
+
     public ValueTask DisposeAsync()
     {
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();

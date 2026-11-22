@@ -111,8 +111,8 @@ public static class Checks
 
     public static string Title(int check) => Titles.TryGetValue(check, out var title) ? title : "check";
 
-    /// <summary>Checks 34, 35 and 37 warn; every other check blocks (docs/09 section 1).</summary>
-    public static Severity SeverityOf(int check) => check is UnusedParameter or DeprecatedReference or FailureRouteArtifact ? Severity.Warning : Severity.Error;
+    /// <summary>Checks 34 and 35 warn; every other check blocks (docs/09 section 1).</summary>
+    public static Severity SeverityOf(int check) => check is UnusedParameter or DeprecatedReference ? Severity.Warning : Severity.Error;
 }
 
 /// <summary>An append-only list of diagnostics, with the severity taken from the check number.</summary>
