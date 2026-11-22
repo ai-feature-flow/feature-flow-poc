@@ -128,8 +128,8 @@ public class MutationTests
             new(FixLoop, "      context: none\n", "      context: none\n      write_access: branch\n")]),
 
         ["step_sets_tools"] = new(13, "may not set tools", "implement sets its own tools (F10)", [
-            new(Ticket, "      skills: [std:skills/solution_design, std:skills/verification]\n    with: { ticket_id",
-                "      skills: [std:skills/solution_design, std:skills/verification]\n      tools: [shell]\n    with: { ticket_id")]),
+            new(Ticket, "      skills: [std:skills/solution_design, std:skills/verification]\n      planning:",
+                "      skills: [std:skills/solution_design, std:skills/verification]\n      tools: [shell]\n      planning:")]),
 
         ["fragment_required_unbound"] = new(14, "required parameter 'subject_id' of fragment std:fragments/plan_and_validate is not bound",
             "the ticket's plan fragment loses its required subject_id binding", [

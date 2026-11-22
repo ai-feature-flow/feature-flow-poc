@@ -158,6 +158,59 @@ public class WorkflowTestRunnerTests
         }
     }
 
+    /// <summary>
+    /// F3 holds an implementer's patch to protected content for a person whatever its grant says: on a copy of std's
+    /// ticket_delivery whose implementer has <c>planning.review: auto</c>, a patch that changes <c>verify.tests</c> is held,
+    /// for that reason alone, and rejected, so the run goes on by the implementer's outcome.
+    /// </summary>
+    [Fact]
+    public void An_implementers_patch_to_verify_is_held_even_with_review_auto()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"ff-implementer-auto-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(root, "templates"));
+        Directory.CreateDirectory(Path.Combine(root, "tests"));
+        File.WriteAllText(Path.Combine(root, "library.yaml"), "name: probe\nversion: 0.1.0\n");
+        var template = File.ReadAllText(Path.Combine(Repository.Root, "library", "std", "templates", "ticket_delivery.yaml"));
+        const string grant = "planning: { targets: [self], review: required }";
+        Assert.Contains(grant, template);
+        File.WriteAllText(Path.Combine(root, "templates", "ticket_delivery.yaml"), template.Replace(grant, "planning: { targets: [self], review: auto }"));
+        var test = Path.Combine(root, "tests", "verify_patch.yaml");
+        File.WriteAllText(test, """
+            api_version: feature-flow/v1
+            kind: workflow_test
+            name: verify_patch
+            template: probe:templates/ticket_delivery
+            parameters: { ticket_id: FF-1042 }
+            repositories: [acme/api]
+            patch:
+              api_version: feature-flow/v1
+              kind: patch
+              metadata: { proposed_by: { type: agent, step_id: implement }, reason: "the tests are slow" }
+              base_revision: 1
+              resume_at: verify
+              changes:
+                - { op: set, target: verify.tests, field: limits, value: { attempts: 1 } }
+            answers:
+              implement: reject
+            expect:
+              status: completed
+              path_includes: [implement, verify.tests, deliver.merge]
+              validation_errors: [29]
+            """);
+        try
+        {
+            var result = WorkflowTestRunner.RunPath(test, [Path.Combine(Repository.Root, "library", "std")]).Single();
+
+            Assert.True(result.Passed, string.Join("\n", result.Failures));
+            Assert.Contains(result.Trace, t => t is { Kind: "patch_pending", StepId: "implement", Detail: "set touches protected step verify.tests (F3)" });
+            Assert.Contains(result.Trace, t => t is { Kind: "patch_rejected", StepId: "implement" });
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public void A_wrong_status_fails_the_test()
     {

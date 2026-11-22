@@ -63,6 +63,7 @@ steps:
       role: std:roles/implementer
       task: std:tasks/implement_ticket
       skills: [std:skills/solution_design, std:skills/verification]
+      planning: { targets: [self], review: required }   # it may add a step it needs; a person approves each (LOG 524)
     with: { ticket_id: { expr: "params.ticket_id" } }
     consumes:
       - { name: requirements }

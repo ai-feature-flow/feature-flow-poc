@@ -82,8 +82,8 @@ content, grant extra attempts, answer for an agent, or abort.
 
 Agents are not humans. An agent may **propose** a change; if it touches
 protected content it becomes a pending human decision, never silently applied
-and never silently refused. In version 1 an agent proposes none (`docs/04`
-section 6.1).
+and never silently refused. An agent with planning authority proposes
+through the engine's tools (`docs/04` section 6.1).
 
 Why: FF let a person amend a run's workflow freely (`ff amend-step` was not
 bound by `protected`), and a supervising agent had to keep runs moving with
@@ -97,7 +97,7 @@ level of work.
 
 | Concern | One mechanism |
 |---|---|
-| Changing a plan during a run | A patch, applied by one function, whatever its source (in version 1 a person or `plan.expand`; `docs/04` section 6.1) |
+| Changing a plan during a run | A patch, applied by one function, whatever its source (an agent, a person or `plan.expand`; `docs/03` section 10) |
 | Waiting for a human | A decision: a type, a prompt, a set of choices. Gates, interventions, agent questions, merge requests and patch approvals are all decisions |
 | Running an agent | The agent step. Reviewers, planners, fixers and implementers are agent steps with different roles |
 | Levels of work | A run starts child runs with the same interpreter and the same plan language. Levels are named by the workflow and nest to any depth |
