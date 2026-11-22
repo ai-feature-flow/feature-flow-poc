@@ -55,7 +55,9 @@ public sealed class EndpointTests : IDisposable
 
         public Task<AgentPlanView> PlanAsync(string workflowId, AgentPlanQuery query, CancellationToken cancellationToken) => throw new NotImplementedException();
 
-        public Task<PatchPreview> PreviewAsync(string workflowId, object query, CancellationToken cancellationToken) => throw new NotImplementedException();
+        public Task<PatchPreview> PreviewAsync(string workflowId, PatchPreviewQuery query, CancellationToken cancellationToken) => throw new NotImplementedException();
+
+        public Task<PatchPreview> ChildPreviewAsync(string workflowId, ChildPatchPreviewQuery query, CancellationToken cancellationToken) => throw new NotImplementedException();
     }
 
     public EndpointTests()
