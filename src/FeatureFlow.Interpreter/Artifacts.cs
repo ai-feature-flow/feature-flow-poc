@@ -7,7 +7,7 @@ namespace FeatureFlow.Interpreter;
 
 /// <summary>
 /// An artifact a step consumes (docs/03 section 7.2): the key it goes by in the step's inputs and sandbox (its name from this
-/// run, else with its source in front: <c>parent/contract</c>, <c>child/ticket_a/summary</c>), its name, whether it is
+/// run, else with its source in front: <c>parent/contract</c>, <c>previous/requirements</c>, <c>child/ticket_a/summary</c>), its name, whether it is
 /// <c>optional</c>, whether it is the run's findings ledger view (staged by the agent worker, never a produced artifact; LOG 63,
 /// 167), and its reference now, or null when there is none.
 /// </summary>
@@ -55,9 +55,9 @@ public sealed partial class RunCore
     }
 
     /// <summary>
-    /// The artifact a step consumes: from this run, the latest of its name nearest the step; from the parent or root, as it
-    /// was when this run started (the root of a root run is the run itself); from a child, as the child ended (its
-    /// <c>run.child</c> step holds it). Null when there is none.
+    /// The artifact a step consumes: from this run, the latest of its name nearest the step; from <c>previous</c>, the same
+    /// over each step's previous execution; from the parent or root, as it was when this run started (the root of a root run
+    /// is the run itself); from a child, as the child ended (its <c>run.child</c> step holds it). Null when there is none.
     /// </summary>
     string? ConsumedReference(Step step, ArtifactIn consumed)
     {
@@ -65,6 +65,7 @@ public sealed partial class RunCore
         return consumed.From switch
         {
             "current" => LatestArtifact(step, consumed.Name),
+            "previous" => LatestArtifact(step, consumed.Name, previous: true),
             "parent" => Run.ParentArtifacts?.GetValueOrDefault(consumed.Name),
             "root" => Run.ParentId is null ? LatestArtifact(step, consumed.Name) : Run.RootArtifacts?.GetValueOrDefault(consumed.Name),
             _ when consumed.From.StartsWith(child, StringComparison.Ordinal)
@@ -79,15 +80,19 @@ public sealed partial class RunCore
     static string ConsumedKey(ArtifactIn consumed) =>
         consumed.From == "current" ? consumed.Name : $"{consumed.From.Replace(':', '/')}/{consumed.Name}";
 
-    /// <summary>The latest artifact of a name in this run, nearest a step's own scope (the run's top level when null). A child's are not this run's.</summary>
-    string? LatestArtifact(Step? near, string name)
+    /// <summary>
+    /// The latest artifact of a name in this run, nearest a step's own scope (the run's top level when null). A child's are not
+    /// this run's. With <paramref name="previous"/>, the same over each step's previous execution (<c>from: previous</c>).
+    /// </summary>
+    string? LatestArtifact(Step? near, string name, bool previous = false)
     {
         var prefix = near?.Scope.Prefix ?? "";
+        Execution? Of(StepRecord record) => previous ? record.Previous : record.Current;
         return State.Steps
-            .Where(kv => kv.Value.Current?.Artifacts.ContainsKey(name) == true && !HoldsChildArtifacts(kv.Key))
+            .Where(kv => Of(kv.Value)?.Artifacts.ContainsKey(name) == true && !HoldsChildArtifacts(kv.Key))
             .OrderByDescending(kv => kv.Key.StartsWith(prefix, StringComparison.Ordinal))
             .ThenBy(kv => kv.Key, StringComparer.Ordinal)
-            .Select(kv => kv.Value.Current!.Artifacts[name])
+            .Select(kv => Of(kv.Value)!.Artifacts[name])
             .FirstOrDefault();
     }
 
