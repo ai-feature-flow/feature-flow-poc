@@ -10,6 +10,11 @@ public sealed record TriageItem(string? Finding);
 /// <summary>A <c>triage</c> document, read for the findings it names.</summary>
 public sealed record TriageDocument(IReadOnlyList<TriageItem>? Entries);
 
+public sealed record FindingsReportItem(string? SameAs);
+
+/// <summary>A <c>findings_report</c>, read for the ledger ids its findings name.</summary>
+public sealed record FindingsReportDocument(IReadOnlyList<FindingsReportItem?>? Findings);
+
 /// <summary>
 /// <c>document_rules</c>: the <c>rules</c> std's artifact types state that a schema cannot (LOG 247), over one document at a
 /// time, so the engine checks them when an agent produces the document and the agent corrects them in its session
@@ -32,6 +37,14 @@ static class DocumentRules
             if (await c.ReadAsync<TriageDocument>(subject) is { } triage)
                 foreach (var duplicate in (triage.Entries ?? []).Where(e => !string.IsNullOrEmpty(e.Finding)).GroupBy(e => e.Finding).Where(g => g.Count() > 1))
                     c.Error("duplicate_id", $"finding {duplicate.Key} is triaged {duplicate.Count()} times; give it one entry", subject.Name, duplicate.Key);
+
+        // A finding's same_as names the ledger finding it repeats (LOG 505); the request carries the run's ledger.
+        var ledger = c.Request.Findings.Select(f => f.FindingId).ToHashSet(StringComparer.Ordinal);
+        foreach (var subject in c.Present(Types.FindingsReport))
+            if (await c.ReadAsync<FindingsReportDocument>(subject) is { } report)
+                foreach (var sameAs in (report.Findings ?? []).Select(f => f?.SameAs).Where(s => !string.IsNullOrWhiteSpace(s) && !ledger.Contains(s.Trim())).Distinct())
+                    c.Error("unknown_finding", $"same_as {sameAs} is not a finding in this run's ledger; name a ledger id from findings_ledger, or leave same_as out for a new finding",
+                        subject.Name, sameAs);
     }
 
     /// <summary>Item names are unique; <c>depends_on</c> names an item of the list; the dependencies form no cycle.</summary>

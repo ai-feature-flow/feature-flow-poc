@@ -186,6 +186,71 @@ public sealed class FindingsActionTests : IAsyncDisposable
         Assert.Equal(expected, Assert.Single(await Ledger()).State);
     }
 
+    // ---- same_as (LOG 505) ----
+
+    /// <summary>A finding declined by a triager, then raised again in other words: another rule and snippet, naming it in same_as.</summary>
+    async Task<FindingRecord> DeclinedThenRepeated()
+    {
+        await Reviewed("review.assess", Finding());
+        await Record();
+        var declined = Assert.Single(await Ledger());
+        await Triaged("fix.triage", new TriageEntry(declined.FindingId, FindingStates.Declined, "by design"));
+        Outcome(await Triage(stepId: "fix.apply_triage"), "applied");
+        await Reviewed("review.assess", Finding("maintainability", snippet: "class Orders") with { SameAs = declined.FindingId });
+        return declined;
+    }
+
+    [Fact]
+    public async Task A_finding_naming_a_declined_finding_in_same_as_is_that_finding_and_stays_declined_on_unchanged_code()
+    {
+        var declined = await DeclinedThenRepeated();
+
+        var again = await Record();
+
+        Assert.Equal((0L, 1L, 0L), (Output(again, "new"), Output(again, "reraised"), Output(again, "reopened")));
+        var finding = Assert.Single(await Ledger());
+        Assert.Equal((declined.FindingId, FindingStates.Declined, 1, File), (finding.FindingId, finding.State, finding.Reraises, finding.Finding.Location.File));
+        Assert.Null(finding.Finding.SameAs);
+    }
+
+    [Fact]
+    public async Task A_finding_naming_a_declined_finding_in_same_as_reopens_it_when_its_code_changed()
+    {
+        await DeclinedThenRepeated();
+        world.CommitWork(File, "class Orders { void Add() { if (x) { } return; } }\n");
+
+        var again = await Record();
+
+        Assert.Equal((1L, 1L), (Output(again, "reraised"), Output(again, "reopened")));
+        Assert.Equal(FindingStates.Open, Assert.Single(await Ledger()).State);
+    }
+
+    [Fact]
+    public async Task A_same_as_naming_no_ledger_finding_stops_the_step_and_records_nothing()
+    {
+        await Reviewed("review.assess", Finding() with { SameAs = "F-0000000000" });
+
+        var result = await Record();
+
+        Assert.Equal(StepOutcome.CannotAnswer, result.Kind);
+        Assert.Contains("same_as F-0000000000, which is not a finding", result.Reason, StringComparison.Ordinal);
+        Assert.Empty(await Ledger());
+    }
+
+    [Fact]
+    public async Task Findings_of_one_report_naming_the_same_ledger_finding_are_recorded_once()
+    {
+        var declined = await DeclinedThenRepeated();
+        await Reviewed("review.assess", Finding("maintainability", snippet: "class Orders") with { SameAs = declined.FindingId },
+            Finding("convention", snippet: "void Add()") with { SameAs = declined.FindingId }, Finding());
+
+        var again = await Record();
+
+        Assert.Equal((0L, 1L), (Output(again, "new"), Output(again, "reraised")));
+        Assert.Equal(1, Assert.Single(await Ledger()).Reraises);
+        Assert.Equal(2, again.Events.Count(e => e.Contains("recorded once", StringComparison.Ordinal)));
+    }
+
     [Fact]
     public async Task A_finding_reopened_after_two_fixes_is_a_repeat_fix()
     {
@@ -513,6 +578,47 @@ public sealed class FindingsActionTests : IAsyncDisposable
             Assert.Contains(result.Events, e => e.Contains("this step may set only", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData(FindingStates.Declined, "applied", FindingStates.Declined)]
+    [InlineData(FindingStates.Fixed, "invalid", FindingStates.Declined)]
+    public async Task States_limit_changes_so_a_verifier_may_restate_a_declined_finding_but_not_fix_it(string state, string expected, string after)
+    {
+        // LOG 506 (diagnosis 3(d), 6.1): record_fixes' states [fixed, open] neither refuses a restatement nor overturns a decline.
+        await Reviewed("review.assess", Finding());
+        await Record();
+        var id = Assert.Single(await Ledger()).FindingId;
+        await Triaged("fix.triage", new TriageEntry(id, FindingStates.Declined, "by design"));
+        Outcome(await Triage(stepId: "fix.apply_triage"), "applied");
+        Fixer();
+        await Triaged("fix.verify_fix", new TriageEntry(id, state, "as the ledger says"));
+
+        var result = await Triage(stepId: "fix.record_fixes", states: "[fixed, open]");
+
+        Outcome(result, expected);
+        var finding = Assert.Single(await Ledger());
+        Assert.Equal(after, finding.State);
+        Assert.Equal(2, (await History(finding)).Count);
+        if (expected == "applied")
+            Assert.Contains(result.Events, e => e.EndsWith("1 entries, 0 state changes", StringComparison.Ordinal));
+        else
+            Assert.Contains(result.Events, e => e.Contains($"{id} is declined; this step may change only findings that are fixed, open", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_restated_decline_of_a_blocking_finding_is_not_counted_so_it_does_not_go_to_a_person_again()
+    {
+        await Reviewed("review.assess", Finding());
+        await Record();
+        var id = Assert.Single(await Ledger()).FindingId;
+        await Triaged("fix.triage", new TriageEntry(id, FindingStates.Declined, "by design"));
+        Assert.Equal(1L, Output(await Triage(stepId: "fix.apply_triage"), "declined_blocking"));
+
+        var restated = await Triage(stepId: "fix.apply_triage_2");
+
+        Outcome(restated, "applied");
+        Assert.Equal(0L, Output(restated, "declined_blocking"));
+    }
+
     [Fact]
     public async Task A_triage_counts_its_escalations_and_its_declines_of_blocking_or_demonstrated_findings_itself()
     {
@@ -789,7 +895,7 @@ public sealed class FindingsActionTests : IAsyncDisposable
         var finding = Assert.Single(await Ledger());
         // The same triage content (so the same reference) produced by another step: an agent's, or another decision's.
         var reference = await PersonTriaged(producer == "an agent step" ? "fix.triage" : "fix.other_decision",
-            new TriageEntry(finding.FindingId, FindingStates.Open, "fix it"));
+            new TriageEntry(finding.FindingId, FindingStates.Declined, "not a bug"));
         await Answered("alice", "fix.person_triage", reference);
         if (decision)
             await Answered("bob", "fix.elsewhere", "sha256:" + new string('0', 64));
@@ -806,7 +912,7 @@ public sealed class FindingsActionTests : IAsyncDisposable
         await Reviewed("review", Finding());
         Outcome(await Record(), "recorded");
         var finding = Assert.Single(await Ledger());
-        var reference = await PersonTriaged("fix.person_triage", new TriageEntry(finding.FindingId, FindingStates.Open, "fix it"));
+        var reference = await PersonTriaged("fix.person_triage", new TriageEntry(finding.FindingId, FindingStates.Declined, "not a bug"));
         // As the API writes it: sent before delivery, then the run's refusal of the same answer (review F3).
         await Answered("mallory", "fix.person_triage", reference, result: "sent", refusedToo: true);
 
@@ -855,5 +961,28 @@ public sealed class FindingsActionTests : IAsyncDisposable
         await PersonTriaged("fix.person_triage", new TriageEntry(ledger[0].FindingId, FindingStates.Open, "fix it"), new TriageEntry(ledger[1].FindingId, FindingStates.Open, "fix it"));
         Outcome(await world.RunAsync("findings.triage", "{ from: person_triage, complete: true }", "fix.apply_person_triage_3"), "applied");
         Assert.All(await Ledger(), f => Assert.Equal(FindingStates.Open, f.State));
+    }
+
+    [Fact]
+    public async Task A_complete_triage_need_not_decide_again_what_a_person_already_decided()
+    {
+        // LOG 506 (diagnosis 6.2): a later pass asks the person only about what an agent declined or escalated since.
+        await Reviewed("review", Finding(), Finding("b", snippet: "void Add()"));
+        Outcome(await Record(), "recorded");
+        var ledger = await Ledger();
+        var (first, second) = (ledger[0].FindingId, ledger[1].FindingId);
+        await Triaged("fix.triage", new TriageEntry(first, FindingStates.Declined, "agent"));
+        Outcome(await Triage(stepId: "fix.apply_triage"), "applied");
+        await Answered("alice", "fix.person_triage", await PersonTriaged("fix.person_triage", new TriageEntry(first, FindingStates.Declined, "accepted")));
+        Outcome(await world.RunAsync("findings.triage", "{ from: person_triage, complete: true }", "fix.apply_person_triage"), "applied");
+        // The next pass: an agent restates the person's decline and declines another blocking finding.
+        await Triaged("fix.triage", new TriageEntry(first, FindingStates.Declined, "as before"), new TriageEntry(second, FindingStates.Declined, "agent"));
+        Assert.Equal(1L, Output(await Triage(stepId: "fix.apply_triage_2"), "declined_blocking"));
+
+        await Answered("alice", "fix.person_triage", await PersonTriaged("fix.person_triage", new TriageEntry(second, FindingStates.Declined, "accepted too")));
+        var result = await world.RunAsync("findings.triage", "{ from: person_triage, complete: true }", "fix.apply_person_triage_2");
+
+        Outcome(result, "applied");
+        Assert.All(await Ledger(), f => Assert.Equal(FindingStates.Declined, f.State));
     }
 }
