@@ -7,7 +7,7 @@ paragraph), (b) the core (a pure patch check for previews, the query handlers, `
 options note: an agent step with `planning` proposes a patch to its own run, or its parent's, and a person approves
 it where the rules say. No live run was made; the product owner's live steps are below.
 
-*Evidence sections to be completed by the sub-orchestrator after the merge.*
+Evidence from the sub-orchestrator's own run at `d1f0697` (the merged branch), below.
 
 ## What was built
 
@@ -26,10 +26,12 @@ it where the rules say. No live run was made; the product owner's live steps are
 
 | Check | Result |
 |---|---|
-| Default suite (`Category!=Integration&Category!=Live&Category!=Cluster`) | *to fill by the sub-orchestrator* |
-| Integration category (Temporal dev server on its own port) | *to fill by the sub-orchestrator*. (a)'s `AgentContractTests` case (an agent's `inspect_plan`, `propose_patch` and `report`; a `patch_approval` with the reason in its prompt; approved by the CLI; the inserted step runs) **has not yet passed**: at `8b3852f` its scripted patch is refused by check 9, as the inserted step is unreachable (review R1). `ChildRunTests` 9/9, the child → parent case among them, passed in the review's run |
-| `Replay.Tests` | *to fill by the sub-orchestrator* (44 expected, plus (a)'s recorded history, not yet recorded) |
-| Break-and-see-fail | *to fill from the builders' reports*. Builder (c): removing `planning` from `implement` fails both std tests (`'migrate' is not a step ... in any revision`; `1 answer(s) were not used`); `verify` unprotected fails the `review: auto` test's `set` case, `deliver` unprotected its insert case; `review: auto` on std's `implement` fails `StdPatchPromptTests` (no wait opens); `white-space: normal` on `.ff-wait-prompt` fails the console test |
+| Default suite (`Category!=Integration&Category!=Live&Category!=Cluster`) | 26 projects, all passed. In the full run two `Console.Tests` cases timed out waiting for the live-events connection (`data-live`) while the machine was loaded; `Console.Tests` alone then passed 49/49 |
+| Integration category (Temporal dev server on port 7703) | 197 passed, 0 failed (Integration.Tests 136, Postgres 30, Docker 17, S3 12, API 2), including `AgentContractTests.An_agent_s_proposed_step_waits_for_approval_and_then_runs` (a scripted agent in a real sandbox calls `inspect_plan`, `propose_patch` and `report` through the MCP server; a `patch_approval` opens with the reason in its prompt; approved by the CLI; the inserted step runs) and `ChildRunTests` (a child's proposal reaches the parent's gate). The agent test first failed in review (R1: its scripted patch left the inserted step unreachable, check 9); fixed in the test |
+| `Replay.Tests` | 47 passed; the recorded histories include the new `agent_planning_patch` |
+| Cluster | Not run: nothing under `deploy/` or the cluster tests changed |
+| Break-and-see-fail (sub-orchestrator, each reverted after) | (1) `WiderPlanning` not called: 5 `AgentPlanningTests` cases fail. (2) A step added inside protected content not counted as touching it: 2 cases of `A_step_added_inside_protected_content_waits_for_a_person` fail. (3) A child's `review` not applied at the parent: `A_childs_review_required_is_carried_to_the_parent_whose_approval_opens_at_the_run_child_step` fails. (4) The planning tools listed without `FF_PLANNING`: `The_planning_tools_are_listed_and_served_only_with_planning` fails |
+| Break-and-see-fail (builders) | Builder (c): removing `planning` from `implement` fails both std tests (`'migrate' is not a step ... in any revision`; `1 answer(s) were not used`); `verify` unprotected fails the `review: auto` test's `set` case, `deliver` unprotected its insert case; `review: auto` on std's `implement` fails `StdPatchPromptTests` (no wait opens); `white-space: normal` on `.ff-wait-prompt` fails the console test. Builders (a) and (b) did the same for each of their tests (their reports) |
 
 ## Judgement calls
 

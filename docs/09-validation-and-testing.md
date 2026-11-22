@@ -144,7 +144,7 @@ CI.
 | Run-time rules | Each rule in section 3 | default, integration |
 | Provider contracts | Each interface's suite, including every documented success response | default, integration, cluster |
 | Merge race | Two work branches catch up from the same parent head; the second merge gets `base_moved` and loops; repeated refusals exhaust the allowance and escalate | integration |
-| Agent reporting | `report`, `ask_human` (including across a worker restart), `checkpoint`; `inspect_plan` and `propose_patch`, a staged patch carried by the report and held for a person (`docs/04` section 6.1): the Integration test is written, its passing run to fill by the sub-orchestrator | integration |
+| Agent reporting | `report`, `ask_human` (including across a worker restart), `checkpoint`; `inspect_plan` and `propose_patch`, a staged patch carried by the report and held for a person (`docs/04` section 6.1) | integration |
 | Pre-submit parity | A session's check and the later step receive the same task, tools, model and commit | integration |
 | Architecture | The shell holds no routing; project reference rules | default |
 | Deployment | Images, network policies, stop on SIGTERM | cluster, integration |
