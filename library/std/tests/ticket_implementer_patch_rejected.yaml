@@ -1,0 +1,36 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: ticket_implementer_patch_rejected
+description: >-
+  The implementer proposes a step, migrate, after its own, as in
+  ticket_implementer_patch_approved. A person rejects the patch: the plan
+  stays at its revision, migrate never runs, and the run follows the
+  implementer's reported outcome, implemented, to verify.
+template: std:templates/ticket_delivery
+parameters: { ticket_id: FF-1042 }
+repositories: [acme/api]
+
+patch:
+  api_version: feature-flow/v1
+  kind: patch
+  metadata: { proposed_by: { type: agent, step_id: implement }, reason: "the orders table needs a migration the plan did not foresee" }
+  base_revision: 1
+  resume_at: migrate
+  changes:
+    - op: insert
+      after: implement
+      step:
+        id: migrate
+        agent:
+          role: std:roles/implementer
+          task: std:tasks/implement_ticket
+        with: { ticket_id: { expr: "params.ticket_id" } }
+        outcomes: { migrated: success, blocked: blocked }
+answers:
+  implement: reject
+
+expect:
+  status: completed
+  path_includes: [approve_spec, implement, verify.tests, deliver.merge]
+  executions: { implement: 1, deliver.merge: 1 }   # migrate is in no revision, so it cannot have run
+  validation_errors: [29]                 # check 29: the patch is held for a person, not refused

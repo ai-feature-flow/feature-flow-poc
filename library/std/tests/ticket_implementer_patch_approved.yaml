@@ -1,0 +1,36 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: ticket_implementer_patch_approved
+description: >-
+  The implementer finds a gap the plan did not foresee and proposes a step,
+  migrate, after its own. Its planning grant has review: required, so the
+  patch waits for a person; approved, the plan moves to its next revision,
+  the run continues at migrate, and then verify and deliver run as before.
+template: std:templates/ticket_delivery
+parameters: { ticket_id: FF-1042 }
+repositories: [acme/api]
+
+patch:
+  api_version: feature-flow/v1
+  kind: patch
+  metadata: { proposed_by: { type: agent, step_id: implement }, reason: "the orders table needs a migration the plan did not foresee" }
+  base_revision: 1
+  resume_at: migrate
+  changes:
+    - op: insert
+      after: implement
+      step:
+        id: migrate
+        agent:
+          role: std:roles/implementer
+          task: std:tasks/implement_ticket
+        with: { ticket_id: { expr: "params.ticket_id" } }
+        outcomes: { migrated: success, blocked: blocked }
+answers:
+  implement: approve
+
+expect:
+  status: completed
+  path_includes: [approve_spec, implement, migrate, verify.tests, deliver.merge]
+  executions: { implement: 1, migrate: 1, deliver.merge: 1 }
+  validation_errors: [29]                 # check 29: the patch is held for a person, not refused
