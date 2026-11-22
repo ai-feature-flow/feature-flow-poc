@@ -37,7 +37,7 @@ public sealed record FindingLocation(string Repository, string File, string? Sym
 /// One entry of a <c>findings_report</c>. <see cref="LedgerId"/> and <see cref="State"/> are set only in a ledger view
 /// the engine stages for a step that consumes <c>findings_ledger</c>; a reviewer leaves them out. <see cref="SameAs"/> is
 /// the reviewer's: the ledger id of the finding this one repeats, which <c>findings.record</c> matches instead of the
-/// fingerprint (LOG 505).
+/// fingerprint (LOG 511).
 /// </summary>
 public sealed record ReportedFinding(
     string Rule,

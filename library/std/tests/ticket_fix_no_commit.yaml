@@ -2,7 +2,7 @@ api_version: feature-flow/v1
 kind: workflow_test
 name: ticket_fix_no_commit
 description: >-
-  The fixer reports fixed but committed nothing (LOG 512). Nothing changed, so
+  The fixer reports fixed but committed nothing (LOG 517). Nothing changed, so
   there is no fix to verify: the step escalates to a person instead of going on
   to the verifying reviewer.
 template: std:templates/ticket_delivery

@@ -25,7 +25,7 @@ public sealed partial class AgentActivities
             var stored = new Dictionary<string, string>(StringComparer.Ordinal);
             var errors = new List<string>();
             var success = call.Contract.Outcomes.Any(o => o.Name == report.Outcome && o.Class == "success");
-            IReadOnlyList<FindingRecord>? findings = null;   // the run's ledger, for a type rule that names its findings (LOG 505)
+            IReadOnlyList<FindingRecord>? findings = null;   // the run's ledger, for a type rule that names its findings (LOG 511)
             foreach (var (name, path) in report.Artifacts.OrderBy(kv => kv.Key, StringComparer.Ordinal))
             {
                 var reference = Must(await sandboxes.CopyOutAsync(sandbox, $"{paths.Output}/{path}", ct), $"copy out artifact {name}").Id;

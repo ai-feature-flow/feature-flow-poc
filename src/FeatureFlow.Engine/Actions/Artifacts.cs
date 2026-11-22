@@ -128,7 +128,7 @@ static class Artifacts
             throw ActionStop.CannotAnswer($"artifact.import may not import {path} as evidence type {declared}; an imported file is not evidence the engine made (F7)");
         try
         {
-            // The ledger is for a type's validators (LOG 505); a type with none is not given it.
+            // The ledger is for a type's validators (LOG 511); a type with none is not given it.
             IReadOnlyList<FindingRecord> findings = type.Validators.Count == 0
                 ? []
                 : ActionRun.Must(await run.Provider<IRecordStoreProvider>("record_store").QueryAsync<FindingRecord>(Queries.Findings,

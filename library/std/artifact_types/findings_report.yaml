@@ -9,13 +9,13 @@ metadata:
     repository and file), any pass, any angle, names it in same_as;
     findings.record then matches that ledger finding instead of
     the fingerprint, so a declined one stays declined unless the code it concerns
-    changed (LOG 505). The engine stages the run's current ledger view in this
+    changed (LOG 511). The engine stages the run's current ledger view in this
     shape, with ledger ids and states, for any step that consumes findings_ledger.
 
 format: yaml
 evidence: false
 compatible_with: []
-validators: [document_rules]   # same_as names a finding in the run's ledger at the same repository and file, checked when the report is produced (LOG 505)
+validators: [document_rules]   # same_as names a finding in the run's ledger at the same repository and file, checked when the report is produced (LOG 511)
 
 schema:
   type: object

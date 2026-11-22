@@ -848,7 +848,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
         string Relative(string path) => path.StartsWith(paths.Checkout + "/", StringComparison.Ordinal) ? path[(paths.Checkout.Length + 1)..] : path;
 
         /// <summary>
-        /// An artifact lives only in the output folder (LOG 509). The attempt fails when the step's net change since it started
+        /// An artifact lives only in the output folder (LOG 514). The attempt fails when the step's net change since it started
         /// (the agent's commits, the sandbox <c>checkpoint</c> tool's and the engine's leftover commit alike) writes a file at
         /// the checkout-relative path of an artifact it reported: <c>claims.yaml</c> committed at the checkout's root. Its
         /// commits stay on the hidden reference, so the next attempt removes the file. A path counts only if the work branch

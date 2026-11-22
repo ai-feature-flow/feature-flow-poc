@@ -281,7 +281,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
     }
 
     /// <summary>
-    /// An artifact lives only in the output folder (LOG 509): a step whose commits add a file at the checkout path of an
+    /// An artifact lives only in the output folder (LOG 514): a step whose commits add a file at the checkout path of an
     /// artifact it reported fails with the reason, and the work branch does not move; one that commits other files passes.
     /// </summary>
     [Theory]
@@ -308,7 +308,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
     static AgentResult ReportsClaims(AgentResult r) =>
         r with { Report = new StepReport("implemented", new Dictionary<string, string>(), new Dictionary<string, string> { ["claims"] = "claims.yaml" }) };
 
-    /// <summary>A file of an artifact's name that the step brings in by merging its parent is the parent's, not the step's (LOG 509).</summary>
+    /// <summary>A file of an artifact's name that the step brings in by merging its parent is the parent's, not the step's (LOG 514).</summary>
     [Fact]
     public async Task A_step_that_merges_its_parent_which_has_a_file_of_an_artifacts_name_passes()
     {
@@ -327,7 +327,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
         Assert.Equal("the parent's file", forge.ReadFile(repo, Work!, "claims.yaml"));
     }
 
-    /// <summary>A step that deletes a file of an artifact's name, an earlier attempt's, is not refused, with or without a code host (LOG 509).</summary>
+    /// <summary>A step that deletes a file of an artifact's name, an earlier attempt's, is not refused, with or without a code host (LOG 514).</summary>
     [Fact]
     public async Task A_step_that_deletes_a_committed_artifact_passes_without_a_code_host()
     {

@@ -143,7 +143,7 @@ public static class ArtifactTypeCheck
 {
     /// <summary>
     /// The artifact's errors, each naming it and its path; warnings do not count. Throws <see cref="ArtifactCheckException"/> when it
-    /// cannot be checked. <paramref name="findings"/> is the run's ledger, for a rule that names its findings (LOG 505).
+    /// cannot be checked. <paramref name="findings"/> is the run's ledger, for a rule that names its findings (LOG 511).
     /// </summary>
     public static async Task<IReadOnlyList<string>> CheckAsync(ArtifactTypeItem type, string name, string declared, string path, string text, string reference,
         ProviderSet providers, IReadOnlyList<FindingRecord> findings, CancellationToken ct)

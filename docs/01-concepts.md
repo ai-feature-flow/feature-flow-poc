@@ -282,7 +282,7 @@ convention, a gap against the specification.
 The **findings ledger** is the run's record of every finding and its history.
 A review pass adds to the ledger; it does not replace it. When a new finding
 names an existing one in `same_as`, or matches one by fingerprint, the engine
-records it as a **re-raise** of that finding rather than a new one (LOG 505), and
+records it as a **re-raise** of that finding rather than a new one (LOG 511), and
 records whether the code at the finding has changed since the finding last changed state. A parent run's
 ledger view includes its children's ledgers, so a parent-level review is
 matched against what the children already found and fixed.

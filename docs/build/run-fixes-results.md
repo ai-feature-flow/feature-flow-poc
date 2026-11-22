@@ -4,7 +4,7 @@ Built 2026-11-22 on `stuart-parkinson_xero/feature-flow-run-fixes` from a diagno
 independent review and a fix pass. The live run `run-91e59ad2ed43` (Copilot CLI, `claude-haiku-4.5`, ticket #198 of
 `ai-feature-flow/feature-flow-example`) looped in std's verify/review loop until aborted; `run-947be4435f5c`
 (`claude-sonnet-5.5`) completed cleanly. Every fault found has a fix that does not depend on the model: the loop now
-converges or ends with a person, and no path cycles without a bound. LOG 505, 506 and 508 to 513 (unreviewed). No
+converges or ends with a person, and no path cycles without a bound. LOG 511, 512 and 513 to 518 (unreviewed). No
 replay history changed.
 
 ## 1. Faults, causes and fixes
@@ -22,7 +22,7 @@ replay history changed.
 | Check | Result |
 |---|---|
 | Default suite (`-p:ConsoleBuild=false`, `Category!=Integration&Category!=Live&Category!=Cluster`, console tests included) | All 26 projects pass (Engine 296, Interpreter 186, Engine.Agent 116, Validation 98, Testing.Workflows 52, Replay 44, Api 191, Console 48, …) |
-| Integration (`Category=Integration`, own dev server on 7960) | 134 of 134 after one expectation change: `FindingsLoopTests` no longer expects a triage event for a triager restating `open` (LOG 506) |
+| Integration (`Category=Integration`, own dev server on 7960) | 134 of 134 after one expectation change: `FindingsLoopTests` no longer expects a triage event for a triager restating `open` (LOG 512) |
 | Replay | 44 of 44; no history regenerated |
 | Break and see fail | Each builder reverted each change and saw its new test fail (builder reports). Rechecked here: base `fix_loop.yaml` fails 3 std workflow tests; base `standard_review.yaml` fails 6 |
 | New std workflow tests | `ticket_fix_retest_failed` (with the new `expect.consumed`), `ticket_repair`, `ticket_fix_no_commit`, `ticket_person_clears_after_fix`; `ticket_verifier_to_person` removed with its dead route |

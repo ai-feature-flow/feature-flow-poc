@@ -65,7 +65,7 @@ other documents cite them.
 | 34 | Unused parameter | Load | No |
 | 35 | Deprecated library reference with a replacement | Load | No |
 | 36 | The run's work branch is neither a repository's default branch nor the run's parent branch (`metadata.branch_pattern` is free text). Checked once: the work branch is fixed when the run starts (LOG 147) | Run start | Yes |
-| 37 | A route on an outcome that is not a success, from step A to step B, where B consumes (optionally or not) an artifact A declares but not for that outcome: B would start without A's evidence, or with an earlier execution's. A list-form `produces` keeps its artifacts for success outcomes only (LOG 510) | Load | Yes |
+| 37 | A route on an outcome that is not a success, from step A to step B, where B consumes (optionally or not) an artifact A declares but not for that outcome: B would start without A's evidence, or with an earlier execution's. A list-form `produces` keeps its artifacts for success outcomes only (LOG 515) | Load | Yes |
 
 Checks 23, 24 and 36 at run start, and 31 to 33 at step start, are as built in M5 (check 36 at run start only since LOG 147) (LOG 125 to 127, 133,
 134, 141). Checks 21 and 23 are not run on a patch (a follow-up; no milestone); `scm.merge` re-checks F1 at merge time.
@@ -190,7 +190,7 @@ An excerpt of `library/std/tests/ticket_fix_loop.yaml`.
 | `overrides`, `answers`, `expect.skipped` | A person's steering (M7): `breakpoint`, `skip` (with `outcome`) or `grant_attempts` on a step, made at the run's start as an administrator; answers to the breakpoints, interventions and patch approvals that open at a step, in order (`continue`, `retry`, `approve`, `reject`, `{ go_to: <step> }`, `{ replan: <step> }`, either with `clean_up: true`, `{ grant_attempts: n }`, `{ end: <status> }`); a patch approval opens at the step that proposed the patch; the steps a skip ended without running |
 | `questions`, `expect.questions` | An agent's questions (`docs/04` section 3.4), by step id, in order: each `ask` (with optional `options`, `id`, default `<step>-q<n>`, and `visit`, default 1) is held while that visit runs, then answered (`answer: <text>`), timed out (`timeout: true`), or with neither left to close when the step ends; how each closed, by id: `answered`, `timed_out` or `step_ended` (LOG 386). Only a question has a deadline: gates, breakpoints, interventions and patch approvals wait until answered. The `merge_action` gate an action raises while it runs is not scripted |
 | `expect.context` | Agent step id to execution number to texts the run context rendered into that execution's specification must contain (`docs/04` section 3.5), such as `{ plan.plan: { 2: ["requirements omit the audit log"] } }` |
-| `expect.consumed` | Step id to execution number to the names of artifacts that must be staged for that execution as it starts, the ledger view included, such as `{ verify.fix.fix: { 2: [fix_test_results] } }` (LOG 512) |
+| `expect.consumed` | Step id to execution number to the names of artifacts that must be staged for that execution as it starts, the ledger view included, such as `{ verify.fix.fix: { 2: [fix_test_results] } }` (LOG 517) |
 
 LOG 75: a list's last entry applies to every later visit; a
 `findings.<name>` list gives one value per route evaluation that reads the

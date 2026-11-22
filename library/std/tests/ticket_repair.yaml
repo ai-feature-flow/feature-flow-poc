@@ -3,7 +3,7 @@ kind: workflow_test
 name: ticket_repair
 description: >-
   The engine's tests fail after the implementation, so the repair step goes
-  with the failing results (LOG 512); the tests then pass and the analysis
+  with the failing results (LOG 517); the tests then pass and the analysis
   fails, so it goes again with the analysis results. Both pass at the third
   try, and the ticket is reviewed and merges.
 template: std:templates/ticket_delivery

@@ -6,7 +6,7 @@ namespace FeatureFlow.Interpreter;
 /// One thing the run has learned that the next agent should know (docs/04 section 3.5; LOG 405): an agent step's report
 /// <see cref="ContextKinds.Summary"/> or a person's <see cref="ContextKinds.Answer"/>, with the step and execution it came
 /// from; or a <see cref="ContextKinds.RetryCause"/>, with the step it is addressed to and that step's execution it follows
-/// (LOG 508). <see cref="Text"/> reads on its own.
+/// (LOG 513). <see cref="Text"/> reads on its own.
 /// </summary>
 public sealed record ContextEntry(string Kind, string StepId, int Execution, string Text);
 
@@ -73,7 +73,7 @@ public static class RunContexts
     }
 
     /// <summary>
-    /// Why a step's execution runs (LOG 508): <c>## Why this step runs again</c>, then one bullet per retry cause addressed to
+    /// Why a step's execution runs (LOG 513): <c>## Why this step runs again</c>, then one bullet per retry cause addressed to
     /// it, in order. Null when there is none: a first execution, or one entered by a success.
     /// </summary>
     public static string? RenderCauses(IReadOnlyList<ContextEntry> causes)
@@ -113,7 +113,7 @@ public sealed partial class RunCore
     public string? RunContext() => RunContexts.Render(State.Context, Run.ParentContext);
 
     /// <summary>
-    /// The retry causes addressed to a step's current execution, rendered (LOG 508): those added since its last execution that
+    /// The retry causes addressed to a step's current execution, rendered (LOG 513): those added since its last execution that
     /// ended with a success-class outcome, so a cause outlasts a failed attempt until the step succeeds. They are its own, so a
     /// step with <c>context: none</c> reads them too.
     /// </summary>

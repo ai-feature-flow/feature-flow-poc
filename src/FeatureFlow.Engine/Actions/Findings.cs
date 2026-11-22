@@ -55,7 +55,7 @@ static class FindingsActions
                      Location = f.Location with { Repository = RepositoryNames.As(f.Location.Repository, run.Scope.Repositories) } },
                      string.IsNullOrWhiteSpace(f.SameAs) ? null : f.SameAs.Trim())))
         {
-            // Identity (LOG 505): the ledger id the reviewer names, else the fingerprint. An unknown id, or one at another place,
+            // Identity (LOG 511): the ledger id the reviewer names, else the fingerprint. An unknown id, or one at another place,
             // is refused, as the type's validator refused it when the reviewer produced the report.
             var fingerprint = FingerprintOf(reported);
             var existing = sameAs is not null
@@ -262,7 +262,7 @@ static class FindingsActions
         if (problems.Count == 0 && run.Bool("complete", false))
         {
             // A person's triage answers for everything an agent may not clear alone (review F1, LOG 248): every escalated finding
-            // of this run, and every declined blocking or demonstrated one, unless a person already decided it (LOG 506). One it
+            // of this run, and every declined blocking or demonstrated one, unless a person already decided it (LOG 512). One it
             // leaves out goes back to the person.
             var people = await PeopleAsync(run);
             foreach (var undecided in ledger.Where(f => f.RunId == run.Call.Step.RunId && (f.State == FindingStates.Escalated
@@ -308,7 +308,7 @@ static class FindingsActions
                 continue;
             }
 
-            // An agent's entry restating the finding's state changes nothing (LOG 506); a person's is their decision (F8), recorded
+            // An agent's entry restating the finding's state changes nothing (LOG 512); a person's is their decision (F8), recorded
             // so they are not asked again.
             if (before.State == t.State && !byPerson)
                 continue;
@@ -339,7 +339,7 @@ static class FindingsActions
                 await PostDeclineAsync(run, byId[t.Finding], t);
 
         // Counted from the triage's decisions and the ledger, never from what its producer reports about itself (review F1): a
-        // restated state is no decision, so it does not send a finding back to a person (LOG 506).
+        // restated state is no decision, so it does not send a finding back to a person (LOG 512).
         var outputs = new Dictionary<string, object?>
         {
             ["escalated"] = (long)decided.Count(t => t.State == FindingStates.Escalated),
@@ -361,7 +361,7 @@ static class FindingsActions
     }
 
     /// <summary>
-    /// Whether a person set the finding's current state (LOG 506): the event that last changed it was a person's triage, or a
+    /// Whether a person set the finding's current state (LOG 512): the event that last changed it was a person's triage, or a
     /// person's triage restated it since. Re-raises and agents' events that leave the state alone do not undo a person's decision.
     /// </summary>
     internal static bool SetByPerson(IEnumerable<FindingEventRecord> history, IReadOnlySet<string> people)
@@ -418,7 +418,7 @@ static class FindingsActions
     /// <summary>
     /// The triage, and what is wrong with it against the ledger: a finding the ledger does not hold, one named twice, a
     /// state that is not one of the four, a change this producer may not make (<c>states</c> names the states it may change a
-    /// finding from and to; review F1, LOG 506), an empty reason.
+    /// finding from and to; review F1, LOG 512), an empty reason.
     /// </summary>
     internal static (Triage? Triage, List<string> Problems) ReadTriage(string text, string what, IReadOnlyDictionary<string, FindingRecord> ledger,
         IReadOnlyList<string> allowed)
@@ -453,7 +453,7 @@ static class FindingsActions
                 problems.Add($"{id} is named more than once");
             if (!FindingStates.All.Contains(e.State))
                 problems.Add($"{id}: state must be one of {string.Join(", ", FindingStates.All)}, not '{e.State}'");
-            // states limits changes, from and to; restating a finding's state changes nothing and is accepted (LOG 506).
+            // states limits changes, from and to; restating a finding's state changes nothing and is accepted (LOG 512).
             else if (ledger.TryGetValue(id, out var current) && current.State != e.State)
             {
                 if (!allowed.Contains(e.State))

@@ -214,7 +214,7 @@ public sealed class ArtifactCheckTests : IAsyncDisposable
     [Fact]
     public async Task A_findings_report_s_same_as_is_checked_against_the_run_s_ledger_in_the_session()
     {
-        // LOG 505: the type check passes the run's ledger to document_rules, so an unknown same_as goes back to the reviewer.
+        // LOG 511: the type check passes the run's ledger to document_rules, so an unknown same_as goes back to the reviewer.
         const string Report = "schema: 1\nfindings:\n  - { rule: convention, title: t, description: d, severity: low, blocking: false, basis: reasoned, " +
                               "location: { repository: acme/api, file: a.cs }, same_as: ID }\n";
         var finding = new ReportedFinding("convention", "t", "d", "low", false, "reasoned", new FindingLocation("acme/api", "a.cs"));

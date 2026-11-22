@@ -5,7 +5,7 @@ description: >-
   The first pass of the fix loop fixes a finding, and the change is tested and
   reviewed again. The second review raises another; the triager escalates it,
   and a person declines it. Nothing is open and no fixer ran in this pass, so
-  the loop leaves by cleared, though a fixer ran in the first pass (LOG 513):
+  the loop leaves by cleared, though a fixer ran in the first pass (LOG 518):
   the change is not tested again, and the run goes on to the satisfaction check
   and merges.
 template: std:templates/ticket_delivery

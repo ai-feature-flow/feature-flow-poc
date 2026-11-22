@@ -186,7 +186,7 @@ public sealed class FindingsActionTests : IAsyncDisposable
         Assert.Equal(expected, Assert.Single(await Ledger()).State);
     }
 
-    // ---- same_as (LOG 505) ----
+    // ---- same_as (LOG 511) ----
 
     /// <summary>A finding declined by a triager, then raised again in other words: another rule and snippet, naming it in same_as.</summary>
     async Task<FindingRecord> DeclinedThenRepeated()
@@ -597,7 +597,7 @@ public sealed class FindingsActionTests : IAsyncDisposable
     [InlineData(FindingStates.Fixed, "invalid", FindingStates.Declined)]
     public async Task States_limit_changes_so_a_verifier_may_restate_a_declined_finding_but_not_fix_it(string state, string expected, string after)
     {
-        // LOG 506 (diagnosis 3(d), 6.1): record_fixes' states [fixed, open] neither refuses a restatement nor overturns a decline.
+        // LOG 512 (diagnosis 3(d), 6.1): record_fixes' states [fixed, open] neither refuses a restatement nor overturns a decline.
         await Reviewed("review.assess", Finding());
         await Record();
         var id = Assert.Single(await Ledger()).FindingId;
@@ -980,7 +980,7 @@ public sealed class FindingsActionTests : IAsyncDisposable
     [Fact]
     public async Task A_complete_triage_need_not_decide_again_what_a_person_already_decided()
     {
-        // LOG 506 (diagnosis 6.2): a later pass asks the person only about what an agent declined or escalated since.
+        // LOG 512 (diagnosis 6.2): a later pass asks the person only about what an agent declined or escalated since.
         await Reviewed("review", Finding(), Finding("b", snippet: "void Add()"));
         Outcome(await Record(), "recorded");
         var ledger = await Ledger();

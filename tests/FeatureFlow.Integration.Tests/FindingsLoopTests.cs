@@ -62,7 +62,7 @@ public class FindingsLoopTests
         Assert.Equal((FindingStates.Fixed, 1, "verify.review.review_0.assess"), (finding.State, finding.Fixes, finding.Source));
         var history = (await records.QueryAsync<FindingEventRecord>(Queries.FindingEvents,
             new Dictionary<string, string> { ["run_id"] = id, ["finding_id"] = finding.FindingId }, ct)).Unwrap();
-        // The triager's `open` restates the state, so it records no event (LOG 506).
+        // The triager's `open` restates the state, so it records no event (LOG 512).
         Assert.Equal([(FindingEventKinds.Raised, FindingStates.Open, "verify.review.review_0.assess"),
             (FindingEventKinds.Triaged, FindingStates.Fixed, "verify.fix.verify_fix")], history.Select(e => (e.Kind, e.State, e.Actor)));
 
@@ -115,7 +115,7 @@ public class FindingsLoopTests
 
     /// <summary>
     /// Re-check R1 and R2: nor can the verifier alone. A fixer that commits nothing (R1) stops at the fixer for a person
-    /// (LOG 512), so no verifier can write fixed over it; a verifier declining after a real fix (R2): findings.triage
+    /// (LOG 517), so no verifier can write fixed over it; a verifier declining after a real fix (R2): findings.triage
     /// refuses it as invalid, so verify_fix runs again until its attempts run out and a person decides. The finding stays
     /// open, and nothing merges.
     /// </summary>

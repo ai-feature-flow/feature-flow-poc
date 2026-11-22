@@ -189,7 +189,7 @@ public class RunContextTests
 
     /// <summary>
     /// An action's non-success summary is addressed to the agent step it routes back to, which reads it even with
-    /// <c>context: none</c>; a first execution, and one after a success, read none (LOG 508).
+    /// <c>context: none</c>; a first execution, and one after a success, read none (LOG 513).
     /// </summary>
     [Fact]
     public void A_failures_reason_reaches_the_agent_step_it_routes_back_to_even_with_context_none()
@@ -214,7 +214,7 @@ public class RunContextTests
         Assert.Null(CausesOf(core, "verify"));
     }
 
-    /// <summary>A cause outlasts a failed attempt: the next attempt reads it with the failure's reason (LOG 508); a success ends it (above).</summary>
+    /// <summary>A cause outlasts a failed attempt: the next attempt reads it with the failure's reason (LOG 513); a success ends it (above).</summary>
     [Fact]
     public void A_cause_reaches_every_attempt_until_the_step_succeeds()
     {

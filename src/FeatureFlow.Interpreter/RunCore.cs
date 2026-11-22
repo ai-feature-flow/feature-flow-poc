@@ -790,7 +790,7 @@ public sealed partial class RunCore
 
                 throw new EvaluationException("no guard held and the list has no fallback");
             case ResolvedStep to:
-                // A failure's reason is the next execution's to put right, so it is addressed to the agent step it routes to (LOG 508).
+                // A failure's reason is the next execution's to put right, so it is addressed to the agent step it routes to (LOG 513).
                 if (cls != OutcomeClass.Success && !string.IsNullOrWhiteSpace(said) && StepById(to.StepId) is { Form: StepForm.Agent })
                     AddContext(ContextKinds.RetryCause, to.StepId, Executions(to.StepId), $"{from.Id} ended {outcome}: {said.Trim()}");
                 State.Pending.Add(new Entry(to.StepId, to.CleanUp));

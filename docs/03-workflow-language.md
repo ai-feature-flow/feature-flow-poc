@@ -106,7 +106,7 @@ its form (`docs/01` section 2.1). A list entry may instead be `parallel`,
 | `task` | Library task, rendered with `with` (section 6.3) |
 | `skills` | Library skills, mounted for the agent to read on demand. Added to the role's |
 | `write_access` | `none`, `branch` or `repository`. Tightens only |
-| `context` | `full` (default): the agent is given the run's step summaries. `none`: it is not, so a reviewer judges independently (from FF); it still reads why it runs again, which is addressed to it (`docs/04` section 3.5, LOG 508) |
+| `context` | `full` (default): the agent is given the run's step summaries. `none`: it is not, so a reviewer judges independently (from FF); it still reads why it runs again, which is addressed to it (`docs/04` section 3.5, LOG 513) |
 | `planning` | Loads (`targets`, `templates`, `review`), but gives the agent nothing in version 1: an agent cannot propose a patch (`docs/04` section 6.1). A recovery's re-plan names a step that has it (`docs/01` section 7.2) |
 | `push` | Default `true`. `false`: the agent's commits are not pushed (scratch work) |
 | `on_uncommitted` | `commit` (default) or `fail`: what to do with changes left uncommitted at the end |

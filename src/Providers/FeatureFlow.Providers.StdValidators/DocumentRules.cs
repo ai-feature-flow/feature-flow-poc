@@ -43,7 +43,7 @@ static class DocumentRules
                 foreach (var duplicate in (triage.Entries ?? []).Where(e => !string.IsNullOrEmpty(e.Finding)).GroupBy(e => e.Finding).Where(g => g.Count() > 1))
                     c.Error("duplicate_id", $"finding {duplicate.Key} is triaged {duplicate.Count()} times; give it one entry", subject.Name, duplicate.Key);
 
-        // A finding's same_as names the ledger finding it repeats, at the same place (LOG 505); the request carries the run's ledger.
+        // A finding's same_as names the ledger finding it repeats, at the same place (LOG 511); the request carries the run's ledger.
         var ledger = c.Request.Findings.GroupBy(f => f.FindingId, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         foreach (var subject in c.Present(Types.FindingsReport))
             if (await c.ReadAsync<FindingsReportDocument>(subject) is { } report)

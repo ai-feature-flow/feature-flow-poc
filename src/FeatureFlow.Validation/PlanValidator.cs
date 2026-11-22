@@ -825,7 +825,7 @@ public sealed class PlanValidator
     /// <summary>
     /// A route on an outcome that is not a success, from step A to step B, where B consumes (optionally or not) an artifact
     /// A declares but not for that outcome: B starts without A's evidence of why it was sent there, or with an earlier
-    /// execution's (LOG 510). A list-form <c>produces</c> keeps its artifacts for success outcomes only.
+    /// execution's (LOG 515). A list-form <c>produces</c> keeps its artifacts for success outcomes only.
     /// </summary>
     void CheckFailureRoutes()
     {

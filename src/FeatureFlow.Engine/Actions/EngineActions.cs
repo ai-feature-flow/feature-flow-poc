@@ -497,7 +497,7 @@ sealed class ActionRun(EngineActions owner, StepCall call, ActionScope scope, Ac
 
     /// <summary>
     /// A report's summary: <c>&lt;step&gt;: &lt;outcome&gt;</c>, and for an outcome that is not a success, what the action
-    /// found (its events) after it, so the agent step it routes back to is told why (LOG 508).
+    /// found (its events) after it, so the agent step it routes back to is told why (LOG 513).
     /// </summary>
     public string SummaryOf(string outcome)
     {

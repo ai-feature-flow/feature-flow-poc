@@ -25,7 +25,7 @@ public sealed record StepContractFacts(
 /// its library, skills, limits, push and uncommitted-work settings, the run's level, the artifacts it consumes by key (the
 /// findings ledger by its view name), the role's name, which the run's <c>role_mapping</c> maps to a runtime, and the run
 /// context rendered for it (docs/04 section 3.5), null with <c>context: none</c> or when the run has none; and why this
-/// execution runs (<see cref="RunContexts.RenderCauses"/>, LOG 508), null when nothing sent it back, whatever its context.
+/// execution runs (<see cref="RunContexts.RenderCauses"/>, LOG 513), null when nothing sent it back, whatever its context.
 /// </summary>
 public sealed record AgentStepFacts(
     string WriteAccess,

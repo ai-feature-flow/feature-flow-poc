@@ -18,7 +18,7 @@ parameters:
 
 exits:
   fixed: success                        # nothing open after a fix: the caller re-tests and re-reviews
-  cleared: success                      # nothing open after the pass's triage, before any fixer: no code changed (LOG 503, 513)
+  cleared: success                      # nothing open after the pass's triage, before any fixer: no code changed (LOG 503, 518)
   escalated: blocked
 
 defaults:
@@ -38,7 +38,7 @@ steps:
       role: std:roles/triager
       task: { param: triager_task }
       skills: [std:skills/review]
-    consumes: [{ name: findings_ledger }, { name: test_results, optional: true }]   # the engine's tests check a demonstrated claim (LOG 511)
+    consumes: [{ name: findings_ledger }, { name: test_results, optional: true }]   # the engine's tests check a demonstrated claim (LOG 516)
     produces:
       triaged: [{ name: triage, type: std:artifact_types/triage }]
     outcomes: { triaged: success, blocked: blocked }
@@ -76,7 +76,7 @@ steps:
         - when: "steps.apply_person_triage.outputs.escalated > 0"
           to: { exit: escalated }                 # the person escalates beyond this loop
         - when: "findings.open == 0"
-          to: { exit: cleared }                   # the person is reached only before a fixer in this pass, so no code changed (LOG 513)
+          to: { exit: cleared }                   # the person is reached only before a fixer in this pass, so no code changed (LOG 518)
         - to: fix
       invalid: person_triage                      # names a finding the ledger does not hold: back to the person
 
@@ -92,7 +92,7 @@ steps:
       - { name: person_triage, optional: true }   # a person's decisions, over the triager's (LOG 248)
       - { name: implementation_claims, optional: true }
       - { name: fix_verification, optional: true }
-      - { name: fix_test_results, optional: true }   # a failed re-test's results: what sent the fixer back (LOG 512)
+      - { name: fix_test_results, optional: true }   # a failed re-test's results: what sent the fixer back (LOG 517)
       - { name: fix_validation, optional: true }     # an invalid regression-test validation, likewise
     produces:
       fixed:
@@ -100,7 +100,7 @@ steps:
         - { name: implementation_claims, type: std:artifact_types/evidence_claims }
     outcomes: { fixed: success, blocked: blocked }
     routes:
-      fixed:                                      # LOG 512
+      fixed:                                      # LOG 517
         - when: "steps.fix.outputs.commits == 0"
           to: { escalate: true }                  # a fix that changed nothing: a person decides, rather than verifying nothing
         - when: "findings.open == 0"
@@ -127,7 +127,7 @@ steps:
 
   - id: record_fixes
     action: findings.triage
-    with: { from: fix_verification, states: [fixed, open] }   # never escalated or declined, so a person is reached only before a fixer (LOG 513)
+    with: { from: fix_verification, states: [fixed, open] }   # never escalated or declined, so a person is reached only before a fixer (LOG 518)
     consumes: [{ name: fix_verification }]
     routes:
       applied: retest
