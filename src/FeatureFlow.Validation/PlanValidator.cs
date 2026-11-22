@@ -54,6 +54,7 @@ public sealed class PlanValidator
         v.CheckCleanUpTargets();
         v.CheckCycles();
         v.CheckArtifacts();
+        v.CheckFailureRoutes();
         v.CheckWriteAccess();
         v.CheckDecisionTypes();
         v.CheckTracker();
@@ -818,6 +819,53 @@ public sealed class PlanValidator
         var branch = Branch(producer);
         return branch.Length == 0 || Branches(consumer).Contains(branch);
     }
+
+    // ---- Check 37 ------------------------------------------------------------------------------
+
+    /// <summary>
+    /// A route on an outcome that is not a success, from step A to step B, where B consumes (optionally or not) an artifact
+    /// A declares but not for that outcome: B starts without A's evidence of why it was sent there, or with an earlier
+    /// execution's (LOG 510). A list-form <c>produces</c> keeps its artifacts for success outcomes only.
+    /// </summary>
+    void CheckFailureRoutes()
+    {
+        foreach (var from in plan.AllSteps)
+        {
+            var declared = from.Produces.GroupBy(p => p.Name).ToDictionary(g => g.Key, g => g.ToList());
+            if (declared.Count == 0)
+                continue;
+            foreach (var route in from.ResolvedRoutes)
+            {
+                if (from.Outcomes().FirstOrDefault(o => o.Name == route.Outcome) is not { } outcome || outcome.Class == OutcomeClass.Success)
+                    continue;
+                foreach (var stepId in Targets(route.Target).Distinct())
+                {
+                    if (plan.FindStep(stepId, from.Scope) is not { } to)
+                        continue;
+                    foreach (var input in to.Consumes.Where(c => c.From == "current" && declared.ContainsKey(c.Name)).DistinctBy(c => c.Name))
+                    {
+                        var kept = declared[input.Name];
+                        if (kept.Any(p => p.Outcome == outcome.Name))
+                            continue;
+                        var on = kept.SelectMany(p => p.Outcome is { } named ? [named] : from.Outcomes().Where(o => o.Class == OutcomeClass.Success).Select(o => o.Name))
+                            .Distinct().Order(StringComparer.Ordinal);
+                        d.Add(Checks.FailureRouteArtifact,
+                            $"routes '{outcome.Name}' to {to.Id}, which consumes '{input.Name}', but this step keeps '{input.Name}' only for {string.Join(", ", on)}; " +
+                            $"declare it for '{outcome.Name}' too (produces: {{ <outcome>: [...] }})",
+                            kept[0].Location, from.Id);
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>The steps a resolved route can enter: its step, or any of a guarded route's.</summary>
+    static IEnumerable<string> Targets(Resolved target) => target switch
+    {
+        ResolvedStep s => [s.StepId],
+        ResolvedGuarded g => g.Entries.SelectMany(e => Targets(e.Target)),
+        _ => [],
+    };
 
     // ---- Check 13 ------------------------------------------------------------------------------
 

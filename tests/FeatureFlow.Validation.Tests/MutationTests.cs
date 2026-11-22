@@ -1,3 +1,4 @@
+using FeatureFlow.Model;
 using static FeatureFlow.Validation.Tests.Std;
 
 namespace FeatureFlow.Validation.Tests;
@@ -260,5 +261,45 @@ public class MutationTests
         var error = Assert.Single(refused, x => x.Blocks);
         Assert.Equal(5, error.Check);
         Assert.Contains($"step act has no output '{unknown}' ({named})", error.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Check 37 (LOG 510): a failure route into a step that consumes an artifact the routing step keeps only on success warns;
+    /// declaring it for the failure too clears it. Optional consumption counts.
+    /// </summary>
+    [Theory]
+    [InlineData("[{ name: fix_test_results, type: std:artifact_types/test_results }]", true)]
+    [InlineData("{ passed: [{ name: fix_test_results, type: std:artifact_types/test_results }], failed: [{ name: fix_test_results, type: std:artifact_types/test_results }] }", false)]
+    public void A_failure_route_to_a_step_consuming_what_the_router_keeps_only_on_success_warns(string produces, bool warns)
+    {
+        var (_, _, d) = Probe($$"""
+            api_version: feature-flow/v1
+            kind: template
+            metadata: { name: probe, level: ticket }
+            artifact_types: [std:artifact_types/test_results]
+            steps:
+              - id: fix
+                agent: { role: std:roles/implementer, task: std:tasks/repair_failures }
+                consumes: [{ name: fix_test_results, optional: true }]
+                outcomes: { fixed: success }
+                routes: { fixed: retest }
+              - id: retest
+                action: test.run
+                produces: {{produces}}
+                routes: { passed: { end: completed }, failed: fix, baseline_failed: { end: failed } }
+            """);
+
+        Assert.False(d.HasErrors, string.Join("\n", d));
+        var warnings = d.Where(x => x.Check == Checks.FailureRouteArtifact).ToList();
+        if (!warnings.Any())
+        {
+            Assert.False(warns, string.Join("\n", d));
+            return;
+        }
+
+        Assert.True(warns);
+        var warning = Assert.Single(warnings);
+        Assert.Equal(("retest", Severity.Warning), (warning.StepId, warning.Severity));
+        Assert.Contains("routes 'failed' to fix, which consumes 'fix_test_results', but this step keeps 'fix_test_results' only for passed", warning.Message, StringComparison.Ordinal);
     }
 }

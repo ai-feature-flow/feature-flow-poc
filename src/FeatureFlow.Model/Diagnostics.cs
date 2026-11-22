@@ -67,6 +67,7 @@ public static class Checks
     public const int UnusedParameter = 34;
     public const int DeprecatedReference = 35;
     public const int WorkBranch = 36;
+    public const int FailureRouteArtifact = 37;
 
     static readonly Dictionary<int, string> Titles = new()
     {
@@ -105,12 +106,13 @@ public static class Checks
         [34] = "unused parameter",
         [35] = "deprecated library reference",
         [36] = "work branch is the default or parent branch",
+        [37] = "a failure route enters a step without an artifact it consumes",
     };
 
     public static string Title(int check) => Titles.TryGetValue(check, out var title) ? title : "check";
 
-    /// <summary>Checks 34 and 35 warn; every other check blocks (docs/09 section 1).</summary>
-    public static Severity SeverityOf(int check) => check is UnusedParameter or DeprecatedReference ? Severity.Warning : Severity.Error;
+    /// <summary>Checks 34, 35 and 37 warn; every other check blocks (docs/09 section 1).</summary>
+    public static Severity SeverityOf(int check) => check is UnusedParameter or DeprecatedReference or FailureRouteArtifact ? Severity.Warning : Severity.Error;
 }
 
 /// <summary>An append-only list of diagnostics, with the severity taken from the check number.</summary>
