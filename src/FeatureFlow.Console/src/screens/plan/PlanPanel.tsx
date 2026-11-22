@@ -54,7 +54,7 @@ const labelOf = ({ key, set }: Choice): string =>
 /**
  * The run's current plan revision and its steering (POST /runs/{id}/overrides, F18, G11): per step, as the caller may and
  * the core accepts, set or clear a breakpoint, skip with an outcome, or grant attempts; run-wide, amend the plan with a
- * patch. Each opens one form where it was chosen, which needs a reason.
+ * patch. Each opens one form where it was chosen, with an optional comment.
  */
 export function PlanPanel({ runId, plan, note, overridesAllowed }: PlanPanelProps) {
   const [choice, setChoice] = useState<Choice>();

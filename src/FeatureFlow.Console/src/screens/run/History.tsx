@@ -25,7 +25,7 @@ const ofOverride = (o: Schema<"OverrideView">): Entry => ({
   at: o.at,
   actor: o.actor,
   what: [o.key, o.step_id ?? "", ...Object.entries(o.change).map(([k, v]) => `${k}: ${v}`)].filter(s => s !== "").join("\n"),
-  reason: o.reason,
+  reason: o.reason ?? "",
   result: o.result,
 });
 
@@ -38,7 +38,7 @@ export function History({ answers, overrides }: { answers: readonly Schema<"Answ
       {entries.length === 0 ? (
         <p>No answers or overrides yet.</p>
       ) : (
-        <Table head={["When", "Who", "What", "Reason", "Result"]}>
+        <Table head={["When", "Who", "What", "Comment", "Result"]}>
           {entries.map(e => (
             <tr key={e.key}>
               <td>

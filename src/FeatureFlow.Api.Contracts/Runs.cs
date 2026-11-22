@@ -70,8 +70,10 @@ public enum WaitKind
 }
 
 /// <summary>
-/// A wait: its kind, step and decision type, the text to show (<see cref="Prompt"/>) and the choices that answer it; what
-/// its step consumed, by reference; whether the caller may answer it now; how many people must answer it the same way
+/// A wait: its kind, step and decision type, the text to show (<see cref="Prompt"/>) and the choices that answer it, with
+/// those a person must give a reason for (<see cref="ReasonRequired"/>, the choices that route the step as a failure or end the run; any
+/// other reason is optional); what its step consumed, by reference; whether the caller may answer it now; how many people
+/// must answer it the same way
 /// (<see cref="MinCount"/>: 1 where the approval rule sets none, and for a closed wait or one whose rule cannot be read
 /// now); for a decision several people must answer, who has answered each way; and once closed, the answer that closed it.
 /// </summary>
@@ -82,6 +84,7 @@ public sealed record WaitView(
     string DecisionType,
     string Prompt,
     IReadOnlyList<string> Choices,
+    IReadOnlyList<string> ReasonRequired,
     bool Open,
     DateTimeOffset UpdatedAt,
     IReadOnlyList<ConsumedArtifactView> Consumed,
@@ -102,12 +105,12 @@ public sealed record ClosedAnswer(string Actor, string Choice, string? Reason, D
 /// <summary>An answer as recorded: the wait (<c>abort</c> for an abort), who, the choice, their reason, and the result (<c>sent</c>, the run's reply, <c>pending: ...</c> or <c>refused: ...</c>).</summary>
 public sealed record AnswerView(string WaitId, string Actor, string Choice, string? Reason, string Result, DateTimeOffset At);
 
-/// <summary>A run-time override as recorded: its key, who and why, the step and the change by argument name, and the result.</summary>
+/// <summary>A run-time override as recorded: its key, who and why (null when no reason was given), the step and the change by argument name, and the result.</summary>
 public sealed record OverrideView(
     string OverrideId,
     string Key,
     string Actor,
-    string Reason,
+    string? Reason,
     string? StepId,
     IReadOnlyDictionary<string, string> Change,
     string Result,

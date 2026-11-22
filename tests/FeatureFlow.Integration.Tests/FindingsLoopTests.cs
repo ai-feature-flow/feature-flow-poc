@@ -266,7 +266,7 @@ public class FindingsLoopTests
         var path = Harness.StartedSteps(view);
         Assert.Equal(2, path.Count(s => s == "verify.fix.apply_person_triage"));
         Assert.DoesNotContain("verify.fix.fix", path);
-        Assert.Equal(1, path.Count(s => s == "verify.tests"));   // the loop left by cleared: nothing changed to re-test (LOG 502)
+        Assert.Equal(1, path.Count(s => s == "verify.tests"));   // the loop left by cleared: nothing changed to re-test (LOG 503)
         Assert.Equal(1, path.Count(s => s == "verify.review.review_0.assess"));
         Assert.Contains("deliver.merge", path);
 

@@ -137,7 +137,7 @@ public static partial class ApiApp
             var (body, malformed) = await BodyAsync<SessionAbandonRequest>(context);
             if (body is null)
                 return malformed!;
-            if (ReasonRefused(body.Reason) is { } refusedReason)
+            if (ReasonRefused(body.Reason, required: false) is { } refusedReason)
                 return refusedReason;
             var (session, run, wait, refused) = await ActableAsync(caller, sid, context.RequestAborted);
             if (refused is not null)

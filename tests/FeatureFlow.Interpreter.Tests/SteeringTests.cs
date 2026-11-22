@@ -363,7 +363,9 @@ public class SteeringTests
         Assert.Equal(2, core.State.RunCeilingGranted);
         Assert.Contains("above the hard ceiling of 4", core.Check(new AttemptsGranted("design", 1, false, "ann")));
         Assert.Contains("above the hard ceiling of 205", core.Check(new AttemptsGranted(null, 4, false, "ann")));
-        Ok(core.Apply(new AttemptsGranted("design", 5, true, "root")));
+        // Beyond it, an administrator's grant needs a reason, its audit trail (LOG 502); within it, none.
+        Assert.Contains("needs a reason", core.Check(new AttemptsGranted("design", 5, true, "root")));
+        Ok(core.Apply(new AttemptsGranted("design", 5, true, "root", "a long migration")));
         Assert.Equal(7, core.State.Steps["design"].AttemptsGranted);
         Assert.Contains("uses no attempts", core.Check(new AttemptsGranted("gate", 1, false, "ann")));
         Assert.Contains("positive", core.Check(new AttemptsGranted("design", 0, false, "ann")));

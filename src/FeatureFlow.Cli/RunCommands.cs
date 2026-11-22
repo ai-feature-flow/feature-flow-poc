@@ -19,15 +19,16 @@ public static class RunCommands
                ff run start <template> [--param <name>=<value>]... [--repo <owner/name>]... [--parent-branch <branch>] [--tracker-issue <key>] [--dry-run] [--continue-as-new-events <n>]
                ff run show <run id> [--timeline]
                ff run wait <run id> [--for end | wait] [--timeout <seconds>]
-               ff run answer <run id> <wait id> <outcome | approve | reject> --reason <text> [--artifact <name>=<file>]...
+               ff run answer <run id> <wait id> <outcome | approve | reject> [--reason <text>] [--artifact <name>=<file>]...
                ff run findings <run id>
                ff run plan <run id>
                ff run artifact <run id> <reference>
-               ff run recover <run id> <wait id> retry | go_to <step> [--clean-up] | replan <step> | grant_attempts <n> | end <status> --reason <text>
+               ff run recover <run id> <wait id> retry | go_to <step> [--clean-up] | replan <step> | grant_attempts <n> | end <status> [--reason <text>]
                ff run abort <run id> --reason <text> [--close-pull-requests]
-               ff run override <run id> <key> --reason <text> [--step <step id>] [--change <name>=<value> | <name>=@<file>]...
+               ff run override <run id> <key> [--reason <text>] [--step <step id>] [--change <name>=<value> | <name>=@<file>]...
                  (key: breakpoint, skip, amend, change_role, grant_attempts or override_library; the run applies a
                  protected or beyond-ceiling variant where your roles hold it; @<file> sends the file's text, @@ a literal @)
+               (a reason is needed for an outcome that routes the step as a failure, for end and for abort; the API says where)
                (every ff run command takes [--api <url>] [--token-file <file>])
         """;
 
@@ -73,26 +74,26 @@ public static class RunCommands
                     return await client.ShowAsync(id, flags.Contains("--timeline"));
                 case ["wait", var id]:
                     return await client.WaitAsync(id, Option("--for") ?? "end", TimeSpan.FromSeconds(double.Parse(Option("--timeout") ?? "300", System.Globalization.CultureInfo.InvariantCulture)));
-                case ["answer", var id, var wait, var outcome] when Option("--reason") is { } reason:
-                    return await client.AnswerAsync(id, Answer(wait, outcome, reason, options.GetValueOrDefault("--artifact") ?? []));
+                case ["answer", var id, var wait, var outcome]:
+                    return await client.AnswerAsync(id, Answer(wait, outcome, Option("--reason"), options.GetValueOrDefault("--artifact") ?? []));
                 case ["findings", var id]:
                     return await client.PrintAsync($"runs/{id}/findings");
                 case ["plan", var id]:
                     return await client.PlanAsync(id);
                 case ["artifact", var id, var reference]:
                     return await client.PrintTextAsync($"runs/{id}/artifacts/{Uri.EscapeDataString(reference)}");
-                case ["recover", var id, var wait, "retry"] when Option("--reason") is { } reason:
-                    return await client.AnswerAsync(id, new AnswerRequest(wait, Action: "retry", Reason: reason));
-                case ["recover", var id, var wait, var action, var step] when action is "go_to" or "replan" && Option("--reason") is { } reason:
-                    return await client.AnswerAsync(id, new AnswerRequest(wait, Action: action, StepId: step, CleanUp: flags.Contains("--clean-up"), Reason: reason));
-                case ["recover", var id, var wait, "grant_attempts", var n] when long.TryParse(n, out var attempts) && Option("--reason") is { } reason:
-                    return await client.AnswerAsync(id, new AnswerRequest(wait, Action: "grant_attempts", Attempts: attempts, Reason: reason));
-                case ["recover", var id, var wait, "end", var status] when Option("--reason") is { } reason:
-                    return await client.AnswerAsync(id, new AnswerRequest(wait, Action: "end", Status: status, Reason: reason));
+                case ["recover", var id, var wait, "retry"]:
+                    return await client.AnswerAsync(id, new AnswerRequest(wait, Action: "retry", Reason: Option("--reason")));
+                case ["recover", var id, var wait, var action, var step] when action is "go_to" or "replan":
+                    return await client.AnswerAsync(id, new AnswerRequest(wait, Action: action, StepId: step, CleanUp: flags.Contains("--clean-up"), Reason: Option("--reason")));
+                case ["recover", var id, var wait, "grant_attempts", var n] when long.TryParse(n, out var attempts):
+                    return await client.AnswerAsync(id, new AnswerRequest(wait, Action: "grant_attempts", Attempts: attempts, Reason: Option("--reason")));
+                case ["recover", var id, var wait, "end", var status]:
+                    return await client.AnswerAsync(id, new AnswerRequest(wait, Action: "end", Status: status, Reason: Option("--reason")));
                 case ["abort", var id] when Option("--reason") is { } reason:
                     return await client.SendAsync($"runs/{id}/abort", new AbortRequest(reason, flags.Contains("--close-pull-requests")));
-                case ["override", var id, var key] when Option("--reason") is { } reason:
-                    return await client.OverrideAsync(id, key, reason, Option("--step"), options.GetValueOrDefault("--change") ?? []);
+                case ["override", var id, var key]:
+                    return await client.OverrideAsync(id, key, Option("--reason"), Option("--step"), options.GetValueOrDefault("--change") ?? []);
             }
         }
         catch (HttpRequestException e)
@@ -110,8 +111,8 @@ public static class RunCommands
         return 2;
     }
 
-    /// <summary>A decision's answer with the person's reason; each <c>--artifact name=file</c> gives what the person produced, such as a triage (LOG 248).</summary>
-    static AnswerRequest Answer(string wait, string outcome, string reason, List<string> artifacts)
+    /// <summary>A decision's answer with the person's reason, if any; each <c>--artifact name=file</c> gives what the person produced, such as a triage (LOG 248).</summary>
+    static AnswerRequest Answer(string wait, string outcome, string? reason, List<string> artifacts)
     {
         var given = artifacts.Select(a => a.Split('=', 2)).ToDictionary(
             p => p[0], p => File.ReadAllText(p.Length == 2 ? p[1] : throw new ArgumentException($"--artifact takes <name>=<file>, not {p[0]}")), StringComparer.Ordinal);
@@ -224,7 +225,7 @@ public static class RunCommands
         public async Task<int> AnswerAsync(string id, AnswerRequest body) => await SendAsync($"runs/{id}/answers", body);
 
         /// <summary>A run-time override (docs/05 section 5): its key, reason, step and its arguments by name, each given as <c>name=value</c>.</summary>
-        public async Task<int> OverrideAsync(string id, string key, string reason, string? step, List<string> changes)
+        public async Task<int> OverrideAsync(string id, string key, string? reason, string? step, List<string> changes)
         {
             var change = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var c in changes)

@@ -177,6 +177,8 @@ public class SteeringRunTests
             "ff run plan did not show revision 3");
 
         Assert.Contains("above the hard ceiling of 4", await RefusedAsync(h, id, Override("grant_attempts", "build", new() { ["attempts"] = "2" })));
+        // Beyond the hard ceiling, the administrator's reason is the grant's audit trail (LOG 502).
+        Assert.Contains("needs a reason", await RefusedAsync(h, id, Override("grant_attempts", "build", new() { ["attempts"] = "2" }, "root", "grant_attempts_beyond") with { Reason = null }));
         Assert.Equal("applied", (await SendAsync(h, id, Override("grant_attempts", "build", new() { ["attempts"] = "2" }, "root", "grant_attempts_beyond"))).Result);
         Assert.Contains("not delivered as an override", await RefusedAsync(h, id, Override("recover", "build")));
         Assert.Contains("not a run-time override key", await RefusedAsync(h, id, Override("teleport", "build")));

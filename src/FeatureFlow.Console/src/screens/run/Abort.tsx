@@ -2,9 +2,9 @@ import { useState } from "preact/hooks";
 import { api, read } from "../../api/client";
 import { invalidate, runKey } from "../../api/live";
 import { ErrorBox } from "../../ui/ErrorBox";
-import { hasReason, Reason } from "../../ui/Reason";
+import { hasReason, labelOf, Reason } from "../../ui/Reason";
 
-/** Abort run (POST /runs/{id}/abort): a reason is required, and the run's pull requests may be closed with it. */
+/** Abort run (POST /runs/{id}/abort): a comment is required, and the run's pull requests may be closed with it. */
 export function Abort({ runId }: { runId: string }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
@@ -39,13 +39,13 @@ export function Abort({ runId }: { runId: string }) {
         </button>
       ) : (
         <form onSubmit={submit}>
-          <Reason value={reason} onInput={setReason} />
+          <Reason value={reason} onInput={setReason} required />
           <label>
             <input type="checkbox" checked={closePullRequests} onChange={e => setClosePullRequests(e.currentTarget.checked)} /> Close its pull requests
           </label>
           <p>
             <button type="submit" disabled={busy || !hasReason(reason)}>
-              Abort
+              {labelOf("Abort", true)}
             </button>{" "}
             <button type="button" onClick={() => setOpen(false)}>
               Cancel

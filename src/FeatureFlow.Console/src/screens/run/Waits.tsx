@@ -49,7 +49,7 @@ export function ClosedWaits({ waits }: { waits: readonly Wait[] }) {
       {closed.length === 0 ? (
         <p>None yet.</p>
       ) : (
-        <Table head={["Wait", "Step", "Answered by", "Choice", "Reason", "When"]}>
+        <Table head={["Wait", "Step", "Answered by", "Choice", "Comment", "When"]}>
           {closed.map(w => (
             <tr key={w.wait_id} data-wait={w.wait_id}>
               <td>

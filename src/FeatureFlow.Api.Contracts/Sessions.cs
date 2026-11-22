@@ -79,5 +79,5 @@ public sealed record SessionCheckResponse(string CheckId, string Result);
 /// <summary><c>POST /sessions/{sid}/submit</c>: submit the session's files at <see cref="Revision"/>, a full commit id pushed to its branch.</summary>
 public sealed record SessionSubmitRequest(string Revision, string? Reason = null);
 
-/// <summary><c>POST /sessions/{sid}/abandon</c>: answer the session's decision with its abandon outcome.</summary>
-public sealed record SessionAbandonRequest(string Reason);
+/// <summary><c>POST /sessions/{sid}/abandon</c>: answer the session's decision with its abandon outcome; a reason is needed only if that outcome routes the step as a failure.</summary>
+public sealed record SessionAbandonRequest(string? Reason = null);

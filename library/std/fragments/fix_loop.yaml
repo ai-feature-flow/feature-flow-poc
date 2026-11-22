@@ -18,7 +18,7 @@ parameters:
 
 exits:
   fixed: success                        # nothing open after a fix: the caller re-tests and re-reviews
-  cleared: success                      # nothing open and no fixer has run: no code changed (LOG 502)
+  cleared: success                      # nothing open and no fixer has run: no code changed (LOG 503)
   escalated: blocked
 
 defaults:

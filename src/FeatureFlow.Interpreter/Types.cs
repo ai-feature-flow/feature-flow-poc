@@ -244,8 +244,9 @@ public enum RecoveryKind
 }
 
 /// <summary>A recovery action with its arguments: the step for go to and re-plan, the attempts to grant, the status to end with.</summary>
-/// <remarks><see cref="BeyondHardCeiling"/> is set by the shell when the authenticated actor may grant beyond the hard ceiling (an administrator).</remarks>
-public sealed record Recovery(RecoveryKind Kind, string? StepId = null, bool CleanUp = false, long Attempts = 0, RunStatus? Status = null, bool BeyondHardCeiling = false);
+/// <remarks><see cref="BeyondHardCeiling"/> is set by the shell when the authenticated actor may grant beyond the hard ceiling (an administrator); a grant beyond it needs the person's <see cref="Reason"/> (LOG 502).</remarks>
+public sealed record Recovery(RecoveryKind Kind, string? StepId = null, bool CleanUp = false, long Attempts = 0, RunStatus? Status = null, bool BeyondHardCeiling = false,
+    string? Reason = null);
 
 /// <summary>A person answered an intervention with a recovery action. The shell names the actor; the core does not need it.</summary>
 public sealed record InterventionAnswered(string WaitId, Recovery Action) : RunInput;
@@ -315,20 +316,21 @@ public sealed record BreakpointSet(string StepId, bool Set, string Actor) : RunI
 /// skipped. A step at a decision, a breakpoint or an intervention is skipped at once. A protected step needs
 /// <see cref="MayTouchProtected"/> (<c>skip_protected</c>).
 /// </summary>
-public sealed record StepSkipped(string StepId, string Outcome, string Actor, string Reason, bool MayTouchProtected) : RunInput;
+public sealed record StepSkipped(string StepId, string Outcome, string Actor, string? Reason, bool MayTouchProtected) : RunInput;
 
 /// <summary>
 /// A person grants attempts (docs/05 section 5, <c>grant_attempts</c>): to <see cref="StepId"/>'s allowance and the
 /// run ceiling, or the run ceiling alone when it is null. The same grant as the recovery action, without the retry;
-/// beyond the hard ceiling only with <see cref="BeyondHardCeiling"/> (<c>grant_attempts_beyond</c>, F4).
+/// beyond the hard ceiling only with <see cref="BeyondHardCeiling"/> (<c>grant_attempts_beyond</c>, F4) and the person's
+/// <see cref="Reason"/>, its audit trail (LOG 502).
 /// </summary>
-public sealed record AttemptsGranted(string? StepId, long Attempts, bool BeyondHardCeiling, string Actor) : RunInput;
+public sealed record AttemptsGranted(string? StepId, long Attempts, bool BeyondHardCeiling, string Actor, string? Reason = null) : RunInput;
 
 /// <summary>
 /// A person changes an agent step's role (docs/05 section 5, <c>change_role</c>): applied as a person's patch that
 /// replaces the step with the role changed, the one way a role changes (docs/03 section 10.2).
 /// </summary>
-public sealed record RoleChanged(string StepId, string Role, string Actor, string Reason) : RunInput;
+public sealed record RoleChanged(string StepId, string Role, string Actor, string? Reason) : RunInput;
 
 /// <summary>
 /// The content future steps resolve was replaced (docs/08 section 5.2): <see cref="Libraries"/> is the run's library set
@@ -361,7 +363,7 @@ public sealed record LibraryOverrideEntry(
     string OldHash,
     string NewHash,
     string Actor,
-    string Reason,
+    string? Reason,
     IReadOnlyList<string> InFlight,
     IReadOnlyList<string> ProtectedSteps);
 
@@ -478,10 +480,11 @@ public sealed record ClosedWait(string Id, WaitKind Kind, string StepId, string 
 public sealed record WaitChange(OpenWait Wait, bool Open);
 
 /// <summary>
-/// What the record store shows of a wait: its record kind, decision type, the choices that answer it, the text to show, and
-/// for a gate what its step consumed as it opened (LOG 394).
+/// What the record store shows of a wait: its record kind, decision type, the choices that answer it, the text to show, for
+/// a gate what its step consumed as it opened (LOG 394), and the choices a person must give a reason for (LOG 502).
 /// </summary>
-public sealed record WaitDescription(string Kind, string Type, IReadOnlyList<string> Choices, string Prompt, IReadOnlyList<ConsumedArtifact>? Consumed = null);
+public sealed record WaitDescription(string Kind, string Type, IReadOnlyList<string> Choices, string Prompt, IReadOnlyList<ConsumedArtifact>? Consumed = null,
+    IReadOnlyList<string>? ReasonRequired = null);
 
 /// <summary>A wait to record (<see cref="RunCore.TakeWaitChanges"/>): opened, with its description, or closed when <see cref="Opened"/> is null.</summary>
 public sealed record WaitShown(string WaitId, string StepId, WaitDescription? Opened);

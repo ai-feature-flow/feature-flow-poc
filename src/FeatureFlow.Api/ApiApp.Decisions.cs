@@ -49,9 +49,6 @@ public static partial class ApiApp
             var action = body.Action;
             if (wait.Kind == "patch_approval" && action is null && outcome is "approve" or "reject")
                 (action, outcome) = (outcome, null);
-            // An agent's question is answered by its text alone (LOG 392); every other answer is recorded with the person's reason.
-            if (ReasonRefused(body.Reason, required: wait.Kind != "question") is { } refusedReason)
-                return refusedReason;
             // F8: the actor is the authenticated caller; the body cannot name one.
             var args = new AnswerArgs(waitId, caller.Actor, outcome, action, body.StepId, body.CleanUp, body.Attempts, body.Status, Reason: body.Reason);
             if (body.Artifacts is { } given)
@@ -67,7 +64,8 @@ public static partial class ApiApp
         }
 
         /// <summary>
-        /// Every way a person answers a wait goes through here (docs/04 section 4.1), so approval applies to all of them:
+        /// Every way a person answers a wait goes through here (docs/04 section 4.1), so approval applies to all of them: a
+        /// reason where the choice needs one (<see cref="WaitRecord.ReasonRequired"/>, LOG 502), then
         /// <see cref="CheckAnswer"/> (roles, <c>from_chat</c>, the local token and <c>min_count</c>), then <c>min_count</c>
         /// itself, distinct people answering the same way before the answer is delivered, each recorded as they answer. The
         /// answer is recorded with the authenticated actor, then delivered as the <c>answer</c> update.
@@ -75,6 +73,9 @@ public static partial class ApiApp
         public async Task<IResult> SubmitAnswerAsync(HttpContext context, Caller caller, RunRecord run, WaitRecord wait, AnswerArgs args)
         {
             var ct = context.RequestAborted;
+            if (ReasonRefused(args.Reason, required: wait.ReasonRequired?.Contains(args.Outcome ?? args.Action) == true) is { } refusedReason)
+                return refusedReason;
+            args = args with { Reason = string.IsNullOrWhiteSpace(args.Reason) ? null : args.Reason };
             var scope = ScopeOf(run.Repositories);
             var (types, unreadable) = await DecisionTypesAsync(wait, ct);
             if (types is null)
@@ -105,11 +106,12 @@ public static partial class ApiApp
                     return Results.Json(new AnswerResponse("recorded: " + progress), Json, statusCode: 202);
                 }
 
-                // Every person who answered is the actor of the delivered answer, and each one's reason is its reason.
+                // Every person who answered is the actor of the delivered answer, and the reasons given are its reason.
+                var reasons = people.Where(p => p.Reason is not null).Select(p => $"{p.Actor}: {p.Reason}").ToList();
                 args = args with
                 {
                     Actor = string.Join(", ", people.Select(p => p.Actor)),
-                    Reason = args.Reason is null ? null : string.Join("; ", people.Select(p => $"{p.Actor}: {p.Reason}")),
+                    Reason = reasons.Count == 0 ? null : string.Join("; ", reasons),
                 };
             }
 
@@ -131,12 +133,12 @@ public static partial class ApiApp
         }
 
         /// <summary>
-        /// A 400 when a person gives no reason where one is <paramref name="required"/> (every answer but a question's, abort and
-        /// abandon; docs/05 section 5; F5), or a reason over <see cref="MaxReasonBytes"/>: it is carried in the run's state and
-        /// its context for the next agent.
+        /// A 400 when a person gives no reason where one is <paramref name="required"/> (a choice that routes the step as a
+        /// failure or ends the run, an abort, and a library override; docs/05 section 5; LOG 502), or a reason over
+        /// <see cref="MaxReasonBytes"/>: it is carried in the run's state and its context for the next agent.
         /// </summary>
-        static IResult? ReasonRefused(string? reason, bool required = true) =>
-            required && string.IsNullOrWhiteSpace(reason) ? Error(400, "reason is required: every answer is recorded with the person's reason (docs/05 section 5)")
+        static IResult? ReasonRefused(string? reason, bool required) =>
+            required && string.IsNullOrWhiteSpace(reason) ? Error(400, "reason is required: a rejection, ending a run, an abort and a library override are recorded with the person's reason (docs/05 section 5)")
             : reason is not null && Encoding.UTF8.GetByteCount(reason) > MaxReasonBytes ? Error(400, $"reason may be at most {MaxReasonBytes} bytes of UTF-8 text")
             : null;
 
@@ -232,7 +234,7 @@ public static partial class ApiApp
             var (body, malformed) = await BodyAsync<AbortRequest>(context);
             if (body is null)
                 return malformed!;
-            if (ReasonRefused(body.Reason) is { } refusedReason)
+            if (ReasonRefused(body.Reason, required: true) is { } refusedReason)
                 return refusedReason;
             var args = new AbortArgs(caller.Actor, body.Reason, body.ClosePullRequests);
             var text = args.ClosePullRequests ? args.Reason + " (close pull requests)" : args.Reason;

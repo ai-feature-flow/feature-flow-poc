@@ -22,33 +22,65 @@ public sealed class ApprovalTests
     static ApprovalRule Rule(string match, long minCount = 1, bool fromChat = false, params string[] roles) =>
         new(match, roles.Length == 0 ? ["approver"] : roles, minCount, fromChat, new Cap<bool>(false, false));
 
-    static async Task<ApiWorld> WorldAsync(OrganisationConfig organisation, string type = "ticket.spec_approval", string kind = "gate")
+    static async Task<ApiWorld> WorldAsync(OrganisationConfig organisation, string type = "ticket.spec_approval", string kind = "gate", params string[] reasonRequired)
     {
         var world = new ApiWorld(organisation);
         await world.RunAsync(Run, "acme/api");
-        await world.WaitAsync(Run, "w1", kind, type);
+        await world.WaitAsync(Run, "w1", kind, type, reasonRequired);
         return world;
     }
 
     static Task<(HttpStatusCode Status, string Body)> AnswerAsync(HttpClient http, string outcome = "approved", string reason = "looks right") =>
         ApiWorld.PostAsync(http, $"runs/{Run}/answers", $$"""{ "wait_id": "w1", "outcome": "{{outcome}}", "reason": "{{reason}}" }""");
 
+    /// <summary>A reason is needed only where the choice routes the step as a failure (the wait's <c>reason_required</c>), and for an abort (LOG 502).</summary>
+    [Theory]
+    [InlineData("gate", "ticket.spec_approval", "rejected", """ "outcome": "rejected" """, "")]
+    [InlineData("gate", "ticket.spec_approval", "rejected", """ "outcome": "rejected" """, """, "reason": "  " """)]
+    [InlineData("gate", "ticket.merge_action", "reject", """ "outcome": "reject" """, "")]
+    [InlineData("intervention", "ticket.escalation", "end", """ "action": "end", "status": "failed" """, "")]
+    [InlineData("intervention", "ticket.escalation", "end", """ "action": "end", "status": "failed" """, """, "reason": "" """)]
+    [InlineData("breakpoint", "ticket.breakpoint", "end", """ "action": "end", "status": "failed" """, "")]
+    public async Task A_rejection_or_ending_the_run_without_a_reason_is_refused_and_nothing_is_recorded(string kind, string type, string required, string answer, string reason)
+    {
+        await using var world = await WorldAsync(Organisation(Rule("*")), type, kind, required);
+        var (status, text) = await ApiWorld.PostAsync(world.As("ann", "approver,steerer,admin"), $"runs/{Run}/answers", $$"""{ "wait_id": "w1", {{answer}}{{reason}} }""");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Contains("reason is required", text, StringComparison.Ordinal);
+        Assert.Empty(world.Temporal.Updates);
+        Assert.Empty(await world.QueryAsync<AnswerRecord>(Queries.Answers, Run));
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData(""", "reason": "  " """)]
-    public async Task An_answer_or_an_abort_without_a_reason_is_refused_and_nothing_is_recorded(string reason)
+    public async Task An_abort_without_a_reason_is_refused_and_nothing_is_recorded(string reason)
     {
         await using var world = await WorldAsync(Organisation(Rule("*")));
-        var admin = world.As("ann", "approver,steerer,admin");
+        var (abort, abortText) = await ApiWorld.PostAsync(world.As("ann", "approver,steerer,admin"), $"runs/{Run}/abort", $$"""{ "close_pull_requests": false{{reason}} }""");
 
-        var (answer, answerText) = await ApiWorld.PostAsync(admin, $"runs/{Run}/answers", $$"""{ "wait_id": "w1", "outcome": "approved"{{reason}} }""");
-        var (abort, abortText) = await ApiWorld.PostAsync(admin, $"runs/{Run}/abort", $$"""{ "close_pull_requests": false{{reason}} }""");
-
-        Assert.Equal((HttpStatusCode.BadRequest, HttpStatusCode.BadRequest), (answer, abort));
+        Assert.Equal(HttpStatusCode.BadRequest, abort);
         // An abort's reason is a required property, so a body without one is not a valid request; a blank one is refused by the rule.
-        Assert.All(new[] { answerText, abortText }, t => Assert.Matches("reason is required|missing required properties.*reason", t));
+        Assert.Matches("reason is required|missing required properties.*reason", abortText);
         Assert.Empty(world.Temporal.Updates);
         Assert.Empty(await world.QueryAsync<AnswerRecord>(Queries.Answers, Run));
+    }
+
+    [Theory]
+    [InlineData("gate", "ticket.spec_approval", "rejected", """ "outcome": "approved" """)]
+    [InlineData("gate", "ticket.merge_action", "reject", """ "outcome": "approve" """)]
+    [InlineData("patch_approval", "ticket.patch_approval", null, """ "action": "reject" """)]
+    [InlineData("breakpoint", "ticket.breakpoint", "end", """ "action": "continue" """)]
+    [InlineData("intervention", "ticket.escalation", "end", """ "action": "retry" """)]
+    public async Task Any_other_answer_needs_no_reason_and_is_recorded_with_none(string kind, string type, string? required, string answer)
+    {
+        await using var world = await WorldAsync(Organisation(Rule("*")), type, kind, required is null ? [] : [required]);
+        var (status, text) = await ApiWorld.PostAsync(world.As("ann", "approver,steerer,admin"), $"runs/{Run}/answers", $$"""{ "wait_id": "w1", {{answer}}, "reason": " " }""");
+
+        Assert.True(status == HttpStatusCode.OK, text);
+        Assert.Null(((AnswerArgs)Assert.Single(world.Temporal.Updates).Argument!).Reason);
+        Assert.All(await world.QueryAsync<AnswerRecord>(Queries.Answers, Run), a => Assert.Null(a.Reason));
     }
 
     [Fact]
@@ -87,6 +119,16 @@ public sealed class ApprovalTests
         var delivered = (AnswerArgs)Assert.Single(world.Temporal.Updates).Argument!;
         Assert.Equal(("ann, cat", "ann: covers the audit log; cat: matches the ticket"), (delivered.Actor, delivered.Reason));
         Assert.Equal("covers the audit log", (await world.QueryAsync<AnswerRecord>(Queries.Answers, Run))[0].Reason);
+    }
+
+    [Fact]
+    public async Task Only_the_reasons_given_are_joined_when_several_people_answer()
+    {
+        await using var world = await WorldAsync(Organisation(Rule("*.spec_approval", minCount: 2)));
+
+        Assert.Equal(HttpStatusCode.Accepted, (await ApiWorld.PostAsync(world.As("ann", "approver"), $"runs/{Run}/answers", """{ "wait_id": "w1", "outcome": "approved" }""")).Status);
+        Assert.Equal(HttpStatusCode.OK, (await AnswerAsync(world.As("cat", "approver"), reason: "matches the ticket")).Status);
+        Assert.Equal("cat: matches the ticket", ((AnswerArgs)Assert.Single(world.Temporal.Updates).Argument!).Reason);
     }
 
     [Fact]

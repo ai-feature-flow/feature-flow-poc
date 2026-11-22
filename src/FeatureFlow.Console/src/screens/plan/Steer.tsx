@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { api, read, type Schema } from "../../api/client";
 import { invalidate, runKey } from "../../api/live";
 import { ErrorBox } from "../../ui/ErrorBox";
-import { hasReason, Reason } from "../../ui/Reason";
+import { Reason, reasonOf } from "../../ui/Reason";
 
 /**
  * An override chosen in the plan panel: its key (docs/05 section 5), the step it applies to (none for an amendment), and
@@ -54,7 +54,7 @@ function changeOf(key: Choice["key"], argument: string, set?: boolean): Record<s
   }
 }
 
-/** One override's form: its argument, a required reason, and Apply (POST /runs/{id}/overrides). */
+/** One override's form: its argument, an optional comment, and Apply (POST /runs/{id}/overrides). */
 export function Steer({ runId, revision, choice, onDone, onCancel }: {
   runId: string;
   revision: number;
@@ -76,14 +76,14 @@ export function Steer({ runId, revision, choice, onDone, onCancel }: {
 
   const apply = async (e: Event) => {
     e.preventDefault();
-    if (change === null || !hasReason(reason)) return;
+    if (change === null) return;
     setSending(true);
     setError(undefined);
     try {
       const reply = await read(
         api.POST("/runs/{id}/overrides", {
           params: { path: { id: runId } },
-          body: { key: choice.key, reason, step_id: choice.step?.id ?? null, change },
+          body: { key: choice.key, reason: reasonOf(reason), step_id: choice.step?.id ?? null, change },
         }),
       );
       invalidate([runKey(runId)]);
@@ -126,7 +126,7 @@ export function Steer({ runId, revision, choice, onDone, onCancel }: {
       <Reason value={reason} onInput={setReason} />
       {error && <ErrorBox error={error} />}
       <p>
-        <button type="submit" disabled={sending || change === null || !hasReason(reason)}>
+        <button type="submit" disabled={sending || change === null}>
           Apply
         </button>{" "}
         <button type="button" onClick={onCancel}>
