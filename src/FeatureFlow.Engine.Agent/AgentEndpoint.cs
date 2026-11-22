@@ -24,8 +24,11 @@ public interface IRunSignals
     /// <summary>The <c>agent_plan</c> query.</summary>
     Task<AgentPlanView> PlanAsync(string workflowId, AgentPlanQuery query, CancellationToken cancellationToken);
 
-    /// <summary>The <c>patch_preview</c> query for a <see cref="PatchPreviewQuery"/>, or <c>child_patch_preview</c> for a <see cref="ChildPatchPreviewQuery"/>.</summary>
-    Task<PatchPreview> PreviewAsync(string workflowId, object query, CancellationToken cancellationToken);
+    /// <summary>The <c>patch_preview</c> query.</summary>
+    Task<PatchPreview> PreviewAsync(string workflowId, PatchPreviewQuery query, CancellationToken cancellationToken);
+
+    /// <summary>The <c>child_patch_preview</c> query, on a parent.</summary>
+    Task<PatchPreview> ChildPreviewAsync(string workflowId, ChildPatchPreviewQuery query, CancellationToken cancellationToken);
 }
 
 public sealed class TemporalRunSignals(ITemporalClient client) : IRunSignals
@@ -39,13 +42,11 @@ public sealed class TemporalRunSignals(ITemporalClient client) : IRunSignals
     public Task<AgentPlanView> PlanAsync(string workflowId, AgentPlanQuery query, CancellationToken cancellationToken) =>
         client.GetWorkflowHandle(workflowId).QueryAsync<AgentPlanView>(RunWorkflowNames.AgentPlan, [query], new WorkflowQueryOptions { Rpc = new RpcOptions { CancellationToken = cancellationToken } });
 
-    public Task<PatchPreview> PreviewAsync(string workflowId, object query, CancellationToken cancellationToken) =>
-        client.GetWorkflowHandle(workflowId).QueryAsync<PatchPreview>(query switch
-        {
-            PatchPreviewQuery => RunWorkflowNames.PatchPreview,
-            ChildPatchPreviewQuery => RunWorkflowNames.ChildPatchPreview,
-            _ => throw new ArgumentException($"no preview query takes a {query.GetType().Name}", nameof(query)),
-        }, [query], new WorkflowQueryOptions { Rpc = new RpcOptions { CancellationToken = cancellationToken } });
+    public Task<PatchPreview> PreviewAsync(string workflowId, PatchPreviewQuery query, CancellationToken cancellationToken) =>
+        client.GetWorkflowHandle(workflowId).QueryAsync<PatchPreview>(RunWorkflowNames.PatchPreview, [query], new WorkflowQueryOptions { Rpc = new RpcOptions { CancellationToken = cancellationToken } });
+
+    public Task<PatchPreview> ChildPreviewAsync(string workflowId, ChildPatchPreviewQuery query, CancellationToken cancellationToken) =>
+        client.GetWorkflowHandle(workflowId).QueryAsync<PatchPreview>(RunWorkflowNames.ChildPatchPreview, [query], new WorkflowQueryOptions { Rpc = new RpcOptions { CancellationToken = cancellationToken } });
 }
 
 /// <summary>

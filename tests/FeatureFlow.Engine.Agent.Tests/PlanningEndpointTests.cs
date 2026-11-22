@@ -41,7 +41,11 @@ public sealed class PlanningEndpointTests : IDisposable
             return Task.FromResult(Plan(workflowId, query));
         }
 
-        public Task<PatchPreview> PreviewAsync(string workflowId, object query, CancellationToken cancellationToken)
+        public Task<PatchPreview> PreviewAsync(string workflowId, PatchPreviewQuery query, CancellationToken cancellationToken) => Previewed(workflowId, query);
+
+        public Task<PatchPreview> ChildPreviewAsync(string workflowId, ChildPatchPreviewQuery query, CancellationToken cancellationToken) => Previewed(workflowId, query);
+
+        Task<PatchPreview> Previewed(string workflowId, object query)
         {
             Queries.Add((workflowId, query));
             return Task.FromResult(Preview(workflowId, query));
@@ -146,6 +150,8 @@ public sealed class PlanningEndpointTests : IDisposable
         var noResume = await AgentEndpoint.ProposePatchAsync(services, Claims, Json(Proposal.Replace("\"resume_at\":\"migrate\",", "", StringComparison.Ordinal)), Ct);
         Assert.Contains("resume_at is required", noResume.Message, StringComparison.Ordinal);
         Assert.Empty(signals.Queries);
+        // Each counts towards the proposals an attempt allows, the oversized one too.
+        Assert.Equal(3, (await EventsAsync()).Count(e => e.Kind == AgentEndpoint.PatchRefusedEvent));
     }
 
     [Fact]

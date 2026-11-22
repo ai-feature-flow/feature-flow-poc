@@ -127,7 +127,8 @@ public sealed class McpServer(EngineClient engine, McpSettings settings, ClientL
                                            "and each step with its outcomes, routes and the step as written.",
                 new JsonObject { ["target"] = target.DeepClone() }, []));
             tools.Add(Tool("propose_patch", "Propose a small change to the plan, checked now and sent with your next report. It takes effect only when you report: " +
-                                            "finish your work and call report as usual. A later proposal replaces this one; withdraw: true clears it.",
+                                            "finish your work and call report as usual. A step you add must be reachable: re-route the step before it " +
+                                            "(set routes.<outcome>). A later proposal that passes replaces this one; withdraw: true clears it.",
                 new JsonObject
                 {
                     ["target"] = target.DeepClone(),

@@ -97,8 +97,13 @@ public static partial class AgentEndpoint
 
         var text = PatchText(claims, request);
         if (System.Text.Encoding.UTF8.GetByteCount(text) > MaxPatchBytes)
-            return new PatchReply(PatchReply.Limit, null, [], [], request.BaseRevision,
-                $"The proposal is larger than {MaxPatchBytes / 1024} KB. Propose a smaller change; for a larger one report blocked and say why.");
+        {
+            // Recorded as a refusal, so it counts towards the proposals an attempt allows.
+            var why = $"The proposal is larger than {MaxPatchBytes / 1024} KB.";
+            await AppendAsync(s, new RecordBatch(AgentEvents: [new AgentEventRecord(claims.StepKey, PatchRefusedEvent, why, DateTimeOffset.UtcNow)]));
+            return new PatchReply(PatchReply.Limit, null, [], [why], request.BaseRevision,
+                why + " Propose a smaller change; for a larger one report blocked and say why. " + StillStaged(staged, "Nothing is staged."));
+        }
         if (Unreadable(text) is { Count: > 0 } schema)
             return await RefuseAsync(s, claims, staged, request.BaseRevision, schema);
 
@@ -170,7 +175,7 @@ public static partial class AgentEndpoint
     {
         var preview = await QueryAsync(() => s.Signals.PreviewAsync(claims.WorkflowId, new PatchPreviewQuery(claims.StepKey, text, target == Parent), cancellationToken));
         if (preview.Status == PatchPreview.Forward && preview.ForwardTo is { } parent)
-            preview = await QueryAsync(() => s.Signals.PreviewAsync(parent, new ChildPatchPreviewQuery(claims.WorkflowId, claims.StepId, text, preview.ReviewRequired), cancellationToken));
+            preview = await QueryAsync(() => s.Signals.ChildPreviewAsync(parent, new ChildPatchPreviewQuery(claims.WorkflowId, claims.StepId, text, preview.ReviewRequired), cancellationToken));
         return preview;
     }
 
