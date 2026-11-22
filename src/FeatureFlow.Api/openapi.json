@@ -2516,6 +2516,12 @@
             "items": {
               "$ref": "#/components/schemas/TemplateParameter"
             }
+          },
+          "tracker_parameter": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

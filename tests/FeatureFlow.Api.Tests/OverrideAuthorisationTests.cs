@@ -321,7 +321,7 @@ public sealed class OverrideAuthorisationTests
     [InlineData(""", "reason": " " """)]
     public async Task An_override_needs_no_reason_and_is_recorded_with_none(string reason)
     {
-        // LOG 501: steering is not a rejection; no reason is invented for one given without.
+        // LOG 502: steering is not a rejection; no reason is invented for one given without.
         await using var world = await WorldAsync();
         var (status, text) = await ApiWorld.PostAsync(world.As("sam", "steerer"), $"runs/{Run}/overrides",
             $$"""{ "key": "skip", "step_id": "verify", "change": { "outcome": "passed" }{{reason}} }""");
@@ -329,5 +329,20 @@ public sealed class OverrideAuthorisationTests
         Assert.True(status == HttpStatusCode.OK, text);
         Assert.Null(((OverrideArgs)Assert.Single(world.Temporal.Updates).Argument!).Reason);
         Assert.All(await world.QueryAsync<OverrideRecord>(Queries.Overrides, Run), r => Assert.Null(r.Reason));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(""", "reason": " " """)]
+    public async Task A_library_override_without_a_reason_is_refused_and_nothing_is_recorded(string reason)
+    {
+        // LOG 502: a library override is privileged; its reason is its audit trail.
+        await using var world = await WorldAsync();
+        var (status, text) = await ApiWorld.PostAsync(world.As("ada", "admin"), $"runs/{Run}/overrides",
+            $$"""{ "key": "override_library", "change": { "item": "std:tasks/plan_ticket", "with": "plan it" }{{reason}} }""");
+
+        Assert.Equal((HttpStatusCode.BadRequest, true), (status, text.Contains("reason is required", StringComparison.Ordinal)));
+        Assert.Empty(world.Temporal.Updates);
+        Assert.Empty(await world.QueryAsync<OverrideRecord>(Queries.Overrides, Run));
     }
 }

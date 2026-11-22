@@ -1,3 +1,5 @@
+using FeatureFlow.Providers.Abstractions;
+
 namespace FeatureFlow.Integration.Tests;
 
 /// <summary>
@@ -120,5 +122,48 @@ public class TicketRunTests
         var view = await h.ShowAsync(id);
         Assert.Contains("check 21", view["run"]!["detail"]!.ToString());
         Assert.Contains(view["timeline"]!.AsArray(), e => e!["detail"]!.ToString().Contains("no code_host provider is configured", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// LOG 501: a std ticket run started with <c>ticket_id</c> and no <c>tracker_issue</c> takes its tracker issue from
+    /// <c>ticket_id</c>, so the ticket is read from the tracker and staged for each agent step, and declarative updates move it.
+    /// </summary>
+    [Fact]
+    public async Task A_std_ticket_run_takes_its_tracker_issue_from_ticket_id()
+    {
+        await using var h = await Harness.StartAsync("ticket-input", autoApprove: true, policy: EngineMerges,
+            script: $$"""{ implement: { delay: 5s, artifacts: { {{Harness.ImplementationClaims}} } } }""");
+        h.Tracker.Add("FF-198", new IssueSpec("Add GET /widgets/{id}", "Return one widget by id."));
+        var id = h.Start("std:templates/ticket_delivery", ["--param", "ticket_id=FF-198", .. Ticket]);
+
+        // The implementer's sandbox, while it works, holds the ticket the engine read from the tracker.
+        string? ticket = null;
+        for (var deadline = DateTime.UtcNow + Timeout; ticket is null && DateTime.UtcNow < deadline; await Task.Delay(100, TestContext.Current.CancellationToken))
+            ticket = h.Sandbox.Specs.Select(s => h.Sandbox.ReadFile(new SandboxHandle(s.Key, "memory"), "/ff/inputs/ticket.md")).FirstOrDefault(t => t is not null);
+        Assert.StartsWith("# Add GET /widgets/{id}\n\nReturn one widget by id.", ticket);
+        var (exit, end, _) = h.Cli("wait", id, "--timeout", "120");
+        Assert.True((exit, end.Trim()) == (0, $"run {id} completed"), (await h.ShowAsync(id)).ToJsonString());
+        Assert.Equal("done", (await h.Tracker.GetIssueAsync(new IssueRef("FF-198"), TestContext.Current.CancellationToken)).Unwrap().Status);
+    }
+
+    /// <summary>
+    /// LOG 501: a std ticket run whose ticket the tracker does not have stops for a person at its planner, before the planner
+    /// runs, rather than planning without a ticket. (An installation with no tracker refuses a std ticket run at start, check 21.)
+    /// </summary>
+    [Fact]
+    public async Task A_std_ticket_run_without_its_ticket_stops_before_planning()
+    {
+        // The run's tracker is a world of its own, where the test files no ticket.
+        var world = "no-ticket-" + Guid.NewGuid().ToString("N");
+        await using var h = await Harness.StartAsync("no-ticket", autoApprove: true, policy: EngineMerges, without: ["tracker"],
+            providers: $"  tracker: {{ instances: {{ memory: {{ world: {world} }} }} }}");
+        var id = h.Start("std:templates/ticket_delivery", ["--param", "ticket_id=FF-404", .. Ticket]);
+
+        var waitId = await h.WaitForWaitAsync(id, Timeout);
+        Assert.True(waitId is not null, (await h.ShowAsync(id)).ToJsonString());
+        var (_, show, _) = h.Cli("show", id);
+        Assert.Contains($"wait {waitId} intervention at plan.plan", show);
+        Assert.Contains("the run's tracker issue FF-404 does not exist", show);
+        Assert.DoesNotContain(Harness.StartedSteps(await h.ShowAsync(id)), s => s == "approve_spec");
     }
 }

@@ -25,7 +25,7 @@ function Options({ values, required = [] }: { values: readonly string[]; require
 /**
  * An intervention or a breakpoint: a recovery from the wait's choices, which the engine fills (Recoveries.For), so
  * `continue` is there at a breakpoint and nowhere else; then the recovery's arguments and an optional comment, which
- * ending the run at an intervention needs (the wait's `reason_required`).
+ * ending the run needs (the wait's `reason_required`).
  */
 export function Recovery({ wait, plan, answer }: { wait: Schema<"WaitView">; plan: Schema<"PlanView"> | null; answer: Answering }) {
   const [action, setAction] = useState(wait.choices[0] ?? "");

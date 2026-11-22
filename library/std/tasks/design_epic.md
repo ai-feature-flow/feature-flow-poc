@@ -15,7 +15,10 @@ current code, and the epic's own requirements document. You change no code.
 
 ## Procedure
 
-1. Read the `solution_design` and `verification` skills, then the inputs.
+1. Read the `solution_design` and `verification` skills, then the inputs. If
+   there is no `child_requirements` from the parent and the manifest's `ticket`
+   is null, stop and report `blocked`: the run has no ticket. Never write
+   requirements nobody asked for.
 2. Write `requirements.yaml` with `scope: { kind: epic, id: {{ epic_name }} }`.
    Copy every requirement this epic owns word for word: `id`, `title`,
    `behaviour` and `supports` unchanged, without `owner`. Copy none another epic
@@ -34,4 +37,4 @@ current code, and the epic's own requirements document. You change no code.
 | Outcome | When | Artifacts |
 |---|---|---|
 | `designed` | Both documents are written | `requirements.yaml` as `requirements`; `design.md` as `contract` |
-| `blocked` | The owned requirements conflict, or the architecture leaves the design no room. Say what must change | None |
+| `blocked` | The run has no ticket and no parent plan, the owned requirements conflict, or the architecture leaves the design no room. Say what must change | None |

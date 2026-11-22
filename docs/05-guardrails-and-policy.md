@@ -184,10 +184,13 @@ decision_types:
 A person may change a running run in any way the organisation's roles allow
 (P3). Every override goes through the API, is authorised by role, and is
 recorded with the actor, the change and the person's reason (a comment) when
-they give one. A reason is optional, except where it matters (LOG 501): an
+they give one. A reason is optional, except where it matters (LOG 502): an
 answer whose choice routes the step as a failure (a gate's outcome of class
 `failure`, such as `rejected`, or `reject` on `merge_action`), ending a run at
-an intervention (`end`), and an abort are refused without one (400). The answer
+an intervention or a breakpoint (`end`), an abort and a library override are
+refused without one (400), and so is a grant beyond the hard ceiling, which the
+run refuses (409) since only it knows the ceilings. For the privileged ones the
+reason is their audit trail. The answer
 record keeps it beside the choice (`docs/04` section 4.1); where none is given,
 none is recorded or invented.
 
@@ -199,8 +202,8 @@ none is recorded or invented.
 | Skip a step | `skip` | Mark it as having ended with a chosen outcome, without running it. The record shows it was skipped | `steerer`; `admin` for a protected step |
 | Amend the plan | `amend` | Apply a patch (`docs/03` section 10). Not bound by F3 | `steerer`; `admin` for protected content |
 | Change a step's role | `change_role` | Only by a person, never by an agent's patch | `admin` |
-| Grant attempts | `grant_attempts` | Up to the hard ceiling (F4); beyond it, for one run, audited (the actor and the grant are recorded; a reason is optional, LOG 501) | `steerer`; `admin` beyond the hard ceiling (`grant_attempts_beyond`) |
-| Override library content | `override_library` | For future steps (`docs/08` section 5.2) | `steerer`; `admin` where a protected step resolves the content |
+| Grant attempts | `grant_attempts` | Up to the hard ceiling (F4); beyond it, for one run, with a reason, its audit trail (LOG 502) | `steerer`; `admin` beyond the hard ceiling (`grant_attempts_beyond`) |
+| Override library content | `override_library` | For future steps (`docs/08` section 5.2), with a reason (LOG 502) | `steerer`; `admin` where a protected step resolves the content |
 | Answer for an agent | `answer_question` | Answer an agent's question | Per approval rules |
 | Abort | `abort` | End the run with status `aborted`. Branches and pull requests are left as they are unless the person asks otherwise | `steerer` |
 

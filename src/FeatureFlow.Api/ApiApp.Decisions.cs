@@ -65,7 +65,7 @@ public static partial class ApiApp
 
         /// <summary>
         /// Every way a person answers a wait goes through here (docs/04 section 4.1), so approval applies to all of them: a
-        /// reason where the choice needs one (<see cref="WaitRecord.ReasonRequired"/>, LOG 501), then
+        /// reason where the choice needs one (<see cref="WaitRecord.ReasonRequired"/>, LOG 502), then
         /// <see cref="CheckAnswer"/> (roles, <c>from_chat</c>, the local token and <c>min_count</c>), then <c>min_count</c>
         /// itself, distinct people answering the same way before the answer is delivered, each recorded as they answer. The
         /// answer is recorded with the authenticated actor, then delivered as the <c>answer</c> update.
@@ -134,11 +134,11 @@ public static partial class ApiApp
 
         /// <summary>
         /// A 400 when a person gives no reason where one is <paramref name="required"/> (a choice that routes the step as a
-        /// failure, ending the run at an intervention, and an abort; docs/05 section 5; LOG 501), or a reason over
+        /// failure or ends the run, an abort, and a library override; docs/05 section 5; LOG 502), or a reason over
         /// <see cref="MaxReasonBytes"/>: it is carried in the run's state and its context for the next agent.
         /// </summary>
         static IResult? ReasonRefused(string? reason, bool required) =>
-            required && string.IsNullOrWhiteSpace(reason) ? Error(400, "reason is required: a rejection, ending a run and an abort are recorded with the person's reason (docs/05 section 5)")
+            required && string.IsNullOrWhiteSpace(reason) ? Error(400, "reason is required: a rejection, ending a run, an abort and a library override are recorded with the person's reason (docs/05 section 5)")
             : reason is not null && Encoding.UTF8.GetByteCount(reason) > MaxReasonBytes ? Error(400, $"reason may be at most {MaxReasonBytes} bytes of UTF-8 text")
             : null;
 

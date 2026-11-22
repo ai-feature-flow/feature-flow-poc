@@ -144,7 +144,7 @@ public sealed partial class RunCore
         Overrides.Breakpoint => new BreakpointSet(o.StepId!, Bool(o.Change, "set") ?? true, o.Actor),
         Overrides.Skip => new StepSkipped(o.StepId!, o.Change["outcome"], o.Actor, o.Reason, Holds(o, Overrides.SkipProtected)),
         Overrides.GrantAttempts => new AttemptsGranted(o.StepId, long.Parse(o.Change["attempts"], System.Globalization.CultureInfo.InvariantCulture),
-            Holds(o, Overrides.GrantAttemptsBeyond), o.Actor),
+            Holds(o, Overrides.GrantAttemptsBeyond), o.Actor, o.Reason),
         Overrides.ChangeRole => new RoleChanged(o.StepId!, o.Change["role"], o.Actor, o.Reason),
         Overrides.Amend when ReadPatch(o.Change["patch"], out _) is { } patch =>
             new PatchProposed(patch with { Reason = $"amend {By(o.Actor, o.Reason)}" }, new Proposer("human", null), Holds(o, Overrides.AmendProtected)),
@@ -173,7 +173,7 @@ public sealed partial class RunCore
     {
         BreakpointSet b => BreakpointError(b),
         StepSkipped s => SkipError(s),
-        AttemptsGranted g => GrantError(g.StepId, g.Attempts, g.BeyondHardCeiling),
+        AttemptsGranted g => GrantError(g.StepId, g.Attempts, g.BeyondHardCeiling, g.Reason),
         RoleChanged r => RoleError(r),
         LibraryOverridden o => LibraryOverrideError(o.Entry.Item, o.Libraries),
         LibraryOverrideProposed p => StepById(p.StepId) is not { } proposer ? $"{p.StepId} is not a step of plan revision {State.Revision}"
@@ -301,7 +301,12 @@ public sealed partial class RunCore
 
     // ---- Attempt grants: the override and the recovery action share one mechanism ------------------
 
-    string? GrantError(string? stepId, long attempts, bool beyond)
+    /// <summary>
+    /// Why a grant would be refused, or null. Beyond the hard ceiling it needs <paramref name="beyond"/> (an administrator,
+    /// <c>grant_attempts_beyond</c>, F4) and the person's reason, its audit trail (LOG 502); only the core knows the ceilings,
+    /// so this rule is the core's, where every other reason rule is the API's.
+    /// </summary>
+    string? GrantError(string? stepId, long attempts, bool beyond, string? reason)
     {
         if (attempts <= 0)
             return "grant attempts needs a positive number of attempts";
@@ -310,19 +315,22 @@ public sealed partial class RunCore
             return $"{stepId} is not a step of plan revision {State.Revision}";
         if (step is { ConsumesAttempts: false })
             return $"{stepId} uses no attempts";
-        if (beyond)
-            return null;
+        string? over = null;
         if (step is not null)
         {
             var allowance = Allowance(step) + (State.Steps.GetValueOrDefault(step.Id)?.AttemptsGranted ?? 0) + attempts;
             if (Options.HardStepCeiling is { } hardStep && allowance > hardStep)
-                return $"granting {attempts} would give {step.Id} {allowance} attempts, above the hard ceiling of {hardStep}; an administrator may grant beyond it ({Model.Overrides.GrantAttemptsBeyond})";
+                over = $"granting {attempts} would give {step.Id} {allowance} attempts, above the hard ceiling of {hardStep}";
         }
 
         var ceiling = Options.RunCeiling + State.RunCeilingGranted + attempts;
-        if (Options.HardRunCeiling is { } hardRun && ceiling > hardRun)
-            return $"granting {attempts} would raise the run ceiling to {ceiling}, above the hard ceiling of {hardRun}; an administrator may grant beyond it ({Model.Overrides.GrantAttemptsBeyond})";
-        return null;
+        if (over is null && Options.HardRunCeiling is { } hardRun && ceiling > hardRun)
+            over = $"granting {attempts} would raise the run ceiling to {ceiling}, above the hard ceiling of {hardRun}";
+        if (over is null)
+            return null;
+        if (!beyond)
+            return $"{over}; an administrator may grant beyond it ({Model.Overrides.GrantAttemptsBeyond})";
+        return string.IsNullOrWhiteSpace(reason) ? $"{over}; a grant beyond the hard ceiling needs a reason, its audit trail" : null;
     }
 
     void Grant(string? stepId, long attempts)

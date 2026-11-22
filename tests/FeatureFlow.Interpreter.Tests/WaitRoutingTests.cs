@@ -296,7 +296,7 @@ public class WaitRoutingTests
         core.Apply(new StepCompleted("ask", "done"));
         core.Advance();
         var wait = Assert.Single(core.State.Waits);
-        Assert.Equal($"breakpoint ticket.breakpoint [continue, retry, go_to, replan, grant_attempts, end | ]: {wait.Reason}", Shown(core, wait));
+        Assert.Equal($"breakpoint ticket.breakpoint [continue, retry, go_to, replan, grant_attempts, end | end]: {wait.Reason}", Shown(core, wait));
 
         var answer = asAction
             ? new AnswerArgs(wait.Id, "ann", Action: action, StepId: action == "go_to" ? "ask" : null, Attempts: action == "grant_attempts" ? 1 : 0,
@@ -443,7 +443,7 @@ public class WaitRoutingTests
 
     /// <summary>
     /// A wait as its record shows it (<see cref="RunCore.Describe"/>): kind, type, choices, those that need a person's
-    /// reason after <c>|</c> (a choice routing the step as a failure, and ending the run at an intervention; LOG 501), and text.
+    /// reason after <c>|</c> (a choice routing the step as a failure or ending the run; LOG 502), and text.
     /// </summary>
     static string Shown(RunCore core, OpenWait wait)
     {

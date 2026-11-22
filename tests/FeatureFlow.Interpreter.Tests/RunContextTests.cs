@@ -155,7 +155,7 @@ public class RunContextTests
             routes: { done: { end: completed } }
         """;
 
-    /// <summary>An answer given without a reason reaches the next agent as what was decided and by whom, with no reason invented (LOG 501).</summary>
+    /// <summary>An answer given without a reason reaches the next agent as what was decided and by whom, with no reason invented (LOG 502).</summary>
     [Theory]
     [InlineData(null, "- ticket.spec_approval at approve: approved by ann\n")]
     [InlineData("covers the audit log", "- ticket.spec_approval at approve: approved by ann: covers the audit log\n")]

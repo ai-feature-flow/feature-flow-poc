@@ -2,7 +2,7 @@ import { useId } from "preact/hooks";
 import "./Reason.css";
 
 /**
- * A person's comment on an answer or override, sent as its reason (docs/05 section 5; LOG 501). It is optional, and
+ * A person's comment on an answer or override, sent as its reason (docs/05 section 5; LOG 502). It is optional, and
  * shown to the next agent, except where the choice routes the step as a failure, ends the run or aborts it: there the
  * form says so on the button, keeps it disabled until there is one, and the server refuses one without.
  */

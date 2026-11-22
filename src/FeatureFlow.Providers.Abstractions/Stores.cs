@@ -35,7 +35,7 @@ public sealed record RunRecord(
 /// A durable wait for a person: a decision, an intervention or a patch approval, open or answered. A record with <see cref="Open"/> false closes the wait and keeps the rest of what the opening record said.
 /// <see cref="Prompt"/> is the text to show (a gate's rendered prompt, a question's text, else the engine's reason); "reason" means only a person's (LOG 389).
 /// <see cref="Consumed"/> is what a gate's step consumed when it opened, by reference (LOG 394).
-/// <see cref="ReasonRequired"/> is the choices a person must give a reason for, those that route the step as a failure (LOG 501); null on a wait recorded before it.
+/// <see cref="ReasonRequired"/> is the choices a person must give a reason for, those that route the step as a failure or end the run (LOG 502); null on a wait recorded before it.
 /// </summary>
 public sealed record WaitRecord(
     string RunId,
@@ -232,7 +232,7 @@ public sealed record ArtifactRecord(
 
 /// <summary>
 /// A run-time override (docs/05 section 5), recorded by the API with the authenticated actor (F8), its reason (null when
-/// none was given, LOG 501) and the
+/// none was given, LOG 502) and the
 /// change, before it is delivered and again with the result, as answers are: appended, never replaced. <see cref="Key"/> is
 /// the catalogue key the caller was authorised for (<c>Model.Overrides</c>), a <c>_protected</c> or <c>_beyond</c> variant
 /// included; <see cref="Result"/> is <c>sent</c>, then the workflow's reply or <c>refused: ...</c>.

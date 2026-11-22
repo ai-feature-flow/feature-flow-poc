@@ -33,13 +33,14 @@ public sealed class ApprovalTests
     static Task<(HttpStatusCode Status, string Body)> AnswerAsync(HttpClient http, string outcome = "approved", string reason = "looks right") =>
         ApiWorld.PostAsync(http, $"runs/{Run}/answers", $$"""{ "wait_id": "w1", "outcome": "{{outcome}}", "reason": "{{reason}}" }""");
 
-    /// <summary>A reason is needed only where the choice routes the step as a failure (the wait's <c>reason_required</c>), and for an abort (LOG 501).</summary>
+    /// <summary>A reason is needed only where the choice routes the step as a failure (the wait's <c>reason_required</c>), and for an abort (LOG 502).</summary>
     [Theory]
     [InlineData("gate", "ticket.spec_approval", "rejected", """ "outcome": "rejected" """, "")]
     [InlineData("gate", "ticket.spec_approval", "rejected", """ "outcome": "rejected" """, """, "reason": "  " """)]
     [InlineData("gate", "ticket.merge_action", "reject", """ "outcome": "reject" """, "")]
     [InlineData("intervention", "ticket.escalation", "end", """ "action": "end", "status": "failed" """, "")]
     [InlineData("intervention", "ticket.escalation", "end", """ "action": "end", "status": "failed" """, """, "reason": "" """)]
+    [InlineData("breakpoint", "ticket.breakpoint", "end", """ "action": "end", "status": "failed" """, "")]
     public async Task A_rejection_or_ending_the_run_without_a_reason_is_refused_and_nothing_is_recorded(string kind, string type, string required, string answer, string reason)
     {
         await using var world = await WorldAsync(Organisation(Rule("*")), type, kind, required);
@@ -70,8 +71,7 @@ public sealed class ApprovalTests
     [InlineData("gate", "ticket.spec_approval", "rejected", """ "outcome": "approved" """)]
     [InlineData("gate", "ticket.merge_action", "reject", """ "outcome": "approve" """)]
     [InlineData("patch_approval", "ticket.patch_approval", null, """ "action": "reject" """)]
-    [InlineData("breakpoint", "ticket.breakpoint", null, """ "action": "continue" """)]
-    [InlineData("breakpoint", "ticket.breakpoint", null, """ "action": "end", "status": "failed" """)]
+    [InlineData("breakpoint", "ticket.breakpoint", "end", """ "action": "continue" """)]
     [InlineData("intervention", "ticket.escalation", "end", """ "action": "retry" """)]
     public async Task Any_other_answer_needs_no_reason_and_is_recorded_with_none(string kind, string type, string? required, string answer)
     {

@@ -169,7 +169,7 @@ public sealed class SessionApiTests : IAsyncDisposable
     [InlineData("""{ "reason": "" }""")]
     public async Task Abandoning_a_session_without_a_reason_is_refused_and_nothing_is_recorded(string body)
     {
-        // Abandoning answers with the decision's abandon outcome, a failure (std: abandoned), which needs a reason (LOG 501).
+        // Abandoning answers with the decision's abandon outcome, a failure (std: abandoned), which needs a reason (LOG 502).
         var http = Start("approver");
         await OpenSessionAsync(document: true);
 

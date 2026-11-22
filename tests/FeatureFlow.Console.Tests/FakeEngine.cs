@@ -156,11 +156,11 @@ public sealed partial class FakeEngine : IClientInterceptor
         _ => [],
     };
 
-    /// <summary>The choices that need a person's reason, as the core describes them (<c>RunCore.Describe</c>): a gate's failure outcome, ending the run at an intervention.</summary>
+    /// <summary>The choices that need a person's reason, as the core describes them (<c>RunCore.Describe</c>): a gate's failure outcome, ending the run at an intervention or a breakpoint.</summary>
     static IReadOnlyList<string> ReasonRequired(string kind) => kind switch
     {
         "gate" => ["rejected"],
-        "intervention" => ["end"],
+        "intervention" or "breakpoint" => ["end"],
         _ => [],
     };
 

@@ -10,7 +10,7 @@ namespace FeatureFlow.Console.Tests;
 
 /// <summary>
 /// The decision form (WaitForm, LOG 463): each kind of wait answered as the API takes it (POST /runs/{id}/answers), with
-/// an optional comment, which a choice that routes the step as a failure, or ends the run, needs (LOG 501).
+/// an optional comment, which a choice that routes the step as a failure, or ends the run, needs (LOG 502).
 /// </summary>
 public sealed class DecisionTests(BrowserFixture browser) : BrowserTest(browser)
 {
@@ -79,7 +79,7 @@ public sealed class DecisionTests(BrowserFixture browser) : BrowserTest(browser)
         var (_, form) = await OpenWaitAsync("breakpoint");
 
         var recovery = form.GetByLabel("Recovery");
-        await ExpectOptionsAsync(recovery, Core.Recoveries.For(Core.WaitKind.Breakpoint));
+        await ExpectOptionsAsync(recovery, Core.Recoveries.For(Core.WaitKind.Breakpoint).Select(r => r == "end" ? "end (comment required)" : r));
         await Expect(recovery).ToHaveValueAsync("continue");
         await form.GetByRole(AriaRole.Button, new() { Name = "Send" }).ClickAsync();
 

@@ -71,7 +71,7 @@ public enum WaitKind
 
 /// <summary>
 /// A wait: its kind, step and decision type, the text to show (<see cref="Prompt"/>) and the choices that answer it, with
-/// those a person must give a reason for (<see cref="ReasonRequired"/>, the choices that route the step as a failure; any
+/// those a person must give a reason for (<see cref="ReasonRequired"/>, the choices that route the step as a failure or end the run; any
 /// other reason is optional); what its step consumed, by reference; whether the caller may answer it now; how many people
 /// must answer it the same way
 /// (<see cref="MinCount"/>: 1 where the approval rule sets none, and for a closed wait or one whose rule cannot be read

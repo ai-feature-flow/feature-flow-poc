@@ -103,7 +103,7 @@ public static class WorkflowTestRunner
             {
                 "breakpoint" => new BreakpointSet(o.StepId, true, "test"),
                 "skip" => new StepSkipped(o.StepId, o.Outcome!, "test", "the test file", MayTouchProtected: true),
-                _ => new AttemptsGranted(o.StepId, o.Attempts, BeyondHardCeiling: true, "test"),
+                _ => new AttemptsGranted(o.StepId, o.Attempts, BeyondHardCeiling: true, "test", "the test file"),
             });
             if (!applied.Accepted)
                 failures.Add($"the override {o.Key} {o.StepId} was refused: {string.Join("; ", applied.Errors)}");

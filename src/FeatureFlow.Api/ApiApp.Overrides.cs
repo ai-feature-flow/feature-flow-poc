@@ -46,7 +46,8 @@ public static partial class ApiApp
                                   " (a protected or beyond-ceiling variant is not asked for: the run applies it where the caller holds it)");
             if (OtherRoutes.TryGetValue(key, out var route))
                 return Error(400, $"{key} is not made here: {route}");
-            if (ReasonRefused(body.Reason, required: false) is { } refusedReason)
+            // A library override is privileged and its reason is its audit trail (LOG 502); every other override's is optional.
+            if (ReasonRefused(body.Reason, required: key == Overrides.OverrideLibrary) is { } refusedReason)
                 return refusedReason;
             var reason = string.IsNullOrWhiteSpace(body.Reason) ? null : body.Reason;
             var change = new Dictionary<string, string>(body.Change ?? new Dictionary<string, string>(), StringComparer.Ordinal);

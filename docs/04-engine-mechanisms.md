@@ -232,7 +232,7 @@ the run's state, carried over a hand-over, as entries of three kinds:
 | Kind | Added when | Text |
 |---|---|---|
 | `summary` | An agent step completes with a report summary | `<step> reported <outcome>: <summary>`, the summary at most 2 KB (LOG 19) |
-| `answer` | A person answers a gate, an intervention, a breakpoint or a patch approval (not a question, whose answer is its agent's alone) | `<decision type> at <step>: <choice> by <actor>: <reason>`, or without `: <reason>` when the person gave none (LOG 501) |
+| `answer` | A person answers a gate, an intervention, a breakpoint or a patch approval (not a question, whose answer is its agent's alone) | `<decision type> at <step>: <choice> by <actor>: <reason>`, or without `: <reason>` when the person gave none (LOG 502) |
 | `retry_cause` | An attempt fails with a work error | `attempt <n> of <step> failed: <reason>`. An infrastructure retry is not a cause the agent can act on and is left out |
 
 The core renders the context in Markdown (`## Run context`, then one bullet per
@@ -341,11 +341,13 @@ that type.
 Every answer may carry the person's **reason** (a comment), and an abort must:
 the API refuses one without (400), not the core, which trusts the API (LOG
 391). A reason is required only where the choice routes the step as a failure
-and for ending the run at an intervention; the core names those choices on the
+or ends the run; the core names those choices on the
 wait record (`reason_required`: a gate's outcomes of class `failure`, `reject`
-on an action's `merge_action` gate, `end` at an intervention; none at a
-breakpoint, a patch approval or a question), so the API and the console read
-the rule rather than repeat it (LOG 501). Any other reason is optional, and
+on an action's `merge_action` gate, `end` at an intervention or a breakpoint;
+none at a patch approval or a question), so the API and the console read
+the rule rather than repeat it (LOG 502). A grant beyond the hard ceiling also
+needs a reason, which the core checks, since only it knows the ceilings (`docs/05`
+section 5). Any other reason is optional, and
 where none is given none is recorded or invented. A question's answer is its
 text, which the agent reads (LOG 392). Two answers are given by the engine: a
 chat button, which carries no words, answers with `answered with a <source>

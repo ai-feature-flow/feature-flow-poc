@@ -144,8 +144,12 @@ credentials; the rest need model tokens or the GitHub App.
    With `FF_API_LISTEN=http://0.0.0.0:8580` the API host refuses to start, naming the address and `none` *(checked)*.
 5. **Open** `http://127.0.0.1:8580/console`: no token form; the header shows your name and "Needs me (0)" *(checked)*.
 6. **The run, from the console only.**
-   1. "Start a run": `std:templates/ticket_delivery`, `ticket_id` the fixture issue, `engine_can_merge` off,
-      Repositories `ai-feature-flow/feature-flow-example`; Start. The run page opens *(checked with m7s)*.
+   1. "Start a run": `std:templates/ticket_delivery`, `ticket_id` the fixture issue (its number, such as `198`, or
+      `ai-feature-flow/feature-flow-example#198`), `engine_can_merge` off, Repositories
+      `ai-feature-flow/feature-flow-example`; Start. The run page opens *(checked with m7s)*. The form has no Tracker
+      issue field for this template: std's templates take the run's tracker issue from `ticket_id` (LOG 501), so the
+      planner reads the issue as `/ff/inputs/ticket.md`. For a template that names no tracker parameter, fill Tracker
+      issue with the issue's key.
    2. Before the agent reaches it, set a breakpoint on a later step from the plan panel, with a reason. When the run
       reaches the step it pauses with a breakpoint wait; choose `continue`, give a reason, Send. (This covers "set a
       breakpoint and continue" on the real engine, which the m7s check could not: its template has one step.)
@@ -234,7 +238,8 @@ Steps 5 to 7, the console run itself, are the product owner's.
 5. **Open** `http://127.0.0.1:8580/console`, as in the run above (checked there; the Copilot check built without the
    console).
 6. **The run, from the console only**, as step 6 of the run above: "Start a run", `std:templates/ticket_delivery`,
-   `ticket_id` an open fixture issue, `engine_can_merge` off, Repositories `ai-feature-flow/feature-flow-example`;
+   `ticket_id` an open fixture issue (it is the run's tracker issue, LOG 501; there is no separate Tracker issue
+   field), `engine_can_merge` off, Repositories `ai-feature-flow/feature-flow-example`;
    Start; answer every wait from the console. The run page's timeline shows `session 1 started on runtime copilot_cli
    with model claude-haiku-4.5`.
 7. **Evidence to record**: as for the run above, and the agent worker's model requests (the step's agent events,

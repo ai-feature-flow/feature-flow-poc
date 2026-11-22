@@ -57,7 +57,9 @@ public sealed partial class StartRunTests(BrowserFixture browser) : BrowserTest(
         await ticket.FillAsync("ACME-12");
         await merge.CheckAsync();
         await page.GetByLabel("Repositories (comma-separated)").FillAsync(" acme/app ,, acme/web");
-        await page.GetByLabel("Tracker issue").FillAsync("ACME-12");
+        // The template takes its tracker issue from ticket_id (LOG 501), so the form does not ask for it separately.
+        await Expect(page.GetByLabel("Tracker issue")).ToHaveCountAsync(0);
+        await Expect(page.Locator(".ff-start-tracker")).ToHaveTextAsync("The tracker issue is ticket_id.");
         await page.GetByLabel("Dry run").CheckAsync();
         await page.GetByRole(AriaRole.Button, new() { Name = "Start" }).ClickAsync();
 
