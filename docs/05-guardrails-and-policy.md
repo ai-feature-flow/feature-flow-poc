@@ -245,11 +245,11 @@ always would, though no tool proposes one yet:
 
 | Condition | Why |
 |---|---|
-| It touches protected content, or leaves a protected step unrun that the run would otherwise run (F3) | The workflow marked it as not the agent's to change |
+| It touches protected content, or leaves a protected step unrun that the run would otherwise run (F3). A step it adds inside protected content (a protected fragment, `parallel` or chain) touches it, whatever the operation | The workflow marked it as not the agent's to change |
 | It adds or changes a step to use a role outside `planning.allowed_roles` | Otherwise an agent could give a new step more access than itself (F10) |
-| It adds or changes a `run.child` whose template is not in the proposer's `planning.templates` | The same reasoning for the child runs an agent may start (LOG 522) |
+| It adds a `run.child`, or changes one's template, to a template not in the proposer's `planning.templates`; a template given by an expression counts as unlisted. A patch to its own run only | The same reasoning for the child runs an agent may start. A child's patch to its parent is not held to it: the parent does not hold the child step's grant, and consented by starting the child's template (LOG 522) |
 | The step's `planning.review` is `required`, or the organisation requires review at this level | The workflow or organisation asked for it |
-| For a child's patch to its parent: any of the above at the parent, or the child step's own `planning.review` is `required` | The parent's rules govern its plan; the proposer's own review still applies (LOG 521) |
+| For a child's patch to its parent: any of the above at the parent but `planning.templates`, or the child step's own `planning.review` is `required` | The parent's rules govern its plan; the proposer's own review still applies (LOG 521) |
 
 An agent never changes a step's role (P8): a patch that would is refused. A
 proposal that would relax a floor, or that breaks a load check, a cap or a

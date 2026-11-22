@@ -57,7 +57,7 @@ other documents cite them.
 | 26 | Patch: `resume_at` exists after the patch (unless sent to a parent) | Patch | Yes |
 | 27 | Patch: the proposer may use the operation; an agent never changes a role | Patch | Yes |
 | 28 | Patch: the result passes every load check | Patch | Yes |
-| 29 | Patch: an agent's patch needs a person: protected content touched or left unrun, a role outside `planning.allowed_roles`, a child template outside `planning.templates`, or review required by the step or the organisation | Patch | **Pending decision** (`docs/05` section 6) |
+| 29 | Patch: an agent's patch needs a person: protected content touched or left unrun, or a step added inside it; a role outside `planning.allowed_roles`; a child template outside `planning.templates`; or review required by the step (a child's, at its parent) or the organisation | Patch | **Pending decision** (`docs/05` section 6) |
 | 30 | Patch: relaxes a safety floor | Patch | **Rejected** |
 | 31 | Step inputs satisfy the action's input schema (`docs/04` section 2): every `with` key is an input of the action, and a value has the input's kind and allowed values. Literals are checked at load, expressions when evaluated at step start (LOG 359), for every action, `run.child` and `plan.expand` included (LOG 488) | Load, Step start | Yes |
 | 32 | Consumed artifacts exist and validate | Step start | Yes |

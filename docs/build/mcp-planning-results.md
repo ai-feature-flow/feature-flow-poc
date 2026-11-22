@@ -13,14 +13,14 @@ it where the rules say. No live run was made; the product owner's live steps are
 
 | Item | Change |
 |---|---|
-| Tools | `inspect_plan` and `propose_patch`, offered only to a step with `planning` (`FF_PLANNING`); `GET /agent/v1/plan`, `POST /agent/v1/patches`; the staged patch kept in the record store and carried by the next accepted `report`, checked again there (LOG 519) |
-| Core | The patch check split from its commit, so a workflow query previews a patch without changing anything; queries `agent_plan`, `patch_preview`, `child_patch_preview`; `planning.templates` enforced (LOG 522); a child step's `review` applied at its parent (LOG 521); the approval prompt written as plain text (LOG 523) |
+| Tools | `inspect_plan` and `propose_patch`, offered only to a step with `planning` (`FF_PLANNING`); `GET /agent/v1/plan`, `POST /agent/v1/patches`; the staged patch kept in the `patch_staged` agent event's detail in the record store and carried by the next accepted `report`, checked again there; a refused proposal leaves the staged one (LOG 519) |
+| Core | The patch check split from its commit (`CheckPatch`), so a workflow query previews a patch without changing anything; queries `agent_plan` (`self`, `parent`, and `child` for a child's view of its parent), `patch_preview`, `child_patch_preview`; `planning.templates` enforced on a step's own patches (LOG 522); a child step's `review` applied at its parent (LOG 521); F3 covers a step added inside protected content (LOG 525); the approval prompt written as plain text (LOG 523) |
 | Run context | A "Planning authority" paragraph, only when the step has `planning` (`docs/04` section 6.1) |
 | Runtimes | Claude Code's allow-list gains `mcp__engine__inspect_plan` and `mcp__engine__propose_patch`; Copilot CLI already allows the `engine` server |
 | std | `ticket_delivery.implement` has `planning: { targets: [self], review: required }`; the planners and designer keep theirs (LOG 509) and now get the tools; the fixer gets none (LOG 524) |
 | Console | No change: a wait's prompt was already text with `white-space: pre-wrap`; a browser test now covers a patch approval's prompt |
-| Tests | std workflow tests `ticket_implementer_patch_approved`, `ticket_implementer_patch_rejected`; `WorkflowTestRunnerTests.An_implementers_patch_to_verify_is_held_even_with_review_auto`; `DecisionTests.A_patch_approvals_prompt_is_shown_as_text_line_by_line_and_approve_sends_the_action`; builders (a) and (b)'s tests (their reports) |
-| Documents | `docs/04` s3.3 and s6.1 (the one description), `docs/05` s3.1 and s6, `docs/03` s2.2, s9.4, s10 and s10.3, `docs/01` s2.3, s7.1, s7.2 and s10, `docs/00` P3 and P4, `docs/08` s6.1, s6.4 and s6.5, `docs/09` s2 (check 29) and s4; LOG 519 to 524 (unreviewed); LOG 474 marked superseded |
+| Tests | std workflow tests `ticket_implementer_patch_approved`, `ticket_implementer_patch_rejected`; `WorkflowTestRunnerTests.An_implementers_patch_to_protected_content_is_held_even_with_review_auto` (a `set` on `verify.tests`, and a step inserted before `deliver.open_pr`, on a `review: auto` copy of `ticket_delivery`); `StdPatchPromptTests` (the core's approval prompt on std's own `ticket_delivery`); `DecisionTests.A_patch_approvals_prompt_is_shown_as_text_line_by_line_and_approve_sends_the_action`; builders (a) and (b)'s tests (their reports) |
+| Documents | `docs/04` s3.3 and s6.1 (the one description), `docs/05` s3.1 and s6, `docs/03` s2.2, s9.4, s10 and s10.3, `docs/01` s2.3, s7.1, s7.2 and s10, `docs/00` P3 and P4, `docs/08` s6.1, s6.4 and s6.5, `docs/09` s2 (check 29) and s4; LOG 519 to 525 (unreviewed); LOG 474 marked superseded |
 
 ## Evidence
 
@@ -29,14 +29,15 @@ it where the rules say. No live run was made; the product owner's live steps are
 | Default suite (`Category!=Integration&Category!=Live&Category!=Cluster`) | *to fill* |
 | Integration category (Temporal dev server on its own port) | *to fill*, including (a)'s `AgentContractTests` case: an agent's `inspect_plan`, `propose_patch` and `report`; a `patch_approval` with the reason in its prompt; approved by the CLI; the inserted step runs |
 | `Replay.Tests` | *to fill* (44 expected, plus (a)'s recorded history) |
-| Break-and-see-fail | *to fill from the builders' reports*. Builder (c): removing `planning` from `implement` fails both std tests (`'migrate' is not a step ... in any revision`; `1 answer(s) were not used`); `verify` unprotected fails the `review: auto` test; `white-space: normal` on `.ff-wait-prompt` fails the console test |
+| Break-and-see-fail | *to fill from the builders' reports*. Builder (c): removing `planning` from `implement` fails both std tests (`'migrate' is not a step ... in any revision`; `1 answer(s) were not used`); `verify` unprotected fails the `review: auto` test's `set` case, `deliver` unprotected its insert case; `review: auto` on std's `implement` fails `StdPatchPromptTests` (no wait opens); `white-space: normal` on `.ff-wait-prompt` fails the console test |
 
 ## Judgement calls
 
 The design note's, decided by the sub-orchestrator and recorded as open for the product owner: every std grant keeps
 `review: required`; the tool returns at once and the patch rides on the report; no branch is added to a running
 `parallel`, so std grants `parent` to no step; the fixer gets no planning. `targets` stays `self | parent`, F3 being
-the fence within a run (LOG 519 to 524).
+the fence within a run, now covering a step added inside protected content (LOG 519 to 525). `approve_spec` stays
+unprotected (open question 1).
 
 ## Live-run steps for the product owner
 
@@ -87,8 +88,9 @@ configuration, secrets, Temporal (port 7833) and three hosts, built from the mer
 ## Open questions
 
 1. Should any std agent patch apply without a person (`review: auto`), for example an `insert` that touches nothing
-   protected (design question 1, LOG 524)? If so, the gaps LOG 524 records come first: an `insert` before a
-   protected step is not F3, so a step inserted inside `deliver` runs after review; `approve_spec` is removable.
+   protected (design question 1, LOG 524)? If so, should `approve_spec` be protected first: an agent's patch can
+   remove it, and a later re-plan then goes to implementation without a spec approval (LOG 524). The other gap the
+   probe found, a step inserted inside `deliver`, is closed (LOG 525).
 2. Is "the patch takes effect when the step reports, and the tool never waits" right (design question 2, LOG 519)?
 3. Should a branch be addable to a running `parallel`, so a child can add a sibling (design question 3, LOG 521)?
 4. Should the fixer get planning or a `needs_replan` route (design question 4; LOG 507 question 3, LOG 524)?
