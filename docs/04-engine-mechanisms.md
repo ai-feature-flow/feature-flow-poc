@@ -462,8 +462,12 @@ tools besides `report` and `ask_human` (LOG 519):
 
 **How a proposal takes effect.** `propose_patch` checks the patch against the
 live plan without changing it (a workflow query, so nothing enters the run's
-history) and stages it in the record store; a later call replaces it, and at
-most 5 calls an attempt, of at most 64 KB each, are taken. The tool returns at
+history) and stages it in the record store, in the detail of a `patch_staged`
+agent event. The endpoint itself refuses a patch that does not read, or one for
+`self` without `resume_at`; every other check is the core's, the same function
+the report's patch goes through. A later proposal that passes replaces the
+staged one; one that is refused leaves it, and the answer says so. At most 5
+proposals an attempt, staged or refused, of at most 64 KB each. The tool returns at
 once: nothing changes while the step runs. The staged patch travels with the
 step's next accepted `report`, and the core decides it as any patch
 (`docs/03` section 10.3), by the rules of `docs/05` section 6:
@@ -476,7 +480,9 @@ step's next accepted `report`, and the core decides it as any patch
 
 The agent is told this in a paragraph of its run context (section 3.5), only
 when its step has `planning`. With `target: parent`, a child run's step
-proposes to the run that started it (`docs/03` section 9.4).
+proposes to the run that started it (`docs/03` section 9.4); `inspect_plan`
+then shows the parent's plan as the parent shows it to a child, with the step's
+own authority.
 
 An agent cannot propose a library override: no tool sends one. The core's path
 for it (LOG 213) is reached only by the `scripted` and `recording` test

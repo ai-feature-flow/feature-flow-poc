@@ -160,11 +160,15 @@ public class WorkflowTestRunnerTests
 
     /// <summary>
     /// F3 holds an implementer's patch to protected content for a person whatever its grant says: on a copy of std's
-    /// ticket_delivery whose implementer has <c>planning.review: auto</c>, a patch that changes <c>verify.tests</c> is held,
-    /// for that reason alone, and rejected, so the run goes on by the implementer's outcome.
+    /// ticket_delivery whose implementer has <c>planning.review: auto</c>, a patch that changes <c>verify.tests</c>, or adds a
+    /// step inside <c>deliver</c> (before <c>deliver.open_pr</c>, so after review), is held for that reason alone, and
+    /// rejected, so the run goes on by the implementer's outcome.
     /// </summary>
-    [Fact]
-    public void An_implementers_patch_to_verify_is_held_even_with_review_auto()
+    [Theory]
+    [InlineData("verify", "{ op: set, target: verify.tests, field: limits, value: { attempts: 1 } }", "set touches protected step verify.tests (F3)")]
+    [InlineData("verify", "{ op: insert, before: deliver.open_pr, step: { id: sneak, agent: { role: std:roles/implementer, task: std:tasks/implement_ticket }, with: { ticket_id: FF-1042 }, outcomes: { done: success } } }",
+        "adds deliver.sneak inside protected content (F3)")]
+    public void An_implementers_patch_to_protected_content_is_held_even_with_review_auto(string resumeAt, string change, string reason)
     {
         var root = Path.Combine(Path.GetTempPath(), $"ff-implementer-auto-{Guid.NewGuid():N}");
         Directory.CreateDirectory(Path.Combine(root, "templates"));
@@ -174,11 +178,11 @@ public class WorkflowTestRunnerTests
         const string grant = "planning: { targets: [self], review: required }";
         Assert.Contains(grant, template);
         File.WriteAllText(Path.Combine(root, "templates", "ticket_delivery.yaml"), template.Replace(grant, "planning: { targets: [self], review: auto }"));
-        var test = Path.Combine(root, "tests", "verify_patch.yaml");
-        File.WriteAllText(test, """
+        var test = Path.Combine(root, "tests", "protected_patch.yaml");
+        File.WriteAllText(test, $$"""
             api_version: feature-flow/v1
             kind: workflow_test
-            name: verify_patch
+            name: protected_patch
             template: probe:templates/ticket_delivery
             parameters: { ticket_id: FF-1042 }
             repositories: [acme/api]
@@ -187,9 +191,9 @@ public class WorkflowTestRunnerTests
               kind: patch
               metadata: { proposed_by: { type: agent, step_id: implement }, reason: "the tests are slow" }
               base_revision: 1
-              resume_at: verify
+              resume_at: {{resumeAt}}
               changes:
-                - { op: set, target: verify.tests, field: limits, value: { attempts: 1 } }
+                - {{change}}
             answers:
               implement: reject
             expect:
@@ -202,7 +206,7 @@ public class WorkflowTestRunnerTests
             var result = WorkflowTestRunner.RunPath(test, [Path.Combine(Repository.Root, "library", "std")]).Single();
 
             Assert.True(result.Passed, string.Join("\n", result.Failures));
-            Assert.Contains(result.Trace, t => t is { Kind: "patch_pending", StepId: "implement", Detail: "set touches protected step verify.tests (F3)" });
+            Assert.Contains(result.Trace, t => t is { Kind: "patch_pending", StepId: "implement" } && t.Detail == reason);
             Assert.Contains(result.Trace, t => t is { Kind: "patch_rejected", StepId: "implement" });
         }
         finally
