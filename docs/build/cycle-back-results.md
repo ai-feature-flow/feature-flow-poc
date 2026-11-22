@@ -21,11 +21,12 @@ step 2. No live run was made; the product owner's live steps are below.
 
 | Check | Result |
 |---|---|
-| `dotnet test tests/FeatureFlow.Testing.Workflows.Tests` | See the std builder's report |
-| `dotnet test tests/FeatureFlow.Library.Tests` | See the std builder's report |
-| `dotnet test tests/FeatureFlow.Replay.Tests` | 44 passed with the route and `planning` (before the core merge); after it, see below |
-| Default suite | To be completed by the sub-orchestrator |
-| Integration category (Temporal dev server on port 7653) | To be completed |
+| `dotnet test tests/FeatureFlow.Testing.Workflows.Tests` | 58 passed, the four new tests among them |
+| `dotnet test tests/FeatureFlow.Library.Tests` | 6 passed |
+| `dotnet test tests/FeatureFlow.Validation.Tests` | 96 passed. Four had used the implementer's `blocked` as the example of the template's class default, and failed with the new route; they now assert the route and check the default on a copy without it, and the ticket's readable-form golden file shows `blocked->plan.plan` |
+| `dotnet test tests/FeatureFlow.Replay.Tests` | 44 passed, before and after the core merge: no recorded history changed |
+| Default suite (`Category!=Integration&Category!=Live&Category!=Cluster`) | 26 projects, 1,882 passed, 0 failed |
+| Integration category (Temporal dev server on port 7653) | 195 passed, 0 failed (Integration.Tests 134, Postgres 30, Docker 17, S3 12, API 2) |
 
 Each new test was seen to fail without its change:
 
@@ -33,8 +34,8 @@ Each new test was seen to fail without its change:
 |---|---|---|
 | `ticket_replan_exhausted` | The `blocked: plan` route | `plan.plan ran 1 time(s), expected 3`; `open escalations are [implement], expected [plan.plan]` |
 | `ticket_replan_recovery` | `planning` on `plan_and_validate.plan` | `the answer was refused: re-plan: plan.plan is not an agent step with planning authority` |
-| `ticket_replan_blocked` | The `from: previous` consumes | To be completed after the core merge |
-| `epic_replan_expands_new` | `planning` on `plan_children.plan` | To be completed after the core merge |
+| `ticket_replan_blocked` | The `from: previous` consumes on `plan_and_validate.plan` | `plan.plan execution 2 did not consume 'previous/requirements'; it consumed [baseline_test_results, plan_validation]` |
+| `epic_replan_expands_new` | `planning` on `plan_children.plan` | `the answer was refused: re-plan: tickets.plan is not an agent step with planning authority`; `tickets.children_2 ran 0 time(s), expected 1` |
 
 ## Judgement calls
 
