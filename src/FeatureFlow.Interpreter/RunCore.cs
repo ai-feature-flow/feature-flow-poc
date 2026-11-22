@@ -575,8 +575,7 @@ public sealed partial class RunCore
             return ApplyResult.Ok;
         }
 
-        record.Current!.Outcome = c.Outcome;
-        Trace("completed", step.Id, c.Outcome);
+        Ended(step, record, c.Outcome);
         switch (result!.Status)
         {
             case PatchStatus.Applied:
@@ -738,9 +737,17 @@ public sealed partial class RunCore
     void Finish(Step step, StepRecord record, string outcome, string? said = null)
     {
         record.Current ??= new Execution { Number = record.Executions };
-        record.Current.Outcome = outcome;
-        Trace("completed", step.Id, outcome);
+        Ended(step, record, outcome);
         Route(step, outcome, said);
+    }
+
+    /// <summary>Records the current execution's outcome; a success-class one is where the step's retry causes start again.</summary>
+    void Ended(Step step, StepRecord record, string outcome)
+    {
+        record.Current!.Outcome = outcome;
+        if (IsSuccess(step.Id, outcome))
+            record.LastSuccess = record.Executions;
+        Trace("completed", step.Id, outcome);
     }
 
     /// <summary>How much of an agent's summary an escalation's text carries.</summary>
@@ -792,6 +799,9 @@ public sealed partial class RunCore
 
                 throw new EvaluationException("no guard held and the list has no fallback");
             case ResolvedStep to:
+                // A failure's reason is the next execution's to put right, so it is addressed to the agent step it routes to (LOG 513).
+                if (cls != OutcomeClass.Success && !string.IsNullOrWhiteSpace(said) && StepById(to.StepId) is { Form: StepForm.Agent })
+                    AddContext(ContextKinds.RetryCause, to.StepId, Executions(to.StepId), $"{from.Id} ended {outcome}: {said.Trim()}");
                 State.Pending.Add(new Entry(to.StepId, to.CleanUp, From: from.Id));
                 break;
             case ResolvedEnd end:

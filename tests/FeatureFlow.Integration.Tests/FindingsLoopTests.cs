@@ -62,7 +62,8 @@ public class FindingsLoopTests
         Assert.Equal((FindingStates.Fixed, 1, "verify.review.review_0.assess"), (finding.State, finding.Fixes, finding.Source));
         var history = (await records.QueryAsync<FindingEventRecord>(Queries.FindingEvents,
             new Dictionary<string, string> { ["run_id"] = id, ["finding_id"] = finding.FindingId }, ct)).Unwrap();
-        Assert.Equal([(FindingEventKinds.Raised, FindingStates.Open, "verify.review.review_0.assess"), (FindingEventKinds.Triaged, FindingStates.Open, "verify.fix.triage"),
+        // The triager's `open` restates the state, so it records no event (LOG 512).
+        Assert.Equal([(FindingEventKinds.Raised, FindingStates.Open, "verify.review.review_0.assess"),
             (FindingEventKinds.Triaged, FindingStates.Fixed, "verify.fix.verify_fix")], history.Select(e => (e.Kind, e.State, e.Actor)));
 
         // The triager and verifier were shown the ledger with its ids: one finding, open.
@@ -113,14 +114,15 @@ public class FindingsLoopTests
     }
 
     /// <summary>
-    /// Re-check R1 and R2: nor can the verifier alone. A fixer that commits nothing, then a verifier writing fixed (R1), or
-    /// a verifier declining after a real fix (R2): findings.triage refuses both as invalid, so verify_fix runs again until
-    /// its attempts run out and a person decides. The finding stays open, and nothing merges.
+    /// Re-check R1 and R2: nor can the verifier alone. A fixer that commits nothing (R1) stops at the fixer for a person
+    /// (LOG 517), so no verifier can write fixed over it; a verifier declining after a real fix (R2): findings.triage
+    /// refuses it as invalid, so verify_fix runs again until its attempts run out and a person decides. The finding stays
+    /// open, and nothing merges.
     /// </summary>
     [Theory]
-    [InlineData("fixed", true)]
-    [InlineData("declined", false)]
-    public async Task The_verifier_alone_cannot_clear_a_demonstrated_blocking_finding(string state, bool noFix)
+    [InlineData("fixed", true, "verify.fix.fix", 0)]
+    [InlineData("declined", false, "verify.fix.verify_fix", 3)]
+    public async Task The_verifier_alone_cannot_clear_a_demonstrated_blocking_finding(string state, bool noFix, string stopsAt, int records)
     {
         var demonstrated = Blocking.Replace("basis: reasoned", "basis: demonstrated, proof: AppTests.Null fails", StringComparison.Ordinal);
         var script = "{ " + string.Join(", ",
@@ -141,13 +143,13 @@ public class FindingsLoopTests
 
         var view = await h.ShowAsync(id);
         var wait = view["waits"]!.AsArray().Single()!;
-        Assert.Equal(("intervention", "verify.fix.verify_fix"), (wait["kind"]!.ToString(), wait["step_id"]!.ToString()));
+        Assert.Equal(("intervention", stopsAt), (wait["kind"]!.ToString(), wait["step_id"]!.ToString()));
         var path = Harness.StartedSteps(view);
         Assert.DoesNotContain(path, s => s.StartsWith("deliver.", StringComparison.Ordinal));
-        Assert.Equal(3, path.Count(s => s == "verify.fix.record_fixes"));
+        Assert.Equal(records, path.Count(s => s == "verify.fix.record_fixes"));
         Assert.Equal(main, forge.Resolve(repo, "main"));
-        var records = new SqliteRecordStore(Path.Combine(h.Folder, "records.db"));
-        var finding = Assert.Single((await records.QueryAsync<FindingRecord>(Queries.Findings, new Dictionary<string, string> { ["run_id"] = id },
+        var store = new SqliteRecordStore(Path.Combine(h.Folder, "records.db"));
+        var finding = Assert.Single((await store.QueryAsync<FindingRecord>(Queries.Findings, new Dictionary<string, string> { ["run_id"] = id },
             TestContext.Current.CancellationToken)).Unwrap());
         Assert.Equal(FindingStates.Open, finding.State);
         Assert.Empty(await h.WorkflowTaskFailuresAsync(id));

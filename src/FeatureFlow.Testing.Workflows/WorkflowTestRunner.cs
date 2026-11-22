@@ -321,7 +321,7 @@ public static class WorkflowTestRunner
 
     /// <summary>The keys of the artifacts a step consumes that resolve now, as its execution starts: what is staged for it.</summary>
     static List<string> Resolved(RunCore core, string stepId) =>
-        core.Consumed(stepId).Where(c => c.Reference is not null).Select(c => c.Key).Distinct().ToList();
+        core.Consumed(stepId).Where(c => c.LedgerView || c.Reference is not null).Select(c => c.Key).Distinct().ToList();
 
     static void Record(ApplyResult result, SortedSet<int> observed, List<Diagnostic> diagnostics, List<string> failures)
     {

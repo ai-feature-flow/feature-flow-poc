@@ -300,6 +300,7 @@ interface IVcsProvider : IProvider {
     Task<..CommitBundle> FetchCommitsAsync(WorkingCopyRef copy, string sinceRevision);
     Task<..int>          CountCommitsAsync(WorkingCopyRef copy, string fromRevision, string toRevision);
     Task<..IReadOnlyList<string>> ChangedFilesAsync(WorkingCopyRef copy, string fromRevision, string toRevision);
+    Task<..IReadOnlyList<string>> FilesAtAsync(WorkingCopyRef copy, string revision, IReadOnlyList<string> paths);   // those that are files there
     // The remote, through the engine's own clones (docs/02 section 6)
     Task<..string?>      ResolveAsync(RepoRef repo, string reference);   // null when absent
     Task<..bool>         DescendsFromAsync(RepoRef repo, string revision, string ancestor);

@@ -81,6 +81,9 @@ public interface IVcsProvider : IProvider
     /// <summary>The paths changed between two revisions of a working copy.</summary>
     Task<ProviderResult<IReadOnlyList<string>>> ChangedFilesAsync(WorkingCopyRef copy, string fromRevision, string toRevision, CancellationToken cancellationToken);
 
+    /// <summary>Those of <paramref name="paths"/> that are files at <paramref name="revision"/> of a working copy.</summary>
+    Task<ProviderResult<IReadOnlyList<string>>> FilesAtAsync(WorkingCopyRef copy, string revision, IReadOnlyList<string> paths, CancellationToken cancellationToken);
+
     /// <summary>
     /// Moves <paramref name="reference"/> on the remote to <paramref name="revision"/>, taking the commits from
     /// <paramref name="commits"/> when the remote lacks them. Refused with <c>base_moved</c> unless the reference is at

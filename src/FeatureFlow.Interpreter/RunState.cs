@@ -31,6 +31,9 @@ public sealed class StepRecord
     /// <summary>Attempts a person granted at an intervention, added to the step's allowance and race allowance.</summary>
     public long AttemptsGranted { get; set; }
 
+    /// <summary>The last execution that ended with a success-class outcome, or 0: where the step's retry causes start (LOG 513).</summary>
+    public int LastSuccess { get; set; }
+
     public Execution? Current { get; set; }
     public Execution? Previous { get; set; }
 

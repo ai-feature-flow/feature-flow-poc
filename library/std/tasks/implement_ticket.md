@@ -30,7 +30,7 @@ plan.
    CI, after you report: do not install a toolchain to run it. Name its tests
    as the test framework reports them (for xUnit, the fully qualified method
    name), and leave them to the engine's run.
-6. Write `claims.yaml`: for every criterion and method, the tests that prove it,
+6. Write `claims.yaml` in your output folder, not the checkout: for every criterion and method, the tests that prove it,
    at the method's repository and tier, each classified against the baseline as
    `new`, `reused` or `modified`, and only as the method allows. List every
    baseline test you removed under `test_impacts`, with its replacement.

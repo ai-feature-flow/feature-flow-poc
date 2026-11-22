@@ -24,7 +24,8 @@ public sealed record StepContractFacts(
 /// An agent step's settings from the plan (docs/04 section 3): the role's write access and tool classes, the rendered task and
 /// its library, skills, limits, push and uncommitted-work settings, the run's level, the artifacts it consumes by key (the
 /// findings ledger by its view name), the role's name, which the run's <c>role_mapping</c> maps to a runtime, and the run
-/// context rendered for it (docs/04 section 3.5), null with <c>context: none</c> or when the run has none.
+/// context rendered for it (docs/04 section 3.5), null with <c>context: none</c> or when the run has none; and why this
+/// execution runs (<see cref="RunContexts.RenderCauses"/>, LOG 513), null when nothing sent it back, whatever its context.
 /// </summary>
 public sealed record AgentStepFacts(
     string WriteAccess,
@@ -40,7 +41,8 @@ public sealed record AgentStepFacts(
     string Level,
     IReadOnlyDictionary<string, string> Consumed,
     string? Role,
-    string? RunContext = null);
+    string? RunContext = null,
+    string? Causes = null);
 
 /// <summary>
 /// What a step's activity is given, from the plan and the state now: which activity, what it runs (a role or an action), its
@@ -160,7 +162,8 @@ public sealed partial class RunCore
             Plan.Document.Level ?? "run",
             consumed,
             agent.Role?.Reference?.Name,
-            agent.Context == "none" ? null : RunContext());
+            agent.Context == "none" ? null : RunContext(),
+            CausesOf(step.Id));
     }
 
     /// <summary>Whether a running step's action waits on the outside world between reads, so a hand-over or a wake interrupts it (LOG 139).</summary>

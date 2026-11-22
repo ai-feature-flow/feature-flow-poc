@@ -24,7 +24,8 @@ cannot write, the checkout is read-only and you must not try to change it. If it
 can, commit your work to the current branch with clear messages. Never push,
 open pull requests or merge: the engine does that. Write the files the task asks
 you to produce into your output folder, whose path the engine gives you with the
-inputs manifest.
+inputs manifest. Files you report as artifacts live only in the output folder:
+never write them in the checkout or commit them.
 
 Commands you run report their output only when they finish. Split long work
 into commands that finish in under 30 minutes, and keep a log of long commands

@@ -70,7 +70,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
 
     async Task<StepOutcome> RunAsync(IReadOnlyDictionary<string, string> edits, bool codeHost = true, string step = "implement", string branch = Branch,
         ITrackerProvider? tracker = null, string? trackerIssue = null, Action<SandboxHandle>? atStart = null, bool dryRun = false, string? roleRuntime = null,
-        string? runContext = null, Func<AgentResult, AgentResult>? ending = null)
+        string? runContext = null, Func<AgentResult, AgentResult>? ending = null, string? causes = null)
     {
         var client = Path.Combine(folder, "ff-sandbox");
         await File.WriteAllTextAsync(client, "a stand-in for the sandbox client", TestContext.Current.CancellationToken);
@@ -100,7 +100,7 @@ public sealed class AgentManifestTests : IAsyncDisposable
         var contract = new StepContract([new OutcomeSpec("implemented", "success")], new Dictionary<string, string> { ["commits"] = "number" }, [],
             new Dictionary<string, string> { ["commits"] = "0" });
         var spec = new AgentStepSpec("write", ["read", "edit"], null, null, [], 2, 0, TimeSpan.FromHours(1), true, "commit", "ticket",
-            new Dictionary<string, string> { [repo.FullName] = branch }, new Dictionary<string, string>(), new Dictionary<string, string>(), "wf", "lock", trackerIssue, Runtime: roleRuntime, RunContext: runContext);
+            new Dictionary<string, string> { [repo.FullName] = branch }, new Dictionary<string, string>(), new Dictionary<string, string>(), "wf", "lock", trackerIssue, Runtime: roleRuntime, RunContext: runContext, Causes: causes);
         var call = new StepCall(new StepIdentity("run-1", "ticket_delivery", step, 1, $"run-1/{step}/1"), "agent", "std:roles/implementer",
             new Dictionary<string, string>(), contract, dryRun, TimeSpan.FromMinutes(5), spec);
         return await new ActivityEnvironment().RunAsync(() => activities.RunAgentStepAsync(call));
@@ -265,16 +265,84 @@ public sealed class AgentManifestTests : IAsyncDisposable
     public async Task The_run_context_is_written_into_the_stored_prompt_before_the_task()
     {
         const string context = "## Run context\n\n- ticket.spec_approval at approve_spec: rejected by ann: requirements omit the audit log\n";
+        const string causes = "## Why this step runs again\n\n- record_fixes ended invalid: F-1: this step may set only fixed, open, not 'declined'\n";
 
-        var outcome = await RunAsync(new Dictionary<string, string>(), runContext: context);
+        var outcome = await RunAsync(new Dictionary<string, string>(), runContext: context, causes: causes);
 
         Assert.Equal(StepOutcome.Reported, outcome.Kind);
         var reference = Assert.Single(outcome.Events!, e => e.StartsWith("prompt of session 1: ", StringComparison.Ordinal))["prompt of session 1: ".Length..];
         await using var stream = (await store.GetAsync(new ArtifactRef(reference), TestContext.Current.CancellationToken)).Unwrap();
         var prompt = await new StreamReader(stream).ReadToEndAsync(TestContext.Current.CancellationToken);
         Assert.Contains(context.TrimEnd(), prompt, StringComparison.Ordinal);
-        Assert.True(prompt.IndexOf("## This step", StringComparison.Ordinal) < prompt.IndexOf("## Run context", StringComparison.Ordinal));
+        Assert.Contains(causes.TrimEnd(), prompt, StringComparison.Ordinal);
+        Assert.True(prompt.IndexOf("## This step", StringComparison.Ordinal) < prompt.IndexOf("## Why this step runs again", StringComparison.Ordinal));
+        Assert.True(prompt.IndexOf("## Why this step runs again", StringComparison.Ordinal) < prompt.IndexOf("## Run context", StringComparison.Ordinal));
         Assert.EndsWith("Do the work of the std:roles/implementer role.", prompt, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// An artifact lives only in the output folder (LOG 514): a step whose commits add a file at the checkout path of an
+    /// artifact it reported fails with the reason, and the work branch does not move; one that commits other files passes.
+    /// </summary>
+    [Theory]
+    [InlineData("claims.yaml", false)]
+    [InlineData("src/B.cs", true)]
+    public async Task A_step_that_commits_a_file_it_reported_as_an_artifact_fails(string committed, bool passes)
+    {
+        var outcome = await RunAsync(new Dictionary<string, string> { [committed] = "claims: []" },
+            atStart: handle => sandbox.WriteFile(handle, $"{AgentPaths.Default.Output}/claims.yaml", "claims: []"),
+            ending: r => r with { Report = new StepReport("implemented", new Dictionary<string, string>(), new Dictionary<string, string> { ["claims"] = "claims.yaml" }) });
+
+        if (passes)
+        {
+            Assert.Equal(StepOutcome.Reported, outcome.Kind);
+            Assert.Equal("claims: []", forge.ReadFile(repo, Work!, committed));
+            return;
+        }
+
+        Assert.Equal(StepOutcome.WorkFailed, outcome.Kind);
+        Assert.Contains("add claims.yaml to the checkout, which it also reported as an artifact", outcome.Reason, StringComparison.Ordinal);
+        Assert.Null(forge.ReadFile(repo, Work!, "claims.yaml"));
+    }
+
+    static AgentResult ReportsClaims(AgentResult r) =>
+        r with { Report = new StepReport("implemented", new Dictionary<string, string>(), new Dictionary<string, string> { ["claims"] = "claims.yaml" }) };
+
+    /// <summary>A file of an artifact's name that the step brings in by merging its parent is the parent's, not the step's (LOG 514).</summary>
+    [Fact]
+    public async Task A_step_that_merges_its_parent_which_has_a_file_of_an_artifacts_name_passes()
+    {
+        forge.Commit(repo, "refs/heads/" + Branch, new Dictionary<string, string?> { ["src/W.cs"] = "class W{}" });
+        var parent = forge.Commit(repo, "refs/heads/main", new Dictionary<string, string?> { ["claims.yaml"] = "the parent's file" });
+
+        var outcome = await RunAsync(new Dictionary<string, string> { ["src/B.cs"] = "class B{}" },
+            atStart: handle =>
+            {
+                sandbox.WriteFile(handle, $"{AgentPaths.Default.Output}/claims.yaml", "claims: []");
+                forge.MergeIntoWorkingCopy(new WorkingCopyRef(handle, AgentPaths.Default.Checkout), parent);
+            },
+            ending: ReportsClaims);
+
+        Assert.True(StepOutcome.Reported == outcome.Kind, outcome.Reason);
+        Assert.Equal("the parent's file", forge.ReadFile(repo, Work!, "claims.yaml"));
+    }
+
+    /// <summary>A step that deletes a file of an artifact's name, an earlier attempt's, is not refused, with or without a code host (LOG 514).</summary>
+    [Fact]
+    public async Task A_step_that_deletes_a_committed_artifact_passes_without_a_code_host()
+    {
+        forge.Commit(repo, "refs/heads/" + Branch, new Dictionary<string, string?> { ["claims.yaml"] = "claims: []" });
+
+        var outcome = await RunAsync(new Dictionary<string, string> { ["src/B.cs"] = "class B{}" }, codeHost: false,
+            atStart: handle =>
+            {
+                sandbox.WriteFile(handle, $"{AgentPaths.Default.Output}/claims.yaml", "claims: []");
+                forge.WorkingFiles(new WorkingCopyRef(handle, AgentPaths.Default.Checkout))!.Remove("claims.yaml");
+            },
+            ending: ReportsClaims);
+
+        Assert.True(StepOutcome.Reported == outcome.Kind, outcome.Reason);
+        Assert.Null(forge.ReadFile(repo, Work!, "claims.yaml"));
     }
 
     public ValueTask DisposeAsync()

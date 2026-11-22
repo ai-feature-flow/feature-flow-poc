@@ -2,9 +2,11 @@ api_version: feature-flow/v1
 kind: workflow_test
 name: ticket_fix_retest_failed
 description: >-
-  The fix loop's re-test fails after the first fix, so the fixer goes again;
-  the second fix passes its re-test and its regression tests are validated, so
-  the loop leaves by its fixed exit and the ticket merges.
+  The fix loop's re-test fails after the first fix, which the verifier has
+  recorded as fixed, so the fixer goes again with the failing results (LOG
+  512). Nothing is open, so its second fix goes straight to the re-test, not to
+  the verifier; it passes, its regression tests are validated, and the loop
+  leaves by its fixed exit and the ticket merges.
 template: std:templates/ticket_delivery
 parameters: { ticket_id: FF-1043 }
 repositories: [acme/api]
@@ -12,22 +14,26 @@ repositories: [acme/api]
 script:
   verify.fix.retest: [failed, passed]
 outputs:
-  "findings.open": 1
+  verify.fix.fix: { commits: 1 }
+  "findings.open": [1, 1, 0]            # the triage applied; the first fix; the second, after the verifier recorded it fixed
   "findings.open_blocking": [1, 0]
 
 expect:
   status: completed
   path_includes:
     - verify.fix.fix
+    - verify.fix.verify_fix
     - verify.fix.record_fixes
     - verify.fix.retest
     - verify.fix.fix
-    - verify.fix.record_fixes
     - verify.fix.retest
     - verify.fix.tests_added
     - verify.tests
     - deliver.merge
   executions:
     verify.fix.fix: 2
+    verify.fix.verify_fix: 1
     verify.fix.retest: 2
     verify.fix.tests_added: 1
+  consumed:
+    verify.fix.fix: { 2: [fix_test_results] }

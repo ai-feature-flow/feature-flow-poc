@@ -129,10 +129,10 @@ reports.
    agent's output folder. A step that consumes the reserved name
    `findings_ledger` is given the ledger's current view, every finding with its
    ledger id and state, in the shape of a findings report (LOG 63).
-2. **Start.** Render the task, prepend the library's reporting preamble and
-   the run context (section 3.5), store it and index it as `prompt:<n>` (n the
-   session's number), and start the agent runtime in the sandbox with the
-   role's tools.
+2. **Start.** Render the task, prepend the library's reporting preamble,
+   why the step runs again and the run context (section 3.5), store it and
+   index it as `prompt:<n>` (n the session's number), and start the agent
+   runtime in the sandbox with the role's tools.
 3. **Supervise.** Heartbeat. About every 30 seconds, ask the VCS provider
    whether the working copy has new commits; if so, push them to the hidden
    work-in-progress reference. Serve hook calls, the engine tools (section 3.3)
@@ -152,7 +152,13 @@ reports.
 6. **After changes.** If the step committed, run the manifest's `after_changes`
    commands (formatters, generators) in the same sandbox and commit what they
    change as part of the step (from FF).
-7. **Finish.** Move the work branch to the final commit, once. Record the
+7. **Finish.** Refuse a step whose commits since it started (its own, the
+   sandbox `checkpoint` tool's and the leftover commit alike) add or change a
+   file at the checkout-relative path of an artifact it reported, such as
+   `claims.yaml` at the checkout's root: an artifact lives only in the output
+   folder, so the attempt fails, saying so, and the branch does not move
+   (LOG 514). A path brought in by merging the parent, or deleted at the final
+   commit, does not count. Move the work branch to the final commit, once. Record the
    summary for the run context.
 
 ### 3.2 Resume after an interruption
@@ -233,7 +239,7 @@ the run's state, carried over a hand-over, as entries of three kinds:
 |---|---|---|
 | `summary` | An agent step completes with a report summary | `<step> reported <outcome>: <summary>`, the summary at most 2 KB (LOG 19) |
 | `answer` | A person answers a gate, an intervention, a breakpoint or a patch approval (not a question, whose answer is its agent's alone) | `<decision type> at <step>: <choice> by <actor>: <reason>`, or without `: <reason>` when the person gave none (LOG 502) |
-| `retry_cause` | An attempt fails with a work error | `attempt <n> of <step> failed: <reason>`. An infrastructure retry is not a cause the agent can act on and is left out |
+| `retry_cause` | An attempt fails with a work error; or a step ends with an outcome that is not a success, with a summary, and routes to an agent step (LOG 513) | `attempt <n> of <step> failed: <reason>`, or `<step> ended <outcome>: <summary>`. An action's summary for an outcome that is not a success is `<step>: <outcome>: ` and what it found (its events), so `findings.triage`'s and `artifact.validate`'s `invalid` name the problems. An infrastructure retry is not a cause the agent can act on and is left out |
 
 The core renders the context in Markdown (`## Run context`, then one bullet per
 entry, oldest first) into the agent step's specification when the step starts,
@@ -246,6 +252,14 @@ saying how many. A child run starts with its parent's context as it was when
 the child started, rendered first under `### From the parent run`. A step with
 `context: none` (a reviewer) is given no context, only its task and consumed
 artifacts.
+
+A retry cause is addressed to the step that runs because of it. The core also
+renders the causes addressed to the step since its last execution that ended
+with a success-class outcome, under `## Why this step runs again`, which the
+agent worker writes before the run context, so a cause outlasts a failed
+attempt until the step succeeds; a step reads its own causes whatever its
+`context`, since they are addressed to it, not the run's history (LOG 513).
+A first execution, and one entered by a success, have none.
 
 ### 3.6 Outputs the engine publishes for every agent step
 
@@ -627,7 +641,7 @@ The standard set, from FF's validators:
 | `verification_satisfaction` | The agent's evidence claims match passing tests in the engine's test results evidence |
 | `requirement_trace` | Every requirement of this run traces through owners and supporting items, across completed children, to passing tests at commits the work contains |
 | `tests_added` | A fix's claims name at least one test that is new or changed since the commit the finding was raised on |
-| `document_rules` | The rules std's types state that a schema cannot, one document at a time: unique ids, a work list's dependencies known and acyclic, a finding triaged once. std's types name it, so it runs when the document is produced (LOG 247) |
+| `document_rules` | The rules std's types state that a schema cannot, one document at a time: unique ids, a work list's dependencies known and acyclic, a finding triaged once, a findings report's `same_as` naming a finding of the run's ledger at the same repository and file (the request carries the ledger, LOG 511). std's types name it, so it runs when the document is produced (LOG 247) |
 
 ### 10.3 `artifact.validate`
 
@@ -651,15 +665,15 @@ workflow's (`docs/01` section 6, RW4).
 |---|---|
 | Inputs | `source`: an artifact of type findings report (from a reviewer agent step), or a findings source provider by name (`copilot_review`, the Copilot review on the pull request). `reopen_on`: when a re-raise of a `fixed` or `declined` finding reopens it: `code_change`, `always` or `never`. The engine default, `code_change`, is a fallback; the standard library sets it explicitly |
 | Outcomes | `recorded`, with outputs `new`, `reraised`, `reopened`, `repeat_fixes` (findings reopened after being fixed at least twice); `unavailable` (the external source could not review, for example Copilot review not enabled, or it stayed pending for 30 minutes) |
-| Behaviour | Fingerprints each finding, matches it against the ledger (including children's), and records it as new or as a re-raise, with whether the code at the fingerprint changed since the finding last changed state: whether the finding's file differs between that revision and the work branch head (LOG 162). A re-raise never weakens the finding: blocking, demonstrated and the higher severity are kept (LOG 169). Applies `reopen_on`. A report that does not read as a findings report raises an intervention |
+| Behaviour | Matches each finding against the ledger (including children's) and records it as new or as a re-raise. A finding that names a ledger id in `same_as` is that finding; one that does not is matched by its fingerprint. A finding that repeats one already in the ledger, any pass, any angle, is the same finding: a declined one stays declined unless the code it concerns changed (LOG 511). Findings of one report that resolve to the same ledger finding are recorded once. A re-raise records whether the code at the finding changed since the finding last changed state: whether the finding's file, where the ledger has it, differs between that revision and the work branch head (LOG 162). A re-raise never weakens the finding: blocking, demonstrated and the higher severity are kept (LOG 169); a `same_as` re-raise keeps the finding's location and title. Applies `reopen_on`. A report that does not read as a findings report, or a `same_as` naming no ledger finding or one at another repository or file, raises an intervention; `std`'s findings report type refuses such a `same_as` when the reviewer produces the report, so the reviewer corrects it in its session (`document_rules`) |
 
 ### 11.2 `findings.triage`
 
 | Element | Detail |
 |---|---|
-| Inputs | `from`: a triage artifact (from a triage agent step, or a person's answer to a decision, LOG 248) listing, per finding, the new state (`fixed`, `declined`, `escalated`, `open`) and a reason; `states`: the states this step's producer may set (none given: all four; a non-empty list of them, LOG 168); `post_declines` (default `true`: post each decline reason on the pull request); `complete` (default `false`: with `true`, the triage must decide every escalated finding of the run and every declined blocking or demonstrated one, else it is `invalid`; for a person's triage, LOG 248) |
-| Outcomes | `applied`, with outputs `escalated` and `declined_blocking` (this triage's escalations, and its declines of blocking or demonstrated findings, counted by the engine); `invalid` (nothing applied) |
-| Behaviour | Applies each state change with its actor and reason. A triage entry naming an unknown finding or a state outside `states`, a move to `fixed` with nothing committed to the finding's repository since it was raised or reopened, or a triage that does not read, is `invalid`; the standard library routes it back to the triage's producer. A decline is posted only where a pull request is open for the finding's repository (LOG 164); `scm.pull_request` posts earlier ones when it opens (LOG 249). A triage from a person's answer is recorded as the authenticated person who gave it, any other as its producing step (F8, LOG 248) |
+| Inputs | `from`: a triage artifact (from a triage agent step, or a person's answer to a decision, LOG 248) listing, per finding, the new state (`fixed`, `declined`, `escalated`, `open`) and a reason; `states`: the states this step's producer may change a finding from and to (none given: all four; a non-empty list of them, LOG 168, 512); `post_declines` (default `true`: post each decline reason on the pull request); `complete` (default `false`: with `true`, the triage must decide every escalated finding of the run and every declined blocking or demonstrated one, except those whose current state a person set, else it is `invalid`; for a person's triage, LOG 248, 512) |
+| Outcomes | `applied`, with outputs `escalated` and `declined_blocking` (this triage's escalations, and its declines of blocking or demonstrated findings, counted by the engine over its decisions only); `invalid` (nothing applied) |
+| Behaviour | Applies each state change with its actor and reason. An entry that restates a finding's current state changes nothing and is accepted: an agent's records nothing and counts nothing; a person's is recorded as their decision (LOG 512). A triage entry naming an unknown finding, a change from or to a state outside `states`, a move to `fixed` with nothing committed to the finding's repository since it was raised or reopened, or a triage that does not read, is `invalid`; the standard library routes it back to the triage's producer. A decline is posted only where a pull request is open for the finding's repository (LOG 164); `scm.pull_request` posts earlier ones when it opens (LOG 249). A triage from a person's answer is recorded as the authenticated person who gave it, any other as its producing step (F8, LOG 248). A person set a finding's current state when the triage event that last changed it, or a later one restating it, names an actor of the run's answers |
 
 The standard library's fragments build review, triage, fix and verification
 from an agent reviewer, these two actions and route guards such as

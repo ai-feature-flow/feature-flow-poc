@@ -51,19 +51,30 @@ static class FindingsActions
         var now = DateTimeOffset.UtcNow;
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var reported in report.Findings.Select(f => f with { LedgerId = null, State = null, Location = f.Location with { Repository = RepositoryNames.As(f.Location.Repository, run.Scope.Repositories) } }))
+        foreach (var (reported, sameAs) in report.Findings.Select(f => (f with { LedgerId = null, State = null, SameAs = null,
+                     Location = f.Location with { Repository = RepositoryNames.As(f.Location.Repository, run.Scope.Repositories) } },
+                     string.IsNullOrWhiteSpace(f.SameAs) ? null : f.SameAs.Trim())))
         {
+            // Identity (LOG 511): the ledger id the reviewer names, else the fingerprint. An unknown id, or one at another place,
+            // is refused, as the type's validator refused it when the reviewer produced the report.
             var fingerprint = FingerprintOf(reported);
-            if (!seen.Add(fingerprint))
+            var existing = sameAs is not null
+                ? ledger.FirstOrDefault(f => f.FindingId == sameAs)
+                  ?? throw ActionStop.CannotAnswer($"{raisedBy}'s finding \"{reported.Title}\" is same_as {sameAs}, which is not a finding in this run's ledger")
+                : Match(ledger, fingerprint, run.Call.Step.RunId);
+            if (sameAs is not null && !(string.Equals(existing!.Finding.Location.Repository, reported.Location.Repository, StringComparison.OrdinalIgnoreCase)
+                                        && existing.Finding.Location.File == reported.Location.File))
+                throw ActionStop.CannotAnswer($"{raisedBy}'s finding \"{reported.Title}\" in {reported.Location.Repository} {reported.Location.File} is same_as {sameAs}, " +
+                                              $"which is in {existing.Finding.Location.Repository} {existing.Finding.Location.File}");
+            var id = existing?.FindingId ?? Fingerprints.LedgerId(run.Call.Step.RunId, fingerprint);
+            if (!seen.Add(id))
             {
-                run.Events.Add($"{raisedBy}'s finding \"{reported.Title}\" ({reported.Rule} in {reported.Location.File}) has the fingerprint of an earlier one in the report; recorded once");
+                run.Events.Add($"{raisedBy}'s finding \"{reported.Title}\" ({reported.Rule} in {reported.Location.File}) is the same finding as an earlier one in the report; recorded once");
                 continue;
             }
-            var head = await code.HeadAsync(reported.Location.Repository);
-            var existing = Match(ledger, fingerprint, run.Call.Step.RunId);
+            var head = await code.HeadAsync((existing?.Finding ?? reported).Location.Repository);
             if (existing is null)
             {
-                var id = Fingerprints.LedgerId(run.Call.Step.RunId, fingerprint);
                 findings.Add(new FindingRecord(run.Call.Step.RunId, id, fingerprint, reported, raisedBy, null, FindingStates.Open, head, head, 0, 0, 0, false, now));
                 events.Add(Event(run, run.Call.Step.RunId, id, FindingEventKinds.Raised, FindingStates.Open, raisedBy, null, head, null, now));
                 tally["new"]++;
@@ -77,12 +88,13 @@ static class FindingsActions
                 continue;
             }
 
-            var changed = await code.ChangedAsync(reported.Location, existing.StateRevision, head);
+            // The code the finding concerns is where the ledger has it; a same_as re-raise keeps its place and its title.
+            var changed = await code.ChangedAsync(existing.Finding.Location, existing.StateRevision, head);
             var reopen = existing.State is FindingStates.Fixed or FindingStates.Declined
                          && (reopenOn == Always || (reopenOn == CodeChange && changed));
             var after = existing with
             {
-                Finding = Merge(existing.Finding, reported),
+                Finding = Merge(existing.Finding, sameAs is null ? reported : reported with { Location = existing.Finding.Location, Title = existing.Finding.Title }),
                 Reraises = existing.Reraises + 1,
                 ReraisedUnchanged = !changed,
                 UpdatedAt = now,
@@ -246,13 +258,19 @@ static class FindingsActions
         // No states input allows all four; a list given, even an empty one, allows exactly its states (re-check R3).
         var allowed = run.Inputs.ContainsKey("states") ? run.Strings("states") : FindingStates.All;
         var (triage, problems) = ReadTriage(await run.ReadTextAsync(entry.Ref), $"{entry.StepId}'s {from} {entry.Ref}", byId, allowed);
+        var history = new History(run);
         if (problems.Count == 0 && run.Bool("complete", false))
+        {
             // A person's triage answers for everything an agent may not clear alone (review F1, LOG 248): every escalated finding
-            // of this run, and every declined blocking or demonstrated one. One it leaves out goes back to the person.
+            // of this run, and every declined blocking or demonstrated one, unless a person already decided it (LOG 512). One it
+            // leaves out goes back to the person.
+            var people = await PeopleAsync(run);
             foreach (var undecided in ledger.Where(f => f.RunId == run.Call.Step.RunId && (f.State == FindingStates.Escalated
                          || (f.State == FindingStates.Declined && (f.Finding.Blocking || f.Finding.Basis == FindingBases.Demonstrated))))
                          .Where(f => triage!.Entries.All(t => t.Finding != f.FindingId)))
-                problems.Add($"{undecided.FindingId} is {undecided.State}{(undecided.State == FindingStates.Declined ? " though blocking or demonstrated" : "")}; this triage must decide it");
+                if (!SetByPerson(await history.OfAsync(undecided), people))
+                    problems.Add($"{undecided.FindingId} is {undecided.State}{(undecided.State == FindingStates.Declined ? " though blocking or demonstrated" : "")}; this triage must decide it");
+        }
         var code = new CodeAt(run);
         if (problems.Count == 0)
             foreach (var t in triage!.Entries.Where(t => t.State == FindingStates.Fixed && byId[t.Finding].State != FindingStates.Fixed))
@@ -274,15 +292,25 @@ static class FindingsActions
         }
 
         var actor = await ActorAsync(run, entry);
-        var history = new History(run);
+        var byPerson = actor != entry.StepId;
         var findings = new List<FindingRecord>();
         var events = new List<FindingEventRecord>();
+        var decided = new List<TriageEntry>();
         var now = DateTimeOffset.UtcNow;
         var applied = 0;
         foreach (var t in triage!.Entries)
         {
             var before = byId[t.Finding];
             if (await history.ByThisStepAsync(before) is not null)
+            {
+                // A retry: this step decided it already, and an event is written only for a decision.
+                decided.Add(t);
+                continue;
+            }
+
+            // An agent's entry restating the finding's state changes nothing (LOG 512); a person's is their decision (F8), recorded
+            // so they are not asked again.
+            if (before.State == t.State && !byPerson)
                 continue;
             var head = await code.HeadAsync(before.Finding.Location.Repository);
             if (before.State != t.State)
@@ -298,6 +326,7 @@ static class FindingsActions
             }
 
             events.Add(Event(run, before.RunId, before.FindingId, FindingEventKinds.Triaged, t.State, actor, t.Reason, head, null, now));
+            decided.Add(t);
         }
 
         if (events.Count > 0)
@@ -306,17 +335,47 @@ static class FindingsActions
         run.Events.Add($"triage from {entry.StepId}" + (actor == entry.StepId ? "" : $", by {actor}") + $": {triage.Entries.Count} entries, {applied} state changes");
 
         if (run.Bool("post_declines", true))
-            foreach (var t in triage.Entries.Where(t => t.State == FindingStates.Declined))
+            foreach (var t in decided.Where(t => t.State == FindingStates.Declined))
                 await PostDeclineAsync(run, byId[t.Finding], t);
 
-        // Counted from the triage and the ledger, never from what its producer reports about itself (review F1).
+        // Counted from the triage's decisions and the ledger, never from what its producer reports about itself (review F1): a
+        // restated state is no decision, so it does not send a finding back to a person (LOG 512).
         var outputs = new Dictionary<string, object?>
         {
-            ["escalated"] = (long)triage.Entries.Count(t => t.State == FindingStates.Escalated),
-            ["declined_blocking"] = (long)triage.Entries.Count(t => t.State == FindingStates.Declined
+            ["escalated"] = (long)decided.Count(t => t.State == FindingStates.Escalated),
+            ["declined_blocking"] = (long)decided.Count(t => t.State == FindingStates.Declined
                 && (byId[t.Finding].Finding.Blocking || byId[t.Finding].Finding.Basis == FindingBases.Demonstrated)),
         };
         return await ReportAsync(run, "applied", outputs, null);
+    }
+
+    /// <summary>
+    /// The people of the run (F8): every actor its decisions' answers name, as the API authenticated them. A triage event whose
+    /// actor is one of them is a person's; a step's own triage is recorded under the step's id.
+    /// </summary>
+    static async Task<HashSet<string>> PeopleAsync(ActionRun run)
+    {
+        var answers = ActionRun.Must(await run.Provider<IRecordStoreProvider>("record_store").QueryAsync<AnswerRecord>(Queries.Answers,
+            new Dictionary<string, string> { ["run_id"] = run.Call.Step.RunId }, run.Ct), "read the run's answers");
+        return answers.Select(a => Args(a.Answer)?.Actor).OfType<string>().ToHashSet(StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// Whether a person set the finding's current state (LOG 512): the event that last changed it was a person's triage, or a
+    /// person's triage restated it since. Re-raises and agents' events that leave the state alone do not undo a person's decision.
+    /// </summary>
+    internal static bool SetByPerson(IEnumerable<FindingEventRecord> history, IReadOnlySet<string> people)
+    {
+        string? state = null;
+        var person = false;
+        foreach (var e in history)
+        {
+            var persons = e.Kind == FindingEventKinds.Triaged && people.Contains(e.Actor);
+            person = e.State != state ? persons : person || persons;
+            state = e.State;
+        }
+
+        return person;
     }
 
     /// <summary>
@@ -358,7 +417,8 @@ static class FindingsActions
 
     /// <summary>
     /// The triage, and what is wrong with it against the ledger: a finding the ledger does not hold, one named twice, a
-    /// state that is not one of the four or not one this producer may set (<c>states</c>, review F1), an empty reason.
+    /// state that is not one of the four, a change this producer may not make (<c>states</c> names the states it may change a
+    /// finding from and to; review F1, LOG 512), an empty reason.
     /// </summary>
     internal static (Triage? Triage, List<string> Problems) ReadTriage(string text, string what, IReadOnlyDictionary<string, FindingRecord> ledger,
         IReadOnlyList<string> allowed)
@@ -393,8 +453,14 @@ static class FindingsActions
                 problems.Add($"{id} is named more than once");
             if (!FindingStates.All.Contains(e.State))
                 problems.Add($"{id}: state must be one of {string.Join(", ", FindingStates.All)}, not '{e.State}'");
-            else if (!allowed.Contains(e.State))
-                problems.Add($"{id}: this step may set only {string.Join(", ", allowed)}, not '{e.State}'");
+            // states limits changes, from and to; restating a finding's state changes nothing and is accepted (LOG 512).
+            else if (ledger.TryGetValue(id, out var current) && current.State != e.State)
+            {
+                if (!allowed.Contains(e.State))
+                    problems.Add($"{id}: this step may set only {string.Join(", ", allowed)}, not '{e.State}'");
+                else if (!allowed.Contains(current.State))
+                    problems.Add($"{id} is {current.State}; this step may change only findings that are {string.Join(", ", allowed)}");
+            }
             if (string.IsNullOrWhiteSpace(e.Reason))
                 problems.Add($"{id}: a reason is required");
         }

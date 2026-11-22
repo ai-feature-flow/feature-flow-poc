@@ -4,8 +4,9 @@ namespace FeatureFlow.Interpreter;
 
 /// <summary>
 /// One thing the run has learned that the next agent should know (docs/04 section 3.5; LOG 405): an agent step's report
-/// <see cref="ContextKinds.Summary"/>, a person's <see cref="ContextKinds.Answer"/> with their reason, or a work failure's
-/// <see cref="ContextKinds.RetryCause"/>, with the step and execution it came from. <see cref="Text"/> reads on its own.
+/// <see cref="ContextKinds.Summary"/> or a person's <see cref="ContextKinds.Answer"/>, with the step and execution it came
+/// from; or a <see cref="ContextKinds.RetryCause"/>, with the step it is addressed to and that step's execution it follows
+/// (LOG 513). <see cref="Text"/> reads on its own.
 /// </summary>
 public sealed record ContextEntry(string Kind, string StepId, int Execution, string Text);
 
@@ -71,6 +72,20 @@ public static class RunContexts
         return text.ToString();
     }
 
+    /// <summary>
+    /// Why a step's execution runs (LOG 513): <c>## Why this step runs again</c>, then one bullet per retry cause addressed to
+    /// it, in order. Null when there is none: a first execution, or one entered by a success.
+    /// </summary>
+    public static string? RenderCauses(IReadOnlyList<ContextEntry> causes)
+    {
+        if (causes.Count == 0)
+            return null;
+        var text = new StringBuilder("## Why this step runs again\n\n");
+        foreach (var e in causes)
+            text.Append("- ").Append(e.Text.ReplaceLineEndings("\n  ")).Append('\n');
+        return text.ToString();
+    }
+
     /// <summary>A parent's rendered context without its own heading, so a grandchild's reads as one section.</summary>
     static string ParentBody(string rendered)
     {
@@ -96,6 +111,17 @@ public sealed partial class RunCore
 {
     /// <summary>The run context the next agent reads, rendered now, with the parent's first; null when empty.</summary>
     public string? RunContext() => RunContexts.Render(State.Context, Run.ParentContext);
+
+    /// <summary>
+    /// The retry causes addressed to a step's current execution, rendered (LOG 513): those added since its last execution that
+    /// ended with a success-class outcome, so a cause outlasts a failed attempt until the step succeeds. They are its own, so a
+    /// step with <c>context: none</c> reads them too.
+    /// </summary>
+    string? CausesOf(string stepId)
+    {
+        var since = State.Steps.GetValueOrDefault(stepId)?.LastSuccess ?? 0;
+        return RunContexts.RenderCauses(State.Context.Where(e => e.Kind == ContextKinds.RetryCause && e.StepId == stepId && e.Execution >= since).ToList());
+    }
 
     void AddContext(string kind, string stepId, int execution, string text)
     {

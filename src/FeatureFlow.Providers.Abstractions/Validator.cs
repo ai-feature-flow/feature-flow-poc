@@ -141,9 +141,12 @@ public sealed class ArtifactCheckException(string message, bool infrastructure) 
 /// </summary>
 public static class ArtifactTypeCheck
 {
-    /// <summary>The artifact's errors, each naming it and its path; warnings do not count. Throws <see cref="ArtifactCheckException"/> when it cannot be checked.</summary>
+    /// <summary>
+    /// The artifact's errors, each naming it and its path; warnings do not count. Throws <see cref="ArtifactCheckException"/> when it
+    /// cannot be checked. <paramref name="findings"/> is the run's ledger, for a rule that names its findings (LOG 511).
+    /// </summary>
     public static async Task<IReadOnlyList<string>> CheckAsync(ArtifactTypeItem type, string name, string declared, string path, string text, string reference,
-        ProviderSet providers, CancellationToken ct)
+        ProviderSet providers, IReadOnlyList<FindingRecord> findings, CancellationToken ct)
     {
         var errors = ArtifactContent.Check(type, text, path).Select(e => $"artifact '{name}' ({path}): {e}").ToList();
         foreach (var validator in type.Validators)
@@ -151,7 +154,7 @@ public static class ArtifactTypeCheck
             var (provider, instance) = ValidatorProviders.Find(providers, validator, out var why)
                                        ?? throw new ArtifactCheckException($"artifact {name}'s type {declared} names validator {validator}: {why}", false);
             var result = await instance.ValidateAsync(new ValidationRequest(validator, [new ValidationSubject(name, declared, new ArtifactRef(reference))],
-                new Dictionary<string, string>(), new Dictionary<string, string>(), [], []), ct);
+                new Dictionary<string, string>(), new Dictionary<string, string>(), [], findings), ct);
             if (!result.Ok)
             {
                 var error = result.Error!;

@@ -44,6 +44,8 @@ public sealed record CarriedExecution(int Number, string? Outcome, IReadOnlyDict
 
 public sealed record CarriedStep(int Executions, int AttemptsUsed, int RacesUsed, long AttemptsGranted, CarriedExecution? Current, CarriedExecution? Previous)
 {
+    public int LastSuccess { get; init; }
+
     /// <summary>
     /// <see cref="StepRecord.EarlierArtifacts"/>; null when empty. State carried before it existed has none, and is read as the
     /// previous execution's artifacts, which is what <c>from: previous</c> read then.
@@ -143,6 +145,7 @@ public sealed partial class RunCore
             new SortedDictionary<string, CarriedStep>(s.Steps.ToDictionary(kv => kv.Key,
                 kv => new CarriedStep(kv.Value.Executions, kv.Value.AttemptsUsed, kv.Value.RacesUsed, kv.Value.AttemptsGranted, Exec(kv.Value.Current), Exec(kv.Value.Previous))
                 {
+                    LastSuccess = kv.Value.LastSuccess,
                     EarlierArtifacts = kv.Value.EarlierArtifacts.Count == 0 ? null : new SortedDictionary<string, string>(kv.Value.EarlierArtifacts, StringComparer.Ordinal),
                 }), StringComparer.Ordinal),
             new SortedDictionary<string, CarriedContainer>(s.Containers.ToDictionary(kv => kv.Key,
@@ -206,6 +209,7 @@ public sealed partial class RunCore
                 AttemptsUsed = step.AttemptsUsed,
                 RacesUsed = step.RacesUsed,
                 AttemptsGranted = step.AttemptsGranted,
+                LastSuccess = step.LastSuccess,
                 Current = Exec(step.Current),
                 Previous = Exec(step.Previous),
             };

@@ -35,7 +35,9 @@ public sealed record FindingLocation(string Repository, string File, string? Sym
 
 /// <summary>
 /// One entry of a <c>findings_report</c>. <see cref="LedgerId"/> and <see cref="State"/> are set only in a ledger view
-/// the engine stages for a step that consumes <c>findings_ledger</c>; a reviewer leaves them out.
+/// the engine stages for a step that consumes <c>findings_ledger</c>; a reviewer leaves them out. <see cref="SameAs"/> is
+/// the reviewer's: the ledger id of the finding this one repeats, which <c>findings.record</c> matches instead of the
+/// fingerprint (LOG 511).
 /// </summary>
 public sealed record ReportedFinding(
     string Rule,
@@ -48,7 +50,8 @@ public sealed record ReportedFinding(
     string? RequiredCorrection = null,
     string? Proof = null,
     string? LedgerId = null,
-    string? State = null);
+    string? State = null,
+    string? SameAs = null);
 
 /// <summary>
 /// <c>findings_report</c> (std's artifact type): one review pass's findings. A reviewer agent writes it; a findings source

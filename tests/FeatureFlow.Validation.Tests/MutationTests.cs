@@ -1,3 +1,4 @@
+using FeatureFlow.Model;
 using static FeatureFlow.Validation.Tests.Std;
 
 namespace FeatureFlow.Validation.Tests;
@@ -56,12 +57,12 @@ public class MutationTests
             new(FixLoop, "steps.apply_triage.outputs.escalated > 0 ||", "steps.apply_triage.outputs.to_fix > 0 ||")]),
 
         ["guard_not_bool"] = new(5, "is int64, not bool", "a fix-loop guard reads a number as a condition", [
-            new(FixLoop, "        - when: \"findings.open == 0\"\n          to: { exit: cleared }",
-                "        - when: \"findings.open\"\n          to: { exit: cleared }")]),
+            new(FixLoop, "        - when: \"findings.open == 0\"\n          to: { exit: cleared }                   # the loop's first decision",
+                "        - when: \"findings.open\"\n          to: { exit: cleared }                   # the loop's first decision")]),
 
         ["index_access"] = new(5, "index access on", "a fix-loop guard reaches an undeclared parameter and output by index", [
-            new(FixLoop, "        - when: \"findings.open == 0\"\n          to: { exit: cleared }",
-                "        - when: \"params['nope'] == 1 && steps['apply_triage'].outputs.bogus > 0\"\n          to: { exit: cleared }")]),
+            new(FixLoop, "        - when: \"findings.open == 0\"\n          to: { exit: cleared }                   # the loop's first decision",
+                "        - when: \"params['nope'] == 1 && steps['apply_triage'].outputs.bogus > 0\"\n          to: { exit: cleared }                   # the loop's first decision")]),
 
         ["declared_exhausted"] = new(6, "'attempts_exhausted' is added by the engine and may not be declared", "implement declares attempts_exhausted itself", [
             new(Ticket, "    outcomes: { implemented: success, blocked: blocked }", "    outcomes: { implemented: success, blocked: blocked, attempts_exhausted: failure }")]),
@@ -94,9 +95,7 @@ public class MutationTests
                 "      reverify: verify\n\n  - id: announce\n    action: artifact.compose\n    with: { members: [requirements] }\n")]),
 
         ["cycle_without_exit"] = new(10, "has no route out", "the fix loop's validated tests go back to the fixer instead of leaving", [
-            new(FixLoop, "      valid: { exit: fixed }\n      invalid: fix", "      valid: fix\n      invalid: fix"),
-            new(FixLoop, "          to: { exit: cleared }                   # no fixer has run", "          to: fix                   # no fixer has run"),
-            new(FixLoop, "          to: { exit: fixed }                     # a fixer has run", "          to: fix                     # a fixer has run")]),
+            new(FixLoop, "      valid: { exit: fixed }\n      invalid: fix", "      valid: fix\n      invalid: fix")]),
 
         ["missing_producer"] = new(11, "consumes 'delivery_plans', which no step produces", "implement consumes an artifact no step produces", [
             new(Ticket, "      - { name: requirements }\n      - { name: delivery_plan }\n      - { name: contract, from: parent, optional: true }\n      - { name: baseline_test_results }",
@@ -260,5 +259,69 @@ public class MutationTests
         var error = Assert.Single(refused, x => x.Blocks);
         Assert.Equal(5, error.Check);
         Assert.Contains($"step act has no output '{unknown}' ({named})", error.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Check 37 (LOG 515): a failure route into a step that consumes an artifact the routing step keeps only on success blocks;
+    /// declaring it for the failure too clears it. Optional consumption counts.
+    /// </summary>
+    [Theory]
+    [InlineData("[{ name: fix_test_results, type: std:artifact_types/test_results }]", true)]
+    [InlineData("{ passed: [{ name: fix_test_results, type: std:artifact_types/test_results }], failed: [{ name: fix_test_results, type: std:artifact_types/test_results }] }", false)]
+    public void A_failure_route_to_a_step_consuming_what_the_router_keeps_only_on_success_blocks(string produces, bool blocks)
+    {
+        var (_, _, d) = Probe($$"""
+            api_version: feature-flow/v1
+            kind: template
+            metadata: { name: probe, level: ticket }
+            artifact_types: [std:artifact_types/test_results]
+            steps:
+              - id: fix
+                agent: { role: std:roles/implementer, task: std:tasks/repair_failures }
+                consumes: [{ name: fix_test_results, optional: true }]
+                outcomes: { fixed: success }
+                routes: { fixed: retest }
+              - id: retest
+                action: test.run
+                produces: {{produces}}
+                routes: { passed: { end: completed }, failed: fix, baseline_failed: { end: failed } }
+            """);
+
+        var found = d.Where(x => x.Check == Checks.FailureRouteArtifact).ToList();
+        Assert.Equal(blocks, d.HasErrors);
+        if (!blocks)
+        {
+            Assert.Empty(found);
+            return;
+        }
+
+        var error = Assert.Single(found);
+        Assert.Equal(("retest", Severity.Error), (error.StepId, error.Severity));
+        Assert.Contains("routes 'failed' to fix, which consumes 'fix_test_results', but this step keeps 'fix_test_results' only for passed", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_blocked_route_to_a_step_consuming_what_the_router_keeps_only_on_success_passes()
+    {
+        // A blocked agent gives a reason, not evidence; the reason reaches the step it routes to (LOG 513).
+        var (_, _, d) = Probe("""
+            api_version: feature-flow/v1
+            kind: template
+            metadata: { name: probe, level: ticket }
+            artifact_types: [std:artifact_types/evidence_claims]
+            steps:
+              - id: plan
+                agent: { role: std:roles/planner, task: std:tasks/plan_ticket }
+                consumes: [{ name: implementation_claims, optional: true }]
+                outcomes: { planned: success }
+                routes: { planned: implement }
+              - id: implement
+                agent: { role: std:roles/implementer, task: std:tasks/implement_ticket }
+                produces: { implemented: [{ name: implementation_claims, type: std:artifact_types/evidence_claims }] }
+                outcomes: { implemented: success, blocked: blocked }
+                routes: { implemented: { end: completed }, blocked: plan }
+            """);
+
+        Assert.DoesNotContain(d, x => x.Check == Checks.FailureRouteArtifact);
     }
 }

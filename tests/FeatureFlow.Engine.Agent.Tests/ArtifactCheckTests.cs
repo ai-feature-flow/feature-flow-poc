@@ -212,6 +212,22 @@ public sealed class ArtifactCheckTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_findings_report_s_same_as_is_checked_against_the_run_s_ledger_in_the_session()
+    {
+        // LOG 511: the type check passes the run's ledger to document_rules, so an unknown same_as goes back to the reviewer.
+        const string Report = "schema: 1\nfindings:\n  - { rule: convention, title: t, description: d, severity: low, blocking: false, basis: reasoned, " +
+                              "location: { repository: acme/api, file: a.cs }, same_as: ID }\n";
+        var finding = new ReportedFinding("convention", "t", "d", "low", false, "reasoned", new FindingLocation("acme/api", "a.cs"));
+        (await records.AppendAsync(new RecordBatch(Findings: [new FindingRecord("run-1", "F-1", "fp", finding, "review", null, FindingStates.Declined, null, null, 0, 0, 0, false,
+            DateTimeOffset.UtcNow)]), CancellationToken.None)).Unwrap();
+
+        var (outcome, runtime) = await RunAsync([new Turn(Report.Replace("ID", "F-2")), new Turn(Report.Replace("ID", "F-1"))], type: "std:artifact_types/findings_report");
+
+        Assert.Equal(StepOutcome.Reported, outcome.Kind);
+        Assert.Contains("same_as F-2 is not a finding in this run's ledger", Assert.Single(runtime.Continued), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Artifacts_still_invalid_after_the_correction_turns_fail_the_attempt()
     {
         var (outcome, runtime) = await RunAsync([new Turn(OwnerAsText)]);

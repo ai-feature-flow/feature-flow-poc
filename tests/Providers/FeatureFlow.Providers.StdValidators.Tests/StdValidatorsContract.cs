@@ -273,8 +273,21 @@ public sealed class StdValidatorsContract : ValidatorContract, IDisposable
                 "unknown_dependency"),
             new("document_rules: dependencies in a cycle", Request(Names.DocumentRules, [w.Subject("tickets", "work_list", WorkList("a", "b", "a"))]), false,
                 "dependency_cycle"),
+            new("document_rules: a findings report's same_as naming a ledger finding",
+                Request(Names.DocumentRules, [w.Subject("findings_report", "findings_report", FindingsReport("F-1"))], findings: [Finding("F-1", null)]), true),
+            new("document_rules: a findings report's same_as naming no ledger finding",
+                Request(Names.DocumentRules, [w.Subject("findings_report", "findings_report", FindingsReport("F-2"))], findings: [Finding("F-1", null)]), false,
+                "unknown_finding"),
+            new("document_rules: a findings report's same_as naming a ledger finding in another file",
+                Request(Names.DocumentRules, [w.Subject("findings_report", "findings_report", FindingsReport("F-1", "src/Other.cs"))], findings: [Finding("F-1", null)]), false,
+                "same_as_elsewhere"),
         ];
     }
+
+    /// <summary>A findings report of one finding, in <paramref name="file"/>, that repeats the ledger finding <paramref name="sameAs"/>.</summary>
+    static string FindingsReport(string sameAs, string file = "src/Widgets.cs") =>
+        "schema: 1\nfindings:\n  - { rule: convention, title: t, description: d, severity: low, blocking: false, basis: reasoned, " +
+        $"location: {{ repository: api, file: {file} }}, same_as: {sameAs} }}\n";
 
     /// <summary>A work list of two items, <paramref name="first"/> and b, each depending on what is given for it.</summary>
     static string WorkList(string first, string? firstNeeds, string? bNeeds = null) =>

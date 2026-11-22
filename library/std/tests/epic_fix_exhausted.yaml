@@ -14,6 +14,7 @@ expand:
 script:
   verify.fix.tests_added: invalid
 outputs:
+  verify.fix.fix: { commits: 1 }
   "findings.open": 1                     # read when the triage is applied: findings left to fix
   "findings.open_blocking": [1]
 

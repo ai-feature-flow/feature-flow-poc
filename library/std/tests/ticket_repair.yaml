@@ -1,0 +1,35 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: ticket_repair
+description: >-
+  The engine's tests fail after the implementation, so the repair step goes
+  with the failing results (LOG 517); the tests then pass and the analysis
+  fails, so it goes again with the analysis results. Both pass at the third
+  try, and the ticket is reviewed and merges.
+template: std:templates/ticket_delivery
+parameters: { ticket_id: FF-1044 }
+repositories: [acme/api]
+
+script:
+  verify.tests: [failed, passed]
+  verify.analysis: [failed, passed]
+
+expect:
+  status: completed
+  path_includes:
+    - implement
+    - verify.tests
+    - verify.repair
+    - verify.tests
+    - verify.analysis
+    - verify.repair
+    - verify.tests
+    - verify.analysis
+    - verify.review.review_0.assess
+    - deliver.merge
+  executions:
+    verify.tests: 3
+    verify.analysis: 2
+    verify.repair: 2
+  consumed:
+    verify.repair: { 1: [test_results], 2: [analysis_results] }

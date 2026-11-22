@@ -204,6 +204,17 @@ public sealed class GitVcs(
             : new ProviderResult<IReadOnlyList<string>>(null, run.Error);
     }
 
+    public async Task<ProviderResult<IReadOnlyList<string>>> FilesAtAsync(WorkingCopyRef copy, string revision, IReadOnlyList<string> paths, CancellationToken cancellationToken)
+    {
+        if (paths.Count == 0)
+            return ProviderResult<IReadOnlyList<string>>.Success([]);
+        var run = await InCopyAsync(copy, $"git ls-tree -r --name-only {Q(revision)} -- {string.Join(' ', paths.Select(Q))}", cancellationToken);
+        if (!run.Ok)
+            return new ProviderResult<IReadOnlyList<string>>(null, run.Error);
+        var present = run.Value!.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => l.Trim()).ToHashSet(StringComparer.Ordinal);
+        return ProviderResult<IReadOnlyList<string>>.Success(paths.Where(present.Contains).ToList());
+    }
+
     public Task<ProviderResult<PushResult>> PushAsync(RepoRef repo, string reference, string revision, CommitBundle? commits, string? expectedOldRevision,
         CancellationToken cancellationToken) =>
         WithCacheAsync(repo, async (dir, env, op) =>

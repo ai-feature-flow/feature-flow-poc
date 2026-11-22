@@ -5,13 +5,17 @@ metadata:
   description: >-
     Findings from one review pass, with the fields the engine fingerprints and
     the reviewer's judgement of severity, blocking and basis (docs/01 section 6).
-    The engine stages the run's current ledger view in this shape, with ledger ids
-    and states, for any step that consumes findings_ledger.
+    A finding that repeats one already in the ledger at the same place (the same
+    repository and file), any pass, any angle, names it in same_as;
+    findings.record then matches that ledger finding instead of
+    the fingerprint, so a declined one stays declined unless the code it concerns
+    changed (LOG 511). The engine stages the run's current ledger view in this
+    shape, with ledger ids and states, for any step that consumes findings_ledger.
 
 format: yaml
 evidence: false
 compatible_with: []
-validators: []
+validators: [document_rules]   # same_as names a finding in the run's ledger at the same repository and file, checked when the report is produced (LOG 511)
 
 schema:
   type: object
@@ -29,6 +33,7 @@ schema:
         properties:
           ledger_id: { type: string, description: "Set by the engine in a ledger view; absent in a reviewer's report" }
           state: { enum: [open, fixed, declined, escalated], description: "Set by the engine in a ledger view" }
+          same_as: { type: string, description: "The ledger id of the finding this one repeats at the same repository and file, from findings_ledger; absent for a new finding" }
           rule:                 # std's vocabulary (skills/review), so the same problem raised again matches (LOG 250)
             description: "The kind of defect, part of the fingerprint"
             enum: [wrong_behaviour, null_dereference, missing_validation, missing_authorisation, injection, secret_exposed, security, error_handling, resource_leak, concurrency, performance, api_contract, missing_test, test_asserts_nothing, convention, maintainability, documentation]
