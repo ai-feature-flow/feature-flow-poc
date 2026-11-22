@@ -16,14 +16,20 @@ public static class DocumentReader
         if (r is null)
             return null;
         var meta = LibraryItemReader.Header(r, kind, name, d, out var deprecated);
-        string? level = null, description = null, branchPattern = null;
-        SourceLocation? branchPatternLocation = null;
+        string? level = null, description = null, branchPattern = null, trackerParameter = null;
+        SourceLocation? branchPatternLocation = null, trackerParameterLocation = null;
         if (meta is not null)
         {
             description = meta.Map["description"].ScalarText();
             level = kind == "template" ? meta.String("level", required: true) : null;
             branchPattern = meta.String("branch_pattern");
             branchPatternLocation = meta.Map["branch_pattern"]?.Location;
+            if (kind == "template")
+            {
+                trackerParameter = meta.String("tracker_parameter");
+                trackerParameterLocation = meta.Map["tracker_parameter"]?.Location;
+            }
+
             meta.Finish();
         }
 
@@ -43,6 +49,10 @@ public static class DocumentReader
                 p.Finish();
                 parameters.Add(new ParameterDecl(key.Text, type, required, dflt, desc, key.Location));
             }
+
+        // The parameter whose value is the run's tracker issue (LOG 501): a declared string parameter.
+        if (trackerParameter is not null && parameters.FirstOrDefault(p => p.Name == trackerParameter) is not { Type: "string" })
+            r.Error($"metadata.tracker_parameter names '{trackerParameter}', which is not a declared string parameter", trackerParameterLocation!);
 
         var types = new List<ItemRef>();
         foreach (var item in LibraryItemReader.Seq(r.Node("artifact_types"), d, "artifact_types"))
@@ -98,6 +108,7 @@ public static class DocumentReader
             Description = description,
             BranchPattern = branchPattern,
             BranchPatternLocation = branchPatternLocation,
+            TrackerParameter = trackerParameter,
             Parameters = parameters,
             ArtifactTypes = types,
             Exits = exits,

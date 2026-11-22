@@ -79,9 +79,11 @@ public static partial class ApiApp
             if (parentBranch is not null && !ValidBranch(parentBranch))
                 return Error(400, $"parent_branch must be a branch name, such as ff/epic/billing, not '{parentBranch}'");
             // The run's tracker issue (run.tracker_issue): its input, read from the tracker, and where declarative updates go.
-            var trackerIssue = body.TrackerIssue;
-            if (trackerIssue is not null && (trackerIssue.Length is 0 or > 200 || trackerIssue.Any(char.IsControl)))
-                return Error(400, "tracker_issue must be a tracker key, such as ACME-12 or owner/repo#12");
+            // A template that names its tracker parameter gives it from that parameter (LOG 501).
+            static bool NotAKey(string? issue) => issue is not null && (issue.Length is 0 or > 200 || issue.Any(char.IsControl));
+            const string keyRefusal = "tracker_issue must be a tracker key, such as ACME-12 or owner/repo#12";
+            if (NotAKey(body.TrackerIssue))
+                return Error(400, keyRefusal);
             var handOver = services.Installation.ContinueAsNewEvents;
             if (body.ContinueAsNewEvents is { } requested)
             {
@@ -96,8 +98,12 @@ public static partial class ApiApp
             var libraries = await OpenLibrariesAsync(context.RequestAborted);
             // Check 18 before the run exists (LOG 495): a required parameter missing, or a value of the wrong type, is the caller's to fix.
             var bound = parameters.ToDictionary(p => p.Key, p => YamlWriter.Read(p.Value, $"params.{p.Key}"));
-            if (RunCore.ParameterProblems(new LibrarySet(libraries), LibraryReference.TryParse(template)!, new RunInfo("", repositories, bound)) is { Count: > 0 } problems)
-                return Error(400, string.Join("; ", problems.Select(p => p.Message)));
+            var check = RunCore.CheckStart(new LibrarySet(libraries), LibraryReference.TryParse(template)!, new RunInfo("", repositories, bound, TrackerIssue: body.TrackerIssue));
+            if (check.Problems.Count > 0)
+                return Error(400, string.Join("; ", check.Problems));
+            var trackerIssue = check.TrackerIssue;
+            if (NotAKey(trackerIssue))
+                return Error(400, keyRefusal);
             var lockRef = await WriteLockAsync(libraries, context.RequestAborted);
             var runId = "run-" + Guid.NewGuid().ToString("N")[..12];
             var now = DateTimeOffset.UtcNow;

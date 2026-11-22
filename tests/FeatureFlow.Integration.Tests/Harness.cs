@@ -222,8 +222,17 @@ public sealed class Harness : IAsyncDisposable
     public static string[] WithReason(string[] args) =>
         args is ["answer" or "recover" or "abort", ..] && !args.Contains("--reason") ? [.. args, "--reason", "the integration test"] : args;
 
+    /// <summary>
+    /// Starts a run through the CLI. A <c>ticket_id</c> the arguments name is filed first in both worlds' trackers, as a person
+    /// files a ticket before starting its run, so a std ticket run, which takes its tracker issue from <c>ticket_id</c>
+    /// (LOG 501), finds it. A test that configures its own tracker (<c>without: ["tracker"]</c>) files its own.
+    /// </summary>
     public string Start(string template, params string[] args)
     {
+        foreach (var ticket in args.Zip(args.Skip(1)).Where(a => a.First == "--param" && a.Second.StartsWith("ticket_id=", StringComparison.Ordinal))
+                     .Select(a => a.Second["ticket_id=".Length..]))
+            foreach (var world in new[] { World, DryWorld })
+                InMemoryTracker.Named(world).Add(ticket, new IssueSpec($"Ticket {ticket}", "The integration test's ticket."));
         var (exit, output, error) = Cli(["start", template, .. args]);
         Assert.True(exit == 0, error);
         return output.Trim().Split(' ')[1];

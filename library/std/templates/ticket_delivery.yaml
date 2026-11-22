@@ -7,6 +7,7 @@ metadata:
     One ticket, from plan to merge into its parent branch. Works standalone,
     where the parent branch is the default branch, or as a child of an epic.
   branch_pattern: "ff/ticket/{{ params.ticket_id }}"
+  tracker_parameter: ticket_id   # a run started on its own takes its tracker issue from ticket_id (LOG 501)
 
 parameters:
   ticket_id: { type: string, required: true, description: "The tracker key, or the ticket's name in its epic's work list" }

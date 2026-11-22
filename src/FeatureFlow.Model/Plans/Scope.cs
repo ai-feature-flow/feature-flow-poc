@@ -87,6 +87,10 @@ public sealed class DocumentInfo
     public string? Description { get; init; }
     public string? BranchPattern { get; init; }
     public SourceLocation? BranchPatternLocation { get; init; }
+
+    /// <summary>The parameter whose value is a root run's tracker issue (<c>metadata.tracker_parameter</c>, LOG 501).</summary>
+    public string? TrackerParameter { get; init; }
+
     public IReadOnlyList<ParameterDecl> Parameters { get; init; } = [];
     public IReadOnlyList<ItemRef> ArtifactTypes { get; init; } = [];
     public Defaults Defaults { get; set; } = Defaults.None;

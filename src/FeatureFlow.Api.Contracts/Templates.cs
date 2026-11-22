@@ -5,9 +5,11 @@ public sealed record TemplateList(IReadOnlyList<TemplateView> Templates, IReadOn
 
 /// <summary>
 /// A template a run may start: its reference (<c>std:templates/ticket_delivery</c>), library and name, the manifest's
-/// <c>when</c>, and its parameters.
+/// <c>when</c>, its parameters, and the parameter whose value is the run's tracker issue when it names one
+/// (<c>metadata.tracker_parameter</c>, LOG 501), so a start form need not ask for the tracker issue separately.
 /// </summary>
-public sealed record TemplateView(string Reference, string Library, string Name, string? When, IReadOnlyList<TemplateParameter> Parameters);
+public sealed record TemplateView(string Reference, string Library, string Name, string? When, IReadOnlyList<TemplateParameter> Parameters,
+    string? TrackerParameter = null);
 
 /// <summary>
 /// A template's parameter: its name, type, whether it is required, its literal default as JSON text (the form

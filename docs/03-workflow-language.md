@@ -47,6 +47,7 @@ steps:                          # an ordered list (section 2)
 | `kind` | Yes | `template`, or `fragment` (section 11) |
 | `metadata.level` | Yes | The level a run of this template is at. Free name |
 | `metadata.branch_pattern` | No | How this run's work branches are named, for example `ff/{{ run.level }}/{{ params.ticket_id }}`. Default `ff/<level>/<run id>` |
+| `metadata.tracker_parameter` | No | Templates only: the declared `string` parameter whose value is the tracker issue (`run.tracker_issue`) of a run started on its own, so its ticket has one source. A start request may repeat it but not differ from it (`docs/02` section 7). A child's tracker issue is still `run.child`'s `tracker_issue` (section 9.2), since its parameter may be a name in its parent's work list. A declaration that names no declared string parameter is refused at load (check 1; LOG 501) |
 | `parameters` | No | Section 6 |
 | `artifact_types` | No | Library references. A step may use only types listed here or in a fragment it uses |
 | `defaults` | No | Route defaults and limits for every step, overridable per step |
@@ -495,6 +496,7 @@ each repository is taken from this run's work branch, which becomes the child's
 | Artifacts | The child's steps consume with `from: parent` or `from: root`, pinned at the revision current when the child starts (a grandchild's `root` artifacts are pinned when its parent started, LOG 153). In an agent step's sandbox they are named with their source in front, for example `parent/contract` |
 | Ratifications | Inherited: a parent's ratification of an artifact is authority in the child (`docs/01` section 5.3) |
 | The parent branch | `run.parent_branch` |
+| The tracker issue | `with.tracker_issue`, when given; never taken from a parameter (`metadata.tracker_parameter` applies to a run started on its own, section 1) |
 | Findings | The parent's view of the ledger includes the child's, not the reverse |
 
 ### 9.3 What the parent sees

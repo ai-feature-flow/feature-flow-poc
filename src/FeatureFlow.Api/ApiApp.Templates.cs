@@ -49,12 +49,11 @@ public static partial class ApiApp
     {
         var reference = new LibraryReference(library.Name, "templates", entrypoint.Template);
         var d = new DiagnosticBag();
-        var parameters = library.Yaml("templates", entrypoint.Template) is { } root
-                         && DocumentReader.Read(root, "template", entrypoint.Template, library.Relative(library.PathOf("templates", entrypoint.Template)!), reference, d) is { } read
-            ? read.Info.Parameters
-            : [];
+        var read = library.Yaml("templates", entrypoint.Template) is { } root
+            ? DocumentReader.Read(root, "template", entrypoint.Template, library.Relative(library.PathOf("templates", entrypoint.Template)!), reference, d)
+            : null;
         return new TemplateView(reference.ToString(), library.Name, entrypoint.Template, entrypoint.When,
-            parameters.Select(ParameterOf).ToList());
+            (read?.Info.Parameters ?? []).Select(ParameterOf).ToList(), read?.Info.TrackerParameter);
     }
 
     /// <summary>A literal default as JSON text; an <c>{ expr: ... }</c> default is evaluated at run start, so it is given as its expression.</summary>

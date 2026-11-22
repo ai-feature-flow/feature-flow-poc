@@ -92,7 +92,7 @@ export function StartRun() {
             repositories: repositories.split(",").map(r => r.trim()).filter(r => r !== ""),
             parameters,
             dry_run: dryRun,
-            tracker_issue: trackerIssue.trim() === "" ? null : trackerIssue.trim(),
+            tracker_issue: template.tracker_parameter || trackerIssue.trim() === "" ? null : trackerIssue.trim(),
           },
         }),
       );
@@ -143,9 +143,13 @@ export function StartRun() {
           <label>
             Repositories (comma-separated) <input type="text" value={repositories} onInput={e => setRepositories(e.currentTarget.value)} />
           </label>
-          <label>
-            Tracker issue <input type="text" value={trackerIssue} onInput={e => setTrackerIssue(e.currentTarget.value)} />
-          </label>
+          {template.tracker_parameter ? (
+            <p class="ff-start-tracker">The tracker issue is {template.tracker_parameter}.</p>
+          ) : (
+            <label>
+              Tracker issue <input type="text" value={trackerIssue} onInput={e => setTrackerIssue(e.currentTarget.value)} />
+            </label>
+          )}
           <label>
             <input type="checkbox" checked={dryRun} onChange={e => setDryRun(e.currentTarget.checked)} /> Dry run
           </label>
