@@ -28,6 +28,8 @@ step 2. No live run was made; the product owner's live steps are below.
 | `dotnet test tests/FeatureFlow.Replay.Tests` | 44 passed, before and after the core merge and after the review fixes: no recorded history changed |
 | Default suite (`Category!=Integration&Category!=Live&Category!=Cluster`) | 26 projects, 1,890 passed, 0 failed |
 | Integration category (Temporal dev server on port 7673) | 195 passed, 0 failed (Integration.Tests 134, Postgres 30, Docker 17, S3 12, API 2) |
+| The sub-orchestrator's own run at 450f788 (dev server on port 7663) | Default suite: 26 projects, all passed, Replay 44/44. Integration: 195 passed. An earlier run at b5a3e63, with other builds loading the machine, failed two timing-sensitive tests (`StuckRunTests`, `SteeringRunTests` library override); both passed twice alone and in the full run at 450f788 |
+| The sub-orchestrator's three break-and-see-fail checks at 450f788 | Removing `blocked: plan`: `ticket_replan_blocked`, `_exhausted`, `_granted`, `_planner_blocked` fail. `from: previous` read from the previous execution only: `ticket_replan_granted`, `_planner_blocked` fail. Re-expansion identity off: `epic_replan_expands_new` fails on `expect.branches`. Each restored; 64 of 64 pass after |
 
 Each new test was seen to fail without its change:
 
