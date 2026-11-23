@@ -87,6 +87,12 @@ public abstract class BrowserTest(BrowserFixture browser) : IAsyncLifetime
     /// </summary>
     protected Task LiveAsync() => Assertions.Expect(Page.Locator("html")).ToHaveAttributeAsync("data-live", "connected");
 
+    /// <summary>Moves the open console to <paramref name="hash"/> (such as <c>#/runs/run-1</c>) as a link inside it does: a hash change, no reload.</summary>
+    protected Task GoAsync(string hash) => Page.EvaluateAsync("hash => { location.hash = hash; }", hash);
+
+    /// <summary>A popup (app/popup.tsx), by its title.</summary>
+    protected ILocator Popup(string label) => Page.GetByRole(AriaRole.Dialog, new() { Name = label, Exact = true });
+
     void Problem(string text)
     {
         lock (problems)

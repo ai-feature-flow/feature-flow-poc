@@ -15,7 +15,7 @@ public sealed class NeedsMeTests(BrowserFixture browser) : BrowserTest(browser)
         var row = page.Locator($"[data-run='{runId}'] tr[data-wait='gate-1']");
         await Expect(row).ToContainTextAsync("gate: m7s.go_ahead");
         await Expect(row).ToContainTextAsync("go_ahead");
-        await Expect(page.GetByRole(AriaRole.Link, new() { Name = "Needs me (1)" })).ToBeVisibleAsync();
+        await Expect(page.GetByRole(AriaRole.Link, new() { Name = "Needs me 1", Exact = true })).ToBeVisibleAsync();
         await row.GetByRole(AriaRole.Link).ClickAsync();
 
         await Expect(page).ToHaveURLAsync(World.ConsoleUrl + "#/runs/" + runId);
