@@ -38,10 +38,10 @@ public sealed class ShellTests(BrowserFixture browser) : BrowserTest(browser)
         await Expect(runId).ToHaveTextAsync(ticket);
         await GoAsync($"#/runs/{P(tree.Root)}/waits/{P(tree.Merge.RunId)}/{P(tree.Merge.WaitId)}");
         await Expect(runId).ToHaveTextAsync(tree.Merge.RunId);
-        await Expect(Popup("gate at deliver.merge")).ToBeVisibleAsync();
+        await Expect(Popup("Merge acme/api#201 into main?")).ToBeVisibleAsync();
         await GoAsync($"#/runs/{P(tree.Root)}/artifacts/{P(ticket)}/{P(requirements)}");
         await Expect(page.Locator(".ff-viewer-name")).ToHaveTextAsync("requirements");
-        await Expect(Popup("gate at deliver.merge")).ToHaveCountAsync(0);
+        await Expect(Popup("Merge acme/api#201 into main?")).ToHaveCountAsync(0);
         // Slice 1's artifact link keeps working.
         await GoAsync($"#/runs/{P(ticket)}/artifacts/{P(requirements)}");
         await Expect(page.Locator(".ff-viewer-name")).ToHaveTextAsync("requirements");
@@ -105,7 +105,7 @@ public sealed class ShellTests(BrowserFixture browser) : BrowserTest(browser)
         var tree = await Engine.ProjectTreeAsync();
         var route = $"#/runs/{P(tree.Root)}/waits/{P(tree.Question.RunId)}/{P(tree.Question.WaitId)}";
         var page = await OpenAsync(route);
-        var popup = Popup("question at implement");
+        var popup = Popup("implement asks");
 
         await Expect(popup).ToBeVisibleAsync();
         await Expect(popup).ToContainTextAsync("Are XLSX exports in scope, or CSV only?");

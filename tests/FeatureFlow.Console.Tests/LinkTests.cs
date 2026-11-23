@@ -7,7 +7,10 @@ using static Microsoft.Playwright.Assertions;
 
 namespace FeatureFlow.Console.Tests;
 
-/// <summary>Links into the console from outside it: the Slack form <c>&lt;console_url&gt;/#/runs/{id}</c> is kept (LOG 463).</summary>
+/// <summary>
+/// Links into the console from outside it: the Slack form <c>&lt;console_url&gt;/#/runs/{id}</c> is kept (LOG 463), and a
+/// decision's link (<c>#/runs/{run}/waits/{run}/{wait}</c>) opens its run tree at the wait's step with its popup.
+/// </summary>
 public sealed partial class LinkTests(BrowserFixture browser) : BrowserTest(browser)
 {
     /// <summary>Captures what Slack is sent, and answers as Slack does.</summary>
@@ -42,5 +45,22 @@ public sealed partial class LinkTests(BrowserFixture browser) : BrowserTest(brow
 
         await Expect(Page.Locator(".ff-run-id")).ToHaveTextAsync(runId);
         await Expect(Page.Locator(".ff-run-template")).ToHaveTextAsync("m7s:templates/decide");
+    }
+
+    [Fact]
+    public async Task A_decision_link_to_a_child_runs_wait_opens_the_roots_tree_at_its_step_with_its_popup()
+    {
+        // The form SlackNotifications.LinkOf builds for a decision: the wait's own run as the tree, which the console resolves to its root.
+        var tree = await Engine.ProjectTreeAsync();
+        var ticket = Uri.EscapeDataString(tree.Merge.RunId);
+
+        await OpenAtAsync($"{World.ConsoleUrl}/#/runs/{ticket}/waits/{ticket}/{Uri.EscapeDataString(tree.Merge.WaitId)}");
+
+        await Expect(Page.GetByRole(Microsoft.Playwright.AriaRole.Dialog)).ToContainTextAsync("acme/api#201");
+        await Expect(Page.Locator(".ff-tree .ff-row-run").First).ToHaveAttributeAsync("data-run", tree.Root);
+        var selected = Page.Locator(".ff-tree .ff-row-selected");
+        await Expect(selected).ToHaveAttributeAsync("data-run", tree.Merge.RunId);
+        await Expect(selected).ToHaveAttributeAsync("data-step", "deliver.merge");
+        await Expect(Page.Locator(".ff-run-id")).ToHaveTextAsync(tree.Merge.RunId);
     }
 }
