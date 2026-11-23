@@ -41,18 +41,20 @@ static class SourceControl
 
     /// <summary>
     /// <c>scm.pull_request</c> (section 7.2): opens the work branch's pull request into its parent branch, or updates the
-    /// one this run opened. Its key is the run's and the repository's, so a re-entry or retry adopts it. The declines the
-    /// ledger already holds for the repository are posted on it (LOG 249).
+    /// one this run opened. Its key is the run's and the repository's, so a re-entry or retry adopts it. With no
+    /// <c>title</c> it is titled after the run's tracker issue (E1, <see cref="PullRequests.TitleAsync"/>). The pull request is
+    /// read and recorded once open (A5). The declines the ledger already holds for the repository are posted on it (LOG 249).
     /// </summary>
     public static async Task<ActionResult> PullRequestAsync(ActionRun run)
     {
         var repo = run.Repository();
         var parent = await run.ParentBranchAsync(repo);
         await run.WorkHeadAsync(repo);
-        var spec = new PullRequestSpec(run.String("title") ?? $"{run.Call.Template()}: {run.Call.Step.RunId}", run.String("body") ?? "", run.Scope.WorkBranch, parent,
-            run.Bool("draft", false));
+        var title = run.String("title") ?? await PullRequests.TitleAsync(run);
+        var spec = new PullRequestSpec(title, run.String("body") ?? "", run.Scope.WorkBranch, parent, run.Bool("draft", false));
         var pr = ActionRun.Must(await run.CodeHost.OpenPullRequestAsync(repo, spec, $"{run.Call.Step.RunId}/{repo.FullName}/pull_request", run.Ct), "open the pull request");
         run.Events.Add($"pull request {ActionRun.Format(pr)} from {run.Scope.WorkBranch} into {parent}");
+        await PullRequests.RecordAsync(run, ActionRun.Must(await run.CodeHost.GetPullRequestAsync(pr, run.Ct), "read the pull request"));
         await FindingsActions.PostLedgerDeclinesAsync(run, repo, pr);
         return run.Report("ready", new Dictionary<string, object?> { ["pull_request"] = ActionRun.Format(pr) });
     }
@@ -79,7 +81,7 @@ static class SourceControl
         var method = run.Bool("squash", false) ? MergeMethods.Squash : MergeMethods.Merge;
 
         // Idempotency (section 7.3): a person's merge on the code host, or a merge this step already made, is merged.
-        if (pr is not null && ActionRun.Must(await run.CodeHost.GetPullRequestAsync(pr, run.Ct), "read the pull request") is { State: PullRequestStates.Merged } merged)
+        if (pr is not null && await ReadAsync(run, pr) is { State: PullRequestStates.Merged } merged)
         {
             NoteDecisionBypassed(run, pr, merged);
             return await RecordAsync(run, repo, target, method, merged.HeadRevision, null, merged.MergeRevision ?? "",
@@ -118,6 +120,8 @@ static class SourceControl
                 if (method == MergeMethods.Squash && pr is not null)
                     // The code host does not show a squash as merged: close the pull request with a link to the commit (section 7.3).
                     ActionRun.Must(await run.CodeHost.ClosePullRequestAsync(pr, $"Squashed into {target} as {result.Revision} by Feature Flow.", run.Ct), "close the pull request");
+                if (pr is not null)
+                    await ReadAsync(run, pr);
                 return await RecordAsync(run, repo, target, result.Method, head, result.TargetBefore, result.Revision, EngineActor, result.AlreadyMerged, pr);
             }
 
@@ -131,6 +135,14 @@ static class SourceControl
 
     /// <summary>The identity the engine merges as, as the merge record names it.</summary>
     const string EngineActor = "feature-flow";
+
+    /// <summary>Reads the run's pull request and records the read (A5), so each poll of the action request records what changed.</summary>
+    static async Task<PullRequestState> ReadAsync(ActionRun run, PullRequestRef pr)
+    {
+        var state = ActionRun.Must(await run.CodeHost.GetPullRequestAsync(pr, run.Ct), "read the pull request");
+        await PullRequests.RecordAsync(run, state);
+        return state;
+    }
 
     /// <summary>Why the head may not merge for want of evidence (require_tested, require_checks), or null.</summary>
     static async Task<string?> MissingEvidenceAsync(ActionRun run, RepoRef repo, string head)
@@ -165,7 +177,7 @@ static class SourceControl
     {
         if (pr is null)
             throw ActionStop.CannotAnswer($"a person must merge {run.Scope.WorkBranch} into {target}, and this run has opened no pull request for it: open one with scm.pull_request first");
-        var state = ActionRun.Must(await run.CodeHost.GetPullRequestAsync(pr, run.Ct), "read the pull request");
+        var state = await ReadAsync(run, pr);
         switch (state.State)
         {
             case PullRequestStates.Merged:

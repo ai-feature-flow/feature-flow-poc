@@ -57,6 +57,15 @@ public class ForgeTicketTests
         Assert.Equal(("main", "ff/ticket/T-1", PullRequestStates.Closed), (state.Base, state.Head, state.State));
         Assert.Contains(main, forge.Comments(pr).Single(), StringComparison.Ordinal);
 
+        // E1: with no title from std, the pull request is titled after the ticket. A5: the run recorded it as its merge step last read it.
+        Assert.Equal("Ticket T-1 (T-1)", state.Title);
+        var records = h.Host.Providers.Required<IRecordStoreProvider>("record_store");
+        var record = Assert.Single((await records.QueryAsync<PullRequestRecord>(Queries.PullRequests, new Dictionary<string, string> { ["run_id"] = id },
+            TestContext.Current.CancellationToken)).Unwrap());
+        Assert.Equal((Repo, 1, "deliver.merge", PullRequestStates.Closed), (record.Repository, record.Number, record.StepId, record.State.State));
+        Assert.Contains(record.Files!, f => f.Path == $"work/{id}/implement.txt");
+        Assert.Equal(record.State.HeadRevision, record.Checks?.Revision);
+
         // The path: engine actions made these steps' outcomes.
         string[] expected = ["baseline.tests", "baseline.analysis", "plan.plan", "approve_spec", "implement", "verify.tests", "verify.analysis",
             "deliver.open_pr", "deliver.checks", "deliver.catch_up", "deliver.merge"];
