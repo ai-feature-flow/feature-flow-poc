@@ -49,6 +49,8 @@ static class Waiting
         var timeout = run.Duration("timeout", TimeSpan.FromHours(2));
         var grace = run.Duration("grace", DefaultGrace);
         var (pending, status, hasCi) = await ReadChecksAsync(run, repo, target, head, run.Strings("expected"), grace, elapsed);
+        if (state is not null)
+            await PullRequests.RecordAsync(run, state, status);
         if (pending.Count > 0)
         {
             if (elapsed > timeout)
@@ -154,6 +156,7 @@ static class Waiting
         string waiting;
         if (run.String("pull_request") is { } wanted)
         {
+            await PullRequests.RecordAsync(run, state);
             (outcome, waiting) = (wanted, state) switch
             {
                 (_, { State: PullRequestStates.Closed }) => ("unmet", $"{name} was closed without merging"),
@@ -167,6 +170,7 @@ static class Waiting
         else
         {
             var (pending, status, _) = await ReadChecksAsync(run, repo, state.Base, state.HeadRevision, [], DefaultGrace, elapsed);
+            await PullRequests.RecordAsync(run, state, status);
             var failed = NotPassing(status.Checks);
             (outcome, waiting) = pending.Count > 0 ? (null, string.Join("; ", pending))
                 : failed.Count > 0 ? ("unmet", $"checks failed on {name}: {string.Join(", ", failed)}")

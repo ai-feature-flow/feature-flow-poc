@@ -373,6 +373,52 @@ public sealed class GitHubCodeHostTests
     }
 
     [Fact]
+    public async Task A_pull_requests_size_and_mergeable_state_are_read_and_null_where_GitHub_gives_none()
+    {
+        var (host, github, _) = Host();
+        var sized = JsonNode.Parse(Pr(7))!.AsObject();
+        (sized["additions"], sized["deletions"], sized["changed_files"], sized["mergeable_state"]) = (12, 3, 2, "blocked");
+        github.On(Get, "~/pulls/7/reviews", 200, "[]").On(Get, "~/pulls/7", 200, sized.ToJsonString())
+            .On(Get, "~/pulls/8/reviews", 200, "[]").On(Get, "~/pulls/8", 200, Pr(8));
+
+        var state = (await host.GetPullRequestAsync(new PullRequestRef(Repo, 7), Ct)).Unwrap();
+        var bare = (await host.GetPullRequestAsync(new PullRequestRef(Repo, 8), Ct)).Unwrap();
+
+        Assert.Equal((12, 3, 2, "blocked"), (state.Additions, state.Deletions, state.ChangedFiles, state.MergeableState));
+        Assert.Equal((null, null, null, null), (bare.Additions, bare.Deletions, bare.ChangedFiles, bare.MergeableState));
+    }
+
+    [Fact]
+    public async Task A_pull_requests_files_are_listed_a_page_at_a_time_up_to_the_first_300()
+    {
+        var (host, github, _) = Host();
+        static string Page(int page) => new JsonArray(Enumerable.Range(0, 100).Select(i => (JsonNode)new JsonObject
+        {
+            ["filename"] = $"src/{page}/{i}.cs", ["status"] = i == 0 ? "renamed" : "modified", ["additions"] = i, ["deletions"] = 1,
+        }).ToArray()).ToJsonString();
+        foreach (var page in new[] { 1, 2, 3, 4 })
+            github.On(Get, $"~/pulls/7/files?per_page=100&page={page}", 200, Page(page));
+
+        var files = (await host.ListPullRequestFilesAsync(new PullRequestRef(Repo, 7), Ct)).Unwrap();
+
+        Assert.Equal(300, files.Count);
+        Assert.Equal((new PullRequestFile("src/1/0.cs", "renamed", 0, 1), new PullRequestFile("src/3/99.cs", "modified", 99, 1)), (files[0], files[^1]));
+        Assert.Empty(github.Called(Get, "~/pulls/7/files?per_page=100&page=4"));
+    }
+
+    [Fact]
+    public async Task A_short_page_ends_the_files_list_and_an_error_is_returned()
+    {
+        var (host, github, _) = Host();
+        github.On(Get, "~/pulls/7/files", 200, """[{"filename":"a.txt","status":"added","additions":2,"deletions":0}]""")
+            .On(Get, "~/pulls/8/files", 404, """{"message":"Not Found"}""");
+
+        Assert.Equal([new PullRequestFile("a.txt", "added", 2, 0)], (await host.ListPullRequestFilesAsync(new PullRequestRef(Repo, 7), Ct)).Unwrap());
+        Assert.Single(github.Called(Get, "~/pulls/7/files"));
+        Assert.Equal("not_found", (await host.ListPullRequestFilesAsync(new PullRequestRef(Repo, 8), Ct)).Error?.Reason);
+    }
+
+    [Fact]
     public async Task Closing_comments_and_closes_an_open_pull_request_and_does_nothing_to_a_closed_one()
     {
         var (host, github, _) = Host();
