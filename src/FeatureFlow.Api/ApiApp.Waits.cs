@@ -1,5 +1,6 @@
 using FeatureFlow.Api.Contracts;
 using FeatureFlow.Interpreter.Wire;
+using FeatureFlow.Model;
 using FeatureFlow.Providers.Abstractions;
 using WaitView = FeatureFlow.Api.Contracts.WaitView;
 using WaitKind = FeatureFlow.Api.Contracts.WaitKind;
@@ -18,19 +19,137 @@ public static partial class ApiApp
         async Task<IReadOnlyList<WaitView>> WaitViewsAsync(Caller caller, RunRecord run, IReadOnlyList<WaitRecord> waits, IReadOnlyList<AnswerRecord>? answers,
             CancellationToken ct)
         {
-            async Task<IReadOnlyList<AnswerRecord>> Answers() =>
-                answers ??= (await Records.QueryAsync<AnswerRecord>(Queries.Answers, new Dictionary<string, string> { ["run_id"] = run.RunId }, ct)).Unwrap();
-
+            var reads = new WaitReads(this, run, answers, ct);
             var views = new List<WaitView>();
             foreach (var wait in waits)
             {
                 var (canAnswer, minCount) = await MayAnswerAsync(caller, run, wait, ct);
-                views.Add(WaitViewOf(wait, canAnswer, minCount,
-                    wait.Open && minCount > 1 ? ProgressOf(wait, await Answers(), minCount) : null,
-                    wait.Open ? null : ClosedAnswerOf(wait, await Answers())));
+                var view = WaitViewOf(wait, canAnswer, minCount,
+                    wait.Open && minCount > 1 ? ProgressOf(wait, await reads.AnswersAsync(), minCount) : null,
+                    wait.Open ? null : ClosedAnswerOf(wait, await reads.AnswersAsync()));
+                views.Add(await reads.DescribeAsync(view, wait));
             }
 
             return views;
+        }
+
+        /// <summary>
+        /// What a wait's view shows beyond its record (A5, A7, A11, A15; design-v2 s4.5), from the run's other records, each read
+        /// once and only when a wait needs it: its title and one-line summary; for an intervention, its cause with the attempts
+        /// people granted the step; for a patch approval, the patch; for a merge, the pull request; for a gate, the session on it;
+        /// and on an open gate, each consumed artifact's type and <c>changes</c>.
+        /// </summary>
+        sealed class WaitReads(Handlers api, RunRecord run, IReadOnlyList<AnswerRecord>? answers, CancellationToken ct)
+        {
+            IReadOnlyList<OverrideRecord>? overrides;
+            IReadOnlyList<WaitRecord>? waits;
+            IReadOnlyList<PullRequestRecord>? pullRequests;
+            IReadOnlyList<SessionRecord>? sessions;
+            IReadOnlyList<ArtifactRecord>? artifacts;
+            int? needPerson;
+            readonly Dictionary<string, IReadOnlyList<string>?> changes = new(StringComparer.Ordinal);
+
+            async Task<IReadOnlyList<T>> QueryAsync<T>(string query, string runId) =>
+                (await api.Records.QueryAsync<T>(query, new Dictionary<string, string> { ["run_id"] = runId }, ct)).Unwrap();
+
+            public async Task<IReadOnlyList<AnswerRecord>> AnswersAsync() => answers ??= await QueryAsync<AnswerRecord>(Queries.Answers, run.RunId);
+
+            public async Task<WaitView> DescribeAsync(WaitView view, WaitRecord wait)
+            {
+                var cause = wait.Cause is { } c ? CauseViewOf(c, await GrantsAsync(c.StepId)) : null;
+                var pullRequest = wait.DecisionType.EndsWith(".merge_action", StringComparison.Ordinal) ? await PullRequestAsync(wait.StepId) : null;
+                var session = wait.Kind == "gate" ? (sessions ??= await QueryAsync<SessionRecord>(Queries.Sessions, run.RunId))
+                    .Where(s => s.WaitId == wait.WaitId).OrderBy(s => s.Status == SessionStatuses.Prepared).ThenBy(s => s.At).LastOrDefault()?.SessionId : null;
+                var triage = wait is { Open: true, Kind: "gate", DecisionType: FindingsTriage } ? await NeedPersonAsync() : (int?)null;
+                var consumed = view.Consumed;
+                if (wait is { Open: true, Kind: "gate" })
+                {
+                    var typed = new List<ConsumedArtifactView>();
+                    foreach (var a in consumed)
+                        typed.Add(await TypedAsync(a));
+                    consumed = typed;
+                }
+
+                return view with
+                {
+                    Consumed = consumed,
+                    Title = WaitTitleOf(wait, run, pullRequest, triage, session is not null),
+                    Summary = WaitSummaryOf(wait),
+                    Cause = cause,
+                    Patch = wait.Patch is { } p ? PatchViewOf(p) : null,
+                    PullRequest = pullRequest,
+                    SessionId = session,
+                };
+            }
+
+            /// <summary>
+            /// The attempts people granted the step, oldest first: an intervention answered with <c>grant_attempts</c> for it, and a
+            /// <c>grant_attempts</c> override (its <c>_beyond</c> variant included) on it, each once the run replied to it.
+            /// </summary>
+            async Task<IReadOnlyList<GrantView>> GrantsAsync(string stepId)
+            {
+                waits ??= await QueryAsync<WaitRecord>(Queries.Waits, run.RunId);
+                overrides ??= await QueryAsync<OverrideRecord>(Queries.Overrides, run.RunId);
+                var interventions = waits.Where(w => w.Kind == "intervention").GroupBy(w => w.WaitId).ToDictionary(g => g.Key, g => g.Last().StepId, StringComparer.Ordinal);
+                var answered = (await AnswersAsync()).Where(a => Delivered(a.Result) && interventions.ContainsKey(a.WaitId))
+                    .Select(a => (Record: a, Args: ArgsOf(a.Answer)))
+                    .Where(a => a.Args is { Action: Overrides.GrantAttempts } args && (args.StepId ?? interventions[a.Record.WaitId]) == stepId)
+                    .Select(a => new GrantView(a.Args!.Attempts, a.Args.Actor, a.Record.Reason ?? a.Args.Reason, a.Record.At));
+                var overridden = overrides.GroupBy(o => o.OverrideId).Select(g => g.Last())
+                    .Where(o => o.Key is Overrides.GrantAttempts or Overrides.GrantAttemptsBeyond && o.StepId == stepId && Delivered(o.Result)
+                                && long.TryParse(o.Change.GetValueOrDefault("attempts"), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out _))
+                    .Select(o => new GrantView(long.Parse(o.Change["attempts"], System.Globalization.CultureInfo.InvariantCulture), o.Actor, o.Reason, o.At));
+                return answered.Concat(overridden).OrderBy(g => g.At).ToList();
+            }
+
+            /// <summary>The pull request a merge waits on: the one its step last read, else the run's only one.</summary>
+            async Task<PullRequestView?> PullRequestAsync(string stepId)
+            {
+                pullRequests ??= await QueryAsync<PullRequestRecord>(Queries.PullRequests, run.RunId);
+                var chosen = pullRequests.Where(r => r.StepId == stepId).MaxBy(r => r.ReadAt) ?? (pullRequests.Count == 1 ? pullRequests[0] : null);
+                return chosen is null ? null : PullRequestViewOf(chosen);
+            }
+
+            /// <summary>How many of the run's own findings need a person (<see cref="FindingsLedger.NeedsPerson"/>).</summary>
+            async Task<int> NeedPersonAsync()
+            {
+                if (needPerson is { } known)
+                    return known;
+                var people = PeopleOf(await AnswersAsync());
+                var count = 0;
+                foreach (var f in (await QueryAsync<FindingRecord>(Queries.Findings, run.RunId)).Where(f => f.RunId == run.RunId && FindingsLedger.AgentMayNotClear(f)))
+                    if (FindingsLedger.NeedsPerson(f, (await api.Records.QueryAsync<FindingEventRecord>(Queries.FindingEvents,
+                            new Dictionary<string, string> { ["run_id"] = f.RunId, ["finding_id"] = f.FindingId }, ct)).Unwrap(), people))
+                        count++;
+                return (needPerson = count).Value;
+            }
+
+            /// <summary>A consumed artifact with the type the run (or its parent) indexed it under, and its document's <c>changes</c> (LOG 508).</summary>
+            async Task<ConsumedArtifactView> TypedAsync(ConsumedArtifactView consumed)
+            {
+                if (consumed.Ref is not { } reference)
+                    return consumed;
+                artifacts ??= [.. await QueryAsync<ArtifactRecord>(Queries.Artifacts, run.RunId),
+                    .. run.ParentRunId is { } parent ? await QueryAsync<ArtifactRecord>(Queries.Artifacts, parent) : []];
+                if (artifacts.LastOrDefault(a => a.Ref == reference && a.Type is not null)?.Type is not { } type)
+                    return consumed;
+                if (!changes.TryGetValue(reference, out var listed))
+                    changes[reference] = listed = await ChangesAsync(reference, type);
+                return consumed with { Type = type, Changes = listed };
+            }
+
+            async Task<IReadOnlyList<string>?> ChangesAsync(string reference, string type)
+            {
+                if (await api.FormatOfAsync(run, type, ct) is not { } format)
+                    return null;
+                var read = await api.Artifacts.GetAsync(new ArtifactRef(reference), ct);
+                if (!read.Ok)
+                    return null;
+                using var bytes = new MemoryStream();
+                await using (var stream = read.Value!)
+                    await stream.CopyToAsync(bytes, ct);
+                return TextOf(bytes.ToArray()) is { } text ? ChangesOf(DocumentOf(text, format)) : null;
+            }
         }
 
         /// <summary>
@@ -97,6 +216,60 @@ public static partial class ApiApp
 
     /// <summary>A pull request as a link: where, its URL and state.</summary>
     static PullRequestLink PullRequestLinkOf(PullRequestRecord r) => new(r.Repository, r.Number, r.State.Url, r.State.State);
+
+    /// <summary>The decision type of std's person triage of findings.</summary>
+    const string FindingsTriage = "findings.triage";
+
+    /// <summary>
+    /// A wait's title (design-v2 s4.5): by kind, then for a gate by what it decides (a session, a triage of findings, a spec
+    /// approval, a merge), else the prompt's heading. <paramref name="triage"/> is how many findings need a person, where known.
+    /// </summary>
+    static string WaitTitleOf(WaitRecord w, RunRecord run, PullRequestView? pullRequest, int? triage, bool session)
+    {
+        var step = w.StepId;
+        return w.Kind switch
+        {
+            "intervention" when w.Cause?.Outcome == Actions.AttemptsExhausted || (w.Cause is null && w.Prompt.StartsWith("attempts exhausted", StringComparison.Ordinal))
+                => $"{step} has used all its attempts",
+            "intervention" => $"{step} needs you: {(w.Cause?.Outcome is { } outcome ? outcome.Replace('_', ' ') : Bounded(FirstLine(w.Prompt) ?? "an intervention", 80))}",
+            "patch_approval" => $"{w.Patch?.ProposerStepId ?? step} proposes a plan change",
+            "breakpoint" => $"Paused before {step}",
+            "question" => $"{step} asks",
+            "stalled" => $"{step} has stalled",
+            "stuck" => $"{step} is stuck",
+            _ when session => $"Your planning session for {IssueOf(run) ?? run.RunId}",
+            _ when w.DecisionType == FindingsTriage => triage is { } n
+                ? $"Triage {n} finding{(n == 1 ? "" : "s")} the triager could not clear"
+                : "Triage the findings the triager could not clear",
+            _ when w.DecisionType.EndsWith(".spec_approval", StringComparison.Ordinal) && IssueOf(run) is { } issue => $"Approve the plan for {issue}",
+            _ when w.DecisionType.EndsWith(".merge_action", StringComparison.Ordinal) && pullRequest is { } pr => $"Merge {pr.Repository}#{pr.Number} into {pr.Base}?",
+            _ => HeadingOf(w.Prompt) ?? $"{step} waits for your decision",
+        };
+    }
+
+    /// <summary>
+    /// A wait's one-line summary: for an intervention, what last sent its step back, else what the step said, else the
+    /// engine's reason; for a patch approval, the proposer's reason; otherwise the prompt's first line that is not a heading.
+    /// </summary>
+    static string? WaitSummaryOf(WaitRecord w) => w switch
+    {
+        { Cause: { } c } => FirstLine(c.SentBack.LastOrDefault()?.Text ?? c.Said ?? c.Reason),
+        { Patch.Reason: { } reason } => FirstLine(reason),
+        _ => FirstLine(w.Prompt),
+    } is { } line ? Bounded(line, 200) : null;
+
+    /// <summary>The run's tracker issue with its title where read (<c>ACME-12 Add widgets</c>), or null.</summary>
+    static string? IssueOf(RunRecord run) => run.TrackerIssue is { } key ? run.TrackerTitle is { } title ? $"{key} {title}" : key : null;
+
+    /// <summary>A text's first heading, when its first line is one (<c># Approve the plan</c>), without its marks.</summary>
+    static string? HeadingOf(string text) =>
+        text.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0) is ['#', ..] heading && heading.TrimStart('#').Trim() is { Length: > 0 } title ? title : null;
+
+    /// <summary>A text's first line that is neither empty nor a heading, trimmed; null when it has none.</summary>
+    static string? FirstLine(string text) =>
+        text.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0 && !l.StartsWith('#'));
+
+    static string Bounded(string text, int length) => text.Length <= length ? text : text[..(length - 1)].TrimEnd() + "…";
 
     /// <summary>A wait record's kind as the API names it: the record store's name (<c>patch_approval</c>) read as <see cref="WaitKind"/>.</summary>
     static WaitKind KindOf(string kind) => kind switch

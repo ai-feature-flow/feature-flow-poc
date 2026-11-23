@@ -371,21 +371,6 @@ public sealed class ApiTests : IAsyncDisposable
         Assert.Equal(page.TrackerIssue, row.TrackerIssue);
     }
 
-    [Theory]
-    [InlineData("runs/r1/findings/F-1")]
-    [InlineData("runs/r1/artifacts/sha256%3A00/document")]
-    public async Task A_route_not_built_yet_answers_501_to_a_viewer_and_404_to_anyone_else(string path)
-    {
-        var ct = TestContext.Current.CancellationToken;
-        await records.AppendAsync(new RecordBatch([new RunRecord("r1", null, "std:templates/ticket_delivery", "running", "x", [], false, DateTimeOffset.UnixEpoch, null)]), ct);
-
-        using var viewer = await Start("viewer").GetAsync(path, ct);
-        using var other = await Start().GetAsync(path, ct);
-
-        Assert.Equal((HttpStatusCode.NotImplemented, HttpStatusCode.NotFound), (viewer.StatusCode, other.StatusCode));
-        Assert.Contains("not built yet (B1 ", await viewer.Content.ReadAsStringAsync(ct));
-    }
-
     [Fact]
     public async Task A_run_s_plan_is_shown_only_to_a_viewer_of_the_run()
     {
