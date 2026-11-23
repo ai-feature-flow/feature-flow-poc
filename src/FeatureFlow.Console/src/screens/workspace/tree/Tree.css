@@ -32,6 +32,10 @@
 .ff-row-ghost { cursor: default; }
 .ff-row-needs { background: linear-gradient(var(--needsrow), var(--needsrow)), var(--panel); }
 .ff-row-needs .ff-name { font-weight: 700; }
+/* Dark: a yellow highlight as in light, its text dark on it (mock-up 02). */
+html[data-theme="dark"] .ff-row-needs:not(.ff-row-selected) { color: #2e3440; }
+html[data-theme="dark"] .ff-row-needs:not(.ff-row-selected) :is(.ff-sum, .ff-cnt, .ff-tw, .ff-name) { color: #2e3440; }
+html[data-theme="dark"] .ff-row-needs:not(.ff-row-selected) .ff-st-needs { color: #a3381f; }
 .ff-row-selected,
 .ff-row-selected:hover { background: linear-gradient(var(--selrow), var(--selrow)), var(--panel); box-shadow: inset 4px 0 var(--selbar); }
 

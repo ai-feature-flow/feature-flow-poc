@@ -63,12 +63,10 @@ public sealed class RunSummaryTests : IAsyncDisposable
         var rows = (await world.GetAsync<RunList>("runs")).Runs.ToDictionary(r => r.RunId);
 
         var root = rows[project];
-        Assert.Equal(
-            [new CurrentStep(project, "epics.children", "running"), new CurrentStep(e0, "tickets.children", "waiting(stalled)"),
-                new CurrentStep(t0, "implement", "running"), new CurrentStep(t0, "approve_spec", "waiting(gate)")],
-            root.CurrentSteps!);
-        // The ended epic's ticket waits too, but an ended run needs no one; the stalled wait is the engine's, no one's to answer.
-        Assert.Equal((1, 2), (root.NeedsYou, root.Running));
+        // Container steps (epics.children, tickets.children) are not current: the console's tree shows their branches in their place.
+        Assert.Equal([new CurrentStep(t0, "implement", "running"), new CurrentStep(t0, "approve_spec", "waiting(gate)")], root.CurrentSteps!);
+        // The ended epic's ticket waits too, but an ended run needs no one.
+        Assert.Equal((1, 1), (root.NeedsYou, root.Running));
         // Only a root carries the tree's counts.
         Assert.Equal(((IReadOnlyList<CurrentStep>?)null, 0, 0), (rows[e0].CurrentSteps, rows[e0].NeedsYou, rows[e0].Running));
         Assert.Equal([new PullRequestLink("acme/api", 7, "https://github.com/acme/api/pull/7", "open")], rows[t0].PullRequests!);
@@ -95,9 +93,7 @@ public sealed class RunSummaryTests : IAsyncDisposable
         var epic = await world.GetAsync<RunDetail>($"runs/{e0}");
         var ticket = await world.GetAsync<RunDetail>($"runs/{t0}");
 
-        Assert.Equal(
-            [new CurrentStep(e0, "tickets.children", "waiting(stalled)"), new CurrentStep(t0, "implement", "running"), new CurrentStep(t0, "approve_spec", "waiting(gate)")],
-            epic.CurrentSteps!);
+        Assert.Equal([new CurrentStep(t0, "implement", "running"), new CurrentStep(t0, "approve_spec", "waiting(gate)")], epic.CurrentSteps!);
         Assert.Empty(epic.PullRequests!);
         Assert.Equal("\"epic_0\"", epic.Inputs!["epic_name"]);
         var pr = Assert.Single(ticket.PullRequests!);

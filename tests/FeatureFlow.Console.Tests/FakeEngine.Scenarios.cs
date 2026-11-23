@@ -101,6 +101,7 @@ public sealed partial class FakeEngine
             "std:artifact_types/requirements");
         await ProduceAsync(tickets[0], "plan.plan", "delivery_plan", "schema: 1\nscope: { kind: ticket, id: INV-1 }\n", "std:artifact_types/delivery_plan");
         await DoneAsync(tickets[0], ("approve_spec", "rejected"), ("plan.plan", "planned"), ("plan.validate", "valid"));
+        await StepStateAsync(tickets[0], "plan.plan", executions: 2, attemptsUsed: 2, attemptsAllowed: 3);
         var requirements = await ProduceAsync(tickets[0], "plan.plan", "requirements",
             "schema: 1\nscope: { kind: ticket, id: INV-1 }\nchanges:\n  - R2 split into R2 and R3\n" +
             "requirements:\n  - { id: R-001, title: List invoices, behaviour: GET /invoices lists the caller's invoices }\n" +

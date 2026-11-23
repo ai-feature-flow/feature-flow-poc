@@ -21,7 +21,7 @@ html[data-theme="dark"] {
   --wait: #bf616a; --waitbg: rgba(191,97,106,.14); --sel: #434c5e; --here: rgba(235,203,139,.10); --hover: #414a5b;
   --code: #2e3440; --top: #242933; --toptext: #d8dee9; --toplater: #6b7789; --shadow: 0 1px 3px rgba(0,0,0,.35);
   --overlay: rgba(20,23,29,.65); --refused: rgba(191,97,106,.12); --pill-ok: rgba(163,190,140,.18); --pill-bad: #4c566a; --pill-wait: rgba(191,97,106,.25);
-  --needsrow: rgba(235,203,139,.40); --selrow: rgba(136,192,208,.45); --selbar: #88c0d0;
+  --needsrow: rgba(235,203,139,.85); --selrow: rgba(136,192,208,.45); --selbar: #88c0d0;
 }
 
 html {

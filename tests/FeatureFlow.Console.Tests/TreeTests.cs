@@ -57,7 +57,7 @@ public sealed class TreeTests(BrowserFixture browser) : BrowserTest(browser)
         await Expect(Step(tree.Tickets[2], "verify.fix.verify_fix").Locator(".ff-used")).ToHaveTextAsync("3/3");
         await Expect(Step(tree.Tickets[2], "verify.fix.verify_fix").Locator(".ff-used")).ToHaveClassAsync("ff-used ff-used-spent");
         await Tree.Locator($".ff-row-group[data-run='{tree.Tickets[0]}']").Filter(new() { HasText = "plan" }).First.GetByRole(AriaRole.Button, new() { Name = "Open plan" }).ClickAsync();
-        await Expect(Step(tree.Tickets[0], "plan.plan").Locator(".ff-used")).ToHaveTextAsync("1/3");
+        await Expect(Step(tree.Tickets[0], "plan.plan").Locator(".ff-used")).ToHaveTextAsync("2/3");
         await Expect(Step(tree.Tickets[0], "plan.plan").Locator(".ff-used")).ToHaveClassAsync("ff-used");
 
         // A fragment where nothing happens is folded, with a roll-up of its steps; it opens on ▸.

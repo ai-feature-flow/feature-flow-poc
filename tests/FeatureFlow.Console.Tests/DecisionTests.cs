@@ -78,6 +78,10 @@ public sealed class DecisionTests(BrowserFixture browser) : BrowserTest(browser)
 
         var send = Answer("Send triage");
         await Expect(Dialog.GetByLabel("Tally")).ToContainTextAsync("0 of 1 decided");
+        // On the answer row, right-aligned (mock-up 03).
+        var answers = Dialog.GetByRole(AriaRole.Group, new() { Name = "Answers" });
+        Assert.Equal(await answers.EvaluateAsync<double>("e => e.getBoundingClientRect().right"),
+            await Dialog.GetByLabel("Tally").EvaluateAsync<double>("e => e.getBoundingClientRect().right"), 2);
         await Expect(send).ToBeDisabledAsync();
         await card.GetByRole(AriaRole.Radio, new() { Name = "Decline" }).ClickAsync();
         await Expect(send).ToBeDisabledAsync();
