@@ -1,0 +1,158 @@
+/* Decision popups (design-v2 s4.5; mock-ups 02, 03, 04). Colours are app/theme.css's. */
+
+.ff-dec { display: flex; flex-direction: column; }
+
+/* The answers and comment stay at the top while the body scrolls under them. */
+.ff-dec-top {
+  position: sticky;
+  top: -18px;
+  z-index: 2;
+  margin: -18px -24px 0;
+  padding: 12px 24px 14px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.ff-dec-body { padding-top: 18px; overflow-wrap: anywhere; }
+.ff-dec-body h3 { font-size: 15px; margin: 22px 0 8px; }
+.ff-dec-body > h3:first-child { margin-top: 0; }
+
+.ff-dec-context { margin: 0; color: var(--muted); }
+.ff-dec-hint { float: right; font-size: 12px; margin-left: 16px; }
+.ff-dec-blocked { margin: 12px 0 0; font-weight: 700; }
+
+.ff-dec-answers { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 14px; }
+.ff-dec-answers .ff-btn { padding: 6px 18px; text-decoration: none; }
+.ff-btn-danger { border-color: var(--bad); color: var(--bad); }
+.ff-dec-aside { display: inline-flex; flex-wrap: wrap; gap: 10px; align-items: center; color: var(--text); }
+.ff-dec-tally { margin-left: auto; color: var(--muted); font-size: 13px; }
+.ff-dec-tally b { color: var(--text); }
+.ff-dec-ticks { font-size: 14px; }
+
+.ff-dec-param {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  background: var(--panel2);
+}
+.ff-dec-param input,
+.ff-dec-param select,
+.ff-dec-param textarea,
+.ff-dec-comment input,
+.ff-fdecide textarea {
+  font: inherit;
+  padding: 5px 10px;
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+}
+.ff-dec-param textarea { flex: 1 1 100%; }
+.ff-dec-inline { display: inline-flex; gap: 8px; align-items: center; }
+.ff-dec-comment { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
+.ff-dec-comment input { flex: 1; }
+.ff-dec-note { margin-top: 10px; font-size: 13px; color: var(--muted); }
+.ff-dec-note p { margin: 0; }
+.ff-dec-pending { margin: 10px 0 0; font-style: italic; }
+.ff-dec-refused {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--bad);
+  border-radius: 10px;
+  background: var(--refused);
+  color: var(--text);
+}
+.ff-dec-refused p { margin: 0; font-weight: 700; color: var(--bad); }
+.ff-dec-refused ul { margin: 6px 0 0; padding-left: 20px; }
+
+.ff-dec-text { white-space: pre-wrap; margin: 0; }
+.ff-dec-muted { color: var(--muted); }
+.ff-dec-ok { color: var(--ok); font-weight: 700; }
+.ff-dec-bad { color: var(--bad); }
+.ff-dec-warn { color: var(--warn); font-weight: 700; }
+.ff-dec-k { font-size: 12px; color: var(--muted); font-weight: 700; margin-bottom: 2px; }
+.ff-mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+
+.ff-dec-why { border-left: 4px solid var(--warn); padding: 4px 14px; margin: 0 0 14px; }
+.ff-dec-why p { margin: 0 0 6px; }
+.ff-dec-said { color: var(--muted); }
+.ff-dec-repeat { font-weight: 700; }
+.ff-dec-callout { background: var(--here); border: 1px solid var(--border2); border-radius: 10px; padding: 10px 14px; }
+.ff-dec-callout p, .ff-dec-callout ul { margin: 0; }
+.ff-dec-okbox { border: 1px solid var(--ok); border-radius: 10px; padding: 10px 14px; }
+.ff-dec-okbox p { margin: 0 0 4px; }
+
+.ff-dec-table, .ff-dec-effects { border-collapse: collapse; width: 100%; }
+.ff-dec-table th, .ff-dec-table td, .ff-dec-effects th, .ff-dec-effects td {
+  text-align: left;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.ff-dec-table th { font-size: 12px; color: var(--muted); font-weight: 700; }
+.ff-dec-effects th { white-space: nowrap; }
+.ff-dec-ids td:first-child { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 700; white-space: nowrap; }
+.ff-dec-files td:nth-child(2), .ff-dec-files td:nth-child(3) { text-align: right; width: 60px; font-variant-numeric: tabular-nums; }
+.ff-dec-plan tr.ff-dec-added td { background: var(--pill-ok); }
+.ff-dec-plan tr.ff-dec-removed td { background: var(--refused); text-decoration: line-through; }
+.ff-dec-plan tr.ff-dec-changed td { background: var(--here); }
+.ff-dec-plan tr.ff-dec-removed td:last-child { text-decoration: none; }
+
+.ff-dec-facts { display: grid; grid-template-columns: 160px 1fr; gap: 6px 16px; margin: 0 0 12px; }
+.ff-dec-facts dt { color: var(--muted); font-weight: 700; font-size: 13px; }
+.ff-dec-facts dd { margin: 0; }
+.ff-dec-facts4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 20px; }
+.ff-dec-two { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+
+.ff-dec-yaml {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  white-space: pre;
+  background: var(--code);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow: auto;
+}
+.ff-dec-command { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; }
+.ff-dec-command code { background: var(--code); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+.ff-dec-consumed { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 0; list-style: none; }
+.ff-dec-history { margin: 0; padding: 0; list-style: none; font-size: 13px; }
+.ff-dec-body .ff-fold { margin: 14px 0; }
+
+.ff-linkbtn { border: 0; background: none; padding: 0; color: var(--link); font: inherit; cursor: pointer; }
+.ff-linkbtn:hover { text-decoration: underline; }
+
+/* Triage: a card per finding that needs the person (mock-up 03). */
+.ff-fcard { border: 1px solid var(--border); border-radius: 12px; margin-bottom: 18px; background: var(--panel); scroll-margin-top: 180px; }
+.ff-fcard-done { border-color: var(--ok); }
+.ff-fhead { padding: 14px 18px 10px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.ff-dec-fid { font-weight: 700; }
+.ff-ftitle { font-weight: 700; font-size: 15px; flex-basis: 100%; }
+.ff-sev { font-size: 12px; font-weight: 700; border-radius: 10px; padding: 0 9px; background: var(--pill-bad); color: var(--text); }
+.ff-sev-high, .ff-sev-critical { background: var(--pill-wait); color: var(--bad); }
+.ff-sev-blocking { background: var(--text); color: var(--panel); }
+.ff-fbody { padding: 0 18px 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; }
+.ff-fbody p { margin: 0; }
+.ff-full { grid-column: 1 / -1; }
+.ff-fdecide { border-top: 1px solid var(--border); padding: 14px 18px 16px; background: var(--panel2); border-radius: 0 0 12px 12px; }
+.ff-fdecide textarea { display: block; width: 100%; margin-top: 10px; box-sizing: border-box; }
+.ff-seg { display: inline-flex; border: 1px solid var(--border2); border-radius: 20px; overflow: hidden; }
+.ff-seg button {
+  padding: 5px 16px;
+  border: 0;
+  border-right: 1px solid var(--border2);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+}
+.ff-seg button:last-child { border-right: 0; }
+.ff-seg button[aria-checked="true"] { background: var(--accent); color: var(--accent-text); }
+.ff-seg button:disabled { color: var(--dim); cursor: not-allowed; }

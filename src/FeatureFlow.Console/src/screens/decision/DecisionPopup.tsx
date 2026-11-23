@@ -1,15 +1,59 @@
 import { useMemo } from "preact/hooks";
-import type { Schema } from "../../api/client";
+import { api, read, type Schema } from "../../api/client";
+import { runKey, useLive } from "../../api/live";
 import { usePopup } from "../../app/popup";
-import { titleOf, wideOf } from "./kinds";
-import { WaitForm } from "./WaitForm";
+import { ErrorBox } from "../../ui/ErrorBox";
+import { AgentQuestion } from "./AgentQuestion";
+import { clock, stepPath } from "./AnswerBar";
+import { Breakpoint } from "./Breakpoint";
+import { Gate } from "./Gate";
+import { Intervention } from "./Intervention";
+import { type DecisionProps, kindOf, titleOf, wideOf } from "./kinds";
+import { Merge } from "./Merge";
+import { PatchApproval } from "./PatchApproval";
+import { Session } from "./Session";
+import { SpecApproval } from "./SpecApproval";
+import { Triage } from "./Triage";
+import "./decision.css";
+
+const bodies = {
+  intervention: Intervention,
+  triage: Triage,
+  spec: SpecApproval,
+  merge: Merge,
+  patch: PatchApproval,
+  breakpoint: Breakpoint,
+  question: AgentQuestion,
+  session: Session,
+  gate: Gate,
+} satisfies Record<ReturnType<typeof kindOf>, (props: DecisionProps) => unknown>;
+
+/** The run as a person names it: its tracker issue and title, else its id. */
+function runLabel(run: Schema<"RunView">): string {
+  const issue = run.tracker_issue;
+  if (issue) return issue.title ? `${issue.key} ${issue.title}` : issue.key;
+  return run.title ?? run.run_id;
+}
 
 /**
- * A decision's popup (plan s5.4). Open it with useDecision().open(runId, wait), which gives the popup its title and width
- * (design-v2 s4.5). Stub body: slice 1's form for the wait, until each kind has its own.
+ * A decision's popup body (design-v2 s4.5; plan s5.4), by the wait's kind and decision type. It reads the wait's run (and
+ * reads it again on every change of it), so the wait shown is the latest: once answered elsewhere it says it is closed.
+ * Open it with useDecision().open(runId, wait).
  */
-export function DecisionPopup({ runId, wait, plan = null }: { runId: string; wait: Schema<"WaitView">; plan?: Schema<"PlanView"> | null }) {
-  return <WaitForm runId={runId} wait={wait} plan={plan} canAnswer={wait.can_answer} />;
+export function DecisionPopup({ runId, wait }: { runId: string; wait: Schema<"WaitView"> }) {
+  const live = useLive([runKey(runId)], async () => {
+    const [detail, plan] = await Promise.all([
+      read(api.GET("/runs/{id}", { params: { path: { id: runId } } })),
+      read(api.GET("/runs/{id}/plan", { params: { path: { id: runId } } })).catch(() => undefined),
+    ]);
+    return { detail, plan: plan ?? null };
+  });
+  if (live.data === undefined) return live.error ? <ErrorBox error={live.error} /> : <p class="ff-dec-muted">Reading the decision…</p>;
+  const { detail, plan } = live.data;
+  const current = detail.waits.find(w => w.wait_id === wait.wait_id) ?? wait;
+  const context = [runLabel(detail.run), stepPath(current.step_id), current.decision_type || current.kind, `opened ${clock(current.updated_at)}`].join(" · ");
+  const Body = bodies[kindOf(current)];
+  return <Body runId={runId} wait={current} detail={detail} plan={plan} context={context} />;
 }
 
 export interface Decisions {

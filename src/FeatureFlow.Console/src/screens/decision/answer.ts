@@ -2,10 +2,11 @@ import { useState } from "preact/hooks";
 import { api, type Schema } from "../../api/client";
 import { invalidate, runKey } from "../../api/live";
 
-type Body = Omit<Schema<"AnswerRequest">, "wait_id">;
+export type Body = Omit<Schema<"AnswerRequest">, "wait_id">;
 
 export interface Answering {
-  send: (body: Body) => Promise<void>;
+  /** Sends the answer; resolves true when the run took it (or recorded it, 202), false when it was refused. */
+  send: (body: Body) => Promise<boolean>;
   busy: boolean;
   error?: Error;
   /** The run's reply to an answer that waits for more people (202 `recorded: …`). */
@@ -24,8 +25,10 @@ export function useAnswer(runId: string, waitId: string): Answering {
       const { data, response } = await api.POST("/runs/{id}/answers", { params: { path: { id: runId } }, body: { wait_id: waitId, ...body } });
       setState({ busy: false, pending: response.status === 202 ? data?.result.replace(/^recorded: /, "") : undefined });
       invalidate([runKey(runId), "attention"]);
+      return true;
     } catch (e) {
       setState(s => ({ ...s, busy: false, error: e instanceof Error ? e : new Error(String(e)) }));
+      return false;
     }
   };
   return { ...state, send };
