@@ -77,12 +77,42 @@ public sealed class ViewerTests(BrowserFixture browser) : BrowserTest(browser)
     }
 
     [Fact]
+    public async Task A_links_pop_out_icon_opens_the_artifact_full_size_and_the_link_still_opens_the_viewer()
+    {
+        await OpenPlanStepAsync();
+        var row = Page.GetByRole(AriaRole.Table, new() { Name = "Artifacts" }).Locator("tbody tr").Filter(new() { HasText = "requirements" }).Last;
+
+        await row.GetByRole(AriaRole.Button, new() { Name = "Open requirements · exec 1 full size" }).ClickAsync();
+        var full = Popup("requirements · exec 1");
+        await Expect(full.Locator(".ff-viewer-name")).ToHaveTextAsync("requirements");
+        await Expect(full.Locator(".ff-doc")).ToContainTextAsync("List invoices");
+        await Expect(Tabs).ToHaveCountAsync(0);
+        await Page.Keyboard.PressAsync("Escape");
+
+        await row.GetByRole(AriaRole.Button, new() { Name = "requirements", Exact = true }).ClickAsync();
+        await Expect(Tabs).ToHaveCountAsync(1);
+        await Expect(full).ToHaveCountAsync(0);
+
+        // The overview's outputs, and the viewer's previous revision, have it too.
+        await Page.GetByRole(AriaRole.Tab, new() { Name = "Overview" }).ClickAsync();
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Open delivery_plan · exec 2 full size" }).ClickAsync();
+        await Expect(Popup("delivery_plan · exec 2").Locator(".ff-viewer-about")).ToContainTextAsync("execution 2");
+        await Page.Keyboard.PressAsync("Escape");
+        await Page.GetByRole(AriaRole.Tab, new() { Name = "Artifacts" }).ClickAsync();
+        await Page.GetByRole(AriaRole.Table, new() { Name = "Artifacts" }).Locator("tbody tr").Filter(new() { HasText = "requirements" }).First
+            .GetByRole(AriaRole.Button, new() { Name = "requirements", Exact = true }).ClickAsync();
+        await Viewer.GetByRole(AriaRole.Button, new() { Name = "Open requirements · exec 1 full size" }).ClickAsync();
+        await Expect(full.Locator(".ff-viewer-about")).ToContainTextAsync("execution 1");
+    }
+
+    [Fact]
     public async Task Yaml_shows_as_tables_and_lists_with_its_source_and_previous_revision_a_click_away()
     {
         await OpenPlanStepAsync();
         // The scenario's spec was put to the person a second time: its requirements of execution 2, with what changed.
         await Expect(Page.GetByRole(AriaRole.Table, new() { Name = "Artifacts" }).Locator("tbody tr")).ToHaveCountAsync(4);
-        await Page.GetByRole(AriaRole.Table, new() { Name = "Artifacts" }).Locator("tbody tr").Filter(new() { HasText = "requirements" }).First.GetByRole(AriaRole.Button).ClickAsync();
+        await Page.GetByRole(AriaRole.Table, new() { Name = "Artifacts" }).Locator("tbody tr").Filter(new() { HasText = "requirements" }).First
+            .GetByRole(AriaRole.Button, new() { Name = "requirements", Exact = true }).ClickAsync();
 
         var doc = Viewer.Locator(".ff-doc");
         await Expect(Viewer.Locator(".ff-viewer-about")).ToHaveTextAsync("artifact from plan.plan, execution 2, type std:artifact_types/requirements");

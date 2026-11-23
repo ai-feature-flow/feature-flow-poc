@@ -50,3 +50,17 @@ export function external(url: string | null | undefined): string {
  * with URL.revokeObjectURL once used.
  */
 export const download = (content: Blob): string => URL.createObjectURL(content);
+
+const webProtocols = ["http:", "https:", "mailto:"];
+
+/** Whether a link written in a document (Markdown, ui/markdown.ts) may be a link: http, https or mailto only (LOG 542). */
+export function isWeb(url: string): boolean {
+  try {
+    return webProtocols.includes(new URL(url).protocol);
+  } catch {
+    return false;
+  }
+}
+
+/** A link written in a document, opened outside the console: the URL when {@link isWeb}, otherwise a harmless link to Needs me. */
+export const web = (url: string): string => (isWeb(url) ? new URL(url).href : needsMe());

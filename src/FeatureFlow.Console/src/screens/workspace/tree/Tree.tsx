@@ -220,6 +220,12 @@ export function Tree({ root, rows, selected, onSelect, follow, onFollow }: TreeP
               aria-label={open ? `Fold ${node.label}` : `Open ${node.label}`}
               onClick={e => {
                 e.stopPropagation();
+                // Folding the branch that holds the selection selects the branch, as a click on it would, and stops Follow
+                // current, which would otherwise open it again at the next change inside.
+                if (open && path.has(node.key)) {
+                  onSelect(node);
+                  onFollow(false);
+                }
                 setFolds(f => new Map(f).set(node.key, !open));
               }}
             >

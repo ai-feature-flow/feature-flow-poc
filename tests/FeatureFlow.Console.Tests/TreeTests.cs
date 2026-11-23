@@ -215,6 +215,33 @@ public sealed class TreeTests(BrowserFixture browser) : BrowserTest(browser)
     }
 
     [Fact]
+    public async Task Folding_the_branch_that_holds_the_selection_selects_it_and_follow_current_leaves_it_folded()
+    {
+        var tree = await Engine.ProjectTreeAsync();
+        await OpenAsync($"#/runs/{P(tree.Root)}/steps/{P(tree.Tickets[0])}/plan.plan");
+        await Expect(Selected).ToHaveAttributeAsync("data-step", "plan.plan");
+        var follow = Page.GetByRole(AriaRole.Button, new() { Name = "Follow current" });
+        await Expect(follow).ToHaveAttributeAsync("aria-pressed", "true");
+        var plan = Tree.Locator($".ff-row-group[data-run='{tree.Tickets[0]}']").Filter(new() { HasText = "plan" }).First;
+        await Expect(plan).ToHaveAttributeAsync("aria-expanded", "true");
+
+        await plan.GetByRole(AriaRole.Button, new() { Name = "Fold plan" }).ClickAsync();
+        await Expect(plan).ToHaveAttributeAsync("aria-expanded", "false");
+        await Expect(plan).ToHaveAttributeAsync("aria-selected", "true");
+        await Expect(Step(tree.Tickets[0], "plan.plan")).ToHaveCountAsync(0);
+        // As a click on the row would: the middle pane and the address follow it; and Follow current stops.
+        await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "In this group" })).ToBeVisibleAsync();
+        Assert.Equal("#/runs/" + P(tree.Tickets[0]), await EvaluateAsync<string>("location.hash"));
+        await Expect(follow).ToHaveAttributeAsync("aria-pressed", "false");
+
+        // A change inside the folded branch does not open it again.
+        await Engine.TraceAsync(tree.Tickets[0], "started", "plan.validate");
+        await Expect(plan).ToHaveAttributeAsync("data-state", "running", new() { Timeout = 5_000 });
+        await Expect(plan).ToHaveAttributeAsync("aria-expanded", "false");
+        await Expect(plan).ToHaveAttributeAsync("aria-selected", "true");
+    }
+
+    [Fact]
     public async Task Follow_current_moves_the_selection_to_the_latest_change_and_can_be_turned_off()
     {
         var tree = await Engine.ProjectTreeAsync();

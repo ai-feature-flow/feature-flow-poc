@@ -32,7 +32,7 @@ public sealed class ArtifactTests(BrowserFixture browser) : BrowserTest(browser)
         await Engine.ProduceAsync(runId, "go_ahead", "transcript:1", "agent: done");
         await Expect(rows.Filter(new() { HasText = "transcript:1" })).ToContainTextAsync("transcript", new() { Timeout = 5_000 });
 
-        await rows.First.GetByRole(AriaRole.Button, new() { Name = "summary" }).ClickAsync();
+        await rows.First.GetByRole(AriaRole.Button, new() { Name = "summary", Exact = true }).ClickAsync();
         await Expect(Viewer.Locator(".ff-viewer-name")).ToHaveTextAsync("summary");
         await Expect(Viewer.Locator(".ff-viewer-about")).ToHaveTextAsync("artifact from go_ahead, execution 2, type std:artifact_types/requirements");
         await Expect(Viewer.Locator(".ff-doc")).ToHaveTextAsync("the summary");
@@ -55,6 +55,78 @@ public sealed class ArtifactTests(BrowserFixture browser) : BrowserTest(browser)
         await Expect(Viewer.Locator(".ff-viewer-about")).ToHaveTextAsync("transcript from build, execution 1");
         await Expect(Viewer.GetByRole(AriaRole.Tab)).ToContainTextAsync(reference);
         Assert.True(await EvaluateAsync<bool>("window.ffx === undefined"));
+
+        // Its download is offered in the formatted view too.
+        var download = await Page.RunAndWaitForDownloadAsync(() => Viewer.GetByRole(AriaRole.Button, new() { Name = "Download" }).ClickAsync());
+        Assert.Equal(transcript, await File.ReadAllTextAsync((await download.PathAsync())!, Ct));
+    }
+
+    /// <summary>A real run's prompt (run-947be4435f5c's plan.plan, execution 2): the reporting preamble and the task, in Markdown.</summary>
+    static string RealPrompt => File.ReadAllText(Path.Combine(Repository.Root, "tests", "FeatureFlow.Console.Tests", "data", "plan-prompt.md"));
+
+    [Fact]
+    public async Task A_markdown_prompt_is_formatted_its_source_stays_raw_and_both_views_download_it()
+    {
+        await Engine.RunAsync("run-1");
+        var reference = await Engine.ProduceAsync("run-1", "plan.plan", "prompt:1", RealPrompt, type: "prompt");
+        await OpenAsync("#/runs/run-1/artifacts/" + Uri.EscapeDataString(reference));
+
+        var md = Viewer.Locator(".ff-doc[data-format='markdown'] .ff-md");
+        await Expect(md.Locator("h1").First).ToHaveTextAsync("How this step works");
+        await Expect(md.Locator("h2").First).ToHaveTextAsync("Your inputs");
+        await Expect(md.Locator("ul > li code").First).ToHaveTextAsync("outcome");
+        await Expect(md.Locator("table").First.Locator("th")).ToHaveTextAsync(["Input", "Use"]);
+        await Expect(md.Locator("ol > li").First).ToContainTextAsync("Read the verification skill. Read the ticket.");
+        await Expect(md.Locator("strong").First).ToHaveTextAsync("200");
+
+        var formatted = await Page.RunAndWaitForDownloadAsync(() => Viewer.GetByRole(AriaRole.Button, new() { Name = "Download" }).ClickAsync());
+        Assert.Equal(RealPrompt, await File.ReadAllTextAsync((await formatted.PathAsync())!, Ct));
+
+        await Viewer.GetByRole(AriaRole.Button, new() { Name = "Source" }).ClickAsync();
+        Assert.Equal(RealPrompt, await Viewer.Locator("pre.ff-viewer-text").TextContentAsync());
+        var source = await Page.RunAndWaitForDownloadAsync(() => Viewer.GetByRole(AriaRole.Button, new() { Name = "Download" }).ClickAsync());
+        Assert.Equal(RealPrompt, await File.ReadAllTextAsync((await source.PathAsync())!, Ct));
+    }
+
+    [Fact]
+    public async Task Markdown_by_its_name_or_front_matter_is_formatted_and_a_hostile_document_renders_inert()
+    {
+        const string hostile = """
+            # Notes
+
+            <script>window.ffx = 1</script>
+            <img src=x onerror="window.ffx=1"> <b class="ffx">bold</b>
+
+            [click](javascript:window.ffx=1) [data](data:text/html,x) <javascript:window.ffx=1> ![img](javascript:window.ffx=1)
+            [docs](https://example.com/docs) and [mail](mailto:a@example.com)
+            """;
+        await Engine.RunAsync("run-1");
+        var notes = await Engine.ProduceAsync("run-1", "build", "notes.md", hostile);
+        var plan = await Engine.ProduceAsync("run-1", "build", "plan", "---\nowner: ann\n---\n## Steps\n\n1. first\n2. second\n");
+        await OpenAsync("#/runs/run-1/artifacts/" + Uri.EscapeDataString(notes));
+
+        var md = Viewer.Locator(".ff-md");
+        await Expect(md.Locator("h1")).ToHaveTextAsync("Notes");
+        await Expect(md.Locator("p").First).ToHaveTextAsync("<script>window.ffx = 1</script>\n<img src=x onerror=\"window.ffx=1\"> <b class=\"ffx\">bold</b>");
+        await Expect(md.Locator("p").Nth(1)).ToContainTextAsync("click data <javascript:window.ffx=1> img");
+        // Only the http(s) and mailto links are links, opened without an opener or a referrer.
+        var anchors = md.Locator("a");
+        await Expect(anchors).ToHaveTextAsync(["docs", "mail"]);
+        await Expect(anchors.Nth(0)).ToHaveAttributeAsync("href", "https://example.com/docs");
+        await Expect(anchors.Nth(1)).ToHaveAttributeAsync("href", "mailto:a@example.com");
+        for (var i = 0; i < 2; i++)
+        {
+            await Expect(anchors.Nth(i)).ToHaveAttributeAsync("rel", "noopener noreferrer");
+            await Expect(anchors.Nth(i)).ToHaveAttributeAsync("target", "_blank");
+        }
+        Assert.Equal(0, await EvaluateAsync<int>("document.querySelectorAll('.ff-md script, .ff-md img, .ffx, .ff-md b').length"));
+        Assert.True(await EvaluateAsync<bool>("window.ffx === undefined"));
+
+        // Front matter makes it Markdown too: the front matter as a table, the body formatted.
+        await GoAsync("#/runs/run-1/artifacts/" + Uri.EscapeDataString(plan));
+        await Expect(Viewer.Locator(".ff-doc-kv th")).ToHaveTextAsync(["owner"]);
+        await Expect(Viewer.Locator(".ff-md h2")).ToHaveTextAsync("Steps");
+        await Expect(Viewer.Locator(".ff-md ol > li")).ToHaveTextAsync(["first", "second"]);
     }
 
     [Fact]

@@ -1,7 +1,7 @@
 import { useState } from "preact/hooks";
 import { api, read, type Schema } from "../../../api/client";
 import { runKey, useLive } from "../../../api/live";
-import { useViewer } from "../../../app/viewer";
+import { ArtifactLink, type ArtifactTarget } from "../../../app/viewer";
 import { Age } from "../../../ui/Age";
 import { ErrorBox } from "../../../ui/ErrorBox";
 import { Tabs } from "../../../ui/Tabs";
@@ -74,11 +74,10 @@ export function StepDetail({ node }: { node: StepNode }) {
   const artifacts = useLive([runKey(runId)], () => read(api.GET("/runs/{id}/artifacts", { params: { path: { id: runId } } })));
   const [tab, setTab] = useState<"overview" | "artifacts" | "activity" | "findings" | "events">("overview");
   const decisions = useDecision();
-  const viewer = useViewer();
 
   const executions = detail.data ? executionsOf(detail.data.timeline, step.id) : [];
   const mine = (artifacts.data?.artifacts ?? []).filter(a => a.step_id === step.id);
-  const open = (a: Artifact) => viewer.openArtifact({ runId, reference: a.ref, name: `${a.name} · exec ${a.execution}` });
+  const targetOf = (a: Artifact): ArtifactTarget => ({ runId, reference: a.ref, name: `${a.name} · exec ${a.execution}` });
   const lastRun = executions[executions.length - 1];
   const allowed = isActive(run.run) ? (detail.data?.overrides_allowed ?? []) : [];
   const decision = wait !== null && !statusWaits.includes(wait.kind);
@@ -199,9 +198,9 @@ export function StepDetail({ node }: { node: StepNode }) {
         <div class="ff-tabpanel" role="tabpanel">
           {artifacts.error && <ErrorBox error={artifacts.error} />}
           {tab === "overview" ? (
-            <Overview step={step} wait={wait} executions={executions} artifacts={mine} open={open} runId={runId} />
+            <Overview step={step} wait={wait} executions={executions} artifacts={mine} targetOf={targetOf} runId={runId} />
           ) : (
-            <ArtifactsTab artifacts={mine} open={open} />
+            <ArtifactsTab artifacts={mine} targetOf={targetOf} />
           )}
         </div>
       </section>
@@ -225,18 +224,17 @@ function Why({ wait }: { wait: Schema<"WaitView"> }) {
   );
 }
 
-function Overview({ step, wait, executions, artifacts, open, runId }: {
+function Overview({ step, wait, executions, artifacts, targetOf, runId }: {
   step: Schema<"PlanStepView">;
   wait: Schema<"WaitView"> | null;
   executions: readonly Execution[];
   artifacts: readonly Artifact[];
-  open: (a: Artifact) => void;
+  targetOf: (a: Artifact) => ArtifactTarget;
   runId: string;
 }) {
   const outputs = artifacts.filter(a => a.kind === "artifact" || a.kind === "evidence");
   const latestOutputs = outputs.filter(a => a.execution === Math.max(...outputs.map(o => o.execution)));
   const prompts = artifacts.filter(a => a.kind === "prompt");
-  const viewer = useViewer();
   return (
     <>
       {executions.length === 0 ? (
@@ -265,11 +263,7 @@ function Overview({ step, wait, executions, artifacts, open, runId }: {
                   <td>{x.outcome ?? "running"}</td>
                   <td>{x.then ?? ""}</td>
                   <td>
-                    {output && (
-                      <button type="button" class="ff-linkbtn" onClick={() => open(output)}>
-                        output
-                      </button>
-                    )}
+                    {output && <ArtifactLink target={targetOf(output)}>output</ArtifactLink>}
                   </td>
                 </tr>
               );
@@ -284,13 +278,7 @@ function Overview({ step, wait, executions, artifacts, open, runId }: {
             ? wait.consumed.map((c, i) => (
                 <span key={c.key}>
                   {i > 0 && " · "}
-                  {c.ref ? (
-                    <button type="button" class="ff-linkbtn" onClick={() => viewer.openArtifact({ runId, reference: c.ref!, name: c.name })}>
-                      {c.name}
-                    </button>
-                  ) : (
-                    c.name
-                  )}
+                  {c.ref ? <ArtifactLink target={{ runId, reference: c.ref, name: c.name }} /> : c.name}
                 </span>
               ))
             : <span class="ff-muted">as the step's prompt names them</span>}
@@ -303,9 +291,7 @@ function Overview({ step, wait, executions, artifacts, open, runId }: {
             latestOutputs.map((a, i) => (
               <span key={a.ref}>
                 {i > 0 && " · "}
-                <button type="button" class="ff-linkbtn" onClick={() => open(a)}>
-                  {a.name}
-                </button>
+                <ArtifactLink target={targetOf(a)}>{a.name}</ArtifactLink>
               </span>
             ))
           )}
@@ -317,9 +303,7 @@ function Overview({ step, wait, executions, artifacts, open, runId }: {
           {prompts.length === 0 ? (
             <span class="ff-muted">none recorded</span>
           ) : (
-            <button type="button" class="ff-linkbtn" onClick={() => open(prompts[prompts.length - 1])}>
-              {prompts[prompts.length - 1].name}
-            </button>
+            <ArtifactLink target={targetOf(prompts[prompts.length - 1])}>{prompts[prompts.length - 1].name}</ArtifactLink>
           )}
         </span>
       </div>
@@ -327,7 +311,7 @@ function Overview({ step, wait, executions, artifacts, open, runId }: {
   );
 }
 
-function ArtifactsTab({ artifacts, open }: { artifacts: readonly Artifact[]; open: (a: Artifact) => void }) {
+function ArtifactsTab({ artifacts, targetOf }: { artifacts: readonly Artifact[]; targetOf: (a: Artifact) => ArtifactTarget }) {
   const ordered = [...artifacts].sort((a, b) => b.execution - a.execution);
   return ordered.length === 0 ? (
     <p class="ff-muted">The step has no artifacts yet.</p>
@@ -346,9 +330,7 @@ function ArtifactsTab({ artifacts, open }: { artifacts: readonly Artifact[]; ope
           <tr key={`${a.ref}\n${a.execution}\n${a.name}`}>
             <td>{a.execution}</td>
             <td>
-              <button type="button" class="ff-linkbtn" onClick={() => open(a)}>
-                {a.name}
-              </button>
+              <ArtifactLink target={targetOf(a)}>{a.name}</ArtifactLink>
             </td>
             <td>{a.kind.replace("_", " ")}</td>
             <td>{a.type ?? ""}</td>

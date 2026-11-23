@@ -1,5 +1,5 @@
 import type { Schema } from "../../api/client";
-import { useViewer } from "../../app/viewer";
+import { ArtifactLink } from "../../app/viewer";
 import { type Answer, AnswerBar, ReasonForm } from "./AnswerBar";
 import type { DecisionProps } from "./kinds";
 
@@ -27,22 +27,13 @@ export function gateAnswers(wait: Schema<"WaitView">, does: (choice: string) => 
   });
 }
 
-/** The artifacts the waiting step consumed, each opened in the viewer. */
+/** The artifacts the waiting step consumed, each a link to it. */
 export function Consumed({ runId, wait }: { runId: string; wait: Schema<"WaitView"> }) {
-  const viewer = useViewer();
   if (wait.consumed.length === 0) return null;
   return (
     <ul class="ff-dec-consumed" aria-label="Consumed">
       {wait.consumed.map(c => (
-        <li key={c.key}>
-          {c.ref === null ? (
-            c.name
-          ) : (
-            <button type="button" class="ff-linkbtn" onClick={() => viewer.openArtifact({ runId, reference: c.ref!, name: c.name })}>
-              {c.name}
-            </button>
-          )}
-        </li>
+        <li key={c.key}>{c.ref === null ? c.name : <ArtifactLink target={{ runId, reference: c.ref, name: c.name }} />}</li>
       ))}
     </ul>
   );

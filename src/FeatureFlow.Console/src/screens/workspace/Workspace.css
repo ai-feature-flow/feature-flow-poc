@@ -66,6 +66,4 @@
 .ff-detail th { font-size: 12px; color: var(--muted); }
 .ff-kv { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 10px 16px; margin-top: 20px; }
 .ff-kv .ff-k { color: var(--muted); font-weight: 700; font-size: 13px; }
-.ff-linkbtn { border: 0; padding: 0; background: none; color: var(--link); font: inherit; cursor: pointer; text-align: left; }
-.ff-linkbtn:hover { text-decoration: underline; }
 .ff-tabpanel { padding: 16px 20px; }

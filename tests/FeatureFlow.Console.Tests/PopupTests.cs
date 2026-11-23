@@ -60,6 +60,97 @@ public sealed class PopupTests(BrowserFixture browser) : BrowserTest(browser)
         }
     }
 
+    [Fact]
+    public async Task An_artifact_popup_fills_the_window_and_follows_its_size_until_toggled_back()
+    {
+        await Engine.RunAsync("run-1");
+        // Longer than the window, so the popup must stay the window's size and scroll inside.
+        var report = string.Join("\n", Enumerable.Range(1, 300).Select(i => $"line {i}"));
+        var reference = await Engine.ProduceAsync("run-1", "build", "report", report);
+        await OpenAsync("#/runs/run-1/artifacts/" + Uri.EscapeDataString(reference));
+        await Page.SetViewportSizeAsync(1280, 800);
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Open full size" }).ClickAsync();
+        var popup = Dialog;
+        var fill = popup.GetByRole(AriaRole.Button, new() { Name = "Fill the window" });
+        await Expect(fill).ToHaveAttributeAsync("aria-pressed", "false");
+        await Expect(fill).ToHaveAttributeAsync("title", "Fill the window");
+        var own = (await popup.BoundingBoxAsync())!;
+        Assert.True(own.Width < 1280 && own.Height < 800);
+
+        // From the keyboard, as well as by a click.
+        await fill.FocusAsync();
+        await Page.Keyboard.PressAsync("Enter");
+        await Expect(fill).ToHaveAttributeAsync("aria-pressed", "true");
+        await Expect(fill).ToHaveAttributeAsync("title", "Back to its own size");
+        Assert.Equal((0, 0, 1280, 800), Box(await popup.BoundingBoxAsync()));
+        await Page.SetViewportSizeAsync(1000, 600);
+        Assert.Equal((0, 0, 1000, 600), Box(await popup.BoundingBoxAsync()));
+        await popup.GetByText("line 300").ScrollIntoViewIfNeededAsync();
+        await Expect(popup.GetByText("line 300")).ToBeInViewportAsync();
+
+        await fill.ClickAsync();
+        await Expect(fill).ToHaveAttributeAsync("aria-pressed", "false");
+        var back = (await popup.BoundingBoxAsync())!;
+        Assert.True(back.Width < 1000 && back.Height < 600);
+    }
+
+    static (int, int, int, int) Box(LocatorBoundingBoxResult? box) => ((int)box!.X, (int)box.Y, (int)Math.Round(box.Width), (int)Math.Round(box.Height));
+
+    /// <summary>
+    /// Not a check: screenshots of the tweaks after first use (docs/build/console-b1-results.md), dark at 1440 × 900, to
+    /// <c>FF_SCREENS</c>: a real run's Markdown prompt formatted, in the viewer and filling the window; its source with its
+    /// download; the pop-out icons; and a folded branch that held the selection.
+    /// </summary>
+    [Fact(Explicit = true)]
+    public async Task Screenshots_of_the_tweaks_after_first_use()
+    {
+        var folder = Environment.GetEnvironmentVariable("FF_SCREENS") ?? Path.Combine(Path.GetTempPath(), "ff-screens");
+        Directory.CreateDirectory(folder);
+        var s = await Engine.DecisionsAsync();
+        var prompt = File.ReadAllText(Path.Combine(Repository.Root, "tests", "FeatureFlow.Console.Tests", "data", "plan-prompt.md"));
+        await Engine.ProduceAsync(s.Tree.Tickets[0], "plan.plan", "prompt:1", prompt, type: "prompt", execution: 2);
+        await OpenAsync($"#/runs/{s.Tree.Root}/steps/{s.Tree.Tickets[0]}/plan.plan");
+        await Page.SetViewportSizeAsync(1440, 900);
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Dark theme" }).ClickAsync();
+        async Task Shot(string name)
+        {
+            await Page.WaitForTimeoutAsync(800);
+            await Page.ScreenshotAsync(new() { Path = Path.Combine(folder, $"{name}.png") });
+        }
+
+        await Page.GetByRole(AriaRole.Button, new() { Name = "prompt:1", Exact = true }).ClickAsync();
+        await Expect(Page.Locator(".ff-md h1").First).ToBeVisibleAsync();
+        await Shot("markdown-prompt-viewer");
+        await Page.GetByRole(AriaRole.Complementary, new() { Name = "Viewer" }).GetByRole(AriaRole.Button, new() { Name = "Source" }).ClickAsync();
+        await Shot("markdown-prompt-source-download");
+        await Page.GetByRole(AriaRole.Complementary, new() { Name = "Viewer" }).GetByRole(AriaRole.Button, new() { Name = "Formatted" }).ClickAsync();
+
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Open prompt:1 · exec 2 full size" }).ClickAsync();
+        await Expect(Dialog.Locator(".ff-md h1").First).ToBeVisibleAsync();
+        await Shot("popout-prompt-popup");
+        await Dialog.GetByRole(AriaRole.Button, new() { Name = "Fill the window" }).ClickAsync();
+        await Dialog.Locator(".ff-popup-body").EvaluateAsync("e => { e.scrollTop = e.scrollHeight; }");
+        await Shot("popup-filling-window");
+        await Page.Keyboard.PressAsync("Escape");
+
+        await Page.GetByRole(AriaRole.Tab, new() { Name = "Artifacts" }).ClickAsync();
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Open requirements · exec 2 full size" }).HoverAsync();
+        await Shot("popout-icons-artifacts");
+
+        await GoAsync($"#/runs/{s.Tree.Root}/waits/{s.Spec.RunId}/{s.Spec.WaitId}");
+        await Expect(Dialog.Locator(".ff-dec-body")).ToBeVisibleAsync();
+        await Expect(Dialog.GetByRole(AriaRole.Table, new() { Name = "Acceptance criteria" })).ToBeVisibleAsync();
+        await Page.WaitForTimeoutAsync(500);
+        await Dialog.GetByRole(AriaRole.List, new() { Name = "Consumed" }).EvaluateAsync("e => e.scrollIntoView({ block: 'center' })");
+        await Shot("popout-icons-decision");
+        await Page.Keyboard.PressAsync("Escape");
+
+        await GoAsync($"#/runs/{s.Tree.Root}/steps/{s.Tree.Tickets[0]}/plan.plan");
+        await Page.Locator($".ff-row-group[data-run='{s.Tree.Tickets[0]}']").Filter(new() { HasText = "plan" }).First
+            .GetByRole(AriaRole.Button, new() { Name = "Fold plan" }).ClickAsync();
+        await Shot("tree-folded-selection");
+    }
+
     /// <summary>
     /// Not a check: saves a screenshot of every screen and popup, dark, at 1440 × 900, and the workspace and Needs me light,
     /// to <c>FF_SCREENS</c> (the package's report folder). Run it on its own:
@@ -128,9 +219,9 @@ public sealed class PopupTests(BrowserFixture browser) : BrowserTest(browser)
         await GoAsync($"#/runs/{s.Tree.Root}/steps/{s.Tree.Tickets[0]}/plan.plan");
         await Page.GetByRole(AriaRole.Tab, new() { Name = "Artifacts" }).ClickAsync();
         var artifacts = Page.GetByRole(AriaRole.Table, new() { Name = "Artifacts" }).Locator("tbody tr");
-        await artifacts.Filter(new() { HasText = "requirements" }).First.GetByRole(AriaRole.Button).ClickAsync();
+        await artifacts.Filter(new() { HasText = "requirements" }).First.GetByRole(AriaRole.Button, new() { Name = "requirements", Exact = true }).ClickAsync();
         await Page.GetByRole(AriaRole.Button, new() { Name = "Pin requirements · exec 2" }).ClickAsync();
-        await artifacts.Filter(new() { HasText = "delivery_plan" }).First.GetByRole(AriaRole.Button).ClickAsync();
+        await artifacts.Filter(new() { HasText = "delivery_plan" }).First.GetByRole(AriaRole.Button, new() { Name = "delivery_plan", Exact = true }).ClickAsync();
         await Shot("viewer");
 
         // Steer, Edit step and the margin's breakpoint, from a step not yet started.

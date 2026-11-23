@@ -4,7 +4,7 @@ import "./popup.css";
 
 // Popups (design-v2 s4.5; plan s5.4): one host for the page, over everything, in a stack so a popup may open another
 // (an artifact full size from a decision). The top one closes on Escape, a click outside it, its × or close(); every
-// one closes when the route changes. A long popup scrolls inside itself.
+// one closes when the route changes. A long popup scrolls inside itself; its ⤢ fills the browser window with it.
 
 export interface PopupOptions {
   /** The dialog's accessible name and title. */
@@ -66,8 +66,10 @@ export function PopupHost({ children }: { children: ComponentChildren }) {
   );
 }
 
+/** One popup: its title, ⤢ to fill the browser window (and follow its size) or go back to its own size, and ×. */
 function Overlay({ entry, close }: { entry: Entry; close: () => void }) {
   const dialog = useRef<HTMLDivElement>(null);
+  const [full, setFull] = useState(false);
   useEffect(() => dialog.current?.focus(), []);
   return (
     <div
@@ -76,9 +78,26 @@ function Overlay({ entry, close }: { entry: Entry; close: () => void }) {
         if (e.target === e.currentTarget) close();
       }}
     >
-      <div ref={dialog} class={entry.wide ? "ff-popup ff-popup-wide" : "ff-popup"} role="dialog" aria-modal="true" aria-label={entry.label} tabIndex={-1}>
+      <div
+        ref={dialog}
+        class={["ff-popup", entry.wide ? "ff-popup-wide" : "", full ? "ff-popup-full" : ""].join(" ")}
+        role="dialog"
+        aria-modal="true"
+        aria-label={entry.label}
+        tabIndex={-1}
+      >
         <header class="ff-popup-head">
           <h2>{entry.label}</h2>
+          <button
+            type="button"
+            class="ff-iconbtn"
+            aria-label="Fill the window"
+            aria-pressed={full}
+            title={full ? "Back to its own size" : "Fill the window"}
+            onClick={() => setFull(f => !f)}
+          >
+            {full ? "⤡" : "⤢"}
+          </button>
           <button type="button" class="ff-iconbtn" aria-label="Close" title="Close (Esc)" onClick={close}>
             ×
           </button>

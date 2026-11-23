@@ -136,6 +136,38 @@ on.
 10. **Evidence to record**: anything shown wrongly or missing, with the run id and a screenshot; how the tree reads on
     a project run; whether the pills and Follow current help.
 
+## Tweaks after first use
+
+Four fixes the product owner asked for after first using B1. Console, its tests and docs only: no API or engine change.
+Screenshots (dark, 1440 × 900) from `PopupTests.Screenshots_of_the_tweaks_after_first_use`, run explicitly with
+`FF_SCREENS` set.
+
+1. **A popup fills the window.** Every popup has ⤢ next to its ×: pressed, it fills the browser window and follows its
+   size, its body scrolling inside; pressed again, it goes back to its own size. A button, so the keyboard reaches it,
+   titled for what it will do. Every popup rather than only an artifact's: decisions hold large tables too.
+2. **Folding the branch that holds the selection** selects the branch, as a click on it does (the middle pane and the
+   address follow), then folds it. It also turns Follow current off, since following would select the next step
+   to change inside and open the branch again. Other manual navigation (a click, a pill) leaves Follow current on, as
+   before: the brief assumed it turned it off; it never did.
+3. **A pop-out icon after every link to an artifact** opens it full size in a popup straight away; the link still opens
+   it in the viewer. One component (`app/viewer.tsx`, `ArtifactLink`) used everywhere one is linked: a step's
+   executions, inputs, outputs, prompt and Artifacts tab; a decision's consumed artifacts (Needs me and the workspace);
+   the viewer's Previous revision. The run's root page links none. In a decision popup the link opened a popup already
+   (popups sit outside the workspace's viewer), so there the icon adds a second way, kept for consistency.
+4. **Markdown is formatted** (LOG 542) where the API reads it as Markdown (a declared type whose format is `markdown`,
+   or front matter), where the artifact's name ends `.md` or `.markdown`, and for prompts. Artifacts carry no content
+   type, so there is none to go by. Built by a small reader of our own (`ui/markdownTree.ts`, no dependency) into a
+   tree that `ui/Markdown.tsx` turns into elements: raw HTML is text, and links are links only for `http`, `https` and
+   `mailto`, opened in a new tab with `rel="noopener noreferrer"`. The source view is unchanged, and **Download** now
+   shows in both views, transcripts included (it reads the bytes when pressed). YAML and JSON stay tables and lists;
+   transcripts (JSON lines) and other text stay text.
+
+Evidence: Playwright tests for each, which fail on the console before the change (`PopupTests`, `TreeTests`,
+`ViewerTests`, `DecisionTests`, `ArtifactTests`), the last including a real run's prompt (run-947be4435f5c's
+`plan.plan`, execution 2, read from the live instance as `tests/FeatureFlow.Console.Tests/data/plan-prompt.md`) and a
+hostile document; the reader's unit tests (`src/FeatureFlow.Console/tests/markdownTree.test.ts`, run by `npm test`,
+which `npm run build` now runs), the hostile document among them.
+
 ## Open questions
 
 1. A code host outage at registration answers 400; should it be a new 503 (LOG 532)?
