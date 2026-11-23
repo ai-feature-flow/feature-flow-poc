@@ -49,8 +49,18 @@ public class ReconcileTests
         foreach (var (id, status) in new[] { (completed, "completed"), (open, "running"), (terminated, "incomplete") })
         {
             var rebuilt = await RecordAsync(h, id);
-            Assert.Equal(before[id] with { Status = status, UpdatedAt = rebuilt!.UpdatedAt, Detail = RunIndex.Detail, Repositories = rebuilt.Repositories }, rebuilt);
+            // A deleted record's level and issue title are gone (they come from the plan and the tracker), and its start is
+            // when Temporal started the run, not when the workflow first recorded it.
+            var deleted = id != terminated;
+            Assert.Equal(before[id] with
+            {
+                Status = status, UpdatedAt = rebuilt!.UpdatedAt, Detail = RunIndex.Detail, Repositories = rebuilt.Repositories,
+                Level = deleted ? null : before[id].Level, TrackerTitle = deleted ? null : before[id].TrackerTitle,
+                TrackerUrl = deleted ? null : before[id].TrackerUrl, StartedAt = rebuilt.StartedAt,
+            }, rebuilt);
             Assert.Equal(before[id].Repositories, rebuilt.Repositories);
+            Assert.True(rebuilt.StartedAt <= before[id].StartedAt && rebuilt.StartedAt > before[id].StartedAt - TimeSpan.FromSeconds(10),
+                $"rebuilt start {rebuilt.StartedAt}, recorded {before[id].StartedAt}");
         }
 
         var again = new StringWriter();

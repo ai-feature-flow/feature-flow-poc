@@ -339,7 +339,8 @@ public sealed partial class RunCore
     /// CLI show the same. A gate also names what its step consumes as it opens, the revisions the person ratifies (LOG 394).
     /// The choices that need a person's reason (LOG 502) are those that route the step as a failure or end the run: a gate's
     /// outcomes of class failure, an action decision's reject, and <c>end</c> at an intervention or a breakpoint; the API
-    /// refuses them without one.
+    /// refuses them without one. An intervention also says why it stopped its step (<see cref="CauseOf"/>), and a patch
+    /// approval of a plan patch holds the patch (<see cref="PatchOf"/>).
     /// </summary>
     public WaitDescription Describe(OpenWait wait)
     {
@@ -354,11 +355,47 @@ public sealed partial class RunCore
             WaitKind.Gate => new(kind, step?.Decision?.Type ?? $"{level}.decision", step?.DeclaredOutcomes.Select(o => o.Name).ToList() ?? [], GatePrompt(wait, step), consumed,
                 step?.DeclaredOutcomes.Where(o => o.Class == OutcomeClass.Failure).Select(o => o.Name).ToList() ?? []),
             WaitKind.Question => new(kind, $"{level}.question", wait.Options ?? [], wait.Reason),
-            WaitKind.PatchApproval => new(kind, $"{level}.patch_approval", PatchChoices, PatchPrompt(wait)),
+            WaitKind.PatchApproval => new(kind, $"{level}.patch_approval", PatchChoices, PatchPrompt(wait), Patch: PatchOf(wait)),
             WaitKind.Breakpoint => new(kind, $"{level}.breakpoint", Recoveries.For(wait.Kind), wait.Reason, ReasonRequired: [Recoveries.Name(RecoveryKind.End)]),
-            _ => new(kind, $"{level}.escalation", Recoveries.For(wait.Kind), wait.Reason, ReasonRequired: [Recoveries.Name(RecoveryKind.End)]),
+            _ => new(kind, $"{level}.escalation", Recoveries.For(wait.Kind), wait.Reason, ReasonRequired: [Recoveries.Name(RecoveryKind.End)], Cause: CauseOf(wait)),
         };
     }
+
+    /// <summary>
+    /// Why an intervention stopped its step (A11): the core's reason and the outcome, the step's own last report summary, its
+    /// attempts used and allowed with grants (null for a step that uses none), and every retry cause addressed to it, oldest
+    /// first, while the run context keeps them (LOG 513). A cause the core wrote as <c>"&lt;step&gt; ended &lt;outcome&gt;: "</c>
+    /// names the step and outcome that sent it back; a failed attempt's names neither.
+    /// </summary>
+    WaitCauseInfo CauseOf(OpenWait wait)
+    {
+        var record = State.Steps.GetValueOrDefault(wait.StepId);
+        var step = StepById(wait.StepId) is { ConsumesAttempts: true } s && record is not null ? s : null;
+        var said = State.Context.LastOrDefault(c => c.Kind == ContextKinds.Summary && c.StepId == wait.StepId)?.Text;
+        var own = $"{wait.StepId} reported ";
+        if (said is not null && said.StartsWith(own, StringComparison.Ordinal) && said.IndexOf(": ", own.Length, StringComparison.Ordinal) is var colon and >= 0)
+            said = said[(colon + 2)..];
+        var sentBack = State.Context.Where(c => c.Kind == ContextKinds.RetryCause && c.StepId == wait.StepId)
+            .Select(c => CorePrefix().Match(c.Text) is { Success: true } m
+                ? new SentBackInfo(c.Execution, m.Groups["by"].Value, m.Groups["outcome"].Value, c.Text[m.Length..])
+                : new SentBackInfo(c.Execution, null, null, c.Text))
+            .ToList();
+        return new WaitCauseInfo(wait.StepId, wait.Outcome, wait.Reason, said, step is null ? null : record!.AttemptsUsed,
+            step is null ? null : Allowance(step) + record!.AttemptsGranted, sentBack);
+    }
+
+    /// <summary>
+    /// The plan patch a patch approval waits on (A8): who proposed it, its reason, why it needs a person (the reasons the core
+    /// joined), where the run continues, its base revision, whether a child proposed it, and the patch as written. Null for a
+    /// library override's approval, which holds no patch.
+    /// </summary>
+    static WaitPatchInfo? PatchOf(OpenWait wait) => wait.Patch is not { } patch
+        ? null
+        : new WaitPatchInfo(patch.ProposedBy.Type, patch.ProposedBy.StepId, patch.Reason, wait.Reason.Split("; ", StringSplitOptions.RemoveEmptyEntries),
+            patch.ResumeAt, patch.BaseRevision, wait.FromChild, PatchReader.Write(patch));
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^(?<by>\S+) ended (?<outcome>[^\s:]+): ")]
+    private static partial System.Text.RegularExpressions.Regex CorePrefix();
 
     /// <summary>A decision's rendered prompt, else the core's reason.</summary>
     string GatePrompt(OpenWait wait, Step? step)

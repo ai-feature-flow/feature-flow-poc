@@ -1,3 +1,4 @@
+using FeatureFlow.Model;
 using FeatureFlow.Providers.Abstractions;
 
 namespace FeatureFlow.Integration.Tests;
@@ -52,8 +53,22 @@ public class TicketRunTests
         Assert.Equal(expected, path.Where(expected.Contains).Distinct().ToArray());
         var taskFailures = await h.WorkflowTaskFailuresAsync(id);
         Assert.True(taskFailures.Count == 0, "C5: workflow task failures: " + string.Join("; ", taskFailures));
+
+        // A1, A2: the run's record carries its level, its issue with the issue's title, and when it started; each step's
+        // counters are recorded, with no allowance for the decision.
+        var run = Assert.Single(await RecordsAsync<RunRecord>(h, Queries.Run, id));
+        Assert.Equal(("ticket", "FF-1042", "Ticket FF-1042", null), (run.Level, run.TrackerIssue, run.TrackerTitle, run.ParentStepId));
+        Assert.NotNull(run.StartedAt);
+        var steps = await RecordsAsync<StepStateRecord>(h, Queries.StepStates, id);
+        Assert.Contains(steps, s => s is { StepId: "implement", Executions: 1, AttemptsUsed: 1, AttemptsGranted: 0, AttemptsAllowed: > 0 });
+        Assert.Contains(steps, s => s is { StepId: "approve_spec", Executions: 1, AttemptsAllowed: null });
         await h.RecordHistoryAsync(id, "ticket_delivery");
     }
+
+    static async Task<IReadOnlyList<T>> RecordsAsync<T>(Harness h, string query, string runId, bool openOnly = false) =>
+        (await h.Host.Providers.Required<IRecordStoreProvider>("record_store").QueryAsync<T>(query,
+            openOnly ? new Dictionary<string, string> { ["run_id"] = runId, ["open"] = "true" } : new Dictionary<string, string> { ["run_id"] = runId },
+            TestContext.Current.CancellationToken)).Unwrap();
 
     [Fact]
     public async Task An_exhausted_step_escalates_and_granting_attempts_through_the_cli_completes_the_run()
@@ -68,6 +83,13 @@ public class TicketRunTests
         Assert.Contains($"wait {waitId} intervention at implement", show);
         Assert.Contains("attempts exhausted", show);
 
+        // A11: the intervention's cause has the step's attempts and each failed attempt that sent it back.
+        var cause = Assert.Single(await RecordsAsync<WaitRecord>(h, Queries.Waits, id, openOnly: true)).Cause!;
+        Assert.Equal(("implement", Actions.AttemptsExhausted), (cause.StepId, cause.Outcome));
+        Assert.Equal(cause.AttemptsAllowed, cause.AttemptsUsed);
+        Assert.Equal([1, 2, 3], cause.SentBack.Select(s => s.Execution));
+        Assert.All(cause.SentBack, s => Assert.True(s.ByStep is null && s.Text.StartsWith("attempt ", StringComparison.Ordinal), s.Text));
+
         var (refusedExit, _, refused) = h.Cli("recover", id, waitId!, "end", "completed");
         Assert.Equal(1, refusedExit);
         Assert.Contains("must be one of", refused);
@@ -76,6 +98,8 @@ public class TicketRunTests
         var (endExit, end, _) = h.Cli("wait", id, "--timeout", "120");
         Assert.Equal((0, $"run {id} completed"), (endExit, end.Trim()));
         Assert.Equal(4, Harness.StartedSteps(await h.ShowAsync(id)).Count(s => s == "implement"));
+        Assert.Contains(await RecordsAsync<StepStateRecord>(h, Queries.StepStates, id),
+            s => s.StepId == "implement" && s.AttemptsGranted == 1 && s.AttemptsAllowed == cause.AttemptsAllowed + 1);
     }
 
     [Fact]

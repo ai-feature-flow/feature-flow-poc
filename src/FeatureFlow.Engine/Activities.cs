@@ -400,10 +400,43 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
             batch = batch with { Artifacts = indexed };
         }
 
+        if (batch.Runs is { Count: > 0 } runs && runs.Any(r => r.TrackerIssue is not null))
+            batch = batch with { Runs = await Task.WhenAll(runs.Select(r => WithTrackerTitleAsync(r, ct))) };
+
         var result = await services.RecordStore.AppendAsync(batch, ct);
         if (!result.Ok)
             throw new ApplicationFailureException($"record store: {result.Error!.Message}");
         // M7: notifications follow what was recorded, here and never in workflow code; a failed send never fails this.
         await new RunNotifier(services, ActivityExecutionContext.Current.Logger).NotifyAsync(batch, ct);
+    }
+
+    /// <summary>How long a run record waits for its tracker issue's title.</summary>
+    internal static readonly TimeSpan TrackerTitleTimeout = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// A run record with its tracker issue's title and link (A1): the stored record's while its issue is the same, else one
+    /// read of the tracker, at most <see cref="TrackerTitleTimeout"/>. A read that fails, or no tracker, leaves them unset and
+    /// never fails the record.
+    /// </summary>
+    async Task<RunRecord> WithTrackerTitleAsync(RunRecord run, CancellationToken ct)
+    {
+        if (run.TrackerIssue is not { } key || run.TrackerTitle is not null)
+            return run;
+        try
+        {
+            var stored = await services.RecordStore.QueryAsync<RunRecord>(Queries.Run, new Dictionary<string, string> { ["run_id"] = run.RunId }, ct);
+            if (stored.Ok && stored.Value!.FirstOrDefault() is { TrackerTitle: { } title } kept && kept.TrackerIssue == key)
+                return run with { TrackerTitle = title, TrackerUrl = kept.TrackerUrl };
+            if (services.Providers.ForRun("tracker", run.DryRun) is not ITrackerProvider tracker)
+                return run;
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TrackerTitleTimeout);
+            var read = await tracker.GetIssueAsync(new IssueRef(key), timeout.Token).WaitAsync(timeout.Token);
+            return read.Ok ? run with { TrackerTitle = read.Value!.Title, TrackerUrl = read.Value.Url } : run;
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            return run;
+        }
     }
 }
