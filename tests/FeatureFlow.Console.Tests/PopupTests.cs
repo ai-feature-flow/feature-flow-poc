@@ -95,5 +95,12 @@ public sealed class PopupTests(BrowserFixture browser) : BrowserTest(browser)
             await Page.Keyboard.PressAsync("Escape");
             await GoAsync("#/needs");
         }
+
+        // A steer, from the step's detail.
+        await GoAsync($"#/runs/{s.Tree.Root}/steps/{s.Tree.Tickets[0]}/implement");
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Steer ▾", Exact = true }).ClickAsync();
+        await Page.GetByRole(AriaRole.Menuitem, new() { Name = "Pause before" }).ClickAsync();
+        await Expect(Dialog).ToBeVisibleAsync();
+        await Page.ScreenshotAsync(new() { Path = Path.Combine(folder, "steer.png") });
     }
 }
