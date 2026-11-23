@@ -1,0 +1,31 @@
+/* The console's tokens (design-v2 s4.1, s4.4; plan s5.5): light (AWS-like) and dark (Nord), from mock-ups 02 and 05.
+   Set on html[data-theme] by app/prefs.ts before the first render. Screens use only these variables for colour. */
+
+html[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f2f3f3; --panel: #ffffff; --panel2: #fafafa; --border: #e2e5e9; --border2: #c6ccd4;
+  --text: #16191f; --muted: #5f6b7a; --accent: #0972d3; --accent-text: #ffffff; --link: #0972d3;
+  --ok: #037f0c; --bad: #d91515; --warn: #b5530b; --dim: #9ba7b6;
+  --wait: #d91515; --waitbg: #fff5f5; --sel: #e9f2fc; --here: #fff9e8; --hover: #f4f6f8;
+  --code: #f4f5f7; --top: #232f3e; --toptext: #d5dbe3; --toplater: #6b7789; --shadow: 0 1px 3px rgba(0,0,0,.08);
+  --overlay: rgba(22,25,31,.45); --refused: #fff1f1; --pill-ok: #e6f4e8; --pill-bad: #eceef1; --pill-wait: #ffe3e3;
+  --needsrow: #fff3b0; --selrow: #cde8ff; --selbar: #0972d3;
+}
+
+html[data-theme="dark"] {
+  /* Nord: polar night 0-3, snow storm 4-6, frost 7-10, aurora 11-15 */
+  color-scheme: dark;
+  --bg: #2e3440; --panel: #3b4252; --panel2: #353c4a; --border: #434c5e; --border2: #4c566a;
+  --text: #eceff4; --muted: #a5afc2; --accent: #88c0d0; --accent-text: #2e3440; --link: #88c0d0;
+  --ok: #a3be8c; --bad: #bf616a; --warn: #d08770; --dim: #6b7589;
+  --wait: #bf616a; --waitbg: rgba(191,97,106,.14); --sel: #434c5e; --here: rgba(235,203,139,.10); --hover: #414a5b;
+  --code: #2e3440; --top: #242933; --toptext: #d8dee9; --toplater: #6b7789; --shadow: 0 1px 3px rgba(0,0,0,.35);
+  --overlay: rgba(20,23,29,.65); --refused: rgba(191,97,106,.12); --pill-ok: rgba(163,190,140,.18); --pill-bad: #4c566a; --pill-wait: rgba(191,97,106,.25);
+  --needsrow: rgba(235,203,139,.28); --selrow: rgba(136,192,208,.32); --selbar: #88c0d0;
+}
+
+html {
+  /* Shared by both themes: the Needs me red is the same in either (markers are drawn in their fixed yellow and black). */
+  --needsme: #d91515;
+  --row: 34px; --topbar: 48px;
+}

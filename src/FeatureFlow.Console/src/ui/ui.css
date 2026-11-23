@@ -1,0 +1,100 @@
+/* Shared pieces (plan s5.1 ui/): badges, pills, markers, menus, tabs, splitters, folds and panes. Colours are app/theme.css's. */
+
+.ff-btn {
+  display: inline-block;
+  border: 2px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  border-radius: 20px;
+  padding: 4px 16px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ff-btn-primary { background: var(--accent); color: var(--accent-text); }
+.ff-btn-ghost { border-color: var(--border2); color: var(--text); }
+.ff-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.ff-iconbtn {
+  width: 30px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.ff-iconbtn:hover { border-color: var(--border2); }
+.ff-iconbtn svg { width: 18px; height: 18px; }
+
+.ff-badge { display: inline-block; min-width: 22px; border-radius: 11px; padding: 0 7px; font-weight: 700; font-size: 12px; text-align: center; }
+.ff-badge-need { background: var(--wait); color: #fff; }
+.ff-badge-run { background: var(--accent); color: var(--accent-text); }
+.ff-badge-ok { background: var(--pill-ok); color: var(--ok); }
+.ff-badge-neutral { background: var(--pill-bad); color: var(--text); }
+
+.ff-pill { font-size: 12px; border-radius: 10px; padding: 1px 10px; font-weight: 700; white-space: nowrap; }
+.ff-pill-wait { background: var(--pill-wait); color: var(--wait); }
+.ff-pill-ok { background: var(--pill-ok); color: var(--ok); }
+.ff-pill-neutral { background: var(--pill-bad); color: var(--muted); }
+
+.ff-marker { display: inline-grid; place-items: center; width: 30px; height: 24px; }
+.ff-marker svg { width: 26px; height: 22px; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35)); }
+.ff-marker-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); }
+
+.ff-menu { position: relative; display: inline-block; }
+.ff-menu-list {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 220px;
+  margin: 0;
+  padding: 6px 0;
+  list-style: none;
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.ff-menu-list button {
+  display: block;
+  width: 100%;
+  padding: 6px 16px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ff-menu-list button:hover:not(:disabled) { background: var(--hover); }
+.ff-menu-list button:disabled { color: var(--dim); cursor: not-allowed; }
+.ff-menu-note { display: block; font-size: 12px; }
+
+.ff-tabs { display: flex; padding: 0 12px; border-bottom: 1px solid var(--border); }
+.ff-tab {
+  padding: 12px 14px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ff-tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+.ff-tab:disabled { color: var(--dim); cursor: not-allowed; }
+
+.ff-splitter { width: 5px; cursor: col-resize; background: var(--border); touch-action: none; }
+.ff-splitter:hover, .ff-splitter:focus-visible, .ff-splitter-active { background: var(--accent); outline: none; }
+
+.ff-fold > summary { cursor: pointer; font-weight: 700; }
+
+.ff-pane { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+.ff-pane-head { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.ff-pane-head h2 { margin: 0; font-size: 18px; flex: 1; }
+.ff-pane-body { padding: 16px 20px; }

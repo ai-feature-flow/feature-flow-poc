@@ -6,6 +6,10 @@ import { begin, useSession } from "./auth/session";
 import { SignIn } from "./auth/SignIn";
 import { Busy } from "./ui/Busy";
 import { ErrorBox } from "./ui/ErrorBox";
+// The theme's tokens, and the preference that sets html[data-theme] before the first render (no flash of the other theme).
+import "./app/theme.css";
+import "./app/prefs";
+import "./ui/ui.css";
 import "./main.css";
 
 // API data reaches the page only as text: JSX children, never markup, and links only from app/links.ts (LOG 460).

@@ -73,7 +73,7 @@ public sealed class SlackNotifications(
                           + (request.StepId is null ? "" : $", step {request.StepId}")
                           + $"\n{request.Prompt}"
                           + (request.Choices.Count == 0 ? "" : $"\nChoices: {string.Join(", ", request.Choices)}"));
-        var link = LinkOf(request.RunId, request.Link);
+        var link = LinkOf(request.RunId, request.Link, request.WaitId);
         var elements = new JsonArray();
         foreach (var (choice, i) in request.Choices.Take(link is null ? MaxButtons : MaxButtons - 1).Select((c, i) => (c, i)))
         {
@@ -103,8 +103,17 @@ public sealed class SlackNotifications(
         return PostAsync(channel, text, blocks, thread, cancellationToken);
     }
 
-    string? LinkOf(string runId, string? link) =>
-        link ?? (consoleUrl is { Length: > 0 } c ? $"{c.TrimEnd('/')}/#/runs/{Uri.EscapeDataString(runId)}" : null);
+    /// <summary>
+    /// The console link: the run's page, or for a decision its wait, <c>#/runs/{run}/waits/{run}/{wait}</c> (design-v2 s4.2);
+    /// the console resolves the run's tree from the run, so a child run's wait links the same way.
+    /// </summary>
+    string? LinkOf(string runId, string? link, string? waitId = null)
+    {
+        if (link is not null || consoleUrl is not { Length: > 0 } console)
+            return link;
+        var run = Uri.EscapeDataString(runId);
+        return $"{console.TrimEnd('/')}/#/runs/{run}" + (waitId is null ? "" : $"/waits/{run}/{Uri.EscapeDataString(waitId)}");
+    }
 
     /// <summary>
     /// Run data as Slack text: <c>&amp;</c>, <c>&lt;</c> and <c>&gt;</c> escaped as Slack documents
