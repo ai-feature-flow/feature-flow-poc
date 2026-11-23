@@ -1,0 +1,46 @@
+/* Mock-up 06's shared pieces: kind badges, segmented choices, the page heading and toolbar, a box of rows. */
+
+.ff-kind {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 4px;
+  padding: 0 5px;
+  margin-right: 6px;
+  vertical-align: 1px;
+  background: var(--pill-bad);
+  color: var(--text);
+}
+html[data-theme="light"] .ff-kind-project { background: #fde7c8; color: #8a4b00; }
+html[data-theme="light"] .ff-kind-epic { background: #ebe1f7; color: #5b2a91; }
+html[data-theme="light"] .ff-kind-ticket { background: #e1eefc; color: #0a4a8f; }
+html[data-theme="dark"] .ff-kind-project { background: rgba(208, 135, 112, 0.25); color: #f0c2a8; }
+html[data-theme="dark"] .ff-kind-epic { background: rgba(180, 142, 173, 0.25); color: #e3c8df; }
+html[data-theme="dark"] .ff-kind-ticket { background: rgba(129, 161, 193, 0.25); color: #b9d0e8; }
+
+.ff-seg { display: inline-flex; border: 1px solid var(--border2); border-radius: 18px; overflow: hidden; }
+.ff-seg button {
+  padding: 3px 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  border: 0;
+  border-right: 1px solid var(--border2);
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+.ff-seg button:last-child { border-right: 0; }
+.ff-seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
+
+.ff-list-page { max-width: 1280px; margin: 0 auto; padding: 24px 28px 60px; }
+.ff-list-page h1 { font-size: 26px; margin: 0 0 4px; display: flex; gap: 12px; align-items: center; }
+.ff-list-page h2 { font-size: 17px; margin: 26px 0 10px; }
+.ff-sub { color: var(--muted); margin: 0 0 20px; }
+.ff-muted { color: var(--muted); }
+.ff-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+.ff-toolbar-end { margin-left: auto; }
+.ff-box { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+.ff-list-page a { text-decoration: none; }
+.ff-list-page a:hover { text-decoration: underline; }
