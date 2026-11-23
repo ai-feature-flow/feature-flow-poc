@@ -1,0 +1,73 @@
+/* The tree (design-v2 s4.4; mock-ups 02 and 05): 34 px rows of margin, status, label and count. The row shown in the middle
+   is sky blue with a blue bar; a step waiting on you is yellow and bold. A row with rows under it stays pinned at the top
+   while they scroll, up to four deep (each pinned below the one above it, within its own group). */
+
+.ff-tree { display: flex; flex-direction: column; min-height: 0; height: 100%; background: var(--panel); }
+
+.ff-treehead { padding: 14px 20px 10px; border-bottom: 1px solid var(--border); }
+.ff-treehead-title { display: flex; justify-content: space-between; align-items: center; font-weight: 700; }
+.ff-follow { border: 0; background: none; color: var(--link); font: inherit; font-size: 13px; cursor: pointer; padding: 0; }
+.ff-follow[aria-pressed="false"] { color: var(--muted); }
+.ff-pills { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.ff-chip { border: 1px solid var(--border2); border-radius: 14px; padding: 1px 12px; font: inherit; font-size: 13px; color: var(--text); background: none; cursor: pointer; }
+.ff-chip:disabled { color: var(--muted); cursor: default; }
+.ff-chip-active { background: var(--selrow); border-color: var(--selbar); }
+
+.ff-treebox { overflow: auto; flex: 1; min-height: 0; padding-bottom: 40px; }
+.ff-tg { position: relative; }
+
+.ff-row {
+  display: grid;
+  grid-template-columns: 34px 24px minmax(0, 1fr) auto;
+  align-items: center;
+  height: var(--row);
+  padding-right: 16px;
+  white-space: nowrap;
+  cursor: pointer;
+  background: var(--panel);
+}
+.ff-row:hover { background: linear-gradient(var(--hover), var(--hover)), var(--panel); }
+.ff-row-ghost { cursor: default; }
+.ff-row-needs { background: linear-gradient(var(--needsrow), var(--needsrow)), var(--panel); }
+.ff-row-needs .ff-name { font-weight: 700; }
+.ff-row-selected,
+.ff-row-selected:hover { background: linear-gradient(var(--selrow), var(--selrow)), var(--panel); box-shadow: inset 4px 0 var(--selbar); }
+
+.ff-sticky { position: sticky; z-index: 5; }
+.ff-sticky-0 { top: 0; z-index: 9; }
+.ff-sticky-1 { top: 34px; z-index: 8; }
+.ff-sticky-2 { top: 68px; z-index: 7; }
+.ff-sticky-3 { top: 102px; z-index: 6; }
+.ff-row-group .ff-name, .ff-row-run .ff-name { font-weight: 700; }
+
+.ff-margin { display: grid; place-items: center; height: var(--row); }
+.ff-bp { width: 12px; height: 12px; padding: 0; border-radius: 50%; border: 1px dashed transparent; background: transparent; cursor: pointer; }
+.ff-row:hover .ff-bp { border-color: var(--dim); }
+.ff-bp-set, .ff-row:hover .ff-bp-set { background: var(--bad); border: 0; }
+
+.ff-st { text-align: center; font-weight: 700; font-size: 15px; }
+.ff-st-done { color: var(--ok); }
+.ff-st-running { color: var(--accent); }
+.ff-st-needs { color: var(--warn); }
+.ff-st-waits { color: var(--muted); }
+.ff-st-problem { color: var(--bad); }
+.ff-st-pending, .ff-st-ghost { color: var(--dim); }
+
+.ff-lbl { overflow: hidden; text-overflow: ellipsis; padding-left: calc(var(--depth, 0) * 16px); }
+.ff-row[data-state="pending"] .ff-name { color: var(--muted); }
+.ff-row-ghost .ff-lbl { color: var(--dim); font-style: italic; }
+.ff-tw { display: inline-block; width: 16px; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; cursor: pointer; text-align: left; }
+.ff-sum { font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 6px; }
+.ff-cnt { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ff-used-spent { color: var(--bad); font-weight: 700; }
+.ff-openrun { margin-left: 8px; color: var(--link); font-size: 12px; opacity: 0.6; text-decoration: none; }
+.ff-row:hover .ff-openrun { opacity: 1; }
+
+.ff-kind { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; border-radius: 4px; padding: 0 5px; margin-right: 6px; vertical-align: 1px; }
+.ff-kind-project { background: #fde7c8; color: #8a4b00; }
+.ff-kind-epic { background: #ebe1f7; color: #5b2a91; }
+.ff-kind-ticket { background: #e1eefc; color: #0a4a8f; }
+.ff-kind-other { background: var(--pill-bad); color: var(--text); }
+html[data-theme="dark"] .ff-kind-project { background: rgba(208, 135, 112, 0.25); color: #f0c2a8; }
+html[data-theme="dark"] .ff-kind-epic { background: rgba(180, 142, 173, 0.25); color: #d9b8d3; }
+html[data-theme="dark"] .ff-kind-ticket { background: rgba(129, 161, 193, 0.25); color: #b9d0e8; }
