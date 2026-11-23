@@ -144,13 +144,75 @@ public static partial class ApiApp
             return (await Artifacts.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(lockText)), ct)).Unwrap().Id;
         }
 
-        /// <summary>The runs the caller may read: those where it is a viewer in the run's scope (docs/05 section 3.3).</summary>
+        /// <summary>
+        /// The runs the caller may read: those where it is a viewer in the run's scope (docs/05 section 3.3), each with its pull
+        /// requests; and for the root of an active tree (A1), the steps current across the tree's active runs the caller views,
+        /// how many of them run, and how many of its waits need the caller, as <c>GET /attention</c> decides it.
+        /// </summary>
         public async Task<IResult> ListAsync(HttpContext context, Caller caller)
         {
-            var runs = (await Records.QueryAsync<RunRecord>(Queries.Runs, new Dictionary<string, string>(), context.RequestAborted)).Unwrap()
-                .Where(r => RolesIn(caller, ScopeOf(r.Repositories)).Contains(PeopleRoles.Viewer)).Select(SummaryOf).ToList();
-            return Results.Json(new RunList(runs), Json);
+            var ct = context.RequestAborted;
+            var all = (await Records.QueryAsync<RunRecord>(Queries.Runs, new Dictionary<string, string>(), ct)).Unwrap();
+            bool Viewed(RunRecord r) => RolesIn(caller, ScopeOf(r.Repositories)).Contains(PeopleRoles.Viewer);
+            var visible = all.Where(Viewed).ToList();
+            var roots = visible.Where(r => r.ParentRunId is null && Active(r)).ToList();
+            var needing = roots.Count == 0 ? [] : await NeedingAsync(caller, ct);
+            var children = all.Where(r => r.ParentRunId is not null).ToLookup(r => r.ParentRunId!, StringComparer.Ordinal);
+            var activity = new Dictionary<string, (IReadOnlyList<CurrentStep> Current, int NeedsYou)>(StringComparer.Ordinal);
+            foreach (var root in roots)
+            {
+                var members = Subtree(root, r => children[r.RunId]).Where(r => Active(r) && Viewed(r)).ToList();
+                var ids = members.Select(r => r.RunId).ToHashSet(StringComparer.Ordinal);
+                activity[root.RunId] = (await CurrentStepsAsync(members, ct), needing.Count(i => ids.Contains(i.Run.RunId)));
+            }
+
+            var rows = new List<RunSummary>();
+            foreach (var r in visible)
+            {
+                var links = await PullRequestLinksAsync(r.RunId, ct);
+                rows.Add(activity.TryGetValue(r.RunId, out var a)
+                    ? SummaryOf(r, links, a.Current, a.NeedsYou, a.Current.Count(c => c.Status == "running"))
+                    : SummaryOf(r, links));
+            }
+
+            return Results.Json(new RunList(rows), Json);
         }
+
+        /// <summary>Whether a run is going: it may have current steps and waits that need someone.</summary>
+        static bool Active(RunRecord r) => r.Status is "starting" or "running";
+
+        /// <summary>The run and its descendants, depth first, each run before its children, children in the order started.</summary>
+        static IEnumerable<RunRecord> Subtree(RunRecord run, Func<RunRecord, IEnumerable<RunRecord>> childrenOf)
+        {
+            yield return run;
+            foreach (var child in childrenOf(run).OrderBy(c => c.StartedAt ?? c.UpdatedAt).ThenBy(c => c.RunId, StringComparer.Ordinal))
+                foreach (var r in Subtree(child, childrenOf))
+                    yield return r;
+        }
+
+        /// <summary>
+        /// The steps current in the runs, in the order given: each step whose status, as the plan shows it, is <c>running</c>,
+        /// <c>retrying</c> or a wait.
+        /// </summary>
+        async Task<IReadOnlyList<CurrentStep>> CurrentStepsAsync(IEnumerable<RunRecord> runs, CancellationToken ct)
+        {
+            var current = new List<CurrentStep>();
+            foreach (var run in runs)
+            {
+                var p = new Dictionary<string, string> { ["run_id"] = run.RunId };
+                var timeline = (await Records.QueryAsync<TimelineRecord>(Queries.Timeline, new Dictionary<string, string>(p) { ["after"] = "0" }, ct)).Unwrap();
+                var waits = (await Records.QueryAsync<WaitRecord>(Queries.Waits, new Dictionary<string, string>(p) { ["open"] = "true" }, ct)).Unwrap().Where(w => w.Kind != "");
+                current.AddRange(Statuses(timeline, waits).Where(s => s.Value is "running" or "retrying" || s.Value.StartsWith("waiting(", StringComparison.Ordinal))
+                    .Select(s => new CurrentStep(run.RunId, s.Key, s.Value)));
+            }
+
+            return current;
+        }
+
+        /// <summary>A run's pull requests as links, as the run last read them.</summary>
+        async Task<IReadOnlyList<PullRequestLink>> PullRequestLinksAsync(string runId, CancellationToken ct) =>
+            (await Records.QueryAsync<PullRequestRecord>(Queries.PullRequests, new Dictionary<string, string> { ["run_id"] = runId }, ct)).Unwrap()
+            .Select(PullRequestLinkOf).ToList();
 
         /// <summary>The run, if the caller is a viewer in its scope; null otherwise, so every read of a run refuses alike (404).</summary>
         async Task<RunRecord?> VisibleRunAsync(Caller caller, string id, CancellationToken ct)
@@ -163,7 +225,8 @@ public static partial class ApiApp
         /// The run's page (LOG 396): the run; every wait, open first, then closed ones most recently closed first, each with
         /// whether the caller may answer it now (<see cref="CheckAnswer"/>), who has answered while more must
         /// (<c>min_count</c>), and the answer that closed it; the timeline after <paramref name="after"/>; the children; every
-        /// answer and override recorded; and the override keys the caller may use on it.
+        /// answer and override recorded; the override keys the caller may use on it; its pull requests as last read; its inputs
+        /// (the parameters of its latest plan revision); and the steps current in it and its active descendants (A1, A5).
         /// </summary>
         public async Task<IResult> ShowAsync(HttpContext context, Caller caller, string id, string? after)
         {
@@ -180,9 +243,25 @@ public static partial class ApiApp
             var answers = (await Records.QueryAsync<AnswerRecord>(Queries.Answers, p, ct)).Unwrap();
             var overrides = (await Records.QueryAsync<OverrideRecord>(Queries.Overrides, p, ct)).Unwrap();
             var views = await WaitViewsAsync(caller, run, waits, answers, ct);
+            var pullRequests = (await Records.QueryAsync<PullRequestRecord>(Queries.PullRequests, p, ct)).Unwrap();
+            var latest = (await PlanRevisionsAsync(id, ct)).Where(a => a.RunId == id).MaxBy(a => a.Execution);
+            var inputs = latest is null ? null : PlanSource.Read(await ReadTextAsync(latest.Ref, ct)).Parameters;
+            var subtree = new List<RunRecord>();
+            async Task CollectAsync(RunRecord r, IReadOnlyList<RunRecord>? kids)
+            {
+                if (!Active(r) || !RolesIn(caller, ScopeOf(r.Repositories)).Contains(PeopleRoles.Viewer))
+                    return;
+                subtree.Add(r);
+                kids ??= (await Records.QueryAsync<RunRecord>(Queries.Runs, new Dictionary<string, string> { ["parent_run_id"] = r.RunId }, ct)).Unwrap();
+                foreach (var child in kids.OrderBy(c => c.StartedAt ?? c.UpdatedAt).ThenBy(c => c.RunId, StringComparer.Ordinal))
+                    await CollectAsync(child, null);
+            }
 
-            return Results.Json(new RunDetail(ViewOf(run), views, timeline.Select(EntryOf).ToList(), children.Select(SummaryOf).ToList(),
-                answers.Select(AnswerViewOf).ToList(), overrides.Select(OverrideViewOf).ToList(), OverridesAllowed(caller, ScopeOf(run.Repositories))), Json);
+            await CollectAsync(run, children);
+
+            return Results.Json(new RunDetail(ViewOf(run, pullRequests.Select(PullRequestLinkOf).ToList()), views, timeline.Select(EntryOf).ToList(),
+                children.Select(SummaryOf).ToList(), answers.Select(AnswerViewOf).ToList(), overrides.Select(OverrideViewOf).ToList(),
+                OverridesAllowed(caller, ScopeOf(run.Repositories)), pullRequests.Select(PullRequestViewOf).ToList(), inputs, await CurrentStepsAsync(subtree, ct)), Json);
         }
 
         /// <summary>
@@ -202,11 +281,18 @@ public static partial class ApiApp
 
     // Store records are not responses: each is mapped to the view the API answers with (docs/02 section 7).
 
-    static RunSummary SummaryOf(RunRecord r) => new(r.RunId, r.ParentRunId, r.Template, r.Status, r.Requester, r.Repositories, r.DryRun, r.UpdatedAt,
-        r.Level, r.ParentStepId, TrackerIssueOf(r), r.TrackerTitle, r.StartedAt);
+    static RunSummary SummaryOf(RunRecord r) => SummaryOf(r, null);
 
-    static RunView ViewOf(RunRecord r) => new(r.RunId, r.ParentRunId, r.Template, r.Status, r.Requester, r.Repositories, r.DryRun, r.UpdatedAt, r.Detail,
-        r.Level, r.ParentStepId, TrackerIssueOf(r), r.TrackerTitle, r.StartedAt);
+    /// <summary>A run in a list, with its pull requests and, for the root of an active tree, the tree's current steps, waits needing the caller and running steps.</summary>
+    static RunSummary SummaryOf(RunRecord r, IReadOnlyList<PullRequestLink>? pullRequests, IReadOnlyList<CurrentStep>? current = null, int needsYou = 0, int running = 0) =>
+        new(r.RunId, r.ParentRunId, r.Template, r.Status, r.Requester, r.Repositories, r.DryRun, r.UpdatedAt,
+            r.Level, r.ParentStepId, TrackerIssueOf(r), r.TrackerTitle, r.StartedAt, pullRequests, current, needsYou, running);
+
+    static RunView ViewOf(RunRecord r) => ViewOf(r, null);
+
+    static RunView ViewOf(RunRecord r, IReadOnlyList<PullRequestLink>? pullRequests) =>
+        new(r.RunId, r.ParentRunId, r.Template, r.Status, r.Requester, r.Repositories, r.DryRun, r.UpdatedAt, r.Detail,
+            r.Level, r.ParentStepId, TrackerIssueOf(r), r.TrackerTitle, r.StartedAt, pullRequests);
 
     /// <summary>The run's tracker issue, with its title and link where they were read; null for a run started for none.</summary>
     static TrackerIssueView? TrackerIssueOf(RunRecord r) => r.TrackerIssue is { } key ? new TrackerIssueView(key, r.TrackerTitle, r.TrackerUrl) : null;
