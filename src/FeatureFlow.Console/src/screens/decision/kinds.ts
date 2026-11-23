@@ -2,6 +2,15 @@ import type { Schema } from "../../api/client";
 
 type Wait = Schema<"WaitView">;
 
+/** What every decision popup's body is given: the wait (as last read), its run's detail and plan (null when none), and the line under its title. */
+export interface DecisionProps {
+  runId: string;
+  wait: Wait;
+  detail: Schema<"RunDetail">;
+  plan: Schema<"PlanView"> | null;
+  context: string;
+}
+
 /** Which popup a wait opens (design-v2 s4.5; plan s5.4), by its kind and decision type. */
 export type DecisionKind = "intervention" | "triage" | "spec" | "merge" | "patch" | "breakpoint" | "question" | "session" | "gate";
 
