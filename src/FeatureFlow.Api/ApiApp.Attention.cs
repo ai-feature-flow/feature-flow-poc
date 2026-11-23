@@ -49,13 +49,14 @@ public static partial class ApiApp
 
         /// <summary>
         /// The caller's answers to waits (not aborts) of the past 7 days on runs it views, newest first, at most 10, each with its
-        /// run, and the wait's step and title.
+        /// run, and the wait's step and title. An answer is recorded "sent" before delivery and again with the run's reply, so
+        /// only its latest record is listed.
         /// </summary>
         async Task<IReadOnlyList<RecentAnswerView>> RecentAnswersAsync(Caller caller, Func<string, Task<RunRecord?>> runOf, CancellationToken ct)
         {
             var since = DateTimeOffset.UtcNow.AddDays(-7);
             var answers = (await Records.QueryAsync<AnswerRecord>(Queries.RecentAnswers, new Dictionary<string, string> { ["actor"] = caller.Actor, ["limit"] = "50" }, ct))
-                .Unwrap().Where(a => a.WaitId != "abort" && a.At >= since).OrderByDescending(a => a.At);
+                .Unwrap().Where(a => a.WaitId != "abort" && a.At >= since).OrderByDescending(a => a.At).DistinctBy(a => (a.RunId, a.WaitId, a.Answer));
             var waits = new Dictionary<string, IReadOnlyList<WaitRecord>>(StringComparer.Ordinal);
             var recent = new List<RecentAnswerView>();
             foreach (var a in answers)

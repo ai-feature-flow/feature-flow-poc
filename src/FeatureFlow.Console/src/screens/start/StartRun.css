@@ -17,6 +17,21 @@
   white-space: pre-wrap;
 }
 
+.ff-start-repository {
+  display: block;
+  margin: 0.2em 0;
+}
+
+.ff-start-register {
+  display: flex;
+  gap: 0.5em;
+  margin-top: 0.6em;
+}
+
+.ff-start-register input {
+  flex: 1;
+}
+
 .ff-start-unreadable {
   color: #8a4b00;
 }

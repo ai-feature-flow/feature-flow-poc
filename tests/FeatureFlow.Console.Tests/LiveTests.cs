@@ -8,7 +8,7 @@ namespace FeatureFlow.Console.Tests;
 /// </summary>
 public sealed class LiveTests(BrowserFixture browser) : BrowserTest(browser)
 {
-    static string Row(string runId) => $"[data-run='{runId}'] tr[data-wait='gate-1']";
+    static string Row(string runId) => $"article[data-run='{runId}'][data-wait='gate-1']";
 
     [Fact]
     public async Task A_wait_opened_elsewhere_appears_without_a_reload()

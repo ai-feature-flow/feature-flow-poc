@@ -278,4 +278,31 @@ public sealed class AttentionTests
         Assert.Equal(Enumerable.Range(1, 10).Select(n => ($"gate-{n}", $"step_{n}", "approved", "r1")), recent.Select(a => (a.WaitId, a.StepId, a.Choice, a.Run.RunId)));
         Assert.Equal(("looks right", "recorded"), (recent[0].Reason, recent[0].Result));
     }
+
+    /// <summary>
+    /// An answer is recorded "sent" before delivery and again with the run's reply (<c>DeliverAnswerAsync</c>): the recent
+    /// answers show it once, as its latest record says; one whose delivery never completed shows as sent.
+    /// </summary>
+    [Fact]
+    public async Task A_recent_answer_recorded_as_sent_and_then_with_its_result_is_listed_once()
+    {
+        await using var world = new ApiWorld(Organisation(Rule("*")));
+        var now = DateTimeOffset.UtcNow;
+        string Answer(string wait, string outcome) =>
+            JsonSerializer.Serialize(new AnswerArgs(wait, "ann", outcome), new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        await RunAsync(world, "r1", repository: "acme/billing");
+        await world.Records.AppendAsync(new RecordBatch(
+            Waits: [new WaitRecord("r1", "gate-1", "gate", "step_1", "ticket.spec_approval", "?", ["approved"], false, now),
+                new WaitRecord("r1", "gate-2", "gate", "step_2", "ticket.spec_approval", "?", ["approved"], true, now)],
+            Answers:
+            [
+                new AnswerRecord("r1", "gate-1", "ann", Answer("gate-1", "approved"), "sent", now.AddMinutes(-3)),
+                new AnswerRecord("r1", "gate-1", "ann", Answer("gate-1", "approved"), "recorded", now.AddMinutes(-2)),
+                new AnswerRecord("r1", "gate-2", "ann", Answer("gate-2", "approved"), "sent", now.AddMinutes(-1)),
+            ]), Ct);
+
+        var recent = (await GetAsync<AttentionList>(world.As("ann", groups: "bill-leads"), "attention")).Recent!;
+
+        Assert.Equal([("gate-2", "sent"), ("gate-1", "recorded")], recent.Select(a => (a.WaitId, a.Result)));
+    }
 }
