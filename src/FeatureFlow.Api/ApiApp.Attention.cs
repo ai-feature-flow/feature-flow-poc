@@ -29,30 +29,19 @@ public static partial class ApiApp
         public async Task<IResult> AttentionAsync(HttpContext context, Caller caller)
         {
             var ct = context.RequestAborted;
-            var open = (await Records.QueryAsync<OpenWaitRecord>(Queries.OpenWaits, new Dictionary<string, string>(), ct)).Unwrap();
-            var answers = new Dictionary<string, IReadOnlyList<AnswerRecord>>(StringComparer.Ordinal);
-            var items = new List<AttentionItem>();
-            foreach (var (wait, run) in open)
+            var open = (await Records.QueryAsync<OpenWaitRecord>(Queries.OpenWaits, new Dictionary<string, string>(), ct)).Unwrap()
+                .Where(o => o.Wait.Kind is not ("" or "stalled" or "stuck") && RolesIn(caller, ScopeOf(o.Run.Repositories)).Contains(PeopleRoles.Viewer)).ToList();
+            var views = new Dictionary<(string Run, string Wait), WaitView>();
+            foreach (var run in open.GroupBy(o => o.Run.RunId, StringComparer.Ordinal))
             {
-                if (wait.Kind is "" or "stalled" or "stuck" || !RolesIn(caller, ScopeOf(run.Repositories)).Contains(PeopleRoles.Viewer))
-                    continue;
-                var (canAnswer, minCount) = await MayAnswerAsync(caller, run, wait, ct);
-                if (!canAnswer)
-                    continue;
-                IReadOnlyList<AnswerProgress>? progress = null;
-                if (minCount > 1)
-                {
-                    if (!answers.TryGetValue(run.RunId, out var recorded))
-                        answers[run.RunId] = recorded = (await Records.QueryAsync<AnswerRecord>(Queries.Answers, new Dictionary<string, string> { ["run_id"] = run.RunId }, ct)).Unwrap();
-                    progress = ProgressOf(wait, recorded, minCount);
-                    // The caller has answered and the decision waits for others: it no longer needs the caller.
-                    if (progress.Any(p => p.Actors.Contains(caller.Actor, StringComparer.Ordinal)))
-                        continue;
-                }
-
-                items.Add(new AttentionItem(SummaryOf(run), WaitViewOf(wait, canAnswer: true, minCount, progress, answer: null)));
+                var waits = run.Select(o => o.Wait).ToList();
+                foreach (var (wait, view) in waits.Zip(await WaitViewsAsync(caller, run.First().Run, waits, answers: null, ct)))
+                    views[(run.Key, wait.WaitId)] = view;
             }
 
+            // A wait the caller may not answer, or a decision it has answered while it waits for others, does not need the caller.
+            var items = open.Select(o => new AttentionItem(SummaryOf(o.Run), views[(o.Run.RunId, o.Wait.WaitId)]))
+                .Where(i => i.Wait.CanAnswer && i.Wait.Progress?.Any(p => p.Actors.Contains(caller.Actor, StringComparer.Ordinal)) != true).ToList();
             return Results.Json(new AttentionList(items), Json);
         }
 

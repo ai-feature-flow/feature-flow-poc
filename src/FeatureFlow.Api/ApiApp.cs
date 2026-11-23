@@ -94,6 +94,8 @@ public static partial class ApiApp
 
         app.MapOpenApi(OpenApiPath);
         MapRuns(app, api);
+        MapArtifacts(app, api);
+        MapTrees(app, api);
         MapDecisions(app, api);
         MapOverrides(app, api);
         MapSessions(app, api);
@@ -102,6 +104,7 @@ public static partial class ApiApp
         MapConsole(app, api);
         MapEvents(app, api);
         MapTemplates(app, api);
+        MapRepositories(app, api);
         return app;
     }
 

@@ -182,7 +182,8 @@ public sealed record ShellState(
 /// (docs/03 section 7.2: consumed with <c>from: parent</c> or <c>from: root</c>). <see cref="TrackerIssue"/> is the run's
 /// issue (<c>run.tracker_issue</c>); a child's comes from its <c>run.child</c> step, never from its parent. <see cref="WorkItems"/>
 /// is the run tree's budget (F11), set by the root and passed down unchanged. <see cref="ParentContext"/> is a child's parent's
-/// rendered run context when it started (docs/04 section 3.5).
+/// rendered run context when it started (docs/04 section 3.5). <see cref="StartedAt"/> is when the run first started, kept
+/// across hand-overs (set from B1; null before).
 /// </summary>
 public sealed record RunStart(
     string RunId,
@@ -202,7 +203,8 @@ public sealed record RunStart(
     IReadOnlyDictionary<string, string>? RootArtifacts = null,
     string? TrackerIssue = null,
     WorkItemBudget? WorkItems = null,
-    string? ParentContext = null);
+    string? ParentContext = null,
+    DateTimeOffset? StartedAt = null);
 
 /// <summary>
 /// A run tree's work-item budget (F11; docs/05 section 3.1): its root run and the most descendant runs the tree may create,

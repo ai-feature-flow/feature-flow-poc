@@ -25,6 +25,7 @@ public sealed class ContractRoundTripTests
         new SessionCheckRequest("check_requirements", Commit),
         new SessionSubmitRequest(Commit, "ready"),
         new SessionAbandonRequest("not needed"),
+        new RegisterRepositoryRequest("acme/api", "/srv/git/api"),
     }.ToDictionary(r => r.GetType().Name);
 
     [Theory]
@@ -35,6 +36,7 @@ public sealed class ContractRoundTripTests
     [InlineData(nameof(SessionCheckRequest))]
     [InlineData(nameof(SessionSubmitRequest))]
     [InlineData(nameof(SessionAbandonRequest))]
+    [InlineData(nameof(RegisterRepositoryRequest))]
     public async Task A_request_record_round_trips_with_the_keys_the_document_names(string name)
     {
         var (document, _) = await OpenApiTests.GeneratedAsync();

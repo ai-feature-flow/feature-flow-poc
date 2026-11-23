@@ -111,6 +111,29 @@ public abstract class RecordStoreContract : ContractBase
     }
 
     [Fact]
+    public async Task A_waits_cause_and_patch_read_back_and_a_closing_record_keeps_them()
+    {
+        var cause = new WaitCause("implement", "failed", "attempts exhausted", "tests still fail", 3, 3,
+            [new SentBack(1, "review", "changes_requested", "fix the null check"), new SentBack(2, null, null, "build failed")]);
+        var patch = new WaitPatch("agent", "plan", "split the work", ["adds a step"], "implement", 2, true, "steps:\n  - id: extra\n");
+        Ok(await Append(new RecordBatch(Waits:
+        [
+            new WaitRecord(Id("run"), "int-1", "intervention", "implement", "", "attempts exhausted", ["retry"], true, At, Cause: cause),
+            new WaitRecord(Id("run"), "patch-1", "patch_approval", "plan", "", "approve the patch?", ["approve", "reject"], true, At, Patch: patch),
+        ])));
+        Ok(await Append(new RecordBatch(Waits: [Wait("run", "int-1", false)])));
+
+        var waits = await Query<WaitRecord>(Queries.Waits, ("run_id", Id("run")));
+        Assert.Equal(["int-1", "patch-1"], waits.Select(w => w.WaitId));
+        Assert.False(waits[0].Open);
+        Assert.Equal(cause with { SentBack = waits[0].Cause!.SentBack }, waits[0].Cause);
+        Assert.Equal(cause.SentBack, waits[0].Cause!.SentBack);
+        Assert.Null(waits[0].Patch);
+        Assert.Equal(patch with { NeedsApproval = waits[1].Patch!.NeedsApproval }, waits[1].Patch);
+        Assert.Equal(["adds a step"], waits[1].Patch!.NeedsApproval);
+    }
+
+    [Fact]
     public async Task The_timeline_is_in_order_once_per_sequence_and_after_skips_what_was_read()
     {
         TimelineRecord T(long sequence, string kind, string? detail = null) => new(Id("run"), sequence, kind, "plan", detail, At);

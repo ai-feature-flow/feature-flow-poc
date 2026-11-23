@@ -5,7 +5,7 @@ public sealed record SessionList(IReadOnlyList<SessionView> Sessions);
 
 /// <summary>
 /// An interactive session (docs/04 section 4.4) on a decision's wait: for whom, where to work, its status, and once
-/// submitted the commit imported and the artifacts it produced by name.
+/// submitted the commit imported and the artifacts it produced by name; and the command that fetches its workspace.
 /// </summary>
 public sealed record SessionView(
     string SessionId,
@@ -19,7 +19,8 @@ public sealed record SessionView(
     string Status,
     string? SubmittedRevision,
     IReadOnlyDictionary<string, string>? Artifacts,
-    DateTimeOffset At);
+    DateTimeOffset At,
+    string? OpenCommand = null);
 
 /// <summary><c>GET /sessions/{sid}</c>: the session, its workspace document, and the drafts' and the context's content inline, by path and by name.</summary>
 public sealed record SessionDetail(

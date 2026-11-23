@@ -228,6 +228,12 @@ public sealed partial class RunCore
         return produced;
     }
 
+    /// <summary>
+    /// The steps whose counters changed since the last take, for the record store's step states. Declared for B1 (b1 fills
+    /// it from a workflow-local snapshot, not carried state); returns none until then.
+    /// </summary>
+    public IReadOnlyList<StepCounters> TakeStepCounters() => [];
+
     // ---- Entering a step --------------------------------------------------------------------------
 
     void Enter(Entry entry)

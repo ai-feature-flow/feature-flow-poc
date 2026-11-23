@@ -23,6 +23,8 @@ public static partial class ApiApp
             .Taking<AbortRequest>().Described<AnswerResponse>("abortRun", 200, 400, 403, 404, 409);
         app.MapGet("/runs/{id}/findings", (HttpContext c, string id) => api.Guard(c, caller => api.FindingsAsync(c, caller, id)))
             .Described<FindingsResponse>("getFindings", 200, 404);
+        app.MapGet("/runs/{id}/findings/{finding}", (HttpContext c, string id, string finding) => api.Guard(c, caller => api.FindingAsync(c, caller, id, finding)))
+            .Described<FindingDetail>("getFinding", 200, 404);
     }
 
     /// <summary>The result an answer is recorded with while it waits for more people to answer the same way (<c>min_count</c>).</summary>
@@ -193,6 +195,14 @@ public static partial class ApiApp
                 return Error(404, $"no run {id}");
             var ledger = (await Records.QueryAsync<FindingRecord>(Queries.Findings, new Dictionary<string, string> { ["run_id"] = id }, context.RequestAborted)).Unwrap();
             return Results.Json(new FindingsResponse(ledger.Select(FindingOf).ToList()), Json);
+        }
+
+        /// <summary>A finding of the run's ledger and its history (A6): not built yet.</summary>
+        public async Task<IResult> FindingAsync(HttpContext context, Caller caller, string id, string finding)
+        {
+            if (await VisibleRunAsync(caller, id, context.RequestAborted) is null)
+                return Error(404, $"no run {id}");
+            return Error(501, $"not built yet (B1 A6): no history of {finding}");
         }
 
         /// <summary>A ledger entry as the API shows it: the finding as last raised, with its ledger id and state.</summary>

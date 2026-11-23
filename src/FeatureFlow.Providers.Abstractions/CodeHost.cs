@@ -36,7 +36,14 @@ public sealed record PullRequestState(
     IReadOnlyList<string> ChangesRequestedBy,
     string? MergedBy,
     string? MergeRevision,
-    string? Url);
+    string? Url,
+    int? Additions = null,
+    int? Deletions = null,
+    int? ChangedFiles = null,
+    string? MergeableState = null);
+
+/// <summary>A file a pull request changes: its path, its status (<c>added</c>, <c>modified</c>, <c>removed</c>, <c>renamed</c>) and its line counts.</summary>
+public sealed record PullRequestFile(string Path, string Status, int Additions, int Deletions);
 
 /// <summary>
 /// Whether a branch is protected, and how (check 24; <c>ci.checks</c> waits for its required checks). The engine only
@@ -106,6 +113,9 @@ public interface ICodeHostProvider : IProvider
     Task<ProviderResult<PullRequestRef>> UpdatePullRequestAsync(PullRequestRef pullRequest, PullRequestSpec spec, CancellationToken cancellationToken);
 
     Task<ProviderResult<PullRequestState>> GetPullRequestAsync(PullRequestRef pullRequest, CancellationToken cancellationToken);
+
+    /// <summary>The files a pull request changes, in the host's order, at most the first 300.</summary>
+    Task<ProviderResult<IReadOnlyList<PullRequestFile>>> ListPullRequestFilesAsync(PullRequestRef pullRequest, CancellationToken cancellationToken);
 
     /// <summary>Closes without merging, after adding <paramref name="comment"/> if given. Closing a closed or merged pull request succeeds.</summary>
     Task<ProviderResult<Unit>> ClosePullRequestAsync(PullRequestRef pullRequest, string? comment, CancellationToken cancellationToken);

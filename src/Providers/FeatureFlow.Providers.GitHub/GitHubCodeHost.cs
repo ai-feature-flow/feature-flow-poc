@@ -217,6 +217,10 @@ public sealed partial class GitHubCodeHost(GitHubApi api) : ICodeHostProvider
         return response.Value!.Code == 200 ? ProviderResult<JsonNode>.Success(response.Value.Json!) : GitHubApi.Unexpected<JsonNode>(response.Value, "GET the pull request");
     }
 
+    /// <summary>The files a pull request changes: none until the files read is built (B1 b2).</summary>
+    public Task<ProviderResult<IReadOnlyList<PullRequestFile>>> ListPullRequestFilesAsync(PullRequestRef pullRequest, CancellationToken cancellationToken) =>
+        Task.FromResult(ProviderResult<IReadOnlyList<PullRequestFile>>.Success([]));
+
     /// <summary>
     /// The pull request (200) and its reviews (200, every page). Each reviewer's latest approval, change request or
     /// dismissal counts; a comment changes nothing, as on GitHub.

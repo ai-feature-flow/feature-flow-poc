@@ -27,3 +27,11 @@ public sealed record ArtifactView(
     bool Evidence,
     ArtifactKind Kind,
     DateTimeOffset At);
+
+/// <summary>
+/// <c>GET /runs/{id}/artifacts/{reference}/document</c>: an artifact read as a document: its format (<c>yaml</c>, <c>json</c>,
+/// <c>markdown</c>, <c>text</c>), its data as JSON text (YAML or JSON parsed and written as JSON, or a Markdown document's
+/// front matter; null for text), and its body as text (Markdown after the front matter, or plain text). The data is text, not
+/// a JSON value, so every schema in the document stays typed.
+/// </summary>
+public sealed record ArtifactDocument(string Format, string? Data, string? Body);

@@ -28,7 +28,11 @@ public sealed record AbortRequest(string Reason, bool ClosePullRequests = false)
 /// <summary><c>GET /runs/{id}/findings</c>: the run's findings ledger, its children's included.</summary>
 public sealed record FindingsResponse(IReadOnlyList<FindingView> Findings);
 
-/// <summary>A finding in the ledger: its ledger id and state, and the finding as last raised.</summary>
+/// <summary>
+/// A finding in the ledger: its ledger id and state, and the finding as last raised; the run that raised it, whether it
+/// needs a person, the person who last decided it, who raised it, whether it may be marked fixed (and why not), how often
+/// it was raised again and fixed, and when it last changed.
+/// </summary>
 public sealed record FindingView(
     string LedgerId,
     string State,
@@ -40,7 +44,33 @@ public sealed record FindingView(
     string Basis,
     FindingLocationView Location,
     string? RequiredCorrection,
-    string? Proof);
+    string? Proof,
+    string? RunId = null,
+    bool NeedsPerson = false,
+    string? DecidedByPerson = null,
+    FindingRaisedView? RaisedBy = null,
+    bool CanMarkFixed = false,
+    string? MarkFixedRefusal = null,
+    int Reraises = 0,
+    int Fixes = 0,
+    DateTimeOffset? UpdatedAt = null);
+
+/// <summary>Who raised a finding: the step, the review angle from the plan item, the source (<c>agent</c>, <c>check</c>, <c>person</c>) and the model.</summary>
+public sealed record FindingRaisedView(string? StepId, string? Angle, string Source, string? Model);
+
+/// <summary><c>GET /runs/{id}/findings/{finding}</c>: a finding and its history, oldest first.</summary>
+public sealed record FindingDetail(FindingView Finding, IReadOnlyList<FindingEventView> History);
+
+/// <summary>An event in a finding's history: its kind, the state after it, who, why, the step and revision, whether code changed, and when.</summary>
+public sealed record FindingEventView(
+    string Kind,
+    string State,
+    string Actor,
+    string? Reason,
+    string? StepId,
+    string? Revision,
+    bool? CodeChanged,
+    DateTimeOffset At);
 
 /// <summary>Where a finding is: never a line number (docs/01 section 6).</summary>
 public sealed record FindingLocationView(string Repository, string File, string? Symbol, string? Snippet, string? Criterion);

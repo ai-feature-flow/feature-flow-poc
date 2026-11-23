@@ -697,6 +697,9 @@ public sealed class InMemoryCodeHost(InMemoryForge forge) : ICodeHostProvider
         });
     }
 
+    public Task<ProviderResult<IReadOnlyList<PullRequestFile>>> ListPullRequestFilesAsync(PullRequestRef pullRequest, CancellationToken cancellationToken) =>
+        WithPr("ListPullRequestFiles", pullRequest, (_, _) => ProviderResult<IReadOnlyList<PullRequestFile>>.Success([]));
+
     public Task<ProviderResult<Unit>> ClosePullRequestAsync(PullRequestRef pullRequest, string? comment, CancellationToken cancellationToken) =>
         WithPr("ClosePullRequest", pullRequest, (r, pr) =>
         {
