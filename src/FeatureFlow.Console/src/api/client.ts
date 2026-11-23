@@ -5,11 +5,12 @@ import type { components, paths } from "./schema.gen";
 /** A contract type by its name in openapi.json, such as Schema<"WaitView">. */
 export type Schema<Name extends keyof components["schemas"]> = components["schemas"][Name];
 
-/** A refusal from the API: its status and the ErrorResponse's text (one error shape, Common.cs). */
+/** A refusal from the API: its status, the ErrorResponse's text and its list of errors, if any (one error shape, Common.cs). */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly errors: readonly string[] = [],
   ) {
     super(message);
   }
@@ -21,15 +22,16 @@ export function authHeaders(): Record<string, string> {
   return held === null ? {} : { Authorization: `Bearer ${held}` };
 }
 
-/** The ErrorResponse's text, else the status. */
-async function messageOf(response: Response): Promise<string> {
+/** The ErrorResponse's text, else the status, and its errors (such as a refused triage's, A10). */
+async function refusalOf(response: Response): Promise<{ message: string; errors: string[] }> {
   try {
-    const body = (await response.json()) as { error?: unknown };
-    if (typeof body.error === "string") return body.error;
+    const body = (await response.json()) as { error?: unknown; errors?: unknown };
+    const errors = Array.isArray(body.errors) ? body.errors.filter((e): e is string => typeof e === "string") : [];
+    if (typeof body.error === "string") return { message: body.error, errors };
   } catch {
     // Not an ErrorResponse.
   }
-  return `The API answered ${response.status}.`;
+  return { message: `The API answered ${response.status}.`, errors: [] };
 }
 
 // Every request carries the token. A 401 means it no longer holds, so the console asks for one again; any other refusal
@@ -41,9 +43,9 @@ const middleware: Middleware = {
   },
   async onResponse({ response }) {
     if (response.ok) return response;
-    const message = await messageOf(response);
+    const { message, errors } = await refusalOf(response);
     if (response.status === 401) signOut("Sign in again: the API refused the token.");
-    throw new ApiError(response.status, message);
+    throw new ApiError(response.status, message, errors);
   },
 };
 
