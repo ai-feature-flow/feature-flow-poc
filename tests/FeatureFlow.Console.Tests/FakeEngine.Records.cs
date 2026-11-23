@@ -71,9 +71,12 @@ public sealed partial class FakeEngine
         return waitId;
     }
 
-    /// <summary>A cause as the core writes one for a step that used its attempts: sent back once per execution with <paramref name="sentBack"/> texts by <paramref name="byStep"/>.</summary>
-    public static WaitCause ExhaustedCause(string stepId, int attempts = 3, string? said = "the tests still fail", string byStep = "review",
-        params string[] sentBack) =>
-        new(stepId, "failed", $"{stepId} used its {attempts} attempts", said, attempts, attempts,
-            sentBack.Select((text, i) => new SentBack(i + 1, byStep, "changes_requested", text)).ToList());
+    /// <summary>
+    /// A cause as the core writes one for a step that used its attempts (<c>RunCore</c>, run #198's shape): outcome
+    /// <c>attempts_exhausted</c>, the reason with the step's last summary, and each execution sent back by
+    /// <paramref name="byStep"/> ending <paramref name="byOutcome"/> with <paramref name="sentBack"/>.
+    /// </summary>
+    public static WaitCause ExhaustedCause(string stepId, int attempts, string said, string byStep, string byOutcome, string sentBack) =>
+        new(stepId, "attempts_exhausted", $"attempts exhausted ({said})", said, attempts, attempts,
+            Enumerable.Range(1, attempts).Select(i => new SentBack(i, byStep, byOutcome, sentBack)).ToList());
 }

@@ -70,7 +70,7 @@ function PullRequest({ pr }: { pr: Schema<"PullRequestView"> }) {
             "–"
           ) : (
             <>
-              <span class="ff-dec-ok">+{pr.additions}</span> <span class="ff-dec-bad">−{pr.deletions ?? 0}</span> in {pr.changed_files ?? pr.files.length} files
+              <span class="ff-dec-ok">+{pr.additions}</span> <span class="ff-dec-bad">−{pr.deletions ?? 0}</span> in {pr.changed_files ?? pr.files.length} {(pr.changed_files ?? pr.files.length) === 1 ? "file" : "files"}
             </>
           )}
         </div>
@@ -231,7 +231,9 @@ export function Merge({ runId, wait, detail, plan, context }: DecisionProps) {
       ) : (
         <>
           <p class="ff-dec-muted">No trace in this run: only project and epic runs trace requirements to tests. The criteria and how each is verified:</p>
-          {criteria.length > 0 && (
+          {criteria.length === 0 ? (
+            <p class="ff-dec-muted">No criteria recorded.</p>
+          ) : (
             <table class="ff-dec-table" aria-label="Criteria">
               <tbody>
                 {criteria.map(c => (

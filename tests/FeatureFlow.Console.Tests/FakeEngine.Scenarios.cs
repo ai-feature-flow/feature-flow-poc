@@ -33,7 +33,7 @@ public sealed record ProjectScenario(
 /// A run tree for the console's B1 tests (plan package d1): a project on <c>std:templates/project_delivery</c>, two epics on
 /// <c>epic_delivery</c> and two tickets under each on <c>ticket_delivery</c>, each run with its library lock (the root's),
 /// its plan revisions (a parent's second revision adds its children's branches, as <c>plan.expand</c> does), step states,
-/// a timeline, and between them an open wait of every kind. It is a fixture: the engine would not hold all these waits at
+/// a timeline, and between them an open wait of every kind, one per step. It is a fixture: the engine would not hold all these waits at
 /// once (the project's session, for one, comes before its epics), but each wait is written as the engine writes it.
 /// </summary>
 public sealed partial class FakeEngine
@@ -84,20 +84,35 @@ public sealed partial class FakeEngine
         await AppendAsync(new RecordBatch(Sessions:
             [new SessionRecord($"{root}-session-1", root, session, "define", requester, ScenarioRepository, $"ff/session/{root}/{session}", Commit, SessionStatuses.Prepared, null, null, Now())]));
 
-        // Epic 1: the ticket planner proposed a patch to the epic's plan. Epic 2: paused at a breakpoint before verify.
-        var patch = await OpenPatchApprovalAsync(epics[0], "tickets.plan", new WaitPatch("agent", "tickets.plan", "INV-2 needs a migration ticket first",
+        // Epic 1: the ticket planner proposed a patch to the epic's plan that loads: a step added before the children and a
+        // limit changed. Epic 2: paused at a breakpoint before verify.
+        var patch = await OpenPatchApprovalAsync(epics[0], "tickets.plan", new WaitPatch("agent", "tickets.plan", "INV-2 needs a migration first",
             ["it adds a step"], "tickets.children", 2, false,
-            "api_version: feature-flow/v1\nkind: patch\nbase_revision: 2\nchanges:\n  - op: insert\n    after: tickets.validate\n    step: { id: migrate, action: test.run }\n"));
+            "api_version: feature-flow/v1\nkind: patch\nbase_revision: 2\nchanges:\n" +
+            "  - op: insert\n    after: tickets.validate\n    step: { id: migrate, action: test.run, routes: { failed: plan, baseline_failed: plan } }\n" +
+            "  - { op: set, target: tickets.plan, field: limits, value: { attempts: 4 } }\n"));
         var breakpoint = await OpenWaitAsync(epics[1], "breakpoint", "verify.tests", "epic.breakpoint", "a person set a breakpoint before verify.tests");
         await TraceAsync(epics[1], "paused", "verify.tests", breakpoint);
 
-        // Ticket 1: its spec waits on approval, the requirements revised (LOG 508).
-        var requirements = await ProduceAsync(tickets[0], "plan.plan", "requirements",
-            "schema: 1\nscope: { kind: ticket, id: INV-1 }\nchanges:\n  - R2 split into R2 and R3: the export and the email are separate behaviours\n" +
-            "requirements:\n  - { id: R1, title: List invoices, behaviour: GET /invoices lists the caller's invoices }\n",
+        // Ticket 1: its spec put to the person a second time, after a rejection, the requirements revised (LOG 508): requirements
+        // and criteria, each with what changed.
+        await ProduceAsync(tickets[0], "plan.plan", "requirements",
+            "schema: 1\nscope: { kind: ticket, id: INV-1 }\nrequirements:\n  - { id: R-001, title: List invoices, behaviour: GET /invoices lists the caller's invoices }\n",
             "std:artifact_types/requirements");
-        var plan = await ProduceAsync(tickets[0], "plan.plan", "delivery_plan", "schema: 1\nscope: { kind: ticket, id: INV-1 }\n", "std:artifact_types/delivery_plan");
-        var spec = await OpenWaitAsync(tickets[0], "gate", "approve_spec", "ticket.spec_approval", "Approve the plan for INV-1?",
+        await ProduceAsync(tickets[0], "plan.plan", "delivery_plan", "schema: 1\nscope: { kind: ticket, id: INV-1 }\n", "std:artifact_types/delivery_plan");
+        await DoneAsync(tickets[0], ("approve_spec", "rejected"), ("plan.plan", "planned"), ("plan.validate", "valid"));
+        var requirements = await ProduceAsync(tickets[0], "plan.plan", "requirements",
+            "schema: 1\nscope: { kind: ticket, id: INV-1 }\nchanges:\n  - R2 split into R2 and R3\n" +
+            "requirements:\n  - { id: R-001, title: List invoices, behaviour: GET /invoices lists the caller's invoices }\n" +
+            "  - { id: R-002, title: Export invoices, behaviour: GET /invoices.csv exports them }\n",
+            "std:artifact_types/requirements", execution: 2);
+        var plan = await ProduceAsync(tickets[0], "plan.plan", "delivery_plan",
+            "schema: 1\nscope: { kind: ticket, id: INV-1 }\nchanges:\n  - AC-002 verified by a unit test\nacceptance_criteria:\n" +
+            "  - id: AC-001\n    title: Invoices are listed\n    behaviour: GET returns 200 and the caller's invoices\n" +
+            "    supports: [{ artifact: requirements, requirement: R-001 }]\n" +
+            "    verification: [{ id: V1, kind: parsed_test, repository: acme/api, tier: unit, semantic_review: required, intent: Call the endpoint in-process }]\n",
+            "std:artifact_types/delivery_plan", execution: 2);
+        var spec = await OpenWaitAsync(tickets[0], "gate", "approve_spec", "ticket.spec_approval", "# Approve the plan for INV-1\n\nCheck each requirement.",
             consumed: [new ConsumedRef("requirements", "requirements", requirements), new ConsumedRef("delivery_plan", "delivery_plan", plan)]);
 
         // Ticket 2: its pull request is ready and the merge waits on a person.
@@ -108,11 +123,16 @@ public sealed partial class FakeEngine
         var merge = await OpenWaitAsync(tickets[1], "gate", "deliver.merge", "ticket.merge_action",
             $"may {ScenarioRepository}#201 be merged into ff/epic/invoices? Approve to ask a person to merge it on the code host; reject to decline");
 
-        // Ticket 3: the implementer used its attempts, sent back by review each time.
-        await DoneAsync(tickets[2], ("approve_spec", "approved"));
-        await StepStateAsync(tickets[2], "implement", executions: 3, attemptsUsed: 3, attemptsAllowed: 3);
-        var intervention = await OpenInterventionAsync(tickets[2], "implement",
-            ExhaustedCause("implement", 3, "the tests still fail", "verify.review", "missing null check", "missing null check", "missing null check"));
+        // Ticket 3: run #198's loop. The verifier kept declining a finding, which record_fixes does not take, so record_fixes sent it
+        // back each time until it used its attempts.
+        await DoneAsync(tickets[2], ("approve_spec", "approved"), ("implement", "implemented"), ("verify.tests", "passed"), ("verify.analysis", "passed"),
+            ("verify.review.review", "reviewed"), ("verify.fix.triage", "triaged"), ("verify.fix.apply_triage", "applied"));
+        for (var i = 0; i < 3; i++)
+            await DoneAsync(tickets[2], ("verify.fix.fix", "fixed"), ("verify.fix.verify_fix", "verified"), ("verify.fix.record_fixes", "invalid"));
+        await StepStateAsync(tickets[2], "verify.fix.verify_fix", executions: 3, attemptsUsed: 3, attemptsAllowed: 3);
+        var intervention = await OpenInterventionAsync(tickets[2], "verify.fix.verify_fix",
+            ExhaustedCause("verify.fix.verify_fix", 3, "F-1 declined, as before", "verify.fix.record_fixes", "invalid",
+                "verify_fix proposed state declined for F-1, which record_fixes does not take (states: fixed, open)"));
 
         // Ticket 4: the implementer asks a question, and a finding waits on a person's triage.
         await DoneAsync(tickets[3], ("approve_spec", "approved"));
@@ -123,7 +143,7 @@ public sealed partial class FakeEngine
 
         return new ProjectScenario(root, epics, tickets,
             new(root, session, "define"), new(epics[0], patch, "tickets.plan"), new(tickets[0], spec, "approve_spec"), new(tickets[1], merge, "deliver.merge"),
-            new(epics[1], breakpoint, "verify.tests"), new(tickets[2], intervention, "implement"), new(tickets[3], triage, "verify.fix.person_triage"),
+            new(epics[1], breakpoint, "verify.tests"), new(tickets[2], intervention, "verify.fix.verify_fix"), new(tickets[3], triage, "verify.fix.person_triage"),
             new(tickets[3], question, "implement"));
     }
 

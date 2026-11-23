@@ -192,17 +192,26 @@ public static partial class ApiApp
 
         /// <summary>
         /// The steps current in the runs, in the order given: each step whose status, as the plan shows it, is <c>running</c>,
-        /// <c>retrying</c> or a wait.
+        /// <c>retrying</c> or a wait. A container step (<c>chain</c>, <c>parallel</c>, <c>for_each</c>) and a <c>run.child</c>
+        /// step are not counted: the console's tree shows their branches and child runs in their place, not them.
         /// </summary>
         async Task<IReadOnlyList<CurrentStep>> CurrentStepsAsync(IEnumerable<RunRecord> runs, CancellationToken ct)
         {
             var current = new List<CurrentStep>();
-            foreach (var run in runs)
+            IReadOnlyList<ArtifactRecord>? revisions = null;
+            var list = runs.ToList();
+            foreach (var run in list)
             {
                 var p = new Dictionary<string, string> { ["run_id"] = run.RunId };
                 var timeline = (await Records.QueryAsync<TimelineRecord>(Queries.Timeline, new Dictionary<string, string>(p) { ["after"] = "0" }, ct)).Unwrap();
                 var waits = (await Records.QueryAsync<WaitRecord>(Queries.Waits, new Dictionary<string, string>(p) { ["open"] = "true" }, ct)).Unwrap().Where(w => w.Kind != "");
-                current.AddRange(Statuses(timeline, waits).Where(s => s.Value is "running" or "retrying" || s.Value.StartsWith("waiting(", StringComparison.Ordinal))
+                var steps = Statuses(timeline, waits).Where(s => s.Value is "running" or "retrying" || s.Value.StartsWith("waiting(", StringComparison.Ordinal)).ToList();
+                if (steps.Count == 0)
+                    continue;
+                // The first run given is the root of the others, whose artifacts hold every descendant's plan revisions.
+                revisions ??= await PlanRevisionsAsync(list[0].RunId, ct);
+                var plan = (await LoadPlanAsync(run, null, null, ct, revisions)).Plan?.Plan;
+                current.AddRange(steps.Where(s => plan?.StepById(s.Key) is not ({ Container: not null } or { Form: FeatureFlow.Model.Plans.StepForm.Action, Action: "run.child" }))
                     .Select(s => new CurrentStep(run.RunId, s.Key, s.Value)));
             }
 

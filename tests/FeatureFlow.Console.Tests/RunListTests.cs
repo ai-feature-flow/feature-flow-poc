@@ -70,6 +70,25 @@ public sealed class RunListTests(BrowserFixture browser) : BrowserTest(browser)
     }
 
     [Fact]
+    public async Task Runs_counts_the_same_running_steps_and_waits_as_the_trees_pills()
+    {
+        // Containers (epics.children, tickets.children) and run.child steps are "running" while their branches run, but the
+        // tree shows their branches and child runs in their place: neither screen counts them.
+        var tree = await Engine.ProjectTreeAsync();
+        await Engine.TraceAsync(tree.Tickets[1], "started", "verify.analysis");
+        var page = await OpenAsync("#/runs");
+        var root = Row(tree.Root);
+        await Expect(root.Locator("td").Nth(2)).ToHaveTextAsync("8");
+        await Expect(root.Locator("td").Nth(3)).ToHaveTextAsync("1");
+        await Expect(root.Locator("td").Nth(4)).Not.ToContainTextAsync("children");
+
+        await root.Locator("td").Nth(1).ClickAsync();
+        var pills = page.GetByRole(AriaRole.Toolbar, new() { Name = "Go to" });
+        await Expect(pills.GetByRole(AriaRole.Button).Filter(new() { HasText = "Needs you" })).ToHaveTextAsync("⚠ Needs you (8)");
+        await Expect(pills.GetByRole(AriaRole.Button).Filter(new() { HasText = "Running" })).ToHaveTextAsync("➜ Running (1)");
+    }
+
+    [Fact]
     public async Task A_run_started_now_reaches_the_list()
     {
         await Engine.RunAsync("run-a");

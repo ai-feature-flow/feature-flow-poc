@@ -75,19 +75,22 @@ public sealed class WorkspaceTests(BrowserFixture browser) : BrowserTest(browser
     public async Task A_waiting_step_shows_why_first_and_review_and_answer_opens_its_decision()
     {
         var tree = await Engine.ProjectTreeAsync();
-        await OpenAsync($"#/runs/{P(tree.Root)}/steps/{P(tree.Intervention.RunId)}/implement");
+        await OpenAsync($"#/runs/{P(tree.Root)}/steps/{P(tree.Intervention.RunId)}/{P(tree.Intervention.StepId)}");
 
+        // Run #198's shape: the verifier used its attempts, sent back by record_fixes each time; one "Needs you" in the heading.
         var card = Middle.GetByRole(AriaRole.Region, new() { Name = "Needs you" });
-        await Expect(card.GetByRole(AriaRole.Heading)).ToHaveTextAsync("Needs you: implement needs you: failed");
-        await Expect(card.Locator(".ff-why")).ToContainTextAsync("Why. implement used its 3 attempts. It last said: “the tests still fail”. Sent back 3 times");
-        await Expect(card.Locator(".ff-why")).ToContainTextAsync("review (changes_requested): missing null check");
+        await Expect(card.GetByRole(AriaRole.Heading)).ToHaveTextAsync("Needs you: verify.fix.verify_fix has used all its attempts");
+        await Expect(card.Locator(".ff-why")).ToContainTextAsync("Why. attempts exhausted (F-1 declined, as before). It last said: “F-1 declined, as before”. Sent back 3 times");
+        await Expect(card.Locator(".ff-why")).ToContainTextAsync("record fixes (invalid): verify_fix proposed state declined for F-1");
         await Expect(Middle.GetByRole(AriaRole.Region, new() { Name = "Running now" })).ToHaveCountAsync(0);
 
-        var step = Middle.GetByRole(AriaRole.Region, new() { Name = "Step implement" });
+        var step = Middle.GetByRole(AriaRole.Region, new() { Name = "Step verify.fix.verify_fix" });
         await Expect(step.Locator(".ff-glance > div")).ToHaveCountAsync(4);
         await Expect(step.Locator(".ff-glance > div").Nth(0)).ToContainTextAsync("Waiting: intervention");
         await Expect(step.Locator(".ff-glance > div").Nth(1)).ToContainTextAsync("3 / 3");
-        await Expect(step.Locator(".ff-glance > div").Nth(3)).ToContainTextAsync("implementer");
+        await Expect(step.Locator(".ff-glance > div").Nth(3)).ToContainTextAsync("reviewer");
+        // Its three executions, from the timeline's starts.
+        await Expect(step.Locator("table[aria-label='Executions'] tbody tr")).ToHaveCountAsync(3);
         await Expect(step.GetByRole(AriaRole.Button, new() { Name = "Steer ▾" })).ToBeVisibleAsync();
         await Expect(step.GetByRole(AriaRole.Tab, new() { Name = "Overview" })).ToHaveAttributeAsync("aria-selected", "true");
         foreach (var later in new[] { "Activity", "Findings", "Events" })
@@ -98,7 +101,19 @@ public sealed class WorkspaceTests(BrowserFixture browser) : BrowserTest(browser
 
         await card.GetByRole(AriaRole.Button, new() { Name = "Review and answer" }).ClickAsync();
         await Expect(Page.GetByRole(AriaRole.Dialog)).ToBeVisibleAsync();
-        await Expect(Page.GetByRole(AriaRole.Dialog)).ToContainTextAsync("implement used its 3 attempts");
+        await Expect(Page.GetByRole(AriaRole.Dialog)).ToContainTextAsync("verify.fix.verify_fix has used all its attempts");
+    }
+
+    [Fact]
+    public async Task A_needs_you_card_whose_title_says_it_needs_you_is_not_prefixed_again()
+    {
+        var tree = await Engine.ProjectTreeAsync();
+        await Engine.OpenInterventionAsync(tree.Tickets[0], "implement",
+            new FeatureFlow.Providers.Abstractions.WaitCause("implement", "blocked", "blocked escalates: the spec contradicts itself", "the spec contradicts itself", 1, 3, []));
+        await OpenAsync($"#/runs/{P(tree.Root)}/steps/{P(tree.Tickets[0])}/implement");
+
+        var heading = Middle.GetByRole(AriaRole.Region, new() { Name = "Needs you" }).GetByRole(AriaRole.Heading);
+        await Expect(heading).ToHaveTextAsync(new System.Text.RegularExpressions.Regex("^implement needs you"));
     }
 
     [Fact]

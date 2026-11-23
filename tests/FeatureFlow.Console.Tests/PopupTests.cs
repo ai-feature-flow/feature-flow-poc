@@ -43,8 +43,7 @@ public sealed class PopupTests(BrowserFixture browser) : BrowserTest(browser)
         // Needs me opens each decision through useDecision() (Review and answer).
         var titles = new Dictionary<ScenarioWait, string>
         {
-            // The shared scenario's cause ends "failed", not attempts_exhausted, so the API titles it by its outcome (a2's rule).
-            [s.Tree.Intervention] = "implement needs you: failed",
+            [s.Tree.Intervention] = "verify.fix.verify_fix has used all its attempts",
             [s.Tree.Breakpoint] = "Paused before verify.tests",
             [s.Patch] = "tickets.plan proposes a plan change",
             [s.Tree.Merge] = "Merge acme/api#201 into main?",

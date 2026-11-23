@@ -10,6 +10,11 @@
 
 .ff-top a {
   color: var(--toptext);
+  text-decoration: none;
+}
+
+.ff-top a:hover {
+  text-decoration: underline;
 }
 
 .ff-title {

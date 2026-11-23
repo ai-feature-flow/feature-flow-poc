@@ -1,5 +1,5 @@
 import type { Schema } from "../../api/client";
-import { titleOf as popupTitleOf } from "../decision/kinds";
+import { titleOf } from "../decision/kinds";
 
 type Wait = Schema<"WaitView">;
 
@@ -33,13 +33,6 @@ export function kindOf(wait: Wait): Kind {
 
 /** The text's first line. */
 const firstLine = (text: string): string => text.split("\n", 1)[0].trim();
-
-/** What the item is called: the wait's title, else its question, else the title its popup has. */
-export function titleOf(wait: Wait): string {
-  if (wait.title) return wait.title;
-  if (wait.kind === "question") return firstLine(wait.prompt);
-  return popupTitleOf(wait);
-}
 
 /** The one-line summary under it: the wait's summary, else its prompt's first line (unless that is the title already). */
 export function summaryOf(wait: Wait): string | null {

@@ -10,9 +10,10 @@ import { ErrorBox } from "../../ui/ErrorBox";
 import { Fold } from "../../ui/Fold";
 import { Marker } from "../../ui/Marker";
 import { useDecision } from "../decision/DecisionPopup";
+import { titleOf } from "../decision/kinds";
 import { RunName, Segmented, stepPath, when } from "../runs/parts";
 import { InlineQuestion } from "./InlineQuestion";
-import { type Kind, kindOf, kinds, summaryOf, titleOf } from "./kinds";
+import { type Kind, kindOf, kinds, summaryOf } from "./kinds";
 import "../runs/parts.css";
 import "./NeedsMe.css";
 
@@ -33,11 +34,15 @@ function Trail({ parts }: { parts: ComponentChildren[] }) {
   );
 }
 
-/** Where the wait is: each run from the tree's root down with its badge, the step of its parent that started it, then the wait's step. */
+/**
+ * Where the wait is: each run from the tree's root down with its badge, the container of its parent's step that started it
+ * (a generated branch id such as `epics.children_0` is shown as its container, `epics`), then the wait's step.
+ */
 function pathOf({ run, wait, path }: Item): ComponentChildren[] {
   const parts: ComponentChildren[] = [];
   [...(path ?? []), run].forEach((r, i) => {
-    if (i > 0 && r.parent_step_id) parts.push(stepPath(r.parent_step_id));
+    const container = r.parent_step_id?.split(".").filter(s => !/_\d+$/.test(s)).join(".");
+    if (i > 0 && container) parts.push(stepPath(container));
     parts.push(<RunName run={r} />);
   });
   parts.push(stepPath(wait.step_id));

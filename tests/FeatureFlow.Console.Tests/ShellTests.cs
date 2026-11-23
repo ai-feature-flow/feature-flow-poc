@@ -18,7 +18,7 @@ public sealed class ShellTests(BrowserFixture browser) : BrowserTest(browser)
     {
         var tree = await Engine.ProjectTreeAsync();
         var ticket = tree.Tickets[0];
-        var requirements = Assert.Single(await ArtifactsAsync(ticket), a => a!["name"]!.GetValue<string>() == "requirements")!["ref"]!.GetValue<string>();
+        var requirements = (await ArtifactsAsync(ticket)).Last(a => a!["name"]!.GetValue<string>() == "requirements")!["ref"]!.GetValue<string>();
         var page = await OpenAsync();
         var runId = page.Locator(".ff-run-id");
         var nowhere = page.GetByText("There is no such page.");
@@ -46,6 +46,14 @@ public sealed class ShellTests(BrowserFixture browser) : BrowserTest(browser)
         await GoAsync($"#/runs/{P(ticket)}/artifacts/{P(requirements)}");
         await Expect(page.Locator(".ff-viewer-name")).ToHaveTextAsync("requirements");
         await Expect(nowhere).ToHaveCountAsync(0);
+        // A run on its own (the tree's ↗): its own tree, it the root, and the rows under it selected in that tree.
+        await GoAsync($"#/own/{P(tree.Epics[0])}");
+        await Expect(runId).ToHaveTextAsync(tree.Epics[0]);
+        await GoAsync($"#/own/{P(tree.Epics[0])}/runs/{P(ticket)}");
+        await Expect(runId).ToHaveTextAsync(ticket);
+        await GoAsync($"#/own/{P(tree.Epics[0])}/steps/{P(ticket)}/approve_spec");
+        await Expect(page.Locator(".ff-tree .ff-row-selected")).ToHaveAttributeAsync("data-step", "approve_spec");
+        await Expect(page.Locator($".ff-tree .ff-row-run[data-run='{tree.Root}']")).ToHaveCountAsync(0);
 
         foreach (var bad in new[] { "#/nowhere", $"#/runs/{P(tree.Root)}/steps/{P(ticket)}", $"#/runs/{P(tree.Root)}/other/{P(ticket)}/x", "#/runs/%E0%A4%A" })
         {

@@ -6,13 +6,13 @@ using FeatureFlow.Providers.Abstractions;
 
 namespace FeatureFlow.Console.Tests;
 
-/// <summary>What <see cref="FakeEngine.DecisionsAsync"/> added to the scenario: findings to triage, a spec to approve with its documents, a session's workspace.</summary>
+/// <summary>What <see cref="FakeEngine.DecisionsAsync"/> added to the scenario: findings to triage and a session's workspace; and the scenario's spec and patch approvals.</summary>
 public sealed record DecisionScenario(ProjectScenario Tree, string Needing, string DecidedByPerson, string Ledger, ScenarioWait Spec, ScenarioWait Patch);
 
 /// <summary>
 /// The records console B1's decision popups show beyond the shared scenario (plan package e): a findings ledger whose
-/// triage needs a person, a spec with requirements, criteria and their changes, and a session's workspace document; and
-/// the <c>change_role</c> override, applied as the core applies it (a new plan revision).
+/// triage needs a person and a session's workspace document; and the <c>change_role</c> override, applied as the core
+/// applies it (a new plan revision).
 /// </summary>
 public sealed partial class FakeEngine
 {
@@ -47,32 +47,8 @@ public sealed partial class FakeEngine
         await FindingAsync(ticket, "F-2F213E91CB", "missing_test", "No test for non-integer ids", "low", false,
             ("triaged", "declined", "verify.fix.triage", "Optional enhancement"));
 
-        // A spec put to the person a second time: requirements and criteria, each with what changed.
-        var spec = tree.SpecApproval.RunId;
-        var requirements = await ProduceAsync(spec, "plan.plan", "requirements",
-            "schema: 1\nscope: { kind: ticket, id: INV-1 }\nchanges:\n  - R2 split into R2 and R3\n" +
-            "requirements:\n  - { id: R-001, title: List invoices, behaviour: GET /invoices lists the caller's invoices }\n" +
-            "  - { id: R-002, title: Export invoices, behaviour: GET /invoices.csv exports them }\n",
-            "std:artifact_types/requirements", execution: 2);
-        var plan = await ProduceAsync(spec, "plan.plan", "delivery_plan",
-            "schema: 1\nscope: { kind: ticket, id: INV-1 }\nchanges:\n  - AC-002 verified by a unit test\nacceptance_criteria:\n" +
-            "  - id: AC-001\n    title: Invoices are listed\n    behaviour: GET returns 200 and the caller's invoices\n" +
-            "    supports: [{ artifact: requirements, requirement: R-001 }]\n" +
-            "    verification: [{ id: V1, kind: parsed_test, repository: acme/api, tier: unit, semantic_review: required, intent: Call the endpoint in-process }]\n",
-            "std:artifact_types/delivery_plan", execution: 2);
-        var specWait = await OpenWaitAsync(spec, "gate", "approve_spec", "ticket.spec_approval", "# Approve the plan for INV-1\n\nCheck each requirement.",
-            consumed: [new ConsumedRef("requirements", "requirements", requirements), new ConsumedRef("delivery_plan", "delivery_plan", plan)]);
-
         await SessionWorkspaceAsync(tree.Session, "requirements.yaml", "schema: 1\nrequirements: []\n");
-
-        // A patch that loads (the shared scenario's names a step without its routes): a step added before the children and a limit changed.
-        var epic = tree.PatchApproval.RunId;
-        var patch = await OpenPatchApprovalAsync(epic, "tickets.plan", new WaitPatch("agent", "tickets.plan", "INV-2 needs a migration first",
-            ["it adds a step"], "tickets.children", 2, false,
-            "api_version: feature-flow/v1\nkind: patch\nbase_revision: 2\nchanges:\n" +
-            "  - op: insert\n    after: tickets.validate\n    step: { id: migrate, action: test.run, routes: { failed: plan, baseline_failed: plan } }\n" +
-            "  - { op: set, target: tickets.plan, field: limits, value: { attempts: 4 } }\n"));
-        return new DecisionScenario(tree, "F-E9EA33EE28", "F-E42DA136D6", "F-2F213E91CB", new(spec, specWait, "approve_spec"), new(epic, patch, "tickets.plan"));
+        return new DecisionScenario(tree, "F-E9EA33EE28", "F-E42DA136D6", "F-2F213E91CB", tree.SpecApproval, tree.PatchApproval);
     }
 
     /// <summary>A finding in the run's ledger, raised by review, then each event (kind, state, actor, reason) in order; its state the last event's.</summary>

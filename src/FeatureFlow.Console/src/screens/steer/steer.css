@@ -13,3 +13,5 @@
   color: var(--text);
 }
 .ff-steer-consequence { border-left: 4px solid var(--warn); padding: 4px 14px; }
+.ff-steer-diff { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; max-width: 46em; }
+.ff-steer-diff pre { margin: 4px 0 0; }

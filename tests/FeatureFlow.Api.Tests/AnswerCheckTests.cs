@@ -77,6 +77,22 @@ public sealed class AnswerCheckTests
     }
 
     [Fact]
+    public async Task A_caller_who_may_not_answer_is_refused_before_the_answers_artifacts_are_stored_or_checked()
+    {
+        await using var world = new DecisionWorld(validators: true, roles: ["viewer", "steerer"]);
+        var validated = 0;
+        world.Validators.Add(new ValidatorDescriptor("document_rules", "rules", [], new Dictionary<string, string>(), []),
+            _ => { validated++; return ValidationResult.Of([new ValidationIssue("unknown_finding", ValidationSeverities.Error, "F-1 is not in the ledger", "person_triage", "entries[0]")]); });
+        var runId = await WaitingAsync(world);
+
+        var (status, body) = await SendAsync(world, runId, Good);
+
+        Assert.True(status == HttpStatusCode.Forbidden, body);
+        Assert.Equal(0, validated);
+        Assert.Empty(world.Temporal.Updates);
+    }
+
+    [Fact]
     public async Task A_triage_whose_validator_this_api_does_not_offer_is_accepted_and_left_to_the_engine()
     {
         await using var world = new DecisionWorld();

@@ -9,6 +9,9 @@ import { useEffect, useState } from "preact/hooks";
 //   #/runs/{tree}/waits/{run}/{wait}        the workspace, the wait's step selected and its popup open
 //   #/runs/{tree}/artifacts/{run}/{ref}     the workspace with the artifact in the viewer
 //   #/runs/{run}/artifacts/{ref}            slice 1's artifact link: the same, in the run's own tree
+//   #/own/{run}                             the run on its own: its own tree, the run as the root (the tree's ↗)
+//   #/own/{run}/runs/{child}                 … a run under it selected
+//   #/own/{run}/steps|waits|artifacts/…      … as under #/runs/{tree}
 //   #/start                                 Start a run
 
 /** What the workspace selects: a run, a step, a wait (its step, with its popup open) or an artifact (in the viewer). */
@@ -21,7 +24,7 @@ export type Selection =
 export type Route =
   | { screen: "needs-me" }
   | { screen: "runs" }
-  | { screen: "workspace"; tree: string; select: Selection }
+  | { screen: "workspace"; tree: string; own: boolean; select: Selection }
   | { screen: "start" }
   | { screen: "not-found" };
 
@@ -32,19 +35,22 @@ export function parse(hash: string): Route {
     if (path === "" || path === "needs") return { screen: "needs-me" };
     if (path === "runs") return { screen: "runs" };
     if (path === "start") return { screen: "start" };
-    if (parts[0] !== "runs" || parts.some(p => p === "")) return { screen: "not-found" };
+    if ((parts[0] !== "runs" && parts[0] !== "own") || parts.some(p => p === "")) return { screen: "not-found" };
     const tree = parts[1];
-    if (parts.length === 2) return { screen: "workspace", tree, select: { kind: "run", runId: tree } };
-    if (parts.length === 4 && parts[2] === "artifacts") return { screen: "workspace", tree, select: { kind: "artifact", runId: tree, reference: parts[3] } };
+    const own = parts[0] === "own";
+    const at = (select: Selection): Route => ({ screen: "workspace", tree, own, select });
+    if (parts.length === 2) return at({ kind: "run", runId: tree });
+    if (parts.length === 4 && parts[2] === "artifacts") return at({ kind: "artifact", runId: tree, reference: parts[3] });
+    if (parts.length === 4 && parts[2] === "runs" && own) return at({ kind: "run", runId: parts[3] });
     if (parts.length === 5) {
       const runId = parts[3];
       switch (parts[2]) {
         case "steps":
-          return { screen: "workspace", tree, select: { kind: "step", runId, stepId: parts[4] } };
+          return at({ kind: "step", runId, stepId: parts[4] });
         case "waits":
-          return { screen: "workspace", tree, select: { kind: "wait", runId, waitId: parts[4] } };
+          return at({ kind: "wait", runId, waitId: parts[4] });
         case "artifacts":
-          return { screen: "workspace", tree, select: { kind: "artifact", runId, reference: parts[4] } };
+          return at({ kind: "artifact", runId, reference: parts[4] });
       }
     }
   } catch {

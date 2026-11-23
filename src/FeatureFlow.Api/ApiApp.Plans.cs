@@ -135,10 +135,12 @@ public static partial class ApiApp
                 var c = counters.GetValueOrDefault(s.Id);
                 return new PlanStepView(s.Id, s.Scope.ContainerId, FormOf(s), ReadableForm.RoleOrAction(s),
                     s.Outcomes().Select(o => new PlanOutcomeView(o.Name, o.Class.Name(),
-                        s.ResolvedRoutes.FirstOrDefault(r => r.Outcome == o.Name) is { } route ? ReadableForm.Show(route.Target) : null)).ToList(),
+                        s.ResolvedRoutes.FirstOrDefault(r => r.Outcome == o.Name) is { } route ? ReadableForm.Show(route.Target) : null,
+                        s.Produces.Where(p => p.Outcome is null || p.Outcome == o.Name).Select(p => p.Name).ToList())).ToList(),
                     s.Protected, statuses.GetValueOrDefault(s.Id) ?? "pending", breakpoints.Contains(s.Id), skips.GetValueOrDefault(s.Id),
                     GroupIdOf(s.Scope), c?.Executions ?? 0, c?.AttemptsUsed, c?.AttemptsAllowed, c?.AttemptsGranted ?? 0, childRuns.GetValueOrDefault(s.Id),
-                    changedAt.TryGetValue(s.Id, out var at) ? at : null, change);
+                    changedAt.TryGetValue(s.Id, out var at) ? at : null, change,
+                    s.Source?["with"] is { } with ? RunCore.BlockYaml(with) : null, s.Source?["limits"] is { } limits ? RunCore.BlockYaml(limits) : null);
             }
 
             var plan = loaded.Plan;
@@ -177,7 +179,7 @@ public static partial class ApiApp
 
         /// <summary>Whether a step is the same in two plans: its form, what it does, its outcomes and their routes, and the step as written.</summary>
         static bool SameStep(PlanStepView a, PlanStepView b, Step x, Step y) =>
-            a.Form == b.Form && a.What == b.What && a.Outcomes.SequenceEqual(b.Outcomes)
+            a.Form == b.Form && a.What == b.What && a.Outcomes.Select(o => (o.Name, o.Class, o.Route)).SequenceEqual(b.Outcomes.Select(o => (o.Name, o.Class, o.Route)))
             && (x.Source is null ? "" : YamlWriter.Write(x.Source)) == (y.Source is null ? "" : YamlWriter.Write(y.Source));
 
         /// <summary>The group a scope's steps sit in: a fragment's use, or a branch (<c>&lt;container&gt;#&lt;index&gt;</c>); null at the template's top level.</summary>

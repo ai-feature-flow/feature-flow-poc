@@ -23,8 +23,10 @@ public sealed class ViewerTests(BrowserFixture browser) : BrowserTest(browser)
         return tree;
     }
 
+    /// <summary>Opens the step's artifact named <paramref name="name"/> from its first execution (the table lists the latest first).</summary>
     Task OpenArtifactAsync(string name) =>
-        Page.GetByRole(AriaRole.Table, new() { Name = "Artifacts" }).GetByRole(AriaRole.Button, new() { Name = name, Exact = true }).ClickAsync();
+        Page.GetByRole(AriaRole.Table, new() { Name = "Artifacts" }).Locator("tbody tr").Filter(new() { HasText = name }).Last
+            .GetByRole(AriaRole.Button, new() { Name = name, Exact = true }).ClickAsync();
 
     [Fact]
     public async Task The_preview_tab_is_replaced_by_the_next_artifact_and_a_pinned_tab_is_kept()
@@ -77,30 +79,27 @@ public sealed class ViewerTests(BrowserFixture browser) : BrowserTest(browser)
     [Fact]
     public async Task Yaml_shows_as_tables_and_lists_with_its_source_and_previous_revision_a_click_away()
     {
-        var tree = await OpenPlanStepAsync();
-        var second = await Engine.ProduceAsync(tree.Tickets[0], "plan.plan", "requirements",
-            "schema: 1\nchanges:\n  - R1 reworded\nrequirements:\n  - { id: R1, title: List my invoices, behaviour: GET /invoices lists the caller's own invoices }\n",
-            "std:artifact_types/requirements", execution: 2);
-        await Expect(Page.GetByRole(AriaRole.Table, new() { Name = "Artifacts" }).Locator("tbody tr")).ToHaveCountAsync(3, new() { Timeout = 5_000 });
-        await Page.GetByRole(AriaRole.Table, new() { Name = "Artifacts" }).Locator("tbody tr").First.GetByRole(AriaRole.Button).ClickAsync();
+        await OpenPlanStepAsync();
+        // The scenario's spec was put to the person a second time: its requirements of execution 2, with what changed.
+        await Expect(Page.GetByRole(AriaRole.Table, new() { Name = "Artifacts" }).Locator("tbody tr")).ToHaveCountAsync(4);
+        await Page.GetByRole(AriaRole.Table, new() { Name = "Artifacts" }).Locator("tbody tr").Filter(new() { HasText = "requirements" }).First.GetByRole(AriaRole.Button).ClickAsync();
 
         var doc = Viewer.Locator(".ff-doc");
         await Expect(Viewer.Locator(".ff-viewer-about")).ToHaveTextAsync("artifact from plan.plan, execution 2, type std:artifact_types/requirements");
         // A list of maps is a table; a list of strings a list; a map key/value rows.
         var requirements = doc.Locator(".ff-doc-table");
         await Expect(requirements.Locator("th")).ToHaveTextAsync(["id", "title", "behaviour"]);
-        await Expect(requirements.Locator("tbody tr").First.Locator("td")).ToHaveTextAsync(["R1", "List my invoices", "GET /invoices lists the caller's own invoices"]);
-        await Expect(doc.Locator(".ff-doc-list li")).ToHaveTextAsync(["R1 reworded"]);
-        await Expect(doc.Locator(".ff-doc-kv > tbody > tr > th")).ToHaveTextAsync(["schema", "changes", "requirements"]);
+        await Expect(requirements.Locator("tbody tr").First.Locator("td")).ToHaveTextAsync(["R-001", "List invoices", "GET /invoices lists the caller's invoices"]);
+        await Expect(doc.Locator(".ff-doc-list li")).ToHaveTextAsync(["R2 split into R2 and R3"]);
+        await Expect(doc.Locator(".ff-doc-kv > tbody > tr > th")).ToHaveTextAsync(["schema", "scope", "kind", "id", "changes", "requirements"]);
 
         await Viewer.GetByRole(AriaRole.Button, new() { Name = "Source" }).ClickAsync();
-        await Expect(Viewer.Locator("pre.ff-viewer-text")).ToHaveTextAsync(new System.Text.RegularExpressions.Regex("^schema: 1\\nchanges:"));
+        await Expect(Viewer.Locator("pre.ff-viewer-text")).ToHaveTextAsync(new System.Text.RegularExpressions.Regex("^schema: 1\\nscope: \\{ kind: ticket, id: INV-1 \\}\\nchanges:"));
         await Viewer.GetByRole(AriaRole.Button, new() { Name = "Formatted" }).ClickAsync();
         await Expect(doc).ToBeVisibleAsync();
 
         await Viewer.GetByRole(AriaRole.Button, new() { Name = "Previous revision" }).ClickAsync();
         await Expect(Viewer.Locator(".ff-viewer-about")).ToHaveTextAsync("artifact from plan.plan, execution 1, type std:artifact_types/requirements");
         await Expect(Viewer.Locator(".ff-doc")).ToContainTextAsync("List invoices");
-        Assert.NotEmpty(second);
     }
 }

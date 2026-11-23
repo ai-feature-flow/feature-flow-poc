@@ -25,3 +25,5 @@
 .ff-doc-list { margin: 0; padding-left: 20px; }
 
 .ff-fullsize .ff-viewer-name { font-size: 18px; }
+
+.ff-viewer-empty { border: 1px dashed var(--border2); border-radius: 8px; padding: 8px 12px; font-size: 12px; }

@@ -23,7 +23,8 @@
 .ff-dec-answers { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 14px; }
 .ff-dec-answers .ff-btn { padding: 6px 18px; text-decoration: none; }
 .ff-btn-danger { border-color: var(--bad); color: var(--bad); }
-.ff-dec-aside { display: inline-flex; flex-wrap: wrap; gap: 10px; align-items: center; color: var(--text); }
+/* Its parts sit on the answer row itself (mock-ups 03 and 04): links beside the buttons, a tally pushed to the right. */
+.ff-dec-aside { display: contents; color: var(--text); }
 .ff-dec-tally { margin-left: auto; color: var(--muted); font-size: 13px; }
 .ff-dec-tally b { color: var(--text); }
 .ff-dec-ticks { font-size: 14px; }

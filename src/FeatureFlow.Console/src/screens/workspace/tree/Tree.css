@@ -1,6 +1,6 @@
 /* The tree (design-v2 s4.4; mock-ups 02 and 05): 34 px rows of margin, status, label and count. The row shown in the middle
-   is sky blue with a blue bar; a step waiting on you is yellow and bold. A row with rows under it stays pinned at the top
-   while they scroll, up to four deep (each pinned below the one above it, within its own group). */
+   is sky blue with a blue bar; a step waiting on you is yellow and bold. The innermost four rows enclosing the first row
+   shown stay pinned at the top while their rows scroll (IDE sticky scroll; Tree.tsx sets which and how far down). */
 
 .ff-tree { display: flex; flex-direction: column; min-height: 0; height: 100%; background: var(--panel); }
 
@@ -8,12 +8,13 @@
 .ff-treehead-title { display: flex; justify-content: space-between; align-items: center; font-weight: 700; }
 .ff-follow { border: 0; background: none; color: var(--link); font: inherit; font-size: 13px; cursor: pointer; padding: 0; }
 .ff-follow[aria-pressed="false"] { color: var(--muted); }
-.ff-pills { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-.ff-chip { border: 1px solid var(--border2); border-radius: 14px; padding: 1px 12px; font: inherit; font-size: 13px; color: var(--text); background: none; cursor: pointer; }
+.ff-pills { display: flex; gap: 6px; margin-top: 10px; flex-wrap: nowrap; }
+.ff-chip { border: 1px solid var(--border2); border-radius: 14px; padding: 1px 9px; font: inherit; font-size: 13px; color: var(--text); background: none; cursor: pointer; white-space: nowrap; }
 .ff-chip:disabled { color: var(--muted); cursor: default; }
 .ff-chip-active { background: var(--selrow); border-color: var(--selbar); }
 
-.ff-treebox { overflow: auto; flex: 1; min-height: 0; padding-bottom: 40px; }
+/* Scrolling stops on whole rows, so the row under the pinned ones always shows whole. */
+.ff-treebox { overflow: auto; flex: 1; min-height: 0; padding-bottom: 40px; scroll-snap-type: y mandatory; }
 .ff-tg { position: relative; }
 
 .ff-row {
@@ -25,6 +26,7 @@
   white-space: nowrap;
   cursor: pointer;
   background: var(--panel);
+  scroll-snap-align: start;
 }
 .ff-row:hover { background: linear-gradient(var(--hover), var(--hover)), var(--panel); }
 .ff-row-ghost { cursor: default; }
@@ -33,14 +35,17 @@
 .ff-row-selected,
 .ff-row-selected:hover { background: linear-gradient(var(--selrow), var(--selrow)), var(--panel); box-shadow: inset 4px 0 var(--selbar); }
 
-.ff-sticky { position: sticky; z-index: 5; }
-.ff-sticky-0 { top: 0; z-index: 9; }
-.ff-sticky-1 { top: 34px; z-index: 8; }
-.ff-sticky-2 { top: 68px; z-index: 7; }
-.ff-sticky-3 { top: 102px; z-index: 6; }
 .ff-row-group .ff-name, .ff-row-run .ff-name { font-weight: 700; }
 
 .ff-margin { display: grid; place-items: center; height: var(--row); }
+.ff-row { position: relative; }
+.ff-sticky { position: sticky; }
+.ff-bp-ask {
+  position: absolute; left: 30px; top: calc(var(--row) - 4px); z-index: 20; width: 300px; display: grid; gap: 8px; padding: 12px;
+  white-space: normal; cursor: default; background: var(--panel); border: 1px solid var(--border2); border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,.25);
+}
+.ff-bp-ask p { margin: 0; }
+.ff-bp-ask textarea { font: inherit; padding: 5px 10px; border: 1px solid var(--border2); border-radius: 8px; background: var(--panel); color: var(--text); }
 .ff-bp { width: 12px; height: 12px; padding: 0; border-radius: 50%; border: 1px dashed transparent; background: transparent; cursor: pointer; }
 .ff-row:hover .ff-bp { border-color: var(--dim); }
 .ff-bp-set, .ff-row:hover .ff-bp-set { background: var(--bad); border: 0; }

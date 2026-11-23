@@ -44,8 +44,9 @@ public sealed record PlanGroupView(string Id, string? Parent, GroupKind Kind, st
 /// <summary>
 /// A step of the plan: its id and container, its form, what it does, its outcomes, whether it is protected, its status
 /// from the run, whether a breakpoint is set on it, and the outcome it was skipped with; the group or step it sits in,
-/// how often it ran, its attempts used, allowed and granted, the child run it started, when its status last changed, and
-/// on a proposed plan how it differs.
+/// how often it ran, its attempts used, allowed and granted, the child run it started, when its status last changed, on a
+/// proposed plan how it differs, and its <c>with</c> and <c>limits</c> as written in the plan (block YAML; null where the
+/// step gives none), which an amend's <c>set</c> replaces whole.
 /// </summary>
 public sealed record PlanStepView(
     string Id,
@@ -64,7 +65,9 @@ public sealed record PlanStepView(
     long AttemptsGranted = 0,
     string? ChildRunId = null,
     DateTimeOffset? ChangedAt = null,
-    PlanChange? Change = null);
+    PlanChange? Change = null,
+    string? With = null,
+    string? Limits = null);
 
-/// <summary>An outcome of a step: its name, its class, and where it routes.</summary>
-public sealed record PlanOutcomeView(string Name, string Class, string? Route);
+/// <summary>An outcome of a step: its name, its class, where it routes, and the artifacts the step produces on it (by name; empty where none).</summary>
+public sealed record PlanOutcomeView(string Name, string Class, string? Route, IReadOnlyList<string>? Produces = null);

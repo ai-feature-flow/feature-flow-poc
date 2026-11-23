@@ -32,7 +32,7 @@ export function TopBar({ me, signedInWithToken, route }: { me: Me; signedInWithT
           Start a run
         </a>
         <span class="ff-later" aria-disabled="true" title="A later follow-up">
-          Templates
+          Templates (later)
         </span>
         <span class="ff-later" aria-disabled="true" title="Not in this build">
           Settings

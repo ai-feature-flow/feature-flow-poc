@@ -95,6 +95,24 @@ public sealed class DecisionTests(BrowserFixture browser) : BrowserTest(browser)
     }
 
     [Fact]
+    public async Task A_triage_is_sent_with_the_outcome_that_produces_the_persons_triage_whatever_the_choices_order()
+    {
+        var s = await Engine.DecisionsAsync();
+        // The same wait, its choices led by an outcome that does not produce person_triage.
+        await Engine.OpenWaitAsync(s.Tree.Triage.RunId, "gate", s.Tree.Triage.StepId, "findings.triage", "Triage the findings the agent may not clear",
+            ["held", "triaged", "escalate"], s.Tree.Triage.WaitId);
+        await OpenAsync(s, s.Tree.Triage);
+
+        var card = Dialog.GetByRole(AriaRole.Article, new() { Name = "Finding " + s.Needing });
+        await card.GetByRole(AriaRole.Radio, new() { Name = "Decline" }).ClickAsync();
+        await card.GetByLabel("Reason for " + s.Needing).FillAsync("not a defect");
+        await Answer("Send triage").ClickAsync();
+
+        await ClosedAsync();
+        Assert.Equal("triaged", Assert.Single(Engine.Answers).Outcome);
+    }
+
+    [Fact]
     public async Task A_triage_the_api_refuses_shows_its_errors_in_place_and_the_popup_stays()
     {
         var s = await Engine.DecisionsAsync();
@@ -125,7 +143,8 @@ public sealed class DecisionTests(BrowserFixture browser) : BrowserTest(browser)
         await OpenAsync(s, s.Tree.Merge);
 
         await Expect(Dialog.Locator(".ff-dec-facts4")).ToContainTextAsync("#201 ↗");
-        await Expect(Dialog.Locator(".ff-dec-facts4")).ToContainTextAsync("+12 −3 in 1 files");
+        await Expect(Dialog.Locator(".ff-dec-facts4")).ToContainTextAsync("+12 −3 in 1 file");
+        await Expect(Dialog.Locator(".ff-dec-facts4")).Not.ToContainTextAsync("1 files");
         await Expect(Dialog.GetByRole(AriaRole.Table, new() { Name = "Files" })).ToContainTextAsync("src/Widgets.cs");
         var log = Dialog.GetByRole(AriaRole.Table, new() { Name = "Checks" }).GetByRole(AriaRole.Link, new() { Name = "log ↗" });
         await Expect(log).ToHaveAttributeAsync("href", "https://github.com/acme/api/actions/runs/1");
@@ -134,6 +153,12 @@ public sealed class DecisionTests(BrowserFixture browser) : BrowserTest(browser)
         await Expect(Dialog.GetByLabel("Ticks")).ToContainTextAsync("✓ CI passed");
         await Expect(Dialog).ToContainTextAsync("the engine may not merge here");
         await Expect(Dialog).ToContainTextAsync("No trace in this run");
+        await Expect(Dialog).ToContainTextAsync("No criteria recorded.");
+        // The links sit on the answer row, beside Approve and Reject (mock-up 04).
+        var row = Dialog.GetByRole(AriaRole.Group, new() { Name = "Answers" });
+        await Expect(row.GetByRole(AriaRole.Link, new() { Name = "Open pull request ↗" })).ToBeVisibleAsync();
+        Assert.Equal(await Answer("Approve merge").EvaluateAsync<double>("b => b.getBoundingClientRect().top"),
+            await row.GetByRole(AriaRole.Link, new() { Name = "Open pull request ↗" }).EvaluateAsync<double>("a => a.getBoundingClientRect().top"), 6);
 
         await Answer("Approve merge").ClickAsync();
         await ClosedAsync();
@@ -216,15 +241,24 @@ public sealed class DecisionTests(BrowserFixture browser) : BrowserTest(browser)
     public async Task A_session_card_gives_the_command_its_drafts_and_submits_a_commit()
     {
         var s = await Engine.DecisionsAsync();
+        // Two checks run on the session's branch: Submit is prefilled from the newer's commit (plan risk 11).
+        var sid = $"{s.Tree.Root}-session-1";
+        await Engine.AppendAsync(new FeatureFlow.Providers.Abstractions.RecordBatch(SessionChecks:
+        [
+            new(sid, "check-1", "check_requirements", new string('b', 40), "{}", "passed", null, DateTimeOffset.UtcNow.AddMinutes(-10)),
+            new(sid, "check-2", "check_requirements", new string('c', 40), "{}", "passed", null, DateTimeOffset.UtcNow.AddMinutes(-2)),
+        ]));
         await OpenAsync(s, s.Tree.Session);
 
         await Expect(Dialog.GetByLabel("Open command")).ToHaveTextAsync(new Regex("^ff session fetch .+ --out \\.ff-session$"));
         await Expect(Dialog).ToContainTextAsync("ff/session/");
         await Expect(Dialog.Locator("summary", new() { HasText = "requirements.yaml" })).ToBeVisibleAsync();
         await Expect(Dialog.GetByLabel("Check", new() { Exact = true })).ToHaveValueAsync("check_requirements");
+        await Expect(Dialog.GetByRole(AriaRole.Table, new() { Name = "Checks" }).Locator("tr")).ToHaveCountAsync(2);
 
         await Answer("Submit…").ClickAsync();
         var submit = Button("Submit");
+        await Expect(Dialog.GetByLabel("Commit to submit")).ToHaveValueAsync(new string('c', 40));
         await Dialog.GetByLabel("Commit to submit").FillAsync("not a commit");
         await Expect(submit).ToBeDisabledAsync();
         await Dialog.GetByLabel("Commit to submit").FillAsync(new string('a', 40));

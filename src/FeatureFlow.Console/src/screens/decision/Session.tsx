@@ -9,8 +9,9 @@ import type { DecisionProps } from "./kinds";
 /** A full commit id, as the API takes one (SessionNames.IsCommit). */
 const isCommit = (text: string) => /^[0-9a-f]{40}([0-9a-f]{24})?$/.test(text.trim());
 
-function Commit({ label, verb, busy, onSend }: { label: string; verb: string; busy: boolean; onSend: (revision: string) => void }) {
-  const [revision, setRevision] = useState("");
+/** Submit's commit: prefilled with `latest` (the newest check's revision, plan risk 11), editable. */
+function Commit({ label, verb, busy, latest, onSend }: { label: string; verb: string; busy: boolean; latest?: string; onSend: (revision: string) => void }) {
+  const [revision, setRevision] = useState(latest ?? "");
   const id = useId();
   return (
     <>
@@ -93,6 +94,8 @@ function Checks({ sid, steps }: { sid: string; steps: readonly string[] }) {
 export function Session({ runId, wait, context }: DecisionProps) {
   const sid = wait.session_id!;
   const detail = useLive([runKey(runId)], () => read(api.GET("/sessions/{sid}", { params: { path: { sid } } })));
+  const checks = useLive([`session:${sid}`], () => read(api.GET("/sessions/{sid}/checks", { params: { path: { sid } } })));
+  const latest = [...(checks.data?.checks ?? [])].sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0]?.revision;
   const [copied, setCopied] = useState(false);
   const session = detail.data?.session;
   const workspace = detail.data?.workspace;
@@ -107,6 +110,7 @@ export function Session({ runId, wait, context }: DecisionProps) {
           label="Commit to submit"
           verb="Submit"
           busy={busy}
+          latest={latest}
           onSend={revision => act(reason => read(api.POST("/sessions/{sid}/submit", { params: { path: { sid } }, body: { revision, reason } })))}
         />
       ),
