@@ -4,6 +4,7 @@ import { useLive } from "../../api/live";
 import * as links from "../../app/links";
 import { Busy } from "../../ui/Busy";
 import { ErrorBox } from "../../ui/ErrorBox";
+import { RepositoryPicker } from "./RepositoryPicker";
 import "./StartRun.css";
 
 type Parameter = Schema<"TemplateParameter">;
@@ -62,7 +63,7 @@ export function StartRun() {
   const list = useLive(["templates"], () => read(api.GET("/templates")));
   const [chosen, choose] = useState<string>();
   const [values, setValues] = useState<Record<string, string>>({});
-  const [repositories, setRepositories] = useState("");
+  const [repositories, setRepositories] = useState<string[]>([]);
   const [trackerIssue, setTrackerIssue] = useState("");
   const [dryRun, setDryRun] = useState(false);
   const [sending, setSending] = useState(false);
@@ -89,7 +90,7 @@ export function StartRun() {
         api.POST("/runs", {
           body: {
             template: template.reference,
-            repositories: repositories.split(",").map(r => r.trim()).filter(r => r !== ""),
+            repositories,
             parameters,
             dry_run: dryRun,
             tracker_issue: template.tracker_parameter || trackerIssue.trim() === "" ? null : trackerIssue.trim(),
@@ -140,9 +141,7 @@ export function StartRun() {
               <ParameterField key={`${template.reference}\n${p.name}`} p={p} value={values[p.name] ?? initial(p)} onInput={v => setValues({ ...values, [p.name]: v })} />
             ))}
           </fieldset>
-          <label>
-            Repositories (comma-separated) <input type="text" value={repositories} onInput={e => setRepositories(e.currentTarget.value)} />
-          </label>
+          <RepositoryPicker chosen={repositories} onChange={setRepositories} />
           {template.tracker_parameter ? (
             <p class="ff-start-tracker">The tracker issue is {template.tracker_parameter}.</p>
           ) : (

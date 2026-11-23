@@ -1,0 +1,71 @@
+/* The workspace's panes (design-v2 s4.4, s5; mock-ups 02 and 05): tree | splitter | middle | splitter | viewer, widths from
+   --left and --right (set through the CSSOM from the remembered preferences). In a narrow window the tree is a drawer. */
+
+.ff-shell { display: grid; height: 100%; min-height: 0; }
+.ff-shell-right { grid-template-columns: var(--left, 360px) 5px minmax(0, 1fr) 5px var(--right, 420px); }
+.ff-shell-noright { grid-template-columns: var(--left, 360px) 5px minmax(0, 1fr); }
+.ff-shell-narrow { grid-template-columns: minmax(0, 1fr); position: relative; }
+
+.ff-left { min-height: 0; min-width: 0; border-right: 1px solid var(--border); }
+.ff-middle { overflow: auto; padding: 20px 24px 40px; min-width: 0; }
+.ff-right { min-height: 0; min-width: 0; background: var(--panel); }
+
+.ff-shell-narrow .ff-left { display: none; }
+.ff-shell-drawer .ff-left {
+  display: block;
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: min(420px, 90vw);
+  z-index: 30;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+}
+.ff-drawer-toggle { margin-bottom: 14px; }
+
+/* The middle's pieces, shared by the run page and the step detail. */
+.ff-stack { display: grid; gap: 20px; }
+.ff-crumbs { font-size: 13px; color: var(--muted); }
+.ff-runhdr h1 { margin: 0; font-size: 24px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ff-right-end { margin-left: auto; display: flex; gap: 10px; align-items: center; white-space: nowrap; }
+.ff-runhdr .ff-btn, .ff-pane-head .ff-btn { font-size: 14px; }
+.ff-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 24px; padding: 16px 20px; }
+.ff-facts .ff-k, .ff-glance .ff-k { font-size: 12px; color: var(--muted); font-weight: 700; }
+.ff-box { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+.ff-muted { color: var(--muted); }
+.ff-mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+.ff-text { white-space: pre-wrap; overflow-wrap: break-word; }
+
+.ff-needs { border: 2px solid var(--wait); }
+.ff-needs > .ff-pane-head, .ff-needs-head { background: var(--waitbg); border-radius: 10px 10px 0 0; display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.ff-needs-head h2 { margin: 0; font-size: 16px; color: var(--wait); }
+.ff-why { border-left: 4px solid var(--warn); padding: 4px 14px; }
+.ff-needlist-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; padding: 14px 20px; border-bottom: 1px solid var(--border); align-items: center; }
+.ff-needlist-item:last-child { border-bottom: 0; }
+.ff-needlist-title { font-weight: 700; color: var(--link); text-decoration: none; }
+
+.ff-board { border-collapse: collapse; width: 100%; }
+.ff-board th, .ff-board td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.ff-board th { font-size: 12px; color: var(--muted); }
+.ff-board-indent { padding-left: 34px !important; }
+.ff-bar { height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; display: flex; width: 160px; }
+.ff-bar > i { display: block; height: 100%; }
+.ff-bar-done { background: var(--ok); }
+.ff-bar-running { background: var(--accent); }
+.ff-bar-needs, .ff-bar-problem { background: var(--wait); }
+.ff-state-done { color: var(--ok); }
+.ff-state-running { color: var(--accent); }
+.ff-state-needs, .ff-state-problem { color: var(--bad); }
+
+.ff-glance { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.ff-glance > div { padding: 16px 20px; border-right: 1px solid var(--border); }
+.ff-glance > div:last-child { border-right: 0; }
+.ff-glance .ff-v { font-weight: 700; font-size: 15px; }
+.ff-glance .ff-sub { font-size: 13px; color: var(--muted); }
+
+.ff-detail table { border-collapse: collapse; width: 100%; }
+.ff-detail th, .ff-detail td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.ff-detail th { font-size: 12px; color: var(--muted); }
+.ff-kv { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 10px 16px; margin-top: 20px; }
+.ff-kv .ff-k { color: var(--muted); font-weight: 700; font-size: 13px; }
+.ff-linkbtn { border: 0; padding: 0; background: none; color: var(--link); font: inherit; cursor: pointer; text-align: left; }
+.ff-linkbtn:hover { text-decoration: underline; }
+.ff-tabpanel { padding: 16px 20px; }

@@ -1,0 +1,76 @@
+.ff-top {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  height: var(--topbar);
+  padding: 0 20px;
+  background: var(--top);
+  color: var(--toptext);
+}
+
+.ff-top a {
+  color: var(--toptext);
+  text-decoration: none;
+}
+
+.ff-top a:hover {
+  text-decoration: underline;
+}
+
+.ff-title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.ff-top .ff-title {
+  color: #fff;
+}
+
+.ff-top-nav {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.ff-top-nav a[aria-current="page"] {
+  color: #fff;
+  font-weight: 700;
+}
+
+.ff-top .ff-needsme {
+  background: var(--needsme);
+  color: #fff;
+  border-radius: 14px;
+  padding: 3px 12px;
+  font-weight: 700;
+}
+
+.ff-later {
+  color: var(--toplater);
+  cursor: default;
+}
+
+.ff-top-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.ff-top .ff-iconbtn {
+  color: var(--toptext);
+}
+
+.ff-top .ff-iconbtn:hover {
+  border-color: #56637a;
+}
+
+.ff-top-button {
+  border: 1px solid #56637a;
+  border-radius: 14px;
+  padding: 2px 12px;
+  background: none;
+  color: var(--toptext);
+  font: inherit;
+  cursor: pointer;
+}

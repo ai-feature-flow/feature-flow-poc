@@ -340,6 +340,7 @@ public sealed class StdValidatorTests : IDisposable
             public Task<ProviderResult<PullRequestRef>> OpenPullRequestAsync(RepoRef repo, PullRequestSpec spec, string key, CancellationToken cancellationToken) => throw new NotSupportedException();
             public Task<ProviderResult<PullRequestRef>> UpdatePullRequestAsync(PullRequestRef pullRequest, PullRequestSpec spec, CancellationToken cancellationToken) => throw new NotSupportedException();
             public Task<ProviderResult<PullRequestState>> GetPullRequestAsync(PullRequestRef pullRequest, CancellationToken cancellationToken) => throw new NotSupportedException();
+            public Task<ProviderResult<IReadOnlyList<PullRequestFile>>> ListPullRequestFilesAsync(PullRequestRef pullRequest, CancellationToken cancellationToken) => throw new NotSupportedException();
             public Task<ProviderResult<Unit>> ClosePullRequestAsync(PullRequestRef pullRequest, string? comment, CancellationToken cancellationToken) => throw new NotSupportedException();
             public Task<ProviderResult<PullRequestRef>> CreateRevertPullRequestAsync(PullRequestRef pullRequest, string key, CancellationToken cancellationToken) => throw new NotSupportedException();
             public Task<ProviderResult<CheckStatus>> GetCheckStatusAsync(RepoRef repo, string revision, CancellationToken cancellationToken) => throw new NotSupportedException();

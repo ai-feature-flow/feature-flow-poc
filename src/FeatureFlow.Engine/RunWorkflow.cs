@@ -43,6 +43,7 @@ public partial class RunWorkflow
     // This run only.
     RunCore? core;
     RunPolicy? policy;
+    DateTimeOffset? startedAt;
     string lastRecordedStatus = "";
     bool draining;
     bool dirty;
@@ -77,6 +78,8 @@ public partial class RunWorkflow
     [WorkflowRun]
     public async Task<string> RunAsync(RunStart start)
     {
+        // When the run first started rides every hand-over; a run handed over before it was kept has none.
+        startedAt = input.StartedAt ?? (input.Carried is null ? Workflow.UtcNow : null);
         if (input.Carried is null)
         {
             var prepared = await Workflow.ExecuteActivityAsync((RunActivities a) => a.PrepareAsync(input), Light);
@@ -727,7 +730,8 @@ public partial class RunWorkflow
 
         var childInput = new RunStart(spec.WorkflowId, spec.Template, spec.Repositories, spec.Parameters,
             LockRef, input.DryRun, input.Requester, Workflow.Info.WorkflowId, s.StepId, input.HandOverEvents, ParentBranch: core.WorkBranch(),
-            ParentArtifacts: spec.ParentArtifacts, RootArtifacts: spec.RootArtifacts, TrackerIssue: spec.TrackerIssue, WorkItems: budget, ParentContext: spec.ParentContext);
+            ParentArtifacts: spec.ParentArtifacts, RootArtifacts: spec.RootArtifacts, TrackerIssue: spec.TrackerIssue, WorkItems: budget, ParentContext: spec.ParentContext,
+            StartedAt: Workflow.UtcNow);
         // What this run has produced is recorded before a child exists, so the artifact index lists a parent's artifacts
         // before the child's that may consume them (m8-results Foundations, follow-up 4).
         await RecordAsync();
@@ -954,7 +958,10 @@ public partial class RunWorkflow
         var (shown, closedQuestions) = core.TakeWaitChanges();
         var waits = shown.Select(w => w.Opened is { } d
             ? new WaitRecord(input.RunId, w.WaitId, d.Kind, w.StepId, d.Type, d.Prompt, d.Choices, true, now,
-                d.Consumed?.Select(c => new ConsumedRef(c.Key, c.Name, c.Reference)).ToList(), d.ReasonRequired)
+                d.Consumed?.Select(c => new ConsumedRef(c.Key, c.Name, c.Reference)).ToList(), d.ReasonRequired,
+                d.Cause is { } c ? new WaitCause(c.StepId, c.Outcome, c.Reason, c.Said, c.AttemptsUsed, c.AttemptsAllowed,
+                    c.SentBack.Select(s => new SentBack(s.Execution, s.ByStep, s.Outcome, s.Text)).ToList()) : null,
+                d.Patch is { } p ? new WaitPatch(p.ProposerType, p.ProposerStepId, p.Reason, p.NeedsApproval, p.ResumeAt, p.BaseRevision, p.FromChild, p.Document) : null)
             : new WaitRecord(input.RunId, w.WaitId, "", "", "", "", [], false, now)).ToList();
         // The agent endpoint long-polls a question's record for its answer or timeout (docs/04 section 3.4).
         var questions = closedQuestions.Select(q => new QuestionRecord(q.StepKey, input.RunId, q.WaitId, q.Text, q.Options,
@@ -968,17 +975,25 @@ public partial class RunWorkflow
         lastRecordedStatus = status;
         if (timeline.Count == 0 && waits.Count == 0 && runs.Count == 0 && questions.Count == 0 && artifacts.Count == 0 && locks.Count == 0)
             return false;
-        // Revisions ride with a record that is written anyway (a patch is traced), never cause one: an extra record activity
-        // would change recorded histories. The count taken is carried, so a hand-over takes only those not yet taken.
+        // Revisions and step counters ride with a record that is written anyway (a patch or a step's start is traced), never
+        // cause one: an extra record activity would change recorded histories. The count taken is carried, so a hand-over
+        // takes only those not yet taken; the counters taken are not, so a hand-over writes them all again.
         var revisions = core.TakeRevisions();
+        var steps = core.TakeStepCounters().Select(s => new StepStateRecord(input.RunId, s.StepId, s.Executions, s.AttemptsUsed, s.AttemptsAllowed, s.AttemptsGranted, now))
+            .ToList();
         var batch = new RecordBatch(runs, waits, timeline, Locks: locks.Count == 0 ? null : locks, Questions: questions.Count == 0 ? null : questions,
-            Artifacts: artifacts.Count == 0 ? null : artifacts);
+            Artifacts: artifacts.Count == 0 ? null : artifacts, StepStates: steps.Count == 0 ? null : steps);
         await Workflow.ExecuteActivityAsync((RunActivities a) => a.RecordAsync(batch, revisions.Count == 0 ? null : revisions), Light);
         return true;
     }
 
+    /// <summary>
+    /// The run's record: its status, and what lists and titles it (A1): its level, the step of its parent that started it,
+    /// its tracker issue (the record activity adds the issue's title and link) and when it first started.
+    /// </summary>
     RunRecord RunRecordOf(string status, string? detail, DateTimeOffset now) =>
-        new(input.RunId, input.ParentWorkflowId, input.Template, status, input.Requester, input.Repositories, input.DryRun, now, detail);
+        new(input.RunId, input.ParentWorkflowId, input.Template, status, input.Requester, input.Repositories, input.DryRun, now, detail,
+            core?.Plan.Document.Level, input.ParentStepId, input.TrackerIssue, StartedAt: startedAt);
 
     async Task<string> RefuseAsync(IReadOnlyList<string> errors)
     {
@@ -1083,7 +1098,7 @@ public partial class RunWorkflow
             pendingChildEnds.Count, interruptedThisRun, activitiesStartedWhileDraining, childEndsWhileDraining, answersWhileDraining));
         var carried = new ShellState(core.Snapshot(), pendingChildEnds.ToList(), pendingParentPatches.ToList(), timelineSequence, handOvers.ToList(), cancelledByParent);
         // The run's lock carries its library overrides (docs/08 section 5.2).
-        var next = input with { Policy = policy, Carried = carried, LockRef = LockRef };
+        var next = input with { Policy = policy, Carried = carried, LockRef = LockRef, StartedAt = startedAt };
         return Workflow.CreateContinueAsNewException((RunWorkflow w) => w.RunAsync(next));
     }
 }

@@ -527,10 +527,11 @@ Opens the work branch's pull request into its parent branch, or updates it.
 
 | Element | Detail |
 |---|---|
-| Inputs | `title`, `body` (a prompt reference, rendered), `draft`, `post_declines` (default `true`) |
+| Inputs | `title`, `body` (a prompt reference, rendered), `draft`, `post_declines` (default `true`). With no `title`, the run's tracker issue gives it: `"<issue title> (<key>)"`, a GitHub key `owner/repo#200` shortened to `#200`, a Jira key as it is; with no issue, or one that does not read (a timeline event says so), `"<level>: <run>"` from the run's record (LOG 531) |
 | Outcomes | `ready`. Output: the pull request reference |
 | Idempotency | Marker in the body; a retry adopts the existing pull request |
 | Behaviour | Posts the declines the run's ledger already holds for the repository, under each declining triage's own comment key, so none is posted twice (LOG 249) |
+| Record | Once open, the pull request is read and written as a pull request record under the step. Every engine read of a run's pull request does the same (`ci.checks` with the checks it read, `scm.merge` and its merge-action polls, a further read after the engine merges, `wait.condition`): a record is written only when the state, files, checks or the reading step changed, so a polling step writes nothing while the pull request stands still; a read without checks keeps the recorded checks of the same head; files are listed again only when the head or base moved, and a failed listing never fails the step (LOG 531) |
 
 ### 7.3 `scm.merge`
 

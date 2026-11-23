@@ -59,8 +59,9 @@ public sealed class ConsoleWorld : IAsyncDisposable
                 ["record_store"] = new Dictionary<string, IProvider> { ["sqlite"] = Records },
                 ["artifact_store"] = new Dictionary<string, IProvider> { ["fs"] = artifacts },
                 ["secrets"] = new Dictionary<string, IProvider> { ["file"] = new FileSecrets(Path.Combine(folder, "secrets.json")) },
+                ["code_host"] = new Dictionary<string, IProvider> { ["memory"] = new InMemoryCodeHost(Forge) },
             },
-            new Dictionary<string, string> { ["record_store"] = "sqlite", ["artifact_store"] = "fs", ["secrets"] = "file" },
+            new Dictionary<string, string> { ["record_store"] = "sqlite", ["artifact_store"] = "fs", ["secrets"] = "file", ["code_host"] = "memory" },
             new Dictionary<string, string>());
         roles ??= ["viewer", "approver", "steerer", "admin"];
         Auth = authMode switch
@@ -102,6 +103,9 @@ public sealed class ConsoleWorld : IAsyncDisposable
     public ApiAuthConfig Auth { get; }
 
     public IRecordStoreProvider Records { get; }
+
+    /// <summary>The code host's repositories (an in-memory GitHub), so a repository can be registered (<c>POST /repositories</c>).</summary>
+    public InMemoryForge Forge { get; } = InMemoryForge.Named("console-" + Guid.NewGuid().ToString("N"));
 
     public FakeEngine Engine { get; }
 

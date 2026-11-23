@@ -217,9 +217,24 @@ public sealed partial class GitHubCodeHost(GitHubApi api) : ICodeHostProvider
         return response.Value!.Code == 200 ? ProviderResult<JsonNode>.Success(response.Value.Json!) : GitHubApi.Unexpected<JsonNode>(response.Value, "GET the pull request");
     }
 
+    /// <summary>The files a pull request changes (200, three pages of 100: the first 300, as GitHub orders them), with GitHub's status for each.</summary>
+    public async Task<ProviderResult<IReadOnlyList<PullRequestFile>>> ListPullRequestFilesAsync(PullRequestRef pullRequest, CancellationToken cancellationToken)
+    {
+        var files = await api.ListAsync(pullRequest.Repo, ReadPermissions, $"/repos/{pullRequest.Repo.FullName}/pulls/{pullRequest.Number}/files",
+            j => j as JsonArray, cancellationToken, maxPages: 3);
+        if (!files.Ok)
+            return new ProviderResult<IReadOnlyList<PullRequestFile>>(null, files.Error);
+        return ProviderResult<IReadOnlyList<PullRequestFile>>.Success(files.Value!.Take(300).Select(f => new PullRequestFile(
+            f["filename"]!.GetValue<string>(),
+            f["status"]?.GetValue<string>() ?? "modified",
+            f["additions"]?.GetValue<int>() ?? 0,
+            f["deletions"]?.GetValue<int>() ?? 0)).ToList());
+    }
+
     /// <summary>
     /// The pull request (200) and its reviews (200, every page). Each reviewer's latest approval, change request or
-    /// dismissal counts; a comment changes nothing, as on GitHub.
+    /// dismissal counts; a comment changes nothing, as on GitHub. Its size (additions, deletions, changed files) and
+    /// <c>mergeable_state</c> are as GitHub reports them, null where it does not.
     /// </summary>
     public async Task<ProviderResult<PullRequestState>> GetPullRequestAsync(PullRequestRef pullRequest, CancellationToken cancellationToken)
     {
@@ -253,7 +268,11 @@ public sealed partial class GitHubCodeHost(GitHubApi api) : ICodeHostProvider
             latest.Where(kv => kv.Value == "CHANGES_REQUESTED").Select(kv => kv.Key).Order(StringComparer.Ordinal).ToList(),
             merged ? p["merged_by"]?["login"]?.GetValue<string>() : null,
             merged ? p["merge_commit_sha"]?.GetValue<string>() : null,
-            p["html_url"]?.GetValue<string>()));
+            p["html_url"]?.GetValue<string>(),
+            p["additions"] is JsonValue additions ? additions.GetValue<int>() : null,
+            p["deletions"] is JsonValue deletions ? deletions.GetValue<int>() : null,
+            p["changed_files"] is JsonValue changed ? changed.GetValue<int>() : null,
+            p["mergeable_state"] is JsonValue mergeableState ? mergeableState.GetValue<string>() : null));
     }
 
     /// <summary>The comment (201) and the close (200) only while it is open, so a retry adds no second comment.</summary>

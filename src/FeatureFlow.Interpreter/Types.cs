@@ -485,10 +485,31 @@ public sealed record WaitChange(OpenWait Wait, bool Open);
 
 /// <summary>
 /// What the record store shows of a wait: its record kind, decision type, the choices that answer it, the text to show, for
-/// a gate what its step consumed as it opened (LOG 394), and the choices a person must give a reason for (LOG 502).
+/// a gate what its step consumed as it opened (LOG 394), and the choices a person must give a reason for (LOG 502); for an
+/// intervention why it stopped its step, and for a patch approval the patch.
 /// </summary>
 public sealed record WaitDescription(string Kind, string Type, IReadOnlyList<string> Choices, string Prompt, IReadOnlyList<ConsumedArtifact>? Consumed = null,
-    IReadOnlyList<string>? ReasonRequired = null);
+    IReadOnlyList<string>? ReasonRequired = null, WaitCauseInfo? Cause = null, WaitPatchInfo? Patch = null);
+
+/// <summary>
+/// Why an intervention stopped a step: the step, the outcome it ended with, the core's reason, the step's own last summary,
+/// its attempts used and allowed (null for a decision), and each time it was sent back, oldest first.
+/// </summary>
+public sealed record WaitCauseInfo(string StepId, string? Outcome, string Reason, string? Said, int? AttemptsUsed, long? AttemptsAllowed,
+    IReadOnlyList<SentBackInfo> SentBack);
+
+/// <summary>A time a step was sent back: its execution, the step and outcome that sent it back where known, and the text.</summary>
+public sealed record SentBackInfo(int Execution, string? ByStep, string? Outcome, string Text);
+
+/// <summary>
+/// A patch a patch approval waits on: the proposer's type and step, its reason, why it needs approval, the step the run
+/// resumes at, the plan revision it applies to, whether a child run proposed it, and the patch as <c>PatchReader.Write</c> wrote it.
+/// </summary>
+public sealed record WaitPatchInfo(string ProposerType, string? ProposerStepId, string? Reason, IReadOnlyList<string> NeedsApproval, string? ResumeAt,
+    long BaseRevision, bool FromChild, string Document);
+
+/// <summary>A step's counters (<see cref="RunCore.TakeStepCounters"/>): how often it ran, its attempts used, allowed with grants (null for a decision) and granted.</summary>
+public sealed record StepCounters(string StepId, int Executions, int AttemptsUsed, long? AttemptsAllowed, long AttemptsGranted);
 
 /// <summary>A wait to record (<see cref="RunCore.TakeWaitChanges"/>): opened, with its description, or closed when <see cref="Opened"/> is null.</summary>
 public sealed record WaitShown(string WaitId, string StepId, WaitDescription? Opened);

@@ -4,10 +4,12 @@ namespace FeatureFlow.Providers.Local;
 
 /// <summary>
 /// A record store in memory for tests, holding runs and what M6 and M7 add: the findings ledger and the artifact index
-/// (docs/02 section 5); overrides, notification de-duplication and sessions. Finding records, sessions and session checks
-/// are kept by key, the last write winning; finding events and artifacts are appended once per key, a notification is kept
-/// once per key with the first write winning, and overrides are appended. Other records are not kept here: the SQLite
-/// store holds them. The changes each batch makes are numbered and kept as the other stores keep them (<see cref="Queries.Changes"/>).
+/// (docs/02 section 5); overrides, notification de-duplication and sessions; and what the console's B1 adds: answers,
+/// step states, pull requests and repositories. Finding records, sessions, session checks, step states, pull requests and
+/// repositories are kept by key, the last write winning; finding events and artifacts are appended once per key, a
+/// notification is kept once per key with the first write winning, and overrides and answers are appended. Other records
+/// are not kept here: the SQLite store holds them. The changes each batch makes are numbered and kept as the other stores
+/// keep them (<see cref="Queries.Changes"/>).
 /// </summary>
 public sealed class InMemoryRecordStore : IRecordStoreProvider
 {
@@ -20,6 +22,10 @@ public sealed class InMemoryRecordStore : IRecordStoreProvider
     readonly List<NotificationRecord> notifications = [];
     readonly Dictionary<string, SessionRecord> sessions = new(StringComparer.Ordinal);
     readonly Dictionary<(string Session, string Check), SessionCheckRecord> checks = [];
+    readonly List<AnswerRecord> answers = [];
+    readonly Dictionary<(string Run, string Step), StepStateRecord> stepStates = [];
+    readonly Dictionary<(string Run, string Repository, int Number), PullRequestRecord> pullRequests = [];
+    readonly Dictionary<string, RepositoryRecord> repositories = new(StringComparer.Ordinal);
 
     public ProviderDescription Describe() => new("record_store", "memory", "0.1.0", new NoCapabilities());
 
@@ -27,9 +33,9 @@ public sealed class InMemoryRecordStore : IRecordStoreProvider
 
     public Task<ProviderResult<Unit>> AppendAsync(RecordBatch records, CancellationToken cancellationToken)
     {
-        if (records.Waits is { Count: > 0 } || records.Timeline is { Count: > 0 } || records.Answers is { Count: > 0 } || records.Locks is { Count: > 0 }
+        if (records.Waits is { Count: > 0 } || records.Timeline is { Count: > 0 } || records.Locks is { Count: > 0 }
             || records.AgentSteps is { Count: > 0 } || records.Reports is { Count: > 0 } || records.Questions is { Count: > 0 } || records.AgentEvents is { Count: > 0 })
-            throw new NotSupportedException("the in-memory record store keeps only runs, the findings ledger, the artifact index, overrides, notifications and sessions");
+            throw new NotSupportedException("the in-memory record store keeps only runs, answers, the findings ledger, the artifact index, overrides, notifications, sessions, step states, pull requests and repositories");
         lock (gate)
         {
             foreach (var run in records.Runs ?? [])
@@ -51,6 +57,13 @@ public sealed class InMemoryRecordStore : IRecordStoreProvider
                 sessions[session.SessionId] = session;
             foreach (var check in records.SessionChecks ?? [])
                 checks[(check.SessionId, check.CheckId)] = check;
+            answers.AddRange(records.Answers ?? []);
+            foreach (var s in records.StepStates ?? [])
+                stepStates[(s.RunId, s.StepId)] = s;
+            foreach (var p in records.PullRequests ?? [])
+                pullRequests[(p.RunId, p.Repository, p.Number)] = p;
+            foreach (var r in records.Repositories ?? [])
+                repositories[r.Name] = r;
             AppendChanges(records);
         }
 
@@ -79,6 +92,12 @@ public sealed class InMemoryRecordStore : IRecordStoreProvider
                 Queries.Session => sessions.Values.Where(s => s.SessionId == P("session_id")),
                 Queries.Sessions => sessions.Values.Where(s => s.RunId == P("run_id")).OrderBy(s => s.SessionId, StringComparer.Ordinal),
                 Queries.SessionChecks => checks.Values.Where(c => c.SessionId == P("session_id")).OrderBy(c => c.CheckId, StringComparer.Ordinal),
+                Queries.Answers => answers.Where(a => a.RunId == P("run_id")),
+                Queries.RecentAnswers => answers.Where(a => a.Actor == P("actor")).Reverse().Take(SqliteRecordStore.Limit(parameters)),
+                Queries.StepStates => stepStates.Values.Where(s => s.RunId == P("run_id")).OrderBy(s => s.StepId, StringComparer.Ordinal),
+                Queries.PullRequests => pullRequests.Values.Where(p => p.RunId == P("run_id"))
+                    .OrderBy(p => p.Repository, StringComparer.Ordinal).ThenBy(p => p.Number),
+                Queries.Repositories => repositories.Values.OrderBy(r => r.Name, StringComparer.Ordinal),
                 // Waits are not kept here, so no wait is open.
                 Queries.OpenWaits => Enumerable.Empty<OpenWaitRecord>(),
                 _ => throw new NotSupportedException($"the in-memory record store does not answer {queryName}"),

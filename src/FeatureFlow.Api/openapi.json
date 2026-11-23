@@ -259,6 +259,124 @@
         }
       }
     },
+    "/runs/{id}/artifacts/{reference}/document": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "getArtifactDocument",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "reference",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactDocument"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported Media Type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{id}/tree": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "getRunTree",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunTreeView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/runs/{id}/answers": {
       "post": {
         "tags": [
@@ -482,6 +600,64 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FindingsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{id}/findings/{finding}": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "getFinding",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "finding",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FindingDetail"
                 }
               }
             }
@@ -1141,6 +1317,13 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "proposed",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1239,6 +1422,94 @@
           },
           "401": {
             "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/repositories": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "listRepositories",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepositoryList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "registerRepository",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRepositoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepositoryView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
             "content": {
               "application/json": {
                 "schema": {
@@ -1396,6 +1667,31 @@
           }
         }
       },
+      "ArtifactDocument": {
+        "required": [
+          "format",
+          "data",
+          "body"
+        ],
+        "type": "object",
+        "properties": {
+          "format": {
+            "type": "string"
+          },
+          "data": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "body": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "ArtifactKind": {
         "enum": [
           "artifact",
@@ -1482,6 +1778,15 @@
           },
           "wait": {
             "$ref": "#/components/schemas/WaitView"
+          },
+          "path": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/RunSummary"
+            }
           }
         }
       },
@@ -1495,6 +1800,15 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AttentionItem"
+            }
+          },
+          "recent": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/RecentAnswerView"
             }
           }
         }
@@ -1538,6 +1852,35 @@
           "wait_closed",
           "reset"
         ]
+      },
+      "CheckView": {
+        "required": [
+          "name",
+          "state",
+          "conclusion",
+          "url"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "conclusion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "url": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
       },
       "ClosedAnswer": {
         "required": [
@@ -1585,6 +1928,40 @@
               "null",
               "string"
             ]
+          },
+          "type": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "changes": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "CurrentStep": {
+        "required": [
+          "run_id",
+          "step_id",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string"
+          },
+          "step_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
           }
         }
       },
@@ -1596,6 +1973,85 @@
         "properties": {
           "error": {
             "type": "string"
+          },
+          "errors": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "FindingDetail": {
+        "required": [
+          "finding",
+          "history"
+        ],
+        "type": "object",
+        "properties": {
+          "finding": {
+            "$ref": "#/components/schemas/FindingView"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FindingEventView"
+            }
+          }
+        }
+      },
+      "FindingEventView": {
+        "required": [
+          "kind",
+          "state",
+          "actor",
+          "reason",
+          "step_id",
+          "revision",
+          "code_changed",
+          "at"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "step_id": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "revision": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "code_changed": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -1628,6 +2084,38 @@
             ]
           },
           "criterion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "FindingRaisedView": {
+        "required": [
+          "step_id",
+          "angle",
+          "source",
+          "model"
+        ],
+        "type": "object",
+        "properties": {
+          "step_id": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "angle": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "model": {
             "type": [
               "null",
               "string"
@@ -1703,8 +2191,95 @@
               "null",
               "string"
             ]
+          },
+          "run_id": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "needs_person": {
+            "type": "boolean",
+            "default": false
+          },
+          "decided_by_person": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "raised_by": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FindingRaisedView"
+              }
+            ]
+          },
+          "can_mark_fixed": {
+            "type": "boolean",
+            "default": false
+          },
+          "mark_fixed_refusal": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "reraises": {
+            "type": "integer",
+            "format": "int32",
+            "default": 0
+          },
+          "fixes": {
+            "type": "integer",
+            "format": "int32",
+            "default": 0
+          },
+          "updated_at": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
           }
         }
+      },
+      "GrantView": {
+        "required": [
+          "attempts",
+          "actor",
+          "reason",
+          "at"
+        ],
+        "type": "object",
+        "properties": {
+          "attempts": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "GroupKind": {
+        "enum": [
+          "fragment",
+          "branch"
+        ]
       },
       "MeResponse": {
         "required": [
@@ -1844,6 +2419,99 @@
           }
         }
       },
+      "PatchView": {
+        "required": [
+          "proposer_type",
+          "proposer_step_id",
+          "reason",
+          "needs_approval",
+          "continues_at",
+          "base_revision",
+          "from_child",
+          "document"
+        ],
+        "type": "object",
+        "properties": {
+          "proposer_type": {
+            "type": "string"
+          },
+          "proposer_step_id": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "needs_approval": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "continues_at": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "base_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "from_child": {
+            "type": "boolean"
+          },
+          "document": {
+            "type": "string"
+          }
+        }
+      },
+      "PlanChange": {
+        "enum": [
+          "added",
+          "removed",
+          "changed",
+          null
+        ]
+      },
+      "PlanGroupView": {
+        "required": [
+          "id",
+          "parent",
+          "kind",
+          "label",
+          "item"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "parent": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/GroupKind"
+          },
+          "label": {
+            "type": "string"
+          },
+          "item": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "PlanOutcomeView": {
         "required": [
           "name",
@@ -1863,6 +2531,15 @@
               "null",
               "string"
             ]
+          },
+          "produces": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -1915,6 +2592,71 @@
               "null",
               "string"
             ]
+          },
+          "parent": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "executions": {
+            "type": "integer",
+            "format": "int32",
+            "default": 0
+          },
+          "attempts_used": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "attempts_allowed": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
+          },
+          "attempts_granted": {
+            "type": "integer",
+            "format": "int64",
+            "default": 0
+          },
+          "child_run_id": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "changed_at": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "change": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlanChange"
+              }
+            ]
+          },
+          "with": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "limits": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -1946,6 +2688,314 @@
             "items": {
               "$ref": "#/components/schemas/PlanStepView"
             }
+          },
+          "groups": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PlanGroupView"
+            }
+          }
+        }
+      },
+      "PullRequestFileView": {
+        "required": [
+          "path",
+          "status",
+          "additions",
+          "deletions"
+        ],
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "additions": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "deletions": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "PullRequestLink": {
+        "required": [
+          "repository",
+          "number",
+          "url",
+          "state"
+        ],
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          },
+          "number": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "url": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "state": {
+            "type": "string"
+          }
+        }
+      },
+      "PullRequestView": {
+        "required": [
+          "repository",
+          "number",
+          "url",
+          "title",
+          "state",
+          "draft",
+          "mergeable",
+          "mergeable_state",
+          "head",
+          "head_revision",
+          "base",
+          "additions",
+          "deletions",
+          "changed_files",
+          "files",
+          "checks",
+          "approved_by",
+          "changes_requested_by",
+          "step_id",
+          "read_at"
+        ],
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          },
+          "number": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "url": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "draft": {
+            "type": "boolean"
+          },
+          "mergeable": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "mergeable_state": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "head": {
+            "type": "string"
+          },
+          "head_revision": {
+            "type": "string"
+          },
+          "base": {
+            "type": "string"
+          },
+          "additions": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "deletions": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "changed_files": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PullRequestFileView"
+            }
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CheckView"
+            }
+          },
+          "approved_by": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "changes_requested_by": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "step_id": {
+            "type": "string"
+          },
+          "read_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "RecentAnswerView": {
+        "required": [
+          "run",
+          "wait_id",
+          "step_id",
+          "title",
+          "choice",
+          "reason",
+          "result",
+          "at"
+        ],
+        "type": "object",
+        "properties": {
+          "run": {
+            "$ref": "#/components/schemas/RunSummary"
+          },
+          "wait_id": {
+            "type": "string"
+          },
+          "step_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "choice": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "result": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "RegisterRepositoryRequest": {
+        "type": "object",
+        "properties": {
+          "github": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "path": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "RepositoryList": {
+        "required": [
+          "repositories"
+        ],
+        "type": "object",
+        "properties": {
+          "repositories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RepositoryView"
+            }
+          }
+        }
+      },
+      "RepositoryView": {
+        "required": [
+          "name",
+          "host",
+          "url",
+          "default_branch",
+          "registered",
+          "registered_by",
+          "at"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "url": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "default_branch": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "registered": {
+            "type": "boolean"
+          },
+          "registered_by": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "at": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
           }
         }
       },
@@ -1998,6 +3048,33 @@
             "type": "array",
             "items": {
               "type": "string"
+            }
+          },
+          "pull_requests": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PullRequestView"
+            }
+          },
+          "inputs": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "current_steps": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/CurrentStep"
             }
           }
         }
@@ -2059,6 +3136,123 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "level": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "parent_step_id": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "tracker_issue": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TrackerIssueView"
+              }
+            ]
+          },
+          "title": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "started_at": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "pull_requests": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PullRequestLink"
+            }
+          },
+          "current_steps": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/CurrentStep"
+            }
+          },
+          "needs_you": {
+            "type": "integer",
+            "format": "int32",
+            "default": 0
+          },
+          "running": {
+            "type": "integer",
+            "format": "int32",
+            "default": 0
+          }
+        }
+      },
+      "RunTreeNode": {
+        "required": [
+          "run",
+          "plan",
+          "plan_note",
+          "waits",
+          "children"
+        ],
+        "type": "object",
+        "properties": {
+          "run": {
+            "$ref": "#/components/schemas/RunView"
+          },
+          "plan": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlanView"
+              }
+            ]
+          },
+          "plan_note": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "waits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WaitView"
+            }
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RunTreeNode"
+            }
+          }
+        }
+      },
+      "RunTreeView": {
+        "required": [
+          "root"
+        ],
+        "type": "object",
+        "properties": {
+          "root": {
+            "$ref": "#/components/schemas/RunTreeNode"
           }
         }
       },
@@ -2112,6 +3306,80 @@
               "null",
               "string"
             ]
+          },
+          "level": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "parent_step_id": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "tracker_issue": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TrackerIssueView"
+              }
+            ]
+          },
+          "title": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "started_at": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "pull_requests": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PullRequestLink"
+            }
+          }
+        }
+      },
+      "SentBackView": {
+        "required": [
+          "execution",
+          "by_step",
+          "outcome",
+          "text"
+        ],
+        "type": "object",
+        "properties": {
+          "execution": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "by_step": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "outcome": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "text": {
+            "type": "string"
           }
         }
       },
@@ -2345,6 +3613,12 @@
           "at": {
             "type": "string",
             "format": "date-time"
+          },
+          "open_command": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -2557,6 +3831,31 @@
           }
         }
       },
+      "TrackerIssueView": {
+        "required": [
+          "key",
+          "title",
+          "url"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "url": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "UnreadableLibrary": {
         "required": [
           "library",
@@ -2569,6 +3868,69 @@
           },
           "error": {
             "type": "string"
+          }
+        }
+      },
+      "WaitCauseView": {
+        "required": [
+          "step_id",
+          "outcome",
+          "reason",
+          "said",
+          "attempts_used",
+          "attempts_allowed",
+          "sent_back",
+          "grants",
+          "likely_to_repeat"
+        ],
+        "type": "object",
+        "properties": {
+          "step_id": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "said": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "attempts_used": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "attempts_allowed": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
+          },
+          "sent_back": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SentBackView"
+            }
+          },
+          "grants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GrantView"
+            }
+          },
+          "likely_to_repeat": {
+            "type": "boolean"
           }
         }
       },
@@ -2666,6 +4028,54 @@
               {
                 "$ref": "#/components/schemas/ClosedAnswer"
               }
+            ]
+          },
+          "title": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "summary": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "cause": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WaitCauseView"
+              }
+            ]
+          },
+          "patch": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PatchView"
+              }
+            ]
+          },
+          "pull_request": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PullRequestView"
+              }
+            ]
+          },
+          "session_id": {
+            "type": [
+              "null",
+              "string"
             ]
           }
         }

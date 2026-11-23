@@ -4,11 +4,15 @@ using FeatureFlow.Api.Contracts;
 using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Library;
 using FeatureFlow.Model;
+using FeatureFlow.Model.Plans;
+using FeatureFlow.Model.Yaml;
 using FeatureFlow.Providers.Abstractions;
+using FeatureFlow.Validation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Temporalio.Client;
 using Temporalio.Exceptions;
+using Step = FeatureFlow.Model.Plans.Step;
 
 namespace FeatureFlow.Api;
 
@@ -23,6 +27,8 @@ public static partial class ApiApp
             .Taking<AbortRequest>().Described<AnswerResponse>("abortRun", 200, 400, 403, 404, 409);
         app.MapGet("/runs/{id}/findings", (HttpContext c, string id) => api.Guard(c, caller => api.FindingsAsync(c, caller, id)))
             .Described<FindingsResponse>("getFindings", 200, 404);
+        app.MapGet("/runs/{id}/findings/{finding}", (HttpContext c, string id, string finding) => api.Guard(c, caller => api.FindingAsync(c, caller, id, finding)))
+            .Described<FindingDetail>("getFinding", 200, 404);
     }
 
     /// <summary>The result an answer is recorded with while it waits for more people to answer the same way (<c>min_count</c>).</summary>
@@ -53,10 +59,18 @@ public static partial class ApiApp
             var args = new AnswerArgs(waitId, caller.Actor, outcome, action, body.StepId, body.CleanUp, body.Attempts, body.Status, Reason: body.Reason);
             if (body.Artifacts is { } given)
             {
+                // The caller may answer before anything they sent is stored or checked (A10's validators may call providers).
+                var (types, unreadable) = await DecisionTypesAsync(wait, context.RequestAborted);
+                if (types is null)
+                    return unreadable!;
+                if (CheckAnswer(caller, run, wait, types, action).Refusal is { } refused)
+                    return refused;
                 // What the person produced, such as a triage of findings (LOG 248), stored and sent by reference on the one answer path.
                 var (stored, problem) = await StoreAnswerArtifactsAsync(given, context.RequestAborted);
                 if (problem is not null)
                     return Error(400, problem);
+                if (wait.Kind == "gate" && outcome is not null && await AnswerArtifactErrorsAsync(run, wait, outcome, given, stored!, context.RequestAborted) is { Count: > 0 } errors)
+                    return Results.Json(new ErrorResponse($"the answer's artifacts do not fit their types ({errors.Count} errors)", errors), Json, statusCode: 400);
                 args = args with { Artifacts = stored };
             }
 
@@ -186,13 +200,117 @@ public static partial class ApiApp
             return (stored, null);
         }
 
-        /// <summary>The run's findings ledger, as a person triaging it needs it: every finding of the run and its children, with its ledger id and state.</summary>
+        /// <summary>
+        /// Each artifact of a gate's answer checked against the type the wait's step declares for it under <paramref name="outcome"/>
+        /// (A10), as the engine checks what an agent reports (LOG 246): it reads in its format, fits its schema or Markdown
+        /// structure, and passes the type's validators, with the run's ledger. A validator this API's providers do not offer, or
+        /// one that fails, is left to the engine: the content is still checked against the type. An artifact with no declared
+        /// type, or a plan that does not load, is not checked here.
+        /// </summary>
+        async Task<IReadOnlyList<string>> AnswerArtifactErrorsAsync(RunRecord run, WaitRecord wait, string outcome, IReadOnlyDictionary<string, string> texts,
+            IReadOnlyDictionary<string, string> stored, CancellationToken ct)
+        {
+            if ((await LoadPlanAsync(run, null, null, ct)).Plan is not { } loaded || loaded.Plan.StepById(wait.StepId) is not { } step)
+                return [];
+            var success = step.Outcomes().Any(o => o.Name == outcome && o.Class == OutcomeClass.Success);
+            IReadOnlyList<FindingRecord>? ledger = null;
+            var errors = new List<string>();
+            foreach (var (name, text) in texts)
+            {
+                if (step.Produces.FirstOrDefault(p => p.Name == name && (p.Outcome == outcome || (p.Outcome is null && success)))?.Type is not { Reference: { } reference } declared
+                    || loaded.Libraries.Resolve(reference)?.ArtifactType(reference.Name) is not { } type)
+                    continue;
+                try
+                {
+                    if (type.Validators.Count > 0)
+                        ledger ??= (await Records.QueryAsync<FindingRecord>(Queries.Findings, new Dictionary<string, string> { ["run_id"] = run.RunId }, ct)).Unwrap();
+                    errors.AddRange(await ArtifactTypeCheck.CheckAsync(type, name, declared.Text, name, text, stored[name], services.Providers, ledger ?? [], ct));
+                }
+                catch (ArtifactCheckException)
+                {
+                    errors.AddRange(ArtifactContent.Check(type, text, name).Select(e => $"artifact '{name}' ({name}): {e}"));
+                }
+            }
+
+            return errors;
+        }
+
+        /// <summary>
+        /// The run's findings ledger, as a person triaging it needs it: every finding of the run and its children, with its ledger
+        /// id and state, whether it needs a person and who decided it, who raised it, and whether it may be marked fixed (A6).
+        /// </summary>
         public async Task<IResult> FindingsAsync(HttpContext context, Caller caller, string id)
         {
-            if (await VisibleRunAsync(caller, id, context.RequestAborted) is null)
+            var ct = context.RequestAborted;
+            if (await VisibleRunAsync(caller, id, ct) is null)
                 return Error(404, $"no run {id}");
-            var ledger = (await Records.QueryAsync<FindingRecord>(Queries.Findings, new Dictionary<string, string> { ["run_id"] = id }, context.RequestAborted)).Unwrap();
-            return Results.Json(new FindingsResponse(ledger.Select(FindingOf).ToList()), Json);
+            var ledger = (await Records.QueryAsync<FindingRecord>(Queries.Findings, new Dictionary<string, string> { ["run_id"] = id }, ct)).Unwrap();
+            var reads = new FindingReads(this, ct);
+            var views = new List<FindingView>();
+            foreach (var f in ledger)
+                views.Add(await reads.ViewAsync(f));
+            return Results.Json(new FindingsResponse(views), Json);
+        }
+
+        /// <summary>A finding of the run's ledger (its children's included), as <see cref="FindingsAsync"/> shows it, and its history, oldest first (A6).</summary>
+        public async Task<IResult> FindingAsync(HttpContext context, Caller caller, string id, string finding)
+        {
+            var ct = context.RequestAborted;
+            if (await VisibleRunAsync(caller, id, ct) is null)
+                return Error(404, $"no run {id}");
+            var ledger = (await Records.QueryAsync<FindingRecord>(Queries.Findings, new Dictionary<string, string> { ["run_id"] = id }, ct)).Unwrap();
+            if (ledger.FirstOrDefault(f => f.FindingId == finding) is not { } found)
+                return Error(404, $"no finding {finding} in run {id}");
+            var reads = new FindingReads(this, ct);
+            var history = await reads.HistoryAsync(found);
+            return Results.Json(new FindingDetail(await reads.ViewAsync(found), history.Select(e =>
+                new FindingEventView(e.Kind, e.State, e.Actor, e.Reason, e.StepId, e.Revision, e.CodeChanged, e.At)).ToList()), Json);
+        }
+
+        /// <summary>
+        /// What showing findings reads beyond the ledger, each once: a finding's history, the people of its run (the actors of the
+        /// run's answers, F8), and its run's plan, for the step that raised it.
+        /// </summary>
+        sealed class FindingReads(Handlers api, CancellationToken ct)
+        {
+            readonly Dictionary<string, IReadOnlySet<string>> people = new(StringComparer.Ordinal);
+            readonly Dictionary<string, Plan?> plans = new(StringComparer.Ordinal);
+
+            public async Task<IReadOnlyList<FindingEventRecord>> HistoryAsync(FindingRecord f) =>
+                (await api.Records.QueryAsync<FindingEventRecord>(Queries.FindingEvents,
+                    new Dictionary<string, string> { ["run_id"] = f.RunId, ["finding_id"] = f.FindingId }, ct)).Unwrap();
+
+            public async Task<IReadOnlySet<string>> PeopleAsync(string runId)
+            {
+                if (!people.TryGetValue(runId, out var found))
+                    people[runId] = found = PeopleOf((await api.Records.QueryAsync<AnswerRecord>(Queries.Answers, new Dictionary<string, string> { ["run_id"] = runId }, ct)).Unwrap());
+                return found;
+            }
+
+            async Task<Plan?> PlanAsync(string runId)
+            {
+                if (!plans.TryGetValue(runId, out var plan))
+                    plans[runId] = plan = await api.RunAsync(runId, ct) is { } run ? (await api.LoadPlanAsync(run, null, null, ct)).Plan?.Plan : null;
+                return plan;
+            }
+
+            public async Task<FindingView> ViewAsync(FindingRecord f)
+            {
+                var decidedBy = FindingsLedger.PersonDecision(await HistoryAsync(f), await PeopleAsync(f.RunId));
+                var (canMarkFixed, refusal) = MarkFixedOf(f);
+                return FindingOf(f) with
+                {
+                    RunId = f.RunId,
+                    NeedsPerson = FindingsLedger.AgentMayNotClear(f) && decidedBy is null,
+                    DecidedByPerson = decidedBy,
+                    RaisedBy = RaisedByOf(f, await PlanAsync(f.RunId)),
+                    CanMarkFixed = canMarkFixed,
+                    MarkFixedRefusal = refusal,
+                    Reraises = f.Reraises,
+                    Fixes = f.Fixes,
+                    UpdatedAt = f.UpdatedAt,
+                };
+            }
         }
 
         /// <summary>A ledger entry as the API shows it: the finding as last raised, with its ledger id and state.</summary>
@@ -202,6 +320,48 @@ public static partial class ApiApp
             return new FindingView(f.FindingId, f.State, finding.Rule, finding.Title, finding.Description, finding.Severity, finding.Blocking, finding.Basis,
                 new FindingLocationView(location.Repository, location.File, location.Symbol, location.Snippet, location.Criterion), finding.RequiredCorrection, finding.Proof);
         }
+
+        /// <summary>The people of a run (F8): every actor its answers name, as the API authenticated them.</summary>
+        static IReadOnlySet<string> PeopleOf(IEnumerable<AnswerRecord> answers) =>
+            answers.Select(a => ArgsOf(a.Answer)?.Actor).OfType<string>().ToHashSet(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Who raised a finding: the step of the run's plan its source names, with the review angle where the step is a
+        /// <c>for_each</c> branch over angles, and the step's form as the source (<c>agent</c>, <c>person</c> for a decision,
+        /// <c>check</c> for an action); <c>external</c> for a findings source provider; the source as recorded when the plan
+        /// cannot be read.
+        /// </summary>
+        static FindingRaisedView RaisedByOf(FindingRecord f, Plan? plan)
+        {
+            if (plan is null)
+                return new FindingRaisedView(f.Source, null, "step", f.Model);
+            if (plan.StepById(f.Source) is not { } step)
+                return new FindingRaisedView(null, null, "external", f.Model);
+            var form = ReadableForm.Form(step) switch { "agent" => "agent", "decision" => "person", _ => "check" };
+            return new FindingRaisedView(step.Id, AngleOf(step), form, f.Model);
+        }
+
+        /// <summary>The item of the innermost <c>for_each</c> branch the step is in, within its own document, where it is text known at load.</summary>
+        static string? AngleOf(Step step)
+        {
+            for (var scope = step.Scope; scope is { Kind: ScopeKind.Branch }; scope = scope.Parent)
+                if (scope is { IsForEach: true })
+                    return scope.Item is YScalar { IsNull: false } item ? item.Text : null;
+            return null;
+        }
+
+        /// <summary>
+        /// Whether a person may mark the finding fixed, and why not (plan risk 4): the API does not read the work branch, so a
+        /// finding is taken as fixable when its state last changed at another revision than the one it was raised at. The engine
+        /// still refuses a <c>fixed</c> with nothing committed.
+        /// </summary>
+        static (bool CanMarkFixed, string? Refusal) MarkFixedOf(FindingRecord f) => f switch
+        {
+            { State: FindingStates.Fixed } => (false, "it is fixed already"),
+            { RaisedRevision: null } => (false, $"it was raised in {f.Finding.Location.Repository}, which this run has not prepared, so no commit of this run can fix it"),
+            _ when f.StateRevision != f.RaisedRevision => (true, null),
+            _ => (false, "nothing has been committed since it was raised, as far as the run recorded"),
+        };
 
         /// <summary>
         /// The organisation's libraries' decision types, read now: approval is checked at the moment of use (docs/05 section 8).

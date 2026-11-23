@@ -8,7 +8,8 @@ namespace FeatureFlow.Providers.Postgres;
 
 /// <summary>
 /// The record store on Postgres (docs/06 section 3.12; the small-company profile, docs/07 section 6). The same tables and
-/// rules as the SQLite store: runs (the newer record kept, by <c>updated_at</c>), waits, locks, agent steps, questions, findings, sessions and their checks are kept by
+/// rules as the SQLite store: runs (the newer record kept, by <c>updated_at</c>), waits, locks, agent steps, questions, findings, sessions and their checks,
+/// step states, pull requests and repositories are kept by
 /// key, the last write winning (a closing wait keeps what its opening record said; an answered or timed-out question is
 /// not reopened); the timeline, finding events, the artifact index and notifications are kept once per key, so a retried
 /// append adds nothing; answers, reports, agent events and overrides are appended. Every key starts with
@@ -193,6 +194,17 @@ public sealed class PostgresRecordStore(Func<CancellationToken, Task<ProviderRes
                 await Run("INSERT INTO session_checks VALUES (@o, @s, @c, @b::jsonb) ON CONFLICT (org_id, session_id, check_id) DO UPDATE SET body = excluded.body",
                     ("s", c.SessionId), ("c", c.CheckId), ("b", Body(c)));
 
+            // The console (B1): step states, pull requests and repositories replace the last write by key.
+            foreach (var s in records.StepStates ?? [])
+                await Run("INSERT INTO step_states VALUES (@o, @r, @s, @b::jsonb) ON CONFLICT (org_id, run_id, step_id) DO UPDATE SET body = excluded.body",
+                    ("r", s.RunId), ("s", s.StepId), ("b", Body(s)));
+            foreach (var p in records.PullRequests ?? [])
+                await Run("INSERT INTO pull_requests VALUES (@o, @r, @p, @n, @b::jsonb) ON CONFLICT (org_id, run_id, repository, number) DO UPDATE SET body = excluded.body",
+                    ("r", p.RunId), ("p", p.Repository), ("n", p.Number), ("b", Body(p)));
+            foreach (var r in records.Repositories ?? [])
+                await Run("INSERT INTO repositories VALUES (@o, @n, @b::jsonb) ON CONFLICT (org_id, name) DO UPDATE SET body = excluded.body",
+                    ("n", r.Name), ("b", Body(r)));
+
             await AppendChangesAsync(connection, tx, records, ct);
             await tx.CommitAsync(ct);
             return default(Unit);
@@ -245,6 +257,12 @@ public sealed class PostgresRecordStore(Func<CancellationToken, Task<ProviderRes
             Queries.Sessions => ("SELECT body FROM sessions WHERE org_id = @o AND run_id = @r ORDER BY session_id", typeof(SessionRecord), [("r", P("run_id"))]),
             Queries.SessionChecks => ("SELECT body FROM session_checks WHERE org_id = @o AND session_id = @s ORDER BY check_id", typeof(SessionCheckRecord),
                 [("s", P("session_id"))]),
+            Queries.StepStates => ("SELECT body FROM step_states WHERE org_id = @o AND run_id = @r ORDER BY step_id COLLATE \"C\"", typeof(StepStateRecord), [("r", P("run_id"))]),
+            Queries.PullRequests => ("SELECT body FROM pull_requests WHERE org_id = @o AND run_id = @r ORDER BY repository COLLATE \"C\", number", typeof(PullRequestRecord),
+                [("r", P("run_id"))]),
+            Queries.Repositories => ("SELECT body FROM repositories WHERE org_id = @o ORDER BY name COLLATE \"C\"", typeof(RepositoryRecord), []),
+            Queries.RecentAnswers => ("SELECT body FROM answers WHERE org_id = @o AND body->>'actor' = @a ORDER BY id DESC LIMIT @l", typeof(AnswerRecord),
+                [("a", P("actor")), ("l", Math.Clamp(int.Parse(parameters.GetValueOrDefault("limit", "500"), CultureInfo.InvariantCulture), 1, 500))]),
             _ => throw new ArgumentException($"unknown query {queryName}"),
         };
         if (query.Type != typeof(T))

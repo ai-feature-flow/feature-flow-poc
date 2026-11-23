@@ -265,10 +265,9 @@ static class FindingsActions
             // of this run, and every declined blocking or demonstrated one, unless a person already decided it (LOG 512). One it
             // leaves out goes back to the person.
             var people = await PeopleAsync(run);
-            foreach (var undecided in ledger.Where(f => f.RunId == run.Call.Step.RunId && (f.State == FindingStates.Escalated
-                         || (f.State == FindingStates.Declined && (f.Finding.Blocking || f.Finding.Basis == FindingBases.Demonstrated))))
+            foreach (var undecided in ledger.Where(f => f.RunId == run.Call.Step.RunId && FindingsLedger.AgentMayNotClear(f))
                          .Where(f => triage!.Entries.All(t => t.Finding != f.FindingId)))
-                if (!SetByPerson(await history.OfAsync(undecided), people))
+                if (FindingsLedger.NeedsPerson(undecided, await history.OfAsync(undecided), people))
                     problems.Add($"{undecided.FindingId} is {undecided.State}{(undecided.State == FindingStates.Declined ? " though blocking or demonstrated" : "")}; this triage must decide it");
         }
         var code = new CodeAt(run);
@@ -358,24 +357,6 @@ static class FindingsActions
         var answers = ActionRun.Must(await run.Provider<IRecordStoreProvider>("record_store").QueryAsync<AnswerRecord>(Queries.Answers,
             new Dictionary<string, string> { ["run_id"] = run.Call.Step.RunId }, run.Ct), "read the run's answers");
         return answers.Select(a => Args(a.Answer)?.Actor).OfType<string>().ToHashSet(StringComparer.Ordinal);
-    }
-
-    /// <summary>
-    /// Whether a person set the finding's current state (LOG 512): the event that last changed it was a person's triage, or a
-    /// person's triage restated it since. Re-raises and agents' events that leave the state alone do not undo a person's decision.
-    /// </summary>
-    internal static bool SetByPerson(IEnumerable<FindingEventRecord> history, IReadOnlySet<string> people)
-    {
-        string? state = null;
-        var person = false;
-        foreach (var e in history)
-        {
-            var persons = e.Kind == FindingEventKinds.Triaged && people.Contains(e.Actor);
-            person = e.State != state ? persons : person || persons;
-            state = e.State;
-        }
-
-        return person;
     }
 
     /// <summary>

@@ -228,6 +228,30 @@ public sealed partial class RunCore
         return produced;
     }
 
+    /// <summary>
+    /// The steps whose counters changed since the last take, by step id, for the record store's step states (A2): executions,
+    /// attempts used, allowed with grants (null for a step that uses none) and granted. What was taken is this core's alone,
+    /// not carried, so a core resumed after a hand-over gives every step again.
+    /// </summary>
+    public IReadOnlyList<StepCounters> TakeStepCounters()
+    {
+        var changed = new List<StepCounters>();
+        foreach (var (id, record) in State.Steps.OrderBy(s => s.Key, StringComparer.Ordinal))
+        {
+            var step = StepById(id);
+            var counters = new StepCounters(id, record.Executions, record.AttemptsUsed,
+                step is { ConsumesAttempts: true } ? Allowance(step) + record.AttemptsGranted : null, record.AttemptsGranted);
+            if (countersTaken.GetValueOrDefault(id) == counters)
+                continue;
+            countersTaken[id] = counters;
+            changed.Add(counters);
+        }
+
+        return changed;
+    }
+
+    readonly Dictionary<string, StepCounters> countersTaken = new(StringComparer.Ordinal);
+
     // ---- Entering a step --------------------------------------------------------------------------
 
     void Enter(Entry entry)

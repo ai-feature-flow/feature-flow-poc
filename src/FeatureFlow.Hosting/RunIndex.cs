@@ -14,7 +14,9 @@ public sealed record ReconcileResult(int Runs, IReadOnlyList<RunRecord> Rebuilt)
 /// from Temporal, for example after a database is restored from a backup older than its runs. It reads every run
 /// workflow on the installation's task queue and writes a record for each run the store lacks, and for each the store
 /// shows open that Temporal has closed. A record that agrees is left alone, so a second reconcile writes nothing. A run's
-/// template, parent, requester, repositories and dry run come from the input its workflow started with; its status from
+/// template, parent and parent step, requester, repositories, dry run, tracker issue and start come from the input its
+/// workflow's current run started with (a first run's start, when its input has none, is when Temporal started it); its
+/// level, and its issue's title and link while the issue is the same, from the record it replaces; its status from
 /// Temporal: an open workflow is <c>running</c>, a completed one has its result (the run's own status), a failed one is
 /// <c>failed</c>, and one terminated, cancelled or timed out outside the engine <c>incomplete</c> (F9: never
 /// <c>completed</c>). A rebuilt record is dated when its workflow closed, or for an open run when its current workflow
@@ -50,7 +52,10 @@ public static class RunIndex
                 _ => "incomplete",
             };
             rebuilt.Add(new RunRecord(start.RunId, start.ParentWorkflowId, start.Template, status, start.Requester, start.Repositories, start.DryRun,
-                new DateTimeOffset(description.CloseTime ?? description.StartTime, TimeSpan.Zero), Detail));
+                new DateTimeOffset(description.CloseTime ?? description.StartTime, TimeSpan.Zero), Detail, existing?.Level, start.ParentStepId,
+                start.TrackerIssue, existing?.TrackerIssue == start.TrackerIssue ? existing?.TrackerTitle : null,
+                existing?.TrackerIssue == start.TrackerIssue ? existing?.TrackerUrl : null,
+                start.StartedAt ?? existing?.StartedAt ?? (start.Carried is null ? new DateTimeOffset(description.StartTime, TimeSpan.Zero) : null)));
         }
 
         if (rebuilt.Count > 0)

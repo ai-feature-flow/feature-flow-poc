@@ -19,7 +19,12 @@ public interface ISecretsProvider : IProvider
 
 // Records the record store holds (docs/02 section 5). The API reads only these, never Temporal queries.
 
-/// <summary>A run: its status, template and parent. Written again whenever it changes; a write replaces a record no newer than itself (by <see cref="UpdatedAt"/>), so a late write never undoes a newer one.</summary>
+/// <summary>
+/// A run: its status, template and parent. Written again whenever it changes; a write replaces a record no newer than itself (by <see cref="UpdatedAt"/>), so a late write never undoes a newer one.
+/// <see cref="Level"/> is its plan's level, <see cref="ParentStepId"/> the parent's step that started it, <see cref="TrackerIssue"/>
+/// the issue key it was started for with the issue's title and link where read, and <see cref="StartedAt"/> when it first
+/// started; all null on a run recorded before them.
+/// </summary>
 public sealed record RunRecord(
     string RunId,
     string? ParentRunId,
@@ -29,13 +34,20 @@ public sealed record RunRecord(
     IReadOnlyList<string> Repositories,
     bool DryRun,
     DateTimeOffset UpdatedAt,
-    string? Detail);
+    string? Detail,
+    string? Level = null,
+    string? ParentStepId = null,
+    string? TrackerIssue = null,
+    string? TrackerTitle = null,
+    string? TrackerUrl = null,
+    DateTimeOffset? StartedAt = null);
 
 /// <summary>
 /// A durable wait for a person: a decision, an intervention or a patch approval, open or answered. A record with <see cref="Open"/> false closes the wait and keeps the rest of what the opening record said.
 /// <see cref="Prompt"/> is the text to show (a gate's rendered prompt, a question's text, else the engine's reason); "reason" means only a person's (LOG 389).
 /// <see cref="Consumed"/> is what a gate's step consumed when it opened, by reference (LOG 394).
 /// <see cref="ReasonRequired"/> is the choices a person must give a reason for, those that route the step as a failure or end the run (LOG 502); null on a wait recorded before it.
+/// <see cref="Cause"/> is why an intervention stopped its step, and <see cref="Patch"/> the patch a patch approval waits on; null otherwise.
 /// </summary>
 public sealed record WaitRecord(
     string RunId,
@@ -48,7 +60,70 @@ public sealed record WaitRecord(
     bool Open,
     DateTimeOffset UpdatedAt,
     IReadOnlyList<ConsumedRef>? Consumed = null,
-    IReadOnlyList<string>? ReasonRequired = null);
+    IReadOnlyList<string>? ReasonRequired = null,
+    WaitCause? Cause = null,
+    WaitPatch? Patch = null);
+
+/// <summary>
+/// Why an intervention stopped a step: the step, the outcome it ended with, the core's reason, the step's own last summary,
+/// its attempts used and allowed (null for a decision), and every time it was sent back, oldest first.
+/// </summary>
+public sealed record WaitCause(
+    string StepId,
+    string? Outcome,
+    string Reason,
+    string? Said,
+    int? AttemptsUsed,
+    long? AttemptsAllowed,
+    IReadOnlyList<SentBack> SentBack);
+
+/// <summary>A time a step was sent back: its execution, the step and outcome that sent it back where known, and the text.</summary>
+public sealed record SentBack(int Execution, string? ByStep, string? Outcome, string Text);
+
+/// <summary>
+/// A plan patch a patch approval waits on: the proposer's type and step, its reason, why it needs approval, the step the
+/// run resumes at, the plan revision it applies to, whether a child run proposed it, and the patch as
+/// <c>PatchReader.Write</c> wrote it.
+/// </summary>
+public sealed record WaitPatch(
+    string ProposerType,
+    string? ProposerStepId,
+    string? Reason,
+    IReadOnlyList<string> NeedsApproval,
+    string? ResumeAt,
+    long BaseRevision,
+    bool FromChild,
+    string Document);
+
+/// <summary>
+/// A step's counters in a run, written when they change; the last write per run and step wins: how often it ran, its
+/// attempts used, allowed (with grants; null for a decision) and granted.
+/// </summary>
+public sealed record StepStateRecord(
+    string RunId,
+    string StepId,
+    int Executions,
+    int AttemptsUsed,
+    long? AttemptsAllowed,
+    long AttemptsGranted,
+    DateTimeOffset UpdatedAt);
+
+/// <summary>
+/// A pull request as a run's step last read it, written when it changed; the last write per run, repository and number
+/// wins. <see cref="Files"/> and <see cref="Checks"/> are null where that read did not fetch them.
+/// </summary>
+public sealed record PullRequestRecord(
+    string RunId,
+    string Repository,
+    int Number,
+    string StepId,
+    PullRequestState State,
+    IReadOnlyList<PullRequestFile>? Files,
+    CheckStatus? Checks,
+    DateTimeOffset ReadAt);
+
+/// <summary>A registered repository: its name (<c>owner/name</c>), host, link and default branch, and who registered it and when. The last write per name wins.</summary>
+public sealed record RepositoryRecord(string Name, string Host, string? Url, string? DefaultBranch, string RegisteredBy, DateTimeOffset At);
 
 /// <summary>An artifact a gate's step consumed: its key as staged (<c>name</c>, <c>parent/name</c>, <c>child/&lt;step&gt;/name</c>), its name and reference.</summary>
 public sealed record ConsumedRef(string Key, string Name, string? Ref);
@@ -82,9 +157,9 @@ public static class ChangeKinds
     public const string WaitClosed = "wait_closed";
 
     /// <summary>
-    /// One <c>run_changed</c> per distinct run whose runs, timeline, answers, overrides, artifacts or sessions the batch
-    /// writes, in the order first written; then one <c>wait_opened</c> or <c>wait_closed</c> per wait record. Nothing for a
-    /// batch of other records.
+    /// One <c>run_changed</c> per distinct run whose runs, timeline, answers, overrides, artifacts, sessions, findings,
+    /// finding events, step states or pull requests the batch writes, in the order first written; then one
+    /// <c>wait_opened</c> or <c>wait_closed</c> per wait record. Nothing for a batch of other records (repositories are no run's).
     /// </summary>
     public static IReadOnlyList<(string RunId, string Kind, string? WaitId)> Of(RecordBatch batch)
     {
@@ -94,7 +169,11 @@ public static class ChangeKinds
                      .Concat((batch.Answers ?? []).Select(a => a.RunId))
                      .Concat((batch.Overrides ?? []).Select(o => o.RunId))
                      .Concat((batch.Artifacts ?? []).Select(a => a.RunId))
-                     .Concat((batch.Sessions ?? []).Select(s => s.RunId)))
+                     .Concat((batch.Sessions ?? []).Select(s => s.RunId))
+                     .Concat((batch.Findings ?? []).Select(f => f.RunId))
+                     .Concat((batch.FindingEvents ?? []).Select(e => e.RunId))
+                     .Concat((batch.StepStates ?? []).Select(s => s.RunId))
+                     .Concat((batch.PullRequests ?? []).Select(p => p.RunId)))
             if (!runs.Contains(runId, StringComparer.Ordinal))
                 runs.Add(runId);
         return
@@ -321,7 +400,10 @@ public sealed record RecordBatch(
     IReadOnlyList<OverrideRecord>? Overrides = null,
     IReadOnlyList<NotificationRecord>? Notifications = null,
     IReadOnlyList<SessionRecord>? Sessions = null,
-    IReadOnlyList<SessionCheckRecord>? SessionChecks = null);
+    IReadOnlyList<SessionCheckRecord>? SessionChecks = null,
+    IReadOnlyList<StepStateRecord>? StepStates = null,
+    IReadOnlyList<PullRequestRecord>? PullRequests = null,
+    IReadOnlyList<RepositoryRecord>? Repositories = null);
 
 /// <summary>
 /// The record store (docs/06 section 3.12). Queries are named, not SQL; the catalogue is <see cref="Queries"/>.
@@ -410,4 +492,16 @@ public static class Queries
 
     /// <summary><see cref="ChangeRecord"/>: the latest change, or none. No parameters.</summary>
     public const string LatestChange = "latest_change";
+
+    /// <summary><see cref="StepStateRecord"/>: a run's step counters, by <c>run_id</c>, the last write per step, ordered by step id.</summary>
+    public const string StepStates = "step_states";
+
+    /// <summary><see cref="PullRequestRecord"/>: a run's pull requests, by <c>run_id</c>, the last write per repository and number, ordered by repository, then number.</summary>
+    public const string PullRequests = "pull_requests";
+
+    /// <summary><see cref="RepositoryRecord"/>: every registered repository, the last write per name, ordered by name. No parameters.</summary>
+    public const string Repositories = "repositories";
+
+    /// <summary><see cref="AnswerRecord"/>: the answers recorded with the actor <c>actor</c> across runs, newest first, at most <c>limit</c> (up to 500).</summary>
+    public const string RecentAnswers = "recent_answers";
 }

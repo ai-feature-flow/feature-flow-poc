@@ -354,6 +354,24 @@ public sealed class ApiTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_runs_level_parent_step_tracker_issue_and_start_show_on_its_page_and_in_the_list()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var started = new DateTimeOffset(2026, 11, 24, 1, 0, 0, TimeSpan.Zero);
+        await records.AppendAsync(new RecordBatch([new RunRecord("r1", "p1", "std:templates/ticket_delivery", "running", "x", [], false, started.AddMinutes(5), null,
+            "ticket", "deliver", "ACME-12", "Add DELETE /widgets/{id}", "https://acme.atlassian.net/browse/ACME-12", started)]), ct);
+        var reader = Start("viewer");
+
+        var page = JsonSerializer.Deserialize<RunDetail>(await reader.GetStringAsync("runs/r1", ct), ApiJson.Options)!.Run;
+        var row = Assert.Single(JsonSerializer.Deserialize<RunList>(await reader.GetStringAsync("runs", ct), ApiJson.Options)!.Runs);
+
+        Assert.Equal(("ticket", "deliver", "Add DELETE /widgets/{id}", started), (page.Level, page.ParentStepId, page.Title, page.StartedAt));
+        Assert.Equal(new TrackerIssueView("ACME-12", "Add DELETE /widgets/{id}", "https://acme.atlassian.net/browse/ACME-12"), page.TrackerIssue);
+        Assert.Equal(("ticket", "deliver", "Add DELETE /widgets/{id}", started), (row.Level, row.ParentStepId, row.Title, row.StartedAt));
+        Assert.Equal(page.TrackerIssue, row.TrackerIssue);
+    }
+
+    [Fact]
     public async Task A_run_s_plan_is_shown_only_to_a_viewer_of_the_run()
     {
         var ct = TestContext.Current.CancellationToken;

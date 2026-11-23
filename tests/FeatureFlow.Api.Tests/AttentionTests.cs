@@ -225,4 +225,84 @@ public sealed class AttentionTests
         Assert.Empty((await GetAsync<RunDetail>(world.As("ann", "approver"), "runs/r1")).OverridesAllowed);
         Assert.Contains(Overrides.SkipProtected, (await GetAsync<RunDetail>(world.As("ada", "admin"), "runs/r1")).OverridesAllowed);
     }
+
+    /// <summary>A wait in a child run comes with the run's ancestors, root first (B1 A13); a root's wait has none.</summary>
+    [Fact]
+    public async Task A_wait_in_a_child_run_comes_with_its_path_from_the_root()
+    {
+        await using var world = new ApiWorld(Organisation(Rule("*")));
+        var now = DateTimeOffset.UtcNow;
+        await world.Records.AppendAsync(new RecordBatch(
+        [
+            new RunRecord("p1", null, "std:templates/project_delivery", "running", "x", ["acme/api"], false, now, null, "project"),
+            new RunRecord("p1.e1", "p1", "std:templates/epic_delivery", "running", "x", ["acme/api"], false, now, null, "epic", "epics.children_0"),
+            new RunRecord("p1.e1.t1", "p1.e1", "std:templates/ticket_delivery", "running", "x", ["acme/api"], false, now, null, "ticket", "tickets.children_0"),
+        ]), Ct);
+        await world.WaitAsync("p1", "gate-1", "gate", "project.requirements_approval");
+        await world.WaitAsync("p1.e1.t1", "gate-1", "gate", "ticket.spec_approval");
+
+        var items = (await GetAsync<AttentionList>(world.As("ann", "approver,viewer"), "attention")).Waits.ToDictionary(i => i.Run.RunId);
+
+        Assert.Equal([("p1", "project"), ("p1.e1", "epic")], items["p1.e1.t1"].Path!.Select(r => (r.RunId, r.Level!)));
+        Assert.Empty(items["p1"].Path!);
+    }
+
+    /// <summary>
+    /// The caller's recent answers (B1 A13): its own answers to waits of the past 7 days, newest first, at most 10, on runs it
+    /// views, each with its run and the wait's step; not an abort, nor anyone else's.
+    /// </summary>
+    [Fact]
+    public async Task The_callers_recent_answers_are_its_own_of_the_past_week_newest_first_at_most_ten()
+    {
+        await using var world = new ApiWorld(Organisation(Rule("*")));
+        var now = DateTimeOffset.UtcNow;
+        string Answer(string wait, string actor, string outcome) =>
+            JsonSerializer.Serialize(new AnswerArgs(wait, actor, outcome), new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        await RunAsync(world, "r1", repository: "acme/billing");
+        await RunAsync(world, "hidden", repository: "acme/payments");
+        await world.Records.AppendAsync(new RecordBatch(
+            Waits: Enumerable.Range(1, 12).Select(n => new WaitRecord("r1", $"gate-{n}", "gate", $"step_{n}", "ticket.spec_approval", "?", ["approved"], false, now)).ToList(),
+            Answers:
+            [
+                .. Enumerable.Range(1, 12).Select(n => new AnswerRecord("r1", $"gate-{n}", "ann", Answer($"gate-{n}", "ann", "approved"), "recorded", now.AddMinutes(-n),
+                    n == 1 ? "looks right" : null)),
+                new AnswerRecord("r1", "gate-1", "bob", Answer("gate-1", "bob", "rejected"), "recorded", now),
+                new AnswerRecord("r1", "abort", "ann", "stop", "recorded", now),
+                new AnswerRecord("r1", "gate-0", "ann", Answer("gate-0", "ann", "approved"), "recorded", now.AddDays(-8)),
+            ]), Ct);
+        await world.Records.AppendAsync(new RecordBatch(Answers: [new AnswerRecord("hidden", "gate-1", "ann", Answer("gate-1", "ann", "approved"), "recorded", now)]), Ct);
+
+        // Ann views billing's runs only, as one of its approvers.
+        var recent = (await GetAsync<AttentionList>(world.As("ann", groups: "bill-leads"), "attention")).Recent!;
+
+        Assert.Equal(Enumerable.Range(1, 10).Select(n => ($"gate-{n}", $"step_{n}", "approved", "r1")), recent.Select(a => (a.WaitId, a.StepId, a.Choice, a.Run.RunId)));
+        Assert.Equal(("looks right", "recorded"), (recent[0].Reason, recent[0].Result));
+    }
+
+    /// <summary>
+    /// An answer is recorded "sent" before delivery and again with the run's reply (<c>DeliverAnswerAsync</c>): the recent
+    /// answers show it once, as its latest record says; one whose delivery never completed shows as sent.
+    /// </summary>
+    [Fact]
+    public async Task A_recent_answer_recorded_as_sent_and_then_with_its_result_is_listed_once()
+    {
+        await using var world = new ApiWorld(Organisation(Rule("*")));
+        var now = DateTimeOffset.UtcNow;
+        string Answer(string wait, string outcome) =>
+            JsonSerializer.Serialize(new AnswerArgs(wait, "ann", outcome), new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        await RunAsync(world, "r1", repository: "acme/billing");
+        await world.Records.AppendAsync(new RecordBatch(
+            Waits: [new WaitRecord("r1", "gate-1", "gate", "step_1", "ticket.spec_approval", "?", ["approved"], false, now),
+                new WaitRecord("r1", "gate-2", "gate", "step_2", "ticket.spec_approval", "?", ["approved"], true, now)],
+            Answers:
+            [
+                new AnswerRecord("r1", "gate-1", "ann", Answer("gate-1", "approved"), "sent", now.AddMinutes(-3)),
+                new AnswerRecord("r1", "gate-1", "ann", Answer("gate-1", "approved"), "recorded", now.AddMinutes(-2)),
+                new AnswerRecord("r1", "gate-2", "ann", Answer("gate-2", "approved"), "sent", now.AddMinutes(-1)),
+            ]), Ct);
+
+        var recent = (await GetAsync<AttentionList>(world.As("ann", groups: "bill-leads"), "attention")).Recent!;
+
+        Assert.Equal([("gate-2", "sent"), ("gate-1", "recorded")], recent.Select(a => (a.WaitId, a.Result)));
+    }
 }

@@ -1,0 +1,17 @@
+.ff-steer { display: grid; gap: 12px; }
+.ff-steer p { margin: 0; }
+.ff-steer-field { display: grid; gap: 4px; max-width: 46em; }
+.ff-steer-field label { font-weight: 700; font-size: 13px; color: var(--muted); }
+.ff-steer input,
+.ff-steer select,
+.ff-steer textarea {
+  font: inherit;
+  padding: 5px 10px;
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+}
+.ff-steer-consequence { border-left: 4px solid var(--warn); padding: 4px 14px; }
+.ff-steer-diff { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; max-width: 46em; }
+.ff-steer-diff pre { margin: 4px 0 0; }

@@ -3,8 +3,8 @@ using System.Text.Json.Serialization;
 
 namespace FeatureFlow.Api.Contracts;
 
-/// <summary>Every refusal and failure the API answers: one message (docs/02 section 7).</summary>
-public sealed record ErrorResponse(string Error);
+/// <summary>Every refusal and failure the API answers: one message (docs/02 section 7), and where a document was refused, each error found in it (left out otherwise).</summary>
+public sealed record ErrorResponse(string Error, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Errors = null);
 
 /// <summary>
 /// The API's JSON (docs/02 section 7): snake_case property names and enum values, required constructor parameters and

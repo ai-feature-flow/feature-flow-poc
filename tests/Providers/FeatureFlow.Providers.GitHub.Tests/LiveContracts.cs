@@ -67,6 +67,9 @@ public sealed class GitHubCodeHostContract : CodeHostContract, IAsyncLifetime
             return state.Ok ? ProviderResult<PullRequestState>.Success(state.Value! with { Head = fixture.Unbranch(state.Value.Head), Base = fixture.Unbranch(state.Value.Base) }) : state;
         }
 
+        public Task<ProviderResult<IReadOnlyList<PullRequestFile>>> ListPullRequestFilesAsync(PullRequestRef pullRequest, CancellationToken cancellationToken) =>
+            inner.ListPullRequestFilesAsync(pullRequest, cancellationToken);
+
         public Task<ProviderResult<Unit>> ClosePullRequestAsync(PullRequestRef pullRequest, string? comment, CancellationToken cancellationToken) =>
             inner.ClosePullRequestAsync(pullRequest, comment, cancellationToken);
 

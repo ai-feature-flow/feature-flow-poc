@@ -61,6 +61,7 @@ public sealed class InMemoryForge
         public readonly List<string> Comments = [];
         public string? MergedBy;
         public string? MergeRevision;
+        public List<PullRequestFile> Files = [];
     }
 
     internal sealed class CiRun
@@ -475,6 +476,32 @@ public sealed class InMemoryForge
             pr.MergedBy = r.RefActors.GetValueOrDefault(Branch(pr.Spec.Base));
             pr.MergeRevision = target;
         }
+        else if (target is not null && pr.HeadRevision.Length > 0 && r.Commits.ContainsKey(pr.HeadRevision))
+            pr.Files = Diff(r.Commits[MergeBase(r, target, pr.HeadRevision) ?? pr.HeadRevision].Files, r.Commits[pr.HeadRevision].Files);
+    }
+
+    /// <summary>
+    /// What an open pull request changes, from the merge base to its head, by path, with line counts; kept once it is merged
+    /// or closed, as a code host keeps a pull request's files.
+    /// </summary>
+    static List<PullRequestFile> Diff(IReadOnlyDictionary<string, string> from, IReadOnlyDictionary<string, string> to)
+    {
+        static List<string> Lines(string? text) => text is null or "" ? [] : text.TrimEnd('\n').Split('\n').ToList();
+        var files = new List<PullRequestFile>();
+        foreach (var path in from.Keys.Union(to.Keys).Order(StringComparer.Ordinal))
+        {
+            var (before, after) = (from.GetValueOrDefault(path), to.GetValueOrDefault(path));
+            if (before == after)
+                continue;
+            var removed = Lines(before);
+            var added = new List<string>();
+            foreach (var line in Lines(after))
+                if (!removed.Remove(line))
+                    added.Add(line);
+            files.Add(new PullRequestFile(path, before is null ? "added" : after is null ? "removed" : "modified", added.Count, removed.Count));
+        }
+
+        return files;
     }
 }
 
@@ -693,9 +720,18 @@ public sealed class InMemoryCodeHost(InMemoryForge forge) : ICodeHostProvider
                 pr.Spec.Base, pr.Spec.Draft, mergeable,
                 pr.Reviews.Where(kv => kv.Value).Select(kv => kv.Key).Order(StringComparer.Ordinal).ToList(),
                 pr.Reviews.Where(kv => !kv.Value).Select(kv => kv.Key).Order(StringComparer.Ordinal).ToList(),
-                pr.MergedBy, pr.MergeRevision, $"memory://{pullRequest.Repo.FullName}/pull/{pr.Number}"));
+                pr.MergedBy, pr.MergeRevision, $"memory://{pullRequest.Repo.FullName}/pull/{pr.Number}",
+                pr.Files.Sum(f => f.Additions), pr.Files.Sum(f => f.Deletions), pr.Files.Count,
+                mergeable switch { true => "clean", false => "dirty", null => null }));
         });
     }
+
+    public Task<ProviderResult<IReadOnlyList<PullRequestFile>>> ListPullRequestFilesAsync(PullRequestRef pullRequest, CancellationToken cancellationToken) =>
+        WithPr("ListPullRequestFiles", pullRequest, (r, pr) =>
+        {
+            InMemoryForge.Refresh(r, pr);
+            return ProviderResult<IReadOnlyList<PullRequestFile>>.Success(pr.Files.Take(300).ToList());
+        });
 
     public Task<ProviderResult<Unit>> ClosePullRequestAsync(PullRequestRef pullRequest, string? comment, CancellationToken cancellationToken) =>
         WithPr("ClosePullRequest", pullRequest, (r, pr) =>

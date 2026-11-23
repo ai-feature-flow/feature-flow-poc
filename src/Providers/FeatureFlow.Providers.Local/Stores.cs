@@ -132,6 +132,7 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
         CreateSteering(connection);
         CreateChanges(connection);
         CreateOpenWaits(connection);
+        CreateConsole(connection);
     }
 
     /// <summary>One organisation per installation; the key is there from the start (docs/02 section 5).</summary>
@@ -219,6 +220,7 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
                 ("$o", Org), ("$r", a.RunId), ("$s", a.StepId), ("$e", a.Execution), ("$n", a.Name), ("$b", JsonSerializer.Serialize(a, Json)));
         AppendLedger(connection, records);
         AppendSteering(connection, records);
+        AppendConsole(connection, records);
         AppendChanges(connection, records);
         transaction.Commit();
         return Task.FromResult(ProviderResult<Unit>.Success(default));
@@ -264,6 +266,12 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
             Queries.Session => ("SELECT body FROM sessions WHERE org_id = $o AND session_id = $s", typeof(SessionRecord), [("$s", P("session_id"))]),
             Queries.Sessions => ("SELECT body FROM sessions WHERE org_id = $o AND run_id = $r ORDER BY session_id", typeof(SessionRecord), [("$r", P("run_id"))]),
             Queries.SessionChecks => ("SELECT body FROM session_checks WHERE org_id = $o AND session_id = $s ORDER BY check_id", typeof(SessionCheckRecord), [("$s", P("session_id"))]),
+            Queries.StepStates => ("SELECT body FROM step_states WHERE org_id = $o AND run_id = $r ORDER BY step_id", typeof(StepStateRecord), [("$r", P("run_id"))]),
+            Queries.PullRequests => ("SELECT body FROM pull_requests WHERE org_id = $o AND run_id = $r ORDER BY repository, number", typeof(PullRequestRecord),
+                [("$r", P("run_id"))]),
+            Queries.Repositories => ("SELECT body FROM repositories WHERE org_id = $o ORDER BY name", typeof(RepositoryRecord), []),
+            Queries.RecentAnswers => ("SELECT body FROM answers WHERE org_id = $o AND json_extract(body, '$.actor') = $a ORDER BY id DESC LIMIT $l", typeof(AnswerRecord),
+                [("$a", P("actor")), ("$l", Limit(parameters))]),
             _ => throw new ArgumentException($"unknown query {queryName}"),
         };
         if (query.Type != typeof(T))
@@ -334,6 +342,31 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
         foreach (var c in records.SessionChecks ?? [])
             Execute(connection, "INSERT OR REPLACE INTO session_checks VALUES ($o, $s, $c, $b)",
                 ("$o", Org), ("$s", c.SessionId), ("$c", c.CheckId), ("$b", JsonSerializer.Serialize(c, Json)));
+    }
+
+    // ---- The console (B1): step counters, pull request state, registered repositories ----
+
+    static void CreateConsole(SqliteConnection connection) =>
+        Execute(connection, """
+            CREATE TABLE IF NOT EXISTS step_states (org_id TEXT NOT NULL, run_id TEXT NOT NULL, step_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (org_id, run_id, step_id));
+            CREATE TABLE IF NOT EXISTS pull_requests (org_id TEXT NOT NULL, run_id TEXT NOT NULL, repository TEXT NOT NULL, number INTEGER NOT NULL, body TEXT NOT NULL,
+                PRIMARY KEY (org_id, run_id, repository, number));
+            CREATE TABLE IF NOT EXISTS repositories (org_id TEXT NOT NULL, name TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (org_id, name));
+            CREATE INDEX IF NOT EXISTS answers_actor ON answers (org_id, json_extract(body, '$.actor'), id);
+            """);
+
+    /// <summary>Step states, pull requests and repositories replace the last write by key.</summary>
+    static void AppendConsole(SqliteConnection connection, RecordBatch records)
+    {
+        foreach (var s in records.StepStates ?? [])
+            Execute(connection, "INSERT OR REPLACE INTO step_states VALUES ($o, $r, $s, $b)",
+                ("$o", Org), ("$r", s.RunId), ("$s", s.StepId), ("$b", JsonSerializer.Serialize(s, Json)));
+        foreach (var p in records.PullRequests ?? [])
+            Execute(connection, "INSERT OR REPLACE INTO pull_requests VALUES ($o, $r, $p, $n, $b)",
+                ("$o", Org), ("$r", p.RunId), ("$p", p.Repository), ("$n", p.Number), ("$b", JsonSerializer.Serialize(p, Json)));
+        foreach (var r in records.Repositories ?? [])
+            Execute(connection, "INSERT OR REPLACE INTO repositories VALUES ($o, $n, $b)",
+                ("$o", Org), ("$n", r.Name), ("$b", JsonSerializer.Serialize(r, Json)));
     }
 
     // ---- Changes (docs/06 section 3.12, LOG 397): what GET /events reports, written in the batch's transaction ----

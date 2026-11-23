@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text.Json.Nodes;
 using FeatureFlow.Interpreter;
 using FeatureFlow.Interpreter.Wire;
+using FeatureFlow.Providers.Abstractions;
 using Temporalio.Client;
 using Temporalio.Exceptions;
 
@@ -151,6 +152,20 @@ public class ContinueAsNewTests
 
         TestContext.Current.TestOutputHelper?.WriteLine(
             $"hand-overs {final.HandOvers.Count}, with children and decisions {withBoth}, child ends while draining {childEnds}, answers while draining {answersDraining}");
+
+        // A1: the run's record keeps when it first started across every hand-over; each child's names the step that started it
+        // and when its parent started it.
+        var records = h.Host.Providers.Required<IRecordStoreProvider>("record_store");
+        async Task<RunRecord> RecordOf(string run) =>
+            (await records.QueryAsync<RunRecord>(Queries.Run, new Dictionary<string, string> { ["run_id"] = run }, TestContext.Current.CancellationToken)).Unwrap().Single();
+        var runs = await h.RunsOfAsync(id);
+        var parent = await RecordOf(id);
+        Assert.True(runs.Count > 1 && parent.StartedAt >= new DateTimeOffset(runs[0].StartTime, TimeSpan.Zero) && parent.StartedAt < new DateTimeOffset(runs[1].StartTime, TimeSpan.Zero),
+            $"started at {parent.StartedAt}; runs started {string.Join(", ", runs.Select(r => r.StartTime.ToString("O", CultureInfo.InvariantCulture)))}");
+        Assert.Equal(("epic", null), (parent.Level, parent.ParentStepId));
+        var child = await RecordOf($"{id}.children_0.1");
+        Assert.Equal(("children_0", id), (child.ParentStepId, child.ParentRunId));
+        Assert.True(child.StartedAt > parent.StartedAt, $"child started at {child.StartedAt}, parent at {parent.StartedAt}");
         await h.RecordHistoryAsync(id, "sp1_parent");
         Assert.True(await h.RecordResumedHistoryAsync(id, "sp1_parent_resumed"), "no run resumed carrying unconfirmed child ends");
     }

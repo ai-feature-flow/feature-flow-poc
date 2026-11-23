@@ -54,6 +54,14 @@ static class Schema
         CREATE TABLE changes (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, org_id text NOT NULL, run_id text NOT NULL, kind text NOT NULL, wait_id text,
             at timestamptz NOT NULL DEFAULT now());
         """,
+        // 4: the console's B1 records: step counters, pull request state, registered repositories; answers by actor (Queries.RecentAnswers).
+        """
+        CREATE TABLE step_states (org_id text NOT NULL, run_id text NOT NULL, step_id text NOT NULL, body jsonb NOT NULL, PRIMARY KEY (org_id, run_id, step_id));
+        CREATE TABLE pull_requests (org_id text NOT NULL, run_id text NOT NULL, repository text NOT NULL, number integer NOT NULL, body jsonb NOT NULL,
+            PRIMARY KEY (org_id, run_id, repository, number));
+        CREATE TABLE repositories (org_id text NOT NULL, name text NOT NULL, body jsonb NOT NULL, PRIMARY KEY (org_id, name));
+        CREATE INDEX answers_actor ON answers (org_id, (body->>'actor'), id DESC);
+        """,
     ];
 
     /// <summary>The schema version this build writes.</summary>

@@ -27,10 +27,6 @@ public static partial class ApiApp
             .Described<RunList>("listRuns", 200);
         app.MapGet("/runs/{id}", (HttpContext c, string id, string? after) => api.Guard(c, caller => api.ShowAsync(c, caller, id, after)))
             .Described<RunDetail>("getRun", 200, 404);
-        app.MapGet("/runs/{id}/artifacts", (HttpContext c, string id) => api.Guard(c, caller => api.ListArtifactsAsync(c, caller, id)))
-            .Described<ArtifactList>("listArtifacts", 200, 404);
-        app.MapGet("/runs/{id}/artifacts/{reference}", (HttpContext c, string id, string reference) => api.Guard(c, caller => api.ArtifactAsync(c, caller, id, reference)))
-            .WithName("getArtifact").Produces<Stream>(200, "application/octet-stream").Produces<ErrorResponse>(401).Produces<ErrorResponse>(404);
     }
 
     sealed partial class Handlers
@@ -148,13 +144,84 @@ public static partial class ApiApp
             return (await Artifacts.PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(lockText)), ct)).Unwrap().Id;
         }
 
-        /// <summary>The runs the caller may read: those where it is a viewer in the run's scope (docs/05 section 3.3).</summary>
+        /// <summary>
+        /// The runs the caller may read: those where it is a viewer in the run's scope (docs/05 section 3.3), each with its pull
+        /// requests; and for the root of an active tree (A1), the steps current across the tree's active runs the caller views,
+        /// how many of them run, and how many of its waits need the caller, as <c>GET /attention</c> decides it.
+        /// </summary>
         public async Task<IResult> ListAsync(HttpContext context, Caller caller)
         {
-            var runs = (await Records.QueryAsync<RunRecord>(Queries.Runs, new Dictionary<string, string>(), context.RequestAborted)).Unwrap()
-                .Where(r => RolesIn(caller, ScopeOf(r.Repositories)).Contains(PeopleRoles.Viewer)).Select(SummaryOf).ToList();
-            return Results.Json(new RunList(runs), Json);
+            var ct = context.RequestAborted;
+            var all = (await Records.QueryAsync<RunRecord>(Queries.Runs, new Dictionary<string, string>(), ct)).Unwrap();
+            bool Viewed(RunRecord r) => RolesIn(caller, ScopeOf(r.Repositories)).Contains(PeopleRoles.Viewer);
+            var visible = all.Where(Viewed).ToList();
+            var roots = visible.Where(r => r.ParentRunId is null && Active(r)).ToList();
+            var needing = roots.Count == 0 ? [] : await NeedingAsync(caller, ct);
+            var children = all.Where(r => r.ParentRunId is not null).ToLookup(r => r.ParentRunId!, StringComparer.Ordinal);
+            var activity = new Dictionary<string, (IReadOnlyList<CurrentStep> Current, int NeedsYou)>(StringComparer.Ordinal);
+            foreach (var root in roots)
+            {
+                var members = Subtree(root, r => children[r.RunId]).Where(r => Active(r) && Viewed(r)).ToList();
+                var ids = members.Select(r => r.RunId).ToHashSet(StringComparer.Ordinal);
+                activity[root.RunId] = (await CurrentStepsAsync(members, ct), needing.Count(i => ids.Contains(i.Run.RunId)));
+            }
+
+            var rows = new List<RunSummary>();
+            foreach (var r in visible)
+            {
+                var links = await PullRequestLinksAsync(r.RunId, ct);
+                rows.Add(activity.TryGetValue(r.RunId, out var a)
+                    ? SummaryOf(r, links, a.Current, a.NeedsYou, a.Current.Count(c => c.Status == "running"))
+                    : SummaryOf(r, links));
+            }
+
+            return Results.Json(new RunList(rows), Json);
         }
+
+        /// <summary>Whether a run is going: it may have current steps and waits that need someone.</summary>
+        static bool Active(RunRecord r) => r.Status is "starting" or "running";
+
+        /// <summary>The run and its descendants, depth first, each run before its children, children in the order started.</summary>
+        static IEnumerable<RunRecord> Subtree(RunRecord run, Func<RunRecord, IEnumerable<RunRecord>> childrenOf)
+        {
+            yield return run;
+            foreach (var child in childrenOf(run).OrderBy(c => c.StartedAt ?? c.UpdatedAt).ThenBy(c => c.RunId, StringComparer.Ordinal))
+                foreach (var r in Subtree(child, childrenOf))
+                    yield return r;
+        }
+
+        /// <summary>
+        /// The steps current in the runs, in the order given: each step whose status, as the plan shows it, is <c>running</c>,
+        /// <c>retrying</c> or a wait. A container step (<c>chain</c>, <c>parallel</c>, <c>for_each</c>) and a <c>run.child</c>
+        /// step are not counted: the console's tree shows their branches and child runs in their place, not them.
+        /// </summary>
+        async Task<IReadOnlyList<CurrentStep>> CurrentStepsAsync(IEnumerable<RunRecord> runs, CancellationToken ct)
+        {
+            var current = new List<CurrentStep>();
+            IReadOnlyList<ArtifactRecord>? revisions = null;
+            var list = runs.ToList();
+            foreach (var run in list)
+            {
+                var p = new Dictionary<string, string> { ["run_id"] = run.RunId };
+                var timeline = (await Records.QueryAsync<TimelineRecord>(Queries.Timeline, new Dictionary<string, string>(p) { ["after"] = "0" }, ct)).Unwrap();
+                var waits = (await Records.QueryAsync<WaitRecord>(Queries.Waits, new Dictionary<string, string>(p) { ["open"] = "true" }, ct)).Unwrap().Where(w => w.Kind != "");
+                var steps = Statuses(timeline, waits).Where(s => s.Value is "running" or "retrying" || s.Value.StartsWith("waiting(", StringComparison.Ordinal)).ToList();
+                if (steps.Count == 0)
+                    continue;
+                // The first run given is the root of the others, whose artifacts hold every descendant's plan revisions.
+                revisions ??= await PlanRevisionsAsync(list[0].RunId, ct);
+                var plan = (await LoadPlanAsync(run, null, null, ct, revisions)).Plan?.Plan;
+                current.AddRange(steps.Where(s => plan?.StepById(s.Key) is not ({ Container: not null } or { Form: FeatureFlow.Model.Plans.StepForm.Action, Action: "run.child" }))
+                    .Select(s => new CurrentStep(run.RunId, s.Key, s.Value)));
+            }
+
+            return current;
+        }
+
+        /// <summary>A run's pull requests as links, as the run last read them.</summary>
+        async Task<IReadOnlyList<PullRequestLink>> PullRequestLinksAsync(string runId, CancellationToken ct) =>
+            (await Records.QueryAsync<PullRequestRecord>(Queries.PullRequests, new Dictionary<string, string> { ["run_id"] = runId }, ct)).Unwrap()
+            .Select(PullRequestLinkOf).ToList();
 
         /// <summary>The run, if the caller is a viewer in its scope; null otherwise, so every read of a run refuses alike (404).</summary>
         async Task<RunRecord?> VisibleRunAsync(Caller caller, string id, CancellationToken ct)
@@ -167,7 +234,8 @@ public static partial class ApiApp
         /// The run's page (LOG 396): the run; every wait, open first, then closed ones most recently closed first, each with
         /// whether the caller may answer it now (<see cref="CheckAnswer"/>), who has answered while more must
         /// (<c>min_count</c>), and the answer that closed it; the timeline after <paramref name="after"/>; the children; every
-        /// answer and override recorded; and the override keys the caller may use on it.
+        /// answer and override recorded; the override keys the caller may use on it; its pull requests as last read; its inputs
+        /// (the parameters of its latest plan revision); and the steps current in it and its active descendants (A1, A5).
         /// </summary>
         public async Task<IResult> ShowAsync(HttpContext context, Caller caller, string id, string? after)
         {
@@ -183,15 +251,26 @@ public static partial class ApiApp
             var children = (await Records.QueryAsync<RunRecord>(Queries.Runs, new Dictionary<string, string> { ["parent_run_id"] = id }, ct)).Unwrap();
             var answers = (await Records.QueryAsync<AnswerRecord>(Queries.Answers, p, ct)).Unwrap();
             var overrides = (await Records.QueryAsync<OverrideRecord>(Queries.Overrides, p, ct)).Unwrap();
-            var views = new List<WaitView>();
-            foreach (var wait in waits)
+            var views = await WaitViewsAsync(caller, run, waits, answers, ct);
+            var pullRequests = (await Records.QueryAsync<PullRequestRecord>(Queries.PullRequests, p, ct)).Unwrap();
+            var latest = (await PlanRevisionsAsync(id, ct)).Where(a => a.RunId == id).MaxBy(a => a.Execution);
+            var inputs = latest is null ? null : PlanSource.Read(await ReadTextAsync(latest.Ref, ct)).Parameters;
+            var subtree = new List<RunRecord>();
+            async Task CollectAsync(RunRecord r, IReadOnlyList<RunRecord>? kids)
             {
-                var (canAnswer, minCount) = await MayAnswerAsync(caller, run, wait, ct);
-                views.Add(WaitViewOf(wait, canAnswer, minCount, wait.Open && minCount > 1 ? ProgressOf(wait, answers, minCount) : null, wait.Open ? null : ClosedAnswerOf(wait, answers)));
+                if (!Active(r) || !RolesIn(caller, ScopeOf(r.Repositories)).Contains(PeopleRoles.Viewer))
+                    return;
+                subtree.Add(r);
+                kids ??= (await Records.QueryAsync<RunRecord>(Queries.Runs, new Dictionary<string, string> { ["parent_run_id"] = r.RunId }, ct)).Unwrap();
+                foreach (var child in kids.OrderBy(c => c.StartedAt ?? c.UpdatedAt).ThenBy(c => c.RunId, StringComparer.Ordinal))
+                    await CollectAsync(child, null);
             }
 
-            return Results.Json(new RunDetail(ViewOf(run), views, timeline.Select(EntryOf).ToList(), children.Select(SummaryOf).ToList(),
-                answers.Select(AnswerViewOf).ToList(), overrides.Select(OverrideViewOf).ToList(), OverridesAllowed(caller, ScopeOf(run.Repositories))), Json);
+            await CollectAsync(run, children);
+
+            return Results.Json(new RunDetail(ViewOf(run, pullRequests.Select(PullRequestLinkOf).ToList()), views, timeline.Select(EntryOf).ToList(),
+                children.Select(SummaryOf).ToList(), answers.Select(AnswerViewOf).ToList(), overrides.Select(OverrideViewOf).ToList(),
+                OverridesAllowed(caller, ScopeOf(run.Repositories)), pullRequests.Select(PullRequestViewOf).ToList(), inputs, await CurrentStepsAsync(subtree, ct)), Json);
         }
 
         /// <summary>
@@ -207,73 +286,27 @@ public static partial class ApiApp
             return Overrides.DefaultRoles.Keys.Where(k => k is not (Overrides.Answer or Overrides.AnswerQuestion or Overrides.Recover) && RolesForKey(k).Intersect(roles).Any())
                 .ToList();
         }
-
-        /// <summary>
-        /// The run's own artifact index, in the order recorded, for a viewer of the run: declared artifacts, evidence, agent
-        /// sessions' transcripts and prompts, and plan revisions (LOG 325 as amended by LOG 343 and 393). A child's are
-        /// listed through the child, whose scope may differ.
-        /// </summary>
-        public async Task<IResult> ListArtifactsAsync(HttpContext context, Caller caller, string id)
-        {
-            if (await VisibleRunAsync(caller, id, context.RequestAborted) is null)
-                return Error(404, $"no run {id}");
-            var indexed = (await Records.QueryAsync<ArtifactRecord>(Queries.Artifacts, new Dictionary<string, string> { ["run_id"] = id }, context.RequestAborted)).Unwrap();
-            return Results.Json(new ArtifactList(indexed.Where(a => a.RunId == id).Select(ArtifactViewOf).ToList()), Json);
-        }
-
-        /// <summary>
-        /// An artifact of the run, for a viewer of the run: one its own index holds (what its timeline shows, its transcripts
-        /// and prompts), or one a wait of the run names as consumed, such as the parent's contract a child's gate ratifies
-        /// (LOG 394). A child's own artifacts are read through the child, whose scope may differ (review R5, F1).
-        /// </summary>
-        public async Task<IResult> ArtifactAsync(HttpContext context, Caller caller, string id, string reference)
-        {
-            var ct = context.RequestAborted;
-            var p = new Dictionary<string, string> { ["run_id"] = id };
-            if (await VisibleRunAsync(caller, id, ct) is null)
-                return Error(404, $"no run {id}");
-            var indexed = (await Records.QueryAsync<ArtifactRecord>(Queries.Artifacts, p, ct)).Unwrap();
-            if (!indexed.Any(a => a.RunId == id && a.Ref == reference)
-                && !(await Records.QueryAsync<WaitRecord>(Queries.Waits, p, ct)).Unwrap().Any(w => w.Consumed?.Any(c => c.Ref == reference) == true))
-                return Error(404, $"no artifact {reference} in run {id}");
-            var read = await Artifacts.GetAsync(new ArtifactRef(reference), ct);
-            if (!read.Ok)
-                return Error(404, $"artifact {reference} cannot be read: {read.Error!.Message}");
-            // Saved, never shown: a browser that navigates to an artifact neither renders nor sniffs it (review R1).
-            context.Response.Headers.XContentTypeOptions = "nosniff";
-            context.Response.Headers.ContentDisposition = "attachment";
-            return Results.Stream(read.Value!, "application/octet-stream");
-        }
     }
-
-    static ArtifactView ArtifactViewOf(ArtifactRecord a) =>
-        new(a.StepId, a.Execution, a.Name, a.Type, a.Ref, a.Action, a.Evidence, ArtifactKindOf(a), a.At);
-
-    /// <summary>What an indexed artifact is, from the names the engine gives what it indexes (<see cref="ArtifactNames"/>).</summary>
-    static ArtifactKind ArtifactKindOf(ArtifactRecord a) => a switch
-    {
-        { StepId: "", Name: ArtifactNames.PlanRevision } => ArtifactKind.PlanRevision,
-        _ when a.Name.StartsWith(ArtifactNames.TranscriptType + ":", StringComparison.Ordinal) => ArtifactKind.Transcript,
-        _ when a.Name.StartsWith(ArtifactNames.PromptType + ":", StringComparison.Ordinal) => ArtifactKind.Prompt,
-        { Evidence: true } => ArtifactKind.Evidence,
-        _ => ArtifactKind.Artifact,
-    };
 
     // Store records are not responses: each is mapped to the view the API answers with (docs/02 section 7).
 
-    static RunSummary SummaryOf(RunRecord r) => new(r.RunId, r.ParentRunId, r.Template, r.Status, r.Requester, r.Repositories, r.DryRun, r.UpdatedAt);
+    static RunSummary SummaryOf(RunRecord r) => SummaryOf(r, null);
 
-    static RunView ViewOf(RunRecord r) => new(r.RunId, r.ParentRunId, r.Template, r.Status, r.Requester, r.Repositories, r.DryRun, r.UpdatedAt, r.Detail);
+    /// <summary>A run in a list, with its pull requests and, for the root of an active tree, the tree's current steps, waits needing the caller and running steps.</summary>
+    static RunSummary SummaryOf(RunRecord r, IReadOnlyList<PullRequestLink>? pullRequests, IReadOnlyList<CurrentStep>? current = null, int needsYou = 0, int running = 0) =>
+        new(r.RunId, r.ParentRunId, r.Template, r.Status, r.Requester, r.Repositories, r.DryRun, r.UpdatedAt,
+            r.Level, r.ParentStepId, TrackerIssueOf(r), r.TrackerTitle, r.StartedAt, pullRequests, current, needsYou, running);
+
+    static RunView ViewOf(RunRecord r) => ViewOf(r, null);
+
+    static RunView ViewOf(RunRecord r, IReadOnlyList<PullRequestLink>? pullRequests) =>
+        new(r.RunId, r.ParentRunId, r.Template, r.Status, r.Requester, r.Repositories, r.DryRun, r.UpdatedAt, r.Detail,
+            r.Level, r.ParentStepId, TrackerIssueOf(r), r.TrackerTitle, r.StartedAt, pullRequests);
+
+    /// <summary>The run's tracker issue, with its title and link where they were read; null for a run started for none.</summary>
+    static TrackerIssueView? TrackerIssueOf(RunRecord r) => r.TrackerIssue is { } key ? new TrackerIssueView(key, r.TrackerTitle, r.TrackerUrl) : null;
 
     static TimelineEntry EntryOf(TimelineRecord t) => new(t.Sequence, t.Kind, t.StepId, t.Detail, t.At);
-
-    /// <summary>
-    /// A wait record as the API shows it, with whether the caller may answer it now, who has answered while more must
-    /// (<c>min_count</c>), and the answer that closed it.
-    /// </summary>
-    static WaitView WaitViewOf(WaitRecord w, bool canAnswer, int minCount, IReadOnlyList<AnswerProgress>? progress, ClosedAnswer? answer) =>
-        new(w.WaitId, KindOf(w.Kind), w.StepId, w.DecisionType, w.Prompt, w.Choices, w.ReasonRequired ?? [], w.Open, w.UpdatedAt,
-            (w.Consumed ?? []).Select(c => new ConsumedArtifactView(c.Key, c.Name, c.Ref)).ToList(), canAnswer, minCount, progress, answer);
 
     /// <summary>The answer a person gave, as recorded (JSON <see cref="AnswerArgs"/>), or null for text that is not one (an abort's reason).</summary>
     static AnswerArgs? ArgsOf(string recorded)
@@ -295,12 +328,6 @@ public static partial class ApiApp
     static bool Delivered(string result) =>
         result != "sent" && !result.StartsWith(Pending, StringComparison.Ordinal) && !result.StartsWith("refused: ", StringComparison.Ordinal);
 
-    /// <summary>The answer that closed the wait: the last one the run replied to, or null if it closed otherwise (a timeout, steering).</summary>
-    static ClosedAnswer? ClosedAnswerOf(WaitRecord w, IReadOnlyList<AnswerRecord> answers) =>
-        answers.LastOrDefault(a => a.WaitId == w.WaitId && Delivered(a.Result)) is { } a && ArgsOf(a.Answer) is { } args
-            ? new ClosedAnswer(args.Actor, ChoiceOf(args), a.Reason ?? args.Reason, a.At)
-            : null;
-
     /// <summary>An answer record as history shows it; an abort's text is its reason.</summary>
     static AnswerView AnswerViewOf(AnswerRecord a) =>
         a.WaitId == "abort" ? new AnswerView(a.WaitId, a.Actor, "abort", a.Reason ?? a.Answer, a.Result, a.At)
@@ -308,45 +335,4 @@ public static partial class ApiApp
         : new AnswerView(a.WaitId, a.Actor, "", a.Reason, a.Result, a.At);
 
     static OverrideView OverrideViewOf(OverrideRecord o) => new(o.OverrideId, o.Key, o.Actor, o.Reason, o.StepId, o.Change, o.Result, o.At);
-
-    sealed partial class Handlers
-    {
-        /// <summary>
-        /// Who has answered an open wait each way while it needs <paramref name="needed"/> people (LOG 221): its pending answers,
-        /// grouped as <see cref="SameWay"/> counts them, each person once.
-        /// </summary>
-        static IReadOnlyList<AnswerProgress> ProgressOf(WaitRecord w, IReadOnlyList<AnswerRecord> answers, int needed)
-        {
-            var ways = new List<(AnswerArgs Way, List<string> Actors)>();
-            foreach (var a in answers.Where(a => a.WaitId == w.WaitId && a.Result.StartsWith(Pending, StringComparison.Ordinal)))
-            {
-                if (ArgsOf(a.Answer) is not { } args)
-                    continue;
-                if (ways.FindIndex(g => SameWay(a.Answer, g.Way)) is var i and >= 0)
-                {
-                    if (!ways[i].Actors.Contains(a.Actor, StringComparer.Ordinal))
-                        ways[i].Actors.Add(a.Actor);
-                }
-                else
-                {
-                    ways.Add((args, [a.Actor]));
-                }
-            }
-
-            return ways.Select(g => new AnswerProgress(ChoiceOf(g.Way), g.Actors, needed)).ToList();
-        }
-    }
-
-    /// <summary>A wait record's kind as the API names it: the record store's name (<c>patch_approval</c>) read as <see cref="WaitKind"/>.</summary>
-    static WaitKind KindOf(string kind) => kind switch
-    {
-        "gate" => WaitKind.Gate,
-        "question" => WaitKind.Question,
-        "intervention" => WaitKind.Intervention,
-        "patch_approval" => WaitKind.PatchApproval,
-        "breakpoint" => WaitKind.Breakpoint,
-        "stalled" => WaitKind.Stalled,
-        "stuck" => WaitKind.Stuck,
-        _ => throw new InvalidOperationException($"a wait record has kind '{kind}', which the API does not know"),
-    };
 }

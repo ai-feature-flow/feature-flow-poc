@@ -35,7 +35,6 @@ steps:
     action: scm.pull_request
     repository: { expr: "params.repository" }
     with:
-      title: { expr: "run.level + ': ' + run.id" }
       body: std:prompts/pull_request_body
     routes:
       ready:

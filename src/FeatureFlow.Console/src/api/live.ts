@@ -39,8 +39,10 @@ export interface Live<T> {
 }
 
 /**
- * Reads with `load` on mount and again whenever one of `keys` (or "*") is invalidated. A change of keys, such as
- * another run, starts afresh. Only the latest read's result is kept.
+ * Reads with `load` on mount and again whenever one of `keys` (or "*") is invalidated. A change of keys, such as another
+ * run of the same tree, reads afresh but keeps the last value until that read settles, so a pane that follows the
+ * selection does not flash; a reader that must not show another key's data is keyed by it (`key=`) and remounts. Only the
+ * latest read's result is kept.
  */
 export function useLive<T>(keys: readonly string[], load: () => Promise<T>): Live<T> {
   const [state, setState] = useState<Live<T>>({ loading: true });
@@ -51,7 +53,7 @@ export function useLive<T>(keys: readonly string[], load: () => Promise<T>): Liv
   useEffect(() => {
     let mounted = true;
     let latest = 0;
-    setState({ loading: true });
+    setState(s => ({ data: s.data, loading: true }));
     const read = () => {
       const mine = ++latest;
       setState(s => ({ ...s, loading: true }));
