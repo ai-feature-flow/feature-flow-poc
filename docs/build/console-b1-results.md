@@ -63,18 +63,17 @@ B1's new records are missing. Nothing was run live; the product owner's live-use
 
 ## Evidence
 
-**To be filled by the sub-orchestrator at the merged head.** The fix pass's runs at its head 163472d: default suite
-green twice (26 assemblies; Api 240, Console 87, Engine 308, Interpreter 229, Replay 47); Integration on a Temporal dev
-server green (Integration 136, Api 2, Postgres 37, S3 12, Docker 17). The builders' own figures are in their reports.
+The sub-orchestrator's runs at the merged head 34d2b53 (later commits change `docs/` only). The fix pass's runs at its
+head 163472d agree: default suite green twice, Integration green. The builders' own figures are in their reports.
 
 | Check | Result |
 |---|---|
-| Default suite (`Category!=Integration&Category!=Live&Category!=Cluster`), head `<commit>` | *TBD* |
-| `Console.Tests` (Playwright) | *TBD* |
-| `Replay.Tests` | *TBD* (47/47 at every builder's head and the fix pass's) |
-| Integration category (Temporal dev server, own port) | *TBD*; the fix pass's run above, and the builders': Postgres store contracts, ticket main and exhausted paths, continue-as-new, child runs, forge ticket, merge-action decisions, findings loop |
-| `OpenApiTests` (committed `openapi.json` current) | *TBD* (4/4 at 7f9b3b7; the fix pass regenerated it for LOG 538) |
-| Break-and-see-fail | About 120 checks by the builders and 20 by the fix pass, each listed in their reports |
+| Default suite (`Category!=Integration&Category!=Live&Category!=Cluster`), head 34d2b53 | 26 assemblies, 0 failed (Api 240, Engine 308, Interpreter 229) |
+| `Console.Tests` (Playwright) | 87/87 in the full run; once earlier, under load from a parallel build, a live re-read test timed out (made robust by the fix pass, M1) |
+| `Replay.Tests` | 47/47, at every builder's head and the merged head |
+| Integration category (Temporal dev server, own port 7823) | Integration 135/136, Api 2, Postgres 37, S3 12, Docker 17. The one failure, `ReminderTests.An_open_decision_is_reminded_once_per_interval_until_it_is_answered` (an `UnhandledCommand` in the history, a signal arriving as a workflow task completed), came while a second build and test run loaded the machine; it passed 3/3 alone and in the full run at the wave-1 head. Load-sensitive, not caused by a B1 change as far as seen |
+| `OpenApiTests` (committed `openapi.json` current) | 4/4 at the merged head (the fix pass regenerated it for LOG 538) |
+| Break-and-see-fail | About 120 checks by the builders and 20 by the fix pass, each listed in their reports; the sub-orchestrator's three: A10's check disabled → `AnswerCheckTests` fails; A11's sent-back entries dropped → two `ConsoleRecordsTests` fail; the tree's order reversed → `TreeTests` (pills) and two `WorkspaceTests` fail |
 
 ## Review
 
