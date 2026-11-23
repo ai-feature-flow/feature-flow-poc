@@ -32,11 +32,11 @@ function useNarrow(): boolean {
   return narrow;
 }
 
-/** The address of a row: a step's route, else its run's (a child run's own route opens it in its root's tree). */
-function linkOf(rootId: string, node: Node): string {
-  if (node.kind === "step") return links.step(rootId, node.runId, node.step.id);
+/** The address of a row: a step's route, else its run's (a child run's own route opens it in its root's tree); with `own`, in the root's own tree. */
+function linkOf(rootId: string, node: Node, own: boolean): string {
+  if (node.kind === "step") return links.step(rootId, node.runId, node.step.id, own);
   const runId = runOf(node).runId;
-  return runId === rootId ? links.tree(rootId) : links.run(runId);
+  return runId === rootId ? links.tree(rootId, own) : links.treeRun(rootId, runId, own);
 }
 
 /** The row a route names, once the tree is read: a run, a step (else its run), a wait's step (else its run), an artifact's run. */
@@ -59,11 +59,12 @@ function rowOf(rows: readonly Node[], select: Selection): string {
  * viewer on the right. `tree` may name any run of the tree: GET /runs/{id}/tree answers its root's tree, and the route's run,
  * step, wait (its popup opened) or artifact (in the viewer) is selected. A selection made here goes to the address bar
  * without a navigation, so a reload keeps it and an open popup stays open. A frame naming any run of the tree reads it again.
+ * With `own`, the run named is the root shown, whatever runs above it (the tree's ↗).
  */
-export function Workspace({ tree, select }: { tree: string; select: Selection }) {
+export function Workspace({ tree, own, select }: { tree: string; own: boolean; select: Selection }) {
   const [runIds, setRunIds] = useState<readonly string[]>([tree]);
   const live = useLive(runIds.map(runKey), () => read(api.GET("/runs/{id}/tree", { params: { path: { id: tree } } })));
-  const root = useMemo(() => (live.data ? build(live.data) : undefined), [live.data]);
+  const root = useMemo(() => (live.data ? build(live.data, own ? tree : undefined) : undefined), [live.data]);
   const rows = useMemo(() => (root ? flatten(root) : []), [root]);
   useEffect(() => {
     const ids = rows.filter(r => r.kind === "run").map(r => r.runId);
@@ -81,7 +82,7 @@ export function Workspace({ tree, select }: { tree: string; select: Selection })
   const choose = (node: Node) => {
     setSelected(node.key);
     setDrawer(false);
-    if (root) history.replaceState(history.state, "", linkOf(root.runId, node));
+    if (root) history.replaceState(history.state, "", linkOf(root.runId, node, own));
   };
 
   // The route's selection, once the tree is read and on every route change after.

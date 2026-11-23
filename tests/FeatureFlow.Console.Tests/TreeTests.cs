@@ -26,9 +26,8 @@ public sealed class TreeTests(BrowserFixture browser) : BrowserTest(browser)
     public async Task Child_runs_nest_under_the_steps_that_started_them_with_markers_roll_ups_and_attempts()
     {
         var tree = await Engine.ProjectTreeAsync();
-        // A step of ticket 2 running, and ticket 3's implementer out of attempts.
+        // A step of ticket 2 running; ticket 3's verifier is out of attempts (the scenario's intervention).
         await Engine.TraceAsync(tree.Tickets[1], "started", "verify.analysis");
-        await Engine.StepStateAsync(tree.Tickets[2], "implement", executions: 3, attemptsUsed: 3, attemptsAllowed: 3);
         await OpenAsync("#/runs/" + P(tree.Root));
 
         // The epics sit in the root's epics fragment, the tickets in each epic's tickets fragment, each run with ↗.
@@ -38,7 +37,7 @@ public sealed class TreeTests(BrowserFixture browser) : BrowserTest(browser)
         await Expect(Run(tree.Epics[0])).ToHaveAttributeAsync("aria-level", "3");
         await Expect(Run(tree.Epics[0])).ToContainTextAsync("epic");
         await Expect(Run(tree.Epics[0])).ToContainTextAsync("invoices");
-        await Expect(Run(tree.Epics[0]).GetByRole(AriaRole.Link, new() { Name = "Open invoices on its own" })).ToHaveAttributeAsync("href", "#/runs/" + P(tree.Epics[0]));
+        await Expect(Run(tree.Epics[0]).GetByRole(AriaRole.Link, new() { Name = "Open invoices on its own" })).ToHaveAttributeAsync("href", "#/own/" + P(tree.Epics[0]));
         await Expect(Run(tree.Tickets[0])).ToHaveAttributeAsync("aria-level", "5");
         await Expect(Run(tree.Tickets[0])).ToContainTextAsync("Ticket INV-1");
         await Expect(Tree.Locator(".ff-row-group[data-run='" + tree.Epics[0] + "']").Filter(new() { HasText = "tickets" }).First)
@@ -55,10 +54,10 @@ public sealed class TreeTests(BrowserFixture browser) : BrowserTest(browser)
         await Expect(Step(tree.Root, "check_requirements").GetByRole(AriaRole.Img)).ToHaveCountAsync(0);
 
         // used/budget, red when spent.
-        await Expect(Step(tree.Tickets[2], "implement").Locator(".ff-used")).ToHaveTextAsync("3/3");
-        await Expect(Step(tree.Tickets[2], "implement").Locator(".ff-used")).ToHaveClassAsync("ff-used ff-used-spent");
+        await Expect(Step(tree.Tickets[2], "verify.fix.verify_fix").Locator(".ff-used")).ToHaveTextAsync("3/3");
+        await Expect(Step(tree.Tickets[2], "verify.fix.verify_fix").Locator(".ff-used")).ToHaveClassAsync("ff-used ff-used-spent");
         await Tree.Locator($".ff-row-group[data-run='{tree.Tickets[0]}']").Filter(new() { HasText = "plan" }).First.GetByRole(AriaRole.Button, new() { Name = "Open plan" }).ClickAsync();
-        await Expect(Step(tree.Tickets[0], "plan.plan").Locator(".ff-used")).ToHaveTextAsync("1/3");
+        await Expect(Step(tree.Tickets[0], "plan.plan").Locator(".ff-used")).ToHaveTextAsync("2/3");
         await Expect(Step(tree.Tickets[0], "plan.plan").Locator(".ff-used")).ToHaveClassAsync("ff-used");
 
         // A fragment where nothing happens is folded, with a roll-up of its steps; it opens on ▸.
@@ -87,24 +86,39 @@ public sealed class TreeTests(BrowserFixture browser) : BrowserTest(browser)
     }
 
     [Fact]
-    public async Task Enclosing_rows_stay_pinned_at_the_top_while_scrolled_up_to_four_deep()
+    public async Task The_innermost_four_rows_enclosing_the_first_row_shown_stay_pinned_and_scrolling_stops_on_whole_rows()
     {
         var tree = await Engine.ProjectTreeAsync();
         await OpenAsync("#/runs/" + P(tree.Root));
         var box = Page.Locator(".ff-treebox");
+        var top = await box.EvaluateAsync<double>("b => b.getBoundingClientRect().top");
+        async Task<double> At(ILocator row) => await row.EvaluateAsync<double>("r => r.getBoundingClientRect().top") - top;
 
-        // Scroll until ticket 2's rows are at the top: the root, epics, epic 1 and its tickets stay pinned, ticket 1 (fifth) does not.
+        // Scroll until ticket 2's approve spec is the first row under the pinned ones. It sits five deep (project › epics ›
+        // epic 1 › tickets › ticket 2): the innermost four stay pinned, ticket 2 last, and the project above them does not.
         var target = Step(tree.Tickets[1], "approve_spec");
         await target.ScrollIntoViewIfNeededAsync();
-        await box.EvaluateAsync("(b, r) => b.scrollTop += r.getBoundingClientRect().top - b.getBoundingClientRect().top - 200", await target.ElementHandleAsync());
-        var top = await box.EvaluateAsync<double>("b => b.getBoundingClientRect().top");
+        await box.EvaluateAsync("(b, r) => b.scrollTop += r.getBoundingClientRect().top - b.getBoundingClientRect().top - 136", await target.ElementHandleAsync());
+        await Expect(Run(tree.Tickets[1])).ToHaveClassAsync(new System.Text.RegularExpressions.Regex("ff-sticky"));
         Assert.True(await box.EvaluateAsync<double>("b => b.scrollTop") > 400);
-        async Task<double> At(ILocator row) => await row.EvaluateAsync<double>("r => r.getBoundingClientRect().top") - top;
-        Assert.Equal(0, await At(Run(tree.Root)), 1);
-        Assert.Equal(34, await At(Tree.Locator(".ff-row-group").Filter(new() { HasText = "epics" }).First), 1);
-        Assert.Equal(68, await At(Run(tree.Epics[0])), 1);
-        Assert.Equal(102, await At(Tree.Locator($".ff-row-group[data-run='{tree.Epics[0]}']").Filter(new() { HasText = "tickets" }).First), 1);
-        Assert.True(await At(Run(tree.Tickets[0])) < 0, "a fifth enclosing row is not pinned");
+        Assert.Equal(0, await At(Tree.Locator(".ff-row-group").Filter(new() { HasText = "epics" }).First), 1);
+        Assert.Equal(34, await At(Run(tree.Epics[0])), 1);
+        Assert.Equal(68, await At(Tree.Locator($".ff-row-group[data-run='{tree.Epics[0]}']").Filter(new() { HasText = "tickets" }).First), 1);
+        Assert.Equal(102, await At(Run(tree.Tickets[1])), 1);
+        Assert.Equal(136, await At(target), 1);
+        Assert.True(await At(Run(tree.Root)) < 0, "the outermost enclosing row is not pinned");
+        await Expect(Tree.Locator(".ff-sticky")).ToHaveCountAsync(4);
+
+        // A scroll that stops part way through a row settles on a whole one: no part of a row shows under the pinned ones.
+        await box.EvaluateAsync("b => b.scrollTop += 17");
+        var settled = -1d;
+        for (var i = 0; i < 30 && settled != 0; i++)
+        {
+            await Task.Delay(100, Ct);
+            settled = await box.EvaluateAsync<double>("b => b.scrollTop % 34");
+        }
+
+        Assert.Equal(0, settled);
 
         // A pinned row is still a row: a click selects it.
         await Run(tree.Epics[0]).ClickAsync(new() { Position = new() { X = 200, Y = 17 } });
@@ -161,24 +175,39 @@ public sealed class TreeTests(BrowserFixture browser) : BrowserTest(browser)
     }
 
     [Fact]
-    public async Task A_breakpoint_is_set_and_cleared_by_clicking_the_margin()
+    public async Task A_breakpoint_is_set_and_cleared_from_the_margin_with_a_reason()
     {
         var tree = await Engine.ProjectTreeAsync();
         await OpenAsync("#/runs/" + P(tree.Root));
         var row = Step(tree.Tickets[0], "implement");
         var margin = row.GetByRole(AriaRole.Button, new() { Name = "Breakpoint before implement" });
 
+        // The margin asks for a reason in a small popover, as Steer ▾'s Pause before does (Q4); Escape leaves it unset.
         await Expect(margin).ToHaveAttributeAsync("aria-pressed", "false");
         await margin.ClickAsync();
+        var ask = Page.GetByRole(AriaRole.Form, new() { Name = "Pause before implement" });
+        await Expect(ask.GetByRole(AriaRole.Button, new() { Name = "Pause before" })).ToBeDisabledAsync();
+        await Expect(ask.GetByLabel("Reason (required)")).ToBeFocusedAsync();
+        await Page.Keyboard.PressAsync("Escape");
+        await Expect(ask).ToHaveCountAsync(0);
+        Assert.Empty(Engine.Overrides);
+
+        await margin.ClickAsync();
+        await ask.GetByLabel("Reason (required)").FillAsync("look before it goes");
+        await ask.GetByRole(AriaRole.Button, new() { Name = "Pause before" }).ClickAsync();
         await Expect(margin).ToHaveAttributeAsync("aria-pressed", "true", new() { Timeout = 5_000 });
+        await Expect(ask).ToHaveCountAsync(0);
         await Expect(margin).ToHaveCSSAsync("background-color", new System.Text.RegularExpressions.Regex("rgb\\((191, 97, 106|217, 21, 21)\\)"));
         // The click sets the breakpoint only: the step is not selected.
         await Expect(row).ToHaveAttributeAsync("aria-selected", "false");
 
         await margin.ClickAsync();
+        var clear = Page.GetByRole(AriaRole.Form, new() { Name = "Clear the breakpoint on implement" });
+        await clear.GetByLabel("Reason (required)").FillAsync("seen enough");
+        await clear.GetByRole(AriaRole.Button, new() { Name = "Clear" }).ClickAsync();
         await Expect(margin).ToHaveAttributeAsync("aria-pressed", "false", new() { Timeout = 5_000 });
         var overrides = Engine.Overrides.Where(o => o.Key == "breakpoint").ToList();
-        Assert.Equal(["true", "false"], overrides.Select(o => o.Change["set"]));
+        Assert.Equal([("true", "look before it goes"), ("false", "seen enough")], overrides.Select(o => (o.Change["set"], o.Reason)));
         Assert.All(overrides, o => Assert.Equal("implement", o.StepId));
 
         // A step waiting has no margin to set one: the core refuses a breakpoint on it.

@@ -39,6 +39,22 @@ public sealed class RunPageTests(BrowserFixture browser) : BrowserTest(browser)
     }
 
     [Fact]
+    public async Task An_ended_run_took_until_it_ended_and_its_actions_list_what_comes_later()
+    {
+        var now = DateTimeOffset.UtcNow;
+        await Engine.AppendAsync(new FeatureFlow.Providers.Abstractions.RecordBatch([new FeatureFlow.Providers.Abstractions.RunRecord("run-ended", null,
+            "std:templates/ticket_delivery", "completed", "local", [], false, now.AddHours(-1), null, "ticket", StartedAt: now.AddHours(-3))]));
+
+        await OpenAsync("#/runs/run-ended");
+
+        // Started three hours ago and ended one hour ago: it took two, not three.
+        await Expect(Middle.Locator(".ff-facts")).ToContainTextAsync("by local · 2 h 0 m");
+        await RunActions.ClickAsync();
+        await Expect(Item("Policy in force")).ToBeDisabledAsync();
+        await Expect(Item("Policy in force")).ToContainTextAsync("in B2");
+    }
+
+    [Fact]
     public async Task A_status_wait_shows_at_its_step_as_a_status_with_nothing_to_answer()
     {
         var runId = await World.StartRunAsync();

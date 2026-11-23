@@ -193,7 +193,7 @@ function Table({ label, findings }: { label: string; findings: readonly Finding[
  * ledger folded. Sent as the step's `person_triage` artifact, YAML built from the form's fields only and shown under "what
  * will be sent"; a triage the API refuses (A10) shows its errors in place.
  */
-export function Triage({ runId, wait, context }: DecisionProps) {
+export function Triage({ runId, wait, plan, context }: DecisionProps) {
   const ledger = useLive([runKey(runId)], () => read(api.GET("/runs/{id}/findings", { params: { path: { id: runId } } })));
   const [decisions, setDecisions] = useState<ReadonlyMap<string, Decision>>(new Map());
   const findings = ledger.data?.findings ?? [];
@@ -202,7 +202,9 @@ export function Triage({ runId, wait, context }: DecisionProps) {
   const rest = findings.filter(f => !f.needs_person && !f.decided_by_person);
   const count = needing.filter(f => decided(decisions.get(f.ledger_id))).length;
   const yaml = triageYaml(needing, decisions);
-  const send = wait.choices.find(c => c !== "escalate") ?? "triaged";
+  // Send is the outcome on which the decision produces the person's triage, as its step declares (std's fix loop: triaged).
+  const produces = plan?.steps.find(s => s.id === wait.step_id)?.outcomes.find(o => o.produces?.includes(artifactName))?.name;
+  const send = produces ?? wait.choices.find(c => c !== "escalate") ?? "triaged";
   const escalated = needing.filter(f => f.state === "escalated").length;
   const declinedBlocking = needing.length - escalated;
 

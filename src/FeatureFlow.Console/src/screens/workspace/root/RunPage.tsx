@@ -4,7 +4,8 @@ import * as links from "../../../app/links";
 import { Age } from "../../../ui/Age";
 import { ErrorBox } from "../../../ui/ErrorBox";
 import { useDecision } from "../../decision/DecisionPopup";
-import { ancestors, descendants, navigable, type Node, pathOf, type RunNode, type State, type StepNode } from "../tree/model";
+import { took } from "../../runs/parts";
+import { ancestors, descendants, isActive, navigable, type Node, pathOf, type RunNode, type State, type StepNode } from "../tree/model";
 import { RunActions } from "./RunActions";
 
 const levels: readonly string[] = ["project", "epic", "ticket"];
@@ -35,12 +36,6 @@ function own(run: RunNode): Node[] {
 
 /** The run a child run sits in. */
 const runParent = (node: Node): RunNode | undefined => ancestors(node).reverse().find((a): a is RunNode => a.kind === "run");
-
-/** How long from `from` to now, as "3 h 12 m". */
-function took(from: string): string {
-  const minutes = Math.max(0, Math.round((Date.now() - Date.parse(from)) / 60_000));
-  return minutes < 60 ? `${minutes} m` : `${Math.floor(minutes / 60)} h ${minutes % 60} m`;
-}
 
 /** Where a run is: the step that needs you or runs (its group, then its name), else done or waiting. */
 function stageOf(run: RunNode): string {
@@ -129,7 +124,7 @@ export function RunPage({ node, rows, onSelect }: { node: RunNode; rows: readonl
           <div class="ff-k">Started</div>
           {run.started_at ? (
             <>
-              <Age at={run.started_at} /> by {run.requester} · {took(run.started_at)}
+              <Age at={run.started_at} /> by {run.requester} · {took(run.started_at, isActive(run) ? new Date().toISOString() : run.updated_at)}
             </>
           ) : (
             <>by {run.requester}</>

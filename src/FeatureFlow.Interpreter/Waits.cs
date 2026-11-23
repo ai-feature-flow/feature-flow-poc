@@ -476,6 +476,9 @@ public sealed partial class RunCore
         return new YMap(entries, at);
     }
 
+    /// <summary>A node as block YAML text, as <see cref="Lines"/> writes it.</summary>
+    public static string BlockYaml(YNode node) => string.Join('\n', Lines(node));
+
     /// <summary>A node as block YAML lines: maps as <c>key: value</c>, lists as <c>- item</c>, nested two spaces in.</summary>
     static IEnumerable<string> Lines(YNode node) => node switch
     {

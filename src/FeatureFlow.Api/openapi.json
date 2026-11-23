@@ -2531,6 +2531,15 @@
               "null",
               "string"
             ]
+          },
+          "produces": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -2635,6 +2644,18 @@
               {
                 "$ref": "#/components/schemas/PlanChange"
               }
+            ]
+          },
+          "with": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "limits": {
+            "type": [
+              "null",
+              "string"
             ]
           }
         }

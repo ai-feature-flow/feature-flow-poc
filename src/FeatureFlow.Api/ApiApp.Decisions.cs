@@ -59,6 +59,12 @@ public static partial class ApiApp
             var args = new AnswerArgs(waitId, caller.Actor, outcome, action, body.StepId, body.CleanUp, body.Attempts, body.Status, Reason: body.Reason);
             if (body.Artifacts is { } given)
             {
+                // The caller may answer before anything they sent is stored or checked (A10's validators may call providers).
+                var (types, unreadable) = await DecisionTypesAsync(wait, context.RequestAborted);
+                if (types is null)
+                    return unreadable!;
+                if (CheckAnswer(caller, run, wait, types, action).Refusal is { } refused)
+                    return refused;
                 // What the person produced, such as a triage of findings (LOG 248), stored and sent by reference on the one answer path.
                 var (stored, problem) = await StoreAnswerArtifactsAsync(given, context.RequestAborted);
                 if (problem is not null)

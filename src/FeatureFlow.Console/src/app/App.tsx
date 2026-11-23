@@ -17,7 +17,7 @@ function screen(route: Route) {
     case "runs":
       return <RunList />;
     case "workspace":
-      return <Workspace key={route.tree} tree={route.tree} select={route.select} />;
+      return <Workspace key={`${route.own ? "own" : "runs"}/${route.tree}`} tree={route.tree} own={route.own} select={route.select} />;
     case "start":
       return <StartRun />;
     case "not-found":

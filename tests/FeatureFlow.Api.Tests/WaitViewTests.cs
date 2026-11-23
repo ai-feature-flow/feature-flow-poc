@@ -20,7 +20,7 @@ namespace FeatureFlow.Api.Tests;
 /// <summary>
 /// An API over SQLite records, files and <see cref="FakeTemporal"/>, with the std library and a small test library
 /// (<c>a2t</c>), for the decision views of B1 (package a2). Its one caller is the local token's <c>tester</c>, who holds
-/// every role. A run started through it has its lock and its first plan revision indexed, as the engine would.
+/// every role unless <c>roles</c> are given. A run started through it has its lock and its first plan revision indexed, as the engine would.
 /// </summary>
 public sealed class DecisionWorld : IAsyncDisposable
 {
@@ -73,7 +73,7 @@ public sealed class DecisionWorld : IAsyncDisposable
             """,
     };
 
-    public DecisionWorld(bool validators = false)
+    public DecisionWorld(bool validators = false, IReadOnlyList<string>? roles = null)
     {
         Directory.CreateDirectory(folder);
         File.WriteAllText(Path.Combine(folder, "secrets.json"), """{ "api_token": "right" }""");
@@ -100,7 +100,7 @@ public sealed class DecisionWorld : IAsyncDisposable
         }
 
         var installation = new InstallationConfig("localhost:7233", "default", "q", 5120, new Dictionary<string, ProviderTypeConfig>(),
-            new ApiAuthConfig("local_token", "secrets/api_token", "tester", ["viewer", "approver", "steerer", "admin"]), 3, 10, Path.Combine(folder, "installation.yaml"));
+            new ApiAuthConfig("local_token", "secrets/api_token", "tester", roles ?? ["viewer", "approver", "steerer", "admin"]), 3, 10, Path.Combine(folder, "installation.yaml"));
         var std = Path.Combine(Repository.Root, "library", "std");
         var organisation = new OrganisationConfig("t",
             [new LibrarySourceConfig("std", "directory", std), new LibrarySourceConfig("a2t", "directory", library)],

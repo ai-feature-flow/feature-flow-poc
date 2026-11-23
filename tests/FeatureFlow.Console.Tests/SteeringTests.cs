@@ -81,7 +81,7 @@ public sealed class SteeringTests(BrowserFixture browser) : BrowserTest(browser)
     [Fact]
     public async Task Grant_attempts_shows_the_budget_it_leaves()
     {
-        await OpenStepAsync(s => s.Tickets[2], "implement");
+        await OpenStepAsync(s => s.Tickets[2], "verify.fix.verify_fix");
 
         await Steer.ClickAsync();
         await Item("Grant attempts").ClickAsync();
@@ -90,22 +90,31 @@ public sealed class SteeringTests(BrowserFixture browser) : BrowserTest(browser)
     }
 
     [Fact]
-    public async Task Edit_step_amends_its_limits_for_the_next_attempt_with_a_set_patch()
+    public async Task Edit_step_starts_from_the_steps_limits_so_raising_one_keeps_the_others()
     {
         await OpenStepAsync(s => s.Tickets[0], "implement");
 
         await Page.GetByRole(AriaRole.Button, new() { Name = "Edit step", Exact = true }).ClickAsync();
+        // Prefilled as the plan has them (implement's parameters, then its limits), so a set keeps what is not changed.
+        await Expect(Dialog.GetByLabel("Parameters, as YAML")).ToHaveValueAsync("ticket_id:\n  expr: params.ticket_id");
         await Dialog.GetByLabel("Change").SelectOptionAsync("limits");
-        await Dialog.GetByLabel("Limits, as YAML").FillAsync("attempts: 4");
+        var limits = Dialog.GetByLabel("Limits, as YAML");
+        await Expect(limits).ToHaveValueAsync("questions:\n  max: 3\n  timeout: \"24h\"");
+        await Expect(Apply).ToBeDisabledAsync();
+        await limits.FillAsync(await limits.InputValueAsync() + "\nattempts: 4");
         await Expect(Dialog.GetByLabel("Patch")).ToContainTextAsync("op: set");
-        await Expect(Dialog.GetByRole(AriaRole.Note, new() { Name = "Consequence" })).ToContainTextAsync("From its next attempt, implement's limits");
+        await Expect(Dialog.GetByRole(AriaRole.Note, new() { Name = "Consequence" })).ToContainTextAsync("From its next attempt, implement's limits become exactly what is below");
+        await Expect(Dialog.GetByLabel("Now", new() { Exact = true })).ToHaveTextAsync("questions:\n  max: 3\n  timeout: \"24h\"");
+        await Expect(Dialog.GetByLabel("After", new() { Exact = true })).ToHaveTextAsync("questions:\n  max: 3\n  timeout: \"24h\"\nattempts: 4");
+        // The prompt comes from the step's role and task: an amend cannot set it.
+        await Expect(Dialog.GetByLabel("Change").Locator("option[value='prompt']")).ToBeDisabledAsync();
         await Dialog.GetByLabel("Reason (required)").FillAsync("it needs more tries");
         await Apply.ClickAsync();
         await Expect(Dialog).ToHaveCountAsync(0, new() { Timeout = 5_000 });
 
         var o = Assert.Single(Engine.Overrides);
         Assert.Equal(("amend", null, "it needs more tries"), (o.Key, o.StepId, o.Reason));
-        Assert.Contains("    target: implement\n    field: limits\n    value:\n      attempts: 4\n", o.Change["patch"], StringComparison.Ordinal);
+        Assert.Contains("    target: implement\n    field: limits\n    value:\n      questions:\n        max: 3\n        timeout: \"24h\"\n      attempts: 4\n", o.Change["patch"], StringComparison.Ordinal);
     }
 
     [Fact]

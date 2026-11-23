@@ -54,6 +54,13 @@ function statusOf(status: string): string {
 
 const forms: Record<string, string> = { agent: "Agent", action: "Action", decision: "Decision" };
 
+/** The Needs you card's heading (mock-up 02): "Needs you: " and the wait's title, without the prefix when the title says it already. */
+function headingOf(wait: Schema<"WaitView">): string {
+  const title = wait.title ?? wait.prompt;
+  const prefix = wait.can_answer ? "Needs you" : "Waits on someone else";
+  return title.toLowerCase().includes(prefix.toLowerCase()) ? title : `${prefix}: ${title}`;
+}
+
 /**
  * A step selected in the tree (design-v2 s4.4; mock-up 02): its path, a red Needs you card when it waits on you (why first,
  * then Review and answer), a Running now card while it runs, four boxes at a glance, and tabs: Overview (its executions,
@@ -87,9 +94,7 @@ export function StepDetail({ node }: { node: StepNode }) {
       {wait && decision && (
         <section class="ff-box ff-needs" aria-label="Needs you">
           <div class="ff-needs-head">
-            <h2>
-              {wait.can_answer ? "Needs you" : "Waits on someone else"}: {wait.title ?? wait.prompt}
-            </h2>
+            <h2>{headingOf(wait)}</h2>
             <span class="ff-muted ff-right-end">
               opened <Age at={wait.updated_at} />
             </span>

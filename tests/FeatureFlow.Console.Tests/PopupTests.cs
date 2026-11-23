@@ -43,8 +43,7 @@ public sealed class PopupTests(BrowserFixture browser) : BrowserTest(browser)
         // Needs me opens each decision through useDecision() (Review and answer).
         var titles = new Dictionary<ScenarioWait, string>
         {
-            // The shared scenario's cause ends "failed", not attempts_exhausted, so the API titles it by its outcome (a2's rule).
-            [s.Tree.Intervention] = "implement needs you: failed",
+            [s.Tree.Intervention] = "verify.fix.verify_fix has used all its attempts",
             [s.Tree.Breakpoint] = "Paused before verify.tests",
             [s.Patch] = "tickets.plan proposes a plan change",
             [s.Tree.Merge] = "Merge acme/api#201 into main?",
@@ -62,24 +61,46 @@ public sealed class PopupTests(BrowserFixture browser) : BrowserTest(browser)
     }
 
     /// <summary>
-    /// Not a check: saves a screenshot of every popup, dark, at 1440 × 900, to <c>FF_SCREENS</c> (the package's report
-    /// folder). Run it on its own: <c>FF_SCREENS=… dotnet test --filter Screenshots_of_every_popup</c>.
+    /// Not a check: saves a screenshot of every screen and popup, dark, at 1440 × 900, and the workspace and Needs me light,
+    /// to <c>FF_SCREENS</c> (the package's report folder). Run it on its own:
+    /// <c>FF_SCREENS=… dotnet test --filter Screenshots_of_every_screen_and_popup</c>.
     /// </summary>
     [Fact(Explicit = true)]
-    public async Task Screenshots_of_every_popup()
+    public async Task Screenshots_of_every_screen_and_popup()
     {
         var folder = Environment.GetEnvironmentVariable("FF_SCREENS") ?? Path.Combine(Path.GetTempPath(), "ff-screens");
         Directory.CreateDirectory(folder);
         var s = await Engine.DecisionsAsync();
+        await Engine.TraceAsync(s.Tree.Tickets[1], "started", "verify.analysis");
         await OpenAsync("#/needs");
         await Page.SetViewportSizeAsync(1440, 900);
+        async Task Shot(string name)
+        {
+            await Page.WaitForTimeoutAsync(800);
+            await Page.ScreenshotAsync(new() { Path = Path.Combine(folder, $"{name}.png") });
+        }
+
+        await Expect(Page.Locator("article.ff-item").First).ToBeVisibleAsync();
+        await Shot("needs-me-light");
+        await GoAsync($"#/runs/{s.Tree.Root}");
+        await Expect(Page.Locator(".ff-run-id")).ToHaveTextAsync(s.Tree.Root);
+        await Shot("workspace-root-light");
         await Page.GetByRole(AriaRole.Button, new() { Name = "Dark theme" }).ClickAsync();
         await Expect(Page.Locator("html")).ToHaveAttributeAsync("data-theme", "dark");
+        await Shot("workspace-root");
+        await GoAsync("#/needs");
+        await Expect(Page.Locator("article.ff-item").First).ToBeVisibleAsync();
+        await Shot("needs-me");
+        await GoAsync("#/runs");
+        await Expect(Page.Locator("tr[data-run]").First).ToBeVisibleAsync();
+        await Shot("runs");
+
         var shots = new (string Name, ScenarioWait Wait)[]
         {
             ("intervention", s.Tree.Intervention), ("triage", s.Tree.Triage), ("spec-approval", s.Spec), ("merge", s.Tree.Merge),
             ("patch-approval", s.Patch), ("breakpoint", s.Tree.Breakpoint), ("question", s.Tree.Question), ("session", s.Tree.Session),
         };
+        await GoAsync("#/needs");
         foreach (var (name, wait) in shots)
         {
             var item = Page.Locator($"article.ff-item[data-run='{wait.RunId}'][data-wait='{wait.WaitId}']");
@@ -90,17 +111,43 @@ public sealed class PopupTests(BrowserFixture browser) : BrowserTest(browser)
             else
                 await GoAsync($"#/runs/{s.Tree.Root}/waits/{wait.RunId}/{wait.WaitId}");
             await Expect(Dialog.Locator(".ff-dec-body")).ToBeVisibleAsync();
-            await Page.WaitForTimeoutAsync(800);
-            await Page.ScreenshotAsync(new() { Path = Path.Combine(folder, $"{name}.png") });
+            await Shot(name);
             await Page.Keyboard.PressAsync("Escape");
             await GoAsync("#/needs");
         }
 
-        // A steer, from the step's detail.
+        // A step waiting on you, and one running.
+        await GoAsync($"#/runs/{s.Tree.Root}/steps/{s.Tree.Intervention.RunId}/{s.Tree.Intervention.StepId}");
+        await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "Needs you" })).ToBeVisibleAsync();
+        await Shot("step-waiting");
+        await GoAsync($"#/runs/{s.Tree.Root}/steps/{s.Tree.Tickets[1]}/verify.analysis");
+        await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "Running now" })).ToBeVisibleAsync();
+        await Shot("step-running");
+
+        // The viewer: a pinned tab and a preview tab.
+        await GoAsync($"#/runs/{s.Tree.Root}/steps/{s.Tree.Tickets[0]}/plan.plan");
+        await Page.GetByRole(AriaRole.Tab, new() { Name = "Artifacts" }).ClickAsync();
+        var artifacts = Page.GetByRole(AriaRole.Table, new() { Name = "Artifacts" }).Locator("tbody tr");
+        await artifacts.Filter(new() { HasText = "requirements" }).First.GetByRole(AriaRole.Button).ClickAsync();
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Pin requirements · exec 2" }).ClickAsync();
+        await artifacts.Filter(new() { HasText = "delivery_plan" }).First.GetByRole(AriaRole.Button).ClickAsync();
+        await Shot("viewer");
+
+        // Steer, Edit step and the margin's breakpoint, from a step not yet started.
         await GoAsync($"#/runs/{s.Tree.Root}/steps/{s.Tree.Tickets[0]}/implement");
         await Page.GetByRole(AriaRole.Button, new() { Name = "Steer ▾", Exact = true }).ClickAsync();
         await Page.GetByRole(AriaRole.Menuitem, new() { Name = "Pause before" }).ClickAsync();
         await Expect(Dialog).ToBeVisibleAsync();
-        await Page.ScreenshotAsync(new() { Path = Path.Combine(folder, "steer.png") });
+        await Shot("steer");
+        await Page.Keyboard.PressAsync("Escape");
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Edit step", Exact = true }).ClickAsync();
+        await Dialog.GetByLabel("Change").SelectOptionAsync("limits");
+        var limits = Dialog.GetByLabel("Limits, as YAML");
+        await limits.FillAsync(await limits.InputValueAsync() + "\nattempts: 4");
+        await Shot("edit-step");
+        await Page.Keyboard.PressAsync("Escape");
+        await Page.Locator(".ff-tree .ff-row-step[data-step='implement'][data-run='" + s.Tree.Tickets[0] + "'] .ff-bp").ClickAsync();
+        await Expect(Page.GetByRole(AriaRole.Form, new() { Name = "Pause before implement" })).ToBeVisibleAsync();
+        await Shot("breakpoint-margin");
     }
 }

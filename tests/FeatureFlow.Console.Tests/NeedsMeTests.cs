@@ -25,7 +25,7 @@ public sealed class NeedsMeTests(BrowserFixture browser) : BrowserTest(browser)
         await Expect(question).ToContainTextAsync("Are XLSX exports in scope, or CSV only?");
         // Its path: the tree's root, the epic and the ticket, each with its kind, and the steps between them.
         await Expect(question.Locator(".ff-item-path")).ToHaveTextAsync(
-            "project#100 Billing › epics › children_1 › epicpayments › tickets › children_1 › ticketPAY-2 Ticket PAY-2 › implement");
+            "project#100 Billing › epics › epicpayments › tickets › ticketPAY-2 Ticket PAY-2 › implement");
         await Expect(question.GetByRole(AriaRole.Button, new() { Name = "Review and answer" })).ToHaveCountAsync(0);
 
         await question.GetByRole(AriaRole.Textbox).FillAsync("CSV only for now");

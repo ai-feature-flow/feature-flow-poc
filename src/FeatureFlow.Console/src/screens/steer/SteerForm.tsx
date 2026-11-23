@@ -78,16 +78,22 @@ function prepare(kind: SteerKind, step: Step, plan: Schema<"PlanView">, value: s
             : `${step.id} may use ${n} more attempt${n === 1 ? "" : "s"}${allowed !== null ? `: ${used} of ${allowed} used, ${allowed + n} allowed after this` : ""}.`,
       };
     }
-    case "edit":
+    case "edit": {
       if (field === "role")
         return {
           request: value.trim() ? { key: "change_role", step_id: step.id, change: { role: value.trim() } } : null,
           consequence: `From its next attempt, ${step.id} runs as ${value.trim() || "…"}; the plan becomes revision ${plan.revision + 1}.`,
         };
+      const now = step[field] ?? "";
+      const name = field === "with" ? "parameters (with)" : "limits";
       return {
-        request: value.trim() ? { key: "amend", step_id: null, change: { patch: setPatch(plan.revision, step.id, field, value) } } : null,
-        consequence: `From its next attempt, ${step.id}'s ${field === "with" ? "parameters (with)" : "limits"} become what you give here; the plan becomes revision ${plan.revision + 1}. This run only.`,
+        request: value.trim() && value.trim() !== now.trim() ? { key: "amend", step_id: null, change: { patch: setPatch(plan.revision, step.id, field, value) } } : null,
+        consequence:
+          value.trim() === now.trim()
+            ? `Change ${step.id}'s ${name} below; they are shown as the plan has them now.`
+            : `From its next attempt, ${step.id}'s ${name} become exactly what is below: a key left out is removed. The plan becomes revision ${plan.revision + 1}. This run only.`,
       };
+    }
   }
 }
 
@@ -109,7 +115,7 @@ export const titleOf = (kind: SteerKind, step: Step): string =>
  */
 export function SteerForm({ runId, plan, step, kind, roles }: { runId: string; plan: Schema<"PlanView">; step: Step; kind: SteerKind; roles: boolean }) {
   const popups = usePopup();
-  const [value, setValue] = useState(kind === "skip" ? (outcomesOf(step)[0] ?? "") : kind === "grant_attempts" ? "1" : "");
+  const [value, setValue] = useState(kind === "skip" ? (outcomesOf(step)[0] ?? "") : kind === "grant_attempts" ? "1" : kind === "edit" ? (step.with ?? "") : "");
   const [field, setField] = useState<Field>("with");
   const [reason, setReason] = useState("");
   const [sending, setSending] = useState(false);
@@ -158,10 +164,21 @@ export function SteerForm({ runId, plan, step, kind, roles }: { runId: string; p
         <>
           <div class="ff-steer-field">
             <label for={ids.field}>Change</label>
-            <select id={ids.field} value={field} onChange={e => (setField(e.currentTarget.value as Field), setValue(""))}>
+            <select
+              id={ids.field}
+              value={field}
+              onChange={e => {
+                const next = e.currentTarget.value as Field;
+                setField(next);
+                setValue(next === "role" ? "" : (step[next] ?? ""));
+              }}
+            >
               <option value="with">Parameters (with)</option>
               <option value="limits">Limits</option>
               {roles && <option value="role">Role</option>}
+              <option value="prompt" disabled>
+                Prompt: set by the step's role and task; an amend cannot change it (needs engine work, B2)
+              </option>
             </select>
           </div>
           <div class="ff-steer-field">
@@ -184,6 +201,22 @@ export function SteerForm({ runId, plan, step, kind, roles }: { runId: string; p
       <p class="ff-steer-consequence" role="note" aria-label="Consequence">
         {prepared.consequence}
       </p>
+      {kind === "edit" && field !== "role" && prepared.request?.change?.patch && (
+        <div class="ff-steer-diff" aria-label="Before and after">
+          <div>
+            <div class="ff-k">Now</div>
+            <pre class="ff-dec-yaml" aria-label="Now">
+              {step[field] ?? "(none)"}
+            </pre>
+          </div>
+          <div>
+            <div class="ff-k">After</div>
+            <pre class="ff-dec-yaml" aria-label="After">
+              {value.trim()}
+            </pre>
+          </div>
+        </div>
+      )}
       {kind === "edit" && field !== "role" && prepared.request?.change?.patch && (
         <pre class="ff-dec-yaml" aria-label="Patch">
           {prepared.request.change.patch}

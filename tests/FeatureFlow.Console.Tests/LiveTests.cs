@@ -13,6 +13,34 @@ public sealed class LiveTests(BrowserFixture browser) : BrowserTest(browser)
 
     static string StepRow(string runId, string stepId) => $".ff-tree .ff-row-step[data-run='{runId}'][data-step='{stepId}']";
 
+    /// <summary>Completes when the page reads a response from a URL containing <paramref name="path"/> whose body holds <paramref name="text"/>; start it before the change.</summary>
+    static async Task ReadAgainAsync(Microsoft.Playwright.IPage page, string path, string text)
+    {
+        var read = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        async void Seen(object? sender, Microsoft.Playwright.IResponse r)
+        {
+            try
+            {
+                if (r.Url.Contains(path, StringComparison.Ordinal) && (await r.TextAsync()).Contains(text, StringComparison.Ordinal))
+                    read.TrySetResult();
+            }
+            catch (Microsoft.Playwright.PlaywrightException)
+            {
+                // A response whose body is gone (the page moved on) is not the read waited for.
+            }
+        }
+
+        page.Response += Seen;
+        try
+        {
+            await read.Task.WaitAsync(TimeSpan.FromSeconds(60));
+        }
+        finally
+        {
+            page.Response -= Seen;
+        }
+    }
+
     [Fact]
     public async Task A_change_to_a_child_run_is_read_again_in_the_workspace_in_place()
     {
@@ -24,10 +52,13 @@ public sealed class LiveTests(BrowserFixture browser) : BrowserTest(browser)
         await EvaluateAsync<int>("window.ffMarker = 1");
         await page.GetByRole(Microsoft.Playwright.AriaRole.Button, new() { Name = "Follow current" }).ClickAsync();
 
-        // A frame for a ticket two levels down: the tree is read again, and the root page's lists with it.
+        // A frame for a ticket two levels down: the tree is read again, and the root page's lists with it. Waits on that
+        // read (a tree read that holds the new question), not on a time, so a slow machine does not fail it.
+        var reread = ReadAgainAsync(page, "/tree", "Which currency?");
         await Engine.OpenWaitAsync(tree.Tickets[0], "question", "implement", "", "Which currency?", ["NZD", "AUD"]);
+        await reread;
 
-        await Expect(row).ToHaveAttributeAsync("data-state", "needs", new() { Timeout = 5_000 });
+        await Expect(row).ToHaveAttributeAsync("data-state", "needs");
         await Expect(page.GetByRole(Microsoft.Playwright.AriaRole.Region, new() { Name = "Needs you" }).GetByRole(Microsoft.Playwright.AriaRole.Heading)).ToHaveTextAsync("Needs you (9)");
         Assert.Equal(1, await EvaluateAsync<int>("window.ffMarker"));
     }

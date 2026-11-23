@@ -15,23 +15,19 @@ export const runs = (): string => "#/runs";
 /** A run's workspace; the form SlackNotifications.LinkOf builds after the console's address. A child run's opens in its root's tree. */
 export const run = (runId: string): string => `#/runs/${part(runId)}`;
 
-/** A run tree's workspace with its root selected: the same route as {@link run}. */
-export const tree = (treeId: string): string => run(treeId);
+/** A run tree's workspace with its root selected: the same route as {@link run}; with `own`, the run's own tree ({@link own}). */
+export const tree = (treeId: string, own = false): string => (own ? `#/own/${part(treeId)}` : run(treeId));
+
+/** A run on its own: its own tree, the run as the root, whatever runs above it (the tree's ↗). */
+export const own = (runId: string): string => tree(runId, true);
+
+/** A run of a tree selected in the workspace, the tree shown from `treeId` (with `own`, as that run's own tree). */
+export const treeRun = (treeId: string, runId: string, own = false): string =>
+  own ? `${tree(treeId, true)}/runs/${part(runId)}` : run(runId);
 
 /** A step of a run in a tree (the root or a child run), selected in the workspace. */
-export const step = (treeId: string, runId: string, stepId: string): string =>
-  `#/runs/${part(treeId)}/steps/${part(runId)}/${part(stepId)}`;
-
-/** A wait of a run in a tree: its step selected and its popup open. */
-export const wait = (treeId: string, runId: string, waitId: string): string =>
-  `#/runs/${part(treeId)}/waits/${part(runId)}/${part(waitId)}`;
-
-/** One of a run's artifacts or transcripts, by reference, in its own tree's viewer (slice 1's form, kept). */
-export const artifact = (runId: string, reference: string): string => `#/runs/${part(runId)}/artifacts/${part(reference)}`;
-
-/** One of a run's artifacts in a tree's viewer: the run may be a child of the tree's root. */
-export const treeArtifact = (treeId: string, runId: string, reference: string): string =>
-  `#/runs/${part(treeId)}/artifacts/${part(runId)}/${part(reference)}`;
+export const step = (treeId: string, runId: string, stepId: string, own = false): string =>
+  `${tree(treeId, own)}/steps/${part(runId)}/${part(stepId)}`;
 
 export const start = (): string => "#/start";
 

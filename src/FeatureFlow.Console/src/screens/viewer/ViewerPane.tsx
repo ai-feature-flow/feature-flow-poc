@@ -133,9 +133,9 @@ export function ViewerPane({ tabs }: { tabs: Tabs }) {
         {current ? (
           <Document key={current.key} runId={current.runId} reference={current.reference} />
         ) : (
-          <p class="ff-muted">
-            Open an input or output from the middle: it shows here in a <i>preview</i> tab, which the next one replaces. 📌 keeps a tab; double-click a
-            tab, or ⤢, to see it full size.
+          <p class="ff-muted ff-viewer-empty">
+            Nothing open. Open an input or output from the middle: it shows here in a <i>preview</i> tab, which the next one replaces. 📌 keeps a tab; double-click a
+            tab, or ⤢, to see it full size; the panel icon closes this pane.
           </p>
         )}
       </div>

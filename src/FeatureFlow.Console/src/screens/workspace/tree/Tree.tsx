@@ -1,14 +1,24 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { api } from "../../../api/client";
+import { api, read } from "../../../api/client";
 import { invalidate, runKey } from "../../../api/live";
 import * as links from "../../../app/links";
 import { ErrorBox } from "../../../ui/ErrorBox";
 import { Marker } from "../../../ui/Marker";
+import { hasReason } from "../../../ui/Reason";
 import { ancestors, isActive, lively, type Navigator, navigable, type Node, runOf, type RunNode, spent, type StepNode } from "./model";
 import "./Tree.css";
 
 /** How many enclosing rows stay pinned at the top when scrolled (design-v2 Q21). */
 const sticky = 4;
+
+/**
+ * The rows pinned at the top, as an IDE's sticky scroll pins them: the innermost `sticky` rows enclosing the first row shown
+ * whole below them. `shown` is every row on screen in order, each `height` tall from the top of the box scrolled `top`.
+ */
+function pinnedAt(shown: readonly Node[], top: number, height: number): Node[] {
+  const first = shown.find((node, i) => (i - Math.min(sticky, ancestors(node).length)) * height >= top - 1);
+  return first ? ancestors(first).slice(-sticky) : [];
+}
 
 const symbols = { done: "✓", running: "●", needs: "!", waits: "…", problem: "✗", pending: "○", ghost: "·" } as const;
 
@@ -31,6 +41,47 @@ function breakpointable(node: StepNode, run: RunNode): boolean {
   return node.step.breakpoint || !(s === "running" || s === "retrying" || s === "interrupted" || (s.startsWith("waiting(") && s !== "waiting(patch_approval)"));
 }
 
+/**
+ * The margin's breakpoint, asked in a small popover beside it: what it does and a reason, which steering needs (Q4), as
+ * Steer ▾'s Pause before asks. Escape or Cancel closes it; the engine's refusal shows in it.
+ */
+function BreakpointAsk({ step, refused, onSend, onCancel }: { step: StepNode; refused?: Error; onSend: (reason: string) => void; onCancel: () => void }) {
+  const [reason, setReason] = useState("");
+  const input = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    input.current?.focus();
+    const escape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    document.addEventListener("keydown", escape);
+    return () => document.removeEventListener("keydown", escape);
+  }, []);
+  const id = step.step.id;
+  return (
+    <form
+      class="ff-bp-ask"
+      aria-label={step.step.breakpoint ? `Clear the breakpoint on ${id}` : `Pause before ${id}`}
+      onClick={e => e.stopPropagation()}
+      onSubmit={e => {
+        e.preventDefault();
+        if (hasReason(reason)) onSend(reason);
+      }}
+    >
+      <p>{step.step.breakpoint ? `The run no longer pauses before ${id}.` : `The run pauses before ${id} starts, and waits for you.`}</p>
+      <textarea ref={input} rows={2} aria-label="Reason (required)" placeholder="Reason (required)" value={reason} onInput={e => setReason(e.currentTarget.value)} />
+      {refused && <ErrorBox error={refused} />}
+      <p>
+        <button type="submit" class="ff-btn ff-btn-primary" disabled={!hasReason(reason)}>
+          {step.step.breakpoint ? "Clear" : "Pause before"}
+        </button>{" "}
+        <button type="button" class="ff-btn ff-btn-ghost" onClick={onCancel}>
+          Cancel
+        </button>
+      </p>
+    </form>
+  );
+}
+
 export interface TreeProps {
   root: RunNode;
   /** Every row in tree order. */
@@ -49,11 +100,26 @@ export function Tree({ root, rows, selected, onSelect, follow, onFollow }: TreeP
   const [folds, setFolds] = useState<ReadonlyMap<string, boolean>>(new Map());
   const [nav, setNav] = useState<{ kind: Navigator; index: number; key: string }>();
   const [refused, setRefused] = useState<Error>();
+  const [asking, setAsking] = useState<string | null>(null);
+  const [scrolled, setScrolled] = useState({ top: 0, height: 34 });
   const box = useRef<HTMLDivElement>(null);
 
   const selectedNode = rows.find(r => r.key === selected);
   const path = new Set(selectedNode ? ancestors(selectedNode).map(a => a.key) : []);
   const isOpen = (node: Node) => folds.get(node.key) ?? (node.depth === 0 || path.has(node.key) || lively(node));
+  const shown: Node[] = [];
+  const walk = (node: Node): void => {
+    shown.push(node);
+    if (node.children.length > 0 && isOpen(node)) node.children.forEach(walk);
+  };
+  walk(root);
+  const pinned = new Map(pinnedAt(shown, scrolled.top, scrolled.height).map((node, i) => [node.key, i]));
+  const onScroll = () => {
+    const el = box.current;
+    if (!el) return;
+    const height = el.querySelector<HTMLElement>(".ff-row")?.offsetHeight || 34;
+    if (el.scrollTop !== scrolled.top || height !== scrolled.height) setScrolled({ top: el.scrollTop, height });
+  };
 
   // A selection made elsewhere (a pill, a Needs you title, Follow current, a route) opens the rows above it and brings it into view.
   useEffect(() => {
@@ -79,13 +145,16 @@ export function Tree({ root, rows, selected, onSelect, follow, onFollow }: TreeP
     onSelect(list[index]);
   };
 
-  const toggleBreakpoint = async (node: StepNode) => {
+  const toggleBreakpoint = async (node: StepNode, reason: string) => {
     setRefused(undefined);
     try {
-      await api.POST("/runs/{id}/overrides", {
-        params: { path: { id: node.runId } },
-        body: { key: "breakpoint", reason: null, step_id: node.step.id, change: { set: String(!node.step.breakpoint) } },
-      });
+      await read(
+        api.POST("/runs/{id}/overrides", {
+          params: { path: { id: node.runId } },
+          body: { key: "breakpoint", reason: reason.trim(), step_id: node.step.id, change: { set: String(!node.step.breakpoint) } },
+        }),
+      );
+      setAsking(null);
       await invalidate([runKey(node.runId)]);
     } catch (failure) {
       setRefused(failure instanceof Error ? failure : new Error(String(failure)));
@@ -98,13 +167,15 @@ export function Tree({ root, rows, selected, onSelect, follow, onFollow }: TreeP
     const step = node.kind === "step" ? node : null;
     const marker = step?.state === "needs" ? "waiting" : step?.state === "running" ? "running" : undefined;
     const classes = ["ff-row", `ff-row-${node.kind}`];
-    if (node.children.length > 0 && node.depth < sticky) classes.push("ff-sticky", `ff-sticky-${node.depth}`);
+    const pin = pinned.get(node.key);
+    if (pin !== undefined) classes.push("ff-sticky");
     if (step?.state === "needs") classes.push("ff-row-needs");
     if (node.key === selected) classes.push("ff-row-selected");
 
     return (
       <div
         class={classes.join(" ")}
+        style={pin === undefined ? undefined : { top: `${pin * scrolled.height}px`, zIndex: String(9 - pin) }}
         role="treeitem"
         aria-level={node.depth + 1}
         aria-selected={node.key === selected}
@@ -127,11 +198,15 @@ export function Tree({ root, rows, selected, onSelect, follow, onFollow }: TreeP
               title={step.step.breakpoint ? "Clear the breakpoint" : "Pause before this step"}
               onClick={e => {
                 e.stopPropagation();
-                void toggleBreakpoint(step);
+                setRefused(undefined);
+                setAsking(asking === step.key ? null : step.key);
               }}
             />
           ) : (
             step?.step.breakpoint && <Marker kind="breakpoint" />
+          )}
+          {step && asking === step.key && (
+            <BreakpointAsk step={step} refused={refused} onSend={reason => void toggleBreakpoint(step, reason)} onCancel={() => setAsking(null)} />
           )}
         </span>
         <span class={`ff-st ff-st-${node.state}`} aria-hidden="true">
@@ -168,7 +243,7 @@ export function Tree({ root, rows, selected, onSelect, follow, onFollow }: TreeP
             </span>
           )}
           {node.kind === "run" && node.depth > 0 && (
-            <a class="ff-openrun" href={links.run(node.runId)} target="_blank" rel="noopener" title="Open this run on its own" aria-label={`Open ${node.label} on its own`} onClick={e => e.stopPropagation()}>
+            <a class="ff-openrun" href={links.own(node.runId)} target="_blank" rel="noopener" title="Open this run on its own" aria-label={`Open ${node.label} on its own`} onClick={e => e.stopPropagation()}>
               ↗
             </a>
           )}
@@ -212,9 +287,9 @@ export function Tree({ root, rows, selected, onSelect, follow, onFollow }: TreeP
             );
           })}
         </div>
-        {refused && <ErrorBox error={refused} />}
+        {refused && !asking && <ErrorBox error={refused} />}
       </div>
-      <div class="ff-treebox" ref={box} role="tree" aria-label="Run tree">
+      <div class="ff-treebox" ref={box} role="tree" aria-label="Run tree" onScroll={onScroll}>
         {branch(root)}
       </div>
     </div>

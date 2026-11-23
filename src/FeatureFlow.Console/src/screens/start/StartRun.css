@@ -12,7 +12,7 @@
 .ff-start-about,
 .ff-start-when {
   margin-top: 0;
-  color: #555;
+  color: var(--muted);
   font-size: 0.9em;
   white-space: pre-wrap;
 }

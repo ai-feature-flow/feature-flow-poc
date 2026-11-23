@@ -155,9 +155,10 @@ function outline(plan: Plan) {
   return { children, steps, groups };
 }
 
-/** The tree's rows from its read: the root run's row, with every other row under it. */
-export function build(tree: Schema<"RunTreeView">): RunNode {
-  return runNode(tree.root, null, 0);
+/** The tree's rows from its read: the root run's row, with every other row under it; with `own`, the named run's own subtree as the root (else the root's, if it is not found). */
+export function build(tree: Schema<"RunTreeView">, own?: string): RunNode {
+  const find = (node: TreeNode): TreeNode | undefined => (node.run.run_id === own ? node : node.children.map(find).find(n => n !== undefined));
+  return runNode((own && find(tree.root)) || tree.root, null, 0);
 }
 
 function runNode(source: TreeNode, parent: Node | null, depth: number): RunNode {
