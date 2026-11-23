@@ -20,7 +20,7 @@ public static partial class ApiApp
     /// <c>console/&lt;path&gt;</c> (LOG 453). It holds no data and reads everything through the API with the person's own
     /// credential, so authentication and authorisation are the API's (LOG 229). Its index is always revalidated, so a deploy
     /// is picked up at once; its assets are named by their hash, so they are kept for a year (LOG 454). The run's plan
-    /// route, which the console reads, is mapped here too; <c>?proposed=</c> is answered 501 until B1's A8 builds it.
+    /// route, which the console reads, is mapped here too, with <c>?proposed=</c> for a patch approval's plan (A8).
     /// </summary>
     static void MapConsole(WebApplication app, Handlers api)
     {
@@ -94,32 +94,31 @@ public static partial class ApiApp
         /// <summary>
         /// A run's current plan revision (G11; LOG 404): the latest revision the run indexed, rebuilt with the libraries
         /// locked when its root run started, as its readable form (docs/09 section 4.4) and as data, each step with its status
-        /// from the run's timeline and open waits, whether a breakpoint is set on it, and the outcome it is skipped with. A run
-        /// that has indexed no revision yet answers 204: it has no plan to show, which is not a refusal (LOG 493).
+        /// from the run's timeline and open waits, whether a breakpoint is set on it, and the outcome it is skipped with; and its
+        /// groups, counters and child runs (A2). A run that has indexed no revision yet answers 204: it has no plan to show,
+        /// which is not a refusal (LOG 493). With <paramref name="proposed"/> naming an open patch approval, the plan as it would
+        /// be with the patch applied, as the next revision, each step that differs marked (A8); 404 for no such wait, 409 when
+        /// the patch does not load.
         /// </summary>
         public async Task<IResult> PlanAsync(HttpContext context, Caller caller, string id, string? proposed)
         {
             var ct = context.RequestAborted;
-            var p = new Dictionary<string, string> { ["run_id"] = id };
             if (await VisibleRunAsync(caller, id, ct) is not { } run)
                 return Error(404, $"no run {id}");
-            if (proposed is not null)
-                return Error(501, "not built yet (B1 A8)");
             var (loaded, refusal) = await LoadPlanAsync(run, revision: null, extraPatch: null, ct);
             if (refusal is { Status: 204 })
                 return Results.NoContent();
             if (refusal is not null)
                 return Error(refusal.Status, refusal.Message);
-            var (plan, source, _) = loaded!;
-            var timeline = (await Records.QueryAsync<TimelineRecord>(Queries.Timeline, new Dictionary<string, string>(p) { ["after"] = "0" }, ct)).Unwrap();
-            var waits = (await Records.QueryAsync<WaitRecord>(Queries.Waits, new Dictionary<string, string>(p) { ["open"] = "true" }, ct)).Unwrap();
-            var statuses = Statuses(timeline, waits);
-            var (breakpoints, skips) = Steering(timeline);
-            var steps = plan.AllSteps.Select(s => new PlanStepView(s.Id, s.Scope.ContainerId, FormOf(s), ReadableForm.RoleOrAction(s),
-                s.Outcomes().Select(o => new PlanOutcomeView(o.Name, o.Class.Name(),
-                    s.ResolvedRoutes.FirstOrDefault(r => r.Outcome == o.Name) is { } route ? ReadableForm.Show(route.Target) : null)).ToList(),
-                s.Protected, statuses.GetValueOrDefault(s.Id) ?? "pending", breakpoints.Contains(s.Id), skips.GetValueOrDefault(s.Id))).ToList();
-            return Results.Json(new PlanView(id, source.Revision, source.Template, ReadableForm.Render(plan, statuses), steps), Json);
+            var state = await RunStateAsync(id, ct);
+            if (proposed is null)
+                return Results.Json(PlanViewOf(id, loaded!, state), Json);
+            if (state.OpenWaits.FirstOrDefault(w => w.WaitId == proposed && w.Patch is not null) is not { Patch: { } patch })
+                return Error(404, $"run {id} has no open patch approval {proposed}");
+            var (next, notLoaded) = await LoadPlanAsync(run, revision: null, extraPatch: patch.Document, ct);
+            return notLoaded is not null
+                ? Error(409, $"the patch of {proposed} does not apply: {notLoaded.Message}")
+                : Results.Json(PlanViewOf(id, next!, state, current: loaded, revision: loaded!.Source.Revision + 1), Json);
         }
     }
 }

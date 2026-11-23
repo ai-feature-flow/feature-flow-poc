@@ -372,10 +372,8 @@ public sealed class ApiTests : IAsyncDisposable
     }
 
     [Theory]
-    [InlineData("runs/r1/tree")]
     [InlineData("runs/r1/findings/F-1")]
     [InlineData("runs/r1/artifacts/sha256%3A00/document")]
-    [InlineData("runs/r1/plan?proposed=patch_approval-1")]
     public async Task A_route_not_built_yet_answers_501_to_a_viewer_and_404_to_anyone_else(string path)
     {
         var ct = TestContext.Current.CancellationToken;
