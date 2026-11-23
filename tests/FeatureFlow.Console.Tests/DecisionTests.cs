@@ -62,6 +62,25 @@ public sealed class DecisionTests(BrowserFixture browser) : BrowserTest(browser)
     }
 
     [Fact]
+    public async Task A_consumed_artifacts_pop_out_icon_opens_it_full_size_from_needs_me_and_from_the_workspace()
+    {
+        var s = await Engine.DecisionsAsync();
+        await OpenAsync("#/needs");
+        await Page.Locator($"article.ff-item[data-run='{s.Spec.RunId}'][data-wait='{s.Spec.WaitId}']").GetByRole(AriaRole.Button, new() { Name = "Review and answer" }).ClickAsync();
+        var consumed = Page.GetByRole(AriaRole.List, new() { Name = "Consumed" });
+        await consumed.GetByRole(AriaRole.Button, new() { Name = "Open requirements full size" }).ClickAsync();
+        await Expect(Popup("requirements").Locator(".ff-viewer-name")).ToHaveTextAsync("requirements");
+        await Page.Keyboard.PressAsync("Escape");
+        await Expect(Popup("requirements")).ToHaveCountAsync(0);
+
+        // In the workspace too, over the decision.
+        await GoAsync($"#/runs/{s.Tree.Root}/waits/{s.Spec.RunId}/{s.Spec.WaitId}");
+        await consumed.GetByRole(AriaRole.Button, new() { Name = "Open delivery_plan full size" }).ClickAsync();
+        await Expect(Popup("delivery_plan").Locator(".ff-viewer-name")).ToHaveTextAsync("delivery_plan");
+        await Expect(Page.GetByRole(AriaRole.Dialog)).ToHaveCountAsync(2);
+    }
+
+    [Fact]
     public async Task A_triage_is_sent_only_once_every_finding_needing_the_person_is_decided_and_sends_what_it_shows()
     {
         var s = await Engine.DecisionsAsync();

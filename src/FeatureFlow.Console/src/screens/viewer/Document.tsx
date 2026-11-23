@@ -2,9 +2,10 @@ import { useState } from "preact/hooks";
 import { api, ApiError, read } from "../../api/client";
 import { runKey, useLive } from "../../api/live";
 import * as links from "../../app/links";
-import { useViewer } from "../../app/viewer";
+import { ArtifactLink } from "../../app/viewer";
 import { Busy } from "../../ui/Busy";
 import { ErrorBox } from "../../ui/ErrorBox";
+import { Markdown } from "../../ui/Markdown";
 
 /** How much of an artifact the raw view shows; the rest is downloaded. */
 const shown = 1024 * 1024;
@@ -36,13 +37,14 @@ function save(blob: Blob, name: string) {
 }
 
 /**
- * One artifact, in the viewer or full size (design-v2 s4.4; A7): YAML and JSON as tables and lists, Markdown as its text
- * (with its front matter as a table), anything else as text; its raw form, a download and its previous revision one click
- * away. Every value is text.
+ * One artifact, in the viewer or full size (design-v2 s4.4; A7): YAML and JSON as tables and lists; Markdown formatted (with
+ * its front matter as a table), whether its declared type says so, its name ends .md or it is a prompt; a transcript and
+ * anything else as text. Its source, its download and its previous revision are one click away in either view. Every value
+ * is text.
  */
 export function Document({ runId, reference }: { runId: string; reference: string }) {
   const [raw, setRaw] = useState(false);
-  const viewer = useViewer();
+  const [refused, setRefused] = useState<Error>();
   const index = useLive([runKey(runId)], () => read(api.GET("/runs/{id}/artifacts", { params: { path: { id: runId } } })));
   const doc = useLive([`document:${runId}\n${reference}`], () => documentOf(runId, reference));
   const showRaw = raw || doc.data === null;
@@ -52,6 +54,15 @@ export function Document({ runId, reference }: { runId: string; reference: strin
   const previous = entry
     ? index.data!.artifacts.filter(a => a.step_id === entry.step_id && a.name === entry.name && a.execution < entry.execution).sort((a, b) => b.execution - a.execution)[0]
     : undefined;
+  const markdown = doc.data?.format === "markdown" || (doc.data?.format === "text" && (entry?.kind === "prompt" || /\.(md|markdown)$/i.test(name)));
+  const download = async () => {
+    setRefused(undefined);
+    try {
+      save(bytes.data?.blob ?? (await rawOf(runId, reference)).blob, name);
+    } catch (e) {
+      setRefused(e instanceof Error ? e : new Error(String(e)));
+    }
+  };
 
   return (
     <article class="ff-viewer">
@@ -66,20 +77,13 @@ export function Document({ runId, reference }: { runId: string; reference: strin
           </button>
         )}
         {previous && (
-          <button
-            type="button"
-            class="ff-linkbtn"
-            onClick={() => viewer.openArtifact({ runId, reference: previous.ref, name: `${previous.name} · exec ${previous.execution}` })}
-          >
-            Previous revision
-          </button>
+          <ArtifactLink target={{ runId, reference: previous.ref, name: `${previous.name} · exec ${previous.execution}` }}>Previous revision</ArtifactLink>
         )}
-        {bytes.data && (
-          <button type="button" class="ff-linkbtn" onClick={() => save(bytes.data!.blob, name)}>
-            Download
-          </button>
-        )}
+        <button type="button" class="ff-linkbtn" onClick={() => void download()}>
+          Download
+        </button>
       </p>
+      {refused && <ErrorBox error={refused} />}
       {doc.error && <ErrorBox error={doc.error} />}
       {showRaw ? (
         bytes.error ? (
@@ -95,13 +99,13 @@ export function Document({ runId, reference }: { runId: string; reference: strin
       ) : doc.data === undefined ? (
         !doc.error && <Busy />
       ) : (
-        <Formatted format={doc.data!.format} data={doc.data!.data} body={doc.data!.body} />
+        <Formatted format={doc.data!.format} data={doc.data!.data} body={doc.data!.body} markdown={markdown} />
       )}
     </article>
   );
 }
 
-function Formatted({ format, data, body }: { format: string; data: string | null; body: string | null }) {
+function Formatted({ format, data, body, markdown }: { format: string; data: string | null; body: string | null; markdown: boolean }) {
   let value: unknown = undefined;
   if (data !== null) {
     try {
@@ -111,9 +115,9 @@ function Formatted({ format, data, body }: { format: string; data: string | null
     }
   }
   return (
-    <div class="ff-doc" data-format={format}>
+    <div class="ff-doc" data-format={markdown ? "markdown" : format}>
       {value !== undefined && <Data value={value} />}
-      {body !== null && body !== "" && <pre class="ff-viewer-text">{body}</pre>}
+      {body !== null && body !== "" && (markdown ? <Markdown source={body} /> : <pre class="ff-viewer-text">{body}</pre>)}
     </div>
   );
 }

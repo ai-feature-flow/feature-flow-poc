@@ -125,8 +125,6 @@
 .ff-dec-history { margin: 0; padding: 0; list-style: none; font-size: 13px; }
 .ff-dec-body .ff-fold { margin: 14px 0; }
 
-.ff-linkbtn { border: 0; background: none; padding: 0; color: var(--link); font: inherit; cursor: pointer; }
-.ff-linkbtn:hover { text-decoration: underline; }
 
 /* Triage: a card per finding that needs the person (mock-up 03). */
 .ff-fcard { border: 1px solid var(--border); border-radius: 12px; margin-bottom: 18px; background: var(--panel); scroll-margin-top: 180px; }

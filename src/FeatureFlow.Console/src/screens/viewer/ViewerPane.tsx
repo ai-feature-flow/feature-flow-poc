@@ -1,9 +1,8 @@
 import { useCallback, useMemo, useState } from "preact/hooks";
 import { setPref } from "../../app/prefs";
 import { usePopup } from "../../app/popup";
-import type { ArtifactTarget, Viewer } from "../../app/viewer";
+import { openFullSize, type ArtifactTarget, type Viewer } from "../../app/viewer";
 import { Document } from "./Document";
-import { FullSize } from "./FullSize";
 import "./viewer.css";
 
 export interface Tab extends ArtifactTarget {
@@ -32,10 +31,7 @@ export function useTabs(): Tabs {
   const [active, setActive] = useState<string>();
   const popups = usePopup();
 
-  const full = useCallback(
-    (t: ArtifactTarget) => popups.open(<FullSize runId={t.runId} reference={t.reference} />, { label: t.name ?? t.reference, wide: true }),
-    [popups],
-  );
+  const full = useCallback((t: ArtifactTarget) => openFullSize(popups, t), [popups]);
 
   const openArtifact = useCallback(
     (target: ArtifactTarget, how: { pin?: boolean; full?: boolean } = {}) => {

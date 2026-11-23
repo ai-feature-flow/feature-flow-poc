@@ -30,6 +30,15 @@
 .ff-iconbtn:hover { border-color: var(--border2); }
 .ff-iconbtn svg { width: 18px; height: 18px; }
 
+/* A button that looks like a link; an artifact's (app/viewer.tsx ArtifactLink) has its pop-out icon after it. */
+.ff-linkbtn { border: 0; padding: 0; background: none; color: var(--link); font: inherit; cursor: pointer; text-align: left; }
+.ff-linkbtn:hover { text-decoration: underline; }
+.ff-artlink { white-space: nowrap; }
+.ff-artlink .ff-linkbtn { white-space: normal; }
+.ff-popout { border: 0; padding: 0 2px; margin-left: 3px; background: none; color: var(--muted); cursor: pointer; vertical-align: -2px; }
+.ff-popout:hover, .ff-popout:focus-visible { color: var(--link); }
+.ff-popout svg { width: 13px; height: 13px; display: block; }
+
 .ff-badge { display: inline-block; min-width: 22px; border-radius: 11px; padding: 0 7px; font-weight: 700; font-size: 12px; text-align: center; }
 .ff-badge-need { background: var(--wait); color: #fff; }
 .ff-badge-run { background: var(--accent); color: var(--accent-text); }

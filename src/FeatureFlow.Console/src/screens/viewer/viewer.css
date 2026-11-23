@@ -26,4 +26,24 @@
 
 .ff-fullsize .ff-viewer-name { font-size: 18px; }
 
+/* Markdown, formatted (ui/Markdown.tsx). */
+.ff-md { line-height: 1.5; overflow-wrap: anywhere; }
+.ff-md > :first-child { margin-top: 0; }
+.ff-md h1, .ff-md h2, .ff-md h3, .ff-md h4, .ff-md h5, .ff-md h6 { margin: 1.2em 0 0.5em; line-height: 1.25; }
+.ff-md h1 { font-size: 22px; }
+.ff-md h2 { font-size: 19px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.ff-md h3 { font-size: 16px; }
+.ff-md h4, .ff-md h5, .ff-md h6 { font-size: 14px; }
+.ff-md p, .ff-md ul, .ff-md ol, .ff-md blockquote, .ff-md table, .ff-md pre { margin: 0 0 0.8em; }
+.ff-md ul, .ff-md ol { padding-left: 24px; }
+.ff-md li > p { margin: 0 0 0.4em; }
+.ff-md li > ul, .ff-md li > ol { margin: 0.2em 0; }
+.ff-md blockquote { border-left: 3px solid var(--border2); padding: 0 12px; color: var(--muted); }
+.ff-md code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.9em; background: var(--panel2); border-radius: 4px; padding: 1px 4px; }
+.ff-md pre.ff-md-code { background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; overflow-x: auto; }
+.ff-md pre.ff-md-code code { background: none; padding: 0; white-space: pre; }
+.ff-md a { color: var(--link); }
+.ff-md hr { border: 0; border-top: 1px solid var(--border); margin: 1em 0; }
+.ff-md table { overflow-wrap: normal; }
+
 .ff-viewer-empty { border: 1px dashed var(--border2); border-radius: 8px; padding: 8px 12px; font-size: 12px; }
