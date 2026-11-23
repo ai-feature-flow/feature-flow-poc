@@ -4,8 +4,8 @@ B1 of the console's second slice, built 2026-11-24 on `stuart-parkinson_xero/fea
 a foundations commit that fixed every contract, record and store first, six packages in parallel (API reads, API
 decisions, engine records, code host and pull request state, repositories with the session and Slack link, the console
 shell), three console packages on the shell (workspace, decision popups and steering, Needs me and Runs), an
-independent review and a fix pass. **Every B1 item of the console design (its section 8) is built**; four console
-items are built partly, each shown with its reason (below). No workflow command or carried state was added, so every
+independent review and a fix pass. **Every B1 item of the console design (its section 8) is built**; Steer,
+Edit step's prompt and the merge popup's trace are built partly, each shown with its reason (below). No workflow command or carried state was added, so every
 recorded history replays unchanged, and runs started before B1 keep running: they show their run id and "–" where
 B1's new records are missing. Nothing was run live; the product owner's live-use steps are below.
 
@@ -39,13 +39,13 @@ B1's new records are missing. Nothing was run live; the product owner's live-use
 | Needs me (inline questions) | Every open wait for the person, oldest first, filtered by kind, with path, summary and age; questions answered in place, an offered option in one click; Review and answer opens the popup; Go to step; recent answers folded (LOG 536) |
 | Runs | One row per run tree; search, Mine/Everyone, Active/Finished/All, child runs on request (LOG 536) |
 | Workspace shell | Tree, middle and viewer panes; both side panes resizable, the right collapsible, remembered; a drawer below about 1,000 px (LOG 534) |
-| The tree | Child runs nested, markers (running, needs you, breakpoints from the margin), `used/budget`, roll-ups, placeholders, sticky enclosing rows, pills cycling in tree order, Follow current (LOG 534) |
+| The tree | Child runs nested, markers (running, needs you, breakpoints from the margin, each with a reason), `used/budget`, roll-ups, placeholders, sticky rows (the innermost four enclosing the first row shown; the tree scrolls by whole rows), pills cycling in tree order, Follow current; ↗ opens a child run as the root of its own tree (LOG 534, 541) |
 | Root page | Header with Run actions (Abort, History), facts, Needs you in tree order, Progress of the runs under it (LOG 534) |
 | Step detail | Path, Needs you card with why first, Running now, the four boxes, Overview and Artifacts tabs (LOG 534) |
-| Steer and Edit step | In a step's detail only, each with its consequence and a reason: pause before, skip, grant attempts; Edit step amends parameters or limits for the next attempt, or the role (LOG 535) |
+| Steer and Edit step | In a step's detail only, each with its consequence and a reason: pause before, skip, grant attempts; Edit step amends parameters or limits for the next attempt, starting from their current values and showing them before and after, or changes the role (LOG 535, 538) |
 | Viewer | A preview tab the next artifact replaces, pinned tabs, full size by double-click or ⤢, YAML and JSON as tables, source and previous revision (LOG 534) |
 | Decision popups | Intervention, triage, spec approval, merge, patch approval with the proposed plan, breakpoint, question, planning session card; answers and comment at the top; a click outside or Escape closes (LOG 535) |
-| Routes | `#/needs`, `#/runs/{tree}/steps/…`, `…/waits/…`, `…/artifacts/…`; slice 1's links still open (LOG 533) |
+| Routes | `#/needs`, `#/runs/{tree}/steps/…`, `…/waits/…`, `…/artifacts/…`, and `#/own/{run}…` for a run as its own tree; slice 1's links still open (LOG 533, 541) |
 | Start a run | Repository picker with inline registration, replacing the comma-separated field (LOG 536) |
 
 ### Not built, or built partly
@@ -54,7 +54,8 @@ B1's new records are missing. Nothing was run live; the product owner's live-use
 |---|---|---|
 | Steer "go to a step" and "re-plan" outside an intervention | No override exists for them; engine work with E4 (B2) | Disabled: "only at an intervention (B2)" |
 | Merge popup's criterion → test → result for a ticket | Only `std:fragments/trace` writes a `trace_report`, in project and epic templates | The run's (or nearest ancestor's) trace; otherwise the criteria, marked "no trace in this run" |
-| "Open review report"; Run actions beyond abort (restart, re-run) | A14 and E-items, B2 | Disabled with the reason |
+| "Open review report"; Run actions beyond abort (restart, re-run, policy in force) | A14 and E-items, B2 | Disabled with the reason |
+| Edit step's prompt | An `amend` sets `with`, `limits`, `outputs`, `consumes` and `produces` only; an agent step's prompt comes from its role and task, so amending it is engine work (B2). Changing the role is the only route to another prompt today | Disabled: "set by the step's role and task; an amend cannot change it (needs engine work, B2)" (LOG 541) |
 | Activity, Findings and Events tabs on a step | B2 | Disabled "in B2" |
 | A local Git repository in A16 | E5 | `POST /repositories { path }` refused with the reason |
 | Settings page | Not in B1's console list | Greyed; registration is inline in Start a run |
@@ -62,27 +63,31 @@ B1's new records are missing. Nothing was run live; the product owner's live-use
 
 ## Evidence
 
-**To be filled by the sub-orchestrator at the merged head** (the builders' own figures are in their reports; the
-review's run at 7f9b3b7 had all 26 assemblies green: Api 239, Console 82, Engine 308, Interpreter 229, Hosting 69,
-Replay 47).
+**To be filled by the sub-orchestrator at the merged head.** The fix pass's runs at its head 163472d: default suite
+green twice (26 assemblies; Api 240, Console 87, Engine 308, Interpreter 229, Replay 47); Integration on a Temporal dev
+server green (Integration 136, Api 2, Postgres 37, S3 12, Docker 17). The builders' own figures are in their reports.
 
 | Check | Result |
 |---|---|
 | Default suite (`Category!=Integration&Category!=Live&Category!=Cluster`), head `<commit>` | *TBD* |
 | `Console.Tests` (Playwright) | *TBD* |
-| `Replay.Tests` | *TBD* (47/47 at every builder's head) |
-| Integration category (Temporal dev server, own port) | *TBD*; builders ran theirs: Postgres store contracts 37/37, ticket main path and exhausted path, continue-as-new, child runs, forge ticket, merge-action decisions, findings loop |
-| `OpenApiTests` (committed `openapi.json` current) | 4/4 at 7f9b3b7 (docs package) |
-| Break-and-see-fail | About 120 checks by the builders, each listed in their reports; the fix pass's in its report |
+| `Replay.Tests` | *TBD* (47/47 at every builder's head and the fix pass's) |
+| Integration category (Temporal dev server, own port) | *TBD*; the fix pass's run above, and the builders': Postgres store contracts, ticket main and exhausted paths, continue-as-new, child runs, forge ticket, merge-action decisions, findings loop |
+| `OpenApiTests` (committed `openapi.json` current) | *TBD* (4/4 at 7f9b3b7; the fix pass regenerated it for LOG 538) |
+| Break-and-see-fail | About 120 checks by the builders and 20 by the fix pass, each listed in their reports |
 
 ## Review
 
 The independent review at 7f9b3b7 found B1 built as designed and nothing blocking: one major finding (Edit step could
 replace a step's whole `with` or `limits` with what was typed, dropping other keys), minor gaps against the design,
-two count differences between Runs and the tree, and small visual differences from the mock-ups. The fix pass
-addressed them; its report lists each with its test. Accepted without a change: any signed-in person may register a
-repository, so the GitHub App's view of private repositories can be probed and the registered list is shown to everyone
-(LOG 532).
+two count differences between Runs and the tree, and small visual differences from the mock-ups. The fix pass fixed
+every finding, each with a test seen to fail without it (LOG 538 to 541): Edit step starts from the current values; Runs
+and the tree count the same steps; an answer's role check comes before its artifacts are stored; ↗ opens a child as its
+own tree; sticky rows are the innermost enclosing ones; the margin's breakpoint asks a reason; the shared test scenario
+is realistic (one wait per step, run #198's exhausted intervention). One finding is narrowed rather than built: the
+prompt in Edit step (above, not built). Accepted for B1 without a change (review R13): any signed-in person may register
+a repository, and so learn through the GitHub App which private repositories it can see; the registered list is shown
+to everyone. Revisit with shared installations (LOG 532).
 
 ## Live use for the product owner
 
@@ -100,8 +105,10 @@ on.
    you, Progress), the viewer on the right. Drag either splitter; close the right pane from the top bar; reload and
    see both kept. Narrow the window below about 1,000 px: the tree becomes a drawer.
 5. **The tree's markers and pills.** A yellow arrow marks a running step; a triangle and a yellow row a step waiting
-   for you; hover in the left margin of a pending step for the red breakpoint dot (click sets it, click again clears
-   it). `used/budget` sits at the right of a step that has run, red when spent. The pills at the top (Needs you,
+   for you; hover in the left margin of a pending step for the red breakpoint dot (click it, give a reason, Pause
+   before; click again to clear, with a reason). `used/budget` sits at the right of a step that has run, red when spent.
+   Scroll a deep tree: the rows enclosing the top row stay pinned, and scrolling stops on whole rows. ↗ on a child run
+   opens it as the root of its own tree. The pills at the top (Needs you,
    Running, Problems) step through their rows in tree order and read "(k/n)". Follow current moves the selection as
    steps change while the run runs. For a project or epic, the child runs sit under the step that started them, and
    tickets not yet planned are grey placeholders.
@@ -110,8 +117,9 @@ on.
    (italic), the next one replaces it, 📌 keeps it; double-click or ⤢ opens it full size. A YAML or JSON artifact shows
    as tables, with its source a click away. Old runs show "–" for attempts.
 7. **Steer.** On a pending step, Steer ▾ → Pause before: the consequence is shown and a reason is required; apply and
-   see the breakpoint dot. Go to a step and Re-plan are disabled "only at an intervention (B2)". Edit step shows the
-   limits or parameters for the next attempt.
+   see the breakpoint dot. Go to a step and Re-plan are disabled "only at an intervention (B2)". Edit step → Limits
+   starts from the step's current limits; change one and the Now/After pair shows the others kept. Its Prompt option is
+   disabled (B2).
 8. **Needs me with an inline question.** When an agent asks a question (`ask_human`), Needs me shows it with a text box
    and its offered options: an option answers at once; or type and Send. The answer appears under "Answered by you
    recently". Other waits: Review and answer opens the popup, Go to step → opens the workspace at the step.
@@ -135,3 +143,9 @@ on.
 2. Revisit open registration (the probe and the unfiltered list) with shared installations (LOG 532).
 3. `can_mark_fixed` approximates "committed since raised" from recorded revisions (LOG 529); acceptable until the API
    reads the work branch?
+4. Edit step's prompt: build prompt amendment in B2 (a step-level prompt override in the engine), or record that the
+   role is the route to another prompt (LOG 541)?
+5. A status wait (`stalled`, `stuck`) on a container step is no longer a current step; should a stalled container show
+   somewhere, on its first branch or the run's page (LOG 539)?
+6. The dark theme's needs-you row is now Nord yellow with dark text, close to the light theme's highlight; worth the
+   product owner's eye, as is whether whole-row scroll snapping in the tree feels stiff on a trackpad.
