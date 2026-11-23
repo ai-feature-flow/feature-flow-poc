@@ -36,8 +36,10 @@ public static partial class ApiApp
             .Taking<SessionAbandonRequest>().Described<AnswerResponse>("abandonSession", 200, 400, 403, 404, 409, 503).Produces<AnswerResponse>(202);
     }
 
+    /// <summary>A session, with the command that opens it locally (A15), as the hand-off's instructions give it.</summary>
     static SessionView SessionViewOf(SessionRecord s) =>
-        new(s.SessionId, s.RunId, s.WaitId, s.StepId, s.Person, s.Repository, s.Branch, s.BaseRevision, s.Status, s.SubmittedRevision, s.Artifacts, s.At);
+        new(s.SessionId, s.RunId, s.WaitId, s.StepId, s.Person, s.Repository, s.Branch, s.BaseRevision, s.Status, s.SubmittedRevision, s.Artifacts, s.At,
+            $"ff session fetch {s.SessionId} --out .ff-session");
 
     static WorkspaceView WorkspaceOf(SessionDocument d) =>
         new(d.SessionId, d.RunId, d.WaitId, d.StepId, d.Repository, d.Branch, d.BaseRevision, d.Folder,

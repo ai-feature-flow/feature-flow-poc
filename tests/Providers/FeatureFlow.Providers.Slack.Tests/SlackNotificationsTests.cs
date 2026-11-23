@@ -76,7 +76,7 @@ public sealed class SlackNotificationsTests
     static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task A_decision_carries_each_choice_as_a_button_naming_its_run_wait_and_choice_and_links_the_console()
+    public async Task A_decision_carries_each_choice_as_a_button_naming_its_run_wait_and_choice_and_links_its_wait_in_the_console()
     {
         var fake = new FakeSlack();
         var slack = Slack.Provider(fake, consoleUrl: "https://ff.example/console/");
@@ -90,7 +90,7 @@ public sealed class SlackNotificationsTests
         Assert.Equal(["approved", "rejected"], answers.Select(a => a["c"]!.GetValue<string>()));
         Assert.All(answers, a => Assert.Equal(("run-1", "gate-3"), (a["r"]!.GetValue<string>(), a["w"]!.GetValue<string>())));
         Assert.All(buttons.Where(b => b!["value"] is not null), b => Assert.StartsWith(SlackNotifications.AnswerAction, b!["action_id"]!.GetValue<string>()));
-        Assert.Equal("https://ff.example/console/#/runs/run-1", buttons.Single(b => b!["url"] is not null)!["url"]!.GetValue<string>());
+        Assert.Equal("https://ff.example/console/#/runs/run-1/waits/run-1/gate-3", buttons.Single(b => b!["url"] is not null)!["url"]!.GetValue<string>());
         Assert.StartsWith("*A person is needed (gate)", fake.Messages[0].Text);
     }
 

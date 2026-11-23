@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Model;
 using FeatureFlow.Providers.Abstractions;
@@ -107,6 +108,21 @@ public sealed class SessionApiTests : IAsyncDisposable
 
     async Task<IReadOnlyList<AnswerRecord>> AnswersAsync() =>
         (await records.QueryAsync<AnswerRecord>(Queries.Answers, new Dictionary<string, string> { ["run_id"] = "r1" }, TestContext.Current.CancellationToken)).Unwrap();
+
+    [Fact]
+    public async Task A_session_names_the_command_that_opens_it_locally_in_its_list_and_when_fetched()
+    {
+        var http = Start("viewer");
+        await OpenSessionAsync(document: true);
+        var ct = TestContext.Current.CancellationToken;
+
+        var list = JsonNode.Parse(await http.GetStringAsync("runs/r1/sessions", ct))!;
+        var detail = JsonNode.Parse(await http.GetStringAsync($"sessions/{Sid}", ct))!;
+
+        const string expected = $"ff session fetch {Sid} --out .ff-session";
+        Assert.Equal(expected, list["sessions"]![0]!["open_command"]!.GetValue<string>());
+        Assert.Equal(expected, detail["session"]!["open_command"]!.GetValue<string>());
+    }
 
     [Fact]
     public async Task A_person_without_a_role_that_may_answer_the_decision_may_read_the_session_but_not_act_on_it()
