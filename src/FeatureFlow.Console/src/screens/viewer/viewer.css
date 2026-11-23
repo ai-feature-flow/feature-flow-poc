@@ -1,0 +1,27 @@
+/* The viewer (design-v2 s4.4; mock-up 02): tabs in a 40 px strip (the preview's name in italics, a pinned tab's pin lit), then
+   the artifact: tables and lists for data, text for the rest. */
+
+.ff-viewer-pane { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.ff-vtabs { display: flex; align-items: center; border-bottom: 1px solid var(--border); background: var(--panel2); height: 40px; }
+.ff-vtabs-list { display: flex; align-items: stretch; height: 100%; flex: 1; min-width: 0; overflow-x: auto; }
+.ff-vtabs .ff-iconbtn { color: var(--muted); margin: 5px 6px; }
+.ff-vtab { display: flex; align-items: center; gap: 6px; padding: 0 10px 0 12px; border-right: 1px solid var(--border); color: var(--muted); cursor: pointer; user-select: none; max-width: 230px; }
+.ff-vtab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ff-vtab-preview .ff-vtab-name { font-style: italic; }
+.ff-vtab-on { background: var(--panel); color: var(--text); box-shadow: inset 0 2px var(--accent); }
+.ff-vtab-pin, .ff-vtab-x { border: 0; padding: 0; background: none; font-size: 13px; opacity: 0.45; cursor: pointer; color: inherit; }
+.ff-vtab-pin:hover, .ff-vtab-x:hover, .ff-vtab-pinned .ff-vtab-pin { opacity: 1; }
+.ff-vbody { overflow: auto; padding: 18px 20px; flex: 1; min-height: 0; }
+
+.ff-viewer-name { margin: 0 0 4px; font-size: 16px; overflow-wrap: anywhere; }
+.ff-viewer-about { margin: 0; color: var(--muted); font-size: 13px; }
+.ff-viewer-actions { display: flex; gap: 14px; margin: 4px 0 12px; font-size: 13px; }
+.ff-viewer-text { white-space: pre-wrap; overflow-wrap: anywhere; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; margin: 0; }
+
+.ff-doc-kv, .ff-doc-table { border-collapse: collapse; width: 100%; margin: 4px 0; }
+.ff-doc-kv th, .ff-doc-kv td, .ff-doc-table th, .ff-doc-table td { text-align: left; vertical-align: top; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+.ff-doc-kv > tbody > tr > th { width: 1%; white-space: nowrap; color: var(--muted); font-size: 13px; }
+.ff-doc-table th { font-size: 12px; color: var(--muted); }
+.ff-doc-list { margin: 0; padding-left: 20px; }
+
+.ff-fullsize .ff-viewer-name { font-size: 18px; }

@@ -1,9 +1,11 @@
-import { ArtifactViewer } from "../artifacts/Viewer";
+import { Document } from "./Document";
+import "./viewer.css";
 
-/**
- * An artifact full size, in a popup (app/viewer.tsx). Stub from the console shell (d1): slice 1's viewer, until the
- * workspace package (d2) renders it as its viewer does (A7).
- */
+/** An artifact full size, in a popup (app/viewer.tsx): from a viewer tab (double-click or ⤢), or from outside the workspace. */
 export function FullSize({ runId, reference }: { runId: string; reference: string }) {
-  return <ArtifactViewer runId={runId} reference={reference} />;
+  return (
+    <div class="ff-fullsize">
+      <Document runId={runId} reference={reference} />
+    </div>
+  );
 }

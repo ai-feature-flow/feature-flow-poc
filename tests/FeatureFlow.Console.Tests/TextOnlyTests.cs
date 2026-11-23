@@ -29,30 +29,25 @@ public sealed class TextOnlyTests(BrowserFixture browser) : BrowserTest(browser)
     {
         // The wait's prompt, as its summary.
         ["needs me"] = new(t => t.OpenAsync(), 1),
-        // The run's template.
-        ["run heading"] = new(t => t.OpenAsync("#/runs/" + RunId), 1),
-        // The run's template and the artifact's name in the artifact list, which is read after the run.
-        ["artifact list"] = new(async t =>
-        {
-            await t.OpenAsync("#/runs/" + RunId);
-            await Expect(t.Page.Locator("[data-kind='artifact'] a")).ToHaveTextAsync(Markup);
-        }, 2),
-        // The artifact's name, once the run's index is read, and its content.
+        // The run's template and requester in its facts.
+        ["run heading"] = new(t => t.OpenAsync("#/runs/" + RunId), 2),
+        // The artifact's name in its viewer tab's page and its content, opened by slice 1's link.
         ["viewer"] = new(async t =>
         {
             await t.OpenAsync($"#/runs/{RunId}/artifacts/{Uri.EscapeDataString(t.artifact!)}");
-            await Expect(t.Page.Locator("pre")).ToHaveTextAsync(Markup);
             await Expect(t.Page.Locator(".ff-viewer-name")).ToHaveTextAsync(Markup);
+            await Expect(t.Page.Locator(".ff-doc")).ToHaveTextAsync(Markup);
         }, 2),
         // Not the start form: its data (template references, parameter names and descriptions, unreadable libraries) comes
         // from the organisation's libraries, which ConsoleWorld fixes as library/std and m7s; neither holds markup.
-        // A step's status from the timeline (done(<detail>)) in the plan's table and its readable form.
-        ["plan"] = new(async t =>
+        // A step's status from the timeline (done(<detail>)) and its last outcome, in the step's detail.
+        ["step"] = new(async t =>
         {
             var runId = await t.World.StartRunAsync();
             await t.Engine.CloseWaitAsync(runId, "gate-1");
+            await t.Engine.TraceAsync(runId, "started", "go_ahead");
             await t.Engine.TraceAsync(runId, "completed", "go_ahead", Markup);
-            await t.OpenAsync("#/runs/" + runId);
+            await t.OpenAsync($"#/runs/{runId}/steps/{runId}/go_ahead");
         }, 2),
         // The wait form: the seeded gate's prompt and choice, and a second gate's prompt, choice and consumed names, linked and not.
         ["wait form"] = new(async t =>
@@ -60,8 +55,8 @@ public sealed class TextOnlyTests(BrowserFixture browser) : BrowserTest(browser)
             var reference = await t.Engine.ProduceAsync(RunId, "draft", "design.md", "the design");
             await t.Engine.OpenWaitAsync(RunId, prompt: Markup, choices: [Markup],
                 consumed: [new FeatureFlow.Providers.Abstractions.ConsumedRef("a", Markup, reference), new FeatureFlow.Providers.Abstractions.ConsumedRef("b", Markup, null)]);
-            await t.OpenAsync("#/runs/" + RunId);
-            await Expect(t.Page.GetByRole(Microsoft.Playwright.AriaRole.Region, new() { Name = "Wait gate-2" })).ToBeVisibleAsync();
+            await t.OpenAsync($"#/runs/{RunId}/waits/{RunId}/gate-2");
+            await Expect(t.Page.GetByRole(Microsoft.Playwright.AriaRole.Dialog)).ToBeVisibleAsync();
         }, 6),
         // The run's template, for a run recorded without a level; its requester is another, so it is listed under Everyone.
         ["run list"] = new(async t =>
@@ -69,9 +64,16 @@ public sealed class TextOnlyTests(BrowserFixture browser) : BrowserTest(browser)
             await t.OpenAsync("#/runs");
             await t.Page.GetByRole(Microsoft.Playwright.AriaRole.Button, new() { Name = "Everyone", Exact = true }).ClickAsync();
         }, 1),
-        // The template, requester and detail; a status wait's prompt; a closed wait's choice and reason; history (an answer's
-        // choice and reason, an override's actor, change and reason); a child's template; timeline details.
-        ["run page"] = new(async t => { await t.SeedRunPageAsync(); await t.OpenAsync("#/runs/" + RunId); }, 16),
+        // The template, requester and detail in the run's facts.
+        ["run page"] = new(async t => { await t.SeedRunPageAsync(); await t.OpenAsync("#/runs/" + RunId); }, 3),
+        // History: an answer's choice and reason, an override's actor, change and reason.
+        ["history"] = new(async t =>
+        {
+            await t.SeedRunPageAsync();
+            await t.OpenAsync("#/runs/" + RunId);
+            await t.Page.GetByRole(Microsoft.Playwright.AriaRole.Button, new() { Name = "Run actions ▾" }).ClickAsync();
+            await t.Page.GetByRole(Microsoft.Playwright.AriaRole.Menuitem, new() { Name = "History" }).ClickAsync();
+        }, 5),
     };
 
     /// <summary>The markup in the run page's other fields: its detail, a status wait, an answer, an override and a child.</summary>

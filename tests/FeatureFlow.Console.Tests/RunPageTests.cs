@@ -7,121 +7,55 @@ using static Microsoft.Playwright.Assertions;
 namespace FeatureFlow.Console.Tests;
 
 /// <summary>
-/// The run page (<c>#/runs/{id}</c>): its summary, open waits (a form for each decision, a banner for each status wait),
-/// closed waits with the answer that closed them, child runs, history, timeline and abort.
+/// A run's page in the workspace (<c>#/runs/{id}</c>, design-v2 s4.4): a run with no plan yet, a status wait at its step, and
+/// Run actions ▾ (abort with a required comment, offered only while the run runs and to a caller who may; its history).
 /// </summary>
 public sealed class RunPageTests(BrowserFixture browser) : BrowserTest(browser)
 {
-    ILocator Open => Page.GetByRole(AriaRole.Region, new() { Name = "Open waits" });
+    ILocator Middle => Page.GetByRole(AriaRole.Region, new() { Name = "Selected" });
 
-    ILocator Closed => Page.GetByRole(AriaRole.Region, new() { Name = "Closed waits" });
+    ILocator RunActions => Middle.GetByRole(AriaRole.Button, new() { Name = "Run actions ▾" });
 
-    async Task<string> PostAsync(string path, object body)
+    ILocator Item(string name) => Page.GetByRole(AriaRole.Menuitem).Filter(new() { HasText = name });
+
+    async Task PostAsync(string path, object body)
     {
         using var http = World.Http();
         using var response = await http.PostAsync(path, new StringContent(JsonSerializer.Serialize(body, ApiJson.Options), Encoding.UTF8, "application/json"), Ct);
-        var text = await response.Content.ReadAsStringAsync(Ct);
-        Assert.True(response.IsSuccessStatusCode, text);
-        return text;
+        Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync(Ct));
     }
 
     [Fact]
     public async Task A_new_run_with_no_plan_revision_yet_is_refused_nothing()
     {
-        // As a run's page reads it before the engine has indexed revision 1 (LOG 493): no request is refused, so no console error.
+        // As the workspace reads a run before the engine has indexed revision 1 (LOG 493): no request is refused.
         ExpectNoRefusal();
         await Engine.RunAsync("run-new");
 
         await OpenAsync("#/runs/run-new");
 
-        var plan = Page.GetByRole(AriaRole.Region, new() { Name = "Plan" });
-        await Expect(plan).ToContainTextAsync("No plan to show yet.");
-        await Expect(Open).ToContainTextAsync("Nothing is waiting.");
+        await Expect(Middle.Locator(".ff-run-id")).ToHaveTextAsync("run-new");
+        await Expect(Page.Locator(".ff-row-ghost[data-run='run-new']")).ToContainTextAsync("has no plan yet");
     }
 
     [Fact]
-    public async Task Stalled_and_stuck_show_as_status_without_a_form()
-    {
-        await Engine.RunAsync("run-status");
-        await Engine.OpenWaitAsync("run-status", "stalled", "build", "ticket.stalled", "no progress for an hour");
-        await Engine.OpenWaitAsync("run-status", "stuck", "test", "ticket.stuck", "the same failure three times");
-
-        await OpenAsync("#/runs/run-status");
-
-        var banners = Open.GetByRole(AriaRole.Status);
-        await Expect(banners).ToHaveCountAsync(2);
-        await Expect(banners.Nth(0)).ToContainTextAsync("stalled at build: no progress for an hour");
-        await Expect(banners.Nth(1)).ToContainTextAsync("stuck at test: the same failure three times");
-        await Expect(Open.GetByLabel("Comment")).ToHaveCountAsync(0);
-        await Expect(Open.GetByRole(AriaRole.Button)).ToHaveCountAsync(0);
-        await Expect(Open.Locator("section")).ToHaveCountAsync(0);
-    }
-
-    [Fact]
-    public async Task Closed_waits_show_who_answered_with_what_and_why()
+    public async Task A_status_wait_shows_at_its_step_as_a_status_with_nothing_to_answer()
     {
         var runId = await World.StartRunAsync();
-        await PostAsync($"runs/{runId}/answers", new AnswerRequest("gate-1", Outcome: "approved", Reason: "the plan is sound"));
+        await Engine.CloseWaitAsync(runId, "gate-1");
+        await Engine.OpenWaitAsync(runId, "stalled", "go_ahead", "ticket.stalled", "no progress for an hour");
 
-        await OpenAsync("#/runs/" + runId);
+        await OpenAsync($"#/runs/{runId}/steps/{runId}/go_ahead");
 
-        var row = Closed.Locator("tr[data-wait='gate-1']");
-        await Expect(row).ToContainTextAsync("gate: m7s.go_ahead");
-        await Expect(row).ToContainTextAsync("go_ahead");
-        await Expect(row).ToContainTextAsync(ConsoleWorld.Actor);
-        await Expect(row).ToContainTextAsync("approved");
-        await Expect(row).ToContainTextAsync("the plan is sound");
-        await Expect(Open).ToContainTextAsync("Nothing is waiting.");
-        await Expect(Open.Locator("[data-wait='gate-1']")).ToHaveCountAsync(0);
-    }
-
-    [Fact]
-    public async Task Children_are_linked_and_marked_when_they_wait_on_you()
-    {
-        await Engine.RunAsync("run-parent");
-        await Engine.RunAsync("run-child-waits", parentRunId: "run-parent");
-        await Engine.OpenWaitAsync("run-child-waits");
-        await Engine.RunAsync("run-child-quiet", parentRunId: "run-parent");
-
-        await OpenAsync("#/runs/run-parent");
-
-        var children = Page.GetByRole(AriaRole.Region, new() { Name = "Child runs" });
-        var waits = children.Locator("tr[data-run='run-child-waits']");
-        var quiet = children.Locator("tr[data-run='run-child-quiet']");
-        await Expect(waits).ToContainTextAsync("waits on you");
-        await Expect(quiet).ToContainTextAsync("running");
-        await Expect(quiet).Not.ToContainTextAsync("waits on you");
-        await waits.GetByRole(AriaRole.Link, new() { Name = "run-child-waits" }).ClickAsync();
-
-        await Expect(Page).ToHaveURLAsync(World.ConsoleUrl + "#/runs/run-child-waits");
-        await Expect(Page.Locator(".ff-run-id")).ToHaveTextAsync("run-child-waits");
-        await Expect(Page.Locator(".ff-run-summary")).ToContainTextAsync("Parent run");
-        await Expect(Page.Locator(".ff-run-summary").GetByRole(AriaRole.Link, new() { Name = "run-parent" })).ToBeVisibleAsync();
-    }
-
-    [Fact]
-    public async Task The_timeline_and_history_are_shown()
-    {
-        var runId = await World.StartRunAsync();
-        // Clearing a breakpoint that is not set is accepted (and traced only as an override); a set one would be refused, the gate being open.
-        await PostAsync($"runs/{runId}/overrides", new OverrideRequest("breakpoint", "look before it goes", "go_ahead", new Dictionary<string, string> { ["set"] = "false" }));
-        await PostAsync($"runs/{runId}/answers", new AnswerRequest("gate-1", Outcome: "rejected", Reason: "not yet"));
-        await Engine.TraceAsync(runId, "completed", "go_ahead", "the last step");
-
-        await OpenAsync("#/runs/" + runId);
-
-        var history = Page.GetByRole(AriaRole.Region, new() { Name = "History" }).Locator("tbody tr");
-        var breakpoint = history.Filter(new() { HasText = "breakpoint" }).Filter(new() { HasText = "applied" });
-        await Expect(breakpoint).ToContainTextAsync("look before it goes");
-        await Expect(breakpoint).ToContainTextAsync("set: false");
-        await Expect(history.Filter(new() { HasText = "gate-1: rejected" }).Filter(new() { HasText = "recorded" })).ToContainTextAsync("not yet");
-
-        var timeline = Page.GetByRole(AriaRole.Region, new() { Name = "Timeline" }).Locator("tbody tr");
-        string[] kinds = ["started", "override", "answered", "completed"];
-        await Expect(timeline).ToHaveCountAsync(kinds.Length);
-        for (var i = 0; i < kinds.Length; i++)
-            await Expect(timeline.Nth(i).Locator("td").Nth(1)).ToHaveTextAsync(kinds[i]);
-        await Expect(timeline.Nth(3)).ToContainTextAsync("the last step");
+        var stalled = Middle.GetByRole(AriaRole.Region, new() { Name = "stalled" });
+        await Expect(stalled.GetByRole(AriaRole.Heading)).ToHaveTextAsync("Stalled");
+        await Expect(stalled.GetByRole(AriaRole.Status)).ToHaveTextAsync("no progress for an hour");
+        await Expect(stalled.GetByRole(AriaRole.Button)).ToHaveCountAsync(0);
+        await Expect(Middle.GetByRole(AriaRole.Region, new() { Name = "Needs you" })).ToHaveCountAsync(0);
+        // In the tree: in trouble, not waiting on you.
+        var row = Page.Locator($".ff-row-step[data-step='go_ahead']");
+        await Expect(row).ToHaveAttributeAsync("data-state", "problem");
+        await Expect(Page.GetByRole(AriaRole.Toolbar, new() { Name = "Go to" })).ToContainTextAsync("Problems (1)");
     }
 
     [Fact]
@@ -130,18 +64,26 @@ public sealed class RunPageTests(BrowserFixture browser) : BrowserTest(browser)
         var runId = await World.StartRunAsync();
         await OpenAsync("#/runs/" + runId);
 
-        await Page.GetByRole(AriaRole.Button, new() { Name = "Abort run" }).ClickAsync();
-        var abort = Page.GetByRole(AriaRole.Button, new() { Name = "Abort (comment required)", Exact = true });
+        await RunActions.ClickAsync();
+        await Item("Abort…").ClickAsync();
+        var popup = Popup($"Abort {runId}");
+        var abort = popup.GetByRole(AriaRole.Button, new() { Name = "Abort (comment required)", Exact = true });
         await Expect(abort).ToBeDisabledAsync();
-        await Page.Locator(".ff-run-abort").GetByLabel("Comment").FillAsync("wrong ticket");
-        await Page.GetByLabel("Close its pull requests").CheckAsync();
+        await popup.GetByLabel("Comment").FillAsync("wrong ticket");
+        await popup.GetByLabel("Close its pull requests").CheckAsync();
         await abort.ClickAsync();
 
-        await Expect(Page.Locator(".ff-run-heading .ff-status")).ToHaveTextAsync("aborted");
-        await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Abort run" })).ToHaveCountAsync(0);
+        await Expect(popup).ToHaveCountAsync(0);
+        var row = Page.Locator($".ff-tree .ff-row-run[data-run='{runId}']");
+        await Expect(row).ToContainTextAsync("aborted");
+        await Expect(row).ToHaveAttributeAsync("data-state", "problem");
+        await Expect(Page.Locator(".ff-tree").GetByRole(AriaRole.Img, new() { Name = "running" })).ToHaveCountAsync(0);
         var aborted = Assert.Single(Engine.Aborts);
         Assert.Equal("wrong ticket", aborted.Reason);
         Assert.True(aborted.ClosePullRequests);
+        await RunActions.ClickAsync();
+        await Expect(Item("Abort…")).ToBeDisabledAsync();
+        await Expect(Item("Abort…")).ToContainTextAsync("the run has ended");
     }
 
     [Fact]
@@ -151,26 +93,51 @@ public sealed class RunPageTests(BrowserFixture browser) : BrowserTest(browser)
         var runId = await World.StartRunAsync();
         await Engine.RunAsync(runId, status: "rejected");
 
-        await OpenAsync("#/runs/" + runId);
+        await OpenAsync($"#/runs/{runId}/steps/{runId}/go_ahead");
 
-        await Expect(Page.Locator(".ff-run-heading .ff-status")).ToHaveTextAsync("rejected");
-        await Expect(Page.Locator(".ff-run-heading .ff-status")).ToHaveClassAsync("ff-status ff-status-failed");
-        await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "Plan", Exact = true })).ToContainTextAsync("go_ahead");
-        await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "Plan", Exact = true }).GetByRole(AriaRole.Button)).ToHaveCountAsync(0);
-        await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Abort run" })).ToHaveCountAsync(0);
+        await Expect(Page.Locator($".ff-row-run[data-run='{runId}']")).ToHaveAttributeAsync("data-state", "problem");
+        await Expect(Page.Locator($".ff-row-step[data-step='go_ahead']").GetByRole(AriaRole.Button, new() { Name = "Breakpoint before go_ahead" })).ToHaveCountAsync(0);
+        await Expect(Middle.GetByRole(AriaRole.Button, new() { Name = "Edit step" })).ToBeDisabledAsync();
+        await Middle.GetByRole(AriaRole.Button, new() { Name = "Steer ▾" }).ClickAsync();
+        foreach (var name in new[] { "Pause before", "Skip", "Grant attempts" })
+            await Expect(Item(name)).ToBeDisabledAsync();
+
+        await Page.Locator($".ff-row-run[data-run='{runId}']").ClickAsync();
+        await RunActions.ClickAsync();
+        await Expect(Item("Abort…")).ToBeDisabledAsync();
     }
 
     [Fact]
     public async Task Abort_is_not_offered_to_a_caller_who_may_not_abort()
     {
         UseWorld("none", roles: ["viewer", "approver"]);
-        var runId = "run-not-mine-to-abort";
-        await World.SeedRunWithWaitAsync(runId);
+        await World.SeedRunWithWaitAsync("run-not-mine-to-abort");
 
+        await OpenAsync("#/runs/run-not-mine-to-abort");
+
+        await Expect(Middle.Locator(".ff-run-id")).ToHaveTextAsync("run-not-mine-to-abort");
+        await RunActions.ClickAsync();
+        await Expect(Item("Abort…")).ToBeDisabledAsync();
+        await Expect(Item("Abort…")).ToContainTextAsync("you may not abort this run");
+    }
+
+    [Fact]
+    public async Task History_lists_every_answer_and_override_with_who_and_why()
+    {
+        var runId = await World.StartRunAsync();
+        // Clearing a breakpoint that is not set is accepted (and traced only as an override).
+        await PostAsync($"runs/{runId}/overrides", new OverrideRequest("breakpoint", "look before it goes", "go_ahead", new Dictionary<string, string> { ["set"] = "false" }));
+        await PostAsync($"runs/{runId}/answers", new AnswerRequest("gate-1", Outcome: "rejected", Reason: "not yet"));
         await OpenAsync("#/runs/" + runId);
 
-        await Expect(Page.Locator(".ff-run-id")).ToHaveTextAsync(runId);
-        await Expect(Open.Locator("[data-wait='gate-1']")).ToBeVisibleAsync();
-        await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Abort run" })).ToHaveCountAsync(0);
+        await RunActions.ClickAsync();
+        await Item("History").ClickAsync();
+
+        var rows = Popup($"History of {runId}").Locator("tbody tr");
+        var breakpoint = rows.Filter(new() { HasText = "look before it goes" }).Filter(new() { HasText = "applied" });
+        await Expect(breakpoint).ToContainTextAsync("breakpoint");
+        await Expect(breakpoint).ToContainTextAsync("set: false");
+        await Expect(breakpoint).ToContainTextAsync(ConsoleWorld.Actor);
+        await Expect(rows.Filter(new() { HasText = "gate-1: rejected" }).Filter(new() { HasText = "recorded" })).ToContainTextAsync("not yet");
     }
 }
