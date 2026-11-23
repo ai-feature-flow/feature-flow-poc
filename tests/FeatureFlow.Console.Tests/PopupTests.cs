@@ -36,26 +36,28 @@ public sealed class PopupTests(BrowserFixture browser) : BrowserTest(browser)
     }
 
     [Fact]
-    public async Task UseDecision_titles_each_popup_by_the_design_table()
+    public async Task Each_popup_opened_through_useDecision_is_titled_by_the_design_table()
     {
         var s = await Engine.DecisionsAsync();
-        await OpenAsync($"#/runs/{s.Tree.Root}");
-        // The workspace opens decisions through useDecision(); open each from the page's own module, as a screen would.
+        await OpenAsync("#/needs");
+        // Needs me opens each decision through useDecision() (Review and answer).
         var titles = new Dictionary<ScenarioWait, string>
         {
-            [s.Tree.Intervention] = "implement has used all its attempts",
+            // The shared scenario's cause ends "failed", not attempts_exhausted, so the API titles it by its outcome (a2's rule).
+            [s.Tree.Intervention] = "implement needs you: failed",
             [s.Tree.Breakpoint] = "Paused before verify.tests",
-            [s.Tree.Question] = "implement asks",
             [s.Patch] = "tickets.plan proposes a plan change",
             [s.Tree.Merge] = "Merge acme/api#201 into main?",
+            [s.Tree.Triage] = "Triage 1 finding the triager could not clear",
         };
         foreach (var (wait, title) in titles)
         {
-            await GoAsync($"#/runs/{s.Tree.Root}/waits/{wait.RunId}/{wait.WaitId}");
+            var item = Page.Locator($"article.ff-item[data-run='{wait.RunId}'][data-wait='{wait.WaitId}']");
+            await item.GetByRole(AriaRole.Button, new() { Name = "Review and answer" }).ClickAsync();
             await Expect(Dialog.Locator(".ff-dec")).ToBeVisibleAsync();
             await Expect(Dialog.GetByRole(AriaRole.Heading, new() { Level = 2 })).ToHaveTextAsync(title);
             await Page.Keyboard.PressAsync("Escape");
-            await GoAsync($"#/runs/{s.Tree.Root}");
+            await Expect(Dialog).ToHaveCountAsync(0);
         }
     }
 
@@ -69,7 +71,7 @@ public sealed class PopupTests(BrowserFixture browser) : BrowserTest(browser)
         var folder = Environment.GetEnvironmentVariable("FF_SCREENS") ?? Path.Combine(Path.GetTempPath(), "ff-screens");
         Directory.CreateDirectory(folder);
         var s = await Engine.DecisionsAsync();
-        await OpenAsync($"#/runs/{s.Tree.Root}");
+        await OpenAsync("#/needs");
         await Page.SetViewportSizeAsync(1440, 900);
         await Page.GetByRole(AriaRole.Button, new() { Name = "Dark theme" }).ClickAsync();
         await Expect(Page.Locator("html")).ToHaveAttributeAsync("data-theme", "dark");
@@ -80,12 +82,18 @@ public sealed class PopupTests(BrowserFixture browser) : BrowserTest(browser)
         };
         foreach (var (name, wait) in shots)
         {
-            await GoAsync($"#/runs/{s.Tree.Root}/waits/{wait.RunId}/{wait.WaitId}");
+            var item = Page.Locator($"article.ff-item[data-run='{wait.RunId}'][data-wait='{wait.WaitId}']");
+            var review = item.GetByRole(AriaRole.Button, new() { Name = "Review and answer" });
+            // A question is answered inline in Needs me; its popup opens from its wait's route.
+            if (await review.CountAsync() > 0)
+                await review.ClickAsync();
+            else
+                await GoAsync($"#/runs/{s.Tree.Root}/waits/{wait.RunId}/{wait.WaitId}");
             await Expect(Dialog.Locator(".ff-dec-body")).ToBeVisibleAsync();
-            await Page.WaitForTimeoutAsync(600);
+            await Page.WaitForTimeoutAsync(800);
             await Page.ScreenshotAsync(new() { Path = Path.Combine(folder, $"{name}.png") });
             await Page.Keyboard.PressAsync("Escape");
-            await GoAsync($"#/runs/{s.Tree.Root}");
+            await GoAsync("#/needs");
         }
     }
 }

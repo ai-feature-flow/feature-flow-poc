@@ -118,7 +118,7 @@
   padding: 10px 12px;
   overflow: auto;
 }
-.ff-dec-command { display: flex; gap: 10px; align-items: center; }
+.ff-dec-command { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; }
 .ff-dec-command code { background: var(--code); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
 .ff-dec-consumed { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 0; list-style: none; }
 .ff-dec-history { margin: 0; padding: 0; list-style: none; font-size: 13px; }

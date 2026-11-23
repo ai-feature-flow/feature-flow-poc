@@ -260,7 +260,8 @@ export function Triage({ runId, wait, context }: DecisionProps) {
         {escalated > 0 && declinedBlocking > 0 ? " and " : ""}
         {declinedBlocking > 0 ? `declined ${declinedBlocking} blocking or demonstrated finding${declinedBlocking === 1 ? "" : "s"}` : ""}
         {needing.length === 0 ? "left nothing for you to decide" : ", which an agent may not clear on its own"}.
-        {byPerson.length > 0 && ` ${byPerson.length} finding${byPerson.length === 1 ? "" : "s"} a person already decided stand as decided and are not asked again (shown below for context).`}
+        {byPerson.length > 0 &&
+          ` ${byPerson.length === 1 ? "1 finding a person already decided stands" : `${byPerson.length} findings a person already decided stand`} as decided and ${byPerson.length === 1 ? "is" : "are"} not asked again (shown below for context).`}
       </div>
       <h3>Needs your decision</h3>
       {needing.map(f => (

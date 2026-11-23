@@ -17,9 +17,9 @@ function Why({ wait, cause }: { wait: Schema<"WaitView">; cause: Schema<"WaitCau
     <div class="ff-dec-why" aria-label="Why it stopped">
       <p>
         {cause.step_id}
-        {cause.outcome ? ` ended ${cause.outcome}` : ""}: {cause.reason}
-        {attempts && ` ${attempts}`}
+        {cause.outcome ? ` ended ${cause.outcome}` : ""}: {cause.reason}.
       </p>
+      {attempts && <p>{attempts}</p>}
       {cause.said && <p class="ff-dec-said">It said: “{cause.said}”</p>}
       {cause.sent_back.length > 0 && (
         <table class="ff-dec-table" aria-label="Sent back">
