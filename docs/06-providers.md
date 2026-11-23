@@ -333,7 +333,8 @@ interface ICodeHostProvider : IProvider {
     Task<..RepoFile?>        ReadFileAsync(RepoRef repo, string path, string reference);
     Task<..PullRequestRef>   OpenPullRequestAsync(RepoRef repo, PullRequestSpec spec, string key);
     Task<..PullRequestRef>   UpdatePullRequestAsync(PullRequestRef pr, PullRequestSpec spec);
-    Task<..PullRequestState> GetPullRequestAsync(PullRequestRef pr);   // state, head, approvals, merged by whom
+    Task<..PullRequestState> GetPullRequestAsync(PullRequestRef pr);   // state, head, approvals, merged by whom, size
+    Task<..IReadOnlyList<PullRequestFile>> ListPullRequestFilesAsync(PullRequestRef pr);   // path, status, +/-
     Task<..Unit>             ClosePullRequestAsync(PullRequestRef pr, string? comment);
     Task<..PullRequestRef>   CreateRevertPullRequestAsync(PullRequestRef pr, string key);
     Task<..CheckStatus>      GetCheckStatusAsync(RepoRef repo, string revision);
@@ -346,7 +347,11 @@ interface ICodeHostProvider : IProvider {
 - `GetBranchProtectionAsync` only checks protection exists; the engine's
   identity has no permission to change it (F5).
 - `GetPullRequestAsync` reports who merged, so `scm.merge` can detect a person's
-  merge on the code host.
+  merge on the code host, and the pull request's size (additions, deletions,
+  changed files) and mergeable state where the host gives them.
+  `ListPullRequestFilesAsync` lists its files; GitHub gives the first 300
+  (`GET /pulls/{n}/files`, three pages). The engine records both on each read
+  of a run's pull request (`docs/04` section 7.2, LOG 531).
 
 ### 3.5 CI
 
@@ -545,8 +550,9 @@ interface ISecretsProvider : IProvider {
 - The record store numbers the changes each batch makes, in a `changes` table
   written inside `AppendAsync`'s own transaction, so no writer changes and none
   is missed (LOG 397): one `run_changed` per run whose runs, timeline,
-  answers, overrides, artifacts or sessions the batch writes, and one
-  `wait_opened` or `wait_closed` per wait record (`ChangeKinds.Of`).
+  answers, overrides, artifacts, sessions, findings, finding events, step
+  states or pull requests the batch writes, and one
+  `wait_opened` or `wait_closed` per wait record (`ChangeKinds.Of`; LOG 527).
   `Queries.Changes` returns those after a sequence (`after`, ascending, at most
   500) and `Queries.LatestChange` the latest; `GET /events` reads them
   (`docs/02` section 7). The numbers are in commit order, so a reader that keeps
@@ -565,6 +571,16 @@ interface ISecretsProvider : IProvider {
   before `GET /attention` filters them by caller, so with more than 500 open a
   caller's newer waits drop out of its list; paging by the caller's scope is
   not in version 1.
+- For the console (LOG 527): `step_states` answers a run's step counters
+  (executions, attempts used, allowed with grants, granted), the last written
+  per step; `pull_requests` a run's pull request records, the last written per
+  repository and number; `repositories` the registered repositories by name;
+  `recent_answers` an actor's answers, newest first, to a limit. Each is its own
+  table in SQLite and Postgres (schema script 4), body as JSON, upserted; the
+  in-memory store keeps them, and now keeps answers too. A wait record carries
+  an intervention's `cause` and a patch approval's `patch`; a run record its
+  level, parent step, tracker issue with title and link, and start (LOG 528).
+  Older records lack them, and nothing is back-filled.
 - Secret values are scrubbed at the logging layer.
 
 ### 3.13 Credential broker
