@@ -4,6 +4,7 @@ import { ApiError, type Schema } from "../../api/client";
 import { invalidate, runKey } from "../../api/live";
 import { usePopup } from "../../app/popup";
 import { hasReason, reasonOf } from "../../ui/Reason";
+import { progress } from "../../ui/progress";
 import { type Body, useAnswer } from "./answer";
 
 /** One answer of a decision: a button at the top of its popup. */
@@ -126,6 +127,11 @@ export function AnswerBar({ runId, wait, context, answers, aside, note, initiall
           </>
         )}
         {note && <div class="ff-dec-note">{note}</div>}
+        {progress(wait).map(line => (
+          <p key={line} class="ff-dec-pending">
+            {line}
+          </p>
+        ))}
         {answer.pending !== undefined && <p class="ff-dec-pending">Recorded: {answer.pending}</p>}
         {error && (
           <div class="ff-dec-refused" role="alert" aria-label="Refused">

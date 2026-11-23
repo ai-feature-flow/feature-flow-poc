@@ -236,6 +236,36 @@ public sealed class DecisionTests(BrowserFixture browser) : BrowserTest(browser)
     }
 
     [Fact]
+    public async Task A_min_count_decision_shows_its_progress_and_an_answer_that_waits_for_more_people_is_recorded()
+    {
+        UseWorld("none", [new FeatureFlow.Model.ApprovalRule("m7s.*", [FeatureFlow.Model.PeopleRoles.Approver], 2, false, new FeatureFlow.Model.Cap<bool>(false, false))]);
+        var runId = await World.StartRunAsync();
+        var route = $"#/runs/{runId}/waits/{runId}/gate-1";
+        await OpenAsync(route);
+        await Expect(Dialog).ToContainTextAsync("0 of 2 people");
+
+        await Answer("approved").ClickAsync();
+        await ClosedAsync();
+        Assert.Empty(Engine.Answers);
+
+        await GoAsync("#/runs");
+        await GoAsync(route);
+        await Expect(Dialog).ToContainTextAsync("approved: 1 of 2 people (local)", new() { Timeout = 5_000 });
+    }
+
+    [Fact]
+    public async Task A_caller_who_may_not_answer_is_told_so_and_offered_no_answer()
+    {
+        // No one answers a wait of a run that is no longer running.
+        await Engine.RunAsync("run-done", status: "completed");
+        await Engine.OpenWaitAsync("run-done");
+        await OpenAsync("#/runs/run-done/waits/run-done/gate-1");
+
+        await Expect(Dialog).ToContainTextAsync("You may not answer this.");
+        await Expect(Dialog.GetByRole(AriaRole.Group, new() { Name = "Answers" })).ToHaveCountAsync(0);
+    }
+
+    [Fact]
     public async Task A_decision_that_has_closed_says_so_and_offers_no_answer()
     {
         var s = await Engine.DecisionsAsync();
