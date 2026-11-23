@@ -14,6 +14,9 @@ public sealed partial class StartRunTests(BrowserFixture browser) : BrowserTest(
     /// <summary>The open gate's form, by the shared accessible name or, before task T5's form, the placeholder's mark.</summary>
     static ILocator WaitOf(IPage page, string waitId) => page.Locator($"section[aria-label='Wait {waitId}'], section[data-wait='{waitId}']");
 
+    /// <summary>A repository's box in the picker.</summary>
+    static ILocator Repository(IPage page, string name) => page.Locator($"[data-repository='{name}'] input[type=checkbox]");
+
     [Fact]
     public async Task A_run_started_from_a_template_opens_on_its_page()
     {
@@ -34,6 +37,8 @@ public sealed partial class StartRunTests(BrowserFixture browser) : BrowserTest(
     [Fact]
     public async Task Parameters_are_offered_by_type_with_their_defaults()
     {
+        // Repositories a run names are offered for the next, marked not registered.
+        await Engine.RunAsync("earlier", repositories: ["acme/app", "acme/web"]);
         var page = await OpenAsync("#/start");
         var template = page.GetByLabel("Template");
 
@@ -56,7 +61,8 @@ public sealed partial class StartRunTests(BrowserFixture browser) : BrowserTest(
 
         await ticket.FillAsync("ACME-12");
         await merge.CheckAsync();
-        await page.GetByLabel("Repositories (comma-separated)").FillAsync(" acme/app ,, acme/web");
+        await Repository(page, "acme/web").CheckAsync();
+        await Repository(page, "acme/app").CheckAsync();
         // The template takes its tracker issue from ticket_id (LOG 501), so the form does not ask for it separately.
         await Expect(page.GetByLabel("Tracker issue")).ToHaveCountAsync(0);
         await Expect(page.Locator(".ff-start-tracker")).ToHaveTextAsync("The tracker issue is ticket_id.");
@@ -70,7 +76,7 @@ public sealed partial class StartRunTests(BrowserFixture browser) : BrowserTest(
         Assert.Equal(2, start.Parameters.Count);
         Assert.Equal("\"ACME-12\"", start.Parameters["ticket_id"]);
         Assert.Equal("true", start.Parameters["engine_can_merge"]);
-        Assert.Equal(new[] { "acme/app", "acme/web" }, start.Repositories);
+        Assert.Equal(new[] { "acme/web", "acme/app" }, start.Repositories);
         Assert.Equal("ACME-12", start.TrackerIssue);
         Assert.True(start.DryRun);
     }
@@ -127,5 +133,48 @@ public sealed partial class StartRunTests(BrowserFixture browser) : BrowserTest(
         Assert.EndsWith("#/start", page.Url);
         Assert.Empty(Engine.Starts);
         await Expect(page.GetByRole(AriaRole.Button, new() { Name = "Start" })).ToBeEnabledAsync();
+    }
+
+    [Fact]
+    public async Task A_registered_repository_is_picked_for_the_run()
+    {
+        await Engine.AppendAsync(new FeatureFlow.Providers.Abstractions.RecordBatch(Repositories:
+            [new FeatureFlow.Providers.Abstractions.RepositoryRecord("acme/api", "github", "https://github.com/acme/api", "trunk", "ana", DateTimeOffset.UtcNow)]));
+        var page = await OpenAsync("#/start");
+
+        await page.GetByLabel("Template").SelectOptionAsync("m7s:templates/decide");
+        await Expect(page.Locator("[data-repository='acme/api']")).ToContainTextAsync("default branch trunk");
+        await Repository(page, "acme/api").CheckAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Start" }).ClickAsync();
+
+        await Expect(page).ToHaveURLAsync(RunPage());
+        Assert.Equal(["acme/api"], Assert.Single(Engine.Starts).Repositories);
+    }
+
+    [Fact]
+    public async Task A_repository_registered_in_place_is_chosen_and_a_refused_one_shows_why()
+    {
+        World.Forge.CreateRepository("acme/api", defaultBranch: "trunk");
+        var page = await OpenAsync("#/start");
+        await page.GetByLabel("Template").SelectOptionAsync("m7s:templates/decide");
+        var entry = page.GetByLabel("Register a repository");
+        var register = page.GetByRole(AriaRole.Button, new() { Name = "Register", Exact = true });
+
+        // Not a GitHub name: refused with the API's reason, and nothing registered.
+        await entry.FillAsync("acme/api/extra");
+        await register.ClickAsync();
+        await Expect(page.GetByRole(AriaRole.Alert)).ToHaveTextAsync("github must name a GitHub repository, as owner/name or https://github.com/owner/name");
+        await Expect(page.Locator("[data-repository]")).ToHaveCountAsync(0);
+
+        await entry.FillAsync("https://github.com/acme/api.git");
+        await register.ClickAsync();
+        await Expect(Repository(page, "acme/api")).ToBeCheckedAsync();
+        await Expect(page.Locator("[data-repository='acme/api']")).ToContainTextAsync("default branch trunk");
+        await Expect(page.GetByRole(AriaRole.Alert)).ToHaveCountAsync(0);
+        await Expect(entry).ToHaveValueAsync("");
+
+        await page.GetByRole(AriaRole.Button, new() { Name = "Start" }).ClickAsync();
+        await Expect(page).ToHaveURLAsync(RunPage());
+        Assert.Equal(["acme/api"], Assert.Single(Engine.Starts).Repositories);
     }
 }

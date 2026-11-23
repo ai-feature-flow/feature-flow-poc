@@ -1,15 +1,20 @@
-.ff-needs-me-run h2 {
-  font-size: 1.1em;
-  margin-bottom: 0.2em;
-}
+/* Needs me (mock-up 06): an item per open wait, its triangle, text and actions in three columns. */
 
-.ff-needs-me-run-id {
-  margin-top: 0;
-  color: #555;
-  font-size: 0.9em;
-}
+.ff-item { display: grid; grid-template-columns: 34px 1fr auto; gap: 6px 16px; padding: 18px 20px; border-bottom: 1px solid var(--border); align-items: start; }
+.ff-item:last-child { border-bottom: 0; }
+.ff-item-main { min-width: 0; }
+.ff-kindtag { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-right: 8px; }
+.ff-item-title { font-weight: 700; font-size: 15px; }
+.ff-item-path { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.ff-item-why { margin-top: 8px; white-space: pre-wrap; }
+.ff-item-acts { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.ff-item-age { font-size: 13px; color: var(--muted); }
 
-.ff-needs-me-prompt {
-  white-space: pre-wrap;
-  max-width: 40em;
-}
+.ff-quick { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; align-items: center; }
+.ff-quick input { flex: 1; min-width: 200px; font: inherit; padding: 5px 10px; border: 1px solid var(--border2); border-radius: 8px; background: var(--panel); color: var(--text); }
+.ff-quick-note { flex-basis: 100%; margin: 0; color: var(--muted); }
+.ff-quick .ff-error { flex-basis: 100%; margin: 0; }
+
+.ff-answered { margin-top: 20px; }
+.ff-answered table { margin-top: 8px; border-collapse: collapse; width: 100%; }
+.ff-answered td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }

@@ -27,8 +27,8 @@ public sealed class TextOnlyTests(BrowserFixture browser) : BrowserTest(browser)
 
     static readonly Dictionary<string, Screen> Screens = new()
     {
-        // The run's template, requester and the wait's prompt.
-        ["needs me"] = new(t => t.OpenAsync(), 3),
+        // The wait's prompt, as its summary.
+        ["needs me"] = new(t => t.OpenAsync(), 1),
         // The run's template.
         ["run heading"] = new(t => t.OpenAsync("#/runs/" + RunId), 1),
         // The run's template and the artifact's name in the artifact list, which is read after the run.
@@ -63,8 +63,12 @@ public sealed class TextOnlyTests(BrowserFixture browser) : BrowserTest(browser)
             await t.OpenAsync("#/runs/" + RunId);
             await Expect(t.Page.GetByRole(Microsoft.Playwright.AriaRole.Region, new() { Name = "Wait gate-2" })).ToBeVisibleAsync();
         }, 6),
-        // The run's template and requester.
-        ["run list"] = new(t => t.OpenAsync("#/runs"), 2),
+        // The run's template, for a run recorded without a level; its requester is another, so it is listed under Everyone.
+        ["run list"] = new(async t =>
+        {
+            await t.OpenAsync("#/runs");
+            await t.Page.GetByRole(Microsoft.Playwright.AriaRole.Button, new() { Name = "Everyone", Exact = true }).ClickAsync();
+        }, 1),
         // The template, requester and detail; a status wait's prompt; a closed wait's choice and reason; history (an answer's
         // choice and reason, an override's actor, change and reason); a child's template; timeline details.
         ["run page"] = new(async t => { await t.SeedRunPageAsync(); await t.OpenAsync("#/runs/" + RunId); }, 16),

@@ -30,7 +30,7 @@ public sealed class SignInTests(BrowserFixture browser) : BrowserTest(browser)
 
         // Appended now, so it reaches the page only over GET /events, which must carry the token.
         await World.SeedRunWithWaitAsync("run-signed-in");
-        await Expect(page.Locator("[data-run='run-signed-in'] tr[data-wait='gate-1']")).ToBeVisibleAsync(new() { Timeout = 5_000 });
+        await Expect(page.Locator("article[data-run='run-signed-in'][data-wait='gate-1']")).ToBeVisibleAsync(new() { Timeout = 5_000 });
     }
 
     [Fact]
