@@ -1,0 +1,51 @@
+.ff-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: var(--overlay);
+}
+
+.ff-popup {
+  width: min(980px, 92vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  outline: none;
+}
+
+.ff-popup-wide {
+  width: min(1200px, 94vw);
+}
+
+.ff-popup-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ff-popup-head h2 {
+  margin: 0;
+  font-size: 20px;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ff-popup-head .ff-iconbtn {
+  color: var(--muted);
+  font-size: 20px;
+}
+
+.ff-popup-body {
+  overflow: auto;
+  padding: 18px 24px 24px;
+}
