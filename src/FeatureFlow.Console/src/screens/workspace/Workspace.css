@@ -67,3 +67,12 @@
 .ff-kv { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 10px 16px; margin-top: 20px; }
 .ff-kv .ff-k { color: var(--muted); font-weight: 700; font-size: 13px; }
 .ff-tabpanel { padding: 16px 20px; }
+
+.ff-act { position: relative; }
+.ff-act-pick { display: inline-flex; gap: 6px; align-items: center; margin-bottom: 10px; font-size: 13px; color: var(--muted); }
+.ff-act-pick select { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--border2); border-radius: 6px; padding: 2px 6px; }
+.ff-act-scroll { max-height: min(70vh, 760px); overflow: auto; overscroll-behavior: contain; padding-right: 4px; }
+.ff-act-session + .ff-act-session { margin-top: 14px; }
+.ff-act-divider { display: flex; gap: 12px; align-items: baseline; padding: 6px 10px; background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-weight: 700; }
+.ff-act-divider .ff-artlink { margin-left: auto; font-weight: 400; }
+.ff-act-new { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); background: var(--panel); box-shadow: var(--shadow); }

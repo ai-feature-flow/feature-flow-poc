@@ -71,7 +71,7 @@ function firstLine(text: string | null | undefined, size = 100) {
   return line.length > size ? `${line.slice(0, size)}…` : line;
 }
 
-function Who({ turn, started }: { turn: Turn; started: string | null | undefined }) {
+function Who({ turn, started, running }: { turn: Turn; started: string | null | undefined; running?: boolean }) {
   const label = { prompt: "Prompt", message: "Agent", reasoning: "Reasoning", tool: "Tool", notice: "Notice", error: "Error", result: "Result" }[turn.kind];
   return (
     <div class="ff-tx-who">
@@ -81,6 +81,7 @@ function Who({ turn, started }: { turn: Turn; started: string | null | undefined
           {offset(started, turn.at)}
         </time>
       )}
+      {running && <span class="ff-tx-running">running</span>}
     </div>
   );
 }
@@ -126,6 +127,30 @@ function Body({ turn }: { turn: Turn }) {
 }
 
 /**
+ * A session's turns, each with who and when (offset from `started`); the turn at `running`, if any, is marked as running
+ * now. The transcript viewer and the step's Activity tab both show turns through it.
+ */
+export function TurnList({ turns, started, running, label = "Turns" }: {
+  turns: readonly Turn[];
+  started: string | null | undefined;
+  running?: number;
+  label?: string;
+}) {
+  return (
+    <ol class="ff-tx-turns" aria-label={label}>
+      {turns.map((turn, i) => (
+        <li key={i} class="ff-tx-turn" data-kind={turn.kind} data-failed={turn.failed || undefined} data-running={i === running || undefined}>
+          <Who turn={turn} started={started} running={i === running} />
+          <div class="ff-tx-body">
+            <Body turn={turn} />
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/**
  * An agent session's transcript as a conversation (console A4), from `GET /runs/{id}/artifacts/{ref}/turns`: a header
  * with the step, runtime, model, duration, calls and tokens, then each turn with who and when. Messages are Markdown through
  * the element renderer; the prompt, reasoning and tool calls are folded, and built only when opened. Every value is text.
@@ -151,16 +176,7 @@ export function Transcript({ turns, step }: { turns: Turns; step: string | undef
           </div>
         ))}
       </dl>
-      <ol class="ff-tx-turns" aria-label="Turns">
-        {turns.turns.map((turn, i) => (
-          <li key={i} class="ff-tx-turn" data-kind={turn.kind} data-failed={turn.failed || undefined}>
-            <Who turn={turn} started={turns.started} />
-            <div class="ff-tx-body">
-              <Body turn={turn} />
-            </div>
-          </li>
-        ))}
-      </ol>
+      <TurnList turns={turns.turns} started={turns.started} />
       {turns.unread.length > 0 && (
         <p class="ff-muted ff-tx-unread">Not shown: {turns.unread.map(u => `${u.type} (${u.count})`).join(", ")}.</p>
       )}

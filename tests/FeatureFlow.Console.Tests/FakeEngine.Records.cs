@@ -4,8 +4,8 @@ namespace FeatureFlow.Console.Tests;
 
 /// <summary>
 /// The console B1 records the engine writes (step states, pull requests, a wait's cause or patch, a run's level, parent step,
-/// tracker issue and start, a child run), written as the engine would write them so a test can show them. Each helper is one
-/// batch, so one change in the feed (the child run, two: its record and the parent's timeline).
+/// tracker issue and start, a child run), written as the engine would write them so a test can show them, and a running agent
+/// step's activity. Each helper is one batch, so one change in the feed (the child run, two: its record and the parent's timeline).
 /// </summary>
 public sealed partial class FakeEngine
 {
@@ -79,4 +79,58 @@ public sealed partial class FakeEngine
     public static WaitCause ExhaustedCause(string stepId, int attempts, string said, string byStep, string byOutcome, string sentBack) =>
         new(stepId, "attempts_exhausted", $"attempts exhausted ({said})", said, attempts, attempts,
             Enumerable.Range(1, attempts).Select(i => new SentBack(i, byStep, byOutcome, sentBack)).ToList());
+
+    /// <summary>The agent step <see cref="AgentStepAsync"/> runs: a ticket's planner.</summary>
+    public const string AgentStep = "plan.plan";
+
+    /// <summary>
+    /// A standalone ticket run whose agent step <see cref="AgentStep"/> has run <paramref name="executions"/> times, each with
+    /// its prompt as the agent activity indexes it before a session (<c>prompt:1</c>); the last still running unless
+    /// <paramref name="running"/> is false.
+    /// </summary>
+    public async Task AgentStepAsync(string runId, int executions = 1, bool running = true)
+    {
+        await RunWithAsync(runId, "std:templates/ticket_delivery", repositories: [ScenarioRepository], level: "ticket", trackerIssue: "INV-9", trackerTitle: "Ticket INV-9");
+        await AppendAsync(new RecordBatch(Locks: [new LockRecord(runId, await LockAsync(), Now())]));
+        await PlanAsync(runId, "std:templates/ticket_delivery", [ScenarioRepository], new() { ["ticket_id"] = "INV-9" });
+        await DoneAsync(runId, ("baseline.tests", "passed"), ("baseline.analysis", "passed"));
+        for (var n = 1; n <= executions; n++)
+        {
+            await TraceAsync(runId, "started", AgentStep, $"execution {n}");
+            await ProduceAsync(runId, AgentStep, "prompt:1", $"Plan ticket INV-9 (execution {n}).", type: "prompt", execution: n);
+            if (n < executions || !running)
+                await TraceAsync(runId, "completed", AgentStep, "planned");
+        }
+    }
+
+    /// <summary>An entry of an agent's activity as the runtime records it: its kind (<see cref="ActivityKinds"/>) and the fields that kind uses.</summary>
+    public sealed record ActivityEntry(string Kind, string? CallId = null, string? Name = null, string? Text = null, string? Detail = null, bool Failed = false)
+    {
+        public static ActivityEntry Said(string text) => new(ActivityKinds.Message, Text: text);
+
+        public static ActivityEntry ToolStarted(string callId, string name, string summary, string arguments = "{}") =>
+            new(ActivityKinds.ToolStarted, callId, name, summary, arguments);
+
+        public static ActivityEntry ToolFinished(string callId, string output, bool failed = false) =>
+            new(ActivityKinds.ToolFinished, callId, Detail: output, Failed: failed);
+    }
+
+    readonly Dictionary<(string, string, int, int), int> activitySequences = [];
+
+    /// <summary>
+    /// Appends <paramref name="entries"/> to the session's activity as one flush of the agent activity does (one batch, so one
+    /// <c>step_changed</c>), numbered after the session's earlier entries.
+    /// </summary>
+    public Task ActivityAsync(string runId, string stepId, int execution, int session, params ActivityEntry[] entries)
+    {
+        int first;
+        lock (activitySequences)
+        {
+            first = activitySequences.GetValueOrDefault((runId, stepId, execution, session)) + 1;
+            activitySequences[(runId, stepId, execution, session)] = first + entries.Length - 1;
+        }
+
+        return AppendAsync(new RecordBatch(Activity: entries.Select((e, i) =>
+            new ActivityRecord(runId, stepId, execution, session, first + i, e.Kind, e.CallId, e.Name, e.Text, e.Detail, e.Failed, Now())).ToList()));
+    }
 }

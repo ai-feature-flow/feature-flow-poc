@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 
 // Live data (LOG 459): one change stream (api/events.ts) invalidates keys, and each mounted reader whose keys are
-// invalidated reads again. There is no cache beyond mounted components. Keys: "attention", "runs", "run:<id>", and "*"
-// for everything.
+// invalidated reads again. There is no cache beyond mounted components. Keys: "attention", "runs", "run:<id>",
+// "step:<run>/<step>" (a step's live activity), and "*" for everything.
 
 /** Reads again if any of the keys concern it; resolves when that read has settled. */
 type Listener = (keys: ReadonlySet<string>) => Promise<void> | undefined;
@@ -15,6 +15,8 @@ let flushed: Promise<void> | undefined;
 const coalesce = 200;
 
 export const runKey = (runId: string): string => `run:${runId}`;
+
+export const stepKey = (runId: string, stepId: string): string => `step:${runId}/${stepId}`;
 
 /** Marks the keys changed; resolves when the reads they cause have settled. */
 export function invalidate(keys: readonly string[]): Promise<void> {
