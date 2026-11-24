@@ -90,8 +90,6 @@ public class ConfigurationTests
     [InlineData("defaults:", "agent_worker: { listen: \"http://0.0.0.0:8490\", token_key_ref: secrets/k }\ndefaults:", "agent_worker.urls must list")]
     [InlineData("defaults:", "agent_worker: { listen: \"http://0.0.0.0:8490\", urls: [\"http://h:1\"] }\ndefaults:", "agent_worker.token_key_ref must name")]
     [InlineData("defaults:", "agent_worker: { commit_interval: 10s }\ndefaults:", "unknown key 'commit_interval'")]
-    // L4: the scripted runtime is a test double.
-    [InlineData("recording: { folder: rec } } }", "recording: { folder: rec }, scripted: { script: s.yaml } } }", "providers.agent_runtime.instances.scripted: the scripted runtime is for development only")]
     // F19 (LOG 339): toolsets are not in version 1.
     [InlineData("  record_store: { default: sqlite,", "  toolset: { instances: { jira: {} } }\n  record_store: { default: sqlite,", "providers.toolset is not supported in version 1; remove it")]
     [InlineData("  record_store: { default: sqlite, instances: { sqlite: { path: records.db } } }", "  record_stor: { instances: { sqlite: {} } }", "unknown provider type 'record_stor'")]
@@ -104,8 +102,6 @@ public class ConfigurationTests
     [InlineData("defaults:", "observability: { otlp_endpoint: \"http://otel:4317\", sampling: 0.5 }\ndefaults:", "unknown key 'sampling'")]
     [InlineData("  limits: { attempts: 4 }", "  limits: { attempts: 4, retries: 2 }", "unknown key 'retries'")]
     [InlineData("continue_as_new_events: 400", "continue_as_new_events: 50", "must be at least 100")]
-    [InlineData("  record_store: { default: sqlite,", "  code_host: { instances: { fake: {} } }\n  record_store: { default: sqlite,", "for development only")]
-    [InlineData("  record_store: { default: sqlite,", "  vcs: { instances: { memory: { world: w } } }\n  record_store: { default: sqlite,", "for development only")]
     // L5 (LOG 263): api.base_url was read and discarded; it is now refused like any other unknown key.
     [InlineData("  auth: { mode: local_token,", "  base_url: https://ff.example\n  auth: { mode: local_token,", "unknown key 'base_url' in api")]
     public void An_installation_refuses_what_it_does_not_read(string old, string replacement, string message)
@@ -115,14 +111,23 @@ public class ConfigurationTests
         Assert.Contains(d, x => x.Blocks && x.Message.Contains(message, StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// L4: the reader knows no kind as a test double; composition refuses a development-only factory's instance outside
+    /// <c>development: true</c> (<c>CompositionTests.Every_development_only_kind_is_refused_outside_development</c>).
+    /// </summary>
     [Fact]
-    public void A_development_installation_may_use_the_scripted_runtime()
+    public void The_reader_leaves_development_only_kinds_to_composition()
     {
         var d = new DiagnosticBag();
-        var config = ConfigurationReader.ReadInstallation(Installation.Replace("kind: installation\n", "kind: installation\ndevelopment: true\n", StringComparison.Ordinal)
-            .Replace("recording: { folder: rec } } }", "recording: { folder: rec }, scripted: { script: s.yaml } } }", StringComparison.Ordinal), "installation.yaml", d)!;
+        var config = ConfigurationReader.ReadInstallation(Installation
+            .Replace("recording: { folder: rec } } }", "recording: { folder: rec }, scripted: { script: s.yaml } } }", StringComparison.Ordinal)
+            .Replace("  record_store: { default: sqlite,", "  code_host: { instances: { fake: {} } }\n  record_store: { default: sqlite,", StringComparison.Ordinal),
+            "installation.yaml", d)!;
         Assert.Empty(d);
+        Assert.False(config.Development);
         Assert.Equal("scripted", config.Providers["agent_runtime"].Instances["scripted"].Kind);
+        Assert.True(ConfigurationReader.ReadInstallation(Installation.Replace("kind: installation\n", "kind: installation\ndevelopment: true\n", StringComparison.Ordinal),
+            "installation.yaml", new DiagnosticBag())!.Development);
     }
 
     [Fact]

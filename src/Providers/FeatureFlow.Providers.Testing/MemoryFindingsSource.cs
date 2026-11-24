@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using System.Text;
 using FeatureFlow.Providers.Abstractions;
 
-namespace FeatureFlow.Providers.Local;
+namespace FeatureFlow.Providers.Testing;
 
 /// <summary>
 /// A findings source in memory (docs/06 section 3.7), for engine tests: a test scripts what a review of a repository at a

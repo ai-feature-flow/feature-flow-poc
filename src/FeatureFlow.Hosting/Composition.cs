@@ -73,6 +73,12 @@ public static class ProviderComposer
 
                 foreach (var key in instance.Settings.Keys.Where(k => !factory.Settings.Contains(k)))
                     errors.Add($"providers.{type}.instances.{name}: unknown setting '{key}'");
+                if (factory.DevelopmentOnly && !installation.Development)
+                {
+                    errors.Add($"providers.{type}.instances.{name}: the {instance.Kind} provider is for development only; set development: true");
+                    continue;
+                }
+
                 if (type == "agent_runtime" && FeatureFlowHost.ModelAccessProblem(name, instance) is { } problem)
                 {
                     errors.Add(problem);

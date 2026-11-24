@@ -350,16 +350,8 @@ public static class ConfigurationReader
             o.Finish();
         }
 
-        // A development installation may configure the fake and in-memory providers (LOG 107).
+        // A development installation may configure the test doubles; composition refuses them otherwise (LOG 107, L4).
         var development = r.Bool("development") ?? false;
-        if (!development)
-            foreach (var (type, config) in providers)
-                foreach (var instance in config.Instances.Values.Where(i => i.Kind is "fake" or "memory"))
-                    r.Error($"providers.{type}.instances.{instance.Name}: the fake provider is for development only; set development: true", r.Map.Location);
-        // The scripted runtime is a test double that runs no agent (L4).
-        if (!development && providers.TryGetValue("agent_runtime", out var runtimes))
-            foreach (var instance in runtimes.Instances.Values.Where(i => i.Kind == "scripted"))
-                r.Error($"providers.agent_runtime.instances.{instance.Name}: the scripted runtime is for development only; set development: true", r.Map.Location);
         r.Finish();
         return new InstallationConfig(address, ns, queue, events, providers, auth, attempts, races, file, development, agentWorker)
         {

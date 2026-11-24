@@ -32,7 +32,11 @@ public static class ReferenceRules
         "FeatureFlow.Providers.Postgres",
         "FeatureFlow.Providers.S3",
         "FeatureFlow.Providers.Kubernetes",
+        TestDoubles,
     ];
+
+    /// <summary>The test doubles (docs/06 section 3): hosts and tests may reference them, no <c>src/</c> project may.</summary>
+    public const string TestDoubles = "FeatureFlow.Providers.Testing";
 
     /// <summary>The Temporal side: the core, provider interfaces and Temporal.</summary>
     public static readonly IReadOnlyList<string> Engine =

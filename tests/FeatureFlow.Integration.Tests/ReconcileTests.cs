@@ -2,6 +2,7 @@ using FeatureFlow.Hosting;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Providers.Local;
 using FeatureFlow.Providers.StdValidators;
+using FeatureFlow.Providers.Testing;
 using Microsoft.Data.Sqlite;
 
 namespace FeatureFlow.Integration.Tests;
@@ -42,7 +43,7 @@ public class ReconcileTests
         Assert.Null(await RecordAsync(h, completed));
 
         var output = new StringWriter();
-        Assert.Equal(0, await HostArguments.ReconcileAsync(h.Host.Configuration, LocalProviders.Factories.Concat(StdValidatorProviders.Factories), output));
+        Assert.Equal(0, await HostArguments.ReconcileAsync(h.Host.Configuration, LocalProviders.Factories.Concat(StdValidatorProviders.Factories).Concat(TestingProviders.Factories), output));
 
         // Only this installation's task queue is read: the suite's other harnesses share the server.
         Assert.StartsWith($"reconcile: 3 runs in Temporal on {h.Host.Configuration.Installation.TaskQueue}, 3 records rebuilt", output.ToString());
@@ -64,7 +65,7 @@ public class ReconcileTests
         }
 
         var again = new StringWriter();
-        await HostArguments.ReconcileAsync(h.Host.Configuration, LocalProviders.Factories.Concat(StdValidatorProviders.Factories), again);
+        await HostArguments.ReconcileAsync(h.Host.Configuration, LocalProviders.Factories.Concat(StdValidatorProviders.Factories).Concat(TestingProviders.Factories), again);
         Assert.StartsWith($"reconcile: 3 runs in Temporal on {h.Host.Configuration.Installation.TaskQueue}, 0 records rebuilt", again.ToString());
     }
 

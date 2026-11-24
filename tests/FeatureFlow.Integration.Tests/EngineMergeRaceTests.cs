@@ -4,6 +4,7 @@ using FeatureFlow.Model.Yaml;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Providers.Git;
 using FeatureFlow.Providers.Local;
+using FeatureFlow.Providers.Testing;
 using System.Text.Json;
 
 namespace FeatureFlow.Integration.Tests;

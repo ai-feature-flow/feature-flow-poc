@@ -13,9 +13,10 @@ using FeatureFlow.Providers.Postgres;
 using FeatureFlow.Providers.S3;
 using FeatureFlow.Providers.Slack;
 using FeatureFlow.Providers.StdValidators;
+using FeatureFlow.Providers.Testing;
 
 var factories = LocalProviders.Factories.Concat(DockerProviders.Factories).Concat(ClaudeCodeProviders.Factories)
     .Concat(GitProviders.Factories).Concat(GitHubProviders.Factories).Concat(StdValidatorProviders.Factories).Concat(SlackProviders.Factories)
     .Concat(PostgresProviders.Factories).Concat(S3Providers.Factories).Concat(KubernetesProviders.Factories).Concat(CopilotCliProviders.Factories)
-    .Concat(JiraProviders.Factories);
+    .Concat(JiraProviders.Factories).Concat(TestingProviders.Factories);
 return await HostArguments.RunAsync(args, factories, orchestration: true, agent: false, apiHost: false);

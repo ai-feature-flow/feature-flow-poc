@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using FeatureFlow.Providers.Abstractions;
 
-namespace FeatureFlow.Providers.Local;
+namespace FeatureFlow.Providers.Testing;
 
 /// <summary>A message the in-memory notifications provider holds: where it went, its thread, its text, and the decision it asks for.</summary>
 public sealed record PostedMessage(MessageRef Ref, MessageRef? Thread, string Text, DecisionRequest? Decision);

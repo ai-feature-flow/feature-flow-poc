@@ -21,6 +21,17 @@ public class ReferenceRuleTests
     }
 
     [Fact]
+    public void No_src_project_references_the_test_doubles()
+    {
+        var offending = Directory.EnumerateFiles(Path.Combine(Root, "src"), "*.csproj", SearchOption.AllDirectories)
+            .Where(path => References(path, "ProjectReference").Select(Path.GetFileNameWithoutExtension).Contains(ReferenceRules.TestDoubles))
+            .Select(path => Path.GetRelativePath(Root, path))
+            .ToList();
+
+        Assert.Empty(offending);
+    }
+
+    [Fact]
     public void Every_project_of_the_layout_exists_and_is_in_the_solution()
     {
         var onDisk = ProductProjects().Select(Path.GetFileNameWithoutExtension).ToHashSet();
@@ -71,6 +82,7 @@ public class ReferenceRuleTests
     [InlineData("FeatureFlow.Engine", "FeatureFlow.Interpreter", "Temporalio")]
     [InlineData("FeatureFlow.Providers.Git", "FeatureFlow.Providers.Abstractions", "LibGit2Sharp")]
     [InlineData("FeatureFlow.Host.AgentWorker", "FeatureFlow.Providers.Docker", null)]
+    [InlineData("FeatureFlow.Host.AgentWorker", "FeatureFlow.Providers.Testing", null)]
     [InlineData("FeatureFlow.Cli", "FeatureFlow.Engine", null)]
     [InlineData("FeatureFlow.Testing.Workflows", "FeatureFlow.Interpreter", null)]
     public void Allowed_references_pass(string project, string reference, string? package)
