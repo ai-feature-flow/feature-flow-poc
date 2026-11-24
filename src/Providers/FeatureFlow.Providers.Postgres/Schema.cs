@@ -62,6 +62,12 @@ static class Schema
         CREATE TABLE repositories (org_id text NOT NULL, name text NOT NULL, body jsonb NOT NULL, PRIMARY KEY (org_id, name));
         CREATE INDEX answers_actor ON answers (org_id, (body->>'actor'), id DESC);
         """,
+        // 5: an agent step's live activity, once per run, step, execution, session and sequence; changes name the step whose activity grew.
+        """
+        CREATE TABLE activity (org_id text NOT NULL, run_id text NOT NULL, step_id text NOT NULL, execution integer NOT NULL, session integer NOT NULL,
+            sequence integer NOT NULL, body jsonb NOT NULL, PRIMARY KEY (org_id, run_id, step_id, execution, session, sequence));
+        ALTER TABLE changes ADD COLUMN step_id text;
+        """,
     ];
 
     /// <summary>The schema version this build writes.</summary>

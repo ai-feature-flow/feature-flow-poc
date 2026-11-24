@@ -53,7 +53,7 @@ public sealed class ClaudeCodeRuntime(ClaudeCodeOptions options, Func<ISandboxPr
 
     protected override string EngineToolPrefix => "mcp__engine__";
 
-    protected override string TurnMarker => "{\"type\":\"assistant\"";
+    protected override TranscriptFormat Format => TranscriptFormat.ClaudeCode;
 
     /// <summary>The session id for a step's key: stable, so a new worker resumes the same conversation.</summary>
     public static string SessionId(string stepKey) => StableSessionId(stepKey);
