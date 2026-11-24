@@ -692,7 +692,8 @@ routes:
 
 The standard single-ticket template, written with defaults and fragments. It
 replaces the first design's 270-line example (`archive/docs/13` section 1).
-It is illustrative: the shipped `std` template uses the `plan_and_validate`
+It is illustrative: the shipped `std` template is a wrapper of the
+`ticket_flow` fragment (section 11.1), which uses the `plan_and_validate`
 fragment where this example has an inline planner (`docs/08` section 6.4).
 
 ```yaml
