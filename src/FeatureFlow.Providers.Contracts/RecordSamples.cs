@@ -96,8 +96,9 @@ public static class RecordSamples
         [
             Case("a parent's children by id", (run, other) => ([R<RunRecord>(run, 1), R<RunRecord>(run, 3), R<RunRecord>(run, 2), R<RunRecord>(other, 2)],
                 P(("parent_run_id", run)), [R<RunRecord>(run, 2), R<RunRecord>(run, 3)])),
-            Case("most recently updated first", (run, other) => ([R<RunRecord>(run, 1, Later + 1), R<RunRecord>(run, 2, Later + 3), R<RunRecord>(run, 3, Later + 2)],
-                P(), [R<RunRecord>(run, 2, Later + 3), R<RunRecord>(run, 3, Later + 2), R<RunRecord>(run, 1, Later + 1)]), shared: true),
+            Case("most recently updated first, at most 200", (run, other) =>
+                ([.. Enumerable.Range(1, 201).Select(n => R<RunRecord>(run, n, Later + n * 7 % 211))], P(),
+                    [.. Enumerable.Range(1, 201).OrderByDescending(n => n * 7 % 211).Take(200).Select(n => R<RunRecord>(run, n, Later + n * 7 % 211))]), shared: true),
         ],
         [Abstractions.Queries.Waits] =
         [

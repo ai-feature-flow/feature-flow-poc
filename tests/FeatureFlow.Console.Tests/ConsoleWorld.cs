@@ -16,7 +16,7 @@ namespace FeatureFlow.Console.Tests;
 
 /// <summary>
 /// The API in process on a real loopback port, as a host builds it, over the Local providers (SQLite records and
-/// file-system artifacts in a temporary folder; the in-memory store refuses waits) and <see cref="FakeEngine"/> in place
+/// file-system artifacts in a temporary folder) and <see cref="FakeEngine"/> in place
 /// of Temporal (LOG 461). The organisation's libraries are <c>library/std</c> and the M7 scenario library <c>m7s</c>.
 /// The change feed polls every 100 ms of real time, so <c>GET /events</c> delivers on its own.
 /// </summary>
