@@ -1,7 +1,8 @@
 .ff-steer { display: grid; gap: 12px; }
 .ff-steer p { margin: 0; }
 .ff-steer-field { display: grid; gap: 4px; max-width: 46em; }
-.ff-steer-field label { font-weight: 700; font-size: 13px; color: var(--muted); }
+.ff-steer-field label,
+.ff-steer-field .ff-k { font-weight: 700; font-size: 13px; color: var(--muted); }
 .ff-steer input,
 .ff-steer select,
 .ff-steer textarea {

@@ -214,4 +214,38 @@ public sealed class SteeringTests(BrowserFixture browser) : BrowserTest(browser)
         await Expect(Dialog.GetByRole(AriaRole.Alert)).ToContainTextAsync("the run has ended", new() { Timeout = 5_000 });
         await Expect(Dialog).ToBeVisibleAsync();
     }
+
+    /// <summary>
+    /// Not a check: screenshots (docs/build/console-b2-results.md), dark at 1440 × 900, to <c>FF_SCREENS</c>: the go-to form
+    /// with what it cancels, and Edit step's instructions with where they go in the prompt.
+    /// </summary>
+    [Fact(Explicit = true)]
+    public async Task Screenshots_of_go_to_and_instructions()
+    {
+        var folder = Environment.GetEnvironmentVariable("FF_SCREENS") ?? Path.Combine(Path.GetTempPath(), "ff-screens");
+        Directory.CreateDirectory(folder);
+        await OpenStepAsync(s => s.Tickets[3], "implement");
+        await Page.SetViewportSizeAsync(1440, 900);
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Dark theme" }).ClickAsync();
+        async Task Shot(string name)
+        {
+            await Page.WaitForTimeoutAsync(800);
+            await Page.ScreenshotAsync(new() { Path = Path.Combine(folder, $"{name}.png") });
+        }
+
+        await Steer.ClickAsync();
+        await Item("Go to a step…").ClickAsync();
+        await Dialog.GetByLabel("Continue from").SelectOptionAsync("plan.plan");
+        await Dialog.GetByLabel("Clean up: reset the branch first").CheckAsync();
+        await Dialog.GetByLabel("Reason (required)").FillAsync("the plan missed the export");
+        await Shot("steer-go-to");
+        await Page.Keyboard.PressAsync("Escape");
+        await Expect(Dialog).ToHaveCountAsync(0);
+
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Edit step", Exact = true }).ClickAsync();
+        await Dialog.GetByLabel("Change").SelectOptionAsync("instructions");
+        await Dialog.GetByLabel("Instructions for the next attempt").FillAsync("CSV only: XLSX is out of scope for INV-4.\nKeep the public API unchanged; add the export as a new route.");
+        await Dialog.GetByLabel("Reason (required)").FillAsync("answered in the ticket");
+        await Shot("steer-instructions");
+    }
 }
