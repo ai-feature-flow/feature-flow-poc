@@ -56,8 +56,13 @@ public sealed record ReportedFinding(
 /// <summary>
 /// <c>findings_report</c> (std's artifact type): one review pass's findings. A reviewer agent writes it; a findings source
 /// provider returns one; the engine stages the ledger view in it. Read and written with <see cref="ArtifactShapes.ReadLibrary{T}"/>.
+/// <see cref="Summary"/> is the reviewer's verdict and what it checked; optional in the type, so a ledger view, an external
+/// source's report and an older report stay valid.
 /// </summary>
-public sealed record FindingsReport(int Schema, IReadOnlyList<ReportedFinding> Findings, string? Angle = null);
+public sealed record FindingsReport(int Schema, IReadOnlyList<ReportedFinding> Findings, string? Angle = null, FindingsSummary? Summary = null);
+
+/// <summary>A reviewer's summary of its pass: its verdict in one or two sentences, and what it examined (files, behaviours, criteria, commands run).</summary>
+public sealed record FindingsSummary(string Verdict, IReadOnlyList<string> Checked);
 
 /// <summary>Whether a fix needs a regression test, and why not when it does not.</summary>
 public sealed record RegressionTest(bool Applicable, string? Reason = null);

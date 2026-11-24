@@ -9,7 +9,8 @@ public sealed class OverridesTests
     public void Every_key_of_docs_05_section_5_and_its_variants_is_in_the_catalogue()
     {
         string[] keys = ["answer", "recover", "breakpoint", "skip", "amend", "change_role", "grant_attempts", "override_library", "answer_question", "abort",
-            "skip_protected", "amend_protected", "override_library_protected", "grant_attempts_beyond"];
+            "go_to", "replan", "instruct",
+            "skip_protected", "amend_protected", "override_library_protected", "grant_attempts_beyond", "instruct_protected"];
 
         Assert.Equal(keys.Order(), Overrides.DefaultRoles.Keys.Order());
         Assert.All(Overrides.Variants.SelectMany(v => v.Value.Append(v.Key)), key => Assert.True(Overrides.IsKey(key), key));
@@ -24,6 +25,10 @@ public sealed class OverridesTests
     [InlineData("grant_attempts_beyond", "admin")]
     [InlineData("override_library_protected", "admin")]
     [InlineData("abort", "steerer,admin")]
+    [InlineData("go_to", "steerer,admin")]
+    [InlineData("replan", "steerer,admin")]
+    [InlineData("instruct", "steerer,admin")]
+    [InlineData("instruct_protected", "admin")]
     [InlineData("answer", "")]
     public void A_key_has_its_default_roles_and_an_administrator_may_do_what_a_steerer_may(string key, string roles) =>
         Assert.Equal(roles.Split(',', StringSplitOptions.RemoveEmptyEntries), Overrides.RolesFor(key, None));

@@ -34,6 +34,7 @@ public sealed class OverrideAuthorisationTests
         Overrides.AnswerQuestion => ($"runs/{Run}/answers", """{ "wait_id": "question-1", "outcome": "yes" }"""),
         Overrides.Recover => ($"runs/{Run}/answers", """{ "wait_id": "intervention-1", "action": "retry", "reason": "flaky" }"""),
         Overrides.Abort => ($"runs/{Run}/abort", """{ "reason": "stop" }"""),
+        Overrides.Instruct => ($"runs/{Run}/overrides", """{ "key": "instruct", "step_id": "implement", "reason": "test", "change": { "text": "Keep the export to CSV" } }"""),
         _ => ($"runs/{Run}/overrides", $$"""{ "key": "{{key}}", "step_id": "implement", "reason": "test", "change": { "x": "1" } }"""),
     };
 
@@ -53,6 +54,9 @@ public sealed class OverrideAuthorisationTests
     [InlineData(Overrides.GrantAttempts, "steerer", "approver")]
     [InlineData(Overrides.OverrideLibrary, "steerer", "viewer")]
     [InlineData(Overrides.Abort, "steerer", "approver")]
+    [InlineData(Overrides.GoTo, "steerer", "approver")]
+    [InlineData(Overrides.Replan, "steerer", "viewer")]
+    [InlineData(Overrides.Instruct, "steerer", "approver")]
     public async Task Each_override_by_default_is_for_its_roles_only_and_records_the_authenticated_actor(string key, string may, string mayNot)
     {
         await using var world = await WorldAsync();
@@ -132,6 +136,7 @@ public sealed class OverrideAuthorisationTests
     [InlineData(Overrides.Amend, Overrides.AmendProtected)]
     [InlineData(Overrides.OverrideLibrary, Overrides.OverrideLibraryProtected)]
     [InlineData(Overrides.GrantAttempts, Overrides.GrantAttemptsBeyond)]
+    [InlineData(Overrides.Instruct, Overrides.InstructProtected)]
     public async Task A_steerer_holds_no_variant_and_an_administrator_holds_it(string key, string variant)
     {
         await using var world = await WorldAsync();

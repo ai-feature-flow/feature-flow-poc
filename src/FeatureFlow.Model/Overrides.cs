@@ -19,10 +19,20 @@ public static class Overrides
     public const string AnswerQuestion = "answer_question";
     public const string Abort = "abort";
 
+    /// <summary>Moves a running run to a step: everything in flight is cancelled, and the run continues at the step.</summary>
+    public const string GoTo = "go_to";
+
+    /// <summary>As <see cref="GoTo"/>, to a planning step, which plans again.</summary>
+    public const string Replan = "replan";
+
+    /// <summary>A person's instructions, added to an agent step's next prompt until the step next succeeds.</summary>
+    public const string Instruct = "instruct";
+
     public const string SkipProtected = "skip_protected";
     public const string AmendProtected = "amend_protected";
     public const string OverrideLibraryProtected = "override_library_protected";
     public const string GrantAttemptsBeyond = "grant_attempts_beyond";
+    public const string InstructProtected = "instruct_protected";
 
     const string Steerer = "steerer";
     const string Admin = "admin";
@@ -47,6 +57,10 @@ public static class Overrides
         [OverrideLibrary] = [Steerer],
         [OverrideLibraryProtected] = [Admin],
         [Abort] = [Steerer],
+        [GoTo] = [Steerer],
+        [Replan] = [Steerer],
+        [Instruct] = [Steerer],
+        [InstructProtected] = [Admin],
     };
 
     /// <summary>The variants of a key, by the base key: what a caller must also hold to use the override on protected content or beyond the hard ceiling.</summary>
@@ -56,6 +70,7 @@ public static class Overrides
         [Amend] = [AmendProtected],
         [OverrideLibrary] = [OverrideLibraryProtected],
         [GrantAttempts] = [GrantAttemptsBeyond],
+        [Instruct] = [InstructProtected],
     };
 
     public static bool IsKey(string key) => DefaultRoles.ContainsKey(key);

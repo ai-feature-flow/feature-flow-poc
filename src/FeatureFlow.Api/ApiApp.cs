@@ -96,6 +96,9 @@ public static partial class ApiApp
         MapRuns(app, api);
         MapArtifacts(app, api);
         MapActivity(app, api);
+        MapSteps(app, api);
+        MapReview(app, api);
+        MapPolicy(app, api);
         MapTrees(app, api);
         MapDecisions(app, api);
         MapOverrides(app, api);

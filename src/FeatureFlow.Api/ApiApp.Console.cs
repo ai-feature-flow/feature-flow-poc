@@ -27,7 +27,7 @@ public static partial class ApiApp
         app.MapGet("/console", () => ConsoleFile("index.html", "no-cache")).ExcludeFromDescription();
         app.MapGet("/console/assets/{**file}", (string file) => ConsoleFile($"assets/{file}", "public, max-age=31536000, immutable"))
             .ExcludeFromDescription();
-        app.MapGet("/runs/{id}/plan", (HttpContext c, string id, string? proposed) => api.Guard(c, caller => api.PlanAsync(c, caller, id, proposed)))
+        app.MapGet("/runs/{id}/plan", (HttpContext c, string id, string? proposed, string? staged) => api.Guard(c, caller => api.PlanAsync(c, caller, id, proposed, staged)))
             .Described<PlanView>("getRunPlan", 200, 404, 409).Produces(StatusCodes.Status204NoContent);
     }
 
@@ -98,13 +98,16 @@ public static partial class ApiApp
         /// groups, counters and child runs (A2). A run that has indexed no revision yet answers 204: it has no plan to show,
         /// which is not a refusal (LOG 493). With <paramref name="proposed"/> naming an open patch approval, the plan as it would
         /// be with the patch applied, as the next revision, each step that differs marked (A8); 404 for no such wait, 409 when
-        /// the patch does not load.
+        /// the patch does not load. With <paramref name="staged"/> naming a step, the plan as the patch its agent has staged
+        /// would make it: not built yet (build-console-b2 package B builds it).
         /// </summary>
-        public async Task<IResult> PlanAsync(HttpContext context, Caller caller, string id, string? proposed)
+        public async Task<IResult> PlanAsync(HttpContext context, Caller caller, string id, string? proposed, string? staged)
         {
             var ct = context.RequestAborted;
             if (await VisibleRunAsync(caller, id, ct) is not { } run)
                 return Error(404, $"no run {id}");
+            if (staged is not null)
+                return NotBuilt();
             var (loaded, refusal) = await LoadPlanAsync(run, revision: null, extraPatch: null, ct);
             if (refusal is { Status: 204 })
                 return Results.NoContent();
