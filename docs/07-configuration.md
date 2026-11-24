@@ -53,7 +53,11 @@ providers:                       # every type: named instances, one default
   vcs:            { default: git, instances: { git: {} } }
   code_host:      { default: github, instances: { github: { webhook_secret_ref: secrets/github_webhook } } }
   ci:             { default: github_actions, instances: { github_actions: {}, teamcity: { base_url: https://tc.internal, secret_ref: secrets/teamcity } } }
-  tracker:        { default: jira, instances: { jira: { base_url: https://acme.atlassian.net, secret_ref: secrets/jira, project: ACME, status_map: { in_progress: "In Progress", code_review: "Code Review", done: "Done" } } } }
+  tracker:
+    default: jira
+    instances:
+      jira: { base_url: https://acme.atlassian.net, secret_ref: secrets/jira, project: ACME, status_map: { in_progress: "In Progress", code_review: "Code Review", done: "Done" } }
+      github_issues: { repository: acme/planning, status_map: { in_progress: "status: in progress", code_review: "status: code review", done: closed } }
   findings_source: { instances: { copilot_review: {} } }
   validator:      { instances: { std: {} } }
   notifications:
@@ -105,7 +109,7 @@ the address, namespace and payload codec only) and the `teamcity` CI instance.
 | `secrets.file.from_environment` | Secret names the `file` provider reads from the process environment, such as the solo profile's subscription token. LOG 91 |
 | `endpoint` | Not in version 1: a runtime reaches its model through its instance's model proxy, whose `upstream` may be any service of the Anthropic Messages API (LOG 293, 446) |
 | `code_host` identity | Must not be able to change branch protection (F5): the GitHub App broker never asks for `administration`, so no credential it issues can |
-| `tracker.*.status_map` | Maps the library's abstract statuses to the tracker's (`docs/08` section 1). For `github_issues` (settings `repository`, `status_map`) a status maps to a label or to `closed` (LOG 184). For `jira` (settings `base_url`, `secret_ref`, `project`, `issue_type`, default Task, and `status_map`) a status maps to a Jira status name, default `in_progress` to "In Progress", `code_review` to "In Review" and `done` to "Done"; the secret holds `<account email>:<API token>` (LOG 301) |
+| `tracker.*.status_map` | Maps the library's abstract statuses to the tracker's (`docs/08` section 1). A status the map does not name is the tracker's status of the same name; there is no built-in map, and a run whose statuses the map names none of is refused at run start (`docs/06` section 3.6). For `github_issues` (settings `repository`, `status_map`) a status maps to a label or to `closed` (LOG 184); for std, `{ in_progress: "status: in progress", code_review: "status: code review", done: closed }`. For `jira` (settings `base_url`, `secret_ref`, `project`, `issue_type`, default Task, and `status_map`) a status maps to a Jira status name; for std on Jira's usual workflow, `{ in_progress: "In Progress", code_review: "In Review", done: "Done" }`; the secret holds `<account email>:<API token>` (LOG 301) |
 | `observability.otlp_endpoint` | Where traces are exported with OTLP over gRPC: an http or https URL. Without it nothing is exported. Version 1 exports traces only; metrics and logs are later (LOG 305) |
 | `notifications.slack` | `token_ref` (the bot token) and `signing_secret_ref` (verifies its buttons at `/inbound/chat/slack`) are secret references. `users` maps a Slack user id to the person its button presses answer as: `actor`, and `groups` or `roles` for the people roles (`docs/05` section 3.3). An unmapped user cannot answer. `console_url` is linked from each message. LOG 227 |
 | `code_host.github.webhook_secret_ref` | The secret GitHub signs webhook deliveries with; deliveries go to `/inbound/events/github` and only wake waits (`docs/02` section 2.3). LOG 228 |

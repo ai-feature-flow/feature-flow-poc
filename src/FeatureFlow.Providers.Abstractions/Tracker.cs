@@ -20,8 +20,8 @@ public sealed record IssueSpec(
     string? Project = null);
 
 /// <summary>
-/// An issue as the tracker reports it now. <see cref="Status"/> is the library status name its tracker status maps to
-/// (<c>library/std/status_map.yaml</c>), else the tracker's own name. <see cref="Body"/> is as given, without the hidden marker.
+/// An issue as the tracker reports it now. <see cref="Status"/> is the library status name its tracker status is mapped
+/// from (<c>status_map</c>), else the tracker's own name. <see cref="Body"/> is as given, without the hidden marker.
 /// </summary>
 public sealed record Issue(
     IssueRef Ref,
@@ -38,12 +38,19 @@ public sealed record IssueQuery(string? Label = null, IssueRef? Parent = null, s
 
 /// <summary>
 /// The tracker provider (docs/06 section 3.6), behind <c>tracker.update</c>, declarative <c>tracker</c> updates on steps and
-/// planners' toolsets. Statuses are the library's names (<c>in_progress</c>, <c>code_review</c>, <c>done</c>), mapped to the
-/// tracker's own in provider configuration. Creates take an idempotency key and write it as a hidden marker; a create or a
-/// comment retried with the same key adopts what the first made. Agents have no tracker identity (F5).
+/// planners' toolsets. Statuses are the library's names, mapped to the tracker's own by the provider configuration's
+/// <c>status_map</c>; a status the map does not name is the tracker status of the same name. Creates take an
+/// idempotency key and write it as a hidden marker; a create or a comment retried with the same key adopts what the first
+/// made. Agents have no tracker identity (F5).
 /// </summary>
 public interface ITrackerProvider : IProvider
 {
+    /// <summary>
+    /// The library statuses the configuration's <c>status_map</c> names, empty when it has none; null for a tracker with no
+    /// map to configure. Run start refuses a plan that moves issues to statuses of which the map names none (docs/06 section 3.6).
+    /// </summary>
+    IReadOnlySet<string>? MappedStatuses => null;
+
     /// <summary>An issue by key; <c>not_found</c> when there is none.</summary>
     Task<ProviderResult<Issue>> GetIssueAsync(IssueRef issue, CancellationToken cancellationToken);
 
@@ -56,8 +63,8 @@ public interface ITrackerProvider : IProvider
     Task<ProviderResult<IssueRef>> UpdateAsync(IssueRef issue, IssueSpec spec, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Moves the issue to a library status. Moving it to the status it has succeeds. A status the configuration does not
-    /// map, or the tracker's workflow does not allow from here, is <c>validation_failed</c>.
+    /// Moves the issue to a library status: the tracker status the configuration maps it to, else the one of the same name.
+    /// Moving it to the status it has succeeds. A status the tracker's workflow does not allow from here is <c>validation_failed</c>.
     /// </summary>
     Task<ProviderResult<Unit>> TransitionAsync(IssueRef issue, string status, CancellationToken cancellationToken);
 

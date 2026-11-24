@@ -10,7 +10,8 @@ namespace FeatureFlow.Providers.Jira;
 /// <summary>
 /// The Jira tracker provider (docs/06 section 3.6), over Jira Cloud's REST API v3. An issue's key is Jira's
 /// (<c>ACME-12</c>); <see cref="IssueSpec.Project"/> is a project key, default the configured one. The configuration's
-/// <c>status_map</c> maps each library status to a Jira status name; a transition takes the workflow's transition into that
+/// <c>status_map</c> maps a library status to a Jira status name, and a status it does not name is the Jira status of the
+/// same name; a transition takes the workflow's transition into that
 /// status. Hierarchy is Jira's <c>parent</c>: a child of an epic is created with the configured issue type, a child of
 /// any other issue as a subtask. A link is a Jira issue link whose type's name or description matches the library's link
 /// type. Text is written as plain paragraphs. A create's idempotency key is a label <c>ff-key-&lt;hash&gt;</c> (JQL finds
@@ -21,14 +22,6 @@ namespace FeatureFlow.Providers.Jira;
 public sealed partial class JiraTracker(JiraApi api, string? project, IReadOnlyDictionary<string, string>? statusMap = null, string issueType = "Task")
     : ITrackerProvider
 {
-    /// <summary>std's statuses (<c>library/std/status_map.yaml</c>) when the configuration maps none: Jira's usual workflow names.</summary>
-    public static readonly IReadOnlyDictionary<string, string> DefaultStatusMap = new Dictionary<string, string>
-    {
-        ["in_progress"] = "In Progress",
-        ["code_review"] = "In Review",
-        ["done"] = "Done",
-    };
-
     /// <summary>The prefix of the label that carries a create's idempotency key.</summary>
     public const string MarkerPrefix = "ff-key-";
 
@@ -37,9 +30,11 @@ public sealed partial class JiraTracker(JiraApi api, string? project, IReadOnlyD
 
     const string Fields = "summary,description,status,labels,parent,issuetype";
 
-    readonly IReadOnlyDictionary<string, string> map = statusMap ?? DefaultStatusMap;
+    readonly IReadOnlyDictionary<string, string> map = statusMap ?? new Dictionary<string, string>();
     readonly Dictionary<string, string> subtaskTypes = new(StringComparer.Ordinal);
     JsonArray? linkTypes;
+
+    public IReadOnlySet<string> MappedStatuses => map.Keys.ToHashSet(StringComparer.Ordinal);
 
     public ProviderDescription Describe() => new("tracker", "jira", "0.1.0", new NoCapabilities());
 
@@ -376,13 +371,12 @@ public sealed partial class JiraTracker(JiraApi api, string? project, IReadOnlyD
     }
 
     /// <summary>
-    /// A mapped status: the workflow's transition into the mapped Jira status (204). An issue already in it is left as it
-    /// is. An unmapped status, or one the workflow offers no transition to from here, is <c>validation_failed</c>.
+    /// The workflow's transition into the Jira status the configuration maps the status to, else the one of the same name
+    /// (204). An issue already in it is left as it is. One the workflow offers no transition to from here is <c>validation_failed</c>.
     /// </summary>
     public async Task<ProviderResult<Unit>> TransitionAsync(IssueRef issue, string status, CancellationToken cancellationToken)
     {
-        if (!map.TryGetValue(status, out var target))
-            return ProviderResult<Unit>.Failure("validation_failed", $"status '{status}' is not mapped to a Jira status ({string.Join(", ", map.Keys.Order(StringComparer.Ordinal))})");
+        var target = map.GetValueOrDefault(status, status);
         if (Parse(issue) is null)
             return NotFound<Unit>(issue);
         var read = await ReadAsync(issue.Key, cancellationToken, "status");

@@ -9,7 +9,7 @@ namespace FeatureFlow.Validation;
 /// <summary>
 /// The run-start checks of docs/09 section 2 that need no Temporal and no provider code: 19 (library
 /// requirements), 20 (a repository's library section adds only), 21 (capability negotiation, given the
-/// capabilities the configured providers offer, by name) and 22 (locked organisation caps). Check 18 is the
+/// capabilities the configured providers offer, by name, and beside it the tracker's <c>status_map</c>) and 22 (locked organisation caps). Check 18 is the
 /// core's (<c>RunCore.Start</c>). The engine calls these with what its providers describe.
 /// </summary>
 public static class RunStartChecks
@@ -98,6 +98,34 @@ public static class RunStartChecks
                 : $"{provider} is not configured";
             d.Add(Checks.Capabilities, $"{what}; needed by {need.By}");
         }
+    }
+
+    /// <summary>
+    /// The library statuses the plan moves tracker issues to: its steps' and fragment uses' declarative <c>tracker</c>
+    /// updates, and each <c>tracker.update</c> transition that names its status as a literal.
+    /// </summary>
+    public static IReadOnlySet<string> TrackerStatuses(Plan plan)
+    {
+        var trackers = plan.AllSteps.Select(s => s.Tracker).Concat(plan.Instances.Select(i => i.Tracker)).OfType<TrackerSpec>();
+        var transitions = plan.AllSteps.Where(s => s.Action == "tracker.update" && s.With?["op"].ScalarText() == "transition")
+            .Select(s => s.With!["status"]).OfType<YScalar>().Where(s => !s.IsNull).Select(s => s.Text);
+        return trackers.SelectMany(t => t.On.Values.Prepend(t.OnStart)).OfType<string>().Concat(transitions).ToHashSet(StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// Beside check 21: the tracker instance the run uses (<paramref name="instance"/>) must map at least one of the statuses
+    /// the plan moves issues to, where it has a <c>status_map</c> (<paramref name="mapped"/>, null where it has none to
+    /// configure). A status it does not map is the tracker's status of the same name, so a map naming none of the plan's
+    /// is almost always a missing <c>status_map</c>, which would move issues to statuses named as the library names them.
+    /// </summary>
+    public static void TrackerStatusMap(Plan plan, string? instance, IReadOnlySet<string>? mapped, DiagnosticBag d)
+    {
+        if (instance is null || mapped is null)
+            return;
+        var used = TrackerStatuses(plan);
+        if (used.Count > 0 && !used.Overlaps(mapped))
+            d.Add(Checks.Capabilities, $"the status_map of tracker instance '{instance}' maps none of the statuses this plan moves issues to " +
+                                       $"({string.Join(", ", used.Order(StringComparer.Ordinal))}); map them to the tracker's (docs/07 section 2)");
     }
 
     /// <summary>

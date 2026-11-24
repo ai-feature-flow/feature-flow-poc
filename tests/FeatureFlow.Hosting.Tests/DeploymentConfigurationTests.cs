@@ -52,10 +52,28 @@ public class DeploymentConfigurationTests
             var set = ProviderComposer.Compose(configuration.Installation,
                 HostFactories.Select(f => f with { Create = _ => new DescribedOnlyProvider(f.Type) }));
             Assert.NotEmpty(set.Types);
+            TrackersMapStdsStatuses(configuration.Installation);
         }
         finally
         {
             Directory.Delete(copy, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// L8: a status a tracker's <c>status_map</c> does not name is the tracker status of the same name, so a shipped
+    /// configuration's tracker maps each of std's statuses (<c>library/std/status_map.yaml</c>) to its own.
+    /// </summary>
+    static void TrackersMapStdsStatuses(FeatureFlow.Model.InstallationConfig installation)
+    {
+        string[] std = ["in_progress", "code_review", "done"];
+        foreach (var instance in installation.Providers.GetValueOrDefault("tracker")?.Instances.Values ?? [])
+        {
+            var factory = HostFactories.Single(f => f.Type == "tracker" && f.Kind == instance.Kind);
+            var tracker = (ITrackerProvider)factory.Create(new ProviderContext(instance, ".", _ => null));
+            var mapped = tracker.MappedStatuses;
+            Assert.True(mapped is null || std.All(mapped.Contains),
+                $"tracker instance '{instance.Name}' maps {(mapped is { Count: > 0 } ? string.Join(", ", mapped.Order(StringComparer.Ordinal)) : "none")} of std's statuses; its status_map should map all three");
         }
     }
 

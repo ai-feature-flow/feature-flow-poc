@@ -239,4 +239,37 @@ public class RunStartCheckTests
     [InlineData("1.2.3", "1.2.3+sha", true)]
     public void Version_ranges(string range, string version, bool contains) =>
         Assert.Equal(contains, VersionRange.Parse(range)!.Contains(version));
+
+    [Fact]
+    public void A_tracker_whose_status_map_names_none_of_the_plans_statuses_is_refused_and_one_named_is_enough()
+    {
+        var (_, plan, d) = Std.Probe("""
+            api_version: feature-flow/v1
+            kind: template
+            metadata: { name: probe, level: ticket }
+            steps:
+              - id: ship
+                action: tracker.update
+                with: { op: transition, status: shipped }
+                tracker: { on_start: in_progress }
+                routes: { done: note, not_found: { end: failed } }
+              - id: note
+                action: tracker.update
+                with: { op: comment, body: Shipped }
+                routes: { done: { end: completed }, not_found: { end: failed } }
+            """);
+        Assert.False(d.HasErrors, string.Join("\n", d));
+        Assert.Equal(["in_progress", "shipped"], RunStartChecks.TrackerStatuses(plan).Order(StringComparer.Ordinal));
+
+        var refused = new DiagnosticBag();
+        RunStartChecks.TrackerStatusMap(plan, "jira", new HashSet<string> { "done" }, refused);
+        Assert.Equal([Checks.Capabilities], Blocking(refused));
+        Assert.Contains("the status_map of tracker instance 'jira' maps none of the statuses this plan moves issues to (in_progress, shipped)", refused.Single().Message,
+            StringComparison.Ordinal);
+
+        var accepted = new DiagnosticBag();
+        RunStartChecks.TrackerStatusMap(plan, "jira", new HashSet<string> { "shipped" }, accepted);
+        RunStartChecks.TrackerStatusMap(plan, "memory", null, accepted);
+        Assert.Empty(accepted);
+    }
 }
