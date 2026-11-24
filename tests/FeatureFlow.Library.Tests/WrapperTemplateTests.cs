@@ -143,4 +143,124 @@ public class WrapperTemplateTests
         Assert.Contains(d, x => x.Blocks && x.Check == Checks.Fragment
             && x.Message.Contains("binds 'who' to an expression; a wrapper template binds literals only", StringComparison.Ordinal));
     }
+
+    // ---- Wrappers of std's ticket_flow, validated as a library would be ------------------------
+
+    const string ProbeFile = "templates/probe.yaml";
+
+    static DiagnosticBag ValidateTicketWrapper(string parameters, string rest)
+    {
+        var d = new DiagnosticBag();
+        var files = new LibraryFiles(new Dictionary<string, string>
+        {
+            ["library.yaml"] = "name: probe\nversion: 0.1.0\ndependencies: [{ name: std }]\n",
+            [ProbeFile] = $"api_version: feature-flow/v1\nkind: template\nmetadata: {{ name: probe, level: ticket }}\nparameters:\n{parameters}\nuse: std:fragments/ticket_flow\n{rest}\n",
+        });
+        var libraries = new LibrarySet(Library.Open(StdRoot, d)!, Library.FromFiles(files, d)!);
+        if (PlanLoader.LoadTemplate(libraries, new LibraryReference("probe", "templates", "probe"), d) is { } plan)
+            PlanValidator.Validate(plan, libraries, d);
+        return d;
+    }
+
+    const string TicketParameters = "  ticket_id: { type: string, required: true }\n  engine_can_merge: { type: boolean, default: false }";
+
+    static Diagnostic OneErrorAtTheWrapper(DiagnosticBag d)
+    {
+        var error = Assert.Single(d);
+        Assert.True(error.Blocks, error.ToString());
+        Assert.EndsWith(ProbeFile, error.Location!.File, StringComparison.Ordinal);
+        return error;
+    }
+
+    [Theory]
+    // The template declares the parameter: with would be ignored, since the fragment reads params.engine_can_merge.
+    [InlineData(TicketParameters, "with: { engine_can_merge: true }", "engine_can_merge")]
+    // The template does not declare it: the fragment's params.ticket_id would read nothing.
+    [InlineData("  engine_can_merge: { type: boolean, default: false }", "with: { ticket_id: ABC-1 }", "ticket_id")]
+    public void A_wrapper_binding_of_a_parameter_its_fragment_reads_through_params_is_refused_once_at_the_wrapper(string parameters, string with, string name)
+    {
+        var error = OneErrorAtTheWrapper(ValidateTicketWrapper(parameters, with + "\nroutes: { declined: { end: rejected } }"));
+
+        Assert.Equal(Checks.Fragment, error.Check);
+        Assert.Contains($"binds '{name}'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("give it as the template's parameter, with its default", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_fragment_parameter_read_through_params_that_the_wrapper_does_not_declare_is_refused_once_at_the_wrapper()
+    {
+        var error = OneErrorAtTheWrapper(ValidateTicketWrapper("  ticket_id: { type: string, required: true }", "routes: { declined: { end: rejected } }"));
+
+        Assert.Equal(Checks.Fragment, error.Check);
+        Assert.Contains("fragment std:fragments/ticket_flow reads params.engine_can_merge; declare 'engine_can_merge' as a parameter of the template", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_wrapper_parameter_whose_type_differs_from_the_fragments_is_refused_once_at_the_wrapper()
+    {
+        var error = OneErrorAtTheWrapper(ValidateTicketWrapper(
+            "  ticket_id: { type: string, required: true }\n  engine_can_merge: { type: string, default: \"yes\" }", "routes: { declined: { end: rejected } }"));
+
+        Assert.Equal(Checks.Fragment, error.Check);
+        Assert.Contains("parameter 'engine_can_merge' is a string here and a boolean in fragment std:fragments/ticket_flow", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_wrapper_exit_routed_other_than_to_an_end_gives_one_error()
+    {
+        var error = OneErrorAtTheWrapper(ValidateTicketWrapper(TicketParameters, "routes: { declined: { escalate: true } }"));
+
+        Assert.Contains("a wrapper template routes exit 'declined' to { end: <status> }", error.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Every role, task and child template a std flow names is a reference parameter passed through to its steps. Bound
+    /// to distinct items, each must reach a step and none of std's defaults may remain: a dropped pass-through leaves
+    /// std's plans unchanged, so only this shows it.
+    /// </summary>
+    [Theory]
+    [InlineData("ticket_delivery")]
+    [InlineData("epic_delivery")]
+    [InlineData("project_delivery")]
+    public void Every_reference_parameter_of_a_std_flow_reaches_its_steps(string template)
+    {
+        var templateText = File.ReadAllText(Path.Combine(StdRoot, "templates", template + ".yaml"));
+        var fragment = ((YMap)YamlText.Parse(templateText, template, new DiagnosticBag())!)["use"].ScalarText()!.Split('/')[1];
+        var raw = (YMap)YamlText.Parse(File.ReadAllText(Path.Combine(StdRoot, "fragments", fragment + ".yaml")), fragment, new DiagnosticBag())!;
+        var references = ((YMap)raw["parameters"]!).Entries
+            .Where(e => (e.Value as YMap)?["type"].ScalarText() == "reference")
+            .Select(e => (Name: e.Key.Text, Default: ((YMap)e.Value)["default"].ScalarText()!))
+            .ToList();
+        Assert.NotEmpty(references);
+
+        // Each bound to a copy of its default under a name of its own; a child template to another std template.
+        var files = new Dictionary<string, string> { ["library.yaml"] = "name: probe\nversion: 0.1.0\ndependencies: [{ name: std }]\n" };
+        var bound = new Dictionary<string, string>();
+        foreach (var (name, dflt) in references)
+        {
+            var (type, item) = (dflt.Split(':')[1].Split('/')[0], dflt.Split('/')[1]);
+            if (type == "templates")
+            {
+                bound[name] = item == "project_delivery" ? "std:templates/ticket_delivery" : "std:templates/project_delivery";
+                continue;
+            }
+
+            var extension = type == "roles" ? ".yaml" : ".md";
+            var text = File.ReadAllText(Path.Combine(StdRoot, type, item + extension));
+            files[$"{type}/p_{name}{extension}"] = type == "roles" ? text.Replace($"name: {item}", $"name: p_{name}", StringComparison.Ordinal) : text;
+            bound[name] = $"probe:{type}/p_{name}";
+        }
+
+        files[$"templates/{template}.yaml"] = templateText + "\nwith:\n" + string.Join("\n", bound.Select(b => $"  {b.Key}: {b.Value}")) + "\n";
+        var d = new DiagnosticBag();
+        var plan = PlanLoader.LoadTemplate(new LibrarySet(Library.Open(StdRoot, d)!, Library.FromFiles(new LibraryFiles(files), d)!),
+            new LibraryReference("probe", "templates", template), d);
+
+        Assert.Empty(d);
+        var named = plan!.AllSteps.SelectMany(s => new[] { s.Agent?.Role?.Text, s.Agent?.Task?.Text, s.With is null ? null : YamlWriter.Write(s.With) })
+            .OfType<string>().ToList();
+        Assert.All(bound, b => Assert.True(named.Any(n => n.Contains(b.Value, StringComparison.Ordinal)), $"{b.Key} reaches no step"));
+        Assert.All(references, r => Assert.False(named.Any(n => n.Contains(r.Default, StringComparison.Ordinal)), $"{r.Name}: a step keeps std's {r.Default}"));
+        Assert.DoesNotContain(plan.AllSteps, s => s.Agent?.Role?.Text?.StartsWith("std:", StringComparison.Ordinal) == true || s.Agent?.Task?.Text?.StartsWith("std:", StringComparison.Ordinal) == true);
+    }
 }

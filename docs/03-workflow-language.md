@@ -682,8 +682,8 @@ routes:
 | Expansion | The fragment's steps join the template's own scope **without a prefix**, so the wrapper's step ids are the fragment's (`plan.plan`, not `ticket.plan.plan`). There is no plan group for the fragment, and its depth is the template's: its own uses nest as a template's would |
 | Header | The template keeps its `metadata`, `parameters` and `budget`. Its `artifact_types` are its own and the fragment's. Its route defaults are the fragment's `defaults`; a wrapper declares none of its own |
 | `with` | Binds the fragment's parameters with literals only, as a `{ param: }` binding must be (LOG 62). An expression is refused |
-| `params` | A fragment parameter the wrapper does not bind keeps its default for `{ param: }` substitution, and the fragment's `params.<name>` reads the template's parameter of that name. A required fragment parameter that is neither bound nor a parameter of the template is refused |
-| `routes` | Map the fragment's exits to `{ end: <status> }`. An unrouted exit of class `success` ends the run `completed`, as a template's last step does; any other unrouted exit is refused |
+| `params` | A fragment parameter the wrapper does not bind keeps its default for `{ param: }` substitution, and the fragment's `params.<name>` reads the template's parameter of that name. So the template declares each parameter the fragment reads through `params`, with the fragment's `type`, and gives its value as that parameter's default; a `with` binding of it, or of any parameter the template declares, would be ignored and is refused. A required fragment parameter that is neither bound nor a parameter of the template is refused. Each is refused at the wrapper (check 14) |
+| `routes` | Map the fragment's exits to `{ end: <status> }`. An unrouted exit of class `success` ends the run `completed`, as a template's last step does; any other unrouted exit, or a route to anything but an end, is refused |
 | Refused | A template with both `steps` and `use` (check 1) |
 
 ---

@@ -97,6 +97,14 @@ public static class ProviderComposer
         set = new ProviderSet(instances, defaults, dryRun);
         return set;
     }
+
+    /// <summary>
+    /// What a host logs once after composition: a tracker instance with statuses to map and no <c>status_map</c>
+    /// passes each status as its own name, and a run already started is not checked again (docs/06 section 3.6).
+    /// </summary>
+    public static IEnumerable<string> Warnings(ProviderSet providers) =>
+        providers.Instances("tracker").Where(i => i.Provider is ITrackerProvider { MappedStatuses.Count: 0 }).Select(i =>
+            $"providers.tracker.instances.{i.Name} has no status_map: a status a run moves an issue to is passed to the tracker as its own name, and a run started before is not checked again at run start (docs/06 section 3.6)");
 }
 
 /// <summary>A running engine in one process: any of the orchestration worker, the agent worker and the API, as a host chooses.</summary>
@@ -134,6 +142,9 @@ public sealed class FeatureFlowHost : IAsyncDisposable
                 throw new StartupRefusal($"the {type} provider is not usable: {failed.Error!.Message}");
         await StartupChecks.CheckSecretsAsync(configuration.Installation, providers, CancellationToken.None);
         var client = await TemporalConnection.ConnectAsync(configuration.Installation, providers);
+        var startup = client.Options.LoggerFactory.CreateLogger<FeatureFlowHost>();
+        foreach (var warning in ProviderComposer.Warnings(providers))
+            startup.LogWarning("{Warning}", warning);
         var host = new FeatureFlowHost(configuration, providers, client) { tracing = Tracing.Start(configuration.Installation.OtlpEndpoint) };
         var services = new EngineServices(providers, configuration.Installation, configuration.Organisation);
         var activities = new RunActivities(services, client);
