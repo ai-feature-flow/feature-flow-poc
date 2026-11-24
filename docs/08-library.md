@@ -111,12 +111,39 @@ to the source.
 | Layer | May |
 |---|---|
 | Base: `std` | Define everything |
-| Organisation: libraries named in organisation configuration | Add content: its own templates, tasks and roles under its own name. Overriding a base item by name is not in version 1 (LOG 268) |
+| Organisation: libraries named in organisation configuration | Add content: its own templates, tasks and roles under its own name. Overriding a base item by name is not in version 1 (LOG 268); a library changes one std task or role by wrapping std's templates (section 4.1) |
 | Repository: `feature-flow.yaml` | Nothing in version 1: a `library` section is refused, naming the key, by the step that reads the manifest (`docs/07` section 4, LOG 487) |
 | Run: a library override | Replace content for this run's future steps (section 5.2) |
 
 A template refers to content by library name, so an organisation that wants its own
 `implement_ticket` writes `acme_delivery:tasks/implement_ticket` and a template that uses it.
+
+### 4.1 Changing one std task or role
+
+Std's templates are wrappers of fragments (`docs/03` section 11.1) whose roles, tasks and child templates are
+reference parameters with std's defaults (section 6.3). An organisation changes one of them in every std
+template by writing its item and a wrapper per template that binds it, without copying the templates:
+
+```yaml
+# acme_delivery:templates/epic_delivery
+api_version: feature-flow/v1
+kind: template
+metadata: { name: epic_delivery, level: epic }
+parameters:
+  epic_name: { type: string, required: true }
+  engine_can_merge: { type: boolean, default: false }
+use: std:fragments/epic_flow
+with:
+  reviewer_task: acme_delivery:tasks/review_change
+  child_template: acme_delivery:templates/ticket_delivery   # so its tickets use acme's reviewer too
+routes:
+  merged: { end: completed }
+  declined: { end: rejected }
+```
+
+The wrapper's steps keep std's ids, so std's workflow tests, the readable form and overrides naming a step
+read the same. A change std does not parameterise, such as a route or a guard, still means a template or
+fragment of the organisation's own.
 
 ---
 
@@ -190,16 +217,27 @@ person to check it (LOG 508).
 | Fragment | Steps | Parameters | Exits |
 |---|---|---|---|
 | `baseline` | `test.run` and `analysis.run` with `baseline: true` | `tier_tags` (default all) | `done` |
-| `plan_and_validate` | Planner agent producing `requirements` and `delivery_plan`; `artifact.validate` with `requirement_support`, `requirement_ownership` or `requirement_inheritance` (by level), `verification_method_support`; on `invalid` back to the planner. The planner consumes its own previous `requirements` and `delivery_plan` (`from: previous`) and the implementer's claims, so a re-entry revises the last plan rather than starting again (LOG 508) | `planner_task`, `subject_id`, `level_validators` | `planned` |
-| `standard_review` | `for_each` over `angles` (default: correctness, design, tests, security, specification) of a reviewer agent step, each judging the net diff at `HEAD` against the ledger view (`findings_ledger`, so a repeat names the finding it repeats in `same_as`) and producing a `findings_report` (LOG 516); `findings.record` for each; a reviewer with `changed_files_unread > 0` re-runs | `spec_refs`, `angles`, `reviewer_task`, `reopen_on` (set to `code_change`) | `reviewed` |
-| `fix_loop` | Triager agent producing `triage`; `findings.triage`, allowing the triager only `open`, `declined` and `escalated`, with an `invalid` triage back to its producer, and an escalation or a declined blocking or demonstrated finding (outputs `escalated`, `declined_blocking`, `declined_demonstrated`) to a person's triage decision (`findings.triage` with `complete` and `person_decides` naming all three classes), applied as that person (LOG 248); out by `cleared` when no finding is open after the triager's or the person's triage, which come before any fixer in the pass, so no code changed (LOG 503, 518); fixer agent, which a `fixed` report with no commit sends to a person; a verifying reviewer checking the fix against the original finding on the full diff, the only step that may set `fixed`, skipped when nothing is open (the fixer was sent back by the re-test or validation, LOG 517); `test.run` on the fix, its results kept on failure for the fixer; `artifact.validate` with `tests_added`; out by `fixed` | `fixer_task`, `triager_task`, `tier_tags` | `fixed`, `cleared`, `escalated` |
-| `verify_and_review` | `test.run`; `analysis.run`; failures, with their results, to a repair agent and back (LOG 517); `standard_review`; then the merge bar: `findings.repeat_fixes > 0` escalates, `findings.open_blocking > 0` goes to `fix_loop`, and back to the tests after `fixed`, or on past the merge bar after `cleared` (nothing changed to re-test or re-review); then `artifact.validate` with `verification_satisfaction`, after the review because satisfaction needs the reviewer's verdict on the claims (LOG 64) | `tier_tags`, `spec_refs`, `angles`, `reviewer_task`, `fixer_task`, `triager_task`, `check_satisfaction` (an epic sets `false`) | `ready`, `escalated` |
-| `merge_into_parent` | `scm.pull_request`; optionally `findings.record` from an external source; `ci.checks`; `scm.catch_up`; re-test and re-check if `changed`; `scm.merge`; `base_moved` back to catch-up, with catch-up, re-test and checks allowed 12 attempts so races are bounded by `limits.races` (LOG 61); `conflict` to a conflict-resolver agent. Anything needing verification again leaves by `reverify` | `repository`, `squash`, `engine_can_merge`, `tier_tags`, `external_findings` (optional) | `merged`, `declined`, `reverify` (no class: the caller routes it to its verification) |
-| `plan_children` | Planner producing a `work_list` and child-level requirements, revising its previous ones (`from: previous`) when re-entered (LOG 508); validation; an approval decision that ratifies them; `plan.expand` into a `parallel` of `run.child`, which runs the children. Expanding again adds only new or changed items, and re-runs only children that have not succeeded (`docs/03` section 10.4) | `planner_task`, `child_template`, `child_requirements_type`, `approval_type`, `child_parameters`, `max_concurrency` | `completed`, `any_failed` |
+| `plan_and_validate` | Planner agent producing `requirements` and `delivery_plan`; `artifact.validate` with `requirement_support`, `requirement_ownership` or `requirement_inheritance` (by level), `verification_method_support`; on `invalid` back to the planner. The planner consumes its own previous `requirements` and `delivery_plan` (`from: previous`) and the implementer's claims, so a re-entry revises the last plan rather than starting again (LOG 508) | `planner_task`, `planner_role`, `subject_id`, `level_validators` | `planned` |
+| `standard_review` | `for_each` over `angles` (default: correctness, design, tests, security, specification) of a reviewer agent step, each judging the net diff at `HEAD` against the ledger view (`findings_ledger`, so a repeat names the finding it repeats in `same_as`) and producing a `findings_report` (LOG 516); `findings.record` for each; a reviewer with `changed_files_unread > 0` re-runs | `spec_refs`, `angles`, `reviewer_task`, `reviewer_role`, `reopen_on` (set to `code_change`) | `reviewed` |
+| `fix_loop` | Triager agent producing `triage`; `findings.triage`, allowing the triager only `open`, `declined` and `escalated`, with an `invalid` triage back to its producer, and an escalation or a declined blocking or demonstrated finding (outputs `escalated`, `declined_blocking`, `declined_demonstrated`) to a person's triage decision (`findings.triage` with `complete` and `person_decides` naming all three classes), applied as that person (LOG 248); out by `cleared` when no finding is open after the triager's or the person's triage, which come before any fixer in the pass, so no code changed (LOG 503, 518); fixer agent, which a `fixed` report with no commit sends to a person; a verifying reviewer checking the fix against the original finding on the full diff, the only step that may set `fixed`, skipped when nothing is open (the fixer was sent back by the re-test or validation, LOG 517); `test.run` on the fix, its results kept on failure for the fixer; `artifact.validate` with `tests_added`; out by `fixed` | `fixer_task`, `triager_task`, `verifier_task`, `fixer_role`, `triager_role`, `reviewer_role` (the verifier's), `tier_tags` | `fixed`, `cleared`, `escalated` |
+| `verify_and_review` | `test.run`; `analysis.run`; failures, with their results, to a repair agent and back (LOG 517); `standard_review`; then the merge bar: `findings.repeat_fixes > 0` escalates, `findings.open_blocking > 0` goes to `fix_loop`, and back to the tests after `fixed`, or on past the merge bar after `cleared` (nothing changed to re-test or re-review); then `artifact.validate` with `verification_satisfaction`, after the review because satisfaction needs the reviewer's verdict on the claims (LOG 64) | `tier_tags`, `spec_refs`, `angles`, `reviewer_task`, `fixer_task`, `triager_task`, `verifier_task`, `repair_task`, `reviewer_role`, `fixer_role` (the fixer's and repair's), `triager_role`, `check_satisfaction` (an epic sets `false`) | `ready`, `escalated` |
+| `merge_into_parent` | `scm.pull_request`; optionally `findings.record` from an external source; `ci.checks`; `scm.catch_up`; re-test and re-check if `changed`; `scm.merge`; `base_moved` back to catch-up, with catch-up, re-test and checks allowed 12 attempts so races are bounded by `limits.races` (LOG 61); `conflict` to a conflict-resolver agent. Anything needing verification again leaves by `reverify` | `repository`, `squash`, `engine_can_merge`, `tier_tags`, `external_findings` (optional), `conflict_resolver_role`, `conflict_resolver_task` | `merged`, `declined`, `reverify` (no class: the caller routes it to its verification) |
+| `plan_children` | Planner producing a `work_list` and child-level requirements, revising its previous ones (`from: previous`) when re-entered (LOG 508); validation; an approval decision that ratifies them; `plan.expand` into a `parallel` of `run.child`, which runs the children. Expanding again adds only new or changed items, and re-runs only children that have not succeeded (`docs/03` section 10.4) | `planner_task`, `planner_role`, `child_template`, `child_requirements_type`, `approval_type`, `child_parameters`, `max_concurrency` | `completed`, `any_failed` |
 | `trace` | `artifact.validate` with `requirement_trace`, producing a `trace_report` | `requirements` (the artifact to trace) | `traced` |
-| `deliver_in_order` | A `for_each` chain of `merge_into_parent` per repository; `delivery.report`; on `partial`, a decision offering retry, fix forward or revert | `repositories`, `squash`, `engine_can_merge`, `tier_tags` | `delivered`, `partial` |
+| `deliver_in_order` | A `for_each` chain of `merge_into_parent` per repository; `delivery.report`; on `partial`, a decision offering retry, fix forward or revert | `repositories`, `squash`, `engine_can_merge`, `tier_tags`, `conflict_resolver_role`, `conflict_resolver_task` | `delivered`, `partial` |
+| `ticket_flow` | The body of `ticket_delivery` (section 6.4) | `ticket_id`, `engine_can_merge`, and with std's defaults the role and task of each agent step it reaches: `planner_role`, `planner_task`, `implementer_role`, `implementer_task`, `reviewer_role`, `reviewer_task`, `verifier_task`, `triager_role`, `triager_task`, `fixer_role`, `fixer_task`, `repair_task`, `conflict_resolver_role`, `conflict_resolver_task` | `merged`, `declined` |
+| `epic_flow` | The body of `epic_delivery` | `epic_name`, `engine_can_merge`, `designer_role`, `design_task`, `planner_role`, `planner_task`, `child_template` (default `std:templates/ticket_delivery`), and the review, fix and conflict parameters of `ticket_flow` | `merged`, `declined` |
+| `project_flow` | The body of `project_delivery` | `project_name`, `planning_repository`, `planner_role`, `planner_task`, `child_template` (default `std:templates/epic_delivery`), `conflict_resolver_role`, `conflict_resolver_task` | `delivered`, `partial`, `abandoned` |
+
+Every role and task a fragment's agent steps name is a `reference` parameter defaulting to std's item, and a
+fragment that uses another passes its own through, so binding one at a `*_flow` fragment reaches every step
+that uses it (section 4.1).
 
 ### 6.4 Templates
+
+Each template is a wrapper (`docs/03` section 11.1) of the matching `*_flow` fragment (section 6.3): its
+`metadata`, `parameters` and `budget`, and routes from the fragment's exits to the run's end. The shapes below
+are the fragments' steps, whose ids the templates keep.
 
 | Template | Level | Shape |
 |---|---|---|
@@ -226,10 +264,11 @@ by the standard library. The last column says how to change it.
 | A finding fixed twice and raised again escalates | The `findings.repeat_fixes` guard in `verify_and_review` | Change or remove the guard |
 | The reviewer reads every changed file | The `changed_files_unread` guard in `standard_review` | Narrow or remove it for a specialised review |
 | A merge conflict goes to an agent first | `merge_into_parent` | Route `conflict` to a decision instead |
-| An implementer's `blocked` goes back to the planner, keeping the branch | The `blocked` route on `ticket_delivery`'s `implement` | Route it to escalate, or add `clean_up` |
+| An implementer's `blocked` goes back to the planner, keeping the branch | The `blocked` route on `ticket_flow`'s `implement` | Route it to escalate, or add `clean_up` |
 | A person approves every agent patch | `review: required` on each std `planning` grant | Set `review: auto`; a patch that touches protected content (F3), or adds or replaces a step with wider `planning` than its proposer's, still needs a person (`docs/05` section 6) |
-| Squash tickets into the epic; plain merges above | `with: { squash: ... }` on each template's `merge_into_parent` | Change the parameter |
-| Delivery to `main` once, at project level | `project_delivery` | Use `merge_into_parent` at epic level instead |
+| Squash tickets into the epic; plain merges above | `with: { squash: ... }` on each `*_flow` fragment's `merge_into_parent` | Change the parameter |
+| Delivery to `main` once, at project level | `project_flow` | Use `merge_into_parent` at epic level instead |
+| Which role and task each agent step uses, and which template each child runs | The `*_role`, `*_task` and `child_template` parameters of the `*_flow` fragments, with std's items as defaults | Bind one in a wrapper template of the organisation's own (section 4.1) |
 
 ---
 

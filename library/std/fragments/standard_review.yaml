@@ -11,6 +11,7 @@ parameters:
   spec_refs: { type: array, required: true, description: "Artifacts the change is reviewed against" }
   angles: { type: array, default: [correctness, design, tests, security, specification] }
   reviewer_task: { type: reference, default: std:tasks/review_change }
+  reviewer_role: { type: reference, default: std:roles/reviewer }
   reopen_on: { type: string, default: code_change }
 
 exits:
@@ -28,7 +29,7 @@ steps:
       step:
         - id: assess
           agent:
-            role: std:roles/reviewer
+            role: { param: reviewer_role }
             task: { param: reviewer_task }
             skills: [std:skills/review, std:skills/verification]
             context: none                       # judges independently (from FF)

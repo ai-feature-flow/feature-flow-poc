@@ -15,6 +15,8 @@ parameters:
   engine_can_merge: { type: boolean, default: true }
   tier_tags: { type: array, default: [] }
   external_findings: { type: string, default: "", description: "A findings source provider name; empty for none" }
+  conflict_resolver_role: { type: reference, default: std:roles/conflict_resolver }
+  conflict_resolver_task: { type: reference, default: std:tasks/resolve_conflict }
 
 exits:
   merged: success
@@ -86,8 +88,8 @@ steps:
 
   - id: resolve_conflict
     agent:
-      role: std:roles/conflict_resolver
-      task: std:tasks/resolve_conflict
+      role: { param: conflict_resolver_role }
+      task: { param: conflict_resolver_task }
     repository: { expr: "params.repository" }
     outcomes: { resolved: success, blocked: blocked }
     routes: { resolved: { exit: reverify }, blocked: { escalate: true } }

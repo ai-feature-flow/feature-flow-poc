@@ -12,6 +12,8 @@ parameters:
   squash: { type: boolean, default: false }
   engine_can_merge: { type: boolean, default: false }
   tier_tags: { type: array, default: [] }
+  conflict_resolver_role: { type: reference, default: std:roles/conflict_resolver }
+  conflict_resolver_task: { type: reference, default: std:tasks/resolve_conflict }
 
 exits:
   delivered: success
@@ -33,6 +35,8 @@ steps:
           squash: { expr: "params.squash" }
           engine_can_merge: { expr: "params.engine_can_merge" }
           tier_tags: { expr: "params.tier_tags" }
+          conflict_resolver_role: { param: conflict_resolver_role }
+          conflict_resolver_task: { param: conflict_resolver_task }
     routes:
       completed: report
       any_failed: report

@@ -10,6 +10,7 @@ metadata:
 
 parameters:
   planner_task: { type: reference, required: true }
+  planner_role: { type: reference, default: std:roles/planner }
   child_template: { type: reference, required: true }
   child_requirements_type: { type: reference, required: true, description: "requirements (project to epic) or delivery_plan (epic to ticket)" }
   approval_type: { type: string, required: true, description: "The approval decision's type" }
@@ -35,7 +36,7 @@ artifact_types:
 steps:
   - id: plan
     agent:
-      role: std:roles/planner
+      role: { param: planner_role }
       task: { param: planner_task }
       skills: [std:skills/verification, std:skills/solution_design]
       planning: { targets: [self], review: required }   # so a person's replan is accepted (LOG 509)

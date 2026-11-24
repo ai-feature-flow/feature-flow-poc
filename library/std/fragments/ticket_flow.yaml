@@ -1,0 +1,127 @@
+api_version: feature-flow/v1
+kind: fragment
+metadata:
+  name: ticket_flow
+  description: >-
+    The body of std:templates/ticket_delivery: one ticket, from plan to merge
+    into its parent branch. Its roles and tasks are parameters with std's
+    defaults, so a library's wrapper template changes one of them and keeps
+    the rest (docs/08 section 4.1).
+
+parameters:
+  ticket_id: { type: string, required: true, description: "The tracker key, or the ticket's name in its epic's work list" }
+  engine_can_merge: { type: boolean, default: false, description: Whether the engine may merge the ticket into its parent branch }
+  planner_role: { type: reference, default: std:roles/planner }
+  planner_task: { type: reference, default: std:tasks/plan_ticket }
+  implementer_role: { type: reference, default: std:roles/implementer }
+  implementer_task: { type: reference, default: std:tasks/implement_ticket }
+  reviewer_role: { type: reference, default: std:roles/reviewer }
+  reviewer_task: { type: reference, default: std:tasks/review_change }
+  verifier_task: { type: reference, default: std:tasks/verify_fix }
+  triager_role: { type: reference, default: std:roles/triager }
+  triager_task: { type: reference, default: std:tasks/triage_findings }
+  fixer_role: { type: reference, default: std:roles/fixer }
+  fixer_task: { type: reference, default: std:tasks/fix_findings }
+  repair_task: { type: reference, default: std:tasks/repair_failures }
+  conflict_resolver_role: { type: reference, default: std:roles/conflict_resolver }
+  conflict_resolver_task: { type: reference, default: std:tasks/resolve_conflict }
+
+exits:
+  merged: success
+  declined: failure
+
+artifact_types:
+  - std:artifact_types/requirements
+  - std:artifact_types/delivery_plan
+  - std:artifact_types/evidence_claims
+  - std:artifact_types/contract
+  - std:artifact_types/test_results
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: baseline
+    use: std:fragments/baseline
+
+  - id: plan
+    use: std:fragments/plan_and_validate
+    with:
+      planner_role: { param: planner_role }
+      planner_task: { param: planner_task }
+      subject_id: { expr: "params.ticket_id" }
+      level_validators:
+        - validator: requirement_support
+          subjects: [requirements, delivery_plan, { name: requirements, from: parent, optional: true }]
+          options: { require_coverage: true }
+        - validator: requirement_inheritance        # passes when there is no parent plan (a standalone ticket)
+          subjects: [{ name: child_requirements, from: parent, optional: true }, delivery_plan]
+          options: { allow_rewording: true }
+        - validator: verification_method_support
+          subjects: [delivery_plan]
+    tracker: { on_start: in_progress }
+
+  - id: approve_spec
+    decision:
+      type: ticket.spec_approval
+      prompt: std:prompts/spec_approval
+      auto: approved              # applied only where organisation policy allows it
+    consumes: [{ name: requirements }, { name: delivery_plan }]
+    ratifies: { approved: [requirements, delivery_plan] }
+    outcomes: { approved: success, rejected: failure }
+    routes:
+      rejected: { to: plan, clean_up: true }
+
+  - id: implement
+    agent:
+      role: { param: implementer_role }
+      task: { param: implementer_task }
+      skills: [std:skills/solution_design, std:skills/verification]
+      planning: { targets: [self], review: required }   # it may add a step it needs; a person approves each (LOG 524)
+    with: { ticket_id: { expr: "params.ticket_id" } }
+    consumes:
+      - { name: requirements }
+      - { name: delivery_plan }
+      - { name: contract, from: parent, optional: true }
+      - { name: baseline_test_results }
+      - { name: implementation_claims, optional: true }
+      - { name: test_results, optional: true }
+    produces:
+      implemented: [{ name: implementation_claims, type: std:artifact_types/evidence_claims }]
+    outcomes: { implemented: success, blocked: blocked }
+    limits: { questions: { max: 3, timeout: 24h } }
+    routes:
+      blocked: plan               # the planner revises with the reason; bounded by its attempts; no clean_up (LOG 507)
+
+  - id: verify
+    use: std:fragments/verify_and_review
+    with:
+      tier_tags: { expr: "steps.plan.plan.outputs.tier_tags" }
+      spec_refs: { expr: "[steps.plan.plan.artifacts.requirements, steps.plan.plan.artifacts.delivery_plan]" }
+      reviewer_role: { param: reviewer_role }
+      reviewer_task: { param: reviewer_task }
+      verifier_task: { param: verifier_task }
+      triager_role: { param: triager_role }
+      triager_task: { param: triager_task }
+      fixer_role: { param: fixer_role }
+      fixer_task: { param: fixer_task }
+      repair_task: { param: repair_task }
+    protected: true
+    routes:
+      ready: deliver
+
+  - id: deliver
+    use: std:fragments/merge_into_parent
+    with:
+      squash: true                # tickets squash into their parent; plain merges above (docs/08 section 6.5)
+      engine_can_merge: { expr: "params.engine_can_merge" }
+      tier_tags: { expr: "steps.plan.plan.outputs.tier_tags" }
+      conflict_resolver_role: { param: conflict_resolver_role }
+      conflict_resolver_task: { param: conflict_resolver_task }
+    protected: true
+    tracker: { on_start: code_review, on: { merged: done } }
+    routes:
+      merged: { exit: merged }
+      declined: { exit: declined }
+      reverify: verify

@@ -1,0 +1,19 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: epic_delivery
+  level: epic
+  description: std's epic, reviewed with Acme's review task, running Acme's tickets
+  branch_pattern: "acme/epic/{{ params.epic_name }}"
+
+parameters:
+  epic_name: { type: string, required: true }
+  engine_can_merge: { type: boolean, default: false }
+
+use: std:fragments/epic_flow
+with:
+  reviewer_task: acme:tasks/review_change
+  child_template: acme:templates/ticket_delivery
+routes:
+  merged: { end: completed }
+  declined: { end: rejected }

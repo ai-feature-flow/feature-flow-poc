@@ -1,0 +1,19 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: ticket_delivery
+  level: ticket
+  description: std's ticket, reviewed with Acme's review task
+  branch_pattern: "acme/ticket/{{ params.ticket_id }}"
+  tracker_parameter: ticket_id
+
+parameters:
+  ticket_id: { type: string, required: true }
+  engine_can_merge: { type: boolean, default: false }
+
+use: std:fragments/ticket_flow
+with:
+  reviewer_task: acme:tasks/review_change
+routes:
+  merged: { end: completed }
+  declined: { end: rejected }

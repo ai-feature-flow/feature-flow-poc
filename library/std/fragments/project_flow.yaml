@@ -1,0 +1,139 @@
+api_version: feature-flow/v1
+kind: fragment
+metadata:
+  name: project_flow
+  description: >-
+    The body of std:templates/project_delivery: requirements and architecture
+    written by a person in an interactive session and ratified; epics planned,
+    approved and run; integration tests where the project owns requirements
+    itself; the trace; delivery to the default branch in order. Its roles, tasks
+    and child template are parameters with std's defaults, so a library's
+    wrapper template changes one of them and keeps the rest (docs/08 section 4.1).
+
+parameters:
+  project_name: { type: string, required: true, description: "The project's scope id" }
+  planning_repository:
+    type: string
+    default: { expr: "run.repositories[0]" }
+    description: The repository the requirements session works in
+  planner_role: { type: reference, default: std:roles/planner }
+  planner_task: { type: reference, default: std:tasks/plan_project_epics }
+  child_template: { type: reference, default: std:templates/epic_delivery, description: "The template each epic runs" }
+  conflict_resolver_role: { type: reference, default: std:roles/conflict_resolver }
+  conflict_resolver_task: { type: reference, default: std:tasks/resolve_conflict }
+
+exits:
+  delivered: success
+  partial: failure
+  abandoned: failure
+
+artifact_types:
+  - std:artifact_types/requirements
+  - std:artifact_types/contract
+  - std:artifact_types/work_list
+  - std:artifact_types/test_results
+  - std:artifact_types/validation_report
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: define
+    decision:
+      type: project.requirements_session
+      prompt: std:prompts/project_session
+      session:
+        repository: { expr: "params.planning_repository" }
+        folder: { expr: "'projects/' + params.project_name" }
+        files:
+          - { path: requirements.yaml, name: requirements, type: std:artifact_types/requirements }
+          - { path: architecture.md, name: contract, type: std:artifact_types/contract }
+        checks_from: [check_requirements]
+    produces:
+      submitted:
+        - { name: requirements, type: std:artifact_types/requirements }
+        - { name: contract, type: std:artifact_types/contract }
+    outcomes: { submitted: success, abandoned: failure }
+    routes:
+      abandoned: { exit: abandoned }
+
+  - id: check_requirements
+    action: artifact.validate
+    with:
+      validation:
+        - validator: requirement_support
+          subjects: [requirements]
+          options: { require_coverage: false }
+    consumes: [{ name: requirements }]
+    produces:                                   # on both outcomes: an invalid result's report goes back with the route
+      valid: [{ name: requirements_validation, type: std:artifact_types/validation_report }]
+      invalid: [{ name: requirements_validation, type: std:artifact_types/validation_report }]
+    routes:
+      valid: approve
+      invalid: define
+
+  - id: approve
+    decision:
+      type: project.requirements_approval
+      prompt: std:prompts/requirements_approval
+    consumes: [{ name: requirements }, { name: contract }]
+    ratifies: { approved: [requirements, contract] }
+    outcomes: { approved: success, rejected: failure }
+    routes:
+      rejected: define
+
+  - id: epics
+    use: std:fragments/plan_children
+    with:
+      planner_role: { param: planner_role }
+      planner_task: { param: planner_task }
+      child_template: { param: child_template }
+      child_requirements_type: std:artifact_types/requirements
+      approval_type: project.epic_plan_approval
+      child_parameters: { epic_name: "$.name", engine_can_merge: true }
+      max_concurrency: 2
+    routes:
+      completed:
+        - when: "steps.epics.plan.outputs.needs_integration"
+          to: integration
+        - to: tests
+
+  - id: integration
+    action: test.integration
+    with: { repositories: { expr: "run.repositories" } }
+    produces: [{ name: integration_results, type: std:artifact_types/test_results }]
+    routes:
+      passed: tests
+
+  - id: tests                     # each repository's project head, with its epics merged: the head deliver merges (LOG 197)
+    for_each:
+      items: { expr: "run.repositories" }
+      mode: parallel
+      step:
+        action: test.run
+        repository: { expr: "item" }
+        produces: [{ name: test_results, type: std:artifact_types/test_results }]
+    routes:
+      completed: trace
+      any_failed: { escalate: true }
+
+  - id: trace
+    use: std:fragments/trace
+    with: { requirements: requirements }
+    protected: true
+    routes:
+      traced: deliver
+
+  - id: deliver
+    use: std:fragments/deliver_in_order
+    with:
+      repositories: { expr: "run.repositories" }
+      squash: false
+      engine_can_merge: false     # delivery to the default branch: a person merges by default (F1)
+      conflict_resolver_role: { param: conflict_resolver_role }
+      conflict_resolver_task: { param: conflict_resolver_task }
+    protected: true
+    routes:
+      delivered: { exit: delivered }
+      partial: { exit: partial }

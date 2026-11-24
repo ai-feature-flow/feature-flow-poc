@@ -1,0 +1,142 @@
+api_version: feature-flow/v1
+kind: fragment
+metadata:
+  name: epic_flow
+  description: >-
+    The body of std:templates/epic_delivery: a technical design and the epic's
+    own requirements; tickets planned, approved and run in parallel; the epic's
+    own review of the combined branch; the trace; merge into the parent branch.
+    Its roles, tasks and child template are parameters with std's defaults, so a
+    library's wrapper template changes one of them and keeps the rest (docs/08
+    section 4.1).
+
+parameters:
+  epic_name: { type: string, required: true, description: "The epic's scope id; in a project, its name in the project's work list" }
+  engine_can_merge: { type: boolean, default: false, description: Whether the engine may merge the epic into its parent branch }
+  designer_role: { type: reference, default: std:roles/designer }
+  design_task: { type: reference, default: std:tasks/design_epic }
+  planner_role: { type: reference, default: std:roles/planner }
+  planner_task: { type: reference, default: std:tasks/plan_epic_tickets }
+  child_template: { type: reference, default: std:templates/ticket_delivery, description: "The template each ticket runs" }
+  reviewer_role: { type: reference, default: std:roles/reviewer }
+  reviewer_task: { type: reference, default: std:tasks/review_change }
+  verifier_task: { type: reference, default: std:tasks/verify_fix }
+  triager_role: { type: reference, default: std:roles/triager }
+  triager_task: { type: reference, default: std:tasks/triage_findings }
+  fixer_role: { type: reference, default: std:roles/fixer }
+  fixer_task: { type: reference, default: std:tasks/fix_findings }
+  repair_task: { type: reference, default: std:tasks/repair_failures }
+  conflict_resolver_role: { type: reference, default: std:roles/conflict_resolver }
+  conflict_resolver_task: { type: reference, default: std:tasks/resolve_conflict }
+
+exits:
+  merged: success
+  declined: failure
+
+artifact_types:
+  - std:artifact_types/requirements
+  - std:artifact_types/delivery_plan
+  - std:artifact_types/contract
+  - std:artifact_types/work_list
+  - std:artifact_types/validation_report
+
+defaults:
+  routes:
+    by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+
+steps:
+  - id: baseline
+    use: std:fragments/baseline
+
+  - id: design
+    agent:
+      role: { param: designer_role }
+      task: { param: design_task }
+      skills: [std:skills/solution_design, std:skills/verification]
+      planning: { targets: [self], review: required }   # so a person's replan is accepted (LOG 509)
+    with: { epic_name: { expr: "params.epic_name" } }
+    consumes:
+      - { name: child_requirements, from: parent, optional: true }
+      - { name: contract, from: parent, optional: true }
+      - { name: requirements, from: parent, optional: true }
+      - { name: design_validation, optional: true }
+      - { name: requirements, from: previous, optional: true }      # a revision starts from the last design (LOG 508)
+      - { name: contract, from: previous, optional: true }
+    produces:
+      designed:
+        - { name: requirements, type: std:artifact_types/requirements }
+        - { name: contract, type: std:artifact_types/contract }
+    outcomes: { designed: success, blocked: blocked }
+    tracker: { on_start: in_progress }
+
+  - id: validate_design
+    action: artifact.validate
+    with:
+      validation:
+        - validator: requirement_inheritance        # the epic holds every requirement it owns, unchanged
+          subjects: [{ name: child_requirements, from: parent, optional: true }, requirements]
+          options: { allow_rewording: false }
+        - validator: requirement_support
+          subjects: [requirements, { name: requirements, from: parent, optional: true }]
+          options: { require_coverage: false }
+    consumes:
+      - { name: requirements }
+      - { name: child_requirements, from: parent, optional: true }
+      - { name: requirements, from: parent, optional: true }
+    produces:                                   # on both outcomes: an invalid result's report goes back with the route
+      valid: [{ name: design_validation, type: std:artifact_types/validation_report }]
+      invalid: [{ name: design_validation, type: std:artifact_types/validation_report }]
+    routes:
+      valid: tickets
+      invalid: design
+
+  - id: tickets
+    use: std:fragments/plan_children
+    with:
+      planner_role: { param: planner_role }
+      planner_task: { param: planner_task }
+      child_template: { param: child_template }
+      child_requirements_type: std:artifact_types/delivery_plan
+      approval_type: epic.ticket_plan_approval
+      child_parameters: { ticket_id: "$.name", engine_can_merge: true }
+      max_concurrency: 2
+    routes:
+      completed: verify
+
+  - id: verify
+    use: std:fragments/verify_and_review
+    with:
+      spec_refs: { expr: "[steps.design.artifacts.contract, steps.design.artifacts.requirements]" }
+      check_satisfaction: false   # the tickets prove their criteria; trace checks the whole chain
+      reviewer_role: { param: reviewer_role }
+      reviewer_task: { param: reviewer_task }
+      verifier_task: { param: verifier_task }
+      triager_role: { param: triager_role }
+      triager_task: { param: triager_task }
+      fixer_role: { param: fixer_role }
+      fixer_task: { param: fixer_task }
+      repair_task: { param: repair_task }
+    protected: true
+    routes:
+      ready: trace
+
+  - id: trace
+    use: std:fragments/trace
+    with: { requirements: requirements }
+    protected: true
+    routes:
+      traced: deliver
+
+  - id: deliver
+    use: std:fragments/merge_into_parent
+    with:
+      squash: false
+      engine_can_merge: { expr: "params.engine_can_merge" }
+      conflict_resolver_role: { param: conflict_resolver_role }
+      conflict_resolver_task: { param: conflict_resolver_task }
+    protected: true
+    tracker: { on: { merged: done } }
+    routes:
+      merged: { exit: merged }
+      declined: { exit: declined }
+      reverify: verify
