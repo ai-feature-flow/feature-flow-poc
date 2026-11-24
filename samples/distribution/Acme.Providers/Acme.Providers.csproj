@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Acme's own providers: a provider package of the organisation's, built against the engine's Abstractions package. -->
+  <ItemGroup>
+    <PackageReference Include="FeatureFlow.Providers.Abstractions" />
+  </ItemGroup>
+
+</Project>

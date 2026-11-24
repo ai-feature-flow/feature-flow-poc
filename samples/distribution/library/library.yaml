@@ -1,0 +1,7 @@
+# Acme's sample library (docs/06 section 4): one template whose check uses Acme's own validator, acme_line_limit, which
+# the engine does not ship. It depends on no other library, so the sample needs nothing of std.
+name: acme
+version: 0.1.0
+description: The sample distribution's library, run by Acme.Host.Tests
+requires:
+  plan_schema: 1

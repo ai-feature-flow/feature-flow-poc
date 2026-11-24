@@ -1,0 +1,12 @@
+api_version: feature-flow/v1
+kind: artifact_type
+metadata:
+  name: validation_report
+  description: The engine's validation report (the shape std's validation_report has), declared here so the library needs no std.
+
+format: json
+evidence: true          # only engine actions may produce it (docs/01 section 5.2, F7)
+produced_by: [artifact.validate]
+compatible_with: []
+validators: []
+schema: engine

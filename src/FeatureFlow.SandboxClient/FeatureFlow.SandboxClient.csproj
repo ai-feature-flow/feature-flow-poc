@@ -7,6 +7,7 @@
     <AssemblyName>ff-sandbox</AssemblyName>
     <InvariantGlobalization>true</InvariantGlobalization>
     <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
 </Project>

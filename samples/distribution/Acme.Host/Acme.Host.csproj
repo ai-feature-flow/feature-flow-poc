@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Acme's host: the engine's hosting and standard providers as packages, the test doubles for development
+       installations, and Acme's own providers. Built from packages only: no project of the engine is referenced. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FeatureFlow.Hosting" />
+    <PackageReference Include="FeatureFlow.Providers.Standard" />
+    <PackageReference Include="FeatureFlow.Providers.Testing" />
+    <ProjectReference Include="..\Acme.Providers\Acme.Providers.csproj" />
+  </ItemGroup>
+
+</Project>

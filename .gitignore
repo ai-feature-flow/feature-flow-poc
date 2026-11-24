@@ -6,6 +6,10 @@
 bin/
 obj/
 
+# The local package feed a pack writes for samples/distribution, and the sample's own package cache (docs/06 section 4)
+artifacts/
+samples/distribution/.packages/
+
 # The console's packages, build output and client types, generated in every build (LOG 453, 456)
 src/FeatureFlow.Console/node_modules/
 src/FeatureFlow.Console/dist/

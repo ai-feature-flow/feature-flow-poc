@@ -7,9 +7,7 @@ using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Providers.ClaudeCode;
 using FeatureFlow.Providers.CopilotCli;
 using FeatureFlow.Providers.Docker;
-using FeatureFlow.Providers.Git;
-using FeatureFlow.Providers.GitHub;
-using FeatureFlow.Providers.Local;
+using FeatureFlow.Providers.Standard;
 using FeatureFlow.Providers.Testing;
 using IOPath = System.IO.Path;
 
@@ -125,20 +123,26 @@ public sealed record AgentHarnessOptions
 /// </summary>
 public sealed class AgentHarness : IAsyncDisposable
 {
-    /// <summary>The providers, with Claude Code's fixed defaults (LOG 91) shortened for the tests.</summary>
-    static IEnumerable<ProviderFactory> FactoriesFor(AgentHarnessOptions options) => LocalProviders.Factories.Concat(DockerProviders.Factories)
-        .Append(ClaudeCodeProviders.Runtime(o => o with
-        {
-            MaxRetries = options.Live ? 2 : 0,
-            HookHold = TimeSpan.FromSeconds(options.HookHoldSeconds),
-            ClientRetry = TimeSpan.FromSeconds(options.ClientRetrySeconds),
-        }))
-        .Append(CopilotCliProviders.Runtime(o => o with
-        {
-            HookHold = TimeSpan.FromSeconds(options.HookHoldSeconds),
-            ClientRetry = TimeSpan.FromSeconds(options.ClientRetrySeconds),
-        }))
-        .Concat(GitProviders.Factories).Concat(GitHubProviders.Factories).Concat(TestingProviders.Factories);
+    /// <summary>The standard providers and the doubles, with Claude Code's and Copilot CLI's fixed defaults (LOG 91) shortened for the tests.</summary>
+    static IEnumerable<ProviderFactory> FactoriesFor(AgentHarnessOptions options)
+    {
+        ProviderFactory[] tuned =
+        [
+            ClaudeCodeProviders.Runtime(o => o with
+            {
+                MaxRetries = options.Live ? 2 : 0,
+                HookHold = TimeSpan.FromSeconds(options.HookHoldSeconds),
+                ClientRetry = TimeSpan.FromSeconds(options.ClientRetrySeconds),
+            }),
+            CopilotCliProviders.Runtime(o => o with
+            {
+                HookHold = TimeSpan.FromSeconds(options.HookHoldSeconds),
+                ClientRetry = TimeSpan.FromSeconds(options.ClientRetrySeconds),
+            }),
+        ];
+        return StandardProviders.Factories.Where(f => !tuned.Any(t => (t.Type, t.Kind) == (f.Type, f.Kind)))
+            .Concat(tuned).Concat(TestingProviders.Factories);
+    }
 
     IEnumerable<ProviderFactory> Factories { get; init; } = [];
 

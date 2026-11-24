@@ -1,0 +1,8 @@
+# The engine raises an escalation when a step cannot answer (docs/05 section 4); a library that stands alone declares it.
+api_version: feature-flow/v1
+kind: decision_types
+
+decision_types:
+  - name: "*.escalation"
+    description: An intervention, whatever raised it
+    default_approval: { roles: [steerer], min_count: 1, auto: false }

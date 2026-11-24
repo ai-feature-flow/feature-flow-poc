@@ -1,8 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- ShellRuleTests: the Temporal shell (RunWorkflow) is read as syntax, and its fields by reflection (docs/02 section 3). -->
+  <!-- ShellRuleTests: the Temporal shell (RunWorkflow) is read as syntax, and its fields by reflection (docs/02 section 3).
+       StandardProvidersTests: the standard providers' list, read by reflection (docs/06 section 4). -->
   <ItemGroup>
     <ProjectReference Include="..\..\src\FeatureFlow.Engine\FeatureFlow.Engine.csproj" />
+    <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Standard\FeatureFlow.Providers.Standard.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -13,6 +13,16 @@ developer's setup, is in Feature Flow's `deploy/README.md`.
 
 Values marked `yours` in the two configuration files must be replaced.
 
+## Your own providers
+
+A provider of your own needs no fork of Feature Flow. Build your host from Feature Flow's packages: a project that
+references `FeatureFlow.Hosting` and `FeatureFlow.Providers.Standard`, composes `StandardProviders.Factories` with
+your own factories, and calls `HostArguments.RunAsync` as Feature Flow's hosts do (Feature Flow's `docs/06` section 4).
+Feature Flow's `samples/distribution` is a working example, with a validator of its own and a workflow test that uses
+it; its `README.md` shows how to pack the engine to a local folder and build against it. Feature Flow does not yet ship
+a Dockerfile for a distribution's host: build its image as Feature Flow's `deploy/images/host.Dockerfile` builds the
+engine's hosts.
+
 ## Try it on your machine (k3d)
 
 With Docker, [k3d](https://k3d.io), `kubectl` and a checkout of Feature Flow:

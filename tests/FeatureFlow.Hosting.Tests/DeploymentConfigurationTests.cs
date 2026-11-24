@@ -1,16 +1,5 @@
 using FeatureFlow.Providers.Abstractions;
-using FeatureFlow.Providers.ClaudeCode;
-using FeatureFlow.Providers.CopilotCli;
-using FeatureFlow.Providers.Docker;
-using FeatureFlow.Providers.Git;
-using FeatureFlow.Providers.GitHub;
-using FeatureFlow.Providers.Jira;
-using FeatureFlow.Providers.Kubernetes;
-using FeatureFlow.Providers.Local;
-using FeatureFlow.Providers.Postgres;
-using FeatureFlow.Providers.S3;
-using FeatureFlow.Providers.Slack;
-using FeatureFlow.Providers.StdValidators;
+using FeatureFlow.Providers.Standard;
 using FeatureFlow.Providers.Testing;
 
 namespace FeatureFlow.Hosting.Tests;
@@ -22,10 +11,7 @@ namespace FeatureFlow.Hosting.Tests;
 /// </summary>
 public class DeploymentConfigurationTests
 {
-    static readonly IEnumerable<ProviderFactory> HostFactories = LocalProviders.Factories.Concat(DockerProviders.Factories)
-        .Concat(ClaudeCodeProviders.Factories).Concat(GitProviders.Factories).Concat(GitHubProviders.Factories).Concat(StdValidatorProviders.Factories)
-        .Concat(SlackProviders.Factories).Concat(PostgresProviders.Factories).Concat(S3Providers.Factories).Concat(KubernetesProviders.Factories)
-        .Concat(CopilotCliProviders.Factories).Concat(JiraProviders.Factories).Concat(TestingProviders.Factories);
+    static readonly IEnumerable<ProviderFactory> HostFactories = StandardProviders.Factories.Concat(TestingProviders.Factories);
 
     [Theory]
     [InlineData("deploy/k3d/smoke")]

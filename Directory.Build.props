@@ -8,6 +8,8 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+    <!-- One version for every package; a pack may pass -p:Version=. Only src/ packs (src/Directory.Build.props). -->
     <Version>0.1.0</Version>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 </Project>
