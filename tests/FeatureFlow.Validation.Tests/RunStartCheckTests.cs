@@ -32,6 +32,10 @@ public class RunStartCheckTests
 
     static IReadOnlySet<string> Everything(Plan plan, LibrarySet libraries) => RunStartChecks.Needs(plan, libraries).Keys.ToHashSet();
 
+    /// <summary>Check 21 with one set of names offered for every type and instance, and no role mapped.</summary>
+    static void Check21(Plan plan, LibrarySet libraries, IReadOnlySet<string> offered, DiagnosticBag d) =>
+        RunStartChecks.Capabilities(plan, libraries, (_, _) => offered, _ => null, d);
+
     static List<int> Blocking(DiagnosticBag d) => d.Where(x => x.Blocks).Select(x => x.Check).Distinct().ToList();
 
     [Fact]
@@ -65,11 +69,11 @@ public class RunStartCheckTests
         Assert.Contains("tracker", needs.Keys);
 
         var all = new DiagnosticBag();
-        RunStartChecks.Capabilities(plan, libraries, Everything(plan, libraries), all);
+        Check21(plan, libraries, Everything(plan, libraries), all);
         Assert.Empty(all);
 
         var d = new DiagnosticBag();
-        RunStartChecks.Capabilities(plan, libraries, Everything(plan, libraries).Where(n => n is not ("code_host.pull_request" or "ci")).ToHashSet(), d);
+        Check21(plan, libraries, Everything(plan, libraries).Where(n => n is not ("code_host.pull_request" or "ci")).ToHashSet(), d);
         Assert.Equal([Checks.Capabilities], Blocking(d));
         Assert.Equal(2, d.Count);
         Assert.Contains(d, x => x.Message.Contains("capability code_host.pull_request is not offered", StringComparison.Ordinal));
@@ -107,11 +111,11 @@ public class RunStartCheckTests
         // Accepted with the provider its condition needs besides what the run and std need: the other is not asked for.
         var rest = needs.Where(kv => kv.Value != "step wait").Select(kv => kv.Key).ToList();
         var accepted = new DiagnosticBag();
-        RunStartChecks.Capabilities(plan, libraries, rest.Append(need).ToHashSet(), accepted);
+        Check21(plan, libraries, rest.Append(need).ToHashSet(), accepted);
         Assert.Empty(accepted);
 
         var refused = new DiagnosticBag();
-        RunStartChecks.Capabilities(plan, libraries, rest.Append(other).ToHashSet(), refused);
+        Check21(plan, libraries, rest.Append(other).ToHashSet(), refused);
         Assert.Equal([Checks.Capabilities], Blocking(refused));
         Assert.Contains(message, refused.Single().Message, StringComparison.Ordinal);
     }

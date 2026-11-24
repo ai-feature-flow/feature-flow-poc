@@ -71,7 +71,7 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
                 // Each need is asked of the instance that serves it: an agent step's runtime is the one its role maps to, as the agent
                 // worker picks it (AgentActivities, NameForRun); a dry run's is its dry_run instance, whatever the mapping.
                 RunStartChecks.Capabilities(core.Plan, libraries, (type, chosen) => services.Providers.Offered(type, chosen, start.DryRun),
-                    role => start.DryRun ? null : policy.AgentFor(role)?.AgentRuntime, d);
+                    role => !start.DryRun && policy.AgentEntryFor(role) is { } entry ? (entry.Mapping.AgentRuntime, entry.Key) : null, d);
                 RunStartChecks.Caps(core.Plan, services.Organisation.Policy, core.Allowance, d, root: start.ParentWorkflowId is null, approval: ApprovalOf);
                 if (services.Providers.ForRun("code_host", start.DryRun) is ICodeHostProvider host)
                     defaultBranches = await RepositoryChecksAsync(host, core, start, policy, d, ct);
