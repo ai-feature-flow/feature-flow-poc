@@ -35,11 +35,11 @@ public sealed partial class RunCore
                     return $"go to: '{action.StepId}' is not a step of plan revision {State.Revision}";
                 return action.CleanUp && StepById(target)?.Form == StepForm.Decision
                     ? $"go to: {target} is a decision, which touches no repository; clean_up resets to where a step started, so go to the step after it"
-                    : Bypasses(wait.StepId, target);
+                    : Bypasses([wait.StepId], target);
             case RecoveryKind.Replan:
                 if (action.StepId is null || FindIn(action.StepId) is not { } id)
                     return $"re-plan: '{action.StepId}' is not a step of plan revision {State.Revision}";
-                return StepById(id)?.Agent?.Planning is null ? $"re-plan: {id} is not an agent step with planning authority" : Bypasses(wait.StepId, id);
+                return StepById(id)?.Agent?.Planning is null ? $"re-plan: {id} is not an agent step with planning authority" : Bypasses([wait.StepId], id);
             case RecoveryKind.End:
                 return action.Status is { } status && EndableStatuses.Contains(status)
                     ? null
@@ -51,12 +51,13 @@ public sealed partial class RunCore
 
     /// <summary>
     /// A go-to that would leave a protected step unrun is a skip of it, which needs <c>skip_protected</c>: the person skips it
-    /// first with the override, then goes to the step (LOG 206).
+    /// first with the override, then goes to the step (LOG 206). <paramref name="stopped"/> are the positions the run leaves:
+    /// the answered wait's step at an intervention, every position for a go to on a live run.
     /// </summary>
-    string? Bypasses(string stopped, string target)
+    string? Bypasses(IReadOnlyCollection<string> stopped, string target)
     {
         var before = Positions();
-        var after = before.Where(id => id != stopped).Append(target).ToList();
+        var after = before.Where(id => !stopped.Contains(id)).Append(target).ToList();
         return StillToRun(Plan, before).Except(StillToRun(Plan, after)).FirstOrDefault() is { } left
             ? $"go to {target} would leave protected step {left} unrun: skip it first ({Model.Overrides.SkipProtected}), then go to {target}"
             : null;

@@ -55,7 +55,11 @@ public class ForgeTicketTests
         var pr = new PullRequestRef(repo, 1);
         var state = (await new InMemoryCodeHost(forge).GetPullRequestAsync(pr, TestContext.Current.CancellationToken)).Unwrap();
         Assert.Equal(("main", "ff/ticket/T-1", PullRequestStates.Closed), (state.Base, state.Head, state.State));
-        Assert.Contains(main, forge.Comments(pr).Single(), StringComparison.Ordinal);
+        // E3: the review summary, posted when the pull request opened, then the squash's closing note.
+        var comments = forge.Comments(pr);
+        Assert.Equal(2, comments.Count);
+        Assert.StartsWith("## Feature Flow review\n", comments[0], StringComparison.Ordinal);
+        Assert.Contains(main, comments[1], StringComparison.Ordinal);
 
         // E1: with no title from std, the pull request is titled after the ticket. A5: the run recorded it as its merge step last read it.
         Assert.Equal("Ticket T-1 (T-1)", state.Title);

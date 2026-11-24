@@ -36,6 +36,8 @@ artifact_types:
   - std:artifact_types/evidence_claims
   - std:artifact_types/contract
   - std:artifact_types/test_results
+  - std:artifact_types/trace_report
+  - std:artifact_types/validation_report
 
 defaults:
   routes:
@@ -109,7 +111,26 @@ steps:
       repair_task: { param: repair_task }
     protected: true
     routes:
-      ready: deliver
+      ready: trace
+
+  # Informational: verify.satisfaction has already required every criterion's tests to pass, so a gap is shown in the
+  # merge popup and the review report and does not stop the ticket, as std:fragments/trace stops an epic.
+  - id: trace
+    action: artifact.validate
+    with:
+      validation:
+        - { validator: requirement_trace, subjects: [requirements] }
+    consumes: [{ name: requirements }]
+    produces:
+      valid:
+        - { name: trace_report, type: std:artifact_types/trace_report }
+        - { name: trace_validation, type: std:artifact_types/validation_report }
+      invalid:
+        - { name: trace_report, type: std:artifact_types/trace_report }
+        - { name: trace_validation, type: std:artifact_types/validation_report }
+    routes:
+      valid: deliver
+      invalid: deliver
 
   - id: deliver
     use: std:fragments/merge_into_parent

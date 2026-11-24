@@ -350,4 +350,50 @@ public sealed class OverrideAuthorisationTests
         Assert.Empty(world.Temporal.Updates);
         Assert.Empty(await world.QueryAsync<OverrideRecord>(Queries.Overrides, Run));
     }
+
+    /// <summary>Going to a step and re-planning cancel the work in flight (plan s1.2): a reason is required, and one given is delivered.</summary>
+    [Theory]
+    [InlineData("go_to", "")]
+    [InlineData("go_to", """, "reason": " " """)]
+    [InlineData("replan", "")]
+    public async Task Going_to_a_step_or_re_planning_without_a_reason_is_refused_and_nothing_is_recorded(string key, string reason)
+    {
+        await using var world = await WorldAsync();
+        var steerer = world.As("sam", "steerer");
+
+        var (status, text) = await ApiWorld.PostAsync(steerer, $"runs/{Run}/overrides", $$"""{ "key": "{{key}}", "step_id": "plan.plan"{{reason}} }""");
+
+        Assert.Equal((HttpStatusCode.BadRequest, true), (status, text.Contains("reason is required", StringComparison.Ordinal)));
+        Assert.Empty(world.Temporal.Updates);
+        Assert.Empty(await world.QueryAsync<OverrideRecord>(Queries.Overrides, Run));
+
+        var (given, _) = await ApiWorld.PostAsync(steerer, $"runs/{Run}/overrides", $$"""{ "key": "{{key}}", "step_id": "plan.plan", "reason": "the plan missed the API" }""");
+
+        Assert.Equal(HttpStatusCode.OK, given);
+        Assert.Equal("the plan missed the API", ((OverrideArgs)Assert.Single(world.Temporal.Updates).Argument!).Reason);
+    }
+
+    /// <summary>An instruction is required and at most 4,096 bytes of UTF-8 text, as a reason is; one of exactly that size is delivered.</summary>
+    [Theory]
+    [InlineData("""{ }""", "change.text is required")]
+    [InlineData("""{ "text": "  " }""", "change.text is required")]
+    [InlineData(null, "change.text may be at most 4096 bytes")]
+    public async Task An_instruction_that_is_missing_blank_or_too_long_is_refused_and_nothing_is_recorded(string? change, string refusal)
+    {
+        await using var world = await WorldAsync();
+        var steerer = world.As("sam", "steerer");
+        // 4,097 bytes: a two-byte character makes the text one byte too long.
+        change ??= $$"""{ "text": "{{new string('a', 4095)}}é" }""";
+
+        var (status, text) = await ApiWorld.PostAsync(steerer, $"runs/{Run}/overrides", $$"""{ "key": "instruct", "step_id": "implement", "change": {{change}} }""");
+
+        Assert.Equal((HttpStatusCode.BadRequest, true), (status, text.Contains(refusal, StringComparison.Ordinal)));
+        Assert.Empty(world.Temporal.Updates);
+        Assert.Empty(await world.QueryAsync<OverrideRecord>(Queries.Overrides, Run));
+
+        var (exact, _) = await ApiWorld.PostAsync(steerer, $"runs/{Run}/overrides",
+            $$"""{ "key": "instruct", "step_id": "implement", "change": { "text": "{{new string('a', 4094)}}é" } }""");
+
+        Assert.Equal(HttpStatusCode.OK, exact);
+    }
 }

@@ -1,5 +1,6 @@
 import type { Me } from "../auth/session";
 import { NeedsMe } from "../screens/needs-me/NeedsMe";
+import { ReviewPage } from "../screens/review/ReviewPage";
 import { RunList } from "../screens/runs/RunList";
 import { StartRun } from "../screens/start/StartRun";
 import { Workspace } from "../screens/workspace/Workspace";
@@ -18,6 +19,8 @@ function screen(route: Route) {
       return <RunList />;
     case "workspace":
       return <Workspace key={`${route.own ? "own" : "runs"}/${route.tree}`} tree={route.tree} own={route.own} select={route.select} />;
+    case "review":
+      return <ReviewPage key={`${route.tree}/${route.runId}`} tree={route.tree} runId={route.runId} own={route.own} />;
     case "start":
       return <StartRun />;
     case "not-found":

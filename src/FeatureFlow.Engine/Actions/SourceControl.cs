@@ -43,7 +43,8 @@ static class SourceControl
     /// <c>scm.pull_request</c> (section 7.2): opens the work branch's pull request into its parent branch, or updates the
     /// one this run opened. Its key is the run's and the repository's, so a re-entry or retry adopts it. With no
     /// <c>title</c> it is titled after the run's tracker issue (E1, <see cref="PullRequests.TitleAsync"/>). The pull request is
-    /// read and recorded once open (A5). The declines the ledger already holds for the repository are posted on it (LOG 249).
+    /// read and recorded once open (A5). The declines the ledger already holds for the repository are posted on it (LOG 249),
+    /// then the review's summary, once per review pass (E3, <see cref="FindingsActions.PostReviewSummaryAsync"/>).
     /// </summary>
     public static async Task<ActionResult> PullRequestAsync(ActionRun run)
     {
@@ -56,6 +57,7 @@ static class SourceControl
         run.Events.Add($"pull request {ActionRun.Format(pr)} from {run.Scope.WorkBranch} into {parent}");
         await PullRequests.RecordAsync(run, ActionRun.Must(await run.CodeHost.GetPullRequestAsync(pr, run.Ct), "read the pull request"));
         await FindingsActions.PostLedgerDeclinesAsync(run, repo, pr);
+        await FindingsActions.PostReviewSummaryAsync(run, pr);
         return run.Report("ready", new Dictionary<string, object?> { ["pull_request"] = ActionRun.Format(pr) });
     }
 

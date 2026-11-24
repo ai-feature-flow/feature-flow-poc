@@ -252,7 +252,7 @@ public static class Actions
             [Str("from"), Str("shape", "parallel", "chain"), Str("target"), Str("on_other"), Map("step")], [], ActionHandling.Expand),
         new("scm.catch_up", [S("updated"), B("conflict")], [new("changed", "boolean")], [Str("repository")], ["vcs", "code_host"]),
         new("scm.pull_request", [S("ready")], [new("pull_request", "string")],
-            [Str("title"), Str("body") with { References = "prompts" }, Bool("draft"), Bool("post_declines")], ["code_host.pull_request"])
+            [Str("title"), Str("body") with { References = "prompts" }, Bool("draft"), Bool("post_declines"), Bool("post_review")], ["code_host.pull_request"])
         {
             OpensPullRequest = PullRequestKind.Work,
         },

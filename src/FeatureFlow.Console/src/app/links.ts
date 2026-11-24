@@ -29,6 +29,19 @@ export const treeRun = (treeId: string, runId: string, own = false): string =>
 export const step = (treeId: string, runId: string, stepId: string, own = false): string =>
   `${tree(treeId, own)}/steps/${part(runId)}/${part(stepId)}`;
 
+/** A run's review report (A14), the tree shown from `treeId`: `#/runs/{tree}/review` for the run named, else `…/review/{run}`. */
+export const review = (treeId: string, runId: string = treeId, own = false): string =>
+  `${tree(treeId, own)}/review${runId === treeId ? "" : `/${part(runId)}`}`;
+
+/**
+ * Opens a link of this file in a window of its own, beside the console (the review report beside the pull request,
+ * design-v2 s4.6). One window per name, so opening the same report again brings it back. Opened with an opener, so the
+ * window keeps this tab's sign-in (sessionStorage is copied to it).
+ */
+export function openWindow(href: string, name: string): void {
+  window.open(href, name, "width=1200,height=900");
+}
+
 export const start = (): string => "#/start";
 
 /**

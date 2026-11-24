@@ -18,11 +18,26 @@ public sealed class ChangeKindsTests
         var changes = ChangeKinds.Of(new RecordBatch(Findings: [finding, finding with { FindingId = "f2" }], FindingEvents: [e], StepStates: [step],
             PullRequests: [pr], Repositories: [repository]));
 
+        // The finding event also changes the step that wrote it (A9), after every run's change.
         Assert.Equal(
             [("r1", ChangeKinds.RunChanged, (string?)null, (string?)null), ("r2", ChangeKinds.RunChanged, null, null), ("r3", ChangeKinds.RunChanged, null, null),
-                ("r4", ChangeKinds.RunChanged, null, null)],
+                ("r4", ChangeKinds.RunChanged, null, null), ("r2", ChangeKinds.StepChanged, null, "review")],
             changes);
         Assert.Empty(ChangeKinds.Of(new RecordBatch(Repositories: [repository])));
+    }
+
+    [Fact]
+    public void A_finding_event_with_no_step_changes_only_its_run_and_agent_events_change_the_step_their_key_names_once()
+    {
+        AgentEventRecord E(string key) => new(key, "hook_pre_tool_use", "Edit allow", At);
+        var unstepped = new FindingEventRecord("r1", "f1", "k", FindingEventKinds.Triaged, "declined", "alice", "no", null, null, null, At);
+
+        var changes = ChangeKinds.Of(new RecordBatch(FindingEvents: [unstepped],
+            AgentEvents: [E("r2/implement/1"), E("r2/implement/1"), E("r2/implement/2"), E("r3/plan.plan/12"), E("session/s-1"), E("r4/implement/x"), E("r4/implement"), E("a/b/c/1")]));
+
+        Assert.Equal(
+            [("r1", ChangeKinds.RunChanged, (string?)null, (string?)null), ("r2", ChangeKinds.StepChanged, null, "implement"), ("r3", ChangeKinds.StepChanged, null, "plan.plan")],
+            changes);
     }
 
     [Fact]

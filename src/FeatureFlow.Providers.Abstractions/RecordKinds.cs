@@ -28,17 +28,27 @@ public enum WriteRule
     KeepFirstWhileOpen,
 }
 
-/// <summary>The change (<see cref="ChangeKinds"/>) a record of a kind makes.</summary>
-public enum ChangeEffect { None, RunChanged, WaitOpenedOrClosed, StepChanged }
+/// <summary>The changes (<see cref="ChangeKinds"/>) a record of a kind makes; a kind may make more than one.</summary>
+[Flags]
+public enum ChangeEffect
+{
+    None = 0,
+    RunChanged = 1,
+    WaitOpenedOrClosed = 2,
+
+    /// <summary>A step's page changed: for the run and step <see cref="RecordKind.StepOf"/> names, none where it names no step.</summary>
+    StepChanged = 4,
+}
 
 /// <summary>A physical column of a kind's table besides <c>org_id</c> and <c>body</c>: its name, value type and value.</summary>
 public sealed record RecordColumn(string Name, Type Type, Func<object, object?> Value);
 
 /// <summary>
 /// A record kind: its record type and table (with the <c>kind</c> value of a table it shares), its key and other columns,
-/// its write rule, the change it makes, its run, its list in a <see cref="RecordBatch"/>, and for the two rules that need it
-/// whether a record opens. Every table's key starts with <c>org_id</c>; a kind with no key is appended with an identity
-/// <c>id</c>, which is also the insertion order of a <see cref="WriteRule.KeepFirst"/> table that has one.
+/// its write rule, the changes it makes, its run, its list in a <see cref="RecordBatch"/>, for the two rules that need it
+/// whether a record opens, and for a kind that changes a step its step. Every table's key starts with <c>org_id</c>; a kind
+/// with no key is appended with an identity <c>id</c>, which is also the insertion order of a <see cref="WriteRule.KeepFirst"/>
+/// table that has one.
 /// </summary>
 public sealed record RecordKind(
     string Name,
@@ -51,7 +61,8 @@ public sealed record RecordKind(
     Func<RecordBatch, IReadOnlyList<object>?> Of,
     ChangeEffect Raises,
     Func<object, string?> RunId,
-    Func<object, bool>? Opens = null)
+    Func<object, bool>? Opens = null,
+    Func<object, string?>? StepOf = null)
 {
     /// <summary>The key columns, then the others.</summary>
     public IEnumerable<RecordColumn> AllColumns => Key.Concat(Columns);
@@ -145,9 +156,16 @@ public static class RecordKinds
         new(name, Nullable.GetUnderlyingType(typeof(TValue)) ?? typeof(TValue), r => value((T)r));
 
     static RecordKind K<T>(string table, Func<RecordBatch, IReadOnlyList<T>?> of, WriteRule rule, ChangeEffect raises, Func<T, string?> runId,
-        RecordColumn[] key, RecordColumn[]? columns = null, string? discriminator = null, Func<T, bool>? opens = null) where T : class =>
+        RecordColumn[] key, RecordColumn[]? columns = null, string? discriminator = null, Func<T, bool>? opens = null, Func<T, string?>? stepOf = null) where T : class =>
         new(typeof(T).Name.Replace("Record", "", StringComparison.Ordinal), typeof(T), table, discriminator, key, columns ?? [], rule, of, raises,
-            r => runId((T)r), opens is null ? null : r => opens((T)r));
+            r => runId((T)r), opens is null ? null : r => opens((T)r), stepOf is null ? null : r => stepOf((T)r));
+
+    /// <summary>
+    /// The run and step of an agent step's key, <c>&lt;run&gt;/&lt;step&gt;/&lt;n&gt;</c> with <c>n</c> a whole number (the
+    /// interpreter's <c>StepKey</c>); null for any other key, such as a session's <c>session/&lt;id&gt;</c>. Run and step ids hold no <c>/</c>.
+    /// </summary>
+    public static (string RunId, string StepId)? StepOfKey(string key) =>
+        key.Split('/') is [{ Length: > 0 } run, { Length: > 0 } step, { Length: > 0 } n] && n.All(char.IsAsciiDigit) ? (run, step) : null;
 
     public static readonly RecordKind Runs = K<RunRecord>("runs", b => b.Runs, WriteRule.ReplaceIfNotOlder, ChangeEffect.RunChanged, r => r.RunId,
         [C<RunRecord, string>("run_id", r => r.RunId)], [C<RunRecord, string?>("parent_run_id", r => r.ParentRunId), C<RunRecord, DateTimeOffset>("updated_at", r => r.UpdatedAt)]);
@@ -173,8 +191,9 @@ public static class RecordKinds
     public static readonly RecordKind Reports = K<ReportRecord>("agent_log", b => b.Reports, WriteRule.Append, ChangeEffect.None, _ => null,
         [], [C<ReportRecord, string>("step_key", r => r.StepKey)], "report");
 
-    public static readonly RecordKind AgentEvents = K<AgentEventRecord>("agent_log", b => b.AgentEvents, WriteRule.Append, ChangeEffect.None, _ => null,
-        [], [C<AgentEventRecord, string>("step_key", e => e.StepKey)], "event");
+    // A staged patch, a hook decision or model usage changes the step's page, not the run (A9).
+    public static readonly RecordKind AgentEvents = K<AgentEventRecord>("agent_log", b => b.AgentEvents, WriteRule.Append, ChangeEffect.StepChanged,
+        e => StepOfKey(e.StepKey)?.RunId, [], [C<AgentEventRecord, string>("step_key", e => e.StepKey)], "event", stepOf: e => StepOfKey(e.StepKey)?.StepId);
 
     public static readonly RecordKind Overrides = K<OverrideRecord>("overrides", b => b.Overrides, WriteRule.Append, ChangeEffect.RunChanged, o => o.RunId,
         [], [C<OverrideRecord, string>("run_id", o => o.RunId)]);
@@ -195,8 +214,11 @@ public static class RecordKinds
     public static readonly RecordKind Findings = K<FindingRecord>("findings", b => b.Findings, WriteRule.Replace, ChangeEffect.RunChanged, f => f.RunId,
         [C<FindingRecord, string>("run_id", f => f.RunId), C<FindingRecord, string>("finding_id", f => f.FindingId)]);
 
-    public static readonly RecordKind FindingEvents = K<FindingEventRecord>("finding_events", b => b.FindingEvents, WriteRule.KeepFirst, ChangeEffect.RunChanged, e => e.RunId,
-        [C<FindingEventRecord, string>("run_id", e => e.RunId), C<FindingEventRecord, string>("finding_id", e => e.FindingId), C<FindingEventRecord, string>("key", e => e.Key)]);
+    // A finding event changes its run and the step that wrote it, whose page lists the finding (A9).
+    public static readonly RecordKind FindingEvents = K<FindingEventRecord>("finding_events", b => b.FindingEvents, WriteRule.KeepFirst,
+        ChangeEffect.RunChanged | ChangeEffect.StepChanged, e => e.RunId,
+        [C<FindingEventRecord, string>("run_id", e => e.RunId), C<FindingEventRecord, string>("finding_id", e => e.FindingId), C<FindingEventRecord, string>("key", e => e.Key)],
+        stepOf: e => e.StepId);
 
     public static readonly RecordKind StepStates = K<StepStateRecord>("step_states", b => b.StepStates, WriteRule.Replace, ChangeEffect.RunChanged, s => s.RunId,
         [C<StepStateRecord, string>("run_id", s => s.RunId), C<StepStateRecord, string>("step_id", s => s.StepId)]);
@@ -209,7 +231,7 @@ public static class RecordKinds
 
     public static readonly RecordKind Activity = K<ActivityRecord>("activity", b => b.Activity, WriteRule.KeepFirst, ChangeEffect.StepChanged, a => a.RunId,
         [C<ActivityRecord, string>("run_id", a => a.RunId), C<ActivityRecord, string>("step_id", a => a.StepId), C<ActivityRecord, int>("execution", a => a.Execution),
-            C<ActivityRecord, int>("session", a => a.Session), C<ActivityRecord, int>("sequence", a => a.Sequence)]);
+            C<ActivityRecord, int>("session", a => a.Session), C<ActivityRecord, int>("sequence", a => a.Sequence)], stepOf: a => a.StepId);
 
     public static IReadOnlyList<RecordKind> All { get; } =
     [

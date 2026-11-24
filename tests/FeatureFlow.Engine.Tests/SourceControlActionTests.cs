@@ -91,6 +91,115 @@ public sealed class SourceControlActionTests
         Assert.Equal(("trunk", ActionWorld.WorkBranch, "Retitled"), (state.Base, state.Head, state.Title));
     }
 
+    // ---- scm.pull_request: the review summary (E3) ----
+
+    static ReportedFinding Blocking() =>
+        new("null_dereference", "Find may dereference null", "d", "high", true, FindingBases.Demonstrated, new FindingLocation("acme/api", "a.txt", "A.Find", "work"), "c");
+
+    /// <summary>A reviewer's report as the workflow lists it: produced by an agent step, so no action.</summary>
+    static async Task ReviewedAsync(ActionWorld w, string stepId, FindingsReport report)
+    {
+        var reference = (await w.Store.PutAsync(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(ArtifactShapes.WriteLibrary(report))), TestContext.Current.CancellationToken)).Unwrap().Id;
+        w.Artifacts.RemoveAll(a => a.StepId == stepId && a.Name == "findings_report");
+        w.Artifacts.Add(new ArtifactEntry(stepId, "findings_report", "std:artifact_types/findings_report", reference));
+    }
+
+    static async Task<ActionWorld> ReviewedWorldAsync(Func<ICodeHostProvider, ICodeHostProvider>? codeHost = null)
+    {
+        var w = new ActionWorld(codeHost: codeHost);
+        w.CommitWork("a.txt", "work");
+        await ReviewedAsync(w, "verify.review.review_0.assess", new FindingsReport(1, [Blocking()], "correctness",
+            new FindingsSummary("Find handles `null` | mostly.\n@team should look", ["a.txt and its callers", "ran `dotnet test`"])));
+        await ReviewedAsync(w, "verify.review.review_1.assess", new FindingsReport(1, [], "security"));
+        Assert.Equal("recorded", Outcome(await w.RunAsync("findings.record", "{ source: findings_report }", "verify.review.review_0.record")));
+        return w;
+    }
+
+    [Fact]
+    public async Task A_pull_request_posts_the_review_summary_once_per_pass_with_the_reviewers_text_as_code()
+    {
+        await using var w = await ReviewedWorldAsync();
+
+        var first = await w.RunAsync("scm.pull_request", "{ title: T-1 }", "deliver.open_pr");
+        await w.RunAsync("scm.pull_request", "{ title: T-1 }", "deliver.open_pr");   // a retry or re-entry with the same reports
+
+        var pr = ActionRunAccess.Pr(Output<string>(first, "pull_request"));
+        var comment = Assert.Single(w.Forge.Comments(pr));
+        Assert.StartsWith("## Feature Flow review\n\n| Angle | Findings | Blocking |\n|---|---|---|\n| ` correctness ` | 1 | 1 |\n| ` security ` | 0 | 0 |\n", comment, StringComparison.Ordinal);
+        Assert.Contains("### ` correctness `\n\n`` Find handles `null` | mostly. ``  \n` @team should look `  \n", comment, StringComparison.Ordinal);
+        Assert.Contains("Checked:\n\n- ` a.txt and its callers `\n- `` ran `dotnet test` ``\n", comment, StringComparison.Ordinal);
+        Assert.Contains("### ` security `\n\nNo verdict recorded.\n", comment, StringComparison.Ordinal);
+        Assert.Contains("Ledger: 1 open (1 blocking), 0 fixed, 0 declined, 0 escalated.", comment, StringComparison.Ordinal);
+        Assert.Contains($"review report of run {w.RunId}", comment, StringComparison.Ordinal);
+        Assert.Contains(first.Events, e => e.StartsWith("the review summary of 2 report(s) is posted on", StringComparison.Ordinal));
+
+        // A later pass: a reviewer's report is new, so the summary is posted again; the first comment stays.
+        await ReviewedAsync(w, "verify.review.review_1.assess", new FindingsReport(1, [], "security", new FindingsSummary("No security concern.", ["a.txt"])));
+        await w.RunAsync("scm.pull_request", "{ title: T-1 }", "deliver.open_pr");
+        Assert.Equal(2, w.Forge.Comments(pr).Count);
+        Assert.Contains("` No security concern. `", w.Forge.Comments(pr)[1], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_pull_request_with_post_review_false_or_no_review_posts_no_summary()
+    {
+        await using var w = await ReviewedWorldAsync();
+        var quiet = await w.RunAsync("scm.pull_request", "{ title: T-1, post_review: false }", "deliver.open_pr");
+        Assert.Empty(w.Forge.Comments(ActionRunAccess.Pr(Output<string>(quiet, "pull_request"))));
+
+        await using var unreviewed = new ActionWorld();
+        unreviewed.CommitWork("a.txt", "work");
+        var opened = await unreviewed.RunAsync("scm.pull_request", "{ title: T-1 }", "deliver.open_pr");
+        Assert.Empty(unreviewed.Forge.Comments(ActionRunAccess.Pr(Output<string>(opened, "pull_request"))));
+        Assert.Contains(opened.Events, e => e.Contains("no review summary is posted", StringComparison.Ordinal));
+    }
+
+    /// <summary>The same summary through the GitHub code host over the GitHub test double: posted once with its key's marker, adopted on a retry.</summary>
+    [Fact]
+    public async Task The_review_summary_is_posted_through_the_GitHub_code_host_once()
+    {
+        var github = new FeatureFlow.Providers.GitHub.Tests.FakeGitHub();
+        var posted = new List<string>();
+        github.On(HttpMethod.Get, "/repos/acme/api/issues/1/comments", _ => new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(new System.Text.Json.Nodes.JsonArray(posted.Select((b, i) => (System.Text.Json.Nodes.JsonNode)new System.Text.Json.Nodes.JsonObject { ["id"] = i + 1, ["body"] = b }).ToArray()).ToJsonString()),
+            })
+            .On(HttpMethod.Post, "/repos/acme/api/issues/1/comments", body =>
+            {
+                posted.Add(System.Text.Json.Nodes.JsonNode.Parse(body)!["body"]!.GetValue<string>());
+                return new HttpResponseMessage(System.Net.HttpStatusCode.Created) { Content = new StringContent($$"""{"id":{{posted.Count}}}""") };
+            });
+        var gitHub = new FeatureFlow.Providers.GitHub.GitHubCodeHost(github.Api());
+        await using var w = await ReviewedWorldAsync(memory => new CommentsThrough(memory, gitHub));
+
+        var first = await w.RunAsync("scm.pull_request", "{ title: T-1 }", "deliver.open_pr");
+        await w.RunAsync("scm.pull_request", "{ title: T-1 }", "deliver.open_pr");
+
+        Assert.Equal("acme/api#1", Output<string>(first, "pull_request"));
+        var body = Assert.Single(posted);
+        Assert.StartsWith("## Feature Flow review\n", body, StringComparison.Ordinal);
+        Assert.Matches($@"<!-- feature-flow:review/{w.RunId}/[0-9a-f]{{16}} -->$", body);
+    }
+
+    /// <summary>The in-memory code host for everything but comments, which go to <paramref name="comments"/>.</summary>
+    sealed class CommentsThrough(ICodeHostProvider inner, ICodeHostProvider comments) : ICodeHostProvider
+    {
+        public ProviderDescription Describe() => inner.Describe();
+        public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => inner.CheckAsync(cancellationToken);
+        public Task<ProviderResult<string>> GetDefaultBranchAsync(RepoRef repo, CancellationToken cancellationToken) => inner.GetDefaultBranchAsync(repo, cancellationToken);
+        public Task<ProviderResult<BranchProtection>> GetBranchProtectionAsync(RepoRef repo, string branch, CancellationToken cancellationToken) => inner.GetBranchProtectionAsync(repo, branch, cancellationToken);
+        public Task<ProviderResult<RepoFile?>> ReadFileAsync(RepoRef repo, string path, string reference, CancellationToken cancellationToken) => inner.ReadFileAsync(repo, path, reference, cancellationToken);
+        public Task<ProviderResult<PullRequestRef>> OpenPullRequestAsync(RepoRef repo, PullRequestSpec spec, string key, CancellationToken cancellationToken) => inner.OpenPullRequestAsync(repo, spec, key, cancellationToken);
+        public Task<ProviderResult<PullRequestRef>> UpdatePullRequestAsync(PullRequestRef pullRequest, PullRequestSpec spec, CancellationToken cancellationToken) => inner.UpdatePullRequestAsync(pullRequest, spec, cancellationToken);
+        public Task<ProviderResult<PullRequestState>> GetPullRequestAsync(PullRequestRef pullRequest, CancellationToken cancellationToken) => inner.GetPullRequestAsync(pullRequest, cancellationToken);
+        public Task<ProviderResult<IReadOnlyList<PullRequestFile>>> ListPullRequestFilesAsync(PullRequestRef pullRequest, CancellationToken cancellationToken) => inner.ListPullRequestFilesAsync(pullRequest, cancellationToken);
+        public Task<ProviderResult<Unit>> ClosePullRequestAsync(PullRequestRef pullRequest, string? comment, CancellationToken cancellationToken) => inner.ClosePullRequestAsync(pullRequest, comment, cancellationToken);
+        public Task<ProviderResult<PullRequestRef>> CreateRevertPullRequestAsync(PullRequestRef pullRequest, string key, CancellationToken cancellationToken) => inner.CreateRevertPullRequestAsync(pullRequest, key, cancellationToken);
+        public Task<ProviderResult<CheckStatus>> GetCheckStatusAsync(RepoRef repo, string revision, CancellationToken cancellationToken) => inner.GetCheckStatusAsync(repo, revision, cancellationToken);
+        public Task<ProviderResult<CommentRef>> AddCommentAsync(PullRequestRef pullRequest, string body, string key, CancellationToken cancellationToken) =>
+            comments.AddCommentAsync(pullRequest, body, key, cancellationToken);
+    }
+
     // ---- scm.merge ----
 
     /// <summary>The evidence a merge needs, for the work branch's current head: a passing test.run and ci.checks.</summary>

@@ -50,8 +50,9 @@ public sealed class RunPageTests(BrowserFixture browser) : BrowserTest(browser)
         // Started three hours ago and ended one hour ago: it took two, not three.
         await Expect(Middle.Locator(".ff-facts")).ToContainTextAsync("by local · 2 h 0 m");
         await RunActions.ClickAsync();
-        await Expect(Item("Policy in force")).ToBeDisabledAsync();
-        await Expect(Item("Policy in force")).ToContainTextAsync("in B2");
+        await Expect(Item("Policy in force")).ToBeEnabledAsync();
+        await Expect(Item("Restart from a step…")).ToBeDisabledAsync();
+        await Expect(Item("Re-run")).ToBeDisabledAsync();
     }
 
     [Fact]
