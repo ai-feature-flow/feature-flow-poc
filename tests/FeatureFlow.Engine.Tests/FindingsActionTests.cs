@@ -634,19 +634,45 @@ public sealed class FindingsActionTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task A_triage_counts_its_escalations_and_its_declines_of_blocking_or_demonstrated_findings_itself()
+    public async Task A_triage_counts_its_escalations_and_its_declines_of_blocking_and_of_demonstrated_findings_itself()
     {
         await Reviewed("review.assess", Finding("blocking"), Finding("demonstrated", blocking: false, basis: FindingBases.Demonstrated, snippet: "void Add()"),
-            Finding("minor", blocking: false, snippet: "class Orders"), Finding("ask", snippet: "x"));
+            Finding("both", basis: FindingBases.Demonstrated, snippet: "Add()"), Finding("minor", blocking: false, snippet: "class Orders"), Finding("ask", snippet: "x"));
         await Record();
         var ledger = await Ledger();
         string Id(string rule) => ledger.Single(f => f.Finding.Rule == rule).FindingId;
         await Triaged("fix.triage", new TriageEntry(Id("blocking"), FindingStates.Declined, "no"), new TriageEntry(Id("demonstrated"), FindingStates.Declined, "no"),
-            new TriageEntry(Id("minor"), FindingStates.Declined, "no"), new TriageEntry(Id("ask"), FindingStates.Escalated, "a person decides"));
+            new TriageEntry(Id("both"), FindingStates.Declined, "no"), new TriageEntry(Id("minor"), FindingStates.Declined, "no"),
+            new TriageEntry(Id("ask"), FindingStates.Escalated, "a person decides"));
 
         var result = await Triage(stepId: "fix.apply_triage");
 
-        Assert.Equal((1L, 2L), (Output(result, "escalated"), Output(result, "declined_blocking")));
+        // A blocking demonstrated decline counts in both declined outputs.
+        Assert.Equal((1L, 2L, 2L), (Output(result, "escalated"), Output(result, "declined_blocking"), Output(result, "declined_demonstrated")));
+    }
+
+    [Theory]
+    [InlineData("[escalated]", "applied")]
+    [InlineData("[escalated, declined_blocking, declined_demonstrated]", "invalid")]
+    [InlineData(null, "invalid")]
+    [InlineData("~", "invalid")]   // refused at load (check 31); were it to reach the engine, it reads as unset, as the API does
+    public async Task A_person_triage_must_decide_exactly_the_classes_its_step_names(string? personDecides, string expected)
+    {
+        // F13: the workflow, not the engine, says which findings a person must decide. A step naming only escalations lets a
+        // declined blocking finding through; one naming all three, or none (the default), sends it back to the person.
+        await Reviewed("review", Finding());
+        Outcome(await Record(), "recorded");
+        var id = Assert.Single(await Ledger()).FindingId;
+        await Triaged("fix.triage", new TriageEntry(id, FindingStates.Declined, "agent"));
+        Outcome(await Triage(stepId: "fix.apply_triage"), "applied");
+        await Produced("fix.person_triage", "person_triage", ArtifactShapes.WriteLibrary(new Triage(1, [])));
+
+        var result = await world.RunAsync("findings.triage",
+            $"{{ from: person_triage, complete: true{(personDecides is null ? "" : ", person_decides: " + personDecides)} }}", "fix.apply_person_triage");
+
+        Outcome(result, expected);
+        if (expected == "invalid")
+            Assert.Contains(result.Events, e => e.Contains($"{id} is declined blocking; this triage must decide it", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -998,5 +1024,71 @@ public sealed class FindingsActionTests : IAsyncDisposable
 
         Outcome(result, "applied");
         Assert.All(await Ledger(), f => Assert.Equal(FindingStates.Declined, f.State));
+    }
+
+    // ---- person_decides in the plan ----
+
+    static (Interpreter.RunCore? Core, IReadOnlyList<Diagnostic> Diagnostics) Started(string applyWith)
+    {
+        var root = Path.Combine(AppContext.BaseDirectory, "person-classes-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "templates"));
+        System.IO.File.WriteAllText(Path.Combine(root, "library.yaml"), "name: pc\nversion: 0.1.0\ndependencies:\n  - { name: std }\n");
+        System.IO.File.WriteAllText(Path.Combine(root, "templates", "triage.yaml"), $$"""
+            api_version: feature-flow/v1
+            kind: template
+            metadata: { name: triage, level: ticket }
+            parameters:
+              classes: { type: array, default: [escalated] }
+            artifact_types: [std:artifact_types/triage]
+            defaults:
+              routes:
+                by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+            steps:
+              - id: person_triage
+                decision: { type: findings.triage, prompt: std:prompts/findings_triage }
+                produces:
+                  triaged: [{ name: person_triage, type: std:artifact_types/triage }]
+                outcomes: { triaged: success }
+              - id: apply
+                action: findings.triage
+                with: {{applyWith}}
+                consumes: [{ name: person_triage }]
+                routes:
+                  applied: { end: completed }
+                  invalid: person_triage
+            """);
+        var d = new DiagnosticBag();
+        var libraries = new Library.LibrarySet(Library.Library.Open(Path.Combine(Repository.Root, "library", "std"), d)!, Library.Library.Open(root, d)!);
+        return Interpreter.RunCore.Start(libraries, new LibraryReference("pc", "templates", "triage"), new Interpreter.RunInfo("run-1", ["acme/api"], new Dictionary<string, YNode>()));
+    }
+
+    [Theory]
+    [InlineData("{ from: person_triage, complete: true, person_decides: [escalated] }", "escalated")]
+    [InlineData("{ from: person_triage, complete: true, person_decides: [declined_demonstrated, escalated] }", "declined_demonstrated escalated")]
+    [InlineData("{ from: person_triage, complete: true }", "declined_blocking declined_demonstrated escalated")]
+    [InlineData("{ from: person_triage, person_decides: [escalated] }", "declined_blocking declined_demonstrated escalated")]
+    [InlineData("{ from: person_triage, complete: false, person_decides: [escalated] }", "declined_blocking declined_demonstrated escalated")]
+    public void The_plan_says_which_classes_a_person_decides(string applyWith, string expected)
+    {
+        // A step that is not complete decides nothing for a person, so with none the classes are the default (docs/04 s11.2).
+        var (core, diagnostics) = Started(applyWith);
+        Assert.True(core is not null, string.Join("; ", diagnostics.Select(x => x.Message)));
+
+        Assert.Equal(expected, string.Join(" ", FindingsLedger.PersonClasses(core.Plan).Order(StringComparer.Ordinal)));
+    }
+
+    [Theory]
+    [InlineData("{ from: person_triage, complete: true, person_decides: { expr: \"params.classes\" } }", "findings.triage input 'person_decides' must be written as a literal")]
+    [InlineData("{ from: person_triage, complete: true, person_decides: [escalated, open] }", "findings.triage input 'person_decides' must name one or more of escalated, declined_blocking, declined_demonstrated")]
+    [InlineData("{ from: person_triage, complete: true, person_decides: ~ }", "findings.triage input 'person_decides' must be written as a literal value, not null")]
+    [InlineData("{ from: person_triage, complete: true, person_decides: [] }", "findings.triage input 'person_decides' must not be empty")]
+    [InlineData("{ from: person_triage, complete: ~, person_decides: [escalated] }", "findings.triage input 'complete' must be written as a literal value, not null")]
+    [InlineData("{ from: person_triage, complete: { expr: \"true\" }, person_decides: [escalated] }", "findings.triage input 'complete' must be written as a literal")]
+    public void Person_decides_is_a_literal_list_of_the_classes(string applyWith, string expected)
+    {
+        var (core, diagnostics) = Started(applyWith);
+
+        Assert.Null(core);
+        Assert.Contains(diagnostics, x => x.Check == Checks.StepInputs && x.Message.Contains(expected, StringComparison.Ordinal));
     }
 }

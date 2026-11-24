@@ -206,7 +206,7 @@ public sealed class Harness : IAsyncDisposable
     {
         var forge = InMemoryForge.Named(world);
         var repo = forge.CreateRepository(RepoName, new Dictionary<string, string> { ["feature-flow.yaml"] = Manifest, ["src/App.cs"] = "class App {}\n" });
-        forge.Protect(repo, new BranchProtection("main", true, true, 1, [], false));
+        forge.Protect(repo, new BranchProtection("main", true, true, 1, []));
     }
 
     /// <summary>Runs <c>ff run ...</c> in this process against this engine's API.</summary>

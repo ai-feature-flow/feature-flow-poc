@@ -159,31 +159,23 @@ public static class ChangeKinds
     public const string StepChanged = "step_changed";
 
     /// <summary>
-    /// One <c>run_changed</c> per distinct run whose runs, timeline, answers, overrides, artifacts, sessions, findings,
-    /// finding events, step states or pull requests the batch writes, in the order first written; then one
+    /// From the kinds' declared effects (<see cref="RecordKinds"/>): one <c>run_changed</c> per distinct run whose
+    /// <see cref="ChangeEffect.RunChanged"/> records the batch writes, in the order first written; then one
     /// <c>wait_opened</c> or <c>wait_closed</c> per wait record; then one <c>step_changed</c> per distinct run and step whose
     /// activity the batch writes (activity alone changes no run). Nothing for a batch of other records (repositories are no run's).
     /// </summary>
     public static IReadOnlyList<(string RunId, string Kind, string? WaitId, string? StepId)> Of(RecordBatch batch)
     {
-        var runs = new List<string>();
-        foreach (var runId in (batch.Runs ?? []).Select(r => r.RunId)
-                     .Concat((batch.Timeline ?? []).Select(t => t.RunId))
-                     .Concat((batch.Answers ?? []).Select(a => a.RunId))
-                     .Concat((batch.Overrides ?? []).Select(o => o.RunId))
-                     .Concat((batch.Artifacts ?? []).Select(a => a.RunId))
-                     .Concat((batch.Sessions ?? []).Select(s => s.RunId))
-                     .Concat((batch.Findings ?? []).Select(f => f.RunId))
-                     .Concat((batch.FindingEvents ?? []).Select(e => e.RunId))
-                     .Concat((batch.StepStates ?? []).Select(s => s.RunId))
-                     .Concat((batch.PullRequests ?? []).Select(p => p.RunId)))
-            if (!runs.Contains(runId, StringComparer.Ordinal))
-                runs.Add(runId);
+        IEnumerable<(RecordKind Kind, object Record)> Raising(ChangeEffect effect) =>
+            RecordKinds.All.Where(k => k.Raises == effect).SelectMany(k => (k.Of(batch) ?? []).Select(r => (k, r)));
         return
         [
-            .. runs.Select(r => (r, RunChanged, (string?)null, (string?)null)),
-            .. (batch.Waits ?? []).Select(w => (w.RunId, w.Open ? WaitOpened : WaitClosed, (string?)w.WaitId, (string?)null)),
-            .. (batch.Activity ?? []).Select(a => (a.RunId, a.StepId)).Distinct().Select(s => (s.RunId, StepChanged, (string?)null, (string?)s.StepId)),
+            .. Raising(ChangeEffect.RunChanged).Select(x => x.Kind.RunId(x.Record)!).Distinct(StringComparer.Ordinal)
+                .Select(r => (r, RunChanged, (string?)null, (string?)null)),
+            .. Raising(ChangeEffect.WaitOpenedOrClosed).Select(x => (x.Kind.RunId(x.Record)!, x.Kind.Opens!(x.Record) ? WaitOpened : WaitClosed,
+                (string?)x.Kind.Column("wait_id").Value(x.Record), (string?)null)),
+            .. Raising(ChangeEffect.StepChanged).Select(x => (x.Kind.RunId(x.Record)!, (string)x.Kind.Column("step_id").Value(x.Record)!)).Distinct()
+                .Select(s => (s.Item1, StepChanged, (string?)null, (string?)s.Item2)),
         ];
     }
 }

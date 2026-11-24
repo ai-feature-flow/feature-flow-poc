@@ -50,7 +50,7 @@ public sealed class SlackNotifications(
 
     public string Source => "slack";
 
-    public ProviderDescription Describe() => new("notifications", "slack", "0.1.0", new NotificationCapabilities(["slack"], true, true));
+    public ProviderDescription Describe() => new("notifications", "slack", "0.1.0", new NoCapabilities());
 
     public async Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken)
     {

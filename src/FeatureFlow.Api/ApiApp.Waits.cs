@@ -110,15 +110,16 @@ public static partial class ApiApp
                 return chosen is null ? null : PullRequestViewOf(chosen);
             }
 
-            /// <summary>How many of the run's own findings need a person (<see cref="FindingsLedger.NeedsPerson"/>).</summary>
+            /// <summary>How many of the run's own findings need a person (<see cref="FindingsLedger.NeedsPerson"/>), in the classes its plan's person triage decides.</summary>
             async Task<int> NeedPersonAsync()
             {
                 if (needPerson is { } known)
                     return known;
                 var people = PeopleOf(await AnswersAsync());
+                var classes = PersonClassesOf((await api.LoadPlanAsync(run, null, null, ct)).Plan?.Plan);
                 var count = 0;
-                foreach (var f in (await QueryAsync<FindingRecord>(Queries.Findings, run.RunId)).Where(f => f.RunId == run.RunId && FindingsLedger.AgentMayNotClear(f)))
-                    if (FindingsLedger.NeedsPerson(f, (await api.Records.QueryAsync<FindingEventRecord>(Queries.FindingEvents,
+                foreach (var f in (await QueryAsync<FindingRecord>(Queries.Findings, run.RunId)).Where(f => f.RunId == run.RunId && FindingsLedger.AgentMayNotClear(f, classes)))
+                    if (FindingsLedger.NeedsPerson(f, classes, (await api.Records.QueryAsync<FindingEventRecord>(Queries.FindingEvents,
                             new Dictionary<string, string> { ["run_id"] = f.RunId, ["finding_id"] = f.FindingId }, ct)).Unwrap(), people))
                         count++;
                 return (needPerson = count).Value;

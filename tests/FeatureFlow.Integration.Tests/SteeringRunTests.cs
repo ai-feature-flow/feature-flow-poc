@@ -315,7 +315,7 @@ public class SteeringRunTests
         var world = $"it-steer-{Guid.NewGuid():N}";
         var forge = InMemoryForge.Named(world);
         var repo = forge.CreateRepository(Repo, new Dictionary<string, string> { ["src/App.cs"] = "class App {}\n" });
-        forge.Protect(repo, new BranchProtection("main", true, true, 1, [], false));
+        forge.Protect(repo, new BranchProtection("main", true, true, 1, []));
         forge.Commit(repo, "refs/heads/ff/steer-pr", new Dictionary<string, string?> { ["src/App.cs"] = "class App { }\n" });
         await using var h = await Harness.StartAsync("steerpr",
             """{ "steer_pr:hold": { delay_from: wait_ms }, "steer_pr_parent:hold": { delay_from: wait_ms }, "steer_pr:note": { outputs: { pull_request: "acme/api#99" } } }""", without: ["vcs", "code_host", "ci"], libraries: Library,

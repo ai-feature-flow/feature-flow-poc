@@ -152,7 +152,7 @@ public class SurfacesTests
         var world = $"it-wake-{Guid.NewGuid():N}";
         var forge = InMemoryForge.Named(world);
         var repo = forge.CreateRepository(Repo, new Dictionary<string, string> { ["src/App.cs"] = "class App {}\n" });
-        forge.Protect(repo, new BranchProtection("main", true, true, 1, [], false));
+        forge.Protect(repo, new BranchProtection("main", true, true, 1, []));
         var head = forge.Commit(repo, "refs/heads/ff/slow", new Dictionary<string, string?> { ["src/App.cs"] = "class App { }\n" });
         forge.ReportCheck(repo, head, new CheckRun("build", CheckStates.InProgress, null, "ci"));
         var hooks = new ProviderFactory("code_host", "test_github", [], _ => new GitHubCodeHost(new GitHubApi(() => null))

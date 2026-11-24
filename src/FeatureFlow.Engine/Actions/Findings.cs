@@ -259,16 +259,17 @@ static class FindingsActions
         var allowed = run.Inputs.ContainsKey("states") ? run.Strings("states") : FindingStates.All;
         var (triage, problems) = ReadTriage(await run.ReadTextAsync(entry.Ref), $"{entry.StepId}'s {from} {entry.Ref}", byId, allowed);
         var history = new History(run);
-        if (problems.Count == 0 && run.Bool("complete", false))
+        if (problems.Count == 0 && FindingClasses.PersonDecides(run.Inputs.GetValueOrDefault("complete"), run.Inputs.GetValueOrDefault("person_decides")) is { } classes)
         {
-            // A person's triage answers for everything an agent may not clear alone (review F1, LOG 248): every escalated finding
-            // of this run, and every declined blocking or demonstrated one, unless a person already decided it (LOG 512). One it
-            // leaves out goes back to the person.
+            // A person's triage answers for everything the workflow says an agent may not clear alone (review F1, LOG 248): every
+            // finding of this run in the classes its person_decides names, all three unless it names some, unless a person
+            // already decided it (LOG 512). One it leaves out goes back to the person. The API reads the same classes from the
+            // plan through the same reader (FindingsLedger.PersonClasses).
             var people = await PeopleAsync(run);
-            foreach (var undecided in ledger.Where(f => f.RunId == run.Call.Step.RunId && FindingsLedger.AgentMayNotClear(f))
+            foreach (var undecided in ledger.Where(f => f.RunId == run.Call.Step.RunId && FindingsLedger.AgentMayNotClear(f, classes))
                          .Where(f => triage!.Entries.All(t => t.Finding != f.FindingId)))
-                if (FindingsLedger.NeedsPerson(undecided, await history.OfAsync(undecided), people))
-                    problems.Add($"{undecided.FindingId} is {undecided.State}{(undecided.State == FindingStates.Declined ? " though blocking or demonstrated" : "")}; this triage must decide it");
+                if (FindingsLedger.NeedsPerson(undecided, classes, await history.OfAsync(undecided), people))
+                    problems.Add($"{undecided.FindingId} is {string.Join(" and ", FindingsLedger.ClassesOf(undecided).Where(classes.Contains)).Replace('_', ' ')}; this triage must decide it");
         }
         var code = new CodeAt(run);
         if (problems.Count == 0)
@@ -338,12 +339,15 @@ static class FindingsActions
                 await PostDeclineAsync(run, byId[t.Finding], t);
 
         // Counted from the triage's decisions and the ledger, never from what its producer reports about itself (review F1): a
-        // restated state is no decision, so it does not send a finding back to a person (LOG 512).
+        // restated state is no decision, so it does not send a finding back to a person (LOG 512). A blocking demonstrated
+        // decline counts in both declined outputs.
+        long Declined(Func<ReportedFinding, bool> which) =>
+            decided.Count(t => t.State == FindingStates.Declined && which(byId[t.Finding].Finding));
         var outputs = new Dictionary<string, object?>
         {
             ["escalated"] = (long)decided.Count(t => t.State == FindingStates.Escalated),
-            ["declined_blocking"] = (long)decided.Count(t => t.State == FindingStates.Declined
-                && (byId[t.Finding].Finding.Blocking || byId[t.Finding].Finding.Basis == FindingBases.Demonstrated)),
+            ["declined_blocking"] = Declined(f => f.Blocking),
+            ["declined_demonstrated"] = Declined(f => f.Basis == FindingBases.Demonstrated),
         };
         return await ReportAsync(run, "applied", outputs, null);
     }

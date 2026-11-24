@@ -37,11 +37,34 @@ public class CompositionTests
             """), Factories);
         Assert.Equal("scripted", set.ForRun("agent_runtime", false)!.Describe().Name);
         Assert.Equal("recording", set.ForRun("agent_runtime", true)!.Describe().Name);
-        Assert.Contains("code_host.pull_request", set.Offered(false));
-        Assert.DoesNotContain("ci", set.Offered(false));
+        Assert.Contains("code_host.pull_request", set.Offered("code_host", null, false));
+        Assert.Empty(set.Offered("ci", null, false));
         // A type with no dry-run instance is absent from a dry run, never served by its default (LOG 362).
         Assert.Null(set.ForRun("code_host", true));
-        Assert.DoesNotContain("code_host.pull_request", set.Offered(true));
+        Assert.Empty(set.Offered("code_host", null, true));
+    }
+
+    /// <summary>
+    /// F16: the names offered for a type are those of the instance the run uses for it: the chosen one (an agent role's
+    /// runtime), else the default; in a dry run the dry_run instance, whatever was chosen.
+    /// </summary>
+    [Fact]
+    public void Capabilities_are_those_of_the_instance_the_run_picks()
+    {
+        var factories = Factories.Append(new("agent_runtime", "bare", [], _ => new Bare())).ToArray();
+        var set = ProviderComposer.Compose(Read("""
+              agent_runtime: { default: scripted, dry_run: recording, instances: { scripted: { script: s.yaml }, recording: { folder: r }, bare: {} } }
+            """), factories);
+        Assert.Contains("agent_runtime.mcp", set.Offered("agent_runtime", null, false));
+        Assert.Equal(["agent_runtime"], set.Offered("agent_runtime", "bare", false));
+        Assert.Contains("agent_runtime.mcp", set.Offered("agent_runtime", "bare", true));
+    }
+
+    sealed class Bare : IProvider
+    {
+        public ProviderDescription Describe() => new("agent_runtime", "bare", "0", new AgentRuntimeCapabilities(false, false));
+
+        public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => Task.FromResult(ProviderResult<Unit>.Success(default));
     }
 
     [Theory]

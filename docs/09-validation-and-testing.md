@@ -49,7 +49,7 @@ other documents cite them.
 | 18 | Required parameters bound | Run start | Yes |
 | 19 | Every library reference resolves; library requirements met; the lock written | Run start | Yes |
 | 20 | Retired: a repository's `library` section, which it checked, is refused (`docs/07` section 4, LOG 487). The number is not reused | None | None |
-| 21 | Capability negotiation: every capability the plan needs is offered by a configured provider. A step needs its action's capabilities and those of the inputs it sets (`wait.condition`'s condition; LOG 489) | Run start | Yes |
+| 21 | Capability negotiation: every capability the plan needs is offered by the instance that serves it. A step needs its action's capabilities and those of the inputs it sets (`wait.condition`'s condition; LOG 489); an agent step needs a sandbox, a VCS provider, and `agent_runtime.hooks` and `agent_runtime.mcp` of the runtime its role maps to (`role_mapping`), not the type's default; a dry run asks the `dry_run` instance. The message names the capability, the instance and the step, such as `capability agent_runtime.mcp is not offered by agent_runtime instance 'x' (role_mapping.implementer); needed by step implement`. A library naming a capability no provider declares (`requires.capabilities`) is refused the same way (F16) | Run start | Yes |
 | 22 | No request exceeds a locked organisation cap (`docs/05` section 3.1): at run start, attempts and races, the merge floors (checks and tests before merging), auto-resolution and the root budget; on a patch, the steps it adds or changes, for attempts, races and the merge floors | Run start, Patch | Yes |
 | 23 | **F1**: no merge step into a default branch has `engine_can_merge: true` unless the organisation allows it for that repository. The default branch is read from the code host | Run start | Yes |
 | 24 | Branch protection exists on each target repository's default branch; classic protection or rulesets both count (LOG 147) | Run start | Yes |
@@ -59,7 +59,7 @@ other documents cite them.
 | 28 | Patch: the result passes every load check | Patch | Yes |
 | 29 | Patch: an agent's patch needs a person: protected content touched or left unrun, or a step added inside it; a role outside `planning.allowed_roles`; a child template outside `planning.templates`; a step added or replaced with `planning` wider than the proposer's; or review required by the step (a child's, at its parent) or the organisation | Patch | **Pending decision** (`docs/05` section 6) |
 | 30 | Patch: relaxes a safety floor | Patch | **Rejected** |
-| 31 | Step inputs satisfy the action's input schema (`docs/04` section 2): every `with` key is an input of the action, and a value has the input's kind and allowed values. Literals are checked at load, expressions when evaluated at step start (LOG 359), for every action, `run.child` and `plan.expand` included (LOG 488) | Load, Step start | Yes |
+| 31 | Step inputs satisfy the action's input schema (`docs/04` section 2): every `with` key is an input of the action, and a value has the input's kind and allowed values. Literals are checked at load, expressions when evaluated at step start (LOG 359), for every action, `run.child` and `plan.expand` included (LOG 488). An input marked literal (`findings.triage`'s `complete` and `person_decides`) is refused at load when written as an expression, null or empty (LOG 556) | Load, Step start | Yes |
 | 32 | Consumed artifacts exist and validate | Step start | Yes |
 | 33 | Every `tier_tags` tag matches a tier in the manifest read at this step | Step start | Yes |
 | 34 | Unused parameter | Load | No |
@@ -142,7 +142,7 @@ CI.
 | Replay | Recorded histories replay against the changed interpreter | default |
 | Failure injection | Worker crash, lost sandbox, Temporal unavailable, hook endpoint unreachable, continue-as-new under load with children and open decisions, stale patch | integration; stale patch and hook endpoint unreachable: default |
 | Run-time rules | Each rule in section 3 | default, integration |
-| Provider contracts | Each interface's suite, including every documented success response | default, integration, cluster |
+| Provider contracts | Each interface's suite, including every documented success response; for the record store also `RecordKindContract`, generated from the record kind declarations (each kind's write rule, each query's forms, ordinal order), which fails when a declared kind or query has no sample or case, run on SQLite (default) and Postgres (integration) | default, integration, cluster |
 | Merge race | Two work branches catch up from the same parent head; the second merge gets `base_moved` and loops; repeated refusals exhaust the allowance and escalate | integration |
 | Agent reporting | `report`, `ask_human` (including across a worker restart), `checkpoint`; `inspect_plan` and `propose_patch`, a staged patch carried by the report and held for a person (`docs/04` section 6.1) | integration |
 | Pre-submit parity | A session's check and the later step receive the same task, tools, model and commit | integration |

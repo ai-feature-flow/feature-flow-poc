@@ -427,7 +427,7 @@ public abstract class AgentRuntimeContract : ContractBase
 
         public void Put(string path, string content) => files[path] = (content, false);
 
-        public ProviderDescription Describe() => new("sandbox", "contract", "0", new SandboxCapabilities(["linux"], false, false, true, false));
+        public ProviderDescription Describe() => new("sandbox", "contract", "0", new NoCapabilities());
 
         public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => Done(ProviderResult<Unit>.Success(default));
 

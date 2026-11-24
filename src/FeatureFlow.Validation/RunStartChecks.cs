@@ -17,11 +17,22 @@ public static class RunStartChecks
     /// <summary>The plan schema this engine reads (docs/08 section 2, <c>requires.plan_schema</c>).</summary>
     public const long PlanSchema = 1;
 
-    /// <summary>What an agent step needs (docs/04 section 3): a sandbox, an agent runtime and a VCS provider.</summary>
-    public static readonly IReadOnlyList<string> AgentNeeds = ["sandbox", "agent_runtime", "vcs"];
+    /// <summary>
+    /// What an agent step needs (docs/04 section 3): a sandbox, a VCS provider and an agent runtime, and of the runtime its
+    /// role maps to the hook reading (the step's tool calls are held and recorded through hooks) and the MCP server (the
+    /// engine's tools).
+    /// </summary>
+    public static readonly IReadOnlyList<string> AgentNeeds = ["sandbox", "vcs", "agent_runtime", "agent_runtime.hooks", "agent_runtime.mcp"];
 
     /// <summary>What every run needs: the stores (docs/02 section 5).</summary>
     public static readonly IReadOnlyList<string> RunNeeds = ["artifact_store", "record_store"];
+
+    /// <summary>One need of a plan: the capability, who needs it, and whether an agent step does, with its role (which picks the runtime instance).</summary>
+    public sealed record Need(string Name, string By, bool AgentStep = false, string? Role = null)
+    {
+        /// <summary>The provider type the need is of: a <c>type.flag</c> need implies its type.</summary>
+        public string Type => Name.Contains('.') ? Name[..Name.IndexOf('.')] : Name;
+    }
 
     /// <summary>
     /// The capabilities a plan needs, with the first step that needs each (null for the run or a library). An action's are
@@ -31,11 +42,19 @@ public static class RunStartChecks
     public static IReadOnlyDictionary<string, string> Needs(Plan plan, LibrarySet libraries)
     {
         var needs = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        foreach (var need in AllNeeds(plan, libraries))
+            needs.TryAdd(need.Name, need.By);
+        return needs;
+    }
+
+    /// <summary>Every need of the plan, in order: the run's, each library's, then each step's.</summary>
+    static IEnumerable<Need> AllNeeds(Plan plan, LibrarySet libraries)
+    {
         foreach (var n in RunNeeds)
-            needs.TryAdd(n, "every run");
+            yield return new Need(n, "every run");
         foreach (var library in libraries.All.OrderBy(l => l.Name, StringComparer.Ordinal))
             foreach (var n in library.Manifest.RequiredCapabilities)
-                needs.TryAdd(n, $"library {library.Name} (requires.capabilities)");
+                yield return new Need(n, $"library {library.Name} (requires.capabilities)");
         foreach (var step in plan.AllSteps)
         {
             IEnumerable<string> stepNeeds = step.Form switch
@@ -46,27 +65,39 @@ public static class RunStartChecks
             };
             if (step.Tracker is not null)
                 stepNeeds = stepNeeds.Append("tracker");
+            var agent = step.Form == StepForm.Agent;
             foreach (var n in stepNeeds)
-                needs.TryAdd(n, $"step {step.Id}");
+                yield return new Need(n, $"step {step.Id}", agent, agent ? step.Agent?.Role?.Reference?.Name : null);
         }
 
         foreach (var use in plan.Instances.Where(i => i.Tracker is not null))
-            needs.TryAdd("tracker", $"fragment use {use.Id} (tracker)");
-
-        return needs;
+            yield return new Need("tracker", $"fragment use {use.Id} (tracker)");
     }
 
-    /// <summary>Check 21: every capability the plan needs is offered by a configured provider.</summary>
-    public static void Capabilities(Plan plan, LibrarySet libraries, IReadOnlySet<string> offered, DiagnosticBag d)
+    /// <summary>
+    /// Check 21: every capability the plan needs is offered by the instance that serves it. <paramref name="offered"/> gives the
+    /// names an instance offers, by type and the run's choice of instance (null for the type's own); an agent step's
+    /// <c>agent_runtime</c> needs are asked of the instance its role maps to (<paramref name="runtimeOfRole"/>: the instance and
+    /// the <c>role_mapping</c> key that chose it, the role's own or <c>default</c>; null where none is mapped), as the agent step
+    /// picks it. A missing capability is reported once per instance, for the first that needs it, and a flag not at all where
+    /// its type is already reported missing.
+    /// </summary>
+    public static void Capabilities(Plan plan, LibrarySet libraries, Func<string, string?, IReadOnlySet<string>> offered,
+        Func<string?, (string Instance, string Key)?> runtimeOfRole, DiagnosticBag d)
     {
-        foreach (var (need, by) in Needs(plan, libraries))
-            if (!offered.Contains(need))
-            {
-                var what = need.Contains('.')
-                    ? $"capability {need} is not offered by the configured {need[..need.IndexOf('.')]} provider"
-                    : $"no {need} provider is configured";
-                d.Add(Checks.Capabilities, $"{what}; needed by {by}");
-            }
+        var reported = new HashSet<(string, string?)>();
+        foreach (var need in AllNeeds(plan, libraries))
+        {
+            var entry = need.AgentStep && need.Type == "agent_runtime" ? runtimeOfRole(need.Role) : null;
+            var mapped = entry?.Instance;
+            if (offered(need.Type, mapped).Contains(need.Name) || reported.Contains((need.Type, mapped)) || !reported.Add((need.Name, mapped)))
+                continue;
+            var provider = entry is { } e ? $"{need.Type} instance '{e.Instance}' (role_mapping.{e.Key})" : $"the configured {need.Type} provider";
+            var what = need.Name.Contains('.') ? $"capability {need.Name} is not offered by {provider}"
+                : mapped is null ? $"no {need.Name} provider is configured"
+                : $"{provider} is not configured";
+            d.Add(Checks.Capabilities, $"{what}; needed by {need.By}");
+        }
     }
 
     /// <summary>

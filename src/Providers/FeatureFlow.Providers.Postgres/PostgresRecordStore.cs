@@ -7,15 +7,12 @@ using Npgsql;
 namespace FeatureFlow.Providers.Postgres;
 
 /// <summary>
-/// The record store on Postgres (docs/06 section 3.12; the small-company profile, docs/07 section 6). The same tables and
-/// rules as the SQLite store: runs (the newer record kept, by <c>updated_at</c>), waits, locks, agent steps, questions, findings, sessions and their checks,
-/// step states, pull requests and repositories are kept by
-/// key, the last write winning (a closing wait keeps what its opening record said; an answered or timed-out question is
-/// not reopened); the timeline, finding events, the artifact index and notifications are kept once per key, so a retried
-/// append adds nothing; answers, reports, agent events and overrides are appended. Every key starts with
-/// <c>org_id</c> (docs/02 section 5). Each batch also writes its changes, numbered in commit order (<see cref="AppendChangesAsync"/>).
-/// The connection string is a secret, resolved when the store is first used; the
-/// schema is created or migrated then (<see cref="Schema"/>).
+/// The record store on Postgres (docs/06 section 3.12; the small-company profile, docs/07 section 6). The same tables as
+/// the SQLite store: every kind is written by its declared rule and every named query built from its declaration
+/// (<see cref="RecordKinds"/>, <see cref="RecordQueries"/>); only the open waits and the changes are written here. Text
+/// orders by <c>COLLATE "C"</c>, which is ordinal. Every key starts with <c>org_id</c> (docs/02 section 5). Each batch also
+/// writes its changes, numbered in commit order (<see cref="AppendChangesAsync"/>). The connection string is a secret,
+/// resolved when the store is first used; the schema is created or migrated then (<see cref="Schema"/>).
 /// </summary>
 public sealed class PostgresRecordStore(Func<CancellationToken, Task<ProviderResult<string>>> connectionString) : IRecordStoreProvider, IAsyncDisposable
 {
@@ -99,12 +96,18 @@ public sealed class PostgresRecordStore(Func<CancellationToken, Task<ProviderRes
         }
     }
 
-    static async Task Execute(NpgsqlConnection connection, NpgsqlTransaction? transaction, string sql, CancellationToken ct, params (string, object?)[] parameters)
+    static NpgsqlCommand Command(NpgsqlConnection connection, NpgsqlTransaction? transaction, string sql, IEnumerable<(string, object?)> parameters)
     {
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("o", Org);
         foreach (var (name, value) in parameters)
             command.Parameters.AddWithValue(name, value ?? DBNull.Value);
+        return command;
+    }
+
+    static async Task Execute(NpgsqlConnection connection, NpgsqlTransaction? transaction, string sql, CancellationToken ct, params (string, object?)[] parameters)
+    {
+        await using var command = Command(connection, transaction, sql, parameters);
         await command.ExecuteNonQueryAsync(ct);
     }
 
@@ -113,7 +116,7 @@ public sealed class PostgresRecordStore(Func<CancellationToken, Task<ProviderRes
     /// U+FFFD, so text from outside (an agent's report, a reviewer's finding) never leaves a record unwritable (LOG 290).
     /// A literal backslash before <c>u0000</c> is left alone.
     /// </summary>
-    static string Body<T>(T record) => EscapedNul.Replace(JsonSerializer.Serialize(record, Json), @"$1\uFFFD");
+    static string Body(object record, Type type) => EscapedNul.Replace(JsonSerializer.Serialize(record, type, Json), @"$1\uFFFD");
 
     static readonly Regex EscapedNul = new(@"(?<!\\)((?:\\\\)*)\\u0000", RegexOptions.Compiled);
 
@@ -122,175 +125,98 @@ public sealed class PostgresRecordStore(Func<CancellationToken, Task<ProviderRes
         {
             await using var connection = await OpenAsync(ct);
             await using var tx = await connection.BeginTransactionAsync(ct);
-            Task Run(string sql, params (string, object?)[] p) => Execute(connection, tx, sql, ct, p);
-
-            foreach (var run in records.Runs ?? [])
-                await Run("""
-                    INSERT INTO runs VALUES (@o, @r, @p, @u, @b::jsonb)
-                    ON CONFLICT (org_id, run_id) DO UPDATE SET parent_run_id = excluded.parent_run_id, updated_at = excluded.updated_at, body = excluded.body
-                    WHERE runs.updated_at <= excluded.updated_at
-                    """, ("r", run.RunId), ("p", run.ParentRunId), ("u", run.UpdatedAt), ("b", Body(run)));
-            foreach (var wait in records.Waits ?? [])
-            {
-                // A record that closes a wait keeps what the opening record said about it.
-                if (wait.Open)
-                    await Run("""
-                        INSERT INTO waits VALUES (@o, @r, @w, true, @b::jsonb)
-                        ON CONFLICT (org_id, run_id, wait_id) DO UPDATE SET open = true, body = excluded.body
-                        """, ("r", wait.RunId), ("w", wait.WaitId), ("b", Body(wait)));
-                else
-                    await Run("""
-                        INSERT INTO waits VALUES (@o, @r, @w, false, @b::jsonb)
-                        ON CONFLICT (org_id, run_id, wait_id) DO UPDATE SET open = false,
-                            body = jsonb_set(jsonb_set(waits.body, '{open}', 'false'), '{updatedAt}', @u::jsonb)
-                        """, ("r", wait.RunId), ("w", wait.WaitId), ("b", Body(wait)), ("u", Body(wait.UpdatedAt)));
-            }
-
-            foreach (var entry in records.Timeline ?? [])
-                await Run("INSERT INTO timeline VALUES (@o, @r, @s, @b::jsonb) ON CONFLICT DO NOTHING", ("r", entry.RunId), ("s", entry.Sequence), ("b", Body(entry)));
-            foreach (var answer in records.Answers ?? [])
-                await Run("INSERT INTO answers (org_id, run_id, body) VALUES (@o, @r, @b::jsonb)", ("r", answer.RunId), ("b", Body(answer)));
-            foreach (var l in records.Locks ?? [])
-                await Run("INSERT INTO locks VALUES (@o, @r, @b::jsonb) ON CONFLICT (org_id, run_id) DO UPDATE SET body = excluded.body", ("r", l.RunId), ("b", Body(l)));
-            foreach (var step in records.AgentSteps ?? [])
-                await Keyed(Run, "step", step.StepKey, step.StepKey, Body(step));
-            foreach (var question in records.Questions ?? [])
-            {
-                // An answer or a timeout is final: a late "open" from a retried endpoint call does not reopen it.
-                if (question.Status == QuestionRecord.Open)
-                    await Run("INSERT INTO agent_keyed VALUES (@o, 'question', @k, @s, @b::jsonb) ON CONFLICT DO NOTHING",
-                        ("k", question.QuestionId), ("s", question.StepKey), ("b", Body(question)));
-                else
-                    await Keyed(Run, "question", question.QuestionId, question.StepKey, Body(question));
-            }
-
-            foreach (var report in records.Reports ?? [])
-                await Run("INSERT INTO agent_log (org_id, kind, step_key, body) VALUES (@o, 'report', @s, @b::jsonb)", ("s", report.StepKey), ("b", Body(report)));
-            foreach (var e in records.AgentEvents ?? [])
-                await Run("INSERT INTO agent_log (org_id, kind, step_key, body) VALUES (@o, 'event', @s, @b::jsonb)", ("s", e.StepKey), ("b", Body(e)));
-            // The artifact index: once per run, step, execution and name, so a retried append adds nothing.
-            foreach (var a in records.Artifacts ?? [])
-                await Run("INSERT INTO artifacts (org_id, run_id, step_id, execution, name, body) VALUES (@o, @r, @s, @e, @n, @b::jsonb) ON CONFLICT DO NOTHING",
-                    ("r", a.RunId), ("s", a.StepId), ("e", a.Execution), ("n", a.Name), ("b", Body(a)));
-
-            // The findings ledger: a finding replaces the last; an event is appended once per run, finding and key.
-            foreach (var f in records.Findings ?? [])
-                await Run("INSERT INTO findings VALUES (@o, @r, @f, @b::jsonb) ON CONFLICT (org_id, run_id, finding_id) DO UPDATE SET body = excluded.body",
-                    ("r", f.RunId), ("f", f.FindingId), ("b", Body(f)));
-            foreach (var e in records.FindingEvents ?? [])
-                await Run("INSERT INTO finding_events (org_id, run_id, finding_id, key, body) VALUES (@o, @r, @f, @k, @b::jsonb) ON CONFLICT DO NOTHING",
-                    ("r", e.RunId), ("f", e.FindingId), ("k", e.Key), ("b", Body(e)));
-
-            // People and steering: overrides appended; a notification kept once per key, the first write winning; sessions and checks replaced.
-            foreach (var o in records.Overrides ?? [])
-                await Run("INSERT INTO overrides (org_id, run_id, body) VALUES (@o, @r, @b::jsonb)", ("r", o.RunId), ("b", Body(o)));
-            foreach (var n in records.Notifications ?? [])
-                await Run("INSERT INTO notifications (org_id, key, run_id, body) VALUES (@o, @k, @r, @b::jsonb) ON CONFLICT DO NOTHING",
-                    ("k", n.Key), ("r", n.RunId), ("b", Body(n)));
-            foreach (var s in records.Sessions ?? [])
-                await Run("INSERT INTO sessions VALUES (@o, @s, @r, @b::jsonb) ON CONFLICT (org_id, session_id) DO UPDATE SET run_id = excluded.run_id, body = excluded.body",
-                    ("s", s.SessionId), ("r", s.RunId), ("b", Body(s)));
-            foreach (var c in records.SessionChecks ?? [])
-                await Run("INSERT INTO session_checks VALUES (@o, @s, @c, @b::jsonb) ON CONFLICT (org_id, session_id, check_id) DO UPDATE SET body = excluded.body",
-                    ("s", c.SessionId), ("c", c.CheckId), ("b", Body(c)));
-
-            // The console (B1): step states, pull requests and repositories replace the last write by key.
-            foreach (var s in records.StepStates ?? [])
-                await Run("INSERT INTO step_states VALUES (@o, @r, @s, @b::jsonb) ON CONFLICT (org_id, run_id, step_id) DO UPDATE SET body = excluded.body",
-                    ("r", s.RunId), ("s", s.StepId), ("b", Body(s)));
-            foreach (var p in records.PullRequests ?? [])
-                await Run("INSERT INTO pull_requests VALUES (@o, @r, @p, @n, @b::jsonb) ON CONFLICT (org_id, run_id, repository, number) DO UPDATE SET body = excluded.body",
-                    ("r", p.RunId), ("p", p.Repository), ("n", p.Number), ("b", Body(p)));
-            foreach (var r in records.Repositories ?? [])
-                await Run("INSERT INTO repositories VALUES (@o, @n, @b::jsonb) ON CONFLICT (org_id, name) DO UPDATE SET body = excluded.body",
-                    ("n", r.Name), ("b", Body(r)));
-
-            // Live activity: once per run, step, execution, session and sequence, so a re-read adds nothing.
-            foreach (var a in records.Activity ?? [])
-                await Run("INSERT INTO activity VALUES (@o, @r, @s, @e, @n, @q, @b::jsonb) ON CONFLICT DO NOTHING",
-                    ("r", a.RunId), ("s", a.StepId), ("e", a.Execution), ("n", a.Session), ("q", a.Sequence), ("b", Body(a)));
-
+            foreach (var kind in RecordKinds.All)
+                foreach (var record in kind.Of(records) ?? [])
+                    await Write(connection, tx, kind, record, ct);
             await AppendChangesAsync(connection, tx, records, ct);
             await tx.CommitAsync(ct);
             return default(Unit);
         }, cancellationToken);
 
-    static Task Keyed(Func<string, (string, object?)[], Task> run, string kind, string key, string stepKey, string body) =>
-        run("INSERT INTO agent_keyed VALUES (@o, @kind, @k, @s, @b::jsonb) ON CONFLICT (org_id, kind, key) DO UPDATE SET step_key = excluded.step_key, body = excluded.body",
-            [("kind", kind), ("k", key), ("s", stepKey), ("b", body)]);
-
-    /// <summary>The run named <c>@r</c> and every run below it, by parent links, as the table <c>tree</c>.</summary>
-    const string RunTree = """
-        WITH RECURSIVE tree(id) AS (
-            SELECT @r::text
-            UNION SELECT runs.run_id FROM runs JOIN tree ON runs.parent_run_id = tree.id WHERE runs.org_id = @o)
-        """ + "\n";
+    /// <summary>One record by its kind's rule (<see cref="WriteRule"/>).</summary>
+    static Task Write(NpgsqlConnection connection, NpgsqlTransaction tx, RecordKind kind, object record, CancellationToken ct)
+    {
+        var rule = kind.RuleFor(record);
+        var columns = kind.AllColumns.ToList();
+        var names = (kind.Discriminator is null ? "" : "kind, ") + string.Concat(columns.Select(c => c.Name + ", "));
+        var values = (kind.Discriminator is null ? "" : "@d, ") + string.Concat(columns.Select((_, i) => $"@c{i}, "));
+        var update = string.Concat(kind.Columns.Select(c => $"{c.Name} = excluded.{c.Name}, "));
+        var sql = $"INSERT INTO {kind.Table} (org_id, {names}body) VALUES (@o, {values}@b::jsonb)" + rule switch
+        {
+            WriteRule.Append => "",
+            WriteRule.KeepFirst => " ON CONFLICT DO NOTHING",
+            _ => $" ON CONFLICT (org_id, {(kind.Discriminator is null ? "" : "kind, ")}{string.Join(", ", kind.Key.Select(c => c.Name))}) DO UPDATE SET {update}body = "
+                 + (rule == WriteRule.CloseKeepsOpening
+                     ? $"jsonb_set(jsonb_set({kind.Table}.body, '{{open}}', 'false'), '{{updatedAt}}', excluded.body->'updatedAt')"
+                     : "excluded.body")
+                 + (rule == WriteRule.ReplaceIfNotOlder ? $" WHERE {kind.Table}.updated_at <= excluded.updated_at" : ""),
+        };
+        return Execute(connection, tx, sql, ct,
+        [
+            ("b", Body(record, kind.Record)),
+            .. kind.Discriminator is { } d ? [("d", (object?)d)] : Array.Empty<(string, object?)>(),
+            .. columns.Select((c, i) => ($"c{i}", c.Value(record))),
+        ]);
+    }
 
     public Task<ProviderResult<IReadOnlyList<T>>> QueryAsync<T>(string queryName, IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken)
     {
-        string P(string key) => parameters.TryGetValue(key, out var value) ? value : throw new ArgumentException($"query {queryName} needs {key}");
-        (string Sql, Type Type, (string, object?)[] Args) query = queryName switch
+        var (sql, args) = queryName switch
         {
-            Queries.Changes or Queries.LatestChange => ChangesQuery(queryName, parameters),
-            Queries.Run => ("SELECT body FROM runs WHERE org_id = @o AND run_id = @r", typeof(RunRecord), [("r", P("run_id"))]),
-            Queries.Runs when parameters.ContainsKey("parent_run_id") =>
-                ("SELECT body FROM runs WHERE org_id = @o AND parent_run_id = @p ORDER BY run_id", typeof(RunRecord), [("p", P("parent_run_id"))]),
-            Queries.Runs => ("SELECT body FROM runs WHERE org_id = @o ORDER BY updated_at DESC LIMIT 200", typeof(RunRecord), []),
-            Queries.Waits when parameters.GetValueOrDefault("open") == "true" =>
-                ("SELECT body FROM waits WHERE org_id = @o AND run_id = @r AND open ORDER BY wait_id", typeof(WaitRecord), [("r", P("run_id"))]),
-            Queries.Waits => ("SELECT body FROM waits WHERE org_id = @o AND run_id = @r ORDER BY wait_id", typeof(WaitRecord), [("r", P("run_id"))]),
-            Queries.OpenWaits => (OpenWaitsSql, typeof(OpenWaitRecord), []),
-            Queries.Timeline => ("SELECT body FROM timeline WHERE org_id = @o AND run_id = @r AND sequence > @a ORDER BY sequence", typeof(TimelineRecord),
-                [("r", P("run_id")), ("a", long.Parse(parameters.GetValueOrDefault("after", "0"), CultureInfo.InvariantCulture))]),
-            Queries.Answers => ("SELECT body FROM answers WHERE org_id = @o AND run_id = @r ORDER BY id", typeof(AnswerRecord), [("r", P("run_id"))]),
-            Queries.Lock => ("SELECT body FROM locks WHERE org_id = @o AND run_id = @r", typeof(LockRecord), [("r", P("run_id"))]),
-            Queries.AgentStep => ("SELECT body FROM agent_keyed WHERE org_id = @o AND kind = 'step' AND key = @k", typeof(AgentStepRecord), [("k", P("step_key"))]),
-            Queries.Question => ("SELECT body FROM agent_keyed WHERE org_id = @o AND kind = 'question' AND key = @k", typeof(QuestionRecord), [("k", P("question_id"))]),
-            Queries.Questions => ("SELECT body FROM agent_keyed WHERE org_id = @o AND kind = 'question' AND step_key = @s ORDER BY key", typeof(QuestionRecord), [("s", P("step_key"))]),
-            Queries.Reports => ("SELECT body FROM agent_log WHERE org_id = @o AND kind = 'report' AND step_key = @s ORDER BY id", typeof(ReportRecord), [("s", P("step_key"))]),
-            Queries.AgentEvents => ("SELECT body FROM agent_log WHERE org_id = @o AND kind = 'event' AND step_key = @s ORDER BY id", typeof(AgentEventRecord), [("s", P("step_key"))]),
-            // A run's artifacts and every descendant run's, by parent links, in the order appended.
-            Queries.Artifacts => (RunTree + "SELECT body FROM artifacts WHERE org_id = @o AND run_id IN (SELECT id FROM tree) ORDER BY id", typeof(ArtifactRecord), [("r", P("run_id"))]),
-            Queries.Findings => (RunTree + "SELECT body FROM findings WHERE org_id = @o AND run_id IN (SELECT id FROM tree) ORDER BY run_id, finding_id", typeof(FindingRecord),
-                [("r", P("run_id"))]),
-            Queries.FindingEvents => ("SELECT body FROM finding_events WHERE org_id = @o AND run_id = @r AND finding_id = @f ORDER BY id", typeof(FindingEventRecord),
-                [("r", P("run_id")), ("f", P("finding_id"))]),
-            Queries.Overrides => ("SELECT body FROM overrides WHERE org_id = @o AND run_id = @r ORDER BY id", typeof(OverrideRecord), [("r", P("run_id"))]),
-            Queries.Notification => ("SELECT body FROM notifications WHERE org_id = @o AND key = @k", typeof(NotificationRecord), [("k", P("key"))]),
-            Queries.Notifications => ("SELECT body FROM notifications WHERE org_id = @o AND run_id = @r ORDER BY id", typeof(NotificationRecord), [("r", P("run_id"))]),
-            Queries.Session => ("SELECT body FROM sessions WHERE org_id = @o AND session_id = @s", typeof(SessionRecord), [("s", P("session_id"))]),
-            Queries.Sessions => ("SELECT body FROM sessions WHERE org_id = @o AND run_id = @r ORDER BY session_id", typeof(SessionRecord), [("r", P("run_id"))]),
-            Queries.SessionChecks => ("SELECT body FROM session_checks WHERE org_id = @o AND session_id = @s ORDER BY check_id", typeof(SessionCheckRecord),
-                [("s", P("session_id"))]),
-            Queries.StepStates => ("SELECT body FROM step_states WHERE org_id = @o AND run_id = @r ORDER BY step_id COLLATE \"C\"", typeof(StepStateRecord), [("r", P("run_id"))]),
-            Queries.PullRequests => ("SELECT body FROM pull_requests WHERE org_id = @o AND run_id = @r ORDER BY repository COLLATE \"C\", number", typeof(PullRequestRecord),
-                [("r", P("run_id"))]),
-            Queries.Repositories => ("SELECT body FROM repositories WHERE org_id = @o ORDER BY name COLLATE \"C\"", typeof(RepositoryRecord), []),
-            Queries.RecentAnswers => ("SELECT body FROM answers WHERE org_id = @o AND body->>'actor' = @a ORDER BY id DESC LIMIT @l", typeof(AnswerRecord),
-                [("a", P("actor")), ("l", Math.Clamp(int.Parse(parameters.GetValueOrDefault("limit", "500"), CultureInfo.InvariantCulture), 1, 500))]),
-            Queries.Activity when parameters.TryGetValue("execution", out var execution) =>
-                ("SELECT body FROM activity WHERE org_id = @o AND run_id = @r AND step_id = @s AND execution = @e ORDER BY session, sequence", typeof(ActivityRecord),
-                    [("r", P("run_id")), ("s", P("step_id")), ("e", int.Parse(execution, CultureInfo.InvariantCulture))]),
-            Queries.Activity => ("SELECT body FROM activity WHERE org_id = @o AND run_id = @r AND step_id = @s ORDER BY execution, session, sequence", typeof(ActivityRecord),
-                [("r", P("run_id")), ("s", P("step_id"))]),
-            _ => throw new ArgumentException($"unknown query {queryName}"),
+            Queries.Changes or Queries.LatestChange => Native<T, ChangeRecord>(queryName, ChangesQuery(queryName, parameters)),
+            Queries.OpenWaits => Native<T, OpenWaitRecord>(queryName, (OpenWaitsSql, [])),
+            _ => Select(RecordQueries.For<T>(queryName), parameters),
         };
-        if (query.Type != typeof(T))
-            throw new ArgumentException($"query {queryName} returns {query.Type.Name}, not {typeof(T).Name}");
-
         return Guarded<IReadOnlyList<T>>(async ct =>
         {
             await using var connection = await OpenAsync(ct);
-            await using var command = new NpgsqlCommand(query.Sql, connection);
-            command.Parameters.AddWithValue("o", Org);
-            foreach (var (name, value) in query.Args)
-                command.Parameters.AddWithValue(name, value ?? DBNull.Value);
+            await using var command = Command(connection, null, sql, args);
             var list = new List<T>();
             await using var reader = await command.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
                 list.Add(JsonSerializer.Deserialize<T>(reader.GetString(0), Json)!);
             return list;
         }, cancellationToken);
+    }
+
+    static (string, (string, object?)[]) Native<T, TRecord>(string queryName, (string, (string, object?)[]) query) =>
+        typeof(T) == typeof(TRecord) ? query : throw new ArgumentException($"query {queryName} returns {typeof(TRecord).Name}, not {typeof(T).Name}");
+
+    /// <summary>A declared query (<see cref="RecordQueries"/>) as SQL: its variant's filters, a run tree by parent links, its order and limit.</summary>
+    static (string, (string, object?)[]) Select(RecordQuery query, IReadOnlyDictionary<string, string> parameters)
+    {
+        var variant = query.VariantFor(parameters);
+        var where = new List<string> { "org_id = @o" };
+        var args = new List<(string, object?)>();
+        var tree = "";
+        if (query.Kind.Discriminator is { } d)
+        {
+            where.Add("kind = @d");
+            args.Add(("d", d));
+        }
+
+        foreach (var (filter, i) in variant.Filters.Select((f, i) => (f, i)))
+        {
+            if (query.Argument(filter, parameters) is not { } value)
+                continue;
+            args.Add(($"f{i}", value));
+            if (variant.RunTree && filter.Field == "run_id")
+            {
+                tree = $"WITH RECURSIVE tree(id) AS (SELECT @f{i}::text UNION SELECT runs.run_id FROM runs JOIN tree ON runs.parent_run_id = tree.id WHERE runs.org_id = @o) ";
+                where.Add("run_id IN (SELECT id FROM tree)");
+                continue;
+            }
+
+            var field = filter.BodyField ? $"body->>'{filter.Field}'" : filter.Field;
+            where.Add($"{field} {(filter.Op == FilterOp.After ? ">" : "=")} @f{i}");
+        }
+
+        string Order(string column) =>
+            (column == QueryVariant.Insertion ? "id" : query.Kind.Column(column).Type == typeof(string) ? column + " COLLATE \"C\"" : column)
+            + (variant.Descending ? " DESC" : "");
+        var order = variant.OrderBy.Count == 0 ? "" : " ORDER BY " + string.Join(", ", variant.OrderBy.Select(Order));
+        var limit = variant.LimitFor(parameters) is { } l ? $" LIMIT {l}" : "";
+        return ($"{tree}SELECT body FROM {query.Kind.Table} WHERE {string.Join(" AND ", where)}{order}{limit}", [.. args]);
     }
 
     // ---- Changes (docs/06 section 3.12, LOG 397): what GET /events reports, written in the batch's transaction ----
@@ -316,12 +242,11 @@ public sealed class PostgresRecordStore(Func<CancellationToken, Task<ProviderRes
 
     const string ChangeJson = "SELECT jsonb_build_object('sequence', id, 'runId', run_id, 'kind', kind, 'waitId', wait_id, 'at', at, 'stepId', step_id) FROM changes WHERE org_id = @o";
 
-    static (string Sql, Type Type, (string, object?)[] Args) ChangesQuery(string queryName, IReadOnlyDictionary<string, string> parameters) =>
+    static (string, (string, object?)[]) ChangesQuery(string queryName, IReadOnlyDictionary<string, string> parameters) =>
         queryName == Queries.LatestChange
-            ? (ChangeJson + " ORDER BY id DESC LIMIT 1", typeof(ChangeRecord), [])
-            : (ChangeJson + " AND id > @a ORDER BY id LIMIT @l", typeof(ChangeRecord),
-                [("a", long.Parse(parameters.GetValueOrDefault("after", "0"), CultureInfo.InvariantCulture)),
-                 ("l", Math.Clamp(int.Parse(parameters.GetValueOrDefault("limit", "500"), CultureInfo.InvariantCulture), 1, 500))]);
+            ? (ChangeJson + " ORDER BY id DESC LIMIT 1", [])
+            : (ChangeJson + " AND id > @a ORDER BY id LIMIT @l",
+                [("a", long.Parse(parameters.GetValueOrDefault("after", "0"), CultureInfo.InvariantCulture)), ("l", QueryVariant.Page(parameters))]);
 
     // ---- Oversight (A3): the open waits of runs still going, for GET /attention (index waits_open, schema script 2) ----
 

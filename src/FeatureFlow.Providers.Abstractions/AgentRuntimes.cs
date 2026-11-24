@@ -149,7 +149,7 @@ public abstract class SandboxedAgentRuntime(AgentRuntimeOptions options, Func<IS
     /// </summary>
     protected abstract HookReply Unreachable { get; }
 
-    public ProviderDescription Describe() => new("agent_runtime", Kind, "0.1.0", new AgentRuntimeCapabilities(true, true, true, true, true, true, true, null));
+    public ProviderDescription Describe() => new("agent_runtime", Kind, "0.1.0", new AgentRuntimeCapabilities(true, true));
 
     public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => Task.FromResult(ProviderResult<Unit>.Success(default));
 

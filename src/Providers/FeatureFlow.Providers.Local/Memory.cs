@@ -512,7 +512,7 @@ public sealed class InMemoryVcs(InMemoryForge forge) : IVcsProvider
 
     public InMemoryForge Forge => forge;
 
-    public ProviderDescription Describe() => new("vcs", "memory", "0.1.0", new VcsCapabilities("git", true, true, false));
+    public ProviderDescription Describe() => new("vcs", "memory", "0.1.0", new NoCapabilities());
 
     public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => Done(ProviderResult<Unit>.Success(default));
 
@@ -660,7 +660,7 @@ public sealed class InMemoryCodeHost(InMemoryForge forge) : ICodeHostProvider
 {
     public InMemoryForge Forge => forge;
 
-    public ProviderDescription Describe() => new("code_host", "memory", "0.1.0", new CodeHostCapabilities(true, false, true, true, false, false));
+    public ProviderDescription Describe() => new("code_host", "memory", "0.1.0", new CodeHostCapabilities(true, true));
 
     public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => Task.FromResult(ProviderResult<Unit>.Success(default));
 
@@ -669,7 +669,7 @@ public sealed class InMemoryCodeHost(InMemoryForge forge) : ICodeHostProvider
 
     public Task<ProviderResult<BranchProtection>> GetBranchProtectionAsync(RepoRef repo, string branch, CancellationToken cancellationToken) =>
         Run("GetBranchProtection", repo, r => r.Refs.ContainsKey(InMemoryForge.Branch(branch))
-            ? ProviderResult<BranchProtection>.Success(r.Protection.GetValueOrDefault(branch) ?? new BranchProtection(branch, false, false, 0, [], false))
+            ? ProviderResult<BranchProtection>.Success(r.Protection.GetValueOrDefault(branch) ?? new BranchProtection(branch, false, false, 0, []))
             : ProviderResult<BranchProtection>.Failure("not_found", $"no branch {branch}"));
 
     public Task<ProviderResult<RepoFile?>> ReadFileAsync(RepoRef repo, string path, string reference, CancellationToken cancellationToken) =>
@@ -815,7 +815,7 @@ public sealed class InMemoryCi(InMemoryForge forge, Func<IArtifactStoreProvider>
 {
     public InMemoryForge Forge => forge;
 
-    public ProviderDescription Describe() => new("ci", "memory", "0.1.0", new CiCapabilities(true, true, true, false, false));
+    public ProviderDescription Describe() => new("ci", "memory", "0.1.0", new NoCapabilities());
 
     public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => Task.FromResult(ProviderResult<Unit>.Success(default));
 

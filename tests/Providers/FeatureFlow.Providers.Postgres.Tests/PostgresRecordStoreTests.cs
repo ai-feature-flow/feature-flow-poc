@@ -107,6 +107,16 @@ public sealed class PostgresActivityRecordsContract(PostgresServer server) : Act
     public ValueTask DisposeAsync() => store.DisposeAsync();
 }
 
+[Trait("Category", "Integration")]
+public sealed class PostgresRecordKindContract(PostgresServer server) : RecordKindContract, IAsyncDisposable
+{
+    readonly PostgresRecordStore store = server.Store();
+
+    protected override IRecordStoreProvider Store => store;
+
+    public ValueTask DisposeAsync() => store.DisposeAsync();
+}
+
 /// <summary>What the contract suites do not cover: the connection secret, the schema, and how failures are classified.</summary>
 [Trait("Category", "Integration")]
 public sealed class PostgresRecordStoreTests(PostgresServer server) : IDisposable

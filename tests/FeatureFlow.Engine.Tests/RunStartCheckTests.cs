@@ -23,7 +23,7 @@ public sealed class RunStartCheckTests
         {
             var forge = new InMemoryForge();
             var repo = forge.CreateRepository("acme/api", null);
-            forge.Protect(repo, new BranchProtection("main", true, true, 1, [], false));
+            forge.Protect(repo, new BranchProtection("main", true, true, 1, []));
             return new Setup(forge, repo);
         }
     }
@@ -108,7 +108,7 @@ public sealed class RunStartCheckTests
         var s = Setup.Protected();
         s.Forge.SetReference(s.Repo, "trunk", s.Forge.Resolve(s.Repo, "main"));
         s.Forge.SetDefaultBranch(s.Repo, "trunk");
-        s.Forge.Protect(s.Repo, new BranchProtection("trunk", true, true, 1, [], false));
+        s.Forge.Protect(s.Repo, new BranchProtection("trunk", true, true, 1, []));
 
         var refused = await CheckAsync(s, engineCanMerge: true);
 
@@ -131,7 +131,7 @@ public sealed class RunStartCheckTests
     public async Task Check_24_an_unprotected_default_branch_is_refused()
     {
         var s = Setup.Protected();
-        s.Forge.Protect(s.Repo, new BranchProtection("main", false, false, 0, [], false));
+        s.Forge.Protect(s.Repo, new BranchProtection("main", false, false, 0, []));
 
         var refused = await CheckAsync(s, engineCanMerge: false);
 

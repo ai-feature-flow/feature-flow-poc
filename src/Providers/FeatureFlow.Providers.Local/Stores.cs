@@ -102,9 +102,9 @@ public sealed class FileSecrets(string path, IReadOnlyList<string>? fromEnvironm
 }
 
 /// <summary>
-/// The record store in SQLite (docs/06 section 3.12; the solo profile). Runs and waits are kept by key, the
-/// last write winning; timeline entries, answers and locks are appended. Timeline entries are kept once per
-/// run and sequence number, so a retried append adds nothing.
+/// The record store in SQLite (docs/06 section 3.12; the solo profile). Every kind is written by its declared rule and
+/// every named query built from its declaration (<see cref="RecordKinds"/>, <see cref="RecordQueries"/>); only the open
+/// waits and the changes are written here. Text orders by SQLite's binary collation, which is ordinal.
 /// </summary>
 public sealed class SqliteRecordStore : IRecordStoreProvider
 {
@@ -127,13 +127,23 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
             CREATE TABLE IF NOT EXISTS agent_log (org_id TEXT NOT NULL, kind TEXT NOT NULL, step_key TEXT NOT NULL, id INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS artifacts (org_id TEXT NOT NULL, run_id TEXT NOT NULL, step_id TEXT NOT NULL, execution INTEGER NOT NULL, name TEXT NOT NULL,
                 id INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT NOT NULL, UNIQUE (org_id, run_id, step_id, execution, name));
+            CREATE TABLE IF NOT EXISTS findings (org_id TEXT NOT NULL, run_id TEXT NOT NULL, finding_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (org_id, run_id, finding_id));
+            CREATE TABLE IF NOT EXISTS finding_events (org_id TEXT NOT NULL, run_id TEXT NOT NULL, finding_id TEXT NOT NULL, key TEXT NOT NULL, id INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT NOT NULL,
+                UNIQUE (org_id, run_id, finding_id, key));
+            CREATE TABLE IF NOT EXISTS overrides (org_id TEXT NOT NULL, run_id TEXT NOT NULL, id INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS notifications (org_id TEXT NOT NULL, key TEXT NOT NULL, run_id TEXT NOT NULL, id INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT NOT NULL, UNIQUE (org_id, key));
+            CREATE TABLE IF NOT EXISTS sessions (org_id TEXT NOT NULL, session_id TEXT NOT NULL, run_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (org_id, session_id));
+            CREATE TABLE IF NOT EXISTS session_checks (org_id TEXT NOT NULL, session_id TEXT NOT NULL, check_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (org_id, session_id, check_id));
+            CREATE TABLE IF NOT EXISTS step_states (org_id TEXT NOT NULL, run_id TEXT NOT NULL, step_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (org_id, run_id, step_id));
+            CREATE TABLE IF NOT EXISTS pull_requests (org_id TEXT NOT NULL, run_id TEXT NOT NULL, repository TEXT NOT NULL, number INTEGER NOT NULL, body TEXT NOT NULL,
+                PRIMARY KEY (org_id, run_id, repository, number));
+            CREATE TABLE IF NOT EXISTS repositories (org_id TEXT NOT NULL, name TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (org_id, name));
+            CREATE INDEX IF NOT EXISTS answers_actor ON answers (org_id, json_extract(body, '$.actor'), id);
+            CREATE TABLE IF NOT EXISTS activity (org_id TEXT NOT NULL, run_id TEXT NOT NULL, step_id TEXT NOT NULL, execution INTEGER NOT NULL, session INTEGER NOT NULL,
+                sequence INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY (org_id, run_id, step_id, execution, session, sequence));
+            CREATE INDEX IF NOT EXISTS waits_open ON waits (org_id) WHERE open = 1;
             """);
-        CreateLedger(connection);
-        CreateSteering(connection);
         CreateChanges(connection);
-        CreateOpenWaits(connection);
-        CreateConsole(connection);
-        CreateActivity(connection);
     }
 
     /// <summary>One organisation per installation; the key is there from the start (docs/02 section 5).</summary>
@@ -159,6 +169,7 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
     {
         using var command = connection.CreateCommand();
         command.CommandText = sql;
+        command.Parameters.AddWithValue("$o", Org);
         foreach (var (name, value) in parameters)
             command.Parameters.AddWithValue(name, value ?? DBNull.Value);
         command.ExecuteNonQuery();
@@ -168,126 +179,52 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
     {
         using var connection = Open();
         using var transaction = connection.BeginTransaction();
-        // A run record replaces one no newer than itself, so a late write never undoes a newer one (LOG 290).
-        foreach (var run in records.Runs ?? [])
-            Execute(connection, """
-                INSERT INTO runs VALUES ($o, $r, $p, $u, $b)
-                ON CONFLICT (org_id, run_id) DO UPDATE SET parent_run_id = excluded.parent_run_id, updated_at = excluded.updated_at, body = excluded.body
-                WHERE excluded.updated_at >= runs.updated_at
-                """,
-                ("$o", Org), ("$r", run.RunId), ("$p", run.ParentRunId), ("$u", run.UpdatedAt.ToUniversalTime().ToString("O")), ("$b", JsonSerializer.Serialize(run, Json)));
-        foreach (var wait in records.Waits ?? [])
-        {
-            // A record that closes a wait keeps what the opening record said about it.
-            if (!wait.Open)
-                Execute(connection, "UPDATE waits SET open = 0, body = json_set(body, '$.open', json('false'), '$.updatedAt', $u) WHERE org_id = $o AND run_id = $r AND wait_id = $w",
-                    ("$o", Org), ("$r", wait.RunId), ("$w", wait.WaitId), ("$u", JsonSerializer.Serialize(wait.UpdatedAt, Json).Trim('"')));
-            Execute(connection, "INSERT OR IGNORE INTO waits VALUES ($o, $r, $w, $open, $b)",
-                ("$o", Org), ("$r", wait.RunId), ("$w", wait.WaitId), ("$open", wait.Open ? 1 : 0), ("$b", JsonSerializer.Serialize(wait, Json)));
-            if (wait.Open)
-                Execute(connection, "UPDATE waits SET open = 1, body = $b WHERE org_id = $o AND run_id = $r AND wait_id = $w",
-                    ("$o", Org), ("$r", wait.RunId), ("$w", wait.WaitId), ("$b", JsonSerializer.Serialize(wait, Json)));
-        }
-        foreach (var entry in records.Timeline ?? [])
-            Execute(connection, "INSERT OR IGNORE INTO timeline VALUES ($o, $r, $s, $b)",
-                ("$o", Org), ("$r", entry.RunId), ("$s", entry.Sequence), ("$b", JsonSerializer.Serialize(entry, Json)));
-        foreach (var answer in records.Answers ?? [])
-            Execute(connection, "INSERT INTO answers (org_id, run_id, body) VALUES ($o, $r, $b)",
-                ("$o", Org), ("$r", answer.RunId), ("$b", JsonSerializer.Serialize(answer, Json)));
-        foreach (var lockRecord in records.Locks ?? [])
-            Execute(connection, "INSERT OR REPLACE INTO locks VALUES ($o, $r, $b)",
-                ("$o", Org), ("$r", lockRecord.RunId), ("$b", JsonSerializer.Serialize(lockRecord, Json)));
-        foreach (var step in records.AgentSteps ?? [])
-            Keyed(connection, "step", step.StepKey, step.StepKey, step);
-        foreach (var question in records.Questions ?? [])
-        {
-            // An answer or a timeout is final: a late "open" from a retried endpoint call does not reopen it.
-            if (question.Status == QuestionRecord.Open)
-                Execute(connection, "INSERT OR IGNORE INTO agent_keyed VALUES ($o, 'question', $k, $s, $b)",
-                    ("$o", Org), ("$k", question.QuestionId), ("$s", question.StepKey), ("$b", JsonSerializer.Serialize(question, Json)));
-            else
-                Keyed(connection, "question", question.QuestionId, question.StepKey, question);
-        }
-
-        foreach (var report in records.Reports ?? [])
-            Execute(connection, "INSERT INTO agent_log (org_id, kind, step_key, body) VALUES ($o, 'report', $s, $b)",
-                ("$o", Org), ("$s", report.StepKey), ("$b", JsonSerializer.Serialize(report, Json)));
-        foreach (var e in records.AgentEvents ?? [])
-            Execute(connection, "INSERT INTO agent_log (org_id, kind, step_key, body) VALUES ($o, 'event', $s, $b)",
-                ("$o", Org), ("$s", e.StepKey), ("$b", JsonSerializer.Serialize(e, Json)));
-        // The artifact index: once per run, step, execution and name, so a retried append adds nothing.
-        foreach (var a in records.Artifacts ?? [])
-            Execute(connection, "INSERT OR IGNORE INTO artifacts (org_id, run_id, step_id, execution, name, body) VALUES ($o, $r, $s, $e, $n, $b)",
-                ("$o", Org), ("$r", a.RunId), ("$s", a.StepId), ("$e", a.Execution), ("$n", a.Name), ("$b", JsonSerializer.Serialize(a, Json)));
-        AppendLedger(connection, records);
-        AppendSteering(connection, records);
-        AppendConsole(connection, records);
-        AppendActivity(connection, records);
+        foreach (var kind in RecordKinds.All)
+            foreach (var record in kind.Of(records) ?? [])
+                Write(connection, kind, record);
         AppendChanges(connection, records);
         transaction.Commit();
         return Task.FromResult(ProviderResult<Unit>.Success(default));
     }
 
-    static void Keyed<T>(SqliteConnection connection, string kind, string key, string stepKey, T record) =>
-        Execute(connection, "INSERT OR REPLACE INTO agent_keyed VALUES ($o, $k, $key, $s, $b)",
-            ("$o", Org), ("$k", kind), ("$key", key), ("$s", stepKey), ("$b", JsonSerializer.Serialize(record, Json)));
+    /// <summary>One record by its kind's rule (<see cref="WriteRule"/>). Times are kept as ISO 8601 text in UTC, which orders as the times do.</summary>
+    static void Write(SqliteConnection connection, RecordKind kind, object record)
+    {
+        var rule = kind.RuleFor(record);
+        var columns = kind.AllColumns.ToList();
+        var names = (kind.Discriminator is null ? "" : "kind, ") + string.Concat(columns.Select(c => c.Name + ", "));
+        var values = (kind.Discriminator is null ? "" : "$d, ") + string.Concat(columns.Select((_, i) => $"$c{i}, "));
+        var update = string.Concat(kind.Columns.Select(c => $"{c.Name} = excluded.{c.Name}, "));
+        var sql = $"INSERT INTO {kind.Table} (org_id, {names}body) VALUES ($o, {values}$b)" + rule switch
+        {
+            WriteRule.Append => "",
+            WriteRule.KeepFirst => " ON CONFLICT DO NOTHING",
+            _ => $" ON CONFLICT (org_id, {(kind.Discriminator is null ? "" : "kind, ")}{string.Join(", ", kind.Key.Select(c => c.Name))}) DO UPDATE SET {update}body = "
+                 + (rule == WriteRule.CloseKeepsOpening
+                     ? $"json_set({kind.Table}.body, '$.open', json('false'), '$.updatedAt', json_extract(excluded.body, '$.updatedAt'))"
+                     : "excluded.body")
+                 + (rule == WriteRule.ReplaceIfNotOlder ? $" WHERE excluded.updated_at >= {kind.Table}.updated_at" : ""),
+        };
+        Execute(connection, sql,
+        [
+            ("$d", kind.Discriminator), ("$b", JsonSerializer.Serialize(record, kind.Record, Json)),
+            .. columns.Select((c, i) => ($"$c{i}", c.Value(record) is DateTimeOffset at ? at.ToUniversalTime().ToString("O") : c.Value(record))),
+        ]);
+    }
 
     public Task<ProviderResult<IReadOnlyList<T>>> QueryAsync<T>(string queryName, IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken)
     {
-        string P(string key) => parameters.TryGetValue(key, out var value) ? value : throw new ArgumentException($"query {queryName} needs {key}");
-        (string Sql, Type Type, (string, object?)[] Args) query = queryName switch
+        var (sql, args) = queryName switch
         {
-            Queries.Changes or Queries.LatestChange => ChangesQuery(queryName, parameters),
-            Queries.Run => ("SELECT body FROM runs WHERE org_id = $o AND run_id = $r", typeof(RunRecord), [("$r", P("run_id"))]),
-            Queries.Runs when parameters.ContainsKey("parent_run_id") =>
-                ("SELECT body FROM runs WHERE org_id = $o AND parent_run_id = $p ORDER BY run_id", typeof(RunRecord), [("$p", P("parent_run_id"))]),
-            Queries.Runs => ("SELECT body FROM runs WHERE org_id = $o ORDER BY updated_at DESC LIMIT 200", typeof(RunRecord), []),
-            Queries.Waits when parameters.GetValueOrDefault("open") == "true" =>
-                ("SELECT body FROM waits WHERE org_id = $o AND run_id = $r AND open = 1 ORDER BY wait_id", typeof(WaitRecord), [("$r", P("run_id"))]),
-            Queries.Waits => ("SELECT body FROM waits WHERE org_id = $o AND run_id = $r ORDER BY wait_id", typeof(WaitRecord), [("$r", P("run_id"))]),
-            Queries.OpenWaits => (OpenWaitsSql, typeof(OpenWaitRecord), []),
-            Queries.Timeline => ("SELECT body FROM timeline WHERE org_id = $o AND run_id = $r AND sequence > $a ORDER BY sequence", typeof(TimelineRecord),
-                [("$r", P("run_id")), ("$a", long.Parse(parameters.GetValueOrDefault("after", "0"), System.Globalization.CultureInfo.InvariantCulture))]),
-            Queries.Answers => ("SELECT body FROM answers WHERE org_id = $o AND run_id = $r ORDER BY id", typeof(AnswerRecord), [("$r", P("run_id"))]),
-            Queries.Lock => ("SELECT body FROM locks WHERE org_id = $o AND run_id = $r", typeof(LockRecord), [("$r", P("run_id"))]),
-            Queries.AgentStep => ("SELECT body FROM agent_keyed WHERE org_id = $o AND kind = 'step' AND key = $k", typeof(AgentStepRecord), [("$k", P("step_key"))]),
-            Queries.Question => ("SELECT body FROM agent_keyed WHERE org_id = $o AND kind = 'question' AND key = $k", typeof(QuestionRecord), [("$k", P("question_id"))]),
-            Queries.Questions => ("SELECT body FROM agent_keyed WHERE org_id = $o AND kind = 'question' AND step_key = $s ORDER BY key", typeof(QuestionRecord), [("$s", P("step_key"))]),
-            Queries.Reports => ("SELECT body FROM agent_log WHERE org_id = $o AND kind = 'report' AND step_key = $s ORDER BY id", typeof(ReportRecord), [("$s", P("step_key"))]),
-            // A run's artifacts and every descendant run's, by parent links, in the order appended.
-            Queries.Artifacts => ("WITH RECURSIVE tree(run_id) AS (SELECT $r UNION SELECT runs.run_id FROM runs JOIN tree ON runs.parent_run_id = tree.run_id"
-                + " WHERE runs.org_id = $o) SELECT body FROM artifacts WHERE org_id = $o AND run_id IN (SELECT run_id FROM tree) ORDER BY id",
-                typeof(ArtifactRecord), [("$r", P("run_id"))]),
-            Queries.AgentEvents => ("SELECT body FROM agent_log WHERE org_id = $o AND kind = 'event' AND step_key = $s ORDER BY id", typeof(AgentEventRecord), [("$s", P("step_key"))]),
-            Queries.Findings => (RunTree + "SELECT body FROM findings WHERE org_id = $o AND run_id IN tree ORDER BY run_id, finding_id", typeof(FindingRecord), [("$r", P("run_id"))]),
-            Queries.FindingEvents => ("SELECT body FROM finding_events WHERE org_id = $o AND run_id = $r AND finding_id = $f ORDER BY id", typeof(FindingEventRecord),
-                [("$r", P("run_id")), ("$f", P("finding_id"))]),
-            Queries.Overrides => ("SELECT body FROM overrides WHERE org_id = $o AND run_id = $r ORDER BY id", typeof(OverrideRecord), [("$r", P("run_id"))]),
-            Queries.Notification => ("SELECT body FROM notifications WHERE org_id = $o AND key = $k", typeof(NotificationRecord), [("$k", P("key"))]),
-            Queries.Notifications => ("SELECT body FROM notifications WHERE org_id = $o AND run_id = $r ORDER BY id", typeof(NotificationRecord), [("$r", P("run_id"))]),
-            Queries.Session => ("SELECT body FROM sessions WHERE org_id = $o AND session_id = $s", typeof(SessionRecord), [("$s", P("session_id"))]),
-            Queries.Sessions => ("SELECT body FROM sessions WHERE org_id = $o AND run_id = $r ORDER BY session_id", typeof(SessionRecord), [("$r", P("run_id"))]),
-            Queries.SessionChecks => ("SELECT body FROM session_checks WHERE org_id = $o AND session_id = $s ORDER BY check_id", typeof(SessionCheckRecord), [("$s", P("session_id"))]),
-            Queries.StepStates => ("SELECT body FROM step_states WHERE org_id = $o AND run_id = $r ORDER BY step_id", typeof(StepStateRecord), [("$r", P("run_id"))]),
-            Queries.PullRequests => ("SELECT body FROM pull_requests WHERE org_id = $o AND run_id = $r ORDER BY repository, number", typeof(PullRequestRecord),
-                [("$r", P("run_id"))]),
-            Queries.Repositories => ("SELECT body FROM repositories WHERE org_id = $o ORDER BY name", typeof(RepositoryRecord), []),
-            Queries.RecentAnswers => ("SELECT body FROM answers WHERE org_id = $o AND json_extract(body, '$.actor') = $a ORDER BY id DESC LIMIT $l", typeof(AnswerRecord),
-                [("$a", P("actor")), ("$l", Limit(parameters))]),
-            Queries.Activity => ("SELECT body FROM activity WHERE org_id = $o AND run_id = $r AND step_id = $s AND ($e IS NULL OR execution = $e)"
-                + " ORDER BY execution, session, sequence", typeof(ActivityRecord),
-                [("$r", P("run_id")), ("$s", P("step_id")),
-                 ("$e", parameters.TryGetValue("execution", out var execution) ? int.Parse(execution, System.Globalization.CultureInfo.InvariantCulture) : null)]),
-            _ => throw new ArgumentException($"unknown query {queryName}"),
+            Queries.Changes or Queries.LatestChange => Native<T, ChangeRecord>(queryName, ChangesQuery(queryName, parameters)),
+            Queries.OpenWaits => Native<T, OpenWaitRecord>(queryName, (OpenWaitsSql, [])),
+            _ => Select(RecordQueries.For<T>(queryName), parameters),
         };
-        if (query.Type != typeof(T))
-            throw new ArgumentException($"query {queryName} returns {query.Type.Name}, not {typeof(T).Name}");
-
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = query.Sql;
+        command.CommandText = sql;
         command.Parameters.AddWithValue("$o", Org);
-        foreach (var (name, value) in query.Args)
+        foreach (var (name, value) in args)
             command.Parameters.AddWithValue(name, value ?? DBNull.Value);
         var list = new List<T>();
         using var reader = command.ExecuteReader();
@@ -296,98 +233,38 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
         return Task.FromResult(ProviderResult<IReadOnlyList<T>>.Success(list));
     }
 
-    // ---- The findings ledger (docs/01 section 6, LOG 148) ----
+    static (string, (string, object?)[]) Native<T, TRecord>(string queryName, (string, (string, object?)[]) query) =>
+        typeof(T) == typeof(TRecord) ? query : throw new ArgumentException($"query {queryName} returns {typeof(TRecord).Name}, not {typeof(T).Name}");
 
-    /// <summary>The run named <c>$r</c> and every run below it, by parent links, as the table <c>tree</c>.</summary>
-    const string RunTree = """
-        WITH RECURSIVE tree(id) AS (
-            SELECT $r
-            UNION SELECT runs.run_id FROM runs JOIN tree ON runs.parent_run_id = tree.id WHERE runs.org_id = $o)
-        """ + "\n";
-
-    static void CreateLedger(SqliteConnection connection) =>
-        Execute(connection, """
-            CREATE TABLE IF NOT EXISTS findings (org_id TEXT NOT NULL, run_id TEXT NOT NULL, finding_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (org_id, run_id, finding_id));
-            CREATE TABLE IF NOT EXISTS finding_events (org_id TEXT NOT NULL, run_id TEXT NOT NULL, finding_id TEXT NOT NULL, key TEXT NOT NULL, id INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT NOT NULL,
-                UNIQUE (org_id, run_id, finding_id, key));
-            """);
-
-    /// <summary>A finding record replaces the last; a finding event is appended once per run, finding and key.</summary>
-    static void AppendLedger(SqliteConnection connection, RecordBatch records)
+    /// <summary>A declared query (<see cref="RecordQueries"/>) as SQL: its variant's filters, a run tree by parent links, its order and limit.</summary>
+    static (string, (string, object?)[]) Select(RecordQuery query, IReadOnlyDictionary<string, string> parameters)
     {
-        foreach (var finding in records.Findings ?? [])
-            Execute(connection, "INSERT OR REPLACE INTO findings VALUES ($o, $r, $f, $b)",
-                ("$o", Org), ("$r", finding.RunId), ("$f", finding.FindingId), ("$b", JsonSerializer.Serialize(finding, Json)));
-        foreach (var e in records.FindingEvents ?? [])
-            Execute(connection, "INSERT OR IGNORE INTO finding_events (org_id, run_id, finding_id, key, body) VALUES ($o, $r, $f, $k, $b)",
-                ("$o", Org), ("$r", e.RunId), ("$f", e.FindingId), ("$k", e.Key), ("$b", JsonSerializer.Serialize(e, Json)));
-    }
+        var variant = query.VariantFor(parameters);
+        var where = new List<string> { "org_id = $o" };
+        var args = new List<(string, object?)> { ("$d", query.Kind.Discriminator) };
+        var tree = "";
+        if (query.Kind.Discriminator is not null)
+            where.Add("kind = $d");
+        foreach (var (filter, i) in variant.Filters.Select((f, i) => (f, i)))
+        {
+            if (query.Argument(filter, parameters) is not { } value)
+                continue;
+            args.Add(($"$f{i}", value));
+            if (variant.RunTree && filter.Field == "run_id")
+            {
+                tree = $"WITH RECURSIVE tree(id) AS (SELECT $f{i} UNION SELECT runs.run_id FROM runs JOIN tree ON runs.parent_run_id = tree.id WHERE runs.org_id = $o) ";
+                where.Add("run_id IN (SELECT id FROM tree)");
+                continue;
+            }
 
-    // ---- People and steering (M7): overrides, notification de-duplication, sessions ----
+            var field = filter.BodyField ? $"json_extract(body, '$.{filter.Field}')" : filter.Field;
+            where.Add($"{field} {(filter.Op == FilterOp.After ? ">" : "=")} $f{i}");
+        }
 
-    static void CreateSteering(SqliteConnection connection) =>
-        Execute(connection, """
-            CREATE TABLE IF NOT EXISTS overrides (org_id TEXT NOT NULL, run_id TEXT NOT NULL, id INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS notifications (org_id TEXT NOT NULL, key TEXT NOT NULL, run_id TEXT NOT NULL, id INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT NOT NULL, UNIQUE (org_id, key));
-            CREATE TABLE IF NOT EXISTS sessions (org_id TEXT NOT NULL, session_id TEXT NOT NULL, run_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (org_id, session_id));
-            CREATE TABLE IF NOT EXISTS session_checks (org_id TEXT NOT NULL, session_id TEXT NOT NULL, check_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (org_id, session_id, check_id));
-            """);
-
-    /// <summary>Overrides are appended; a notification is kept once per key, the first write winning; sessions and their checks replace the last write.</summary>
-    static void AppendSteering(SqliteConnection connection, RecordBatch records)
-    {
-        foreach (var o in records.Overrides ?? [])
-            Execute(connection, "INSERT INTO overrides (org_id, run_id, body) VALUES ($o, $r, $b)",
-                ("$o", Org), ("$r", o.RunId), ("$b", JsonSerializer.Serialize(o, Json)));
-        foreach (var n in records.Notifications ?? [])
-            Execute(connection, "INSERT OR IGNORE INTO notifications (org_id, key, run_id, body) VALUES ($o, $k, $r, $b)",
-                ("$o", Org), ("$k", n.Key), ("$r", n.RunId), ("$b", JsonSerializer.Serialize(n, Json)));
-        foreach (var s in records.Sessions ?? [])
-            Execute(connection, "INSERT OR REPLACE INTO sessions VALUES ($o, $s, $r, $b)",
-                ("$o", Org), ("$s", s.SessionId), ("$r", s.RunId), ("$b", JsonSerializer.Serialize(s, Json)));
-        foreach (var c in records.SessionChecks ?? [])
-            Execute(connection, "INSERT OR REPLACE INTO session_checks VALUES ($o, $s, $c, $b)",
-                ("$o", Org), ("$s", c.SessionId), ("$c", c.CheckId), ("$b", JsonSerializer.Serialize(c, Json)));
-    }
-
-    // ---- The console (B1): step counters, pull request state, registered repositories ----
-
-    static void CreateConsole(SqliteConnection connection) =>
-        Execute(connection, """
-            CREATE TABLE IF NOT EXISTS step_states (org_id TEXT NOT NULL, run_id TEXT NOT NULL, step_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (org_id, run_id, step_id));
-            CREATE TABLE IF NOT EXISTS pull_requests (org_id TEXT NOT NULL, run_id TEXT NOT NULL, repository TEXT NOT NULL, number INTEGER NOT NULL, body TEXT NOT NULL,
-                PRIMARY KEY (org_id, run_id, repository, number));
-            CREATE TABLE IF NOT EXISTS repositories (org_id TEXT NOT NULL, name TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (org_id, name));
-            CREATE INDEX IF NOT EXISTS answers_actor ON answers (org_id, json_extract(body, '$.actor'), id);
-            """);
-
-    /// <summary>Step states, pull requests and repositories replace the last write by key.</summary>
-    static void AppendConsole(SqliteConnection connection, RecordBatch records)
-    {
-        foreach (var s in records.StepStates ?? [])
-            Execute(connection, "INSERT OR REPLACE INTO step_states VALUES ($o, $r, $s, $b)",
-                ("$o", Org), ("$r", s.RunId), ("$s", s.StepId), ("$b", JsonSerializer.Serialize(s, Json)));
-        foreach (var p in records.PullRequests ?? [])
-            Execute(connection, "INSERT OR REPLACE INTO pull_requests VALUES ($o, $r, $p, $n, $b)",
-                ("$o", Org), ("$r", p.RunId), ("$p", p.Repository), ("$n", p.Number), ("$b", JsonSerializer.Serialize(p, Json)));
-        foreach (var r in records.Repositories ?? [])
-            Execute(connection, "INSERT OR REPLACE INTO repositories VALUES ($o, $n, $b)",
-                ("$o", Org), ("$n", r.Name), ("$b", JsonSerializer.Serialize(r, Json)));
-    }
-
-    // ---- Live activity: an agent step's completed events while it runs, once per run, step, execution, session and sequence ----
-
-    static void CreateActivity(SqliteConnection connection) =>
-        Execute(connection, """
-            CREATE TABLE IF NOT EXISTS activity (org_id TEXT NOT NULL, run_id TEXT NOT NULL, step_id TEXT NOT NULL, execution INTEGER NOT NULL, session INTEGER NOT NULL,
-                sequence INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY (org_id, run_id, step_id, execution, session, sequence));
-            """);
-
-    static void AppendActivity(SqliteConnection connection, RecordBatch records)
-    {
-        foreach (var a in records.Activity ?? [])
-            Execute(connection, "INSERT OR IGNORE INTO activity VALUES ($o, $r, $s, $e, $n, $q, $b)",
-                ("$o", Org), ("$r", a.RunId), ("$s", a.StepId), ("$e", a.Execution), ("$n", a.Session), ("$q", a.Sequence), ("$b", JsonSerializer.Serialize(a, Json)));
+        var order = variant.OrderBy.Count == 0 ? ""
+            : " ORDER BY " + string.Join(", ", variant.OrderBy.Select(c => (c == QueryVariant.Insertion ? "id" : c) + (variant.Descending ? " DESC" : "")));
+        var limit = variant.LimitFor(parameters) is { } l ? $" LIMIT {l}" : "";
+        return ($"{tree}SELECT body FROM {query.Kind.Table} WHERE {string.Join(" AND ", where)}{order}{limit}", [.. args]);
     }
 
     // ---- Changes (docs/06 section 3.12, LOG 397): what GET /events reports, written in the batch's transaction ----
@@ -419,27 +296,19 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
     {
         foreach (var (runId, kind, waitId, stepId) in ChangeKinds.Of(records))
             Execute(connection, "INSERT INTO changes (org_id, run_id, kind, wait_id, step_id, at) VALUES ($o, $r, $k, $w, $s, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
-                ("$o", Org), ("$r", runId), ("$k", kind), ("$w", waitId), ("$s", stepId));
+                ("$r", runId), ("$k", kind), ("$w", waitId), ("$s", stepId));
     }
 
     const string ChangeJson = "SELECT json_object('sequence', id, 'runId', run_id, 'kind', kind, 'waitId', wait_id, 'at', at, 'stepId', step_id) FROM changes WHERE org_id = $o";
 
-    static (string Sql, Type Type, (string, object?)[] Args) ChangesQuery(string queryName, IReadOnlyDictionary<string, string> parameters) =>
+    static (string, (string, object?)[]) ChangesQuery(string queryName, IReadOnlyDictionary<string, string> parameters) =>
         queryName == Queries.LatestChange
-            ? (ChangeJson + " ORDER BY id DESC LIMIT 1", typeof(ChangeRecord), [])
-            : (ChangeJson + " AND id > $a ORDER BY id LIMIT $l", typeof(ChangeRecord), [("$a", After(parameters)), ("$l", Limit(parameters))]);
-
-    internal static long After(IReadOnlyDictionary<string, string> parameters) =>
-        long.Parse(parameters.GetValueOrDefault("after", "0"), System.Globalization.CultureInfo.InvariantCulture);
-
-    /// <summary>A page of changes: <c>limit</c>, at most 500 (the default).</summary>
-    internal static int Limit(IReadOnlyDictionary<string, string> parameters) =>
-        Math.Clamp(int.Parse(parameters.GetValueOrDefault("limit", "500"), System.Globalization.CultureInfo.InvariantCulture), 1, 500);
+            ? (ChangeJson + " ORDER BY id DESC LIMIT 1", [])
+            : (ChangeJson + " AND id > $a ORDER BY id LIMIT $l",
+                [("$a", long.Parse(parameters.GetValueOrDefault("after", "0"), System.Globalization.CultureInfo.InvariantCulture)),
+                 ("$l", QueryVariant.Page(parameters))]);
 
     // ---- Oversight (A3): the open waits of runs still going, for GET /attention ----
-
-    static void CreateOpenWaits(SqliteConnection connection) =>
-        Execute(connection, "CREATE INDEX IF NOT EXISTS waits_open ON waits (org_id) WHERE open = 1");
 
     /// <summary>Every open wait of a <c>starting</c> or <c>running</c> run, with the run, oldest first, at most 500 (<see cref="Queries.OpenWaits"/>).</summary>
     const string OpenWaitsSql = """

@@ -32,7 +32,7 @@ public sealed class GitHubActionsCi(GitHubApi api, Func<IArtifactStoreProvider> 
     /// </summary>
     public TimeSpan DispatchGrace { get; init; } = TimeSpan.FromMinutes(5);
 
-    public ProviderDescription Describe() => new("ci", "github_actions", "0.1.0", new CiCapabilities(true, true, true, false, false));
+    public ProviderDescription Describe() => new("ci", "github_actions", "0.1.0", new NoCapabilities());
 
     public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => api.CheckAsync(cancellationToken);
 

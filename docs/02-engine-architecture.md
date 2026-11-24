@@ -252,6 +252,7 @@ child's is read through the child (LOG 325 as amended).
 | Payloads | Never transcripts, diffs, code or secrets in workflow state; a pluggable payload codec for organisations that encrypt payloads (`aes_gcm`, LOG 284) |
 | Git is not a store | Publishing artifacts to a repository for people to read is an action (`artifact.publish`) |
 | Tenancy | One organisation per installation; `org_id` in record store keys from the start |
+| Record kinds | Each kind is declared once, with its table, key, write rule and change, and each named query over it (`RecordKinds`, `RecordQueries`; `docs/06` section 3.12). The SQL stores read the declarations; a new kind is a batch list and a declaration |
 | Recovery | Database backups and object store versioning; a reconcile job rebuilds the run index from Temporal (the hosts' `reconcile` command, run after a restore, LOG 285) |
 
 ---

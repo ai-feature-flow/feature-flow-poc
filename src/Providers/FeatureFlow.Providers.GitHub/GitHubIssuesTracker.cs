@@ -32,7 +32,7 @@ public sealed class GitHubIssuesTracker(GitHubApi api, string? repository, IRead
 
     IEnumerable<string> StatusLabels => map.Values.Where(v => v != Closed);
 
-    public ProviderDescription Describe() => new("tracker", "github_issues", "0.1.0", new TrackerCapabilities(true, true, true, true, true, false, true));
+    public ProviderDescription Describe() => new("tracker", "github_issues", "0.1.0", new NoCapabilities());
 
     public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => api.CheckAsync(cancellationToken);
 

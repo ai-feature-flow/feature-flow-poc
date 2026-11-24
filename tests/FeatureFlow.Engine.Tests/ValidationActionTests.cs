@@ -25,7 +25,7 @@ public sealed class ValidationActionTests : IAsyncDisposable
     readonly RepoRef repo;
     readonly RepoRef other;
     readonly FileSystemArtifactStore store;
-    readonly InMemoryRecordStore records = new();
+    readonly SqliteRecordStore records;
     readonly InMemoryValidators memory = new();
     readonly EngineActions actions;
     readonly List<ArtifactEntry> artifacts = [];
@@ -42,6 +42,7 @@ public sealed class ValidationActionTests : IAsyncDisposable
     {
         Directory.CreateDirectory(folder);
         store = new FileSystemArtifactStore(folder);
+        records = new SqliteRecordStore(Path.Combine(folder, "records", "records.db"));
         repo = forge.CreateRepository("acme/api");
         other = forge.CreateRepository("acme/web");
         memory.Add(new ValidatorDescriptor("spy", "Records its request", [], new Dictionary<string, string>(), []), r =>

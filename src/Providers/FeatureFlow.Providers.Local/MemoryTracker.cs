@@ -39,7 +39,7 @@ public sealed class InMemoryTracker(IReadOnlyCollection<string>? statuses = null
     readonly List<Stored> issues = [];
     readonly Dictionary<string, Queue<ProviderError>> faults = new(StringComparer.Ordinal);
 
-    public ProviderDescription Describe() => new("tracker", "memory", "0.1.0", new TrackerCapabilities(true, true, true, true, true, true, true));
+    public ProviderDescription Describe() => new("tracker", "memory", "0.1.0", new NoCapabilities());
 
     public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => Task.FromResult(ProviderResult<Unit>.Success(default));
 

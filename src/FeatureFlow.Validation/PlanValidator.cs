@@ -207,8 +207,14 @@ public sealed class PlanValidator
         if (with is null)
             return;
         foreach (var (key, value) in with.Entries)
+        {
+            if (descriptor.Inputs.FirstOrDefault(i => i.Name == key.Text) is { Literal: true } && Plain(value, items) is null)
+                d.Add(Checks.StepInputs, value is YScalar { IsNull: true }
+                    ? $"{descriptor.Name} input '{key.Text}' must be written as a literal value, not null; leave it out for its default"
+                    : $"{descriptor.Name} input '{key.Text}' must be written as a literal, not {ReadableForm.Describe(value, step.Scope)}", key.Location, step.Id);
             foreach (var error in descriptor.InputErrors(new Dictionary<string, object?> { [key.Text] = Plain(value, items) }, rule: false))
                 d.Add(Checks.StepInputs, error, key.Location, step.Id);
+        }
         if (descriptor.Handling == ActionHandling.Expand && ExpandedStep(with) is { } inner)
             CheckInputs(inner.Descriptor, inner.With, step, items: true);
     }

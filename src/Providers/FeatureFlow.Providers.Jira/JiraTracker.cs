@@ -41,7 +41,7 @@ public sealed partial class JiraTracker(JiraApi api, string? project, IReadOnlyD
     readonly Dictionary<string, string> subtaskTypes = new(StringComparer.Ordinal);
     JsonArray? linkTypes;
 
-    public ProviderDescription Describe() => new("tracker", "jira", "0.1.0", new TrackerCapabilities(true, true, true, true, true, false, true));
+    public ProviderDescription Describe() => new("tracker", "jira", "0.1.0", new NoCapabilities());
 
     public async Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken)
     {
