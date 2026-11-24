@@ -62,7 +62,7 @@ description: Acme's delivery process
 requires:
   engine: ">=1.0.0"
   plan_schema: 1
-  capabilities: [tracker.hierarchy, code_host.pull_request]
+  capabilities: [code_host.pull_request, code_host.check_status]
 
 dependencies:
   - { name: std }
