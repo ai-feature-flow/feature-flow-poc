@@ -126,10 +126,14 @@ public sealed record RunPolicy(
     /// The runtime instance and model an agent of <paramref name="role"/> runs with: its own entry, else <c>default</c>; null
     /// with neither, when the installation's default runtime runs it with that runtime's own model.
     /// </summary>
-    public Model.AgentRoleMapping? AgentFor(string? role) =>
+    public Model.AgentRoleMapping? AgentFor(string? role) => AgentEntryFor(role)?.Mapping;
+
+    /// <summary><see cref="AgentFor"/> with the <c>role_mapping</c> key it used: the role's own, or <c>default</c> (check 21 names it).</summary>
+    public (string Key, Model.AgentRoleMapping Mapping)? AgentEntryFor(string? role) =>
         RoleMapping is null ? null
-        : role is not null && RoleMapping.TryGetValue(role, out var own) ? own
-        : RoleMapping.GetValueOrDefault("default");
+        : role is not null && RoleMapping.TryGetValue(role, out var own) ? (role, own)
+        : RoleMapping.TryGetValue("default", out var fallback) ? ("default", fallback)
+        : null;
 
     public RunOptions ToOptions() => new()
     {

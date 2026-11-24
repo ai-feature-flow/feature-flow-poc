@@ -79,6 +79,17 @@ public sealed class RoleInstanceCapabilityTests : IDisposable
             refused, StringComparison.Ordinal);
     }
 
+    /// <summary>A role with no entry of its own runs on <c>role_mapping.default</c>'s instance, and the refusal names that entry (review R1-5).</summary>
+    [Fact]
+    public async Task A_refusal_names_the_default_entry_for_a_role_that_falls_to_it()
+    {
+        var refused = await Check21Async("full", new Dictionary<string, string> { ["default"] = "limited", ["implementer"] = "full" });
+
+        var message = Assert.Single(refused);
+        Assert.Contains("agent_runtime instance 'limited' (role_mapping.default)", message, StringComparison.Ordinal);
+        Assert.Single(message.Split("role_mapping.").Skip(1));
+    }
+
     [Fact]
     public async Task A_step_whose_role_maps_to_an_instance_offering_the_capability_starts_although_the_default_lacks_it()
     {

@@ -147,8 +147,10 @@ abbreviated: every method also takes a cancellation token, and `..X` stands for
   sandbox never reads the manifest itself. A container sandbox uses the image
   only when it is its own or matches one of its `allowed_images`, and refuses any
   other as `cannot_answer`, which stops the step for a person (LOG 441).
-- `PersistentAcrossSteps`: the sandbox outlives a worker restart. Without it, a
-  worker loss is treated as a lost sandbox.
+- After a worker restart the agent worker re-attaches a step's sandbox by its
+  key (`AttachAsync`); one that cannot be found, or whose preparation did not
+  finish, is made again, as for a lost sandbox. No capability flag declares this
+  (F16).
 - Read-only checkouts are enforced by the sandbox (`MakeReadOnlyAsync`), not the
   agent.
 - Commands are started and polled; `AttachCommandAsync` re-attaches to a running

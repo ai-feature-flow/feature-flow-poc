@@ -74,27 +74,25 @@ public static class RunStartChecks
             yield return new Need("tracker", $"fragment use {use.Id} (tracker)");
     }
 
-    /// <summary>Check 21 against one set of names for every type and instance.</summary>
-    public static void Capabilities(Plan plan, LibrarySet libraries, IReadOnlySet<string> offered, DiagnosticBag d) =>
-        Capabilities(plan, libraries, (_, _) => offered, _ => null, d);
-
     /// <summary>
     /// Check 21: every capability the plan needs is offered by the instance that serves it. <paramref name="offered"/> gives the
     /// names an instance offers, by type and the run's choice of instance (null for the type's own); an agent step's
-    /// <c>agent_runtime</c> needs are asked of the instance its role maps to (<paramref name="runtimeOfRole"/>, <c>role_mapping</c>;
-    /// null where none is mapped), as the agent step picks it. A missing capability is reported once per instance, for the
-    /// first that needs it, and a flag not at all where its type is already reported missing.
+    /// <c>agent_runtime</c> needs are asked of the instance its role maps to (<paramref name="runtimeOfRole"/>: the instance and
+    /// the <c>role_mapping</c> key that chose it, the role's own or <c>default</c>; null where none is mapped), as the agent step
+    /// picks it. A missing capability is reported once per instance, for the first that needs it, and a flag not at all where
+    /// its type is already reported missing.
     /// </summary>
     public static void Capabilities(Plan plan, LibrarySet libraries, Func<string, string?, IReadOnlySet<string>> offered,
-        Func<string?, string?> runtimeOfRole, DiagnosticBag d)
+        Func<string?, (string Instance, string Key)?> runtimeOfRole, DiagnosticBag d)
     {
         var reported = new HashSet<(string, string?)>();
         foreach (var need in AllNeeds(plan, libraries))
         {
-            var mapped = need.AgentStep && need.Type == "agent_runtime" ? runtimeOfRole(need.Role) : null;
+            var entry = need.AgentStep && need.Type == "agent_runtime" ? runtimeOfRole(need.Role) : null;
+            var mapped = entry?.Instance;
             if (offered(need.Type, mapped).Contains(need.Name) || reported.Contains((need.Type, mapped)) || !reported.Add((need.Name, mapped)))
                 continue;
-            var provider = mapped is null ? $"the configured {need.Type} provider" : $"{need.Type} instance '{mapped}' (role_mapping.{need.Role ?? "default"})";
+            var provider = entry is { } e ? $"{need.Type} instance '{e.Instance}' (role_mapping.{e.Key})" : $"the configured {need.Type} provider";
             var what = need.Name.Contains('.') ? $"capability {need.Name} is not offered by {provider}"
                 : mapped is null ? $"no {need.Name} provider is configured"
                 : $"{provider} is not configured";
