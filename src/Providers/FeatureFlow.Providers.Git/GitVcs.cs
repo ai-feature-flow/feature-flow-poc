@@ -31,7 +31,7 @@ public sealed class GitVcs(
     /// <summary>Where this process keeps its clones.</summary>
     public string CacheFolder { get; } = Path.Combine(cache, ProcessFolder);
 
-    public ProviderDescription Describe() => new("vcs", "git", "0.1.0", new VcsCapabilities("git", true, true, false));
+    public ProviderDescription Describe() => new("vcs", "git", "0.1.0", new NoCapabilities());
 
     public async Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken)
     {

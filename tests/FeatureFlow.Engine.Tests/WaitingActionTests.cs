@@ -35,7 +35,7 @@ public sealed class WaitingActionTests
     {
         await using var w = await WithPullRequestAsync();
         var head = w.Work!;
-        w.Forge.Protect(w.Repo, new BranchProtection("main", true, true, 0, ["build"], false));
+        w.Forge.Protect(w.Repo, new BranchProtection("main", true, true, 0, ["build"]));
         w.Forge.ReportCheck(w.Repo, head, new CheckRun("licence", CheckStates.Completed, Conclusions.Success, null));
 
         var early = await w.RunAsync("ci.checks", null, "checks", waits: 3);

@@ -309,7 +309,7 @@ public class ChildRunTests
         var (h, forge, _) = await ForgeTicketTests.StartAsync("branching", script: """{ "branching_child:work": written }""", libraries: Library);
         await using var _h = h;
         var client = forge.CreateRepository("acme/client", new Dictionary<string, string> { ["README.md"] = "# client\n" });
-        forge.Protect(client, new Providers.Abstractions.BranchProtection("main", true, true, 1, [], false));
+        forge.Protect(client, new Providers.Abstractions.BranchProtection("main", true, true, 1, []));
         var main = forge.Resolve(client, "main")!;
 
         var id = h.Start("m6:templates/branching_parent", "--repo", "acme/api", "--repo", "acme/client");

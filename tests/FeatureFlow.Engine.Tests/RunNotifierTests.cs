@@ -146,7 +146,7 @@ public sealed class RunNotifierTests : IDisposable
     {
         public int Calls { get; private set; }
 
-        public ProviderDescription Describe() => new("notifications", "broken", "0", new NotificationCapabilities([], true, true));
+        public ProviderDescription Describe() => new("notifications", "broken", "0", new NoCapabilities());
 
         public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => Task.FromResult(ProviderResult<Unit>.Success(default));
 

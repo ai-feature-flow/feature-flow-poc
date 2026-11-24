@@ -102,7 +102,7 @@ public sealed class MemorySandbox(Func<IArtifactStoreProvider> store, InMemoryFo
             return boxes.GetValueOrDefault(sandbox.Id)?.Files.GetValueOrDefault(path);
     }
 
-    public ProviderDescription Describe() => new("sandbox", "memory", "0.1.0", new SandboxCapabilities(["linux"], false, false, true, false));
+    public ProviderDescription Describe() => new("sandbox", "memory", "0.1.0", new NoCapabilities());
 
     public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => Done(ProviderResult<Unit>.Success(default));
 

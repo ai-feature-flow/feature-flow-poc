@@ -18,7 +18,7 @@ Signatures are C#, abbreviated: every method is async, takes a
 | Rule | Detail |
 |---|---|
 | Base interface | `Describe()` returns type, name, version and the typed capability record. Each provider's factory lists the settings it accepts; any other key is refused when the providers are composed. `CheckAsync()` is called at startup and run start |
-| Capabilities | Typed records, never strings. A run checks every capability its plan needs when it starts (P9). Flags are otherwise not read before a call: planned (`docs/12` R1, F16) |
+| Capabilities | Typed records, never strings, holding only the flags the engine reads; a type with none describes `NoCapabilities`. A run checks every capability its plan needs when it starts (P9, check 21), on the instance that serves each step: an agent step's runtime is the one its role maps to (`role_mapping`), a dry run's the `dry_run` instance. Flags are not read again before a call. The flags: `agent_runtime.hooks` and `agent_runtime.mcp`, which every agent step needs, and `code_host.pull_request` and `code_host.check_status`, which actions need (`docs/12` R1, F16) |
 | Short and bounded | No method waits on human or external time. Long work is started and polled; waiting is the engine's (`docs/02` section 2.3) |
 | Classified results | Expected failures are `ProviderError` values with a class and a reason (section 1.1). Exceptions are programming errors. The engine's decorator records one on the call's span and re-throws it, so the caller decides: an engine action stops for a person (an intervention), and only network faults are retried (LOG 303) |
 | Every success mapped | Every documented success response of the remote system maps to a result, including empty ones such as GitHub's 204 for a merge with nothing to merge. An unmapped success is `unexpected_response`, a **work** error, so it is never retried forever (Spike 3, `archive/docs/18` section 4) |
@@ -114,8 +114,7 @@ The notifications and session surface interfaces as built in M7, and the records
 ### 3.1 Sandbox
 
 ```csharp
-record SandboxCapabilities(IReadOnlyList<string> Os, bool Docker, bool NetworkPolicy,
-                           bool PersistentAcrossSteps, bool StreamingOutput);
+record NoCapabilities;   // the sandbox declares no flags: nothing reads them (F16)
 
 record SandboxSpec(string Key, string Home, IReadOnlyDictionary<string, string> Environment,
                    IReadOnlyList<string> Folders, string? Image = null);
@@ -156,8 +155,8 @@ abbreviated: every method also takes a cancellation token, and `..X` stands for
   command after a worker restart (Spike 1, `archive/docs/15` section 3.4).
 - Every sandbox has the engine's hook client and MCP endpoint configured, with
   the per-step token (`docs/02` section 4.2).
-- Network policy, CPU and memory limits are applied where the capability is
-  declared. FF's containers had none (`../feature-factory/issues.md`).
+- Network policy, CPU and memory limits are applied by every built sandbox; no
+  capability flag declares them (F16). FF's containers had none (`../feature-factory/issues.md`).
 - Built in M8: a sandbox reaches the agent worker (its `urls` and model proxy)
   and the internet, never Temporal, the stores or anything else on its host or
   cluster. Docker closes it with rules inside the container (LOG 291); the
@@ -186,9 +185,7 @@ run time its sandbox has the same network as any other: the agent worker and the
 ### 3.2 Agent runtime
 
 ```csharp
-record AgentRuntimeCapabilities(bool Hooks, bool Mcp, bool SessionResume, bool StreamingToolCalls,
-                                bool UsageReporting, bool ModelConfiguration, bool CustomEndpoint,
-                                int? MaxContextTokens);
+record AgentRuntimeCapabilities(bool Hooks, bool Mcp);   // every agent step needs both, of the runtime its role maps to
 
 interface IAgentRuntimeProvider : IProvider {
     Task<..AgentSession>  StartAsync(SandboxHandle s, AgentTask task, AgentLimits limits);
@@ -303,7 +300,7 @@ interface IAgentRuntimeProvider : IProvider {
 ### 3.3 VCS
 
 ```csharp
-record VcsCapabilities(string System, bool HiddenReferences, bool Squash, bool PartialClone);
+record NoCapabilities;   // VCS declares no flags (F16)
 
 interface IVcsProvider : IProvider {
     // A working copy in a sandbox, reached through the sandbox provider
@@ -339,8 +336,7 @@ interface IVcsProvider : IProvider {
 ### 3.4 Code host
 
 ```csharp
-record CodeHostCapabilities(bool PullRequest, bool ReviewComments, bool CheckStatus, bool BranchProtection,
-                            bool MergeQueue, bool InboundEvents);   // MergeQueue not read (docs/12 R1, F16)
+record CodeHostCapabilities(bool PullRequest, bool CheckStatus);   // read from the action descriptors (check 21)
 
 interface ICodeHostProvider : IProvider {
     Task<..string>           GetDefaultBranchAsync(RepoRef repo);
@@ -371,8 +367,7 @@ interface ICodeHostProvider : IProvider {
 ### 3.5 CI
 
 ```csharp
-record CiCapabilities(bool Trigger, bool ReadLogs, bool Artifacts, bool InboundEvents,
-                      bool QueueBuilds);   // QueueBuilds not read (docs/12 R1, F16)
+record NoCapabilities;   // CI declares no flags (F16)
 
 interface ICiProvider : IProvider {
     Task<..CiRunRef>    TriggerAsync(RepoRef repo, CiJobRef job, string commit);
@@ -419,8 +414,7 @@ repository's secrets are reviewed code, never a file the agent edited. A workflo
 ### 3.6 Tracker
 
 ```csharp
-record TrackerCapabilities(bool Issues, bool Hierarchy, bool Transitions, bool Links, bool Comments,
-                           bool CustomFields, bool Labels);
+record NoCapabilities;   // the tracker declares no flags (F16)
 
 interface ITrackerProvider : IProvider {
     Task<..Issue>                GetIssueAsync(string key);
@@ -440,7 +434,7 @@ interface ITrackerProvider : IProvider {
 ### 3.7 Findings source
 
 ```csharp
-record FindingsSourceCapabilities(bool Fingerprints, bool Severity, bool Threads);
+record NoCapabilities;   // a findings source declares no flags (F16)
 
 interface IFindingsSourceProvider : IProvider {
     Task<..CollectHandle>  RequestAsync(FindingsTarget target, string key);   // e.g. ask for a review of a head
@@ -504,7 +498,7 @@ interface IToolsetProvider : IProvider {
 ### 3.10 Notifications
 
 ```csharp
-record NotificationCapabilities(IReadOnlyList<string> Channels, bool Interactive, bool Threads);
+record NoCapabilities;   // notifications declare no flags; every provider threads replies (F16)
 
 interface INotificationsProvider : IProvider {
     Task<..MessageRef> SendAsync(string channel, Notification message, MessageRef? thread);

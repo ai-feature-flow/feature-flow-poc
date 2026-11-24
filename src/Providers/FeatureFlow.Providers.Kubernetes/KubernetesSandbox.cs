@@ -31,7 +31,7 @@ public sealed class KubernetesSandbox(IKubernetes client, string @namespace, str
     public const string KeyAnnotation = "feature-flow.sandbox/key";
     const string Container = "sandbox";
 
-    public override ProviderDescription Describe() => new("sandbox", "kubernetes", "0.1.0", new SandboxCapabilities(["linux"], false, true, true, true));
+    public override ProviderDescription Describe() => new("sandbox", "kubernetes", "0.1.0", new NoCapabilities());
 
     public override async Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken)
     {

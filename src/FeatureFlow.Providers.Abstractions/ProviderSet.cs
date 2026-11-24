@@ -50,13 +50,12 @@ public sealed class ProviderSet(IReadOnlyDictionary<string, IReadOnlyDictionary<
     public T Required<T>(string type, bool dryRun = false) where T : class =>
         ForRun(type, dryRun) as T ?? throw new InvalidOperationException($"no {type} provider implementing {typeof(T).Name} is configured");
 
-    /// <summary>The capability names the providers a run would use offer (check 21).</summary>
-    public IReadOnlySet<string> Offered(bool dryRun)
-    {
-        var names = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var type in Types)
-            if (ForRun(type, dryRun) is { } provider)
-                names.UnionWith(provider.Describe().CapabilityNames());
-        return names;
-    }
+    /// <summary>
+    /// The capability names the instance a run uses for a type offers (check 21): the instance <see cref="NameForRun"/> picks,
+    /// given the run's choice (an agent role's runtime, <c>role_mapping</c>), as the step's activity picks it. Empty where
+    /// the run has no instance of the type.
+    /// </summary>
+    public IReadOnlySet<string> Offered(string type, string? chosen, bool dryRun) =>
+        (NameForRun(type, chosen, dryRun) is { } name ? Instance(type, name) : null)?.Describe().CapabilityNames().ToHashSet(StringComparer.Ordinal)
+        ?? new HashSet<string>(StringComparer.Ordinal);
 }

@@ -52,7 +52,7 @@ public sealed record PullRequestFile(string Path, string Status, int Additions, 
 /// review rules, which only an administrator can read).
 /// </summary>
 public sealed record BranchProtection(string Branch, bool Protected, bool RequiresPullRequest, int RequiredApprovals,
-    IReadOnlyList<string> RequiredChecks, bool RequiresMergeQueue);
+    IReadOnlyList<string> RequiredChecks);
 
 /// <summary>A check's progress: <c>queued</c>, <c>in_progress</c> or <c>completed</c>.</summary>
 public static class CheckStates

@@ -223,7 +223,7 @@ public sealed class GitHubCodeHostTests
 
         var protection = (await host.GetBranchProtectionAsync(Repo, "main", Ct)).Unwrap();
 
-        Assert.Equal(new BranchProtection("main", true, true, 2, protection.RequiredChecks, true), protection);
+        Assert.Equal(new BranchProtection("main", true, true, 2, protection.RequiredChecks), protection);
         Assert.Equal(["legacy", "unit"], protection.RequiredChecks);
     }
 
@@ -249,7 +249,7 @@ public sealed class GitHubCodeHostTests
             .On(Get, "~/branches/none", 404, """{"message":"Branch not found"}""");
 
         var free = (await host.GetBranchProtectionAsync(Repo, "free", Ct)).Unwrap();
-        Assert.Equal((false, false, 0, false), (free.Protected, free.RequiresPullRequest, free.RequiredApprovals, free.RequiresMergeQueue));
+        Assert.Equal((false, false, 0), (free.Protected, free.RequiresPullRequest, free.RequiredApprovals));
         Assert.Empty(free.RequiredChecks);
         Assert.Equal("not_found", (await host.GetBranchProtectionAsync(Repo, "none", Ct)).Error?.Reason);
     }
