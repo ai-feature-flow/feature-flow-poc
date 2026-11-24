@@ -15,3 +15,10 @@
 .ff-steer-consequence { border-left: 4px solid var(--warn); padding: 4px 14px; }
 .ff-steer-diff { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; max-width: 46em; }
 .ff-steer-diff pre { margin: 4px 0 0; }
+.ff-steer-consequence p { margin: 0 0 4px; }
+.ff-steer-consequence ul { margin: 0 0 4px; padding-left: 20px; }
+.ff-steer-check { display: flex; gap: 8px; align-items: center; }
+.ff-steer-protected { border-left: 4px solid var(--bad); padding: 4px 14px; max-width: 46em; }
+.ff-steer-prompt { white-space: pre-wrap; max-width: 46em; }
+.ff-staged { border-color: var(--warn); }
+.ff-staged-ops { margin: 0; padding-left: 18px; }
