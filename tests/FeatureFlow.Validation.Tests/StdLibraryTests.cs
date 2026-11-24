@@ -122,7 +122,7 @@ public class StdLibraryTests
         // The ticket routes verify_and_review's escalated exit; fix_loop's blocked triager must reach that
         // route through fix_loop's and verify_and_review's escalated exits (LOG 72).
         var result = Std.Mutate(new Std.Edit("fragments/ticket_flow.yaml",
-            "    routes:\n      ready: deliver\n", "    routes:\n      ready: deliver\n      escalated: { end: failed }\n"), Std.WithoutBlockedToPlan);
+            "    routes:\n      ready: trace\n", "    routes:\n      ready: trace\n      escalated: { end: failed }\n"), Std.WithoutBlockedToPlan);
         Assert.False(result.HasErrors, Std.Describe(result));
         var plan = result.Plans["std:templates/ticket_delivery"];
 

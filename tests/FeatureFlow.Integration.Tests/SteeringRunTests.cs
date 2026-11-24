@@ -156,6 +156,47 @@ public class SteeringRunTests
         Assert.Contains(Timeline(view), e => e is { Kind: "skipped", Step: "ship" });
     }
 
+    /// <summary>
+    /// Go to on a live run (build-console-b2 s1.2): while a scripted agent step runs, a person's instructions for a later step
+    /// are kept for its prompt, and a go to past the running step cancels it and the run continues at the target, which reads
+    /// both the instruction and who sent the run there. A go to past the protected review is refused.
+    /// </summary>
+    [Fact]
+    public async Task A_go_to_while_an_agent_step_runs_cancels_it_and_the_run_continues_at_the_target()
+    {
+        await using var h = await Harness.StartAsync("steergoto", """{ "steer_line:prepare": { delay_from: wait_ms } }""", libraries: Library);
+        var id = h.Start("m7steer:templates/steer_line", "--param", "wait_ms=60000", "--repo", Repo);
+        await UntilAsync(async () => Harness.StartedSteps(await h.ShowAsync(id)).Contains("prepare"), "prepare did not start");
+
+        Assert.Equal("applied", (await SendAsync(h, id, Override("instruct", "build", new() { ["text"] = "INSTRUCTED: keep the build small" }))).Result);
+        Assert.Contains("leave protected step review unrun", await RefusedAsync(h, id, Override("go_to", "ship")));
+        Assert.Equal("applied: continues at build; cancelled prepare", (await SendAsync(h, id, Override("go_to", "build"))).Result);
+
+        var (_, end, _) = h.Cli("wait", id, "--timeout", "60");
+        var view = await h.ShowAsync(id);
+        Assert.True(end.Trim() == $"run {id} completed", end + view.ToJsonString());
+        Assert.Equal(["prepare", "build", "review", "ship"], Harness.StartedSteps(view));
+        var timeline = Timeline(view);
+        Assert.Contains(timeline, e => e is { Kind: "cancelled", Step: "prepare" });
+        Assert.DoesNotContain(timeline, e => e is { Kind: "completed", Step: "prepare" });
+        Assert.Contains(timeline, e => e.Kind == "override" && e.Step == "build" && e.Detail.StartsWith("go_to by ann: testing go_to -> applied", StringComparison.Ordinal));
+
+        var causes = new List<string>();
+        foreach (var run in await h.RunsOfAsync(id))
+            foreach (var e in (await h.Client.GetWorkflowHandle(id, run.RunId).FetchHistoryAsync()).Events
+                         .Where(e => e.EventType == EventType.ActivityTaskScheduled && e.ActivityTaskScheduledEventAttributes.ActivityType.Name == "RunAgentStep"))
+            {
+                var call = JsonNode.Parse(e.ActivityTaskScheduledEventAttributes.Input.Payloads_[0].Data.ToStringUtf8())!;
+                if (call["Step"]!["StepId"]!.ToString() == "build")
+                    causes.Add(call["Agent"]?["Causes"]?.ToString() ?? "");
+            }
+
+        var build = Assert.Single(causes);
+        Assert.Contains("- go to by ann sent the run here: testing go_to", build, StringComparison.Ordinal);
+        Assert.Contains("## A person's instructions for this step\n\n- from ann: INSTRUCTED: keep the build small", build, StringComparison.Ordinal);
+        Assert.Empty(await h.WorkflowTaskFailuresAsync(id));
+    }
+
     [Fact]
     public async Task A_persons_amend_role_change_and_grant_are_bounded_by_their_variants()
     {

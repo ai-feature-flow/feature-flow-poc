@@ -1,0 +1,23 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: ticket_trace_gap
+description: >-
+  A ticket traces its requirements after verify, as an epic does, but the trace
+  is informational: verify.satisfaction has already required every criterion's
+  tests to pass. A trace with a gap (invalid) still delivers, and the ticket
+  merges; the gap is shown in the merge popup and the review report.
+template: std:templates/ticket_delivery
+parameters: { ticket_id: FF-1042 }
+repositories: [acme/api]
+
+script:
+  trace: [invalid]
+
+expect:
+  status: completed
+  path_includes:
+    - verify.satisfaction
+    - trace
+    - deliver.open_pr
+    - deliver.merge
+  executions: { trace: 1, deliver.merge: 1 }

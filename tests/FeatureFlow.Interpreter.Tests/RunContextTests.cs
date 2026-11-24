@@ -231,4 +231,55 @@ public class RunContextTests
         Assert.Equal("## Why this step runs again\n\n- check ended invalid: F-1 may not be declined\n" +
                      "- attempt 2 of verify failed: output still invalid after correction turns\n", CausesOf(core, "verify"));
     }
+
+    const string Instruction = "## A person's instructions for this step\n\n- from ann: keep the audit table\n";
+
+    /// <summary>
+    /// A person's instructions (<c>instruct</c>) reach the step's next prompt after its retry causes, even with
+    /// <c>context: none</c>; given while an execution runs they are for the next, and they last until an execution that read
+    /// them succeeds. They survive a hand-over.
+    /// </summary>
+    [Fact]
+    public void An_instruction_reaches_the_steps_next_prompts_until_it_next_succeeds()
+    {
+        var lib = new Probe("run-context-checked", ("checked", Checked));
+        var options = new RunOptions { DefaultAttempts = 10 };
+        var core = lib.Start("checked", options);
+        Assert.Equal([new StartStep("verify", 1)], core.Advance());
+        Assert.True(core.Apply(new StepInstructed("verify", "keep the audit table\n", "ann", false)).Accepted);
+
+        Assert.True(core.Apply(new StepCompleted("verify", "done")).Accepted);
+        core.Advance();
+        Assert.True(core.Apply(new StepCompleted("check", "valid")).Accepted);
+        Assert.Equal([new StartStep("verify", 2)], core.Advance());
+        Assert.Equal(Instruction, CausesOf(core, "verify"));
+
+        core = RunCore.Resume(lib.Libraries, Probe.Ref("checked"),
+            System.Text.Json.JsonSerializer.Deserialize<CarriedCore>(System.Text.Json.JsonSerializer.Serialize(core.Snapshot()))!, options);
+        Assert.True(core.Apply(new StepFailed("verify", ErrorClass.Work, "tests fail")).Accepted);
+        Assert.Equal([new StartStep("verify", 3)], core.Advance());
+        Assert.Equal("## Why this step runs again\n\n- attempt 2 of verify failed: tests fail\n\n" + Instruction, CausesOf(core, "verify"));
+
+        Assert.True(core.Apply(new StepCompleted("verify", "done")).Accepted);
+        core.Advance();
+        Assert.True(core.Apply(new StepCompleted("check", "valid")).Accepted);
+        Assert.Equal([new StartStep("verify", 4)], core.Advance());
+        Assert.Null(CausesOf(core, "verify"));
+    }
+
+    [Fact]
+    public void An_instruction_is_its_steps_alone_and_not_part_of_the_run_context()
+    {
+        var core = Lib.Start("context");
+        core.Advance();
+        Assert.True(core.Apply(new StepInstructed("next", "keep the audit table", "ann", false)).Accepted);
+        Assert.True(core.Apply(new StepCompleted("work", "done", Summary: "added the audit log table")).Accepted);
+        core.Advance();
+        Assert.Null(CausesOf(core, "quiet"));
+        Assert.True(core.Apply(new StepCompleted("quiet", "done")).Accepted);
+        Assert.Equal([new StartStep("next", 1)], core.Advance());
+
+        Assert.Equal(Instruction, CausesOf(core, "next"));
+        Assert.DoesNotContain("keep the audit table", ContextOf(core, "next"), StringComparison.Ordinal);
+    }
 }

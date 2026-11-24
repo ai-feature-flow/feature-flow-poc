@@ -502,7 +502,8 @@ public sealed class FindingsActionTests : IAsyncDisposable
     {
         await Reviewed("review.assess", Finding(), Finding("b", snippet: "void Add()"));
         await Record();
-        Outcome(await world.RunAsync("scm.pull_request", "{ title: T-1 }"), "ready");
+        // post_review: false, here and below: these count the declines alone; the review summary has its own tests (SourceControlActionTests).
+        Outcome(await world.RunAsync("scm.pull_request", "{ title: T-1, post_review: false }"), "ready");
         var pr = ActionRunAccess.Pr(world.PullRequests.Single());
         var ledger = await Ledger();
         await Triaged("fix.triage", new TriageEntry(ledger[0].FindingId, FindingStates.Declined, "not a bug: x is never null here"));
@@ -541,14 +542,14 @@ public sealed class FindingsActionTests : IAsyncDisposable
         await Triaged("fix.triage", new TriageEntry(ledger[0].FindingId, FindingStates.Declined, "not a bug: x is never null here"));
         Outcome(await Triage(stepId: "fix.apply_triage"), "applied");
 
-        var opened = await world.RunAsync("scm.pull_request", "{ title: T-1 }", "deliver.open_pr");
+        var opened = await world.RunAsync("scm.pull_request", "{ title: T-1, post_review: false }", "deliver.open_pr");
         Outcome(opened, "ready");
         var pr = ActionRunAccess.Pr(world.PullRequests.Single());
         Assert.Contains(opened.Events, e => e.StartsWith($"the decline of {ledger[0].FindingId} is posted", StringComparison.Ordinal));
         // A decline after the pull request opened is posted by its triage; opening again (a re-entry) posts neither twice.
         await Triaged("fix.triage", new TriageEntry(ledger[1].FindingId, FindingStates.Declined, "by design"));
         Outcome(await Triage(stepId: "fix.apply_triage_2"), "applied");
-        Outcome(await world.RunAsync("scm.pull_request", "{ title: T-1 }", "deliver.open_pr"), "ready");
+        Outcome(await world.RunAsync("scm.pull_request", "{ title: T-1, post_review: false }", "deliver.open_pr"), "ready");
 
         var comments = world.Forge.Comments(pr);
         Assert.Equal(2, comments.Count);
@@ -564,7 +565,7 @@ public sealed class FindingsActionTests : IAsyncDisposable
         await Triaged("fix.triage", new TriageEntry(Assert.Single(await Ledger()).FindingId, FindingStates.Declined, "by design"));
         Outcome(await Triage(stepId: "fix.apply_triage", postDeclines: false), "applied");
 
-        Outcome(await world.RunAsync("scm.pull_request", "{ title: T-1, post_declines: false }", "deliver.open_pr"), "ready");
+        Outcome(await world.RunAsync("scm.pull_request", "{ title: T-1, post_declines: false, post_review: false }", "deliver.open_pr"), "ready");
 
         Assert.Empty(world.Forge.Comments(ActionRunAccess.Pr(world.PullRequests.Single())));
     }
