@@ -4,6 +4,7 @@
     <OutputType>Exe</OutputType>
     <AssemblyName>ff</AssemblyName>
     <RootNamespace>FeatureFlow.Cli</RootNamespace>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>

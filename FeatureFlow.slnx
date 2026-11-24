@@ -33,6 +33,7 @@
     <Project Path="src/Providers/FeatureFlow.Providers.Postgres/FeatureFlow.Providers.Postgres.csproj" />
     <Project Path="src/Providers/FeatureFlow.Providers.S3/FeatureFlow.Providers.S3.csproj" />
     <Project Path="src/Providers/FeatureFlow.Providers.Slack/FeatureFlow.Providers.Slack.csproj" />
+    <Project Path="src/Providers/FeatureFlow.Providers.Standard/FeatureFlow.Providers.Standard.csproj" />
     <Project Path="src/Providers/FeatureFlow.Providers.StdValidators/FeatureFlow.Providers.StdValidators.csproj" />
     <Project Path="src/Providers/FeatureFlow.Providers.Testing/FeatureFlow.Providers.Testing.csproj" />
   </Folder>

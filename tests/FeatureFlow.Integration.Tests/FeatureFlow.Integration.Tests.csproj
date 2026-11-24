@@ -15,6 +15,7 @@
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.GitHub\FeatureFlow.Providers.GitHub.csproj" />
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.StdValidators\FeatureFlow.Providers.StdValidators.csproj" />
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Slack\FeatureFlow.Providers.Slack.csproj" />
+    <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Standard\FeatureFlow.Providers.Standard.csproj" />
     <ProjectReference Include="..\..\src\FeatureFlow.Cli\FeatureFlow.Cli.csproj" />
   </ItemGroup>
 

@@ -644,10 +644,15 @@ requests (`archive/docs/16` section 2).
 
 ## 4. Packaging
 
+A provider is added without a fork: the engine is built as packages, and an organisation's own host composes the
+standard providers with its own.
+
 | Rule | Detail |
 |---|---|
-| Version 1 | Providers are in-process .NET packages. A host project references the providers it ships; configuration selects them by name |
-| Organisation customisation | A **distribution repository**, not a fork: the organisation's own providers, a small host project that builds its worker and API images, and its configuration. A fork is needed only for core changes, and is acceptable for bespoke authentication handlers (`docs/00` P13). Version 1 has no published packages or sample host, so today a distribution needs the engine's source; both are planned (`docs/12` R1, review F6) |
+| Version 1 | Providers are in-process .NET packages, one per provider project, plus `FeatureFlow.Providers.Standard`, whose `StandardProviders.Factories` is every standard provider's factories in one list. A host composes factory lists; configuration selects instances by type and kind (section 1). The engine's three hosts compose `StandardProviders.Factories` and the test doubles' `TestingProviders.Factories` (section 3; composition refuses a double outside `development: true`) |
+| Packages | Every library under `src/` is a package: the core, `Providers.Abstractions`, `Providers.Contracts` (an organisation's provider contract tests), the engine, the API, `Hosting`, `Testing.Workflows` and each provider. Not packed: the hosts, `ff` and `ff-sandbox`. One version for all (0.1.0; `-p:Version=` overrides). Packed to a folder only, never published to a feed: `dotnet pack FeatureFlow.slnx -c Release -o <folder>`; without Node, add `-p:ConsoleBuild=false`, which leaves the console out of the `FeatureFlow.Api` package, so a real distribution packs with Node |
+| Organisation customisation | A **distribution repository**, not a fork: the organisation's own providers, a small host project that composes `StandardProviders.Factories` with its own factories (and `TestingProviders.Factories` if it serves development installations) and builds its worker and API images, and its configuration. `samples/distribution` is a working example: Acme's own validator (`acme_line_limit`), Acme's host, and a workflow test that runs a library step using that validator, built from the packages alone (`docs/09` section 4.2). A fork is needed only for core changes, and is acceptable for bespoke authentication handlers (`docs/00` P13) |
+| Not packaged yet | std, the library: a distribution names it as a `directory` or `git` library source (`docs/08` section 3). The sandbox client a distribution's agent image needs (`ff-sandbox`): with the published images (`docs/12` R4) |
 | Later | A remote provider adapter for providers in other languages or needing isolation |
 
 ---

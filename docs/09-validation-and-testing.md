@@ -146,7 +146,8 @@ CI.
 | Merge race | Two work branches catch up from the same parent head; the second merge gets `base_moved` and loops; repeated refusals exhaust the allowance and escalate | integration |
 | Agent reporting | `report`, `ask_human` (including across a worker restart), `checkpoint`; `inspect_plan` and `propose_patch`, a staged patch carried by the report and held for a person (`docs/04` section 6.1) | integration |
 | Pre-submit parity | A session's check and the later step receive the same task, tools, model and commit | integration |
-| Architecture | The shell holds no routing; project reference rules | default |
+| Architecture | The shell holds no routing; project reference rules; `StandardProviders` lists every standard provider package | default |
+| Distribution | The engine packed to a temporary folder feed; `samples/distribution`, copied outside the repository with its own package cache, builds from the packages alone and runs its workflow test, whose step uses the sample's own validator; its assets resolve every `FeatureFlow.*` as a package and no project but its own (`docs/06` section 4) | integration |
 | Deployment | Images, network policies, stop on SIGTERM | cluster, integration |
 | Console (serving) | The API serves the built console; the console sources never build markup or links from data | default |
 | Console (browser) | The console in Chromium (Playwright) against the API in process over the local stores, with a scripted engine writing the records a run would: find a wait in "Needs me" and answer it with a reason, start a run, set a breakpoint and continue, a change arriving over `/events`, the notification link, sign-in, markup in API data shown as text (LOG 461), and a patch approval's prompt shown as text, line by line | default |

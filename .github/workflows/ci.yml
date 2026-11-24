@@ -20,6 +20,7 @@
 #   the deployment: images, network policies, stop  cluster (Cluster/DeploymentTests) and integration (HostProcessTests)
 #   console: serving and the text-only source rule  default (Api.Tests ConsoleTests)
 #   console (Playwright)                            default (FeatureFlow.Console.Tests)
+#   distribution (packages and the sample host)      integration (Hosting.Tests DistributionTests; needs nuget.org)
 #
 # Every job builds the console (src/FeatureFlow.Console) with Node inside dotnet build (LOG 453, 462), so each sets up
 # Node first. The default job also installs Playwright's Chromium for the browser tests.

@@ -38,8 +38,9 @@ public class ReferenceRuleTests
         var solution = File.ReadAllText(Path.Combine(Root, "FeatureFlow.slnx"));
 
         var missing = ReferenceRules.AllProjects.Where(p => !onDisk.Contains(p)).ToList();
+        // spikes/ keeps its own settings; samples/ builds against the packages, not the solution (docs/06 section 4).
         var notInSolution = Directory.EnumerateFiles(Root, "*.csproj", SearchOption.AllDirectories)
-            .Where(p => !IsUnder(p, "spikes"))
+            .Where(p => !IsUnder(p, "spikes") && !IsUnder(p, "samples"))
             .Select(p => Path.GetRelativePath(Root, p).Replace('\\', '/'))
             .Where(p => !solution.Contains(p, StringComparison.Ordinal))
             .ToList();
@@ -54,7 +55,7 @@ public class ReferenceRuleTests
     {
         var shared = new[] { "Directory.Build.props", "Directory.Build.targets", "Directory.Packages.props" }
             .SelectMany(name => Directory.EnumerateFiles(Root, name, SearchOption.AllDirectories))
-            .Where(p => !IsUnder(p, "spikes") && !IsUnder(p, "tests"));
+            .Where(p => !IsUnder(p, "spikes") && !IsUnder(p, "samples") && !IsUnder(p, "tests"));
 
         var offending = shared
             .Where(p => XDocument.Load(p).Descendants().Any(e =>
@@ -81,8 +82,10 @@ public class ReferenceRuleTests
     [InlineData("FeatureFlow.Interpreter", "FeatureFlow.Validation", null)]
     [InlineData("FeatureFlow.Engine", "FeatureFlow.Interpreter", "Temporalio")]
     [InlineData("FeatureFlow.Providers.Git", "FeatureFlow.Providers.Abstractions", "LibGit2Sharp")]
-    [InlineData("FeatureFlow.Host.AgentWorker", "FeatureFlow.Providers.Docker", null)]
+    [InlineData("FeatureFlow.Host.AgentWorker", "FeatureFlow.Providers.Standard", null)]
     [InlineData("FeatureFlow.Host.AgentWorker", "FeatureFlow.Providers.Testing", null)]
+    [InlineData("FeatureFlow.Providers.Standard", "FeatureFlow.Providers.Docker", null)]
+    [InlineData("FeatureFlow.Providers.Standard", "FeatureFlow.Providers.Abstractions", null)]
     [InlineData("FeatureFlow.Cli", "FeatureFlow.Engine", null)]
     [InlineData("FeatureFlow.Testing.Workflows", "FeatureFlow.Interpreter", null)]
     public void Allowed_references_pass(string project, string reference, string? package)
@@ -98,6 +101,9 @@ public class ReferenceRuleTests
     [InlineData("FeatureFlow.Providers.Git", "FeatureFlow.Engine", null)]
     [InlineData("FeatureFlow.Engine", "FeatureFlow.Hosting", null)]
     [InlineData("FeatureFlow.Host.Api", "FeatureFlow.Engine", null)]
+    [InlineData("FeatureFlow.Host.Api", "FeatureFlow.Providers.Docker", null)]
+    [InlineData("FeatureFlow.Providers.Standard", "FeatureFlow.Providers.Testing", null)]
+    [InlineData("FeatureFlow.Providers.Standard", "FeatureFlow.Engine", null)]
     [InlineData("FeatureFlow.Unlisted", null, null)]
     [InlineData("FeatureFlow.Testing.Workflows", null, "Temporalio")]
     [InlineData("FeatureFlow.Testing.Workflows", "FeatureFlow.Engine", null)]

@@ -1,0 +1,17 @@
+<Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <!-- Every library under src/ is a package (docs/06 section 4): a distribution builds its own host from them, adding its
+       own providers without a fork. The executables (ff, ff-sandbox) set IsPackable false; the hosts are not under src/.
+       Pack to a local folder only: dotnet pack FeatureFlow.slnx -c Release -o <folder> (-p:ConsoleBuild=false without Node,
+       which leaves the console out of the FeatureFlow.Api package). Must not add package or project references. -->
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <Authors>ai-feature-flow</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/ai-feature-flow/feature-flow-poc</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>feature-flow</PackageTags>
+    <Description>Feature Flow: $(MSBuildProjectName).</Description>
+  </PropertyGroup>
+</Project>

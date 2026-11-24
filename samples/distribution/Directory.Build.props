@@ -1,0 +1,13 @@
+<Project>
+  <!-- The sample distribution's own build settings (docs/06 section 4). It stands outside the engine's repository: nothing
+       here imports the repository's Directory.Build.props, so it builds as an organisation's copy would. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+    <!-- The engine's packages' version; a build against another pack passes -p:FeatureFlowVersion=. -->
+    <FeatureFlowVersion Condition="'$(FeatureFlowVersion)' == ''">0.1.0</FeatureFlowVersion>
+  </PropertyGroup>
+</Project>
