@@ -10,7 +10,8 @@ namespace FeatureFlow.Validation.Tests;
 /// </summary>
 public class MutationTests
 {
-    const string Ticket = "templates/ticket_delivery.yaml";
+    const string TicketTemplate = "templates/ticket_delivery.yaml";
+    const string Ticket = "fragments/ticket_flow.yaml";   // the ticket template's body (docs/03 section 11.1)
     const string FixLoop = "fragments/fix_loop.yaml";
     const string Merge = "fragments/merge_into_parent.yaml";
     const string DeliverInOrder = "fragments/deliver_in_order.yaml";
@@ -30,7 +31,7 @@ public class MutationTests
         // LOG 501: the run's tracker issue comes from a parameter the template declares.
         ["tracker_parameter_undeclared"] = new(1, "metadata.tracker_parameter names 'ticket', which is not a declared string parameter",
             "the ticket names a tracker parameter it does not declare", [
-            new(Ticket, "  tracker_parameter: ticket_id ", "  tracker_parameter: ticket ")]),
+            new(TicketTemplate, "  tracker_parameter: ticket_id ", "  tracker_parameter: ticket ")]),
 
         ["unknown_action"] = new(2, "unknown action 'analysis.execute'", "verify_and_review's analysis step names an action that does not exist", [
             new(VerifyAndReview, "    action: analysis.run\n    with: { fail_on: new_issues }", "    action: analysis.execute\n    with: { fail_on: new_issues }")]),
@@ -92,7 +93,7 @@ public class MutationTests
         ["unreachable_step"] = new(9, "no route reaches this step", "a step after the last fragment, which every exit routes past", [
             new(Ticket,
                 "      reverify: verify\n",
-                "      reverify: verify\n\n  - id: announce\n    action: artifact.compose\n    with: { members: [requirements] }\n")]),
+                "      reverify: verify\n\n  - id: announce\n    action: artifact.compose\n    with: { members: [requirements] }\n    routes: { composed: { exit: merged } }\n")]),
 
         ["cycle_without_exit"] = new(10, "has no route out", "the fix loop's validated tests go back to the fixer instead of leaving", [
             new(FixLoop, "      valid: { exit: fixed }\n      invalid: fix", "      valid: fix\n      invalid: fix")]),
@@ -138,11 +139,11 @@ public class MutationTests
         ["fragment_param_no_value"] = new(14, "{ param: planner_task } has no value",
             "planner_task becomes optional with no default, and the ticket stops binding it", [
             new("fragments/plan_and_validate.yaml", "  planner_task: { type: reference, required: true,", "  planner_task: { type: reference, required: false,"),
-            new(Ticket, "      planner_task: std:tasks/plan_ticket\n", "")]),
+            new(Ticket, "      planner_task: { param: planner_task }\n", "")]),
 
         ["fragment_param_needs_literal"] = new(14, "{ param: planner_task } needs a literal value",
             "the ticket binds planner_task, which the fragment substitutes into a task field, to an expression", [
-            new(Ticket, "      planner_task: std:tasks/plan_ticket\n", "      planner_task: { expr: \"params.ticket_id\" }\n")]),
+            new(Ticket, "      planner_task: { param: planner_task }\n", "      planner_task: { expr: \"params.ticket_id\" }\n")]),
 
         ["fragment_exit_unrouted"] = new(14, "exit 'reverify' (class ~) of fragment use 'deliver' is not routed", "merge_into_parent's reverify exit, which has no class, is left unrouted", [
             new(Ticket, "      reverify: verify\n", "")]),
@@ -164,7 +165,7 @@ public class MutationTests
                 + string.Join(", ", Enumerable.Range(0, 1000).Select(i => $"angle_{i}")) + "]\n")]),
 
         ["unresolved_reference"] = new(19, "std:roles/implementor does not resolve", "implement names a role that does not exist", [
-            new(Ticket, "      role: std:roles/implementer\n", "      role: std:roles/implementor\n")]),
+            new(Ticket, "  implementer_role: { type: reference, default: std:roles/implementer }", "  implementer_role: { type: reference, default: std:roles/implementor }")]),
 
         // Check 31 on what the plan writes (LOG 346, 358, 359): every action's with is checked against its input schema at load.
         ["run_child_run_gate"] = new(31, "run.child has no input 'run_gate'", "a run.child step asks for run_gate, dropped by LOG 264", [
@@ -208,7 +209,7 @@ public class MutationTests
     [Fact]
     public void Unused_parameter_warns_and_does_not_block()
     {
-        var result = Mutate(new Edit(Ticket, "parameters:\n", "parameters:\n  notify_channel: { type: string, default: \"\" }\n"));
+        var result = Mutate(new Edit(TicketTemplate, "parameters:\n", "parameters:\n  notify_channel: { type: string, default: \"\" }\n"));
 
         Assert.False(result.HasErrors, Describe(result));
         Assert.Equal([34], result.WarningChecks);

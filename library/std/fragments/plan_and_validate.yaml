@@ -8,6 +8,7 @@ metadata:
 
 parameters:
   planner_task: { type: reference, required: true, description: "The planner's library task" }
+  planner_role: { type: reference, default: std:roles/planner }
   subject_id: { type: string, required: true, description: "The scope id being planned, for example the ticket key" }
   level_validators:
     type: array
@@ -30,7 +31,7 @@ artifact_types:
 steps:
   - id: plan
     agent:
-      role: std:roles/planner
+      role: { param: planner_role }
       task: { param: planner_task }
       skills: [std:skills/verification]
       planning: { targets: [self], review: required }   # so a person's replan is accepted (LOG 509)

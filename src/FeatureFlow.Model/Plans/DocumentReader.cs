@@ -91,11 +91,25 @@ public static class DocumentReader
         var defaults = MapReader.Of(r.Node("defaults"), d, "defaults");
 
         YSeq? steps = null;
-        var stepsNode = r.Required("steps");
-        if (stepsNode is YSeq s)
-            steps = s;
-        else if (stepsNode is not null)
-            r.Error("steps must be a list", stepsNode.Location);
+        if (kind == "template" && r.Has("use"))
+        {
+            // A wrapper template (docs/03 section 11.1): the loader expands the fragment it uses in place of steps.
+            r.Node("use");
+            r.Node("with");
+            r.Node("routes");
+            if (r.Node("steps") is { } both)
+                r.Error("a template has steps or a document-level use of a fragment, not both", both.Location);
+            if (defaults is not null)
+                r.Error("a wrapper template takes its defaults from its fragment", defaults.Map.Location);
+        }
+        else
+        {
+            var stepsNode = r.Required("steps");
+            if (stepsNode is YSeq s)
+                steps = s;
+            else if (stepsNode is not null)
+                r.Error("steps must be a list", stepsNode.Location);
+        }
 
         r.Finish();
         var info = new DocumentInfo

@@ -172,12 +172,17 @@ public class WorkflowTestRunnerTests
     {
         var root = Path.Combine(Path.GetTempPath(), $"ff-implementer-auto-{Guid.NewGuid():N}");
         Directory.CreateDirectory(Path.Combine(root, "templates"));
+        Directory.CreateDirectory(Path.Combine(root, "fragments"));
         Directory.CreateDirectory(Path.Combine(root, "tests"));
         File.WriteAllText(Path.Combine(root, "library.yaml"), "name: probe\nversion: 0.1.0\n");
-        var template = File.ReadAllText(Path.Combine(Repository.Root, "library", "std", "templates", "ticket_delivery.yaml"));
+        // The ticket's body, with the implementer's grant changed, behind a copy of std's wrapper that uses it (docs/03 section 11.1).
+        var std = Path.Combine(Repository.Root, "library", "std");
+        var body = File.ReadAllText(Path.Combine(std, "fragments", "ticket_flow.yaml"));
         const string grant = "planning: { targets: [self], review: required }";
-        Assert.Contains(grant, template);
-        File.WriteAllText(Path.Combine(root, "templates", "ticket_delivery.yaml"), template.Replace(grant, "planning: { targets: [self], review: auto }"));
+        Assert.Contains(grant, body);
+        File.WriteAllText(Path.Combine(root, "fragments", "ticket_flow.yaml"), body.Replace(grant, "planning: { targets: [self], review: auto }"));
+        File.WriteAllText(Path.Combine(root, "templates", "ticket_delivery.yaml"),
+            File.ReadAllText(Path.Combine(std, "templates", "ticket_delivery.yaml")).Replace("use: std:fragments/ticket_flow", "use: probe:fragments/ticket_flow"));
         var test = Path.Combine(root, "tests", "protected_patch.yaml");
         File.WriteAllText(test, $$"""
             api_version: feature-flow/v1

@@ -14,6 +14,10 @@ metadata:
 parameters:
   fixer_task: { type: reference, default: std:tasks/fix_findings }
   triager_task: { type: reference, default: std:tasks/triage_findings }
+  verifier_task: { type: reference, default: std:tasks/verify_fix }
+  triager_role: { type: reference, default: std:roles/triager }
+  fixer_role: { type: reference, default: std:roles/fixer }
+  reviewer_role: { type: reference, default: std:roles/reviewer, description: "The role of the reviewer verifying each fix" }
   tier_tags: { type: array, default: [] }
 
 exits:
@@ -35,7 +39,7 @@ artifact_types:
 steps:
   - id: triage
     agent:
-      role: std:roles/triager
+      role: { param: triager_role }
       task: { param: triager_task }
       skills: [std:skills/review]
     consumes: [{ name: findings_ledger }, { name: test_results, optional: true }]   # the engine's tests check a demonstrated claim (LOG 516)
@@ -85,7 +89,7 @@ steps:
 
   - id: fix
     agent:
-      role: std:roles/fixer
+      role: { param: fixer_role }
       task: { param: fixer_task }
       skills: [std:skills/review, std:skills/verification]
     with: { tier_tags: { expr: "params.tier_tags" } }
@@ -112,8 +116,8 @@ steps:
 
   - id: verify_fix
     agent:
-      role: std:roles/reviewer
-      task: std:tasks/verify_fix
+      role: { param: reviewer_role }
+      task: { param: verifier_task }
       skills: [std:skills/review]
       context: none
     consumes:

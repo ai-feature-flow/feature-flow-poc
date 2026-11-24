@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\FeatureFlow.Library\FeatureFlow.Library.csproj" />
+    <ProjectReference Include="..\..\src\FeatureFlow.Validation\FeatureFlow.Validation.csproj" />
   </ItemGroup>
 
 </Project>

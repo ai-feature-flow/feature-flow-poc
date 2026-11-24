@@ -12,8 +12,8 @@ open are LOG 62 to 65, approved 2026-11-01.
 
 | Folder | Holds |
 |---|---|
-| `templates/` | `ticket_delivery`, `epic_delivery`, `project_delivery` |
-| `fragments/` | `baseline`, `plan_and_validate`, `standard_review`, `fix_loop`, `verify_and_review`, `merge_into_parent`, `plan_children`, `trace`, `deliver_in_order` |
+| `templates/` | `ticket_delivery`, `epic_delivery`, `project_delivery`: wrappers of the `*_flow` fragments (`docs/03` section 11.1) |
+| `fragments/` | `ticket_flow`, `epic_flow`, `project_flow` (each template's body, its roles, tasks and child template parameters with std's defaults), `baseline`, `plan_and_validate`, `standard_review`, `fix_loop`, `verify_and_review`, `merge_into_parent`, `plan_children`, `trace`, `deliver_in_order` |
 | `tasks/` | One per agent step |
 | `prompts/` | The reporting preamble every agent step gets; decision and pull request text |
 | `skills/` | `verification`, `review`, `solution_design` |

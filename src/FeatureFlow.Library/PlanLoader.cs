@@ -17,7 +17,8 @@ public sealed record LoadOptions(
 
 /// <summary>
 /// Loads a template into an expanded <see cref="Plan"/>: fragments replaced by their steps with ids
-/// prefixed (docs/03 section 11; LOG 62), <c>for_each</c> expanded into a <c>parallel</c> or a chain
+/// prefixed (docs/03 section 11; LOG 62), or for a wrapper template's own fragment unprefixed (section 11.1),
+/// <c>for_each</c> expanded into a <c>parallel</c> or a chain
 /// (section 8.2), and every outcome's route resolved after defaults (section 4.3).
 /// </summary>
 public sealed partial class PlanLoader
@@ -84,7 +85,13 @@ public sealed partial class PlanLoader
                 null => SubstitutionResult.Undeclared,
                 { Default: { } dflt } when !dflt.IsSingleKeyMap("expr", out _) => new SubstitutionResult(dflt, false),
                 _ => SubstitutionResult.Unbound,
-            }, "", null);
+            }, "", null, standalone: true);
+        }
+        else if (raw is YMap wrapper && wrapper.Has("use") && !wrapper.Has("steps") && !wrapper.Has("defaults"))
+        {
+            if (Wrap(wrapper) is not { } wrapped)
+                return null;
+            root = wrapped;
         }
 
         var read = DocumentReader.Read(root, kind, reference.Name, file, reference, d);
@@ -514,6 +521,114 @@ public sealed partial class PlanLoader
         }
     }
 
+    // ---- Wrapper templates ---------------------------------------------------------------------
+
+    /// <summary>
+    /// A wrapper template (docs/03 section 11.1): the template's header with the steps, defaults and artifact types of
+    /// the one fragment it uses, the fragment's parameters bound by its <c>with</c>, and each <c>{ exit }</c> replaced by
+    /// the template's route for that exit. The steps join the template's own scope, so they keep the fragment's ids, and
+    /// the fragment's <c>params.name</c> reads the template's parameter of that name.
+    /// </summary>
+    YMap? Wrap(YMap wrapper)
+    {
+        var reference = LibraryItemReader.Ref(wrapper["use"], new MapReader(wrapper, d, "a template"), "use");
+        if (reference?.Reference is not { } fragment)
+            return null;
+        if (fragment.Type != "fragments")
+        {
+            d.Add(Checks.Schema, $"use names a fragment, not {reference.Text}", reference.Location);
+            return null;
+        }
+
+        var library = libraries.Resolve(fragment);
+        if (library is null)
+        {
+            d.Add(Checks.ReferenceResolves, $"fragment {reference.Text} does not resolve", reference.Location);
+            return null;
+        }
+
+        var file = library.Relative(library.PathOf("fragments", fragment.Name)!);
+        d.AddRange(library.Diagnostics.Where(x => x.Location?.File == file));
+        if (library.Yaml("fragments", fragment.Name) is not YMap raw)
+            return null;
+
+        var bindings = new Dictionary<string, YNode>();
+        switch (wrapper["with"])
+        {
+            case YMap with:
+                foreach (var (key, value) in with.Entries)
+                    bindings[key.Text] = value;
+                break;
+            case null or YScalar { IsNull: true }:
+                break;
+            case var other:
+                d.Add(Checks.Schema, "with must be a map", other.Location);
+                break;
+        }
+
+        var decls = ReadParameterDecls(raw);
+        var templateParameters = ReadParameterDecls(wrapper);
+        foreach (var (key, value) in bindings)
+            if (!decls.ContainsKey(key))
+                d.Add(Checks.Fragment, $"binds '{key}', which fragment {reference.Text} does not declare", value.Location);
+            else if (value.IsSingleKeyMap("expr", out _))
+                d.Add(Checks.Fragment, $"binds '{key}' to an expression; a wrapper template binds literals only (LOG 62)", value.Location);
+        foreach (var decl in decls.Values)
+            if (decl.Required && decl.Default is null && !bindings.ContainsKey(decl.Name) && !templateParameters.ContainsKey(decl.Name))
+                d.Add(Checks.Fragment, $"required parameter '{decl.Name}' of fragment {reference.Text} is neither bound nor a parameter of the template", wrapper.Location);
+
+        var body = (YMap)Substitute(raw, name =>
+        {
+            if (!decls.TryGetValue(name, out var decl))
+                return SubstitutionResult.Undeclared;
+            if (bindings.TryGetValue(name, out var bound))
+                return new SubstitutionResult(bound, bound.IsSingleKeyMap("expr", out _));
+            if (decl.Default is { } dflt)
+                return new SubstitutionResult(dflt, dflt.IsSingleKeyMap("expr", out _));
+            return SubstitutionResult.Unbound;
+        }, "", null);
+
+        // Each exit's route: the template's { end }, or for an unrouted success exit the end a template's last step has.
+        var targets = new Dictionary<string, YMap>();
+        var routes = wrapper["routes"] as YMap;
+        if (wrapper["routes"] is { } routesNode && routes is null && routesNode is not YScalar { IsNull: true })
+            d.Add(Checks.Schema, "routes must be a map", routesNode.Location);
+        var exits = (raw["exits"] as YMap)?.Entries ?? [];
+        foreach (var (key, value) in routes?.Entries ?? [])
+            if (!exits.Any(e => e.Key.Text == key.Text))
+                d.Add(Checks.RouteTarget, $"routes names '{key.Text}', which is not an exit of fragment {reference.Text}", key.Location);
+            else if (value is YMap { Entries.Count: 1 } end && end.Has("end"))
+                targets[key.Text] = end;
+            else
+                d.Add(Checks.Schema, $"a wrapper template routes exit '{key.Text}' to {{ end: <status> }}", value.Location);
+        foreach (var (key, value) in exits)
+            if (!targets.ContainsKey(key.Text) && routes?.Has(key.Text) != true)
+            {
+                if (OutcomeClasses.Parse(value.ScalarText()) == OutcomeClass.Success)
+                    targets[key.Text] = new YMap([new(new YScalar("end", false, key.Location), new YScalar("completed", false, key.Location))], key.Location);
+                else
+                    d.Add(Checks.Fragment, $"exit '{key.Text}' of fragment {reference.Text} is not routed", wrapper.Location);
+            }
+
+        YNode Route(YNode node) => node switch
+        {
+            YMap m when m.Has("exit") && m.Keys.All(k => k is "exit" or "when") && targets.TryGetValue(m["exit"].ScalarText() ?? "", out var target) =>
+                new YMap(m.Entries.Where(e => e.Key.Text != "exit").Concat(target.Entries).ToList(), m.Location),
+            YMap m => new YMap(m.Entries.Select(e => new KeyValuePair<YScalar, YNode>(e.Key, Route(e.Value))).ToList(), m.Location),
+            YSeq q => new YSeq(q.Items.Select(Route).ToList(), q.Location),
+            _ => node,
+        };
+
+        var entries = wrapper.Entries.Where(e => e.Key.Text is not ("use" or "with" or "routes" or "artifact_types")).ToList();
+        var types = new[] { wrapper["artifact_types"], body["artifact_types"] }.OfType<YSeq>().SelectMany(q => q.Items).ToList();
+        if (types.Count > 0)
+            entries.Add(new(new YScalar("artifact_types", false, wrapper.Location), new YSeq(types, wrapper.Location)));
+        foreach (var key in new[] { "defaults", "steps" })
+            if (body.Entries.FirstOrDefault(e => e.Key.Text == key) is { Key: not null } entry)
+                entries.Add(new(entry.Key, Route(entry.Value)));
+        return new YMap(entries, wrapper.Location);
+    }
+
     // ---- Fragment parameters ------------------------------------------------------------------
 
     sealed record SubstitutionResult(YNode? Value, bool IsExpression)
@@ -541,7 +656,7 @@ public sealed partial class PlanLoader
     /// Replaces each <c>{ param: name }</c> with the parameter's literal value (LOG 62). The
     /// <c>parameters</c> section itself is left alone.
     /// </summary>
-    YNode Substitute(YNode raw, Func<string, SubstitutionResult> lookup, string scopeId, string? useId)
+    YNode Substitute(YNode raw, Func<string, SubstitutionResult> lookup, string scopeId, string? useId, bool standalone = false)
     {
         YNode Visit(YNode node, bool top)
         {
@@ -559,7 +674,7 @@ public sealed partial class PlanLoader
 
                     if (result.NoValue || result.Value is null)
                     {
-                        if (useId is not null)
+                        if (!standalone)
                             d.Add(Checks.Fragment, $"{{ param: {name} }} has no value: bind '{name}' to a literal", m.Location, useId);
                         return new YUnbound(name, m.Location);
                     }

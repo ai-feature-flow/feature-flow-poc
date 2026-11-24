@@ -1,0 +1,13 @@
+# An organisation library that changes one std task in every std template (R1 done-when; docs/08 section 4.1).
+# It wraps std's templates rather than copying them: each template binds acme's review task and passes the rest through.
+name: acme
+version: 0.1.0
+description: Acme's delivery process, std with Acme's review task
+
+dependencies:
+  - { name: std }
+
+entrypoints:
+  - { template: ticket_delivery, when: "One ticket" }
+  - { template: epic_delivery, when: "One epic" }
+  - { template: project_delivery, when: "A project spanning several epics" }

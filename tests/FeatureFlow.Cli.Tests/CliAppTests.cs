@@ -103,7 +103,7 @@ public class CliAppTests
         CopyDirectory(StdRoot, copy);
         try
         {
-            var template = Path.Combine(copy, "templates", "ticket_delivery.yaml");
+            var template = Path.Combine(copy, "fragments", "ticket_flow.yaml");
             File.WriteAllText(template, File.ReadAllText(template).Replace("type: ticket.spec_approval", "type: ticket.spec_approvel"));
 
             var (code, output, _) = Run("validate", copy);
