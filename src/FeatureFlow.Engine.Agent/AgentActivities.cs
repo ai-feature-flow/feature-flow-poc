@@ -3,6 +3,7 @@ using System.Text.Json;
 using FeatureFlow.Library;
 using FeatureFlow.Model;
 using FeatureFlow.Providers.Abstractions;
+using Microsoft.Extensions.Logging;
 using Temporalio.Activities;
 using Temporalio.Exceptions;
 
@@ -10,15 +11,17 @@ namespace FeatureFlow.Engine.Agent;
 
 /// <summary>
 /// The agent worker's settings: the URLs at which sandboxes reach its replicas (any replica serves any step,
-/// RW17), the model proxy's base URL as sandboxes see it, how often commits are detected, and the sandbox client
-/// executable copied into each sandbox (LOG 67).
+/// RW17), the model proxy's base URL as sandboxes see it, how often commits are detected, the sandbox client
+/// executable copied into each sandbox (LOG 67), how often a session's progress is read, and how often the activity
+/// read is recorded (<see cref="AgentActivities.DefaultActivityFlush"/>).
 /// </summary>
 public sealed record AgentWorkerOptions(
     IReadOnlyList<string> AgentUrls,
     string ModelBaseUrl,
     TimeSpan CommitInterval,
     string? SandboxClient,
-    TimeSpan? PollInterval = null);
+    TimeSpan? PollInterval = null,
+    TimeSpan? ActivityFlush = null);
 
 /// <summary>A work failure of the step: the attempt fails and the core counts it (docs/01 section 4).</summary>
 public sealed class StepWorkException(string message) : Exception(message);
@@ -49,6 +52,12 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
     readonly StepTokens tokens = tokens;
     readonly AgentWorkerOptions options = options;
     public const string ActivityName = "RunAgentStep";
+
+    /// <summary>How often a running session's activity is recorded, at most: at most one <c>step_changed</c> per running step per flush.</summary>
+    public static readonly TimeSpan DefaultActivityFlush = TimeSpan.FromSeconds(2);
+
+    /// <summary>The most activity entries recorded for a session; past it, one <c>truncated</c> entry, and the transcript holds the rest.</summary>
+    public const int ActivityCap = 500;
     static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     readonly SemaphoreSlim clientGate = new(1, 1);
     ArtifactRef? clientArtifact;
@@ -609,7 +618,7 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                                + $" with model {spec.Model ?? "of the runtime"}");
                 }
 
-                await SuperviseAsync(running);
+                await SuperviseAsync(running, number);
                 var result = Must(await runtime.GetResultAsync(running, ct), "read the session's result");
                 if (result.End == SessionEnd.EngineUnreachable && await LastContactAsync() is { } contact
                     && DateTimeOffset.UtcNow - contact < (result.QuietWindow ?? TimeSpan.FromSeconds(60)))
@@ -760,18 +769,57 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
                 : ($"{number}", number, null);
         }
 
-        /// <summary>Heartbeats and pushes new commits to the hidden reference until the session ends (docs/02 section 4.3).</summary>
-        async Task SuperviseAsync(AgentSession session)
+        /// <summary>
+        /// Heartbeats, records the session's activity and pushes new commits to the hidden reference until the session ends
+        /// (docs/02 section 4.3). Activity is appended at most every <see cref="AgentWorkerOptions.ActivityFlush"/> and when
+        /// the session ends; entries past <see cref="ActivityCap"/> are one <c>truncated</c> entry. A new worker reads the
+        /// output again from its start, and its entries keep their numbers, so the store keeps each once.
+        /// </summary>
+        async Task SuperviseAsync(AgentSession session, int number)
         {
             var nextPush = DateTimeOffset.UtcNow + owner.options.CommitInterval;
+            var flush = owner.options.ActivityFlush ?? DefaultActivityFlush;
+            var nextFlush = DateTimeOffset.UtcNow + flush;
+            var pending = new List<ActivityRecord>();
+            var truncated = false;
+
+            // Activity is for display, and the transcript supersedes it: a failed write is logged and kept for the next
+            // flush, never the step's failure. pending is bounded already: a session makes at most ActivityCap entries and one truncated.
+            async Task FlushAsync()
+            {
+                nextFlush = DateTimeOffset.UtcNow + flush;
+                if (pending.Count == 0)
+                    return;
+                var appended = await owner.Records.AppendAsync(new RecordBatch(Activity: pending.ToList()), CancellationToken.None);
+                if (appended.Ok)
+                    pending.Clear();
+                else
+                    context.Logger.LogWarning("Could not record {Count} activity entries of {Step} session {Session}; retrying at the next flush: {Reason}: {Message}",
+                        pending.Count, key, number, appended.Error!.Reason, appended.Error.Message);
+            }
+
             while (true)
             {
                 context.Heartbeat();
                 var progress = Must(await runtime.GetProgressAsync(session, ct), "read the session's progress");
+                foreach (var entry in progress.Activity)
+                    if (entry.Sequence <= ActivityCap)
+                        pending.Add(new ActivityRecord(call.Step.RunId, call.Step.StepId, call.Step.Execution, number, entry.Sequence, entry.Kind, entry.CallId,
+                            entry.Name, entry.Text, entry.Detail, entry.Failed, entry.At ?? DateTimeOffset.UtcNow));
+                    else if (!truncated)
+                    {
+                        truncated = true;
+                        pending.Add(new ActivityRecord(call.Step.RunId, call.Step.StepId, call.Step.Execution, number, int.MaxValue, ActivityKinds.Truncated,
+                            null, null, null, null, false, DateTimeOffset.UtcNow));
+                    }
+
+                if (progress.Finished || DateTimeOffset.UtcNow >= nextFlush)
+                    await FlushAsync();
                 if (progress.Finished)
                     return;
                 if (await PastDeadlineAsync())
                 {
+                    await FlushAsync();
                     await PushCommitsAsync();
                     await OutOfTimeAsync(session);
                 }

@@ -5,8 +5,8 @@ namespace FeatureFlow.Providers.Local;
 /// <summary>
 /// A record store in memory for tests, holding runs and what M6 and M7 add: the findings ledger and the artifact index
 /// (docs/02 section 5); overrides, notification de-duplication and sessions; and what the console's B1 adds: answers,
-/// step states, pull requests and repositories. Finding records, sessions, session checks, step states, pull requests and
-/// repositories are kept by key, the last write winning; finding events and artifacts are appended once per key, a
+/// step states, pull requests and repositories; and an agent step's live activity. Finding records, sessions, session checks, step states, pull requests and
+/// repositories are kept by key, the last write winning; finding events, artifacts and activity are appended once per key, a
 /// notification is kept once per key with the first write winning, and overrides and answers are appended. Other records
 /// are not kept here: the SQLite store holds them. The changes each batch makes are numbered and kept as the other stores
 /// keep them (<see cref="Queries.Changes"/>).
@@ -26,6 +26,7 @@ public sealed class InMemoryRecordStore : IRecordStoreProvider
     readonly Dictionary<(string Run, string Step), StepStateRecord> stepStates = [];
     readonly Dictionary<(string Run, string Repository, int Number), PullRequestRecord> pullRequests = [];
     readonly Dictionary<string, RepositoryRecord> repositories = new(StringComparer.Ordinal);
+    readonly Dictionary<(string Run, string Step, int Execution, int Session, int Sequence), ActivityRecord> activity = [];
 
     public ProviderDescription Describe() => new("record_store", "memory", "0.1.0", new NoCapabilities());
 
@@ -35,7 +36,7 @@ public sealed class InMemoryRecordStore : IRecordStoreProvider
     {
         if (records.Waits is { Count: > 0 } || records.Timeline is { Count: > 0 } || records.Locks is { Count: > 0 }
             || records.AgentSteps is { Count: > 0 } || records.Reports is { Count: > 0 } || records.Questions is { Count: > 0 } || records.AgentEvents is { Count: > 0 })
-            throw new NotSupportedException("the in-memory record store keeps only runs, answers, the findings ledger, the artifact index, overrides, notifications, sessions, step states, pull requests and repositories");
+            throw new NotSupportedException("the in-memory record store keeps only runs, answers, the findings ledger, the artifact index, overrides, notifications, sessions, step states, pull requests, repositories and activity");
         lock (gate)
         {
             foreach (var run in records.Runs ?? [])
@@ -64,6 +65,8 @@ public sealed class InMemoryRecordStore : IRecordStoreProvider
                 pullRequests[(p.RunId, p.Repository, p.Number)] = p;
             foreach (var r in records.Repositories ?? [])
                 repositories[r.Name] = r;
+            foreach (var a in records.Activity ?? [])
+                activity.TryAdd((a.RunId, a.StepId, a.Execution, a.Session, a.Sequence), a);
             AppendChanges(records);
         }
 
@@ -98,6 +101,10 @@ public sealed class InMemoryRecordStore : IRecordStoreProvider
                 Queries.PullRequests => pullRequests.Values.Where(p => p.RunId == P("run_id"))
                     .OrderBy(p => p.Repository, StringComparer.Ordinal).ThenBy(p => p.Number),
                 Queries.Repositories => repositories.Values.OrderBy(r => r.Name, StringComparer.Ordinal),
+                Queries.Activity => activity.Values
+                    .Where(a => a.RunId == P("run_id") && a.StepId == P("step_id")
+                        && (!parameters.TryGetValue("execution", out var execution) || a.Execution == int.Parse(execution, System.Globalization.CultureInfo.InvariantCulture)))
+                    .OrderBy(a => a.Execution).ThenBy(a => a.Session).ThenBy(a => a.Sequence),
                 // Waits are not kept here, so no wait is open.
                 Queries.OpenWaits => Enumerable.Empty<OpenWaitRecord>(),
                 _ => throw new NotSupportedException($"the in-memory record store does not answer {queryName}"),
@@ -126,7 +133,7 @@ public sealed class InMemoryRecordStore : IRecordStoreProvider
 
     void AppendChanges(RecordBatch records)
     {
-        foreach (var (runId, kind, waitId) in ChangeKinds.Of(records))
-            changes.Add(new ChangeRecord(changes.Count + 1, runId, kind, waitId, DateTimeOffset.UtcNow));
+        foreach (var (runId, kind, waitId, stepId) in ChangeKinds.Of(records))
+            changes.Add(new ChangeRecord(changes.Count + 1, runId, kind, waitId, DateTimeOffset.UtcNow, stepId));
     }
 }

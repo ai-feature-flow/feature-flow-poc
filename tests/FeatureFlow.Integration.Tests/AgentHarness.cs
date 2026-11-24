@@ -416,11 +416,14 @@ public sealed class AgentHarness : IAsyncDisposable
         return runId;
     }
 
-    public async Task<JsonNode> ShowAsync(string runId)
+    public async Task<JsonNode> ShowAsync(string runId) => Harness.OpenWaitsOnly(await GetAsync($"/runs/{runId}"));
+
+    /// <summary>An API route's answer as JSON, read with the harness's token.</summary>
+    public async Task<JsonNode> GetAsync(string path)
     {
         using var http = new HttpClient();
         http.DefaultRequestHeaders.Authorization = new("Bearer", await File.ReadAllTextAsync(TokenFile));
-        return Harness.OpenWaitsOnly(JsonNode.Parse(await http.GetStringAsync($"{Api}/runs/{runId}"))!);
+        return JsonNode.Parse(await http.GetStringAsync(Api + path))!;
     }
 
     public async Task<string> WaitForEndAsync(string runId, TimeSpan timeout)

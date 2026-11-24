@@ -60,7 +60,7 @@ public abstract class AgentRuntimeContract : ContractBase
     /// <summary>The CLI's tools the command line offers, other than the engine's.</summary>
     protected abstract IReadOnlyList<string> OfferedTools(CliInvocation invocation);
 
-    /// <summary>The CLI's output for a script; every tool call and the last text is one assistant turn.</summary>
+    /// <summary>The CLI's output for a script; each tool call, with its result, and the last text, as the CLI prints them.</summary>
     protected abstract CliRun Play(CliInvocation invocation, CliScript script);
 
     /// <summary>The hook input the CLI sends for a tool call (<c>tool_name</c>, <c>tool_input</c>).</summary>
@@ -242,7 +242,13 @@ public abstract class AgentRuntimeContract : ContractBase
         var progress = Ok(await Runtime.GetProgressAsync(session, Ct));
         var result = Ok(await Runtime.GetResultAsync(session, Ct));
 
-        Assert.Equal((true, 4), (progress.Finished, progress.Turns));
+        Assert.Equal((true, 1), (progress.Finished, progress.Turns));
+        // Each tool call started and finished, then the last text, numbered in order; the stand-in's tools by their own names.
+        Assert.Equal([ActivityKinds.ToolStarted, ActivityKinds.ToolFinished, ActivityKinds.ToolStarted, ActivityKinds.ToolFinished,
+            ActivityKinds.ToolStarted, ActivityKinds.ToolFinished, ActivityKinds.Message], progress.Activity.Select(e => e.Kind));
+        Assert.Equal(Enumerable.Range(1, 7), progress.Activity.Select(e => e.Sequence));
+        Assert.All(progress.Activity.Where(e => e.Kind != ActivityKinds.Message), e => Assert.False(string.IsNullOrEmpty(e.CallId) || string.IsNullOrEmpty(e.Name)));
+        Assert.Equal(("Finished the work.", false), (progress.Activity[^1].Text, progress.Activity.Any(e => e.Failed)));
         Assert.Equal((SessionEnd.Completed, "Finished the work."), (result.End, result.Detail));
         Assert.Equal((120L, 45L), (result.InputTokens, result.OutputTokens));
         Assert.Equal(["/ff/work/a.txt", "/ff/work/b.txt"], result.FilesOpened!.Order(StringComparer.Ordinal));
@@ -265,18 +271,54 @@ public abstract class AgentRuntimeContract : ContractBase
         Assert.NotEqual(id, Session(other).Id);
     }
 
-    /// <summary>A new worker finds a running session again by the step's key (R18), and stopping it cancels the command.</summary>
+    /// <summary>
+    /// A new worker finds a running session again by the step's key (R18), reading its output from the start with its
+    /// activity numbered as the first worker read it, so recording it again adds nothing; stopping it cancels the command.
+    /// </summary>
     [Fact]
     public async Task A_running_session_is_found_again_by_a_new_worker_and_stopped()
     {
-        var (_, _) = await StartAsync(Simple with { Running = true });
+        var (first, _) = await StartAsync(Simple with { Running = true });
+        var read = Ok(await Runtime.GetProgressAsync(first, Ct)).Activity;
         var again = CreateRuntime(sandboxes, store);
 
         var session = Ok(await again.AttachAsync(sandbox, StepTask(), Ct));
-        Assert.False(Ok(await again.GetProgressAsync(session, Ct)).Finished);
+        var progress = Ok(await again.GetProgressAsync(session, Ct));
+        Assert.False(progress.Finished);
+        Assert.NotEmpty(read);
+        Assert.Equal(read, progress.Activity);
         Ok(await again.StopAsync(session, Ct));
         Assert.Contains(session.Id, sandboxes.Cancelled);
         Refused(await again.AttachAsync(sandbox, StepTask(session: 9), Ct), "not_found");
+    }
+
+    /// <summary>
+    /// A retried attempt on the same worker re-attaches with a reader of its own: the output is read from the start and
+    /// numbered as before, so nothing the first attempt read but did not record is lost, and two attempts never share a reader.
+    /// </summary>
+    [Fact]
+    public async Task A_session_re_attached_by_the_same_worker_is_read_again_from_its_start()
+    {
+        var (first, _) = await StartAsync(Simple with { Running = true });
+        var read = Ok(await Runtime.GetProgressAsync(first, Ct)).Activity;
+
+        var session = Ok(await Runtime.AttachAsync(sandbox, StepTask(), Ct));
+
+        Assert.NotEmpty(read);
+        Assert.Equal(read, Ok(await Runtime.GetProgressAsync(session, Ct)).Activity);
+    }
+
+    /// <summary>A session collected or stopped is forgotten, so a long-lived worker holds only its running sessions.</summary>
+    [Fact]
+    public async Task A_session_collected_or_stopped_is_forgotten()
+    {
+        var (collected, _) = await StartAsync(Simple);
+        Ok(await Runtime.GetResultAsync(collected, Ct));
+        var (stopped, _) = await StartAsync(Simple with { Running = true }, StepTask(session: 2));
+        Ok(await Runtime.StopAsync(stopped, Ct));
+
+        Refused(await Runtime.GetProgressAsync(collected, Ct), "not_found");
+        Refused(await Runtime.GetProgressAsync(stopped, Ct), "not_found");
     }
 
     /// <summary>LOG 98: no status, 429 and 5xx are transient; 401 and 403 a configuration fault; any other 4xx a failure.</summary>

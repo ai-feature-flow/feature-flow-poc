@@ -66,10 +66,20 @@ public sealed class CopilotCliRuntimeContract : AgentRuntimeContract
     protected override CliRun Play(CliInvocation invocation, CliScript script)
     {
         var lines = new List<JsonObject>();
-        foreach (var (tool, arguments) in script.Actions.Select(Tool))
+        foreach (var (i, (tool, arguments)) in script.Actions.Select(Tool).Index())
         {
-            lines.Add(new JsonObject { ["type"] = "assistant.message", ["data"] = new JsonObject { ["content"] = "", ["toolRequests"] = new JsonArray(new JsonObject { ["name"] = tool }) } });
-            lines.Add(new JsonObject { ["type"] = "tool.execution_start", ["data"] = new JsonObject { ["toolName"] = tool, ["arguments"] = arguments } });
+            var id = $"call_{i}";
+            lines.Add(new JsonObject
+            {
+                ["type"] = "assistant.message",
+                ["data"] = new JsonObject { ["content"] = "", ["toolRequests"] = new JsonArray(new JsonObject { ["toolCallId"] = id, ["name"] = tool }) },
+            });
+            lines.Add(new JsonObject { ["type"] = "tool.execution_start", ["data"] = new JsonObject { ["toolCallId"] = id, ["toolName"] = tool, ["arguments"] = arguments } });
+            lines.Add(new JsonObject
+            {
+                ["type"] = "tool.execution_complete",
+                ["data"] = new JsonObject { ["toolCallId"] = id, ["success"] = true, ["result"] = new JsonObject { ["content"] = "ok" } },
+            });
         }
 
         lines.Add(new JsonObject { ["type"] = "assistant.message", ["data"] = new JsonObject { ["content"] = script.Text } });

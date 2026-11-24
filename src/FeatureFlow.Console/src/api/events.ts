@@ -1,6 +1,6 @@
 import { signOut } from "../auth/session";
 import { authHeaders } from "./client";
-import { invalidate, runKey } from "./live";
+import { invalidate, runKey, stepKey } from "./live";
 
 // GET /events read with fetch streaming, not EventSource, because the route authenticates through the Authorization
 // header, which EventSource cannot send (LOG 459). One code path serves every sign-in mode.
@@ -50,6 +50,12 @@ function apply(frame: Frame): void {
     case "wait_closed": {
       const change = JSON.parse(frame.data) as { run_id: string };
       invalidate(["attention", "runs", runKey(change.run_id)]);
+      return;
+    }
+    case "step_changed": {
+      // A running agent step's activity: only that step's readers read again.
+      const change = JSON.parse(frame.data) as { run_id: string; step_id: string };
+      invalidate([stepKey(change.run_id, change.step_id)]);
       return;
     }
   }

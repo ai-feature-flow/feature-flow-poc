@@ -97,6 +97,16 @@ public sealed class PostgresConsoleRecordsContract(PostgresServer server) : Cons
     public ValueTask DisposeAsync() => store.DisposeAsync();
 }
 
+[Trait("Category", "Integration")]
+public sealed class PostgresActivityRecordsContract(PostgresServer server) : ActivityRecordsContract, IAsyncDisposable
+{
+    readonly PostgresRecordStore store = server.Store();
+
+    protected override IRecordStoreProvider Store => store;
+
+    public ValueTask DisposeAsync() => store.DisposeAsync();
+}
+
 /// <summary>What the contract suites do not cover: the connection secret, the schema, and how failures are classified.</summary>
 [Trait("Category", "Integration")]
 public sealed class PostgresRecordStoreTests(PostgresServer server) : IDisposable
@@ -163,10 +173,10 @@ public sealed class PostgresRecordStoreTests(PostgresServer server) : IDisposabl
         var checks = await Task.WhenAll(stores.Select(s => s.CheckAsync(Ct)));
 
         Assert.All(checks, c => Assert.True(c.Ok, c.Error?.Message));
-        Assert.Equal([1, 2, 3, 4], await ColumnAsync<int>(database, "SELECT version FROM ff_schema ORDER BY version"));
+        Assert.Equal([1, 2, 3, 4, 5], await ColumnAsync<int>(database, "SELECT version FROM ff_schema ORDER BY version"));
         var tables = await ColumnAsync<string>(database, "SELECT table_name::text FROM information_schema.tables WHERE table_schema = 'public' AND table_name <> 'ff_schema'");
         var keyed = await ColumnAsync<string>(database, "SELECT table_name::text FROM information_schema.columns WHERE table_schema = 'public' AND column_name = 'org_id'");
-        Assert.Equal(18, tables.Count);
+        Assert.Equal(19, tables.Count);
         Assert.Equal(tables.Order(), keyed.Order());
         foreach (var s in stores)
             await s.DisposeAsync();

@@ -45,10 +45,18 @@ public sealed class ClaudeCodeRuntimeContract : AgentRuntimeContract
 
     protected override CliRun Play(CliInvocation invocation, CliScript script)
     {
-        var lines = script.Actions.Select(a => Tool(a)).Select(t => new JsonObject
+        var lines = script.Actions.Select(a => Tool(a)).SelectMany((t, i) => new[]
         {
-            ["type"] = "assistant",
-            ["message"] = new JsonObject { ["content"] = new JsonArray(new JsonObject { ["type"] = "tool_use", ["name"] = t.Tool, ["input"] = t.Input }) },
+            new JsonObject
+            {
+                ["type"] = "assistant",
+                ["message"] = new JsonObject { ["content"] = new JsonArray(new JsonObject { ["type"] = "tool_use", ["id"] = $"toolu_{i}", ["name"] = t.Tool, ["input"] = t.Input }) },
+            },
+            new JsonObject
+            {
+                ["type"] = "user",
+                ["message"] = new JsonObject { ["content"] = new JsonArray(new JsonObject { ["type"] = "tool_result", ["tool_use_id"] = $"toolu_{i}", ["content"] = "ok" }) },
+            },
         }).Append(new JsonObject
         {
             ["type"] = "assistant",

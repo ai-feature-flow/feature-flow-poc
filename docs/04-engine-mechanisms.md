@@ -136,7 +136,7 @@ reports.
 3. **Supervise.** Heartbeat. About every 30 seconds, ask the VCS provider
    whether the working copy has new commits; if so, push them to the hidden
    work-in-progress reference. Serve hook calls, the engine tools (section 3.3)
-   and questions.
+   and questions. Record the session's live activity (below).
 4. **Collect.** When the session ends, index its transcript as
    `transcript:<n>`, however it ended, so a failed attempt's transcript is
    listed too (LOG 393). When the agent reports, read its result from the
@@ -160,6 +160,22 @@ reports.
    (LOG 514). A path brought in by merging the parent, or deleted at the final
    commit, does not count. Move the work branch to the final commit, once. Record the
    summary for the run context.
+
+**Live activity** (LOG 544, 545). While a session runs, the agent worker
+records the agent's completed messages and tool calls, so a person can follow
+the step before its transcript is stored. Each second it reads the session's
+new output through the runtime (`docs/06` section 3.2), which returns the
+completed events as entries; nothing new runs in the sandbox, and nothing the
+agent controls writes records. The entries are appended as `activity` records,
+tagged with the run, step, execution and session:
+
+| Rule | Detail |
+|---|---|
+| Kinds | `message`, `reasoning`, `tool_started`, `tool_finished` (with whether it failed), `notice`, `error`; streamed pieces are never recorded, so a message shows once complete |
+| Flush | At most every 2 seconds (`ActivityFlush`), and always when the session ends; each flush raises one `step_changed` change for the step. Best effort: a refused write is logged and its entries kept for the next flush (at most a session's cap), and never fails the step; a refused final flush loses only what the transcript holds anyway |
+| Key | Run, step, execution, session and sequence, the entry's place among the session's entries from the start of its output. Any re-attach, by a new worker or the same one, reads the output again from the start and numbers it the same, so the store keeps each entry once |
+| Caps per entry | Message 4,000 characters (head), reasoning 1,000, a tool call's summary 300 and arguments 2,000, its output 2,000 (tail), a notice or error 1,000 |
+| Cap per session | 500 entries, then one `truncated` entry (sequence `int.MaxValue`) and nothing more; the transcript holds the rest |
 
 ### 3.2 Resume after an interruption
 

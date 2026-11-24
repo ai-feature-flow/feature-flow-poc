@@ -67,7 +67,7 @@ public static partial class ApiApp
                 if (KindOfChange(change.Kind) is not { } kind || await feed.RepositoriesAsync(change.RunId, ct) is not { } repositories
                     || !RolesIn(caller, ScopeOf(repositories)).Contains(PeopleRoles.Viewer))
                     return;
-                var data = JsonSerializer.Serialize(new ChangeEvent(change.Sequence, change.RunId, kind, change.WaitId, change.At), Json);
+                var data = JsonSerializer.Serialize(new ChangeEvent(change.Sequence, change.RunId, kind, change.WaitId, change.At, change.StepId), Json);
                 await Write($"id: {change.Sequence}\nevent: {change.Kind}\ndata: {data}\n\n");
             }
 
@@ -102,6 +102,7 @@ public static partial class ApiApp
             ChangeKinds.RunChanged => ChangeKind.RunChanged,
             ChangeKinds.WaitOpened => ChangeKind.WaitOpened,
             ChangeKinds.WaitClosed => ChangeKind.WaitClosed,
+            ChangeKinds.StepChanged => ChangeKind.StepChanged,
             _ => null,
         };
     }

@@ -93,7 +93,8 @@ public sealed class WorkspaceTests(BrowserFixture browser) : BrowserTest(browser
         await Expect(step.Locator("table[aria-label='Executions'] tbody tr")).ToHaveCountAsync(3);
         await Expect(step.GetByRole(AriaRole.Button, new() { Name = "Steer ▾" })).ToBeVisibleAsync();
         await Expect(step.GetByRole(AriaRole.Tab, new() { Name = "Overview" })).ToHaveAttributeAsync("aria-selected", "true");
-        foreach (var later in new[] { "Activity", "Findings", "Events" })
+        await Expect(step.GetByRole(AriaRole.Tab, new() { Name = "Activity" })).ToBeEnabledAsync();
+        foreach (var later in new[] { "Findings", "Events" })
         {
             await Expect(step.GetByRole(AriaRole.Tab, new() { Name = later })).ToBeDisabledAsync();
             await Expect(step.GetByRole(AriaRole.Tab, new() { Name = later })).ToHaveAttributeAsync("title", "in B2");

@@ -74,7 +74,7 @@ public sealed class CopilotCliRuntime(CopilotCliOptions options, Func<ISandboxPr
 
     protected override string EngineToolPrefix => "engine-";
 
-    protected override string TurnMarker => "{\"type\":\"assistant.message\"";
+    protected override TranscriptFormat Format => TranscriptFormat.CopilotCli;
 
     /// <summary>The session id for a step's key: stable, so a continuation resumes the same conversation.</summary>
     public static string SessionId(string stepKey) => StableSessionId("copilot/" + stepKey);

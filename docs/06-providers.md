@@ -247,13 +247,28 @@ interface IAgentRuntimeProvider : IProvider {
 - **A runtime whose CLI runs in a sandbox** derives from
   `SandboxedAgentRuntime` (F12, A5), which holds the session lifecycle: a
   session is the CLI started by key in the step's sandbox from settings files
-  the engine writes read-only, found again by that key, polled for turns, read
+  the engine writes read-only, found again by that key, polled for its activity
+  as its output grows, read
   when it ends (the engine-unreachable marker, an API error by its status, a
   lost process, the exit code) and stopped by cancelling it. A runtime supplies
-  its command line, environment, settings files, transcript parser, turn marker,
+  its command line, environment, settings files, transcript parser, output format,
   the tools it offers for each tool class with the other names its hooks report
   for them (one table), how its CLI is told a call is denied, and how it is
   stopped when the engine is unreachable.
+- **One reader for a runtime's output** (`AgentTranscripts`, LOG 544) reads
+  Copilot CLI's JSON-lines session events and Claude Code's stream-json, for
+  the API's readable transcript (whole text, as turns) and for live activity (fed
+  as the output grows). Each poll, the runtime feeds the output written after its
+  cursor; the reader keeps a partial last line for the next chunk and returns the
+  activity entries the complete lines finished, capped (`docs/04` section 3.1),
+  as `AgentProgress.Activity`. Turns and entries come from the same code for each
+  event, so the two views cannot drift; streamed pieces make no entry.
+  `AgentProgress.Turns` counts the agent's messages. Every attach, by a new
+  worker or by the same one on a retried attempt, registers a fresh live reader
+  at the start of the output, so the entries are numbered as before and two
+  attempts never share a reader. The live reader keeps no turns and only the tail
+  of a running shell's output; a session's reader is dropped when its result is
+  collected or it is stopped.
 - **Hooks are read by the runtime** (`IAgentHooks`, LOG 444). Every runtime's
   settings call the same hook command, `ff-sandbox hook <event>`. The step's
   token names its runtime instance; the agent worker asks that instance to read

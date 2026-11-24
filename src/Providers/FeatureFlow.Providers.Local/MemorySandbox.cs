@@ -9,9 +9,11 @@ namespace FeatureFlow.Providers.Local;
 /// What a scripted command does: the latest rule whose <see cref="Pattern"/> matches the command line (its arguments
 /// joined by spaces) decides its exit code and output, the files it writes in the sandbox (paths relative to its
 /// working directory, or absolute), and the edits it makes to an in-memory working copy there (null deletes a path).
+/// With <see cref="Chunks"/>, the output arrives in those pieces, one more with each read of the command's status, and the
+/// command runs until the last is read, as a long command's output grows.
 /// </summary>
 public sealed record SandboxRule(string Pattern, int Exit = 0, string Output = "", IReadOnlyDictionary<string, string>? Files = null,
-    IReadOnlyDictionary<string, string?>? Edits = null);
+    IReadOnlyDictionary<string, string?>? Edits = null, IReadOnlyList<string>? Chunks = null);
 
 /// <summary>
 /// The <c>memory</c> sandbox provider (M5): a scripted sandbox for engine tests of <c>test.run</c>, <c>analysis.run</c>
@@ -32,7 +34,7 @@ public sealed class MemorySandbox(Func<IArtifactStoreProvider> store, InMemoryFo
     {
         public string Key { get; } = key;
         public readonly Dictionary<string, string> Files = new(StringComparer.Ordinal);
-        public readonly Dictionary<string, (int Exit, string Output)> Commands = new(StringComparer.Ordinal);
+        public readonly Dictionary<string, (int Exit, IReadOnlyList<string> Chunks, int Shown)> Commands = new(StringComparer.Ordinal);
     }
 
     readonly object gate = new();
@@ -145,7 +147,7 @@ public sealed class MemorySandbox(Func<IArtifactStoreProvider> store, InMemoryFo
                                 files.Remove(path);
                             else
                                 files[path] = content;
-                box.Commands[key] = (rule?.Exit ?? 0, rule?.Output ?? "");
+                box.Commands[key] = (rule?.Exit ?? 0, rule?.Chunks ?? [rule?.Output ?? ""], 0);
             }
 
             return Done(ProviderResult<CommandHandle>.Success(new CommandHandle(sandbox, key)));
@@ -166,8 +168,12 @@ public sealed class MemorySandbox(Func<IArtifactStoreProvider> store, InMemoryFo
         {
             if (!boxes.TryGetValue(command.Sandbox.Id, out var box) || !box.Commands.TryGetValue(command.Key, out var result))
                 return Done(ProviderResult<CommandStatus>.Success(new CommandStatus(false, null, "", cursor, Lost: true)));
-            var output = cursor >= result.Output.Length ? "" : result.Output[(int)cursor..];
-            return Done(ProviderResult<CommandStatus>.Success(new CommandStatus(false, result.Exit, output, result.Output.Length)));
+            var shown = Math.Min(result.Shown + 1, result.Chunks.Count);
+            box.Commands[command.Key] = result with { Shown = shown };
+            var written = string.Concat(result.Chunks.Take(shown));
+            var running = shown < result.Chunks.Count;
+            var output = cursor >= written.Length ? "" : written[(int)cursor..];
+            return Done(ProviderResult<CommandStatus>.Success(new CommandStatus(running, running ? null : result.Exit, output, written.Length)));
         }
     }
 

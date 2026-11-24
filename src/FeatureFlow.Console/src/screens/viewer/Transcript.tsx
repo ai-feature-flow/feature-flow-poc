@@ -71,7 +71,7 @@ function firstLine(text: string | null | undefined, size = 100) {
   return line.length > size ? `${line.slice(0, size)}…` : line;
 }
 
-function Who({ turn, started }: { turn: Turn; started: string | null | undefined }) {
+function Who({ turn, started, running }: { turn: Turn; started: string | null | undefined; running?: boolean }) {
   const label = { prompt: "Prompt", message: "Agent", reasoning: "Reasoning", tool: "Tool", notice: "Notice", error: "Error", result: "Result" }[turn.kind];
   return (
     <div class="ff-tx-who">
@@ -81,11 +81,12 @@ function Who({ turn, started }: { turn: Turn; started: string | null | undefined
           {offset(started, turn.at)}
         </time>
       )}
+      {running && <span class="ff-tx-running">running</span>}
     </div>
   );
 }
 
-function Body({ turn }: { turn: Turn }) {
+function Body({ turn, running }: { turn: Turn; running?: boolean }) {
   switch (turn.kind) {
     case "prompt":
       return <Fold summary={firstLine(turn.text) || "The prompt"}>{() => <Markdown source={turn.text ?? ""} />}</Fold>;
@@ -107,7 +108,8 @@ function Body({ turn }: { turn: Turn }) {
           {() => (
             <>
               {tool.arguments && <Arguments json={tool.arguments} />}
-              {tool.output !== null && tool.output !== undefined ? <Clipped label="Result" text={tool.output} /> : <p class="ff-muted">No result recorded.</p>}
+              {tool.output !== null && tool.output !== undefined ? <Clipped label="Result" text={tool.output} />
+                : <p class="ff-muted">{running ? "Running…" : "No result recorded."}</p>}
             </>
           )}
         </Fold>
@@ -123,6 +125,30 @@ function Body({ turn }: { turn: Turn }) {
     default:
       return <p class={`ff-text${turn.failed ? " ff-tx-failed" : ""}`}>{turn.text}</p>;
   }
+}
+
+/**
+ * A session's turns, each with who and when (offset from `started`); the turn at `running`, if any, is marked as running
+ * now. The transcript viewer and the step's Activity tab both show turns through it.
+ */
+export function TurnList({ turns, started, running, label = "Turns" }: {
+  turns: readonly Turn[];
+  started: string | null | undefined;
+  running?: number;
+  label?: string;
+}) {
+  return (
+    <ol class="ff-tx-turns" aria-label={label}>
+      {turns.map((turn, i) => (
+        <li key={i} class="ff-tx-turn" data-kind={turn.kind} data-failed={turn.failed || undefined} data-running={i === running || undefined}>
+          <Who turn={turn} started={started} running={i === running} />
+          <div class="ff-tx-body">
+            <Body turn={turn} running={i === running} />
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
 }
 
 /**
@@ -151,16 +177,7 @@ export function Transcript({ turns, step }: { turns: Turns; step: string | undef
           </div>
         ))}
       </dl>
-      <ol class="ff-tx-turns" aria-label="Turns">
-        {turns.turns.map((turn, i) => (
-          <li key={i} class="ff-tx-turn" data-kind={turn.kind} data-failed={turn.failed || undefined}>
-            <Who turn={turn} started={turns.started} />
-            <div class="ff-tx-body">
-              <Body turn={turn} />
-            </div>
-          </li>
-        ))}
-      </ol>
+      <TurnList turns={turns.turns} started={turns.started} />
       {turns.unread.length > 0 && (
         <p class="ff-muted ff-tx-unread">Not shown: {turns.unread.map(u => `${u.type} (${u.count})`).join(", ")}.</p>
       )}

@@ -19,8 +19,23 @@ public sealed class ChangeKindsTests
             PullRequests: [pr], Repositories: [repository]));
 
         Assert.Equal(
-            [("r1", ChangeKinds.RunChanged, (string?)null), ("r2", ChangeKinds.RunChanged, null), ("r3", ChangeKinds.RunChanged, null), ("r4", ChangeKinds.RunChanged, null)],
+            [("r1", ChangeKinds.RunChanged, (string?)null, (string?)null), ("r2", ChangeKinds.RunChanged, null, null), ("r3", ChangeKinds.RunChanged, null, null),
+                ("r4", ChangeKinds.RunChanged, null, null)],
             changes);
         Assert.Empty(ChangeKinds.Of(new RecordBatch(Repositories: [repository])));
+    }
+
+    [Fact]
+    public void Activity_changes_each_distinct_step_once_after_the_runs_and_waits_and_changes_no_run_itself()
+    {
+        ActivityRecord A(string run, string step, int sequence) => new(run, step, 1, 1, sequence, ActivityKinds.Message, null, null, "text", null, false, At);
+        var wait = new WaitRecord("r2", "gate-1", "gate", "approve", "t", "Approve?", ["approved"], true, At);
+
+        var changes = ChangeKinds.Of(new RecordBatch(Waits: [wait], Activity: [A("r1", "implement", 1), A("r1", "implement", 2), A("r1", "review", 1), A("r2", "implement", 1)]));
+
+        Assert.Equal(
+            [("r2", ChangeKinds.WaitOpened, (string?)"gate-1", (string?)null), ("r1", ChangeKinds.StepChanged, null, "implement"), ("r1", ChangeKinds.StepChanged, null, "review"),
+                ("r2", ChangeKinds.StepChanged, null, "implement")],
+            changes);
     }
 }
