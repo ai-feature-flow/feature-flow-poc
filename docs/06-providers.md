@@ -562,12 +562,37 @@ interface ISecretsProvider : IProvider {
 - The record store takes named queries, not SQL, so a provider cannot leak its
   storage engine into the interface. The query catalogue is in the engine
   (`Queries`, `FeatureFlow.Providers.Abstractions/Stores.cs`).
+- Every record kind is declared once (`RecordKinds`,
+  `FeatureFlow.Providers.Abstractions/RecordKinds.cs`; F17): its `RecordBatch`
+  list, table (and `kind` value in a shared table), key and other columns,
+  write rule and the change it makes. Every named query but `open_waits`,
+  `changes` and `latest_change` is declared over its kind (`RecordQueries`): its
+  forms by the parameters given, filters, order and limit. The SQL stores have
+  one writer and one query builder that read the declarations, and keep only
+  their dialect (JSON extraction, the closing wait's body patch, `COLLATE "C"`,
+  Postgres's NUL escape) and the three store-native queries. A new kind is one
+  batch list and one declaration, with no store code. Text orders ordinally in
+  every store. The declarations name today's tables and columns, so existing
+  databases open unchanged. There is no in-memory record store; tests use
+  SQLite on a temporary file.
+
+  | Write rule | Kinds |
+  |---|---|
+  | Replace if not older (`updated_at`) | runs |
+  | Replace | locks, agent steps, sessions, session checks, findings, step states, pull requests, repositories |
+  | Keep first | timeline, artifacts, notifications, finding events, activity |
+  | Append | answers, reports, agent events, overrides |
+  | A closing record keeps the opening one's body, set closed | waits |
+  | An opening record is kept once; an answer or timeout replaces | questions |
+
 - The record store numbers the changes each batch makes, in a `changes` table
   written inside `AppendAsync`'s own transaction, so no writer changes and none
-  is missed (LOG 397): one `run_changed` per run whose runs, timeline,
-  answers, overrides, artifacts, sessions, findings, finding events, step
-  states or pull requests the batch writes, and one
-  `wait_opened` or `wait_closed` per wait record (`ChangeKinds.Of`; LOG 527).
+  is missed (LOG 397): one `run_changed` per run whose records of a kind
+  declared to change it (runs, timeline, answers, overrides, artifacts,
+  sessions, findings, finding events, step states, pull requests) the batch
+  writes, one `wait_opened` or `wait_closed` per wait record, and one
+  `step_changed` per run and step whose activity it writes (`ChangeKinds.Of`,
+  computed from the declarations; LOG 527).
   `Queries.Changes` returns those after a sequence (`after`, ascending, at most
   500) and `Queries.LatestChange` the latest; `GET /events` reads them
   (`docs/02` section 7). The numbers are in commit order, so a reader that keeps
@@ -580,7 +605,7 @@ interface ISecretsProvider : IProvider {
   that ended without closing its waits (a terminated workflow, set by
   `  reconcile`) shows none. SQLite and Postgres index the open waits by
   organisation (`waits_open`, a partial index on `open`; Postgres schema script
-  2); the in-memory store keeps no waits and answers with none. A wait that
+  2). A wait that
   opened and closed between two records is never written (LOG 374), so it never
   appears. Known limit: the 500 are the organisation's oldest open waits, taken
   before `GET /attention` filters them by caller, so with more than 500 open a
@@ -591,8 +616,7 @@ interface ISecretsProvider : IProvider {
   per step; `pull_requests` a run's pull request records, the last written per
   repository and number; `repositories` the registered repositories by name;
   `recent_answers` an actor's answers, newest first, to a limit. Each is its own
-  table in SQLite and Postgres (schema script 4), body as JSON, upserted; the
-  in-memory store keeps them, and now keeps answers too. A wait record carries
+  table in SQLite and Postgres (schema script 4), body as JSON, upserted. A wait record carries
   an intervention's `cause` and a patch approval's `patch`; a run record its
   level, parent step, tracker issue with title and link, and start (LOG 528).
   Older records lack them, and nothing is back-filled.

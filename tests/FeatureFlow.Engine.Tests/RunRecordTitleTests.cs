@@ -14,7 +14,7 @@ public sealed class RunRecordTitleTests
 {
     static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    readonly InMemoryRecordStore records = new();
+    readonly SqliteRecordStore records = new(Path.Combine(Path.GetTempPath(), "ff-title-" + Guid.NewGuid().ToString("N"), "records.db"));
     readonly InMemoryTracker tracker = new();
 
     RunActivities Activities(bool withTracker = true)
