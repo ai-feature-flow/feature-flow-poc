@@ -85,6 +85,26 @@ public class CompositionTests
         public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => Task.FromResult(ProviderResult<Unit>.Success(default));
     }
 
+    /// <summary>
+    /// L8: a tracker instance with statuses to map and no <c>status_map</c> is warned of once at composition, since a run
+    /// started before it is not checked again; one with a map, or a tracker with nothing to map, is not.
+    /// </summary>
+    [Fact]
+    public void A_tracker_instance_with_no_status_map_is_warned_of()
+    {
+        var set = ProviderComposer.Compose(Read("""
+              tracker:
+                default: plain
+                instances:
+                  plain: { provider: github_issues, repository: acme/planning }
+                  mapped: { provider: github_issues, repository: acme/planning, status_map: { done: closed } }
+                  memory: { provider: memory }
+            """), Providers.Standard.StandardProviders.Factories.Concat(TestingProviders.Factories));
+
+        var warning = Assert.Single(ProviderComposer.Warnings(set));
+        Assert.StartsWith("providers.tracker.instances.plain has no status_map: a status a run moves an issue to is passed to the tracker as its own name", warning, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("  ci: { instances: { github_actions: {} } }", "no ci provider of kind 'github_actions'")]
     [InlineData("  agent_runtime: { instances: { scripted: { script: s.yaml, model: haiku } } }", "unknown setting 'model'")]

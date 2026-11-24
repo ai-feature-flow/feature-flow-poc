@@ -437,6 +437,8 @@ interface ITrackerProvider : IProvider {
   installation states one for each status its library uses; std's are in `docs/07` section 2.
 - A run whose plan moves issues to statuses of which the tracker's `status_map` names none is refused at run start,
   beside check 21, naming the instance and `status_map` (`docs/09` section 2). A map naming at least one is accepted.
+  A run already started is not checked again, so at start-up the host logs a warning, once, for each tracker instance
+  that has statuses to map (`MappedStatuses` not null) and no `status_map`: its statuses pass as their own names.
 - GitHub Issues has no statuses of its own. A transition leaves one mapped label (or closes the issue, for `closed`);
   a label an unmapped status added is not a mapped one, so a later transition leaves it, and a read reports a mapped
   status only. Map every status a run uses.
