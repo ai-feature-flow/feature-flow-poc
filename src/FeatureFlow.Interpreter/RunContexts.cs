@@ -6,7 +6,7 @@ namespace FeatureFlow.Interpreter;
 /// One thing the run has learned that the next agent should know (docs/04 section 3.5; LOG 405): an agent step's report
 /// <see cref="ContextKinds.Summary"/> or a person's <see cref="ContextKinds.Answer"/>, with the step and execution it came
 /// from; or a <see cref="ContextKinds.RetryCause"/>, with the step it is addressed to and that step's execution it follows
-/// (LOG 513). <see cref="Text"/> reads on its own.
+/// (LOG 513), or a person's <see cref="ContextKinds.Instruction"/> for it, likewise. <see cref="Text"/> reads on its own.
 /// </summary>
 public sealed record ContextEntry(string Kind, string StepId, int Execution, string Text);
 
@@ -16,6 +16,9 @@ public static class ContextKinds
     public const string Summary = "summary";
     public const string Answer = "answer";
     public const string RetryCause = "retry_cause";
+
+    /// <summary>A person's instructions for a step's next prompt (<c>instruct</c>): addressed to the step like a retry cause, and not part of the run context.</summary>
+    public const string Instruction = "instruction";
 }
 
 /// <summary>The run context as an agent reads it (docs/04 section 3.5): one pure rendering, bounded.</summary>
@@ -86,6 +89,20 @@ public static class RunContexts
         return text.ToString();
     }
 
+    /// <summary>
+    /// A person's instructions for a step (<c>instruct</c>): <c>## A person's instructions for this step</c>, then one bullet
+    /// per instruction, in order, each saying who gave it. Null when there is none.
+    /// </summary>
+    public static string? RenderInstructions(IReadOnlyList<ContextEntry> instructions)
+    {
+        if (instructions.Count == 0)
+            return null;
+        var text = new StringBuilder("## A person's instructions for this step\n\n");
+        foreach (var e in instructions)
+            text.Append("- ").Append(e.Text.ReplaceLineEndings("\n  ")).Append('\n');
+        return text.ToString();
+    }
+
     /// <summary>A parent's rendered context without its own heading, so a grandchild's reads as one section.</summary>
     static string ParentBody(string rendered)
     {
@@ -110,17 +127,21 @@ public static class RunContexts
 public sealed partial class RunCore
 {
     /// <summary>The run context the next agent reads, rendered now, with the parent's first; null when empty.</summary>
-    public string? RunContext() => RunContexts.Render(State.Context, Run.ParentContext);
+    public string? RunContext() => RunContexts.Render(State.Context.Where(e => e.Kind != ContextKinds.Instruction).ToList(), Run.ParentContext);
 
     /// <summary>
-    /// The retry causes addressed to a step's current execution, rendered (LOG 513): those added since its last execution that
-    /// ended with a success-class outcome, so a cause outlasts a failed attempt until the step succeeds. They are its own, so a
-    /// step with <c>context: none</c> reads them too.
+    /// The retry causes addressed to a step's current execution, rendered (LOG 513), then a person's instructions for it
+    /// (<see cref="RunContexts.RenderInstructions"/>): those added since its last execution that ended with a success-class
+    /// outcome, so each outlasts a failed attempt until the step succeeds. An instruction given while an execution runs is
+    /// for the next, which is the first to read it. They are the step's own, so a step with <c>context: none</c> reads them too.
     /// </summary>
     string? CausesOf(string stepId)
     {
         var since = State.Steps.GetValueOrDefault(stepId)?.LastSuccess ?? 0;
-        return RunContexts.RenderCauses(State.Context.Where(e => e.Kind == ContextKinds.RetryCause && e.StepId == stepId && e.Execution >= since).ToList());
+        List<ContextEntry> Since(string kind) => State.Context.Where(e => e.Kind == kind && e.StepId == stepId && e.Execution >= since).ToList();
+        var parts = new[] { RunContexts.RenderCauses(Since(ContextKinds.RetryCause)), RunContexts.RenderInstructions(Since(ContextKinds.Instruction)) }
+            .OfType<string>().ToList();
+        return parts.Count == 0 ? null : string.Join("\n", parts);
     }
 
     void AddContext(string kind, string stepId, int execution, string text)

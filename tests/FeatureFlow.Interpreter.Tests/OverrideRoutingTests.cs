@@ -110,7 +110,27 @@ public class OverrideRoutingTests
         { Args("k-9", Overrides.Skip, "ship", null, ("outcome", "composed")), null },
         { Args("k-10", Overrides.Skip, "review", null, ("outcome", "accepted")), "review is protected: skipping it needs skip_protected" },
         { Args("k-11", Overrides.GrantAttempts, "design", null, ("attempts", "2")), null },
+        { Args("k-12", Overrides.GoTo, null, null), "go_to needs a step" },
+        { Args("k-13", Overrides.Replan, "design", null), "re-plan: design is not an agent step with planning authority" },
+        { Args("k-14", Overrides.GoTo, "design", null), null },
+        { Args("k-15", Overrides.Instruct, null, null, ("text", "use the audit table")), "instruct needs a step" },
+        { Args("k-16", Overrides.Instruct, "design", null), "instruct needs change.text" },
+        { Args("k-17", Overrides.Instruct, "design", null, ("text", new string('x', 4097))), "instruct's change.text is at most 4096 bytes" },
+        { Args("k-18", Overrides.Instruct, "ship", null, ("text", "use the audit table")), "ship is not an agent step; instructions go into an agent's next prompt" },
+        { Args("k-19", Overrides.Instruct, "review", null, ("text", "use the audit table")), "review is protected: instructing it needs instruct_protected" },
+        { Args("k-20", Overrides.Instruct, "design", null, ("text", "use the audit table")), null },
     };
+
+    [Fact]
+    public void An_instruction_for_a_protected_step_needs_the_variant_and_names_the_step()
+    {
+        var core = Started();
+
+        Assert.Equal("applied (protected: review)",
+            Agree(core, Args("i-1", Overrides.Instruct, "review", [Overrides.InstructProtected], ("text", "check the migration too"))).Result);
+        Assert.Contains("from alice: check the migration too", core.State.Context.Single(e => e.Kind == ContextKinds.Instruction && e.StepId == "review").Text,
+            StringComparison.Ordinal);
+    }
 
     [Theory]
     [MemberData(nameof(Cases))]

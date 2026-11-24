@@ -88,7 +88,43 @@ public class SteeringTests
             routes: { composed: { end: completed } }
         """;
 
-    static readonly Probe Lib = new("steering", ("line", Line), ("fan", Fan), ("chain", Chain), ("planned", Planned));
+    /// <summary>A planner, then a child run, then a protected check: what a go to on a live run must stop.</summary>
+    const string Live = """
+        api_version: feature-flow/v1
+        kind: template
+        metadata: { name: live, level: epic }
+        defaults:
+          routes:
+            by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+        steps:
+          - id: plan
+            agent:
+              role: std:roles/planner
+              task: std:tasks/repair_failures
+              planning: { targets: [self] }
+            outcomes: { planned: success, blocked: blocked }
+          - id: kid
+            action: run.child
+            with: { template: probe:templates/kid, repositories: [acme/api], parameters: {} }
+          - id: review
+            protected: true
+            action: artifact.validate
+          - id: ship
+            action: artifact.compose
+            routes: { composed: { end: completed } }
+        """;
+
+    const string Kid = """
+        api_version: feature-flow/v1
+        kind: template
+        metadata: { name: kid, level: ticket }
+        steps:
+          - id: work
+            action: test.run
+            routes: { passed: { end: completed }, failed: { end: failed }, baseline_failed: { end: failed } }
+        """;
+
+    static readonly Probe Lib = new("steering", ("line", Line), ("fan", Fan), ("chain", Chain), ("planned", Planned), ("live", Live), ("kid", Kid));
 
     static ApplyResult PlannerPatch(RunCore core, string changes, string resumeAt = "build") =>
         core.Apply(new StepCompleted("plan", "planned", Patch: new PatchDocument("run-1", new Proposer("agent", "plan"), "test", 1, resumeAt,
@@ -527,6 +563,130 @@ public class SteeringTests
         driver.Run();
         Assert.Equal(RunStatus.Completed, core.State.Status);
         Assert.True(core.State.Steps["c"].Current is { Skipped: true });
+    }
+
+    // ---- Go to and re-plan on a live run -------------------------------------------------------------
+
+    static OverrideOutcome Steer(RunCore core, string key, string stepId, params (string Name, string Value)[] change) =>
+        core.Override(new Wire.OverrideArgs($"o-{core.State.Overrides.Count + 1}", key, "ann", "wrong turn", stepId, change.ToDictionary(c => c.Name, c => c.Value), null));
+
+    [Fact]
+    public void A_go_to_on_a_live_run_cancels_the_running_step_and_its_child_run_and_enters_the_target()
+    {
+        var core = Lib.Start("live");
+        Assert.Equal([new StartStep("plan", 1)], core.Advance());
+        Ok(core.Apply(new StepCompleted("plan", "planned")));
+        var start = Assert.Single(core.Advance().OfType<StartChild>());
+        Ok(core.Apply(new ChildStarted("kid", start.Execution, "run-1.kid.1")));
+
+        Assert.Equal(new OverrideOutcome(null, "applied: continues at plan; cancelled kid"), Steer(core, Model.Overrides.GoTo, "plan"));
+
+        Assert.Equal([new CancelStep("kid"), new CancelChild("kid", "run-1.kid.1"), new StartStep("plan", 2)], core.Advance());
+        Assert.Empty(core.Children);
+        Assert.Equal(["plan"], core.InFlight);
+        Assert.Contains("- go to by ann sent the run here: wrong turn", core.StepSpec("plan").Spec!.Agent!.Causes, StringComparison.Ordinal);
+        Assert.Contains(core.State.Trace, t => t is { Kind: "cancelled", StepId: "kid" });
+        Assert.Contains(core.State.Trace, t => t is { Kind: "override", StepId: "plan", Detail: "go_to by ann: wrong turn -> applied: continues at plan; cancelled kid" });
+        // The cancelled child's end, reported late, is not the run's to route.
+        Assert.False(core.Apply(new ChildEnded("run-1.kid.1", RunStatus.Completed, null)).Accepted);
+    }
+
+    [Fact]
+    public void A_go_to_withdraws_the_open_waits_and_a_re_plan_needs_planning_authority()
+    {
+        var (core, driver) = Line_core();
+        driver.Run();
+        var gate = Assert.Single(core.State.Waits);
+        Assert.Equal("re-plan: design is not an agent step with planning authority", Steer(core, Model.Overrides.Replan, "design").Error);
+
+        Assert.Equal($"applied: continues at design; cancelled {gate.Id}", Steer(core, Model.Overrides.GoTo, "design", ("clean_up", "true")).Result);
+
+        Assert.Empty(core.State.Waits);
+        Assert.Equal([new CloseWait(gate.Id, "gate"), new CleanUp("design"), new StartStep("design", 2)], core.Advance());
+        Assert.Contains(core.State.Closed, c => c.Id == gate.Id && c.How == WaitEnds.Withdrawn);
+    }
+
+    [Fact]
+    public void A_re_plan_enters_a_planner_and_says_when_nothing_was_running()
+    {
+        var core = Lib.Start("live");
+        core.Advance();
+        Ok(core.Apply(new StepCompleted("plan", "blocked")));
+        core.Advance();
+        var intervention = Assert.Single(core.State.Waits);
+
+        Assert.Equal($"applied: continues at plan; cancelled {intervention.Id}", Steer(core, Model.Overrides.Replan, "plan").Result);
+        Assert.Equal([new CloseWait(intervention.Id, "plan"), new StartStep("plan", 2)], core.Advance());
+        Assert.Contains("- re-plan by ann sent the run here: wrong turn", core.StepSpec("plan").Spec!.Agent!.Causes, StringComparison.Ordinal);
+
+        // Before the first step starts nothing is running or waiting; the entry is replaced by the target.
+        var fan = Lib.Start("fan");
+        Assert.Equal("applied: continues at ship; nothing was running", Steer(fan, Model.Overrides.GoTo, "ship").Result);
+        Assert.Equal([new StartStep("ship", 1)], fan.Advance());
+    }
+
+    [Theory]
+    [InlineData("gate", null, "go to gate would leave protected step review unrun: skip it first (skip_protected), then go to gate")]
+    [InlineData("gate", "true", "go to: gate is a decision, which touches no repository; clean_up resets to where a step started, so go to the step after it")]
+    [InlineData("nowhere", null, "go to: 'nowhere' is not a step of plan revision 1")]
+    [InlineData("design", "maybe", "go_to's change.clean_up is true or false")]
+    public void A_go_to_is_refused_where_the_recovery_go_to_is(string target, string? cleanUp, string error)
+    {
+        var (core, _) = Line_core();
+        core.Advance();
+
+        var outcome = cleanUp is null ? Steer(core, Model.Overrides.GoTo, target) : Steer(core, Model.Overrides.GoTo, target, ("clean_up", cleanUp));
+
+        Assert.Equal(error, outcome.Error);
+        Assert.Equal(["design"], core.InFlight);
+        Assert.Empty(core.State.Overrides);
+    }
+
+    [Fact]
+    public void A_go_to_on_an_ended_run_is_refused()
+    {
+        var (core, _) = Line_core();
+        core.Advance();
+        Ok(core.Apply(new RunAborted("stop")));
+
+        Assert.Equal("the run has ended (aborted)", Steer(core, Model.Overrides.GoTo, "design").Error);
+        Assert.Equal("the run has ended (aborted)", Steer(core, Model.Overrides.Replan, "design").Error);
+    }
+
+    [Fact]
+    public void A_go_to_out_of_a_running_parallel_cancels_its_branches_without_deciding_its_join()
+    {
+        var core = Lib.Start("fan");
+        var driver = new Driver(core) { Respond = (id, _) => id == "ship" ? new StepCompleted(id, "composed") : null };
+        driver.Run();
+        Assert.Equal(["a", "b", "c"], core.InFlight);
+        Assert.Equal("go to: b is in a branch of fan, which is running its branches or has not started them; go to fan to run them all",
+            Steer(core, Model.Overrides.GoTo, "b").Error);
+
+        Assert.Equal("applied: continues at ship; cancelled a, b, c", Steer(core, Model.Overrides.GoTo, "ship").Result);
+
+        Assert.Equal([new CancelStep("a"), new CancelStep("b"), new CancelStep("c"), new StartStep("ship", 1)], driver.Advance());
+        Assert.Equal([BranchStatus.Cancelled, BranchStatus.Cancelled, BranchStatus.Cancelled], core.State.Containers["fan"].Branches);
+        Assert.False(core.State.Containers["fan"].Active);
+        Assert.False(core.State.Steps.ContainsKey("fan") && core.State.Steps["fan"].Current?.Outcome is not null);
+        driver.Run();
+        Assert.Equal(RunStatus.Completed, core.State.Status);
+    }
+
+    [Fact]
+    public void A_go_to_into_a_branch_of_a_decided_join_runs_it_again_as_the_recovery_does()
+    {
+        var core = Lib.Start("fan");
+        var driver = new Driver(core) { Respond = (id, e) => id == "c" && e == 1 ? new StepCompleted(id, "failed") : Succeed(id) };
+        driver.Run();
+        var intervention = Assert.Single(core.State.Waits);
+
+        Assert.Equal($"applied: continues at c; cancelled {intervention.Id}", Steer(core, Model.Overrides.GoTo, "c").Result);
+
+        driver.Run();
+        Assert.Equal(RunStatus.Completed, core.State.Status);
+        Assert.Equal(2, core.State.Steps["c"].Executions);
+        Assert.Contains(core.State.Trace, t => t is { Kind: "reopened", StepId: "fan" });
     }
 
     // ---- Carried across a hand-over ------------------------------------------------------------------

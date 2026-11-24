@@ -22,6 +22,7 @@ expect:
     - verify.review.review_0.assess
     - verify.review.review_0.record
     - verify.satisfaction
+    - trace                             # informational: produces trace_report, then delivers
     - deliver.open_pr
     - deliver.checks
     - deliver.catch_up

@@ -129,7 +129,8 @@ public sealed class FakeEngineReviewTests
         }
 
         Assert.Equal(HttpStatusCode.OK, (await InstructAsync("implement", """{ "text": "Keep the export to CSV" }""")).Item1);
-        Assert.Contains("needs the instructions as text", (await InstructAsync("implement", "{}")).Item2, StringComparison.Ordinal);
+        // The API refuses missing text before the run sees it (package B).
+        Assert.Contains("change.text is required", (await InstructAsync("implement", "{}")).Item2, StringComparison.Ordinal);
         Assert.Contains("not an agent step", (await InstructAsync("plan.validate", """{ "text": "x" }""")).Item2, StringComparison.Ordinal);
         Assert.Contains("instruct_protected", (await InstructAsync(FakeEngine.ReviewerStep(0), """{ "text": "x" }""")).Item2, StringComparison.Ordinal);
     }

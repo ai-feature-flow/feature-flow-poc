@@ -498,7 +498,7 @@ public sealed partial class RunCore
             WaitTimerFired t => TimerFired(t),
             ReminderDue r => Remind(r),
             GateSessionOpened s => OpenSession(s),
-            BreakpointSet or StepSkipped or AttemptsGranted or RoleChanged or LibraryOverridden or LibraryOverrideProposed => Steer(input),
+            BreakpointSet or StepSkipped or AttemptsGranted or RoleChanged or LibraryOverridden or LibraryOverrideProposed or RunMoved or StepInstructed => Steer(input),
             _ => ApplyResult.Refused($"unknown input {input.GetType().Name}"),
         };
     }
@@ -966,5 +966,41 @@ public sealed partial class RunCore
             CloseWaitFor(wait, WaitEnds.Withdrawn);
         Trace("ended", stepId, $"{status.Name()} ({detail})");
         outbox.Add(new EndRun(status));
+    }
+
+    /// <summary>
+    /// Stops what the run is doing and enters <paramref name="target"/>, as <see cref="End"/> stops it without ending: every
+    /// step in flight and its child run are cancelled, every open wait withdrawn, every active parallel or chain's branches
+    /// cancelled without deciding its join, and nothing else entered. Returns the steps and waits it stopped, in that order.
+    /// </summary>
+    List<string> MoveTo(string target, bool cleanUp)
+    {
+        var stopped = new List<string>();
+        foreach (var id in State.InFlight.ToList())
+        {
+            LeaveInFlight(id);
+            Trace("cancelled", id);
+            Cancel(id);
+            stopped.Add(id);
+        }
+
+        foreach (var (id, container) in State.Containers.Where(c => c.Value.Active))
+        {
+            container.Active = false;
+            for (var i = 0; i < container.Branches.Count; i++)
+                if (container.Branches[i] is BranchStatus.Waiting or BranchStatus.Running)
+                    container.Branches[i] = BranchStatus.Cancelled;
+            Trace("cancelled", id, "its branches stop; the join does not decide");
+        }
+
+        State.Pending.Clear();
+        foreach (var wait in State.Waits.ToList())
+        {
+            CloseWaitFor(wait, WaitEnds.Withdrawn);
+            stopped.Add(wait.Id);
+        }
+
+        State.Pending.Add(new Entry(target, cleanUp));
+        return stopped;
     }
 }

@@ -336,6 +336,21 @@ public sealed record AttemptsGranted(string? StepId, long Attempts, bool BeyondH
 public sealed record RoleChanged(string StepId, string Role, string Actor, string? Reason) : RunInput;
 
 /// <summary>
+/// A person moves a live run to a step (docs/05 section 5, <c>go_to</c>, or <c>replan</c> when <see cref="Replan"/>, whose
+/// target is a step with planning authority): every step in flight and its child run are cancelled, every open wait is
+/// withdrawn, every active parallel or chain stops its branches, and the run enters <see cref="StepId"/>, with
+/// <see cref="CleanUp"/> as a route's <c>clean_up</c>. The same move as the recovery answers, outside an intervention.
+/// </summary>
+public sealed record RunMoved(string StepId, bool CleanUp, bool Replan, string Actor, string? Reason) : RunInput;
+
+/// <summary>
+/// A person's instructions for an agent step's next prompt (docs/05 section 5, <c>instruct</c>): rendered after the step's
+/// retry causes until the step next ends with a success-class outcome. A protected step needs <see cref="MayTouchProtected"/>
+/// (<c>instruct_protected</c>), since an instruction could weaken a protected review.
+/// </summary>
+public sealed record StepInstructed(string StepId, string Text, string Actor, bool MayTouchProtected) : RunInput;
+
+/// <summary>
 /// The content future steps resolve was replaced (docs/08 section 5.2): <see cref="Libraries"/> is the run's library set
 /// with <see cref="Entry"/> applied. Steps in flight keep what they resolved; the plan does not change.
 /// </summary>
