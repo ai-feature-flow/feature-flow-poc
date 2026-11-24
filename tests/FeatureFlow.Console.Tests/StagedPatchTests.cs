@@ -63,4 +63,22 @@ public sealed class StagedPatchTests(BrowserFixture browser) : BrowserTest(brows
         await Expect(Middle.GetByRole(AriaRole.Region, new() { Name = $"Step {Step}" })).ToBeVisibleAsync();
         await Expect(Card).ToHaveCountAsync(0);
     }
+
+    /// <summary>Not a check: a screenshot of the card with the plan shown (docs/build/console-b2-results.md), dark at 1440 × 900, to <c>FF_SCREENS</c>.</summary>
+    [Fact(Explicit = true)]
+    public async Task Screenshot_of_the_staged_patch_card()
+    {
+        var folder = Environment.GetEnvironmentVariable("FF_SCREENS") ?? Path.Combine(Path.GetTempPath(), "ff-screens");
+        Directory.CreateDirectory(folder);
+        await Engine.AgentStepAsync("run-1");
+        await Engine.StagedPatchAsync("run-1", Step);
+        await OpenStepAsync("run-1");
+        await Page.SetViewportSizeAsync(1440, 900);
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Dark theme" }).ClickAsync();
+        await Card.GetByRole(AriaRole.Button, new() { Name = "Show the plan as it would become" }).ClickAsync();
+        await Expect(Card.GetByRole(AriaRole.Table)).ToBeVisibleAsync();
+        await Card.EvaluateAsync("e => e.scrollIntoView()");
+        await Page.WaitForTimeoutAsync(800);
+        await Page.ScreenshotAsync(new() { Path = Path.Combine(folder, "staged-patch.png") });
+    }
 }
