@@ -67,7 +67,7 @@ The engine's decorator sets a timeout per call by provider type (LOG 304):
 | New **toolset** provider | External MCP servers for agents, proxied by the engine (from FF). Not in version 1 (section 5) |
 | CI provider gains `HasCiAsync` | `ci.checks` must tell "no CI" from "not started" without GitHub-specific logic in the step (`docs/04` section 13). It replaced `GetExpectedRunsAsync`, which predicted the runs from workflow triggers (LOG 147) |
 | Code host loses `CreateBranchAsync` | Work branches are created by a VCS push (`docs/04` section 7) |
-| Tracker statuses are mapped from the library's status names in provider configuration | Templates name statuses abstractly (`docs/03` section 2.5) |
+| Tracker statuses are mapped from the library's status names in provider configuration (`status_map`); a status the map does not name is the tracker's status of the same name, and no provider knows a library's statuses (L8) | Templates name statuses abstractly (`docs/03` section 2.5), and a provider that knew std's names would be part of std |
 
 ---
 
@@ -420,6 +420,7 @@ repository's secrets are reviewed code, never a file the agent edited. A workflo
 record NoCapabilities;   // the tracker declares no flags (F16)
 
 interface ITrackerProvider : IProvider {
+    IReadOnlySet<string>?        MappedStatuses { get; }   // the statuses status_map names; null: no map to configure
     Task<..Issue>                GetIssueAsync(string key);
     Task<..IReadOnlyList<Issue>> SearchAsync(IssueQuery query);   // by label, parent, marker
     Task<..IssueRef>             CreateAsync(IssueSpec spec, string key);
@@ -430,8 +431,15 @@ interface ITrackerProvider : IProvider {
 }
 ```
 
-- Field and status mapping are provider configuration: a library status such as
-  `code_review` maps to the tracker's own status name.
+- Field and status mapping are provider configuration: the instance's `status_map` maps a library status such as
+  `code_review` to the tracker's own status name (`docs/07` section 2). A status the map does not name is the tracker
+  status of the same name: a Jira status so named, a GitHub label so named. No provider has a built-in map, so an
+  installation states one for each status its library uses; std's are in `docs/07` section 2.
+- A run whose plan moves issues to statuses of which the tracker's `status_map` names none is refused at run start,
+  beside check 21, naming the instance and `status_map` (`docs/09` section 2). A map naming at least one is accepted.
+- GitHub Issues has no statuses of its own. A transition leaves one mapped label (or closes the issue, for `closed`);
+  a label an unmapped status added is not a mapped one, so a later transition leaves it, and a read reports a mapped
+  status only. Map every status a run uses.
 - Transitioning to the current status succeeds.
 
 ### 3.7 Findings source

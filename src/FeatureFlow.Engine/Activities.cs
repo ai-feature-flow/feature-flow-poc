@@ -72,6 +72,8 @@ public sealed partial class RunActivities(EngineServices services, ITemporalClie
                 // worker picks it (AgentActivities, NameForRun); a dry run's is its dry_run instance, whatever the mapping.
                 RunStartChecks.Capabilities(core.Plan, libraries, (type, chosen) => services.Providers.Offered(type, chosen, start.DryRun),
                     role => !start.DryRun && policy.AgentEntryFor(role) is { } entry ? (entry.Mapping.AgentRuntime, entry.Key) : null, d);
+                RunStartChecks.TrackerStatusMap(core.Plan, services.Providers.NameForRun("tracker", null, start.DryRun),
+                    (services.Providers.ForRun("tracker", start.DryRun) as ITrackerProvider)?.MappedStatuses, d);
                 RunStartChecks.Caps(core.Plan, services.Organisation.Policy, core.Allowance, d, root: start.ParentWorkflowId is null, approval: ApprovalOf);
                 if (services.Providers.ForRun("code_host", start.DryRun) is ICodeHostProvider host)
                     defaultBranches = await RepositoryChecksAsync(host, core, start, policy, d, ct);

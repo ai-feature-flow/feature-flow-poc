@@ -9,7 +9,7 @@ public sealed class GitHubIssuesTrackerContract : TrackerContract
     // The newest issue is left out of every list, as GitHub's lists lag a create.
     readonly FakeGitHubIssues github = new() { Unlisted = 1 };
 
-    public GitHubIssuesTrackerContract() => Tracker = new GitHubIssuesTracker(github.Api(), "o/r");
+    public GitHubIssuesTrackerContract() => Tracker = new GitHubIssuesTracker(github.Api(), "o/r", GitHubIssuesTrackerTests.Map);
 
     protected override ITrackerProvider Tracker { get; }
 
@@ -21,6 +21,14 @@ public sealed class GitHubIssuesTrackerContract : TrackerContract
 /// <summary>The GitHub Issues tracker's mapping of GitHub's answers (docs/06 section 1.1) and of statuses to labels and state.</summary>
 public sealed class GitHubIssuesTrackerTests
 {
+    /// <summary>The <c>status_map</c> the provider built in before R1 (L8), as <c>docs/07</c> section 2 writes it.</summary>
+    internal static readonly IReadOnlyDictionary<string, string> Map = new Dictionary<string, string>
+    {
+        ["in_progress"] = "status: in progress",
+        ["code_review"] = "status: code review",
+        ["done"] = GitHubIssuesTracker.Closed,
+    };
+
     static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     static (string, string) Shown((string State, IReadOnlyList<string> Labels) read) => (read.State, string.Join(",", read.Labels));
@@ -72,7 +80,7 @@ public sealed class GitHubIssuesTrackerTests
             .On(HttpMethod.Get, "~/issues/3", 200, """{ "id": 1, "number": 3, "title": "T", "body": "B", "state": "open", "labels": [{ "name": "status: code review" }, { "name": "bug" }] }""")
             .On(HttpMethod.Get, "~/issues/4", 200, """{ "id": 2, "number": 4, "title": "T", "body": "B", "state": "closed", "labels": [] }""")
             .On(HttpMethod.Get, "~/issues/5", 200, """{ "id": 3, "number": 5, "title": "T", "body": "B", "state": "open", "labels": [] }""");
-        var tracker = new GitHubIssuesTracker(github.Api(), "o/r");
+        var tracker = new GitHubIssuesTracker(github.Api(), "o/r", Map);
 
         var review = (await tracker.GetIssueAsync(new IssueRef("#3"), Ct)).Unwrap();
         Assert.Equal("code_review", review.Status);
@@ -85,7 +93,7 @@ public sealed class GitHubIssuesTrackerTests
     public async Task A_transition_leaves_one_status_label_and_done_closes_the_issue()
     {
         var github = new FakeGitHubIssues();
-        var tracker = new GitHubIssuesTracker(github.Api(), "o/r");
+        var tracker = new GitHubIssuesTracker(github.Api(), "o/r", Map);
         var issue = (await tracker.CreateAsync(new IssueSpec("T", "B", ["bug"]), "k", Ct)).Unwrap();
 
         (await tracker.TransitionAsync(issue, "in_progress", Ct)).Unwrap();
@@ -100,22 +108,42 @@ public sealed class GitHubIssuesTrackerTests
     }
 
     [Fact]
-    public async Task A_configured_status_map_replaces_the_default()
+    public async Task A_configured_status_map_still_maps()
     {
         var github = new FakeGitHubIssues();
         var tracker = new GitHubIssuesTracker(github.Api(), "o/r", new Dictionary<string, string> { ["shipped"] = "closed", ["doing"] = "wip" });
         var issue = (await tracker.CreateAsync(new IssueSpec("T"), "k", Ct)).Unwrap();
 
-        Assert.Equal("validation_failed", (await tracker.TransitionAsync(issue, "in_progress", Ct)).Error!.Reason);
         (await tracker.TransitionAsync(issue, "doing", Ct)).Unwrap();
+        Assert.Equal(("open", "wip"), Shown(github.Read(2)));
         Assert.Equal("doing", (await tracker.GetIssueAsync(issue, Ct)).Unwrap().Status);
+
+        (await tracker.TransitionAsync(issue, "shipped", Ct)).Unwrap();
+        Assert.Equal(("closed", ""), Shown(github.Read(2)));
+        Assert.Equal("shipped", (await tracker.GetIssueAsync(issue, Ct)).Unwrap().Status);
+        Assert.Equal(["doing", "shipped"], tracker.MappedStatuses.Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task An_unmapped_status_maps_to_itself()
+    {
+        var github = new FakeGitHubIssues();
+        var tracker = new GitHubIssuesTracker(github.Api(), "o/r");
+        var issue = (await tracker.CreateAsync(new IssueSpec("T", Labels: ["bug"]), "k", Ct)).Unwrap();
+
+        (await tracker.TransitionAsync(issue, "in_progress", Ct)).Unwrap();
+        Assert.Equal(("open", "bug,in_progress"), Shown(github.Read(2)));
+
+        (await tracker.TransitionAsync(issue, "done", Ct)).Unwrap();
+        Assert.Equal(("open", "bug,in_progress,done"), Shown(github.Read(2)));
+        Assert.Empty(tracker.MappedStatuses);
     }
 
     [Fact]
     public async Task An_update_keeps_the_marker_and_the_status_label()
     {
         var github = new FakeGitHubIssues();
-        var tracker = new GitHubIssuesTracker(github.Api(), "o/r");
+        var tracker = new GitHubIssuesTracker(github.Api(), "o/r", Map);
         var issue = (await tracker.CreateAsync(new IssueSpec("T", "Old body"), "k", Ct)).Unwrap();
         (await tracker.TransitionAsync(issue, "code_review", Ct)).Unwrap();
 

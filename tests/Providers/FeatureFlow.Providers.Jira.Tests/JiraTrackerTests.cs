@@ -12,7 +12,7 @@ public sealed class JiraTrackerContract : TrackerContract
     // The newest issue is left out of every search, as Jira's index lags a create.
     readonly FakeJira jira = new() { Unlisted = 1 };
 
-    public JiraTrackerContract() => Tracker = new JiraTracker(jira.Api(), "ACME");
+    public JiraTrackerContract() => Tracker = new JiraTracker(jira.Api(), "ACME", JiraTrackerTests.Map);
 
     protected override ITrackerProvider Tracker { get; }
 
@@ -27,10 +27,18 @@ public sealed class JiraTrackerTests
 {
     static CancellationToken Ct => TestContext.Current.CancellationToken;
 
+    /// <summary>The <c>status_map</c> the provider built in before R1 (L8), as <c>docs/07</c> section 2 writes it.</summary>
+    internal static readonly IReadOnlyDictionary<string, string> Map = new Dictionary<string, string>
+    {
+        ["in_progress"] = "In Progress",
+        ["code_review"] = "In Review",
+        ["done"] = "Done",
+    };
+
     static async Task<(FakeJira Jira, JiraTracker Tracker)> WithIssueAsync(IReadOnlyDictionary<string, string>? map = null)
     {
         var jira = new FakeJira();
-        var tracker = new JiraTracker(jira.Api(), "ACME", map);
+        var tracker = new JiraTracker(jira.Api(), "ACME", map ?? Map);
         Assert.True((await tracker.CreateAsync(new IssueSpec("A ticket", "Line one.\n\nLine three."), "k1", Ct)).Ok);
         return (jira, tracker);
     }
@@ -113,18 +121,32 @@ public sealed class JiraTrackerTests
     }
 
     [Fact]
-    public async Task A_status_the_map_does_not_name_is_refused_before_Jira_is_asked()
+    public async Task An_unmapped_status_maps_to_itself()
     {
-        var (jira, tracker) = await WithIssueAsync();
-        var before = jira.Calls.Count;
+        var (jira, tracker) = await WithIssueAsync(new Dictionary<string, string>());
 
-        // "Done" is a Jira status the workflow offers, but the library's status name is what is mapped, and "Done" is not one.
-        var refused = await tracker.TransitionAsync(new IssueRef("ACME-1"), "Done", Ct);
+        // A Jira status of the library status's own name is taken as it is.
+        Assert.True((await tracker.TransitionAsync(new IssueRef("ACME-1"), "In Review", Ct)).Ok);
+        Assert.Equal("In Review", jira.Issue("ACME-1").Status);
+        Assert.Equal("In Review", (await tracker.GetIssueAsync(new IssueRef("ACME-1"), Ct)).Value!.Status);
 
+        // With no map, in_progress is a Jira status named in_progress, which this workflow lacks.
+        var refused = await tracker.TransitionAsync(new IssueRef("ACME-1"), "in_progress", Ct);
         Assert.Equal("validation_failed", refused.Error!.Reason);
-        Assert.Contains("status 'Done' is not mapped", refused.Error.Message);
-        Assert.Equal(before, jira.Calls.Count);
-        Assert.Equal("To Do", jira.Issue("ACME-1").Status);
+        Assert.Contains("to 'in_progress'", refused.Error.Message);
+        Assert.Empty(tracker.MappedStatuses);
+    }
+
+    [Fact]
+    public async Task A_configured_status_map_still_maps()
+    {
+        var (jira, tracker) = await WithIssueAsync(new Dictionary<string, string> { ["shipped"] = "Done" });
+
+        Assert.True((await tracker.TransitionAsync(new IssueRef("ACME-1"), "shipped", Ct)).Ok);
+
+        Assert.Equal("Done", jira.Issue("ACME-1").Status);
+        Assert.Equal("shipped", (await tracker.GetIssueAsync(new IssueRef("ACME-1"), Ct)).Value!.Status);
+        Assert.Equal(["shipped"], tracker.MappedStatuses);
     }
 
     [Fact]

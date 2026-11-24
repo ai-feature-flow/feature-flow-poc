@@ -49,7 +49,11 @@ providers:
   tracker:
     default: jira
     instances:
-      jira: { base_url: "https://your-site.atlassian.net", secret_ref: secrets/jira, project: PROJ }   # yours
+      jira:   # yours; status_map maps std's statuses to your Jira workflow's (a status it does not name is the Jira status of the same name)
+        base_url: "https://your-site.atlassian.net"
+        secret_ref: secrets/jira
+        project: PROJ
+        status_map: { in_progress: "In Progress", code_review: "In Review", done: "Done" }
   findings_source:
     instances: { copilot_review: {} }
   validator:

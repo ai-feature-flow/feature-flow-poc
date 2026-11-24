@@ -11,7 +11,7 @@ public abstract class TrackerContract : ContractBase
 {
     protected abstract ITrackerProvider Tracker { get; }
 
-    /// <summary>Two library statuses the provider's configuration maps, such as <c>in_progress</c> and <c>done</c>.</summary>
+    /// <summary>Two library statuses the provider's configuration maps, such as <c>in_progress</c> and <c>done</c>; a subclass configures its provider's <c>status_map</c> to map them.</summary>
     protected abstract (string First, string Second) Statuses { get; }
 
     /// <summary>The bodies of an issue's comments, read from the tracker as a person would see them.</summary>
@@ -76,14 +76,6 @@ public abstract class TrackerContract : ContractBase
         Ok(await Tracker.TransitionAsync(issue, second, Ct));
         Ok(await Tracker.TransitionAsync(issue, second, Ct));
         Assert.Equal(second, Ok(await Tracker.GetIssueAsync(issue, Ct)).Status);
-    }
-
-    [Fact]
-    public async Task A_status_the_configuration_does_not_map_is_refused()
-    {
-        var issue = Ok(await CreateAsync("unmapped"));
-
-        Refused(await Tracker.TransitionAsync(issue, "no_such_library_status", Ct), "validation_failed");
     }
 
     [Fact]
