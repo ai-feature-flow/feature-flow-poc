@@ -278,6 +278,15 @@ attempt until the step succeeds; a step reads its own causes whatever its
 `context`, since they are addressed to it, not the run's history (LOG 513).
 A first execution, and one entered by a success, have none.
 
+A person's instructions for a step (the `instruct` override, `docs/05`
+section 5) are context entries of a fourth kind, `instruction`, text
+`from <actor>: <text>`, addressed to the step with its current execution
+count. They are rendered after the causes, under `## A person's instructions
+for this step`, one bullet each, and last as causes do: until an execution
+that read them ends with a success-class outcome. One given while the step
+runs is for its next execution. They are the step's own: not in the run
+context other steps read, and read by a step with `context: none` (LOG 573).
+
 ### 3.6 Outputs the engine publishes for every agent step
 
 Besides the outputs the agent reports, the engine publishes these, so a route
@@ -406,7 +415,9 @@ answer (section 1), or when a step's allowance runs out and the plan routes it
 to escalate. The person answers with a recovery action: retry, go to a step
 (optionally with `clean_up`), re-plan at a planning step, grant attempts, or
 end the run (`docs/01` section 7.2). The intervention records what stopped the
-step, so the answer is informed.
+step, so the answer is informed. Go to and re-plan may also be given on a
+running run with no intervention open, as the overrides `go_to` and `replan`
+(`docs/05` section 5), which cancel what is in flight first (LOG 572).
 
 ### 4.4 Interactive sessions
 
@@ -543,10 +554,10 @@ Opens the work branch's pull request into its parent branch, or updates it.
 
 | Element | Detail |
 |---|---|
-| Inputs | `title`, `body` (a prompt reference, rendered), `draft`, `post_declines` (default `true`). With no `title`, the run's tracker issue gives it: `"<issue title> (<key>)"`, a GitHub key `owner/repo#200` shortened to `#200`, a Jira key as it is; with no issue, or one that does not read (a timeline event says so), `"<level>: <run>"` from the run's record (LOG 531) |
+| Inputs | `title`, `body` (a prompt reference, rendered), `draft`, `post_declines` (default `true`), `post_review` (default `true`). With no `title`, the run's tracker issue gives it: `"<issue title> (<key>)"`, a GitHub key `owner/repo#200` shortened to `#200`, a Jira key as it is; with no issue, or one that does not read (a timeline event says so), `"<level>: <run>"` from the run's record (LOG 531) |
 | Outcomes | `ready`. Output: the pull request reference |
 | Idempotency | Marker in the body; a retry adopts the existing pull request |
-| Behaviour | Posts the declines the run's ledger already holds for the repository, under each declining triage's own comment key, so none is posted twice (LOG 249) |
+| Behaviour | Posts the declines the run's ledger already holds for the repository, under each declining triage's own comment key, so none is posted twice (LOG 249). Then, unless `post_review: false`, posts the **review summary** as one comment: the heading "Feature Flow review"; a table of each reviewer's current `findings_report` in this run (one per reviewer step, produced by an agent step) with its angle, findings and blocking findings; under each angle its verdict and what it checked (the report's `summary`, `docs/08` section 6.2), or "No verdict recorded."; the run's ledger tally (open with blocking, fixed, declined, escalated); and a line naming the run's review report in the console. Every reviewer string is a code span, fenced longer than any backtick run in it, so it is shown as written and never read as Markdown or a mention. The comment key is `review/<run id>/<first 16 hex digits of the SHA-256 of the sorted report references>`: a retry or re-entry with the same reports posts nothing twice, and a later review pass (re-verify, then deliver again) posts a new comment, the earlier ones staying. With no reviewer's report in scope nothing is posted, and a timeline event says so (LOG 574) |
 | Record | Once open, the pull request is read and written as a pull request record under the step. Every engine read of a run's pull request does the same (`ci.checks` with the checks it read, `scm.merge` and its merge-action polls, a further read after the engine merges, `wait.condition`): a record is written only when the state, files, checks or the reading step changed, so a polling step writes nothing while the pull request stands still; a read without checks keeps the recorded checks of the same head; files are listed again only when the head or base moved, and a failed listing never fails the step (LOG 531) |
 
 ### 7.3 `scm.merge`

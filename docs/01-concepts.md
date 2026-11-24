@@ -346,7 +346,9 @@ The answers to an intervention or a breakpoint:
 | End | End the run with a chosen status |
 | Continue | Breakpoints only: start the step that was paused before |
 
-Each is an override (section 10) and is bounded by organisation roles.
+Each is an override (section 10) and is bounded by organisation roles. Go to
+and re-plan may also be given on a running run with no decision open; they
+first cancel what is in flight (`docs/05` section 5, LOG 572).
 
 ---
 
