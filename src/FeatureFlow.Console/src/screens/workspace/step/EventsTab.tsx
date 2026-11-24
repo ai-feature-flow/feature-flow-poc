@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks";
 import type { Schema } from "../../../api/client";
 import { Segmented } from "../../runs/parts";
+import "./step.css";
 
 type Event = Schema<"StepEventView">;
 type Source = Schema<"StepEventSource">;
@@ -25,7 +26,7 @@ export function EventsTab({ events }: { events: readonly Event[] }) {
   const shown = events.filter(e => source === "all" || e.source === source).reverse();
   return (
     <>
-      <p>
+      <p class="ff-steptab-filter">
         <Segmented
           label="Source"
           value={source}
@@ -36,7 +37,7 @@ export function EventsTab({ events }: { events: readonly Event[] }) {
       {shown.length === 0 ? (
         <p class="ff-muted">{events.length === 0 ? "The step has no events yet." : "No events from this source."}</p>
       ) : (
-        <table aria-label="Events">
+        <table aria-label="Events" class="ff-steptab">
           <thead>
             <tr>
               <th>Time</th>
@@ -50,17 +51,17 @@ export function EventsTab({ events }: { events: readonly Event[] }) {
           <tbody>
             {shown.map((e, i) => (
               <tr key={i} data-source={e.source}>
-                <td class="ff-muted" title={e.at}>
+                <td class="ff-muted ff-nowrap" title={e.at}>
                   {clock.format(new Date(e.at))}
                 </td>
                 <td>{e.execution ?? ""}</td>
                 <td>{e.source}</td>
-                <td class="ff-mono">{e.kind}</td>
-                <td class="ff-text">
-                  {e.finding_id && <span class="ff-mono">{e.finding_id} </span>}
+                <td class="ff-mono ff-wrap">{e.kind}</td>
+                <td class="ff-text ff-wrap">
+                  {e.finding_id && <div class="ff-mono ff-nowrap">{e.finding_id}</div>}
                   {e.text}
                 </td>
-                <td>{e.actor ?? ""}</td>
+                <td class="ff-wrap">{e.actor ?? ""}</td>
               </tr>
             ))}
           </tbody>

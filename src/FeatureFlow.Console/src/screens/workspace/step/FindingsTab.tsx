@@ -1,6 +1,7 @@
 import type { Schema } from "../../../api/client";
 import * as links from "../../../app/links";
 import { Age } from "../../../ui/Age";
+import "./step.css";
 
 type Detail = Schema<"StepDetail">;
 
@@ -17,7 +18,7 @@ export function FindingsTab({ detail, tree }: { detail: Detail; tree: string }) 
       {detail.findings.length === 0 ? (
         <p class="ff-muted">The step has no findings.</p>
       ) : (
-        <table aria-label="Findings">
+        <table aria-label="Findings" class="ff-steptab">
           <thead>
             <tr>
               <th>Id</th>
@@ -32,14 +33,14 @@ export function FindingsTab({ detail, tree }: { detail: Detail; tree: string }) 
               const here = lastHere.get(f.ledger_id);
               return (
                 <tr key={f.ledger_id} data-finding={f.ledger_id}>
-                  <td class="ff-mono">{f.ledger_id}</td>
+                  <td class="ff-mono ff-nowrap">{f.ledger_id}</td>
                   <td>
                     {f.severity}
                     {f.blocking ? ", blocking" : ""}
                   </td>
                   <td class="ff-text">{f.title}</td>
                   <td>{f.state}</td>
-                  <td>
+                  <td class="ff-wrap">
                     {here ? (
                       <>
                         <span class="ff-text">

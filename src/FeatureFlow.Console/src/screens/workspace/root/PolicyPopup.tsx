@@ -49,7 +49,7 @@ export function PolicyPopup({ runId }: { runId: string }) {
         {data.overrides.map(o => (
           <tr key={o.key} data-override={o.key}>
             <td class="ff-mono">{o.key}</td>
-            <td>{o.roles.join(", ")}</td>
+            <td>{o.roles.length === 0 ? <span class="ff-muted">no role</span> : o.roles.join(", ")}</td>
             <td>{o.yours ? "may" : "may not"}</td>
           </tr>
         ))}

@@ -87,7 +87,7 @@ function Summary({ report }: { report: Report }) {
   const count = (state: string) => all.filter(f => f.finding.state === state).length;
   const trace = report.trace;
   return (
-    <div class="ff-box ff-facts" aria-label="Summary">
+    <section class="ff-box ff-facts" aria-label="Summary">
       <div>
         <div class="ff-k">Passes</div>
         {report.passes.length === 0 ? <span class="ff-muted">none</span> : report.passes.length}
@@ -104,7 +104,7 @@ function Summary({ report }: { report: Report }) {
           `${trace.requirements.filter(r => r.traced).length} of ${trace.requirements.length} requirements traced`
         )}
       </div>
-    </div>
+    </section>
   );
 }
 
