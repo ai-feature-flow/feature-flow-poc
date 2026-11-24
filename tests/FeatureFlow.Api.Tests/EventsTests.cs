@@ -60,6 +60,38 @@ public sealed class EventsTests
         await A_wait_opening_reaches_its_runs_viewers_only(world, "sqlite");
     }
 
+    /// <summary>
+    /// Activity appended for a step reaches the run's viewer as <c>step_changed</c> with the run and step, and raises no
+    /// <c>run_changed</c>: the viewer's next frame after it is the run's own later change.
+    /// </summary>
+    [Fact]
+    public async Task Activity_appended_for_a_step_is_sent_as_step_changed_to_a_viewer_of_its_run_only()
+    {
+        await using var world = new ApiWorld(TwoTeams());
+        await world.RunAsync("pay", "acme/pay");
+        await world.RunAsync("web", "acme/web");
+        await world.Feed.PollAsync(Ct);
+        await using var payStream = await EventStream.OpenAsync(world.As("pat", groups: "pay-eng"));
+        await using var webStream = await EventStream.OpenAsync(world.As("wes", groups: "web-eng"));
+
+        await world.Records.AppendAsync(new RecordBatch(Activity:
+        [
+            new ActivityRecord("pay", "build", 1, 1, 1, ActivityKinds.Message, null, null, "Looking", null, false, DateTimeOffset.UtcNow),
+            new ActivityRecord("pay", "build", 1, 1, 2, ActivityKinds.ToolStarted, "c1", "bash", null, null, false, DateTimeOffset.UtcNow),
+        ]), Ct);
+        await world.RunAsync("pay", "acme/pay");
+        await world.RunAsync("web", "acme/web");
+        await world.Feed.PollAsync(Ct);
+
+        var changed = await payStream.NextAsync();
+        Assert.Equal(("step_changed", "pay", ChangeKind.StepChanged, "build", (string?)null),
+            (changed.Event, changed.Data!.RunId, changed.Data.Kind, changed.Data.StepId, changed.Data.WaitId));
+        var next = await payStream.NextAsync();
+        Assert.Equal(("run_changed", "pay", (string?)null), (next.Event, next.Data!.RunId, next.Data.StepId));
+        var web = await webStream.NextAsync();
+        Assert.Equal(("run_changed", "web"), (web.Event, web.Data!.RunId));
+    }
+
     [Fact]
     public async Task Last_event_id_within_the_ring_replays_what_followed_and_beyond_it_resets()
     {
@@ -169,7 +201,7 @@ public sealed class EventsTests
     /// <summary>One server-sent event: its lines as read (<see cref="Raw"/>), and its <c>id</c>, <c>event</c> and <c>data</c>.</summary>
     internal sealed record Frame(string Raw, string? Id, string? Event, string? Text)
     {
-        public ChangeEvent? Data => Event is "run_changed" or "wait_opened" or "wait_closed" ? JsonSerializer.Deserialize<ChangeEvent>(Text!, ApiJson.Options) : null;
+        public ChangeEvent? Data => Event is "run_changed" or "wait_opened" or "wait_closed" or "step_changed" ? JsonSerializer.Deserialize<ChangeEvent>(Text!, ApiJson.Options) : null;
     }
 
     /// <summary>An open <c>GET /events</c> response, read frame by frame; the first frame, <c>retry</c>, is checked and skipped. It owns its client.</summary>
