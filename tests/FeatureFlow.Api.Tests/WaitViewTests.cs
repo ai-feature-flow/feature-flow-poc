@@ -71,6 +71,32 @@ public sealed class DecisionWorld : IAsyncDisposable
                 routes:
                   triaged: { end: completed }
             """,
+        ["templates/escalations.yaml"] = """
+            api_version: feature-flow/v1
+            kind: template
+            metadata:
+              name: escalations
+              level: ticket
+              description: A person decides escalations only
+            artifact_types:
+              - std:artifact_types/triage
+            defaults:
+              routes:
+                by_class: { failure: { escalate: true }, blocked: { escalate: true } }
+            steps:
+              - id: person_triage
+                decision: { type: findings.triage, prompt: a2t:prompts/triage }
+                produces:
+                  triaged: [{ name: person_triage, type: std:artifact_types/triage }]
+                outcomes: { triaged: success }
+              - id: apply_person_triage
+                action: findings.triage
+                with: { from: person_triage, complete: true, person_decides: [escalated] }
+                consumes: [{ name: person_triage }]
+                routes:
+                  applied: { end: completed }
+                  invalid: person_triage
+            """,
     };
 
     public DecisionWorld(bool validators = false, IReadOnlyList<string>? roles = null)
@@ -130,10 +156,10 @@ public sealed class DecisionWorld : IAsyncDisposable
         Directory.Delete(folder, recursive: true);
     }
 
-    /// <summary>Starts <c>a2t:templates/triage</c> through the API (its lock and record), then indexes its first plan revision as the engine does.</summary>
-    public async Task<RunRecord> StartAsync()
+    /// <summary>Starts <paramref name="template"/> of <c>a2t</c> through the API (its lock and record), then indexes its first plan revision as the engine does.</summary>
+    public async Task<RunRecord> StartAsync(string template = "triage")
     {
-        using (var started = await Http.PostAsync("runs", new StringContent("""{ "template": "a2t:templates/triage" }""", Encoding.UTF8, "application/json"), Ct))
+        using (var started = await Http.PostAsync("runs", new StringContent($$"""{ "template": "a2t:templates/{{template}}" }""", Encoding.UTF8, "application/json"), Ct))
             Assert.Equal(HttpStatusCode.Created, started.StatusCode);
         var run = Assert.Single((await Records.QueryAsync<RunRecord>(Queries.Runs, new Dictionary<string, string>(), Ct)).Unwrap());
         var (core, diagnostics) = RunCore.Start(libraries, LibraryReference.TryParse(run.Template)!, new RunInfo(run.RunId, [], new Dictionary<string, YNode>()));
@@ -381,6 +407,24 @@ public sealed class WaitViewTests
             Findings: [Finding("F-1", FindingStates.Escalated, false), Finding("F-2", FindingStates.Declined, true), Finding("F-3", FindingStates.Declined, false)]));
 
         Assert.Equal("Triage 2 findings the triager could not clear", (await ViewAsync(world, "r1", "triage")).Title);
+    }
+
+    [Fact]
+    public async Task A_triage_counts_only_the_classes_the_runs_plan_says_a_person_decides()
+    {
+        // F13: the plan's person triage names only escalations, so a declined blocking finding is not counted.
+        await using var world = new DecisionWorld();
+        var run = await world.StartAsync("escalations");
+        FindingRecord Finding(string id, string state, bool blocking) =>
+            new(run.RunId, id, id, new ReportedFinding("r", id, "d", "high", blocking, FindingBases.Reasoned, new FindingLocation("acme/api", "A.cs")), "review", null, state,
+                "h1", "h1", 0, 0, 0, false, T0);
+        await world.AppendAsync(new RecordBatch(
+            Waits: [Wait(run.RunId, "triage", "gate", "person_triage", "findings.triage", "# Triage")],
+            Findings: [Finding("F-1", FindingStates.Escalated, false), Finding("F-2", FindingStates.Declined, true), Finding("F-3", FindingStates.Escalated, true)]));
+
+        Assert.Equal("Triage 2 findings the triager could not clear", (await ViewAsync(world, run.RunId, "triage")).Title);
+        var findings = (await world.GetAsync<FindingsResponse>($"runs/{run.RunId}/findings")).Findings.ToDictionary(f => f.LedgerId);
+        Assert.Equal((true, false, true), (findings["F-1"].NeedsPerson, findings["F-2"].NeedsPerson, findings["F-3"].NeedsPerson));
     }
 
     [Fact]
