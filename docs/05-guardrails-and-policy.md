@@ -187,7 +187,8 @@ recorded with the actor, the change and the person's reason (a comment) when
 they give one. A reason is optional, except where it matters (LOG 502): an
 answer whose choice routes the step as a failure (a gate's outcome of class
 `failure`, such as `rejected`, or `reject` on `merge_action`), ending a run at
-an intervention or a breakpoint (`end`), an abort and a library override are
+an intervention or a breakpoint (`end`), an abort, a library override, and a
+`go_to` or `replan` override (which cancel the work in flight, LOG 572) are
 refused without one (400), and so is a grant beyond the hard ceiling, which the
 run refuses (409) since only it knows the ceilings. For the privileged ones the
 reason is their audit trail. The answer
@@ -198,6 +199,9 @@ none is recorded or invented.
 |---|---|---|---|
 | Answer a decision | `answer` | `docs/04` section 4 | Per approval rules |
 | Recovery action at an intervention | `recover` | Retry, go to, re-plan, grant attempts, end (`docs/01` section 7.2) | `steerer` |
+| Go to a step | `go_to` | On a running run, outside an intervention: cancel every step in flight and its child run, end every active parallel or chain's branches without deciding its join, withdraw every open wait, and enter the step, with `change.clean_up` (`true` or `false`, default `false`) as a route's. Checked as the recovery go to is: the step is in the plan, `clean_up` does not aim at a decision, and no protected step is left unrun. A step inside a parallel or chain that is running or has not started is refused (go to the container); one inside a decided join runs its branch again. An agent step entered so is told who sent the run there and why. A reason is required. A run that has ended is refused. The result names what was cancelled (LOG 572) | `steerer` |
+| Re-plan | `replan` | As `go_to`, to an agent step with `planning` (LOG 572) | `steerer` |
+| Instructions for a step's next attempt | `instruct` | `change.text`, at most 4,096 bytes, added to an agent step's next prompt with who gave it, until the step next succeeds (`docs/04` section 3.5). Replacing the prompt text is not offered: it would let a person drop the reporting instructions (LOG 573) | `steerer`; `admin` for a step in protected content (`instruct_protected`) |
 | Set or clear a breakpoint | `breakpoint` | Pause before a step | `steerer` |
 | Skip a step | `skip` | Mark it as having ended with a chosen outcome, without running it. The record shows it was skipped | `steerer`; `admin` for a protected step |
 | Amend the plan | `amend` | Apply a patch (`docs/03` section 10). Not bound by F3 | `steerer`; `admin` for protected content |
@@ -228,7 +232,7 @@ literal `@` (LOG 406).
 
 The organisation may change the default role for any override by key, in
 `policy.overrides` (`docs/07` section 3). A `_protected` suffix (`skip_protected`,
-`amend_protected`, `override_library_protected`) sets the role for the same
+`amend_protected`, `override_library_protected`, `instruct_protected`) sets the role for the same
 override on protected content; `grant_attempts_beyond` sets who may grant beyond
 the hard ceiling.
 
@@ -275,6 +279,10 @@ result, and which setting decided it.
 | Who may act on the merge request | `approver`, 2 people, console only | Approval rule `*.merge_action` |
 
 The view is part of the plan's readable form and of the run start record.
+For a running run, `GET /runs/{id}/policy` (the console's Run actions →
+Policy in force) gives each decision type of its plan with who may answer and
+where the rule comes from, every override key with its roles and whether the
+caller holds it, and the attempt limits (`docs/02` section 7, LOG 578).
 
 ---
 

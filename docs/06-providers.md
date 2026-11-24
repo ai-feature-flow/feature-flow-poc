@@ -598,8 +598,10 @@ interface ISecretsProvider : IProvider {
   declared to change it (runs, timeline, answers, overrides, artifacts,
   sessions, findings, finding events, step states, pull requests) the batch
   writes, one `wait_opened` or `wait_closed` per wait record, and one
-  `step_changed` per run and step whose activity it writes (`ChangeKinds.Of`,
-  computed from the declarations; LOG 527).
+  `step_changed` per run and step whose activity, finding events or agent
+  events it writes, an agent event's run and step read from its key
+  `<run>/<step>/<n>` (`ChangeKinds.Of`, computed from the declarations, whose
+  `ChangeEffect` is a set of flags and `StepOf` names the step; LOG 527, 577).
   `Queries.Changes` returns those after a sequence (`after`, ascending, at most
   500) and `Queries.LatestChange` the latest; `GET /events` reads them
   (`docs/02` section 7). The numbers are in commit order, so a reader that keeps
