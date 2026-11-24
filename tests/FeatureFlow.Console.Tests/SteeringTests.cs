@@ -114,7 +114,7 @@ public sealed class SteeringTests(BrowserFixture browser) : BrowserTest(browser)
         await Dialog.GetByLabel("Instructions for the next attempt").FillAsync("Keep <b>the</b> public API unchanged.");
         // Shown as text, where the prompt has it: after why the step runs again, before the run context and task.
         var preview = Dialog.GetByLabel("Where it goes in the prompt");
-        await Expect(preview).ToContainTextAsync("## A person's instructions for this step\n\nKeep <b>the</b> public API unchanged.");
+        await Expect(preview).ToContainTextAsync("## A person's instructions for this step\n\n- from you: Keep <b>the</b> public API unchanged.");
         await Expect(Dialog.GetByRole(AriaRole.Note, new() { Name = "Consequence" })).ToContainTextAsync("until the step next succeeds. The plan does not change");
         // implement is not protected.
         await Expect(Dialog.GetByRole(AriaRole.Note, new() { Name = "Protected step" })).ToHaveCountAsync(0);

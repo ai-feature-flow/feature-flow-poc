@@ -277,7 +277,7 @@ function MoveForm({ runId, plan: opened, step, kind }: { runId: string; plan: Sc
   );
 }
 
-/** Where a person's instructions go in the step's next prompt (plan s1.3), around the text given. */
+/** Where a person's instructions go in the step's next prompt (plan s1.3; RunContexts.RenderInstructions), around the text given. */
 function PromptPreview({ text }: { text: string }) {
   return (
     <div class="ff-steer-field">
@@ -285,8 +285,8 @@ function PromptPreview({ text }: { text: string }) {
       <pre class="ff-dec-yaml ff-steer-prompt" aria-label="Where it goes in the prompt">
         <span class="ff-muted">{"… the reporting preamble, ## This step, and ## Why this step runs again when it does\n\n"}</span>
         {"## A person's instructions for this step\n\n"}
-        {text.trim() || "(your instructions)"}
-        {"\n— you, with your reason\n\n"}
+        {/* As RunContexts.RenderInstructions writes each: a bullet naming who gave it, later lines indented. */}
+        {`- from you: ${(text.trim() || "(your instructions)").replaceAll("\n", "\n  ")}\n\n`}
         <span class="ff-muted">{"… the run context, and the step's task"}</span>
       </pre>
     </div>
