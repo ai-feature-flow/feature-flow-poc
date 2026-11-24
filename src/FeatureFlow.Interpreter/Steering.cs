@@ -24,7 +24,11 @@ public sealed partial class RunCore
 
     /// <summary>The keys the <c>override</c> update carries out: answers keep the <c>answer</c> update (LOG 203).</summary>
     static readonly IReadOnlyList<string> UpdateKeys =
-        [Overrides.Breakpoint, Overrides.Skip, Overrides.Amend, Overrides.ChangeRole, Overrides.GrantAttempts, Overrides.OverrideLibrary, Overrides.Abort];
+        [Overrides.Breakpoint, Overrides.Skip, Overrides.Amend, Overrides.ChangeRole, Overrides.GrantAttempts, Overrides.OverrideLibrary, Overrides.Abort,
+         Overrides.GoTo, Overrides.Replan, Overrides.Instruct];
+
+    /// <summary>The most a person's instructions for a step may be, in UTF-8 bytes; the API refuses more as it does a long reason.</summary>
+    public const int MaxInstructionBytes = 4096;
 
     /// <summary>
     /// Where an override goes, without changing anything: a duplicate of the one applied with its id (with its first result),
@@ -70,6 +74,10 @@ public sealed partial class RunCore
                     Apply(aborted);
                     result = close ? "aborted; its open pull requests will be closed" : "aborted";
                     break;
+                case Applies { Input: RunMoved moved }:
+                    var stopped = Move(moved);
+                    result = $"applied: continues at {FindIn(moved.StepId)}; {(stopped.Count == 0 ? "nothing was running" : "cancelled " + string.Join(", ", stopped))}";
+                    break;
                 case Applies p:
                     var applied = Apply(p.Input);
                     if (!applied.Accepted || applied.Patch is { Status: not PatchStatus.Applied })
@@ -107,8 +115,14 @@ public sealed partial class RunCore
             : null;
         switch (o.Key)
         {
-            case Overrides.Breakpoint or Overrides.Skip or Overrides.ChangeRole when o.StepId is null:
+            case Overrides.Breakpoint or Overrides.Skip or Overrides.ChangeRole or Overrides.GoTo or Overrides.Replan or Overrides.Instruct when o.StepId is null:
                 return $"{o.Key} needs a step";
+            case Overrides.GoTo or Overrides.Replan when o.Change.ContainsKey("clean_up") && Bool(o.Change, "clean_up") is null:
+                return $"{o.Key}'s change.clean_up is true or false";
+            case Overrides.Instruct when Missing("text") is { } missing:
+                return missing;
+            case Overrides.Instruct when System.Text.Encoding.UTF8.GetByteCount(o.Change["text"]) > MaxInstructionBytes:
+                return $"instruct's change.text is at most {MaxInstructionBytes} bytes";
             case Overrides.Skip when Missing("outcome") is { } missing:
                 return missing;
             case Overrides.ChangeRole when Missing("role") is { } missing:
@@ -148,6 +162,8 @@ public sealed partial class RunCore
         Overrides.ChangeRole => new RoleChanged(o.StepId!, o.Change["role"], o.Actor, o.Reason),
         Overrides.Amend when ReadPatch(o.Change["patch"], out _) is { } patch =>
             new PatchProposed(patch with { Reason = $"amend {By(o.Actor, o.Reason)}" }, new Proposer("human", null), Holds(o, Overrides.AmendProtected)),
+        Overrides.GoTo or Overrides.Replan => new RunMoved(o.StepId!, Bool(o.Change, "clean_up") ?? false, o.Key == Overrides.Replan, o.Actor, o.Reason),
+        Overrides.Instruct => new StepInstructed(o.StepId!, o.Change["text"], o.Actor, Holds(o, Overrides.InstructProtected)),
         _ => null,
     };
 
@@ -180,6 +196,8 @@ public sealed partial class RunCore
             : proposer.Agent?.Planning is null ? $"{p.StepId} has no planning authority, so it may not propose a library override"
             : p.Content is null ? "a library override proposal needs with, the new content"
             : LibraryItemError(p.Item),
+        RunMoved m => MoveError(m),
+        StepInstructed s => InstructError(s),
         _ => null,
     };
 
@@ -219,9 +237,69 @@ public sealed partial class RunCore
                 });
                 Trace("library_override_proposed", p.StepId, $"{p.Item}, {wait.Id}");
                 return ApplyResult.Ok;
+            case RunMoved m:
+                Move(m);
+                return ApplyResult.Ok;
+            case StepInstructed s:
+                AddContext(ContextKinds.Instruction, s.StepId, Executions(s.StepId), $"from {s.Actor}: {s.Text.Trim()}");
+                return ApplyResult.Ok;
             default:
                 return ApplyResult.Refused($"unknown input {input.GetType().Name}");
         }
+    }
+
+    // ---- Go to and re-plan on a live run ----------------------------------------------------------
+
+    /// <summary>
+    /// The recovery answers' checks (<see cref="RecoveryError"/>), for a run that may be doing anything: the target is in the
+    /// plan, re-plan's has planning authority, <c>clean_up</c> does not aim at a decision, and no protected step is left unrun
+    /// by moving every position the run has to the target. A target inside a parallel or chain is entered only when every
+    /// container round it has decided its join, so that its branch runs again as a recovery's go to does (<see cref="Reopen"/>).
+    /// </summary>
+    string? MoveError(RunMoved m)
+    {
+        var how = m.Replan ? "re-plan" : "go to";
+        if (FindIn(m.StepId) is not { } target)
+            return $"{how}: '{m.StepId}' is not a step of plan revision {State.Revision}";
+        var step = StepById(target)!;
+        if (m.Replan && step.Agent?.Planning is null)
+            return $"re-plan: {target} is not an agent step with planning authority";
+        if (m.CleanUp && step.Form == StepForm.Decision)
+            return $"{how}: {target} is a decision, which touches no repository; clean_up resets to where a step started, so go to the step after it";
+        for (var lane = step.Lane; lane.Length > 0;)
+        {
+            var owner = lane[..lane.LastIndexOf('#')];
+            if (!State.Containers.TryGetValue(owner, out var container) || container.Active)
+                return $"{how}: {target} is in a branch of {owner}, which is running its branches or has not started them; go to {owner} to run them all";
+            lane = StepById(owner)?.Lane ?? "";
+        }
+
+        return Bypasses(Positions(), target);
+    }
+
+    /// <summary>Moves the run (<see cref="MoveTo"/>); an agent target is told who sent it there and why, as a retry cause (LOG 513).</summary>
+    List<string> Move(RunMoved m)
+    {
+        var target = FindIn(m.StepId)!;
+        if (StepById(target) is { Form: StepForm.Agent })
+            AddContext(ContextKinds.RetryCause, target, Executions(target),
+                $"{(m.Replan ? "re-plan" : "go to")} by {m.Actor} sent the run here{(string.IsNullOrWhiteSpace(m.Reason) ? "" : ": " + m.Reason.Trim())}");
+        return MoveTo(target, m.CleanUp);
+    }
+
+    // ---- A person's instructions for a step's next prompt ---------------------------------------------
+
+    string? InstructError(StepInstructed s)
+    {
+        if (StepById(s.StepId) is not { } step)
+            return $"{s.StepId} is not a step of plan revision {State.Revision}";
+        if (step.Form != StepForm.Agent)
+            return $"{s.StepId} is not an agent step; instructions go into an agent's next prompt";
+        if (string.IsNullOrWhiteSpace(s.Text))
+            return "instruct needs change.text";
+        return InsideProtected(Plan, step) && !s.MayTouchProtected
+            ? $"{s.StepId} is protected: instructing it needs {Model.Overrides.InstructProtected}"
+            : null;
     }
 
     // ---- Breakpoints ------------------------------------------------------------------------------
@@ -439,7 +517,7 @@ public sealed partial class RunCore
     /// </summary>
     IReadOnlyList<string> ProtectedTouched(OverrideArgs o) => o.Key switch
     {
-        Overrides.Skip or Overrides.ChangeRole when o.StepId is not null && StepById(o.StepId) is { Protected: true } => [o.StepId],
+        Overrides.Skip or Overrides.ChangeRole or Overrides.Instruct when o.StepId is not null && StepById(o.StepId) is { } step && InsideProtected(Plan, step) => [o.StepId],
         Overrides.OverrideLibrary when o.Change.GetValueOrDefault("item") is { } item => ProtectedResolving(item)
             .Concat(Plan.AllSteps.Any(x => x.Descriptor?.Handling is ActionHandling.ChildRun or ActionHandling.Expand) ? ["its child runs"] : []).ToList(),
         _ => [],

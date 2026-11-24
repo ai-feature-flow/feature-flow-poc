@@ -48,6 +48,10 @@ and your inputs.
    one, without `same_as`. Do not
    raise a finding the ledger shows `declined` again unless the code it concerns
    has changed since; if it has, say in the description what changed.
+8. Write `summary`, even when you have no findings: `verdict`, your judgement
+   of the change from your angle in one or two sentences, and `checked`, what
+   you examined (files, behaviours, criteria, commands you ran). It is posted on
+   the pull request and shown in the review report.
 
 ## What blocks
 
@@ -62,5 +66,5 @@ finding.
 
 | Outcome | When | Artifacts |
 |---|---|---|
-| `reviewed` | The review is complete, with or without findings | `findings.yaml` in your output folder as `findings_report`, `angle: {{ angle }}` |
+| `reviewed` | The review is complete, with or without findings | `findings.yaml` in your output folder as `findings_report`, `angle: {{ angle }}`, with its `summary` |
 | `blocked` | The review cannot be done: the baseline is missing, or the specification conflicts with itself | None |
