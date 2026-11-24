@@ -64,6 +64,58 @@ public sealed class ArtifactTests(BrowserFixture browser) : BrowserTest(browser)
     /// <summary>A real run's prompt (run-947be4435f5c's plan.plan, execution 2): the reporting preamble and the task, in Markdown.</summary>
     static string RealPrompt => File.ReadAllText(Path.Combine(Repository.Root, "tests", "FeatureFlow.Console.Tests", "data", "plan-prompt.md"));
 
+    /// <summary>A real Copilot CLI transcript (run-947be4435f5c's plan.plan, execution 1), as the API's tests of its turns read it.</summary>
+    internal static string RealTranscript => File.ReadAllText(Path.Combine(Repository.Root, "tests", "FeatureFlow.Api.Tests", "data", "copilot-transcript.jsonl"));
+
+    [Fact]
+    public async Task A_transcript_reads_as_turns_with_its_tool_calls_and_reasoning_folded_and_both_views_download_it()
+    {
+        await Engine.RunAsync("run-1");
+        var reference = await Engine.ProduceAsync("run-1", "plan.plan", "transcript:1", RealTranscript, type: "transcript");
+        await OpenAsync("#/runs/run-1/artifacts/" + Uri.EscapeDataString(reference));
+
+        await Expect(Viewer.Locator(".ff-tx-head dd")).ToHaveTextAsync(["plan.plan", "Copilot CLI", "claude-sonnet-5.5", "26.8 s", "7", "7", "100,462 in · 3,130 out"]);
+        var turns = Viewer.Locator(".ff-tx-turn");
+        await Expect(turns).ToHaveCountAsync(13);
+        await Expect(turns.Nth(0).Locator(".ff-tx-who")).ToHaveTextAsync("Prompt+0:02");
+        // A message is Markdown, formatted.
+        await Expect(turns.Nth(11).Locator(".ff-tx-who")).ToHaveTextAsync("Agent+0:27");
+        await Expect(turns.Nth(11).Locator(".ff-md code").First).ToHaveTextAsync("requirements.yaml");
+
+        // Reasoning is folded, and not built until opened.
+        var reasoning = turns.Nth(7);
+        await Expect(reasoning.Locator("summary")).ToContainTextAsync("I can't use bash to write file contents");
+        Assert.Equal(0, await reasoning.Locator(".ff-tx-reasoning").CountAsync());
+
+        // A tool call is one row, a failed one marked; it opens to its arguments and result.
+        var denied = turns.Nth(5);
+        await Expect(denied.Locator("summary .ff-tx-name")).ToHaveTextAsync("bash");
+        await Expect(denied.Locator("summary .ff-tx-failed")).ToHaveTextAsync("failed");
+        Assert.Equal(0, await denied.Locator("pre").CountAsync());
+        await denied.Locator("summary").ClickAsync();
+        // One block per argument, a command's lines as lines, then the result.
+        await Expect(denied.Locator(".ff-tx-label")).ToHaveTextAsync(["command", "description", "Result"]);
+        await Expect(denied.Locator("pre").First).ToContainTextAsync("cd /ff/out; cat > requirements.yaml <<'E'\nschema: 1\n");
+        await Expect(denied.Locator("pre").Last).ToContainTextAsync("Permission denied because no interactive user response was available.");
+
+        // A long result shows its first lines, and all of it on request.
+        var first = turns.Nth(1);
+        await Expect(first.Locator("summary")).ToContainTextAsync("bash Read inputs");
+        await first.Locator("summary").ClickAsync();
+        var output = first.Locator("pre").Last;
+        await Expect(output).ToContainTextAsync("\"step\": \"plan.plan\"");
+        Assert.DoesNotContain("/ff/work:", await output.TextContentAsync());
+        await first.GetByRole(AriaRole.Button, new() { Name = "Show all (57 lines)" }).ClickAsync();
+        await Expect(output).ToContainTextAsync("/ff/work:\nREADME.md");
+
+        var formatted = await Page.RunAndWaitForDownloadAsync(() => Viewer.GetByRole(AriaRole.Button, new() { Name = "Download" }).ClickAsync());
+        Assert.Equal(RealTranscript, await File.ReadAllTextAsync((await formatted.PathAsync())!, Ct));
+        await Viewer.GetByRole(AriaRole.Button, new() { Name = "Source" }).ClickAsync();
+        Assert.Equal(RealTranscript[..1000], (await Viewer.Locator("pre.ff-viewer-text").TextContentAsync())![..1000]);
+        var source = await Page.RunAndWaitForDownloadAsync(() => Viewer.GetByRole(AriaRole.Button, new() { Name = "Download" }).ClickAsync());
+        Assert.Equal(RealTranscript, await File.ReadAllTextAsync((await source.PathAsync())!, Ct));
+    }
+
     [Fact]
     public async Task A_markdown_prompt_is_formatted_its_source_stays_raw_and_both_views_download_it()
     {

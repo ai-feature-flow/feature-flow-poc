@@ -168,6 +168,24 @@ Evidence: Playwright tests for each, which fail on the console before the change
 hostile document; the reader's unit tests (`src/FeatureFlow.Console/tests/markdownTree.test.ts`, run by `npm test`,
 which `npm run build` now runs), the hostile document among them.
 
+## Readable transcripts
+
+Pulled forward from B2 (design-v2 A4, curated activity) at the product owner's request: an agent step's transcript reads
+as a conversation in its formatted view, in the viewer and full size (LOG 543). The API reads the runtime's output into
+turns (`GET /runs/{id}/artifacts/{reference}/turns`, docs/02 section 7), one shape for Copilot CLI and Claude Code; the
+console shows a header (step, runtime, model, duration, tool and model calls, tokens), then each turn with who and its
+time since the session started: the prompt and reasoning folded, messages as Markdown, each tool call one row (name,
+summary, "failed" where it failed) that opens to its arguments and result, cut to 40 lines with "Show all". Event types
+it does not show are listed at the end. The source view stays raw; Download works in both. A transcript the API cannot
+read (no runtime's events) still shows as text. Live activity streaming (A9) and the Activity tab stay in B2.
+
+Evidence: `TranscriptTurnsTests` (a real Copilot CLI transcript, run-947be4435f5c's `plan.plan` execution 1 with most of
+its streamed tool arguments left out, `tests/FeatureFlow.Api.Tests/data/copilot-transcript.jsonl`; a Claude Code
+fixture; deltas, a denied tool call, an unknown event type and a line cut short), which fail when deltas are not merged,
+failures not marked or stream events not dropped; `ArtifactTests` for the view (a tool call expanded, reasoning folded
+and not built, a long result shown in full on request, Download in both views). Screenshots from
+`PopupTests.Screenshots_of_a_transcript_as_turns`, run explicitly with `FF_SCREENS` set.
+
 ## Open questions
 
 1. A code host outage at registration answers 400; should it be a new 503 (LOG 532)?
@@ -180,3 +198,5 @@ which `npm run build` now runs), the hostile document among them.
    somewhere, on its first branch or the run's page (LOG 539)?
 6. The dark theme's needs-you row is now Nord yellow with dark text, close to the light theme's highlight; worth the
    product owner's eye, as is whether whole-row scroll snapping in the tree feels stiff on a trackpad.
+7. Transcripts are read into turns by the API, which knows both runtimes' formats; should each runtime provider own its
+   reader instead, so a new runtime brings its own (LOG 543)?

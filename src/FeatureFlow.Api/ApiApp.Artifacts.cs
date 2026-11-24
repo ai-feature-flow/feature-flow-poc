@@ -11,7 +11,7 @@ namespace FeatureFlow.Api;
 
 public static partial class ApiApp
 {
-    /// <summary>A run's artifacts: its index, an artifact's bytes, and an artifact read as a document.</summary>
+    /// <summary>A run's artifacts: its index, an artifact's bytes, an artifact read as a document, and a transcript read as turns.</summary>
     static void MapArtifacts(WebApplication app, Handlers api)
     {
         app.MapGet("/runs/{id}/artifacts", (HttpContext c, string id) => api.Guard(c, caller => api.ListArtifactsAsync(c, caller, id)))
@@ -21,6 +21,9 @@ public static partial class ApiApp
         app.MapGet("/runs/{id}/artifacts/{reference}/document",
                 (HttpContext c, string id, string reference) => api.Guard(c, caller => api.ArtifactDocumentAsync(c, caller, id, reference)))
             .Described<ArtifactDocument>("getArtifactDocument", 200, 404, 415);
+        app.MapGet("/runs/{id}/artifacts/{reference}/turns",
+                (HttpContext c, string id, string reference) => api.Guard(c, caller => api.ArtifactTurnsAsync(c, caller, id, reference)))
+            .Described<TranscriptTurns>("getArtifactTurns", 200, 404, 415);
     }
 
     sealed partial class Handlers
@@ -66,20 +69,42 @@ public static partial class ApiApp
         public async Task<IResult> ArtifactDocumentAsync(HttpContext context, Caller caller, string id, string reference)
         {
             var ct = context.RequestAborted;
-            var (run, refused) = await ReadableArtifactAsync(caller, id, reference, ct);
+            var (run, text, refused) = await ReadableTextAsync(caller, id, reference, ct);
             if (refused is not null)
                 return refused;
+            var declared = (await Records.QueryAsync<ArtifactRecord>(Queries.Artifacts, new Dictionary<string, string> { ["run_id"] = id }, ct)).Unwrap()
+                .LastOrDefault(a => a.Ref == reference && a.Type is not null)?.Type;
+            return Results.Json(DocumentOf(text!, await FormatOfAsync(run!, declared, ct)), Json);
+        }
+
+        /// <summary>
+        /// An agent session's transcript read as turns (console A4), under the same rule as its bytes (<see cref="ArtifactAsync"/>):
+        /// one shape for every runtime, read here so the runtimes' formats stay out of the console (<see cref="Transcripts"/>).
+        /// Text that holds no runtime's events is 415: read it as a document instead.
+        /// </summary>
+        public async Task<IResult> ArtifactTurnsAsync(HttpContext context, Caller caller, string id, string reference)
+        {
+            var (_, text, refused) = await ReadableTextAsync(caller, id, reference, context.RequestAborted);
+            if (refused is not null)
+                return refused;
+            return Transcripts.Read(text!) is { } turns
+                ? Results.Json(turns, Json)
+                : Error(415, $"artifact {reference} is not a transcript this API reads; read it as a document instead");
+        }
+
+        /// <summary>The run and the artifact's text, for a viewer of the run (<see cref="ReadableArtifactAsync"/>); 404 or, for bytes that are not text, 415.</summary>
+        async Task<(RunRecord? Run, string? Text, IResult? Refused)> ReadableTextAsync(Caller caller, string id, string reference, CancellationToken ct)
+        {
+            var (run, refused) = await ReadableArtifactAsync(caller, id, reference, ct);
+            if (refused is not null)
+                return (null, null, refused);
             var read = await Artifacts.GetAsync(new ArtifactRef(reference), ct);
             if (!read.Ok)
-                return Error(404, $"artifact {reference} cannot be read: {read.Error!.Message}");
+                return (null, null, Error(404, $"artifact {reference} cannot be read: {read.Error!.Message}"));
             using var bytes = new MemoryStream();
             await using (var stream = read.Value!)
                 await stream.CopyToAsync(bytes, ct);
-            if (TextOf(bytes.ToArray()) is not { } text)
-                return Error(415, $"artifact {reference} is not text; download it instead");
-            var declared = (await Records.QueryAsync<ArtifactRecord>(Queries.Artifacts, new Dictionary<string, string> { ["run_id"] = id }, ct)).Unwrap()
-                .LastOrDefault(a => a.Ref == reference && a.Type is not null)?.Type;
-            return Results.Json(DocumentOf(text, await FormatOfAsync(run!, declared, ct)), Json);
+            return TextOf(bytes.ToArray()) is { } text ? (run, text, null) : (null, null, Error(415, $"artifact {reference} is not text; download it instead"));
         }
 
         /// <summary>

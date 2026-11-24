@@ -47,3 +47,27 @@
 .ff-md table { overflow-wrap: normal; }
 
 .ff-viewer-empty { border: 1px dashed var(--border2); border-radius: 8px; padding: 8px 12px; font-size: 12px; }
+
+/* A transcript as turns (Transcript.tsx): a header of facts, then one row per turn, who and when on the left. */
+.ff-tx-head { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 0 0 14px; padding: 10px 12px; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
+.ff-tx-head dt { color: var(--muted); font-size: 12px; }
+.ff-tx-head dd { margin: 0; overflow-wrap: anywhere; }
+.ff-tx-turns { list-style: none; margin: 0; padding: 0; }
+.ff-tx-turn { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.ff-tx-who { font-size: 12px; font-weight: 700; color: var(--muted); }
+.ff-tx-who > span { display: block; }
+.ff-tx-turn[data-kind="message"] .ff-tx-who, .ff-tx-turn[data-kind="result"] .ff-tx-who { color: var(--accent); }
+.ff-tx-when { font-weight: 400; font-variant-numeric: tabular-nums; }
+.ff-tx-body { min-width: 0; }
+.ff-tx-body > p { margin: 0; }
+.ff-tx-body .ff-fold > summary { font-weight: 400; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ff-tx-body .ff-fold[open] > summary { margin-bottom: 6px; }
+.ff-tx-call { color: var(--text); }
+.ff-tx-name { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; background: var(--panel2); border-radius: 4px; padding: 1px 5px; }
+.ff-tx-failed { color: var(--bad); font-weight: 700; }
+.ff-tx-call .ff-tx-failed { margin-left: 8px; font-size: 12px; }
+.ff-tx-reasoning { white-space: pre-wrap; color: var(--muted); font-style: italic; margin: 0; }
+.ff-tx-block { margin: 0 0 8px; }
+.ff-tx-label { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.ff-tx-pre { background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 12px; max-height: 480px; overflow: auto; }
+.ff-tx-unread { font-size: 12px; margin-top: 10px; }
