@@ -41,6 +41,14 @@ public abstract class RecordKindContract : ContractBase
             .Select(x => $"{x.Query.Name}, form {x.Form}"));
     }
 
+    [Fact]
+    public void Every_named_query_is_declared_or_store_native()
+    {
+        var named = typeof(Queries).GetFields().Where(f => f.IsLiteral).Select(f => (string)f.GetRawConstantValue()!);
+
+        Assert.Empty(named.Where(q => !RecordQueries.All.ContainsKey(q) && !RecordQueries.StoreNative.Contains(q)));
+    }
+
     [Theory]
     [MemberData(nameof(Kinds))]
     public async Task A_kind_keeps_what_its_write_rule_says(string name)
