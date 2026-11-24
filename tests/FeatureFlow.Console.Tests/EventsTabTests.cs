@@ -53,6 +53,23 @@ public sealed class EventsTabTests(BrowserFixture browser) : BrowserTest(browser
         await Expect(Rows.First).ToContainTextAsync("claude-sonnet-5.5");
     }
 
+    /// <summary>Not a check: a screenshot of the tab (docs/build/console-b2-results.md), dark at 1440 × 900, to <c>FF_SCREENS</c>.</summary>
+    [Fact(Explicit = true)]
+    public async Task Screenshot_of_the_events_tab()
+    {
+        var folder = Environment.GetEnvironmentVariable("FF_SCREENS") ?? Path.Combine(Path.GetTempPath(), "ff-screens");
+        Directory.CreateDirectory(folder);
+        var s = await Engine.ReviewScenarioAsync();
+        await Engine.AgentEventAsync(s.RunId, s.ReviewerSteps[0], 2, "hook_pre_tool_use", "Edit allow");
+        await OpenAsync($"#/runs/{s.RunId}/steps/{s.RunId}/{s.ReviewerSteps[0]}");
+        await Page.SetViewportSizeAsync(1440, 900);
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Dark theme" }).ClickAsync();
+        await Middle.GetByRole(AriaRole.Tab, new() { Name = "Events" }).ClickAsync();
+        await Expect(Rows.First).ToBeVisibleAsync();
+        await Page.WaitForTimeoutAsync(800);
+        await Page.ScreenshotAsync(new() { Path = Path.Combine(folder, "c-events-tab-dark.png") });
+    }
+
     [Fact]
     public async Task Event_text_from_the_api_is_shown_as_text()
     {

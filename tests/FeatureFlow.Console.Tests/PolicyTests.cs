@@ -34,5 +34,24 @@ public sealed class PolicyTests(BrowserFixture browser) : BrowserTest(browser)
         await Expect(popup.Locator("tr[data-override='go_to']")).ToHaveCountAsync(1);
         await Expect(popup.GetByRole(AriaRole.Heading, new() { Name = "Attempts" })).ToBeVisibleAsync();
         await Expect(popup).ToContainTextAsync("A step's default attempts");
+        // Answers have no override row: the decisions above say who answers.
+        await Expect(popup.Locator("tr[data-override='answer'], tr[data-override='answer_question']")).ToHaveCountAsync(0);
+    }
+
+    /// <summary>Not a check: a screenshot of the popup (docs/build/console-b2-results.md), dark at 1440 × 900, to <c>FF_SCREENS</c>.</summary>
+    [Fact(Explicit = true)]
+    public async Task Screenshot_of_the_policy_popup()
+    {
+        var folder = Environment.GetEnvironmentVariable("FF_SCREENS") ?? Path.Combine(Path.GetTempPath(), "ff-screens");
+        Directory.CreateDirectory(folder);
+        var s = await Engine.ReviewScenarioAsync();
+        await OpenAsync($"#/runs/{s.RunId}");
+        await Page.SetViewportSizeAsync(1440, 900);
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Dark theme" }).ClickAsync();
+        await Middle.GetByRole(AriaRole.Button, new() { Name = "Run actions ▾" }).ClickAsync();
+        await Page.GetByRole(AriaRole.Menuitem).Filter(new() { HasText = "Policy in force" }).ClickAsync();
+        await Expect(Popup($"Policy in force for {s.RunId}").Locator("tr[data-override='abort']")).ToBeVisibleAsync();
+        await Page.WaitForTimeoutAsync(800);
+        await Page.ScreenshotAsync(new() { Path = Path.Combine(folder, "c-policy-popup-dark.png") });
     }
 }

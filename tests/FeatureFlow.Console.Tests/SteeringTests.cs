@@ -276,5 +276,11 @@ public sealed class SteeringTests(BrowserFixture browser) : BrowserTest(browser)
         await Dialog.GetByLabel("Instructions for the next attempt").FillAsync("CSV only: XLSX is out of scope for INV-4.\nKeep the public API unchanged; add the export as a new route.");
         await Dialog.GetByLabel("Reason (required)").FillAsync("answered in the ticket");
         await Shot("steer-instructions");
+
+        // Applied: the step page lists it as pending for the next attempt.
+        await Apply.ClickAsync();
+        await Expect(Dialog).ToHaveCountAsync(0, new() { Timeout = 5_000 });
+        await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "Pending instructions" })).ToBeVisibleAsync(new() { Timeout = 5_000 });
+        await Shot("step-instructions-pending");
     }
 }
