@@ -655,6 +655,7 @@ public sealed class FindingsActionTests : IAsyncDisposable
     [InlineData("[escalated]", "applied")]
     [InlineData("[escalated, declined_blocking, declined_demonstrated]", "invalid")]
     [InlineData(null, "invalid")]
+    [InlineData("~", "invalid")]   // refused at load (check 31); were it to reach the engine, it reads as unset, as the API does
     public async Task A_person_triage_must_decide_exactly_the_classes_its_step_names(string? personDecides, string expected)
     {
         // F13: the workflow, not the engine, says which findings a person must decide. A step naming only escalations lets a
@@ -1066,6 +1067,7 @@ public sealed class FindingsActionTests : IAsyncDisposable
     [InlineData("{ from: person_triage, complete: true, person_decides: [declined_demonstrated, escalated] }", "declined_demonstrated escalated")]
     [InlineData("{ from: person_triage, complete: true }", "declined_blocking declined_demonstrated escalated")]
     [InlineData("{ from: person_triage, person_decides: [escalated] }", "declined_blocking declined_demonstrated escalated")]
+    [InlineData("{ from: person_triage, complete: false, person_decides: [escalated] }", "declined_blocking declined_demonstrated escalated")]
     public void The_plan_says_which_classes_a_person_decides(string applyWith, string expected)
     {
         // A step that is not complete decides nothing for a person, so with none the classes are the default (docs/04 s11.2).
@@ -1078,6 +1080,10 @@ public sealed class FindingsActionTests : IAsyncDisposable
     [Theory]
     [InlineData("{ from: person_triage, complete: true, person_decides: { expr: \"params.classes\" } }", "findings.triage input 'person_decides' must be written as a literal")]
     [InlineData("{ from: person_triage, complete: true, person_decides: [escalated, open] }", "findings.triage input 'person_decides' must name one or more of escalated, declined_blocking, declined_demonstrated")]
+    [InlineData("{ from: person_triage, complete: true, person_decides: ~ }", "findings.triage input 'person_decides' must be written as a literal value, not null")]
+    [InlineData("{ from: person_triage, complete: true, person_decides: [] }", "findings.triage input 'person_decides' must not be empty")]
+    [InlineData("{ from: person_triage, complete: ~, person_decides: [escalated] }", "findings.triage input 'complete' must be written as a literal value, not null")]
+    [InlineData("{ from: person_triage, complete: { expr: \"true\" }, person_decides: [escalated] }", "findings.triage input 'complete' must be written as a literal")]
     public void Person_decides_is_a_literal_list_of_the_classes(string applyWith, string expected)
     {
         var (core, diagnostics) = Started(applyWith);

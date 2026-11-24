@@ -259,12 +259,12 @@ static class FindingsActions
         var allowed = run.Inputs.ContainsKey("states") ? run.Strings("states") : FindingStates.All;
         var (triage, problems) = ReadTriage(await run.ReadTextAsync(entry.Ref), $"{entry.StepId}'s {from} {entry.Ref}", byId, allowed);
         var history = new History(run);
-        if (problems.Count == 0 && run.Bool("complete", false))
+        if (problems.Count == 0 && FindingClasses.PersonDecides(run.Inputs.GetValueOrDefault("complete"), run.Inputs.GetValueOrDefault("person_decides")) is { } classes)
         {
             // A person's triage answers for everything the workflow says an agent may not clear alone (review F1, LOG 248): every
             // finding of this run in the classes its person_decides names, all three unless it names some, unless a person
-            // already decided it (LOG 512). One it leaves out goes back to the person.
-            var classes = run.Inputs.ContainsKey("person_decides") ? run.Strings("person_decides").ToHashSet(StringComparer.Ordinal) : FindingClasses.Default;
+            // already decided it (LOG 512). One it leaves out goes back to the person. The API reads the same classes from the
+            // plan through the same reader (FindingsLedger.PersonClasses).
             var people = await PeopleAsync(run);
             foreach (var undecided in ledger.Where(f => f.RunId == run.Call.Step.RunId && FindingsLedger.AgentMayNotClear(f, classes))
                          .Where(f => triage!.Entries.All(t => t.Finding != f.FindingId)))
