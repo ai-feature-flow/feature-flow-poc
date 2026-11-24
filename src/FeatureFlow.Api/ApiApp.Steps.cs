@@ -127,9 +127,6 @@ public static partial class ApiApp
                 [.. events.OrderBy(e => e.At)], staged, instructions), Json);
         }
 
-        /// <summary>A route whose contract is fixed and whose handler is not built yet: 501.</summary>
-        static IResult NotBuilt() => Error(StatusCodes.Status501NotImplemented, "not built yet");
-
         /// <summary>
         /// The step and its finding steps (plan s1.7): the action steps in its innermost group that consume an artifact it
         /// produces, since the engine's actions, not agents, write the ledger (<c>assess</c> → <c>record</c>, <c>triage</c> →
