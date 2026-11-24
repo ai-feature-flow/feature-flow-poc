@@ -99,21 +99,21 @@ public static partial class ApiApp
         /// which is not a refusal (LOG 493). With <paramref name="proposed"/> naming an open patch approval, the plan as it would
         /// be with the patch applied, as the next revision, each step that differs marked (A8); 404 for no such wait, 409 when
         /// the patch does not load. With <paramref name="staged"/> naming a step, the plan as the patch its agent has staged
-        /// would make it: not built yet (build-console-b2 package B builds it).
+        /// would make it (<see cref="StagedPlanAsync"/>).
         /// </summary>
         public async Task<IResult> PlanAsync(HttpContext context, Caller caller, string id, string? proposed, string? staged)
         {
             var ct = context.RequestAborted;
             if (await VisibleRunAsync(caller, id, ct) is not { } run)
                 return Error(404, $"no run {id}");
-            if (staged is not null)
-                return NotBuilt();
             var (loaded, refusal) = await LoadPlanAsync(run, revision: null, extraPatch: null, ct);
             if (refusal is { Status: 204 })
                 return Results.NoContent();
             if (refusal is not null)
                 return Error(refusal.Status, refusal.Message);
             var state = await RunStateAsync(id, ct);
+            if (staged is not null)
+                return await StagedPlanAsync(run, staged, loaded!, state, ct);
             if (proposed is null)
                 return Results.Json(PlanViewOf(id, loaded!, state), Json);
             if (state.OpenWaits.FirstOrDefault(w => w.WaitId == proposed && w.Patch is not null) is not { Patch: { } patch })
@@ -122,6 +122,26 @@ public static partial class ApiApp
             return notLoaded is not null
                 ? Error(409, $"the patch of {proposed} does not apply: {notLoaded.Message}")
                 : Results.Json(PlanViewOf(id, next!, state, current: loaded, revision: loaded!.Source.Revision + 1), Json);
+        }
+
+        /// <summary>
+        /// The plan as the patch the step's agent has staged would make it (A8), marked against the current plan as a proposed
+        /// one is: the step's latest execution must still run and its staged patch target this run (<c>self</c>), else 404; 409
+        /// when the patch does not apply.
+        /// </summary>
+        async Task<IResult> StagedPlanAsync(RunRecord run, string step, LoadedPlan current, RunState state, CancellationToken ct)
+        {
+            var latest = RunsOf(state.Timeline, step).LastOrDefault();
+            var events = latest is { EndedAt: null }
+                ? (await Records.QueryAsync<AgentEventRecord>(Queries.AgentEvents,
+                    new Dictionary<string, string> { ["step_key"] = $"{run.RunId}/{step}/{latest.Number.ToString(System.Globalization.CultureInfo.InvariantCulture)}" }, ct)).Unwrap()
+                : [];
+            if (latest is null || StagedOf(latest.Number, events) is not { Target: "self" } patch)
+                return Error(404, $"step {step} of run {run.RunId} has no plan change staged for this run");
+            var (next, notLoaded) = await LoadPlanAsync(run, revision: null, extraPatch: patch.Patch, ct);
+            return notLoaded is not null
+                ? Error(409, $"the patch staged by {step} does not apply: {notLoaded.Message}")
+                : Results.Json(PlanViewOf(run.RunId, next!, state, current: current, revision: current.Source.Revision + 1), Json);
         }
     }
 }
