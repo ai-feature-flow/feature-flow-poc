@@ -71,3 +71,7 @@
 .ff-tx-label { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
 .ff-tx-pre { background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 12px; max-height: 480px; overflow: auto; }
 .ff-tx-unread { font-size: 12px; margin-top: 10px; }
+.ff-tx-who > .ff-tx-running { display: table; margin-top: 4px; padding: 0 7px; border-radius: 9px; background: var(--accent); color: var(--accent-text); font-size: 11px; font-weight: 700; animation: ff-tx-pulse 1.6s ease-in-out infinite; }
+.ff-tx-turn[data-running] .ff-tx-call { color: var(--accent); }
+@keyframes ff-tx-pulse { 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .ff-tx-who > .ff-tx-running { animation: none; } }

@@ -7,6 +7,7 @@ import { ErrorBox } from "../../../ui/ErrorBox";
 import { Tabs } from "../../../ui/Tabs";
 import { useDecision } from "../../decision/DecisionPopup";
 import { StepActions } from "../../steer/StepActions";
+import { ActivityTab } from "./ActivityTab";
 import { isActive, pathOf, runOf, shown, statusWaits, type StepNode } from "../tree/model";
 
 type Entry = Schema<"TimelineEntry">;
@@ -64,15 +65,17 @@ function headingOf(wait: Schema<"WaitView">): string {
 /**
  * A step selected in the tree (design-v2 s4.4; mock-up 02): its path, a red Needs you card when it waits on you (why first,
  * then Review and answer), a Running now card while it runs, four boxes at a glance, and tabs: Overview (its executions,
- * inputs, outputs, routes and prompt) and Artifacts, both from the run's existing reads; Activity, Findings and Events come
- * in B2. Steer and Edit step are here, never on tree rows.
+ * inputs, outputs, routes and prompt), Activity (its agent sessions' turns, live while it runs; open first for a running
+ * agent step) and Artifacts; Findings and Events come in B2. Steer and Edit step are here, never on tree rows.
  */
 export function StepDetail({ node }: { node: StepNode }) {
   const { step, wait, runId } = node;
   const run = runOf(node);
   const detail = useLive([runKey(runId)], () => read(api.GET("/runs/{id}", { params: { path: { id: runId } } })));
   const artifacts = useLive([runKey(runId)], () => read(api.GET("/runs/{id}/artifacts", { params: { path: { id: runId } } })));
-  const [tab, setTab] = useState<"overview" | "artifacts" | "activity" | "findings" | "events">("overview");
+  const [tab, setTab] = useState<"overview" | "artifacts" | "activity" | "findings" | "events">(
+    node.state === "running" && step.form === "agent" ? "activity" : "overview",
+  );
   const decisions = useDecision();
 
   const executions = detail.data ? executionsOf(detail.data.timeline, step.id) : [];
@@ -141,7 +144,7 @@ export function StepDetail({ node }: { node: StepNode }) {
                 , since <Age at={step.changed_at} />
               </>
             ) : null}
-            . <span class="ff-muted">Its live activity comes in B2.</span>
+            .
           </div>
         </section>
       )}
@@ -189,7 +192,7 @@ export function StepDetail({ node }: { node: StepNode }) {
           onSelect={setTab}
           tabs={[
             { id: "overview", label: "Overview" },
-            { id: "activity", label: "Activity", disabled: "in B2" },
+            { id: "activity", label: "Activity" },
             { id: "artifacts", label: "Artifacts" },
             { id: "findings", label: "Findings", disabled: "in B2" },
             { id: "events", label: "Events", disabled: "in B2" },
@@ -199,6 +202,8 @@ export function StepDetail({ node }: { node: StepNode }) {
           {artifacts.error && <ErrorBox error={artifacts.error} />}
           {tab === "overview" ? (
             <Overview step={step} wait={wait} executions={executions} artifacts={mine} targetOf={targetOf} runId={runId} />
+          ) : tab === "activity" ? (
+            <ActivityTab runId={runId} stepId={step.id} running={node.state === "running"} />
           ) : (
             <ArtifactsTab artifacts={mine} targetOf={targetOf} />
           )}
