@@ -395,6 +395,72 @@
         }
       }
     },
+    "/runs/{id}/steps/{step}/activity": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "getStepActivity",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "step",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "execution",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepActivity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/runs/{id}/tree": {
       "get": {
         "tags": [
@@ -1607,6 +1673,40 @@
           }
         }
       },
+      "ActivitySession": {
+        "required": [
+          "session",
+          "source",
+          "transcript_ref",
+          "truncated",
+          "turns"
+        ],
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "source": {
+            "type": "string"
+          },
+          "transcript_ref": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "turns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TranscriptTurn"
+            }
+          }
+        }
+      },
       "AnswerProgress": {
         "required": [
           "choice",
@@ -1910,6 +2010,12 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "step_id": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -1918,6 +2024,7 @@
           "run_changed",
           "wait_opened",
           "wait_closed",
+          "step_changed",
           "reset"
         ]
       },
@@ -3750,6 +3857,33 @@
         "properties": {
           "run_id": {
             "type": "string"
+          }
+        }
+      },
+      "StepActivity": {
+        "required": [
+          "execution",
+          "executions",
+          "sessions"
+        ],
+        "type": "object",
+        "properties": {
+          "execution": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "executions": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivitySession"
+            }
           }
         }
       },

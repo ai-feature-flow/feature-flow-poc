@@ -142,9 +142,10 @@ public sealed record AnswerRecord(string RunId, string WaitId, string Actor, str
 
 /// <summary>
 /// A change the record store wrote, numbered in commit order by the store itself as it appends: a run's records changed
-/// (<c>run_changed</c>), or one of its waits opened or closed (<c>wait_opened</c>, <c>wait_closed</c>, with <see cref="WaitId"/>).
+/// (<c>run_changed</c>), one of its waits opened or closed (<c>wait_opened</c>, <c>wait_closed</c>, with <see cref="WaitId"/>),
+/// or a step's live activity grew (<c>step_changed</c>, with <see cref="StepId"/>).
 /// </summary>
-public sealed record ChangeRecord(long Sequence, string RunId, string Kind, string? WaitId, DateTimeOffset At);
+public sealed record ChangeRecord(long Sequence, string RunId, string Kind, string? WaitId, DateTimeOffset At, string? StepId = null);
 
 /// <summary>
 /// The kinds of <see cref="ChangeRecord"/>, and the changes a batch makes, which every record store writes in the same
@@ -155,13 +156,15 @@ public static class ChangeKinds
     public const string RunChanged = "run_changed";
     public const string WaitOpened = "wait_opened";
     public const string WaitClosed = "wait_closed";
+    public const string StepChanged = "step_changed";
 
     /// <summary>
     /// One <c>run_changed</c> per distinct run whose runs, timeline, answers, overrides, artifacts, sessions, findings,
     /// finding events, step states or pull requests the batch writes, in the order first written; then one
-    /// <c>wait_opened</c> or <c>wait_closed</c> per wait record. Nothing for a batch of other records (repositories are no run's).
+    /// <c>wait_opened</c> or <c>wait_closed</c> per wait record; then one <c>step_changed</c> per distinct run and step whose
+    /// activity the batch writes (activity alone changes no run). Nothing for a batch of other records (repositories are no run's).
     /// </summary>
-    public static IReadOnlyList<(string RunId, string Kind, string? WaitId)> Of(RecordBatch batch)
+    public static IReadOnlyList<(string RunId, string Kind, string? WaitId, string? StepId)> Of(RecordBatch batch)
     {
         var runs = new List<string>();
         foreach (var runId in (batch.Runs ?? []).Select(r => r.RunId)
@@ -178,8 +181,9 @@ public static class ChangeKinds
                 runs.Add(runId);
         return
         [
-            .. runs.Select(r => (r, RunChanged, (string?)null)),
-            .. (batch.Waits ?? []).Select(w => (w.RunId, w.Open ? WaitOpened : WaitClosed, (string?)w.WaitId)),
+            .. runs.Select(r => (r, RunChanged, (string?)null, (string?)null)),
+            .. (batch.Waits ?? []).Select(w => (w.RunId, w.Open ? WaitOpened : WaitClosed, (string?)w.WaitId, (string?)null)),
+            .. (batch.Activity ?? []).Select(a => (a.RunId, a.StepId)).Distinct().Select(s => (s.RunId, StepChanged, (string?)null, (string?)s.StepId)),
         ];
     }
 }
@@ -231,6 +235,41 @@ public sealed record QuestionRecord(
 
 /// <summary>Something that happened during an agent step: a hook call and its decision, a push, model usage. Appended.</summary>
 public sealed record AgentEventRecord(string StepKey, string Kind, string Detail, DateTimeOffset At);
+
+/// <summary>
+/// One completed event of an agent session while it runs (live activity): a message, reasoning, a tool call starting or
+/// finishing, a notice or error, or the <c>truncated</c> marker once the session's cap is reached. <see cref="Sequence"/> is
+/// the event's line number in the session's output, so a re-read appends nothing: kept once per run, step, execution,
+/// session and sequence. <see cref="Text"/> is a message, reasoning, notice or a tool call's summary; <see cref="Detail"/> a
+/// tool call's arguments or the tail of its output.
+/// </summary>
+public sealed record ActivityRecord(
+    string RunId,
+    string StepId,
+    int Execution,
+    int Session,
+    int Sequence,
+    string Kind,
+    string? CallId,
+    string? Name,
+    string? Text,
+    string? Detail,
+    bool Failed,
+    DateTimeOffset At);
+
+/// <summary>The kinds of <see cref="ActivityRecord"/>.</summary>
+public static class ActivityKinds
+{
+    public const string Message = "message";
+    public const string Reasoning = "reasoning";
+    public const string ToolStarted = "tool_started";
+    public const string ToolFinished = "tool_finished";
+    public const string Notice = "notice";
+    public const string Error = "error";
+
+    /// <summary>The session's cap was reached: written once, at sequence <see cref="int.MaxValue"/>; nothing more is recorded.</summary>
+    public const string Truncated = "truncated";
+}
 
 // The findings ledger (docs/01 section 6, docs/02 section 5): one FindingRecord per finding, holding its current state,
 // and its history as FindingEventRecords. A parent's view includes its descendants' ledgers, never the reverse.
@@ -403,7 +442,8 @@ public sealed record RecordBatch(
     IReadOnlyList<SessionCheckRecord>? SessionChecks = null,
     IReadOnlyList<StepStateRecord>? StepStates = null,
     IReadOnlyList<PullRequestRecord>? PullRequests = null,
-    IReadOnlyList<RepositoryRecord>? Repositories = null);
+    IReadOnlyList<RepositoryRecord>? Repositories = null,
+    IReadOnlyList<ActivityRecord>? Activity = null);
 
 /// <summary>
 /// The record store (docs/06 section 3.12). Queries are named, not SQL; the catalogue is <see cref="Queries"/>.
@@ -450,6 +490,12 @@ public static class Queries
 
     /// <summary><see cref="AgentEventRecord"/>: a step's events in order, by <c>step_key</c>.</summary>
     public const string AgentEvents = "agent_events";
+
+    /// <summary>
+    /// <see cref="ActivityRecord"/>: a step's live activity, by <c>run_id</c> and <c>step_id</c>; <c>execution</c> narrows to
+    /// one execution. Ordered by execution, session, then sequence.
+    /// </summary>
+    public const string Activity = "activity";
 
     /// <summary>
     /// <see cref="FindingRecord"/>: the ledger view of the run named by <c>run_id</c>: its findings and every descendant

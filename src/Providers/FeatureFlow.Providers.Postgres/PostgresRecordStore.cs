@@ -299,7 +299,7 @@ public sealed class PostgresRecordStore(Func<CancellationToken, Task<ProviderRes
         if (changes.Count == 0)
             return;
         await Execute(connection, tx, $"SELECT pg_advisory_xact_lock({ChangesLockKey})", ct);
-        foreach (var (runId, kind, waitId) in changes)
+        foreach (var (runId, kind, waitId, _) in changes)
             await Execute(connection, tx, "INSERT INTO changes (org_id, run_id, kind, wait_id) VALUES (@o, @r, @k, @w)", ct, ("r", runId), ("k", kind), ("w", waitId));
     }
 

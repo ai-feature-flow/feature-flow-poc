@@ -133,6 +133,7 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
         CreateChanges(connection);
         CreateOpenWaits(connection);
         CreateConsole(connection);
+        CreateActivity(connection);
     }
 
     /// <summary>One organisation per installation; the key is there from the start (docs/02 section 5).</summary>
@@ -221,6 +222,7 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
         AppendLedger(connection, records);
         AppendSteering(connection, records);
         AppendConsole(connection, records);
+        AppendActivity(connection, records);
         AppendChanges(connection, records);
         transaction.Commit();
         return Task.FromResult(ProviderResult<Unit>.Success(default));
@@ -272,6 +274,10 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
             Queries.Repositories => ("SELECT body FROM repositories WHERE org_id = $o ORDER BY name", typeof(RepositoryRecord), []),
             Queries.RecentAnswers => ("SELECT body FROM answers WHERE org_id = $o AND json_extract(body, '$.actor') = $a ORDER BY id DESC LIMIT $l", typeof(AnswerRecord),
                 [("$a", P("actor")), ("$l", Limit(parameters))]),
+            Queries.Activity => ("SELECT body FROM activity WHERE org_id = $o AND run_id = $r AND step_id = $s AND ($e IS NULL OR execution = $e)"
+                + " ORDER BY execution, session, sequence", typeof(ActivityRecord),
+                [("$r", P("run_id")), ("$s", P("step_id")),
+                 ("$e", parameters.TryGetValue("execution", out var execution) ? int.Parse(execution, System.Globalization.CultureInfo.InvariantCulture) : null)]),
             _ => throw new ArgumentException($"unknown query {queryName}"),
         };
         if (query.Type != typeof(T))
@@ -369,22 +375,45 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
                 ("$o", Org), ("$n", r.Name), ("$b", JsonSerializer.Serialize(r, Json)));
     }
 
+    // ---- Live activity: an agent step's completed events while it runs, once per run, step, execution, session and sequence ----
+
+    static void CreateActivity(SqliteConnection connection) =>
+        Execute(connection, """
+            CREATE TABLE IF NOT EXISTS activity (org_id TEXT NOT NULL, run_id TEXT NOT NULL, step_id TEXT NOT NULL, execution INTEGER NOT NULL, session INTEGER NOT NULL,
+                sequence INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY (org_id, run_id, step_id, execution, session, sequence));
+            """);
+
+    static void AppendActivity(SqliteConnection connection, RecordBatch records)
+    {
+        foreach (var a in records.Activity ?? [])
+            Execute(connection, "INSERT OR IGNORE INTO activity VALUES ($o, $r, $s, $e, $n, $q, $b)",
+                ("$o", Org), ("$r", a.RunId), ("$s", a.StepId), ("$e", a.Execution), ("$n", a.Session), ("$q", a.Sequence), ("$b", JsonSerializer.Serialize(a, Json)));
+    }
+
     // ---- Changes (docs/06 section 3.12, LOG 397): what GET /events reports, written in the batch's transaction ----
 
-    static void CreateChanges(SqliteConnection connection) =>
+    /// <summary>The changes table; a database made before <c>step_changed</c> gains its <c>step_id</c> column.</summary>
+    static void CreateChanges(SqliteConnection connection)
+    {
         Execute(connection, """
-            CREATE TABLE IF NOT EXISTS changes (org_id TEXT NOT NULL, id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, kind TEXT NOT NULL, wait_id TEXT, at TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS changes (org_id TEXT NOT NULL, id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, kind TEXT NOT NULL, wait_id TEXT, at TEXT NOT NULL,
+                step_id TEXT);
             """);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM pragma_table_info('changes') WHERE name = 'step_id'";
+        if (Convert.ToInt64(command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture) == 0)
+            Execute(connection, "ALTER TABLE changes ADD COLUMN step_id TEXT");
+    }
 
     /// <summary>The batch's changes (<see cref="ChangeKinds.Of"/>). SQLite has one writer at a time, so the ids are in commit order.</summary>
     static void AppendChanges(SqliteConnection connection, RecordBatch records)
     {
-        foreach (var (runId, kind, waitId) in ChangeKinds.Of(records))
-            Execute(connection, "INSERT INTO changes (org_id, run_id, kind, wait_id, at) VALUES ($o, $r, $k, $w, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
-                ("$o", Org), ("$r", runId), ("$k", kind), ("$w", waitId));
+        foreach (var (runId, kind, waitId, stepId) in ChangeKinds.Of(records))
+            Execute(connection, "INSERT INTO changes (org_id, run_id, kind, wait_id, step_id, at) VALUES ($o, $r, $k, $w, $s, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
+                ("$o", Org), ("$r", runId), ("$k", kind), ("$w", waitId), ("$s", stepId));
     }
 
-    const string ChangeJson = "SELECT json_object('sequence', id, 'runId', run_id, 'kind', kind, 'waitId', wait_id, 'at', at) FROM changes WHERE org_id = $o";
+    const string ChangeJson = "SELECT json_object('sequence', id, 'runId', run_id, 'kind', kind, 'waitId', wait_id, 'at', at, 'stepId', step_id) FROM changes WHERE org_id = $o";
 
     static (string Sql, Type Type, (string, object?)[] Args) ChangesQuery(string queryName, IReadOnlyDictionary<string, string> parameters) =>
         queryName == Queries.LatestChange

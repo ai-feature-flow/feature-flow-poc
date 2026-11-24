@@ -64,6 +64,29 @@ public sealed class LocalProviderTests : IDisposable
     }
 
     [Fact]
+    public async Task A_record_store_made_before_step_changes_gains_the_changes_step_column_and_keeps_its_changes()
+    {
+        var path = Path.Combine(folder, "old.db");
+        using (var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={path};Pooling=False"))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TABLE changes (org_id TEXT NOT NULL, id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, kind TEXT NOT NULL, wait_id TEXT, at TEXT NOT NULL);
+                INSERT INTO changes (org_id, run_id, kind, wait_id, at) VALUES ('default', 'r0', 'run_changed', NULL, '2026-11-24T00:00:00.000Z');
+                """;
+            command.ExecuteNonQuery();
+        }
+
+        var store = new SqliteRecordStore(path);
+        _ = new SqliteRecordStore(path);
+        (await store.AppendAsync(new RecordBatch(Activity: [new ActivityRecord("r1", "implement", 1, 1, 1, ActivityKinds.Message, null, null, "Looking", null, false, DateTimeOffset.UnixEpoch)]), Ct)).Unwrap();
+
+        var changes = (await store.QueryAsync<ChangeRecord>(Queries.Changes, new Dictionary<string, string>(), Ct)).Unwrap();
+        Assert.Equal([("r0", ChangeKinds.RunChanged, (string?)null), ("r1", ChangeKinds.StepChanged, "implement")], changes.Select(c => (c.RunId, c.Kind, c.StepId)));
+    }
+
+    [Fact]
     public async Task File_secrets_resolve_by_name()
     {
         var path = Path.Combine(folder, "secrets.json");

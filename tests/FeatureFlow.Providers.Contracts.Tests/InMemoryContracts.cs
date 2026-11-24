@@ -172,6 +172,11 @@ public sealed class InMemoryConsoleRecordsContract : ConsoleRecordsContract
     protected override IRecordStoreProvider Store { get; } = new InMemoryRecordStore();
 }
 
+public sealed class InMemoryActivityRecordsContract : ActivityRecordsContract
+{
+    protected override IRecordStoreProvider Store { get; } = new InMemoryRecordStore();
+}
+
 public sealed class InMemoryNotificationsContract : NotificationsContract
 {
     readonly InMemoryNotifications notifications = new InMemoryNotifications().AddChannel("#ff-contract");
