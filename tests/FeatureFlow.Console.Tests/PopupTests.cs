@@ -97,6 +97,42 @@ public sealed class PopupTests(BrowserFixture browser) : BrowserTest(browser)
     static (int, int, int, int) Box(LocatorBoundingBoxResult? box) => ((int)box!.X, (int)box.Y, (int)Math.Round(box.Width), (int)Math.Round(box.Height));
 
     /// <summary>
+    /// Not a check: screenshots of a real Copilot CLI transcript as turns (docs/build/console-b1-results.md), dark at 1440 × 900,
+    /// to <c>FF_SCREENS</c>: in the viewer pane and in the full-size popup, a failed tool call opened.
+    /// </summary>
+    [Fact(Explicit = true)]
+    public async Task Screenshots_of_a_transcript_as_turns()
+    {
+        var folder = Environment.GetEnvironmentVariable("FF_SCREENS") ?? Path.Combine(Path.GetTempPath(), "ff-screens");
+        Directory.CreateDirectory(folder);
+        var s = await Engine.DecisionsAsync();
+        await Engine.ProduceAsync(s.Tree.Tickets[0], "plan.plan", "transcript:1", ArtifactTests.RealTranscript, type: "transcript");
+        await OpenAsync($"#/runs/{s.Tree.Root}/steps/{s.Tree.Tickets[0]}/plan.plan");
+        await Page.SetViewportSizeAsync(1440, 900);
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Dark theme" }).ClickAsync();
+        async Task Shot(string name)
+        {
+            await Page.WaitForTimeoutAsync(800);
+            await Page.ScreenshotAsync(new() { Path = Path.Combine(folder, $"{name}.png") });
+        }
+
+        var viewer = Page.GetByRole(AriaRole.Complementary, new() { Name = "Viewer" });
+        await Page.GetByRole(AriaRole.Tab, new() { Name = "Artifacts" }).ClickAsync();
+        await Page.GetByRole(AriaRole.Button, new() { Name = "transcript:1", Exact = true }).ClickAsync();
+        await viewer.Locator(".ff-tx-turn").Nth(5).Locator("summary").ClickAsync();
+        await Shot("transcript-pane");
+
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Open transcript:1 · exec 1 full size" }).ClickAsync();
+        var turns = Dialog.Locator(".ff-tx-turn");
+        await turns.Nth(5).Locator("summary").ClickAsync();
+        await turns.Nth(7).Locator("summary").ClickAsync();
+        await Dialog.Locator(".ff-popup-body").EvaluateAsync("e => { e.scrollTop = 0; }");
+        await Shot("transcript-popup");
+        await Dialog.GetByRole(AriaRole.Button, new() { Name = "Fill the window" }).ClickAsync();
+        await Shot("transcript-popup-filling-window");
+    }
+
+    /// <summary>
     /// Not a check: screenshots of the tweaks after first use (docs/build/console-b1-results.md), dark at 1440 × 900, to
     /// <c>FF_SCREENS</c>: a real run's Markdown prompt formatted, in the viewer and filling the window; its source with its
     /// download; the pop-out icons; and a folded branch that held the selection.

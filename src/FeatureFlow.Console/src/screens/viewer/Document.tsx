@@ -6,6 +6,7 @@ import { ArtifactLink } from "../../app/viewer";
 import { Busy } from "../../ui/Busy";
 import { ErrorBox } from "../../ui/ErrorBox";
 import { Markdown } from "../../ui/Markdown";
+import { Transcript } from "./Transcript";
 
 /** How much of an artifact the raw view shows; the rest is downloaded. */
 const shown = 1024 * 1024;
@@ -27,6 +28,16 @@ async function documentOf(runId: string, reference: string) {
   }
 }
 
+/** A transcript's turns (console A4), or null when the API reads none in it (415): then it is shown as its document. */
+async function turnsOf(runId: string, reference: string) {
+  try {
+    return await read(api.GET("/runs/{id}/artifacts/{reference}/turns", { params: { path: { id: runId, reference } } }));
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 415) return null;
+    throw e;
+  }
+}
+
 /** Saves `blob` as `name` through a link to an object URL: a plain link to the API could not send the token. */
 function save(blob: Blob, name: string) {
   const link = document.createElement("a");
@@ -38,9 +49,9 @@ function save(blob: Blob, name: string) {
 
 /**
  * One artifact, in the viewer or full size (design-v2 s4.4; A7): YAML and JSON as tables and lists; Markdown formatted (with
- * its front matter as a table), whether its declared type says so, its name ends .md or it is a prompt; a transcript and
- * anything else as text. Its source, its download and its previous revision are one click away in either view. Every value
- * is text.
+ * its front matter as a table), whether its declared type says so, its name ends .md or it is a prompt; a transcript as its
+ * turns, where the API reads them; anything else as text. Its source, its download and its previous revision are one click
+ * away in either view. Every value is text.
  */
 export function Document({ runId, reference }: { runId: string; reference: string }) {
   const [raw, setRaw] = useState(false);
@@ -50,6 +61,8 @@ export function Document({ runId, reference }: { runId: string; reference: strin
   const showRaw = raw || doc.data === null;
   const bytes = useLive([`artifact:${runId}\n${reference}\n${showRaw}`], () => (showRaw ? rawOf(runId, reference) : Promise.resolve(undefined)));
   const entry = index.data?.artifacts.find(a => a.ref === reference);
+  const transcript = entry?.kind === "transcript";
+  const turns = useLive([`turns:${runId}\n${reference}\n${transcript}`], () => (transcript ? turnsOf(runId, reference) : Promise.resolve(null)));
   const name = entry?.name ?? reference;
   const previous = entry
     ? index.data!.artifacts.filter(a => a.step_id === entry.step_id && a.name === entry.name && a.execution < entry.execution).sort((a, b) => b.execution - a.execution)[0]
@@ -96,7 +109,11 @@ export function Document({ runId, reference }: { runId: string; reference: strin
             <pre class="ff-viewer-text">{bytes.data.text}</pre>
           </>
         )
-      ) : doc.data === undefined ? (
+      ) : turns.error ? (
+        <ErrorBox error={turns.error} />
+      ) : turns.data ? (
+        <Transcript turns={turns.data} step={entry?.step_id || undefined} />
+      ) : doc.data === undefined || (!index.data && !index.error) || (transcript && turns.loading) ? (
         !doc.error && <Busy />
       ) : (
         <Formatted format={doc.data!.format} data={doc.data!.data} body={doc.data!.body} markdown={markdown} />
