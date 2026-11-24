@@ -239,7 +239,7 @@ public sealed record AgentEventRecord(string StepKey, string Kind, string Detail
 /// <summary>
 /// One completed event of an agent session while it runs (live activity): a message, reasoning, a tool call starting or
 /// finishing, a notice or error, or the <c>truncated</c> marker once the session's cap is reached. <see cref="Sequence"/> is
-/// the event's line number in the session's output, so a re-read appends nothing: kept once per run, step, execution,
+/// the event's place among the session's entries from the start of its output, so a re-read appends nothing: kept once per run, step, execution,
 /// session and sequence. <see cref="Text"/> is a message, reasoning, notice or a tool call's summary; <see cref="Detail"/> a
 /// tool call's arguments or the tail of its output.
 /// </summary>

@@ -56,8 +56,8 @@ public sealed record Transcript(string? Result, string? ApiError, long InputToke
 /// <summary>
 /// An agent runtime whose CLI runs in a sandbox (docs/06 section 3.2), with the session lifecycle every such runtime
 /// shares: a session is the CLI started by key in the step's sandbox from files the engine writes read-only, found again
-/// by that key, polled for turns, read when it ends and stopped by cancelling it. A runtime supplies its command line,
-/// environment, files, transcript parser, turn marker, hook table and hook reply (F12).
+/// by that key, polled for its activity as its output grows, read when it ends and stopped by cancelling it. A runtime supplies its command line,
+/// environment, files, transcript parser, output format, hook table and hook reply (F12).
 /// <para>
 /// The runtime is given only the step's token and the model proxy's URL, never a model credential (F6, SP5). Reporting
 /// goes through the engine's MCP tools (SP3), served by the sandbox client; hooks call the hook endpoint through it.
@@ -78,7 +78,8 @@ public abstract class SandboxedAgentRuntime(AgentRuntimeOptions options, Func<IS
     /// </summary>
     public const string UnreachableVariable = "FF_HOOK_UNREACHABLE";
 
-    readonly ConcurrentDictionary<string, (SandboxHandle Sandbox, long Cursor, int Turns, int Session)> progress = new();
+    /// <summary>Each session's sandbox, its output read so far (a byte cursor, and the reader holding any partial last line), its messages, and its number.</summary>
+    readonly ConcurrentDictionary<string, (SandboxHandle Sandbox, long Cursor, TranscriptReader Reader, int Turns, int Session)> progress = new();
 
     protected AgentRuntimeOptions Options => options;
 
@@ -122,8 +123,8 @@ public abstract class SandboxedAgentRuntime(AgentRuntimeOptions options, Func<IS
     /// <summary>The prefix of the engine's MCP tools in the runtime's hook input.</summary>
     protected abstract string EngineToolPrefix { get; }
 
-    /// <summary>The start of an output line that marks one assistant turn.</summary>
-    protected abstract string TurnMarker { get; }
+    /// <summary>The format of the CLI's output, which the shared reader reads as it grows (<see cref="AgentTranscripts"/>).</summary>
+    protected abstract TranscriptFormat Format { get; }
 
     /// <summary>The command line, reading the prompt from a file so no task text sits in an argument.</summary>
     public abstract string CommandLine(AgentTask task, string promptFile, bool resume);
@@ -245,9 +246,13 @@ public abstract class SandboxedAgentRuntime(AgentRuntimeOptions options, Func<IS
         return started.Ok ? Session(sandbox, key, task.Session) : new ProviderResult<AgentSession>(null, started.Error);
     }
 
+    /// <summary>
+    /// Registers a session at the start of its output. A new worker re-attaching reads the whole output again: its entries
+    /// are numbered as before (<see cref="ActivityEntry.Sequence"/>), so recording them again adds nothing.
+    /// </summary>
     ProviderResult<AgentSession> Session(SandboxHandle sandbox, string key, int session)
     {
-        progress.TryAdd(key, (sandbox, 0, 0, session));
+        progress.TryAdd(key, (sandbox, 0, AgentTranscripts.Reader(Format), 0, session));
         return ProviderResult<AgentSession>.Success(new AgentSession(key, Kind));
     }
 
@@ -261,6 +266,7 @@ public abstract class SandboxedAgentRuntime(AgentRuntimeOptions options, Func<IS
     public Task<ProviderResult<AgentSession>> ResumeAsync(SandboxHandle sandbox, string sessionRef, CancellationToken cancellationToken) =>
         Task.FromResult(ProviderResult<AgentSession>.Failure("capability_missing", "resume with a message: ContinueAsync"));
 
+    /// <summary>Reads the output written since the last call: the activity entries its complete lines hold, and whether the session has finished.</summary>
     public async Task<ProviderResult<AgentProgress>> GetProgressAsync(AgentSession session, CancellationToken cancellationToken)
     {
         if (!progress.TryGetValue(session.Id, out var state))
@@ -268,9 +274,10 @@ public abstract class SandboxedAgentRuntime(AgentRuntimeOptions options, Func<IS
         var status = await sandboxes().GetCommandStatusAsync(new CommandHandle(state.Sandbox, session.Id), state.Cursor, cancellationToken);
         if (!status.Ok)
             return new ProviderResult<AgentProgress>(null, status.Error);
-        var turns = state.Turns + status.Value!.Output.Split('\n').Count(l => l.StartsWith(TurnMarker, StringComparison.Ordinal));
-        progress[session.Id] = (state.Sandbox, status.Value.Cursor, turns, state.Session);
-        return ProviderResult<AgentProgress>.Success(new AgentProgress(!status.Value.Running, turns));
+        var activity = state.Reader.Feed(status.Value!.Output);
+        var turns = state.Turns + activity.Count(e => e.Kind == ActivityKinds.Message);
+        progress[session.Id] = state with { Cursor = status.Value.Cursor, Turns = turns };
+        return ProviderResult<AgentProgress>.Success(new AgentProgress(!status.Value.Running, turns) { Activity = activity });
     }
 
     public async Task<ProviderResult<AgentResult>> GetResultAsync(AgentSession session, CancellationToken cancellationToken)

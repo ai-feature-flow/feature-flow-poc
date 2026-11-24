@@ -175,7 +175,14 @@ public sealed record AgentLimits(TimeSpan? Timeout, int CorrectionTurns, TimeSpa
 
 public sealed record AgentSession(string Id, string Runtime);
 
-public sealed record AgentProgress(bool Finished, int Turns);
+/// <summary>
+/// A session's progress: whether it has finished, how many messages the agent has sent, and the activity entries read
+/// since the last call (none from a runtime that does not read its output as it runs).
+/// </summary>
+public sealed record AgentProgress(bool Finished, int Turns)
+{
+    public IReadOnlyList<ActivityEntry> Activity { get; init; } = [];
+}
 
 /// <summary>Why a session ended, as the runtime saw it.</summary>
 public static class SessionEnd

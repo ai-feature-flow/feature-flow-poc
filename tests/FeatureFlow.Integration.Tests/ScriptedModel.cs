@@ -26,6 +26,7 @@ namespace FeatureFlow.Integration.Tests;
 public sealed class ScriptedModel : IAsyncDisposable
 {
     readonly List<Func<Conversation, JsonObject>> script = [];
+    readonly Dictionary<int, string> preambles = [];
     readonly X509Certificate2? certificate;
     WebApplication? app;
 
@@ -92,6 +93,13 @@ public sealed class ScriptedModel : IAsyncDisposable
     public ScriptedModel ThenBash(string command) => ThenTool("Bash", new JsonObject { ["command"] = command, ["description"] = "scripted" });
 
     public ScriptedModel ThenText(string text) => Then(_ => new JsonObject { ["type"] = "text", ["text"] = text });
+
+    /// <summary>Adds the next action, said first with a message in the same response, as a model announces a tool call mid-task.</summary>
+    public ScriptedModel ThenSay(string text, Func<Conversation, JsonObject> action)
+    {
+        preambles[script.Count] = text;
+        return Then(action);
+    }
 
     /// <summary>The action once the script is used up, chosen from the conversation; by default the text "Done."</summary>
     public Func<Conversation, JsonObject>? Otherwise { get; set; }
@@ -182,30 +190,33 @@ public sealed class ScriptedModel : IAsyncDisposable
             return;
 
         var body = (await JsonNode.ParseAsync(http.Request.Body))!;
-        JsonObject block;
+        var blocks = new List<JsonObject>();
         var tools = body["tools"]?.AsArray().Select(t => t?["name"]?.ToString()).ToList() ?? [];
         // An agent's request offers its tools: Claude Code's (Bash, Read, mcp__engine__*) or Copilot CLI's (bash, view, engine-*).
         if (!tools.Any(t => t is "Bash" or "Read" or "bash" or "view" || t?.StartsWith("mcp__", StringComparison.Ordinal) == true
                             || t?.StartsWith("engine-", StringComparison.Ordinal) == true))
-            block = new JsonObject { ["type"] = "text", ["text"] = "ok" };
+            blocks.Add(new JsonObject { ["type"] = "text", ["text"] = "ok" });
         else
         {
             Requests.Enqueue(body.DeepClone());
             var conversation = new Conversation(body);
             var turn = conversation.AssistantTurns;
-            block = turn < script.Count ? script[turn](conversation) : Otherwise?.Invoke(conversation) ?? new JsonObject { ["type"] = "text", ["text"] = "Done." };
+            if (preambles.TryGetValue(turn, out var said))
+                blocks.Add(new JsonObject { ["type"] = "text", ["text"] = said });
+            var block = turn < script.Count ? script[turn](conversation) : Otherwise?.Invoke(conversation) ?? new JsonObject { ["type"] = "text", ["text"] = "Done." };
             if (block["type"]?.ToString() == "tool_use")
                 block["id"] = $"toolu_{turn:D3}_{Guid.NewGuid():N}"[..24];
+            blocks.Add(block);
         }
 
-        var stop = block["type"]?.ToString() == "tool_use" ? "tool_use" : "end_turn";
+        var stop = blocks[^1]["type"]?.ToString() == "tool_use" ? "tool_use" : "end_turn";
         var model = body["model"]?.ToString() ?? "scripted";
         if (body["stream"]?.GetValue<bool>() != true)
         {
             await http.Response.WriteAsJsonAsync(new JsonObject
             {
                 ["id"] = "msg_" + Guid.NewGuid().ToString("N"), ["type"] = "message", ["role"] = "assistant", ["model"] = model,
-                ["content"] = new JsonArray(block), ["stop_reason"] = stop, ["stop_sequence"] = null,
+                ["content"] = new JsonArray([.. blocks]), ["stop_reason"] = stop, ["stop_sequence"] = null,
                 ["usage"] = new JsonObject { ["input_tokens"] = 100, ["output_tokens"] = 20 },
             });
             return;
@@ -224,32 +235,36 @@ public sealed class ScriptedModel : IAsyncDisposable
                 ["usage"] = new JsonObject { ["input_tokens"] = 100, ["output_tokens"] = 1 },
             },
         });
-        if (block["type"]?.ToString() == "tool_use")
+        foreach (var (index, block) in blocks.Index())
         {
-            Event("content_block_start", new JsonObject
+            if (block["type"]?.ToString() == "tool_use")
             {
-                ["type"] = "content_block_start", ["index"] = 0,
-                ["content_block"] = new JsonObject { ["type"] = "tool_use", ["id"] = block["id"]!.DeepClone(), ["name"] = block["name"]!.DeepClone(), ["input"] = new JsonObject() },
-            });
-            Event("content_block_delta", new JsonObject
+                Event("content_block_start", new JsonObject
+                {
+                    ["type"] = "content_block_start", ["index"] = index,
+                    ["content_block"] = new JsonObject { ["type"] = "tool_use", ["id"] = block["id"]!.DeepClone(), ["name"] = block["name"]!.DeepClone(), ["input"] = new JsonObject() },
+                });
+                Event("content_block_delta", new JsonObject
+                {
+                    ["type"] = "content_block_delta", ["index"] = index,
+                    ["delta"] = new JsonObject { ["type"] = "input_json_delta", ["partial_json"] = block["input"]!.ToJsonString() },
+                });
+            }
+            else
             {
-                ["type"] = "content_block_delta", ["index"] = 0,
-                ["delta"] = new JsonObject { ["type"] = "input_json_delta", ["partial_json"] = block["input"]!.ToJsonString() },
-            });
-        }
-        else
-        {
-            Event("content_block_start", new JsonObject
-            {
-                ["type"] = "content_block_start", ["index"] = 0, ["content_block"] = new JsonObject { ["type"] = "text", ["text"] = "" },
-            });
-            Event("content_block_delta", new JsonObject
-            {
-                ["type"] = "content_block_delta", ["index"] = 0, ["delta"] = new JsonObject { ["type"] = "text_delta", ["text"] = block["text"]!.DeepClone() },
-            });
+                Event("content_block_start", new JsonObject
+                {
+                    ["type"] = "content_block_start", ["index"] = index, ["content_block"] = new JsonObject { ["type"] = "text", ["text"] = "" },
+                });
+                Event("content_block_delta", new JsonObject
+                {
+                    ["type"] = "content_block_delta", ["index"] = index, ["delta"] = new JsonObject { ["type"] = "text_delta", ["text"] = block["text"]!.DeepClone() },
+                });
+            }
+
+            Event("content_block_stop", new JsonObject { ["type"] = "content_block_stop", ["index"] = index });
         }
 
-        Event("content_block_stop", new JsonObject { ["type"] = "content_block_stop", ["index"] = 0 });
         Event("message_delta", new JsonObject
         {
             ["type"] = "message_delta", ["delta"] = new JsonObject { ["stop_reason"] = stop, ["stop_sequence"] = null },

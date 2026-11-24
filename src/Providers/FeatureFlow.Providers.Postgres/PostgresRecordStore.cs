@@ -205,6 +205,11 @@ public sealed class PostgresRecordStore(Func<CancellationToken, Task<ProviderRes
                 await Run("INSERT INTO repositories VALUES (@o, @n, @b::jsonb) ON CONFLICT (org_id, name) DO UPDATE SET body = excluded.body",
                     ("n", r.Name), ("b", Body(r)));
 
+            // Live activity: once per run, step, execution, session and sequence, so a re-read adds nothing.
+            foreach (var a in records.Activity ?? [])
+                await Run("INSERT INTO activity VALUES (@o, @r, @s, @e, @n, @q, @b::jsonb) ON CONFLICT DO NOTHING",
+                    ("r", a.RunId), ("s", a.StepId), ("e", a.Execution), ("n", a.Session), ("q", a.Sequence), ("b", Body(a)));
+
             await AppendChangesAsync(connection, tx, records, ct);
             await tx.CommitAsync(ct);
             return default(Unit);
@@ -263,6 +268,11 @@ public sealed class PostgresRecordStore(Func<CancellationToken, Task<ProviderRes
             Queries.Repositories => ("SELECT body FROM repositories WHERE org_id = @o ORDER BY name COLLATE \"C\"", typeof(RepositoryRecord), []),
             Queries.RecentAnswers => ("SELECT body FROM answers WHERE org_id = @o AND body->>'actor' = @a ORDER BY id DESC LIMIT @l", typeof(AnswerRecord),
                 [("a", P("actor")), ("l", Math.Clamp(int.Parse(parameters.GetValueOrDefault("limit", "500"), CultureInfo.InvariantCulture), 1, 500))]),
+            Queries.Activity when parameters.TryGetValue("execution", out var execution) =>
+                ("SELECT body FROM activity WHERE org_id = @o AND run_id = @r AND step_id = @s AND execution = @e ORDER BY session, sequence", typeof(ActivityRecord),
+                    [("r", P("run_id")), ("s", P("step_id")), ("e", int.Parse(execution, CultureInfo.InvariantCulture))]),
+            Queries.Activity => ("SELECT body FROM activity WHERE org_id = @o AND run_id = @r AND step_id = @s ORDER BY execution, session, sequence", typeof(ActivityRecord),
+                [("r", P("run_id")), ("s", P("step_id"))]),
             _ => throw new ArgumentException($"unknown query {queryName}"),
         };
         if (query.Type != typeof(T))
@@ -299,11 +309,12 @@ public sealed class PostgresRecordStore(Func<CancellationToken, Task<ProviderRes
         if (changes.Count == 0)
             return;
         await Execute(connection, tx, $"SELECT pg_advisory_xact_lock({ChangesLockKey})", ct);
-        foreach (var (runId, kind, waitId, _) in changes)
-            await Execute(connection, tx, "INSERT INTO changes (org_id, run_id, kind, wait_id) VALUES (@o, @r, @k, @w)", ct, ("r", runId), ("k", kind), ("w", waitId));
+        foreach (var (runId, kind, waitId, stepId) in changes)
+            await Execute(connection, tx, "INSERT INTO changes (org_id, run_id, kind, wait_id, step_id) VALUES (@o, @r, @k, @w, @s)", ct,
+                ("r", runId), ("k", kind), ("w", waitId), ("s", stepId));
     }
 
-    const string ChangeJson = "SELECT jsonb_build_object('sequence', id, 'runId', run_id, 'kind', kind, 'waitId', wait_id, 'at', at) FROM changes WHERE org_id = @o";
+    const string ChangeJson = "SELECT jsonb_build_object('sequence', id, 'runId', run_id, 'kind', kind, 'waitId', wait_id, 'at', at, 'stepId', step_id) FROM changes WHERE org_id = @o";
 
     static (string Sql, Type Type, (string, object?)[] Args) ChangesQuery(string queryName, IReadOnlyDictionary<string, string> parameters) =>
         queryName == Queries.LatestChange
