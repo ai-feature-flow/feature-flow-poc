@@ -59,7 +59,7 @@ public sealed class SandboxImageTests
                   - { name: unit, tags: [unit], command: {{Marker}} }
                 """,
         });
-        h.Forge.Protect(repo, new BranchProtection("main", true, true, 1, [], false));
+        h.Forge.Protect(repo, new BranchProtection("main", true, true, 1, []));
         return (h, h.Start("m5:templates/tests_only", "--repo", "acme/imaged"));
     }
 

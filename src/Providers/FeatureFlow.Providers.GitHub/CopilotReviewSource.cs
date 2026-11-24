@@ -24,7 +24,7 @@ public sealed class CopilotReviewSource(GitHubApi api, Func<IArtifactStoreProvid
     static readonly IReadOnlyDictionary<string, string> Write = new Dictionary<string, string> { ["pull_requests"] = "write" };
     static readonly IReadOnlyDictionary<string, string> Read = new Dictionary<string, string> { ["pull_requests"] = "read" };
 
-    public ProviderDescription Describe() => new("findings_source", "copilot_review", "0.1.0", new FindingsSourceCapabilities(false, false, true));
+    public ProviderDescription Describe() => new("findings_source", "copilot_review", "0.1.0", new NoCapabilities());
 
     public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => api.CheckAsync(cancellationToken);
 

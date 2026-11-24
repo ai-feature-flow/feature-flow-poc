@@ -36,7 +36,7 @@ public class WaitHandOverTests
             // The chain's repo.inspect reads it: each is quick and real, so sixty of them grow the history past the threshold.
             ["feature-flow.yaml"] = "api_version: feature-flow/v1\nkind: repository\n",
         });
-        forge.Protect(repo, new BranchProtection("main", true, true, 1, [], false));
+        forge.Protect(repo, new BranchProtection("main", true, true, 1, []));
         var head = forge.Commit(repo, "refs/heads/ff/waits", new Dictionary<string, string?> { ["src/App.cs"] = "class App { }\n" });
         forge.ReportCheck(repo, head, new CheckRun("build", CheckStates.InProgress, null, "ci"));
         if (midAttempt)

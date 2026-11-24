@@ -26,7 +26,7 @@ public class ReconcileTests
         var (endExit, end, endError) = h.Cli("wait", completed, "--timeout", "120");
         Assert.True(endExit == 0, end + endError + (await h.ShowAsync(completed)).ToJsonString());
         var web = h.Forge.CreateRepository("acme/web", new Dictionary<string, string> { ["feature-flow.yaml"] = Harness.Manifest });
-        h.Forge.Protect(web, new BranchProtection("main", true, true, 1, [], false));
+        h.Forge.Protect(web, new BranchProtection("main", true, true, 1, []));
         var open = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=FF-2", "--repo", "acme/web");
         Assert.True(await h.WaitForWaitAsync(open, Timeout) is not null, (await h.ShowAsync(open)).ToJsonString());
         var terminated = h.Start("std:templates/ticket_delivery", "--param", "ticket_id=FF-3");

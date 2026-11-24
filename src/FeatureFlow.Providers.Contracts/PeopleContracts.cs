@@ -37,7 +37,6 @@ public abstract class NotificationsContract : ContractBase
     [Fact]
     public async Task A_reply_lands_in_its_thread_and_not_at_the_top_level()
     {
-        Assert.True(((NotificationCapabilities)Notifications.Describe().Capabilities).Threads, "the contract's thread test needs a provider with threads");
         var root = Ok(await Notifications.SendAsync(Channel, Message($"{unique} root"), null, Ct));
 
         var reply = Ok(await Notifications.SendAsync(Channel, Message($"{unique} child"), root, Ct));

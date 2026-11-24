@@ -28,7 +28,7 @@ public sealed class DockerSandbox(string image, string user, Func<IArtifactStore
     readonly IReadOnlyList<Uri> reach = reach ?? [];
     readonly IReadOnlyList<string> allowedImages = allowedImages ?? [];
 
-    public override ProviderDescription Describe() => new("sandbox", "docker", "0.2.0", new SandboxCapabilities(["linux"], false, true, true, true));
+    public override ProviderDescription Describe() => new("sandbox", "docker", "0.2.0", new NoCapabilities());
 
     public override async Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken)
     {

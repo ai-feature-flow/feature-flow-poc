@@ -28,7 +28,7 @@ public sealed class InMemoryNotifications : INotificationsProvider
         return this;
     }
 
-    public ProviderDescription Describe() => new("notifications", "memory", "0.1.0", new NotificationCapabilities(["memory"], true, true));
+    public ProviderDescription Describe() => new("notifications", "memory", "0.1.0", new NoCapabilities());
 
     public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => Task.FromResult(ProviderResult<Unit>.Success(default));
 

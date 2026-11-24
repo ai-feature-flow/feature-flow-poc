@@ -16,7 +16,7 @@ public sealed partial class GitHubCodeHost(GitHubApi api) : ICodeHostProvider
     static readonly IReadOnlyDictionary<string, string> Permissions = GitHubApi.CodeHostPermissions;
     static readonly IReadOnlyDictionary<string, string> ReadPermissions = GitHubApi.CodeHostReadPermissions;
 
-    public ProviderDescription Describe() => new("code_host", "github", "0.1.0", new CodeHostCapabilities(true, false, true, true, false, false));
+    public ProviderDescription Describe() => new("code_host", "github", "0.1.0", new CodeHostCapabilities(true, true));
 
     public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => api.CheckAsync(cancellationToken);
 
@@ -90,9 +90,9 @@ public sealed partial class GitHubCodeHost(GitHubApi api) : ICodeHostProvider
                     checks.Add(c!["context"]!.GetValue<string>());
         }
 
-        bool Has(string type) => list.Any(r => r?["type"]?.GetValue<string>() == type);
+        var requiresPullRequest = list.Any(r => r?["type"]?.GetValue<string>() == "pull_request");
         var protectedBranch = json["protected"]?.GetValue<bool>() == true || list.Count > 0;
-        return ProviderResult<BranchProtection>.Success(new BranchProtection(branch, protectedBranch, Has("pull_request"), approvals, checks.ToList(), Has("merge_queue")));
+        return ProviderResult<BranchProtection>.Success(new BranchProtection(branch, protectedBranch, requiresPullRequest, approvals, checks.ToList()));
     }
 
     /// <summary>

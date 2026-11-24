@@ -47,7 +47,7 @@ public sealed class ObservabilityTests : IDisposable
     /// <summary>A tracker that also receives inbound events, answering <see cref="GetIssueAsync"/> as the test says.</summary>
     sealed class Probe(Func<CancellationToken, Task<ProviderResult<Issue>>> get) : ITrackerProvider, IInboundEventSource
     {
-        public ProviderDescription Describe() => new("tracker", "probe", "0", new TrackerCapabilities(true, false, false, false, false, false, false));
+        public ProviderDescription Describe() => new("tracker", "probe", "0", new NoCapabilities());
 
         public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => Task.FromResult(ProviderResult<Unit>.Success(default));
 

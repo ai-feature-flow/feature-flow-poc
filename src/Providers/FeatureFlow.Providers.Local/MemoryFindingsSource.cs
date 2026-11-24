@@ -28,7 +28,7 @@ public sealed class InMemoryFindingsSource(Func<IArtifactStoreProvider> store) :
     readonly Dictionary<(string Repository, string Revision), Script> scripts = [];
     readonly Dictionary<string, Request> requests = new(StringComparer.Ordinal);
 
-    public ProviderDescription Describe() => new("findings_source", "memory", "0.1.0", new FindingsSourceCapabilities(true, true, false));
+    public ProviderDescription Describe() => new("findings_source", "memory", "0.1.0", new NoCapabilities());
 
     public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => Task.FromResult(ProviderResult<Unit>.Success(default));
 
