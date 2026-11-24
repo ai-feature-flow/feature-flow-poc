@@ -142,7 +142,7 @@ CI.
 | Replay | Recorded histories replay against the changed interpreter | default |
 | Failure injection | Worker crash, lost sandbox, Temporal unavailable, hook endpoint unreachable, continue-as-new under load with children and open decisions, stale patch | integration; stale patch and hook endpoint unreachable: default |
 | Run-time rules | Each rule in section 3 | default, integration |
-| Provider contracts | Each interface's suite, including every documented success response | default, integration, cluster |
+| Provider contracts | Each interface's suite, including every documented success response; for the record store also `RecordKindContract`, generated from the record kind declarations (each kind's write rule, each query's forms, ordinal order), which fails when a declared kind or query has no sample or case, run on SQLite (default) and Postgres (integration) | default, integration, cluster |
 | Merge race | Two work branches catch up from the same parent head; the second merge gets `base_moved` and loops; repeated refusals exhaust the allowance and escalate | integration |
 | Agent reporting | `report`, `ask_human` (including across a worker restart), `checkpoint`; `inspect_plan` and `propose_patch`, a staged patch carried by the report and held for a person (`docs/04` section 6.1) | integration |
 | Pre-submit parity | A session's check and the later step receive the same task, tools, model and commit | integration |

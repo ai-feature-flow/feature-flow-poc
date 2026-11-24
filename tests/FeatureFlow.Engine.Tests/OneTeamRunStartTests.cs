@@ -36,7 +36,7 @@ public sealed class OneTeamRunStartTests : IDisposable
         var instances = new Dictionary<string, IReadOnlyDictionary<string, IProvider>>
         {
             ["artifact_store"] = new Dictionary<string, IProvider> { ["one"] = artifacts },
-            ["record_store"] = new Dictionary<string, IProvider> { ["one"] = new InMemoryRecordStore() },
+            ["record_store"] = new Dictionary<string, IProvider> { ["one"] = new SqliteRecordStore(Path.Combine(folder, "records.db")) },
         };
         var providers = new ProviderSet(instances, new Dictionary<string, string> { ["artifact_store"] = "one", ["record_store"] = "one" }, new Dictionary<string, string>());
         var installation = new InstallationConfig("localhost:7233", "default", "q", 5120, new Dictionary<string, ProviderTypeConfig>(),

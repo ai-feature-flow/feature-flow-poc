@@ -20,11 +20,12 @@ public sealed class UnservableActionTests
     static RunActivities Activities()
     {
         IReadOnlyDictionary<string, IProvider> One(IProvider provider) => new Dictionary<string, IProvider> { ["one"] = provider };
+        var folder = Path.Combine(Path.GetTempPath(), "ff-unservable-" + Guid.NewGuid().ToString("N"));
         var instances = new Dictionary<string, IReadOnlyDictionary<string, IProvider>>
         {
             ["tracker"] = One(new InMemoryTracker()),
-            ["record_store"] = One(new InMemoryRecordStore()),
-            ["artifact_store"] = One(new FileSystemArtifactStore(Path.Combine(Path.GetTempPath(), "ff-unservable-" + Guid.NewGuid().ToString("N")))),
+            ["record_store"] = One(new SqliteRecordStore(Path.Combine(folder, "records", "records.db"))),
+            ["artifact_store"] = One(new FileSystemArtifactStore(folder)),
         };
         var providers = new ProviderSet(instances, instances.Keys.ToDictionary(k => k, _ => "one"), new Dictionary<string, string>());
         var installation = new InstallationConfig("localhost:7233", "default", "q", 5120, new Dictionary<string, ProviderTypeConfig>(),

@@ -46,7 +46,7 @@ public sealed class DryRunStartTests : IDisposable
             ["validator"] = new InMemoryValidators(),
             ["agent_runtime"] = new ScriptedAgentRuntime(FakeScript.Empty, () => artifacts),
             ["artifact_store"] = artifacts,
-            ["record_store"] = new InMemoryRecordStore(),
+            ["record_store"] = new SqliteRecordStore(Path.Combine(folder, "records.db")),
         };
         // One instance of each type, named "one", which is also the dry-run instance of the types given.
         var instances = made.ToDictionary(kv => kv.Key, kv => (IReadOnlyDictionary<string, IProvider>)new Dictionary<string, IProvider> { ["one"] = kv.Value });

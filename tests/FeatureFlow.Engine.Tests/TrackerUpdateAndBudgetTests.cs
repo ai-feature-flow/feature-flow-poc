@@ -84,7 +84,7 @@ public sealed class TrackerUpdateAndBudgetTests
     [Fact]
     public async Task A_retried_reservation_does_not_count_its_own_child_twice()
     {
-        var records = new InMemoryRecordStore();
+        var records = new SqliteRecordStore(Path.Combine(Path.GetTempPath(), "ff-budget-" + Guid.NewGuid().ToString("N"), "records.db"));
         (await records.AppendAsync(new RecordBatch([Run("root", null), Run("root.a.1", "root"), Run("root.a.1.b.1", "root.a.1")]), TestContext.Current.CancellationToken)).Unwrap();
         var activities = Activities(records);
         var request = new WorkItemRequest(new WorkItemBudget("root", 3), 1, Run("root.c.1", "root"));

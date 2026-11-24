@@ -20,6 +20,22 @@ public sealed class SqliteRecordStoreContract : RecordStoreContract, IDisposable
     }
 }
 
+/// <summary>The contract generated from the record kind declarations, against the SQLite record store.</summary>
+public sealed class SqliteRecordKindContract : RecordKindContract, IDisposable
+{
+    readonly string folder = Path.Combine(Path.GetTempPath(), "ff-kinds-" + Guid.NewGuid().ToString("N"));
+
+    public SqliteRecordKindContract() => Store = new SqliteRecordStore(Path.Combine(folder, "records.db"));
+
+    protected override IRecordStoreProvider Store { get; }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(folder))
+            Directory.Delete(folder, recursive: true);
+    }
+}
+
 /// <summary>The artifact store on the local filesystem (the solo profile).</summary>
 public sealed class FileSystemArtifactStoreContract : ArtifactStoreContract, IDisposable
 {
