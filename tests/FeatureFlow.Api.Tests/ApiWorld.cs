@@ -172,5 +172,10 @@ public sealed class ApiWorld : IAsyncDisposable
     public async Task<IReadOnlyList<T>> QueryAsync<T>(string query, string runId) =>
         (await Records.QueryAsync<T>(query, new Dictionary<string, string> { ["run_id"] = runId }, TestContext.Current.CancellationToken)).Unwrap();
 
+    /// <summary>Stores <paramref name="text"/> in the API's artifact store; its reference.</summary>
+    public async Task<string> StoreAsync(string text) =>
+        (await new FileSystemArtifactStore(Path.Combine(folder, "artifacts")).PutAsync(new MemoryStream(Encoding.UTF8.GetBytes(text)), TestContext.Current.CancellationToken))
+        .Unwrap().Id;
+
     public static AuthenticationHeaderValue Bearer(string token) => new("Bearer", token);
 }
