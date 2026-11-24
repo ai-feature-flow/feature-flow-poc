@@ -16,8 +16,9 @@ const latest = (artifacts: readonly Artifact[], type: string): Artifact | undefi
   artifacts.filter(a => isType(a, type)).sort((a, b) => a.execution - b.execution || a.at.localeCompare(b.at)).at(-1);
 
 /**
- * What proves the run's criteria: the latest trace report (std:fragments/trace) in the run or its nearest ancestor that
- * has one, and the run's own delivery plan for its criteria when none has (plan s2.3: tickets have no trace).
+ * What proves the run's criteria: the latest trace report (std:fragments/trace, or a ticket's `trace` step) in the run or
+ * its nearest ancestor that has one, and the run's own delivery plan for its criteria when none has (a run that predates
+ * the ticket trace).
  */
 function useEvidence(runId: string) {
   return useLive([runKey(runId)], async () => {
@@ -103,8 +104,8 @@ function PullRequest({ pr }: { pr: Schema<"PullRequestView"> }) {
 }
 
 /**
- * A merge decision (design-v2 s4.5, mock-up 04): Approve merge · Reject… · Open pull request ↗ · Open review report (B2) ·
- * ticks; what Approve does when the engine may not merge (a `*.merge_action` gate: a person merges on the code host); the
+ * A merge decision (design-v2 s4.5, mock-up 04): Approve merge · Reject… · Open pull request ↗ · Open review report ⧉ (in a
+ * window of its own, to read beside the pull request) · ticks; what Approve does when the engine may not merge (a `*.merge_action` gate: a person merges on the code host); the
  * pull request (A5) with its files and checks; the engine's own checks; each requirement's trace to tests, or the criteria
  * marked "no trace in this run".
  */
@@ -140,7 +141,7 @@ export function Merge({ runId, wait, detail, plan, context }: DecisionProps) {
               Open pull request ↗
             </a>
           )}{" "}
-          <button type="button" class="ff-btn ff-btn-ghost" disabled title="The review report comes in B2">
+          <button type="button" class="ff-btn ff-btn-ghost" title="Opens in a window of its own" onClick={() => links.openWindow(links.review(runId), `review:${runId}`)}>
             Open review report ⧉
           </button>{" "}
           <span class="ff-dec-ticks" aria-label="Ticks">
@@ -230,7 +231,10 @@ export function Merge({ runId, wait, detail, plan, context }: DecisionProps) {
         </table>
       ) : (
         <>
-          <p class="ff-dec-muted">No trace in this run: only project and epic runs trace requirements to tests. The criteria and how each is verified:</p>
+          <p class="ff-dec-muted">
+            No trace in this run: its plan has no requirement trace step (a ticket run started before tickets traced their
+            requirements), or the step has not run yet. The criteria:
+          </p>
           {criteria.length === 0 ? (
             <p class="ff-dec-muted">No criteria recorded.</p>
           ) : (

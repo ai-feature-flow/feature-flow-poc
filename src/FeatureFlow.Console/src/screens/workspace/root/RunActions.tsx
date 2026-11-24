@@ -8,13 +8,14 @@ import { Menu } from "../../../ui/Menu";
 import { hasReason, labelOf, Reason } from "../../../ui/Reason";
 import { Table } from "../../../ui/Table";
 import { isActive } from "../tree/model";
+import { PolicyPopup } from "./PolicyPopup";
 
 /** Engine work for a later build (design-v2 s4.4, E4). */
 const later = "needs engine work (B2)";
 
 /**
  * A run's Run actions ▾ (design-v2 s4.4): abort, when the caller may and the run still runs; its history of answers and
- * overrides; restart from a step and re-run shown disabled, for they need engine work, and the policy in force, which is B2's.
+ * overrides; the policy in force; and restart from a step and re-run shown disabled, for they need engine work (E4).
  */
 export function RunActions({ run, detail }: { run: Schema<"RunView">; detail: Schema<"RunDetail"> }) {
   const popups = usePopup();
@@ -35,7 +36,10 @@ export function RunActions({ run, detail }: { run: Schema<"RunView">; detail: Sc
         },
         { label: "Restart from a step…", disabled: true, note: later, onSelect: () => undefined },
         { label: "Re-run", disabled: true, note: later, onSelect: () => undefined },
-        { label: "Policy in force", disabled: true, note: "in B2", onSelect: () => undefined },
+        {
+          label: "Policy in force",
+          onSelect: () => popups.open(<PolicyPopup runId={run.run_id} />, { label: `Policy in force for ${run.run_id}`, wide: true }),
+        },
       ]}
     />
   );
