@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using FeatureFlow.Providers.Abstractions;
 
-namespace FeatureFlow.Providers.Local;
+namespace FeatureFlow.Providers.Testing;
 
 /// <summary>
 /// A tracker in memory (docs/06 section 3.6), for engine tests: issues keyed <c>MEM-n</c>, created in status <c>to_do</c>,

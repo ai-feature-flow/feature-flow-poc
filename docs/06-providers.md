@@ -91,11 +91,12 @@ The engine's decorator sets a timeout per call by provider type (LOG 304):
 
 Temporal and the worker platform are configuration only (`docs/07`).
 
-A `fake` provider of any type but the stores and secrets only describes itself. Neither it nor a `memory`
-provider is configured in a production installation: an installation that
-configures one must set `development: true`, as must one that configures the
-`scripted` agent runtime (L4). An action that no handler or configured provider
-can serve stops for a person (`docs/04` section 1).
+The test doubles are in `FeatureFlow.Providers.Testing` (`TestingProviders.Factories`): the `memory` providers, the
+`fake` provider of any type but the stores and secrets, which only describes itself, and the `scripted` and
+`recording` agent runtimes. Each is development-only: composition refuses an instance of one unless the installation
+sets `development: true` (L4). No `src/` project references the package; the engine's hosts compose it, so a
+development installation (the k3d smoke installation, `deploy/k3d/smoke`) runs on the real host images. An action
+that no handler or configured provider can serve stops for a person (`docs/04` section 1).
 
 The VCS, code host and CI interfaces as built in M5 differ from the signatures below: catch-up and merge take an
 expected revision and a key, the code host reads a file and has no merge method, and CI results are returned as

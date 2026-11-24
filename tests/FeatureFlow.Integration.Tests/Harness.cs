@@ -5,6 +5,7 @@ using FeatureFlow.Hosting;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Providers.Local;
 using FeatureFlow.Providers.StdValidators;
+using FeatureFlow.Providers.Testing;
 using Temporalio.Api.Enums.V1;
 using Temporalio.Client;
 using IOPath = System.IO.Path;
@@ -191,7 +192,7 @@ public sealed class Harness : IAsyncDisposable
         var configuration = FeatureFlowConfiguration.Load(IOPath.Combine(folder, "installation.yaml"), IOPath.Combine(folder, "organisation.yaml"));
         if (configure is not null)
             configuration = configure(configuration);
-        harness.Host = await FeatureFlowHost.StartAsync(configuration, LocalProviders.Factories.Concat(StdValidatorProviders.Factories).Concat(factories ?? []),
+        harness.Host = await FeatureFlowHost.StartAsync(configuration, LocalProviders.Factories.Concat(StdValidatorProviders.Factories).Concat(TestingProviders.Factories).Concat(factories ?? []),
             true, agentWorker, "http://127.0.0.1:0");
         // The sandboxes the host composed: tests pass with a TRX, analysis is clean.
         foreach (var world in new[] { harness.World, harness.DryWorld })

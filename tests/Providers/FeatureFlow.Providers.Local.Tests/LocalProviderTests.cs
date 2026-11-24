@@ -1,5 +1,6 @@
 using System.Text;
 using FeatureFlow.Providers.Abstractions;
+using FeatureFlow.Providers.Testing;
 
 namespace FeatureFlow.Providers.Local.Tests;
 
@@ -208,7 +209,7 @@ public sealed class LocalProviderTests : IDisposable
               agent_runtime: { instances: { scripted: { world: test-{{Guid.NewGuid():N}} } } }
             """, "installation.yaml", d)!;
         Assert.DoesNotContain(d, x => x.Blocks);
-        var runtime = (IAgentRuntimeProvider)LocalProviders.Factories.Single(f => f is { Type: "agent_runtime", Kind: "scripted" })
+        var runtime = (IAgentRuntimeProvider)TestingProviders.Factories.Single(f => f is { Type: "agent_runtime", Kind: "scripted" })
             .Create(new ProviderContext(config.Providers["agent_runtime"].Instances["scripted"], folder,
                 type => type switch { "artifact_store" => store, "record_store" => records, "sandbox" => sandboxes, _ => null }));
         var sandbox = (await sandboxes.CreateAsync(new SandboxSpec("run-1/implement/1", "/ff/home", new Dictionary<string, string>(), []), Ct)).Unwrap();

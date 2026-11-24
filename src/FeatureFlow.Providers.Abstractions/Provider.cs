@@ -124,5 +124,9 @@ public sealed record ProviderContext(ProviderInstanceConfig Instance, string Bas
     public IReadOnlyList<Uri> SandboxReach { get; init; } = [];
 }
 
-/// <summary>Creates one kind of provider for one type, by the kind name configuration uses (docs/06 section 4).</summary>
-public sealed record ProviderFactory(string Type, string Kind, IReadOnlyList<string> Settings, Func<ProviderContext, IProvider> Create);
+/// <summary>
+/// Creates one kind of provider for one type, by the kind name configuration uses (docs/06 section 4). A
+/// development-only factory (a test double) is refused at composition unless the installation sets <c>development: true</c>.
+/// </summary>
+public sealed record ProviderFactory(string Type, string Kind, IReadOnlyList<string> Settings, Func<ProviderContext, IProvider> Create,
+    bool DevelopmentOnly = false);

@@ -4,6 +4,7 @@ using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Providers.ClaudeCode;
 using FeatureFlow.Providers.CopilotCli;
 using FeatureFlow.Providers.Local;
+using FeatureFlow.Providers.Testing;
 using Temporalio.Testing;
 
 namespace FeatureFlow.Engine.Agent.Tests;

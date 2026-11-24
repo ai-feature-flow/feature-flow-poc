@@ -79,7 +79,8 @@ src/
   FeatureFlow.Cli/                      `ff`
   FeatureFlow.Console/                  The console: TypeScript, built by FeatureFlow.Api's build and embedded in it. Not a .NET project (LOG 453)
   Providers/
-    FeatureFlow.Providers.Local/        Filesystem artifact store, SQLite record store, file secrets, local hand-off session surface, recording providers
+    FeatureFlow.Providers.Local/        Filesystem artifact store, SQLite record store, file secrets, local hand-off session surface
+    FeatureFlow.Providers.Testing/      The test doubles: the memory providers, fake, and the scripted and recording runtimes; development only (L4)
     FeatureFlow.Providers.Git/          VCS provider and the engine's clone cache (docs/02 section 6)
     FeatureFlow.Providers.GitHub/       Code host, GitHub Actions CI, GitHub Issues tracker, GitHub App credential broker, Copilot review findings source
     FeatureFlow.Providers.Docker/       Local Docker sandbox
@@ -104,6 +105,7 @@ Reference rules, checked by a test that reads the project files:
 |---|---|
 | `Model`, `Expressions`, `Library`, `Validation`, `Interpreter` | Each other, in that order. No Temporal, no providers, no I/O except reading library files |
 | `Providers.*` | `Providers.Abstractions` and `Model` only |
+| `Providers.Testing` | As `Providers.*`; no `src/` project references it, so only hosts and tests compose the test doubles (L4) |
 | `Engine`, `Engine.Agent`, `Api` | The core, `Providers.Abstractions`, Temporal; `Api` also `Api.Contracts` |
 | `Api.Contracts` | Nothing: no project, no package (LOG 388) |
 | `hosts/*` | `Hosting` and the provider projects they ship |

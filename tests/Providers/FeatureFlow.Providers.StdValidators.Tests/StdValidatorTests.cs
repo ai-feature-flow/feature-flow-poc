@@ -193,7 +193,7 @@ public sealed class StdValidatorTests : IDisposable
         };
 
         Valid(await ValidateAsync(Trace(artifacts, head)));
-        var noVcs = new StdValidators(() => w.Store, () => new FeatureFlow.Providers.Local.InMemoryCodeHost(w.Forge), () => null);
+        var noVcs = new StdValidators(() => w.Store, () => new FeatureFlow.Providers.Testing.InMemoryCodeHost(w.Forge), () => null);
         Invalid(await ValidateAsync(noVcs, Trace(artifacts, head)), "trace_gap");
     }
 

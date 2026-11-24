@@ -1,4 +1,5 @@
 using FeatureFlow.Providers.Abstractions;
+using FeatureFlow.Providers.Testing;
 
 namespace FeatureFlow.Providers.Local.Tests;
 
@@ -95,7 +96,7 @@ public sealed class MemoryProviderTests
 
     static IProvider Create(string type, string world)
     {
-        var factory = LocalProviders.Factories.Single(f => f.Type == type && f.Kind == "memory");
+        var factory = TestingProviders.Factories.Single(f => f.Type == type && f.Kind == "memory");
         var d = new Model.DiagnosticBag();
         var config = Model.ConfigurationReader.ReadInstallation($$"""
             api_version: feature-flow/v1

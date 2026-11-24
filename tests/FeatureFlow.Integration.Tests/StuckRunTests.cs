@@ -3,6 +3,7 @@ using FeatureFlow.Hosting;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Providers.Local;
 using FeatureFlow.Providers.StdValidators;
+using FeatureFlow.Providers.Testing;
 using Microsoft.Extensions.Logging.Abstractions;
 using Temporalio.Api.Workflow.V1;
 using Temporalio.Api.WorkflowService.V1;
@@ -111,7 +112,7 @@ public class StuckRunTests
         Assert.Equal([NotificationEvents.Stuck], await EventsAsync(h, id, NotificationEvents.Stuck));
 
         // An agent worker comes up: it takes the step, the run moves on, and the next check (at the usual threshold) closes the wait.
-        await using var worker = await FeatureFlowHost.StartAsync(h.Host.Configuration, LocalProviders.Factories.Concat(StdValidatorProviders.Factories), false, true, null);
+        await using var worker = await FeatureFlowHost.StartAsync(h.Host.Configuration, LocalProviders.Factories.Concat(StdValidatorProviders.Factories).Concat(TestingProviders.Factories), false, true, null);
         await UntilAsync(async () => Harness.StartedSteps(await h.ShowAsync(id)).Contains("approve_spec"), "the run to move past the agent step");
         await Check(h, StuckRunTimings.Default.StuckAfter).CheckAsync(Ct);
 

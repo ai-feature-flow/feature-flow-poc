@@ -10,6 +10,7 @@ using FeatureFlow.Providers.Docker;
 using FeatureFlow.Providers.Git;
 using FeatureFlow.Providers.GitHub;
 using FeatureFlow.Providers.Local;
+using FeatureFlow.Providers.Testing;
 using IOPath = System.IO.Path;
 
 namespace FeatureFlow.Integration.Tests;
@@ -137,7 +138,7 @@ public sealed class AgentHarness : IAsyncDisposable
             HookHold = TimeSpan.FromSeconds(options.HookHoldSeconds),
             ClientRetry = TimeSpan.FromSeconds(options.ClientRetrySeconds),
         }))
-        .Concat(GitProviders.Factories).Concat(GitHubProviders.Factories);
+        .Concat(GitProviders.Factories).Concat(GitHubProviders.Factories).Concat(TestingProviders.Factories);
 
     IEnumerable<ProviderFactory> Factories { get; init; } = [];
 

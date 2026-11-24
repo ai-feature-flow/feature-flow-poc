@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using FeatureFlow.Providers.Abstractions;
 
-namespace FeatureFlow.Providers.Local;
+namespace FeatureFlow.Providers.Testing;
 
 /// <summary>
 /// What a scripted command does: the latest rule whose <see cref="Pattern"/> matches the command line (its arguments

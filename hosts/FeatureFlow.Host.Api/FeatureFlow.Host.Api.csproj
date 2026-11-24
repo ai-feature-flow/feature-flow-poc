@@ -18,6 +18,7 @@
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Kubernetes\FeatureFlow.Providers.Kubernetes.csproj" />
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.CopilotCli\FeatureFlow.Providers.CopilotCli.csproj" />
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Jira\FeatureFlow.Providers.Jira.csproj" />
+    <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Testing\FeatureFlow.Providers.Testing.csproj" />
   </ItemGroup>
 
 </Project>

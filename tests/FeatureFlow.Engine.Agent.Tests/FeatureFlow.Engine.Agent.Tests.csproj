@@ -8,6 +8,7 @@
     <ProjectReference Include="..\..\src\FeatureFlow.Engine.Agent\FeatureFlow.Engine.Agent.csproj" />
     <ProjectReference Include="..\..\src\FeatureFlow.SandboxClient\FeatureFlow.SandboxClient.csproj" />
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Local\FeatureFlow.Providers.Local.csproj" />
+    <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.Testing\FeatureFlow.Providers.Testing.csproj" />
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.ClaudeCode\FeatureFlow.Providers.ClaudeCode.csproj" />
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.CopilotCli\FeatureFlow.Providers.CopilotCli.csproj" />
     <ProjectReference Include="..\..\src\Providers\FeatureFlow.Providers.StdValidators\FeatureFlow.Providers.StdValidators.csproj" />
