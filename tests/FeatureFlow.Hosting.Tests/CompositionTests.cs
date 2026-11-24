@@ -1,5 +1,6 @@
 using FeatureFlow.Model;
 using FeatureFlow.Providers.Abstractions;
+using FeatureFlow.Providers.Testing;
 
 namespace FeatureFlow.Hosting.Tests;
 
@@ -20,12 +21,29 @@ public class CompositionTests
         new("agent_runtime", "recording", ["folder"], _ => new Probe("agent_runtime", "recording")),
     ];
 
-    static InstallationConfig Read(string providers)
+    static InstallationConfig Read(string providers, bool development = true)
     {
         var d = new DiagnosticBag();
-        var config = ConfigurationReader.ReadInstallation($"api_version: feature-flow/v1\nkind: installation\ndevelopment: true\nproviders:\n{providers}", "/tmp/installation.yaml", d);
+        var config = ConfigurationReader.ReadInstallation($"api_version: feature-flow/v1\nkind: installation\ndevelopment: {(development ? "true" : "false")}\nproviders:\n{providers}", "/tmp/installation.yaml", d);
         Assert.False(d.HasErrors, string.Join("\n", d));
         return config!;
+    }
+
+    public static TheoryData<string, string> DevelopmentOnlyKinds => [.. TestingProviders.Factories.Select(f => (f.Type, f.Kind))];
+
+    /// <summary>
+    /// L4: every test double is development-only, refused at composition unless the installation sets
+    /// <c>development: true</c>, by its factory rather than by its kind's name (<c>recording</c> included).
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(DevelopmentOnlyKinds))]
+    public void Every_development_only_kind_is_refused_outside_development(string type, string kind)
+    {
+        var providers = $"  {type}: {{ instances: {{ x: {{ provider: {kind} }} }} }}";
+        Assert.True(TestingProviders.Factories.Single(f => f.Type == type && f.Kind == kind).DevelopmentOnly);
+
+        var e = Assert.Throws<StartupRefusal>(() => ProviderComposer.Compose(Read(providers, development: false), TestingProviders.Factories));
+        Assert.Contains($"providers.{type}.instances.x: the {kind} provider is for development only; set development: true", e.Message);
     }
 
     [Fact]
@@ -65,6 +83,26 @@ public class CompositionTests
         public ProviderDescription Describe() => new("agent_runtime", "bare", "0", new AgentRuntimeCapabilities(false, false));
 
         public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => Task.FromResult(ProviderResult<Unit>.Success(default));
+    }
+
+    /// <summary>
+    /// L8: a tracker instance with statuses to map and no <c>status_map</c> is warned of once at composition, since a run
+    /// started before it is not checked again; one with a map, or a tracker with nothing to map, is not.
+    /// </summary>
+    [Fact]
+    public void A_tracker_instance_with_no_status_map_is_warned_of()
+    {
+        var set = ProviderComposer.Compose(Read("""
+              tracker:
+                default: plain
+                instances:
+                  plain: { provider: github_issues, repository: acme/planning }
+                  mapped: { provider: github_issues, repository: acme/planning, status_map: { done: closed } }
+                  memory: { provider: memory }
+            """), Providers.Standard.StandardProviders.Factories.Concat(TestingProviders.Factories));
+
+        var warning = Assert.Single(ProviderComposer.Warnings(set));
+        Assert.StartsWith("providers.tracker.instances.plain has no status_map: a status a run moves an issue to is passed to the tracker as its own name", warning, StringComparison.Ordinal);
     }
 
     [Theory]

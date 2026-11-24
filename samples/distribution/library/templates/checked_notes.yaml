@@ -1,0 +1,43 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: checked_notes
+  level: ticket
+  description: >-
+    Imports notes.md from a repository at an exact commit, then checks it with Acme's own validator, acme_line_limit.
+    The run completes when the notes have at most max_lines lines, and is rejected otherwise.
+
+artifact_types:
+  - acme:artifact_types/notes
+  - acme:artifact_types/validation_report
+
+parameters:
+  repository: { type: string, required: true, description: "The repository holding notes.md, such as acme/notes" }
+  commit: { type: string, required: true, description: "The full commit id to read notes.md at" }
+  max_lines: { type: number, required: true }
+
+steps:
+  - id: import
+    action: artifact.import
+    with:
+      repository: { expr: "params.repository" }
+      commit: { expr: "params.commit" }
+      files: [{ path: notes.md, name: notes, type: acme:artifact_types/notes }]
+    produces:
+      imported: [{ name: notes, type: acme:artifact_types/notes }]
+    routes: { imported: check }
+
+  - id: check
+    action: artifact.validate
+    with:
+      validation:
+        - validator: acme_line_limit
+          subjects: [notes]
+          options: { max_lines: { expr: "params.max_lines" } }
+    consumes: [{ name: notes }]
+    produces:
+      valid: [{ name: line_check, type: acme:artifact_types/validation_report }]
+      invalid: [{ name: line_check, type: acme:artifact_types/validation_report }]
+    routes:
+      valid: { end: completed }
+      invalid: { end: rejected }

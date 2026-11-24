@@ -19,8 +19,8 @@ public static class GitHubProviders
     ];
 
     /// <summary>
-    /// <c>status_map</c> (docs/07 section 2): a library status to a label, or to <c>closed</c>. Unset, std's statuses map to
-    /// <see cref="GitHubIssuesTracker.DefaultStatusMap"/>.
+    /// <c>status_map</c> (docs/07 section 2): a library status to a label, or to <c>closed</c>. Unset, it maps none, and each
+    /// status is a label of its own name.
     /// </summary>
     static IReadOnlyDictionary<string, string>? StatusMap(ProviderContext c)
     {

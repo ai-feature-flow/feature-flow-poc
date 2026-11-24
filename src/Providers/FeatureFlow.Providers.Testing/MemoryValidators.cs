@@ -1,7 +1,7 @@
 using System.Text.Json;
 using FeatureFlow.Providers.Abstractions;
 
-namespace FeatureFlow.Providers.Local;
+namespace FeatureFlow.Providers.Testing;
 
 /// <summary>
 /// A validator provider in memory (docs/06 section 3.8), for engine tests before the standard validators exist and for

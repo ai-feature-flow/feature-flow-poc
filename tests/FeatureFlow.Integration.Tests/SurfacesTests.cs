@@ -6,8 +6,8 @@ using FeatureFlow.Hosting;
 using FeatureFlow.Model;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Providers.GitHub;
-using FeatureFlow.Providers.Local;
 using FeatureFlow.Providers.Slack;
+using FeatureFlow.Providers.Testing;
 using Temporalio.Client;
 
 namespace FeatureFlow.Integration.Tests;

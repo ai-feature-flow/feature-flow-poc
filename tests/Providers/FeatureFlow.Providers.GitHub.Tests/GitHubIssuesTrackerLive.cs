@@ -23,7 +23,7 @@ public sealed class GitHubIssuesTrackerLiveContract : TrackerContract, IAsyncLif
         api = Environment.GetEnvironmentVariable("FF_GITHUB_TRACKER_TOKEN") is { Length: > 0 } variable
             ? new GitHubApi(() => new TokenBroker(Environment.GetEnvironmentVariable(variable) ?? throw new InvalidOperationException($"{variable} is not set")))
             : new LiveFixture().Api;
-        Tracker = new Recorded(new GitHubIssuesTracker(api, LiveFixture.Repo.FullName), created);
+        Tracker = new Recorded(new GitHubIssuesTracker(api, LiveFixture.Repo.FullName, GitHubIssuesTrackerTests.Map), created);
     }
 
     protected override ITrackerProvider Tracker { get; }

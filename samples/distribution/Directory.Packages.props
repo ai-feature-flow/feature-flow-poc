@@ -1,0 +1,15 @@
+<Project>
+  <!-- The sample's own package versions: the engine's packages from the local feed, the rest from nuget.org. -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include="FeatureFlow.Hosting" Version="$(FeatureFlowVersion)" />
+    <PackageVersion Include="FeatureFlow.Providers.Abstractions" Version="$(FeatureFlowVersion)" />
+    <PackageVersion Include="FeatureFlow.Providers.Standard" Version="$(FeatureFlowVersion)" />
+    <PackageVersion Include="FeatureFlow.Providers.Testing" Version="$(FeatureFlowVersion)" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+    <PackageVersion Include="xunit.v3" Version="3.2.2" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+  </ItemGroup>
+</Project>

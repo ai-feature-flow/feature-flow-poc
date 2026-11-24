@@ -1,0 +1,22 @@
+api_version: feature-flow/v1
+kind: template
+metadata:
+  name: project_delivery
+  level: project
+  description: std's project, running Acme's epics
+  branch_pattern: "acme/project/{{ params.project_name }}"
+
+parameters:
+  project_name: { type: string, required: true }
+  planning_repository: { type: string, default: { expr: "run.repositories[0]" } }
+
+budget:
+  max_work_items: 20
+
+use: std:fragments/project_flow
+with:
+  child_template: acme:templates/epic_delivery
+routes:
+  delivered: { end: completed }
+  partial: { end: partial }
+  abandoned: { end: rejected }

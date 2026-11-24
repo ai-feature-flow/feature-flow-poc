@@ -15,6 +15,11 @@ parameters:
   reviewer_task: { type: reference, default: std:tasks/review_change }
   fixer_task: { type: reference, default: std:tasks/fix_findings }
   triager_task: { type: reference, default: std:tasks/triage_findings }
+  verifier_task: { type: reference, default: std:tasks/verify_fix }
+  repair_task: { type: reference, default: std:tasks/repair_failures }
+  reviewer_role: { type: reference, default: std:roles/reviewer }
+  fixer_role: { type: reference, default: std:roles/fixer, description: "The role of the fixer and of the repair step" }
+  triager_role: { type: reference, default: std:roles/triager }
   check_satisfaction:
     type: boolean
     default: true
@@ -65,6 +70,7 @@ steps:
       spec_refs: { expr: "params.spec_refs" }
       angles: { expr: "params.angles" }
       reviewer_task: { param: reviewer_task }
+      reviewer_role: { param: reviewer_role }
       reopen_on: code_change
     routes:
       reviewed:                                   # the merge bar (docs/08 section 6.5)
@@ -81,6 +87,10 @@ steps:
     with:
       fixer_task: { param: fixer_task }
       triager_task: { param: triager_task }
+      verifier_task: { param: verifier_task }
+      fixer_role: { param: fixer_role }
+      triager_role: { param: triager_role }
+      reviewer_role: { param: reviewer_role }
       tier_tags: { expr: "params.tier_tags" }
     routes:
       fixed: tests                                # re-test and re-review after every fix
@@ -111,8 +121,8 @@ steps:
 
   - id: repair
     agent:
-      role: std:roles/fixer
-      task: std:tasks/repair_failures
+      role: { param: fixer_role }
+      task: { param: repair_task }
       skills: [std:skills/verification]
     consumes:
       - { name: test_results, optional: true }

@@ -33,7 +33,7 @@ public class PlanLoaderTests
         Assert.Empty(d);
         Assert.Equal("std", std.Name);
         Assert.Equal(["epic_delivery", "project_delivery", "ticket_delivery"], std.Names("templates"));
-        Assert.Equal(9, std.Names("fragments").Count());
+        Assert.Equal(12, std.Names("fragments").Count());
         Assert.Equal(3, std.Names("skills").Count());
         Assert.Contains(std.DecisionTypes, t => t.Name == "*.escalation");
         Assert.Equal(["in_progress", "code_review", "done"], std.Statuses.Select(s => s.Name));

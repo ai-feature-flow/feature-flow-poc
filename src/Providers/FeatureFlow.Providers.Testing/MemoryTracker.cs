@@ -2,11 +2,11 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using FeatureFlow.Providers.Abstractions;
 
-namespace FeatureFlow.Providers.Local;
+namespace FeatureFlow.Providers.Testing;
 
 /// <summary>
 /// A tracker in memory (docs/06 section 3.6), for engine tests: issues keyed <c>MEM-n</c>, created in status <c>to_do</c>,
-/// moved only to the library statuses it maps (by default std's <c>in_progress</c>, <c>code_review</c> and <c>done</c>).
+/// moved to any status, or, given <c>statuses</c>, only to those.
 /// Providers configured with the same <c>world</c> share one tracker. <see cref="Fail"/> makes the next calls of an
 /// operation fail, as the forge's faults do.
 /// </summary>
@@ -34,12 +34,14 @@ public sealed class InMemoryTracker(IReadOnlyCollection<string>? statuses = null
         public readonly HashSet<(string To, string Type)> Links = [];
     }
 
-    readonly IReadOnlySet<string> mapped = new HashSet<string>(statuses ?? ["in_progress", "code_review", "done"], StringComparer.Ordinal);
+    readonly IReadOnlySet<string>? mapped = statuses?.ToHashSet(StringComparer.Ordinal);
     readonly Lock gate = new();
     readonly List<Stored> issues = [];
     readonly Dictionary<string, Queue<ProviderError>> faults = new(StringComparer.Ordinal);
 
     public ProviderDescription Describe() => new("tracker", "memory", "0.1.0", new NoCapabilities());
+
+    public IReadOnlySet<string>? MappedStatuses => mapped;
 
     public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => Task.FromResult(ProviderResult<Unit>.Success(default));
 
@@ -124,7 +126,7 @@ public sealed class InMemoryTracker(IReadOnlyCollection<string>? statuses = null
         {
             if (Find(issue) is not { } stored)
                 return NotFound<Unit>(issue);
-            if (!mapped.Contains(status))
+            if (mapped is not null && !mapped.Contains(status))
                 return ProviderResult<Unit>.Failure("validation_failed", $"status '{status}' is not mapped to a tracker status ({string.Join(", ", mapped.Order())})");
             stored.Status = status;
             return ProviderResult<Unit>.Success(default);

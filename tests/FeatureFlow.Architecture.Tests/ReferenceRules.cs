@@ -32,7 +32,14 @@ public static class ReferenceRules
         "FeatureFlow.Providers.Postgres",
         "FeatureFlow.Providers.S3",
         "FeatureFlow.Providers.Kubernetes",
+        TestDoubles,
     ];
+
+    /// <summary>The test doubles (docs/06 section 3): hosts and tests may reference them, no <c>src/</c> project may.</summary>
+    public const string TestDoubles = "FeatureFlow.Providers.Testing";
+
+    /// <summary>The standard providers in one list (docs/06 section 4): it may reference provider projects and Abstractions only.</summary>
+    public const string Standard = "FeatureFlow.Providers.Standard";
 
     /// <summary>The Temporal side: the core, provider interfaces and Temporal.</summary>
     public static readonly IReadOnlyList<string> Engine =
@@ -69,7 +76,7 @@ public static class ReferenceRules
         "FeatureFlow.Cli",
     ];
 
-    public static IEnumerable<string> AllProjects => Core.Concat(Providers).Concat(Engine).Append(ApiContracts).Concat(Hosts).Concat(ReDrive).Concat(Unconstrained);
+    public static IEnumerable<string> AllProjects => Core.Concat(Providers).Append(Standard).Concat(Engine).Append(ApiContracts).Concat(Hosts).Concat(ReDrive).Concat(Unconstrained);
 
     const string Abstractions = "FeatureFlow.Providers.Abstractions";
 
@@ -91,6 +98,12 @@ public static class ReferenceRules
             string[] allowed = [Abstractions, "FeatureFlow.Model"];
             foreach (var reference in projects.Where(r => !allowed.Contains(r)))
                 yield return $"{project} references {reference}: a provider project may reference only Providers.Abstractions and Model";
+        }
+        else if (project == Standard)
+        {
+            var allowed = Providers.Except(["FeatureFlow.Providers.Contracts", TestDoubles]).ToHashSet();
+            foreach (var reference in projects.Where(r => !allowed.Contains(r)))
+                yield return $"{project} references {reference}: the standard providers may reference only provider projects and Providers.Abstractions";
         }
         else if (Engine.Contains(project))
         {
@@ -116,9 +129,9 @@ public static class ReferenceRules
         }
         else if (Hosts.Contains(project))
         {
-            var allowed = Providers.Except([Abstractions, "FeatureFlow.Providers.Contracts"]).Append("FeatureFlow.Hosting").ToHashSet();
+            string[] allowed = ["FeatureFlow.Hosting", Standard, TestDoubles];
             foreach (var reference in projects.Where(r => !allowed.Contains(r)))
-                yield return $"{project} references {reference}: a host may reference only Hosting and provider projects";
+                yield return $"{project} references {reference}: a host may reference only Hosting, Providers.Standard and Providers.Testing";
         }
         else if (!Unconstrained.Contains(project))
         {

@@ -1,5 +1,6 @@
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Providers.Local;
+using FeatureFlow.Providers.Testing;
 
 namespace FeatureFlow.Providers.Contracts.Tests;
 
@@ -103,6 +104,36 @@ public sealed class InMemoryTrackerContract : TrackerContract
     protected override (string First, string Second) Statuses => ("in_progress", "done");
 
     protected override Task<IReadOnlyList<string>> CommentsAsync(IssueRef issue) => Task.FromResult(tracker.Comments(issue));
+}
+
+/// <summary>The in-memory tracker's statuses (docs/06 section 3.6): any, unless it is given the ones it maps.</summary>
+public sealed class InMemoryTrackerTests
+{
+    static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    [Fact]
+    public async Task An_unmapped_status_maps_to_itself()
+    {
+        var tracker = new InMemoryTracker();
+        var issue = (await tracker.CreateAsync(new IssueSpec("T"), "k", Ct)).Unwrap();
+
+        (await tracker.TransitionAsync(issue, "anything_at_all", Ct)).Unwrap();
+
+        Assert.Equal("anything_at_all", (await tracker.GetIssueAsync(issue, Ct)).Unwrap().Status);
+        Assert.Null(((ITrackerProvider)tracker).MappedStatuses);
+    }
+
+    [Fact]
+    public async Task A_configured_status_map_still_maps()
+    {
+        var tracker = new InMemoryTracker(["shipped"]);
+        var issue = (await tracker.CreateAsync(new IssueSpec("T"), "k", Ct)).Unwrap();
+
+        (await tracker.TransitionAsync(issue, "shipped", Ct)).Unwrap();
+
+        Assert.Equal("shipped", (await tracker.GetIssueAsync(issue, Ct)).Unwrap().Status);
+        Assert.Equal("validation_failed", (await tracker.TransitionAsync(issue, "other", Ct)).Error!.Reason);
+    }
 }
 
 public sealed class InMemoryFindingsSourceContract : FindingsSourceContract, IDisposable

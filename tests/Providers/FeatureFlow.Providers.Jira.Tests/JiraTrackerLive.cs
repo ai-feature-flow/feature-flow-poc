@@ -23,7 +23,8 @@ public sealed class JiraTrackerLiveContract : TrackerContract, IAsyncLifetime
             Environment.GetEnvironmentVariable(name) is { Length: > 0 } value ? value : throw new InvalidOperationException($"{name} is not set");
         var url = Required("FF_LIVE_JIRA_URL");
         var credential = Required("FF_LIVE_JIRA_USER") + ":" + Required("FF_LIVE_JIRA_TOKEN");
-        tracker = new JiraTracker(api = new JiraApi(_ => Task.FromResult(ProviderResult<string>.Success(credential)), url), Required("FF_LIVE_JIRA_PROJECT"));
+        tracker = new JiraTracker(api = new JiraApi(_ => Task.FromResult(ProviderResult<string>.Success(credential)), url), Required("FF_LIVE_JIRA_PROJECT"),
+            JiraTrackerTests.Map);
         Tracker = new Recorded(tracker, created);
     }
 

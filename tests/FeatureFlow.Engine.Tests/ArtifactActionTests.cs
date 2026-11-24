@@ -3,7 +3,7 @@ using System.Text.Json;
 using FeatureFlow.Engine.Actions;
 using FeatureFlow.Model.Yaml;
 using FeatureFlow.Providers.Abstractions;
-using FeatureFlow.Providers.Local;
+using FeatureFlow.Providers.Testing;
 
 namespace FeatureFlow.Engine.Tests;
 

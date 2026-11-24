@@ -7,8 +7,9 @@ namespace FeatureFlow.Providers.GitHub;
 /// <summary>
 /// The GitHub Issues tracker provider (docs/06 section 3.6), over GitHub's REST API. An issue's key is
 /// <c>owner/repo#12</c>; <see cref="IssueSpec.Project"/> is a repository, default the configured one. GitHub Issues has no
-/// statuses: the configuration's <c>status_map</c> maps each library status to a label, or to <c>closed</c>, which closes
-/// the issue. A transition sets the issue's state and leaves exactly one mapped label on it. Hierarchy is GitHub's
+/// statuses: the configuration's <c>status_map</c> maps a library status to a label, or to <c>closed</c>, which closes
+/// the issue, and a status it does not name is a label of its own name. A transition sets the issue's state and leaves
+/// exactly one mapped label on it; a read reports a mapped status only. Hierarchy is GitHub's
 /// sub-issues; a link is a comment on the first issue naming the second; there are no custom fields. Creates and comments
 /// write the key as a hidden marker in the body and adopt what a retry finds. Agents never hold this identity (F5).
 /// </summary>
@@ -17,20 +18,14 @@ public sealed class GitHubIssuesTracker(GitHubApi api, string? repository, IRead
     /// <summary>The state a library status maps to when it closes the issue rather than labelling it.</summary>
     public const string Closed = "closed";
 
-    /// <summary>std's statuses (<c>library/std/status_map.yaml</c>) when the configuration maps none.</summary>
-    public static readonly IReadOnlyDictionary<string, string> DefaultStatusMap = new Dictionary<string, string>
-    {
-        ["in_progress"] = "status: in progress",
-        ["code_review"] = "status: code review",
-        ["done"] = Closed,
-    };
-
     static readonly IReadOnlyDictionary<string, string> Permissions = new Dictionary<string, string> { ["issues"] = "write", ["metadata"] = "read" };
     static readonly IReadOnlyDictionary<string, string> ReadPermissions = new Dictionary<string, string> { ["issues"] = "read", ["metadata"] = "read" };
 
-    readonly IReadOnlyDictionary<string, string> map = statusMap ?? DefaultStatusMap;
+    readonly IReadOnlyDictionary<string, string> map = statusMap ?? new Dictionary<string, string>();
 
     IEnumerable<string> StatusLabels => map.Values.Where(v => v != Closed);
+
+    public IReadOnlySet<string> MappedStatuses => map.Keys.ToHashSet(StringComparer.Ordinal);
 
     public ProviderDescription Describe() => new("tracker", "github_issues", "0.1.0", new NoCapabilities());
 
@@ -347,13 +342,13 @@ public sealed class GitHubIssuesTracker(GitHubApi api, string? repository, IRead
     }
 
     /// <summary>
-    /// A mapped status: <c>closed</c> closes the issue; a label reopens it if needed. Either way the other mapped labels are
-    /// removed (one PATCH, 200). An issue already in the status is left as it is. An unmapped status is <c>validation_failed</c>.
+    /// A status's mapped target, else a label of its own name: <c>closed</c> closes the issue; a label reopens it if needed.
+    /// Either way the mapped labels other than the target are removed (one PATCH, 200); a label an unmapped status added is
+    /// not a mapped one, so a later transition leaves it. An issue already in the status is left as it is.
     /// </summary>
     public async Task<ProviderResult<Unit>> TransitionAsync(IssueRef issue, string status, CancellationToken cancellationToken)
     {
-        if (!map.TryGetValue(status, out var target))
-            return ProviderResult<Unit>.Failure("validation_failed", $"status '{status}' is not mapped to a GitHub label or state ({string.Join(", ", map.Keys.Order(StringComparer.Ordinal))})");
+        var target = map.GetValueOrDefault(status, status);
         if (Parse(issue) is not { } number)
             return NotFound<Unit>(issue);
         var read = await ReadAsync(number, cancellationToken);

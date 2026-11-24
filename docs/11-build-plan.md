@@ -79,7 +79,8 @@ src/
   FeatureFlow.Cli/                      `ff`
   FeatureFlow.Console/                  The console: TypeScript, built by FeatureFlow.Api's build and embedded in it. Not a .NET project (LOG 453)
   Providers/
-    FeatureFlow.Providers.Local/        Filesystem artifact store, SQLite record store, file secrets, local hand-off session surface, recording providers
+    FeatureFlow.Providers.Local/        Filesystem artifact store, SQLite record store, file secrets, local hand-off session surface
+    FeatureFlow.Providers.Testing/      The test doubles: the memory providers, fake, and the scripted and recording runtimes; development only (L4)
     FeatureFlow.Providers.Git/          VCS provider and the engine's clone cache (docs/02 section 6)
     FeatureFlow.Providers.GitHub/       Code host, GitHub Actions CI, GitHub Issues tracker, GitHub App credential broker, Copilot review findings source
     FeatureFlow.Providers.Docker/       Local Docker sandbox
@@ -87,8 +88,12 @@ src/
     FeatureFlow.Providers.CopilotCli/   Agent runtime
     FeatureFlow.Providers.StdValidators/  The standard validators (docs/04 section 10.2)
     FeatureFlow.Providers.Slack/, .Jira/, .Postgres/, .Kubernetes/, .S3/ (the object store on the S3 API, LOG 266)
+    FeatureFlow.Providers.Standard/     StandardProviders.Factories: every standard provider above in one list, for a host to compose (F6)
+  Directory.Build.props                 Every library under src/ is a package (docs/06 section 4); ff and ff-sandbox are not
 hosts/
   FeatureFlow.Host.Api/, FeatureFlow.Host.OrchestrationWorker/, FeatureFlow.Host.AgentWorker/
+samples/
+  distribution/                         An organisation's distribution built from the packages only: its own provider, host and workflow test. Not in the solution
 tests/
   <Project>.Tests/                      One per src project
   FeatureFlow.Replay.Tests/             Recorded Temporal histories, in tests/histories/
@@ -104,14 +109,18 @@ Reference rules, checked by a test that reads the project files:
 |---|---|
 | `Model`, `Expressions`, `Library`, `Validation`, `Interpreter` | Each other, in that order. No Temporal, no providers, no I/O except reading library files |
 | `Providers.*` | `Providers.Abstractions` and `Model` only |
+| `Providers.Testing` | As `Providers.*`; no `src/` project references it, so only hosts and tests compose the test doubles (L4) |
+| `Providers.Standard` | The provider projects (not `Providers.Testing` or `Providers.Contracts`) and `Providers.Abstractions` only (F6) |
 | `Engine`, `Engine.Agent`, `Api` | The core, `Providers.Abstractions`, Temporal; `Api` also `Api.Contracts` |
 | `Api.Contracts` | Nothing: no project, no package (LOG 388) |
-| `hosts/*` | `Hosting` and the provider projects they ship |
+| `hosts/*` | `Hosting`, `Providers.Standard` and `Providers.Testing` only: a host composes the standard list and the doubles, never a provider of its own choosing (F6) |
 | `Testing.Workflows` | The core only. No Temporal: re-drive runs without it (LOG 66). Added in M2, LOG 80 |
 
 The `hosts/` projects are the images the project ships. An organisation's
 distribution repository (`docs/06` section 4) writes its own host projects
-against `Hosting` and adds its providers.
+against the `Hosting` and `Providers.Standard` packages and adds its providers;
+`samples/distribution` is one, and the reference-rule and solution checks leave
+`samples/` out, as they do `spikes/`.
 
 The pure core is a project of its own (LOG 66). `docs/02` section 2.1 already
 says everything outside `await` is a pure function of plan and state; making it

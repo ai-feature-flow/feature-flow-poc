@@ -2,7 +2,7 @@ using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Providers.Abstractions;
-using FeatureFlow.Providers.Local;
+using FeatureFlow.Providers.Testing;
 
 namespace FeatureFlow.Integration.Tests;
 

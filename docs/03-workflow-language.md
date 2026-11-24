@@ -655,13 +655,45 @@ The fragment document (LOG 62):
 | Entering | A route to a `use` entry's id enters the fragment's first step; a route may also name an expanded inner id, such as `plan.plan` |
 | Artifact names | Names produced inside a `for_each` branch are scoped to that branch; names produced by a fragment's steps are not prefixed, so the caller consumes them by name |
 
+### 11.1 Wrapper templates
+
+A template may give, in place of `steps`, one document-level `use` of a fragment, with `with` and `routes`. It
+is a **wrapper template**: the template is the fragment's steps, so a library can reuse a whole process and
+change only what the fragment takes as parameters. Std's templates are wrappers of `ticket_flow`, `epic_flow`
+and `project_flow` (`docs/08` section 6.4).
+
+```yaml
+api_version: feature-flow/v1
+kind: template
+metadata: { name: ticket_delivery, level: ticket, tracker_parameter: ticket_id }
+parameters:
+  ticket_id: { type: string, required: true }
+  engine_can_merge: { type: boolean, default: false }
+use: std:fragments/ticket_flow
+with:
+  reviewer_task: acme:tasks/review_change
+routes:
+  merged: { end: completed }
+  declined: { end: rejected }
+```
+
+| Rule | Detail |
+|---|---|
+| Expansion | The fragment's steps join the template's own scope **without a prefix**, so the wrapper's step ids are the fragment's (`plan.plan`, not `ticket.plan.plan`). There is no plan group for the fragment, and its depth is the template's: its own uses nest as a template's would |
+| Header | The template keeps its `metadata`, `parameters` and `budget`. Its `artifact_types` are its own and the fragment's. Its route defaults are the fragment's `defaults`; a wrapper declares none of its own |
+| `with` | Binds the fragment's parameters with literals only, as a `{ param: }` binding must be (LOG 62). An expression is refused |
+| `params` | A fragment parameter the wrapper does not bind keeps its default for `{ param: }` substitution, and the fragment's `params.<name>` reads the template's parameter of that name. So the template declares each parameter the fragment reads through `params`, with the fragment's `type`, and gives its value as that parameter's default; a `with` binding of it, or of any parameter the template declares, would be ignored and is refused. A required fragment parameter that is neither bound nor a parameter of the template is refused. Each is refused at the wrapper (check 14) |
+| `routes` | Map the fragment's exits to `{ end: <status> }`. An unrouted exit of class `success` ends the run `completed`, as a template's last step does; any other unrouted exit, or a route to anything but an end, is refused |
+| Refused | A template with both `steps` and `use` (check 1) |
+
 ---
 
 ## 12. Example: a ticket
 
 The standard single-ticket template, written with defaults and fragments. It
 replaces the first design's 270-line example (`archive/docs/13` section 1).
-It is illustrative: the shipped `std` template uses the `plan_and_validate`
+It is illustrative: the shipped `std` template is a wrapper of the
+`ticket_flow` fragment (section 11.1), which uses the `plan_and_validate`
 fragment where this example has an inline planner (`docs/08` section 6.4).
 
 ```yaml

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Acme's workflow test: Acme's host in this process against the Temporal named by FF_TEMPORAL_ADDRESS. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <ProjectReference Include="..\Acme.Host\Acme.Host.csproj" />
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

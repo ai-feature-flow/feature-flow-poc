@@ -28,7 +28,7 @@ public static class JiraProviders
         return new JiraTracker(api, c.Setting("project"), StatusMap(c), c.Setting("issue_type") ?? "Task");
     }
 
-    /// <summary><c>status_map</c> (docs/07 section 2): a library status to a Jira status name. Unset, std's statuses map to <see cref="JiraTracker.DefaultStatusMap"/>.</summary>
+    /// <summary><c>status_map</c> (docs/07 section 2): a library status to a Jira status name. Unset, it maps none, and each status is the Jira status of its own name.</summary>
     static IReadOnlyDictionary<string, string>? StatusMap(ProviderContext c)
     {
         if (c.Instance.Settings["status_map"] is not { } node)

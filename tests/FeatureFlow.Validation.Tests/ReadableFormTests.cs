@@ -30,7 +30,7 @@ public class ReadableFormTests
     public void A_change_to_a_template_changes_its_readable_form()
     {
         var before = ReadableForm.Render(LibraryValidator.ValidateLibrary(Std.Root).Plans["std:templates/ticket_delivery"]);
-        var after = ReadableForm.Render(Std.Mutate(new Std.Edit("templates/ticket_delivery.yaml",
+        var after = ReadableForm.Render(Std.Mutate(new Std.Edit("fragments/ticket_flow.yaml",
             "      rejected: { to: plan, clean_up: true }", "      rejected: { to: implement }")).Plans["std:templates/ticket_delivery"]);
 
         Assert.NotEqual(before, after);

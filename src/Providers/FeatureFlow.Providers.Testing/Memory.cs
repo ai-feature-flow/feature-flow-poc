@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json;
 using FeatureFlow.Providers.Abstractions;
 
-namespace FeatureFlow.Providers.Local;
+namespace FeatureFlow.Providers.Testing;
 
 /// <summary>A scripted file a fake CI run produces: name, format (<see cref="ResultFormats"/>) and content.</summary>
 public sealed record CiScriptFile(string Name, string Format, string Content);

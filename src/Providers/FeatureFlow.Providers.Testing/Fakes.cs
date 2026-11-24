@@ -6,7 +6,7 @@ using FeatureFlow.Model;
 using FeatureFlow.Model.Yaml;
 using FeatureFlow.Providers.Abstractions;
 
-namespace FeatureFlow.Providers.Local;
+namespace FeatureFlow.Providers.Testing;
 
 /// <summary>
 /// One visit of a scripted step: what it reports the n-th time it runs. Every field is optional; an empty visit
@@ -468,8 +468,11 @@ public sealed class DescribedOnlyProvider(string type) : IProvider
     public Task<ProviderResult<Unit>> CheckAsync(CancellationToken cancellationToken) => Task.FromResult(ProviderResult<Unit>.Success(default));
 }
 
-/// <summary>The factories of this package, by type and kind, for a host to register (docs/06 section 4).</summary>
-public static class LocalProviders
+/// <summary>
+/// The test doubles' factories, by type and kind, for a host or test to register (docs/06 section 4). Every one is
+/// development-only: composition refuses it unless the installation sets <c>development: true</c>.
+/// </summary>
+public static class TestingProviders
 {
     public static IReadOnlyList<ProviderFactory> Factories { get; } = Build();
 
@@ -481,10 +484,6 @@ public static class LocalProviders
 
         var list = new List<ProviderFactory>
         {
-            new("artifact_store", "filesystem", ["root"], c => new FileSystemArtifactStore(c.PathSetting("root") ?? c.RequiredSetting("root"))),
-            new("record_store", "sqlite", ["path"], c => new SqliteRecordStore(c.PathSetting("path") ?? c.RequiredSetting("path"))),
-            new("secrets", "file", ["path", "from_environment"], c => new FileSecrets(c.PathSetting("path") ?? c.RequiredSetting("path"),
-                c.Instance.Settings["from_environment"] is YSeq names ? names.Items.Select(n => n.ScalarText() ?? "").ToList() : null)),
             new("agent_runtime", "scripted", ["script", "world", "no_edits"], c => new ScriptedAgentRuntime(Script(c), () => Store(c)) { Acting = SandboxActing.Of(c, () => Store(c)) }),
             new("agent_runtime", "recording", ["folder", "script", "world", "no_edits"], c => new RecordingAgentRuntime(
                 new Recorder(c.PathSetting("folder") ?? c.RequiredSetting("folder"), () => Store(c), Script(c)))
@@ -503,11 +502,9 @@ public static class LocalProviders
             // M7: in-memory notifications and session surface for engine tests.
             new("notifications", "memory", ["world"], c => InMemoryNotifications.Named(c.Setting("world") ?? "default")),
             new("session_surface", "memory", ["world"], c => InMemorySessionSurface.Named(c.Setting("world") ?? "default")),
-            // M7: version 1's session surface, a hand-off to the person's own agent tool (RW18).
-            new("session_surface", "local", [], _ => new LocalSessionSurface()),
         };
         foreach (var type in ConfigurationReader.ProviderTypes.Where(t => t is not ("artifact_store" or "record_store" or "secrets")))
             list.Add(new ProviderFactory(type, "fake", [], _ => new DescribedOnlyProvider(type)));
-        return list;
+        return [.. list.Select(f => f with { DevelopmentOnly = true })];
     }
 }

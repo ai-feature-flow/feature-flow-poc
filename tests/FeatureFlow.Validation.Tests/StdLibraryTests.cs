@@ -28,6 +28,9 @@ public class StdLibraryTests
     [InlineData("fragments", "plan_children")]
     [InlineData("fragments", "trace")]
     [InlineData("fragments", "deliver_in_order")]
+    [InlineData("fragments", "ticket_flow")]
+    [InlineData("fragments", "epic_flow")]
+    [InlineData("fragments", "project_flow")]
     public void Each_template_and_fragment_loads_on_its_own(string type, string name)
     {
         var result = LibraryValidator.ValidateItem(Std.Root, new LibraryReference("std", type, name));
@@ -40,7 +43,7 @@ public class StdLibraryTests
     [Fact]
     public void A_version_constraint_in_a_templates_reference_is_refused_naming_it()
     {
-        var result = Std.Mutate(new Std.Edit("templates/ticket_delivery.yaml", "task: std:tasks/implement_ticket", "task: std@>=1.0.0:tasks/implement_ticket"));
+        var result = Std.Mutate(new Std.Edit("fragments/ticket_flow.yaml", "default: std:tasks/implement_ticket", "default: std@>=1.0.0:tasks/implement_ticket"));
 
         Assert.Contains(result.Diagnostics, d => d.Blocks && d.Message.Contains(
             "'std@>=1.0.0:tasks/implement_ticket': a version constraint in a reference (@>=1.0.0) is not supported in version 1; remove it", StringComparison.Ordinal));
@@ -71,7 +74,7 @@ public class StdLibraryTests
         var files = Directory.GetFiles(Path.Combine(Std.Root, "fragments"), "*.yaml")
             .Concat(Directory.GetFiles(Path.Combine(Std.Root, "templates"), "*.yaml"));
 
-        Assert.Equal(12, files.Count());
+        Assert.Equal(15, files.Count());
     }
 
     [Fact]
@@ -118,7 +121,7 @@ public class StdLibraryTests
     {
         // The ticket routes verify_and_review's escalated exit; fix_loop's blocked triager must reach that
         // route through fix_loop's and verify_and_review's escalated exits (LOG 72).
-        var result = Std.Mutate(new Std.Edit("templates/ticket_delivery.yaml",
+        var result = Std.Mutate(new Std.Edit("fragments/ticket_flow.yaml",
             "    routes:\n      ready: deliver\n", "    routes:\n      ready: deliver\n      escalated: { end: failed }\n"), Std.WithoutBlockedToPlan);
         Assert.False(result.HasErrors, Std.Describe(result));
         var plan = result.Plans["std:templates/ticket_delivery"];

@@ -3,6 +3,7 @@ using FeatureFlow.Hosting;
 using FeatureFlow.Interpreter.Wire;
 using FeatureFlow.Providers.Abstractions;
 using FeatureFlow.Providers.Local;
+using FeatureFlow.Providers.Testing;
 using Temporalio.Api.Enums.V1;
 
 namespace FeatureFlow.Integration.Tests;

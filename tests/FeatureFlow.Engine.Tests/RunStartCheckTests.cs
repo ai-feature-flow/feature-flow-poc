@@ -5,7 +5,7 @@ using FeatureFlow.Library;
 using FeatureFlow.Model;
 using FeatureFlow.Model.Yaml;
 using FeatureFlow.Providers.Abstractions;
-using FeatureFlow.Providers.Local;
+using FeatureFlow.Providers.Testing;
 
 namespace FeatureFlow.Engine.Tests;
 

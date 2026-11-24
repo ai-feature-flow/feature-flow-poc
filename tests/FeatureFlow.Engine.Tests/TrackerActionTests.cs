@@ -78,10 +78,11 @@ public sealed class TrackerActionTests
     }
 
     [Fact]
-    public async Task A_status_the_tracker_does_not_map_stops_for_a_person()
+    public async Task A_status_the_tracker_refuses_stops_for_a_person()
     {
         await using var w = new ActionWorld();
         w.TrackerIssue = (await w.Tracker.CreateAsync(new IssueSpec("Ticket"), "seed", Ct)).Unwrap().Key;
+        w.Tracker.Fail("Transition", new ProviderError("validation_failed", "the workflow offers no transition to 'shipped'"));
 
         var result = await w.RunAsync("tracker.update", "{ op: transition, status: shipped }");
 
