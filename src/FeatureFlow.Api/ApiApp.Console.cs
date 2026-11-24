@@ -28,7 +28,7 @@ public static partial class ApiApp
         app.MapGet("/console/assets/{**file}", (string file) => ConsoleFile($"assets/{file}", "public, max-age=31536000, immutable"))
             .ExcludeFromDescription();
         app.MapGet("/runs/{id}/plan", (HttpContext c, string id, string? proposed, string? staged) => api.Guard(c, caller => api.PlanAsync(c, caller, id, proposed, staged)))
-            .Described<PlanView>("getRunPlan", 200, 404, 409).Produces(StatusCodes.Status204NoContent);
+            .Described<PlanView>("getRunPlan", 200, 400, 404, 409).Produces(StatusCodes.Status204NoContent);
     }
 
     /// <summary>
@@ -99,13 +99,15 @@ public static partial class ApiApp
         /// which is not a refusal (LOG 493). With <paramref name="proposed"/> naming an open patch approval, the plan as it would
         /// be with the patch applied, as the next revision, each step that differs marked (A8); 404 for no such wait, 409 when
         /// the patch does not load. With <paramref name="staged"/> naming a step, the plan as the patch its agent has staged
-        /// would make it (<see cref="StagedPlanAsync"/>).
+        /// would make it (<see cref="StagedPlanAsync"/>). Both at once is 400: they are two different plans.
         /// </summary>
         public async Task<IResult> PlanAsync(HttpContext context, Caller caller, string id, string? proposed, string? staged)
         {
             var ct = context.RequestAborted;
             if (await VisibleRunAsync(caller, id, ct) is not { } run)
                 return Error(404, $"no run {id}");
+            if (proposed is not null && staged is not null)
+                return Error(400, "give proposed or staged, not both: each is a plan of its own");
             var (loaded, refusal) = await LoadPlanAsync(run, revision: null, extraPatch: null, ct);
             if (refusal is { Status: 204 })
                 return Results.NoContent();

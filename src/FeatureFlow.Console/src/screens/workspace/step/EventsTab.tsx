@@ -56,7 +56,7 @@ export function EventsTab({ events }: { events: readonly Event[] }) {
                 </td>
                 <td>{e.execution ?? ""}</td>
                 <td>{e.source}</td>
-                <td class="ff-mono ff-wrap">{e.kind}</td>
+                <td class="ff-mono ff-nowrap">{e.kind}</td>
                 <td class="ff-text ff-wrap">
                   {e.finding_id && <div class="ff-mono ff-nowrap">{e.finding_id}</div>}
                   {e.text}

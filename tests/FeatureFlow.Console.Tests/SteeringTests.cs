@@ -79,6 +79,29 @@ public sealed class SteeringTests(BrowserFixture browser) : BrowserTest(browser)
     }
 
     [Fact]
+    public async Task Go_to_lists_the_parallel_it_stops_and_says_the_reason_reaches_the_target_only_for_an_agent_step()
+    {
+        var s = await Engine.ProjectTreeAsync();
+        // A reviewer runs in its parallel, which the core stops without deciding its join (RunCore.MoveTo).
+        await Engine.TraceAsync(s.Tickets[3], "entered", "verify.review.review", "2 branch(es), join all");
+        await Engine.TraceAsync(s.Tickets[3], "started", "verify.review.review_0.assess", "execution 1");
+        await OpenAsync($"#/runs/{s.Root}/steps/{s.Tickets[3]}/implement");
+
+        await Steer.ClickAsync();
+        await Item("Go to a step…").ClickAsync();
+        var consequence = Dialog.GetByRole(AriaRole.Note, new() { Name = "Consequence" });
+        var cancelled = consequence.GetByRole(AriaRole.List, new() { Name = "Cancelled" });
+        await Expect(cancelled).ToContainTextAsync("verify.review.review_0.assess (running)");
+        await Expect(cancelled).ToContainTextAsync("verify.review.review (its branches, stopped without deciding its join)");
+        await Expect(consequence).ToContainTextAsync("Your reason is given to it as why it runs.");
+
+        // An action step is not told why it runs (Steering.cs adds the retry cause only for an agent step).
+        await Dialog.GetByLabel("Continue from").SelectOptionAsync("verify.tests");
+        await Expect(consequence).ToContainTextAsync("The run continues at verify.tests. This run only.");
+        await Expect(consequence).Not.ToContainTextAsync("why it runs");
+    }
+
+    [Fact]
     public async Task Re_plan_offers_agent_steps_only_and_a_decision_takes_no_attempts()
     {
         await OpenStepAsync(s => s.Tickets[0], "approve_spec");
@@ -124,6 +147,12 @@ public sealed class SteeringTests(BrowserFixture browser) : BrowserTest(browser)
 
         var o = Assert.Single(Engine.Overrides);
         Assert.Equal(("instruct", "implement", "the last attempt renamed a route", "Keep <b>the</b> public API unchanged."), (o.Key, o.StepId, o.Reason, o.Change["text"]));
+
+        // The step shows it as pending, as text: who gave it, when, and until when it lasts.
+        var pending = Page.GetByRole(AriaRole.Region, new() { Name = "Pending instructions" });
+        await Expect(pending).ToContainTextAsync("until the step next succeeds", new() { Timeout = 5_000 });
+        await Expect(pending.GetByRole(AriaRole.List, new() { Name = "Instructions" })).ToHaveTextAsync(
+            new System.Text.RegularExpressions.Regex(@"^from \S+, just now: Keep <b>the</b> public API unchanged\.$"));
     }
 
     [Fact]

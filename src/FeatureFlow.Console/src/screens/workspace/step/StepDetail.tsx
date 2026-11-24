@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useState } from "preact/hooks";
 import { api, read, type Schema } from "../../../api/client";
 import { runKey, stepKey, useLive } from "../../../api/live";
 import { ArtifactLink, type ArtifactTarget } from "../../../app/viewer";
@@ -15,6 +15,9 @@ import { ancestors, isActive, pathOf, runOf, shown, statusWaits, type StepNode }
 
 type Artifact = Schema<"ArtifactView">;
 type Execution = Schema<"StepExecutionView">;
+
+/** The least time between two reads of the step's detail on changes, in milliseconds (build-console-b2 review R3). */
+const stepThrottle = 2000;
 
 const time = (at: string) => new Date(at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 
@@ -42,22 +45,20 @@ function headingOf(wait: Schema<"WaitView">): string {
  * runs; open first for a running agent step), Artifacts, Findings (its findings, and a link to the run's ledger) and Events
  * (every source merged). Steer and Edit step are here, never on tree rows.
  *
- * The step's own read is `GET /runs/{id}/steps/{step}` (A3), read again on the run's changes and on `step_changed` for the
- * step or any of its finding steps (the steps that record its findings, A9), so a finding recorded while the page is open
- * shows without a reload. The run's detail gives only the overrides the caller may use.
+ * The step's own read is `GET /runs/{id}/steps/{step}` (A3), read again on the run's changes (a finding event is one, so a
+ * finding recorded while the page is open shows without a reload) and on `step_changed` for the step, which its agent's
+ * events raise (the staged patch). An agent raises those many times a second, so the read is throttled to one per
+ * `stepThrottle`. The run's detail gives only the overrides the caller may use.
  */
 export function StepDetail({ node }: { node: StepNode }) {
   const { step, wait, runId } = node;
   const run = runOf(node);
   const detail = useLive([runKey(runId)], () => read(api.GET("/runs/{id}", { params: { path: { id: runId } } })));
-  const [findingSteps, setFindingSteps] = useState<readonly string[]>([step.id]);
-  const own = useLive([runKey(runId), ...findingSteps.map(s => stepKey(runId, s))], () =>
-    read(api.GET("/runs/{id}/steps/{step}", { params: { path: { id: runId, step: step.id } } })),
+  const own = useLive(
+    [runKey(runId), stepKey(runId, step.id)],
+    () => read(api.GET("/runs/{id}/steps/{step}", { params: { path: { id: runId, step: step.id } } })),
+    stepThrottle,
   );
-  const steps = own.data?.finding_steps;
-  useEffect(() => {
-    if (steps && steps.join("\n") !== findingSteps.join("\n")) setFindingSteps(steps.includes(step.id) ? steps : [step.id, ...steps]);
-  }, [steps?.join("\n")]);
   const [tab, setTab] = useState<"overview" | "artifacts" | "activity" | "findings" | "events">(
     node.state === "running" && step.form === "agent" ? "activity" : "overview",
   );
@@ -93,7 +94,7 @@ export function StepDetail({ node }: { node: StepNode }) {
             </div>
             {wait.can_answer && (
               <p>
-                <button type="button" class="ff-btn ff-btn-primary" onClick={() => decisions.open(runId, wait)}>
+                <button type="button" class="ff-btn ff-btn-primary" onClick={() => decisions.open(runId, wait, tree)}>
                   {wait.kind === "question" ? "Answer" : "Review and answer"}
                 </button>
               </p>
@@ -140,6 +141,7 @@ export function StepDetail({ node }: { node: StepNode }) {
         </section>
       )}
       {own.data?.staged_patch && <StagedPatch runId={runId} stepId={step.id} staged={own.data.staged_patch} />}
+      {own.data && own.data.instructions.length > 0 && <Instructions instructions={own.data.instructions} />}
 
       <section class="ff-box ff-detail" aria-label={`Step ${step.id}`}>
         <header class="ff-pane-head">
@@ -206,6 +208,33 @@ export function StepDetail({ node }: { node: StepNode }) {
         </div>
       </section>
     </div>
+  );
+}
+
+/**
+ * The instructions people gave the step that its next prompt reads (build-console-b2 plan s1.3): who gave each, when, and
+ * its text, as text. They are kept until the step next succeeds, and the prompt lists every one.
+ */
+function Instructions({ instructions }: { instructions: readonly Schema<"InstructionView">[] }) {
+  return (
+    <section class="ff-box" aria-label="Pending instructions">
+      <header class="ff-pane-head">
+        <h2>Instructions for the next attempt</h2>
+        <span class="ff-muted">until the step next succeeds</span>
+      </header>
+      <div class="ff-pane-body">
+        <ul aria-label="Instructions">
+          {instructions.map(i => (
+            <li key={i.override_id}>
+              <span class="ff-muted">
+                from {i.actor}, <Age at={i.at} />:
+              </span>{" "}
+              <span class="ff-text">{i.text}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
   );
 }
 

@@ -44,9 +44,10 @@ export interface Live<T> {
  * Reads with `load` on mount and again whenever one of `keys` (or "*") is invalidated. A change of keys, such as another
  * run of the same tree, reads afresh but keeps the last value until that read settles, so a pane that follows the
  * selection does not flash; a reader that must not show another key's data is keyed by it (`key=`) and remounts. Only the
- * latest read's result is kept.
+ * latest read's result is kept. With `throttle` (milliseconds), a change read again within that time of the last read
+ * waits until it has passed, and the changes in between are one read after it, so the last change is always read.
  */
-export function useLive<T>(keys: readonly string[], load: () => Promise<T>): Live<T> {
+export function useLive<T>(keys: readonly string[], load: () => Promise<T>, throttle = 0): Live<T> {
   const [state, setState] = useState<Live<T>>({ loading: true });
   const loader = useRef(load);
   loader.current = load;
@@ -55,8 +56,13 @@ export function useLive<T>(keys: readonly string[], load: () => Promise<T>): Liv
   useEffect(() => {
     let mounted = true;
     let latest = 0;
+    let lastRead = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let trailing: Promise<void> | undefined;
+    let release: (() => void) | undefined;
     setState(s => ({ data: s.data, loading: true }));
     const read = () => {
+      lastRead = Date.now();
       const mine = ++latest;
       setState(s => ({ ...s, loading: true }));
       return loader.current().then(
@@ -69,11 +75,26 @@ export function useLive<T>(keys: readonly string[], load: () => Promise<T>): Liv
         },
       );
     };
-    const listener: Listener = changed => (changed.has("*") || keys.some(k => changed.has(k)) ? read() : undefined);
+    const throttled = () => {
+      const wait = lastRead + throttle - Date.now();
+      if (trailing) return trailing;
+      if (wait <= 0) return read();
+      return (trailing = new Promise<void>(resolve => {
+        release = resolve;
+        timer = setTimeout(() => {
+          trailing = undefined;
+          void read().then(resolve);
+        }, wait);
+      }));
+    };
+    const listener: Listener = changed => (changed.has("*") || keys.some(k => changed.has(k)) ? throttled() : undefined);
     read();
     listeners.add(listener);
     return () => {
       mounted = false;
+      // A read waiting for the throttle is not made; whoever awaits it is not left waiting.
+      clearTimeout(timer);
+      release?.();
       listeners.delete(listener);
     };
   }, [identity]);

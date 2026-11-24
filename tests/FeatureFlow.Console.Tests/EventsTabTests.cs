@@ -31,6 +31,8 @@ public sealed class EventsTabTests(BrowserFixture browser) : BrowserTest(browser
         await Expect(Rows.First).ToHaveAttributeAsync("data-source", "agent");
         await Expect(Rows.First).ToContainTextAsync("hook_pre_tool_use");
         await Expect(Rows.First).ToContainTextAsync("Edit allow");
+        // A kind is one word on one line, never broken mid-word.
+        Assert.Equal("nowrap", await Rows.First.Locator("td").Nth(3).EvaluateAsync<string>("td => getComputedStyle(td).whiteSpace"));
 
         await Source("Findings").ClickAsync();
         await Expect(Source("Findings")).ToHaveAttributeAsync("aria-pressed", "true");

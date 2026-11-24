@@ -2,9 +2,13 @@ import type { Schema } from "../../api/client";
 
 type Wait = Schema<"WaitView">;
 
-/** What every decision popup's body is given: the wait (as last read), its run's detail and plan (null when none), and the line under its title. */
+/**
+ * What every decision popup's body is given: the wait (as last read), its run's detail and plan (null when none), the line
+ * under its title, and the run tree it was opened in (its root run), absent where it was opened outside one.
+ */
 export interface DecisionProps {
   runId: string;
+  tree?: string;
   wait: Wait;
   detail: Schema<"RunDetail">;
   plan: Schema<"PlanView"> | null;

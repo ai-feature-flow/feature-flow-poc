@@ -193,6 +193,8 @@ public sealed class StepDetailTests : IAsyncDisposable
         Assert.Equal(HttpStatusCode.OK, status);
         Assert.Equal((2, PlanChange.Added), (plan!.Revision, plan.Steps.Single(s => s.Id == "migration_check").Change!.Value));
         Assert.Equal((HttpStatusCode.NotFound, (PlanView?)null), await GetAsync<PlanView>($"runs/{run}/plan?staged=plan.plan"));
+        // A staged and a proposed plan are two plans: asking for both is refused, not answered with one.
+        Assert.Equal(HttpStatusCode.BadRequest, (await GetAsync<PlanView>($"runs/{run}/plan?staged=implement&proposed=w-1")).Status);
 
         await world.AppendAsync(new RecordBatch(AgentEvents: [new AgentEventRecord($"{run}/implement/1", "patch_withdrawn", "", T0.AddMinutes(3))]));
 
@@ -236,7 +238,7 @@ public sealed class StepDetailTests : IAsyncDisposable
             ],
             Overrides:
             [
-                Override(run, "o-old", Overrides.Instruct, "implement", "applied", 2, "used by the first attempt"),
+                Override(run, "o-old", Overrides.Instruct, "implement", "applied", 0, "used by the first attempt"),
                 Override(run, "o-1", Overrides.Instruct, "implement", "sent", 4, "keep the API stable"),
                 Override(run, "o-1", Overrides.Instruct, "implement", "applied", 4, "keep the API stable"),
                 Override(run, "o-2", Overrides.InstructProtected, "implement", "applied", 8, "add a test"),
@@ -248,6 +250,28 @@ public sealed class StepDetailTests : IAsyncDisposable
 
         // "blocked" is not a success: the instruction given before that attempt is still pending.
         Assert.Equal([("o-1", "alice", "keep the API stable"), ("o-2", "alice", "add a test")], detail!.Instructions.Select(i => (i.OverrideId, i.Actor, i.Text)));
+    }
+
+    [Fact]
+    public async Task An_instruction_given_while_an_execution_runs_outlasts_that_executions_success_as_the_engine_keeps_it()
+    {
+        var run = await TicketAsync();
+        await world.AppendAsync(new RecordBatch(
+            Timeline:
+            [
+                Entry(run, "started", "implement", "execution 1", 1), Entry(run, "completed", "implement", "implemented", 5),
+                Entry(run, "started", "verify.tests", "execution 1", 5),
+            ],
+            Overrides:
+            [
+                Override(run, "o-before", Overrides.Instruct, "implement", "applied", 0, "read by execution 1"),
+                Override(run, "o-during", Overrides.Instruct, "implement", "applied", 3, "keep the API stable"),
+            ]));
+
+        var (_, detail) = await GetAsync<StepDetail>($"runs/{run}/steps/implement");
+
+        // Execution 1 read the first and succeeded; the second came while it ran, so execution 2 reads it (RunCore.CausesOf).
+        Assert.Equal(["o-during"], detail!.Instructions.Select(i => i.OverrideId));
     }
 
     [Fact]

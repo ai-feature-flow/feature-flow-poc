@@ -155,7 +155,11 @@ public static class RecordSamples
                 P(("run_id", run)), [R<FindingRecord>(run, 2), R<FindingRecord>(run, 3), R<FindingRecord>(Child(run), 1)]))],
         [Abstractions.Queries.FindingEvents] = [Case("a finding's in insertion order", (run, other) =>
             ([R<FindingEventRecord>(run, 3), R<FindingEventRecord>(run, 1), R<FindingEventRecord>(other, 2)], P(("run_id", run), ("finding_id", "f")),
-                [R<FindingEventRecord>(run, 3), R<FindingEventRecord>(run, 1)]))],
+                [R<FindingEventRecord>(run, 3), R<FindingEventRecord>(run, 1)])),
+            Case("a run's, every finding's, in insertion order", (run, other) =>
+                ([R<FindingEventRecord>(run, 3), new FindingEventRecord(run, "g", "k-g", FindingEventKinds.Raised, "state-1", "review", null, "review", null, null, At),
+                    R<FindingEventRecord>(other, 2)], P(("run_id", run)),
+                    [R<FindingEventRecord>(run, 3), new FindingEventRecord(run, "g", "k-g", FindingEventKinds.Raised, "state-1", "review", null, "review", null, null, At)]))],
         [Abstractions.Queries.StepStates] = [Case("a run's by step", (run, other) =>
             ([R<StepStateRecord>(run, 3), R<StepStateRecord>(run, 1), R<StepStateRecord>(run, 2), R<StepStateRecord>(other, 1)],
                 P(("run_id", run)), [R<StepStateRecord>(run, 1), R<StepStateRecord>(run, 2), R<StepStateRecord>(run, 3)]))],

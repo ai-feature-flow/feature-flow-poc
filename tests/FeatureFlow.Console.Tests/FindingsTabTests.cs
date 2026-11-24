@@ -7,7 +7,7 @@ namespace FeatureFlow.Console.Tests;
 /// <summary>
 /// A step's Findings tab (design-v2 s4.4; mock-up 02), from <c>GET /runs/{id}/steps/{step}</c>: the findings its finding
 /// steps recorded, each with its ledger state and the last thing done to it here; a link to the run's ledger, the review
-/// report; and a finding event written while the tab is open reaching it over the change stream, with no reload.
+/// report; and a finding event written while the tab is open reaching it over the change stream (its run_changed frame), with no reload.
 /// </summary>
 public sealed class FindingsTabTests(BrowserFixture browser) : BrowserTest(browser)
 {
@@ -52,7 +52,8 @@ public sealed class FindingsTabTests(BrowserFixture browser) : BrowserTest(brows
         await Expect(Middle).ToContainTextAsync("The step has no findings.");
         await Page.EvaluateAsync("() => { window.notReloaded = true; }");
 
-        // The design reviewer raises a finding in a third pass, recorded by its record step: a step_changed for a finding step.
+        // The design reviewer raises a finding in a third pass, recorded by its record step. A finding event raises run_changed
+        // (and step_changed for the record step, which this page does not follow); the step page reads again on run:<id>.
         var raised = new ReportedFinding("design", "The handler mixes paging and filtering", "Paging and filtering are one method.", "low", false, "reasoned",
             new FindingLocation(FakeEngine.ScenarioRepository, "src/Invoices/InvoiceEndpoints.cs", "ListInvoices", null, null), null, null);
         var id = Fingerprints.LedgerId(s.RunId, Fingerprints.Of(raised));

@@ -532,7 +532,8 @@ static class FindingsActions
 
     static string ReviewSummaryBody(string runId, IReadOnlyList<(ArtifactEntry Entry, FindingsReport? Report)> reports, IReadOnlyList<FindingRecord> ledger)
     {
-        string Angle((ArtifactEntry Entry, FindingsReport? Report) r) => r.Report?.Angle is { Length: > 0 } angle ? angle : r.Entry.StepId;
+        // On one line: a line break would end the table row or heading and let the rest be read as Markdown.
+        string Angle((ArtifactEntry Entry, FindingsReport? Report) r) => r.Report?.Angle is { Length: > 0 } angle ? angle.ReplaceLineEndings(" ") : r.Entry.StepId;
         var text = new System.Text.StringBuilder("## Feature Flow review\n\n| Angle | Findings | Blocking |\n|---|---|---|\n");
         foreach (var r in reports)
             text.Append($"| {Code(Angle(r)).Replace("|", "\\|", StringComparison.Ordinal)} | {Count(r.Report?.Findings.Count)} | {Count(r.Report?.Findings.Count(f => f.Blocking))} |\n");

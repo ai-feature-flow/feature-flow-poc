@@ -173,6 +173,13 @@ public sealed class DecisionTests(BrowserFixture browser) : BrowserTest(browser)
         await Expect(log).ToHaveAttributeAsync("href", "https://github.com/acme/api/actions/runs/1");
         await Expect(Dialog.GetByRole(AriaRole.Link, new() { Name = "Open pull request ↗" })).ToHaveAttributeAsync("href", "https://github.com/acme/api/pull/201");
         await Expect(Button("Open review report ⧉")).ToBeEnabledAsync();
+        // The report opens in the tree the popup was opened in, its run selected, not with the child run as a tree.
+        var opened = Page.Context.WaitForPageAsync();
+        await Button("Open review report ⧉").ClickAsync();
+        var report = await opened;
+        Assert.NotEqual(s.Tree.Root, s.Tree.Merge.RunId);
+        Assert.EndsWith($"#/runs/{s.Tree.Root}/review/{s.Tree.Merge.RunId}", report.Url);
+        await report.CloseAsync();
         await Expect(Dialog.GetByLabel("Ticks")).ToContainTextAsync("✓ CI passed");
         await Expect(Dialog).ToContainTextAsync("the engine may not merge here");
         await Expect(Dialog).ToContainTextAsync("No trace in this run");

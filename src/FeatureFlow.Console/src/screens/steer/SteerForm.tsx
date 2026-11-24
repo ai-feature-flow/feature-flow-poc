@@ -26,7 +26,7 @@ export const outcomesOf = (step: Step): string[] => step.outcomes.map(o => o.nam
  */
 type Field = "with" | "limits" | "role" | "instructions";
 
-/** The most an instruction may hold, in UTF-8 bytes; the API refuses a longer one. */
+/** The most an instruction may hold, in UTF-8 bytes: RunCore.MaxInstructionBytes (Steering.cs), which the API also checks. */
 const instructionLimit = 4096;
 
 /** Text indented under a YAML key. */
@@ -220,6 +220,11 @@ function MoveForm({ runId, plan: opened, step, kind }: { runId: string; plan: Sc
   const chosen = plan.steps.find(s => s.id === target);
   const decision = chosen?.form === "decision";
   const cancelled = plan.steps.filter(s => inFlight(s.status));
+  // The parallels and chains holding those steps, which the core stops without deciding their joins (RunCore.MoveTo).
+  const byId = new Map(plan.steps.map(s => [s.id, s]));
+  const stopped = new Set<string>();
+  for (const s of cancelled) for (let c = s.container ? byId.get(s.container) : undefined; c; c = c.container ? byId.get(c.container) : undefined) stopped.add(c.id);
+  const containers = plan.steps.filter(s => stopped.has(s.id) && !inFlight(s.status));
 
   if (result !== undefined)
     return (
@@ -244,19 +249,26 @@ function MoveForm({ runId, plan: opened, step, kind }: { runId: string; plan: Sc
         <>
           <p>
             {kind === "go_to" ? `The run continues at ${target || "…"}` : `The run goes back to ${target || "…"} to plan again`}
-            {cleanUp && !decision ? ", after the branch is reset to where that step started" : ""}. Your reason is given to it as why it runs. This run only.
+            {cleanUp && !decision ? ", after the branch is reset to where that step started" : ""}.
+            {/* Steering.cs gives the reason as a retry cause only to an agent step. */}
+            {chosen?.form === "agent" ? " Your reason is given to it as why it runs." : ""} This run only.
           </p>
           {cancelled.length === 0 ? (
             <p>Nothing is running or waiting, so nothing is cancelled.</p>
           ) : (
             <>
               <p>
-                Cancelled first ({cancelled.length}), with any open question or decision withdrawn:
+                Cancelled first ({cancelled.length + containers.length}), with any open question or decision withdrawn:
               </p>
               <ul aria-label="Cancelled">
                 {cancelled.map(s => (
                   <li key={s.id}>
                     <span class="ff-mono">{s.id}</span> ({doingOf(s.status)}){s.child_run_id ? <>, and its child run <span class="ff-mono">{s.child_run_id}</span></> : null}
+                  </li>
+                ))}
+                {containers.map(s => (
+                  <li key={s.id}>
+                    <span class="ff-mono">{s.id}</span> (its branches, stopped without deciding its join)
                   </li>
                 ))}
               </ul>
