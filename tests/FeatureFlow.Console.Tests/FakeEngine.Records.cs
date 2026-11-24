@@ -113,6 +113,8 @@ public sealed partial class FakeEngine
 
         public static ActivityEntry ToolFinished(string callId, string output, bool failed = false) =>
             new(ActivityKinds.ToolFinished, callId, Detail: output, Failed: failed);
+
+        public static ActivityEntry Truncated() => new(ActivityKinds.Truncated);
     }
 
     readonly Dictionary<(string, string, int, int), int> activitySequences = [];

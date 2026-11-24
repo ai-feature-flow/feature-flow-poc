@@ -41,14 +41,22 @@ public sealed class ActivityTests(BrowserFixture browser) : BrowserTest(browser)
         await Expect(Turns.Nth(1).Locator(".ff-tx-name")).ToHaveTextAsync("bash");
         await Expect(Turns.Nth(1).Locator(".ff-tx-running")).ToHaveTextAsync("running");
         await Expect(Activity.Locator(".ff-tx-running")).ToHaveCountAsync(1);
+        await Turns.Nth(1).Locator("summary").ClickAsync();
+        await Expect(Turns.Nth(1).Locator(".ff-tx-body")).ToContainTextAsync("Running…");
 
         // It finishes, and the agent says more: the marker goes, and the result is under the call.
         await Engine.ActivityAsync("run-1", Step, 1, 1, ToolFinished("c1", "README.md\nsrc"), Said("Now planning."));
         await Expect(Turns).ToHaveCountAsync(3, new() { Timeout = 5_000 });
         await Expect(Activity.Locator(".ff-tx-running")).ToHaveCountAsync(0);
-        await Turns.Nth(1).Locator("summary").ClickAsync();
         await Expect(Turns.Nth(1).Locator("pre").Last).ToHaveTextAsync("README.md\nsrc");
         await Expect(Turns.Nth(2)).ToContainTextAsync("Now planning.");
+
+        // Past the cap a call's finish may never be recorded: a truncated session marks no call as running.
+        await Engine.ActivityAsync("run-1", Step, 1, 1, ToolStarted("c2", "bash", "Run the tests"));
+        await Expect(Activity.Locator(".ff-tx-running")).ToHaveCountAsync(1, new() { Timeout = 5_000 });
+        await Engine.ActivityAsync("run-1", Step, 1, 1, Truncated());
+        await Expect(Turns).ToHaveCountAsync(5, new() { Timeout = 5_000 });
+        await Expect(Activity.Locator(".ff-tx-running")).ToHaveCountAsync(0);
     }
 
     async Task<bool> AtBottomAsync() =>

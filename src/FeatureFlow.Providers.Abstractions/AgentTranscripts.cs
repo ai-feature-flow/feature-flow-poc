@@ -86,11 +86,15 @@ public static class AgentTranscripts
         return reader.Turns();
     }
 
-    /// <summary>An incremental reader of a session's output in <paramref name="format"/>, fed as the output grows.</summary>
-    public static TranscriptReader Reader(TranscriptFormat format) => format switch
+    /// <summary>
+    /// An incremental reader of a session's output in <paramref name="format"/>, fed as the output grows. A <paramref name="live"/>
+    /// reader is read for its entries only: it keeps no turns, forgets a call or message once its entry is made, and keeps
+    /// only the tail of a shell's output, so what it holds does not grow with the session.
+    /// </summary>
+    public static TranscriptReader Reader(TranscriptFormat format, bool live = false) => format switch
     {
-        TranscriptFormat.CopilotCli => new CopilotReader(),
-        _ => new ClaudeReader(),
+        TranscriptFormat.CopilotCli => new CopilotReader { Live = live },
+        _ => new ClaudeReader { Live = live },
     };
 }
 
@@ -116,6 +120,9 @@ public abstract class TranscriptReader
     }
 
     public abstract TranscriptFormat Format { get; }
+
+    /// <summary>Read for entries only (<see cref="AgentTranscripts.Reader"/>): <see cref="Turns"/> then holds no turns.</summary>
+    internal bool Live { get; init; }
 
     /// <summary>Reads the complete lines <paramref name="chunk"/> ends, keeping a partial last line, and returns the entries they completed.</summary>
     public IReadOnlyList<ActivityEntry> Feed(string chunk)
@@ -194,7 +201,8 @@ public abstract class TranscriptReader
     protected Turn Add(AgentTurnKind kind, DateTimeOffset? at, string? text, string? id = null)
     {
         var turn = new Turn(kind, at, text);
-        turns.Add(turn);
+        if (!Live)
+            turns.Add(turn);
         if (id is not null)
             byId[id] = turn;
         return turn;
@@ -202,7 +210,8 @@ public abstract class TranscriptReader
 
     protected Turn Add(Turn turn, string id)
     {
-        turns.Add(turn);
+        if (!Live)
+            turns.Add(turn);
         byId[id] = turn;
         return turn;
     }
@@ -226,6 +235,8 @@ public abstract class TranscriptReader
             streamed.Text.Clear().Append(whole);
         else
             Add(kind, at, whole, id is null ? null : kind + id);
+        if (Live && id is not null)
+            byId.Remove(kind + id);
         Said(kind, at, whole);
     }
 
@@ -255,8 +266,22 @@ public abstract class TranscriptReader
     }
 
     /// <summary>A tool call finishing, once its output and failure are set on its turn, as an entry.</summary>
-    protected void ToolFinished(Turn tool, string? id, DateTimeOffset? at) =>
+    protected void ToolFinished(Turn tool, string? id, DateTimeOffset? at)
+    {
         Entry(ActivityKinds.ToolFinished, at, id, tool.Name, null, Tail(tool.ToolOutput, AgentTranscripts.OutputCap), tool.Failed);
+        if (Live && id is not null)
+            byId.Remove(id);
+    }
+
+    /// <summary>A piece of a running shell's output; a live reader keeps only as much of its tail as an entry shows.</summary>
+    protected void ShellOutput(Turn? tool, string? piece)
+    {
+        if (tool is null)
+            return;
+        tool.Shell.Append(piece);
+        if (Live && tool.Shell.Length > AgentTranscripts.OutputCap + 1)
+            tool.Shell.Remove(0, tool.Shell.Length - AgentTranscripts.OutputCap - 1);
+    }
 
     void Entry(string kind, DateTimeOffset? at, string? callId, string? name, string? text, string? detail, bool failed) =>
         entries.Add(new ActivityEntry(++sequence, kind, callId, name, text, detail, failed, at));
@@ -321,12 +346,12 @@ sealed class CopilotReader : TranscriptReader
                 ToolStarted(new Turn(AgentTurnKind.Tool, at, null)
                 {
                     Name = Text(data?["toolName"]),
-                    Summary = summaries.GetValueOrDefault(id) ?? Text(data?["arguments"]?["description"]),
+                    Summary = (summaries.Remove(id, out var intention) ? intention : null) ?? Text(data?["arguments"]?["description"]),
                     Arguments = Pretty(data?["arguments"]),
                 }, id);
                 break;
             case "tool.shell_output":
-                Find(Text(data?["toolCallId"]))?.Shell.Append(Text(data?["text"]));
+                ShellOutput(Find(Text(data?["toolCallId"])), Text(data?["text"]));
                 break;
             case "tool.execution_complete":
                 var callId = Text(data?["toolCallId"]);

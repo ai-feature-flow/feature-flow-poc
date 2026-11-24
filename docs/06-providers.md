@@ -263,8 +263,12 @@ interface IAgentRuntimeProvider : IProvider {
   activity entries the complete lines finished, capped (`docs/04` section 3.1),
   as `AgentProgress.Activity`. Turns and entries come from the same code for each
   event, so the two views cannot drift; streamed pieces make no entry.
-  `AgentProgress.Turns` counts the agent's messages. A worker that re-attaches
-  reads from the start again, and the entries are numbered as before.
+  `AgentProgress.Turns` counts the agent's messages. Every attach, by a new
+  worker or by the same one on a retried attempt, registers a fresh live reader
+  at the start of the output, so the entries are numbered as before and two
+  attempts never share a reader. The live reader keeps no turns and only the tail
+  of a running shell's output; a session's reader is dropped when its result is
+  collected or it is stopped.
 - **Hooks are read by the runtime** (`IAgentHooks`, LOG 444). Every runtime's
   settings call the same hook command, `ff-sandbox hook <event>`. The step's
   token names its runtime instance; the agent worker asks that instance to read

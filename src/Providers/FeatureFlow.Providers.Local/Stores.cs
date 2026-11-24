@@ -402,7 +402,16 @@ public sealed class SqliteRecordStore : IRecordStoreProvider
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT COUNT(*) FROM pragma_table_info('changes') WHERE name = 'step_id'";
         if (Convert.ToInt64(command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture) == 0)
-            Execute(connection, "ALTER TABLE changes ADD COLUMN step_id TEXT");
+        {
+            try
+            {
+                Execute(connection, "ALTER TABLE changes ADD COLUMN step_id TEXT");
+            }
+            catch (SqliteException e) when (e.Message.Contains("duplicate column name", StringComparison.Ordinal))
+            {
+                // Another process opening the same old database added it first.
+            }
+        }
     }
 
     /// <summary>The batch's changes (<see cref="ChangeKinds.Of"/>). SQLite has one writer at a time, so the ids are in commit order.</summary>

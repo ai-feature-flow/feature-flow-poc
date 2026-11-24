@@ -11,8 +11,9 @@ type Session = Schema<"ActivitySession">;
 /** How close to the bottom (px) counts as at it: the list then follows new activity. */
 const near = 40;
 
-/** The index of a live session's current tool call: its last one with no result yet; undefined when there is none. */
+/** The index of a live session's current tool call: its last one with no result yet; undefined when there is none, or when the session's activity was truncated (a call's finish may not have been recorded). */
 function current(session: Session): number | undefined {
+  if (session.truncated) return undefined;
   for (let i = session.turns.length - 1; i >= 0; i--) {
     const turn = session.turns[i];
     if (turn.kind === "tool" && (turn.tool?.output === null || turn.tool?.output === undefined)) return i;

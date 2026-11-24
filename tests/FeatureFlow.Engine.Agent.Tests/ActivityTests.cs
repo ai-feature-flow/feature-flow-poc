@@ -39,10 +39,12 @@ public sealed class ActivityTests : IAsyncDisposable
         return ValueTask.CompletedTask;
     }
 
-    /// <summary>A record store that keeps every batch appended, in order.</summary>
+    /// <summary>A record store that keeps every batch appended, in order, and refuses the first <see cref="RefuseActivity"/> batches of activity.</summary>
     sealed class Watched(SqliteRecordStore inner) : IRecordStoreProvider
     {
         readonly List<RecordBatch> batches = [];
+
+        public int RefuseActivity { get; set; }
 
         public IReadOnlyList<RecordBatch> Batches
         {
@@ -60,7 +62,14 @@ public sealed class ActivityTests : IAsyncDisposable
         public Task<ProviderResult<Unit>> AppendAsync(RecordBatch batch, CancellationToken cancellationToken)
         {
             lock (batches)
+            {
                 batches.Add(batch);
+                if (batch.Activity is { Count: > 0 } && RefuseActivity > 0)
+                {
+                    RefuseActivity--;
+                    return Task.FromResult(ProviderResult<Unit>.Failure("unreachable", "the record store is down"));
+                }
+            }
             return inner.AppendAsync(batch, cancellationToken);
         }
 
@@ -181,6 +190,23 @@ public sealed class ActivityTests : IAsyncDisposable
 
         var batches = records.Batches.Where(b => b.Activity is { Count: > 0 }).ToList();
         Assert.Equal(5, Assert.Single(batches).Activity!.Count);
+    }
+
+    /// <summary>
+    /// Activity is best effort: a refused write neither fails the attempt nor loses its entries, which the next flush
+    /// records. The session still ends and is collected.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(Runtimes))]
+    public async Task A_refused_activity_write_is_retried_at_the_next_flush_and_the_step_goes_on(string runtime)
+    {
+        records.RefuseActivity = 1;
+
+        await RunAsync(runtime, Output(runtime).SelectMany(l => new[] { l[..(l.Length / 2)], l[(l.Length / 2)..] }).ToList(), TimeSpan.Zero);
+
+        Assert.Equal(0, records.RefuseActivity);
+        Assert.True(Ended() >= 0, "the session's end was not recorded");
+        Assert.Equal(Enumerable.Range(1, 5), (await ActivityAsync()).Select(a => a.Sequence));
     }
 
     /// <summary>Past the cap, one <c>truncated</c> entry at the last sequence, and nothing more; the transcript holds the rest.</summary>

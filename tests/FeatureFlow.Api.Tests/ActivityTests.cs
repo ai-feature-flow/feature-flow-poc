@@ -47,6 +47,15 @@ public sealed class ActivityTests
         Assert.Equal(ActivityTurns.TruncatedNotice, turns[7].Text);
     }
 
+    /// <summary>An unnamed call is <c>tool</c> live, as it is once the transcript is read.</summary>
+    [Fact]
+    public void A_tool_call_with_no_name_is_named_tool_as_in_a_transcript()
+    {
+        var turns = ActivityTurns.Of([Entry(1, ActivityKinds.ToolStarted, "c1"), Entry(2, ActivityKinds.ToolFinished, "c2", detail: "x")]);
+
+        Assert.Equal(["tool", "tool"], turns.Select(t => t.Tool!.Name));
+    }
+
     static async Task<string> PromptAsync(ApiWorld world, string run, string step, int execution, int session) =>
         await IndexAsync(world, run, step, execution, ArtifactNames.Prompt(session), ArtifactNames.PromptType, "the task");
 

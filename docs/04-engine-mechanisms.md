@@ -172,8 +172,8 @@ tagged with the run, step, execution and session:
 | Rule | Detail |
 |---|---|
 | Kinds | `message`, `reasoning`, `tool_started`, `tool_finished` (with whether it failed), `notice`, `error`; streamed pieces are never recorded, so a message shows once complete |
-| Flush | At most every 2 seconds (`ActivityFlush`), and always when the session ends; each flush raises one `step_changed` change for the step |
-| Key | Run, step, execution, session and sequence, the entry's place among the session's entries from the start of its output. A new worker reads the output again from the start and numbers it the same, so the store keeps each entry once |
+| Flush | At most every 2 seconds (`ActivityFlush`), and always when the session ends; each flush raises one `step_changed` change for the step. Best effort: a refused write is logged and its entries kept for the next flush (at most a session's cap), and never fails the step; a refused final flush loses only what the transcript holds anyway |
+| Key | Run, step, execution, session and sequence, the entry's place among the session's entries from the start of its output. Any re-attach, by a new worker or the same one, reads the output again from the start and numbers it the same, so the store keeps each entry once |
 | Caps per entry | Message 4,000 characters (head), reasoning 1,000, a tool call's summary 300 and arguments 2,000, its output 2,000 (tail), a notice or error 1,000 |
 | Cap per session | 500 entries, then one `truncated` entry (sequence `int.MaxValue`) and nothing more; the transcript holds the rest |
 

@@ -86,7 +86,7 @@ function Who({ turn, started, running }: { turn: Turn; started: string | null | 
   );
 }
 
-function Body({ turn }: { turn: Turn }) {
+function Body({ turn, running }: { turn: Turn; running?: boolean }) {
   switch (turn.kind) {
     case "prompt":
       return <Fold summary={firstLine(turn.text) || "The prompt"}>{() => <Markdown source={turn.text ?? ""} />}</Fold>;
@@ -108,7 +108,8 @@ function Body({ turn }: { turn: Turn }) {
           {() => (
             <>
               {tool.arguments && <Arguments json={tool.arguments} />}
-              {tool.output !== null && tool.output !== undefined ? <Clipped label="Result" text={tool.output} /> : <p class="ff-muted">No result recorded.</p>}
+              {tool.output !== null && tool.output !== undefined ? <Clipped label="Result" text={tool.output} />
+                : <p class="ff-muted">{running ? "Running…" : "No result recorded."}</p>}
             </>
           )}
         </Fold>
@@ -142,7 +143,7 @@ export function TurnList({ turns, started, running, label = "Turns" }: {
         <li key={i} class="ff-tx-turn" data-kind={turn.kind} data-failed={turn.failed || undefined} data-running={i === running || undefined}>
           <Who turn={turn} started={started} running={i === running} />
           <div class="ff-tx-body">
-            <Body turn={turn} />
+            <Body turn={turn} running={i === running} />
           </div>
         </li>
       ))}

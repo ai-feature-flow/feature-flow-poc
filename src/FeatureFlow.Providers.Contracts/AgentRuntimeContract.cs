@@ -292,6 +292,35 @@ public abstract class AgentRuntimeContract : ContractBase
         Refused(await again.AttachAsync(sandbox, StepTask(session: 9), Ct), "not_found");
     }
 
+    /// <summary>
+    /// A retried attempt on the same worker re-attaches with a reader of its own: the output is read from the start and
+    /// numbered as before, so nothing the first attempt read but did not record is lost, and two attempts never share a reader.
+    /// </summary>
+    [Fact]
+    public async Task A_session_re_attached_by_the_same_worker_is_read_again_from_its_start()
+    {
+        var (first, _) = await StartAsync(Simple with { Running = true });
+        var read = Ok(await Runtime.GetProgressAsync(first, Ct)).Activity;
+
+        var session = Ok(await Runtime.AttachAsync(sandbox, StepTask(), Ct));
+
+        Assert.NotEmpty(read);
+        Assert.Equal(read, Ok(await Runtime.GetProgressAsync(session, Ct)).Activity);
+    }
+
+    /// <summary>A session collected or stopped is forgotten, so a long-lived worker holds only its running sessions.</summary>
+    [Fact]
+    public async Task A_session_collected_or_stopped_is_forgotten()
+    {
+        var (collected, _) = await StartAsync(Simple);
+        Ok(await Runtime.GetResultAsync(collected, Ct));
+        var (stopped, _) = await StartAsync(Simple with { Running = true }, StepTask(session: 2));
+        Ok(await Runtime.StopAsync(stopped, Ct));
+
+        Refused(await Runtime.GetProgressAsync(collected, Ct), "not_found");
+        Refused(await Runtime.GetProgressAsync(stopped, Ct), "not_found");
+    }
+
     /// <summary>LOG 98: no status, 429 and 5xx are transient; 401 and 403 a configuration fault; any other 4xx a failure.</summary>
     [Theory]
     [InlineData(null, SessionEnd.ModelUnreachable)]

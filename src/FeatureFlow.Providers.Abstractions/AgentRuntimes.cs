@@ -78,7 +78,10 @@ public abstract class SandboxedAgentRuntime(AgentRuntimeOptions options, Func<IS
     /// </summary>
     public const string UnreachableVariable = "FF_HOOK_UNREACHABLE";
 
-    /// <summary>Each session's sandbox, its output read so far (a byte cursor, and the reader holding any partial last line), its messages, and its number.</summary>
+    /// <summary>
+    /// Each running session's sandbox, its output read so far (a byte cursor, and the live reader holding any partial last
+    /// line), its messages, and its number; removed when the session is collected or stopped.
+    /// </summary>
     readonly ConcurrentDictionary<string, (SandboxHandle Sandbox, long Cursor, TranscriptReader Reader, int Turns, int Session)> progress = new();
 
     protected AgentRuntimeOptions Options => options;
@@ -247,12 +250,13 @@ public abstract class SandboxedAgentRuntime(AgentRuntimeOptions options, Func<IS
     }
 
     /// <summary>
-    /// Registers a session at the start of its output. A new worker re-attaching reads the whole output again: its entries
-    /// are numbered as before (<see cref="ActivityEntry.Sequence"/>), so recording them again adds nothing.
+    /// Registers a session at the start of its output, replacing any earlier registration. A re-attach, by a new worker
+    /// or by this one on a retried attempt, reads the whole output again with a reader of its own: its entries are
+    /// numbered as before (<see cref="ActivityEntry.Sequence"/>), so recording them again adds nothing.
     /// </summary>
     ProviderResult<AgentSession> Session(SandboxHandle sandbox, string key, int session)
     {
-        progress.TryAdd(key, (sandbox, 0, AgentTranscripts.Reader(Format), 0, session));
+        progress[key] = (sandbox, 0, AgentTranscripts.Reader(Format, live: true), 0, session);
         return ProviderResult<AgentSession>.Success(new AgentSession(key, Kind));
     }
 
@@ -307,6 +311,8 @@ public abstract class SandboxedAgentRuntime(AgentRuntimeOptions options, Func<IS
             SessionEnd.Failed => parsed.ApiError is not null ? $"the model answered {parsed.ApiStatus}: {parsed.ApiError}" : $"{Path.GetFileName(options.Executable)} exited {status.Value.ExitCode}: {parsed.Result}",
             _ => parsed.Result,
         };
+        // Collected: the session's reader is no longer needed; collecting it again re-attaches.
+        progress.TryRemove(session.Id, out _);
         return ProviderResult<AgentResult>.Success(new AgentResult(null, end, detail, parsed.InputTokens, parsed.OutputTokens, parsed.Files, put.Ok ? put.Value!.Id : null)
         {
             QuietWindow = options.Hold < options.Retry ? options.Hold : options.Retry,
@@ -315,7 +321,7 @@ public abstract class SandboxedAgentRuntime(AgentRuntimeOptions options, Func<IS
 
     public async Task<ProviderResult<Unit>> StopAsync(AgentSession session, CancellationToken cancellationToken)
     {
-        if (!progress.TryGetValue(session.Id, out var state))
+        if (!progress.TryRemove(session.Id, out var state))
             return ProviderResult<Unit>.Success(default);
         return await sandboxes().CancelCommandAsync(new CommandHandle(state.Sandbox, session.Id), cancellationToken);
     }

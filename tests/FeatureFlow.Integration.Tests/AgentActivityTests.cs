@@ -63,5 +63,12 @@ public sealed class AgentActivityTests
         var sleep = seen.Single(a => a.Kind == ActivityKinds.ToolStarted && a.Detail?.Contains("sleep 8", StringComparison.Ordinal) == true);
         Assert.DoesNotContain(seen, a => a.Kind == ActivityKinds.ToolFinished && a.CallId == sleep.CallId);
         Assert.All(seen, a => Assert.Equal((1, 1), (a.Execution, a.Session)));
+
+        // Once the session has ended, the route reads it from its stored transcript: the real CLI's transcript, read as turns.
+        var activity = await h.GetAsync($"/runs/{runId}/steps/implement/activity");
+        var session = activity["sessions"]!.AsArray().Single(s => (int)s!["session"]! == 1)!;
+        Assert.Equal("transcript", (string?)session["source"]);
+        Assert.Contains(session["turns"]!.AsArray(), t => (string?)t!["kind"] == "tool"
+            && ((string?)t["tool"]!["arguments"])?.Contains("echo one", StringComparison.Ordinal) == true);
     }
 }

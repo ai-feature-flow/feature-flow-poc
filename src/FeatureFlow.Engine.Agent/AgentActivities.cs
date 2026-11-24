@@ -3,6 +3,7 @@ using System.Text.Json;
 using FeatureFlow.Library;
 using FeatureFlow.Model;
 using FeatureFlow.Providers.Abstractions;
+using Microsoft.Extensions.Logging;
 using Temporalio.Activities;
 using Temporalio.Exceptions;
 
@@ -782,12 +783,19 @@ public sealed partial class AgentActivities(ProviderSet providers, StepTokens to
             var pending = new List<ActivityRecord>();
             var truncated = false;
 
+            // Activity is for display, and the transcript supersedes it: a failed write is logged and kept for the next
+            // flush, never the step's failure. pending is bounded already: a session makes at most ActivityCap entries and one truncated.
             async Task FlushAsync()
             {
-                if (pending.Count > 0)
-                    await RecordAsync(new RecordBatch(Activity: pending.ToList()));
-                pending.Clear();
                 nextFlush = DateTimeOffset.UtcNow + flush;
+                if (pending.Count == 0)
+                    return;
+                var appended = await owner.Records.AppendAsync(new RecordBatch(Activity: pending.ToList()), CancellationToken.None);
+                if (appended.Ok)
+                    pending.Clear();
+                else
+                    context.Logger.LogWarning("Could not record {Count} activity entries of {Step} session {Session}; retrying at the next flush: {Reason}: {Message}",
+                        pending.Count, key, number, appended.Error!.Reason, appended.Error.Message);
             }
 
             while (true)

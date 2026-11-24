@@ -192,4 +192,18 @@ public sealed class AgentTranscriptsTests
         Assert.Equal(whole.Turns, fed.Turns);
         Assert.Equal((whole.ToolCalls, whole.ModelCalls), (fed.ToolCalls, fed.ModelCalls));
     }
+
+    /// <summary>The agent worker's live reader makes the same entries, capped the same, but keeps no turns: its memory does not grow with the session.</summary>
+    [Theory]
+    [MemberData(nameof(Formats))]
+    public void A_live_reader_makes_the_same_entries_and_keeps_no_turns(TranscriptFormat format)
+    {
+        var output = Output(format, Long, Long);
+        var live = AgentTranscripts.Reader(format, live: true);
+
+        var entries = output.Chunk(11).SelectMany(c => live.Feed(new string(c))).ToList();
+
+        Assert.Equal(FeedWhole(format, output), entries);
+        Assert.Empty(live.Turns().Turns);
+    }
 }

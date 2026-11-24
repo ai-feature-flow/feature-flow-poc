@@ -36,13 +36,13 @@ public static class ActivityTurns
                 case ActivityKinds.ToolStarted:
                     if (a.CallId is not null)
                         started[a.CallId] = turns.Count;
-                    turns.Add(new TranscriptTurn(TranscriptTurnKind.Tool, a.At, null, new TranscriptTool(a.Name ?? "", a.Text, a.Detail, null), false));
+                    turns.Add(new TranscriptTurn(TranscriptTurnKind.Tool, a.At, null, new TranscriptTool(a.Name ?? "tool", a.Text, a.Detail, null), false));
                     break;
                 case ActivityKinds.ToolFinished when a.CallId is not null && started.Remove(a.CallId, out var at):
                     turns[at] = turns[at] with { Tool = turns[at].Tool! with { Output = a.Detail ?? "" }, Failed = a.Failed };
                     break;
                 case ActivityKinds.ToolFinished:
-                    turns.Add(new TranscriptTurn(TranscriptTurnKind.Tool, a.At, null, new TranscriptTool(a.Name ?? "", null, null, a.Detail ?? ""), a.Failed));
+                    turns.Add(new TranscriptTurn(TranscriptTurnKind.Tool, a.At, null, new TranscriptTool(a.Name ?? "tool", null, null, a.Detail ?? ""), a.Failed));
                     break;
                 case ActivityKinds.Truncated:
                     turns.Add(new TranscriptTurn(TranscriptTurnKind.Notice, a.At, TruncatedNotice, null, false));
