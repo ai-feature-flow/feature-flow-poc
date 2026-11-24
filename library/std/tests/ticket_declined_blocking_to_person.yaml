@@ -1,0 +1,30 @@
+api_version: feature-flow/v1
+kind: workflow_test
+name: ticket_declined_blocking_to_person
+description: >-
+  The triager declines a blocking finding that is not demonstrated. The agent
+  alone may not clear it (LOG 168): apply_triage counts it as declined_blocking,
+  so a person triages it and the person's triage is applied before any fix or
+  merge. The person agrees, nothing is open and no fixer ran, so the loop ends
+  cleared and the ticket merges.
+template: std:templates/ticket_delivery
+parameters: { ticket_id: FF-1042 }
+repositories: [acme/api]
+
+outputs:
+  verify.fix.apply_triage: { escalated: 0, declined_blocking: 1, declined_demonstrated: 0 }
+  verify.fix.apply_person_triage: { escalated: 0, declined_blocking: 1, declined_demonstrated: 0 }
+  "findings.open_blocking": [1]         # the merge bar, before the loop only
+  "findings.open": 0
+
+expect:
+  status: completed
+  path_includes:
+    - verify.fix.apply_triage
+    - verify.fix.person_triage
+    - verify.fix.apply_person_triage
+    - deliver.merge
+  executions:
+    verify.fix.person_triage: 1
+    verify.fix.apply_person_triage: 1
+    verify.fix.fix: 0
