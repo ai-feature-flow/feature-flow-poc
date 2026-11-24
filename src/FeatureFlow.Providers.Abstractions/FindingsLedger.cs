@@ -74,16 +74,17 @@ public static class FindingsLedger
         AgentMayNotClear(finding, classes) && PersonDecision(history, people) is null;
 
     /// <summary>
-    /// The classes a person decides in a run of <paramref name="plan"/>: the union of <c>person_decides</c> over its
-    /// <c>findings.triage</c> steps with <c>complete</c> set (each unset one counting as <see cref="FindingClasses.Default"/>),
-    /// or the default when no step sets <c>complete</c>. <c>person_decides</c> is a literal (check 31 refuses an expression),
-    /// so the plan alone answers it.
+    /// The classes a person decides in a run of <paramref name="plan"/>: the union of the classes of its
+    /// <c>findings.triage</c> steps (<see cref="FindingClasses.PersonDecides"/>, read on their literals as the engine reads the
+    /// evaluated inputs), or the default when no step sets <c>complete: true</c>. Both inputs are literal (check 31 refuses an
+    /// expression, null or empty value), so the plan alone answers it.
     /// </summary>
     public static IReadOnlySet<string> PersonClasses(Plan plan)
     {
-        var steps = plan.AllSteps.Where(s => s is { Form: StepForm.Action, Action: "findings.triage" }
-                                             && s.With?["complete"] is { } complete && (complete as YScalar)?.AsBool() != false).ToList();
-        return steps.Count == 0 ? FindingClasses.Default : steps.SelectMany(s => FindingClasses.Of(s.With)).ToHashSet(StringComparer.Ordinal);
+        var classes = plan.AllSteps.Where(s => s is { Form: StepForm.Action, Action: "findings.triage" })
+            .Select(s => FindingClasses.PersonDecides(s.With?["complete"]?.ToPlain(), s.With?["person_decides"]?.ToPlain()))
+            .OfType<IReadOnlySet<string>>().ToList();
+        return classes.Count == 0 ? FindingClasses.Default : classes.SelectMany(c => c).ToHashSet(StringComparer.Ordinal);
     }
 
     /// <summary>
