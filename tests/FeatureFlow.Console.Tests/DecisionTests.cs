@@ -172,7 +172,7 @@ public sealed class DecisionTests(BrowserFixture browser) : BrowserTest(browser)
         var log = Dialog.GetByRole(AriaRole.Table, new() { Name = "Checks" }).GetByRole(AriaRole.Link, new() { Name = "log ↗" });
         await Expect(log).ToHaveAttributeAsync("href", "https://github.com/acme/api/actions/runs/1");
         await Expect(Dialog.GetByRole(AriaRole.Link, new() { Name = "Open pull request ↗" })).ToHaveAttributeAsync("href", "https://github.com/acme/api/pull/201");
-        await Expect(Button("Open review report ⧉")).ToBeDisabledAsync();
+        await Expect(Button("Open review report ⧉")).ToBeEnabledAsync();
         await Expect(Dialog.GetByLabel("Ticks")).ToContainTextAsync("✓ CI passed");
         await Expect(Dialog).ToContainTextAsync("the engine may not merge here");
         await Expect(Dialog).ToContainTextAsync("No trace in this run");

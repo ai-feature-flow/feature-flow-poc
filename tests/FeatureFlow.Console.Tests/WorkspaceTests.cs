@@ -94,11 +94,8 @@ public sealed class WorkspaceTests(BrowserFixture browser) : BrowserTest(browser
         await Expect(step.GetByRole(AriaRole.Button, new() { Name = "Steer ▾" })).ToBeVisibleAsync();
         await Expect(step.GetByRole(AriaRole.Tab, new() { Name = "Overview" })).ToHaveAttributeAsync("aria-selected", "true");
         await Expect(step.GetByRole(AriaRole.Tab, new() { Name = "Activity" })).ToBeEnabledAsync();
-        foreach (var later in new[] { "Findings", "Events" })
-        {
-            await Expect(step.GetByRole(AriaRole.Tab, new() { Name = later })).ToBeDisabledAsync();
-            await Expect(step.GetByRole(AriaRole.Tab, new() { Name = later })).ToHaveAttributeAsync("title", "in B2");
-        }
+        await Expect(step.GetByRole(AriaRole.Tab, new() { Name = "Findings" })).ToBeEnabledAsync();
+        await Expect(step.GetByRole(AriaRole.Tab, new() { Name = "Events" })).ToBeEnabledAsync();
 
         await card.GetByRole(AriaRole.Button, new() { Name = "Review and answer" }).ClickAsync();
         await Expect(Page.GetByRole(AriaRole.Dialog)).ToBeVisibleAsync();

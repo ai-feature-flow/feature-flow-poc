@@ -9,9 +9,12 @@ import { useEffect, useState } from "preact/hooks";
 //   #/runs/{tree}/waits/{run}/{wait}        the workspace, the wait's step selected and its popup open
 //   #/runs/{tree}/artifacts/{run}/{ref}     the workspace with the artifact in the viewer
 //   #/runs/{run}/artifacts/{ref}            slice 1's artifact link: the same, in the run's own tree
+//   #/runs/{tree}/review                    the review report of the run named (A14; design-v2 s4.6)
+//   #/runs/{tree}/review/{run}              the review report of a run in the tree
 //   #/own/{run}                             the run on its own: its own tree, the run as the root (the tree's ↗)
 //   #/own/{run}/runs/{child}                 … a run under it selected
 //   #/own/{run}/steps|waits|artifacts/…      … as under #/runs/{tree}
+//   #/own/{run}/review[/{run}]              … as under #/runs/{tree}
 //   #/start                                 Start a run
 
 /** What the workspace selects: a run, a step, a wait (its step, with its popup open) or an artifact (in the viewer). */
@@ -25,6 +28,7 @@ export type Route =
   | { screen: "needs-me" }
   | { screen: "runs" }
   | { screen: "workspace"; tree: string; own: boolean; select: Selection }
+  | { screen: "review"; tree: string; own: boolean; runId: string }
   | { screen: "start" }
   | { screen: "not-found" };
 
@@ -40,6 +44,7 @@ export function parse(hash: string): Route {
     const own = parts[0] === "own";
     const at = (select: Selection): Route => ({ screen: "workspace", tree, own, select });
     if (parts.length === 2) return at({ kind: "run", runId: tree });
+    if ((parts.length === 3 || parts.length === 4) && parts[2] === "review") return { screen: "review", tree, own, runId: parts[3] ?? tree };
     if (parts.length === 4 && parts[2] === "artifacts") return at({ kind: "artifact", runId: tree, reference: parts[3] });
     if (parts.length === 4 && parts[2] === "runs" && own) return at({ kind: "run", runId: parts[3] });
     if (parts.length === 5) {

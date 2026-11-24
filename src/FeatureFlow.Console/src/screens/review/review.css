@@ -1,0 +1,18 @@
+/* The review report page (design-v2 s4.6): the workspace's containers and tables, in a column readable in a window of its own. */
+.ff-review { max-width: 1200px; margin: 20px auto 0; }
+.ff-review-prs { font-size: 14px; font-weight: 400; }
+.ff-review-table { border-collapse: collapse; width: 100%; }
+.ff-review-table th, .ff-review-table td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.ff-review-table th { font-size: 12px; color: var(--muted); }
+.ff-review-table tr:last-child td { border-bottom: 0; }
+.ff-review-angle { font-weight: 700; white-space: nowrap; }
+.ff-review-checked { margin: 0; padding-left: 18px; }
+.ff-review-ftitle { font-weight: 700; }
+.ff-review-ok { color: var(--ok); }
+.ff-review-gap { color: var(--warn); }
+.ff-review .ff-fold { margin-top: 4px; font-size: 13px; }
+.ff-review .ff-fold > summary { cursor: pointer; color: var(--muted); }
+@media (max-width: 999px) {
+  .ff-review .ff-facts { grid-template-columns: minmax(0, 1fr); }
+  .ff-review-table { display: block; overflow-x: auto; }
+}

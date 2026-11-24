@@ -1,0 +1,4 @@
+/* The Findings and Events tabs: long ids and step names wrap inside the middle pane rather than widen it. */
+.ff-steptab .ff-wrap { overflow-wrap: anywhere; }
+.ff-steptab .ff-nowrap, .ff-steptab-filter button { white-space: nowrap; }
+.ff-steptab-filter .ff-seg { flex-wrap: wrap; }
