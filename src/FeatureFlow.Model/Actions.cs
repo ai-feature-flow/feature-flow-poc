@@ -62,6 +62,12 @@ public sealed record ActionInput(string Name, string Kind, IReadOnlyList<string>
 
     /// <summary>The capabilities a step needs when it sets this input, beyond the action's own (check 21; LOG 489).</summary>
     public IReadOnlyList<string> Needs { get; init; } = [];
+
+    /// <summary>
+    /// Whether the input must be written as a literal: an expression or an artifact is refused at load (check 31), because
+    /// something other than the step reads it from the plan, as the API reads <c>findings.triage</c>'s <c>person_decides</c>.
+    /// </summary>
+    public bool Literal { get; init; }
 }
 
 /// <summary>An output an action publishes, with its type (docs/03 section 5.4).</summary>
@@ -151,6 +157,8 @@ public sealed record ActionDescriptor(
                 errors.Add($"{Name} input '{name}' must be {input.Kind switch { "duration" => "a duration such as 30s, 5m or 2h", "boolean" => "true or false", "array" => "a list", _ => "a " + input.Kind }}, not {Describe(value)}");
             else if (input.Allowed is { } allowed && value is string text && !allowed.Contains(text))
                 errors.Add($"{Name} input '{name}' must be one of {string.Join(", ", allowed)}, not '{text}'");
+            else if (input.Allowed is { } names && value is IList<object?> items && items.FirstOrDefault(x => x is not string s || !names.Contains(s)) is { } other)
+                errors.Add($"{Name} input '{name}' must name one or more of {string.Join(", ", names)}, not {(other is string s ? $"'{s}'" : Describe(other))}");
             else if (input.Minimum is { } minimum && value is string d && Durations.Parse(d) < minimum)
                 errors.Add($"{Name} input '{name}' must be at least {minimum.TotalSeconds.ToString(CultureInfo.InvariantCulture)}s, not {d}");
         }
@@ -283,8 +291,8 @@ public static class Actions
         new("artifact.validate", [S("valid"), F("invalid")], null, [List("validation")], ["validator"]) { Evidence = "validation_report" },
         new("findings.record", [S("recorded"), B("unavailable")], [Number("new"), Number("reraised"), Number("reopened"), Number("repeat_fixes")],
             [Str("source"), Str("reopen_on", "code_change", "always", "never")], []),
-        new("findings.triage", [S("applied"), F("invalid")], [Number("escalated"), Number("declined_blocking")],
-            [Str("from"), Bool("post_declines"), List("states"), Bool("complete")], [])
+        new("findings.triage", [S("applied"), F("invalid")], [Number("escalated"), Number("declined_blocking"), Number("declined_demonstrated")],
+            [Str("from"), Bool("post_declines"), List("states"), Bool("complete"), new ActionInput("person_decides", "array", FindingClasses.All) { Literal = true }], [])
         {
             Rule = TriageStates,
         },
@@ -316,6 +324,8 @@ public static class Actions
         if (inputs.GetValueOrDefault("states") is IList<object?> states
             && (states.Count == 0 || states.Any(x => x is not string state || !FindingStates.Contains(state))))
             yield return $"findings.triage input 'states' must name one or more of {string.Join(", ", FindingStates)}";
+        if (inputs.GetValueOrDefault("person_decides") is IList<object?> { Count: 0 })
+            yield return $"findings.triage input 'person_decides' must name one or more of {string.Join(", ", FindingClasses.All)}";
     }
 
     /// <summary>The current registry's actions by name.</summary>
@@ -337,4 +347,26 @@ public static class Actions
 
     /// <summary>Outcomes of a <c>parallel</c> or a <c>for_each</c> (docs/03 section 8.1).</summary>
     public static readonly IReadOnlyList<Outcome> JoinOutcomes = [S("completed"), F("any_failed")];
+}
+
+/// <summary>
+/// The classes of finding an agent may not clear alone where the workflow says a person decides them (docs/04 section
+/// 11.2): <c>findings.triage</c>'s <c>person_decides</c> names some of them, and its outputs count each.
+/// </summary>
+public static class FindingClasses
+{
+    public const string Escalated = "escalated";
+    public const string DeclinedBlocking = "declined_blocking";
+    public const string DeclinedDemonstrated = "declined_demonstrated";
+
+    public static readonly IReadOnlyList<string> All = [Escalated, DeclinedBlocking, DeclinedDemonstrated];
+
+    /// <summary>What a <c>findings.triage</c> step that leaves <c>person_decides</c> unset decides: all three.</summary>
+    public static readonly IReadOnlySet<string> Default = All.ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>The classes a step's <c>with</c> names in <c>person_decides</c>, a literal list; <see cref="Default"/> when unset.</summary>
+    public static IReadOnlySet<string> Of(Yaml.YMap? with) =>
+        with?["person_decides"] is Yaml.YSeq list
+            ? list.Items.OfType<Yaml.YScalar>().Select(s => s.Text).ToHashSet(StringComparer.Ordinal)
+            : Default;
 }

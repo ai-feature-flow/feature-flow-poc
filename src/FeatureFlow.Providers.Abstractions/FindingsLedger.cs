@@ -1,3 +1,7 @@
+using FeatureFlow.Model;
+using FeatureFlow.Model.Plans;
+using FeatureFlow.Model.Yaml;
+
 namespace FeatureFlow.Providers.Abstractions;
 
 /// <summary>
@@ -39,19 +43,48 @@ public static class FindingsLedger
     public static bool IsRepeatFix(FindingRecord finding) => finding.State == FindingStates.Open && finding.Fixes >= 2;
 
     /// <summary>
-    /// Whether an agent may not clear the finding alone (review F1, LOG 168, 248): it is escalated, or declined though
-    /// blocking or demonstrated. A person decides such a finding unless a person already did (<see cref="NeedsPerson"/>).
+    /// The person classes (<see cref="FindingClasses"/>) the finding is in: <c>escalated</c>; or, declined,
+    /// <c>declined_blocking</c> when blocking and <c>declined_demonstrated</c> when demonstrated (both for a blocking
+    /// demonstrated decline); none otherwise.
     /// </summary>
-    public static bool AgentMayNotClear(FindingRecord finding) =>
-        finding.State == FindingStates.Escalated
-        || (finding.State == FindingStates.Declined && (finding.Finding.Blocking || finding.Finding.Basis == FindingBases.Demonstrated));
+    public static IEnumerable<string> ClassesOf(FindingRecord finding)
+    {
+        if (finding.State == FindingStates.Escalated)
+            yield return FindingClasses.Escalated;
+        if (finding.State != FindingStates.Declined)
+            yield break;
+        if (finding.Finding.Blocking)
+            yield return FindingClasses.DeclinedBlocking;
+        if (finding.Finding.Basis == FindingBases.Demonstrated)
+            yield return FindingClasses.DeclinedDemonstrated;
+    }
+
+    /// <summary>
+    /// Whether an agent may not clear the finding alone (review F1, LOG 168, 248): it is in one of <paramref name="classes"/>,
+    /// the classes the workflow's person triage decides (<see cref="PersonClasses"/>). A person decides such a finding unless a
+    /// person already did (<see cref="NeedsPerson"/>).
+    /// </summary>
+    public static bool AgentMayNotClear(FindingRecord finding, IReadOnlySet<string> classes) => ClassesOf(finding).Any(classes.Contains);
 
     /// <summary>
     /// Whether the finding needs a person's decision (LOG 512): an agent may not clear it alone, and no person set its current
     /// state. <paramref name="history"/> is the finding's events in order; <paramref name="people"/> the actors of its run's answers.
     /// </summary>
-    public static bool NeedsPerson(FindingRecord finding, IEnumerable<FindingEventRecord> history, IReadOnlySet<string> people) =>
-        AgentMayNotClear(finding) && PersonDecision(history, people) is null;
+    public static bool NeedsPerson(FindingRecord finding, IReadOnlySet<string> classes, IEnumerable<FindingEventRecord> history, IReadOnlySet<string> people) =>
+        AgentMayNotClear(finding, classes) && PersonDecision(history, people) is null;
+
+    /// <summary>
+    /// The classes a person decides in a run of <paramref name="plan"/>: the union of <c>person_decides</c> over its
+    /// <c>findings.triage</c> steps with <c>complete</c> set (each unset one counting as <see cref="FindingClasses.Default"/>),
+    /// or the default when no step sets <c>complete</c>. <c>person_decides</c> is a literal (check 31 refuses an expression),
+    /// so the plan alone answers it.
+    /// </summary>
+    public static IReadOnlySet<string> PersonClasses(Plan plan)
+    {
+        var steps = plan.AllSteps.Where(s => s is { Form: StepForm.Action, Action: "findings.triage" }
+                                             && s.With?["complete"] is { } complete && (complete as YScalar)?.AsBool() != false).ToList();
+        return steps.Count == 0 ? FindingClasses.Default : steps.SelectMany(s => FindingClasses.Of(s.With)).ToHashSet(StringComparer.Ordinal);
+    }
 
     /// <summary>
     /// The person who set the finding's current state (LOG 512), or null: the actor of the triage event that last changed it,

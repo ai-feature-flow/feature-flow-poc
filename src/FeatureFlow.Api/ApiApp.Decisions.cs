@@ -297,13 +297,14 @@ public static partial class ApiApp
             public async Task<FindingView> ViewAsync(FindingRecord f)
             {
                 var decidedBy = FindingsLedger.PersonDecision(await HistoryAsync(f), await PeopleAsync(f.RunId));
+                var plan = await PlanAsync(f.RunId);
                 var (canMarkFixed, refusal) = MarkFixedOf(f);
                 return FindingOf(f) with
                 {
                     RunId = f.RunId,
-                    NeedsPerson = FindingsLedger.AgentMayNotClear(f) && decidedBy is null,
+                    NeedsPerson = FindingsLedger.AgentMayNotClear(f, PersonClassesOf(plan)) && decidedBy is null,
                     DecidedByPerson = decidedBy,
-                    RaisedBy = RaisedByOf(f, await PlanAsync(f.RunId)),
+                    RaisedBy = RaisedByOf(f, plan),
                     CanMarkFixed = canMarkFixed,
                     MarkFixedRefusal = refusal,
                     Reraises = f.Reraises,
@@ -324,6 +325,12 @@ public static partial class ApiApp
         /// <summary>The people of a run (F8): every actor its answers name, as the API authenticated them.</summary>
         static IReadOnlySet<string> PeopleOf(IEnumerable<AnswerRecord> answers) =>
             answers.Select(a => ArgsOf(a.Answer)?.Actor).OfType<string>().ToHashSet(StringComparer.Ordinal);
+
+        /// <summary>
+        /// The classes a person decides in a run (<see cref="FindingsLedger.PersonClasses"/>), from its plan; the default
+        /// classes for a run with no plan to show.
+        /// </summary>
+        static IReadOnlySet<string> PersonClassesOf(Plan? plan) => plan is null ? FindingClasses.Default : FindingsLedger.PersonClasses(plan);
 
         /// <summary>
         /// Who raised a finding: the step of the run's plan its source names, with the review angle where the step is a
