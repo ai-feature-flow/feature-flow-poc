@@ -133,11 +133,17 @@ public sealed class SourceControlActionTests
         Assert.Contains($"review report of run {w.RunId}", comment, StringComparison.Ordinal);
         Assert.Contains(first.Events, e => e.StartsWith("the review summary of 2 report(s) is posted on", StringComparison.Ordinal));
 
-        // A later pass: a reviewer's report is new, so the summary is posted again; the first comment stays.
-        await ReviewedAsync(w, "verify.review.review_1.assess", new FindingsReport(1, [], "security", new FindingsSummary("No security concern.", ["a.txt"])));
+        // A later pass: a reviewer's report is new, so the summary is posted again; the first comment stays. Its angle, a
+        // free string, has a line break: it stays on one line, in its code span, in the table row and the heading.
+        await ReviewedAsync(w, "verify.review.review_1.assess",
+            new FindingsReport(1, [], "security\n@acme/admins # approved", new FindingsSummary("No security concern.", ["a.txt"])));
         await w.RunAsync("scm.pull_request", "{ title: T-1 }", "deliver.open_pr");
         Assert.Equal(2, w.Forge.Comments(pr).Count);
-        Assert.Contains("` No security concern. `", w.Forge.Comments(pr)[1], StringComparison.Ordinal);
+        var second = w.Forge.Comments(pr)[1];
+        Assert.Contains("` No security concern. `", second, StringComparison.Ordinal);
+        Assert.Contains("| ` security @acme/admins # approved ` | 0 | 0 |\n", second, StringComparison.Ordinal);
+        Assert.Contains("### ` security @acme/admins # approved `\n", second, StringComparison.Ordinal);
+        Assert.DoesNotContain("\n@acme", second, StringComparison.Ordinal);
     }
 
     [Fact]

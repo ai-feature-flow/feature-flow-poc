@@ -17,7 +17,7 @@ recorded" verdicts and no ticket trace (below). Nothing was run live; the produc
 | A3 step detail | `GET /runs/{id}/steps/{step}`: a step's executions with their artifacts, sessions, reports and questions; its waits; its findings and finding steps; its events from every source merged; its staged patch; its pending instructions (`docs/02` section 7, LOG 576) |
 | A9 findings frames | `ChangeEffect` is a set of flags. A finding event raises `step_changed` for the step that wrote it as well as `run_changed`. An agent event raises `step_changed` for the run and step of its key `<run>/<step>/<n>` (LOG 577) |
 | A14 review report | `GET /runs/{id}/review`: passes, each angle's verdict, what it checked, findings and blocking findings, the run's findings with the pass that raised them and the latest reason, external review, trace, pull requests; a `note` for a run with no review (LOG 578) |
-| Policy in force | `GET /runs/{id}/policy`: the plan's decision types with who answers and where the rule comes from, every override key with whether the caller may use it, and attempt limits (LOG 578) |
+| Policy in force | `GET /runs/{id}/policy`: the plan's decision types with who answers and where the rule comes from, every override key but `answer` and `answer_question` with whether the caller may use it, and attempt limits (LOG 578, 584) |
 | E2 reviewer verdict | `findings_report.summary` (`verdict`, `checked`), optional in the type; std's `review_change` task and review skill require it, with or without findings (LOG 574) |
 | E3 review summary on the pull request | `scm.pull_request` posts one comment per review pass after the declines, unless `post_review: false`: angles with findings and blocking findings, each verdict and what was checked, the ledger tally. Reviewer text is shown as code spans. Keyed by the reports, so a retry posts once (`docs/04` section 7.2, LOG 574) |
 | A8 staged patch | The step detail's `staged_patch` while the agent runs; `GET /runs/{id}/plan?staged={step}`, the plan as a `self` patch would make it (LOG 576) |
@@ -29,11 +29,11 @@ recorded" verdicts and no ticket trace (below). Nothing was run live; the produc
 
 | Item | Change |
 |---|---|
-| Step page | Reads the step detail; re-reads on `run_changed` for its run and `step_changed` for any of its finding steps |
+| Step page | Reads the step detail; re-reads on `run_changed` for its run (a finding event raises it) and `step_changed` for the step (its agent's events), at most once every 2 s, the last change always read (LOG 583). Lists the instructions pending for the next attempt: who, when, the text, "until the step next succeeds" (LOG 582) |
 | Findings tab | The step's findings: id, severity and blocking, title, ledger state, and "Here", the last finding event at the step. "The run's full ledger ⧉" opens the review report (LOG 579) |
 | Events tab | Timeline, agent, override, answer and finding events merged, newest first, with a filter by source and a count each; text only |
 | Staged patch card | On a running step: target, revision, the agent's reason, operations, the document folded, and "Show the plan as it would become" for a `self` patch; it changes and disappears live (LOG 581) |
-| Steer ▾ Go to a step…, Re-plan… | Grouped step picker, clean up, a consequence listing what will be cancelled, a required reason; after Apply the engine's reply names what it cancelled (LOG 581) |
+| Steer ▾ Go to a step…, Re-plan… | Grouped step picker, clean up, a consequence listing what will be cancelled (steps, their child runs, and the parallels and chains holding them) and saying the reason reaches the target only for an agent step, a required reason; after Apply the engine's reply names what it cancelled (LOG 581) |
 | Edit step → Instructions for the next attempt | Replaces B1's disabled Prompt option: text box, preview of where it goes in the prompt, byte limit, protected note (LOG 581) |
 | Review report page | `#/runs/{tree}/review` and `…/review/{run}`: summary, current pass's angles, findings, external review, trace, earlier passes folded, pull requests. Opened from the merge popup's Open review report and the run header's Review report ⧉, in a window of its own beside the pull request (LOG 579) |
 | Policy in force | Run actions → Policy in force: a popup of decisions, overrides and attempt limits; a null limit reads "set by the engine" |
@@ -66,7 +66,25 @@ To be filled by the sub-orchestrator at the merged head.
 
 ## Review
 
-To be filled after the independent review and fix pass.
+An independent review of the build found no high findings, three medium, seven low and five nits (R1 to R15). The fix
+pass fixed all fifteen, each with a test seen to fail without it where behaviour changed:
+
+| Finding | Fix |
+|---|---|
+| R1 (medium) | The step detail's pending instructions are numbered as the core numbers them, so one given during a successful execution stays pending (LOG 582) |
+| R2 (medium) | The step page lists pending instructions (LOG 582) |
+| R3, R4 (medium, low) | The step detail reads every finding's history in one query; the console's step page drops its finding-step keys and reads at most once every 2 s (LOG 583) |
+| R5 | A reviewer's angle stays on one line in the pull request comment |
+| R6 | A test per new read that a person with a role in another repository's scope gets 404 |
+| R7 | Policy in force leaves out `answer` and `answer_question` (LOG 584) |
+| R8 | The staged patch card skips a `changes` entry that is not an object |
+| R9 | The merge popup opens the review report in its tree |
+| R10 | A validator test traces a ticket over the shapes of a real ticket run's artifacts (run-947be4435f5c): clean, with no change to the validator |
+| R11 | One instruction limit, `RunCore.MaxInstructionBytes` |
+| R12 | Go to's consequence lists the parallels and chains it stops, and says the reason reaches only an agent target |
+| R13 | Event kinds are not broken mid-word |
+| R14 | `Approval.For` gives the rule's source as `ApprovalSource` |
+| R15 | `?staged=` with `?proposed=` is 400 (LOG 585) |
 
 ## Live use for the product owner
 
@@ -92,7 +110,8 @@ hosts. B2 adds no table and changes no workflow history, so runs in flight carry
    (`plan.plan`). Try a target past `verify` from before it: refused, since `verify` is protected.
 6. **Edit step → Instructions for the next attempt.** On an agent step, Edit step, choose Instructions for the next
    attempt, type an instruction and Apply. The preview shows where it goes in the prompt. The next execution's
-   prompt artifact holds it under "A person's instructions for this step"; it stays until the step next succeeds. On a
+   prompt artifact holds it under "A person's instructions for this step"; it stays until the step next succeeds, and
+   the step page lists it as pending until then. On a
    protected step (under `verify` or `deliver`) the form notes that it needs `instruct_protected` (admin).
 7. **Review report.** At the merge decision, the merge popup's Open review report opens the report in a window of its
    own: place it beside the pull request. The run header's Review report ⧉ opens the same window. It shows each

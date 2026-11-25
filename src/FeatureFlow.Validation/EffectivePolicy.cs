@@ -41,7 +41,7 @@ public static class EffectivePolicy
             if (step is { Form: StepForm.Decision, Decision: { } decision })
             {
                 var type = decision.Type ?? $"{plan.Document.Level ?? "run"}.decision";
-                var (rule, source) = approval(type);
+                var (rule, source, _) = approval(type);
                 rows.Add(WhoAnswers(step, type, approval));
                 var cap = $"auto {(rule.Auto.Value ? "allowed" : "not allowed")}{(rule.Auto.Locked ? ", locked" : "")}";
                 var result = decision.Auto is null ? "a person answers"
@@ -57,7 +57,7 @@ public static class EffectivePolicy
     /// <summary>Who may answer a decision of a type: the roles, how many people, and whether from chat.</summary>
     static PolicyRow WhoAnswers(Step step, string type, Func<string, EffectiveApproval> approval)
     {
-        var (rule, source) = approval(type);
+        var (rule, source, _) = approval(type);
         var chat = rule.FromChat ? "chat or console" : "console or CLI only";
         return new PolicyRow(step.Id, "who answers", type, "-", $"{string.Join(" or ", rule.Roles)}, {rule.MinCount} {(rule.MinCount == 1 ? "person" : "people")}, {chat}", source);
     }

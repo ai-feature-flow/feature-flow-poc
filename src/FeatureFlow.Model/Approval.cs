@@ -45,8 +45,19 @@ public static class PeopleRoles
     }
 }
 
-/// <summary>The approval rule that governs a decision type, and the setting it came from, for the record and the effective policy view.</summary>
-public sealed record EffectiveApproval(ApprovalRule Rule, string Source);
+/// <summary>
+/// The approval rule that governs a decision type, and the setting it came from: in words (<see cref="Source"/>), for the
+/// record, and as its kind (<see cref="Kind"/>), for the effective policy view.
+/// </summary>
+public sealed record EffectiveApproval(ApprovalRule Rule, string Source, ApprovalSource Kind);
+
+/// <summary>Where a governing approval rule is set: the organisation's <c>approval</c> rules, a library's <c>default_approval</c>, or the engine's default.</summary>
+public enum ApprovalSource
+{
+    Organisation,
+    Library,
+    Default,
+}
 
 /// <summary>
 /// Who may answer a decision (docs/05 sections 3.2 and 4), in one place for the API, run start and the effective policy
@@ -80,19 +91,19 @@ public static class Approval
     {
         var governing = Governing(type, policy, declared, kind);
         if (team?.Approval.FirstOrDefault(r => r.Matches(type)) is { } teamRule && teamRule.MinCount > governing.Rule.MinCount)
-            return new(governing.Rule with { MinCount = teamRule.MinCount }, $"{governing.Source}, min_count from team {team.Name}'s rule '{teamRule.Match}'");
+            return governing with { Rule = governing.Rule with { MinCount = teamRule.MinCount }, Source = $"{governing.Source}, min_count from team {team.Name}'s rule '{teamRule.Match}'" };
         return governing;
     }
 
     static EffectiveApproval Governing(string type, PolicyConfig policy, IReadOnlyList<DecisionTypeItem> declared, string kind)
     {
         if (policy.RuleFor(type) is { } rule)
-            return new(rule, $"approval rule '{rule.Match}'");
+            return new(rule, $"approval rule '{rule.Match}'", ApprovalSource.Organisation);
         if (Declared(type, declared) is { } item)
             return new(item.DefaultApproval ?? new ApprovalRule(item.Name, item.DefaultRoles, 1, false, new Cap<bool>(false, false)),
-                $"library default_approval of {item.Name}");
+                $"library default_approval of {item.Name}", ApprovalSource.Library);
         return new(new ApprovalRule("*", [kind is "gate" or "question" ? PeopleRoles.Approver : PeopleRoles.Steerer], 1, false, new Cap<bool>(false, false)),
-            "the engine's default");
+            "the engine's default", ApprovalSource.Default);
     }
 
     /// <summary>

@@ -54,6 +54,44 @@ public sealed class StagedPatchTests(BrowserFixture browser) : BrowserTest(brows
     }
 
     [Fact]
+    public async Task A_burst_of_agent_events_reads_the_step_at_most_once_per_two_seconds_and_the_last_is_read()
+    {
+        await Engine.AgentStepAsync("run-1");
+        await OpenStepAsync("run-1");
+        await Expect(Middle.GetByRole(AriaRole.Region, new() { Name = $"Step {Step}" })).ToBeVisibleAsync();
+        var reads = 0;
+        Page.Request += (_, r) =>
+        {
+            if (new Uri(r.Url).AbsolutePath.EndsWith($"/runs/run-1/steps/{Step}", StringComparison.Ordinal))
+                Interlocked.Increment(ref reads);
+        };
+
+        // An agent at work: an event every 300 ms for 2.4 s, each a step_changed frame beyond live.ts's 200 ms coalescing.
+        for (var i = 0; i < 8; i++)
+        {
+            await Engine.AgentEventAsync("run-1", Step, 1, "hook_pre_tool_use", $"Edit allow {i}");
+            await Task.Delay(300, TestContext.Current.CancellationToken);
+        }
+
+        await Engine.StagedPatchAsync("run-1", Step, revision: 2);
+        await Expect(Card.GetByRole(AriaRole.Definition).Nth(1)).ToHaveTextAsync("2", new() { Timeout = 6_000 });
+        // About 2.7 s of changes: a read at once, then one at most every 2 s, the last after the staged patch.
+        Assert.InRange(reads, 1, 3);
+    }
+
+    [Fact]
+    public async Task A_change_that_is_not_an_object_is_skipped_and_the_step_page_still_shows()
+    {
+        await Engine.AgentStepAsync("run-1");
+        // Agent-written: entries a patch should not hold, beside one it may.
+        await Engine.StagedPatchAsync("run-1", Step, patch: """{"metadata":{"reason":"odd"},"changes":[null,1,{"op":"remove","target":"plan.validate"}]}""");
+        await OpenStepAsync("run-1");
+
+        await Expect(Card.GetByRole(AriaRole.List, new() { Name = "Operations" })).ToHaveTextAsync("remove plan.validate");
+        await Expect(Middle.GetByRole(AriaRole.Region, new() { Name = $"Step {Step}" })).ToBeVisibleAsync();
+    }
+
+    [Fact]
     public async Task A_finished_step_shows_no_staged_patch()
     {
         await Engine.AgentStepAsync("run-1", running: false);

@@ -32,15 +32,13 @@ public static partial class ApiApp
         [Overrides.Abort] = "abort a run with POST /runs/{id}/abort",
     };
 
-    /// <summary>The longest instruction for a step's next attempt (<c>instruct</c>'s <c>change.text</c>), in bytes of UTF-8 text, as a reason.</summary>
-    public const int MaxInstructionBytes = 4 * 1024;
-
     sealed partial class Handlers
     {
-        /// <summary>Why an <c>instruct</c> override's text is refused: missing or blank, or longer than <see cref="MaxInstructionBytes"/>; null when it is accepted.</summary>
+        /// <summary>Why an <c>instruct</c> override's text is refused: missing or blank, or longer than the core allows (<see cref="Interpreter.RunCore.MaxInstructionBytes"/>); null when it is accepted.</summary>
         static IResult? InstructionRefused(string? text) =>
             string.IsNullOrWhiteSpace(text) ? Error(400, "change.text is required for instruct: the person's instructions for the step's next attempt")
-            : System.Text.Encoding.UTF8.GetByteCount(text) > MaxInstructionBytes ? Error(400, $"change.text may be at most {MaxInstructionBytes} bytes of UTF-8 text")
+            : System.Text.Encoding.UTF8.GetByteCount(text) > Interpreter.RunCore.MaxInstructionBytes
+                ? Error(400, $"change.text may be at most {Interpreter.RunCore.MaxInstructionBytes} bytes of UTF-8 text")
             : null;
 
         public async Task<IResult> OverrideAsync(HttpContext context, Caller caller, string id)

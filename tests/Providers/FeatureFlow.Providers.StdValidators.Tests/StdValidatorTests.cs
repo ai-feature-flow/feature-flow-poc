@@ -179,6 +179,77 @@ public sealed class StdValidatorTests : IDisposable
         Invalid(await ValidateAsync(Trace(artifacts, head)), "trace_gap");
     }
 
+    /// <summary>
+    /// A ticket run's trace step (std:fragments/ticket_flow, <c>trace</c>) over the artifacts a real ticket run produced
+    /// (review R10): the requirements and delivery plan its planner wrote, its implementer's claims and the test results
+    /// <c>test.run</c> recorded, as run-947be4435f5c on the live instance holds them, cut to one requirement and repository
+    /// acme/api. The ticket's own requirement has no owner, so it traces through the criterion that supports it to the
+    /// claimed test, which passed at the work's head; the baseline's results at main are beside them, as in a real run.
+    /// </summary>
+    [Fact]
+    public async Task A_real_tickets_requirement_traces_clean_through_its_criterion_to_a_passing_test_run()
+    {
+        const string requirements = """
+            schema: 1
+            scope: { kind: ticket, id: "200" }
+            requirements:
+              - id: R-001
+                title: Delete an existing widget
+                behaviour: DELETE /widgets/{id} for an id that exists removes the widget and returns 204 No Content; a later GET /widgets/{id} for that id returns 404.
+                supports_reason: Delivers the ticket's DELETE /widgets/{id} endpoint; the ticket has no parent plan.
+            """;
+        const string deliveryPlan = """
+            schema: 1
+            scope: { kind: ticket, id: "200" }
+            acceptance_criteria:
+              - id: AC-001
+                title: Deleting an existing widget returns 204 and removes it
+                behaviour: DELETE /widgets/{id} for an existing widget returns 204 No Content, and a following GET /widgets/{id} returns 404.
+                supports:
+                  - { artifact: requirements, requirement: R-001 }
+                verification:
+                  - id: unit
+                    kind: parsed_test
+                    repository: acme/api
+                    tier: unit
+                    intent: Call the endpoint in-process for an existing widget, then GET the same id.
+                    allowed_test_changes: [new, reused]
+                    semantic_review: required
+            """;
+        const string test = "FeatureFlow.Example.Api.UnitTests.WidgetDeleteEndpointTests.Delete_existing_widget_returns_204_and_then_get_is_404";
+        const string claims = $$"""
+            schema: 1
+            claims:
+              - criterion: AC-001
+                verification: unit
+                tests:
+                  - repository: acme/api
+                    tier: unit
+                    id: {{test}}
+                    source: { file: tests/FeatureFlow.Example.Api.UnitTests/WidgetDeleteEndpointTests.cs, symbol: Delete_existing_widget_returns_204_and_then_get_is_404 }
+                    change: new
+            test_impacts: []
+            """;
+        var head = w.Commit("tests/FeatureFlow.Example.Api.UnitTests/WidgetDeleteEndpointTests.cs", "Delete_existing_widget_returns_204_and_then_get_is_404\n");
+        var artifacts = new List<ArtifactRecord>
+        {
+            Record("requirements", "requirements", w.Put(requirements), step: "plan.plan") with { Execution = 2 },
+            Record("delivery_plan", "delivery_plan", w.Put(deliveryPlan), step: "plan.plan") with { Execution = 2 },
+            w.TestEvidence(w.Main, ["FeatureFlow.Example.Api.UnitTests.WidgetStoreTests.Add_assigns_sequential_ids"], baseline: true) with { Name = "baseline_test_results", StepId = "baseline.tests" },
+            Record("implementation_claims", "evidence_claims", w.Put(claims), step: "implement"),
+            w.TestEvidence(head, [test, "FeatureFlow.Example.Api.UnitTests.WidgetStoreTests.Add_assigns_sequential_ids"]) with { StepId = "verify.tests" },
+        };
+
+        var result = await ValidateAsync(Trace(artifacts, head));
+
+        Valid(result);
+        var report = System.Text.Json.JsonSerializer.Deserialize<TraceReport>(await w.ReadAsync(result.Reports.Single().Artifact), ArtifactShapes.Engine)!;
+        Assert.True(report.Traced);
+        var traced = Assert.Single(report.Requirements);
+        Assert.Equal(("R-001", true), (traced.Id, traced.Traced));
+        Assert.Contains(test, Assert.Single(traced.Tests));
+    }
+
     [Fact]
     public async Task Tests_at_an_ancestor_of_the_head_are_contained_through_the_VCS_and_not_without_it()
     {

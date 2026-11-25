@@ -276,9 +276,32 @@ public static partial class ApiApp
             readonly Dictionary<string, IReadOnlySet<string>> people = new(StringComparer.Ordinal);
             readonly Dictionary<string, Plan?> plans = new(StringComparer.Ordinal);
 
-            public async Task<IReadOnlyList<FindingEventRecord>> HistoryAsync(FindingRecord f) =>
-                (await api.Records.QueryAsync<FindingEventRecord>(Queries.FindingEvents,
-                    new Dictionary<string, string> { ["run_id"] = f.RunId, ["finding_id"] = f.FindingId }, ct)).Unwrap();
+            readonly Dictionary<(string Run, string Finding), IReadOnlyList<FindingEventRecord>> histories = new();
+
+            public async Task<IReadOnlyList<FindingEventRecord>> HistoryAsync(FindingRecord f)
+            {
+                if (!histories.TryGetValue((f.RunId, f.FindingId), out var history))
+                    histories[(f.RunId, f.FindingId)] = history = (await api.Records.QueryAsync<FindingEventRecord>(Queries.FindingEvents,
+                        new Dictionary<string, string> { ["run_id"] = f.RunId, ["finding_id"] = f.FindingId }, ct)).Unwrap();
+                return history;
+            }
+
+            /// <summary>Takes a run's plan and answers the caller has already read, so the views do not read them again.</summary>
+            public void Know(string runId, Plan? plan, IReadOnlyList<AnswerRecord> answers)
+            {
+                plans[runId] = plan;
+                people[runId] = PeopleOf(answers);
+            }
+
+            /// <summary>Every finding's history in a run, in one query, kept for <see cref="HistoryAsync"/>; a finding with none has an empty history.</summary>
+            public async Task<ILookup<string, FindingEventRecord>> RunHistoriesAsync(string runId, IEnumerable<FindingRecord> findings)
+            {
+                var all = (await api.Records.QueryAsync<FindingEventRecord>(Queries.FindingEvents, new Dictionary<string, string> { ["run_id"] = runId }, ct)).Unwrap()
+                    .ToLookup(e => e.FindingId, StringComparer.Ordinal);
+                foreach (var f in findings.Where(f => f.RunId == runId))
+                    histories[(runId, f.FindingId)] = [.. all[f.FindingId]];
+                return all;
+            }
 
             public async Task<IReadOnlySet<string>> PeopleAsync(string runId)
             {

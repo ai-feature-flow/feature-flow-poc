@@ -191,7 +191,7 @@ export function RunPage({ node, rows, onSelect }: { node: RunNode; rows: readonl
                   {pathOf(step)} › {step.label}
                 </div>
               </div>
-              <button type="button" class="ff-btn ff-btn-primary" onClick={() => step.wait && decisions.open(step.runId, step.wait)}>
+              <button type="button" class="ff-btn ff-btn-primary" onClick={() => step.wait && decisions.open(step.runId, step.wait, rows[0].runId)}>
                 {step.wait?.kind === "question" ? "Answer" : "Review and answer"}
               </button>
             </section>

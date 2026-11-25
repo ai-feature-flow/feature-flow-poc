@@ -109,7 +109,7 @@ function PullRequest({ pr }: { pr: Schema<"PullRequestView"> }) {
  * pull request (A5) with its files and checks; the engine's own checks; each requirement's trace to tests, or the criteria
  * marked "no trace in this run".
  */
-export function Merge({ runId, wait, detail, plan, context }: DecisionProps) {
+export function Merge({ runId, tree, wait, detail, plan, context }: DecisionProps) {
   const pr = wait.pull_request ?? null;
   const evidence = useEvidence(runId);
   const trace = useDocument(evidence.data?.trace?.runId ?? runId, evidence.data?.trace?.ref);
@@ -141,7 +141,7 @@ export function Merge({ runId, wait, detail, plan, context }: DecisionProps) {
               Open pull request ↗
             </a>
           )}{" "}
-          <button type="button" class="ff-btn ff-btn-ghost" title="Opens in a window of its own" onClick={() => links.openWindow(links.review(runId), `review:${runId}`)}>
+          <button type="button" class="ff-btn ff-btn-ghost" title="Opens in a window of its own" onClick={() => links.openWindow(links.review(tree ?? runId, runId, tree === undefined), `review:${runId}`)}>
             Open review report ⧉
           </button>{" "}
           <span class="ff-dec-ticks" aria-label="Ticks">

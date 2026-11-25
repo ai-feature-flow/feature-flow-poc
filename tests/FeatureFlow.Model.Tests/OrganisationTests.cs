@@ -293,6 +293,10 @@ public class OrganisationTests
         Assert.Equal((1L, "the engine's default"), Pick(Approval.For("y.other", noRules, null, declared)));
         Assert.Equal(["approver"], Approval.For("y.other", noRules, null, [], "question").Rule.Roles);
         Assert.Equal(["steerer"], Approval.For("y.escalation", noRules, null, [], "intervention").Rule.Roles);
+        // The kind of setting is given apart from its words, which a team's rule extends.
+        Assert.Equal(
+            [ApprovalSource.Organisation, ApprovalSource.Library, ApprovalSource.Default],
+            [Approval.For("epic.merge_action", org.Policy, team, declared).Kind, Approval.For("x.audit", noRules, null, declared).Kind, Approval.For("y.other", noRules, null, declared).Kind]);
 
         static (long, string) Pick(EffectiveApproval a) => (a.Rule.MinCount, a.Source);
     }

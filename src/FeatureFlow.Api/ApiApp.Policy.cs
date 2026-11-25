@@ -23,7 +23,7 @@ public static partial class ApiApp
         /// scope: the roles that may answer (an admin wherever a steerer may), how many must, whether it may be answered
         /// automatically, and whether the rule is the organisation's, a library's or the engine's default. The library rules
         /// are the organisation's libraries as now read, else, where one cannot be read, those the run locked. Each override
-        /// key of the catalogue, its roles and whether the caller holds one; and the attempt limits configuration sets, null
+        /// key of the catalogue but <c>answer</c> and <c>answer_question</c>, its roles and whether the caller holds one; and the attempt limits configuration sets, null
         /// where it leaves the engine's default.
         /// </summary>
         public async Task<IResult> RunPolicyAsync(HttpContext context, Caller caller, string id)
@@ -58,16 +58,19 @@ public static partial class ApiApp
             }
 
             var held = caller.Actor == PeopleRoles.PolicyActor ? [] : RolesIn(caller, scope);
-            var overrides = Overrides.DefaultRoles.Keys.Select(k => (Key: k, Roles: RolesForKey(k)))
+            // Answers have no roles of their own: the decisions' rules above say who answers (Overrides.cs).
+            var overrides = Overrides.DefaultRoles.Keys.Where(k => k is not (Overrides.Answer or Overrides.AnswerQuestion)).Select(k => (Key: k, Roles: RolesForKey(k)))
                 .Select(o => new OverridePolicyView(o.Key, o.Roles, o.Roles.Intersect(held).Any())).ToList();
             var attempts = new AttemptPolicyView(services.Installation.DefaultAttempts, policy.AttemptsPerRun, policy.HardPerStep, policy.HardPerRun);
             return Results.Json(new RunPolicyView(id, decisions, overrides, attempts), Json);
         }
     }
 
-    /// <summary>Where an approval rule comes from, from <see cref="Approval.For"/>'s account of it: <c>organisation</c>, <c>library</c> or <c>default</c>.</summary>
-    static string SourceOf(EffectiveApproval approval) =>
-        approval.Source.StartsWith("approval rule", StringComparison.Ordinal) ? "organisation"
-        : approval.Source.StartsWith("library", StringComparison.Ordinal) ? "library"
-        : "default";
+    /// <summary>Where an approval rule comes from, as <see cref="Approval.For"/> gives it: <c>organisation</c>, <c>library</c> or <c>default</c>.</summary>
+    static string SourceOf(EffectiveApproval approval) => approval.Kind switch
+    {
+        ApprovalSource.Organisation => "organisation",
+        ApprovalSource.Library => "library",
+        _ => "default",
+    };
 }

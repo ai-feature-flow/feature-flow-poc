@@ -498,7 +498,10 @@ public static class Queries
     /// </summary>
     public const string Findings = "findings";
 
-    /// <summary><see cref="FindingEventRecord"/>: one finding's history in the order appended, by <c>run_id</c> (the finding's own run) and <c>finding_id</c>.</summary>
+    /// <summary>
+    /// <see cref="FindingEventRecord"/>: one finding's history in the order appended, by <c>run_id</c> (the finding's own run)
+    /// and <c>finding_id</c>; without <c>finding_id</c>, every finding's of that run, in the order appended.
+    /// </summary>
     public const string FindingEvents = "finding_events";
 
     /// <summary><see cref="ArtifactRecord"/>: the artifacts of the run named by <c>run_id</c> and of every descendant run, in the order appended.</summary>

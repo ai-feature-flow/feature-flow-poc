@@ -45,7 +45,8 @@ public sealed class PolicyTests
         var steerer = await AsAsync("viewer,steerer");
         var viewer = await AsAsync("viewer");
 
-        Assert.Equal(Overrides.DefaultRoles.Keys.Order(), steerer.Keys.Order());
+        // Answers are left out: the decisions' rules say who answers, and the keys themselves have no roles.
+        Assert.Equal(Overrides.DefaultRoles.Keys.Except([Overrides.Answer, Overrides.AnswerQuestion]).Order(), steerer.Keys.Order());
         Assert.Equal(("steerer,admin", true), (string.Join(",", steerer[Overrides.GoTo].Roles), steerer[Overrides.GoTo].Yours));
         Assert.Equal(("admin", false), (string.Join(",", steerer[Overrides.InstructProtected].Roles), steerer[Overrides.InstructProtected].Yours));
         Assert.False(viewer[Overrides.GoTo].Yours);

@@ -38,7 +38,8 @@ public static partial class ApiApp
         /// and questions (by step key <c>&lt;run&gt;/&lt;step&gt;/&lt;n&gt;</c>); its waits, open first; its findings and finding
         /// steps (<see cref="FindingStepsOf"/>); its events merged oldest first from the timeline, its agent events, the overrides
         /// on it, the answers to its waits and the finding events of its finding steps; the patch its agent has staged while the
-        /// latest execution runs; and the <c>instruct</c> overrides the run applied since the step last succeeded. A step the run
+        /// latest execution runs; and the <c>instruct</c> overrides the run applied that its next prompt still reads
+        /// (<see cref="ExecutionsOver"/>). A step the run
         /// has neither recorded nor planned is 404.
         /// </summary>
         public async Task<IResult> StepDetailAsync(HttpContext context, Caller caller, string id, string step)
@@ -84,12 +85,14 @@ public static partial class ApiApp
 
             var findingSteps = FindingStepsOf(plan, step);
             var reads = new FindingReads(this, ct);
+            reads.Know(id, plan, answers);
             var findings = new List<FindingView>();
             var findingEvents = new List<StepEventView>();
-            foreach (var f in (await Records.QueryAsync<FindingRecord>(Queries.Findings, p, ct)).Unwrap().Where(f => f.RunId == id))
+            var ledger = (await Records.QueryAsync<FindingRecord>(Queries.Findings, p, ct)).Unwrap().Where(f => f.RunId == id).ToList();
+            var histories = await reads.RunHistoriesAsync(id, ledger);
+            foreach (var f in ledger)
             {
-                var history = await reads.HistoryAsync(f);
-                var ours = history.Where(e => e.StepId is { } s && findingSteps.Contains(s)).ToList();
+                var ours = histories[f.FindingId].Where(e => e.StepId is { } s && findingSteps.Contains(s)).ToList();
                 if (ours.Count == 0 && !findingSteps.Contains(f.Source))
                     continue;
                 findings.Add(await reads.ViewAsync(f));
@@ -116,11 +119,10 @@ public static partial class ApiApp
 
             var latest = executions.LastOrDefault();
             var staged = latest is { StartedAt: not null, EndedAt: null } ? StagedOf(latest.Number, agentEvents[latest.Number]) : null;
-            var succeeded = timeline.LastOrDefault(t => t.StepId == step && t.Kind == "completed"
-                && (planned is null || planned.Outcomes().Any(o => o.Name == t.Detail && o.Class == OutcomeClass.Success)))?.At;
+            var (lastSuccess, executionAt) = ExecutionsOver(timeline, step, planned);
             var instructions = overrides
                 .Where(o => o.Key is Overrides.Instruct or Overrides.InstructProtected && o.Result.StartsWith("applied", StringComparison.Ordinal)
-                            && (succeeded is null || o.At > succeeded) && o.Change.TryGetValue("text", out _))
+                            && executionAt(o.At) >= lastSuccess && o.Change.TryGetValue("text", out _))
                 .Select(o => new InstructionView(o.OverrideId, o.Actor, o.Change["text"], o.At)).ToList();
 
             return Results.Json(new StepDetail(id, step, executions, waits, findings, [.. findingSteps.Order(StringComparer.Ordinal)],
@@ -174,6 +176,31 @@ public static partial class ApiApp
         }
 
         return list;
+    }
+
+    /// <summary>
+    /// The step's executions as the engine numbers them, for its pending instructions (<c>RunCore.CausesOf</c>): the number of
+    /// its last execution that ended with a success-class outcome (any outcome when the plan does not hold the step), and the
+    /// execution current at a moment, from the last <c>started</c> (or <c>skipped</c> or <c>entered</c>, which also begin
+    /// one) at or before it, 0 before the first. The engine records an instruction at the execution current when it is
+    /// given and keeps it while that is at least the last success's, so one given while an execution runs outlasts its success.
+    /// </summary>
+    static (int LastSuccess, Func<DateTimeOffset, int> ExecutionAt) ExecutionsOver(IReadOnlyList<TimelineRecord> timeline, string step, Step? planned)
+    {
+        var marks = new List<(DateTimeOffset At, int Execution)>();
+        int current = 0, lastSuccess = 0;
+        foreach (var t in timeline.Where(t => t.StepId == step).OrderBy(t => t.Sequence))
+        {
+            if (t.Kind == "started")
+                current = ExecutionOf(t) ?? current + 1;
+            else if (t.Kind is "skipped" or "entered")
+                current++;
+            else if (t.Kind == "completed" && (planned is null || planned.Outcomes().Any(o => o.Name == t.Detail && o.Class == OutcomeClass.Success)))
+                lastSuccess = current;
+            marks.Add((t.At, current));
+        }
+
+        return (lastSuccess, at => marks.LastOrDefault(m => m.At <= at).Execution);
     }
 
     /// <summary>The execution a <c>started</c> or <c>resumed</c> entry names (<c>execution &lt;n&gt;</c>), else null.</summary>

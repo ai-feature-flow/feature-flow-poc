@@ -19,7 +19,7 @@ interface Operation {
 
 /**
  * The patch's reason and operations, read from the document when it is JSON (as the agent tools stage it); null when it is
- * not, and then only the document itself is shown. Values are kept as text.
+ * not, and then only the document itself is shown. Values are kept as text; a change that is not an object is skipped.
  */
 function partsOf(document: string): { reason: string | null; operations: Operation[] } | null {
   let parsed: unknown;
@@ -31,8 +31,10 @@ function partsOf(document: string): { reason: string | null; operations: Operati
   if (typeof parsed !== "object" || parsed === null) return null;
   const doc = parsed as { metadata?: { reason?: unknown }; changes?: unknown };
   const text = (v: unknown) => (typeof v === "string" ? v : null);
-  const operations = (Array.isArray(doc.changes) ? doc.changes : []).map((c: Record<string, unknown>): Operation => {
-    const step = c.step as Record<string, unknown> | undefined;
+  const changes: unknown[] = Array.isArray(doc.changes) ? doc.changes : [];
+  const objects = changes.filter((c): c is Record<string, unknown> => typeof c === "object" && c !== null && !Array.isArray(c));
+  const operations = objects.map((c): Operation => {
+    const step = typeof c.step === "object" && c.step !== null ? (c.step as Record<string, unknown>) : undefined;
     const named = text(step?.id) ?? text(c.target) ?? text(c.step_id) ?? "";
     const where = text(c.after) ? ` after ${c.after}` : text(c.before) ? ` before ${c.before}` : "";
     return { op: text(c.op) ?? "?", step: named + where };
