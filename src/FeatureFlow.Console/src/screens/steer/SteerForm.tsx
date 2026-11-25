@@ -13,7 +13,7 @@ type Request = Omit<Schema<"OverrideRequest">, "reason">;
 
 /**
  * A steer chosen on a step (design-v2 s4.4): Steer ▾'s pause before (or clear it), skip, grant attempts, go to a step and
- * re-plan; Edit step's amend, change role and instructions for the next attempt.
+ * re-plan; Edit step's amend, change role and edit prompt (instructions for the next attempt; LOG 573).
  */
 export type SteerKind = "breakpoint" | "skip" | "grant_attempts" | "go_to" | "replan" | "edit";
 
@@ -374,7 +374,7 @@ function ChangeForm({ runId, plan, step, kind, roles, instruct }: {
               <option value="limits">Limits</option>
               {roles && <option value="role">Role</option>}
               <option value="instructions" disabled={instruct !== null}>
-                {instruct === null ? "Instructions for the next attempt" : `Instructions for the next attempt: ${instruct}`}
+                {instruct === null ? "Edit prompt (adds instructions)" : `Edit prompt (adds instructions): ${instruct}`}
               </option>
             </select>
           </div>

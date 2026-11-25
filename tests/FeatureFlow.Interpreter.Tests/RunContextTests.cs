@@ -282,4 +282,27 @@ public class RunContextTests
         Assert.Equal(Instruction, CausesOf(core, "next"));
         Assert.DoesNotContain("keep the audit table", ContextOf(core, "next"), StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// An instruction given while the step waits at its breakpoint (pause before) is in its first execution's prompt
+    /// (LOG 573, accepted by the product owner 2026-11-25).
+    /// </summary>
+    [Fact]
+    public void An_instruction_given_at_a_breakpoint_reaches_the_steps_first_execution()
+    {
+        var core = Lib.Start("context");
+        Assert.True(core.Apply(new BreakpointSet("next", true, "ann")).Accepted);
+        core.Advance();
+        Assert.True(core.Apply(new StepCompleted("work", "done")).Accepted);
+        core.Advance();
+        Assert.True(core.Apply(new StepCompleted("quiet", "done")).Accepted);
+        Assert.Empty(core.Advance());
+        var wait = Assert.Single(core.State.Waits);
+        Assert.Equal((WaitKind.Breakpoint, "next"), (wait.Kind, wait.StepId));
+
+        Assert.True(core.Apply(new StepInstructed("next", "keep the audit table", "ann", false)).Accepted);
+        Assert.True(core.Apply(new InterventionAnswered(wait.Id, new Recovery(RecoveryKind.Continue))).Accepted);
+        Assert.Equal([new StartStep("next", 1)], core.Advance());
+        Assert.Equal(Instruction, CausesOf(core, "next"));
+    }
 }
