@@ -94,7 +94,7 @@ export function Workspace({ tree, own, select }: { tree: string; own: boolean; s
     if (select.kind === "wait") {
       const run = rows.find(r => r.kind === "run" && r.runId === select.runId);
       const wait = run?.kind === "run" ? run.waits.find(w => w.wait_id === select.waitId) : undefined;
-      if (wait) decisions.open(select.runId, wait);
+      if (wait) decisions.open(select.runId, wait, root?.runId);
     }
     if (select.kind === "artifact") tabs.openArtifact({ runId: select.runId, reference: select.reference });
   }, [routed, read_]);

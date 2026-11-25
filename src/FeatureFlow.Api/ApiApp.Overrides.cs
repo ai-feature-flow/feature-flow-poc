@@ -34,6 +34,13 @@ public static partial class ApiApp
 
     sealed partial class Handlers
     {
+        /// <summary>Why an <c>instruct</c> override's text is refused: missing or blank, or longer than the core allows (<see cref="Interpreter.RunCore.MaxInstructionBytes"/>); null when it is accepted.</summary>
+        static IResult? InstructionRefused(string? text) =>
+            string.IsNullOrWhiteSpace(text) ? Error(400, "change.text is required for instruct: the person's instructions for the step's next attempt")
+            : System.Text.Encoding.UTF8.GetByteCount(text) > Interpreter.RunCore.MaxInstructionBytes
+                ? Error(400, $"change.text may be at most {Interpreter.RunCore.MaxInstructionBytes} bytes of UTF-8 text")
+            : null;
+
         public async Task<IResult> OverrideAsync(HttpContext context, Caller caller, string id)
         {
             var ct = context.RequestAborted;
@@ -46,11 +53,16 @@ public static partial class ApiApp
                                   " (a protected or beyond-ceiling variant is not asked for: the run applies it where the caller holds it)");
             if (OtherRoutes.TryGetValue(key, out var route))
                 return Error(400, $"{key} is not made here: {route}");
-            // A library override is privileged and its reason is its audit trail (LOG 502); every other override's is optional.
+            // A library override is privileged and its reason is its audit trail (LOG 502); going to a step and re-planning
+            // cancel the work in flight, so they need one too (plan s1.2); every other override's is optional.
+            if (key is Overrides.GoTo or Overrides.Replan && string.IsNullOrWhiteSpace(body.Reason))
+                return Error(400, $"reason is required: {key} cancels every step and wait in flight, and is recorded with the person's reason");
             if (ReasonRefused(body.Reason, required: key == Overrides.OverrideLibrary) is { } refusedReason)
                 return refusedReason;
             var reason = string.IsNullOrWhiteSpace(body.Reason) ? null : body.Reason;
             var change = new Dictionary<string, string>(body.Change ?? new Dictionary<string, string>(), StringComparer.Ordinal);
+            if (key == Overrides.Instruct && InstructionRefused(change.GetValueOrDefault("text")) is { } refusedText)
+                return refusedText;
 
             // A caller who does not view the run is told it does not exist, as on reads.
             if (await VisibleRunAsync(caller, id, ct) is not { } run)

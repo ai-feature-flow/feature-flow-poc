@@ -1,6 +1,6 @@
 import { useState } from "preact/hooks";
 import { api, read, type Schema } from "../../../api/client";
-import { runKey, useLive } from "../../../api/live";
+import { runKey, stepKey, useLive } from "../../../api/live";
 import { ArtifactLink, type ArtifactTarget } from "../../../app/viewer";
 import { Age } from "../../../ui/Age";
 import { ErrorBox } from "../../../ui/ErrorBox";
@@ -8,40 +8,16 @@ import { Tabs } from "../../../ui/Tabs";
 import { useDecision } from "../../decision/DecisionPopup";
 import { StepActions } from "../../steer/StepActions";
 import { ActivityTab } from "./ActivityTab";
-import { isActive, pathOf, runOf, shown, statusWaits, type StepNode } from "../tree/model";
+import { EventsTab } from "./EventsTab";
+import { FindingsTab } from "./FindingsTab";
+import { StagedPatch } from "./StagedPatch";
+import { ancestors, isActive, pathOf, runOf, shown, statusWaits, type StepNode } from "../tree/model";
 
-type Entry = Schema<"TimelineEntry">;
 type Artifact = Schema<"ArtifactView">;
+type Execution = Schema<"StepExecutionView">;
 
-/** What a timeline entry of the step ends an execution with. */
-const ends: readonly string[] = ["completed", "auto_resolved", "attempt_failed", "retried", "exhausted", "escalated", "cancelled", "interrupted"];
-
-interface Execution {
-  number: number;
-  start: string;
-  end?: string;
-  outcome?: string;
-  /** What the run did next: the next step's name, and what it said when it ended there. */
-  then?: string;
-}
-
-/** The step's executions from the run's timeline: one per start, each with how and when it ended and what followed. */
-function executionsOf(timeline: readonly Entry[], stepId: string): Execution[] {
-  const ordered = [...timeline].sort((a, b) => a.sequence - b.sequence);
-  const list: Execution[] = [];
-  ordered.forEach((e, i) => {
-    if (e.step_id !== stepId) return;
-    if (e.kind === "started") list.push({ number: list.length + 1, start: e.at });
-    else if (ends.includes(e.kind) && list.length > 0 && list[list.length - 1].end === undefined) {
-      const current = list[list.length - 1];
-      current.end = e.at;
-      current.outcome = e.kind === "completed" ? (e.detail ?? "completed") : e.detail ? `${e.kind}: ${e.detail}` : e.kind;
-      const next = ordered.slice(i + 1).find(n => n.step_id !== "" && n.step_id !== stepId);
-      if (next) current.then = shown(next.step_id);
-    }
-  });
-  return list;
-}
+/** The least time between two reads of the step's detail on changes, in milliseconds (build-console-b2 review R3). */
+const stepThrottle = 2000;
 
 const time = (at: string) => new Date(at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 
@@ -64,26 +40,37 @@ function headingOf(wait: Schema<"WaitView">): string {
 
 /**
  * A step selected in the tree (design-v2 s4.4; mock-up 02): its path, a red Needs you card when it waits on you (why first,
- * then Review and answer), a Running now card while it runs, four boxes at a glance, and tabs: Overview (its executions,
- * inputs, outputs, routes and prompt), Activity (its agent sessions' turns, live while it runs; open first for a running
- * agent step) and Artifacts; Findings and Events come in B2. Steer and Edit step are here, never on tree rows.
+ * then Review and answer), a Running now card while it runs, the patch its agent has staged, four boxes at a glance, and
+ * tabs: Overview (its executions, inputs, outputs, routes and prompt), Activity (its agent sessions' turns, live while it
+ * runs; open first for a running agent step), Artifacts, Findings (its findings, and a link to the run's ledger) and Events
+ * (every source merged). Steer and Edit step are here, never on tree rows.
+ *
+ * The step's own read is `GET /runs/{id}/steps/{step}` (A3), read again on the run's changes (a finding event is one, so a
+ * finding recorded while the page is open shows without a reload) and on `step_changed` for the step, which its agent's
+ * events raise (the staged patch). An agent raises those many times a second, so the read is throttled to one per
+ * `stepThrottle`. The run's detail gives only the overrides the caller may use.
  */
 export function StepDetail({ node }: { node: StepNode }) {
   const { step, wait, runId } = node;
   const run = runOf(node);
   const detail = useLive([runKey(runId)], () => read(api.GET("/runs/{id}", { params: { path: { id: runId } } })));
-  const artifacts = useLive([runKey(runId)], () => read(api.GET("/runs/{id}/artifacts", { params: { path: { id: runId } } })));
+  const own = useLive(
+    [runKey(runId), stepKey(runId, step.id)],
+    () => read(api.GET("/runs/{id}/steps/{step}", { params: { path: { id: runId, step: step.id } } })),
+    stepThrottle,
+  );
   const [tab, setTab] = useState<"overview" | "artifacts" | "activity" | "findings" | "events">(
     node.state === "running" && step.form === "agent" ? "activity" : "overview",
   );
   const decisions = useDecision();
 
-  const executions = detail.data ? executionsOf(detail.data.timeline, step.id) : [];
-  const mine = (artifacts.data?.artifacts ?? []).filter(a => a.step_id === step.id);
+  const executions = own.data?.executions ?? [];
+  const mine = executions.flatMap(x => x.artifacts);
   const targetOf = (a: Artifact): ArtifactTarget => ({ runId, reference: a.ref, name: `${a.name} · exec ${a.execution}` });
-  const lastRun = executions[executions.length - 1];
+  const lastRun = executions.at(-1);
   const allowed = isActive(run.run) ? (detail.data?.overrides_allowed ?? []) : [];
   const decision = wait !== null && !statusWaits.includes(wait.kind);
+  const tree = ancestors(node)[0]?.runId ?? runId;
 
   return (
     <div class="ff-stack" data-run={runId} data-step={step.id}>
@@ -107,7 +94,7 @@ export function StepDetail({ node }: { node: StepNode }) {
             </div>
             {wait.can_answer && (
               <p>
-                <button type="button" class="ff-btn ff-btn-primary" onClick={() => decisions.open(runId, wait)}>
+                <button type="button" class="ff-btn ff-btn-primary" onClick={() => decisions.open(runId, wait, tree)}>
                   {wait.kind === "question" ? "Answer" : "Review and answer"}
                 </button>
               </p>
@@ -137,7 +124,12 @@ export function StepDetail({ node }: { node: StepNode }) {
             {forms[step.form] ?? step.form} {step.what}
             {lastRun ? (
               <>
-                , execution {lastRun.number}, since <Age at={lastRun.start} />
+                , execution {lastRun.number}
+                {lastRun.started_at && (
+                  <>
+                    , since <Age at={lastRun.started_at} />
+                  </>
+                )}
               </>
             ) : step.changed_at ? (
               <>
@@ -148,6 +140,8 @@ export function StepDetail({ node }: { node: StepNode }) {
           </div>
         </section>
       )}
+      {own.data?.staged_patch && <StagedPatch runId={runId} stepId={step.id} staged={own.data.staged_patch} />}
+      {own.data && own.data.instructions.length > 0 && <Instructions instructions={own.data.instructions} />}
 
       <section class="ff-box ff-detail" aria-label={`Step ${step.id}`}>
         <header class="ff-pane-head">
@@ -178,7 +172,7 @@ export function StepDetail({ node }: { node: StepNode }) {
           <div>
             <div class="ff-k">Last outcome</div>
             <div class="ff-v">{lastRun?.outcome ?? "–"}</div>
-            {lastRun?.then && <div class="ff-sub">then {lastRun.then}</div>}
+            {lastRun?.then && <div class="ff-sub">then {shown(lastRun.then)}</div>}
           </div>
           <div>
             <div class="ff-k">{forms[step.form] ?? "Form"}</div>
@@ -194,22 +188,53 @@ export function StepDetail({ node }: { node: StepNode }) {
             { id: "overview", label: "Overview" },
             { id: "activity", label: "Activity" },
             { id: "artifacts", label: "Artifacts" },
-            { id: "findings", label: "Findings", disabled: "in B2" },
-            { id: "events", label: "Events", disabled: "in B2" },
+            { id: "findings", label: own.data ? `Findings (${own.data.findings.length})` : "Findings" },
+            { id: "events", label: "Events" },
           ]}
         />
         <div class="ff-tabpanel" role="tabpanel">
-          {artifacts.error && <ErrorBox error={artifacts.error} />}
+          {own.error && <ErrorBox error={own.error} />}
           {tab === "overview" ? (
             <Overview step={step} wait={wait} executions={executions} artifacts={mine} targetOf={targetOf} runId={runId} />
           ) : tab === "activity" ? (
             <ActivityTab runId={runId} stepId={step.id} running={node.state === "running"} />
+          ) : tab === "findings" ? (
+            own.data && <FindingsTab detail={own.data} tree={tree} />
+          ) : tab === "events" ? (
+            own.data && <EventsTab events={own.data.events} />
           ) : (
             <ArtifactsTab artifacts={mine} targetOf={targetOf} />
           )}
         </div>
       </section>
     </div>
+  );
+}
+
+/**
+ * The instructions people gave the step that its next prompt reads (build-console-b2 plan s1.3): who gave each, when, and
+ * its text, as text. They are kept until the step next succeeds, and the prompt lists every one.
+ */
+function Instructions({ instructions }: { instructions: readonly Schema<"InstructionView">[] }) {
+  return (
+    <section class="ff-box" aria-label="Pending instructions">
+      <header class="ff-pane-head">
+        <h2>Instructions for the next attempt</h2>
+        <span class="ff-muted">until the step next succeeds</span>
+      </header>
+      <div class="ff-pane-body">
+        <ul aria-label="Instructions">
+          {instructions.map(i => (
+            <li key={i.override_id}>
+              <span class="ff-muted">
+                from {i.actor}, <Age at={i.at} />:
+              </span>{" "}
+              <span class="ff-text">{i.text}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
   );
 }
 
@@ -262,11 +287,11 @@ function Overview({ step, wait, executions, artifacts, targetOf, runId }: {
                 <tr key={x.number}>
                   <td>{x.number}</td>
                   <td>
-                    {time(x.start)}
-                    {x.end && `–${time(x.end)}`}
+                    {x.started_at && time(x.started_at)}
+                    {x.ended_at && `–${time(x.ended_at)}`}
                   </td>
                   <td>{x.outcome ?? "running"}</td>
-                  <td>{x.then ?? ""}</td>
+                  <td>{x.then ? shown(x.then) : ""}</td>
                   <td>
                     {output && <ArtifactLink target={targetOf(output)}>output</ArtifactLink>}
                   </td>

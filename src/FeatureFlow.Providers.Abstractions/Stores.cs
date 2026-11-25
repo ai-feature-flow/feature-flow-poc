@@ -143,7 +143,7 @@ public sealed record AnswerRecord(string RunId, string WaitId, string Actor, str
 /// <summary>
 /// A change the record store wrote, numbered in commit order by the store itself as it appends: a run's records changed
 /// (<c>run_changed</c>), one of its waits opened or closed (<c>wait_opened</c>, <c>wait_closed</c>, with <see cref="WaitId"/>),
-/// or a step's live activity grew (<c>step_changed</c>, with <see cref="StepId"/>).
+/// or a step's page changed: its live activity, a finding event it wrote or its agent's events (<c>step_changed</c>, with <see cref="StepId"/>).
 /// </summary>
 public sealed record ChangeRecord(long Sequence, string RunId, string Kind, string? WaitId, DateTimeOffset At, string? StepId = null);
 
@@ -161,21 +161,24 @@ public static class ChangeKinds
     /// <summary>
     /// From the kinds' declared effects (<see cref="RecordKinds"/>): one <c>run_changed</c> per distinct run whose
     /// <see cref="ChangeEffect.RunChanged"/> records the batch writes, in the order first written; then one
-    /// <c>wait_opened</c> or <c>wait_closed</c> per wait record; then one <c>step_changed</c> per distinct run and step whose
-    /// activity the batch writes (activity alone changes no run). Nothing for a batch of other records (repositories are no run's).
+    /// <c>wait_opened</c> or <c>wait_closed</c> per wait record; then one <c>step_changed</c> per distinct run and step that its
+    /// <see cref="ChangeEffect.StepChanged"/> records name (<see cref="RecordKind.StepOf"/>): activity, finding events and
+    /// agent events by step key; activity and agent events change no run. Nothing for a batch of other records
+    /// (repositories are no run's), nor for a record that names no step (an agent session's events).
     /// </summary>
     public static IReadOnlyList<(string RunId, string Kind, string? WaitId, string? StepId)> Of(RecordBatch batch)
     {
         IEnumerable<(RecordKind Kind, object Record)> Raising(ChangeEffect effect) =>
-            RecordKinds.All.Where(k => k.Raises == effect).SelectMany(k => (k.Of(batch) ?? []).Select(r => (k, r)));
+            RecordKinds.All.Where(k => k.Raises.HasFlag(effect)).SelectMany(k => (k.Of(batch) ?? []).Select(r => (k, r)));
         return
         [
             .. Raising(ChangeEffect.RunChanged).Select(x => x.Kind.RunId(x.Record)!).Distinct(StringComparer.Ordinal)
                 .Select(r => (r, RunChanged, (string?)null, (string?)null)),
             .. Raising(ChangeEffect.WaitOpenedOrClosed).Select(x => (x.Kind.RunId(x.Record)!, x.Kind.Opens!(x.Record) ? WaitOpened : WaitClosed,
                 (string?)x.Kind.Column("wait_id").Value(x.Record), (string?)null)),
-            .. Raising(ChangeEffect.StepChanged).Select(x => (x.Kind.RunId(x.Record)!, (string)x.Kind.Column("step_id").Value(x.Record)!)).Distinct()
-                .Select(s => (s.Item1, StepChanged, (string?)null, (string?)s.Item2)),
+            .. Raising(ChangeEffect.StepChanged).Select(x => (Run: x.Kind.RunId(x.Record), Step: x.Kind.StepOf!(x.Record)))
+                .Where(s => s is { Run: not null, Step: { Length: > 0 } }).Distinct()
+                .Select(s => (s.Run!, StepChanged, (string?)null, s.Step)),
         ];
     }
 }
@@ -495,7 +498,10 @@ public static class Queries
     /// </summary>
     public const string Findings = "findings";
 
-    /// <summary><see cref="FindingEventRecord"/>: one finding's history in the order appended, by <c>run_id</c> (the finding's own run) and <c>finding_id</c>.</summary>
+    /// <summary>
+    /// <see cref="FindingEventRecord"/>: one finding's history in the order appended, by <c>run_id</c> (the finding's own run)
+    /// and <c>finding_id</c>; without <c>finding_id</c>, every finding's of that run, in the order appended.
+    /// </summary>
     public const string FindingEvents = "finding_events";
 
     /// <summary><see cref="ArtifactRecord"/>: the artifacts of the run named by <c>run_id</c> and of every descendant run, in the order appended.</summary>

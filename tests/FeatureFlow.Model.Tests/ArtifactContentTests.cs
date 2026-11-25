@@ -213,4 +213,23 @@ public class ArtifactContentTests
         var error = Assert.Single(ArtifactContent.Check(Std("findings_report"), Report.Replace("null_dereference", "null-check"), "findings.yaml"));
         Assert.StartsWith("findings[0].rule (line 3): must be one of \"wrong_behaviour\", \"null_dereference\"", error, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void A_findings_report_may_carry_a_summary_with_a_verdict_and_what_was_checked()
+    {
+        // E2 (build-console-b2 plan s1.4): optional in the type, so a report without one stays valid; when given, both parts.
+        const string Report = """
+            schema: 1
+            angle: correctness
+            summary:
+              verdict: The change does what the criteria ask.
+              checked: [src/Invoices.cs, AC-001]
+            findings: []
+            """;
+
+        Assert.Empty(ArtifactContent.Check(Std("findings_report"), Report, "findings.yaml"));
+        Assert.Empty(ArtifactContent.Check(Std("findings_report"), "schema: 1\nangle: correctness\nfindings: []\n", "findings.yaml"));
+        Assert.NotEmpty(ArtifactContent.Check(Std("findings_report"), Report.Replace("  checked: [src/Invoices.cs, AC-001]\n", ""), "findings.yaml"));
+        Assert.NotEmpty(ArtifactContent.Check(Std("findings_report"), Report.Replace("The change does what the criteria ask.", "\"\""), "findings.yaml"));
+    }
 }

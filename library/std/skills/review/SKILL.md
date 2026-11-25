@@ -95,6 +95,12 @@ report (`findings.yaml`):
 ```yaml
 schema: 1
 angle: correctness
+summary:                        # always, with or without findings
+  verdict: >-
+    One or two sentences: your judgement of the change from your angle.
+  checked:                      # what you examined
+    - src/Example.cs and its callers
+    - criterion AC-2, by running the Example tests
 findings:                       # [] when there are none
   - rule: null_dereference      # a stable id for the kind of defect
     title: Find may dereference a null name

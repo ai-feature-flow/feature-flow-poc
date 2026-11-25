@@ -461,6 +461,164 @@
         }
       }
     },
+    "/runs/{id}/steps/{step}": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "getStepDetail",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "step",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{id}/review": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "getReviewReport",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewReport"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{id}/policy": {
+      "get": {
+        "tags": [
+          "FeatureFlow.Api.Tests"
+        ],
+        "operationId": "getRunPolicy",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunPolicyView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/runs/{id}/tree": {
       "get": {
         "tags": [
@@ -1458,6 +1616,13 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "staged",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1473,6 +1638,16 @@
           },
           "401": {
             "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
             "content": {
               "application/json": {
                 "schema": {
@@ -1707,6 +1882,32 @@
           }
         }
       },
+      "AgentSessionView": {
+        "required": [
+          "session",
+          "prompt_ref",
+          "transcript_ref"
+        ],
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "prompt_ref": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "transcript_ref": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "AnswerProgress": {
         "required": [
           "choice",
@@ -1934,6 +2135,45 @@
           }
         }
       },
+      "AttemptPolicyView": {
+        "required": [
+          "default_attempts",
+          "run_ceiling",
+          "hard_step_ceiling",
+          "hard_run_ceiling"
+        ],
+        "type": "object",
+        "properties": {
+          "default_attempts": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
+          },
+          "run_ceiling": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
+          },
+          "hard_step_ceiling": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
+          },
+          "hard_run_ceiling": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
+          }
+        }
+      },
       "AttentionItem": {
         "required": [
           "run",
@@ -2136,6 +2376,44 @@
             "type": "string"
           },
           "status": {
+            "type": "string"
+          }
+        }
+      },
+      "DecisionPolicyView": {
+        "required": [
+          "decision_type",
+          "step_ids",
+          "roles",
+          "min_count",
+          "automatic",
+          "source"
+        ],
+        "type": "object",
+        "properties": {
+          "decision_type": {
+            "type": "string"
+          },
+          "step_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "min_count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "automatic": {
+            "type": "boolean"
+          },
+          "source": {
             "type": "string"
           }
         }
@@ -2456,6 +2734,30 @@
           "branch"
         ]
       },
+      "InstructionView": {
+        "required": [
+          "override_id",
+          "actor",
+          "text",
+          "at"
+        ],
+        "type": "object",
+        "properties": {
+          "override_id": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "MeResponse": {
         "required": [
           "actor",
@@ -2495,6 +2797,28 @@
                 "type": "string"
               }
             }
+          }
+        }
+      },
+      "OverridePolicyView": {
+        "required": [
+          "key",
+          "roles",
+          "yours"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "yours": {
+            "type": "boolean"
           }
         }
       },
@@ -3174,6 +3498,201 @@
           }
         }
       },
+      "ReviewAngleView": {
+        "required": [
+          "angle",
+          "step_id",
+          "execution",
+          "verdict",
+          "checked",
+          "findings",
+          "blocking",
+          "report_ref"
+        ],
+        "type": "object",
+        "properties": {
+          "angle": {
+            "type": "string"
+          },
+          "step_id": {
+            "type": "string"
+          },
+          "execution": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "verdict": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "checked": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "findings": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "blocking": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "report_ref": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ReviewFindingView": {
+        "required": [
+          "finding",
+          "raised_in_pass",
+          "reason",
+          "reason_by",
+          "decided_at"
+        ],
+        "type": "object",
+        "properties": {
+          "finding": {
+            "$ref": "#/components/schemas/FindingView"
+          },
+          "raised_in_pass": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "reason_by": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "decided_at": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "ReviewPassView": {
+        "required": [
+          "pass",
+          "step_id",
+          "started_at",
+          "ended_at",
+          "angles"
+        ],
+        "type": "object",
+        "properties": {
+          "pass": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "step_id": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ended_at": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "angles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewAngleView"
+            }
+          }
+        }
+      },
+      "ReviewReport": {
+        "required": [
+          "run_id",
+          "title",
+          "pull_requests",
+          "passes",
+          "findings",
+          "external",
+          "trace",
+          "note"
+        ],
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "pull_requests": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PullRequestLink"
+            }
+          },
+          "passes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewPassView"
+            }
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewFindingView"
+            }
+          },
+          "external": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewFindingView"
+            }
+          },
+          "trace": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TraceView"
+              }
+            ]
+          },
+          "note": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "RunDetail": {
         "required": [
           "run",
@@ -3265,6 +3784,35 @@
             "items": {
               "$ref": "#/components/schemas/RunSummary"
             }
+          }
+        }
+      },
+      "RunPolicyView": {
+        "required": [
+          "run_id",
+          "decisions",
+          "overrides",
+          "attempts"
+        ],
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string"
+          },
+          "decisions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecisionPolicyView"
+            }
+          },
+          "overrides": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OverridePolicyView"
+            }
+          },
+          "attempts": {
+            "$ref": "#/components/schemas/AttemptPolicyView"
           }
         }
       },
@@ -3797,6 +4345,36 @@
           }
         }
       },
+      "StagedPatchView": {
+        "required": [
+          "execution",
+          "target",
+          "revision",
+          "patch",
+          "at"
+        ],
+        "type": "object",
+        "properties": {
+          "execution": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "target": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "patch": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "StartRunRequest": {
         "required": [
           "template"
@@ -3887,6 +4465,198 @@
           }
         }
       },
+      "StepDetail": {
+        "required": [
+          "run_id",
+          "step_id",
+          "executions",
+          "waits",
+          "findings",
+          "finding_steps",
+          "events",
+          "staged_patch",
+          "instructions"
+        ],
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string"
+          },
+          "step_id": {
+            "type": "string"
+          },
+          "executions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StepExecutionView"
+            }
+          },
+          "waits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WaitView"
+            }
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FindingView"
+            }
+          },
+          "finding_steps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StepEventView"
+            }
+          },
+          "staged_patch": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StagedPatchView"
+              }
+            ]
+          },
+          "instructions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InstructionView"
+            }
+          }
+        }
+      },
+      "StepEventSource": {
+        "enum": [
+          "timeline",
+          "agent",
+          "override",
+          "answer",
+          "finding"
+        ]
+      },
+      "StepEventView": {
+        "required": [
+          "at",
+          "source",
+          "kind",
+          "execution",
+          "text",
+          "actor"
+        ],
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StepEventSource"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "execution": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "text": {
+            "type": "string"
+          },
+          "actor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "finding_id": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "StepExecutionView": {
+        "required": [
+          "number",
+          "started_at",
+          "ended_at",
+          "outcome",
+          "then",
+          "artifacts",
+          "sessions",
+          "reports",
+          "questions"
+        ],
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "started_at": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "ended_at": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "outcome": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "then": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArtifactView"
+            }
+          },
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentSessionView"
+            }
+          },
+          "reports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StepReportView"
+            }
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StepQuestionView"
+            }
+          }
+        }
+      },
       "StepForm": {
         "enum": [
           "agent",
@@ -3896,6 +4666,86 @@
           "parallel",
           "for_each"
         ]
+      },
+      "StepQuestionView": {
+        "required": [
+          "question_id",
+          "text",
+          "options",
+          "status",
+          "answer",
+          "at"
+        ],
+        "type": "object",
+        "properties": {
+          "question_id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string"
+          },
+          "answer": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "StepReportView": {
+        "required": [
+          "sequence",
+          "accepted",
+          "outcome",
+          "summary",
+          "errors",
+          "at"
+        ],
+        "type": "object",
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "accepted": {
+            "type": "boolean"
+          },
+          "outcome": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "summary": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
       },
       "Stream": {
         "type": "string",
@@ -4030,6 +4880,57 @@
           "at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "TracedRequirementView": {
+        "required": [
+          "id",
+          "traced",
+          "tests",
+          "gaps"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "traced": {
+            "type": "boolean"
+          },
+          "tests": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "gaps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "TraceView": {
+        "required": [
+          "ref",
+          "traced",
+          "requirements"
+        ],
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string"
+          },
+          "traced": {
+            "type": "boolean"
+          },
+          "requirements": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TracedRequirementView"
+            }
           }
         }
       },

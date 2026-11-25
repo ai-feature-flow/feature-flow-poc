@@ -62,7 +62,8 @@ function Bar({ run }: { run: RunNode }) {
 }
 
 /**
- * A run selected in the tree (design-v2 s4.4; mock-up 05): its header with Run actions, its facts, the steps in it that need
+ * A run selected in the tree (design-v2 s4.4; mock-up 05): its header with its review report (in a window of its own) and
+ * Run actions, its facts, the steps in it that need
  * you (in tree order; a title selects its step, a button opens its decision), and a Progress board of the runs under it.
  */
 export function RunPage({ node, rows, onSelect }: { node: RunNode; rows: readonly Node[]; onSelect: (node: Node) => void }) {
@@ -85,7 +86,13 @@ export function RunPage({ node, rows, onSelect }: { node: RunNode; rows: readonl
           <span class={node.state === "needs" ? "ff-pill ff-pill-wait" : node.state === "done" ? "ff-pill ff-pill-ok" : "ff-pill ff-pill-neutral"}>
             {node.state === "needs" ? "needs you" : run.status}
           </span>
-          <span class="ff-right-end">{detail.data && <RunActions run={run} detail={detail.data} />}</span>
+          <span class="ff-right-end">
+            <button type="button" class="ff-btn ff-btn-ghost" title="Opens in a window of its own"
+              onClick={() => links.openWindow(links.review(rows[0].runId, run.run_id), `review:${run.run_id}`)}>
+              Review report ⧉
+            </button>
+            {detail.data && <RunActions run={run} detail={detail.data} />}
+          </span>
         </h1>
       </div>
       {detail.error && <ErrorBox error={detail.error} />}
@@ -184,7 +191,7 @@ export function RunPage({ node, rows, onSelect }: { node: RunNode; rows: readonl
                   {pathOf(step)} › {step.label}
                 </div>
               </div>
-              <button type="button" class="ff-btn ff-btn-primary" onClick={() => step.wait && decisions.open(step.runId, step.wait)}>
+              <button type="button" class="ff-btn ff-btn-primary" onClick={() => step.wait && decisions.open(step.runId, step.wait, rows[0].runId)}>
                 {step.wait?.kind === "question" ? "Answer" : "Review and answer"}
               </button>
             </section>

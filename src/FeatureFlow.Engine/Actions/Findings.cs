@@ -486,6 +486,93 @@ static class FindingsActions
     }
 
     /// <summary>
+    /// The review's summary on a pull request (E3), unless the step says <c>post_review: false</c>: each reviewer's current
+    /// <c>findings_report</c> in this run (one per review branch: its latest), with its angle, verdict and what it checked
+    /// (E2's <c>summary</c>), its findings and blocking findings, and the run's ledger as it stands. Keyed by the reports
+    /// themselves, so a retry or a re-entry with the same reports posts nothing twice, and a later review pass posts a new
+    /// comment. A reviewer's text is shown in code spans, never as Markdown. With no report there is nothing to post; the
+    /// timeline says so.
+    /// </summary>
+    internal static async Task PostReviewSummaryAsync(ActionRun run, PullRequestRef pr)
+    {
+        if (!run.Bool("post_review", true))
+            return;
+        var reports = run.Scope.Artifacts.Where(a => a.Name == ReviewReportName && a.Action is null).OrderBy(a => a.StepId, StringComparer.Ordinal).ToList();
+        if (reports.Count == 0)
+        {
+            run.Events.Add($"no review summary is posted on {ActionRun.Format(pr)}: this run holds no reviewer's {ReviewReportName}");
+            return;
+        }
+
+        var read = new List<(ArtifactEntry Entry, FindingsReport? Report)>();
+        foreach (var entry in reports)
+        {
+            FindingsReport? report;
+            try
+            {
+                report = ArtifactShapes.ReadLibrary<FindingsReport>(await run.ReadTextAsync(entry.Ref), $"{entry.StepId}'s {ReviewReportName} {entry.Ref}");
+            }
+            catch (FormatException)
+            {
+                report = null;
+            }
+
+            read.Add((entry, report));
+        }
+
+        var runId = run.Call.Step.RunId;
+        var ledger = (await LedgerAsync(run)).Where(f => f.RunId == runId).ToList();
+        var key = $"review/{runId}/{Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(string.Join("\n", reports.Select(r => r.Ref).Order(StringComparer.Ordinal)))))[..16]}";
+        var comment = ActionRun.Must(await run.CodeHost.AddCommentAsync(pr, ReviewSummaryBody(runId, read, ledger), key, run.Ct), "post the review summary on the pull request");
+        run.Events.Add($"the review summary of {reports.Count} report(s) is posted on {ActionRun.Format(pr)} ({comment.Id})");
+    }
+
+    const string ReviewReportName = "findings_report";
+
+    static string ReviewSummaryBody(string runId, IReadOnlyList<(ArtifactEntry Entry, FindingsReport? Report)> reports, IReadOnlyList<FindingRecord> ledger)
+    {
+        // On one line: a line break would end the table row or heading and let the rest be read as Markdown.
+        string Angle((ArtifactEntry Entry, FindingsReport? Report) r) => r.Report?.Angle is { Length: > 0 } angle ? angle.ReplaceLineEndings(" ") : r.Entry.StepId;
+        var text = new System.Text.StringBuilder("## Feature Flow review\n\n| Angle | Findings | Blocking |\n|---|---|---|\n");
+        foreach (var r in reports)
+            text.Append($"| {Code(Angle(r)).Replace("|", "\\|", StringComparison.Ordinal)} | {Count(r.Report?.Findings.Count)} | {Count(r.Report?.Findings.Count(f => f.Blocking))} |\n");
+        foreach (var r in reports)
+        {
+            text.Append($"\n### {Code(Angle(r))}\n\n");
+            if (r.Report is null)
+                text.Append("The report does not read.\n");
+            else if (r.Report.Summary is not { } summary)
+                text.Append("No verdict recorded.\n");
+            else
+            {
+                foreach (var line in summary.Verdict.Split('\n').Where(l => l.Trim().Length > 0))
+                    text.Append(Code(line.Trim())).Append("  \n");
+                if (summary.Checked.Count > 0)
+                    text.Append("\nChecked:\n\n").AppendJoin("", summary.Checked.Where(c => c.Trim().Length > 0).Select(c => $"- {Code(c.Trim().ReplaceLineEndings(" "))}\n"));
+            }
+        }
+
+        long Tally(string state) => ledger.Count(f => f.State == state);
+        text.Append($"\nLedger: {Tally(FindingStates.Open)} open ({ledger.Count(f => f.State == FindingStates.Open && f.Finding.Blocking)} blocking), "
+                    + $"{Tally(FindingStates.Fixed)} fixed, {Tally(FindingStates.Declined)} declined, {Tally(FindingStates.Escalated)} escalated.\n\n"
+                    + $"The full review is the review report of run {runId} in the Feature Flow console.");
+        return text.ToString();
+    }
+
+    static string Count(int? n) => n?.ToString(CultureInfo.InvariantCulture) ?? "?";
+
+    /// <summary>Text as a Markdown code span, so a reviewer's words are shown as written and never read as Markdown or mentions.</summary>
+    static string Code(string text)
+    {
+        var longest = 0;
+        for (int i = 0, run = 0; i < text.Length; i++)
+            longest = Math.Max(longest, run = text[i] == '`' ? run + 1 : 0);
+        var fence = new string('`', longest + 1);
+        return $"{fence} {text} {fence}";
+    }
+
+    /// <summary>
     /// A decline's reason on the pull request of the finding's repository, once per triage and finding (the comment's
     /// key). Before a pull request is open there is nowhere to post it; the timeline says so (LOG 164).
     /// </summary>

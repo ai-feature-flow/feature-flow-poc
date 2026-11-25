@@ -7,10 +7,12 @@ using FeatureFlow.Providers.Abstractions;
 namespace FeatureFlow.Console.Tests;
 
 /// <summary>
-/// The overrides (<c>POST /runs/{id}/overrides</c>): <c>breakpoint</c>, <c>skip</c>, <c>grant_attempts</c> and <c>amend</c>,
-/// refused where the core refuses them and otherwise traced as the core traces them (<c>Steering.cs</c>, <c>Patches.cs</c>), so
-/// the plan (<c>GET /runs/{id}/plan</c>) shows the change. A breakpoint pauses the run only when it reaches the step
-/// (<see cref="ReachAsync"/>).
+/// The overrides (<c>POST /runs/{id}/overrides</c>): <c>breakpoint</c>, <c>skip</c>, <c>grant_attempts</c>, <c>amend</c>,
+/// <c>go_to</c>, <c>replan</c> and <c>instruct</c>, refused where the core refuses them and otherwise traced as the core traces
+/// them (<c>Steering.cs</c>, <c>Patches.cs</c>; build-console-b2 plan s1.2, s1.3), so the plan (<c>GET /runs/{id}/plan</c>)
+/// shows the change. A breakpoint pauses the run only when it reaches the step (<see cref="ReachAsync"/>). A go to or re-plan
+/// cancels every running step and withdraws every open wait, then the run reaches the target; child runs and containers'
+/// branches are not modelled. An instruction changes only the timeline: the core keeps it as context for the step's next prompt.
 /// </summary>
 public sealed partial class FakeEngine
 {
@@ -18,13 +20,16 @@ public sealed partial class FakeEngine
 
     async Task<string?> SteerAsync(Update update)
     {
-        if (update is not { Name: RunWorkflowNames.Override, Argument: OverrideArgs { Key: "breakpoint" or "skip" or "grant_attempts" or "amend" } o })
+        if (update is not { Name: RunWorkflowNames.Override, Argument: OverrideArgs { Key: "breakpoint" or "skip" or "grant_attempts" or "amend" or "go_to" or "replan" or "instruct" } o })
             return null;
         lock (Overrides)
             Overrides.Add(o);
         var runId = update.RunId;
         var result = await SteerAsync(runId, o);
         await TraceAsync(runId, "override", o.StepId ?? "", $"{o.Key} by {o.Actor}: {o.Reason} -> {result}");
+        // As the core: the moved run enters the target after the update, from its pending entries.
+        if (o.Key is "go_to" or "replan")
+            await ReachAsync(runId, o.StepId!);
         return result;
     }
 
@@ -82,6 +87,36 @@ public sealed partial class FakeEngine
                     throw new Refusal($"{stepId} uses no attempts");
                 await TraceAsync(runId, "attempts_granted", stepId, $"{attempts} attempt(s){(o.StepId is null ? " to the run ceiling" : "")} by {o.Actor}");
                 return "applied";
+            case "go_to" or "replan":
+                var cleanUp = o.Change.TryGetValue("clean_up", out var clean) && clean == "true";
+                if (o.StepId is null)
+                    throw new Refusal($"{(o.Key == "go_to" ? "go to" : "re-plan")}: name the step");
+                if (o.Key == "replan" && step?.Agent?.Planning is null)
+                    throw new Refusal($"re-plan: {stepId} is not an agent step with planning authority");
+                if (cleanUp && step?.Form == StepForm.Decision)
+                    throw new Refusal($"go to: {stepId} is a decision, which touches no repository; clean_up resets to where a step started, so go to the step after it");
+                var cancelled = new List<string>();
+                foreach (var running in await RunningStepsAsync(runId))
+                {
+                    await TraceAsync(runId, "cancelled", running);
+                    cancelled.Add(running);
+                }
+
+                foreach (var wait in await OpenWaitsAsync(runId))
+                {
+                    await CloseWaitAsync(runId, wait.WaitId);
+                    await TraceAsync(runId, "wait_closed", wait.StepId, wait.WaitId);
+                }
+
+                return $"applied: continues at {stepId}; {(cancelled.Count == 0 ? "nothing was running" : "cancelled " + string.Join(", ", cancelled))}";
+            case "instruct":
+                if (!o.Change.TryGetValue("text", out var text) || string.IsNullOrWhiteSpace(text))
+                    throw new Refusal("instruct needs the instructions as text");
+                if (step is not null && step.Form != StepForm.Agent)
+                    throw new Refusal($"{stepId} is not an agent step; instructions go into an agent's next prompt");
+                if (step is { Protected: true } && o.Variants?.Contains(Model.Overrides.InstructProtected) != true)
+                    throw new Refusal($"{stepId} is protected: instructing it needs {Model.Overrides.InstructProtected}");
+                return "applied";
             default:
                 return $"applied: plan revision {await AmendAsync(runId)}";
         }
@@ -91,18 +126,27 @@ public sealed partial class FakeEngine
     /// A step's state as the core sees it for steering: <c>running</c> (started, resumed or to be retried) or another, and
     /// its open waits.
     /// </summary>
-    async Task<(string Status, IReadOnlyList<WaitRecord> Waits)> StepAsync(string runId, string stepId)
+    async Task<(string Status, IReadOnlyList<WaitRecord> Waits)> StepAsync(string runId, string stepId) =>
+        (StatusOf((await TimelineAsync(runId)).Where(t => t.StepId == stepId)), (await OpenWaitsAsync(runId)).Where(w => w.StepId == stepId).ToList());
+
+    /// <summary>A step's status from its timeline entries, in order: <c>running</c>, <c>pending</c>, or how it last ended.</summary>
+    static string StatusOf(IEnumerable<TimelineRecord> entries)
     {
         var status = "pending";
-        foreach (var t in (await TimelineAsync(runId)).Where(t => t.StepId == stepId))
+        foreach (var t in entries)
             status = t.Kind switch
             {
                 "started" or "resumed" or "retried" or "attempt_failed" => "running",
                 "completed" or "auto_resolved" or "interrupted" or "escalated" or "cancelled" or "exhausted" => t.Kind,
                 _ => status,
             };
-        return (status, (await OpenWaitsAsync(runId)).Where(w => w.StepId == stepId).ToList());
+        return status;
     }
+
+    /// <summary>The run's running steps, in the order they first appear on its timeline.</summary>
+    async Task<IReadOnlyList<string>> RunningStepsAsync(string runId) =>
+        (await TimelineAsync(runId)).Where(t => t.StepId.Length > 0).GroupBy(t => t.StepId, StringComparer.Ordinal)
+        .Where(g => StatusOf(g) == "running").Select(g => g.Key).ToList();
 
     /// <summary>The breakpoints set on the run's steps, from its timeline, as the API reads them.</summary>
     async Task<HashSet<string>> BreakpointsAsync(string runId)

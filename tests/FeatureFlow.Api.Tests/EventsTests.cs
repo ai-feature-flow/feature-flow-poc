@@ -92,6 +92,33 @@ public sealed class EventsTests
         Assert.Equal(("run_changed", "web"), (web.Event, web.Data!.RunId));
     }
 
+    /// <summary>
+    /// A9: a finding event reaches the run's viewer as <c>run_changed</c> and then <c>step_changed</c> for the step that wrote
+    /// it; an agent event as <c>step_changed</c> for the step its key names, and an agent session's event (key
+    /// <c>session/&lt;id&gt;</c>) as nothing: the viewer's next frame is the run's own later change.
+    /// </summary>
+    [Fact]
+    public async Task Finding_events_and_agent_events_are_sent_as_step_changed_and_a_sessions_events_are_not()
+    {
+        await using var world = new ApiWorld();
+        await world.RunAsync("r");
+        await world.Feed.PollAsync(Ct);
+        await using var stream = await EventStream.OpenAsync(world.As("vic", "viewer"));
+
+        await world.Records.AppendAsync(new RecordBatch(FindingEvents:
+            [new FindingEventRecord("r", "f1", "k1", FindingEventKinds.Raised, FindingStates.Open, "review", null, "verify.review.review_0.record", null, null, DateTimeOffset.UtcNow)]), Ct);
+        await world.Records.AppendAsync(new RecordBatch(AgentEvents: [new AgentEventRecord("r/implement/1", "patch_staged", "{}", DateTimeOffset.UtcNow)]), Ct);
+        await world.Records.AppendAsync(new RecordBatch(AgentEvents: [new AgentEventRecord("session/s-1", "hook_pre_tool_use", "Edit allow", DateTimeOffset.UtcNow)]), Ct);
+        await world.RunAsync("r");
+        await world.Feed.PollAsync(Ct);
+
+        Assert.Equal(
+            [
+                ("run_changed", (string?)null), ("step_changed", "verify.review.review_0.record"), ("step_changed", "implement"), ("run_changed", null),
+            ],
+            new[] { await stream.NextAsync(), await stream.NextAsync(), await stream.NextAsync(), await stream.NextAsync() }.Select(f => (f.Event, f.Data!.StepId)));
+    }
+
     [Fact]
     public async Task Last_event_id_within_the_ring_replays_what_followed_and_beyond_it_resets()
     {

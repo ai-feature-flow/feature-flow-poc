@@ -24,6 +24,13 @@ schema:
   properties:
     schema: { const: 1 }
     angle: { type: string, description: "The review angle, for example correctness or security" }
+    summary:                    # optional in the type, so a ledger view, an external source and older reports stay valid; std's reviewer task requires it
+      type: object
+      additionalProperties: false
+      required: [verdict, checked]
+      properties:
+        verdict: { type: string, minLength: 1, description: "One or two sentences: the angle's judgement of the change" }
+        checked: { type: array, items: { type: string, minLength: 1 }, description: "What the reviewer examined: files, behaviours, criteria, commands run" }
     findings:
       type: array
       items:
