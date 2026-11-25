@@ -53,16 +53,24 @@ recorded" verdicts and no ticket trace (below). Nothing was run live; the produc
 
 ## Evidence
 
-To be filled by the sub-orchestrator at the merged head.
+Run by the sub-orchestrator at the merged head 2b04cbd, except where a row says otherwise.
 
 | Check | Result |
 |---|---|
-| Default suite (`Category!=Integration&Category!=Live&Category!=Cluster`), head … | |
-| `Console.Tests` (Playwright) | |
-| `Replay.Tests` (no history re-recorded) | |
-| Integration category (Temporal dev server, own port) | |
-| `OpenApiTests` (committed `openapi.json` current; no contract change after foundations) | |
-| Break-and-see-fail | The builders' checks are listed in their reports; the sub-orchestrator's own: |
+| Default suite (`Category!=Integration&Category!=Live&Category!=Cluster`) | 26 assemblies, 0 failed (Api 284, Engine 335, Interpreter 251) |
+| `Console.Tests` (Playwright) | 121 passed |
+| `Replay.Tests` (no history re-recorded) | 47 passed |
+| Integration category (`Category!=Cluster&Category!=Live`, Temporal dev server on port 7951) | 138 of 139 Integration tests passed, and Postgres 94, S3 12, Docker 17, Api 2, Hosting 1 all passed. `CopilotStepTests.With_a_key_the_model_refuses_the_copilot_step_stops_for_a_person` failed once in the full run (`model.Refused` was 0). It then passed 2 of 2 runs alone. B2 changes no Copilot runtime or agent worker code, so the failure is load-sensitive, not a B2 regression. The full run at 4f305e4, before the fix pass, passed 139 of 139 |
+| Cluster | Not run: B2 touches nothing under `deploy/` |
+| `OpenApiTests` | Green. The contracts are unchanged since foundations, apart from R15's 400 response (`openapi.json` regenerated) |
+| Break-and-see-fail | The builders' checks are listed in their reports. The sub-orchestrator's own four, run at 4f305e4 and then reverted, are in the table below |
+
+| Broken | Failed |
+|---|---|
+| `RunCore.MoveTo` does not cancel what is in flight | `SteeringTests`: 2 go-to tests, one with a running step and its child run, the other out of a running parallel |
+| E3 comment key made unique per call | `SourceControlActionTests`: the once-per-pass test, and the test with `GitHubCodeHost` over `FakeGitHub` |
+| `AgentEvents.StepOf` returns null | Api `EventsTests` (finding and agent events sent as `step_changed`); console `StagedPatchTests` (staged again while open) |
+| Events tab filter ignores the chosen source | `EventsTabTests` (merged and filtered by source) |
 
 ## Review
 
